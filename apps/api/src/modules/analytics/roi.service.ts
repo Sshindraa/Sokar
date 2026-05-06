@@ -33,8 +33,8 @@ export async function computeRoi(restaurantId: string, period: string): Promise<
     }),
   ]);
 
-  const totalCouverts    = reservations.reduce((s, r) => s + r.partySize, 0);
-  const estimatedRevenue = reservations.reduce((s, r) => s + Number(r.estimatedRevenue ?? 0), 0);
+  const totalCouverts    = reservations.reduce((s: number, r: any) => s + r.partySize, 0);
+  const estimatedRevenue = reservations.reduce((s: number, r: any) => s + Number(r.estimatedRevenue ?? 0), 0);
   const theforkSavings   = totalCouverts * THEFORK_COMMISSION_PER_PAX;
   const monthlyCost      = PLAN_PRICES[restaurant.plan] ?? 89;
 
