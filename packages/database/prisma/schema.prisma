@@ -1,0 +1,211 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String?
+  emailVerified Boolean   @default(false) @map("email_verified")
+  image         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  sessions      Session[]
+  accounts      Account[]
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(uuid())
+  userId                String    @map("user_id")
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  @@map("verifications")
+}
+
+model Restaurant {
+  id              String          @id @default(uuid())
+  name            String
+  plan            Plan            @default(STARTER)
+  managerPhone    String          @map("manager_phone")
+  managerEmail    String          @map("manager_email")
+  phoneNumber     String          @unique @map("phone_number")
+  openingHours    Json            @map("opening_hours")
+  carrier         String          @default("vapi")        // "vapi" | "telnyx" — rollback feature flag
+  theforkSavings  Decimal         @default(0) @map("thefork_savings") @db.Decimal(10, 2)
+  createdAt       DateTime        @default(now()) @map("created_at")
+  calls           Call[]
+  reservations    Reservation[]
+  customers       Customer[]
+  personality     AgentPersonality?
+  callQuotas      CallQuota[]
+  @@map("restaurants")
+}
+
+model Call {
+  id            String        @id @default(uuid())
+  restaurantId  String        @map("restaurant_id")
+  callSid       String        @unique @map("call_sid")
+  durationSec   Int?          @map("duration_sec")
+  transcript    String?
+  intent        CallIntent?
+  outcome       CallOutcome?
+  sttProvider   String?       @map("stt_provider")
+  llmProvider   String?       @map("llm_provider")
+  ttsProvider   String?       @map("tts_provider")
+  carrier       String?
+  createdAt     DateTime      @default(now()) @map("created_at")
+  restaurant    Restaurant    @relation(fields: [restaurantId], references: [id])
+  reservation   Reservation?
+  latencyTrace  LatencyTrace?
+  @@index([restaurantId, createdAt(sort: Desc)])
+  @@map("calls")
+}
+
+model Reservation {
+  id               String            @id @default(uuid())
+  restaurantId     String            @map("restaurant_id")
+  callId           String?           @unique @map("call_id")
+  customerId       String?           @map("customer_id")
+  reservedAt       DateTime          @map("reserved_at")
+  partySize        Int               @map("party_size")
+  customerName     String            @map("customer_name")
+  customerPhone    String?           @map("customer_phone")
+  status           ReservationStatus @default(CONFIRMED)
+  estimatedRevenue Decimal?          @map("estimated_revenue") @db.Decimal(10, 2)
+  confirmedRevenue Decimal?          @map("confirmed_revenue") @db.Decimal(10, 2)
+  createdAt        DateTime          @default(now()) @map("created_at")
+  restaurant       Restaurant        @relation(fields: [restaurantId], references: [id])
+  call             Call?             @relation(fields: [callId], references: [id])
+  customer         Customer?         @relation(fields: [customerId], references: [id])
+  @@index([restaurantId, createdAt(sort: Desc)])
+  @@map("reservations")
+}
+
+model AgentPersonality {
+  id                String      @id @default(uuid())
+  restaurantId      String      @unique @map("restaurant_id")
+  profileType       ProfileType @default(BISTROT_BRASSERIE) @map("profile_type")
+  speakingRate      Decimal     @default(1.0) @map("speaking_rate") @db.Decimal(3, 2)
+  fillerStyle       FillerStyle @default(CASUAL) @map("filler_style")
+  systemPromptExtra String?     @map("system_prompt_extra")
+  voiceIdEl         String?     @map("voice_id_el")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+  restaurant        Restaurant  @relation(fields: [restaurantId], references: [id])
+  @@map("agent_personalities")
+}
+
+model CallQuota {
+  restaurantId  String     @map("restaurant_id")
+  monthKey      String     @map("month_key")
+  callCount     Int        @default(0) @map("call_count")
+  restaurant    Restaurant @relation(fields: [restaurantId], references: [id])
+  @@id([restaurantId, monthKey])
+  @@map("call_quotas")
+}
+
+model Customer {
+  id              String        @id @default(uuid())
+  restaurantId    String        @map("restaurant_id")
+  phone           String
+  name            String?
+  visitCount      Int           @default(0) @map("visit_count")
+  loyaltyScore    Decimal       @default(0) @map("loyalty_score") @db.Decimal(5, 2)
+  isVip           Boolean       @default(false) @map("is_vip")
+  notes           String?
+  specialOccasion String?       @map("special_occasion")
+  lastSeenAt      DateTime?     @map("last_seen_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  restaurant      Restaurant    @relation(fields: [restaurantId], references: [id])
+  reservations    Reservation[]
+  @@unique([restaurantId, phone])
+  @@index([restaurantId, isVip])
+  @@map("customers")
+}
+
+model LatencyTrace {
+  id             String   @id @default(uuid())
+  callId         String   @unique @map("call_id")
+  vadEndMs       Int?     @map("vad_end_ms")
+  sttFinalMs     Int?     @map("stt_final_ms")
+  llmFirstToken  Int?     @map("llm_first_token_ms")
+  ttsFirstByte   Int?     @map("tts_first_byte_ms")
+  audioPlayingMs Int?     @map("audio_playing_ms")
+  totalE2eMs     Int?     @map("total_e2e_ms")
+  createdAt      DateTime @default(now()) @map("created_at")
+  call           Call     @relation(fields: [callId], references: [id])
+  @@index([callId])
+  @@map("latency_traces")
+}
+
+enum Plan {
+  STARTER
+  PRO
+  PREMIUM
+}
+enum CallIntent {
+  RESERVATION
+  HOURS
+  MENU
+  CANCEL
+  OTHER
+}
+enum CallOutcome {
+  RESERVED
+  INFO
+  NO_ACTION
+  HANDOFF
+  ERROR
+}
+enum ReservationStatus {
+  CONFIRMED
+  CANCELLED
+  NO_SHOW
+  SEATED
+}
+enum ProfileType {
+  BISTROT_BRASSERIE
+  GASTRONOMIQUE
+  SEMI_GASTRO
+}
+enum FillerStyle {
+  CASUAL
+  FORMAL
+  WARM
+}

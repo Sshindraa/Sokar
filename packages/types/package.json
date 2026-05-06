@@ -1,0 +1,17 @@
+{
+  "name": "@callyx/types",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/call-event.ts",
+  "types": "./src/call-event.ts",
+  "exports": {
+    ".": "./src/call-event.ts"
+  },
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf .turbo"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}
