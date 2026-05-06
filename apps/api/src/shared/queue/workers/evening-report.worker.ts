@@ -16,14 +16,14 @@ export const eveningReportWorker = new Worker('evening-report', async (job) => {
     db.restaurant.findUniqueOrThrow({ where: { id: restaurantId } }),
   ]);
 
-  const reserved   = reservations.filter(r => r.status === 'CONFIRMED').length;
-  const cancelled  = reservations.filter(r => r.status === 'CANCELLED').length;
+  const reserved   = reservations.filter((r: any) => r.status === 'CONFIRMED').length;
+  const cancelled  = reservations.filter((r: any) => r.status === 'CANCELLED').length;
   const totalCouverts = reservations
-    .filter(r => r.status === 'CONFIRMED')
-    .reduce((s, r) => s + r.partySize, 0);
+    .filter((r: any) => r.status === 'CONFIRMED')
+    .reduce((s: number, r: any) => s + r.partySize, 0);
   const estimatedRevenue = reservations
-    .filter(r => r.estimatedRevenue)
-    .reduce((sum, r) => sum + Number(r.estimatedRevenue), 0);
+    .filter((r: any) => r.estimatedRevenue)
+    .reduce((sum: number, r: any) => sum + Number(r.estimatedRevenue), 0);
 
   await sendEmail({
     to:      restaurant.managerEmail,
