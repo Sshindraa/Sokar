@@ -1,0 +1,14 @@
+node_modules
+dist
+.next
+.turbo
+*.local
+.env.local
+.env.*.local
+.env.production
+
+# On versionne les .env.example et .env.test
+!.env.example
+!.env.test
+!apps/api/.env.example
+!apps/api/.env.test

@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ES2022",
+    "paths": {
+      "@callyx/config": ["../../packages/config/src/constants.ts"],
+      "@callyx/types": ["../../packages/types/src/call-event.ts"],
+      "@callyx/database": ["../../packages/database"]
+    }
+  },
+  "include": ["src", "../../packages/config/src", "../../packages/types/src"]
+}

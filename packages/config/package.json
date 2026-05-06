@@ -1,0 +1,17 @@
+{
+  "name": "@callyx/config",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/constants.ts",
+  "types": "./src/constants.ts",
+  "exports": {
+    ".": "./src/constants.ts"
+  },
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf .turbo"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}
