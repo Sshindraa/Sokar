@@ -2,16 +2,10 @@
   "name": "@callyx/config",
   "version": "0.0.1",
   "private": true,
-  "main": "./src/constants.js",
-  "types": "./src/constants.d.ts",
-  "exports": {
-    ".": {
-      "import": "./src/constants.js",
-      "require": "./src/constants.js",
-      "types": "./src/constants.d.ts"
-    }
-  },
+  "main": "./dist/constants.js",
+  "types": "./dist/constants.d.ts",
   "scripts": {
+    "build": "tsc",
     "lint": "tsc --noEmit",
     "clean": "rm -rf .turbo"
   },
