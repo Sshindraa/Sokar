@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
+    "build": "prisma generate",
     "generate": "prisma generate",
     "push": "prisma db push",
     "studio": "prisma studio",
