@@ -4,7 +4,7 @@ const baseUrl = process.env.REDIS_URL!;
 
 export const redisSession = new Redis(baseUrl + '/0');
 export const redisCache   = new Redis(baseUrl + '/1');
-export const redisQueue   = new Redis(baseUrl + '/2');
+export const redisQueue   = new Redis(baseUrl + '/2', { maxRetriesPerRequest: null });
 
 export async function getCachedContext(key: string) {
   const cached = await redisCache.get(key);
