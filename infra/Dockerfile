@@ -7,6 +7,7 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json ./
 COPY apps/api ./apps/api
 COPY packages ./packages
 RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @callyx/database exec prisma generate
 RUN pnpm build --filter=@callyx/api
 
 FROM base AS runner
