@@ -14,4 +14,4 @@ FROM base AS runner
 WORKDIR /app
 COPY --from=builder /app .
 EXPOSE 3001
-CMD ["node", "apps/api/dist/server.js"]
+CMD ["node", "apps/api/dist/main.js"]

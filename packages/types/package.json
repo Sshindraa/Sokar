@@ -2,10 +2,14 @@
   "name": "@callyx/types",
   "version": "0.0.1",
   "private": true,
-  "main": "./src/call-event.ts",
-  "types": "./src/call-event.ts",
+  "main": "./src/call-event.js",
+  "types": "./src/call-event.d.ts",
   "exports": {
-    ".": "./src/call-event.ts"
+    ".": {
+      "import": "./src/call-event.js",
+      "require": "./src/call-event.js",
+      "types": "./src/call-event.d.ts"
+    }
   },
   "scripts": {
     "lint": "tsc --noEmit",

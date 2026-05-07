@@ -2,10 +2,14 @@
   "name": "@callyx/config",
   "version": "0.0.1",
   "private": true,
-  "main": "./src/constants.ts",
-  "types": "./src/constants.ts",
+  "main": "./src/constants.js",
+  "types": "./src/constants.d.ts",
   "exports": {
-    ".": "./src/constants.ts"
+    ".": {
+      "import": "./src/constants.js",
+      "require": "./src/constants.js",
+      "types": "./src/constants.d.ts"
+    }
   },
   "scripts": {
     "lint": "tsc --noEmit",

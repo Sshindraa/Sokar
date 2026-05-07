@@ -4,12 +4,7 @@
     "outDir": "./dist",
     "module": "CommonJS",
     "moduleResolution": "node",
-    "target": "ES2022",
-    "paths": {
-      "@callyx/config": ["../../packages/config/src/constants.ts"],
-      "@callyx/types": ["../../packages/types/src/call-event.ts"],
-      "@callyx/database": ["../../packages/database"]
-    }
+    "target": "ES2022"
   },
-  "include": ["src", "../../packages/config/src", "../../packages/types/src"]
+  "include": ["src"]
 }
