@@ -86,6 +86,10 @@ async function start() {
   });
 }
 
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+
 if (!process.env.VITEST) {
   start();
 }
