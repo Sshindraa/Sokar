@@ -1,0 +1,89 @@
+{
+  "name": "Callyx Restaurant Assistant",
+  "firstMessage": "Bonjour, je suis l'assistant virtuel de votre restaurant. Comment puis-je vous aider ? Souhaitez-vous réserver une table, connaître nos horaires, ou annuler une réservation ?",
+  "firstMessageMode": "assistant-speaks-first",
+  "model": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "temperature": 0.7,
+    "maxTokens": 150,
+    "messages": [
+      {
+        "role": "system",
+        "content": "Tu es l'assistant virtuel d'un restaurant français. Tu aides les clients à réserver des tables, vérifier la disponibilité, obtenir des informations sur le restaurant, ou annuler des réservations. Sois poli, concis et professionnel. Parle en français."
+      }
+    ]
+  },
+  "voice": {
+    "provider": "11labs",
+    "voiceId": "XB0fDUnXU5powFXDhCwa",
+    "model": "eleven_turbo_v2_5",
+    "language": "fr"
+  },
+  "backgroundSound": "off",
+  "silenceTimeoutSeconds": 10,
+  "maxDurationSeconds": 300,
+  "recordingEnabled": true,
+  "server": {
+    "url": "PASTE_YOUR_NGROK_URL_HERE/webhooks/vapi",
+    "timeoutSeconds": 10
+  },
+  "functions": [
+    {
+      "name": "createReservation",
+      "description": "Créer une nouvelle réservation pour un restaurant",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "restaurantId": { "type": "string", "description": "ID du restaurant" },
+          "date": { "type": "string", "description": "Date au format YYYY-MM-DD" },
+          "time": { "type": "string", "description": "Heure au format HH:MM" },
+          "guests": { "type": "number", "description": "Nombre de convives" },
+          "name": { "type": "string", "description": "Nom du client" },
+          "phone": { "type": "string", "description": "Numéro de téléphone du client" }
+        },
+        "required": ["restaurantId", "date", "time", "guests", "name", "phone"]
+      },
+      "async": true
+    },
+    {
+      "name": "checkAvailability",
+      "description": "Vérifier la disponibilité pour une date et une heure",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "restaurantId": { "type": "string", "description": "ID du restaurant" },
+          "date": { "type": "string", "description": "Date au format YYYY-MM-DD" },
+          "time": { "type": "string", "description": "Heure au format HH:MM" },
+          "guests": { "type": "number", "description": "Nombre de convives" }
+        },
+        "required": ["restaurantId", "date", "time", "guests"]
+      },
+      "async": true
+    },
+    {
+      "name": "getRestaurantInfo",
+      "description": "Obtenir les informations du restaurant (horaires, menu, etc.)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "restaurantId": { "type": "string", "description": "ID du restaurant" }
+        },
+        "required": ["restaurantId"]
+      },
+      "async": false
+    },
+    {
+      "name": "cancelReservation",
+      "description": "Annuler une réservation existante",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reservationId": { "type": "string", "description": "ID de la réservation" }
+        },
+        "required": ["reservationId"]
+      },
+      "async": true
+    }
+  ]
+}
