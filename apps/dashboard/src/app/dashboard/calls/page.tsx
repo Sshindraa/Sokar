@@ -6,21 +6,20 @@ import { fr } from 'date-fns/locale';
 
 interface CallRecord {
   id: string;
-  callerNumber: string;
-  callerName?: string;
-  status: string;
-  outcome?: string;
-  durationSeconds?: number;
-  costUsd?: string;
+  callSid: string;
+  durationSec: number | null;
+  transcript: string | null;
+  intent: string | null;
+  outcome: string | null;
+  sttProvider: string | null;
+  llmProvider: string | null;
+  ttsProvider: string | null;
+  carrier: string | null;
   createdAt: string;
 }
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('callyx_token');
-}
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+const RESTAURANT_ID = '00000000-0000-0000-0000-000000000001';
 
 export default function CallsPage() {
   const [calls, setCalls] = useState<CallRecord[]>([]);
@@ -29,12 +28,8 @@ export default function CallsPage() {
 
   useEffect(() => {
     async function fetchCalls() {
-      const token = getToken();
       const res = await fetch(
-        `${API}/api/calls?limit=100&offset=0`,
-        {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        },
+        `${API}/calls?restaurantId=${RESTAURANT_ID}&limit=100&offset=0`,
       );
       if (res.ok) {
         const data = await res.json();
@@ -61,11 +56,11 @@ export default function CallsPage() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-[var(--border)] text-left text-sm font-medium text-[var(--muted-foreground)]">
-              <th className="px-4 py-3">Numéro</th>
-              <th className="px-4 py-3">Nom</th>
-              <th className="px-4 py-3">Statut</th>
+              <th className="px-4 py-3">Call SID</th>
+              <th className="px-4 py-3">Intention</th>
+              <th className="px-4 py-3">Résultat</th>
               <th className="px-4 py-3">Durée</th>
-              <th className="px-4 py-3">Coût</th>
+              <th className="px-4 py-3">Carrier</th>
               <th className="px-4 py-3">Date</th>
             </tr>
           </thead>
@@ -79,28 +74,36 @@ export default function CallsPage() {
             )}
             {calls.map((call) => (
               <tr key={call.id} className="border-b border-[var(--border)] text-sm">
-                <td className="px-4 py-3 font-medium">{call.callerNumber}</td>
+                <td className="px-4 py-3 font-medium">{call.callSid}</td>
                 <td className="px-4 py-3 text-[var(--muted-foreground)]">
-                  {call.callerName || '—'}
+                  {call.intent || '—'}
                 </td>
                 <td className="px-4 py-3">
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs ${
-                      call.status === 'completed'
+                      call.outcome === 'RESERVED'
                         ? 'bg-green-100 text-green-700'
-                        : call.status === 'failed'
-                          ? 'bg-red-100 text-red-700'
-                          : 'bg-yellow-100 text-yellow-700'
+                        : call.outcome === 'INFO'
+                          ? 'bg-blue-100 text-blue-700'
+                          : call.outcome === 'NO_ACTION'
+                            ? 'bg-gray-100 text-gray-700'
+                            : 'bg-yellow-100 text-yellow-700'
                     }`}
                   >
-                    {call.status === 'completed' ? 'Terminé' : call.status === 'failed' ? 'Échec' : 'En cours'}
+                    {call.outcome === 'RESERVED'
+                      ? 'Réservé'
+                      : call.outcome === 'INFO'
+                        ? 'Info'
+                        : call.outcome === 'NO_ACTION'
+                          ? 'Aucune action'
+                          : call.outcome ?? 'En cours'}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-[var(--muted-foreground)]">
-                  {call.durationSeconds ? `${call.durationSeconds}s` : '—'}
+                  {call.durationSec != null ? `${call.durationSec}s` : '—'}
                 </td>
                 <td className="px-4 py-3 text-[var(--muted-foreground)]">
-                  {call.costUsd ? `${parseFloat(call.costUsd).toFixed(4)}$` : '—'}
+                  {call.carrier || '—'}
                 </td>
                 <td className="px-4 py-3 text-[var(--muted-foreground)]">
                   {format(new Date(call.createdAt), 'dd MMM HH:mm', { locale: fr })}

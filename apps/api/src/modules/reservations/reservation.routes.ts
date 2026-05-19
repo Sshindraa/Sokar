@@ -1,0 +1,46 @@
+import { FastifyInstance } from 'fastify';
+import { z }              from 'zod';
+import { db }             from '../../shared/db/client';
+import { ReservationService } from './reservation.service';
+import { CreateReservationSchema, ReservationQuerySchema } from './reservation.schema';
+
+const UpdateReservationSchema = z.object({
+  status:       z.enum(['CONFIRMED', 'CANCELLED', 'NO_SHOW', 'SEATED']).optional(),
+  customerName: z.string().min(1).max(200).optional(),
+  partySize:    z.number().int().min(1).max(20).optional(),
+});
+
+export async function reservationRoutes(app: FastifyInstance) {
+
+  app.get('/reservations', async (req, reply) => {
+    const query = ReservationQuerySchema.parse(req.query);
+    const reservations = await ReservationService.findByRestaurant(query.restaurantId, query.date);
+    return reply.send(reservations);
+  });
+
+  app.post('/reservations', async (req, reply) => {
+    const body = CreateReservationSchema.parse(req.body);
+    const reservation = await ReservationService.create({
+      restaurantId:   body.restaurantId,
+      callId:         body.callId,
+      reservedAt:     new Date(body.reservedAt),
+      partySize:      body.partySize,
+      customerName:   body.customerName,
+      customerPhone:  body.customerPhone,
+    });
+    return reply.status(201).send(reservation);
+  });
+
+  app.patch('/reservations/:id', async (req, reply) => {
+    const { id }  = req.params as { id: string };
+    const body    = UpdateReservationSchema.parse(req.body);
+    const updated = await db.reservation.update({ where: { id }, data: body });
+    return reply.send(updated);
+  });
+
+  app.delete('/reservations/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    await db.reservation.delete({ where: { id } });
+    return reply.status(204).send();
+  });
+}

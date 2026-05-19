@@ -7,6 +7,9 @@ import { telnyxVoiceRoutes } from './modules/voice/telnyx.pipeline';
 import { restaurantRoutes }  from './modules/restaurants/restaurant.routes';
 import { customerRoutes }    from './modules/customers/customer.routes';
 import { analyticsRoutes }   from './modules/analytics/analytics.routes';
+import { reservationRoutes } from './modules/reservations/reservation.routes';
+import { callRoutes }        from './modules/calls/call.routes';
+import { dashboardRoutes }   from './modules/dashboard/dashboard.routes';
 import { toNodeHandler }     from 'better-auth/node';
 import { auth }              from './lib/auth';
 import { registerCors }      from './plugins/cors';
@@ -29,6 +32,9 @@ export async function buildApp() {
   await app.register(restaurantRoutes);
   await app.register(customerRoutes);
   await app.register(analyticsRoutes);
+  await app.register(reservationRoutes);
+  await app.register(callRoutes);
+  await app.register(dashboardRoutes);
 
   await app.register(async (instance) => {
     instance.route({
@@ -66,7 +72,7 @@ async function start() {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT',  () => shutdown('SIGINT'));
 
-  app.listen({ port: 3000, host: '0.0.0.0' }, (err) => {
+  app.listen({ port: 4000, host: '0.0.0.0' }, (err) => {
     if (err) { app.log.error(err); process.exit(1); }
   });
 
