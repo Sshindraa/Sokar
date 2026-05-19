@@ -171,7 +171,7 @@ function buildCallyxFunctions() {
       name: 'createReservation',
       description: 'Créer une nouvelle réservation pour un restaurant',
       parameters: {
-        type: 'object',
+        type: 'object' as const,
         properties: {
           restaurantId: { type: 'string', description: 'ID du restaurant' },
           date: { type: 'string', description: 'Date au format YYYY-MM-DD' },
@@ -188,7 +188,7 @@ function buildCallyxFunctions() {
       name: 'checkAvailability',
       description: 'Vérifier la disponibilité pour une date et une heure',
       parameters: {
-        type: 'object',
+        type: 'object' as const,
         properties: {
           restaurantId: { type: 'string', description: 'ID du restaurant' },
           date: { type: 'string', description: 'Date au format YYYY-MM-DD' },
@@ -203,7 +203,7 @@ function buildCallyxFunctions() {
       name: 'getRestaurantInfo',
       description: 'Obtenir les informations du restaurant (horaires, menu, etc.)',
       parameters: {
-        type: 'object',
+        type: 'object' as const,
         properties: {
           restaurantId: { type: 'string', description: 'ID du restaurant' },
         },
@@ -215,7 +215,7 @@ function buildCallyxFunctions() {
       name: 'cancelReservation',
       description: 'Annuler une réservation existante',
       parameters: {
-        type: 'object',
+        type: 'object' as const,
         properties: {
           reservationId: { type: 'string', description: 'ID de la réservation' },
         },
