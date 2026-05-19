@@ -7,40 +7,30 @@ import { fr } from 'date-fns/locale';
 interface ReservationRecord {
   id: string;
   customerName: string;
-  customerPhone: string;
-  date: string;
-  time: string;
-  covers: number;
+  customerPhone: string | null;
+  reservedAt: string;
+  partySize: number;
   status: string;
-  notes?: string;
+  estimatedRevenue: string | null;
+  confirmedRevenue: string | null;
   createdAt: string;
 }
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('callyx_token');
-}
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+const RESTAURANT_ID = '00000000-0000-0000-0000-000000000001';
 
 export default function ReservationsPage() {
   const [reservations, setReservations] = useState<ReservationRecord[]>([]);
-  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchReservations() {
-      const token = getToken();
       const res = await fetch(
-        `${API}/api/reservations?limit=100&offset=0`,
-        {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        },
+        `${API}/reservations?restaurantId=${RESTAURANT_ID}&limit=100`,
       );
       if (res.ok) {
         const data = await res.json();
-        setReservations(data.data);
-        setTotal(data.total);
+        setReservations(data);
       }
       setLoading(false);
     }
@@ -55,7 +45,7 @@ export default function ReservationsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Réservations</h1>
-        <span className="text-sm text-[var(--muted-foreground)]">{total} réservations</span>
+        <span className="text-sm text-[var(--muted-foreground)]">{reservations.length} réservations</span>
       </div>
 
       <div className="rounded-xl border border-[var(--border)]">
@@ -65,16 +55,15 @@ export default function ReservationsPage() {
               <th className="px-4 py-3">Client</th>
               <th className="px-4 py-3">Téléphone</th>
               <th className="px-4 py-3">Date</th>
-              <th className="px-4 py-3">Heure</th>
               <th className="px-4 py-3">Couverts</th>
+              <th className="px-4 py-3">Revenu estimé</th>
               <th className="px-4 py-3">Statut</th>
-              <th className="px-4 py-3">Notes</th>
             </tr>
           </thead>
           <tbody>
             {reservations.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-[var(--muted-foreground)]">
+                <td colSpan={6} className="px-4 py-8 text-center text-sm text-[var(--muted-foreground)]">
                   Aucune réservation
                 </td>
               </tr>
@@ -82,32 +71,41 @@ export default function ReservationsPage() {
             {reservations.map((res) => (
               <tr key={res.id} className="border-b border-[var(--border)] text-sm">
                 <td className="px-4 py-3 font-medium">{res.customerName}</td>
-                <td className="px-4 py-3 text-[var(--muted-foreground)]">{res.customerPhone}</td>
-                <td className="px-4 py-3">
-                  {format(new Date(res.date), 'dd MMM yyyy', { locale: fr })}
+                <td className="px-4 py-3 text-[var(--muted-foreground)]">
+                  {res.customerPhone ?? '—'}
                 </td>
-                <td className="px-4 py-3">{res.time}</td>
-                <td className="px-4 py-3">{res.covers}</td>
+                <td className="px-4 py-3">
+                  {format(new Date(res.reservedAt), 'dd MMM yyyy HH:mm', { locale: fr })}
+                </td>
+                <td className="px-4 py-3">{res.partySize}</td>
+                <td className="px-4 py-3 text-[var(--muted-foreground)]">
+                  {res.estimatedRevenue ? `${res.estimatedRevenue}€` : '—'}
+                </td>
                 <td className="px-4 py-3">
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs ${
-                      res.status === 'confirmed'
+                      res.status === 'CONFIRMED'
                         ? 'bg-green-100 text-green-700'
-                        : res.status === 'cancelled'
+                        : res.status === 'CANCELLED'
                           ? 'bg-red-100 text-red-700'
-                          : 'bg-gray-100 text-gray-700'
+                          : res.status === 'SEATED'
+                            ? 'bg-blue-100 text-blue-700'
+                            : res.status === 'NO_SHOW'
+                              ? 'bg-gray-100 text-gray-700'
+                              : 'bg-yellow-100 text-yellow-700'
                     }`}
                   >
-                    {res.status === 'confirmed'
+                    {res.status === 'CONFIRMED'
                       ? 'Confirmée'
-                      : res.status === 'cancelled'
+                      : res.status === 'CANCELLED'
                         ? 'Annulée'
-                        : res.status === 'no_show'
-                          ? 'No-show'
-                          : 'En attente'}
+                        : res.status === 'SEATED'
+                          ? 'Installée'
+                          : res.status === 'NO_SHOW'
+                            ? 'No-show'
+                            : 'En attente'}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-[var(--muted-foreground)]">{res.notes || '—'}</td>
               </tr>
             ))}
           </tbody>

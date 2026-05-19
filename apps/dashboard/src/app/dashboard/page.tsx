@@ -7,68 +7,79 @@ import { fr } from 'date-fns/locale';
 interface DashboardStats {
   totalCalls: number;
   totalReservations: number;
-  quota: { used: number; limit: number };
-  recentCalls: Array<{
+  answeredRate: number;
+  revenueRecovered: number;
+}
+
+interface RecentActivity {
+  reservations: Array<{
     id: string;
-    callerNumber: string;
-    callerName?: string;
+    restaurantId: string;
+    callId: string | null;
+    customerId: string | null;
+    reservedAt: string;
+    partySize: number;
+    customerName: string;
+    customerPhone: string | null;
     status: string;
-    durationSeconds?: number;
+    estimatedRevenue: string | null;
+    confirmedRevenue: string | null;
     createdAt: string;
   }>;
-  todayReservations: Array<{
+  calls: Array<{
     id: string;
-    customerName: string;
-    date: string;
-    time: string;
-    covers: number;
-    status: string;
+    restaurantId: string;
+    callSid: string;
+    durationSec: number | null;
+    transcript: string | null;
+    intent: string | null;
+    outcome: string | null;
+    sttProvider: string | null;
+    llmProvider: string | null;
+    ttsProvider: string | null;
+    carrier: string | null;
+    createdAt: string;
   }>;
 }
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('callyx_token');
-}
-
-async function authFetch(path: string, options?: RequestInit) {
-  const token = getToken();
-  return fetch(`${API}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options?.headers,
-    },
-  });
-}
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+const RESTAURANT_ID = '00000000-0000-0000-0000-000000000001';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [activity, setActivity] = useState<RecentActivity | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    async function fetchStats() {
+    async function fetchData() {
       try {
-        const res = await authFetch('/api/dashboard/stats');
-        if (!res.ok) {
-          if (res.status === 401) {
-            setError('Session expirée. Veuillez vous reconnecter.');
-            return;
-          }
+        const [statsRes, activityRes] = await Promise.all([
+          fetch(`${API}/dashboard/stats?restaurantId=${RESTAURANT_ID}`),
+          fetch(`${API}/dashboard/recent-activity?restaurantId=${RESTAURANT_ID}`),
+        ]);
+
+        if (!statsRes.ok || !activityRes.ok) {
           throw new Error('Erreur serveur');
         }
-        setStats(await res.json());
+
+        const statsData = await statsRes.json();
+        const activityData = await activityRes.json();
+
+        setStats({
+          totalCalls: statsData.total_calls,
+          totalReservations: statsData.total_reservations,
+          answeredRate: statsData.answered_rate,
+          revenueRecovered: statsData.revenue_recovered,
+        });
+        setActivity(activityData);
       } catch {
         setError('Impossible de charger les données');
       } finally {
         setLoading(false);
       }
     }
-    fetchStats();
+    fetchData();
   }, []);
 
   if (loading) {
@@ -83,6 +94,9 @@ export default function DashboardPage() {
     );
   }
 
+  const todayCalls = activity?.calls.slice(0, 5) ?? [];
+  const todayReservations = activity?.reservations.slice(0, 5) ?? [];
+
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-semibold">Vue d'ensemble</h1>
@@ -96,12 +110,12 @@ export default function DashboardPage() {
         <StatCard
           title="Réservations"
           value={stats?.totalReservations ?? 0}
-          subtitle="Aujourd'hui"
+          subtitle="Total"
         />
         <StatCard
-          title="Appels restants"
-          value={(stats?.quota.limit ?? 0) - (stats?.quota.used ?? 0)}
-          subtitle={`Sur ${stats?.quota.limit ?? 1500} / mois`}
+          title="Taux de réponse"
+          value={`${stats?.answeredRate ?? 0}%`}
+          subtitle="Appels aboutis"
         />
       </div>
 
@@ -109,29 +123,30 @@ export default function DashboardPage() {
         <div className="rounded-xl border border-[var(--border)] p-6">
           <h2 className="mb-4 text-lg font-semibold">Appels récents</h2>
           <div className="space-y-3">
-            {stats?.recentCalls.length === 0 && (
+            {todayCalls.length === 0 && (
               <p className="text-sm text-[var(--muted-foreground)]">Aucun appel</p>
             )}
-            {stats?.recentCalls.map((call) => (
+            {todayCalls.map((call) => (
               <div
                 key={call.id}
                 className="flex items-center justify-between rounded-lg bg-[var(--muted)] p-3"
               >
                 <div>
-                  <p className="text-sm font-medium">{call.callerNumber}</p>
+                  <p className="text-sm font-medium">{call.callSid}</p>
                   <p className="text-xs text-[var(--muted-foreground)]">
                     {format(new Date(call.createdAt), 'HH:mm', { locale: fr })}
-                    {call.durationSeconds && ` · ${call.durationSeconds}s`}
+                    {call.durationSec != null && ` · ${call.durationSec}s`}
+                    {call.outcome && ` · ${call.outcome}`}
                   </p>
                 </div>
                 <span
                   className={`rounded-full px-2 py-0.5 text-xs ${
-                    call.status === 'completed'
+                    call.outcome === 'RESERVED'
                       ? 'bg-green-100 text-green-700'
                       : 'bg-yellow-100 text-yellow-700'
                   }`}
                 >
-                  {call.status === 'completed' ? 'Terminé' : 'En cours'}
+                  {call.outcome === 'RESERVED' ? 'Réservé' : call.outcome ?? 'En cours'}
                 </span>
               </div>
             ))}
@@ -139,12 +154,12 @@ export default function DashboardPage() {
         </div>
 
         <div className="rounded-xl border border-[var(--border)] p-6">
-          <h2 className="mb-4 text-lg font-semibold">Réservations du jour</h2>
+          <h2 className="mb-4 text-lg font-semibold">Réservations récentes</h2>
           <div className="space-y-3">
-            {stats?.todayReservations.length === 0 && (
+            {todayReservations.length === 0 && (
               <p className="text-sm text-[var(--muted-foreground)]">Aucune réservation</p>
             )}
-            {stats?.todayReservations.map((res) => (
+            {todayReservations.map((res) => (
               <div
                 key={res.id}
                 className="flex items-center justify-between rounded-lg bg-[var(--muted)] p-3"
@@ -152,17 +167,26 @@ export default function DashboardPage() {
                 <div>
                   <p className="text-sm font-medium">{res.customerName}</p>
                   <p className="text-xs text-[var(--muted-foreground)]">
-                    {res.time} · {res.covers} couverts
+                    {format(new Date(res.reservedAt), 'HH:mm', { locale: fr })}
+                    {' · '}
+                    {res.partySize} couverts
+                    {res.estimatedRevenue && ` · ${res.estimatedRevenue}€ estimé`}
                   </p>
                 </div>
                 <span
                   className={`rounded-full px-2 py-0.5 text-xs ${
-                    res.status === 'confirmed'
+                    res.status === 'CONFIRMED'
                       ? 'bg-green-100 text-green-700'
-                      : 'bg-gray-100 text-gray-700'
+                      : res.status === 'SEATED'
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-gray-100 text-gray-700'
                   }`}
                 >
-                  {res.status === 'confirmed' ? 'Confirmée' : res.status}
+                  {res.status === 'CONFIRMED'
+                    ? 'Confirmée'
+                    : res.status === 'SEATED'
+                      ? 'Installée'
+                      : res.status}
                 </span>
               </div>
             ))}
@@ -179,7 +203,7 @@ function StatCard({
   subtitle,
 }: {
   title: string;
-  value: number;
+  value: string | number;
   subtitle: string;
 }) {
   return (
