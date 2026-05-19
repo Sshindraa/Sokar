@@ -2,7 +2,7 @@
 
 ## Dernière activité
 
-2026-05-19 22:41 — [general] Test E2E: créer test_e2e.md avec OpenCode Go deepseek-v4-flash
+2026-05-20 00:35 — [general] Architecture: documenter la Phone Number Strategy pour Callyx (numero par restaurant, pool, porting, SIP trunking)
 
 ## Décisions récentes
 
