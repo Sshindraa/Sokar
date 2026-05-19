@@ -61,6 +61,41 @@ git push origin main
 git log --oneline --graph -20
 ```
 
+## Mode Automatique (Cron)
+
+Un daemon tourne en arrière-plan et commit **toutes les 15 minutes** si des fichiers ont changé.
+
+### Vérifier que le cron est actif
+
+```bash
+crontab -l | grep callyx
+```
+
+Tu dois voir :
+```
+*/15 * * * * /bin/zsh /Users/hamza/Desktop/Callyx/agent/scripts/auto-commit-daemon.sh
+```
+
+### Désactiver le cron auto
+
+```bash
+crontab -l | grep -v callyx | crontab -
+```
+
+### Logs du daemon
+
+```bash
+tail -f /Users/hamza/Desktop/Callyx/.git/auto-commit.log
+```
+
+### Fonctionnement du daemon
+
+- Toutes les 15 minutes, vérifie s'il y a des changements
+- Détecte le scope (`api`, `dashboard`, `database`, `agent`, `docs`) automatiquement
+- Commit avec message au format Conventional Commits
+- Push vers GitHub automatiquement
+- Logue chaque action dans `.git/auto-commit.log`
+
 ## Lier avec Obsidian
 
 Chaque commit est logué automatiquement dans [[Journal.md]] via le MCP serveur.
