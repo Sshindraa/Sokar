@@ -10,6 +10,7 @@ import { analyticsRoutes }   from './modules/analytics/analytics.routes';
 import { reservationRoutes } from './modules/reservations/reservation.routes';
 import { callRoutes }        from './modules/calls/call.routes';
 import { dashboardRoutes }   from './modules/dashboard/dashboard.routes';
+import vapiRoutes            from './modules/voice/vapi.routes';
 import { toNodeHandler }     from 'better-auth/node';
 import { auth }              from './lib/auth';
 import { registerCors }      from './plugins/cors';
@@ -35,6 +36,7 @@ export async function buildApp() {
   await app.register(reservationRoutes);
   await app.register(callRoutes);
   await app.register(dashboardRoutes);
+  await app.register(vapiRoutes);
 
   await app.register(async (instance) => {
     instance.route({
