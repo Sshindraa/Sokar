@@ -2,7 +2,7 @@
 
 ## Dernière activité
 
-2026-05-20 12:49 — [agent] echo "Bridge test OK from Hermes MCP"
+2026-05-20 13:31 — [general] echo test
 
 ## Décisions récentes
 
