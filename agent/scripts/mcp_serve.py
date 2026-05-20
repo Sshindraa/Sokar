@@ -24,10 +24,13 @@ import re
 import shlex
 import subprocess
 import sys
+import uuid
 from datetime import datetime
 from pathlib import Path
 
 SOKAR_ROOT = os.environ.get("SOKAR_ROOT", str(Path.home() / "Desktop" / "Sokar"))
+TASKS_DIR = Path.home() / ".hermes" / "tasks"
+TASKS_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = Path.home() / ".hermes" / "logs" / "mcp_serve.log"
 SESSION_LOG = Path.home() / ".hermes" / "logs" / "cascade_hermes_bridge.md"
 JOURNAL_PATH = Path(SOKAR_ROOT) / "docs" / "obsidian" / "Journal.md"
@@ -254,91 +257,101 @@ def guess_module(task: str) -> str:
     return "general"
 
 
-def tool_execute_task(task: str, workdir: str | None = None) -> str:
-    """
-    Delegue une tache a Hermes CLI (deepseek-v4-flash).
-    C'est le SEUL outil disponible. Cascade doit TOUJOURS passer par ici.
+def _run_hermes_background(task: str, workdir: str, task_id: str) -> None:
+    """Lance hermes -z en background et écrit le résultat dans TASKS_DIR."""
+    log_file = TASKS_DIR / f"{task_id}.log"
+    cmd = f"hermes -z {shlex.quote(task)} > {log_file} 2>&1"
+    log(f"[bg] starting task {task_id}: {task[:200]}")
+    try:
+        subprocess.Popen(cmd, shell=True, cwd=workdir, start_new_session=True)
+    except Exception as e:
+        log_file.write_text(f"[fatal] Failed to start hermes: {e}")
+        log(f"[bg] error starting task {task_id}: {e}")
 
-    AUTO-LOGGING: Après exécution, détecte automatiquement le type de tâche
-    et met à jour la note Obsidian appropriée.
+
+def _log_task_result(task: str, output: str) -> None:
+    """Auto-logging après exécution."""
+    log_session(task, output)
+    log_to_journal(task, output)
+    mod = detect_module_from_task(task)
+    update_context(f"[{mod}] {task[:80]}")
+    try:
+        subprocess.run(
+            ["python3", str(Path(SOKAR_ROOT) / "agent" / "skills" / "obsidian" / "auto_sync.py"), "diff"],
+            capture_output=True, text=True, cwd=SOKAR_ROOT, timeout=30,
+        )
+    except Exception:
+        pass
+
+
+def tool_execute_task(task: str, workdir: str | None = None) -> dict:
+    """
+    Delegue une tache a Hermes CLI en mode ASYNCHRONE.
+    Retourne immédiatement un task_id — utilise check_task pour récupérer le résultat.
+
+    Pourquoi asynchrone ? Le client MCP de Windsurf timeout après ~10s.
+    hermes -z prend 30-120s. Sans asynchrone, le MCP crashe avec EOF.
     """
     cwd = workdir or SOKAR_ROOT
-    cmd = "hermes -z " + shlex.quote(task)
-    log(f"execute_task: {task[:300]}")
+    task_id = str(uuid.uuid4())[:8]
+    log(f"execute_task: {task_id} | {task[:300]}")
 
-    # Verifier que Hermes CLI est disponible
+    # Verifier Hermes CLI
     try:
         subprocess.run(["which", "hermes"], capture_output=True, check=True)
     except subprocess.CalledProcessError:
-        msg = "[fatal] Hermes CLI not found. Run: curl -fsSL https://hermes-agent.nousresearch.com/install.sh | sh"
-        log(msg)
-        return msg
+        return {
+            "task_id": task_id,
+            "status": "fatal",
+            "message": "Hermes CLI not found. Run: curl -fsSL https://hermes-agent.nousresearch.com/install.sh | sh"
+        }
 
-    # Verifier que le projet existe
     if not os.path.isdir(cwd):
-        msg = f"[fatal] Project directory not found: {cwd}"
-        log(msg)
-        return msg
+        return {
+            "task_id": task_id,
+            "status": "fatal",
+            "message": f"Project directory not found: {cwd}"
+        }
 
-    max_attempts = 2
-    last_error: str = ""
+    # Lancer hermes en background
+    _run_hermes_background(task, cwd, task_id)
 
-    for attempt in range(1, max_attempts + 1):
-        try:
-            log(f"execute_task attempt {attempt}/{max_attempts}")
-            result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, cwd=cwd, timeout=600
-            )
-            output = result.stdout or ""
-
-            # Filtrer le stderr pour ne garder que les warnings/erreurs
-            if result.stderr:
-                warnings = [
-                    l for l in result.stderr.split("\n")
-                    if "ERROR" in l.upper() or "WARNING" in l.upper() or "traceback" in l.lower()
-                ]
-                if warnings:
-                    output += "\n[stderr warnings]\n" + "\n".join(warnings)
-
-            if result.returncode != 0:
-                output += f"\n[exit code: {result.returncode}]"
-
-            final = output.strip() or "(empty output)"
-
-            # ── AUTO-LOGGING : 3 actions automatiques ──
-            log_session(task, final)            # 1. Log session bridge
-            log_to_journal(task, final)          # 2. Journal + note ciblée
-            mod = detect_module_from_task(task)
-            update_context(f"[{mod}] {task[:80]}")  # 3. Context.md
-
-            # Déclencher auto_sync pour synchroniser les notes modifiées
-            try:
-                subprocess.run(
-                    ["python3", str(Path(SOKAR_ROOT) / "agent" / "skills" / "obsidian" / "auto_sync.py"), "diff"],
-                    capture_output=True, text=True, cwd=SOKAR_ROOT, timeout=30,
-                )
-            except Exception:
-                pass  # auto_sync est optionnel
-
-            return final
-
-        except subprocess.TimeoutExpired:
-            last_error = "[timeout] Task exceeded 600 seconds."
-            log(last_error)
-        except subprocess.CalledProcessError as e:
-            last_error = f"[error] Hermes subprocess failed: {e}"
-            log(last_error)
-        except Exception as e:
-            last_error = f"[error] {e}"
-            log(last_error)
-
-    log_to_journal(task, last_error)
-    mod = detect_module_from_task(task)
-    update_context(f"[{mod}] {task[:80]} — ERREUR")
-    return last_error
+    # Réponse immédiate au client MCP (évite timeout)
+    return {
+        "task_id": task_id,
+        "status": "running",
+        "check_after_seconds": 30,
+        "message": f"Task '{task_id}' started. Wait ~30s then call check_task with task_id='{task_id}'"
+    }
 
 
-# ── Tool registry (UN seul outil) ─────────────────────────────────────────────
+def tool_check_task(task_id: str) -> dict:
+    """Récupère le résultat d'une tâche lancée par execute_task."""
+    log_file = TASKS_DIR / f"{task_id}.log"
+
+    if not log_file.exists():
+        return {
+            "task_id": task_id,
+            "status": "not_found",
+            "message": f"Task {task_id} not found. Wait a bit longer or the task was never started."
+        }
+
+    content = log_file.read_text(encoding="utf-8", errors="replace")
+    # Si le fichier est petit (<500 chars), hermes est probablement encore en cours
+    is_done = len(content) > 500 or "[final answer]" in content.lower() or "exit code" in content.lower()
+
+    status = "completed" if is_done else "running"
+    message = content if is_done else content[:1000] + "\n... [task still running, check again in 30s]"
+
+    return {
+        "task_id": task_id,
+        "status": status,
+        "output": message,
+        "log_path": str(log_file)
+    }
+
+
+# ── Tool registry ───────────────────────────────────────────────────────────────
 
 TOOLS = {
     "execute_task": {
@@ -348,6 +361,8 @@ TOOLS = {
             "(run_shell, read_file, search_files, git_status were removed). "
             "Call me with a complete task description. Do NOT show code blocks or JSON. "
             "Do NOT ask for confirmation. Just call execute_task immediately.\n\n"
+            "ASYNC BEHAVIOUR: This tool returns a task_id immediately. "
+            "Hermes runs in the background. After ~30 seconds, call check_task with the task_id to get results.\n\n"
             "AUTO-LOGGING: After execution, the task type is automatically detected "
             "(route creation, schema modification, component addition, voice pipeline, etc.) "
             "and the corresponding Obsidian note is updated. No manual logging required."
@@ -373,11 +388,29 @@ TOOLS = {
         },
         "handler": tool_execute_task,
     },
+    "check_task": {
+        "description": (
+            "Récupère le résultat d'une tâche lancée par execute_task. "
+            "Appelle cette fonction ~30 secondes après execute_task en passant le task_id reçu."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "L'identifiant de tâche retourné par execute_task (ex: 'a3f7b2d1')",
+                },
+            },
+            "required": ["task_id"],
+        },
+        "handler": tool_check_task,
+    }
 }
 
 
 # ── MCP protocol (JSON-RPC over stdio) ────────────────────────────────────────
 
+# ... (rest of the code remains the same)
 
 def make_result(req_id, result):
     return {"jsonrpc": "2.0", "id": req_id, "result": result}
