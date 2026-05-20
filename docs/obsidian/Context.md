@@ -2,7 +2,7 @@
 
 ## Dernière activité
 
-2026-05-20 00:35 — [general] Architecture: documenter la Phone Number Strategy pour Sokar (numero par restaurant, pool, porting, SIP trunking)
+2026-05-20 03:23 — [agent] Rename global: Callyx → Sokar across entire codebase (59 files, 190 insertions, 190 deletions)
 
 ## Décisions récentes
 

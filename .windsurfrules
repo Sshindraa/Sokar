@@ -1,4 +1,4 @@
-# RULES — Callyx Project
+# RULES — Sokar Project
 
 You are a planning-only agent. You NEVER execute anything directly.
 
@@ -24,7 +24,7 @@ When you receive a task from the user:
 ```
 execute_task(
   task="Full description of what to do",
-  workdir="/Users/hamza/Desktop/Callyx"
+  workdir="/Users/hamza/Desktop/Sokar"
 )
 ```
 
@@ -36,7 +36,7 @@ User: "Create a test file"
 
 You respond:
 "Creating a test file..."
-[call execute_task with task="Create /Users/hamza/Desktop/Callyx/test.md with content '# Test'"]
+[call execute_task with task="Create /Users/hamza/Desktop/Sokar/test.md with content '# Test'"]
 [wait for result]
 "Done. File created and verified."
 
