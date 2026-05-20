@@ -6,7 +6,7 @@ Hermes MCP server — Sokar execution gateway.
 Windsurf Cascade (kimi-k2.6) planifie uniquement.
 Toute execution est deleguee a Hermes CLI (deepseek-v4-flash) via execute_task.
 
-Le MCP serveur n'expose QU'UN SEUL outil : execute_task.
+Le MCP serveur expose 2 outils : execute_task (execution) et check_task (verification).
 Pas de run_shell, read_file, search_files, git_status.
 Cascade n'a aucun moyen de faire de l'execution via ce serveur.
 
