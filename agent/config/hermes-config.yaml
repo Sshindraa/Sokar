@@ -1,4 +1,4 @@
-# Hermes Agent — Configuration Callyx
+# Hermes Agent — Configuration Sokar
 # Architecture 2 niveaux inversée:
 # - Primary (executor): deepseek/deepseek-v4-flash (OpenRouter) - fait 90% du travail
 # - Subagent (planner): kimi-k2.6-precision (Crof AI) - uniquement pour tâches complexes
@@ -15,7 +15,7 @@ model:
     api_key: ''
   persistent: true
 
-skills_dir: /Users/hamza/Desktop/Callyx/agent/skills
+skills_dir: /Users/hamza/Desktop/Sokar/agent/skills
 
 # Orchestration autonome avec architecture 2 niveaux
 # kimi-k2.6-precision pour le planning, deepseek/deepseek-v4-flash pour l'exécution

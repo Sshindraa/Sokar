@@ -31,8 +31,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-CALLYX_ROOT = Path(os.environ.get("CALLYX_ROOT", str(Path.home() / "Desktop" / "Callyx")))
-VAULT_PATH = CALLYX_ROOT / "docs" / "obsidian"
+SOKAR_ROOT = Path(os.environ.get("SOKAR_ROOT", str(Path.home() / "Desktop" / "Sokar")))
+VAULT_PATH = SOKAR_ROOT / "docs" / "obsidian"
 MAP_FILE = VAULT_PATH / ".notion_map.json"
 LOG_FILE = Path.home() / ".hermes" / "logs" / "notion_sync.log"
 

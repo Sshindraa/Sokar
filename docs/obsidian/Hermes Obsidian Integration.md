@@ -1,4 +1,4 @@
-# Hermes x Obsidian — Intégration Callyx
+# Hermes x Obsidian — Intégration Sokar
 
 **Dernière mise à jour** : Mai 2025
 **Statut** : Actif — utilisé quotidiennement
@@ -7,7 +7,7 @@
 
 ## Pourquoi
 
-L'intégration Hermes-Obsidian est le pont entre l'agent IA et la documentation persistante du projet Callyx. Elle permet :
+L'intégration Hermes-Obsidian est le pont entre l'agent IA et la documentation persistante du projet Sokar. Elle permet :
 
 - **Mémoire persistante** — Hermes lit et écrit dans le vault Obsidian, ce qui lui donne accès à l'historique des décisions, sprints et notes de réunion au-delà de sa propre mémoire éphémère.
 - **Brainstorming et exploration** — Lancer des commandes `hermes -z` pour brainstormer dans une note, structurer des idées, ou faire des recherches dans toute la doc sans ouvrir l'IDE.
@@ -40,7 +40,7 @@ Le skill Hermes-Obsidian expose **6 fonctions** accessibles via `hermes -z` ou l
 ### 1. Lister toutes les notes disponibles
 
 ```zsh
-hermes -z "Liste toutes les notes du vault Obsidian Callyx et affiche les 5 plus récentes par date de modification"
+hermes -z "Liste toutes les notes du vault Obsidian Sokar et affiche les 5 plus récentes par date de modification"
 ```
 
 Sortie typique :
@@ -75,9 +75,9 @@ Utilise `write_note` pour créer la note avec contenu markdown structuré, front
 
 | Élément | Chemin |
 |---|---|
-| **Vault racine** | `/Users/hamza/Desktop/Callyx/docs/obsidian/` |
-| **Skill Hermes** | `/Users/hamza/Desktop/Callyx/agent/skills/obsidian/skill.py` |
-| **MCP Config** | `/Users/hamza/Desktop/Callyx/agent/config/mcp-config.json` (serveur `obsidian-vault`) |
+| **Vault racine** | `/Users/hamza/Desktop/Sokar/docs/obsidian/` |
+| **Skill Hermes** | `/Users/hamza/Desktop/Sokar/agent/skills/obsidian/skill.py` |
+| **MCP Config** | `/Users/hamza/Desktop/Sokar/agent/config/mcp-config.json` (serveur `obsidian-vault`) |
 | **Variable d'env** | `OBSIDIAN_VAULT` (optionnelle, override du chemin par défaut) |
 
 ### MCP Server (Windsurf)
@@ -86,8 +86,8 @@ Utilise `write_note` pour créer la note avec contenu markdown structuré, front
 "obsidian-vault": {
   "command": "npx",
   "args": ["-y", "@modelcontextprotocol/server-filesystem",
-           "/Users/hamza/Desktop/Callyx/docs/obsidian"],
-  "description": "Callyx Obsidian vault — lecture et écriture des notes"
+           "/Users/hamza/Desktop/Sokar/docs/obsidian"],
+  "description": "Sokar Obsidian vault — lecture et écriture des notes"
 }
 ```
 
@@ -105,7 +105,7 @@ Le MCP server Filesystem expose les opérations fichiers standard (read, write, 
 
 ## Automatisation — Everything Auto-Géré
 
-Depuis la v2.1 du MCP server, **plus aucune mise à jour manuelle n'est nécessaire**. Le système auto-logging Callyx gère tout :
+Depuis la v2.1 du MCP server, **plus aucune mise à jour manuelle n'est nécessaire**. Le système auto-logging Sokar gère tout :
 
 ### Comment ça marche
 

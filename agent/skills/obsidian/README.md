@@ -1,12 +1,12 @@
-# Callyx Auto-Logging System
+# Sokar Auto-Logging System
 
 ## Architecture
 
-Le système d'automatisation Callyx élimine tout besoin de mise à jour manuelle de la documentation. Il repose sur **3 composants** qui fonctionnent en synergie :
+Le système d'automatisation Sokar élimine tout besoin de mise à jour manuelle de la documentation. Il repose sur **3 composants** qui fonctionnent en synergie :
 
 ```
   ┌─────────────────────────────────────────────────────────────────────┐
-  │                   CALLYX AUTO-LOGGING SYSTEM                         │
+  │                   SOKAR AUTO-LOGGING SYSTEM                         │
   │                                                                      │
   │  ┌──────────────────┐    ┌──────────────┐    ┌──────────────────┐   │
   │  │  mcp_serve.py    │    │ auto_sync.py │    │ notion_sync.py   │   │
@@ -39,7 +39,7 @@ Le système d'automatisation Callyx élimine tout besoin de mise à jour manuell
 
 ### 1. `mcp_serve.py` (MCP Gateway)
 
-**Chemin** : `/Users/hamza/Desktop/Callyx/agent/scripts/mcp_serve.py`
+**Chemin** : `/Users/hamza/Desktop/Sokar/agent/scripts/mcp_serve.py`
 
 Le point d'entrée unique pour toute exécution via Windsurf Cascade.
 
@@ -65,7 +65,7 @@ Le point d'entrée unique pour toute exécution via Windsurf Cascade.
 
 ### 2. `auto_sync.py` (Git Watcher)
 
-**Chemin** : `/Users/hamza/Desktop/Callyx/agent/skills/obsidian/auto_sync.py`
+**Chemin** : `/Users/hamza/Desktop/Sokar/agent/skills/obsidian/auto_sync.py`
 
 Surveille les changements dans le code source et met à jour le vault Obsidian.
 
@@ -88,7 +88,7 @@ Surveille les changements dans le code source et met à jour le vault Obsidian.
 
 ### 3. `notion_sync.py` (Bidirectional Sync)
 
-**Chemin** : `/Users/hamza/Desktop/Callyx/agent/skills/obsidian/notion_sync.py`
+**Chemin** : `/Users/hamza/Desktop/Sokar/agent/skills/obsidian/notion_sync.py`
 
 Synchronisation bidirectionnelle entre Notion et Obsidian.
 

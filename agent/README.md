@@ -1,6 +1,6 @@
-# Hermes Agent for Callyx
+# Hermes Agent for Sokar
 
-Configuration Hermes CLI pour le monorepo Callyx.
+Configuration Hermes CLI pour le monorepo Sokar.
 
 ## Architecture 2 niveaux
 
@@ -43,9 +43,9 @@ zsh agent/scripts/start-hermes.sh
 
 ### Via MCP Windsurf (IDE)
 Les MCP servers configurés :
-- **hermes** : Orchestrateur Callyx
-- **callyx-postgres** : PostgreSQL
-- **callyx-github** : GitHub
+- **hermes** : Orchestrateur Sokar
+- **sokar-postgres** : PostgreSQL
+- **sokar-github** : GitHub
 
 ## Configuration
 
@@ -58,7 +58,7 @@ Les API keys sont configurées directement dans `agent/config/hermes-config.yaml
 - `~/.hermes/config.yaml` : Copié depuis `agent/config/hermes-config.yaml`
 - `agent/config/mcp-config.json` : Configuration MCP pour Windsurf
 
-## Stack Callyx reconnu
+## Stack Sokar reconnu
 
 - **apps/api** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx
 - **apps/dashboard** : Next.js 14 + React 18 + Tailwind 3

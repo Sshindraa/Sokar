@@ -60,9 +60,9 @@ if __name__ == "__main__":
     print(json.dumps(tools_resp, indent=2)[:2000])
     print()
     
-    # Search for "Callyx HQ"
-    print("=== SEARCH: Callyx HQ ===")
-    search_resp = client.call_tool("API-post-search", {"query": "Callyx HQ"})
+    # Search for "Sokar HQ"
+    print("=== SEARCH: Sokar HQ ===")
+    search_resp = client.call_tool("API-post-search", {"query": "Sokar HQ"})
     print(json.dumps(search_resp, indent=2)[:5000])
     print()
     

@@ -1,4 +1,4 @@
-import type { CallEvent } from '@callyx/types';
+import type { CallEvent } from '@sokar/types';
 
 export type CallOutcome = 'RESERVED' | 'INFO' | 'NO_ACTION' | 'HANDOFF' | 'ERROR';
 

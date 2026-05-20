@@ -160,7 +160,7 @@ DEFAULT_VOICE_ID              = '21m00Tcm4TlvDq8ikWAM'
 ## Arborescence du Monorepo
 
 ```
-callyx/
+sokar/
 ├── apps/
 │   ├── api/
 │   │   ├── src/modules/voice/          pipeline.ts | outcome.ts | tools.ts | prompts.ts | fillers.ts
@@ -229,13 +229,13 @@ callyx/
 
 ```
 DATABASE_URL="postgresql://callyx:***@localhost:5432/callyx_dev"
-REDIS_URL="redis://localhost:***@callyx.fr"
-PUBLIC_URL="https://api.callyx.fr"
+REDIS_URL="redis://localhost:***@sokar.fr"
+PUBLIC_URL="https://api.sokar.fr"
 NODE_ENV="development"
 LOG_LEVEL="info"
 TZ="Europe/Paris"
 BETTER_AUTH_SECRET="***"
-BETTER_AUTH_URL="https://api.callyx.fr"
+BETTER_AUTH_URL="https://api.sokar.fr"
 ```
 
 ---

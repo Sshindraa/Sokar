@@ -1,11 +1,11 @@
 #!/bin/zsh
-# Callyx Auto-Commit Daemon
+# Sokar Auto-Commit Daemon
 # S'exécute via cron toutes les 15 minutes
 # Commit + push automatiquement si des fichiers ont changé
 
 set -e
 
-REPO="/Users/hamza/Desktop/Callyx"
+REPO="/Users/hamza/Desktop/Sokar"
 LOG="$REPO/.git/auto-commit.log"
 
 cd "$REPO"

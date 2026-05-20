@@ -4,11 +4,11 @@
 
 set -e
 
-REPO="/Users/hamza/Desktop/Callyx"
+REPO="/Users/hamza/Desktop/Sokar"
 LOG="$REPO/.vapi-dev.log"
 
 echo "╔════════════════════════════════════════╗"
-echo "║     Callyx Vapi Dev Setup              ║"
+echo "║     Sokar Vapi Dev Setup              ║"
 echo "╚════════════════════════════════════════╝"
 echo ""
 

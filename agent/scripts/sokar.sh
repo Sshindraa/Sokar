@@ -1,46 +1,46 @@
 #!/bin/zsh
 # =============================================================================
-# callyx.sh — Wrapper Hermes CLI pour Callyx
+# sokar.sh — Wrapper Hermes CLI pour Sokar
 #
 # Concatène tous les arguments en une tâche, exécute hermes -z,
 # journalise l'activité dans Context.md + Journal.md (Obsidian),
 # puis affiche le résultat.
 #
 # Usage:
-#   callyx Ajoute Zod validation aux routes API
-#   callyx Crée le composant KPI latency dans le dashboard
+#   sokar Ajoute Zod validation aux routes API
+#   sokar Crée le composant KPI latency dans le dashboard
 #
 # Alias recommandé dans ~/.zshrc :
-#   alias callyx='zsh /Users/hamza/Desktop/Callyx/agent/scripts/callyx.sh'
+#   alias sokar='zsh /Users/hamza/Desktop/Sokar/agent/scripts/sokar.sh'
 # =============================================================================
 
 set -euo pipefail
 
-CALLYX_ROOT="/Users/hamza/Desktop/Callyx"
-SCRIPT_DIR="${CALLYX_ROOT}/agent/scripts"
-OBSIDIAN_SKILL="${CALLYX_ROOT}/agent/skills/obsidian"
+SOKAR_ROOT="/Users/hamza/Desktop/Sokar"
+SCRIPT_DIR="${SOKAR_ROOT}/agent/scripts"
+OBSIDIAN_SKILL="${SOKAR_ROOT}/agent/skills/obsidian"
 OBSIDIAN_DOC="${OBSIDIAN_SKILL}/auto_doc.py"
-OBSIDIAN_VAULT="${CALLYX_ROOT}/docs/obsidian"
+OBSIDIAN_VAULT="${SOKAR_ROOT}/docs/obsidian"
 
 # ── 1. Charger .env ──────────────────────────────────────────────────────────
-if [[ -f "${CALLYX_ROOT}/.env" ]]; then
+if [[ -f "${SOKAR_ROOT}/.env" ]]; then
   set -a
-  source "${CALLYX_ROOT}/.env"
+  source "${SOKAR_ROOT}/.env"
   set +a
 fi
 
 # ── 2. Concaténer les arguments en une tâche ────────────────────────────────
 TASK="${*}"
 if [[ -z "$TASK" ]]; then
-  echo "❌ Usage: callyx <description de la tâche>"
+  echo "❌ Usage: sokar <description de la tâche>"
   exit 1
 fi
 
-# ── 3. Détecter le module Callyx pour la journalisation ──────────────────────
+# ── 3. Détecter le module Sokar pour la journalisation ──────────────────────
 MODULE=$(python3 "${OBSIDIAN_DOC}" detect "${TASK}" 2>/dev/null || echo "general")
 
 # ── 4. Exécuter hermes -z et capturer le résultat ────────────────────────────
-echo "🚀 Callyx — Exécution : ${TASK}"
+echo "🚀 Sokar — Exécution : ${TASK}"
 echo "   Module détecté : ${MODULE}"
 echo ""
 

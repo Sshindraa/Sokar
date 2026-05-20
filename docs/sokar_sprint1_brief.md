@@ -1,4 +1,4 @@
-# Callyx — Sprint 1 : Brief Technique Agent Code
+# Sokar — Sprint 1 : Brief Technique Agent Code
 ### MVP Production-Ready — Mai 2026
 
 ---
@@ -14,7 +14,7 @@ Construire le **minimum viable** : un agent vocal qui répond aux appels d'un re
 ## 📁 Structure du Monorepo
 
 ```
-callyx/
+sokar/
 ├── apps/
 │   ├── api/
 │   │   ├── src/
@@ -241,19 +241,19 @@ SMTP_HOST="smtp.resend.com"
 SMTP_PORT="465"
 SMTP_USER="resend"
 SMTP_PASS="re_..."
-EMAIL_FROM="noreply@callyx.fr"
-PUBLIC_URL="https://api.callyx.fr"
+EMAIL_FROM="noreply@sokar.fr"
+PUBLIC_URL="https://api.sokar.fr"
 NODE_ENV="development"
 LOG_LEVEL="info"
 TZ="Europe/Paris"
 BETTER_AUTH_SECRET="..."
-BETTER_AUTH_URL="https://app.callyx.fr"
+BETTER_AUTH_URL="https://app.sokar.fr"
 ```
 
 ### `.env.test`
 
 ```env
-DATABASE_URL="postgresql://callyx:password@localhost:5432/callyx_test"
+DATABASE_URL="postgresql://callyx:password@localhost:5432/sokar_test"
 REDIS_URL="redis://localhost:6379"
 VAPI_WEBHOOK_SECRET="test-secret"
 BETTER_AUTH_SECRET="test-auth-secret"
@@ -387,7 +387,7 @@ export interface SendEmailOptions {
 
 export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   await transporter.sendMail({
-    from:    process.env.EMAIL_FROM ?? 'noreply@callyx.fr',
+    from:    process.env.EMAIL_FROM ?? 'noreply@sokar.fr',
     to:      opts.to,
     subject: opts.subject,
     html:    opts.html,
@@ -400,7 +400,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
 ## 🎯 Outcome Detection — `voice/outcome.ts`
 
 ```typescript
-import type { CallEvent } from '@callyx/types';
+import type { CallEvent } from '@sokar/types';
 
 export type CallOutcome = 'RESERVED' | 'INFO' | 'NO_ACTION' | 'HANDOFF' | 'ERROR';
 
@@ -625,7 +625,7 @@ export class ReservationService {
 import { db }                               from '../../shared/db/client';
 import { getCachedContext, setCachedContext, redisCache } from '../../shared/redis/client';
 import * as Sentry                           from '@sentry/node';
-import { INTERNAL_CALL_ALERT_THRESHOLD, CIRCUIT_BREAKER_HOURLY_LIMIT, REDIS_CTX_TTL_SECONDS } from '@callyx/config';
+import { INTERNAL_CALL_ALERT_THRESHOLD, CIRCUIT_BREAKER_HOURLY_LIMIT, REDIS_CTX_TTL_SECONDS } from '@sokar/config';
 
 function getCurrentMonthKey() {
   const d = new Date();
@@ -820,7 +820,7 @@ export const eveningReportWorker = new Worker('evening-report', async (job) => {
 
   await sendEmail({
     to:      restaurant.managerEmail,
-    subject: `📊 Résumé Callyx — ${new Date().toLocaleDateString('fr-FR')}`,
+    subject: `📊 Résumé Sokar — ${new Date().toLocaleDateString('fr-FR')}`,
     html:    buildReportEmail({ restaurantName: restaurant.name, totalCalls: calls.length, reserved, cancelled, estimatedRevenue }),
   });
 }, { connection: redisQueue });
@@ -838,7 +838,7 @@ import { RestaurantService }  from '../restaurants/restaurant.service';
 import { buildSystemPrompt, formatOpeningHours } from './prompts';
 import { getRestaurantTools } from './tools';
 import { detectOutcome }      from './outcome';
-import { DEFAULT_VOICE_ID }   from '@callyx/config';
+import { DEFAULT_VOICE_ID }   from '@sokar/config';
 
 interface VapiIncomingPayload {
   call: { id: string; phoneNumberId: string };
@@ -864,7 +864,7 @@ export async function voiceRoutes(app: FastifyInstance) {
     if (!safe) {
       return reply
         .type('text/xml')
-        .send(`<Response><Play>https://cdn.callyx.fr/assets/technical-issue.mp3</Play><Hangup/></Response>`);
+        .send(`<Response><Play>https://cdn.sokar.fr/assets/technical-issue.mp3</Play><Hangup/></Response>`);
     }
 
     return reply.send({

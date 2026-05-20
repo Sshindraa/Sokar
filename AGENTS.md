@@ -1,10 +1,10 @@
 ---
-description: Callyx Autonomous Agent System powered by Hermes CLI
+description: Sokar Autonomous Agent System powered by Hermes CLI
 ---
 
-# Callyx Autonomous Agent System
+# Sokar Autonomous Agent System
 
-L'agent Callyx utilise Hermes CLI pour automatiser les tâches de développement dans ce monorepo.
+L'agent Sokar utilise Hermes CLI pour automatiser les tâches de développement dans ce monorepo.
 
 ## Architecture
 
@@ -16,7 +16,7 @@ L'agent Callyx utilise Hermes CLI pour automatiser les tâches de développement
 - **MCP** : `agent/config/mcp-config.json` - Integration MCP pour Windsurf (hermes, postgres, github)
 - **Contexte** : `AGENTS.md` - Contexte du projet pour Hermes CLI
 
-## Stack Callyx
+## Stack Sokar
 
 - **apps/api** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx
 - **apps/dashboard** : Next.js 14 + React 18 + Tailwind 3
@@ -63,9 +63,9 @@ Les autres outils MCP (run_shell, read_file, search_files, git_status) ont
 ete supprimes pour empecher Cascade de tricher.
 
 Les MCP servers configurés :
-- **hermes** : Orchestrateur Callyx
-- **callyx-postgres** : PostgreSQL
-- **callyx-github** : GitHub
+- **hermes** : Orchestrateur Sokar
+- **sokar-postgres** : PostgreSQL
+- **sokar-github** : GitHub
 
 ## Providers LLM
 

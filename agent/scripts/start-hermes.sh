@@ -1,10 +1,10 @@
 #!/usr/bin/env zsh
-# Lance Hermes Agent avec la config Callyx
+# Lance Hermes Agent avec la config Sokar
 # Usage: zsh agent/scripts/start-hermes.sh
 
 set -euo pipefail
 
-REPO_ROOT="/Users/hamza/Desktop/Callyx"
+REPO_ROOT="/Users/hamza/Desktop/Sokar"
 HERMES_BIN_DIR="$HOME/Library/Python/3.14/bin"
 export PATH="$HERMES_BIN_DIR:$PATH"
 
@@ -26,10 +26,10 @@ if [ -z "${WINDSURF_TOKEN:-}" ]; then
     exit 1
 fi
 
-echo "[CALLYX-AGENT] Démarrage d'Hermes..."
+echo "[SOKAR-AGENT] Démarrage d'Hermes..."
 echo "  Config: $REPO_ROOT/agent/config/hermes-config.yaml"
 echo "  Token:  ${WINDSURF_TOKEN:0:10}..."
 echo ""
 
-# Lancer Hermes avec le modèle executor Callyx
+# Lancer Hermes avec le modèle executor Sokar
 hermes --provider=openrouter --model=deepseek/deepseek-v4-flash

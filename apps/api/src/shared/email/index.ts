@@ -13,7 +13,7 @@ export interface SendEmailOptions {
 
 export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   await transporter.sendMail({
-    from:    process.env.EMAIL_FROM ?? 'noreply@callyx.fr',
+    from:    process.env.EMAIL_FROM ?? 'noreply@sokar.fr',
     to:      opts.to,
     subject: opts.subject,
     html:    opts.html,

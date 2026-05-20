@@ -8,7 +8,7 @@
 
 ## 1. Vérification de l'outil Notion MCP
 
-**Fichier** : `/Users/hamza/Desktop/Callyx/notion_mcp_client.py`
+**Fichier** : `/Users/hamza/Desktop/Sokar/notion_mcp_client.py`
 - [x] Existe (1981 octets, Python 3)
 - [x] Fonctionne avec `NOTION_TOKEN` depuis Hermes config (`~/.hermes/config.yaml`)
 - ⚠️ Le token est passé via `NOTION_API_KEY` dans la config Hermes mais le script utilise `NOTION_TOKEN`.

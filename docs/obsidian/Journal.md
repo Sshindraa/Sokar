@@ -1,4 +1,4 @@
-# Journal Callyx
+# Journal Sokar
 
 Log automatique des tâches Hermes.
 

@@ -1,4 +1,4 @@
-# Architecture Callyx
+# Architecture Sokar
 
 **Dernière mise à jour** : Mai 2025  
 **Stack** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx / Next.js 14 + React 18 + Tailwind 3
@@ -8,7 +8,7 @@
 ## Structure du Monorepo
 
 ```
-callyx/
+sokar/
 ├── apps/
 │   ├── api/              # Fastify 5 backend
 │   │   └── src/

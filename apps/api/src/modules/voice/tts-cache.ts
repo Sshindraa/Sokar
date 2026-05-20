@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { redisCache } from '../../shared/redis/client';
-import { TTS_CACHE_TTL_SECONDS, TTS_CACHE_MIN_LENGTH } from '@callyx/config';
+import { TTS_CACHE_TTL_SECONDS, TTS_CACHE_MIN_LENGTH } from '@sokar/config';
 
 const isTtsCacheEnabled = () => process.env.TTS_CACHE_ENABLED === 'true';
 

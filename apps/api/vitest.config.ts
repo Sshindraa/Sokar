@@ -10,8 +10,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@callyx/config': '../../packages/config/src/constants.ts',
-      '@callyx/types': '../../packages/types/src/call-event.ts',
+      '@sokar/config': '../../packages/config/src/constants.ts',
+      '@sokar/types': '../../packages/types/src/call-event.ts',
     },
   },
 });

@@ -56,10 +56,10 @@ export async function listCalls(limit = 10) {
 export async function handleAssistantRequest(
   payload: VapiAssistantRequestPayload
 ): Promise<VapiAssistantResponse> {
-  // Retourne l'assistant configuré avec les fonctions Callyx
+  // Retourne l'assistant configuré avec les fonctions Sokar
   return {
     assistant: {
-      name: 'Callyx Assistant',
+      name: 'Sokar Assistant',
       firstMessage:
         "Bonjour, je suis l'assistant virtuel de votre restaurant. Comment puis-je vous aider ?",
       model: {
@@ -72,7 +72,7 @@ export async function handleAssistantRequest(
         provider: '11labs',
         voiceId: 'XB0fDUnXU5powFXDhCwa', // Adam (français)
       },
-      functions: buildCallyxFunctions(),
+      functions: buildSokarFunctions(),
       server: {
         url: `${process.env.PUBLIC_URL}/webhooks/vapi`,
         timeoutSeconds: 10,
@@ -163,9 +163,9 @@ export async function handleEndOfCallReport(payload: VapiEndOfCallReport): Promi
   // TODO: persister dans la DB (CallLog, Reservation, etc.)
 }
 
-/** ── Définition des fonctions Callyx pour Vapi ── */
+/** ── Définition des fonctions Sokar pour Vapi ── */
 
-function buildCallyxFunctions() {
+function buildSokarFunctions() {
   return [
     {
       name: 'createReservation',

@@ -1,5 +1,5 @@
 {
-  "name": "Callyx Restaurant Assistant",
+  "name": "Sokar Restaurant Assistant",
   "firstMessage": "Bonjour, je suis l'assistant virtuel de votre restaurant. Comment puis-je vous aider ? Souhaitez-vous réserver une table, connaître nos horaires, ou annuler une réservation ?",
   "firstMessageMode": "assistant-speaks-first",
   "model": {

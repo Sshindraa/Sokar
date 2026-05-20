@@ -1,11 +1,11 @@
-# Callyx — Sprint 2 : Brief Technique Agent Code
+# Sokar — Sprint 2 : Brief Technique Agent Code
 ### Différenciation Économique — Mai/Juin 2026
 
 ---
 
 ## 🎯 Objectif du Sprint 2
 
-Rendre Callyx **rentable et différencié** : migrer vers Telnyx + Deepgram, ajouter la mémoire client, le cache TTS, et le dashboard ROI. Durée réaliste : **5 à 7 semaines**.
+Rendre Sokar **rentable et différencié** : migrer vers Telnyx + Deepgram, ajouter la mémoire client, le cache TTS, et le dashboard ROI. Durée réaliste : **5 à 7 semaines**.
 
 > ⚠️ La migration Vapi → Telnyx est le risque #1 du sprint. L'attaquer en semaine 1 à froid. Ne pas commencer par le dashboard.
 
@@ -14,7 +14,7 @@ Rendre Callyx **rentable et différencié** : migrer vers Telnyx + Deepgram, ajo
 ## 📁 Nouveaux fichiers — delta vs Sprint 1
 
 ```
-callyx/
+sokar/
 ├── apps/
 │   ├── api/
 │   │   ├── src/

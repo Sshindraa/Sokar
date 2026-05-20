@@ -1,11 +1,11 @@
 #!/bin/zsh
-# Callyx Auto-Commit System
+# Sokar Auto-Commit System
 # Commits automatiquement avec des messages intelligents basés sur les fichiers modifiés
 # Usage: ./auto-commit.sh [message_custom] [--push]
 
 set -e
 
-REPO_ROOT="/Users/hamza/Desktop/Callyx"
+REPO_ROOT="/Users/hamza/Desktop/Sokar"
 cd "$REPO_ROOT"
 
 # ── Couleurs ──
@@ -75,7 +75,7 @@ generate_message() {
 }
 
 # ── Main ──
-echo "${GREEN}Callyx Auto-Commit${NC}"
+echo "${GREEN}Sokar Auto-Commit${NC}"
 echo "=================="
 
 # Stage all changes

@@ -1,8 +1,8 @@
-# Contexte Callyx
+# Contexte Sokar
 
 ## Dernière activité
 
-2026-05-20 00:35 — [general] Architecture: documenter la Phone Number Strategy pour Callyx (numero par restaurant, pool, porting, SIP trunking)
+2026-05-20 00:35 — [general] Architecture: documenter la Phone Number Strategy pour Sokar (numero par restaurant, pool, porting, SIP trunking)
 
 ## Décisions récentes
 
