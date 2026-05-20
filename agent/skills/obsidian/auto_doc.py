@@ -9,10 +9,12 @@ Usage:
         detect_module_from_task,
     )
 """
+from __future__ import annotations
 
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 SOKAR_ROOT = Path(__file__).resolve().parents[3]  # remonte jusqu'a la racine Sokar
 CONTEXT_PATH = SOKAR_ROOT / "docs" / "obsidian" / "Context.md"
@@ -83,7 +85,7 @@ def _ensure_context_md() -> None:
         )
 
 
-def _find_section_boundaries(text: str, header: str) -> tuple[int, int, int] | None:
+def _find_section_boundaries(text: str, header: str) -> Optional[tuple[int, int, int]]:
     """Retourne (start_header, start_body, end_section) ou None si introuvable.
 
     La recherche ignore la casse et les accents (ex: 'activite' matche 'activite', 'activité').
@@ -189,7 +191,7 @@ def add_decision(decision_text: str) -> None:
 # ── Note linking ──
 
 
-def _read_note(path: str) -> tuple[Path, str] | None:
+def _read_note(path: str) -> Optional[tuple[Path, str]]:
     """Lit une note du vault par chemin relatif ou nom (sans ou avec .md).
 
     Retourne (path_resolu, contenu) ou None si introuvable.

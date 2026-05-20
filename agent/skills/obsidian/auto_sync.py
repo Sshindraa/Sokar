@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 auto_sync — Watcher git + filesystem pour mise à jour automatique du vault Obsidian.
 

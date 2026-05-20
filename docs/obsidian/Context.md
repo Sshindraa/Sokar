@@ -2,7 +2,7 @@
 
 ## Dernière activité
 
-2026-05-20 03:23 — [agent] Rename global: Callyx → Sokar across entire codebase (59 files, 190 insertions, 190 deletions)
+2026-05-20 12:49 — [agent] echo "Bridge test OK from Hermes MCP"
 
 ## Décisions récentes
 
