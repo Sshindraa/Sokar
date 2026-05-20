@@ -31,5 +31,5 @@ echo "  Config: $REPO_ROOT/agent/config/hermes-config.yaml"
 echo "  Token:  ${WINDSURF_TOKEN:0:10}..."
 echo ""
 
-# Lancer Hermes avec le modèle executor Sokar
-hermes --provider=openrouter --model=deepseek/deepseek-v4-flash
+# Lancer Hermes (lit ~/.hermes/config.yaml — OpenCode Go primary, OpenRouter fallback)
+hermes
