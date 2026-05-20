@@ -469,30 +469,60 @@ HANDLERS = {
 }
 
 
+def _send_message(msg: dict) -> None:
+    payload = json.dumps(msg)
+    sys.stdout.write(f"Content-Length: {len(payload)}\r\n\r\n{payload}")
+    sys.stdout.flush()
+
+
+def _read_message() -> Optional[dict]:
+    """Lit un message JSON-RPC au format MCP stdio (Content-Length)."""
+    header = b""
+    while True:
+        byte = sys.stdin.buffer.read(1)
+        if not byte:
+            return None
+        header += byte
+        if header.endswith(b"\r\n\r\n"):
+            break
+
+    # Parse Content-Length
+    length = 0
+    for line in header.decode("ascii", errors="replace").split("\r\n"):
+        if line.lower().startswith("content-length:"):
+            length = int(line.split(":", 1)[1].strip())
+            break
+
+    if length <= 0:
+        return None
+
+    raw = sys.stdin.buffer.read(length)
+    if not raw:
+        return None
+
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+
+
 def main():
     log("server starting")
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            req = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+    while True:
+        req = _read_message()
+        if req is None:
+            break
 
         method = req.get("method", "")
         handler = HANDLERS.get(method)
 
         if handler is None:
-            resp = make_error(req.get("id"), -32601, f"Method not found: {method}")
-            sys.stdout.write(json.dumps(resp) + "\n")
-            sys.stdout.flush()
+            _send_message(make_error(req.get("id"), -32601, f"Method not found: {method}"))
             continue
 
         resp = handler(req)
         if resp is not None:
-            sys.stdout.write(json.dumps(resp) + "\n")
-            sys.stdout.flush()
+            _send_message(resp)
 
 
 if __name__ == "__main__":
