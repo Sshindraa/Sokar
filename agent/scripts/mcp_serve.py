@@ -389,9 +389,11 @@ def make_error(req_id, code, message):
 
 def handle_initialize(req: dict) -> dict:
     log("initialize")
+    params = req.get("params", {}) if isinstance(req.get("params", {}), dict) else {}
+    protocol_version = params.get("protocolVersion") or "2024-11-05"
     return make_result(req.get("id"), {
-        "protocolVersion": "0.1.0",
-        "capabilities": {"tools": {}},
+        "protocolVersion": protocol_version,
+        "capabilities": {"tools": {"listChanged": False}},
         "serverInfo": {"name": "hermes-executor", "version": "2.1.0"},
     })
 
@@ -435,8 +437,7 @@ HANDLERS = {
 
 
 def main():
-    sys.stderr.write("[hermes MCP v2.1] Server starting — auto-logging enabled\n")
-    sys.stderr.flush()
+    log("server starting")
     for line in sys.stdin:
         line = line.strip()
         if not line:
