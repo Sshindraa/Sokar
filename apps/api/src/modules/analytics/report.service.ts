@@ -1,4 +1,4 @@
-import { THEFORK_COMMISSION_PER_PAX } from '@callyx/config';
+import { THEFORK_COMMISSION_PER_PAX } from '@sokar/config';
 
 export interface ReportData {
   restaurantName:   string;
@@ -26,7 +26,7 @@ export function buildReportEmail(data: ReportData): string {
 
   return `
     <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto;">
-      <h1 style="color: #16a34a;">Callyx</h1>
+      <h1 style="color: #16a34a;">Sokar</h1>
       <h2>Rapport du jour — ${data.restaurantName}</h2>
       ${savingsBlock}
       <table style="width: 100%; border-collapse: collapse;">
@@ -64,7 +64,7 @@ export function buildReportEmail(data: ReportData): string {
         </tr>
       </table>
       <p style="color: #737373; font-size: 12px; margin-top: 24px;">
-        Cet email est envoyé automatiquement par Callyx.
+        Cet email est envoyé automatiquement par Sokar.
       </p>
     </div>
   `;

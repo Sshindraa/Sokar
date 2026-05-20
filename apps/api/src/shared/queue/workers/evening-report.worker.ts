@@ -27,7 +27,7 @@ export const eveningReportWorker = new Worker('evening-report', async (job) => {
 
   await sendEmail({
     to:      restaurant.managerEmail,
-    subject: `📊 Résumé Callyx — ${new Date().toLocaleDateString('fr-FR')}`,
+    subject: `📊 Résumé Sokar — ${new Date().toLocaleDateString('fr-FR')}`,
     html:    buildReportEmail({ restaurantName: restaurant.name, totalCalls: calls.length, reserved, cancelled, estimatedRevenue, totalCouverts }),
   });
 }, { connection: redisQueue });

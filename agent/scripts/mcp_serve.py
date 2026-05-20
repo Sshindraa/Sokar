@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Hermes MCP server — Callyx execution gateway.
+Hermes MCP server — Sokar execution gateway.
 
 Windsurf Cascade (kimi-k2.6) planifie uniquement.
 Toute execution est deleguee a Hermes CLI (deepseek-v4-flash) via execute_task.
@@ -26,12 +26,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-CALLYX_ROOT = os.environ.get("CALLYX_ROOT", str(Path.home() / "Desktop" / "Callyx"))
+SOKAR_ROOT = os.environ.get("SOKAR_ROOT", str(Path.home() / "Desktop" / "Sokar"))
 LOG_FILE = Path.home() / ".hermes" / "logs" / "mcp_serve.log"
 SESSION_LOG = Path.home() / ".hermes" / "logs" / "cascade_hermes_bridge.md"
-JOURNAL_PATH = Path(CALLYX_ROOT) / "docs" / "obsidian" / "Journal.md"
+JOURNAL_PATH = Path(SOKAR_ROOT) / "docs" / "obsidian" / "Journal.md"
 
-sys.path.insert(0, str(Path(CALLYX_ROOT) / "agent" / "skills" / "obsidian"))
+sys.path.insert(0, str(Path(SOKAR_ROOT) / "agent" / "skills" / "obsidian"))
 from auto_doc import update_context, detect_module_from_task
 
 # ── Task classification ──
@@ -143,7 +143,7 @@ def update_relevant_note(task: str, result: str) -> None:
     if not note_name:
         return  # Pas de note cible
 
-    note_path = Path(CALLYX_ROOT) / "docs" / "obsidian" / note_name
+    note_path = Path(SOKAR_ROOT) / "docs" / "obsidian" / note_name
 
     # Préparer l'entrée de log
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -188,7 +188,7 @@ def update_relevant_note(task: str, result: str) -> None:
 
 
 def log_to_journal(task: str, result: str) -> None:
-    """Append une ligne markdown au Journal Callyx."""
+    """Append une ligne markdown au Journal Sokar."""
     try:
         JOURNAL_PATH.parent.mkdir(parents=True, exist_ok=True)
         date = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -239,7 +239,7 @@ def log_session(cascade_msg: str, hermes_result: str) -> None:
 
 
 def guess_module(task: str) -> str:
-    """Devine le module Callyx touche a partir de la description de la tache."""
+    """Devine le module Sokar touche a partir de la description de la tache."""
     patterns = [
         (r"apps/api/", "apps/api"),
         (r"apps/dashboard/", "apps/dashboard"),
@@ -261,7 +261,7 @@ def tool_execute_task(task: str, workdir: str | None = None) -> str:
     AUTO-LOGGING: Après exécution, détecte automatiquement le type de tâche
     et met à jour la note Obsidian appropriée.
     """
-    cwd = workdir or CALLYX_ROOT
+    cwd = workdir or SOKAR_ROOT
     cmd = "hermes -z " + shlex.quote(task)
     log(f"execute_task: {task[:300]}")
 
@@ -313,8 +313,8 @@ def tool_execute_task(task: str, workdir: str | None = None) -> str:
             # Déclencher auto_sync pour synchroniser les notes modifiées
             try:
                 subprocess.run(
-                    ["python3", str(Path(CALLYX_ROOT) / "agent" / "skills" / "obsidian" / "auto_sync.py"), "diff"],
-                    capture_output=True, text=True, cwd=CALLYX_ROOT, timeout=30,
+                    ["python3", str(Path(SOKAR_ROOT) / "agent" / "skills" / "obsidian" / "auto_sync.py"), "diff"],
+                    capture_output=True, text=True, cwd=SOKAR_ROOT, timeout=30,
                 )
             except Exception:
                 pass  # auto_sync est optionnel
@@ -365,7 +365,7 @@ TOOLS = {
                 },
                 "workdir": {
                     "type": "string",
-                    "description": "Working directory (defaut: racine du projet Callyx)",
+                    "description": "Working directory (defaut: racine du projet Sokar)",
                 },
             },
             "required": ["task"],

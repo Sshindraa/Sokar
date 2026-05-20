@@ -133,7 +133,7 @@ function selectLlmModel(isVip: boolean, turnCount: number): string {
 
 - **FLASH** : `deepseek/deepseek-v4-flash` (défaut, rapide/économique)
 - **PRO** : Modèle premium pour clients VIP ou conversations longues
-- Configuré dans `@callyx/config`
+- Configuré dans `@sokar/config`
 
 ---
 

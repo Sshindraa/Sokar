@@ -5,7 +5,7 @@ import { RestaurantService }  from '../restaurants/restaurant.service';
 import { buildSystemPrompt, formatOpeningHours } from './prompts';
 import { getRestaurantTools } from './tools';
 import { detectOutcome }      from './outcome';
-import { DEFAULT_VOICE_ID }   from '@callyx/config';
+import { DEFAULT_VOICE_ID }   from '@sokar/config';
 
 interface VapiIncomingPayload {
   call: { id: string; phoneNumberId: string };
@@ -31,7 +31,7 @@ export async function voiceRoutes(app: FastifyInstance) {
     if (!safe) {
       return reply
         .type('text/xml')
-        .send(`<Response><Play>https://cdn.callyx.fr/assets/technical-issue.mp3</Play><Hangup/></Response>`);
+        .send(`<Response><Play>https://cdn.sokar.fr/assets/technical-issue.mp3</Play><Hangup/></Response>`);
     }
 
     return reply.send({

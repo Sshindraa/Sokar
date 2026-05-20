@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Skill Hermes — Obsidian Vault Callyx
+Skill Hermes — Obsidian Vault Sokar
 Exposes tools to read, write, list and search notes in the Obsidian vault.
 """
 import os
@@ -9,7 +9,7 @@ import glob
 from pathlib import Path
 from datetime import datetime
 
-VAULT_PATH = os.environ.get("OBSIDIAN_VAULT", "/Users/hamza/Desktop/Callyx/docs/obsidian")
+VAULT_PATH = os.environ.get("OBSIDIAN_VAULT", "/Users/hamza/Desktop/Sokar/docs/obsidian")
 
 
 def _list_notes() -> list[str]:

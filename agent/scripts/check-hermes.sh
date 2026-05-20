@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="/Users/hamza/Desktop/Callyx"
+REPO_ROOT="/Users/hamza/Desktop/Sokar"
 HERMES_BIN_DIR="$HOME/Library/Python/3.14/bin"
 export PATH="$HERMES_BIN_DIR:$PATH"
 
@@ -35,7 +35,7 @@ check_env() {
     fi
 }
 
-echo "=== Hermes Agent Callyx — Healthcheck ==="
+echo "=== Hermes Agent Sokar — Healthcheck ==="
 echo ""
 
 check "hermes CLI" "command -v hermes"

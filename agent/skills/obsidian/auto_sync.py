@@ -32,8 +32,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-CALLYX_ROOT = Path(os.environ.get("CALLYX_ROOT", str(Path.home() / "Desktop" / "Callyx")))
-VAULT_PATH = CALLYX_ROOT / "docs" / "obsidian"
+SOKAR_ROOT = Path(os.environ.get("SOKAR_ROOT", str(Path.home() / "Desktop" / "Sokar")))
+VAULT_PATH = SOKAR_ROOT / "docs" / "obsidian"
 LOG_FILE = Path.home() / ".hermes" / "logs" / "auto_sync.log"
 
 # ── Carte : type de fichier → note Obsidian → extracteur de contenu ──
@@ -69,14 +69,14 @@ def get_git_diff() -> list[dict]:
     try:
         result = subprocess.run(
             ["git", "diff", "--name-status", "HEAD"],
-            capture_output=True, text=True, cwd=CALLYX_ROOT, timeout=30,
+            capture_output=True, text=True, cwd=SOKAR_ROOT, timeout=30,
         )
         raw = result.stdout.strip()
         if not raw:
             # Maybe no commits yet → diff against empty tree
             result = subprocess.run(
                 ["git", "status", "--porcelain"],
-                capture_output=True, text=True, cwd=CALLYX_ROOT, timeout=30,
+                capture_output=True, text=True, cwd=SOKAR_ROOT, timeout=30,
             )
             raw = result.stdout.strip()
 
@@ -121,7 +121,7 @@ def detect_note_for_file(file_path: str) -> tuple[str | None, str | None]:
 
 def extract_routes(file_path: str) -> str | None:
     """Extrait les routes Fastify d'un fichier .routes.ts."""
-    full = CALLYX_ROOT / file_path
+    full = SOKAR_ROOT / file_path
     if not full.is_file():
         return None
     try:
@@ -156,7 +156,7 @@ def extract_routes(file_path: str) -> str | None:
 
 def extract_schema(file_path: str) -> str | None:
     """Extrait les modèles Prisma d'un schema.prisma."""
-    full = CALLYX_ROOT / file_path
+    full = SOKAR_ROOT / file_path
     if not full.is_file():
         return None
     try:
@@ -187,9 +187,9 @@ def extract_schema(file_path: str) -> str | None:
 
 def extract_voice(file_dir: str) -> str | None:
     """Liste les fichiers du module voice."""
-    full = CALLYX_ROOT / file_dir
+    full = SOKAR_ROOT / file_dir
     if not full.is_dir():
-        full = CALLYX_ROOT / "apps/api/src/modules/voice"
+        full = SOKAR_ROOT / "apps/api/src/modules/voice"
     if not full.is_dir():
         return None
     files = sorted(full.glob("*"))
@@ -344,14 +344,14 @@ def scan_filesystem() -> list[dict]:
     now = time.time()
     recent = []
     for rel_dir in watched_dirs:
-        full = CALLYX_ROOT / rel_dir
+        full = SOKAR_ROOT / rel_dir
         if not full.is_dir():
             continue
         for f in full.rglob("*"):
             if f.is_file() and f.suffix in (".ts", ".py", ".prisma", ".tsx", ".js"):
                 mtime = f.stat().st_mtime
                 if now - mtime < 60:  # modifié dans la dernière minute
-                    recent.append({"path": str(f.relative_to(CALLYX_ROOT)), "status": "M"})
+                    recent.append({"path": str(f.relative_to(SOKAR_ROOT)), "status": "M"})
     return recent
 
 
@@ -362,7 +362,7 @@ def daemon_loop(interval: int = 30) -> None:
     """Boucle principale : vérifie git diff toutes les `interval` secondes."""
     log(f"🚀 Daemon auto_sync démarré (intervalle={interval}s)")
     log(f"   Vault : {VAULT_PATH}")
-    log(f"   Root  : {CALLYX_ROOT}")
+    log(f"   Root  : {SOKAR_ROOT}")
 
     while True:
         try:
@@ -382,7 +382,7 @@ def daemon_loop(interval: int = 30) -> None:
 
             # Auto-update Context.md with heartbeat
             try:
-                sys.path.insert(0, str(CALLYX_ROOT / "agent" / "skills" / "obsidian"))
+                sys.path.insert(0, str(SOKAR_ROOT / "agent" / "skills" / "obsidian"))
                 from auto_doc import update_context  # type: ignore
 
                 update_context(f"[auto_sync] Daemon heartbeat — {len(files)} changement(s)")

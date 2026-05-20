@@ -1,12 +1,12 @@
-# Callyx — Guide de Démarrage
+# Sokar — Guide de Démarrage
 
-Bienvenue dans le vault Obsidian Callyx. Ce vault centralise la documentation, les objectifs de sprint, les décisions d'architecture et les notes de réunion du projet.
+Bienvenue dans le vault Obsidian Sokar. Ce vault centralise la documentation, les objectifs de sprint, les décisions d'architecture et les notes de réunion du projet.
 
 ---
 
 ## Architecture
 
-Callyx est un monorepo (pnpm workspace + Turborepo) dédié à la gestion de réservations de restaurants avec un assistant vocal IA.
+Sokar est un monorepo (pnpm workspace + Turborepo) dédié à la gestion de réservations de restaurants avec un assistant vocal IA.
 
 - **Backend API** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx → [[Architecture#API]]
 - **Dashboard** : Next.js 14 (App Router) + React 18 + Tailwind 3 → [[Architecture#Dashboard]]

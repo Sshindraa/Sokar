@@ -4,7 +4,7 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: callyx
+      POSTGRES_USER: sokar
       POSTGRES_PASSWORD: password
       POSTGRES_DB: callyx_dev
     ports:

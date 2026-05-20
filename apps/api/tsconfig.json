@@ -6,8 +6,8 @@
     "moduleResolution": "node",
     "target": "ES2022",
     "paths": {
-      "@callyx/config": ["../../packages/config/dist/constants.d.ts"],
-      "@callyx/types": ["../../packages/types/dist/call-event.d.ts"]
+      "@sokar/config": ["../../packages/config/dist/constants.d.ts"],
+      "@sokar/types": ["../../packages/types/dist/call-event.d.ts"]
     }
   },
   "include": ["src"]

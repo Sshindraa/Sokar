@@ -1,21 +1,21 @@
 # Git Auto-Commit System
 
-Système de commits automatiques pour le monorepo Callyx.
+Système de commits automatiques pour le monorepo Sokar.
 
 ## Usage Rapide
 
 ```bash
 # Commit automatique avec message intelligent
-callyx-commit
+sokar-commit
 
 # Commit avec message personnalisé
-callyx-commit "feat(api): ajoute la route reservations"
+sokar-commit "feat(api): ajoute la route reservations"
 
 # Commit + push vers GitHub
-callyx-commit --push
+sokar-commit --push
 
 # Commit personnalisé + push
-callyx-commit "fix: corrige le bug voice" --push
+sokar-commit "fix: corrige le bug voice" --push
 ```
 
 ## Comment ça marche
@@ -37,7 +37,7 @@ Le script `agent/scripts/auto-commit.sh` analyse les fichiers modifiés et gén�
 Ajoute dans ton `~/.zshrc` :
 
 ```bash
-alias callyx-commit="/Users/hamza/Desktop/Callyx/agent/scripts/auto-commit.sh"
+alias sokar-commit="/Users/hamza/Desktop/Sokar/agent/scripts/auto-commit.sh"
 ```
 
 Puis recharge :
@@ -49,7 +49,7 @@ source ~/.zshrc
 ## Commit Manuel (sans script)
 
 ```bash
-cd /Users/hamza/Desktop/Callyx
+cd /Users/hamza/Desktop/Sokar
 git add -A
 git commit -m "ton message"
 git push origin main
@@ -68,24 +68,24 @@ Un daemon tourne en arrière-plan et commit **toutes les 15 minutes** si des fic
 ### Vérifier que le cron est actif
 
 ```bash
-crontab -l | grep callyx
+crontab -l | grep sokar
 ```
 
 Tu dois voir :
 ```
-*/15 * * * * /bin/zsh /Users/hamza/Desktop/Callyx/agent/scripts/auto-commit-daemon.sh
+*/15 * * * * /bin/zsh /Users/hamza/Desktop/Sokar/agent/scripts/auto-commit-daemon.sh
 ```
 
 ### Désactiver le cron auto
 
 ```bash
-crontab -l | grep -v callyx | crontab -
+crontab -l | grep -v sokar | crontab -
 ```
 
 ### Logs du daemon
 
 ```bash
-tail -f /Users/hamza/Desktop/Callyx/.git/auto-commit.log
+tail -f /Users/hamza/Desktop/Sokar/.git/auto-commit.log
 ```
 
 ### Fonctionnement du daemon

@@ -1,7 +1,7 @@
 import { db }                               from '../../shared/db/client';
 import { getCachedContext, setCachedContext, redisCache } from '../../shared/redis/client';
 import * as Sentry                           from '@sentry/node';
-import { INTERNAL_CALL_ALERT_THRESHOLD, CIRCUIT_BREAKER_HOURLY_LIMIT, REDIS_CTX_TTL_SECONDS } from '@callyx/config';
+import { INTERNAL_CALL_ALERT_THRESHOLD, CIRCUIT_BREAKER_HOURLY_LIMIT, REDIS_CTX_TTL_SECONDS } from '@sokar/config';
 
 function getCurrentMonthKey() {
   const d = new Date();

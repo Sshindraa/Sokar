@@ -1,10 +1,10 @@
 #!/usr/bin/env zsh
-# Setup Hermes Agent pour Callyx
+# Setup Hermes Agent pour Sokar
 # Usage: zsh agent/scripts/setup.sh
 
 set -euo pipefail
 
-REPO_ROOT="/Users/hamza/Desktop/Callyx"
+REPO_ROOT="/Users/hamza/Desktop/Sokar"
 HERMES_BIN_DIR="$HOME/Library/Python/3.14/bin"
 
 # Couleurs

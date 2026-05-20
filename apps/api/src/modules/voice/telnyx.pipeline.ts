@@ -5,7 +5,7 @@ import { RestaurantService }  from '../restaurants/restaurant.service';
 import { CustomerService }    from '../customers/customer.service';
 import { buildSystemPrompt }  from './prompts';
 import { detectOutcome }      from './outcome';
-import { DEFAULT_VOICE_ID, LLM_MODELS, LLM_VIP_TURN_THRESHOLD } from '@callyx/config';
+import { DEFAULT_VOICE_ID, LLM_MODELS, LLM_VIP_TURN_THRESHOLD } from '@sokar/config';
 
 interface TelnyxCallPayload {
   data: {

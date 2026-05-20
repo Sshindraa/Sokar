@@ -1,5 +1,5 @@
 {
-  "name": "@callyx/types",
+  "name": "@sokar/types",
   "version": "0.0.1",
   "private": true,
   "main": "./dist/call-event.js",

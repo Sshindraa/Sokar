@@ -1,5 +1,5 @@
 import { db } from '../../shared/db/client';
-import { THEFORK_COMMISSION_PER_PAX } from '@callyx/config';
+import { THEFORK_COMMISSION_PER_PAX } from '@sokar/config';
 
 export interface RoiReport {
   period:            string;
@@ -7,7 +7,7 @@ export interface RoiReport {
   totalCouverts:     number;
   estimatedRevenue:  number;
   theforkSavings:    number;
-  callyxMonthlyCost: number;
+  sokarMonthlyCost: number;
   roiMultiplier:     number;
 }
 
@@ -44,7 +44,7 @@ export async function computeRoi(restaurantId: string, period: string): Promise<
     totalCouverts,
     estimatedRevenue,
     theforkSavings,
-    callyxMonthlyCost: monthlyCost,
+    sokarMonthlyCost: monthlyCost,
     roiMultiplier: monthlyCost > 0 ? Math.round((theforkSavings / monthlyCost) * 10) / 10 : 0,
   };
 }

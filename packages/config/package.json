@@ -1,5 +1,5 @@
 {
-  "name": "@callyx/config",
+  "name": "@sokar/config",
   "version": "0.0.1",
   "private": true,
   "main": "./dist/constants.js",

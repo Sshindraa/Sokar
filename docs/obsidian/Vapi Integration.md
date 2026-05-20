@@ -32,7 +32,7 @@ Appel entrant (numéro Vapi ou transfert Telnyx)
 VAPI_API_KEY="sk_vapi_..."
 VAPI_WEBHOOK_SECRET="whsec_..."
 VAPI_ASSISTANT_ID="asst_..."
-PUBLIC_URL="https://api.callyx.fr"
+PUBLIC_URL="https://api.sokar.fr"
 ```
 
 ### 2. Dashboard Vapi
@@ -40,11 +40,11 @@ PUBLIC_URL="https://api.callyx.fr"
 1. Créer un compte sur [vapi.ai](https://vapi.ai)
 2. Créditer le compte (tu as 10 crédits)
 3. Créer un **Assistant** :
-   - Name: `Callyx Assistant`
+   - Name: `Sokar Assistant`
    - First message: `"Bonjour, je suis l'assistant virtuel de votre restaurant..."`
    - Model: `gpt-4o`
    - Voice: `11labs` → `Adam` (français)
-   - Server URL: `https://api.callyx.fr/webhooks/vapi`
+   - Server URL: `https://api.sokar.fr/webhooks/vapi`
    - Server Secret: (optionnel)
 4. Ajouter un **numéro de téléphone** (ou utiliser le numéro Telnyx)
 5. Lier l'assistant au numéro

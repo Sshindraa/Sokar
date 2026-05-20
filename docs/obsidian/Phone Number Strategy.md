@@ -1,4 +1,4 @@
-# Phone Number Strategy — Callyx
+# Phone Number Strategy — Sokar
 
 > Décision architecture : comment gérer les numéros de téléphone à l'échelle.
 > Date : 2026-05-20
