@@ -2,7 +2,7 @@
 
 ## Dernière activité
 
-2026-05-20 13:31 — [general] echo test
+2026-05-20 13:46 — [agent] Test workflow Cascade→Hermes — fichier test-workflow.md créé, MCP hermes Enabled (1/1)
 
 ## Décisions récentes
 
