@@ -1,21 +1,19 @@
 # Hermes Agent — Configuration Sokar
-# Architecture 2 niveaux inversée:
-# - Primary (executor): deepseek/deepseek-v4-flash (OpenRouter) - fait 90% du travail
-# - Subagent (planner): kimi-k2.6-precision (Crof AI) - uniquement pour tâches complexes
-# Copier vers ~/.hermes/config.yaml
-# NOTE: plus de modèle :free — tout est payant via credits OpenRouter/Crof
+# Architecture: OpenCode Go primary → OpenRouter fallback
+# Copier vers ~/.hermes/config.yaml pour appliquer
 
 model:
-  provider: openrouter
-  default: deepseek/deepseek-v4-flash
+  provider: custom
+  default: deepseek-v4-flash
+  base_url: https://opencode.ai/zen/go/v1
+  key_env: OPENCODE_GO_API_KEY
   fallback:
-    provider: custom
-    model: deepseek-v4-flash
-    base_url: https://crof.ai/v1
+    provider: openrouter
+    model: deepseek/deepseek-v4-flash
+    base_url: https://openrouter.ai/api/v1
     api_key: ''
   persistent: true
 
 skills_dir: /Users/hamza/Desktop/Sokar/agent/skills
 
-# Orchestration autonome avec architecture 2 niveaux
-# kimi-k2.6-precision pour le planning, deepseek/deepseek-v4-flash pour l'exécution
+# Cascade (kimi-k2.6) planifie → Hermes (deepseek-v4-flash) exécute via MCP
