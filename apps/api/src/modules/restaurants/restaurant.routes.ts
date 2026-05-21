@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z }              from 'zod';
 import { db }             from '../../shared/db/client';
 import { redisCache }     from '../../shared/redis/client';
-import { authGuard }      from '../../shared/security/auth.guard';
+import { requireOrg }     from '../../plugins/clerk';
 
 const CreateRestaurantSchema = z.object({
   name:         z.string().min(2).max(100),
@@ -18,7 +18,7 @@ const CreateRestaurantSchema = z.object({
 
 export async function restaurantRoutes(app: FastifyInstance) {
 
-  app.post('/restaurants', { preHandler: authGuard }, async (req, reply) => {
+  app.post('/restaurants', { preHandler: requireOrg() }, async (req, reply) => {
     const body = CreateRestaurantSchema.parse(req.body);
     try {
       const restaurant = await db.restaurant.create({ data: body });
@@ -36,14 +36,14 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
   });
 
-  app.get('/restaurants/:id', { preHandler: authGuard }, async (req, reply) => {
+  app.get('/restaurants/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
     return reply.send(
       await db.restaurant.findUniqueOrThrow({ where: { id }, include: { personality: true } })
     );
   });
 
-  app.patch('/restaurants/:id', { preHandler: authGuard }, async (req, reply) => {
+  app.patch('/restaurants/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const body   = CreateRestaurantSchema.partial().parse(req.body);
     const updated = await db.restaurant.update({ where: { id }, data: body });

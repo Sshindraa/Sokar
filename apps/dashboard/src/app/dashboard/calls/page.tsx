@@ -3,43 +3,30 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-
-interface CallRecord {
-  id: string;
-  callSid: string;
-  durationSec: number | null;
-  transcript: string | null;
-  intent: string | null;
-  outcome: string | null;
-  sttProvider: string | null;
-  llmProvider: string | null;
-  ttsProvider: string | null;
-  carrier: string | null;
-  createdAt: string;
-}
-
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-const RESTAURANT_ID = '00000000-0000-0000-0000-000000000001';
+import { useApi } from '../../lib/api';
 
 export default function CallsPage() {
-  const [calls, setCalls] = useState<CallRecord[]>([]);
+  const { get, orgId } = useApi();
+
+  const [calls, setCalls] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!orgId) return;
+
     async function fetchCalls() {
-      const res = await fetch(
-        `${API}/calls?restaurantId=${RESTAURANT_ID}&limit=100&offset=0`,
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setCalls(data.data);
-        setTotal(data.total);
+      try {
+        const data = await get(`calls?restaurantId=${orgId}&limit=100&offset=0`);
+        setCalls(data.data ?? []);
+        setTotal(data.total ?? 0);
+      } catch {
+        // silent
       }
       setLoading(false);
     }
     fetchCalls();
-  }, []);
+  }, [orgId]);
 
   if (loading) {
     return <div className="text-center text-[var(--muted-foreground)]">Chargement...</div>;

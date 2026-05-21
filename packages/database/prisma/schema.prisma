@@ -124,7 +124,7 @@ model AgentPersonality {
   speakingRate      Decimal     @default(1.0) @map("speaking_rate") @db.Decimal(3, 2)
   fillerStyle       FillerStyle @default(CASUAL) @map("filler_style")
   systemPromptExtra String?     @map("system_prompt_extra")
-  voiceIdEl         String?     @map("voice_id_el")
+  voiceIdCa         String?     @map("voice_id_ca")
   updatedAt         DateTime    @updatedAt @map("updated_at")
   restaurant        Restaurant  @relation(fields: [restaurantId], references: [id])
   @@map("agent_personalities")

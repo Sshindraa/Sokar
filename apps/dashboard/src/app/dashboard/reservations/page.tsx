@@ -3,39 +3,28 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-
-interface ReservationRecord {
-  id: string;
-  customerName: string;
-  customerPhone: string | null;
-  reservedAt: string;
-  partySize: number;
-  status: string;
-  estimatedRevenue: string | null;
-  confirmedRevenue: string | null;
-  createdAt: string;
-}
-
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-const RESTAURANT_ID = '00000000-0000-0000-0000-000000000001';
+import { useApi } from '../../lib/api';
 
 export default function ReservationsPage() {
-  const [reservations, setReservations] = useState<ReservationRecord[]>([]);
+  const { get, orgId } = useApi();
+
+  const [reservations, setReservations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!orgId) return;
+
     async function fetchReservations() {
-      const res = await fetch(
-        `${API}/reservations?restaurantId=${RESTAURANT_ID}&limit=100`,
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setReservations(data);
+      try {
+        const data = await get(`reservations?restaurantId=${orgId}&limit=100`);
+        setReservations(Array.isArray(data) ? data : []);
+      } catch {
+        // silent
       }
       setLoading(false);
     }
     fetchReservations();
-  }, []);
+  }, [orgId]);
 
   if (loading) {
     return <div className="text-center text-[var(--muted-foreground)]">Chargement...</div>;

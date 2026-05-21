@@ -2,7 +2,6 @@ import Fastify               from 'fastify';
 import { db }                from './shared/db/client';
 import { redisCache }        from './shared/redis/client';
 import { queues }            from './shared/queue/queues';
-import { voiceRoutes }       from './modules/voice/pipeline';
 import { telnyxVoiceRoutes } from './modules/voice/telnyx.pipeline';
 import { restaurantRoutes }  from './modules/restaurants/restaurant.routes';
 import { customerRoutes }    from './modules/customers/customer.routes';
@@ -10,11 +9,12 @@ import { analyticsRoutes }   from './modules/analytics/analytics.routes';
 import { reservationRoutes } from './modules/reservations/reservation.routes';
 import { callRoutes }        from './modules/calls/call.routes';
 import { dashboardRoutes }   from './modules/dashboard/dashboard.routes';
-import vapiRoutes            from './modules/voice/vapi.routes';
-import { toNodeHandler }     from 'better-auth/node';
-import { auth }              from './lib/auth';
+import { authSyncRoutes }    from './modules/auth/auth.routes';
 import { registerCors }      from './plugins/cors';
 import { registerRateLimit } from './plugins/rate-limit';
+import { registerClerk }     from './plugins/clerk';
+import { registerMediaStreamRoutes } from './modules/voice/stream/handler';
+import { initFillerCache } from './modules/voice/stream/fillers-cache';
 import './shared/queue/workers/evening-report.worker';
 import './shared/queue/workers/sms-confirmation.worker';
 import './shared/queue/workers/outbound-confirm.worker';
@@ -27,8 +27,8 @@ export async function buildApp() {
 
   await registerCors(app);
   await registerRateLimit(app);
+  await registerClerk(app);
 
-  await app.register(voiceRoutes);
   await app.register(telnyxVoiceRoutes);
   await app.register(restaurantRoutes);
   await app.register(customerRoutes);
@@ -36,19 +36,14 @@ export async function buildApp() {
   await app.register(reservationRoutes);
   await app.register(callRoutes);
   await app.register(dashboardRoutes);
-  await app.register(vapiRoutes);
+  await app.register(authSyncRoutes);
 
-  await app.register(async (instance) => {
-    instance.route({
-      method:  ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      url:     '/auth/*',
-      handler: async (req, reply) => {
-        const handler = toNodeHandler(auth);
-        await handler(req.raw, reply.raw);
-        reply.hijack();
-      },
-    });
-  });
+  // WebSocket plugin + media stream routes (flux pipeline)
+  await app.register(import('@fastify/websocket'));
+  registerMediaStreamRoutes(app);
+
+  // Init filler cache (pré-génération des fillers audio)
+  await initFillerCache();
 
   app.get('/health', async (_req, reply) => {
     let dbStatus = 'ok', redisStatus = 'ok';

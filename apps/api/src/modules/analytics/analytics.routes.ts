@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z }              from 'zod';
-import { authGuard }      from '../../shared/security/auth.guard';
-import { computeRoi }     from './roi.service';
 import { db }             from '../../shared/db/client';
+import { requireOrg }     from '../../plugins/clerk';
+import { computeRoi }     from './roi.service';
 
 const AnalyticsQuerySchema = z.object({
   restaurantId: z.string().uuid(),
@@ -11,13 +11,13 @@ const AnalyticsQuerySchema = z.object({
 
 export async function analyticsRoutes(app: FastifyInstance) {
 
-  app.get('/analytics/roi', { preHandler: authGuard }, async (req, reply) => {
+  app.get('/analytics/roi', { preHandler: requireOrg() }, async (req, reply) => {
     const query = AnalyticsQuerySchema.parse(req.query);
     const roi   = await computeRoi(query.restaurantId, query.period);
     return reply.send(roi);
   });
 
-  app.get('/analytics/latency', { preHandler: authGuard }, async (req, reply) => {
+  app.get('/analytics/latency', { preHandler: requireOrg() }, async (req, reply) => {
     const query = AnalyticsQuerySchema.parse(req.query);
     const { period, restaurantId } = query;
     const [year, month] = period.split('-').map(Number);

@@ -6,7 +6,7 @@ Test de Vapi en parallèle du pipeline Telnyx existant.
 
 ```
 Appel entrant (numéro Vapi ou transfert Telnyx)
-    → Vapi orchestre : STT → LLM (GPT-4o) → TTS (ElevenLabs)
+    → Vapi orchestre : STT → LLM (GPT-4o) → TTS (Cartesia Sonic 3.5)
     → Quand l'IA veut "créer une réservation"
       → Webhook POST /webhooks/vapi
       → API Fastify exécute la fonction
@@ -19,7 +19,7 @@ Appel entrant (numéro Vapi ou transfert Telnyx)
 |---|---|---|
 | **STT** | Deepgram (inclus) | Deepgram (manuel) |
 | **LLM** | GPT-4o / Claude (inclus) | OpenRouter (manuel) |
-| **TTS** | ElevenLabs (inclus) | ElevenLabs (manuel) |
+| **TTS** | Cartesia Sonic 3.5 | Cartesia Sonic 3.5 |
 | **Coût** | ~$0.05/min (crédits) | ~$0.004/min Telnyx + coûts AI séparés |
 | **Code** | Minimal (webhooks uniquement) | Pipeline complet custom |
 | **Contrôle** | Limité (dashboard Vapi) | Total |

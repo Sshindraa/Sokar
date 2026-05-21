@@ -9,7 +9,8 @@ export const CIRCUIT_BREAKER_HOURLY_LIMIT  = 200;
 export const REDIS_CTX_TTL_SECONDS         = 300;
 export const SMS_RATE_LIMIT_SECONDS        = 900;
 
-export const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
+export const CARTESIA_MODEL = 'sonic-3.5';
+export const DEFAULT_CARTESIA_VOICE_ID = 'f786b574-daa5-4673-aa0c-cbe3e8534c02';
 
 // ─── Sprint 2 — TTS Cache ─────────────────────────────────────────────────
 export const TTS_CACHE_TTL_SECONDS      = 86_400 * 7;  // 7 jours
@@ -30,7 +31,7 @@ export const LLM_MODELS = {
   FALLBACK: 'x-ai/grok-4.1-fast',
 } as const;
 
-export const TTS_PROVIDERS = ['elevenlabs', 'cartesia', 'deepgram-aura'] as const;
+export const TTS_PROVIDERS = ['cartesia', 'deepgram-aura'] as const;
 export type  TtsProvider   = typeof TTS_PROVIDERS[number];
 
 // ─── Sprint 2 — Carrier ────────────────────────────────────────────────────

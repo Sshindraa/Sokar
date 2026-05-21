@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import { ReactNode } from 'react';
+import { SyncOrganization } from './SyncOrganization';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen">
       <aside className="w-64 border-r border-[var(--border)] bg-[var(--muted)] p-6">
         <Link href="/dashboard" className="text-xl font-bold text-[var(--primary)]">
-          Callyx
+          Sokar
         </Link>
         <nav className="mt-8 space-y-2">
           <NavItem href="/dashboard" label="Vue d'ensemble" />
@@ -23,7 +24,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </Link>
         </div>
       </aside>
-      <main className="flex-1 p-8">{children}</main>
+      <main className="flex-1 p-8">
+        <SyncOrganization />
+        {children}
+      </main>
     </div>
   );
 }

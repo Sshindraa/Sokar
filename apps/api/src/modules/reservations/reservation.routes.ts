@@ -1,8 +1,13 @@
 import { FastifyInstance } from 'fastify';
 import { z }              from 'zod';
 import { db }             from '../../shared/db/client';
+import { requireOrg }     from '../../plugins/clerk';
 import { ReservationService } from './reservation.service';
 import { CreateReservationSchema, ReservationQuerySchema } from './reservation.schema';
+
+// --- auth/public split ---
+// Les routes GET/PATCH/DELETE nécessitent une organisation (dashboard manager).
+// POST /reservations est publique (appelée par le pipeline vocal Telnyx).
 
 const UpdateReservationSchema = z.object({
   status:       z.enum(['CONFIRMED', 'CANCELLED', 'NO_SHOW', 'SEATED']).optional(),
@@ -12,7 +17,7 @@ const UpdateReservationSchema = z.object({
 
 export async function reservationRoutes(app: FastifyInstance) {
 
-  app.get('/reservations', async (req, reply) => {
+  app.get('/reservations', { preHandler: requireOrg() }, async (req, reply) => {
     const query = ReservationQuerySchema.parse(req.query);
     const reservations = await ReservationService.findByRestaurant(query.restaurantId, query.date);
     return reply.send(reservations);

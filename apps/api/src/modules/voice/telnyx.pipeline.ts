@@ -5,7 +5,12 @@ import { RestaurantService }  from '../restaurants/restaurant.service';
 import { CustomerService }    from '../customers/customer.service';
 import { buildSystemPrompt }  from './prompts';
 import { detectOutcome }      from './outcome';
-import { DEFAULT_VOICE_ID, LLM_MODELS, LLM_VIP_TURN_THRESHOLD } from '@sokar/config';
+import { DEFAULT_CARTESIA_VOICE_ID, CARTESIA_MODEL, LLM_MODELS, LLM_VIP_TURN_THRESHOLD } from '@sokar/config';
+import { CallSessionManager } from './stream/manager';
+import { connectDeepgramFlux } from './stream/deepgram-bridge';
+
+/** Flag pour activer le pipeline Flux media stream (au lieu de ai_config) */
+const FLUX_ENABLED = process.env.FLUX_ENABLED === 'true';
 
 interface TelnyxCallPayload {
   data: {
@@ -60,6 +65,58 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
 
         const systemPrompt = buildSystemPrompt({ ...ctx, customerExtra });
 
+        // ─── Pipeline Flux (media stream) — FLUX_ENABLED = true ───
+        if (FLUX_ENABLED) {
+          const mgr = CallSessionManager.getInstance();
+          mgr.create({
+            callControlId: payload.call_control_id,
+            callSessionId: payload.call_leg_id,
+            from:          payload.from,
+            to:            payload.to,
+            restaurantId:  ctx.id,
+            systemPrompt:  systemPrompt,
+            isVip:         customer?.isVip ?? false,
+            telnyxWs:      null as any,
+          });
+
+          app.log.info({ callId: payload.call_control_id }, 'Flux pipeline — answering with media stream');
+
+          // Pre-warm Deepgram : initier la connexion en parallèle de la réponse
+          // Gain : ~50-80ms de TLS + WS handshake absorbés
+          connectDeepgramFlux(mgr.get(payload.call_control_id)!)
+            .then(() => app.log.info({ callId: payload.call_control_id }, 'Deepgram pre-warmed'))
+            .catch((err: Error) => app.log.error({ err: err.message }, 'Deepgram pre-warm failed'));
+
+          // Répondre avec media streaming via l'API Telnyx
+          const publicUrl = process.env.PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? 4000}`;
+          const wsUrl = publicUrl.replace(/^http/, 'wss') + `/voice/stream/${payload.call_control_id}`;
+
+          // Fire-and-forget : on répond d'abord au webhook, puis on appelle Telnyx
+          reply.send({ result: 'ok' });
+
+          fetch(`https://api.telnyx.com/v2/calls/${payload.call_control_id}/actions/answer`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${process.env.TELNYX_API_KEY}`,
+            },
+            body: JSON.stringify({
+              stream_url: wsUrl,
+              stream_track: 'inbound_track',
+              stream_bidirectional_mode: 'rtp',
+              stream_bidirectional_codec: 'L16',
+            }),
+          }).then(async (res) => {
+            if (!res.ok) app.log.error({ status: res.status, body: await res.text() }, 'Telnyx answer failed');
+            else app.log.info({ callId: payload.call_control_id }, 'Media stream started');
+          }).catch((err) => {
+            app.log.error({ err: err.message }, 'Telnyx answer error');
+          });
+
+          return; // réponse déjà envoyée
+        }
+
+        // ─── Pipeline AI config (legacy) — FLUX_ENABLED = false ───
         return reply.send({
           call_control_id: payload.call_control_id,
           ai_config: {
@@ -76,8 +133,9 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
               messages: [{ role: 'system', content: systemPrompt }],
             },
             tts: {
-              provider:         'elevenlabs',
-              voice_id:         ctx.personality?.voiceIdEl ?? DEFAULT_VOICE_ID,
+              provider:         'cartesia',
+              voice_id:         ctx.personality?.voiceIdCa ?? DEFAULT_CARTESIA_VOICE_ID,
+              model:            CARTESIA_MODEL,
               chunk_on:         ['.', '!', '?'],
               min_chunk_length: 4,
             },
@@ -172,7 +230,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         outcome:     detectOutcome({ transcript, endedReason: ended_reason }),
         sttProvider: stt_provider ?? 'deepgram-nova3',
         llmProvider: llm_provider ?? LLM_MODELS.FLASH,
-        ttsProvider: tts_provider ?? 'elevenlabs',
+        ttsProvider: tts_provider ?? 'cartesia-sonic3.5',
         carrier:     'telnyx',
       },
     });
