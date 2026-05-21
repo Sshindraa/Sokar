@@ -1,20 +1,20 @@
 import { FastifyInstance } from 'fastify';
 import { db }             from '../../shared/db/client';
-import { authGuard }      from '../../shared/security/auth.guard';
 import { redisCache }     from '../../shared/redis/client';
+import { requireOrg }     from '../../plugins/clerk';
 import { CreateCustomerSchema, UpdateCustomerSchema, ToggleVipSchema } from './customer.schema';
 
 export async function customerRoutes(app: FastifyInstance) {
 
-  app.get('/customers', { preHandler: authGuard }, async (req, reply) => {
-    const { restaurantId, phone } = req.query as { restaurantId?: string; phone?: string };
-    if (!restaurantId) return reply.status(400).send({ error: 'restaurantId required' });
+  app.get('/customers', { preHandler: requireOrg() }, async (req, reply) => {
+    const { phone } = req.query as { phone?: string };
+    const restaurantId = (req as any).restaurantId;
     const where: any = { restaurantId };
     if (phone) where.phone = phone;
     return reply.send(await db.customer.findMany({ where, orderBy: { visitCount: 'desc' }, take: 50 }));
   });
 
-  app.post('/customers', { preHandler: authGuard }, async (req, reply) => {
+  app.post('/customers', { preHandler: requireOrg() }, async (req, reply) => {
     const body = CreateCustomerSchema.parse(req.body);
     try {
       const customer = await db.customer.upsert({
@@ -29,7 +29,7 @@ export async function customerRoutes(app: FastifyInstance) {
     }
   });
 
-  app.patch('/customers/:id', { preHandler: authGuard }, async (req, reply) => {
+  app.patch('/customers/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id }  = req.params as { id: string };
     const body    = UpdateCustomerSchema.parse(req.body);
     const updated = await db.customer.update({ where: { id }, data: body });
@@ -37,7 +37,7 @@ export async function customerRoutes(app: FastifyInstance) {
     return reply.send(updated);
   });
 
-  app.post('/customers/:id/vip', { preHandler: authGuard }, async (req, reply) => {
+  app.post('/customers/:id/vip', { preHandler: requireOrg() }, async (req, reply) => {
     const { id }    = req.params as { id: string };
     const { isVip } = ToggleVipSchema.parse(req.body);
     const updated   = await db.customer.update({ where: { id }, data: { isVip } });

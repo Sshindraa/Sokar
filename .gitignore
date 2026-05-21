@@ -12,6 +12,9 @@ dist
 # Workspace agent Hermes
 .agent-workspace/
 
+# Redis
+dump.rdb
+
 # On versionne les .env.example et .env.test
 !.env.example
 !.env.test

@@ -1,0 +1,28 @@
+# Hermes Agent — Configuration Sokar
+# Architecture: Hermes CLI (deepseek-v4-pro orchestrateur via Crof AI + deepseek-v4-flash executeur via OpenCode Go)
+# Copier vers ~/.hermes/config.yaml pour appliquer
+
+model:
+  provider: opencode-go
+  default: deepseek-v4-flash
+  base_url: https://opencode.ai/zen/go/v1
+  key_env: OPENCODE_GO_API_KEY
+  fallback:
+    provider: openrouter
+    model: deepseek/deepseek-v4-flash
+    base_url: https://openrouter.ai/api/v1
+    api_key: ''
+  persistent: true
+
+delegation:
+  model: deepseek/deepseek-v4-pro
+  provider: custom
+  base_url: https://crof.ai/v1
+  api_key_env: CROF_API_KEY
+  orchestrator_enabled: true
+  max_iterations: 50
+  child_timeout_seconds: 600
+
+skills_dir: /Users/hamza/Desktop/Sokar/tools/hermes/skills
+
+# Orchestrateur (Crof AI deepseek-v4-pro) planifie → Executeur (Hermes deepseek-v4-flash OpenCode Go) exécute

@@ -8,12 +8,11 @@ L'agent Sokar utilise Hermes CLI pour automatiser les tâches de développement 
 
 ## Architecture
 
-- **Backend** : Hermes CLI — modèle unique
-- **Modèle principal** : deepseek/deepseek-v4-flash (OpenRouter) — fait planification + exécution. Fallback: Crof AI deepseek-v4-flash
-- **Windsurf Cascade** : kimi-k2.6 (Windsurf Pro gratuit) — planification/raisonnement uniquement, communique via MCP. Toute execution est deleguee a Hermes via l'outil MCP `execute_task`.
-- **Crof AI kimi-k2.6** : plus utilisé (credits épuisés). Pas de rechargement prévu.
-- **Config** : `agent/config/hermes-config.yaml` - Configuration LLM
-- **MCP** : `agent/config/mcp-config.json` - Integration MCP pour Windsurf (hermes, postgres, github)
+- **Orchestrateur (planification)** : Crof AI — modèle `deepseek/deepseek-v4-pro`
+- **Executeur** : Hermes CLI — modèle `deepseek-v4-flash` (OpenCode Go, fallback OpenRouter)
+- **Communication** : Hermes `delegate_task` → subagents Crof AI pour la planification
+- **Plus de Windsurf Cascade** — tout passe par Hermes CLI directement
+- **Config** : `agent/config/hermes-config.yaml` — Configuration LLM
 - **Contexte** : `AGENTS.md` - Contexte du projet pour Hermes CLI
 
 ## Stack Sokar
@@ -42,41 +41,31 @@ Exemples :
 zsh agent/scripts/start-hermes.sh
 ```
 
-### Via MCP Windsurf (IDE) — Workflow enforce
-
-Le MCP serveur `hermes` n'expose QU'UN SEUL outil : `execute_task`.
-
-```
-Cascade (kimi-k2.6)                    Hermes (deepseek-v4-flash)
-      │ planifie                             │ execute
-      │── execute_task("fais X") ──────────→│
-      │←── resultat de l'execution ─────────│
+### Mode orchestré (recommandé)
+```zsh
+hermes -z "ta tâche ici" --mode delegate
 ```
 
-- **Cascade** : planification uniquement, zéro execution directe
-- **Hermes** : execution via `hermes -z "task"` avec timeout 600s et retry 2x
-- **Logs** : `~/.hermes/logs/cascade_hermes_bridge.md` (trace complète)
-- **Fichiers** : `.windsurfrules` = contrat de comportement pour Cascade
-            `agent/scripts/mcp_serve.py` = MCP serveur (1 seul outil)
+- L'orchestrateur (Crof AI deepseek-v4-pro) planifie la tâche
+- Les sous-agents (deepseek-v4-flash OpenCode Go) exécutent
+- Résultat consolidé retourné automatiquement
 
-Les autres outils MCP (run_shell, read_file, search_files, git_status) ont
-ete supprimes pour empecher Cascade de tricher.
-
-Les MCP servers configurés :
-- **hermes** : Orchestrateur Sokar
-- **sokar-postgres** : PostgreSQL
-- **sokar-github** : GitHub
+Exemples :
+- "Add Zod validation to contact routes"
+- "Create KPI latency component in dashboard"
+- "Refactor Telnyx webhook handler with retry logic"
 
 ## Providers LLM
 
-Modèle unique :
-- **deepseek/deepseek-v4-flash** (OpenRouter) — planification + exécution, 100% du travail dans Hermes
-- **Fallback** : deepseek-v4-flash (Crof AI) — utilisé si OpenRouter 429/500/401
+Architecture dual-model :
 
-Windsurf Cascade :
-- **kimi-k2.6** (Windsurf Pro gratuit) — planification uniquement, communique via Hermes MCP
+- **Executeur** : `deepseek-v4-flash` via **OpenCode Go** (OpenAI-compatible, `https://opencode.ai/zen/go/v1`) — 100% de l'exécution dans Hermes
+  - Fallback : `deepseek/deepseek-v4-flash` via **OpenRouter**
 
-Crof AI kimi-k2.6 : désactivé, crédits épuisés.
+- **Orchestrateur** : `deepseek/deepseek-v4-pro` via **Crof AI** (`https://crof.ai/v1`) — planification, découpage de tâches, coordination des subagents
+  - Utilisé par Hermes `delegate_task` (section `delegation` dans la config)
+
+Windsurf Cascade : abandonné — plus utilisé.
 
 ## Règles de style
 

@@ -1,6 +1,6 @@
 # Telnyx Pipeline
 
-**Dernière mise à jour** : Mai 2025
+**Dernière mise à jour** : Mai 2026
 **Carrier** : Telnyx (production)
 **Code** : `apps/api/src/modules/voice/telnyx.pipeline.ts`
 
@@ -35,8 +35,10 @@ POST /voice/telnyx  ← call.initiated webhook
 |-------|----------|--------|--------|
 | **STT** | Deepgram | `nova-3` | Langue `fr`, endpointing 300ms, utterance_end_ms 1000ms |
 | **LLM** | OpenRouter | `deepseek/deepseek-v4-flash` (default) ou PRO si VIP | System prompt + conversation turns |
-| **TTS** | ElevenLabs | Voice ID depuis `ctx.personality.voiceIdEl` | Chunk on `.`, `!`, `?`, min_chunk_length 4 |
+| **TTS** | Cartesia | `sonic-3.5` + Katie (`f786b574-daa5-4673-aa0c-cbe3e8534c02`) | Chunk on `.`, `!`, `?`, min_chunk_length 4. Voice ID depuis `ctx.personality.voiceIdCa` |
 | **First utterance** | — | — | `"Bonjour, ${ctx.name}..."` |
+
+> ⚠️ **Limitation sonic-3.5** : les contrôles de `speed` et `volume` sont désactivés temporairement sur sonic-3.5 (depuis avril 2026, cf doc Cartesia). Le champ `speakingRate` dans `AgentPersonality` n'a pas d'effet tant que cette limitation est en place. Pour utiliser speed/volume, il faudrait revenir à `sonic-3` (snapshotté) ou attendre la réactivation par Cartesia.
 
 ---
 
@@ -59,7 +61,7 @@ POST /voice/telnyx  ← call.initiated webhook
          │ réponse textuelle
          ▼
 ┌─────────────────┐
-│  ElevenLabs TTS  │  ← synthèse vocale
+│  Cartesia Sonic 3.5 TTS  │  ← synthèse vocale
 │   (audio stream) │
 └────────┬────────┘
          │ audio chunks

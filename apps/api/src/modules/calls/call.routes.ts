@@ -1,16 +1,17 @@
 import { FastifyInstance } from 'fastify';
 import { z }              from 'zod';
 import { db }             from '../../shared/db/client';
+import { requireOrg }     from '../../plugins/clerk';
 
 const CallQuerySchema = z.object({
-  restaurantId: z.string().uuid(),
+  restaurantId: z.string(),
   limit:        z.coerce.number().int().min(1).max(100).default(50),
   offset:       z.coerce.number().int().min(0).default(0),
 });
 
 export async function callRoutes(app: FastifyInstance) {
 
-  app.get('/calls', async (req, reply) => {
+  app.get('/calls', { preHandler: requireOrg() }, async (req, reply) => {
     const query = CallQuerySchema.parse(req.query);
     const { restaurantId, limit, offset } = query;
 

@@ -12,9 +12,9 @@ export interface RoiReport {
 }
 
 const PLAN_PRICES: Record<string, number> = {
-  STARTER: 89,
-  PRO:     179,
-  PREMIUM: 299,
+  STARTER: 149,
+  PRO:     249,
+  PREMIUM: 349,
 };
 
 export async function computeRoi(restaurantId: string, period: string): Promise<RoiReport> {
@@ -36,7 +36,7 @@ export async function computeRoi(restaurantId: string, period: string): Promise<
   const totalCouverts    = reservations.reduce((s: number, r: any) => s + r.partySize, 0);
   const estimatedRevenue = reservations.reduce((s: number, r: any) => s + Number(r.estimatedRevenue ?? 0), 0);
   const theforkSavings   = totalCouverts * THEFORK_COMMISSION_PER_PAX;
-  const monthlyCost      = PLAN_PRICES[restaurant.plan] ?? 89;
+  const monthlyCost      = PLAN_PRICES[restaurant.plan] ?? 149;
 
   return {
     period,

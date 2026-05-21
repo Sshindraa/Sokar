@@ -3,84 +3,40 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-
-interface DashboardStats {
-  totalCalls: number;
-  totalReservations: number;
-  answeredRate: number;
-  revenueRecovered: number;
-}
-
-interface RecentActivity {
-  reservations: Array<{
-    id: string;
-    restaurantId: string;
-    callId: string | null;
-    customerId: string | null;
-    reservedAt: string;
-    partySize: number;
-    customerName: string;
-    customerPhone: string | null;
-    status: string;
-    estimatedRevenue: string | null;
-    confirmedRevenue: string | null;
-    createdAt: string;
-  }>;
-  calls: Array<{
-    id: string;
-    restaurantId: string;
-    callSid: string;
-    durationSec: number | null;
-    transcript: string | null;
-    intent: string | null;
-    outcome: string | null;
-    sttProvider: string | null;
-    llmProvider: string | null;
-    ttsProvider: string | null;
-    carrier: string | null;
-    createdAt: string;
-  }>;
-}
-
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-const RESTAURANT_ID = '00000000-0000-0000-0000-000000000001';
+import { useApi } from '../../lib/api';
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [activity, setActivity] = useState<RecentActivity | null>(null);
+  const { get, orgId } = useApi();
+
+  const [stats, setStats] = useState<any>(null);
+  const [activity, setActivity] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    if (!orgId) return;
+
     async function fetchData() {
       try {
-        const [statsRes, activityRes] = await Promise.all([
-          fetch(`${API}/dashboard/stats?restaurantId=${RESTAURANT_ID}`),
-          fetch(`${API}/dashboard/recent-activity?restaurantId=${RESTAURANT_ID}`),
+        const [statsData, activityData] = await Promise.all([
+          get(`dashboard/stats?restaurantId=${orgId}`),
+          get(`dashboard/recent-activity?restaurantId=${orgId}`),
         ]);
-
-        if (!statsRes.ok || !activityRes.ok) {
-          throw new Error('Erreur serveur');
-        }
-
-        const statsData = await statsRes.json();
-        const activityData = await activityRes.json();
-
         setStats({
-          totalCalls: statsData.total_calls,
-          totalReservations: statsData.total_reservations,
-          answeredRate: statsData.answered_rate,
-          revenueRecovered: statsData.revenue_recovered,
+          totalCalls: statsData.total_calls ?? 0,
+          totalReservations: statsData.total_reservations ?? 0,
+          answeredRate: statsData.answered_rate ?? 0,
+          revenueRecovered: statsData.revenue_recovered ?? 0,
         });
         setActivity(activityData);
-      } catch {
-        setError('Impossible de charger les données');
+      } catch (err: any) {
+        setError(err.message || 'Impossible de charger les données');
       } finally {
         setLoading(false);
       }
     }
     fetchData();
-  }, []);
+  }, [orgId]);
 
   if (loading) {
     return <div className="text-center text-[var(--muted-foreground)]">Chargement...</div>;

@@ -1,5 +1,5 @@
 // Mots de transition et fillers pour l'assistant vocal
-// Utilisés par Vapi en mode "filler" pour combler les silences
+// Pré-générés par fillers-cache.ts et joués pendant le LLM processing
 
 export const CASUAL_FILLERS = [
   "Je regarde ça…",
