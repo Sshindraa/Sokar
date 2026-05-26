@@ -92,7 +92,7 @@ export const FLAGS = {
   NEW_FILLER_SYSTEM: 'new_filler_system',
   /** Outbound : appels sortants de confirmation */
   OUTBOUND_CONFIRMATION: 'outbound_confirmation',
-  /** Plan tarifaire du restaurant (Starter/Pro/Premium) */
+  /** Plan tarifaire du restaurant (Essential/Pro/Premium) */
   RESTAURANT_PLAN: 'restaurant_plan',
 } as const;
 
