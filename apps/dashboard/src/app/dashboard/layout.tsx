@@ -1,44 +1,30 @@
-import Link from 'next/link';
 import { ReactNode } from 'react';
-import { SyncOrganization } from './SyncOrganization';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen">
-      <aside className="w-64 border-r border-[var(--border)] bg-[var(--muted)] p-6">
-        <Link href="/dashboard" className="text-xl font-bold text-[var(--primary)]">
-          Sokar
-        </Link>
-        <nav className="mt-8 space-y-2">
-          <NavItem href="/dashboard" label="Vue d'ensemble" />
-          <NavItem href="/dashboard/calls" label="Appels" />
-          <NavItem href="/dashboard/reservations" label="Réservations" />
-          <NavItem href="/dashboard/settings" label="Paramètres" />
-        </nav>
-        <div className="mt-auto pt-8">
-          <Link
-            href="/login"
-            className="text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-          >
-            Déconnexion
-          </Link>
-        </div>
-      </aside>
-      <main className="flex-1 p-8">
-        <SyncOrganization />
-        {children}
-      </main>
-    </div>
-  );
-}
-
-function NavItem({ href, label }: { href: string; label: string }) {
-  return (
-    <Link
-      href={href}
-      className="block rounded-lg px-3 py-2 text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--card)] hover:text-[var(--foreground)]"
+    <div
+      className="dark"
+      style={{
+        minHeight: '100vh',
+        background: 'radial-gradient(circle at top, #2a3036 0%, #1a1e22 45%, #15181c 100%)',
+        fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+        color: '#f3f3f3',
+        padding: 16,
+      }}
     >
-      {label}
-    </Link>
+      <div
+        style={{
+          width: '100%',
+          minHeight: 'calc(100vh - 32px)',
+          background: 'linear-gradient(180deg, #212121 0%, #1b1b1b 100%)',
+          border: '1px solid rgba(255,255,255,.05)',
+          borderRadius: 28,
+          padding: 16,
+          boxShadow: '0 18px 40px rgba(0,0,0,.25)',
+        }}
+      >
+        {children}
+      </div>
+    </div>
   );
 }

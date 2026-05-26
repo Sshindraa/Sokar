@@ -3,7 +3,18 @@
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { useApi } from '../../lib/api';
+import { useApi } from '../../../lib/api';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { PhoneCall, Frown } from 'lucide-react';
 
 export default function CallsPage() {
   const { get, orgId } = useApi();
@@ -26,80 +37,90 @@ export default function CallsPage() {
       setLoading(false);
     }
     fetchCalls();
-  }, [orgId]);
+  }, [orgId, get]);
 
   if (loading) {
-    return <div className="text-center text-[var(--muted-foreground)]">Chargement...</div>;
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-8 w-24" />
+          <Skeleton className="h-4 w-20" />
+        </div>
+        <div className="space-y-2">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Appels</h1>
-        <span className="text-sm text-[var(--muted-foreground)]">{total} appels</span>
+        <h1 className="text-2xl font-semibold tracking-tight">Appels</h1>
+        <span className="text-sm text-muted-foreground">{total} appels</span>
       </div>
 
-      <div className="rounded-xl border border-[var(--border)]">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-[var(--border)] text-left text-sm font-medium text-[var(--muted-foreground)]">
-              <th className="px-4 py-3">Call SID</th>
-              <th className="px-4 py-3">Intention</th>
-              <th className="px-4 py-3">Résultat</th>
-              <th className="px-4 py-3">Durée</th>
-              <th className="px-4 py-3">Carrier</th>
-              <th className="px-4 py-3">Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {calls.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-[var(--muted-foreground)]">
-                  Aucun appel
-                </td>
-              </tr>
-            )}
-            {calls.map((call) => (
-              <tr key={call.id} className="border-b border-[var(--border)] text-sm">
-                <td className="px-4 py-3 font-medium">{call.callSid}</td>
-                <td className="px-4 py-3 text-[var(--muted-foreground)]">
-                  {call.intent || '—'}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs ${
-                      call.outcome === 'RESERVED'
-                        ? 'bg-green-100 text-green-700'
-                        : call.outcome === 'INFO'
-                          ? 'bg-blue-100 text-blue-700'
-                          : call.outcome === 'NO_ACTION'
-                            ? 'bg-gray-100 text-gray-700'
-                            : 'bg-yellow-100 text-yellow-700'
-                    }`}
-                  >
-                    {call.outcome === 'RESERVED'
-                      ? 'Réservé'
-                      : call.outcome === 'INFO'
-                        ? 'Info'
-                        : call.outcome === 'NO_ACTION'
-                          ? 'Aucune action'
-                          : call.outcome ?? 'En cours'}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-[var(--muted-foreground)]">
-                  {call.durationSec != null ? `${call.durationSec}s` : '—'}
-                </td>
-                <td className="px-4 py-3 text-[var(--muted-foreground)]">
-                  {call.carrier || '—'}
-                </td>
-                <td className="px-4 py-3 text-[var(--muted-foreground)]">
-                  {format(new Date(call.createdAt), 'dd MMM HH:mm', { locale: fr })}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {calls.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
+          <PhoneCall size={40} className="opacity-30" />
+          <p className="text-sm">Aucun appel pour le moment</p>
+          <p className="text-xs opacity-60">
+            Les appels apparaîtront ici quand votre assistant commencera à répondre.
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Call SID</TableHead>
+                <TableHead>Intention</TableHead>
+                <TableHead>Résultat</TableHead>
+                <TableHead>Durée</TableHead>
+                <TableHead>Carrier</TableHead>
+                <TableHead>Date</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {calls.map((call: any) => (
+                <TableRow key={call.id} className="transition-all duration-200 hover:bg-accent">
+                  <TableCell className="font-medium">{call.callSid}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {call.intent || <span className="opacity-50">—</span>}
+                  </TableCell>
+                  <TableCell>
+                    <OutcomeBadge outcome={call.outcome} />
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {call.durationSec != null ? `${call.durationSec}s` : <span className="opacity-50">—</span>}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {call.carrier || <span className="opacity-50">—</span>}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {format(new Date(call.createdAt), 'dd MMM HH:mm', { locale: fr })}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
     </div>
   );
+}
+
+function OutcomeBadge({ outcome }: { outcome: string | null }) {
+  switch (outcome) {
+    case 'RESERVED':
+      return <Badge className="bg-green-100 text-green-700 hover:bg-green-200">Réservé</Badge>;
+    case 'INFO':
+      return <Badge variant="secondary">Info</Badge>;
+    case 'NO_ACTION':
+      return <Badge variant="outline">Aucune action</Badge>;
+    default:
+      return <Badge variant="secondary">En cours</Badge>;
+  }
 }
