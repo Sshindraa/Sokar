@@ -12,14 +12,12 @@ const AnalyticsQuerySchema = z.object({
 export async function analyticsRoutes(app: FastifyInstance) {
 
   app.get('/analytics/roi', { preHandler: requireOrg() }, async (req, reply) => {
-    const restaurantId = req.restaurantId;
     const query = AnalyticsQuerySchema.parse(req.query);
     const roi   = await computeRoi(req.restaurantId!, query.period);
     return reply.send(roi);
   });
 
   app.get('/analytics/latency', { preHandler: requireOrg() }, async (req, reply) => {
-    const restaurantId = req.restaurantId;
     const query = AnalyticsQuerySchema.parse(req.query);
     const { period } = query;
     const [year, month] = period.split('-').map(Number);
@@ -29,7 +27,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
     const traces = await db.latencyTrace.findMany({
       where: {
         call: {
-          restaurantId,
+          restaurantId: req.restaurantId!,
           createdAt: { gte: start, lte: end },
         },
       },
