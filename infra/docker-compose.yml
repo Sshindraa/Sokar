@@ -33,6 +33,25 @@ services:
       timeout: 3s
       retries: 5
 
+  localstack:
+    image: localstack/localstack:4.2
+    ports:
+      - '127.0.0.1:4566:4566'
+    environment:
+      - SERVICES=s3,sqs,ses,lambda,cloudwatch,secretsmanager
+      - AWS_DEFAULT_REGION=eu-west-1
+      - DEBUG=${LOCALSTACK_DEBUG:-0}
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:4566/_localstack/health']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   pgdata:
   redis-data:
+  localstack-data:
