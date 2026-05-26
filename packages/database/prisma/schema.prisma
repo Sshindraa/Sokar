@@ -179,6 +179,7 @@ model LatencyTrace {
 }
 
 enum Plan {
+  ESSENTIAL
   STARTER
   PRO
   PREMIUM
