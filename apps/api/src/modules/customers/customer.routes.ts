@@ -13,7 +13,7 @@ import {
 export async function customerRoutes(app: FastifyInstance) {
   app.get('/customers', { preHandler: requireOrg() }, async (req, reply) => {
     const query = CustomerQuerySchema.parse(req.query);
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
     const where: any = { restaurantId };
     if (query.phone) where.phone = query.phone;
 
@@ -59,7 +59,7 @@ export async function customerRoutes(app: FastifyInstance) {
 
   app.patch('/customers/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = CustomerParamsSchema.parse(req.params);
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
     const body = UpdateCustomerSchema.parse(req.body);
     const updated = await db.customer.update({ where: { id, restaurantId }, data: body });
     await redisCache.del(`customer:${updated.restaurantId}:${updated.phone}`);
@@ -68,14 +68,14 @@ export async function customerRoutes(app: FastifyInstance) {
 
   app.delete('/customers/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = CustomerParamsSchema.parse(req.params);
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
     await db.customer.delete({ where: { id, restaurantId } });
     return reply.status(204).send();
   });
 
   app.post('/customers/:id/vip', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = CustomerParamsSchema.parse(req.params);
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
     const { isVip } = ToggleVipSchema.parse(req.body);
     const updated = await db.customer.update({ where: { id, restaurantId }, data: { isVip } });
     await redisCache.del(`customer:${updated.restaurantId}:${updated.phone}`);

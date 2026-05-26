@@ -10,8 +10,8 @@ vi.mock('../plugins/clerk', () => ({
       if (!authHeader) {
         return reply.status(401).send({ error: 'Authentication required' });
       }
-      (req as any).restaurantId = 'test-rest-1';
-      (req as any).userId = 'test-user-1';
+      req.restaurantId = 'test-rest-1';
+      req.userId = 'test-user-1';
     };
   },
   requireAuth: () => {
@@ -20,7 +20,7 @@ vi.mock('../plugins/clerk', () => ({
       if (!authHeader) {
         return reply.status(401).send({ error: 'Authentication required' });
       }
-      (req as any).userId = 'test-user-1';
+      req.userId = 'test-user-1';
     };
   },
 }));
