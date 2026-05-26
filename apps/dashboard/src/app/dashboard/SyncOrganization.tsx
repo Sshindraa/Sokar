@@ -9,7 +9,7 @@ import { useEffect, useRef } from 'react';
  * Idempotent : ne crée le restaurant qu'une seule fois.
  */
 export function SyncOrganization() {
-  const { isSignedIn, getToken } = useAuth();
+  const { isSignedIn } = useAuth();
   const { organization } = useOrganization();
   const synced = useRef(false);
 
@@ -20,7 +20,6 @@ export function SyncOrganization() {
 
     (async () => {
       try {
-        const token = await getToken();
         const res = await fetch('/api/auth/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -37,7 +36,7 @@ export function SyncOrganization() {
         console.warn('[sync] Error:', err);
       }
     })();
-  }, [isSignedIn, organization, getToken]);
+  }, [isSignedIn, organization]);
 
   return null; // Ce composant ne rend rien
 }
