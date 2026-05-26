@@ -197,7 +197,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
       },
       create: {
         callSid: call_leg_id,
-        restaurantId: (req as any).restaurantId ?? '',
+        restaurantId: req.restaurantId ?? '',
         durationSec: Math.round(
           ended_at && started_at
             ? (new Date(ended_at).getTime() - new Date(started_at).getTime()) / 1000
