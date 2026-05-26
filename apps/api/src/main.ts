@@ -87,7 +87,7 @@ export async function buildApp() {
     try { await redisCache.ping(); }        catch { redisStatus = 'error'; }
     return reply.send({
       status: dbStatus === 'ok' && redisStatus === 'ok' ? 'ok' : 'degraded',
-      db: dbStatus, redis: redisStatus, telnyx: process.env.TELNYX_API_KEY ? 'client_initialized' : 'not_configured',
+      db: dbStatus, redis: redisStatus,
     });
   });
 
