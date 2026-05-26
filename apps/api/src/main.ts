@@ -30,7 +30,7 @@ export async function buildApp() {
   app.decorate('queues',     queues);
 
   // Global error handler — Zod validation errors → 400 propre
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {
       return reply.status(400).send({
         error: 'Validation Error',
@@ -40,11 +40,19 @@ export async function buildApp() {
         })),
       });
     }
-    const err = error as any;
-    reply.status(err.statusCode ?? 500).send({
+
+    // Toujours logger le détail côté serveur
+    request.server.log.error({ err: error, path: request.url }, 'Unhandled error');
+
+    const err = error as Error;
+    const statusCode = (err as any).statusCode ?? 500;
+    reply.status(statusCode).send({
       error: err.name ?? 'InternalServerError',
-      message: err.message,
-      statusCode: err.statusCode ?? 500,
+      message:
+        process.env.NODE_ENV === 'production'
+          ? 'Une erreur interne est survenue.'
+          : err.message,
+      statusCode,
     });
   });
 
