@@ -18,8 +18,8 @@ export function requireOrg() {
     if (!orgId) {
       return reply.status(401).send({ error: 'Organization required' });
     }
-    (req as any).restaurantId = orgId;
-    (req as any).userId = userId;
+    req.restaurantId = orgId;
+    req.userId = userId;
   };
 }
 
@@ -32,6 +32,6 @@ export function requireAuth() {
     if (!userId) {
       return reply.status(401).send({ error: 'Authentication required' });
     }
-    (req as any).userId = userId;
+    req.userId = userId;
   };
 }

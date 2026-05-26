@@ -5,7 +5,7 @@
     "module": "CommonJS",
     "moduleResolution": "node",
     "target": "ES2022",
-    "strict": false,
+    "strict": true,
     "skipLibCheck": true,
     "types": ["node"],
     "paths": {
