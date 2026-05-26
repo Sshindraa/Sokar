@@ -85,6 +85,12 @@ export function connectDeepgramFlux(
 }
 
 /**
+ * Limite du buffer audio Deepgram (en chunks) avant de drop les plus vieux.
+ * ~200 chunks = ~4s d'audio à 50chunks/s (20ms par chunk)
+ */
+const DEEPGRAM_AUDIO_BUFFER_MAX = 200;
+
+/**
  * Envoie un chunk audio Telnyx à Deepgram.
  * Convertit PCMU/L16 → format attendu par Deepgram.
  */
@@ -95,6 +101,10 @@ export function sendAudioToDeepgram(session: CallSession, audioPayload: string):
     session.deepgramWs.send(audioBuffer);
   } else {
     // Bufferiser en attendant que Deepgram soit connecté
+    // Limiter la taille du buffer pour éviter le leak mémoire
+    if (session.audioBuffer.length >= DEEPGRAM_AUDIO_BUFFER_MAX) {
+      session.audioBuffer.shift(); // drop le plus vieux chunk
+    }
     session.audioBuffer.push(audioBuffer);
   }
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll, vi } from 'vitest';
-import { getApp, closeApp } from '../../../test/helpers';
+import { closeApp } from '../../../test/helpers';
 
-// Hoisted mock: l'auth retourne une session valide
+// Hoist these mocks BEFORE importing helpers.ts to ensure they take effect
 vi.mock('../../../lib/auth', () => ({
   auth: {
     api: {
@@ -13,23 +13,46 @@ vi.mock('../../../lib/auth', () => ({
   },
 }));
 
+vi.mock('../../../shared/db/client', () => ({
+  db: {
+    restaurant: {
+      create: vi.fn(),
+      update: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+    },
+    agentPersonality: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+    },
+  },
+}));
+
+vi.mock('../../../shared/redis/client', () => ({
+  redisCache: {
+    del: vi.fn(),
+  },
+}));
+
 describe('Cache invalidation — PATCH /restaurants/:id', () => {
   it('PATCH /restaurants/:id devrait appeler redisCache.del pour invalider le cache', async () => {
     const { db } = await import('../../../shared/db/client');
     const { redisCache } = await import('../../../shared/redis/client');
+    const { getApp } = await import('../../../test/helpers');
 
-    // Mock DB update
-    (db.restaurant.update as any).mockResolvedValue({
+    const mockRestaurant = {
       id: 'rest-1',
       name: 'Chez Test Modifié',
       phoneNumber: 'pn-test',
       managerPhone: '+33600000000',
       managerEmail: 'new@test.fr',
       openingHours: {},
-      plan: 'STARTER',
-    });
+      plan: 'STARTER' as const,
+    };
 
-    (redisCache.del as any).mockClear();
+    (db.restaurant.update as any).mockResolvedValue(mockRestaurant);
+    (db.restaurant.findUniqueOrThrow as any).mockResolvedValue(mockRestaurant);
+    (db.agentPersonality.findUnique as any).mockResolvedValue(null);
+    (db.agentPersonality.upsert as any).mockResolvedValue({} as any);
 
     const app = await getApp();
     const res = await app.inject({

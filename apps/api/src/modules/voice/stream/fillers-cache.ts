@@ -121,8 +121,8 @@ async function generateFillerAudio(text: string): Promise<string[]> {
       },
       output_format: {
         container: 'raw',
-        encoding: 'pcm_mulaw',
-        sample_rate: 8000,
+        encoding: 'pcm_s16le',
+        sample_rate: 16000,
       },
     }),
   });
@@ -151,8 +151,8 @@ async function generateFillerAudio(text: string): Promise<string[]> {
       const data = line.slice(6).trim();
       try {
         const parsed = JSON.parse(data);
-        if (parsed.type === 'chunk' && parsed.audio) {
-          chunks.push(parsed.audio);
+        if (parsed.type === 'chunk' && parsed.data) {
+          chunks.push(parsed.data);
         }
       } catch { /* skip */ }
     }

@@ -23,30 +23,6 @@ export function getRestaurantTools(_restaurantId: string) {
     {
       type: 'function',
       function: {
-        name:        'checkAvailability',
-        description: 'Vérifie si le restaurant est ouvert pour un créneau donné.',
-        parameters: {
-          type: 'object',
-          properties: {
-            date:      { type: 'string', format: 'date' },
-            time:      { type: 'string', pattern: TIME_PATTERN },
-            partySize: { type: 'integer', minimum: 1 },
-          },
-          required: ['date', 'time', 'partySize'],
-        },
-      },
-    },
-    {
-      type: 'function',
-      function: {
-        name:        'getOpeningHours',
-        description: "Retourne les horaires d'ouverture formatés pour être lus à voix haute.",
-        parameters: { type: 'object', properties: {}, required: [] },
-      },
-    },
-    {
-      type: 'function',
-      function: {
         name:        'handoffToManager',
         description: "Transfère l'appel au gérant. Utiliser si : groupe ≥8 personnes, demande complexe, client mécontent, ou incompréhension après 2 essais.",
         parameters: { type: 'object', properties: {}, required: [] },

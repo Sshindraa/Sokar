@@ -1,4 +1,6 @@
 import Fastify               from 'fastify';
+import { ZodError }          from 'zod';
+import * as Sentry           from '@sentry/node';
 import { db }                from './shared/db/client';
 import { redisCache }        from './shared/redis/client';
 import { queues }            from './shared/queue/queues';
@@ -10,6 +12,7 @@ import { reservationRoutes } from './modules/reservations/reservation.routes';
 import { callRoutes }        from './modules/calls/call.routes';
 import { dashboardRoutes }   from './modules/dashboard/dashboard.routes';
 import { authSyncRoutes }    from './modules/auth/auth.routes';
+import { testRoutes }        from './modules/test/test.routes';
 import { registerCors }      from './plugins/cors';
 import { registerRateLimit } from './plugins/rate-limit';
 import { registerClerk }     from './plugins/clerk';
@@ -22,8 +25,28 @@ import './shared/queue/workers/outbound-confirm.worker';
 export async function buildApp() {
   const app = Fastify({ logger: true });
 
-  app.decorate('db',     db);
-  app.decorate('queues', queues);
+  app.decorate('db',         db);
+  app.decorate('redisCache', redisCache);
+  app.decorate('queues',     queues);
+
+  // Global error handler — Zod validation errors → 400 propre
+  app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof ZodError) {
+      return reply.status(400).send({
+        error: 'Validation Error',
+        details: error.errors.map((e) => ({
+          path: e.path.join('.'),
+          message: e.message,
+        })),
+      });
+    }
+    const err = error as any;
+    reply.status(err.statusCode ?? 500).send({
+      error: err.name ?? 'InternalServerError',
+      message: err.message,
+      statusCode: err.statusCode ?? 500,
+    });
+  });
 
   await registerCors(app);
   await registerRateLimit(app);
@@ -37,6 +60,9 @@ export async function buildApp() {
   await app.register(callRoutes);
   await app.register(dashboardRoutes);
   await app.register(authSyncRoutes);
+
+  // Routes de test (simulation d'appel sans Telnyx)
+  await app.register(testRoutes);
 
   // WebSocket plugin + media stream routes (flux pipeline)
   await app.register(import('@fastify/websocket'));
@@ -60,6 +86,11 @@ export async function buildApp() {
 
 async function start() {
   const app = await buildApp();
+
+  // Initialisation Sentry (silent si SENTRY_DSN absent)
+  if (process.env.SENTRY_DSN) {
+    Sentry.init({ dsn: process.env.SENTRY_DSN, environment: process.env.NODE_ENV ?? 'development' });
+  }
 
   const shutdown = async (signal: string) => {
     app.log.info({ signal }, 'Shutting down gracefully...');

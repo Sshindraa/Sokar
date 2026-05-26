@@ -10,6 +10,8 @@ vi.mock('../../../lib/auth', () => ({
   },
 }));
 
+
+
 describe('Auth Guard — protection des routes REST', () => {
   afterAll(async () => {
     await closeApp();

@@ -118,7 +118,7 @@ async function seed() {
         outcome: 'INFO',
         sttProvider: 'deepgram',
         llmProvider: 'deepseek-v4-flash',
-        ttsProvider: 'elevenlabs',
+        ttsProvider: 'cartesia',
         carrier: 'vapi',
         createdAt: new Date(now.getTime() - 24 * 3600000),
       },
