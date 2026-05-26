@@ -44,6 +44,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   app.get('/restaurants/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    const restaurantId = (req as any).restaurantId;
+    if (id !== restaurantId) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
     return reply.send(
       await app.db.restaurant.findUniqueOrThrow({ where: { id }, include: { personality: true } })
     );
@@ -51,6 +55,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   app.patch('/restaurants/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    const restaurantId = (req as any).restaurantId;
+    if (id !== restaurantId) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
     const body   = CreateRestaurantSchema.partial().parse(req.body);
     const updated = await app.db.restaurant.update({ where: { id }, data: body });
     await app.redisCache.del(`phone:${updated.phoneNumber}`);
@@ -61,12 +69,20 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   app.get('/restaurants/:id/personality', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    const restaurantId = (req as any).restaurantId;
+    if (id !== restaurantId) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
     const personality = await app.db.agentPersonality.findUnique({ where: { restaurantId: id } });
     return reply.send(personality ?? {});
   });
 
   app.patch('/restaurants/:id/personality', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    const restaurantId = (req as any).restaurantId;
+    if (id !== restaurantId) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
     const body = UpdatePersonalitySchema.parse(req.body);
 
     const personality = await app.db.agentPersonality.upsert({

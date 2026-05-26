@@ -59,22 +59,25 @@ export async function customerRoutes(app: FastifyInstance) {
 
   app.patch('/customers/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = CustomerParamsSchema.parse(req.params);
+    const restaurantId = (req as any).restaurantId;
     const body = UpdateCustomerSchema.parse(req.body);
-    const updated = await db.customer.update({ where: { id }, data: body });
+    const updated = await db.customer.update({ where: { id, restaurantId }, data: body });
     await redisCache.del(`customer:${updated.restaurantId}:${updated.phone}`);
     return reply.send(updated);
   });
 
   app.delete('/customers/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = CustomerParamsSchema.parse(req.params);
-    await db.customer.delete({ where: { id } });
+    const restaurantId = (req as any).restaurantId;
+    await db.customer.delete({ where: { id, restaurantId } });
     return reply.status(204).send();
   });
 
   app.post('/customers/:id/vip', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = CustomerParamsSchema.parse(req.params);
+    const restaurantId = (req as any).restaurantId;
     const { isVip } = ToggleVipSchema.parse(req.body);
-    const updated = await db.customer.update({ where: { id }, data: { isVip } });
+    const updated = await db.customer.update({ where: { id, restaurantId }, data: { isVip } });
     await redisCache.del(`customer:${updated.restaurantId}:${updated.phone}`);
     return reply.send(updated);
   });

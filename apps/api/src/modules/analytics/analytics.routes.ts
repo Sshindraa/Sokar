@@ -12,14 +12,16 @@ const AnalyticsQuerySchema = z.object({
 export async function analyticsRoutes(app: FastifyInstance) {
 
   app.get('/analytics/roi', { preHandler: requireOrg() }, async (req, reply) => {
+    const restaurantId = (req as any).restaurantId;
     const query = AnalyticsQuerySchema.parse(req.query);
-    const roi   = await computeRoi(query.restaurantId, query.period);
+    const roi   = await computeRoi(restaurantId, query.period);
     return reply.send(roi);
   });
 
   app.get('/analytics/latency', { preHandler: requireOrg() }, async (req, reply) => {
+    const restaurantId = (req as any).restaurantId;
     const query = AnalyticsQuerySchema.parse(req.query);
-    const { period, restaurantId } = query;
+    const { period } = query;
     const [year, month] = period.split('-').map(Number);
     const start = new Date(year, month - 1, 1);
     const end   = new Date(year, month, 0, 23, 59, 59, 999);
