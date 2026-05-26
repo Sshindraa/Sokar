@@ -18,7 +18,6 @@ const UpdateReservationSchema = z.object({
 export async function reservationRoutes(app: FastifyInstance) {
 
   app.get('/reservations', { preHandler: requireOrg() }, async (req, reply) => {
-    const restaurantId = req.restaurantId;
     const query = ReservationQuerySchema.parse(req.query);
     const reservations = await ReservationService.findByRestaurant(req.restaurantId!, query.date);
     return reply.send(reservations);
