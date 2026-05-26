@@ -47,4 +47,10 @@ export async function callRoutes(app: FastifyInstance) {
 
     return reply.send(call);
   });
+
+  app.delete('/calls/:id', { preHandler: requireOrg() }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    await db.call.delete({ where: { id } });
+    return reply.status(204).send();
+  });
 }

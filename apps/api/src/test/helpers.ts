@@ -2,7 +2,6 @@ import { buildApp } from '../main';
 import type { FastifyInstance } from 'fastify';
 import { vi } from 'vitest';
 
-// Mock Clerk plugin — évite la validation des clés API en test
 vi.mock('../plugins/clerk', () => ({
   registerClerk: vi.fn().mockResolvedValue(undefined),
   requireOrg: () => {
@@ -23,6 +22,37 @@ vi.mock('../plugins/clerk', () => ({
       }
       (req as any).userId = 'test-user-1';
     };
+  },
+}));
+
+vi.mock('../shared/db/client', () => ({
+  db: {
+    restaurant: {
+      create: vi.fn(),
+      update: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+    },
+    agentPersonality: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+    },
+  },
+}));
+
+vi.mock('../shared/redis/client', () => ({
+  redisCache: {
+    del: vi.fn(),
+  },
+  redisQueue: {
+    on: vi.fn(),
+  },
+}));
+
+vi.mock('../shared/queue/queues', () => ({
+  queues: {
+    eveningReport: {
+      upsertJobScheduler: vi.fn(),
+    },
   },
 }));
 

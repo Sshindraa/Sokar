@@ -1,7 +1,5 @@
 import { FastifyInstance } from 'fastify';
 import { z }              from 'zod';
-import { db }             from '../../shared/db/client';
-import { redisCache }     from '../../shared/redis/client';
 import { requireOrg }     from '../../plugins/clerk';
 
 const CreateRestaurantSchema = z.object({
@@ -16,12 +14,20 @@ const CreateRestaurantSchema = z.object({
   plan: z.enum(['STARTER', 'PRO', 'PREMIUM']).default('STARTER'),
 });
 
+const UpdatePersonalitySchema = z.object({
+  profileType:       z.enum(['BISTROT_BRASSERIE', 'GASTRONOMIQUE', 'SEMI_GASTRO']).optional(),
+  fillerStyle:       z.enum(['CASUAL', 'FORMAL', 'WARM']).optional(),
+  speakingRate:      z.number().min(0.5).max(2.0).optional(),
+  voiceIdCa:         z.string().optional(),
+  systemPromptExtra: z.string().max(2000).optional(),
+});
+
 export async function restaurantRoutes(app: FastifyInstance) {
 
   app.post('/restaurants', { preHandler: requireOrg() }, async (req, reply) => {
     const body = CreateRestaurantSchema.parse(req.body);
     try {
-      const restaurant = await db.restaurant.create({ data: body });
+      const restaurant = await app.db.restaurant.create({ data: body as any });
       await app.queues.eveningReport.upsertJobScheduler(
         `nightly-${restaurant.id}`,
         { pattern: '0 23 * * *', tz: 'Europe/Paris' },
@@ -39,15 +45,40 @@ export async function restaurantRoutes(app: FastifyInstance) {
   app.get('/restaurants/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
     return reply.send(
-      await db.restaurant.findUniqueOrThrow({ where: { id }, include: { personality: true } })
+      await app.db.restaurant.findUniqueOrThrow({ where: { id }, include: { personality: true } })
     );
   });
 
   app.patch('/restaurants/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const body   = CreateRestaurantSchema.partial().parse(req.body);
-    const updated = await db.restaurant.update({ where: { id }, data: body });
-    await redisCache.del(`phone:${updated.phoneNumber}`);
+    const updated = await app.db.restaurant.update({ where: { id }, data: body });
+    await app.redisCache.del(`phone:${updated.phoneNumber}`);
     return reply.send(updated);
+  });
+
+  // ─── Personnalité de l'agent vocal ─────────────────────────────
+
+  app.get('/restaurants/:id/personality', { preHandler: requireOrg() }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const personality = await app.db.agentPersonality.findUnique({ where: { restaurantId: id } });
+    return reply.send(personality ?? {});
+  });
+
+  app.patch('/restaurants/:id/personality', { preHandler: requireOrg() }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = UpdatePersonalitySchema.parse(req.body);
+
+    const personality = await app.db.agentPersonality.upsert({
+      where:  { restaurantId: id },
+      create: { restaurantId: id, ...body },
+      update: body,
+    });
+
+    // Invalider le cache du restaurant pour que le nouveau system prompt soit pris en compte
+    const restaurant = await app.db.restaurant.findUniqueOrThrow({ where: { id } });
+    await app.redisCache.del(`phone:${restaurant.phoneNumber}`);
+
+    return reply.send(personality);
   });
 }

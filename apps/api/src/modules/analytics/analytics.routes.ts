@@ -5,7 +5,7 @@ import { requireOrg }     from '../../plugins/clerk';
 import { computeRoi }     from './roi.service';
 
 const AnalyticsQuerySchema = z.object({
-  restaurantId: z.string().uuid(),
+  restaurantId: z.string(),
   period:       z.string().regex(/^\d{4}-\d{2}$/),
 });
 

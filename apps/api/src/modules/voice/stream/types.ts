@@ -40,6 +40,8 @@ export interface TelnyxStreamMessage {
 export interface CallSession {
   callControlId: string;
   callSessionId: string;
+  /** call_leg_id Telnyx — utilisé comme callSid en DB */
+  callLegId: string;
   from: string;
   to: string;
   restaurantId: string;
@@ -71,6 +73,10 @@ export interface CallSession {
   speculativeTranscript: string;
   /** Résultat LLM spéculatif mis en cache (résolu) */
   speculativeResult: string | null;
+
+  // Transcript cumulé (persistance)
+  /** Transcript final cumulé de tout l'appel (concaténation des UtteranceEnd) */
+  transcript: string;
 
   // Timeouts
   lastActivityAt: number;

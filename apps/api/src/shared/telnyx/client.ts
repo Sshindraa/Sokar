@@ -1,6 +1,9 @@
-import { createTelnyx } from 'telnyx';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const createTelnyx: (key: string) => any = require('telnyx');
 
-let _telnyx: ReturnType<typeof createTelnyx> | null = null;
+type TelnyxClient = any;
+
+let _telnyx: TelnyxClient | null = null;
 
 function getTelnyx() {
   if (!_telnyx) {

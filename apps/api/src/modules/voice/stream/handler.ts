@@ -16,6 +16,34 @@ import { CallSessionManager } from './manager';
 import { connectDeepgramFlux, sendAudioToDeepgram, closeDeepgram } from './deepgram-bridge';
 import { playFiller } from './fillers-cache';
 
+/** Crée ou met à jour un enregistrement Call en base pour un appel Flux */
+async function persistFluxCall(session: CallSession): Promise<void> {
+  try {
+    const { db } = await import('../../../shared/db/client');
+    const durationSec = session.createdAt
+      ? Math.round((Date.now() - session.createdAt) / 1000)
+      : 0;
+
+    await db.call.upsert({
+      where: { callSid: session.callLegId },
+      update: {
+        durationSec,
+        transcript: session.transcript || null,
+        carrier: 'telnyx',
+      },
+      create: {
+        callSid: session.callLegId,
+        restaurantId: session.restaurantId,
+        durationSec,
+        transcript: session.transcript || null,
+        carrier: 'telnyx',
+      },
+    });
+  } catch (err) {
+    console.error('[flux] Failed to persist call:', err);
+  }
+}
+
 /**
  * Enregistre la route WebSocket pour le media stream Telnyx.
  * Utilise @fastify/websocket pour la gestion des connexions WS.
@@ -42,6 +70,8 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
     socket.on('close', () => {
       console.log(`[stream] Telnyx WS closed for ${callId}`);
       if (session) {
+        // Persister l'appel avant cleanup
+        persistFluxCall(session);
         closeDeepgram(session);
         mgr.delete(session.callControlId);
       }
@@ -50,6 +80,7 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
     socket.on('error', (err: Error) => {
       console.error(`[stream] Error for ${callId}:`, err.message);
       if (session) {
+        persistFluxCall(session);
         closeDeepgram(session);
         mgr.delete(session.callControlId);
       }
@@ -168,7 +199,8 @@ function handleFluxEvent(
       // Stocker la promise pour la réutiliser si l'utterance finale correspond
       if (session.state !== 'LISTENING' && session.state !== 'IDLE') break;
 
-      session.state = 'PROCESSING'; // transition optimiste
+      // Utiliser la transition du manager pour rester cohérent avec la state machine
+      mgr.transition(session, 'PROCESSING'); // transition optimiste
       session.speculativeLlm = mgr.processUtterance(session, event.transcript)
         .then((response) => {
           session.speculativeResult = response;
@@ -184,6 +216,9 @@ function handleFluxEvent(
     }
 
     case 'UtteranceEnd': {
+      // Cumuler le transcript pour persistance
+      session.transcript += (session.transcript ? ' ' : '') + event.transcript;
+
       // Vérifier si une spéculation est en cours et si le transcript correspond
       const speculativeTranscript = session.speculativeTranscript;
 
@@ -197,7 +232,7 @@ function handleFluxEvent(
         session.speculativeLlm.then(async (response) => {
           if (response) {
             mgr.transition(session, 'SPEAKING');
-            await speakTts(session, response);
+            await speakTtsStreamed(session, response);
             mgr.transition(session, 'LISTENING');
           }
         });
@@ -215,7 +250,7 @@ function handleFluxEvent(
 
     case 'Error': {
       console.error(`[flux] Error: ${event.message}`);
-      speakTts(session, "Désolé, je n'ai pas bien compris. Pouvez-vous répéter ?");
+      speakTtsStreamed(session, "Désolé, je n'ai pas bien compris. Pouvez-vous répéter ?");
       mgr.transition(session, 'LISTENING');
       break;
     }
@@ -274,7 +309,7 @@ async function processTranscript(
     }
 
     // TTS
-    await speakTts(session, llmResponse);
+    await speakTtsStreamed(session, llmResponse);
 
     // Retour en écoute
     mgr.transition(session, 'LISTENING');
@@ -285,76 +320,113 @@ async function processTranscript(
 }
 
 /**
- * Synthétise une réponse vocale avec Cartesia et l'envoie à Telnyx.
- * Lit le stream SSE Cartesia → chaque chunk audio → Telnyx WS.
+ * Ajoute des pauses naturelles dans le texte en forçant la ponctuation.
+ * Cartesia sonic-3.5 marque une pause sur les virgules et points.
  */
-async function speakTts(session: CallSession, text: string): Promise<void> {
-  const response = await fetch('https://api.cartesia.ai/tts/sse', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Cartesia-Version': '2026-03-01',
-      'X-API-Key': process.env.CARTESIA_API_KEY ?? '',
-    },
-    body: JSON.stringify({
-      model_id: 'sonic-3.5',
-      transcript: text,
-      voice: {
-        mode: 'id',
-        id: process.env.CARTESIA_VOICE_ID ?? 'f786b574-daa5-4673-aa0c-cbe3e8534c02',
-      },
-      output_format: {
-        container: 'raw',
-        encoding: 'pcm_mulaw',
-        sample_rate: 8000,
-      },
-    }),
-  });
+function addNaturalPauses(text: string): string {
+  let result = text
+    .replace(/\n+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 
-  if (!response.ok) {
-    throw new Error(`TTS ${response.status}: ${await response.text()}`);
-  }
+  // Forcer un point à la fin si absent
+  if (!/[.!?]$/.test(result)) result += '.';
 
-  session.isSpeaking = true;
+  return result;
+}
 
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error('No response body');
+/**
+ * Découpe le texte en phrases pour un streaming progressif.
+ * Envoie chaque phrase séparément à Cartesia avec un délai inter-phrase
+ * pour un rendu plus naturel.
+ */
+async function speakTtsStreamed(
+  session: CallSession,
+  text: string,
+): Promise<void> {
+  const textWithPauses = addNaturalPauses(text);
+  const sentences = textWithPauses
+    .split(/(?<=[.!?])\s+/)
+    .filter(s => s.trim().length > 0);
 
-  const decoder = new TextDecoder();
-  let buffer = '';
+  let spokenAny = false;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  for (let i = 0; i < sentences.length; i++) {
+    const sentence = sentences[i].trim();
+    if (!sentence) continue;
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
+    // Pause inter-phrase (sauf pour la première)
+    if (i > 0) {
+      await new Promise(r => setTimeout(r, 300));
+      // Vérifier barge-in avant chaque phrase
+      if (session.state !== 'SPEAKING') break;
+    }
 
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const data = line.slice(6).trim();
+    try {
+      const response = await fetch('https://api.cartesia.ai/tts/sse', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cartesia-Version': '2026-03-01',
+          'X-API-Key': process.env.CARTESIA_API_KEY ?? '',
+        },
+        body: JSON.stringify({
+          model_id: 'sonic-3.5',
+          transcript: sentence,
+          voice: {
+            mode: 'id',
+            id: process.env.CARTESIA_VOICE_ID ?? 'f786b574-daa5-4673-aa0c-cbe3e8534c02',
+          },
+          output_format: {
+            container: 'raw',
+            encoding: 'pcm_s16le',
+            sample_rate: 16000,
+          },
+        }),
+      });
 
-      try {
-        const parsed = JSON.parse(data);
-        if (parsed.type === 'chunk' && parsed.audio) {
-          if (session.telnyxWs.readyState === WebSocket.OPEN) {
-            session.telnyxWs.send(JSON.stringify({
-              event: 'media',
-              media: { payload: parsed.audio },
-            }));
-          }
+      if (!response.ok) {
+        console.error(`[tts] Sentence ${i} failed: ${response.status}`);
+        continue;
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) continue;
+
+      const decoder = new TextDecoder();
+      let buf = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const parsed = JSON.parse(line.slice(6));
+            if (parsed.type === 'chunk' && parsed.data) {
+              if (session.telnyxWs.readyState === WebSocket.OPEN) {
+                session.telnyxWs.send(JSON.stringify({
+                  event: 'media',
+                  media: { payload: parsed.data },
+                }));
+              }
+            }
+            if (parsed.type === 'done') break;
+          } catch { /* skip */ }
         }
-        if (parsed.type === 'done') break;
-      } catch { /* skip */ }
-    }
 
-    // Si barge-in, arrêter le TTS
-    if (session.state !== 'SPEAKING') {
-      reader.cancel();
-      break;
+        if (session.state !== 'SPEAKING') {
+          reader.cancel();
+          break;
+        }
+      }
+    } catch (err) {
+      console.error(`[tts] Error on sentence ${i}:`, err);
     }
   }
-
-  session.isSpeaking = false;
 }
