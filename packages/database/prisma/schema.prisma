@@ -17,6 +17,7 @@ model User {
   updatedAt     DateTime  @updatedAt @map("updated_at")
   sessions      Session[]
   accounts      Account[]
+  @@ignore // Clerk gère l'auth — table inutilisée par le code
   @@map("users")
 }
 
@@ -30,6 +31,7 @@ model Session {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@ignore // Clerk gère l'auth — table inutilisée par le code
   @@map("sessions")
 }
 
@@ -46,6 +48,7 @@ model Account {
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@ignore // Clerk gère l'auth — tokens/password jamais lus par le code
   @@map("accounts")
 }
 
@@ -55,6 +58,7 @@ model Verification {
   value      String
   expiresAt  DateTime @map("expires_at")
   createdAt  DateTime @default(now()) @map("created_at")
+  @@ignore // Non utilisé — Clerk gère les vérifications
   @@map("verifications")
 }
 
