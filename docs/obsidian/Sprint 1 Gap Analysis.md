@@ -13,7 +13,7 @@
 - [x] Fonctionne avec `NOTION_TOKEN` depuis Hermes config (`~/.hermes/config.yaml`)
 - ⚠️ Le token est passé via `NOTION_API_KEY` dans la config Hermes mais le script utilise `NOTION_TOKEN`.
 - ⚠️ Le script nécessite `npx` sur le PATH pour lancer `@notionhq/notion-mcp-server`.
-- Token Notion valide : `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`
+- Token Notion valide : `ntn_...` (remplacé — cf .env.local)
 - Les MCP tools système (`mcp_notion_API_*`) retournent 401 — ils utilisent un jeton invalide/différent de celui de Hermes config.
 
 ---
