@@ -20,12 +20,9 @@ export declare const THEFORK_COMMISSION_PER_PAX = 3;
 export declare const VIP_PARTY_SIZE_THRESHOLD = 6;
 export declare const SPECULATIVE_MISS_THRESHOLD = 0.6;
 export declare const LLM_VIP_TURN_THRESHOLD = 5;
-export declare const LLM_MODELS: {
-    readonly FLASH: "deepseek/deepseek-v4-flash";
-    readonly PRO: "deepseek/deepseek-v4-pro";
-    readonly FALLBACK: "x-ai/grok-4.1-fast";
-};
-export declare const TTS_PROVIDERS: readonly ["elevenlabs", "cartesia", "deepgram-aura"];
+// Modèle LLM unique
+export declare const LLM_MODEL = "mistralai/ministral-3b-2512";
+export declare const TTS_PROVIDERS: readonly ["cartesia", "deepgram-aura"];
 export type TtsProvider = typeof TTS_PROVIDERS[number];
 export declare const CARRIER_PROVIDERS: readonly ["vapi", "telnyx"];
 export type CarrierProvider = typeof CARRIER_PROVIDERS[number];

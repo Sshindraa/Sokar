@@ -24,12 +24,8 @@ export const VIP_PARTY_SIZE_THRESHOLD   = 6;
 export const SPECULATIVE_MISS_THRESHOLD = 0.60;
 export const LLM_VIP_TURN_THRESHOLD     = 5;
 
-// Slugs OpenRouter — alignés avec l'architecture consolidée Sprint 1
-export const LLM_MODELS = {
-  FLASH:    'deepseek/deepseek-v4-flash',
-  PRO:      'deepseek/deepseek-v4-pro',
-  FALLBACK: 'x-ai/grok-4.1-fast',
-} as const;
+// Modèle LLM unique
+export const LLM_MODEL = 'mistralai/ministral-3b-2512';
 
 export const TTS_PROVIDERS = ['cartesia', 'deepgram-aura'] as const;
 export type  TtsProvider   = typeof TTS_PROVIDERS[number];

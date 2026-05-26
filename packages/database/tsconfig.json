@@ -5,5 +5,5 @@
     "rootDir": ".",
     "declaration": true
   },
-  "include": ["prisma"]
+  "include": ["src"]
 }
