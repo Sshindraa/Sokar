@@ -17,14 +17,14 @@ async function dashboardGuard(req: FastifyRequest, reply: FastifyReply) {
   if (!orgId) {
     return reply.status(401).send({ error: 'Organization required' });
   }
-  (req as any).restaurantId = orgId;
-  (req as any).userId = userId;
+  req.restaurantId = orgId;
+  req.userId = userId;
 }
 
 export async function dashboardRoutes(app: FastifyInstance) {
 
   app.get('/dashboard/stats', { preHandler: dashboardGuard }, async (req, reply) => {
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
 
     const [totalCalls, totalReservations] = await Promise.all([
       db.call.count({ where: { restaurantId } }),
@@ -50,7 +50,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
   });
 
   app.get('/dashboard/recent-activity', { preHandler: dashboardGuard }, async (req, reply) => {
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
     const query = ActivityQuerySchema.parse(req.query);
     const { limit } = query;
 

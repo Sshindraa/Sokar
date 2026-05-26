@@ -18,9 +18,9 @@ const UpdateReservationSchema = z.object({
 export async function reservationRoutes(app: FastifyInstance) {
 
   app.get('/reservations', { preHandler: requireOrg() }, async (req, reply) => {
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
     const query = ReservationQuerySchema.parse(req.query);
-    const reservations = await ReservationService.findByRestaurant(restaurantId, query.date);
+    const reservations = await ReservationService.findByRestaurant(req.restaurantId!, query.date);
     return reply.send(reservations);
   });
 
@@ -40,7 +40,7 @@ export async function reservationRoutes(app: FastifyInstance) {
   app.patch('/reservations/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id }  = req.params as { id: string };
     const body    = UpdateReservationSchema.parse(req.body);
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
     const updated = await db.reservation.update({
       where: { id, restaurantId },
       data: body,
@@ -50,7 +50,7 @@ export async function reservationRoutes(app: FastifyInstance) {
 
   app.delete('/reservations/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
     await db.reservation.delete({ where: { id, restaurantId } });
     return reply.status(204).send();
   });

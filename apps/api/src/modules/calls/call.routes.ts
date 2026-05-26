@@ -12,7 +12,7 @@ const CallQuerySchema = z.object({
 export async function callRoutes(app: FastifyInstance) {
 
   app.get('/calls', { preHandler: requireOrg() }, async (req, reply) => {
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
     const query = CallQuerySchema.parse(req.query);
     const { limit, offset } = query;
 
@@ -36,7 +36,7 @@ export async function callRoutes(app: FastifyInstance) {
 
   app.get('/calls/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
 
     const call = await db.call.findUnique({
       where: { id, restaurantId },
@@ -52,7 +52,7 @@ export async function callRoutes(app: FastifyInstance) {
 
   app.delete('/calls/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
     await db.call.delete({ where: { id, restaurantId } });
     return reply.status(204).send();
   });

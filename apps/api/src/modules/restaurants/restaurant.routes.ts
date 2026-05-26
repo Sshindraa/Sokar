@@ -44,7 +44,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   app.get('/restaurants/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
     if (id !== restaurantId) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
@@ -55,7 +55,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   app.patch('/restaurants/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
     if (id !== restaurantId) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
@@ -69,7 +69,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   app.get('/restaurants/:id/personality', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
     if (id !== restaurantId) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
@@ -79,7 +79,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   app.patch('/restaurants/:id/personality', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const restaurantId = (req as any).restaurantId;
+    const restaurantId = req.restaurantId;
     if (id !== restaurantId) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
