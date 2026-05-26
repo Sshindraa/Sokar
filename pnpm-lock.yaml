@@ -65,6 +65,9 @@ importers:
       bullmq:
         specifier: ^5.48.0
         version: 5.76.5
+      configcat-node:
+        specifier: ^11.4.1
+        version: 11.4.1
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -2022,6 +2025,13 @@ packages:
   confbox@0.2.4:
     resolution: {integrity: sha512-ysOGlgTFbN2/Y6Cg3Iye8YKulHw+R2fNXHrgSmXISQdMnomY6eNDprVdW9R5xBguEqI954+S6709UyiO7B+6OQ==}
 
+  configcat-common@9.4.1:
+    resolution: {integrity: sha512-7fcuD3x/X+KIvnkdJfx8yK0acAz/lNUFs/EBkpMuGA+9xXslgIoDvb/qOrkNgMcMr+X6yPvXlvSKdtkgTvV1vQ==}
+
+  configcat-node@11.4.1:
+    resolution: {integrity: sha512-xyMr8IPHL83347Mys5+UGcdf225TmdcCf/1diQBBO8GCPbVF+PzMk6uotxhATTDJ6qWyTCpJR7YD1cym1xXSFg==}
+    engines: {node: '>=14'}
+
   consola@3.4.2:
     resolution: {integrity: sha512-5IKcdX0nnYavi6G7TtOhwkYzyjfJlatbjMjuLSfE2kYT5pMDOilZ4OvMhi637CcDICTmz3wARPoyhqyX1Y+XvA==}
     engines: {node: ^14.18.0 || >=16.10.0}
@@ -3765,6 +3775,10 @@ packages:
     resolution: {integrity: sha512-5C1sg4USs1lfG0GFb2RLXsdpXqBSEhAaA/0kPL01wxzpMqLILNxIxIOKiILz+cdg/pLnOUxFYOR5yhHU666wbw==}
     engines: {node: '>=18.0.0'}
     hasBin: true
+
+  tunnel@0.0.6:
+    resolution: {integrity: sha512-1h/Lnq9yajKY2PEbBadPXj3VxsDDu844OnaAo52UVmIzIvwwtBPIuNvkjuzBlTWpfJyUbG3ez0KSBibQkj4ojg==}
+    engines: {node: '>=0.6.11 <=0.7.0 || >=0.7.3'}
 
   turbo@2.9.9:
     resolution: {integrity: sha512-3xfzXE/yTjhh0S5dIWlE+3E+J9A09REpLI1ZqVh2+HrNZoVzZn0pkvjiRgVK/Ev3PF9XnaTwCntTx+CADWXcyA==}
@@ -5991,6 +6005,16 @@ snapshots:
 
   confbox@0.2.4: {}
 
+  configcat-common@9.4.1:
+    dependencies:
+      tslib: 2.8.1
+
+  configcat-node@11.4.1:
+    dependencies:
+      configcat-common: 9.4.1
+      tslib: 2.8.1
+      tunnel: 0.0.6
+
   consola@3.4.2: {}
 
   convert-source-map@2.0.0: {}
@@ -7963,6 +7987,8 @@ snapshots:
       get-tsconfig: 4.14.0
     optionalDependencies:
       fsevents: 2.3.3
+
+  tunnel@0.0.6: {}
 
   turbo@2.9.9:
     optionalDependencies:

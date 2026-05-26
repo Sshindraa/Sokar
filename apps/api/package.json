@@ -26,6 +26,7 @@
     "@sokar/database": "workspace:*",
     "@sokar/types": "workspace:*",
     "bullmq": "^5.48.0",
+    "configcat-node": "^11.4.1",
     "dotenv": "^16.4.7",
     "fastify": "^5.3.0",
     "ioredis": "^5.6.0",
