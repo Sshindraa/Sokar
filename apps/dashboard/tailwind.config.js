@@ -45,11 +45,6 @@ module.exports = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
-        sokar: {
-          50: '#f0f5f8', 100: '#dee8ee', 200: '#c8d8e4', 300: '#98b0c4',
-          400: '#6878a8', 500: '#3f5268', 600: '#353c43', 700: '#2a3036',
-          800: '#1a1e22', 900: '#0a0a0a',
-        },
       },
       borderRadius: {
         lg: 'var(--radius)',
