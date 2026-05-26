@@ -18,8 +18,9 @@ const UpdateReservationSchema = z.object({
 export async function reservationRoutes(app: FastifyInstance) {
 
   app.get('/reservations', { preHandler: requireOrg() }, async (req, reply) => {
+    const restaurantId = (req as any).restaurantId;
     const query = ReservationQuerySchema.parse(req.query);
-    const reservations = await ReservationService.findByRestaurant(query.restaurantId, query.date);
+    const reservations = await ReservationService.findByRestaurant(restaurantId, query.date);
     return reply.send(reservations);
   });
 
@@ -36,16 +37,21 @@ export async function reservationRoutes(app: FastifyInstance) {
     return reply.status(201).send(reservation);
   });
 
-  app.patch('/reservations/:id', async (req, reply) => {
+  app.patch('/reservations/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id }  = req.params as { id: string };
     const body    = UpdateReservationSchema.parse(req.body);
-    const updated = await db.reservation.update({ where: { id }, data: body });
+    const restaurantId = (req as any).restaurantId;
+    const updated = await db.reservation.update({
+      where: { id, restaurantId },
+      data: body,
+    });
     return reply.send(updated);
   });
 
-  app.delete('/reservations/:id', async (req, reply) => {
+  app.delete('/reservations/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    await db.reservation.delete({ where: { id } });
+    const restaurantId = (req as any).restaurantId;
+    await db.reservation.delete({ where: { id, restaurantId } });
     return reply.status(204).send();
   });
 }

@@ -24,8 +24,7 @@ async function dashboardGuard(req: FastifyRequest, reply: FastifyReply) {
 export async function dashboardRoutes(app: FastifyInstance) {
 
   app.get('/dashboard/stats', { preHandler: dashboardGuard }, async (req, reply) => {
-    const query = StatsQuerySchema.parse(req.query);
-    const { restaurantId } = query;
+    const restaurantId = (req as any).restaurantId;
 
     const [totalCalls, totalReservations] = await Promise.all([
       db.call.count({ where: { restaurantId } }),
@@ -51,8 +50,9 @@ export async function dashboardRoutes(app: FastifyInstance) {
   });
 
   app.get('/dashboard/recent-activity', { preHandler: dashboardGuard }, async (req, reply) => {
+    const restaurantId = (req as any).restaurantId;
     const query = ActivityQuerySchema.parse(req.query);
-    const { restaurantId, limit } = query;
+    const { limit } = query;
 
     const [recentReservations, recentCalls] = await Promise.all([
       db.reservation.findMany({
