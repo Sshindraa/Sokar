@@ -61,8 +61,10 @@ export async function buildApp() {
   await app.register(dashboardRoutes);
   await app.register(authSyncRoutes);
 
-  // Routes de test (simulation d'appel sans Telnyx)
-  await app.register(testRoutes);
+  // Routes de test — uniquement en dev/test (simulation d'appel sans Telnyx)
+  if (process.env.NODE_ENV !== 'production') {
+    await app.register(testRoutes);
+  }
 
   // WebSocket plugin + media stream routes (flux pipeline)
   await app.register(import('@fastify/websocket'));
