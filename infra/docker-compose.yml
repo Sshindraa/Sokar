@@ -41,6 +41,7 @@ services:
       - SERVICES=s3,sqs,ses,lambda,cloudwatch,secretsmanager
       - AWS_DEFAULT_REGION=eu-west-1
       - DEBUG=${LOCALSTACK_DEBUG:-0}
+      - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN:-}
     volumes:
       - localstack-data:/var/lib/localstack
       - /var/run/docker.sock:/var/run/docker.sock
