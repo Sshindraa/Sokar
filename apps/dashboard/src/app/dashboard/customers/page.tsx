@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Users, Search, RotateCcw, Star } from 'lucide-react';
+import { AlertCircle, Users, Search, RotateCcw, Star } from 'lucide-react';
 
 export default function CustomersPage() {
   const { get, patch, orgId } = useApi();
@@ -22,15 +22,17 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchPhone, setSearchPhone] = useState('');
+  const [error, setError] = useState('');
 
   const fetchCustomers = useCallback(async (phone?: string) => {
     setLoading(true);
+    setError('');
     try {
       const params = phone ? `?phone=${encodeURIComponent(phone)}` : '';
       const data = await get(`customers${params}`);
       setCustomers(Array.isArray(data) ? data : []);
-    } catch {
-      // silent
+    } catch (err: any) {
+      setError(err.message || 'Impossible de charger les clients');
     }
     setLoading(false);
   }, [get]);
@@ -46,8 +48,8 @@ export default function CustomersPage() {
       setCustomers((prev) =>
         prev.map((c) => (c.id === id ? { ...c, isVip: !current } : c)),
       );
-    } catch {
-      // silent
+    } catch (err: any) {
+      setError(err.message || 'Impossible de modifier le statut VIP');
     }
   }
 
@@ -55,7 +57,7 @@ export default function CustomersPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <Skeleton className="h-8 w-24" />
+          <Skeleton className="h-8 w-24 rounded-full" />
           <Skeleton className="h-4 w-20" />
         </div>
         <div className="flex gap-2">
@@ -64,7 +66,7 @@ export default function CustomersPage() {
         </div>
         <div className="space-y-2">
           {[1, 2, 3, 4, 5].map((i) => (
-            <Skeleton key={i} className="h-12 w-full" />
+            <Skeleton key={i} className="h-12 w-full rounded-xl" />
           ))}
         </div>
       </div>
@@ -81,8 +83,8 @@ export default function CustomersPage() {
       </div>
 
       {/* Recherche */}
-      <div className="flex gap-2">
-        <div className="relative">
+      <div className="flex flex-wrap gap-2">
+        <div className="relative w-full sm:w-72">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="text"
@@ -90,7 +92,7 @@ export default function CustomersPage() {
             value={searchPhone}
             onChange={(e) => setSearchPhone(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && fetchCustomers(searchPhone || undefined)}
-            className="w-64 pl-9"
+            className="pl-9"
           />
         </div>
         <Button onClick={() => fetchCustomers(searchPhone || undefined)}>
@@ -105,8 +107,13 @@ export default function CustomersPage() {
       </div>
 
       {/* Tableau */}
-      {customers.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
+      {error ? (
+        <div className="sokar-error">
+          <AlertCircle size={18} />
+          {error}
+        </div>
+      ) : customers.length === 0 ? (
+        <div className="sokar-empty">
           <Users size={40} className="opacity-30" />
           <p className="text-sm">Aucun client enregistré</p>
           <p className="text-xs opacity-60">
@@ -114,7 +121,7 @@ export default function CustomersPage() {
           </p>
         </div>
       ) : (
-        <div className="rounded-xl border border-border">
+        <div className="sokar-card overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -139,11 +146,11 @@ export default function CustomersPage() {
                       onClick={() => toggleVip(c.id, c.isVip)}
                       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-all duration-200 ${
                         c.isVip
-                          ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                          ? 'border border-primary/20 bg-primary/10 text-foreground hover:bg-primary/15'
                           : 'bg-muted text-muted-foreground hover:bg-accent'
                       }`}
                     >
-                      <Star size={12} className={c.isVip ? 'fill-yellow-500' : ''} />
+                      <Star size={12} className={c.isVip ? 'fill-current' : ''} />
                       {c.isVip ? 'VIP' : 'Ajouter'}
                     </button>
                   </TableCell>

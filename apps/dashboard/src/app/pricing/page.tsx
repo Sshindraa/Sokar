@@ -100,12 +100,12 @@ export default function PricingPage() {
           --radius-sm: 0.375rem; --radius-md: 0.5rem; --radius-lg: 0.75rem;
           --radius-xl: 1rem; --radius-2xl: 1.5rem; --radius-full: 9999px;
           --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
-          --color-bg: #0a0a0a;
-          --color-surface: #111111;
+          --color-bg: hsl(0 0% 4%);
+          --color-surface: hsl(0 0% 7%);
           --color-border: rgba(255,255,255,0.08);
           --color-border-strong: rgba(255,255,255,0.15);
-          --color-text: #f0f0f0;
-          --color-text-muted: #888888;
+          --color-text: hsl(0 0% 94%);
+          --color-text-muted: hsl(0 0% 53%);
         }
         .pricing-root {
           font-family: var(--font-body);
@@ -161,7 +161,7 @@ export default function PricingPage() {
         .nav-links a:hover { color: var(--color-text); background: rgba(255,255,255,0.05); }
         .nav-links a.active { color: var(--color-text); }
         .nav-download {
-          background: #fff; color: #000;
+          background: hsl(0 0% 100%); color: hsl(0 0% 0%);
           font-size: var(--text-sm); font-weight: 500;
           padding: var(--space-1) var(--space-4);
           border-radius: var(--radius-full);
@@ -287,8 +287,8 @@ export default function PricingPage() {
         }
         .cta-btn:hover { opacity: 0.88; transform: scale(1.01); }
         .cta-btn:active { transform: scale(0.99); }
-        .cta-dark { background: #1e1e1e; color: var(--color-text); }
-        .cta-light { background: #fff; color: #000; }
+        .cta-dark { background: hsl(0 0% 12%); color: var(--color-text); }
+        .cta-light { background: hsl(0 0% 100%); color: hsl(0 0% 0%); }
 
         /* ---- Billing ---- */
         .billing-row {
@@ -307,7 +307,7 @@ export default function PricingPage() {
         }
         .toggle-track {
           width: 44px; height: 24px;
-          background: ${yearly ? '#2a7af3' : '#444'};
+          background: ${yearly ? 'hsl(214 89% 56%)' : 'hsl(0 0% 27%)'};
           border-radius: var(--radius-full);
           position: relative;
           transition: background var(--transition);

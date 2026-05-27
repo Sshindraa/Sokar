@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PhoneCall, Frown } from 'lucide-react';
+import { AlertCircle, PhoneCall } from 'lucide-react';
 
 export default function CallsPage() {
   const { get, orgId } = useApi();
@@ -22,6 +22,7 @@ export default function CallsPage() {
   const [calls, setCalls] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!orgId) return;
@@ -31,8 +32,8 @@ export default function CallsPage() {
         const data = await get(`calls?restaurantId=${orgId}&limit=100&offset=0`);
         setCalls(data.data ?? []);
         setTotal(data.total ?? 0);
-      } catch {
-        // silent
+      } catch (err: any) {
+        setError(err.message || 'Impossible de charger les appels');
       }
       setLoading(false);
     }
@@ -43,12 +44,12 @@ export default function CallsPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <Skeleton className="h-8 w-24" />
+          <Skeleton className="h-8 w-24 rounded-full" />
           <Skeleton className="h-4 w-20" />
         </div>
         <div className="space-y-2">
           {[1, 2, 3, 4, 5].map((i) => (
-            <Skeleton key={i} className="h-12 w-full" />
+            <Skeleton key={i} className="h-12 w-full rounded-xl" />
           ))}
         </div>
       </div>
@@ -62,8 +63,13 @@ export default function CallsPage() {
         <span className="text-sm text-muted-foreground">{total} appels</span>
       </div>
 
-      {calls.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
+      {error ? (
+        <div className="sokar-error">
+          <AlertCircle size={18} />
+          {error}
+        </div>
+      ) : calls.length === 0 ? (
+        <div className="sokar-empty">
           <PhoneCall size={40} className="opacity-30" />
           <p className="text-sm">Aucun appel pour le moment</p>
           <p className="text-xs opacity-60">
@@ -71,7 +77,7 @@ export default function CallsPage() {
           </p>
         </div>
       ) : (
-        <div className="rounded-xl border border-border">
+        <div className="sokar-card overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -115,7 +121,7 @@ export default function CallsPage() {
 function OutcomeBadge({ outcome }: { outcome: string | null }) {
   switch (outcome) {
     case 'RESERVED':
-      return <Badge className="bg-green-100 text-green-700 hover:bg-green-200">Réservé</Badge>;
+      return <Badge className="border-primary/20 bg-primary/10 text-foreground hover:bg-primary/15">Réservé</Badge>;
     case 'INFO':
       return <Badge variant="secondary">Info</Badge>;
     case 'NO_ACTION':
