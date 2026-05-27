@@ -1,0 +1,50 @@
+'use client';
+
+import Link from 'next/link';
+import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/nextjs';
+import { Button } from '@/components/ui/button';
+
+export default function Header() {
+  return (
+    <header className="fixed left-1/2 top-5 z-50 w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 rounded-full border border-border bg-card/85 px-3 py-2 shadow-2xl shadow-background/40 backdrop-blur-xl">
+      <div className="flex items-center justify-between gap-3">
+        <Link
+          href="/"
+          className="flex min-w-0 items-center gap-2 rounded-full px-2 transition-all duration-200 hover:opacity-80"
+        >
+          <img src="/logo-nav.png" alt="Sokar" className="h-9 w-9" />
+          <span className="text-sm font-semibold text-foreground">Sokar</span>
+        </Link>
+        <div className="flex items-center gap-1 sm:gap-2">
+          <Link href="/pricing" className="sokar-pill border-transparent bg-transparent px-3 py-1.5">
+            Tarifs
+          </Link>
+          <SignedOut>
+            <SignInButton mode="redirect">
+              <Button size="sm" className="rounded-full transition-all duration-200">
+                Connexion
+              </Button>
+            </SignInButton>
+          </SignedOut>
+          <SignedIn>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/dashboard"
+                className="hidden rounded-full px-3 py-1.5 text-sm font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground sm:inline-flex"
+              >
+                Dashboard
+              </Link>
+              <UserButton
+                appearance={{
+                  elements: {
+                    avatarBox: 'h-8 w-8',
+                  },
+                }}
+              />
+            </div>
+          </SignedIn>
+        </div>
+      </div>
+    </header>
+  );
+}
