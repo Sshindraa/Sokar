@@ -111,7 +111,12 @@ async function start() {
   process.on('SIGINT',  () => shutdown('SIGINT'));
 
   app.listen({ port: 4000, host: '0.0.0.0' }, (err) => {
-    if (err) { app.log.error(err); process.exit(1); }
+    if (err) {
+      app.log.error(err);
+      app.log.warn('Failed to listen on port 4000 — will exit gracefully for PM2 restart');
+      process.exitCode = 1;
+      return;
+    }
   });
 
   setImmediate(async () => {
