@@ -29,7 +29,7 @@ export default function RegisterPage() {
   const [visibleSteps, setVisibleSteps] = useState<typeof SIMULATOR_STEPS>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isTyping, setIsTyping] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   // Redirection si déjà connecté
   useEffect(() => {
@@ -78,13 +78,18 @@ export default function RegisterPage() {
     }
   }, [currentStepIndex, visibleSteps]);
 
-  // Scroll automatique vers le bas du chat simulé
+  // Scroll automatique uniquement du conteneur du chat simulé (sans scroller la fenêtre principale)
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+    }
   }, [visibleSteps, isTyping]);
 
-  // Affichage du loader haut de gamme pendant la redirection
-  if (!isLoaded || isSignedIn) {
+  // Affichage du loader haut de gamme uniquement pendant la redirection (quand déjà connecté)
+  if (isLoaded && isSignedIn) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center relative overflow-hidden">
         <style>{`body > header { display: none !important; }`}</style>
@@ -142,33 +147,49 @@ export default function RegisterPage() {
             </p>
           </div>
 
-          <SignUp
-            appearance={{
-              variables: {
-                colorPrimary: 'hsl(var(--foreground))',
-                colorBackground: 'hsl(var(--card))',
-                colorText: 'hsl(var(--foreground))',
-                colorTextSecondary: 'hsl(var(--muted-foreground))',
-                borderRadius: '0.75rem',
-              },
-              elements: {
-                rootBox: 'mx-auto w-full max-w-sm',
-                card: 'shadow-none border border-border bg-card/60 backdrop-blur-xl p-0 w-full rounded-2xl overflow-hidden',
-                main: 'p-6',
-                header: 'hidden', // On masque le header Clerk brut au profit du nôtre
-                socialButtonsBlockButton: 'border border-border bg-secondary/40 text-foreground hover:bg-accent hover:text-foreground transition-all duration-200 rounded-xl h-10',
-                formFieldLabel: 'text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1',
-                formFieldInput: 'flex h-10 w-full rounded-lg border border-input bg-background/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-all duration-200',
-                formButtonPrimary: 'bg-primary text-primary-foreground hover:bg-primary/95 transition-all duration-200 rounded-lg h-10 text-sm font-semibold shadow-md shadow-primary/10 active:scale-[0.98]',
-                footerActionText: 'text-xs text-muted-foreground',
-                footerActionLink: 'text-xs text-foreground font-semibold hover:underline transition-colors',
-                dividerLine: 'bg-border',
-                dividerText: 'text-muted-foreground text-[10px] uppercase font-bold tracking-widest',
-                identityPreviewCard: 'border border-border bg-secondary/30 rounded-xl p-3',
-                formResendCodeButton: 'text-foreground hover:text-muted-foreground transition-colors font-medium',
-              },
-            }}
-          />
+          {!isLoaded ? (
+            <div className="mx-auto w-full max-w-sm space-y-5">
+              <div className="space-y-2">
+                <div className="h-3 w-16 bg-secondary/80 rounded animate-pulse" />
+                <div className="h-10 w-full bg-secondary/40 border border-border/80 rounded-lg animate-pulse" />
+              </div>
+              <div className="space-y-2">
+                <div className="h-3 w-28 bg-secondary/80 rounded animate-pulse" />
+                <div className="h-10 w-full bg-secondary/40 border border-border/80 rounded-lg animate-pulse" />
+              </div>
+              <div className="h-10 w-full bg-primary/20 rounded-lg animate-pulse" />
+              <div className="h-px bg-border/40 my-6" />
+              <div className="h-10 w-full bg-secondary/20 border border-border/80 rounded-lg animate-pulse" />
+            </div>
+          ) : (
+            <SignUp
+              appearance={{
+                variables: {
+                  colorPrimary: 'hsl(var(--foreground))',
+                  colorBackground: 'hsl(var(--card))',
+                  colorText: 'hsl(var(--foreground))',
+                  colorTextSecondary: 'hsl(var(--muted-foreground))',
+                  borderRadius: '0.75rem',
+                },
+                elements: {
+                  rootBox: 'mx-auto w-full max-w-sm',
+                  card: 'shadow-none border border-border bg-card/60 backdrop-blur-xl p-0 w-full rounded-2xl overflow-hidden',
+                  main: 'p-6',
+                  header: 'hidden', // On masque le header Clerk brut au profit du nôtre
+                  socialButtonsBlockButton: 'border border-border bg-secondary/40 text-foreground hover:bg-accent hover:text-foreground transition-all duration-200 rounded-xl h-10',
+                  formFieldLabel: 'text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1',
+                  formFieldInput: 'flex h-10 w-full rounded-lg border border-input bg-background/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-all duration-200',
+                  formButtonPrimary: 'bg-primary text-primary-foreground hover:bg-primary/95 transition-all duration-200 rounded-lg h-10 text-sm font-semibold shadow-md shadow-primary/10 active:scale-[0.98]',
+                  footerActionText: 'text-xs text-muted-foreground',
+                  footerActionLink: 'text-xs text-foreground font-semibold hover:underline transition-colors',
+                  dividerLine: 'bg-border',
+                  dividerText: 'text-muted-foreground text-[10px] uppercase font-bold tracking-widest',
+                  identityPreviewCard: 'border border-border bg-secondary/30 rounded-xl p-3',
+                  formResendCodeButton: 'text-foreground hover:text-muted-foreground transition-colors font-medium',
+                },
+              }}
+            />
+          )}
         </div>
 
         {/* Pied de page discret */}
@@ -251,7 +272,10 @@ export default function RegisterPage() {
             </div>
 
             {/* Corps des messages du chat */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-3 scrollbar-none flex flex-col justify-start">
+            <div
+              ref={chatContainerRef}
+              className="flex-1 overflow-y-auto p-5 space-y-3 scrollbar-none flex flex-col justify-start"
+            >
               {visibleSteps.map((step, idx) => (
                 <div
                   key={idx}
@@ -274,7 +298,6 @@ export default function RegisterPage() {
                   <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
               )}
-              <div ref={chatEndRef} />
             </div>
           </div>
         </div>
