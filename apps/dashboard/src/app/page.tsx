@@ -12,8 +12,8 @@ import {
 
 const navItems = [
   { label: 'Services', href: '#services' },
+  { label: "Cas d'usage", href: '#cases' },
   { label: 'Tarifs', href: '/pricing' },
-  { label: 'Dashboard', href: '/dashboard' },
   { label: 'Contact', href: '#contact' },
 ];
 
@@ -39,63 +39,63 @@ export default function HomePage() {
           position: absolute;
           inset: auto;
           pointer-events: none;
-          filter: blur(34px);
-          opacity: 0.75;
+          filter: blur(38px);
+          opacity: 0.78;
         }
         .home-atmosphere::before {
-          width: 58rem;
-          height: 14rem;
-          left: -8rem;
-          top: 3rem;
-          transform: rotate(-18deg);
+          width: 64rem;
+          height: 12rem;
+          left: -12rem;
+          top: 1rem;
+          transform: rotate(-14deg);
           border-radius: 9999px;
-          background: linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.82), transparent);
+          background: linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.85), transparent);
         }
         .home-atmosphere::after {
-          width: 52rem;
-          height: 16rem;
-          right: -10rem;
-          bottom: 3rem;
-          transform: rotate(-22deg);
+          width: 46rem;
+          height: 18rem;
+          right: -6rem;
+          bottom: 6rem;
+          transform: rotate(-28deg);
           border-radius: 9999px;
-          background: linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.55), transparent);
+          background: linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.5), transparent);
         }
         .liquid-field {
           background:
-            radial-gradient(ellipse at 20% 62%, hsl(0 0% 100% / 0.42) 0%, hsl(0 0% 100% / 0.1) 18%, transparent 36%),
-            radial-gradient(ellipse at 78% 66%, hsl(0 0% 100% / 0.28) 0%, hsl(0 0% 100% / 0.08) 20%, transparent 42%),
-            radial-gradient(ellipse at 49% 83%, hsl(0 0% 100% / 0.34) 0%, hsl(0 0% 100% / 0.1) 16%, transparent 34%),
+            radial-gradient(ellipse at 15% 45%, hsl(0 0% 100% / 0.44) 0%, hsl(0 0% 100% / 0.12) 20%, transparent 38%),
+            radial-gradient(ellipse at 85% 72%, hsl(0 0% 100% / 0.3) 0%, hsl(0 0% 100% / 0.06) 18%, transparent 40%),
+            radial-gradient(ellipse at 35% 88%, hsl(0 0% 100% / 0.36) 0%, hsl(0 0% 100% / 0.1) 15%, transparent 32%),
             linear-gradient(180deg, hsl(0 0% 2%) 0%, hsl(0 0% 0%) 100%);
         }
         .liquid-field::before {
           content: '';
           position: absolute;
-          left: -8%;
-          right: -6%;
-          top: 31%;
-          height: 33%;
+          left: -12%;
+          right: -4%;
+          top: 28%;
+          height: 36%;
           border-radius: 50%;
-          transform: rotate(6deg);
+          transform: rotate(8deg);
           background:
-            radial-gradient(ellipse at 18% 40%, hsl(0 0% 100% / 0.7), transparent 18%),
-            radial-gradient(ellipse at 37% 66%, hsl(0 0% 100% / 0.45), transparent 15%),
-            radial-gradient(ellipse at 62% 56%, hsl(0 0% 100% / 0.28), transparent 18%),
-            radial-gradient(ellipse at 86% 42%, hsl(0 0% 100% / 0.35), transparent 17%);
-          filter: blur(18px);
-          opacity: 0.72;
+            radial-gradient(ellipse at 12% 35%, hsl(0 0% 100% / 0.72), transparent 16%),
+            radial-gradient(ellipse at 42% 70%, hsl(0 0% 100% / 0.48), transparent 14%),
+            radial-gradient(ellipse at 58% 46%, hsl(0 0% 100% / 0.26), transparent 16%),
+            radial-gradient(ellipse at 92% 52%, hsl(0 0% 100% / 0.38), transparent 15%);
+          filter: blur(20px);
+          opacity: 0.75;
         }
         .liquid-field::after {
           content: '';
           position: absolute;
-          left: 24%;
-          top: 20%;
-          width: 52%;
-          height: 56%;
-          border-radius: 48%;
-          border: 1px solid hsl(0 0% 100% / 0.11);
-          transform: rotate(-12deg);
-          filter: blur(1px);
-          opacity: 0.7;
+          left: 28%;
+          top: 16%;
+          width: 48%;
+          height: 60%;
+          border-radius: 52%;
+          border: 1px solid hsl(0 0% 100% / 0.13);
+          transform: rotate(-16deg);
+          filter: blur(1.5px);
+          opacity: 0.65;
         }
       `}</style>
 
@@ -116,7 +116,7 @@ export default function HomePage() {
               </p>
               <Link
                 href="/dashboard"
-                className="mt-8 inline-flex items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-all duration-200 hover:scale-[1.01] hover:bg-primary/90"
+                className="mt-8 inline-flex items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.01] hover:bg-primary/90 hover:shadow-[0_0_20px_rgba(255,255,255,0.12)] active:scale-[0.98]"
               >
                 Ouvrir le dashboard
                 <ArrowUpRight size={16} />
@@ -132,9 +132,9 @@ export default function HomePage() {
             <div className="liquid-field absolute inset-0" />
 
             <header className="relative z-10 mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-6 py-6 md:px-10">
-              <Link href="/" className="flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-80">
-                <img src="/logo-nav.png" alt="Sokar" className="h-6 w-6 rounded-full" />
-                <span className="text-sm font-semibold">Sokar</span>
+              <Link href="/" className="flex items-center gap-2.5 rounded-full transition-all duration-300 hover:opacity-90">
+                <img src="/logo-nav.png" alt="Sokar" className="h-7 w-7 rounded-full shadow-[0_0_10px_rgba(255,255,255,0.15)]" />
+                <span className="text-base font-bold tracking-tight text-foreground">Sokar</span>
               </Link>
               <nav className="hidden items-center gap-6 md:flex">
                 {navItems.map((item) => (
@@ -149,7 +149,7 @@ export default function HomePage() {
               </nav>
               <Link
                 href="/register"
-                className="inline-flex items-center gap-2 rounded-full border border-border bg-card/80 px-4 py-2 text-xs font-medium transition-all duration-200 hover:bg-primary hover:text-primary-foreground"
+                className="inline-flex items-center gap-2 rounded-full border border-border bg-card/80 px-4 py-2 text-xs font-medium transition-all duration-300 hover:-translate-y-0.5 hover:bg-primary hover:text-primary-foreground hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] active:scale-[0.98]"
               >
                 Essai gratuit
                 <ArrowUpRight size={14} />
@@ -157,7 +157,7 @@ export default function HomePage() {
             </header>
 
             <div className="relative z-10 mx-auto flex w-full max-w-7xl flex-1 flex-col items-center justify-center px-6 py-16 text-center md:px-10">
-              <p className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-4 py-2 text-xs text-muted-foreground backdrop-blur-xl">
+              <p className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-5 py-2.5 text-xs text-muted-foreground backdrop-blur-xl transition-all duration-300 hover:border-foreground/20">
                 <Sparkles size={14} />
                 Assistant vocal pour restaurants
               </p>
@@ -171,31 +171,34 @@ export default function HomePage() {
               <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
                 <Link
                   href="/register"
-                  className="inline-flex items-center justify-center rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-all duration-200 hover:scale-[1.01] hover:bg-primary/90"
+                  className="inline-flex items-center justify-center rounded-full bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.01] hover:bg-primary/90 hover:shadow-[0_0_20px_rgba(255,255,255,0.12)] active:scale-[0.98]"
                 >
                   Réserver une démo
                 </Link>
                 <Link
                   href="/pricing"
-                  className="inline-flex items-center justify-center rounded-full border border-border bg-card/80 px-6 py-3 text-sm font-semibold transition-all duration-200 hover:bg-accent"
+                  className="inline-flex items-center justify-center rounded-full border border-border bg-card/80 px-6 py-3 text-sm font-semibold transition-all duration-300 hover:-translate-y-0.5 hover:bg-accent hover:border-foreground/30 hover:shadow-[0_0_15px_rgba(255,255,255,0.08)] active:scale-[0.98]"
                 >
                   Voir les tarifs
                 </Link>
               </div>
             </div>
 
-            <div className="relative z-10 mx-auto grid w-full max-w-7xl gap-4 px-6 pb-8 text-xs text-muted-foreground md:grid-cols-[1fr_auto_1fr] md:px-10">
+            <div className="relative z-10 mx-auto grid w-full max-w-7xl gap-4 px-6 pb-8 text-xs text-foreground/80 md:grid-cols-[1fr_auto_1fr] md:px-10">
               <div className="hidden items-center gap-3 md:flex">
-                <span>Scroll</span>
-                <span className="h-px flex-1 bg-border" />
-                <span>pour découvrir</span>
+                <span className="font-medium">Scroll</span>
+                <span className="h-px flex-1 bg-border/40" />
+                <span className="font-medium">pour découvrir</span>
               </div>
-              <div className="mx-auto grid h-8 w-8 place-items-center rounded-full border border-border bg-card/70">
-                <Headphones size={14} />
-              </div>
+              <button className="group mx-auto flex items-center gap-2 rounded-full border border-border/40 bg-card/70 px-3 py-1.5 transition-all duration-300 hover:bg-foreground hover:text-background hover:scale-105 active:scale-95">
+                <Headphones size={14} className="animate-pulse" />
+                <span className="text-[10px] font-semibold tracking-wide uppercase text-foreground/80 group-hover:text-background transition-colors duration-300">
+                  écouter une démo
+                </span>
+              </button>
               <div className="hidden items-center gap-3 md:flex">
-                <span className="h-px flex-1 bg-border" />
-                <span>pilotage temps réel</span>
+                <span className="h-px flex-1 bg-border/40" />
+                <span className="font-medium">pilotage temps réel</span>
               </div>
             </div>
           </section>
