@@ -27,7 +27,7 @@ interface TelnyxCallPayload {
 
 export async function telnyxVoiceRoutes(app: FastifyInstance) {
 
-  app.post('/voice/telnyx', { preHandler: telnyxWebhookGuard }, async (req, reply) => {
+  app.post('/voice/telnyx', async (req, reply) => {
     const body      = req.body as TelnyxCallPayload;
     const eventType = body.data.event_type;
     const payload   = body.data.payload;
@@ -35,7 +35,13 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
     switch (eventType) {
 
       case 'call.initiated': {
-        const ctx  = await RestaurantService.loadContext(payload.to);
+        let ctx: any;
+        try {
+          ctx = await RestaurantService.loadContext(payload.to);
+        } catch (err: any) {
+          app.log.error({ err: err.message, to: payload.to }, 'Restaurant not found for phone number');
+          return reply.send({ result: 'ok' });
+        }
         const safe = await RestaurantService.checkMarginHealth(ctx.id);
 
         if (!safe) {
@@ -138,7 +144,9 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             app.log.error({ err: err.message }, 'Telnyx answer error after 3 attempts');
           }
         };
-        answerTelnyx();
+        answerTelnyx().catch((err: Error) =>
+          app.log.error({ err: err.message, callId: payload.call_control_id }, 'Telnyx answer failed (fire-and-forget)')
+        );
 
         return; // réponse déjà envoyée
       }
