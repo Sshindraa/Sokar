@@ -14,13 +14,14 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { CalendarCheck } from 'lucide-react';
+import { AlertCircle, CalendarCheck } from 'lucide-react';
 
 export default function ReservationsPage() {
   const { get, orgId } = useApi();
 
   const [reservations, setReservations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!orgId) return;
@@ -29,8 +30,8 @@ export default function ReservationsPage() {
       try {
         const data = await get(`reservations?restaurantId=${orgId}&limit=100`);
         setReservations(Array.isArray(data) ? data : []);
-      } catch {
-        // silent
+      } catch (err: any) {
+        setError(err.message || 'Impossible de charger les réservations');
       }
       setLoading(false);
     }
@@ -41,12 +42,12 @@ export default function ReservationsPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <Skeleton className="h-8 w-36" />
+          <Skeleton className="h-8 w-36 rounded-full" />
           <Skeleton className="h-4 w-24" />
         </div>
         <div className="space-y-2">
           {[1, 2, 3, 4, 5].map((i) => (
-            <Skeleton key={i} className="h-12 w-full" />
+            <Skeleton key={i} className="h-12 w-full rounded-xl" />
           ))}
         </div>
       </div>
@@ -62,8 +63,13 @@ export default function ReservationsPage() {
         </span>
       </div>
 
-      {reservations.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
+      {error ? (
+        <div className="sokar-error">
+          <AlertCircle size={18} />
+          {error}
+        </div>
+      ) : reservations.length === 0 ? (
+        <div className="sokar-empty">
           <CalendarCheck size={40} className="opacity-30" />
           <p className="text-sm">Aucune réservation pour le moment</p>
           <p className="text-xs opacity-60">
@@ -71,7 +77,7 @@ export default function ReservationsPage() {
           </p>
         </div>
       ) : (
-        <div className="rounded-xl border border-border">
+        <div className="sokar-card overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -113,11 +119,11 @@ export default function ReservationsPage() {
 function StatusBadge({ status }: { status: string }) {
   switch (status) {
     case 'CONFIRMED':
-      return <Badge className="bg-green-100 text-green-700 hover:bg-green-200">Confirmée</Badge>;
+      return <Badge className="border-primary/20 bg-primary/10 text-foreground hover:bg-primary/15">Confirmée</Badge>;
     case 'CANCELLED':
-      return <Badge className="bg-red-100 text-red-700 hover:bg-red-200">Annulée</Badge>;
+      return <Badge variant="destructive">Annulée</Badge>;
     case 'SEATED':
-      return <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200">Installée</Badge>;
+      return <Badge className="border-border bg-secondary text-secondary-foreground hover:bg-accent">Installée</Badge>;
     case 'NO_SHOW':
       return <Badge variant="secondary">No-show</Badge>;
     default:

@@ -1,29 +1,52 @@
+'use client';
+
+import Link from 'next/link';
 import { ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
+import { BarChart3, CalendarCheck, PhoneCall, Settings, Users } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+const navItems = [
+  { href: '/dashboard', label: 'Aperçu', icon: BarChart3 },
+  { href: '/dashboard/calls', label: 'Appels', icon: PhoneCall },
+  { href: '/dashboard/reservations', label: 'Réservations', icon: CalendarCheck },
+  { href: '/dashboard/customers', label: 'Clients', icon: Users },
+  { href: '/dashboard/settings', label: 'Réglages', icon: Settings },
+];
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+
   return (
-    <div
-      className="dark"
-      style={{
-        minHeight: '100vh',
-        background: 'radial-gradient(circle at top, #2a3036 0%, #1a1e22 45%, #15181c 100%)',
-        fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
-        color: '#f3f3f3',
-        padding: 16,
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          minHeight: 'calc(100vh - 32px)',
-          background: 'linear-gradient(180deg, #212121 0%, #1b1b1b 100%)',
-          border: '1px solid rgba(255,255,255,.05)',
-          borderRadius: 28,
-          padding: 16,
-          boxShadow: '0 18px 40px rgba(0,0,0,.25)',
-        }}
-      >
-        {children}
+    <div className="dark sokar-page pt-24">
+      <div className="sokar-container">
+        <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm text-muted-foreground">Sokar OS</p>
+            <h1 className="mt-1 text-3xl font-semibold tracking-tight">Tableau de bord</h1>
+          </div>
+          <nav className="flex gap-2 overflow-x-auto rounded-full border border-border bg-card/80 p-2 backdrop-blur-xl">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const active = pathname === item.href;
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground',
+                    active && 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
+                  )}
+                >
+                  <Icon size={16} />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+        <main className="min-h-[calc(100vh-14rem)]">{children}</main>
       </div>
     </div>
   );
