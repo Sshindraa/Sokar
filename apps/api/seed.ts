@@ -5,25 +5,37 @@ const db = new PrismaClient();
 async function seed() {
   console.log('Seeding test data...');
 
-  // 1. Créer un restaurant test (ou upsert s'il existe déjà)
+  // 1. Créer un restaurant test (upsert)
   const restId = '00000000-0000-0000-0000-000000000001';
-  const existing = await db.restaurant.findUnique({ where: { id: restId } });
-  if (existing) {
-    console.log(`  Restaurant existe déjà: ${existing.name}`);
-    // Supprimer les données existantes pour éviter les doublons
-    await db.reservation.deleteMany({ where: { restaurantId: restId } });
-    await db.call.deleteMany({ where: { restaurantId: restId } });
-    await db.customer.deleteMany({ where: { restaurantId: restId } });
-  }
+  await db.reservation.deleteMany({ where: { restaurantId: restId } });
+  await db.call.deleteMany({ where: { restaurantId: restId } });
+  await db.customer.deleteMany({ where: { restaurantId: restId } });
 
-  const restaurant = existing ?? await db.restaurant.create({
-    data: {
-      id: '00000000-0000-0000-0000-000000000001',
+  const restaurant = await db.restaurant.upsert({
+    where: { id: restId },
+    create: {
+      id: restId,
       name: 'Le Petit Bistrot Parisien',
       plan: 'PRO',
       managerPhone: '+33611223344',
       managerEmail: 'gerant@petitbistrot.fr',
-      phoneNumber: '+33199887766',
+      phoneNumber: '+33451221528',
+      openingHours: {
+        mon: { open: '12:00', close: '14:30' },
+        tue: { open: '12:00', close: '14:30' },
+        wed: { open: '12:00', close: '14:30' },
+        thu: { open: '12:00', close: '14:30' },
+        fri: { open: '12:00', close: '15:00' },
+        sat: { open: '19:00', close: '23:00' },
+        sun: null,
+      },
+    },
+    update: {
+      name: 'Le Petit Bistrot Parisien',
+      plan: 'PRO',
+      managerPhone: '+33611223344',
+      managerEmail: 'gerant@petitbistrot.fr',
+      phoneNumber: '+33451221528',
       openingHours: {
         mon: { open: '12:00', close: '14:30' },
         tue: { open: '12:00', close: '14:30' },
@@ -35,7 +47,7 @@ async function seed() {
       },
     },
   });
-  console.log(`  Restaurant: ${restaurant.name}`);
+  console.log(`  Restaurant: ${restaurant.name} (tel: ${restaurant.phoneNumber})`);
 
   // 2. Créer des clients
   const customers = await Promise.all([

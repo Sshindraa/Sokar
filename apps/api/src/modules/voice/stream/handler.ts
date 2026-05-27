@@ -114,14 +114,35 @@ function handleTelnyxMessage(
         return;
       }
 
+      // Assigner le WebSocket Telnyx à la session (manquant — cause du silence)
+      session.telnyxWs = socket;
+
       // Deepgram est déjà en cours de connexion (pre-warmé dans call.initiated)
-      // On attache juste le handler d'events
       session.onDeepgramEvent = (event: FluxEvent) => handleFluxEvent(event, session, mgr);
       session.deepgramReady?.then(() => {
         console.log(`[stream] Deepgram ready for ${start.call_control_id}`);
       }).catch((err) => {
         console.error(`[stream] Deepgram was not ready: ${err.message}`);
       });
+
+      // Jouer le message d'accueil immédiatement (ne dépend pas de Deepgram)
+      const restaurantName = session.systemPrompt
+        .split('\n')[0]
+        .replace(/^Tu es l'assistant vocal de /, '')
+        .replace(/\.$/, '')
+        .trim();
+
+      const greeting = `Bonjour, ${restaurantName}, cet appel peut être enregistré à des fins de qualité de service. En quoi puis-je vous aider ?`;
+
+      mgr.transition(session, 'SPEAKING');
+      speakTtsStreamed(session, greeting)
+        .then(() => {
+          mgr.transition(session, 'LISTENING');
+        })
+        .catch((err) => {
+          console.error(`[stream] Initial greeting TTS failed:`, err);
+          mgr.transition(session, 'LISTENING');
+        });
 
       return session;
     }
