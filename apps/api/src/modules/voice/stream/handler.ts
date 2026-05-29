@@ -11,10 +11,74 @@
 
 import type { FastifyInstance } from 'fastify';
 import { WebSocket } from 'ws';
+import * as fs from 'fs';
+import * as path from 'path';
 import type { TelnyxStreamMessage, FluxEvent, CallSession } from './types';
 import { CallSessionManager } from './manager';
 import { connectDeepgramFlux, sendAudioToDeepgram, closeDeepgram } from './deepgram-bridge';
 import { playFiller } from './fillers-cache';
+import { getTtsCached, setTtsCached } from '../tts-cache';
+import { alaw, mulaw } from 'alawmulaw';
+
+const recentTranscripts = new WeakMap<CallSession, { normalized: string; at: number }>();
+
+function writeDebugLog(msg: string, err?: any) {
+  const timestamp = new Date().toISOString();
+  const logMsg = `[${timestamp}] ${msg}${err ? ' | ERROR: ' + err.message + '\n' + err.stack : ''}\n`;
+  try {
+    const logPath = process.env.DEBUG_LOG_PATH || path.join(process.cwd(), 'scratch', 'call_debug.log');
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(logPath, logMsg);
+  } catch (e) {
+    console.error('Failed to write debug log:', e);
+  }
+}
+
+function normalizeTranscriptForDedupe(transcript: string): string {
+  return transcript
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function shouldSkipDuplicateTranscript(session: CallSession, transcript: string): boolean {
+  const normalized = normalizeTranscriptForDedupe(transcript);
+  if (!normalized) return true;
+
+  const previous = recentTranscripts.get(session);
+  const now = Date.now();
+  if (previous && previous.normalized === normalized && now - previous.at < 2000) {
+    return true;
+  }
+
+  recentTranscripts.set(session, { normalized, at: now });
+  return false;
+}
+
+function isSessionActiveForTts(session: CallSession): boolean {
+  return !session.ended && session.state === 'SPEAKING' && session.telnyxWs.readyState === WebSocket.OPEN;
+}
+
+function extractRestaurantName(systemPrompt: string): string {
+  return systemPrompt
+    .split('\n')[0]
+    .replace(/^Tu es l'hôte d'accueil et assistant vocal chaleureux de /, '')
+    .replace(/^Tu es l'assistant vocal de /, '')
+    .replace(/\.$/, '')
+    .trim();
+}
+
+function stripRepeatedGreeting(text: string, session: CallSession): string {
+  const restaurantName = extractRestaurantName(session.systemPrompt);
+  const escapedName = restaurantName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const greetingPattern = new RegExp(
+    `^\\s*Bonjour,\\s*${escapedName}\\s*!\\s*`,
+    'i',
+  );
+
+  return text.replace(greetingPattern, '').trim();
+}
 
 /** Crée ou met à jour un enregistrement Call en base pour un appel Flux */
 async function persistFluxCall(session: CallSession): Promise<void> {
@@ -44,6 +108,47 @@ async function persistFluxCall(session: CallSession): Promise<void> {
   }
 }
 
+/** Enregistre la trace de latence en base pour l'appel */
+async function persistLatencyTrace(session: CallSession): Promise<void> {
+  const trace = session.latencyTrace;
+  if (!trace) return;
+  try {
+    const { db } = await import('../../../shared/db/client');
+    const callRecord = await db.call.findUnique({
+      where: { callSid: session.callLegId }
+    });
+    if (!callRecord) {
+      writeDebugLog(`[latency] No call record found for leg ${session.callLegId} to attach latency trace`);
+      return;
+    }
+    
+    await db.latencyTrace.upsert({
+      where: { callId: callRecord.id },
+      update: {
+        vadEndMs: 0,
+        sttFinalMs: trace.sttFinalMs ?? 0,
+        llmFirstToken: trace.llmFirstTokenMs ?? null,
+        ttsFirstByte: trace.ttsFirstByteMs ?? null,
+        audioPlayingMs: trace.totalE2eMs ?? null,
+        totalE2eMs: trace.totalE2eMs ?? null,
+      },
+      create: {
+        callId: callRecord.id,
+        vadEndMs: 0,
+        sttFinalMs: trace.sttFinalMs ?? 0,
+        llmFirstToken: trace.llmFirstTokenMs ?? null,
+        ttsFirstByte: trace.ttsFirstByteMs ?? null,
+        audioPlayingMs: trace.totalE2eMs ?? null,
+        totalE2eMs: trace.totalE2eMs ?? null,
+      }
+    });
+    writeDebugLog(`[latency] Saved latency trace for call ${callRecord.id}: E2E ${trace.totalE2eMs}ms`);
+  } catch (err: any) {
+    writeDebugLog(`[latency] Failed to persist latency trace`, err);
+    console.error('[latency] Failed to persist latency trace:', err);
+  }
+}
+
 /**
  * Enregistre la route WebSocket pour le media stream Telnyx.
  * Utilise @fastify/websocket pour la gestion des connexions WS.
@@ -70,6 +175,9 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
     socket.on('close', () => {
       console.log(`[stream] Telnyx WS closed for ${callId}`);
       if (session) {
+        session.ended = true;
+        session.state = 'IDLE';
+        session.isSpeaking = false;
         // Persister l'appel avant cleanup
         persistFluxCall(session);
         closeDeepgram(session);
@@ -80,6 +188,9 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
     socket.on('error', (err: Error) => {
       console.error(`[stream] Error for ${callId}:`, err.message);
       if (session) {
+        session.ended = true;
+        session.state = 'IDLE';
+        session.isSpeaking = false;
         persistFluxCall(session);
         closeDeepgram(session);
         mgr.delete(session.callControlId);
@@ -105,11 +216,13 @@ function handleTelnyxMessage(
 
     case 'start': {
       const start = msg.start!;
+      writeDebugLog(`[stream] Received start event for call ${start.call_control_id}`);
       console.log(`[stream] Start — call ${start.call_control_id}, from ${start.from}, ` +
         `encoding ${start.media_format.encoding}`);
 
       const session = mgr.get(start.call_control_id);
       if (!session) {
+        writeDebugLog(`[stream] No session found for ${start.call_control_id}`);
         console.warn(`[stream] No session found for ${start.call_control_id}`);
         return;
       }
@@ -120,26 +233,27 @@ function handleTelnyxMessage(
       // Deepgram est déjà en cours de connexion (pre-warmé dans call.initiated)
       session.onDeepgramEvent = (event: FluxEvent) => handleFluxEvent(event, session, mgr);
       session.deepgramReady?.then(() => {
+        writeDebugLog(`[stream] Deepgram ready for ${start.call_control_id}`);
         console.log(`[stream] Deepgram ready for ${start.call_control_id}`);
       }).catch((err) => {
+        writeDebugLog(`[stream] Deepgram pre-warm was not ready`, err);
         console.error(`[stream] Deepgram was not ready: ${err.message}`);
       });
 
       // Jouer le message d'accueil immédiatement (ne dépend pas de Deepgram)
-      const restaurantName = session.systemPrompt
-        .split('\n')[0]
-        .replace(/^Tu es l'assistant vocal de /, '')
-        .replace(/\.$/, '')
-        .trim();
+      const restaurantName = extractRestaurantName(session.systemPrompt);
 
-      const greeting = `Bonjour, ${restaurantName}, cet appel peut être enregistré à des fins de qualité de service. En quoi puis-je vous aider ?`;
+      const greeting = `Bonjour, ${restaurantName} !`;
 
+      writeDebugLog(`[stream] Speaking greeting: "${greeting}"`);
       mgr.transition(session, 'SPEAKING');
       speakTtsStreamed(session, greeting)
         .then(() => {
+          writeDebugLog(`[stream] Greeting spoken successfully, transitioning to LISTENING`);
           mgr.transition(session, 'LISTENING');
         })
         .catch((err) => {
+          writeDebugLog(`[stream] Greeting TTS failed`, err);
           console.error(`[stream] Initial greeting TTS failed:`, err);
           mgr.transition(session, 'LISTENING');
         });
@@ -157,18 +271,6 @@ function handleTelnyxMessage(
       // Forwarder l'audio à Deepgram
       sendAudioToDeepgram(session, payload);
 
-      // Barge-in avec debounce (3 chunks inbound consécutifs = ~60ms de parole)
-      if (session.state === 'SPEAKING' && msg.media?.track === 'inbound') {
-        session.bargeInChunks++;
-        if (session.bargeInChunks >= 3) {
-          mgr.handleBargeIn(session);
-          session.bargeInChunks = 0;
-        }
-      } else if (session.state !== 'SPEAKING') {
-        // Reset du compteur si on n'est plus en train de parler
-        session.bargeInChunks = 0;
-      }
-
       return session;
     }
 
@@ -176,6 +278,9 @@ function handleTelnyxMessage(
       console.log(`[stream] Telnyx stream stop for ${callId}`);
       const session = mgr.get(callId);
       if (session) {
+        session.ended = true;
+        session.state = 'IDLE';
+        session.isSpeaking = false;
         closeDeepgram(session);
         mgr.delete(session.callControlId);
       }
@@ -218,7 +323,15 @@ function handleFluxEvent(
     case 'InterimHighConfidence': {
       // Spéculation LLM : lancer le LLM sans attendre la fin de l'utterance
       // Stocker la promise pour la réutiliser si l'utterance finale correspond
+      if (process.env.SPECULATIVE_LLM_ENABLED !== 'true') break;
       if (session.state !== 'LISTENING' && session.state !== 'IDLE') break;
+
+      if (!session.latencyTrace) {
+        session.latencyTrace = {
+          startTime: Date.now(),
+          sttFinalMs: 0,
+        };
+      }
 
       // Utiliser la transition du manager pour rester cohérent avec la state machine
       mgr.transition(session, 'PROCESSING'); // transition optimiste
@@ -237,13 +350,21 @@ function handleFluxEvent(
     }
 
     case 'UtteranceEnd': {
+      if (!session.latencyTrace) {
+        session.latencyTrace = {
+          startTime: Date.now(),
+          sttFinalMs: 0,
+        };
+      }
+
       // Cumuler le transcript pour persistance
       session.transcript += (session.transcript ? ' ' : '') + event.transcript;
 
-      // Vérifier si une spéculation est en cours et si le transcript correspond
+      const isSpeculativeEnabled = process.env.SPECULATIVE_LLM_ENABLED === 'true';
       const speculativeTranscript = session.speculativeTranscript;
 
       if (
+        isSpeculativeEnabled &&
         session.speculativeLlm &&
         speculativeTranscript &&
         transcriptsMatch(speculativeTranscript, event.transcript)
@@ -252,15 +373,33 @@ function handleFluxEvent(
         console.log(`[speculative] Match! Using cached LLM response`);
         session.speculativeLlm.then(async (response) => {
           if (response) {
+            // Vérifier que la session est toujours en attente (pas déjà en train de parler)
+            if (session.state !== 'LISTENING' && session.state !== 'IDLE') {
+              writeDebugLog(`[speculative] Session state is ${session.state}, skipping speculative speech`);
+              return;
+            }
             mgr.transition(session, 'SPEAKING');
             await speakTtsStreamed(session, response);
             mgr.transition(session, 'LISTENING');
           }
         });
         session.speculativeLlm = null;
-      } else if (session.state === 'LISTENING' || session.state === 'IDLE') {
-        // Pas de spéculation valide → LLM normal
-        processTranscript(session, event.transcript, mgr);
+        session.speculativeResult = null;
+        session.speculativeTranscript = '';
+      } else {
+        // Pas de spéculation valide ou mismatch / désactivé !
+        if (session.speculativeLlm) {
+          console.log(`[speculative] Mismatch or disabled. Clearing speculative state. Interim: "${speculativeTranscript}", Final: "${event.transcript}"`);
+          session.speculativeLlm = null;
+          session.speculativeResult = null;
+          session.speculativeTranscript = '';
+          mgr.transition(session, 'LISTENING');
+        }
+
+        if (session.state === 'LISTENING' || session.state === 'IDLE') {
+          // LLM streaming phrase par phrase
+          processTranscriptStreaming(session, event.transcript, mgr);
+        }
       }
       break;
     }
@@ -309,6 +448,7 @@ function transcriptsMatch(a: string, b: string): boolean {
 
 /**
  * Traite un transcript : LLM → TTS → envoi à Telnyx.
+ * Mode classique (non-streaming) — utilisé par la spéculation et le fallback.
  */
 async function processTranscript(
   session: CallSession,
@@ -316,26 +456,108 @@ async function processTranscript(
   mgr: CallSessionManager,
 ): Promise<void> {
   if (!transcript.trim()) return;
+  if (session.ended || session.telnyxWs.readyState !== WebSocket.OPEN) {
+    writeDebugLog(`[processTranscript] Session ended or WS closed, skipping transcript`);
+    return;
+  }
+  if (shouldSkipDuplicateTranscript(session, transcript)) {
+    writeDebugLog(`[processTranscript] Skipping duplicate transcript: "${transcript}"`);
+    return;
+  }
 
+  writeDebugLog(`[processTranscript] Received transcript: "${transcript}"`);
   try {
-    // Jouer un filler immédiatement pendant que le LLM réfléchit
-    playFiller(session.telnyxWs, 'CASUAL');
-
-    // LLM
+    writeDebugLog(`[processTranscript] Calling LLM...`);
     const llmResponse = await mgr.processUtterance(session, transcript);
+    if (session.latencyTrace) {
+      session.latencyTrace.llmFirstTokenMs = Date.now() - session.latencyTrace.startTime;
+    }
+    const ttsResponse = stripRepeatedGreeting(llmResponse, session);
+    writeDebugLog(`[processTranscript] LLM responded: "${llmResponse}"`);
 
-    // Clear le filler si encore en cours de lecture
-    if (session.telnyxWs.readyState === WebSocket.OPEN) {
-      session.telnyxWs.send(JSON.stringify({ event: 'clear' }));
+    if (!ttsResponse) {
+      writeDebugLog(`[processTranscript] LLM response empty after greeting strip, skipping TTS`);
+      mgr.transition(session, 'LISTENING');
+      return;
     }
 
-    // TTS
-    await speakTtsStreamed(session, llmResponse);
+    if (!isSessionActiveForTts(session)) {
+      writeDebugLog(`[processTranscript] Session inactive after LLM, skipping TTS`);
+      return;
+    }
 
-    // Retour en écoute
+    writeDebugLog(`[processTranscript] Starting speakTtsStreamed...`);
+    await speakTtsStreamed(session, ttsResponse);
+    writeDebugLog(`[processTranscript] Completed speakTtsStreamed successfully`);
+
     mgr.transition(session, 'LISTENING');
-  } catch (err) {
+    writeDebugLog(`[processTranscript] Transitioned back to LISTENING`);
+  } catch (err: any) {
+    writeDebugLog(`[processTranscript] Caught error`, err);
     console.error(`[pipeline] Error:`, err);
+    mgr.transition(session, 'LISTENING');
+  }
+}
+
+/**
+ * Version streaming : reçoit les phrases du LLM au fur et à mesure
+ * et lance le TTS immédiatement sans attendre la réponse complète.
+ */
+async function processTranscriptStreaming(
+  session: CallSession,
+  transcript: string,
+  mgr: CallSessionManager,
+): Promise<void> {
+  if (!transcript.trim()) return;
+  if (session.ended || session.telnyxWs.readyState !== WebSocket.OPEN) {
+    writeDebugLog(`[processTranscriptStreaming] Session ended or WS closed, skipping`);
+    return;
+  }
+  if (shouldSkipDuplicateTranscript(session, transcript)) {
+    writeDebugLog(`[processTranscriptStreaming] Skipping duplicate transcript: "${transcript}"`);
+    return;
+  }
+
+  writeDebugLog(`[processTranscriptStreaming] Starting LLM stream for: "${transcript}"`);
+
+  const ttsPromises: Promise<void>[] = [];
+
+  try {
+    await mgr.processUtteranceStreaming(session, transcript, (phrase: string) => {
+      writeDebugLog(`[processTranscriptStreaming] Phrase received: "${phrase}"`);
+      if (session.latencyTrace && !session.latencyTrace.llmFirstTokenMs) {
+        session.latencyTrace.llmFirstTokenMs = Date.now() - session.latencyTrace.startTime;
+      }
+
+      const cleanPhrase = stripRepeatedGreeting(phrase, session);
+      if (!cleanPhrase) return;
+
+      if (session.state !== 'SPEAKING') {
+        mgr.transition(session, 'SPEAKING');
+      }
+
+      if (!isSessionActiveForTts(session)) {
+        writeDebugLog(`[processTranscriptStreaming] Session inactive, skipping phrase`);
+        return;
+      }
+
+      // Lancer TTS en background pour ne pas bloquer le stream LLM
+      const ttsPromise = speakTtsStreamed(session, cleanPhrase)
+        .catch((err: any) => {
+          writeDebugLog(`[processTranscriptStreaming] TTS error for phrase: "${cleanPhrase}"`, err);
+        });
+      ttsPromises.push(ttsPromise);
+    });
+
+    writeDebugLog(`[processTranscriptStreaming] LLM stream ended, waiting for TTS...`);
+    await Promise.all(ttsPromises);
+    writeDebugLog(`[processTranscriptStreaming] All TTS completed`);
+
+    mgr.transition(session, 'LISTENING');
+    writeDebugLog(`[processTranscriptStreaming] Transitioned back to LISTENING`);
+  } catch (err: any) {
+    writeDebugLog(`[processTranscriptStreaming] Caught error`, err);
+    console.error(`[pipeline] Streaming error:`, err);
     mgr.transition(session, 'LISTENING');
   }
 }
@@ -356,98 +578,335 @@ function addNaturalPauses(text: string): string {
   return result;
 }
 
+function cleanTextForTts(text: string): string {
+  let cleaned = text;
+
+  // 1. Remove emojis
+  cleaned = cleaned.replace(/[\u{1F300}-\u{1F9FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}]/gu, '');
+
+  // 2. Remove Markdown bold/italic
+  cleaned = cleaned.replace(/\*\*([^*]+)\*\*/g, '$1');
+  cleaned = cleaned.replace(/\*([^*]+)\*/g, '$1');
+  cleaned = cleaned.replace(/__([^_]+)__/g, '$1');
+  cleaned = cleaned.replace(/_([^_]+)_/g, '$1');
+
+  // 3. Normalise time patterns (e.g. 19h -> 19 heures)
+  cleaned = cleaned.replace(/\b(\d+)\s*h\b/g, '$1 heures');
+
+  // 4. Space out alphanumeric codes (e.g. BB344719 -> B. B. 3. 4. 4. 7. 1. 9.)
+  cleaned = cleaned.replace(/\b([A-Z0-9]{5,})\b/g, (match) => {
+    if (/\d/.test(match)) {
+      return match.split('').join('. ');
+    }
+    return match;
+  });
+
+  return cleaned.trim();
+}
+
+async function speakTelnyxNative(session: CallSession, text: string): Promise<void> {
+  writeDebugLog(`[speakTelnyxNative] Sending native Telnyx TTS speak command for: "${text}"`);
+  try {
+    const res = await fetch(`https://api.telnyx.com/v2/calls/${session.callControlId}/actions/speak`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.TELNYX_API_KEY}`,
+      },
+      body: JSON.stringify({
+        payload: text,
+        voice: 'female',
+        language: 'fr-FR',
+        payload_type: 'text',
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      writeDebugLog(`[speakTelnyxNative] Telnyx native speak failed: ${res.status} ${errText}`);
+    } else {
+      writeDebugLog(`[speakTelnyxNative] Telnyx native speak command sent successfully`);
+    }
+  } catch (err: any) {
+    writeDebugLog(`[speakTelnyxNative] Error in Telnyx native speak`, err);
+  }
+}
+
 /**
  * Découpe le texte en phrases pour un streaming progressif.
  * Envoie chaque phrase séparément à Cartesia avec un délai inter-phrase
  * pour un rendu plus naturel.
+ * Consomme le stream HTTP de Cartesia au fil de l'eau.
  */
 async function speakTtsStreamed(
   session: CallSession,
   text: string,
 ): Promise<void> {
-  const textWithPauses = addNaturalPauses(text);
+  const cleanedText = cleanTextForTts(text);
+  if (!cleanedText) return;
+  if (!isSessionActiveForTts(session)) {
+    writeDebugLog(`[speakTtsStreamed] Session inactive, state=${session.state}, ended=${session.ended}, skipping synthesis`);
+    return;
+  }
+
+  writeDebugLog(`[speakTtsStreamed] Starting synthesis for text: "${cleanedText}" (original: "${text}")`);
+  
+  const isAlaw = session.codec === 'PCMA';
+  const textWithPauses = addNaturalPauses(cleanedText);
   const sentences = textWithPauses
     .split(/(?<=[.!?])\s+/)
     .filter(s => s.trim().length > 0);
 
-  let spokenAny = false;
+  writeDebugLog(`[speakTtsStreamed] Split into ${sentences.length} sentences`);
 
+  const apiKey = process.env.CARTESIA_API_KEY;
+  const voiceId = process.env.CARTESIA_VOICE_ID;
+  if (!apiKey || !voiceId) {
+    await speakTelnyxNative(session, "Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?");
+    return;
+  }
+
+  const cacheVoiceId = `${voiceId}|sonic-3.5`;
+
+  // ─── Traitement séquentiel avec pause inter-phrase ──────────────────
   for (let i = 0; i < sentences.length; i++) {
-    const sentence = sentences[i].trim();
-    if (!sentence) continue;
+    const sentence = sentences[i];
+    const trimmed = sentence.trim();
+    if (!trimmed) continue;
+    if (!isSessionActiveForTts(session)) {
+      writeDebugLog(`[speakTtsStreamed] Session inactive before sentence ${i}, stopping`);
+      break;
+    }
 
     // Pause inter-phrase (sauf pour la première)
     if (i > 0) {
-      await new Promise(r => setTimeout(r, 300));
-      // Vérifier barge-in avant chaque phrase
-      if (session.state !== 'SPEAKING') break;
+      writeDebugLog(`[speakTtsStreamed] Inter-sentence pause of 150ms...`);
+      await new Promise(r => setTimeout(r, 150));
+      if (!isSessionActiveForTts(session)) {
+        writeDebugLog(`[speakTtsStreamed] Session inactive after pause, breaking loop`);
+        break;
+      }
     }
 
+    // 1. Tenter le cache
+    let cachedBuffer: Buffer | null = null;
     try {
-      const response = await fetch('https://api.cartesia.ai/tts/sse', {
+      cachedBuffer = await getTtsCached(trimmed, cacheVoiceId);
+    } catch (err: any) {
+      writeDebugLog(`[speakTtsStreamed] TTS cache read failed`, err);
+    }
+
+    if (cachedBuffer) {
+      writeDebugLog(`[speakTtsStreamed] Cache HIT for sentence: "${trimmed}"`);
+      if (session.latencyTrace && !session.latencyTrace.ttsFirstByteMs) {
+        session.latencyTrace.ttsFirstByteMs = Date.now() - session.latencyTrace.startTime;
+      }
+      
+      const converted = convertPcm24kTo8kCodec(cachedBuffer, isAlaw ? 'PCMA' : 'PCMU');
+      const chunkSize = 160;
+      let chunksSent = 0;
+      for (let offset = 0; offset < converted.length; offset += chunkSize) {
+        if (!isSessionActiveForTts(session)) {
+          writeDebugLog(`[speakTtsStreamed] Session inactive during send, stopping`);
+          break;
+        }
+        const chunk = converted.slice(offset, offset + chunkSize);
+        session.telnyxWs.send(JSON.stringify({
+          event: 'media',
+          media: { payload: chunk.toString('base64') },
+        }));
+        chunksSent++;
+        
+        // Measure E2E latency on first chunk sent
+        if (session.latencyTrace && !session.latencyTrace.totalE2eMs) {
+          session.latencyTrace.totalE2eMs = Date.now() - session.latencyTrace.startTime;
+          persistLatencyTrace(session);
+        }
+        
+        await new Promise(r => setTimeout(r, 20));
+      }
+      writeDebugLog(`[speakTtsStreamed] Sent ${chunksSent} cached audio chunks to Telnyx for sentence ${i}`);
+      continue;
+    }
+
+    // 2. Cache MISS ➔ Requête de streaming à Cartesia
+    writeDebugLog(`[speakTtsStreamed] Cache MISS. Streaming from Cartesia for sentence: "${trimmed}"`);
+    try {
+      const response = await fetch('https://api.cartesia.ai/tts/bytes', {
         method: 'POST',
         headers: {
+          'Cartesia-Version': '2024-06-10',
+          'X-API-Key': apiKey,
           'Content-Type': 'application/json',
-          'Cartesia-Version': '2026-03-01',
-          'X-API-Key': process.env.CARTESIA_API_KEY ?? '',
         },
         body: JSON.stringify({
           model_id: 'sonic-3.5',
-          transcript: sentence,
-          voice: {
-            mode: 'id',
-            id: process.env.CARTESIA_VOICE_ID ?? 'f786b574-daa5-4673-aa0c-cbe3e8534c02',
-          },
+          transcript: trimmed,
+          voice: { mode: 'id', id: voiceId },
           output_format: {
             container: 'raw',
             encoding: 'pcm_s16le',
-            sample_rate: 16000,
+            sample_rate: 24000,
           },
         }),
       });
 
       if (!response.ok) {
-        console.error(`[tts] Sentence ${i} failed: ${response.status}`);
+        writeDebugLog(`[speakTtsStreamed] Cartesia stream failed: ${response.status}`);
+        await speakTelnyxNative(session, "Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?");
         continue;
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) continue;
+      if (!response.body) {
+        writeDebugLog(`[speakTtsStreamed] Cartesia stream body is null`);
+        continue;
+      }
 
-      const decoder = new TextDecoder();
-      let buf = '';
+      const reader = response.body.getReader();
+      const playbackQueue: Buffer[] = [];
+      let streamFinished = false;
+      let firstByteReceived = false;
+
+      // Background playback loop (Consumer)
+      const playPromise = (async () => {
+        let chunksSent = 0;
+        while (true) {
+          if (!isSessionActiveForTts(session)) {
+            writeDebugLog(`[speakTtsStreamed] Session inactive during stream playback, stopping`);
+            break;
+          }
+
+          if (playbackQueue.length === 0) {
+            if (streamFinished) {
+              break; // Tout est lu
+            }
+            await new Promise(r => setTimeout(r, 10)); // Sous-alimentation temporaire, attendre
+            continue;
+          }
+
+          const chunk = playbackQueue.shift()!;
+          session.telnyxWs.send(JSON.stringify({
+            event: 'media',
+            media: { payload: chunk.toString('base64') },
+          }));
+          chunksSent++;
+
+          // Latence de bout en bout (E2E) enregistrée lors du tout premier chunk envoyé
+          if (session.latencyTrace && !session.latencyTrace.totalE2eMs) {
+            session.latencyTrace.totalE2eMs = Date.now() - session.latencyTrace.startTime;
+            persistLatencyTrace(session);
+          }
+
+          await new Promise(r => setTimeout(r, 20));
+        }
+        writeDebugLog(`[speakTtsStreamed] Paced player sent ${chunksSent} chunks for sentence ${i}`);
+      })();
+
+      // Streaming bytes reader (Producer)
+      let remaining24k = Buffer.alloc(0);
+      let remaining8k = Buffer.alloc(0);
+      const accumulatedChunks: Buffer[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop() ?? '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const parsed = JSON.parse(line.slice(6));
-            if (parsed.type === 'chunk' && parsed.data) {
-              if (session.telnyxWs.readyState === WebSocket.OPEN) {
-                session.telnyxWs.send(JSON.stringify({
-                  event: 'media',
-                  media: { payload: parsed.data },
-                }));
-              }
-            }
-            if (parsed.type === 'done') break;
-          } catch { /* skip */ }
-        }
-
-        if (session.state !== 'SPEAKING') {
-          reader.cancel();
+        if (done) {
+          streamFinished = true;
           break;
         }
+
+        if (!firstByteReceived) {
+          firstByteReceived = true;
+          writeDebugLog(`[speakTtsStreamed] First Cartesia byte received for sentence ${i}`);
+          if (session.latencyTrace && !session.latencyTrace.ttsFirstByteMs) {
+            session.latencyTrace.ttsFirstByteMs = Date.now() - session.latencyTrace.startTime;
+          }
+        }
+
+        const rawChunk = Buffer.from(value);
+        accumulatedChunks.push(rawChunk);
+        
+        const chunk24k = Buffer.concat([remaining24k, rawChunk]);
+
+        // Downsampling progressif : multiples de 6 bytes (3 samples de 16-bit PCM)
+        const processableLength = Math.floor(chunk24k.length / 6) * 6;
+        const processable = chunk24k.slice(0, processableLength);
+        remaining24k = chunk24k.slice(processableLength);
+
+        if (processable.length > 0) {
+          const chunk8k = convertPcm24kTo8kCodec(processable, isAlaw ? 'PCMA' : 'PCMU');
+          const full8k = Buffer.concat([remaining8k, chunk8k]);
+
+          let offset = 0;
+          while (offset + 160 <= full8k.length) {
+            playbackQueue.push(full8k.slice(offset, offset + 160));
+            offset += 160;
+          }
+          remaining8k = full8k.slice(offset);
+        }
       }
-    } catch (err) {
-      console.error(`[tts] Error on sentence ${i}:`, err);
+
+      // Flush final
+      if (remaining24k.length > 0 || remaining8k.length > 0) {
+        if (remaining24k.length > 0 && remaining24k.length < 6) {
+          const padded = Buffer.concat([remaining24k, Buffer.alloc(6 - remaining24k.length)]);
+          const chunk8k = convertPcm24kTo8kCodec(padded, isAlaw ? 'PCMA' : 'PCMU');
+          remaining8k = Buffer.concat([remaining8k, chunk8k]);
+        }
+
+        if (remaining8k.length > 0) {
+          if (remaining8k.length < 160) {
+            const padded8k = Buffer.concat([remaining8k, Buffer.alloc(160 - remaining8k.length)]);
+            playbackQueue.push(padded8k);
+          } else {
+            playbackQueue.push(remaining8k);
+          }
+        }
+      }
+
+      streamFinished = true;
+      await playPromise; // Attendre la fin de la lecture progressive
+
+      // 3. Mettre en cache Redis le buffer 24kHz complet
+      const pcm24kFull = Buffer.concat(accumulatedChunks);
+      try {
+        await setTtsCached(trimmed, cacheVoiceId, pcm24kFull);
+      } catch (err: any) {
+        writeDebugLog(`[speakTtsStreamed] TTS cache write failed`, err);
+      }
+
+    } catch (err: any) {
+      writeDebugLog(`[speakTtsStreamed] Cartesia stream process error for sentence: "${trimmed}"`, err);
+      await speakTelnyxNative(session, "Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?");
     }
   }
+}
+
+function convertPcm24kTo8kCodec(pcm24k: Buffer, codec: 'PCMA' | 'PCMU'): Buffer {
+  const numSamples24k = pcm24k.length / 2;
+  const numSamples8k = Math.floor(numSamples24k / 3);
+  const output = Buffer.alloc(numSamples8k);
+  
+  for (let i = 0; i < numSamples8k; i++) {
+    const offset = i * 3 * 2;
+    
+    // Average 3 adjacent samples to act as a box-car low-pass filter (anti-aliasing)
+    let sum = 0;
+    let count = 0;
+    for (let s = 0; s < 3; s++) {
+      const sampleOffset = offset + (s * 2);
+      if (sampleOffset + 1 < pcm24k.length) {
+        sum += pcm24k.readInt16LE(sampleOffset);
+        count++;
+      }
+    }
+    
+    const sample = count > 0 ? Math.round(sum / count) : 0;
+    
+    if (codec === 'PCMA') {
+      output[i] = alaw.encodeSample(sample);
+    } else {
+      output[i] = mulaw.encodeSample(sample);
+    }
+  }
+  
+  return output;
 }

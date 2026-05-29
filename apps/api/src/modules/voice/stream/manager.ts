@@ -1,7 +1,7 @@
 import { WebSocket } from 'ws';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { CallSession, FluxEvent, CallState } from './types';
-import { LLM_MODEL } from '@sokar/config';
+import { LLM_MODEL } from '@sokar/config'; // Resolved dynamically via tsconfig paths
 import { getRestaurantTools } from '../tools';
 
 // Chargé paresseusement pour éviter les circular deps
@@ -30,7 +30,17 @@ export class CallSessionManager {
     isVip: boolean;
     telnyxWs: WebSocket;
     callLegId: string;
+    codec: 'PCMA' | 'PCMU';
   }): CallSession {
+    const restaurantName = opts.systemPrompt
+      .split('\n')[0]
+      .replace(/^Tu es l'hôte d'accueil et assistant vocal chaleureux de /, '')
+      .replace(/^Tu es l'assistant vocal de /, '')
+      .replace(/\.$/, '')
+      .trim();
+
+    const greeting = `Bonjour, ${restaurantName} !`;
+
     const session: CallSession = {
       callControlId: opts.callControlId,
       callSessionId: opts.callSessionId,
@@ -40,9 +50,15 @@ export class CallSessionManager {
       restaurantId: opts.restaurantId,
       systemPrompt: opts.systemPrompt,
       state: 'IDLE',
+      ended: false,
       turnCount: 0,
       isVip: opts.isVip,
       telnyxWs: opts.telnyxWs,
+      codec: opts.codec,
+      history: [
+        { role: 'system', content: opts.systemPrompt },
+        { role: 'assistant', content: greeting }
+      ],
       deepgramWs: null,
       deepgramReady: null,
       onDeepgramEvent: null,
@@ -53,6 +69,7 @@ export class CallSessionManager {
       speculativeTranscript: '',
       speculativeResult: null,
       transcript: '',
+      turnTranscript: '',
       lastActivityAt: Date.now(),
       createdAt: Date.now(),
     };
@@ -73,6 +90,9 @@ export class CallSessionManager {
   }
 
   cleanup(session: CallSession): void {
+    session.ended = true;
+    session.state = 'IDLE';
+    session.isSpeaking = false;
     if (session.deepgramWs && session.deepgramWs.readyState === WebSocket.OPEN) {
       try { session.deepgramWs.close(); } catch { /* ignore */ }
     }
@@ -83,8 +103,10 @@ export class CallSessionManager {
   // ─── State Machine ──────────────────────────────────────────────
 
   transition(session: CallSession, newState: CallState): boolean {
+    if (session.ended && newState !== 'IDLE') return false;
+
     const valid: Record<CallState, CallState[]> = {
-      IDLE:       ['LISTENING'],
+      IDLE:       ['LISTENING', 'SPEAKING'],
       LISTENING:  ['PROCESSING', 'IDLE'],
       PROCESSING: ['SPEAKING', 'LISTENING', 'IDLE'],
       SPEAKING:   ['LISTENING', 'IDLE'],
@@ -118,10 +140,34 @@ export class CallSessionManager {
     this.transition(session, 'PROCESSING');
     session.turnCount++;
 
+    // Mettre à jour l'historique avec la phrase utilisateur
+    session.history.push({ role: 'user', content: transcript });
+
     const response = await this.callLlm(session, transcript);
 
     this.transition(session, 'SPEAKING');
     return response;
+  }
+
+  /**
+   * Version streaming de processUtterance.
+   * Appelle le LLM en stream, détecte les phrases complètes,
+   * et invoque onPhrase dès qu'une phrase est prête.
+   * Retourne le texte complet à la fin.
+   */
+  async processUtteranceStreaming(
+    session: CallSession,
+    transcript: string,
+    onPhrase: (phrase: string) => Promise<void> | void,
+  ): Promise<string> {
+    this.transition(session, 'PROCESSING');
+    session.turnCount++;
+    session.history.push({ role: 'user', content: transcript });
+
+    const fullText = await this.callLlmStreaming(session, onPhrase);
+
+    this.transition(session, 'SPEAKING');
+    return fullText;
   }
 
   /**
@@ -134,10 +180,7 @@ export class CallSessionManager {
     transcript: string,
   ): Promise<string> {
     const tools = getRestaurantTools(session.restaurantId);
-    const messages: any[] = [
-      { role: 'system', content: session.systemPrompt },
-      { role: 'user', content: transcript },
-    ];
+    const messages = [...session.history];
 
     for (let round = 0; round < 3; round++) {
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -149,11 +192,13 @@ export class CallSessionManager {
         body: JSON.stringify({
           model: LLM_MODEL,
           messages,
-          max_tokens: 300,
+          max_tokens: 150,
           temperature: 0.7,
           tools,
           tool_choice: 'auto',
-          provider: { order: ['mistral'], allow_fallbacks: false },
+          ...(LLM_MODEL.includes('mistral') ? {
+            provider: { order: ['mistral'], allow_fallbacks: false }
+          } : {})
         }),
       });
 
@@ -167,23 +212,212 @@ export class CallSessionManager {
       if (!msg) throw new Error('Empty LLM response');
 
       // Si le LLM répond en texte → terminé
-      if (msg.content?.trim()) return msg.content;
+      if (msg.content?.trim()) {
+        session.history.push(msg);
+        return msg.content;
+      }
 
       // Si le LLM appelle un outil
       if (msg.tool_calls?.length > 0) {
+        session.history.push(msg);
         messages.push(msg);
         for (const tc of msg.tool_calls) {
           const result = await this.executeTool(session, tc.function.name, tc.function.arguments);
-          messages.push({ role: 'tool', tool_call_id: tc.id, content: result });
+          const toolMsg = { role: 'tool', tool_call_id: tc.id, content: result };
+          session.history.push(toolMsg);
+          messages.push(toolMsg);
         }
         continue; // round suivant
       }
 
       // Fallback
+      session.history.push(msg);
       return msg.content ?? '';
     }
 
-    return 'Désolé, je n\'ai pas pu traiter votre demande.';
+    const defaultErrorMsg = 'Désolé, je n\'ai pas pu traiter votre demande.';
+    session.history.push({ role: 'assistant', content: defaultErrorMsg });
+    return defaultErrorMsg;
+  }
+
+  /**
+   * Version streaming de callLlm.
+   * Parse le SSE d'OpenRouter, détecte les phrases complètes,
+   * et invoque onPhrase pour chaque phrase.
+   * Si un tool_call est détecté, fallback sur callLlm non-streaming.
+   * Retourne le texte complet.
+   */
+  private async callLlmStreaming(
+    session: CallSession,
+    onPhrase: (phrase: string) => Promise<void> | void,
+  ): Promise<string> {
+    const tools = getRestaurantTools(session.restaurantId);
+    const messages = [...session.history];
+
+    for (let round = 0; round < 3; round++) {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: LLM_MODEL,
+          messages,
+          max_tokens: 150,
+          temperature: 0.7,
+          tools,
+          tool_choice: 'auto',
+          stream: true,
+          ...(LLM_MODEL.includes('mistral') ? {
+            provider: { order: ['mistral'], allow_fallbacks: false }
+          } : {})
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`LLM ${response.status}: ${await response.text()}`);
+      }
+
+      if (!response.body) {
+        throw new Error('LLM response body is null');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let sentenceBuffer = '';
+      let fullText = '';
+      let hasToolCall = false;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // Parser les lignes SSE
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data: ')) continue;
+            const data = trimmed.slice(6);
+
+            if (data === '[DONE]') {
+              break;
+            }
+
+            try {
+              const chunk = JSON.parse(data);
+              const delta = chunk.choices?.[0]?.delta;
+
+              if (!delta) continue;
+
+              // Tool call détecté → arrêter le stream et fallback
+              if (delta.tool_calls) {
+                hasToolCall = true;
+                break;
+              }
+
+              const token = delta.content ?? '';
+              if (!token) continue;
+
+              sentenceBuffer += token;
+              fullText += token;
+
+              // Détecter fin de phrase : . ! ? suivi d'espace ou fin
+              const match = sentenceBuffer.match(/^(.+?[.!?])(\s+|$)/);
+              if (match) {
+                const phrase = match[1].trim();
+                if (phrase) {
+                  // Lancer onPhrase sans await pour ne pas bloquer le stream
+                  onPhrase(phrase);
+                }
+                sentenceBuffer = sentenceBuffer.slice(match[0].length);
+              }
+            } catch {
+              // Ignorer les lignes mal formées
+            }
+          }
+
+          if (hasToolCall) break;
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      // Yield le reste du buffer s'il reste quelque chose
+      if (sentenceBuffer.trim()) {
+        await onPhrase(sentenceBuffer.trim());
+      }
+
+      if (hasToolCall) {
+        // Fallback non-streaming pour gérer les tool calls
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: LLM_MODEL,
+            messages,
+            max_tokens: 150,
+            temperature: 0.7,
+            tools,
+            tool_choice: 'auto',
+            ...(LLM_MODEL.includes('mistral') ? {
+              provider: { order: ['mistral'], allow_fallbacks: false }
+            } : {})
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`LLM ${response.status}: ${await response.text()}`);
+        }
+
+        const data = await response.json() as any;
+        const msg = data.choices?.[0]?.message;
+
+        if (!msg) throw new Error('Empty LLM response');
+
+        if (msg.content?.trim()) {
+          session.history.push(msg);
+          const text = msg.content.trim();
+          await onPhrase(text);
+          return text;
+        }
+
+        if (msg.tool_calls?.length > 0) {
+          session.history.push(msg);
+          messages.push(msg);
+          for (const tc of msg.tool_calls) {
+            const result = await this.executeTool(session, tc.function.name, tc.function.arguments);
+            const toolMsg = { role: 'tool', tool_call_id: tc.id, content: result };
+            session.history.push(toolMsg);
+            messages.push(toolMsg);
+          }
+          continue; // round suivant
+        }
+
+        session.history.push(msg);
+        return msg.content ?? '';
+      }
+
+      // Pas de tool call → streaming terminé normalement
+      if (fullText.trim()) {
+        session.history.push({ role: 'assistant', content: fullText.trim() });
+      }
+      return fullText.trim();
+    }
+
+    const defaultErrorMsg = 'Désolé, je n\'ai pas pu traiter votre demande.';
+    session.history.push({ role: 'assistant', content: defaultErrorMsg });
+    await onPhrase(defaultErrorMsg);
+    return defaultErrorMsg;
   }
 
   /**
@@ -200,18 +434,30 @@ export class CallSessionManager {
       switch (name) {
         case 'createReservation': {
           const { date, time, partySize, customerName, customerPhone } = args;
-          const database = await db();
-          const reservation = await database.reservation.create({
-            data: {
-              restaurantId: session.restaurantId,
-              reservedAt: new Date(`${date}T${time}`),
-              partySize: partySize ?? 1,
-              customerName: customerName ?? 'Client',
-              customerPhone: customerPhone ?? session.from,
-              status: 'PENDING',
-            },
+          const reservationId = randomUUID();
+
+          // Exécution asynchrone / optimiste pour éliminer la latence d'écriture en base de données
+          db().then(async (database) => {
+            try {
+              await database.reservation.create({
+                data: {
+                  id: reservationId,
+                  restaurantId: session.restaurantId,
+                  reservedAt: new Date(`${date}T${time}`),
+                  partySize: partySize ?? 1,
+                  customerName: customerName ?? 'Client',
+                  customerPhone: customerPhone ?? session.from,
+                  status: 'CONFIRMED',
+                },
+              });
+            } catch (err: any) {
+              console.error(`[tool] Async reservation creation failed:`, err.message);
+            }
+          }).catch((err) => {
+            console.error('[tool] Failed to load DB lazily:', err.message);
           });
-          return `Réservation confirmée pour ${customerName ?? 'le client'}, le ${date} à ${time}, pour ${partySize} personne(s). Numéro de réservation : ${reservation.id.slice(0, 8).toUpperCase()}.`;
+
+          return `Réservation confirmée pour ${customerName ?? 'le client'}, le ${date} à ${time}, pour ${partySize} personne(s). Un SMS de confirmation va être envoyé au client.`;
         }
 
         case 'handoffToManager':
