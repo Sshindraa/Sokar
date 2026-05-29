@@ -62,6 +62,9 @@ importers:
       '@sokar/types':
         specifier: workspace:*
         version: link:../../packages/types
+      alawmulaw:
+        specifier: ^6.0.0
+        version: 6.0.0
       bullmq:
         specifier: ^5.48.0
         version: 5.76.5
@@ -1782,6 +1785,10 @@ packages:
 
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
+
+  alawmulaw@6.0.0:
+    resolution: {integrity: sha512-1aQJZX2Ax5X7Bq9j9Wkv0gczxexnkshlNNxTc0sD5DjAb+NIgfHkI3rpnjSgr6pK1s4V0Z7viBgE9/FHcIwkyw==}
+    engines: {node: '>=8'}
 
   ansi-regex@5.0.1:
     resolution: {integrity: sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==}
@@ -5737,6 +5744,8 @@ snapshots:
       fast-uri: 3.1.2
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
+
+  alawmulaw@6.0.0: {}
 
   ansi-regex@5.0.1: {}
 
