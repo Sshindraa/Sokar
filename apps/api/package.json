@@ -12,6 +12,7 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
+    "alawmulaw": "^6.0.0",
     "@aws-sdk/client-s3": "^3.1054.0",
     "@aws-sdk/client-ses": "^3.1054.0",
     "@aws-sdk/client-sqs": "^3.1054.0",

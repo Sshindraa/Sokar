@@ -91,6 +91,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           systemPrompt:  systemPrompt,
           isVip:         customer?.isVip ?? false,
           telnyxWs:      null as any,
+          codec:         'PCMA',
         });
 
         app.log.info({ callId: payload.call_control_id }, 'Media stream pipeline — answering');
