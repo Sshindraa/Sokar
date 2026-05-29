@@ -178,7 +178,8 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
         session.ended = true;
         session.state = 'IDLE';
         session.isSpeaking = false;
-        // Persister l'appel avant cleanup
+        // Persister les traces avant cleanup
+        persistLatencyTrace(session);
         persistFluxCall(session);
         closeDeepgram(session);
         mgr.delete(session.callControlId);
@@ -191,6 +192,7 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
         session.ended = true;
         session.state = 'IDLE';
         session.isSpeaking = false;
+        persistLatencyTrace(session);
         persistFluxCall(session);
         closeDeepgram(session);
         mgr.delete(session.callControlId);
@@ -281,6 +283,8 @@ function handleTelnyxMessage(
         session.ended = true;
         session.state = 'IDLE';
         session.isSpeaking = false;
+        persistLatencyTrace(session);
+        persistFluxCall(session);
         closeDeepgram(session);
         mgr.delete(session.callControlId);
       }
@@ -309,6 +313,12 @@ function handleFluxEvent(
 ): void {
   switch (event.type) {
     case 'UtteranceStart': {
+      // Annuler toute requête LLM en cours (le caller continue de parler)
+      if (session.abortController) {
+        session.abortController.abort();
+        session.abortController = null;
+      }
+
       // Si on était en spéculation (PROCESSING), le caller continue → reset
       if (session.state === 'PROCESSING') {
         session.speculativeLlm = null;
@@ -467,8 +477,20 @@ async function processTranscript(
 
   writeDebugLog(`[processTranscript] Received transcript: "${transcript}"`);
   try {
+    session.abortController = new AbortController();
+    let responseReceived = false;
+    const fillerTimer = setTimeout(() => {
+      if (!responseReceived && !session.ended && session.state === 'PROCESSING') {
+        writeDebugLog(`[processTranscript] LLM took too long (>400ms). Playing a voice filler...`);
+        playFiller(session.telnyxWs, session.personality?.fillerStyle ?? 'CASUAL');
+      }
+    }, 400);
+
     writeDebugLog(`[processTranscript] Calling LLM...`);
     const llmResponse = await mgr.processUtterance(session, transcript);
+    responseReceived = true;
+    clearTimeout(fillerTimer);
+
     if (session.latencyTrace) {
       session.latencyTrace.llmFirstTokenMs = Date.now() - session.latencyTrace.startTime;
     }
@@ -496,6 +518,8 @@ async function processTranscript(
     writeDebugLog(`[processTranscript] Caught error`, err);
     console.error(`[pipeline] Error:`, err);
     mgr.transition(session, 'LISTENING');
+  } finally {
+    session.abortController = null;
   }
 }
 
@@ -523,7 +547,19 @@ async function processTranscriptStreaming(
   const ttsPromises: Promise<void>[] = [];
 
   try {
+    session.abortController = new AbortController();
+    let firstTokenReceived = false;
+    const fillerTimer = setTimeout(() => {
+      if (!firstTokenReceived && !session.ended && session.state === 'PROCESSING') {
+        writeDebugLog(`[processTranscriptStreaming] LLM took too long (>400ms). Playing a voice filler...`);
+        playFiller(session.telnyxWs, session.personality?.fillerStyle ?? 'CASUAL');
+      }
+    }, 400);
+
     await mgr.processUtteranceStreaming(session, transcript, (phrase: string) => {
+      firstTokenReceived = true;
+      clearTimeout(fillerTimer);
+
       writeDebugLog(`[processTranscriptStreaming] Phrase received: "${phrase}"`);
       if (session.latencyTrace && !session.latencyTrace.llmFirstTokenMs) {
         session.latencyTrace.llmFirstTokenMs = Date.now() - session.latencyTrace.startTime;
@@ -559,6 +595,8 @@ async function processTranscriptStreaming(
     writeDebugLog(`[processTranscriptStreaming] Caught error`, err);
     console.error(`[pipeline] Streaming error:`, err);
     mgr.transition(session, 'LISTENING');
+  } finally {
+    session.abortController = null;
   }
 }
 

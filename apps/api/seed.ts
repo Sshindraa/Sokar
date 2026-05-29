@@ -7,6 +7,7 @@ async function seed() {
 
   // 1. Créer un restaurant test (upsert)
   const restId = '00000000-0000-0000-0000-000000000001';
+  await db.latencyTrace.deleteMany({ where: { call: { restaurantId: restId } } });
   await db.reservation.deleteMany({ where: { restaurantId: restId } });
   await db.call.deleteMany({ where: { restaurantId: restId } });
   await db.customer.deleteMany({ where: { restaurantId: restId } });

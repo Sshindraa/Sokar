@@ -4,7 +4,7 @@
 
 model:
   provider: opencode-go
-  default: deepseek-v4-flash
+  model: deepseek-v4-flash
   base_url: https://opencode.ai/zen/go/v1
   key_env: OPENCODE_GO_API_KEY
   api_mode: chat_completions

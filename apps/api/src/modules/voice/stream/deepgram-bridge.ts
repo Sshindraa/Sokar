@@ -54,6 +54,7 @@ export function connectDeepgramFlux(
       punctuate: 'true',
       smart_format: 'true',
       endpointing: '150',
+      utterance_end_ms: '1000',
     });
 
     // Boost critical reservation vocabulary for Nova-3
@@ -192,7 +193,11 @@ function handleDeepgramMessage(
     }
 
     case 'SpeechResumed':
-      // Le caller continue après une pause → annuler la spéculation
+      // Le caller continue après une pause → annuler la spéculation et le LLM en cours
+      if (session.abortController) {
+        session.abortController.abort();
+        session.abortController = null;
+      }
       session.speculativeLlm = null;
       session.speculativeResult = null;
       session.speculativeTranscript = '';
@@ -217,6 +222,10 @@ function handleDeepgramMessage(
       // Barge-in: si on est en train de parler et que l'utilisateur dit quelque chose (transcript non vide)
       if (session.state === 'SPEAKING' && transcript.trim().length > 0) {
         console.log(`[barge-in] User spoke: "${transcript.trim()}" while assistant was speaking. Interrupting.`);
+        if (session.abortController) {
+          session.abortController.abort();
+          session.abortController = null;
+        }
         mgr.handleBargeIn(session);
       }
 
@@ -226,21 +235,62 @@ function handleDeepgramMessage(
           console.log(`[deepgram] Segment finalized: "${transcript.slice(0, 60)}..." (speech_final=${isSpeechFinal})`);
         }
 
-        if (isSpeechFinal && session.turnTranscript.trim()) {
-          const fullTurnTranscript = session.turnTranscript;
-          session.turnTranscript = ''; // Reset pour le prochain tour
-          console.log(`[deepgram] Speech final (turn completed): "${fullTurnTranscript.slice(0, 60)}..."`);
-          session.onDeepgramEvent?.({ type: 'UtteranceEnd', transcript: fullTurnTranscript });
+        if (isSpeechFinal) {
+          // speech_final reçu → annuler le timer de fallback et fire immédiatement
+          if (session.speechFinalTimer) {
+            clearTimeout(session.speechFinalTimer);
+            session.speechFinalTimer = null;
+          }
+
+          if (session.turnTranscript.trim()) {
+            const fullTurnTranscript = session.turnTranscript;
+            session.turnTranscript = '';
+            console.log(`[deepgram] Speech final (turn completed): "${fullTurnTranscript.slice(0, 60)}..."`);
+            session.onDeepgramEvent?.({ type: 'UtteranceEnd', transcript: fullTurnTranscript });
+          }
+        } else if (session.turnTranscript.trim()) {
+          // is_final=true avec du contenu MAIS speech_final=false
+          // → Timer intelligent : court si ponctuation détectée, plus long sinon
+          // → Le timer se RESET à chaque nouveau segment (évite de couper mid-phrase)
+          const endsWithPunctuation = /[.!?]\s*$/.test(session.turnTranscript);
+          const timeoutMs = endsWithPunctuation ? 400 : 1500;
+
+          // Reset le timer existant (nouveau segment reçu = l'user continue peut-être)
+          if (session.speechFinalTimer) {
+            clearTimeout(session.speechFinalTimer);
+          }
+
+          writeDebugLog(`[deepgram] Starting ${timeoutMs}ms smart timer (punctuation=${endsWithPunctuation})`);
+          session.speechFinalTimer = setTimeout(() => {
+            if (session.turnTranscript.trim()) {
+              const fallbackTranscript = session.turnTranscript;
+              session.turnTranscript = '';
+              session.speechFinalTimer = null;
+              writeDebugLog(`[deepgram] Smart timer fired! (${timeoutMs}ms) UtteranceEnd: "${fallbackTranscript.slice(0, 80)}"`);
+              console.log(`[deepgram] Speech final (smart ${timeoutMs}ms): "${fallbackTranscript.slice(0, 60)}..."`);
+              session.onDeepgramEvent?.({ type: 'UtteranceEnd', transcript: fallbackTranscript });
+            }
+          }, timeoutMs);
         }
       }
 
       // Fallback: si speech_final=true mais isFinal=false, forcer UtteranceEnd
-      // avec le transcript accumulé (peut arriver avec endpointing court)
       if (!isFinal && isSpeechFinal && session.turnTranscript.trim()) {
+        if (session.speechFinalTimer) {
+          clearTimeout(session.speechFinalTimer);
+          session.speechFinalTimer = null;
+        }
         const fullTurnTranscript = session.turnTranscript;
         session.turnTranscript = '';
         console.log(`[deepgram] Speech final (forced fallback): "${fullTurnTranscript.slice(0, 60)}..."`);
         session.onDeepgramEvent?.({ type: 'UtteranceEnd', transcript: fullTurnTranscript });
+      }
+
+      // Reset timer si l'user continue de parler (interim non vide)
+      if (!isFinal && transcript.trim() && session.speechFinalTimer) {
+        writeDebugLog(`[deepgram] User still speaking, resetting timer`);
+        clearTimeout(session.speechFinalTimer);
+        session.speechFinalTimer = null;
       }
 
       // Spéculation LLM : interim stable, confiance > 0.95, au moins 3 mots
@@ -255,10 +305,9 @@ function handleDeepgramMessage(
         confidence >= 0.95 &&
         wordCount >= 3 &&
         wordCount <= 20 &&
-        transcript !== lastTranscript // éviter les doublons
+        transcript !== lastTranscript
       ) {
         session.speculativeTranscript = transcript;
-        // Le handler déclenchera le LLM spéculatif via l'event
         session.onDeepgramEvent?.({ type: 'InterimHighConfidence', transcript } as any);
       }
       break;

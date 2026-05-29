@@ -69,6 +69,10 @@ export interface CallSession {
   /** Nombre de chunks inbound consécutifs reçus pendant SPEAKING */
   bargeInChunks: number;
 
+  // Annulation LLM
+  /** AbortController pour annuler la requête LLM en cours */
+  abortController: AbortController | null;
+
   // LLM spéculatif
   /** Promise LLM en cours (spéculation sur interim result) */
   speculativeLlm: Promise<string> | null;
@@ -82,6 +86,8 @@ export interface CallSession {
   transcript: string;
   /** Buffer pour accumuler les segments d'un tour de parole */
   turnTranscript: string;
+  /** Timer de fallback : force UtteranceEnd si speech_final tarde trop */
+  speechFinalTimer: ReturnType<typeof setTimeout> | null;
 
   // Timeouts
   lastActivityAt: number;
@@ -95,6 +101,7 @@ export interface CallSession {
     ttsFirstByteMs?: number;
     totalE2eMs?: number;
   };
+  personality: { fillerStyle: 'CASUAL' | 'FORMAL' | 'WARM'; systemPromptExtra?: string | null } | null;
 }
 
 /** Config retournée à Telnyx pour lancer le media stream */

@@ -7,11 +7,11 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json ./
 COPY apps/api ./apps/api
 COPY packages ./packages
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter @callyx/database exec prisma generate
-RUN pnpm build --filter=@callyx/api
+RUN pnpm --filter @sokar/database exec prisma generate
+RUN pnpm build --filter=@sokar/api
 
 FROM base AS runner
 WORKDIR /app
 COPY --from=builder /app .
-EXPOSE 3001
+EXPOSE 4000
 CMD ["node", "apps/api/dist/main.js"]

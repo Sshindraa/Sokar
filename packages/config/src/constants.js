@@ -21,6 +21,7 @@ exports.VIP_PARTY_SIZE_THRESHOLD = 6;
 exports.SPECULATIVE_MISS_THRESHOLD = 0.60;
 exports.LLM_VIP_TURN_THRESHOLD = 5;
 // Slugs OpenRouter — alignés avec l'architecture consolidée Sprint 1
+exports.LLM_MODEL = 'mistralai/ministral-3b-2512';
 exports.LLM_MODELS = {
     FLASH: 'deepseek/deepseek-v4-flash',
     PRO: 'deepseek/deepseek-v4-pro',
