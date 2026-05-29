@@ -92,6 +92,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           isVip:         customer?.isVip ?? false,
           telnyxWs:      null as any,
           codec:         'PCMA',
+          personality:   ctx.personality,
         });
 
         app.log.info({ callId: payload.call_control_id }, 'Media stream pipeline — answering');
@@ -120,7 +121,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
                 stream_url: wsUrl,
                 stream_track: 'inbound_track',
                 stream_bidirectional_mode: 'rtp',
-                stream_bidirectional_codec: 'L16',
+                stream_bidirectional_codec: 'PCMA',
               }),
             });
             if (res.ok) {

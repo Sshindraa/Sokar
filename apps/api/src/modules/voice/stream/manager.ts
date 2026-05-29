@@ -31,6 +31,7 @@ export class CallSessionManager {
     telnyxWs: WebSocket;
     callLegId: string;
     codec: 'PCMA' | 'PCMU';
+    personality?: { fillerStyle: 'CASUAL' | 'FORMAL' | 'WARM'; systemPromptExtra?: string | null } | null;
   }): CallSession {
     const restaurantName = opts.systemPrompt
       .split('\n')[0]
@@ -65,13 +66,16 @@ export class CallSessionManager {
       audioBuffer: [],
       isSpeaking: false,
       bargeInChunks: 0,
+      abortController: null,
       speculativeLlm: null,
       speculativeTranscript: '',
       speculativeResult: null,
       transcript: '',
       turnTranscript: '',
+      speechFinalTimer: null,
       lastActivityAt: Date.now(),
       createdAt: Date.now(),
+      personality: opts.personality ?? null,
     };
     this.sessions.set(sessionIdKey(opts.callControlId), session);
     return session;
@@ -93,6 +97,14 @@ export class CallSessionManager {
     session.ended = true;
     session.state = 'IDLE';
     session.isSpeaking = false;
+    if (session.speechFinalTimer) {
+      clearTimeout(session.speechFinalTimer);
+      session.speechFinalTimer = null;
+    }
+    if (session.abortController) {
+      session.abortController.abort();
+      session.abortController = null;
+    }
     if (session.deepgramWs && session.deepgramWs.readyState === WebSocket.OPEN) {
       try { session.deepgramWs.close(); } catch { /* ignore */ }
     }
@@ -189,6 +201,7 @@ export class CallSessionManager {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
         },
+        signal: session.abortController?.signal,
         body: JSON.stringify({
           model: LLM_MODEL,
           messages,
@@ -196,7 +209,7 @@ export class CallSessionManager {
           temperature: 0.7,
           tools,
           tool_choice: 'auto',
-          ...(LLM_MODEL.includes('mistral') ? {
+          ...(LLM_MODEL?.includes('mistral') ? {
             provider: { order: ['mistral'], allow_fallbacks: false }
           } : {})
         }),
@@ -261,6 +274,7 @@ export class CallSessionManager {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
         },
+        signal: session.abortController?.signal,
         body: JSON.stringify({
           model: LLM_MODEL,
           messages,
@@ -269,7 +283,7 @@ export class CallSessionManager {
           tools,
           tool_choice: 'auto',
           stream: true,
-          ...(LLM_MODEL.includes('mistral') ? {
+          ...(LLM_MODEL?.includes('mistral') ? {
             provider: { order: ['mistral'], allow_fallbacks: false }
           } : {})
         }),
@@ -369,7 +383,7 @@ export class CallSessionManager {
             temperature: 0.7,
             tools,
             tool_choice: 'auto',
-            ...(LLM_MODEL.includes('mistral') ? {
+            ...(LLM_MODEL?.includes('mistral') ? {
               provider: { order: ['mistral'], allow_fallbacks: false }
             } : {})
           }),

@@ -9,7 +9,10 @@
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "db:generate": "prisma generate --schema=packages/database/prisma/schema.prisma",
     "db:push": "prisma db push --schema=packages/database/prisma/schema.prisma",
-    "db:studio": "prisma studio --schema=packages/database/prisma/schema.prisma"
+    "db:studio": "prisma studio --schema=packages/database/prisma/schema.prisma",
+    "db:seed": "pnpm --filter @sokar/api seed",
+    "test": "pnpm --filter @sokar/api test",
+    "test:diagnostic": "node scripts/test-stt-tts.mjs"
   },
   "devDependencies": {
     "turbo": "^2.5.0",
