@@ -31,6 +31,12 @@ pnpm --filter @sokar/database prisma generate
 echo "🔨 Build..."
 pnpm build
 
+# 4.1 Copy public and static assets for Next.js standalone
+echo "📦 Copying public & static folders for Next.js standalone..."
+cp -r apps/dashboard/public apps/dashboard/.next/standalone/apps/dashboard/
+mkdir -p apps/dashboard/.next/standalone/apps/dashboard/.next
+cp -r apps/dashboard/.next/static apps/dashboard/.next/standalone/apps/dashboard/.next/
+
 # 5. Migrations
 echo "🗄️  Migrations..."
 pnpm --filter @sokar/database prisma migrate deploy
