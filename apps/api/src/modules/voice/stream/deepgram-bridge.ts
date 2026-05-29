@@ -1,8 +1,22 @@
 import { WebSocket } from 'ws';
+import * as fs from 'fs';
+import * as path from 'path';
 import type { CallSession, FluxEvent } from './types';
 import { CallSessionManager } from './manager';
 
-const DEEPGRAM_API_URL = 'wss://api.deepgram.com/v2/listen';
+function writeDebugLog(msg: string, err?: any) {
+  const timestamp = new Date().toISOString();
+  const logMsg = `[${timestamp}] ${msg}${err ? ' | ERROR: ' + err.message + '\n' + err.stack : ''}\n`;
+  try {
+    const logPath = process.env.DEBUG_LOG_PATH || path.join(process.cwd(), 'scratch', 'call_debug.log');
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(logPath, logMsg);
+  } catch (e) {
+    console.error('Failed to write debug log:', e);
+  }
+}
+
+const DEEPGRAM_API_URL = 'wss://api.deepgram.com/v1/listen';
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY ?? '';
 
 /**
@@ -29,15 +43,27 @@ export function connectDeepgramFlux(
 
   console.log(`[deepgram] Initiating connection for ${session.callControlId}...`);
   const promise = new Promise<void>((resolve, reject) => {
+    const isAlaw = session.codec === 'PCMA';
     const params = new URLSearchParams({
-      model: 'flux-general-multi',
+      model: process.env.DEEPGRAM_MODEL ?? 'nova-3',
       language: 'fr',
-      encoding: 'linear16',
-      sample_rate: '16000',
+      encoding: isAlaw ? 'alaw' : 'mulaw',
+      sample_rate: '8000',
       channels: '1',
       interim_results: 'true',
-      utterance_end_ms: '900',
+      punctuate: 'true',
+      smart_format: 'true',
+      endpointing: '150',
     });
+
+    // Boost critical reservation vocabulary for Nova-3
+    const keyterms = [
+      'réservation', 'personnes', 'soir', 'heures', 'midi', 'couverts',
+      'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf', 'dix'
+    ];
+    for (const term of keyterms) {
+      params.append('keyterm', term);
+    }
 
     const url = `${DEEPGRAM_API_URL}?${params}`;
     const ws = new WebSocket(url, {
@@ -47,6 +73,7 @@ export function connectDeepgramFlux(
     session.deepgramWs = ws;
 
     ws.on('open', () => {
+      writeDebugLog(`[deepgram] Connected successfully for call ${session.callControlId}. Sending ${session.audioBuffer.length} buffered chunks`);
       console.log(`[deepgram] Connected for call ${session.callControlId}`);
 
       // Envoyer tous les buffers audio accumulés pendant la connexion
@@ -61,8 +88,10 @@ export function connectDeepgramFlux(
     ws.on('message', (raw: Buffer) => {
       try {
         const msg = JSON.parse(raw.toString());
+        writeDebugLog(`[deepgram] Message received: type=${msg.type} is_final=${msg.is_final} speech_final=${msg.speech_final} channel_trans="${msg.channel?.alternatives?.[0]?.transcript}"`);
         handleDeepgramMessage(session, msg);
       } catch (err) {
+        writeDebugLog(`[deepgram] Parse error in message`, err);
         console.error('[deepgram] Parse error:', err);
       }
     });
@@ -97,8 +126,12 @@ const DEEPGRAM_AUDIO_BUFFER_MAX = 200;
 export function sendAudioToDeepgram(session: CallSession, audioPayload: string): void {
   const audioBuffer = Buffer.from(audioPayload, 'base64');
 
-  if (session.deepgramWs && session.deepgramWs.readyState === WebSocket.OPEN) {
-    session.deepgramWs.send(audioBuffer);
+  const isOpen = session.deepgramWs && session.deepgramWs.readyState === WebSocket.OPEN;
+  // (uncomment if log is too verbose, but for now we want full diagnostics)
+  // writeDebugLog(`[deepgram] sendAudioToDeepgram: buffer_len=${audioBuffer.length} ws_open=${isOpen}`);
+
+  if (isOpen) {
+    session.deepgramWs!.send(audioBuffer);
   } else {
     // Bufferiser en attendant que Deepgram soit connecté
     // Limiter la taille du buffer pour éviter le leak mémoire
@@ -128,6 +161,7 @@ export function closeDeepgram(session: CallSession): void {
 
 interface DeepgramMessage {
   type: string;
+  is_final?: boolean;
   channel?: {
     alternatives?: Array<{ transcript: string; confidence: number }>;
   };
@@ -147,11 +181,6 @@ function handleDeepgramMessage(
   switch (msg.type) {
     case 'UtteranceStart': {
       console.log(`[deepgram] Utterance start — ${session.callControlId}`);
-
-      // Barge-in : si on était en train de parler, le caller a coupé
-      if (session.state === 'SPEAKING') {
-        mgr.handleBargeIn(session);
-      }
 
       // Annuler toute spéculation en cours (le caller continue)
       session.speculativeLlm = null;
@@ -181,18 +210,46 @@ function handleDeepgramMessage(
     case 'Results':
     case 'FinalTranscript': {
       const transcript = msg.channel?.alternatives?.[0]?.transcript ?? '';
-      const isFinal = msg.speech_final === true;
+      const isFinal = msg.is_final === true;
+      const isSpeechFinal = msg.speech_final === true;
       const confidence = msg.channel?.alternatives?.[0]?.confidence ?? 0;
 
-      if (isFinal && transcript.trim()) {
-        session.onDeepgramEvent?.({ type: 'FinalTranscript', transcript });
+      // Barge-in: si on est en train de parler et que l'utilisateur dit quelque chose (transcript non vide)
+      if (session.state === 'SPEAKING' && transcript.trim().length > 0) {
+        console.log(`[barge-in] User spoke: "${transcript.trim()}" while assistant was speaking. Interrupting.`);
+        mgr.handleBargeIn(session);
+      }
+
+      if (isFinal) {
+        if (transcript.trim()) {
+          session.turnTranscript += (session.turnTranscript ? ' ' : '') + transcript.trim();
+          console.log(`[deepgram] Segment finalized: "${transcript.slice(0, 60)}..." (speech_final=${isSpeechFinal})`);
+        }
+
+        if (isSpeechFinal && session.turnTranscript.trim()) {
+          const fullTurnTranscript = session.turnTranscript;
+          session.turnTranscript = ''; // Reset pour le prochain tour
+          console.log(`[deepgram] Speech final (turn completed): "${fullTurnTranscript.slice(0, 60)}..."`);
+          session.onDeepgramEvent?.({ type: 'UtteranceEnd', transcript: fullTurnTranscript });
+        }
+      }
+
+      // Fallback: si speech_final=true mais isFinal=false, forcer UtteranceEnd
+      // avec le transcript accumulé (peut arriver avec endpointing court)
+      if (!isFinal && isSpeechFinal && session.turnTranscript.trim()) {
+        const fullTurnTranscript = session.turnTranscript;
+        session.turnTranscript = '';
+        console.log(`[deepgram] Speech final (forced fallback): "${fullTurnTranscript.slice(0, 60)}..."`);
+        session.onDeepgramEvent?.({ type: 'UtteranceEnd', transcript: fullTurnTranscript });
       }
 
       // Spéculation LLM : interim stable, confiance > 0.95, au moins 3 mots
+      const isSpeculativeEnabled = process.env.SPECULATIVE_LLM_ENABLED === 'true';
       const wordCount = transcript.trim().split(/\s+/).length;
       const lastTranscript = session.speculativeTranscript;
 
       if (
+        isSpeculativeEnabled &&
         !isFinal &&
         !session.speculativeLlm &&
         confidence >= 0.95 &&

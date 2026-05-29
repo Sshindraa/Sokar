@@ -47,8 +47,11 @@ export interface CallSession {
   restaurantId: string;
   systemPrompt: string;
   state: CallState;
+  ended: boolean;
   turnCount: number;
   isVip: boolean;
+  codec: 'PCMA' | 'PCMU';
+  history: any[];
 
   // WebSockets
   telnyxWs: WebSocket;
@@ -77,10 +80,21 @@ export interface CallSession {
   // Transcript cumulé (persistance)
   /** Transcript final cumulé de tout l'appel (concaténation des UtteranceEnd) */
   transcript: string;
+  /** Buffer pour accumuler les segments d'un tour de parole */
+  turnTranscript: string;
 
   // Timeouts
   lastActivityAt: number;
   createdAt: number;
+
+  // Latence
+  latencyTrace?: {
+    startTime: number;
+    sttFinalMs?: number;
+    llmFirstTokenMs?: number;
+    ttsFirstByteMs?: number;
+    totalE2eMs?: number;
+  };
 }
 
 /** Config retournée à Telnyx pour lancer le media stream */
@@ -88,5 +102,5 @@ export interface MediaStreamConfig {
   stream_url: string;
   stream_track: 'inbound_track';
   stream_bidirectional_mode: 'rtp';
-  stream_bidirectional_codec: 'L16';
+  stream_bidirectional_codec: 'PCMA' | 'PCMU';
 }
