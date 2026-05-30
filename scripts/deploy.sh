@@ -19,6 +19,11 @@ echo "🚀 Déploiement $CONFIG — Sokar"
 echo "📦 Git pull..."
 git pull origin main
 
+# 1.1 Copy env files to package directories
+echo "🔑 Copying env files..."
+cp /opt/sokar/.env /opt/sokar/apps/api/.env
+cp /opt/sokar/.env /opt/sokar/apps/dashboard/.env
+
 # 2. Install
 echo "📦 pnpm install..."
 pnpm install --frozen-lockfile
