@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
 
-const API_ORIGIN = process.env.API_URL || 'http://localhost:4000';
+const API_ORIGIN = process.env.API_URL || 'http://127.0.0.1:4000';
 
 /**
  * Proxy universel : /api/proxy/customers?phone=xxx → http://localhost:4000/customers?phone=xxx
