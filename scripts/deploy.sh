@@ -25,7 +25,7 @@ pnpm install --frozen-lockfile
 
 # 3. Prisma generate
 echo "🗄️  Prisma generate..."
-pnpm --filter @sokar/database prisma generate
+pnpm --filter @sokar/database generate
 
 # 4. Build
 echo "🔨 Build..."
