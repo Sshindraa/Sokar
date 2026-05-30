@@ -50,3 +50,6 @@ scratch/
 apps/api/scratch/
 *.log
 *.mp3
+
+# Shopify test directory
+Unboxxed/
