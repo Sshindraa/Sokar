@@ -1,0 +1,20 @@
+{
+  "name": "@sokar/database",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "prisma generate",
+    "generate": "prisma generate",
+    "push": "prisma db push",
+    "studio": "prisma studio",
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf .turbo node_modules"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.0.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.0.0",
+    "typescript": "^5.8.0"
+  }
+}

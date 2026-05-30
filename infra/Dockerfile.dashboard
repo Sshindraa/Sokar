@@ -1,0 +1,36 @@
+FROM node:22-alpine AS base
+RUN corepack enable && corepack prepare pnpm@10.8.0 --activate
+
+# ── Builder ────────────────────────────────────────────────────────────────
+FROM base AS builder
+WORKDIR /app
+
+# Package manifests
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.json ./
+COPY apps/dashboard/package.json apps/dashboard/tsconfig.json ./apps/dashboard/
+
+# Install
+RUN pnpm install --frozen-lockfile
+
+# Source
+COPY apps/dashboard  ./apps/dashboard
+COPY packages        ./packages
+
+# Build Next.js standalone
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN pnpm --filter @sokar/dashboard build
+
+# ── Runner ─────────────────────────────────────────────────────────────────
+FROM base AS runner
+WORKDIR /app
+
+COPY --from=builder /app/apps/dashboard/.next/standalone ./
+COPY --from=builder /app/apps/dashboard/.next/static     ./apps/dashboard/.next/static
+COPY --from=builder /app/apps/dashboard/public           ./apps/dashboard/public
+
+EXPOSE 3000
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+CMD ["node", "apps/dashboard/server.js"]
