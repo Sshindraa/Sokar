@@ -1,11 +1,12 @@
 'use client';
-
+ 
 import Link from 'next/link';
 import { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { BarChart3, CalendarCheck, PhoneCall, Settings, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
+import { SyncOrganization } from './SyncOrganization';
+ 
 const navItems = [
   { href: '/dashboard', label: 'Aperçu', icon: BarChart3 },
   { href: '/dashboard/calls', label: 'Appels', icon: PhoneCall },
@@ -13,12 +14,13 @@ const navItems = [
   { href: '/dashboard/customers', label: 'Clients', icon: Users },
   { href: '/dashboard/settings', label: 'Réglages', icon: Settings },
 ];
-
+ 
 export default function DashboardLayoutClient({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-
+ 
   return (
     <div className="dark sokar-page pt-24">
+      <SyncOrganization />
       <div className="sokar-container">
         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
