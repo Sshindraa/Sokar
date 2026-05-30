@@ -58,7 +58,7 @@ doppler configure set token "$TOKEN" --scope /opt/sokar 2>/dev/null || true
 
 # 7. Restart — les wrapper scripts bin/doppler-run-*.sh gèrent l'injection
 echo "🔄 Restart apps..."
-pm2 restart sokar-api --update-env
-pm2 restart sokar-dashboard --update-env
+sudo pm2 restart sokar-api --update-env
+sudo pm2 restart sokar-dashboard --update-env
 
 echo "✅ $CONFIG déployé"
