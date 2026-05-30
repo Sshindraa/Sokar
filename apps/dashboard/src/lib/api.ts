@@ -36,7 +36,15 @@ export function useApi() {
         body: body ? JSON.stringify(body) : undefined,
       });
 
-      const data = await res.json();
+      let data: any = {};
+      const text = await res.text();
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = { message: text };
+        }
+      }
 
       if (!res.ok) {
         throw new Error(data.error || data.message || `Erreur ${res.status}`);
@@ -47,11 +55,15 @@ export function useApi() {
     [],
   );
 
+  const get = useCallback(<T = any>(path: string) => apiFetch<T>('GET', path), [apiFetch]);
+  const post = useCallback(<T = any>(path: string, body?: any) => apiFetch<T>('POST', path, body), [apiFetch]);
+  const patch = useCallback(<T = any>(path: string, body?: any) => apiFetch<T>('PATCH', path, body), [apiFetch]);
+
   return {
     orgId,
     isSignedIn,
-    get: <T = any>(path: string) => apiFetch<T>('GET', path),
-    post: <T = any>(path: string, body?: any) => apiFetch<T>('POST', path, body),
-    patch: <T = any>(path: string, body?: any) => apiFetch<T>('PATCH', path, body),
+    get,
+    post,
+    patch,
   };
 }
