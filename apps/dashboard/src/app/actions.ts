@@ -43,6 +43,7 @@ export async function joinWaitlistAction(email: string) {
   // 2. Intégration RESEND (Envoi d'un email de bienvenue premium)
   if (resendKey) {
     try {
+      const emailFrom = process.env.EMAIL_FROM || 'Sokar <welcome@sokar.tech>';
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -50,7 +51,7 @@ export async function joinWaitlistAction(email: string) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: 'Sokar <welcome@sokar.tech>',
+          from: emailFrom,
           to: [email],
           subject: 'Bienvenue dans la liste d\'attente de Sokar 🚀',
           html: `
