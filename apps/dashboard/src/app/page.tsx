@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { SignedIn } from '@clerk/nextjs';
+import { joinWaitlistAction } from './actions';
 import { 
   ArrowUpRight, 
   CheckCircle2, 
@@ -25,12 +26,21 @@ export default function HomePage() {
 
     setStatus('loading');
     
-    // Simuler une requête API avec un effet premium de chargement
-    await new Promise((resolve) => setTimeout(resolve, 1400));
-    
-    setStatus('success');
-    setMessage('Merci ! Vous avez été ajouté à notre liste d\'attente prioritaire.');
-    setEmail('');
+    try {
+      const res = await joinWaitlistAction(email);
+      if (res.success) {
+        setStatus('success');
+        setMessage('Merci ! Vous avez été ajouté à notre liste d\'attente prioritaire.');
+        setEmail('');
+      } else {
+        setStatus('error');
+        setMessage(res.error || 'Une erreur est survenue lors de l\'inscription.');
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus('error');
+      setMessage('Une erreur réseau ou serveur est survenue. Veuillez réessayer.');
+    }
   };
 
   return (
