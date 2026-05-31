@@ -5,31 +5,38 @@ export async function joinWaitlistAction(email: string) {
     return { success: false, error: 'Veuillez fournir une adresse email valide.' };
   }
 
-  const loopsKey = process.env.LOOPS_API_KEY;
+  const brevoKey = process.env.BREVO_API_KEY;
+  const brevoListIdStr = process.env.BREVO_LIST_ID;
   const resendKey = process.env.RESEND_API_KEY;
 
   console.log(`[Waitlist] Nouvelle inscription pour : ${email}`);
 
-  // 1. Intégration LOOPS.SO
-  if (loopsKey) {
+  // 1. Intégration BREVO (Contacts API v3)
+  if (brevoKey) {
     try {
-      const response = await fetch('https://api.loops.so/v1/contacts/create', {
+      const listIds = brevoListIdStr ? [parseInt(brevoListIdStr)] : undefined;
+      const response = await fetch('https://api.brevo.com/v3/contacts', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${loopsKey}`,
+          'api-key': brevoKey,
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({
+          email,
+          ...(listIds && { listIds }),
+          updateEnabled: true,
+        }),
       });
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        console.error('[Waitlist] Erreur de Loops:', errData);
+        console.error('[Waitlist] Erreur de Brevo:', errData);
       } else {
-        console.log('[Waitlist] Contact enregistré avec succès sur Loops.');
+        console.log('[Waitlist] Contact enregistré avec succès sur Brevo.');
       }
     } catch (err) {
-      console.error('[Waitlist] Erreur réseau avec Loops:', err);
+      console.error('[Waitlist] Erreur réseau avec Brevo:', err);
     }
   }
 
@@ -86,8 +93,8 @@ export async function joinWaitlistAction(email: string) {
   }
 
   // Si aucune clé n'est fournie, on simule une réussite pour le dev local
-  if (!loopsKey && !resendKey) {
-    console.log('[Waitlist] [Dev Info] Aucun jeton API Loops ou Resend défini dans le fichier .env. Mode simulation activé.');
+  if (!brevoKey && !resendKey) {
+    console.log('[Waitlist] [Dev Info] Aucun jeton API Brevo ou Resend défini dans le fichier .env. Mode simulation activé.');
   }
 
   return { success: true };
