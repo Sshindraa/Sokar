@@ -78,8 +78,8 @@ export default function DashboardPage() {
       {/* ================= HEADER & OVERVIEW GRID ================= */}
       <section className="grid gap-5 lg:grid-cols-[1.1fr_2fr]">
         
-        {/* Welcome Command Card */}
-        <div className="rounded-2xl border-l-4 border-l-orange-500 border border-y-white/5 border-r-white/5 bg-gradient-to-r from-orange-500/[0.02] to-transparent p-6 flex flex-col justify-between shadow-[inset_1px_1px_1px_rgba(255,255,255,0.02)] min-h-[220px]">
+        {/* Welcome Command Card with Slide-in Transition */}
+        <div className="rounded-2xl border-l-4 border-l-orange-500 border border-y-white/5 border-r-white/5 bg-gradient-to-r from-orange-500/[0.02] to-transparent p-6 flex flex-col justify-between shadow-[inset_1px_1px_1px_rgba(255,255,255,0.02)] min-h-[220px] animate-in fade-in slide-in-from-left-4 duration-700 ease-out">
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-orange-500/20 bg-orange-500/10 text-[10px] font-bold tracking-widest uppercase text-orange-400 shadow-[0_0_15px_rgba(249,115,22,0.1)]">
               <Sparkles size={10} className="text-orange-400" />
@@ -98,8 +98,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 4 Metrics Grid */}
-        <div className="grid gap-4 sm:grid-cols-2">
+        {/* 4 Metrics Grid with Slide-in Transition */}
+        <div className="grid gap-4 sm:grid-cols-2 animate-in fade-in slide-in-from-right-4 duration-700 ease-out">
           <MetricCard 
             label="Appels traités" 
             value={formatNum(stats?.totalCalls ?? 0)} 
@@ -131,8 +131,8 @@ export default function DashboardPage() {
       {/* ================= CHARTS & ACTIVITY GRID ================= */}
       <section className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
         
-        {/* Weekly Activity Bar Chart */}
-        <div className="rounded-2xl border border-white/5 bg-white/[0.01] backdrop-blur-xl p-6 shadow-xl">
+        {/* Weekly Activity Bar Chart with Mount Transitions */}
+        <div className="rounded-2xl border border-white/5 bg-white/[0.01] backdrop-blur-xl p-6 shadow-xl animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100 ease-out">
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-bold tracking-tight text-white font-display">Activité hebdomadaire</h3>
@@ -146,10 +146,7 @@ export default function DashboardPage() {
           <div className="grid h-64 grid-cols-7 items-end gap-3 px-2 pt-4 border-b border-white/5 pb-2">
             {[44, 58, 36, 72, 64, 88, 52].map((height, index) => (
               <div key={index} className="flex h-full flex-col justify-end gap-3 group cursor-pointer">
-                <div
-                  className="rounded-t-lg bg-gradient-to-t from-orange-500/20 to-orange-500/80 transition-all duration-300 hover:to-orange-400 shadow-[0_0_15px_rgba(249,115,22,0.1)] group-hover:shadow-[0_0_20px_rgba(249,115,22,0.25)] border-t border-x border-orange-500/30"
-                  style={{ height: `${height}%` }}
-                />
+                <AnimatedBar height={height} delay={index * 80} />
                 <span className="text-center text-[10px] font-bold uppercase tracking-wider text-white/35 group-hover:text-white transition-colors duration-200 font-sans">
                   {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'][index]}
                 </span>
@@ -158,8 +155,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Recent Reservations List */}
-        <div className="rounded-2xl border border-white/5 bg-white/[0.01] backdrop-blur-xl p-6 shadow-xl flex flex-col justify-between">
+        {/* Recent Reservations List with Mount Transitions */}
+        <div className="rounded-2xl border border-white/5 bg-white/[0.01] backdrop-blur-xl p-6 shadow-xl flex flex-col justify-between animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200 ease-out">
           <div>
             <div className="mb-6 flex items-center justify-between gap-4">
               <div>
@@ -204,12 +201,42 @@ export default function DashboardPage() {
   );
 }
 
+function AnimatedBar({ height, delay }: { height: number; delay: number }) {
+  const [currentHeight, setCurrentHeight] = useState(0);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setCurrentHeight(height);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [height, delay]);
+
+  return (
+    <div
+      className="rounded-t-lg bg-gradient-to-t from-orange-500/20 to-orange-500/80 shadow-[0_0_15px_rgba(249,115,22,0.1)] group-hover:shadow-[0_0_20px_rgba(249,115,22,0.25)] border-t border-x border-orange-500/30 w-full"
+      style={{ 
+        height: `${currentHeight}%`,
+        transition: 'height 1.2s cubic-bezier(0.16, 1, 0.3, 1)' 
+      }}
+    />
+  );
+}
+
 function RadialDial({ value }: { value: number }) {
+  const [currentValue, setCurrentValue] = useState(0);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setCurrentValue(value);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [value]);
+
   const radius = 24;
   const stroke = 3;
   const normalizedRadius = radius - stroke * 2;
   const circumference = normalizedRadius * 2 * Math.PI;
-  const strokeDashoffset = circumference - (value / 100) * circumference;
+  const strokeDashoffset = circumference - (currentValue / 100) * circumference;
 
   return (
     <div className="relative flex items-center justify-center">
@@ -229,7 +256,10 @@ function RadialDial({ value }: { value: number }) {
           fill="transparent"
           strokeWidth={stroke}
           strokeDasharray={circumference + ' ' + circumference}
-          style={{ strokeDashoffset }}
+          style={{ 
+            strokeDashoffset,
+            transition: 'stroke-dashoffset 1.5s cubic-bezier(0.16, 1, 0.3, 1)' 
+          }}
           strokeLinecap="round"
           r={normalizedRadius}
           cx={radius}
@@ -242,7 +272,9 @@ function RadialDial({ value }: { value: number }) {
           </linearGradient>
         </defs>
       </svg>
-      <span className="absolute text-[9px] font-black text-white tracking-tight font-display">{value}%</span>
+      <span className="absolute text-[9px] font-black text-white tracking-tight font-display transition-all duration-500">
+        {Math.round(currentValue)}%
+      </span>
     </div>
   );
 }
