@@ -639,55 +639,110 @@ export default function HomePage() {
             )}
           </div>
         </section>
-
-        {/* Social Icons row */}
-        <div className="flex items-center gap-4 mt-8 mb-16">
-          {[
-            { 
-              label: "Twitter",
-              path: "M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z",
-              isSvgStroke: false
-            },
-            { 
-              label: "Facebook",
-              path: "M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15H8v-3h2V9.5C10 7.57 11.57 6 13.5 6H16v3h-2c-.55 0-1 .45-1 1v2h3v3h-3v6.95c4.56-.93 8-4.96 8-9.75z",
-              isSvgStroke: false
-            }
-          ].map((soc, idx) => (
-            <Link
-              key={idx}
-              href="#"
-              aria-label={soc.label}
-              className="h-11 w-11 rounded-full border border-white/10 bg-white/[0.03] flex items-center justify-center text-white/60 transition-all duration-300 hover:text-white hover:bg-white/[0.08] hover:border-white/20 active:scale-95 shadow-md shadow-black/10"
-            >
-              <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24">
-                <path d={soc.path} />
-              </svg>
-            </Link>
-          ))}
-          <Link
-            href="#"
-            aria-label="Instagram"
-            className="h-11 w-11 rounded-full border border-white/10 bg-white/[0.03] flex items-center justify-center text-white/60 transition-all duration-300 hover:text-white hover:bg-white/[0.08] hover:border-white/20 active:scale-95 shadow-md shadow-black/10"
-          >
-            <svg className="h-4 w-4 stroke-current fill-none stroke-2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
-              <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-              <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
-            </svg>
-          </Link>
-        </div>
       </main>
 
-      {/* Footer Area with Massive outline text (Waitlist) */}
-      <footer className="relative z-10 w-full flex flex-col items-center pointer-events-none pb-12">
-        <span className="stroke-text font-black text-7xl md:text-[10rem] select-none leading-none select-none uppercase">
-          Waitlist
-        </span>
-        <div className="mt-8 text-[10px] tracking-[0.2em] font-medium uppercase text-white/30 flex items-center gap-2 font-sans">
-          <span>&copy; {new Date().getFullYear()} Sokar OS</span>
-          <span className="h-1 w-1 rounded-full bg-white/20" />
-          <span>Coming Soon</span>
+      {/* Footer Area */}
+      <footer className="relative z-10 w-full border-t border-white/5 bg-black/40 backdrop-blur-md pt-16 pb-12 mt-20 px-6 flex flex-col items-center">
+        {/* Massive outline background text (SOKAR) */}
+        <div className="absolute inset-x-0 bottom-0 overflow-hidden pointer-events-none select-none flex justify-center -z-10 opacity-30">
+          <span className="stroke-text font-black text-[12vw] tracking-[0.1em] uppercase leading-none select-none">
+            SOKAR
+          </span>
+        </div>
+
+        <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
+          {/* Brand Info */}
+          <div className="flex flex-col gap-4">
+            <Link href="/" className="flex items-center gap-2">
+              <img src="/logo-nav.png" alt="Sokar" className="h-8 w-8 filter drop-shadow-[0_0_10px_rgba(255,255,255,0.15)]" />
+              <span className="text-lg font-bold text-white font-display">Sokar</span>
+            </Link>
+            <p className="text-xs text-white/40 leading-relaxed font-sans max-w-xs">
+              L&apos;assistant vocal intelligent qui révolutionne la prise de réservations et la gestion des appels de votre restaurant.
+            </p>
+            {/* Social Icons inside Brand column */}
+            <div className="flex items-center gap-3 mt-2">
+              {[
+                { 
+                  label: "Twitter",
+                  path: "M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+                },
+                { 
+                  label: "Facebook",
+                  path: "M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15H8v-3h2V9.5C10 7.57 11.57 6 13.5 6H16v3h-2c-.55 0-1 .45-1 1v2h3v3h-3v6.95c4.56-.93 8-4.96 8-9.75z"
+                }
+              ].map((soc, idx) => (
+                <Link
+                  key={idx}
+                  href="#"
+                  aria-label={soc.label}
+                  className="h-9 w-9 rounded-full border border-white/10 bg-white/[0.03] flex items-center justify-center text-white/60 transition-all duration-300 hover:text-white hover:bg-white/[0.08] hover:border-white/20 active:scale-95 shadow-md shadow-black/10"
+                >
+                  <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
+                    <path d={soc.path} />
+                  </svg>
+                </Link>
+              ))}
+              <Link
+                href="#"
+                aria-label="Instagram"
+                className="h-9 w-9 rounded-full border border-white/10 bg-white/[0.03] flex items-center justify-center text-white/60 transition-all duration-300 hover:text-white hover:bg-white/[0.08] hover:border-white/20 active:scale-95 shadow-md shadow-black/10"
+              >
+                <svg className="h-3.5 w-3.5 stroke-current fill-none stroke-2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+                  <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+                  <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+                </svg>
+              </Link>
+            </div>
+          </div>
+
+          {/* Links Column 1: Produit */}
+          <div className="flex flex-col gap-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-white/80 font-sans">Produit</h4>
+            <a href="#demo" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans">
+              Démonstration
+            </a>
+            <a href="#tarifs" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans">
+              Tarifs
+            </a>
+            <a href="#faq" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans">
+              FAQ
+            </a>
+          </div>
+
+          {/* Links Column 2: Entreprise */}
+          <div className="flex flex-col gap-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-white/80 font-sans">Entreprise</h4>
+            <a href="#waitlist" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans">
+              Waitlist Bêta
+            </a>
+            <Link href="/login" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans">
+              Espace Partenaire
+            </Link>
+          </div>
+
+          {/* Links Column 3: Légal */}
+          <div className="flex flex-col gap-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-white/80 font-sans">Légal</h4>
+            <a href="#" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans">
+              Mentions Légales
+            </a>
+            <a href="#" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans">
+              Confidentialité
+            </a>
+          </div>
+        </div>
+
+        {/* Bottom border and copyright */}
+        <div className="w-full max-w-5xl border-t border-white/5 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="text-[10px] tracking-[0.1em] uppercase text-white/30 font-sans">
+            &copy; {new Date().getFullYear()} SOKAR OS. TOUS DROITS RÉSERVÉS.
+          </p>
+          <div className="flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase text-white/45 bg-white/5 border border-white/10 px-3 py-1 rounded-full font-bold">
+            <span className="h-1.5 w-1.5 rounded-full bg-orange-400 animate-pulse" />
+            Bêta Privée
+          </div>
         </div>
       </footer>
     </div>
