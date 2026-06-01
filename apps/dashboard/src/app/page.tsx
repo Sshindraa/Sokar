@@ -98,11 +98,20 @@ const FAQS = [
 ];
 
 function RadialDial({ value }: { value: number }) {
+  const [currentValue, setCurrentValue] = useState(0);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setCurrentValue(value);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [value]);
+
   const radius = 24;
   const stroke = 3;
   const normalizedRadius = radius - stroke * 2;
   const circumference = normalizedRadius * 2 * Math.PI;
-  const strokeDashoffset = circumference - (value / 100) * circumference;
+  const strokeDashoffset = circumference - (currentValue / 100) * circumference;
 
   return (
     <div className="relative flex items-center justify-center">
@@ -120,7 +129,10 @@ function RadialDial({ value }: { value: number }) {
           fill="transparent"
           strokeWidth={stroke}
           strokeDasharray={circumference + ' ' + circumference}
-          style={{ strokeDashoffset }}
+          style={{ 
+            strokeDashoffset,
+            transition: 'stroke-dashoffset 1.5s cubic-bezier(0.16, 1, 0.3, 1)'
+          }}
           strokeLinecap="round"
           r={normalizedRadius}
           cx={radius}
@@ -133,7 +145,9 @@ function RadialDial({ value }: { value: number }) {
           </linearGradient>
         </defs>
       </svg>
-      <span className="absolute text-[9px] font-black text-white tracking-tight font-display">{value}%</span>
+      <span className="absolute text-[9px] font-black text-white tracking-tight font-display transition-all duration-500">
+        {Math.round(currentValue)}%
+      </span>
     </div>
   );
 }
