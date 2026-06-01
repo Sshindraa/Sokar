@@ -11,14 +11,13 @@ import {
   Sparkles,
   PhoneCall,
   TrendingUp,
-  ArrowRight,
   ChevronDown,
-  HelpCircle,
   Check,
   CalendarCheck,
   Zap,
   MessageSquare,
-  Euro
+  Euro,
+  Headphones
 } from 'lucide-react';
 
 const SIMULATOR_STEPS = [
@@ -564,11 +563,6 @@ export default function HomePage() {
             inset 0 1px 1px rgba(255, 255, 255, 0.05);
         }
 
-        .orange-glow-light {
-          background: radial-gradient(circle, rgba(249,115,22,0.18) 0%, rgba(249,115,22,0) 70%);
-          filter: blur(70px);
-        }
-
         @keyframes wave-bounce {
           0%, 100% { height: 4px; }
           50% { height: 26px; }
@@ -606,113 +600,163 @@ export default function HomePage() {
         input[type="range"]::-moz-range-thumb:hover {
           transform: scale(1.3);
         }
+
+        .liquid-field {
+          background:
+            radial-gradient(ellipse at 15% 45%, hsl(0 0% 100% / 0.44) 0%, hsl(0 0% 100% / 0.12) 20%, transparent 38%),
+            radial-gradient(ellipse at 85% 72%, hsl(0 0% 100% / 0.3) 0%, hsl(0 0% 100% / 0.06) 18%, transparent 40%),
+            radial-gradient(ellipse at 35% 88%, hsl(0 0% 100% / 0.36) 0%, hsl(0 0% 100% / 0.1) 15%, transparent 32%),
+            linear-gradient(180deg, hsl(0 0% 2%) 0%, hsl(0 0% 0%) 100%);
+        }
+        .liquid-field::before {
+          content: '';
+          position: absolute;
+          left: -12%;
+          right: -4%;
+          top: 28%;
+          height: 36%;
+          border-radius: 50%;
+          transform: rotate(8deg);
+          background:
+            radial-gradient(ellipse at 12% 35%, hsl(0 0% 100% / 0.72), transparent 16%),
+            radial-gradient(ellipse at 42% 70%, hsl(0 0% 100% / 0.48), transparent 14%),
+            radial-gradient(ellipse at 58% 46%, hsl(0 0% 100% / 0.26), transparent 16%),
+            radial-gradient(ellipse at 92% 52%, hsl(0 0% 100% / 0.38), transparent 15%);
+          filter: blur(20px);
+          opacity: 0.75;
+        }
+        .liquid-field::after {
+          content: '';
+          position: absolute;
+          left: 28%;
+          top: 16%;
+          width: 48%;
+          height: 60%;
+          border-radius: 52%;
+          border: 1px solid hsl(0 0% 100% / 0.13);
+          transform: rotate(-16deg);
+          filter: blur(1.5px);
+          opacity: 0.65;
+        }
       `}</style>
 
-      {/* Abstract Glowing Fluid Curves & Background (WOW Factor) */}
-      <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden select-none">
-        {/* Halo central orange juste derrière le titre */}
-        <div className="orange-glow-light absolute top-[20%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[450px] pointer-events-none z-0" />
-        
-        <svg className="absolute w-[130%] h-[130%] -left-[15%] -top-[15%] filter blur-[60px] opacity-75" viewBox="0 0 1000 1000" fill="none">
-          <defs>
-            <linearGradient id="orange-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#f97316" stopOpacity="0.6" />
-              <stop offset="40%" stopColor="#ea580c" stopOpacity="0.4" />
-              <stop offset="70%" stopColor="#c2410c" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="#7c2d12" stopOpacity="0" />
-            </linearGradient>
-            <linearGradient id="blue-grad" x1="0%" y1="100%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#1d4ed8" stopOpacity="0.2" />
-              <stop offset="50%" stopColor="#1e3a8a" stopOpacity="0.08" />
-              <stop offset="100%" stopColor="#0f172a" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          {/* Deep blue ambiance behind */}
-          <circle cx="200" cy="500" r="400" fill="url(#blue-grad)" />
-          <circle cx="800" cy="300" r="350" fill="url(#blue-grad)" />
-          
-          {/* Orange glowing fluid lines matching the reference screenshot */}
-          <path d="M-50 350 C 200 420, 350 150, 650 300 C 850 400, 750 780, 1050 550" stroke="url(#orange-grad)" strokeWidth="45" strokeLinecap="round" />
-          <path d="M150 750 C 350 580, 550 820, 800 480" stroke="url(#orange-grad)" strokeWidth="22" strokeLinecap="round" />
-        </svg>
+      {/* Liquid Field Background — old elegant grayscale glow */}
+      <div className="liquid-field absolute inset-0 pointer-events-none z-0 overflow-hidden select-none" />
+
+      {/* Logo — top-left fixed */}
+      <Link
+        href="/"
+        className="fixed left-6 top-5 z-50 flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-80"
+      >
+        <img src="/logo-nav.png" alt="Sokar" className="h-11 w-11" />
+        <span className="text-xl font-bold tracking-tight text-white font-display">Sokar</span>
+      </Link>
+
+      {/* Floating navbar — nav links + CTA */}
+      <div className="fixed left-1/2 top-5 z-50 -translate-x-1/2">
+        <nav className="flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-2 shadow-2xl backdrop-blur-xl">
+          <div className="hidden items-center gap-1 md:flex">
+            {[
+              { label: 'Services', href: '#services' },
+              { label: "Cas d'usage", href: '#cases' },
+              { label: 'Tarifs', href: '/pricing' },
+              { label: 'Contact', href: '#contact' },
+            ].map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="rounded-full px-3 py-1.5 text-sm text-white/60 transition-colors hover:bg-white/5 hover:text-white"
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
+          <SignedOut>
+            <Link
+              href="/register"
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm font-medium transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:text-black hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] active:scale-[0.98]"
+            >
+              Essai gratuit
+              <ArrowUpRight size={14} />
+            </Link>
+          </SignedOut>
+          <SignedIn>
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-sm font-medium transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:text-black hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] active:scale-[0.98]"
+            >
+              Dashboard
+              <ArrowUpRight size={14} />
+            </Link>
+          </SignedIn>
+        </nav>
       </div>
 
-      {/* Floating Header */}
-      <header className="fixed top-5 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-5xl rounded-full border border-white/10 bg-black/40 backdrop-blur-xl px-4 py-2 flex items-center justify-between shadow-2xl transition-all duration-300">
-        {/* Logo */}
-        <Link
-          href="/"
-          className="flex items-center gap-2 rounded-full transition-all duration-300 hover:opacity-80 px-2"
-        >
-          <img src="/logo-nav.png" alt="Sokar" className="h-9 w-9 filter drop-shadow-[0_0_10px_rgba(255,255,255,0.15)]" />
-          <span className="text-lg font-bold tracking-tight text-white glow-title font-display">Sokar</span>
-        </Link>
-
-        {/* Center menu */}
-        <nav className="hidden md:flex items-center gap-1">
-          <a href="#demo" className="text-xs font-semibold tracking-wide text-white/60 hover:text-white px-3 py-1.5 rounded-full hover:bg-white/5 transition-all duration-200">
-            Démonstration
-          </a>
-          <a href="#tarifs" className="text-xs font-semibold tracking-wide text-white/60 hover:text-white px-3 py-1.5 rounded-full hover:bg-white/5 transition-all duration-200">
-            Tarifs
-          </a>
-          <a href="#faq" className="text-xs font-semibold tracking-wide text-white/60 hover:text-white px-3 py-1.5 rounded-full hover:bg-white/5 transition-all duration-200">
-            FAQ
-          </a>
-        </nav>
-
-        {/* Action Button */}
-        <div className="flex items-center gap-2">
-          <Link
-            href="/login"
-            className="text-xs font-semibold text-white/60 hover:text-white px-3 py-1.5 rounded-full hover:bg-white/5 transition-all duration-200"
-          >
-            Connexion
-          </Link>
-          <a
-            href="#waitlist"
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full border border-orange-500/20 bg-orange-500/10 hover:bg-orange-500/20 text-xs font-semibold tracking-wide text-orange-400 transition-all duration-300 hover:-translate-y-0.5 active:scale-95 shadow-[0_4px_12px_rgba(0,0,0,0.3)]"
-          >
-            Rejoindre la Waitlist
-            <ArrowRight size={12} />
-          </a>
-        </div>
-      </header>
-
       {/* Main Content Area */}
-      <main className="relative z-10 w-full max-w-5xl px-6 pt-32 flex flex-col items-center">
+      <main className="relative z-10 w-full max-w-7xl px-6 pt-32 flex flex-col items-center">
         
         {/* ================= HERO SECTION ================= */}
-        <section className="flex flex-col items-center text-center max-w-3xl my-12 md:my-20">
-          {/* Floating Waitlist Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-orange-500/20 bg-orange-500/10 text-[10px] font-bold tracking-widest uppercase text-orange-400 shadow-[0_0_15px_rgba(249,115,22,0.15)] animate-pulse">
-            <Sparkles size={11} className="text-orange-400" />
-            Waitlist de la bêta privée
+        <section className="relative flex flex-col items-center justify-center text-center w-full min-h-[85vh]">
+          <div className="flex flex-col items-center max-w-5xl px-6 pt-20 pb-8">
+            {/* Badge */}
+            <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-5 py-2.5 text-xs text-white/70 backdrop-blur-xl transition-all duration-300 hover:border-white/20">
+              <Sparkles size={14} />
+              Assistant vocal pour restaurants
+            </p>
+
+            {/* Title */}
+            <h1 className="mt-6 max-w-5xl text-5xl font-semibold leading-[0.9] tracking-tight text-white md:text-7xl lg:text-8xl font-display">
+              La salle répond quand vous cuisinez.
+            </h1>
+
+            <p className="mx-auto mt-5 max-w-xl text-sm leading-6 text-white/50 md:text-base font-sans">
+              Sokar prend les appels, confirme les réservations et transmet les bonnes infos à votre équipe sans casser le rythme du service.
+            </p>
+
+            {/* CTAs */}
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+              <SignedOut>
+                <Link
+                  href="/register"
+                  className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.01] hover:bg-white/90 hover:shadow-[0_0_20px_rgba(255,255,255,0.12)] active:scale-[0.98]"
+                >
+                  Réserver une démo
+                </Link>
+              </SignedOut>
+              <SignedIn>
+                <Link
+                  href="/dashboard"
+                  className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.01] hover:bg-white/90 hover:shadow-[0_0_20px_rgba(255,255,255,0.12)] active:scale-[0.98]"
+                >
+                  Accéder au Dashboard
+                </Link>
+              </SignedIn>
+              <Link
+                href="/pricing"
+                className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.03] px-6 py-3 text-sm font-semibold text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/5 hover:border-white/20 hover:shadow-[0_0_15px_rgba(255,255,255,0.08)] active:scale-[0.98]"
+              >
+                Voir les tarifs
+              </Link>
+            </div>
           </div>
 
-          {/* Coming soon Title */}
-          <h1 className="mt-6 text-4xl sm:text-6xl md:text-7xl font-black tracking-tight text-white glow-title font-display leading-[1.05]">
-            L&apos;assistant vocal intelligent pour votre restaurant.
-          </h1>
-
-          <p className="mt-6 text-sm sm:text-base text-white/50 max-w-xl mx-auto leading-relaxed font-sans">
-            Sokar répond à vos appels clients, gère 100% de vos réservations en direct sur votre logiciel et éradique les no-shows. Vos équipes restent concentrées sur la salle.
-          </p>
-
-          {/* CTAs */}
-          <div className="mt-8 flex flex-col sm:flex-row items-center gap-4 justify-center">
-            <a
-              href="#waitlist"
-              className="px-8 py-3.5 rounded-full bg-white text-black font-bold text-sm tracking-wide transition-all duration-300 hover:bg-white/95 hover:scale-[1.02] hover:shadow-[0_0_25px_rgba(255,255,255,0.4)] active:scale-[0.98]"
-            >
-              Rejoindre la Waitlist
-            </a>
-            <a
-              href="#demo"
-              className="px-6 py-3.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white font-semibold text-sm tracking-wide transition-all duration-300"
-            >
-              Voir la démo
-            </a>
+          {/* Bottom bar */}
+          <div className="relative z-10 mx-auto grid w-full max-w-7xl gap-4 px-6 pb-8 text-xs text-white/80 md:grid-cols-[1fr_auto_1fr] md:px-10">
+            <div className="hidden items-center gap-3 md:flex">
+              <span className="font-medium">Scroll</span>
+              <span className="h-px flex-1 bg-white/10" />
+              <span className="font-medium">pour découvrir</span>
+            </div>
+            <button className="group mx-auto flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 transition-all duration-300 hover:bg-white hover:text-black hover:scale-105 active:scale-95">
+              <Headphones size={14} className="animate-pulse" />
+              <span className="text-[10px] font-semibold tracking-wide uppercase text-white/80 group-hover:text-black transition-colors duration-300">
+                écouter une démo
+              </span>
+            </button>
+            <div className="hidden items-center gap-3 md:flex">
+              <span className="h-px flex-1 bg-white/10" />
+              <span className="font-medium">pilotage temps réel</span>
+            </div>
           </div>
         </section>
 
