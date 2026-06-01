@@ -96,6 +96,112 @@ const FAQS = [
   }
 ];
 
+function RadialDial({ value }: { value: number }) {
+  const radius = 24;
+  const stroke = 3;
+  const normalizedRadius = radius - stroke * 2;
+  const circumference = normalizedRadius * 2 * Math.PI;
+  const strokeDashoffset = circumference - (value / 100) * circumference;
+
+  return (
+    <div className="relative flex items-center justify-center">
+      <svg height={radius * 2} width={radius * 2} className="transform -rotate-90">
+        <circle
+          stroke="rgba(255, 255, 255, 0.05)"
+          fill="transparent"
+          strokeWidth={stroke}
+          r={normalizedRadius}
+          cx={radius}
+          cy={radius}
+        />
+        <circle
+          stroke="url(#orangeDialGradShowcase)"
+          fill="transparent"
+          strokeWidth={stroke}
+          strokeDasharray={circumference + ' ' + circumference}
+          style={{ strokeDashoffset }}
+          strokeLinecap="round"
+          r={normalizedRadius}
+          cx={radius}
+          cy={radius}
+        />
+        <defs>
+          <linearGradient id="orangeDialGradShowcase" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#f97316" />
+            <stop offset="100%" stopColor="#ea580c" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <span className="absolute text-[9px] font-black text-white tracking-tight font-display">{value}%</span>
+    </div>
+  );
+}
+
+function ShowcaseMetricCard({
+  label,
+  value,
+  icon: Icon,
+  trend,
+  isDial,
+  dialValue,
+  featured,
+}: {
+  label: string;
+  value: string;
+  icon: any;
+  trend?: string;
+  isDial?: boolean;
+  dialValue?: number;
+  featured?: boolean;
+}) {
+  return (
+    <div className={`relative overflow-hidden rounded-2xl border transition-all duration-300 p-4 ${
+      featured 
+        ? 'border-orange-500/25 bg-orange-500/[0.01] shadow-[0_0_30px_rgba(249,115,22,0.03)]' 
+        : 'border-white/5 bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.03]'
+    }`}>
+      {featured && (
+        <div className="absolute -top-12 -right-12 w-24 h-24 rounded-full bg-orange-500/10 filter blur-xl pointer-events-none" />
+      )}
+      
+      <div className="flex items-center justify-between gap-3">
+        <span className={`h-8 w-8 rounded-full flex items-center justify-center border transition-all duration-200 ${
+          featured 
+            ? 'bg-orange-500/10 border-orange-500/25 text-orange-400' 
+            : 'bg-white/5 border-white/5 text-white/50'
+        }`}>
+          <Icon size={14} />
+        </span>
+        
+        {trend && (
+          <span className="flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold">
+            <span className="inline-block transform -rotate-45">→</span> {trend}
+          </span>
+        )}
+      </div>
+      
+      <div className="mt-6 flex items-baseline justify-between gap-2">
+        <div className="min-w-0">
+          <p className={`text-xl font-black font-display tracking-tight truncate ${
+            featured ? 'text-orange-400' : 'text-white'
+          }`}>
+            {value}
+          </p>
+          <p className="mt-1 text-[9px] font-bold text-white/40 tracking-wider uppercase font-sans">
+            {label}
+          </p>
+        </div>
+
+        {isDial && dialValue !== undefined && (
+          <div className="flex-shrink-0">
+            <RadialDial value={dialValue} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -352,60 +458,121 @@ export default function HomePage() {
         <section id="demo" className="w-full py-16 scroll-mt-24 flex flex-col items-center">
           <div className="text-center max-w-lg mb-10">
             <h2 className="text-2xl md:text-4xl font-bold tracking-tight text-white font-display">
-              Découvrez-le en action
+              Le Tableau de Bord en Action
             </h2>
             <p className="mt-2 text-xs md:text-sm text-white/50 leading-relaxed font-sans">
-              Voici une simulation en temps réel de la voix et du raisonnement de Sokar lorsqu&apos;un client appelle pour réserver.
+              Admirez l&apos;interface de pilotage Sokar en temps réel. Le moniteur d&apos;activité affiche les statistiques de l&apos;assistant vocal en parallèle de la console de dialogue.
             </p>
           </div>
 
-          <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-white/[0.02] backdrop-blur-xl shadow-2xl overflow-hidden flex flex-col h-[360px] transition-all duration-300">
-            {/* Header du Chat */}
-            <div className="border-b border-white/10 bg-white/[0.03] px-5 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center shadow-inner">
-                  <img src="/logo-nav.png" alt="Sokar AI" className="h-5 w-5 animate-pulse" />
-                </div>
+          {/* Interactive HMI Dashboard Showcase (Pinterest Style) */}
+          <div className="w-full grid gap-6 lg:grid-cols-[1.1fr_1fr] bg-white/[0.01] border border-white/5 p-6 rounded-3xl backdrop-blur-2xl shadow-2xl relative overflow-hidden">
+            {/* Ambient Background glow behind showcase */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[300px] bg-orange-500/5 filter blur-3xl pointer-events-none rounded-full" />
+            
+            {/* Left side: Showcase Metrics & Status */}
+            <div className="flex flex-col gap-4 justify-between">
+              
+              {/* Mini Welcome panel with active indicator */}
+              <div className="rounded-2xl border-l-4 border-l-orange-500 border border-y-white/5 border-r-white/5 bg-gradient-to-r from-orange-500/[0.02] to-transparent p-5 flex flex-col justify-between shadow-[inset_1px_1px_1px_rgba(255,255,255,0.02)]">
                 <div>
-                  <h4 className="text-sm font-semibold tracking-tight text-white">Assistant Vocal Sokar</h4>
-                  <p className="text-[10px] text-emerald-400 font-medium flex items-center gap-1.5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    Appel en cours
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-orange-500/20 bg-orange-500/10 text-[9px] font-bold tracking-widest uppercase text-orange-400">
+                    <Sparkles size={9} />
+                    Moniteur d&apos;activité IA
+                  </div>
+                  <h3 className="mt-3 text-xl font-black leading-tight text-white font-display">
+                    La salle répond quand vous cuisinez.
+                  </h3>
+                  <p className="mt-2 text-[10px] sm:text-xs text-white/45 leading-relaxed font-sans">
+                    Découvrez ci-dessous comment les appels sont interceptés, les tables créées et le chiffre d&apos;affaires sécurisé en temps réel.
                   </p>
                 </div>
+                
+                <div className="mt-4 pt-3 border-t border-white/5 flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-[9px] font-bold tracking-widest text-white/40 uppercase">Assistant Vocal en ligne</span>
+                </div>
               </div>
-              
-              <div className="h-1.5 w-24 bg-white/10 rounded-full overflow-hidden relative">
-                <div className="h-full bg-gradient-to-r from-orange-400 to-orange-600 rounded-full w-2/3 animate-pulse" />
+
+              {/* 4 Metric cards showcase grid */}
+              <div className="grid grid-cols-2 gap-3.5">
+                <ShowcaseMetricCard 
+                  label="Appels traités" 
+                  value="412" 
+                  icon={PhoneCall} 
+                  trend="+12.4%"
+                />
+                <ShowcaseMetricCard
+                  label="Tables réservées"
+                  value="189"
+                  icon={CalendarCheck}
+                  trend="+15.8%"
+                />
+                <ShowcaseMetricCard 
+                  label="Taux de réponse" 
+                  value="98%" 
+                  icon={TrendingUp} 
+                  isDial 
+                  dialValue={98}
+                />
+                <ShowcaseMetricCard 
+                  label="Revenus récupérés" 
+                  value="5 420 €" 
+                  icon={Euro} 
+                  featured
+                />
               </div>
             </div>
 
-            {/* Corps des messages du chat */}
-            <div
-              ref={chatContainerRef}
-              className="flex-1 overflow-y-auto p-5 space-y-3 flex flex-col justify-start scrollbar-none"
-            >
-              {visibleSteps.map((step, idx) => (
-                <div
-                  key={idx}
-                  className={`flex flex-col max-w-[85%] rounded-2xl px-4 py-2.5 text-xs sm:text-sm transition-all duration-300 scale-95 origin-bottom animate-in fade-in slide-in-from-bottom-2 ${
-                    step.sender === 'assistant'
-                      ? "bg-white/[0.04] text-white self-start rounded-tl-none border border-white/10"
-                      : "bg-white text-black self-end rounded-tr-none shadow-md"
-                  }`}
-                >
-                  <p className="leading-relaxed font-semibold">{step.text}</p>
+            {/* Right side: Live Conversational Simulator in Showcase mock frame */}
+            <div className="rounded-2xl border border-white/10 bg-black/60 shadow-xl overflow-hidden flex flex-col h-full min-h-[380px] transition-all duration-300 relative">
+              {/* Header du Chat */}
+              <div className="border-b border-white/10 bg-white/[0.03] px-5 py-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-full bg-orange-500/10 border border-orange-500/20 flex items-center justify-center shadow-inner">
+                    <img src="/logo-nav.png" alt="Sokar AI" className="h-4.5 w-4.5 animate-pulse" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-semibold tracking-tight text-white">Console de Dialogue Live</h4>
+                    <p className="text-[9px] text-emerald-400 font-medium flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Appel client en cours
+                    </p>
+                  </div>
                 </div>
-              ))}
+                
+                <div className="h-1.5 w-20 bg-white/10 rounded-full overflow-hidden relative">
+                  <div className="h-full bg-gradient-to-r from-orange-400 to-orange-600 rounded-full w-2/3 animate-pulse" />
+                </div>
+              </div>
 
-              {/* Indicateur de saisie IA */}
-              {isTyping && (
-                <div className="flex items-center gap-1 bg-white/[0.04] text-white border border-white/10 rounded-2xl rounded-tl-none px-4 py-3 self-start max-w-[80%] transition-opacity duration-300">
-                  <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '300ms' }} />
-                </div>
-              )}
+              {/* Corps des messages du chat */}
+              <div
+                ref={chatContainerRef}
+                className="flex-1 overflow-y-auto p-4 space-y-3 flex flex-col justify-start scrollbar-none h-[280px]"
+              >
+                {visibleSteps.map((step, idx) => (
+                  <div
+                    key={idx}
+                    className={`flex flex-col max-w-[85%] rounded-2xl px-3.5 py-2 text-xs transition-all duration-300 scale-95 origin-bottom animate-in fade-in slide-in-from-bottom-2 ${
+                      step.sender === 'assistant'
+                        ? "bg-white/[0.04] text-white self-start rounded-tl-none border border-white/10 font-sans"
+                        : "bg-white text-black self-end rounded-tr-none shadow-md font-sans"
+                    }`}
+                  >
+                    <p className="leading-relaxed font-semibold">{step.text}</p>
+                  </div>
+                ))}
+
+                {/* Indicateur de saisie IA */}
+                {isTyping && (
+                  <div className="flex items-center gap-1 bg-white/[0.04] text-white border border-white/10 rounded-2xl rounded-tl-none px-3.5 py-2.5 self-start max-w-[80%] transition-opacity duration-300">
+                    <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </section>
