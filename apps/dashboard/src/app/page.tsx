@@ -603,40 +603,45 @@ export default function HomePage() {
 
         .liquid-field {
           background:
-            radial-gradient(ellipse at 15% 45%, hsl(0 0% 100% / 0.44) 0%, hsl(0 0% 100% / 0.12) 20%, transparent 38%),
-            radial-gradient(ellipse at 85% 72%, hsl(0 0% 100% / 0.3) 0%, hsl(0 0% 100% / 0.06) 18%, transparent 40%),
-            radial-gradient(ellipse at 35% 88%, hsl(0 0% 100% / 0.36) 0%, hsl(0 0% 100% / 0.1) 15%, transparent 32%),
+            radial-gradient(ellipse at 50% 10%, hsl(0 0% 100% / 0.12) 0%, hsl(0 0% 100% / 0.04) 28%, transparent 58%),
+            radial-gradient(ellipse at 16% 34%, hsl(0 0% 100% / 0.38) 0%, hsl(0 0% 100% / 0.1) 22%, transparent 46%),
+            radial-gradient(ellipse at 84% 38%, hsl(0 0% 100% / 0.32) 0%, hsl(0 0% 100% / 0.08) 20%, transparent 44%),
+            radial-gradient(ellipse at 50% 62%, hsl(0 0% 100% / 0.2) 0%, hsl(0 0% 100% / 0.06) 22%, transparent 52%),
+            radial-gradient(ellipse at 35% 88%, hsl(0 0% 100% / 0.28) 0%, hsl(0 0% 100% / 0.08) 15%, transparent 32%),
             linear-gradient(180deg, hsl(0 0% 2%) 0%, hsl(0 0% 0%) 100%);
         }
         .liquid-field::before {
           content: '';
           position: absolute;
-          left: -12%;
-          right: -4%;
-          top: 28%;
-          height: 36%;
+          left: -18%;
+          right: -10%;
+          top: 20%;
+          height: 46%;
           border-radius: 50%;
-          transform: rotate(8deg);
+          transform: rotate(6deg);
           background:
-            radial-gradient(ellipse at 12% 35%, hsl(0 0% 100% / 0.72), transparent 16%),
-            radial-gradient(ellipse at 42% 70%, hsl(0 0% 100% / 0.48), transparent 14%),
-            radial-gradient(ellipse at 58% 46%, hsl(0 0% 100% / 0.26), transparent 16%),
-            radial-gradient(ellipse at 92% 52%, hsl(0 0% 100% / 0.38), transparent 15%);
-          filter: blur(20px);
-          opacity: 0.75;
+            radial-gradient(ellipse at 10% 44%, hsl(0 0% 100% / 0.64), transparent 17%),
+            radial-gradient(ellipse at 36% 64%, hsl(0 0% 100% / 0.42), transparent 15%),
+            radial-gradient(ellipse at 58% 46%, hsl(0 0% 100% / 0.32), transparent 18%),
+            radial-gradient(ellipse at 86% 54%, hsl(0 0% 100% / 0.5), transparent 17%);
+          filter: blur(24px);
+          opacity: 0.9;
         }
         .liquid-field::after {
           content: '';
           position: absolute;
-          left: 28%;
-          top: 16%;
-          width: 48%;
-          height: 60%;
+          left: 20%;
+          top: 11%;
+          width: 60%;
+          height: 66%;
           border-radius: 52%;
-          border: 1px solid hsl(0 0% 100% / 0.13);
-          transform: rotate(-16deg);
-          filter: blur(1.5px);
-          opacity: 0.65;
+          border: 1px solid hsl(0 0% 100% / 0.16);
+          box-shadow:
+            inset 0 0 80px hsl(0 0% 100% / 0.025),
+            0 0 120px hsl(0 0% 100% / 0.045);
+          transform: rotate(-14deg);
+          filter: blur(1.2px);
+          opacity: 0.78;
         }
       `}</style>
 
