@@ -9,7 +9,15 @@ import glob
 from pathlib import Path
 from datetime import datetime
 
-VAULT_PATH = os.environ.get("OBSIDIAN_VAULT", "/Users/hamza/Desktop/Sokar/docs/obsidian")
+def find_sokar_root() -> Path:
+    current = Path(__file__).resolve().parent
+    for parent in [current] + list(current.parents):
+        if (parent / "package.json").exists() and (parent / "pnpm-workspace.yaml").exists():
+            return parent
+    return Path("/Users/hamza/Desktop/Sokar")
+
+SOKAR_ROOT = find_sokar_root()
+VAULT_PATH = os.environ.get("OBSIDIAN_VAULT", str(SOKAR_ROOT / "docs" / "obsidian"))
 
 
 def _list_notes() -> list[str]:

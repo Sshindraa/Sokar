@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 # Setup Hermes Agent pour Sokar
-# Usage: zsh agent/scripts/setup.sh
+# Usage: zsh tools/hermes/scripts/setup.sh
 
 set -euo pipefail
 
@@ -68,12 +68,12 @@ log "Création des liens de configuration..."
 
 mkdir -p "$HOME/.codeium/windsurf"
 if [ ! -f "$HOME/.codeium/windsurf/mcp_config.json" ]; then
-    cp "$REPO_ROOT/agent/config/mcp-config.json" "$HOME/.codeium/windsurf/mcp_config.json"
+    cp "$REPO_ROOT/tools/hermes/config/mcp-config.json" "$HOME/.codeium/windsurf/mcp_config.json"
     log "MCP config copiée"
 fi
 
 if [ ! -f "$HOME/.hermes/config.yaml" ]; then
-    cp "$REPO_ROOT/agent/config/hermes-config.yaml" "$HOME/.hermes/config.yaml"
+    cp "$REPO_ROOT/tools/hermes/config/hermes-config.yaml" "$HOME/.hermes/config.yaml"
     log "Hermes config copiée"
 fi
 
@@ -82,5 +82,5 @@ log "✅ Setup terminé !"
 log ""
 log "Utilisation:"
 log "  hermes -z \"ta tâche ici\""
-log "  zsh $REPO_ROOT/agent/scripts/start-hermes.sh"
+log "  zsh $REPO_ROOT/tools/hermes/scripts/start-hermes.sh"
 log ""

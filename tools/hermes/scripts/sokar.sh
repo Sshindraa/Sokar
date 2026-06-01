@@ -11,14 +11,14 @@
 #   sokar Crée le composant KPI latency dans le dashboard
 #
 # Alias recommandé dans ~/.zshrc :
-#   alias sokar='zsh /Users/hamza/Desktop/Sokar/agent/scripts/sokar.sh'
+#   alias sokar='zsh /Users/hamza/Desktop/Sokar/tools/hermes/scripts/sokar.sh'
 # =============================================================================
 
 set -euo pipefail
 
 SOKAR_ROOT="/Users/hamza/Desktop/Sokar"
-SCRIPT_DIR="${SOKAR_ROOT}/agent/scripts"
-OBSIDIAN_SKILL="${SOKAR_ROOT}/agent/skills/obsidian"
+SCRIPT_DIR="${SOKAR_ROOT}/tools/hermes/scripts"
+OBSIDIAN_SKILL="${SOKAR_ROOT}/tools/hermes/skills/obsidian"
 OBSIDIAN_DOC="${OBSIDIAN_SKILL}/auto_doc.py"
 OBSIDIAN_VAULT="${SOKAR_ROOT}/docs/obsidian"
 

@@ -35,7 +35,10 @@ LOG_FILE = Path.home() / ".hermes" / "logs" / "mcp_serve.log"
 SESSION_LOG = Path.home() / ".hermes" / "logs" / "cascade_hermes_bridge.md"
 JOURNAL_PATH = Path(SOKAR_ROOT) / "docs" / "obsidian" / "Journal.md"
 
-sys.path.insert(0, str(Path(SOKAR_ROOT) / "agent" / "skills" / "obsidian"))
+skills_path = Path(SOKAR_ROOT) / "tools" / "hermes" / "skills" / "obsidian"
+if not skills_path.exists():
+    skills_path = Path(SOKAR_ROOT) / "agent" / "skills" / "obsidian"
+sys.path.insert(0, str(skills_path))
 from auto_doc import update_context, detect_module_from_task
 
 # ── Task classification ──
@@ -248,7 +251,7 @@ def guess_module(task: str) -> str:
         (r"apps/api/", "apps/api"),
         (r"apps/dashboard/", "apps/dashboard"),
         (r"packages/", "packages"),
-        (r"agent/", "agent"),
+        (r"(?:agent|tools/hermes)/", "agent"),
         (r"docs/", "docs"),
     ]
     for pattern, label in patterns:
@@ -276,8 +279,11 @@ def _log_task_result(task: str, output: str) -> None:
     mod = detect_module_from_task(task)
     update_context(f"[{mod}] {task[:80]}")
     try:
+        sync_script = Path(SOKAR_ROOT) / "tools" / "hermes" / "skills" / "obsidian" / "auto_sync.py"
+        if not sync_script.exists():
+            sync_script = Path(SOKAR_ROOT) / "agent" / "skills" / "obsidian" / "auto_sync.py"
         subprocess.run(
-            ["python3", str(Path(SOKAR_ROOT) / "agent" / "skills" / "obsidian" / "auto_sync.py"), "diff"],
+            ["python3", str(sync_script), "diff"],
             capture_output=True, text=True, cwd=SOKAR_ROOT, timeout=30,
         )
     except Exception:

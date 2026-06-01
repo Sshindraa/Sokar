@@ -40,7 +40,7 @@ echo ""
 
 check "hermes CLI" "command -v hermes"
 check "Docker daemon" "docker info"
-check "Repo root" "test -d '$REPO_ROOT/agent'"
+check "Repo root" "test -d '$REPO_ROOT/tools/hermes'"
 
 echo ""
 echo "=== Variables ==="

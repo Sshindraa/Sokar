@@ -11,12 +11,20 @@ Usage:
 """
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-SOKAR_ROOT = Path(__file__).resolve().parents[3]  # remonte jusqu'a la racine Sokar
+def find_sokar_root() -> Path:
+    current = Path(__file__).resolve().parent
+    for parent in [current] + list(current.parents):
+        if (parent / "package.json").exists() and (parent / "pnpm-workspace.yaml").exists():
+            return parent
+    return Path(os.environ.get("SOKAR_ROOT", "/Users/hamza/Desktop/Sokar"))
+
+SOKAR_ROOT = find_sokar_root()
 CONTEXT_PATH = SOKAR_ROOT / "docs" / "obsidian" / "Context.md"
 VAULT_PATH = SOKAR_ROOT / "docs" / "obsidian"
 

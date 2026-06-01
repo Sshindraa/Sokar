@@ -24,7 +24,7 @@ FILES_CHANGED=$(git diff --name-only; git diff --cached --name-only)
 if echo "$FILES_CHANGED" | grep -q "apps/api"; then SCOPE="api"; TYPE="feat"; fi
 if echo "$FILES_CHANGED" | grep -q "apps/dashboard"; then SCOPE="dashboard"; TYPE="feat"; fi
 if echo "$FILES_CHANGED" | grep -q "packages/database"; then SCOPE="database"; TYPE="feat"; fi
-if echo "$FILES_CHANGED" | grep -q "agent/"; then SCOPE="agent"; TYPE="feat"; fi
+if echo "$FILES_CHANGED" | grep -q -E "agent/|tools/hermes/"; then SCOPE="hermes"; TYPE="feat"; fi
 if echo "$FILES_CHANGED" | grep -q "docs/"; then SCOPE="docs"; TYPE="docs"; fi
 if echo "$FILES_CHANGED" | grep -q "test"; then TYPE="test"; fi
 if echo "$FILES_CHANGED" | grep -q "fix\|bug"; then TYPE="fix"; fi
