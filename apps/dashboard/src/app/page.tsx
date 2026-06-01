@@ -17,7 +17,8 @@ import {
   Check,
   CalendarCheck,
   Zap,
-  MessageSquare
+  MessageSquare,
+  Euro
 } from 'lucide-react';
 
 const SIMULATOR_STEPS = [
