@@ -29,7 +29,7 @@ generate_message() {
   local has_api=$(echo "$files" | grep -c "apps/api" || true)
   local has_dashboard=$(echo "$files" | grep -c "apps/dashboard" || true)
   local has_db=$(echo "$files" | grep -c "packages/database" || true)
-  local has_agent=$(echo "$files" | grep -c "agent/" || true)
+  local has_agent=$(echo "$files" | grep -c -E "agent/|tools/hermes/" || true)
   local has_docs=$(echo "$files" | grep -c "docs/" || true)
   local has_infra=$(echo "$files" | grep -c "infra/" || true)
   local has_config=$(echo "$files" | grep -c -E "(package\.json|tsconfig|turbo|pnpm)" || true)
@@ -39,7 +39,7 @@ generate_message() {
   if [[ $has_api -gt 0 ]]; then scope="api"; fi
   if [[ $has_dashboard -gt 0 ]]; then scope="dashboard"; fi
   if [[ $has_db -gt 0 ]]; then scope="database"; fi
-  if [[ $has_agent -gt 0 ]]; then scope="agent"; fi
+  if [[ $has_agent -gt 0 ]]; then scope="hermes"; fi
   if [[ $has_docs -gt 0 ]]; then scope="docs"; fi
   if [[ $has_infra -gt 0 ]]; then scope="infra"; fi
   if [[ $has_config -gt 0 && -z "$scope" ]]; then scope="config"; fi

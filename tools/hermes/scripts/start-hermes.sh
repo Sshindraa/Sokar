@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 # Lance Hermes Agent avec la config Sokar
-# Usage: zsh agent/scripts/start-hermes.sh
+# Usage: zsh tools/hermes/scripts/start-hermes.sh
 
 set -euo pipefail
 
@@ -15,7 +15,7 @@ set +a
 
 # Vérifications
 if ! command -v hermes &> /dev/null; then
-    echo "[ERROR] Hermes non trouvé. Lance d'abord: zsh $REPO_ROOT/agent/scripts/setup.sh"
+    echo "[ERROR] Hermes non trouvé. Lance d'abord: zsh $REPO_ROOT/tools/hermes/scripts/setup.sh"
     exit 1
 fi
 
@@ -27,7 +27,7 @@ if [ -z "${WINDSURF_TOKEN:-}" ]; then
 fi
 
 echo "[SOKAR-AGENT] Démarrage d'Hermes..."
-echo "  Config: $REPO_ROOT/agent/config/hermes-config.yaml"
+echo "  Config: $REPO_ROOT/tools/hermes/config/hermes-config.yaml"
 echo "  Token:  ${WINDSURF_TOKEN:0:10}..."
 echo ""
 

@@ -29,6 +29,6 @@ delegation:
   max_spawn_depth: 2
   subagent_auto_approve: true
 
-skills_dir: /Users/hamza/Desktop/Sokar/agent/skills
+skills_dir: /Users/hamza/Desktop/Sokar/tools/hermes/skills
 
 # Orchestrateur (OpenCode Go deepseek-v4-flash) planifie → Subagents (OpenCode Go deepseek-v4-flash) exécutent

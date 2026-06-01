@@ -33,7 +33,14 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-SOKAR_ROOT = Path(os.environ.get("SOKAR_ROOT", str(Path.home() / "Desktop" / "Sokar")))
+def find_sokar_root() -> Path:
+    current = Path(__file__).resolve().parent
+    for parent in [current] + list(current.parents):
+        if (parent / "package.json").exists() and (parent / "pnpm-workspace.yaml").exists():
+            return parent
+    return Path(os.environ.get("SOKAR_ROOT", str(Path.home() / "Desktop" / "Sokar")))
+
+SOKAR_ROOT = find_sokar_root()
 VAULT_PATH = SOKAR_ROOT / "docs" / "obsidian"
 LOG_FILE = Path.home() / ".hermes" / "logs" / "auto_sync.log"
 
@@ -45,7 +52,7 @@ FILE_TO_NOTE_MAP: list[tuple[re.Pattern, str | None, str | None]] = [
     (re.compile(r"apps/api/src/modules/voice/"), "Voice Pipeline.md", "voice"),
     (re.compile(r"apps/dashboard/"), "Dashboard.md", "dashboard"),
     (re.compile(r"packages/"), "Architecture.md", "packages"),
-    (re.compile(r"agent/"), "Hermes Agent.md", "agent"),
+    (re.compile(r"(?:agent|tools/hermes)/"), "Hermes Agent.md", "agent"),
     (re.compile(r"apps/api/src/modules/(\w+)/"), None, "module"),  # wildcard
 ]
 
@@ -339,6 +346,8 @@ def scan_filesystem() -> list[dict]:
         "apps/api/src/modules",
         "apps/dashboard/src",
         "packages/database/prisma",
+        "tools/hermes/skills",
+        "tools/hermes/scripts",
         "agent/skills",
         "agent/scripts",
     ]
@@ -383,7 +392,10 @@ def daemon_loop(interval: int = 30) -> None:
 
             # Auto-update Context.md with heartbeat
             try:
-                sys.path.insert(0, str(SOKAR_ROOT / "agent" / "skills" / "obsidian"))
+                skills_path = SOKAR_ROOT / "tools" / "hermes" / "skills" / "obsidian"
+                if not skills_path.exists():
+                    skills_path = SOKAR_ROOT / "agent" / "skills" / "obsidian"
+                sys.path.insert(0, str(skills_path))
                 from auto_doc import update_context  # type: ignore
 
                 update_context(f"[auto_sync] Daemon heartbeat — {len(files)} changement(s)")
