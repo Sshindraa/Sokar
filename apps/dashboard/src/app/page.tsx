@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { SignedIn } from '@clerk/nextjs';
+import { SignedIn, SignedOut } from '@clerk/nextjs';
 import { joinWaitlistAction } from './actions';
 import { 
   ArrowUpRight, 
@@ -128,6 +128,25 @@ export default function HomePage() {
           <span className="text-xl font-bold tracking-tight text-white glow-title font-display">Sokar</span>
         </Link>
 
+        {/* Navigation pour les visiteurs non connectés */}
+        <SignedOut>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/pricing"
+              className="text-xs font-semibold tracking-wide text-white/60 hover:text-white px-3 py-1.5 rounded-full hover:bg-white/5 transition-all duration-200"
+            >
+              Tarifs
+            </Link>
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-xs font-semibold tracking-wide text-white transition-all duration-300 hover:-translate-y-0.5 active:scale-95 shadow-[0_4px_12px_rgba(0,0,0,0.3)]"
+            >
+              Se connecter
+              <ArrowUpRight size={14} />
+            </Link>
+          </div>
+        </SignedOut>
+
         {/* CTA si déjà connecté */}
         <SignedIn>
           <Link
@@ -196,6 +215,17 @@ export default function HomePage() {
                   {message}
                 </p>
               )}
+
+              {/* Lien subtil d'accès membre */}
+              <div className="mt-8 border-t border-white/5 pt-4 text-xs text-white/40 font-sans">
+                Déjà membre de la bêta ?{' '}
+                <Link
+                  href="/login"
+                  className="text-white/60 hover:text-white underline underline-offset-4 transition-colors duration-200"
+                >
+                  Se connecter
+                </Link>
+              </div>
             </>
           ) : (
             /* Succès avec animation premium */
