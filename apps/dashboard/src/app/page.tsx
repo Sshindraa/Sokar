@@ -324,7 +324,7 @@ export default function HomePage() {
 
           {/* Coming soon Title */}
           <h1 className="mt-6 text-4xl sm:text-6xl md:text-7xl font-black tracking-tight text-white glow-title font-display leading-[1.05]">
-            L'assistant vocal intelligent pour votre restaurant.
+            L&apos;assistant vocal intelligent pour votre restaurant.
           </h1>
 
           <p className="mt-6 text-sm sm:text-base text-white/50 max-w-xl mx-auto leading-relaxed font-sans">
@@ -355,7 +355,7 @@ export default function HomePage() {
               Découvrez-le en action
             </h2>
             <p className="mt-2 text-xs md:text-sm text-white/50 leading-relaxed font-sans">
-              Voici une simulation en temps réel de la voix et du raisonnement de Sokar lorsqu'un client appelle pour réserver.
+              Voici une simulation en temps réel de la voix et du raisonnement de Sokar lorsqu&apos;un client appelle pour réserver.
             </p>
           </div>
 
