@@ -1115,17 +1115,8 @@ export default function HomePage() {
         </section>
 
         {/* ================= PRICING SECTION — Cyan/Blue Glassmorphism ================= */}
-        <section id="tarifs" className="pricing-section-wrapper w-full py-16 scroll-mt-24 relative overflow-hidden">
-          {/* Transition fade from dark to cyan */}
-          <div className="absolute top-0 left-0 right-0 h-40 z-0 pointer-events-none"
-            style={{ background: 'linear-gradient(to bottom, #030303 0%, transparent 100%)' }}
-          />
-          {/* Cyan glow background */}
-          <div className="absolute inset-0 pointer-events-none z-0" style={{
-            background: 'radial-gradient(circle at 67% 16%, rgba(44, 174, 255, 0.25), transparent 18rem), radial-gradient(circle at 72% 62%, rgba(126, 244, 255, 0.22), transparent 17rem), radial-gradient(circle at 39% 92%, rgba(87, 214, 255, 0.28), transparent 18rem)'
-          }} />
-
-          <div className="relative z-10 flex flex-col items-center">
+        <section id="tarifs" className="pricing-section-wrapper w-full py-16 scroll-mt-24 relative">
+          <div className="flex flex-col items-center">
             {/* Mini Hero */}
             <div className="text-center mb-6">
               <h2 className="pricing-hero-title text-center">Tarifs</h2>
@@ -1208,11 +1199,6 @@ export default function HomePage() {
               ))}
             </div>
           </div>
-
-          {/* Transition fade from cyan to dark */}
-          <div className="absolute bottom-0 left-0 right-0 h-40 z-0 pointer-events-none"
-            style={{ background: 'linear-gradient(to top, #030303 0%, transparent 100%)' }}
-          />
         </section>
 
         {/* ================= FAQ SECTION ================= */}
