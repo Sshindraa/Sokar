@@ -23,10 +23,11 @@ export default function WaitlistSection() {
       const res = await joinWaitlistAction(email);
       if (res.success) {
         setStatus('success');
-        setMessage(res.message || 'Vous êtes inscrit !');
+        setMessage('Merci ! Vous avez été ajouté à notre liste prioritaire.');
+        setEmail('');
       } else {
         setStatus('error');
-        setMessage(res.message || 'Une erreur est survenue.');
+        setMessage(res.error || 'Une erreur est survenue.');
       }
     } catch {
       setStatus('error');
