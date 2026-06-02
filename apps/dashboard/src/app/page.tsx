@@ -643,6 +643,217 @@ export default function HomePage() {
           filter: blur(1.2px);
           opacity: 0.78;
         }
+
+        /* ===== PRICING SECTION — Cyan/Blue Glassmorphism ===== */
+        .pricing-section-wrapper {
+          position: relative;
+        }
+        .pricing-hero-title {
+          font-size: clamp(4rem, 4rem + 12vw, 14rem);
+          font-weight: 800;
+          letter-spacing: -0.075em;
+          line-height: 0.66;
+          background: linear-gradient(90deg, rgba(21, 100, 255, 0.12), rgba(111, 228, 255, 0.72), rgba(255,255,255,0.2));
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          pointer-events: none;
+          user-select: none;
+          text-shadow: 0 0 56px rgba(52, 174, 255, 0.45);
+        }
+        .pricing-hero-kicker {
+          font-size: clamp(1.8rem, 3vw, 3.5rem);
+          font-weight: 700;
+          letter-spacing: -0.05em;
+          color: rgba(235,250,255,0.88);
+          text-shadow: 0 0 34px rgba(64, 187, 255, 0.55);
+          white-space: nowrap;
+        }
+        .pricing-card {
+          min-height: 24rem;
+          background:
+            linear-gradient(135deg, rgba(255,255,255,0.09), rgba(255,255,255,0.015) 42%, rgba(255,255,255,0.055)),
+            hsla(0, 0%, 4%, 0.62);
+          border: 1px solid rgba(255,255,255,0.18);
+          border-radius: 2rem;
+          padding: 2rem;
+          display: flex;
+          flex-direction: column;
+          gap: 1.25rem;
+          position: relative;
+          overflow: hidden;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.14),
+            0 1.5rem 4rem rgba(0,0,0,0.56);
+          backdrop-filter: blur(28px) saturate(150%);
+          -webkit-backdrop-filter: blur(28px) saturate(150%);
+          transition: border-color 180ms cubic-bezier(0.16, 1, 0.3, 1), transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .pricing-card:hover {
+          border-color: rgba(147,226,255,0.75);
+          transform: translateY(-5px);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.18),
+            0 2rem 5rem rgba(0,0,0,0.62),
+            0 0 3.5rem rgba(67, 197, 255, 0.18);
+        }
+        .pricing-card::before {
+          content: '';
+          position: absolute;
+          top: -110px; left: 50%;
+          transform: translateX(-50%);
+          width: 300px; height: 300px;
+          background: radial-gradient(circle, rgba(92,221,255,0.26) 0%, transparent 66%);
+          pointer-events: none;
+          border-radius: 50%;
+          filter: blur(18px);
+        }
+        .pricing-card::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(124deg, transparent 18%, rgba(255,255,255,0.08) 44%, transparent 62%);
+          opacity: 0.62;
+          pointer-events: none;
+        }
+        .pricing-card.featured::before {
+          background: radial-gradient(circle, rgba(107,234,255,0.5) 0%, transparent 66%);
+        }
+        .pricing-card.featured {
+          border-color: rgba(129,232,255,0.58);
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.16),
+            0 1.5rem 4rem rgba(0,0,0,0.56),
+            0 0 3.5rem rgba(77, 203, 255, 0.28);
+        }
+        .pricing-card-label {
+          position: relative;
+          z-index: 1;
+          font-size: 1.25rem;
+          color: hsl(0 0% 94%);
+          font-weight: 500;
+          margin-bottom: 0.2rem;
+        }
+        .pricing-card-price {
+          position: relative;
+          z-index: 1;
+          font-size: clamp(2.2rem, 4vw, 3.1rem);
+          font-weight: 650;
+          letter-spacing: -0.055em;
+          color: hsl(0 0% 94%);
+          line-height: 1;
+        }
+        .pricing-card-price .period {
+          font-size: clamp(1rem, 1.6vw, 1.35rem);
+          font-weight: 400;
+          color: hsl(0 0% 94%);
+          letter-spacing: -0.04em;
+        }
+        .pricing-card-desc {
+          position: relative;
+          z-index: 1;
+          margin-top: 1rem;
+          max-width: 18rem;
+          font-size: 0.74rem;
+          color: rgba(255,255,255,0.68);
+          line-height: 1.5;
+        }
+        .pricing-features {
+          list-style: none;
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+          flex: 1;
+          margin: 0; padding: 0;
+          position: relative;
+          z-index: 1;
+        }
+        .pricing-feature-item {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.75rem;
+          font-size: 0.8rem;
+          color: rgba(255,255,255,0.76);
+          line-height: 1.45;
+        }
+        .pricing-check-icon {
+          width: 18px; height: 18px;
+          border-radius: 9999px;
+          border: 1px solid rgba(255,255,255,0.28);
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0; margin-top: 1px;
+        }
+        .pricing-check-icon svg {
+          width: 10px; height: 10px;
+          stroke: rgba(255,255,255,0.55);
+          fill: none; stroke-width: 2.5;
+          stroke-linecap: round; stroke-linejoin: round;
+        }
+        .pricing-cta {
+          align-self: center;
+          width: auto;
+          min-width: 9.25rem;
+          padding: 0.72rem 1.5rem;
+          border-radius: 9999px;
+          font-size: 0.82rem; font-weight: 600;
+          cursor: pointer; border: none;
+          position: relative;
+          z-index: 1;
+          transition: opacity 180ms cubic-bezier(0.16, 1, 0.3, 1), transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1);
+          text-align: center; text-decoration: none; display: inline-block;
+          background: hsl(0 0% 100%); color: hsl(0 0% 0%);
+        }
+        .pricing-cta:hover { opacity: 0.94; transform: translateY(-1px) scale(1.01); box-shadow: 0 0.75rem 1.8rem rgba(255,255,255,0.12); }
+        .pricing-cta:active { transform: scale(0.99); }
+        .pricing-cta.featured-cta {
+          background: linear-gradient(135deg, #0ea5e9, #06b6d4);
+          color: white;
+        }
+        .pricing-cta.featured-cta:hover {
+          box-shadow: 0 0.75rem 1.8rem rgba(14, 165, 233, 0.35);
+        }
+
+        /* Pricing toggle */
+        .pricing-toggle-label {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          cursor: pointer;
+        }
+        .pricing-toggle-track {
+          width: 45px; height: 24px;
+          background: hsl(0 0% 19%);
+          border: 1px solid rgba(255,255,255,0.22);
+          border-radius: 9999px;
+          position: relative;
+          transition: background 180ms cubic-bezier(0.16, 1, 0.3, 1);
+          flex-shrink: 0;
+        }
+        .pricing-toggle-track.active {
+          background: hsl(0 0% 100%);
+        }
+        .pricing-toggle-track::after {
+          content: '';
+          position: absolute;
+          top: 3px; left: 3px;
+          width: 18px; height: 18px;
+          background: hsl(0 0% 100%);
+          border-radius: 9999px;
+          transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+          box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .pricing-toggle-track.active::after {
+          background: hsl(0 0% 0%);
+          transform: translateX(20px);
+        }
+        .pricing-toggle-text {
+          font-size: 0.875rem;
+          color: hsl(0 0% 70%);
+        }
+
+        @media (max-width: 768px) {
+          .pricing-card { min-height: auto; }
+        }
       `}</style>
 
       {/* Liquid Field Background — old elegant grayscale glow */}
@@ -903,87 +1114,95 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* ================= PRICING SECTION ================= */}
-        <section id="tarifs" className="w-full py-16 scroll-mt-24 flex flex-col items-center">
-          <div className="text-center max-w-lg mb-10 flex flex-col items-center">
-            <h2 className="text-2xl md:text-4xl font-bold tracking-tight text-white font-display">
-              Des tarifs adaptés à chaque restaurant
-            </h2>
-            <p className="mt-2 text-xs md:text-sm text-white/50 leading-relaxed font-sans">
-              Pas de frais cachés, sans engagement. Choisissez la formule qui convient le mieux à votre activité.
-            </p>
+        {/* ================= PRICING SECTION — Cyan/Blue Glassmorphism ================= */}
+        <section id="tarifs" className="pricing-section-wrapper w-full py-16 scroll-mt-24 relative overflow-hidden">
+          {/* Cyan glow background */}
+          <div className="absolute inset-0 pointer-events-none z-0" style={{
+            background: 'radial-gradient(circle at 67% 16%, rgba(44, 174, 255, 0.25), transparent 18rem), radial-gradient(circle at 72% 62%, rgba(126, 244, 255, 0.22), transparent 17rem), radial-gradient(circle at 39% 92%, rgba(87, 214, 255, 0.28), transparent 18rem)'
+          }} />
 
-            {/* Toggle Yearly */}
-            <div className="mt-6 flex items-center gap-3">
-              <span className={`text-xs font-semibold ${!yearly ? 'text-white' : 'text-white/40'} transition-all duration-200`}>Mensuel</span>
-              <button 
-                onClick={() => setYearly(!yearly)}
-                className={`relative w-12 h-6 rounded-full border border-white/10 transition-colors duration-300 focus:outline-none ${yearly ? 'bg-orange-500/20' : 'bg-white/5'}`}
-              >
-                <span className={`absolute top-0.5 left-0.5 h-4.5 w-4.5 rounded-full bg-white transition-all duration-300 ${yearly ? 'translate-x-6' : 'translate-x-0'}`} />
-              </button>
-              <span className={`text-xs font-semibold ${yearly ? 'text-white' : 'text-white/40'} transition-all duration-200 flex items-center gap-1.5`}>
-                Annuel 
-                <span className="px-2 py-0.5 text-[9px] bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-full font-bold">
+          <div className="relative z-10 flex flex-col items-center">
+            {/* Mini Hero */}
+            <div className="text-center mb-6">
+              <h2 className="pricing-hero-title text-center">Tarifs</h2>
+              <p className="pricing-hero-kicker absolute left-1/2 -translate-x-1/2" style={{ top: '1.5rem' }}>Sokar AI</p>
+            </div>
+
+            {/* Toggle Billing */}
+            <div className="flex items-center justify-center gap-3 mb-10 relative z-10">
+              <span className={`pricing-toggle-text ${!yearly ? '!text-white' : ''}`}>Mensuel</span>
+              <label className="pricing-toggle-label" aria-label="Toggle yearly billing">
+                <div
+                  className={`pricing-toggle-track${yearly ? ' active' : ''}`}
+                  role="switch"
+                  aria-checked={yearly}
+                  tabIndex={0}
+                  onClick={() => setYearly(!yearly)}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      e.preventDefault();
+                      setYearly(!yearly);
+                    }
+                  }}
+                />
+              </label>
+              <span className={`pricing-toggle-text ${yearly ? '!text-white' : ''} flex items-center gap-1.5`}>
+                Annuel
+                <span className="px-2 py-0.5 text-[9px] bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-full font-bold">
                   -20%
                 </span>
               </span>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full mt-6">
-            {PLANS.map((plan) => (
-              <div 
-                key={plan.label} 
-                className={`glass-card p-8 rounded-3xl border flex flex-col justify-between gap-6 transition-all duration-500 hover:scale-[1.01] ${
-                  plan.featured 
-                    ? 'border-orange-500/30 bg-orange-500/[0.01] shadow-[0_0_50px_rgba(249,115,22,0.05)]' 
-                    : 'border-white/5'
-                }`}
-              >
-                <div>
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-xs uppercase tracking-widest font-bold text-white/45 font-sans">
-                      {plan.label}
-                    </span>
-                    {plan.featured && (
-                      <span className="px-2 py-0.5 text-[9px] font-bold tracking-wide uppercase bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded-full">
-                        Recommandé
-                      </span>
-                    )}
-                  </div>
-                  
-                  <div className="flex items-baseline gap-1 mt-2">
-                    <span className="text-4xl md:text-5xl font-black text-white font-display tracking-tight">
+            {/* Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-6xl px-4">
+              {PLANS.map((plan) => (
+                <div 
+                  key={plan.label} 
+                  className={`pricing-card${plan.featured ? ' featured' : ''}`}
+                >
+                  <div>
+                    <div className="flex justify-between items-center">
+                      <p className="pricing-card-label">{plan.label}</p>
+                      {plan.featured && (
+                        <span className="px-2 py-0.5 text-[9px] font-bold tracking-wide uppercase bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-full">
+                          Recommandé
+                        </span>
+                      )}
+                    </div>
+                    <p className="pricing-card-price">
                       {displayPrice(plan.price, yearly)}
-                    </span>
-                    <span className="text-sm font-medium text-white/50 font-sans">
-                      {plan.period}
-                    </span>
+                      <span className="period"> {plan.period === '€' ? '€/mois' : plan.period}</span>
+                    </p>
+                    <p className="pricing-card-desc">
+                      {plan.label === 'Essential' && 'Pour automatiser vos premiers appels et réservations.'}
+                      {plan.label === 'Pro' && 'Pour les restaurants qui veulent maximiser chaque service.'}
+                      {plan.label === 'Multi-site' && 'Pour piloter plusieurs établissements avec une seule équipe.'}
+                    </p>
                   </div>
 
-                  <ul className="mt-8 space-y-3.5 flex flex-col">
+                  <ul className="pricing-features">
                     {plan.features.map((feat) => (
-                      <li key={feat} className="flex items-start gap-2.5 text-xs text-white/60 leading-relaxed font-sans">
-                        <Check size={14} className="text-orange-400 mt-0.5 flex-shrink-0" />
-                        <span>{feat}</span>
+                      <li key={feat} className="pricing-feature-item">
+                        <span className="pricing-check-icon">
+                          <svg viewBox="0 0 12 12">
+                            <polyline points="2,6 5,9 10,3" />
+                          </svg>
+                        </span>
+                        {feat}
                       </li>
                     ))}
                   </ul>
-                </div>
 
-                <a 
-                  href="#waitlist"
-                  className={`w-full py-3 rounded-xl font-bold text-xs tracking-wider text-center transition-all duration-300 block ${
-                    plan.featured 
-                      ? 'bg-orange-500 text-white hover:bg-orange-600 hover:shadow-[0_0_20px_rgba(249,115,22,0.3)] active:scale-[0.98]' 
-                      : 'bg-white/5 text-white hover:bg-white/10 active:scale-[0.98]'
-                  }`}
-                >
-                  Rejoindre la Waitlist
-                </a>
-              </div>
-            ))}
+                  <a 
+                    href="#waitlist"
+                    className={`pricing-cta${plan.featured ? ' featured-cta' : ''}`}
+                  >
+                    Rejoindre la Waitlist
+                  </a>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
 
