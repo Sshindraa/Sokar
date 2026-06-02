@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { SignedIn, SignedOut } from '@clerk/nextjs';
+import { Outfit, Plus_Jakarta_Sans } from 'next/font/google';
 import { joinWaitlistAction } from './actions';
 import { 
   ArrowUpRight, 
@@ -19,6 +20,20 @@ import {
   Euro,
   Headphones
 } from 'lucide-react';
+
+const outfit = Outfit({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700', '800', '900'],
+  display: 'swap',
+  variable: '--font-display',
+});
+
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700', '800'],
+  display: 'swap',
+  variable: '--font-sans',
+});
 
 const SIMULATOR_STEPS = [
   { sender: 'client', text: 'Bonjour, je voudrais réserver une table pour ce soir.' },
@@ -324,7 +339,7 @@ function TelemetryTuner() {
 
       <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[9px] font-bold text-white/35 uppercase tracking-widest z-10 font-mono">
         <span className="flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
           NEURONAL NETWORK ONLINE
         </span>
         <span className="text-white/20 text-[8px]">
@@ -390,7 +405,7 @@ function ShowcaseMetricCard({
       <div className="relative z-10 flex items-center justify-between gap-3">
         <span className={`h-8 w-8 rounded-full flex items-center justify-center border transition-all duration-200 ${
           featured 
-            ? 'bg-cyan-500/10 border-cyan-500/25 text-cyan-400 animate-pulse' 
+            ? 'bg-cyan-500/10 border-cyan-500/25 text-cyan-400' 
             : 'bg-white/5 border-white/5 text-white/50'
         }`}>
           <Icon size={14} />
@@ -525,20 +540,14 @@ export default function HomePage() {
   };
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-[#030303] text-foreground flex flex-col justify-between items-center select-none font-sans antialiased">
-      {/* Importation des polices premium de Google Fonts */}
+    <div className={`relative min-h-screen w-full overflow-hidden bg-[#030303] text-foreground flex flex-col justify-between items-center select-none font-sans antialiased ${outfit.variable} ${jakarta.variable}`}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
-
-        /* Masquer le header global du layout sur cette page */
-        body > header { display: none !important; }
-        
         .font-display {
-          font-family: 'Outfit', sans-serif;
+          font-family: var(--font-display), sans-serif;
         }
         
         .font-sans {
-          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-family: var(--font-sans), sans-serif;
         }
 
         .glow-title {
@@ -546,7 +555,7 @@ export default function HomePage() {
         }
         
         .stroke-text {
-          font-family: 'Outfit', sans-serif;
+          font-family: var(--font-display), sans-serif;
           color: transparent;
           -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.05);
           letter-spacing: 0.25em;
@@ -561,6 +570,8 @@ export default function HomePage() {
           box-shadow: 
             0 30px 70px rgba(0, 0, 0, 0.8),
             inset 0 1px 1px rgba(255, 255, 255, 0.05);
+          transform: translateZ(0);
+          will-change: transform;
         }
 
         @keyframes wave-bounce {
@@ -688,6 +699,8 @@ export default function HomePage() {
           backdrop-filter: blur(28px) saturate(150%);
           -webkit-backdrop-filter: blur(28px) saturate(150%);
           transition: border-color 180ms cubic-bezier(0.16, 1, 0.3, 1), transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1);
+          transform: translateZ(0);
+          will-change: transform;
         }
         .pricing-card:hover {
           border-color: rgba(147,226,255,0.75);
@@ -964,7 +977,7 @@ export default function HomePage() {
               <span className="font-medium">pour découvrir</span>
             </div>
             <button className="group mx-auto flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 transition-all duration-300 hover:bg-white hover:text-black hover:scale-105 active:scale-95">
-              <Headphones size={14} className="animate-pulse" />
+              <Headphones size={14} />
               <span className="text-[10px] font-semibold tracking-wide uppercase text-white/80 group-hover:text-black transition-colors duration-300">
                 écouter une démo
               </span>
@@ -1034,19 +1047,19 @@ export default function HomePage() {
               <div className="border-b border-white/10 bg-white/[0.03] px-5 py-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="h-8 w-8 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shadow-inner">
-                    <img src="/logo-nav.png" alt="Sokar AI" className="h-4.5 w-4.5 animate-pulse" />
+                    <img src="/logo-nav.png" alt="Sokar AI" className="h-4.5 w-4.5" />
                   </div>
                   <div>
                     <h4 className="text-xs font-semibold tracking-tight text-white">Console de Dialogue Live</h4>
                     <p className="text-[9px] text-emerald-400 font-medium flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                       Appel client en cours
                     </p>
                   </div>
                 </div>
                 
                 <div className="h-1.5 w-20 bg-white/10 rounded-full overflow-hidden relative">
-                  <div className="h-full bg-gradient-to-r from-cyan-400 to-cyan-600 rounded-full w-2/3 animate-pulse" />
+                  <div className="h-full bg-gradient-to-r from-cyan-400 to-cyan-600 rounded-full w-2/3" />
                 </div>
               </div>
 
@@ -1414,7 +1427,7 @@ export default function HomePage() {
             &copy; {new Date().getFullYear()} SOKAR OS. TOUS DROITS RÉSERVÉS.
           </p>
           <div className="flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase text-white/45 bg-white/5 border border-white/10 px-3 py-1 rounded-full font-bold">
-            <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
             Bêta Privée
           </div>
         </div>
