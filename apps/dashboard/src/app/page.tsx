@@ -87,11 +87,6 @@ export default function HomePage() {
         {/* HERO — fully static, server-rendered */}
         <section className="relative flex flex-col items-center justify-center text-center w-full min-h-[50vh] sm:min-h-[65vh] md:min-h-[80vh]">
           <div className="flex flex-col items-center max-w-5xl px-2 sm:px-6 pt-12 sm:pt-20 pb-8">
-      <main className="relative z-10 w-full max-w-7xl px-6 pt-20 sm:pt-32 flex flex-col items-center">
-        
-        {/* HERO — fully static, server-rendered */}
-        <section className="relative flex flex-col items-center justify-center text-center w-full min-h-[40vh] sm:min-h-[65vh] md:min-h-[80vh]">
-          <div className="flex flex-col items-center max-w-5xl px-6 pt-12 sm:pt-20 pb-8">
             <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-5 py-2.5 text-xs text-white/70 backdrop-blur-xl transition-all duration-300 hover:border-white/20">
               <Sparkles size={14} />
               Assistant vocal pour restaurants
