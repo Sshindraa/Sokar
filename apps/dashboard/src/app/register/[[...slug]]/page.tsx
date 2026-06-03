@@ -122,14 +122,14 @@ export default function RegisterPage() {
         <div className="flex items-center justify-between">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary/30 px-4 py-2 text-xs font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground active:scale-[0.98]"
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary/30 px-4 py-2.5 text-xs font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground active:scale-[0.98] min-h-[44px]"
           >
-            <ArrowLeft size={12} />
+            <ArrowLeft size={14} />
             Accueil
           </Link>
           
           <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-90">
-            <img src="/logo-nav.png" alt="Sokar Logo" className="h-8 w-8" />
+            <img src="/logo-nav.png" alt="Sokar Logo" width={32} height={32} className="h-8 w-8" />
             <span className="text-lg font-bold tracking-tight text-foreground">Sokar</span>
           </Link>
         </div>

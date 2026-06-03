@@ -89,7 +89,7 @@ export default function HomePage() {
               Assistant vocal pour restaurants
             </p>
 
-            <h1 className="mt-6 max-w-5xl text-5xl font-semibold leading-[0.9] tracking-tight text-white md:text-7xl lg:text-8xl font-display">
+            <h1 className="mt-6 max-w-5xl text-4xl sm:text-5xl md:text-7xl lg:text-8xl font-semibold leading-[1.05] sm:leading-[0.9] tracking-tight text-white font-display">
               La salle répond quand vous cuisinez.
             </h1>
 
@@ -181,7 +181,7 @@ export default function HomePage() {
             </p>
             <div className="flex items-center gap-3 mt-2">
               {['Twitter', 'Facebook', 'Instagram'].map((name) => (
-                <a key={name} aria-label={name} href="#" className="h-9 w-9 rounded-full border border-white/10 bg-white/[0.03] flex items-center justify-center text-white/60 transition-all duration-300 hover:text-white hover:bg-white/[0.08] hover:border-white/20 active:scale-95 shadow-md shadow-black/10">
+                <a key={name} aria-label={name} href="#" className="h-11 w-11 rounded-full border border-white/10 bg-white/[0.03] flex items-center justify-center text-white/60 transition-all duration-300 hover:text-white hover:bg-white/[0.08] hover:border-white/20 active:scale-95 shadow-md shadow-black/10">
                   <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
                 </a>
               ))}
@@ -189,22 +189,22 @@ export default function HomePage() {
           </div>
 
           <div className="flex flex-col gap-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-white/80 font-sans">Produit</h4>
-            <a href="#demo" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans">Démonstration</a>
-            <a href="#tarifs" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans">Tarifs</a>
-            <a href="#faq" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans">FAQ</a>
+            <h4 className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-white/80 font-sans">Produit</h4>
+            <a href="#demo" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Démonstration</a>
+            <a href="#tarifs" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Tarifs</a>
+            <a href="#faq" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">FAQ</a>
           </div>
 
           <div className="flex flex-col gap-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-white/80 font-sans">Entreprise</h4>
-            <a href="#waitlist" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans">Waitlist Bêta</a>
-            <Link href="/login" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans">Espace Partenaire</Link>
+            <h4 className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-white/80 font-sans">Entreprise</h4>
+            <a href="#waitlist" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Waitlist Bêta</a>
+            <Link href="/login" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Espace Partenaire</Link>
           </div>
 
           <div className="flex flex-col gap-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-white/80 font-sans">Légal</h4>
-            <a href="#" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans">Mentions Légales</a>
-            <a href="#" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans">Confidentialité</a>
+            <h4 className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-white/80 font-sans">Légal</h4>
+            <a href="#" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Mentions Légales</a>
+            <a href="#" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Confidentialité</a>
           </div>
         </div>
 

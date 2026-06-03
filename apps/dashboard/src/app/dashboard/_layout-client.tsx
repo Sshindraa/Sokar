@@ -27,7 +27,7 @@ export default function DashboardLayoutClient({ children }: { children: ReactNod
             <p className="text-sm text-muted-foreground">Sokar OS</p>
             <h1 className="mt-1 text-3xl font-semibold tracking-tight">Tableau de bord</h1>
           </div>
-          <nav className="flex gap-2 overflow-x-auto rounded-full border border-border bg-card/80 p-2 backdrop-blur-xl">
+          <nav className="flex gap-1 sm:gap-2 overflow-x-auto rounded-full border border-border bg-card/80 p-1.5 sm:p-2 backdrop-blur-xl -mx-1 px-1">
             {navItems.map((item) => {
               const Icon = item.icon;
               const active = pathname === item.href;
@@ -37,12 +37,12 @@ export default function DashboardLayoutClient({ children }: { children: ReactNod
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground',
+                    'inline-flex items-center gap-1.5 sm:gap-2 rounded-full px-3 sm:px-4 py-2.5 min-h-[44px] text-sm font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground whitespace-nowrap',
                     active && 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
                   )}
                 >
                   <Icon size={16} />
-                  {item.label}
+                  <span className="hidden sm:inline">{item.label}</span>
                 </Link>
               );
             })}

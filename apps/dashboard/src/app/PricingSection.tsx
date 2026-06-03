@@ -10,9 +10,9 @@ export default function PricingSection() {
     <section id="tarifs" className="pricing-section-wrapper w-full py-16 scroll-mt-24 relative">
       <div className="flex flex-col items-center">
         {/* Mini Hero */}
-        <div className="text-center mb-6">
-          <h2 className="pricing-hero-title text-center">Tarifs</h2>
-          <p className="pricing-hero-kicker absolute left-1/2 -translate-x-1/2" style={{ top: '1.5rem' }}>Sokar AI</p>
+        <div className="text-center mb-6 sm:mb-6 relative px-2">
+          <h2 className="pricing-hero-title text-center leading-none">Tarifs</h2>
+          <p className="pricing-hero-kicker mt-1 sm:absolute sm:left-1/2 sm:-translate-x-1/2 sm:top-[clamp(1rem,2vw,1.5rem)]">Sokar AI</p>
         </div>
 
         {/* Toggle Billing */}
