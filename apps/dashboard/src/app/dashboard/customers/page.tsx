@@ -83,8 +83,8 @@ export default function CustomersPage() {
       </div>
 
       {/* Recherche */}
-      <div className="flex flex-wrap gap-2">
-        <div className="relative w-full sm:w-72">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-0 max-w-full sm:max-w-xs">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="text"
@@ -92,14 +92,14 @@ export default function CustomersPage() {
             value={searchPhone}
             onChange={(e) => setSearchPhone(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && fetchCustomers(searchPhone || undefined)}
-            className="pl-9"
+            className="pl-9 w-full"
           />
         </div>
-        <Button onClick={() => fetchCustomers(searchPhone || undefined)}>
+        <Button onClick={() => fetchCustomers(searchPhone || undefined)} className="flex-shrink-0">
           Rechercher
         </Button>
         {searchPhone && (
-          <Button variant="outline" onClick={() => { setSearchPhone(''); fetchCustomers(); }}>
+          <Button variant="outline" onClick={() => { setSearchPhone(''); fetchCustomers(); }} className="flex-shrink-0">
             <RotateCcw size={14} className="mr-1" />
             Réinitialiser
           </Button>
@@ -122,7 +122,8 @@ export default function CustomersPage() {
         </div>
       ) : (
         <div className="sokar-card overflow-hidden">
-          <Table>
+          <div className="mobile-table-wrapper">
+            <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Nom</TableHead>
@@ -166,6 +167,7 @@ export default function CustomersPage() {
               ))}
             </TableBody>
           </Table>
+          </div>
         </div>
       )}
     </div>

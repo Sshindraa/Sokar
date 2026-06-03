@@ -83,20 +83,20 @@ export default function DashboardPage() {
     : [];
 
   return (
-    <div className="space-y-8 select-none">
-      
+    <div className="space-y-6 md:space-y-8 select-none">
+
       {/* ================= HEADER & OVERVIEW GRID ================= */}
-      <section className="grid gap-5 lg:grid-cols-[1.1fr_2fr]">
-        
+      <section className="grid gap-4 md:gap-5 lg:grid-cols-[1.1fr_2fr]">
+
         {/* Pupitre Télémétrique Vocal HMI */}
         <TelemetryTuner />
 
         {/* 4 Metrics Grid */}
-        <div className="grid gap-4 sm:grid-cols-2 animate-in fade-in slide-in-from-right-4 duration-700 ease-out">
-          <MetricCard 
-            label="Appels traités" 
-            value={stats?.totalCalls ?? 0} 
-            icon={PhoneCall} 
+        <div className="metric-grid grid gap-3 sm:gap-4 grid-cols-2 animate-in fade-in slide-in-from-right-4 duration-700 ease-out">
+          <MetricCard
+            label="Appels traités"
+            value={stats?.totalCalls ?? 0}
+            icon={PhoneCall}
             trend="+12.4%"
           />
           <MetricCard
@@ -105,17 +105,17 @@ export default function DashboardPage() {
             icon={CalendarCheck}
             trend="+15.8%"
           />
-          <MetricCard 
-            label="Taux de réponse" 
-            value={stats?.answeredRate ?? 0} 
-            icon={TrendingUp} 
-            isDial 
+          <MetricCard
+            label="Taux de réponse"
+            value={stats?.answeredRate ?? 0}
+            icon={TrendingUp}
+            isDial
             dialValue={stats?.answeredRate ?? 0}
           />
-          <MetricCard 
-            label="Revenus récupérés" 
-            value={stats?.revenueRecovered ?? 0} 
-            icon={Euro} 
+          <MetricCard
+            label="Revenus récupérés"
+            value={stats?.revenueRecovered ?? 0}
+            icon={Euro}
             isRevenue
             featured
           />
@@ -123,26 +123,26 @@ export default function DashboardPage() {
       </section>
 
       {/* ================= CHARTS & ACTIVITY GRID ================= */}
-      <section className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-        
+      <section className="grid gap-4 md:gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+
         {/* Weekly Activity Bar Chart */}
-        <div className="rounded-2xl border border-white/5 bg-white/[0.01] backdrop-blur-xl p-6 shadow-xl animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100 ease-out">
-          <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="rounded-2xl border border-white/5 bg-white/[0.01] backdrop-blur-xl p-4 md:p-6 shadow-xl animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100 ease-out">
+          <div className="mb-4 md:mb-6 flex items-center justify-between gap-4">
             <div>
-              <h3 className="text-lg font-bold tracking-tight text-white font-display">Activité hebdomadaire</h3>
-              <p className="mt-1 text-xs text-white/40 font-sans font-medium">Répartition des demandes reçues ce mois-ci</p>
+              <h3 className="text-base md:text-lg font-bold tracking-tight text-white font-display">Activité hebdomadaire</h3>
+              <p className="mt-1 text-[11px] md:text-xs text-white/40 font-sans font-medium">Répartition des demandes reçues ce mois-ci</p>
             </div>
-            <button className="h-8 w-8 rounded-full border border-white/5 bg-white/5 text-white/60 flex items-center justify-center transition-all duration-200 hover:bg-white/10 hover:text-white" aria-label="Voir les rapports">
+            <button className="h-8 w-8 rounded-full border border-white/5 bg-white/5 text-white/60 flex items-center justify-center transition-all duration-200 hover:bg-white/10 hover:text-white flex-shrink-0" aria-label="Voir les rapports">
               <ArrowUpRight size={14} />
             </button>
           </div>
-          
-          <div className="grid h-64 grid-cols-7 items-end gap-3 px-2 pt-4 border-b border-white/5 pb-2">
+
+          <div className="grid h-48 sm:h-64 grid-cols-7 items-end gap-1.5 sm:gap-3 px-1 sm:px-2 pt-4 border-b border-white/5 pb-2">
             {CHART_DATA.map((item, index) => (
-              <AnimatedBar 
+              <AnimatedBar
                 key={item.day}
-                height={item.height} 
-                delay={index * 80} 
+                height={item.height}
+                delay={index * 80}
                 day={item.day}
                 calls={item.calls}
               />
@@ -151,35 +151,36 @@ export default function DashboardPage() {
         </div>
 
         {/* Recent Reservations List */}
-        <div className="rounded-2xl border border-white/5 bg-white/[0.01] backdrop-blur-xl p-6 shadow-xl flex flex-col justify-between animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200 ease-out">
+        <div className="rounded-2xl border border-white/5 bg-white/[0.01] backdrop-blur-xl p-4 md:p-6 shadow-xl flex flex-col justify-between animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200 ease-out">
           <div>
-            <div className="mb-6 flex items-center justify-between gap-4">
+            <div className="mb-4 md:mb-6 flex items-center justify-between gap-4">
               <div>
-                <h3 className="text-lg font-bold tracking-tight text-white font-display">Dernières réservations</h3>
-                <p className="mt-1 text-xs text-white/40 font-sans font-medium">Créées automatiquement par l&apos;assistant</p>
+                <h3 className="text-base md:text-lg font-bold tracking-tight text-white font-display">Dernières réservations</h3>
+                <p className="mt-1 text-[11px] md:text-xs text-white/40 font-sans font-medium">Créées automatiquement par l&apos;assistant</p>
               </div>
-              <MessageSquare size={16} className="text-white/40" />
+              <MessageSquare size={16} className="text-white/40 flex-shrink-0" />
             </div>
 
             {recentReservations.length === 0 ? (
-              <div className="sokar-empty min-h-48 rounded-xl border border-dashed border-white/5 bg-white/[0.005] flex flex-col items-center justify-center gap-3 p-8 text-center text-white/30">
-                <CalendarCheck size={38} className="opacity-30 text-white/50 animate-pulse" />
-                <p className="text-xs font-medium font-sans">Aucune réservation récente</p>
+              <div className="sokar-empty min-h-40 sm:min-h-48 rounded-xl border border-dashed border-white/5 bg-white/[0.005] flex flex-col items-center justify-center gap-3 p-6 sm:p-8 text-center text-white/30">
+                <CalendarCheck size={32} className="sm:hidden opacity-30 text-white/50 animate-pulse" />
+                <CalendarCheck size={38} className="hidden sm:block opacity-30 text-white/50 animate-pulse" />
+                <p className="text-[11px] sm:text-xs font-medium font-sans">Aucune réservation récente</p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2 sm:space-y-3">
                 {recentReservations.map((reservation: any) => (
                   <div
                     key={reservation.id}
-                    className="grid grid-cols-[1fr_auto] gap-3 rounded-xl border border-white/5 bg-white/[0.01] p-4 transition-all duration-300 hover:bg-white/[0.03] hover:border-white/10"
+                    className="grid grid-cols-[1fr_auto] gap-2 sm:gap-3 rounded-xl border border-white/5 bg-white/[0.01] p-3 sm:p-4 transition-all duration-300 hover:bg-white/[0.03] hover:border-white/10"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-xs sm:text-sm font-bold text-white">{reservation.customerName}</p>
-                      <p className="mt-1 text-xs sm:text-[11px] tracking-wide uppercase text-white/40 font-sans">
+                      <p className="mt-1 text-[10px] sm:text-[11px] tracking-wide uppercase text-white/40 font-sans">
                         {reservation.partySize} couverts · {reservation.status?.toLowerCase() || 'nouveau'}
                       </p>
                     </div>
-                    <span className="text-xs text-white/45 bg-white/5 border border-white/10 px-2.5 py-1 rounded-lg h-fit font-bold font-sans">
+                    <span className="text-[10px] sm:text-xs text-white/45 bg-white/5 border border-white/10 px-2 sm:px-2.5 py-1 rounded-lg h-fit font-bold font-sans flex-shrink-0">
                       {new Date(reservation.reservedAt).toLocaleTimeString('fr-FR', {
                         hour: '2-digit',
                         minute: '2-digit',
@@ -419,7 +420,7 @@ function TelemetryTuner() {
       onTouchMove={handleTouchMove}
       onTouchStart={() => setIsHovered(true)}
       onTouchEnd={() => setIsHovered(false)}
-      className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group transition-all duration-300 hover:border-white/10"
+      className="rounded-2xl border border-white/5 bg-white/[0.01] p-4 md:p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group transition-all duration-300 hover:border-white/10"
     >
       <div 
         className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${isHovered ? 'opacity-100' : 'opacity-0'}`}
@@ -428,10 +429,10 @@ function TelemetryTuner() {
         }}
       />
       
-      <div className="absolute top-2 left-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">+ 01_HMI_TUNER</div>
-      <div className="absolute top-2 right-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">SYS_OK</div>
-      <div className="absolute bottom-2 left-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">SOKAR_OS</div>
-      <div className="absolute bottom-2 right-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">2026_V1</div>
+      <div className="absolute top-2 left-3.5 text-[7px] md:text-[9px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none hidden sm:block">+ 01_HMI_TUNER</div>
+      <div className="absolute top-2 right-3.5 text-[7px] md:text-[9px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none hidden sm:block">SYS_OK</div>
+      <div className="absolute bottom-2 left-3.5 text-[7px] md:text-[9px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none hidden sm:block">SOKAR_OS</div>
+      <div className="absolute bottom-2 right-3.5 text-[7px] md:text-[9px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none hidden sm:block">2026_V1</div>
 
       <div className="z-10">
         <div className="flex items-center justify-between gap-4">
@@ -442,7 +443,7 @@ function TelemetryTuner() {
           <AudioWaveform />
         </div>
         
-        <h3 className="mt-4 text-xl font-black leading-tight text-white font-display">
+        <h3 className="mt-3 md:mt-4 text-lg md:text-xl font-black leading-tight text-white font-display">
           Pupitre Télémétrique Vocal
         </h3>
         <p className="mt-1 text-xs sm:text-[11px] text-white/45 leading-relaxed font-sans">
@@ -450,7 +451,7 @@ function TelemetryTuner() {
         </p>
       </div>
 
-      <div className="mt-5 space-y-3.5 z-10">
+      <div className="mt-4 md:mt-5 space-y-3 md:space-y-3.5 z-10">
         <div className="space-y-1">
           <div className="flex items-center justify-between text-xs sm:text-[11px] font-bold uppercase tracking-wider text-white/55">
             <span className="font-sans">Vitesse de parole</span>
@@ -528,7 +529,7 @@ function TelemetryTuner() {
         </div>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-xs sm:text-[11px] font-bold text-white/35 uppercase tracking-widest z-10 font-mono">
+      <div className="mt-3 md:mt-4 pt-2 md:pt-3 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-0 text-[10px] md:text-[11px] font-bold text-white/35 uppercase tracking-widest z-10 font-mono">
         <span className="flex items-center gap-1">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
           NEURONAL NETWORK ONLINE
@@ -584,7 +585,7 @@ function MetricCard({
       onTouchMove={handleTouchMove}
       onTouchStart={() => setIsHovered(true)}
       onTouchEnd={() => setIsHovered(false)}
-      className={`relative overflow-hidden rounded-2xl border transition-all duration-300 p-5 select-none ${
+      className={`relative overflow-hidden rounded-2xl border transition-all duration-300 p-4 md:p-5 select-none ${
         featured 
           ? 'border-orange-500/25 bg-orange-500/[0.01] shadow-[0_0_30px_rgba(249,115,22,0.03)]' 
           : 'border-white/5 bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.03]'
@@ -622,14 +623,14 @@ function MetricCard({
         )}
       </div>
       
-      <div className="relative z-10 mt-8 flex items-baseline justify-between gap-2">
+      <div className="relative z-10 mt-5 md:mt-8 flex items-baseline justify-between gap-2">
         <div className="min-w-0">
-          <p className={`text-2xl font-black font-display tracking-tight truncate ${
+          <p className={`text-xl md:text-2xl font-black font-display tracking-tight truncate ${
             featured ? 'text-orange-400' : 'text-white'
           }`}>
             <AnimatedNumber value={value} isRevenue={isRevenue} />
           </p>
-          <p className="mt-1.5 text-xs font-bold text-white/40 tracking-wider uppercase font-sans">
+          <p className="mt-1 text-[11px] md:text-xs font-bold text-white/40 tracking-wider uppercase font-sans">
             {label}
           </p>
         </div>
@@ -646,18 +647,18 @@ function MetricCard({
 
 function DashboardSkeleton() {
   return (
-    <div className="space-y-8">
-      <div className="grid gap-5 lg:grid-cols-[1fr_2fr]">
-        <Skeleton className="h-56 rounded-2xl bg-white/5 border border-white/5" />
-        <div className="grid gap-4 sm:grid-cols-2">
+    <div className="space-y-6 md:space-y-8">
+      <div className="grid gap-4 md:gap-5 lg:grid-cols-[1fr_2fr]">
+        <Skeleton className="h-48 sm:h-56 rounded-2xl bg-white/5 border border-white/5" />
+        <div className="grid gap-3 sm:gap-4 grid-cols-2">
           {[1, 2, 3, 4].map((item) => (
-            <Skeleton key={item} className="h-[125px] rounded-2xl bg-white/5 border border-white/5" />
+            <Skeleton key={item} className="h-[100px] sm:h-[125px] rounded-2xl bg-white/5 border border-white/5" />
           ))}
         </div>
       </div>
-      <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-        <Skeleton className="h-80 rounded-2xl bg-white/5 border border-white/5" />
-        <Skeleton className="h-80 rounded-2xl bg-white/5 border border-white/5" />
+      <div className="grid gap-4 md:gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+        <Skeleton className="h-64 sm:h-80 rounded-2xl bg-white/5 border border-white/5" />
+        <Skeleton className="h-64 sm:h-80 rounded-2xl bg-white/5 border border-white/5" />
       </div>
     </div>
   );

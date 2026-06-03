@@ -79,7 +79,8 @@ export default function ReservationsPage() {
         </div>
       ) : (
         <div className="sokar-card overflow-hidden">
-          <Table>
+          <div className="mobile-table-wrapper">
+            <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Client</TableHead>
@@ -111,6 +112,7 @@ export default function ReservationsPage() {
               ))}
             </TableBody>
           </Table>
+          </div>
         </div>
       )}
     </div>

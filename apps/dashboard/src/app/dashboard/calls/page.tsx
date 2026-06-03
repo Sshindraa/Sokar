@@ -79,7 +79,8 @@ export default function CallsPage() {
         </div>
       ) : (
         <div className="sokar-card overflow-hidden">
-          <Table>
+          <div className="mobile-table-wrapper">
+            <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Call SID</TableHead>
@@ -113,6 +114,7 @@ export default function CallsPage() {
               ))}
             </TableBody>
           </Table>
+          </div>
         </div>
       )}
     </div>
