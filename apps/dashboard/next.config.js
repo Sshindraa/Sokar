@@ -3,7 +3,10 @@ const nextConfig = {
   output: 'standalone',
   experimental: {
     esmExternals: 'loose',
+    optimizeCss: true,
   },
+  // Désactivé : le VPS n'a pas d'accès à fonts.gstatic.com
+  optimizeFonts: false,
 };
 
 module.exports = nextConfig;
