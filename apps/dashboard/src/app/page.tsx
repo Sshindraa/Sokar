@@ -47,9 +47,9 @@ export default function HomePage() {
           <div className="hidden items-center gap-1 md:flex">
             {[
               { label: 'Services', href: '#services' },
-              { label: "Cas d'usage", href: '#cases' },
+              { label: "Cas d'usage", href: '#demo' },
               { label: 'Tarifs', href: '/pricing' },
-              { label: 'Contact', href: '#contact' },
+              { label: 'Contact', href: '#waitlist' },
             ].map((item) => (
               <Link
                 key={item.href}
@@ -128,7 +128,7 @@ export default function HomePage() {
         </section>
 
         {/* FEATURES — fully static, server-rendered */}
-        <section className="w-full py-16 grid grid-cols-1 md:grid-cols-3 gap-6">
+        <section id="services" className="w-full py-16 grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="glass-card p-6 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300 flex flex-col gap-4">
             <span className="h-10 w-10 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2a9 9 0 0 1 9 9"/><path d="M13 6a5 5 0 0 1 5 5"/><path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384"/></svg>
@@ -212,10 +212,10 @@ export default function HomePage() {
         </div>
 
         <div className="w-full max-w-5xl border-t border-white/5 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-[11px] tracking-[0.1em] uppercase text-white/30 font-sans">
+          <p className="text-xs tracking-[0.1em] uppercase text-white/30 font-sans">
             &copy; {new Date().getFullYear()} SOKAR OS. TOUS DROITS RÉSERVÉS.
           </p>
-          <div className="flex items-center gap-1.5 text-[11px] tracking-[0.15em] uppercase text-white/45 bg-white/5 border border-white/10 px-3 py-1 rounded-full font-bold">
+          <div className="flex items-center gap-1.5 text-xs tracking-[0.15em] uppercase text-white/45 bg-white/5 border border-white/10 px-3 py-1 rounded-full font-bold">
             <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
             Bêta Privée
           </div>

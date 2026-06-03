@@ -22,9 +22,9 @@ export default function MobileNav() {
 
   const links = [
     { label: 'Services', href: '#services' },
-    { label: "Cas d'usage", href: '#cases' },
+    { label: "Cas d'usage", href: '#demo' },
     { label: 'Tarifs', href: '/pricing' },
-    { label: 'Contact', href: '#contact' },
+    { label: 'Contact', href: '#waitlist' },
   ];
 
   return (
