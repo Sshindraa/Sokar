@@ -15,6 +15,7 @@
     "test:diagnostic": "node scripts/test-stt-tts.mjs"
   },
   "devDependencies": {
+    "@netlify/plugin-nextjs": "^5",
     "netlify-cli": "^26.1.0",
     "prettier": "^3.5.0",
     "prisma": "^6.0.0",
