@@ -197,7 +197,7 @@ export default function DemoSection() {
         </p>
       </div>
 
-      <div className="w-full grid gap-6 lg:grid-cols-[1.1fr_1fr] bg-white/[0.01] border border-white/5 p-6 rounded-3xl backdrop-blur-2xl shadow-2xl relative overflow-hidden">
+      <div className="w-full grid gap-4 md:gap-6 lg:grid-cols-[1.1fr_1fr] bg-white/[0.01] border border-white/5 p-4 md:p-6 rounded-2xl md:rounded-3xl backdrop-blur-2xl shadow-2xl relative overflow-hidden">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[300px] bg-cyan-500/5 filter blur-3xl pointer-events-none rounded-full" />
         <div className="flex flex-col gap-4 justify-between">
           <TelemetryTuner />
@@ -208,7 +208,7 @@ export default function DemoSection() {
             <ShowcaseMetricCard label="Revenus récupérés" value="5 420 €" icon={Euro} featured />
           </div>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-black/60 shadow-xl overflow-hidden flex flex-col h-full min-h-[380px] transition-all duration-300 relative">
+        <div className="rounded-2xl border border-white/10 bg-black/60 shadow-xl overflow-hidden flex flex-col h-full min-h-[320px] sm:min-h-[380px] transition-all duration-300 relative">
           <div className="border-b border-white/10 bg-white/[0.03] px-5 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="h-8 w-8 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shadow-inner">

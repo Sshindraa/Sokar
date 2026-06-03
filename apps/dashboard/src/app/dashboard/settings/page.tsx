@@ -152,7 +152,7 @@ export default function SettingsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="max-w-lg space-y-4">
+          <form onSubmit={handleSubmit} className="max-w-full sm:max-w-lg space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Nom du restaurant</label>
               <Input value={name} onChange={(e) => setName(e.target.value)} required />
@@ -165,7 +165,7 @@ export default function SettingsPage() {
               <label className="text-sm font-medium">Email du gérant</label>
               <Input type="email" value={managerEmail} onChange={(e) => setManagerEmail(e.target.value)} />
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" disabled={saving}>
                 <Save size={16} className="mr-1" />
                 {saving ? 'Enregistrement...' : 'Enregistrer'}
@@ -213,7 +213,7 @@ Personnalité de l&apos;agent vocal
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handlePersonalitySave} className="max-w-lg space-y-5">
+          <form onSubmit={handlePersonalitySave} className="max-w-full sm:max-w-lg space-y-5">
             <div className="space-y-2">
               <label className="text-sm font-medium">Type de restaurant</label>
               <select
@@ -291,7 +291,7 @@ Personnalité de l&apos;agent vocal
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" disabled={savingPersonality}>
                 <Bot size={16} className="mr-1" />
                 {savingPersonality ? 'Enregistrement...' : 'Enregistrer la personnalité'}

@@ -15,10 +15,11 @@
     "test:diagnostic": "node scripts/test-stt-tts.mjs"
   },
   "devDependencies": {
-    "turbo": "^2.5.0",
+    "netlify-cli": "^26.1.0",
     "prettier": "^3.5.0",
-    "typescript": "^5.8.0",
-    "prisma": "^6.0.0"
+    "prisma": "^6.0.0",
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.0"
   },
   "engines": {
     "node": ">=20.0.0 <23.0.0"
