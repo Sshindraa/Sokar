@@ -97,7 +97,7 @@ export default function PricingPage() {
           --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
           --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
           --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
-          --text-hero: clamp(6rem, 4rem + 15vw, 18rem);
+          --text-hero: clamp(3rem, 2rem + 10vw, 16rem);
           --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem; --space-4: 1rem;
           --space-5: 1.25rem; --space-6: 1.5rem; --space-8: 2rem; --space-12: 3rem; --space-16: 4rem;
           --radius-sm: 0.375rem; --radius-md: 0.5rem; --radius-lg: 0.75rem;
@@ -172,12 +172,12 @@ export default function PricingPage() {
           white-space: nowrap;
         }
         .nav-close {
-          width: 30px; height: 30px;
+          width: 44px; height: 44px;
           border-radius: var(--radius-full);
           background: rgba(255,255,255,0.08);
           border: none; cursor: pointer;
           display: flex; align-items: center; justify-content: center;
-          color: var(--color-text); font-size: 13px;
+          color: var(--color-text); font-size: 15px;
           transition: background var(--transition); flex-shrink: 0;
         }
         .nav-close:hover { background: rgba(255,255,255,0.18); }
@@ -188,7 +188,7 @@ export default function PricingPage() {
         .nav-links a {
           text-decoration: none;
           color: var(--color-text-muted);
-          font-size: 0.78rem; font-weight: 400;
+          font-size: 0.82rem; font-weight: 400;
           padding: 0.42rem var(--space-3);
           border-radius: var(--radius-full);
           transition: color var(--transition), background var(--transition);
@@ -197,7 +197,7 @@ export default function PricingPage() {
         .nav-links a.active { color: var(--color-text); }
         .nav-download {
           background: hsl(0 0% 100%); color: hsl(0 0% 0%);
-          font-size: 0.78rem; font-weight: 600;
+          font-size: 0.82rem; font-weight: 600;
           padding: 0.48rem var(--space-5);
           border-radius: var(--radius-full);
           border: none; cursor: pointer;
@@ -341,7 +341,7 @@ export default function PricingPage() {
           z-index: 1;
           margin-top: var(--space-4);
           max-width: 18rem;
-          font-size: 0.74rem;
+          font-size: 0.82rem;
           color: rgba(255,255,255,0.68);
           line-height: 1.5;
         }
@@ -361,19 +361,19 @@ export default function PricingPage() {
           display: flex;
           align-items: flex-start;
           gap: var(--space-3);
-          font-size: var(--text-xs);
+          font-size: var(--text-sm);
           color: rgba(255,255,255,0.76);
           line-height: 1.45;
         }
         .check-icon {
-          width: 18px; height: 18px;
+          width: 22px; height: 22px;
           border-radius: var(--radius-full);
           border: 1px solid rgba(255,255,255,0.28);
           display: flex; align-items: center; justify-content: center;
           flex-shrink: 0; margin-top: 1px;
         }
         .check-icon svg {
-          width: 10px; height: 10px;
+          width: 12px; height: 12px;
           stroke: rgba(255,255,255,0.55);
           fill: none; stroke-width: 2.5;
           stroke-linecap: round; stroke-linejoin: round;
@@ -458,7 +458,7 @@ export default function PricingPage() {
           .nav-links a { padding: var(--space-1) var(--space-2); font-size: var(--text-xs); }
           .billing-row { padding: var(--space-4); }
           .hero { padding-top: 92px; }
-          .hero-kicker { left: 50%; top: 132px; transform: translateX(-50%); font-size: clamp(1.6rem, 9vw, 3rem); }
+          .hero-kicker { left: 50%; top: 98px; transform: translateX(-50%); font-size: clamp(1.6rem, 9vw, 3rem); }
           .card { min-height: auto; }
         }
       `}</style>

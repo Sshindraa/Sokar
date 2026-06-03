@@ -7,6 +7,7 @@ import { Outfit, Plus_Jakarta_Sans } from 'next/font/google';
 import PricingSection from '@/app/PricingSection';
 import FaqSection from '@/app/FaqSection';
 import WaitlistSection from '@/app/WaitlistSection';
+import MobileNav from '@/components/MobileNav';
 import DemoSection from '@/app/DemoSection';
 
 const outfit = Outfit({
@@ -25,7 +26,7 @@ const jakarta = Plus_Jakarta_Sans({
 
 export default function HomePage() {
   return (
-    <div className={`relative min-h-screen w-full overflow-hidden bg-[#030303] text-foreground flex flex-col justify-between items-center select-none font-sans antialiased ${outfit.variable} ${jakarta.variable}`}>
+    <div className={`relative min-h-screen w-full overflow-hidden bg-[#030303] text-foreground flex flex-col justify-between items-center font-sans antialiased ${outfit.variable} ${jakarta.variable}`}>
       {/* Liquid Field Background */}
       <div className="liquid-field absolute inset-0 pointer-events-none z-0 overflow-hidden select-none" />
 
@@ -39,7 +40,9 @@ export default function HomePage() {
       </Link>
 
       {/* Floating navbar */}
-      <div className="fixed left-1/2 top-5 z-50 -translate-x-1/2">
+      <div className="fixed left-1/2 top-5 z-50 -translate-x-1/2 flex items-center gap-2">
+        {/* Mobile hamburger */}
+        <MobileNav />
         <nav className="flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-2 shadow-2xl backdrop-blur-xl">
           <div className="hidden items-center gap-1 md:flex">
             {[
@@ -82,7 +85,7 @@ export default function HomePage() {
       <main className="relative z-10 w-full max-w-7xl px-6 pt-32 flex flex-col items-center">
         
         {/* HERO — fully static, server-rendered */}
-        <section className="relative flex flex-col items-center justify-center text-center w-full min-h-[85vh]">
+        <section className="relative flex flex-col items-center justify-center text-center w-full min-h-[65vh] sm:min-h-[80vh]">
           <div className="flex flex-col items-center max-w-5xl px-6 pt-20 pb-8">
             <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-5 py-2.5 text-xs text-white/70 backdrop-blur-xl transition-all duration-300 hover:border-white/20">
               <Sparkles size={14} />
@@ -131,7 +134,7 @@ export default function HomePage() {
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2a9 9 0 0 1 9 9"/><path d="M13 6a5 5 0 0 1 5 5"/><path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384"/></svg>
             </span>
             <h3 className="text-lg font-bold text-white font-display">100% des appels traités</h3>
-            <p className="text-xs text-white/50 leading-relaxed font-sans">Sokar gère plusieurs appels simultanés lors des pics de service. Finis les clients frustrés qui tombent sur messagerie.</p>
+            <p className="text-[13px] text-white/50 leading-relaxed font-sans">Sokar gère plusieurs appels simultanés lors des pics de service. Finis les clients frustrés qui tombent sur messagerie.</p>
           </div>
 
           <div className="glass-card p-6 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300 flex flex-col gap-4">
@@ -139,7 +142,7 @@ export default function HomePage() {
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
             </span>
             <h3 className="text-lg font-bold text-white font-display">Zéro double saisie</h3>
-            <p className="text-xs text-white/50 leading-relaxed font-sans">Intégration transparente et bidirectionnelle avec vos logiciels de réservation (ZenChef, TheFork) et de caisse.</p>
+            <p className="text-[13px] text-white/50 leading-relaxed font-sans">Intégration transparente et bidirectionnelle avec vos logiciels de réservation (ZenChef, TheFork) et de caisse.</p>
           </div>
 
           <div className="glass-card p-6 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300 flex flex-col gap-4">
@@ -147,7 +150,7 @@ export default function HomePage() {
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
             </span>
             <h3 className="text-lg font-bold text-white font-display">Intelligence locale</h3>
-            <p className="text-xs text-white/50 leading-relaxed font-sans">Sokar connaît vos plats du jour, vos allergènes et prend des décisions complexes selon les consignes que vous lui donnez.</p>
+            <p className="text-[13px] text-white/50 leading-relaxed font-sans">Sokar connaît vos plats du jour, vos allergènes et prend des décisions complexes selon les consignes que vous lui donnez.</p>
           </div>
         </section>
 
@@ -189,30 +192,30 @@ export default function HomePage() {
           </div>
 
           <div className="flex flex-col gap-3">
-            <h4 className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-white/80 font-sans">Produit</h4>
+            <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white/80 font-sans">Produit</h4>
             <a href="#demo" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Démonstration</a>
             <a href="#tarifs" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Tarifs</a>
             <a href="#faq" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">FAQ</a>
           </div>
 
           <div className="flex flex-col gap-3">
-            <h4 className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-white/80 font-sans">Entreprise</h4>
+            <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white/80 font-sans">Entreprise</h4>
             <a href="#waitlist" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Waitlist Bêta</a>
             <Link href="/login" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Espace Partenaire</Link>
           </div>
 
           <div className="flex flex-col gap-3">
-            <h4 className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-white/80 font-sans">Légal</h4>
+            <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white/80 font-sans">Légal</h4>
             <a href="#" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Mentions Légales</a>
             <a href="#" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Confidentialité</a>
           </div>
         </div>
 
         <div className="w-full max-w-5xl border-t border-white/5 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-[10px] tracking-[0.1em] uppercase text-white/30 font-sans">
+          <p className="text-[11px] tracking-[0.1em] uppercase text-white/30 font-sans">
             &copy; {new Date().getFullYear()} SOKAR OS. TOUS DROITS RÉSERVÉS.
           </p>
-          <div className="flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase text-white/45 bg-white/5 border border-white/10 px-3 py-1 rounded-full font-bold">
+          <div className="flex items-center gap-1.5 text-[11px] tracking-[0.15em] uppercase text-white/45 bg-white/5 border border-white/10 px-3 py-1 rounded-full font-bold">
             <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
             Bêta Privée
           </div>
