@@ -33,10 +33,10 @@ export default function HomePage() {
       {/* Logo — top-left fixed */}
       <Link
         href="/"
-        className="fixed left-6 top-5 z-50 flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-80"
+        className="fixed left-4 top-5 z-50 flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-80 sm:left-6"
       >
-        <Image src="/logo-nav.png" alt="Sokar" width={44} height={44} className="h-11 w-11" priority />
-        <span className="text-xl font-bold tracking-tight text-white font-display">Sokar</span>
+        <Image src="/logo-nav.png" alt="Sokar" width={36} height={36} className="h-9 w-9 sm:h-11 sm:w-11" priority />
+        <span className="hidden text-xl font-bold tracking-tight text-white font-display sm:inline">Sokar</span>
       </Link>
 
       {/* Floating navbar */}
@@ -82,17 +82,17 @@ export default function HomePage() {
       </div>
 
       {/* Main Content */}
-      <main className="relative z-10 w-full max-w-7xl px-6 pt-32 flex flex-col items-center">
+      <main className="relative z-10 w-full max-w-7xl px-4 sm:px-6 pt-28 sm:pt-32 flex flex-col items-center">
         
         {/* HERO — fully static, server-rendered */}
-        <section className="relative flex flex-col items-center justify-center text-center w-full min-h-[65vh] sm:min-h-[80vh]">
-          <div className="flex flex-col items-center max-w-5xl px-6 pt-20 pb-8">
+        <section className="relative flex flex-col items-center justify-center text-center w-full min-h-[50vh] sm:min-h-[65vh] md:min-h-[80vh]">
+          <div className="flex flex-col items-center max-w-5xl px-2 sm:px-6 pt-12 sm:pt-20 pb-8">
             <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-5 py-2.5 text-xs text-white/70 backdrop-blur-xl transition-all duration-300 hover:border-white/20">
               <Sparkles size={14} />
               Assistant vocal pour restaurants
             </p>
 
-            <h1 className="mt-6 max-w-5xl text-4xl sm:text-5xl md:text-7xl lg:text-8xl font-semibold leading-[1.05] sm:leading-[0.9] tracking-tight text-white font-display">
+            <h1 className="mt-5 sm:mt-6 max-w-5xl text-3xl sm:text-4xl md:text-7xl lg:text-8xl font-semibold leading-[1.1] sm:leading-[1.05] md:leading-[0.9] tracking-tight text-white font-display">
               La salle répond quand vous cuisinez.
             </h1>
 
@@ -100,11 +100,11 @@ export default function HomePage() {
               Sokar prend les appels, confirme les réservations et transmet les bonnes infos à votre équipe sans casser le rythme du service.
             </p>
 
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row sm:flex-wrap items-center justify-center gap-3 w-full sm:w-auto">
               <SignedOut>
                 <Link
                   href="/register"
-                  className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.01] hover:bg-white/90 hover:shadow-[0_0_20px_rgba(255,255,255,0.12)] active:scale-[0.98]"
+                  className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.01] hover:bg-white/90 hover:shadow-[0_0_20px_rgba(255,255,255,0.12)] active:scale-[0.98] w-full sm:w-auto"
                 >
                   Réserver une démo
                 </Link>
@@ -112,14 +112,14 @@ export default function HomePage() {
               <SignedIn>
                 <Link
                   href="/dashboard"
-                  className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.01] hover:bg-white/90 hover:shadow-[0_0_20px_rgba(255,255,255,0.12)] active:scale-[0.98]"
+                  className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.01] hover:bg-white/90 hover:shadow-[0_0_20px_rgba(255,255,255,0.12)] active:scale-[0.98] w-full sm:w-auto"
                 >
                   Accéder au Dashboard
                 </Link>
               </SignedIn>
               <Link
                 href="/pricing"
-                className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.03] px-6 py-3 text-sm font-semibold text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/5 hover:border-white/20 hover:shadow-[0_0_15px_rgba(255,255,255,0.08)] active:scale-[0.98]"
+                className="inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.03] px-6 py-3 text-sm font-semibold text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-white/5 hover:border-white/20 hover:shadow-[0_0_15px_rgba(255,255,255,0.08)] active:scale-[0.98] w-full sm:w-auto"
               >
                 Voir les tarifs
               </Link>

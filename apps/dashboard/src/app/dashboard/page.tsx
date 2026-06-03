@@ -92,7 +92,7 @@ export default function DashboardPage() {
         <TelemetryTuner />
 
         {/* 4 Metrics Grid */}
-        <div className="metric-grid grid gap-3 sm:gap-4 grid-cols-2 animate-in fade-in slide-in-from-right-4 duration-700 ease-out">
+        <div className="grid gap-2.5 sm:gap-4 grid-cols-2 animate-in fade-in slide-in-from-right-4 duration-700 ease-out">
           <MetricCard
             label="Appels traités"
             value={stats?.totalCalls ?? 0}
@@ -243,8 +243,9 @@ function AnimatedBar({
           transition: 'height 1.2s cubic-bezier(0.16, 1, 0.3, 1)' 
         }}
       />
-      <span className="text-center text-xs sm:text-[11px] font-bold uppercase tracking-wider text-white/35 group-hover:text-white transition-colors duration-200 font-sans">
-        {day.slice(0, 3)}
+      <span className="text-center text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/35 group-hover:text-white transition-colors duration-200 font-sans">
+        <span className="sm:hidden">{day.slice(0, 1)}</span>
+        <span className="hidden sm:inline">{day.slice(0, 3)}</span>
       </span>
     </div>
   );
@@ -647,18 +648,18 @@ function MetricCard({
 
 function DashboardSkeleton() {
   return (
-    <div className="space-y-6 md:space-y-8">
-      <div className="grid gap-4 md:gap-5 lg:grid-cols-[1fr_2fr]">
-        <Skeleton className="h-48 sm:h-56 rounded-2xl bg-white/5 border border-white/5" />
-        <div className="grid gap-3 sm:gap-4 grid-cols-2">
+    <div className="space-y-4 md:space-y-8">
+      <div className="grid gap-3 md:gap-5 lg:grid-cols-[1fr_2fr]">
+        <Skeleton className="h-40 sm:h-56 rounded-2xl bg-white/5 border border-white/5" />
+        <div className="grid gap-2.5 sm:gap-4 grid-cols-2">
           {[1, 2, 3, 4].map((item) => (
-            <Skeleton key={item} className="h-[100px] sm:h-[125px] rounded-2xl bg-white/5 border border-white/5" />
+            <Skeleton key={item} className="h-[90px] sm:h-[125px] rounded-2xl bg-white/5 border border-white/5" />
           ))}
         </div>
       </div>
-      <div className="grid gap-4 md:gap-5 lg:grid-cols-[1.2fr_0.8fr]">
-        <Skeleton className="h-64 sm:h-80 rounded-2xl bg-white/5 border border-white/5" />
-        <Skeleton className="h-64 sm:h-80 rounded-2xl bg-white/5 border border-white/5" />
+      <div className="grid gap-3 md:gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+        <Skeleton className="h-48 sm:h-80 rounded-2xl bg-white/5 border border-white/5" />
+        <Skeleton className="h-48 sm:h-80 rounded-2xl bg-white/5 border border-white/5" />
       </div>
     </div>
   );

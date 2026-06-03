@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useApi } from '../../../lib/api';
+import { useIsMobile } from '@/lib/useMediaQuery';
+import MobileDataCard from '@/components/MobileDataCard';
 import {
   Table,
   TableHeader,
@@ -19,6 +21,7 @@ import { AlertCircle, PhoneCall } from 'lucide-react';
 
 export default function CallsPage() {
   const { get, orgId } = useApi();
+  const isMobile = useIsMobile();
 
   const [calls, setCalls] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
@@ -58,9 +61,9 @@ export default function CallsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Appels</h1>
+        <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Appels</h1>
         <span className="text-sm text-muted-foreground">{total} appels</span>
       </div>
 
@@ -77,7 +80,41 @@ export default function CallsPage() {
             Les appels apparaîtront ici quand votre assistant commencera à répondre.
           </p>
         </div>
+      ) : isMobile ? (
+        /* ========== MOBILE: Card List ========== */
+        <div className="space-y-2.5">
+          {calls.map((call: any) => (
+            <MobileDataCard
+              key={call.id}
+              title={call.intent || 'Appel entrant'}
+              subtitle={call.callSid}
+              badge={<OutcomeBadge outcome={call.outcome} />}
+              accentClass={
+                call.outcome === 'RESERVED'
+                  ? 'border-l-emerald-500'
+                  : call.outcome === 'INFO'
+                    ? 'border-l-blue-400'
+                    : 'border-l-white/10'
+              }
+              details={[
+                {
+                  label: 'Durée',
+                  value: call.durationSec != null ? `${call.durationSec}s` : '—',
+                },
+                {
+                  label: 'Carrier',
+                  value: call.carrier || '—',
+                },
+                {
+                  label: 'Date',
+                  value: format(new Date(call.createdAt), 'dd MMM HH:mm', { locale: fr }),
+                },
+              ]}
+            />
+          ))}
+        </div>
       ) : (
+        /* ========== DESKTOP: Table ========== */
         <div className="sokar-card overflow-hidden">
           <div className="mobile-table-wrapper">
             <Table>
@@ -133,3 +170,4 @@ function OutcomeBadge({ outcome }: { outcome: string | null }) {
       return <Badge variant="secondary">En cours</Badge>;
   }
 }
+
