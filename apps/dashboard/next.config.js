@@ -7,6 +7,10 @@ const nextConfig = {
   },
   // Désactivé : le VPS n'a pas d'accès à fonts.gstatic.com
   optimizeFonts: false,
+  // Désactivé : sharp non disponible sur le VPS
+  images: {
+    unoptimized: true,
+  },
 };
 
 module.exports = nextConfig;
