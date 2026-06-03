@@ -1,0 +1,10 @@
+[build]
+  command = "cd apps/dashboard && pnpm build"
+  publish = "apps/dashboard/.next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NPM_FLAGS = "--legacy-peer-deps"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
