@@ -197,7 +197,7 @@ export default function DemoSection() {
         </p>
       </div>
 
-      <div className="w-full grid gap-4 md:gap-6 lg:grid-cols-[1.1fr_1fr] bg-white/[0.01] border border-white/5 p-4 md:p-6 rounded-2xl md:rounded-3xl backdrop-blur-2xl shadow-2xl relative overflow-hidden">
+      <div className="w-full flex flex-col-reverse gap-4 lg:grid lg:grid-cols-[1.1fr_1fr] lg:gap-6 bg-white/[0.01] border border-white/5 p-3 sm:p-4 md:p-6 rounded-2xl md:rounded-3xl backdrop-blur-2xl shadow-2xl relative overflow-hidden">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[300px] bg-cyan-500/5 filter blur-3xl pointer-events-none rounded-full" />
         <div className="flex flex-col gap-4 justify-between">
           <TelemetryTuner />

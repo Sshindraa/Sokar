@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useApi } from '../../../lib/api';
+import { useIsMobile } from '@/lib/useMediaQuery';
+import MobileDataCard from '@/components/MobileDataCard';
 import {
   Table,
   TableHeader,
@@ -18,6 +20,7 @@ import { AlertCircle, Users, Search, RotateCcw, Star } from 'lucide-react';
 
 export default function CustomersPage() {
   const { get, patch, orgId } = useApi();
+  const isMobile = useIsMobile();
 
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,17 +77,17 @@ export default function CustomersPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Clients</h1>
+        <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Clients</h1>
         <span className="text-sm text-muted-foreground">
           {customers.length} client{customers.length > 1 ? 's' : ''}
         </span>
       </div>
 
       {/* Recherche */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-0 max-w-full sm:max-w-xs">
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1 min-w-0">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="text"
@@ -95,18 +98,20 @@ export default function CustomersPage() {
             className="pl-9 w-full"
           />
         </div>
-        <Button onClick={() => fetchCustomers(searchPhone || undefined)} className="flex-shrink-0">
-          Rechercher
-        </Button>
-        {searchPhone && (
-          <Button variant="outline" onClick={() => { setSearchPhone(''); fetchCustomers(); }} className="flex-shrink-0">
-            <RotateCcw size={14} className="mr-1" />
-            Réinitialiser
+        <div className="flex gap-2">
+          <Button onClick={() => fetchCustomers(searchPhone || undefined)} className="flex-1 sm:flex-initial">
+            Rechercher
           </Button>
-        )}
+          {searchPhone && (
+            <Button variant="outline" onClick={() => { setSearchPhone(''); fetchCustomers(); }} className="flex-shrink-0">
+              <RotateCcw size={14} className="mr-1" />
+              Reset
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Tableau */}
+      {/* Contenu */}
       {error ? (
         <div className="sokar-error">
           <AlertCircle size={18} />
@@ -120,7 +125,52 @@ export default function CustomersPage() {
             Les clients apparaîtront quand votre assistant prendra des appels.
           </p>
         </div>
+      ) : isMobile ? (
+        /* ========== MOBILE: Card List ========== */
+        <div className="space-y-2.5">
+          {customers.map((c: any) => {
+            const initials = (c.name || '?')
+              .split(' ')
+              .map((w: string) => w[0])
+              .join('')
+              .slice(0, 2)
+              .toUpperCase();
+
+            return (
+              <MobileDataCard
+                key={c.id}
+                title={c.name || 'Client inconnu'}
+                subtitle={c.phone}
+                badge={
+                  <button
+                    onClick={() => toggleVip(c.id, c.isVip)}
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-all duration-200 min-h-[32px] touch-manipulation ${
+                      c.isVip
+                        ? 'border border-orange-500/30 bg-orange-500/10 text-orange-400'
+                        : 'bg-white/5 text-white/40 border border-white/10'
+                    }`}
+                  >
+                    <Star size={12} className={c.isVip ? 'fill-current' : ''} />
+                    {c.isVip ? 'VIP' : 'Ajouter'}
+                  </button>
+                }
+                details={[
+                  { label: 'Visites', value: c.visitCount },
+                  { label: 'Fidélité', value: Number(c.loyaltyScore).toFixed(1) },
+                  {
+                    label: 'Dernière visite',
+                    value: c.lastSeenAt
+                      ? new Date(c.lastSeenAt).toLocaleDateString('fr-FR')
+                      : '—',
+                  },
+                  ...(c.notes ? [{ label: 'Notes', value: c.notes }] : []),
+                ]}
+              />
+            );
+          })}
+        </div>
       ) : (
+        /* ========== DESKTOP: Table ========== */
         <div className="sokar-card overflow-hidden">
           <div className="mobile-table-wrapper">
             <Table>
@@ -173,3 +223,4 @@ export default function CustomersPage() {
     </div>
   );
 }
+

@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useApi } from '../../../lib/api';
+import { useIsMobile } from '@/lib/useMediaQuery';
+import MobileDataCard from '@/components/MobileDataCard';
 import {
   Table,
   TableHeader,
@@ -19,6 +21,7 @@ import { AlertCircle, CalendarCheck } from 'lucide-react';
 
 export default function ReservationsPage() {
   const { get, orgId } = useApi();
+  const isMobile = useIsMobile();
 
   const [reservations, setReservations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,9 +59,9 @@ export default function ReservationsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Réservations</h1>
+        <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Réservations</h1>
         <span className="text-sm text-muted-foreground">
           {reservations.length} réservation{reservations.length > 1 ? 's' : ''}
         </span>
@@ -77,7 +80,43 @@ export default function ReservationsPage() {
             Les réservations prises par votre assistant apparaîtront ici.
           </p>
         </div>
+      ) : isMobile ? (
+        /* ========== MOBILE: Card List ========== */
+        <div className="space-y-2.5">
+          {reservations.map((res: any) => (
+            <MobileDataCard
+              key={res.id}
+              title={res.customerName}
+              subtitle={res.customerPhone || undefined}
+              badge={<StatusBadge status={res.status} />}
+              accentClass={
+                res.status === 'CONFIRMED'
+                  ? 'border-l-emerald-500'
+                  : res.status === 'CANCELLED'
+                    ? 'border-l-red-500'
+                    : res.status === 'SEATED'
+                      ? 'border-l-blue-400'
+                      : 'border-l-white/10'
+              }
+              details={[
+                {
+                  label: 'Date',
+                  value: format(new Date(res.reservedAt), 'dd MMM HH:mm', { locale: fr }),
+                },
+                {
+                  label: 'Couverts',
+                  value: `${res.partySize} pers.`,
+                },
+                {
+                  label: 'Revenu',
+                  value: res.estimatedRevenue ? `${res.estimatedRevenue}€` : '—',
+                },
+              ]}
+            />
+          ))}
+        </div>
       ) : (
+        /* ========== DESKTOP: Table ========== */
         <div className="sokar-card overflow-hidden">
           <div className="mobile-table-wrapper">
             <Table>
@@ -133,3 +172,4 @@ function StatusBadge({ status }: { status: string }) {
       return <Badge variant="outline">{status}</Badge>;
   }
 }
+
