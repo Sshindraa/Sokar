@@ -35,7 +35,7 @@ export default function PricingSection() {
           </label>
           <span className={`pricing-toggle-text ${yearly ? '!text-white' : ''} flex items-center gap-1.5`}>
             Annuel
-            <span className="px-2 py-0.5 text-[11px] bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-full font-bold">
+            <span className="px-2 py-0.5 text-xs bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded-full font-bold">
               -20%
             </span>
           </span>
@@ -52,7 +52,7 @@ export default function PricingSection() {
                 <div className="flex justify-between items-center">
                   <p className="pricing-card-label">{plan.label}</p>
                   {plan.featured && (
-                    <span className="px-2 py-0.5 text-[11px] font-bold tracking-wide uppercase bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-full">
+                    <span className="px-2 py-0.5 text-xs font-bold tracking-wide uppercase bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-full">
                       Recommandé
                     </span>
                   )}

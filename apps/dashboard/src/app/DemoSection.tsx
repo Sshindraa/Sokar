@@ -32,7 +32,7 @@ function RadialDial({ value }: { value: number }) {
         <circle stroke="rgba(6, 182, 212, 0.3)" fill="transparent" strokeWidth="1" strokeDasharray={circumference} strokeDashoffset={circumference} style={{ strokeDashoffset, transition: 'stroke-dashoffset 1.5s cubic-bezier(0.16, 1, 0.3, 1)' }} r={normalizedRadius} cx={radius} cy={radius} />
         <circle stroke="url(#cyanDialGradShowcase)" fill="transparent" strokeWidth="2.5" strokeDasharray={innerCircumference} strokeDashoffset={innerCircumference} style={{ strokeDashoffset: innerStrokeDashoffset, transition: 'stroke-dashoffset 1.5s cubic-bezier(0.16, 1, 0.3, 1)' }} r={innerRadius} cx={radius} cy={radius} />
       </svg>
-      <span className="absolute text-[10px] sm:text-[8px] font-black text-white tracking-tight font-display">{currentValue}%</span>
+      <span className="absolute text-xs sm:text-[11px] font-black text-white tracking-tight font-display">{currentValue}%</span>
     </div>
   );
 }
@@ -78,7 +78,7 @@ function TelemetryTuner() {
       <div className="absolute top-2 left-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">+ 01_HMI_TUNER</div>
       <div className="absolute top-2 right-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">SYS_OK</div>
       <div className="absolute bottom-2 left-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">THRESHOLD: DYNAMIC</div>
-      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-cyan-500/20 bg-cyan-500/10 text-[10px] sm:text-[9px] font-bold tracking-widest uppercase text-cyan-400">
+      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-cyan-500/20 bg-cyan-500/10 text-xs sm:text-[11px] font-bold tracking-widest uppercase text-cyan-400">
         <span className="h-1 w-1 rounded-full bg-cyan-500 animate-ping" /> LIVE
       </div>
       <div className="flex-1 flex items-center justify-center py-2 relative">
@@ -91,7 +91,7 @@ function TelemetryTuner() {
           { label: 'THRESH', value: threshold, setter: setThreshold, min: -70, max: -10, unit: 'dB', fmt: (v: number) => v + ' dB' },
           { label: 'LATENCY', value: latency, setter: setLatency, min: 5, max: 500, unit: 'ms', fmt: (v: number) => v + ' ms' },
         ].map(({ label, value, setter, min, max, fmt }) => (
-          <div key={label} className="flex items-center gap-2 sm:gap-3 text-[11px] sm:text-[9px] font-mono text-white/60">
+          <div key={label} className="flex items-center gap-2 sm:gap-3 text-xs sm:text-[11px] font-mono text-white/60">
             <span className="w-12 sm:w-14 text-right tracking-widest text-white/40">{label}</span>
             <input type="range" min={min} max={max} step={(max - min) / 200} value={value} onChange={(e) => setter(parseFloat(e.target.value))}
               className="w-full h-2 sm:h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-cyan-500 transition-all focus:outline-none focus:ring-0" style={{ minHeight: 44 }} />
@@ -132,12 +132,12 @@ function ShowcaseMetricCard({ label, value, icon: Icon, trend, isDial, dialValue
         <span className={`h-8 w-8 rounded-full flex items-center justify-center border transition-all duration-200 ${featured ? 'bg-cyan-500/10 border-cyan-500/25 text-cyan-400' : 'bg-white/5 border-white/5 text-white/50'}`}>
           <Icon size={14} />
         </span>
-        {isDial && dialValue !== undefined ? <RadialDial value={dialValue} /> : trend && <span className="text-[10px] sm:text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2.5 py-0.5">{trend}</span>}
+        {isDial && dialValue !== undefined ? <RadialDial value={dialValue} /> : trend && <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2.5 py-0.5">{trend}</span>}
       </div>
       <div className="relative z-10 mt-3 flex items-end justify-between gap-2">
         <div className="min-w-0">
           <p className={`text-xl font-black font-display tracking-tight truncate ${featured ? 'text-cyan-400' : 'text-white'}`}>{value}</p>
-          <p className="mt-1 text-[10px] sm:text-[9px] font-bold text-white/40 tracking-wider uppercase font-sans">{label}</p>
+          <p className="mt-1 text-xs sm:text-[11px] font-bold text-white/40 tracking-wider uppercase font-sans">{label}</p>
         </div>
         {featured && <div className="absolute -top-12 -right-12 w-24 h-24 rounded-full bg-cyan-500/10 filter blur-xl pointer-events-none" />}
       </div>
@@ -215,8 +215,8 @@ export default function DemoSection() {
                 <Image src="/logo-nav.png" alt="Sokar AI" width={18} height={18} className="h-4.5 w-4.5" />
               </div>
               <div>
-                <h4 className="text-[11px] sm:text-xs font-semibold tracking-tight text-white">Console de Dialogue Live</h4>
-                <p className="text-[11px] sm:text-[9px] text-emerald-400 font-medium flex items-center gap-1.5">
+                <h4 className="text-xs font-semibold tracking-tight text-white">Console de Dialogue Live</h4>
+                <p className="text-xs sm:text-[11px] text-emerald-400 font-medium flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Appel client en cours
                 </p>
               </div>

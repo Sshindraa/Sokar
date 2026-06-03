@@ -137,7 +137,7 @@ export default function LoginPage() {
         {/* Formulaire d'authentification Clerk stylisé */}
         <div className="my-auto py-8">
           <div className="text-center max-w-sm mx-auto mb-6">
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/50 px-3 py-1 text-[11px] font-semibold text-muted-foreground transition-all duration-300 hover:border-foreground/15">
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/50 px-3 py-1 text-xs font-semibold text-muted-foreground transition-all duration-300 hover:border-foreground/15">
               <Sparkles size={11} className="text-muted-foreground" />
               Intelligence artificielle vocale
             </div>
@@ -183,7 +183,7 @@ export default function LoginPage() {
                   footerActionText: 'text-xs text-muted-foreground',
                   footerActionLink: 'text-xs text-foreground font-semibold hover:underline transition-colors',
                   dividerLine: 'bg-border',
-                  dividerText: 'text-muted-foreground text-[10px] uppercase font-bold tracking-widest',
+                  dividerText: 'text-muted-foreground text-xs uppercase font-bold tracking-widest',
                   identityPreviewCard: 'border border-border bg-secondary/30 rounded-xl p-3',
                   formResendCodeButton: 'text-foreground hover:text-muted-foreground transition-colors font-medium',
                 },
@@ -227,7 +227,7 @@ export default function LoginPage() {
                 <span className="sokar-icon-button h-9 w-9 border-border bg-secondary/50">
                   <PhoneCall size={15} className="text-muted-foreground" />
                 </span>
-                <span className="rounded-full bg-primary/10 border border-primary/20 text-foreground px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+                <span className="rounded-full bg-primary/10 border border-primary/20 text-foreground px-2 py-0.5 text-xs font-bold uppercase tracking-wide">
                   Actif
                 </span>
               </div>
@@ -240,7 +240,7 @@ export default function LoginPage() {
                 <span className="sokar-icon-button h-9 w-9 border-border bg-secondary/50">
                   <TrendingUp size={15} className="text-emerald-500" />
                 </span>
-                <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+                <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 text-xs font-bold uppercase tracking-wide">
                   +18.4%
                 </span>
               </div>
@@ -259,7 +259,7 @@ export default function LoginPage() {
                 </div>
                 <div>
                   <h4 className="text-sm font-semibold tracking-tight text-foreground">Assistant Vocal Sokar</h4>
-                  <p className="text-[10px] text-muted-foreground font-medium flex items-center gap-1.5">
+                  <p className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                     En communication avec un client
                   </p>
@@ -310,9 +310,9 @@ export default function LoginPage() {
           <div className="mt-4 flex items-center justify-between border-t border-border/40 pt-3">
             <div>
               <p className="text-xs font-semibold text-foreground">Chef Matthieu</p>
-              <p className="text-[10px] text-muted-foreground">Bistrot L’Ardoise — 2 étoiles Michelin</p>
+              <p className="text-xs text-muted-foreground">Bistrot L’Ardoise — 2 étoiles Michelin</p>
             </div>
-            <div className="flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2.5 py-1 text-[10px] font-semibold text-emerald-400">
+            <div className="flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2.5 py-1 text-xs font-semibold text-emerald-400">
               <CheckCircle size={10} />
               Partenaire Certifié
             </div>
