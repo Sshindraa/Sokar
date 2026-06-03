@@ -175,7 +175,7 @@ export default function DashboardPage() {
                   >
                     <div className="min-w-0">
                       <p className="truncate text-xs sm:text-sm font-bold text-white">{reservation.customerName}</p>
-                      <p className="mt-1 text-[10px] tracking-wide uppercase text-white/40 font-sans">
+                      <p className="mt-1 text-[11px] sm:text-[10px] tracking-wide uppercase text-white/40 font-sans">
                         {reservation.partySize} couverts · {reservation.status?.toLowerCase() || 'nouveau'}
                       </p>
                     </div>
@@ -229,8 +229,8 @@ function AnimatedBar({
           hovered ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-2 scale-95'
         }`}
       >
-        <span className="text-[9px] font-bold text-white/40 uppercase tracking-wider font-sans">{day}</span>
-        <span className="text-[11px] font-black text-orange-400 whitespace-nowrap font-sans">{calls} appels</span>
+        <span className="text-[11px] sm:text-[9px] font-bold text-white/40 uppercase tracking-wider font-sans">{day}</span>
+        <span className="text-sm sm:text-[11px] font-black text-orange-400 whitespace-nowrap font-sans">{calls} appels</span>
         {/* Tooltip arrow */}
         <div className="absolute bottom-[-4px] left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-black border-r border-b border-white/10" />
       </div>
@@ -242,7 +242,7 @@ function AnimatedBar({
           transition: 'height 1.2s cubic-bezier(0.16, 1, 0.3, 1)' 
         }}
       />
-      <span className="text-center text-[10px] font-bold uppercase tracking-wider text-white/35 group-hover:text-white transition-colors duration-200 font-sans">
+      <span className="text-center text-[11px] sm:text-[10px] font-bold uppercase tracking-wider text-white/35 group-hover:text-white transition-colors duration-200 font-sans">
         {day.slice(0, 3)}
       </span>
     </div>
@@ -361,7 +361,7 @@ function RadialDial({ value }: { value: number }) {
           </linearGradient>
         </defs>
       </svg>
-      <span className="absolute text-[8px] font-black text-white tracking-tight font-display">
+      <span className="absolute text-[10px] sm:text-[8px] font-black text-white tracking-tight font-display">
         {Math.round(currentValue)}%
       </span>
     </div>
@@ -403,11 +403,22 @@ function TelemetryTuner() {
     setCoords({ x: e.clientX - rect.left, y: e.clientY - rect.top });
   };
 
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const touch = e.touches[0];
+    if (touch) {
+      setCoords({ x: touch.clientX - rect.left, y: touch.clientY - rect.top });
+    }
+  };
+
   return (
     <div 
       onMouseMove={handleMouseMove}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onTouchMove={handleTouchMove}
+      onTouchStart={() => setIsHovered(true)}
+      onTouchEnd={() => setIsHovered(false)}
       className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group transition-all duration-300 hover:border-white/10"
     >
       <div 
@@ -417,14 +428,14 @@ function TelemetryTuner() {
         }}
       />
       
-      <div className="absolute top-2 left-3.5 text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">+ 01_HMI_TUNER</div>
-      <div className="absolute top-2 right-3.5 text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">SYS_OK</div>
-      <div className="absolute bottom-2 left-3.5 text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">SOKAR_OS</div>
-      <div className="absolute bottom-2 right-3.5 text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">2026_V1</div>
+      <div className="absolute top-2 left-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">+ 01_HMI_TUNER</div>
+      <div className="absolute top-2 right-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">SYS_OK</div>
+      <div className="absolute bottom-2 left-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">SOKAR_OS</div>
+      <div className="absolute bottom-2 right-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">2026_V1</div>
 
       <div className="z-10">
         <div className="flex items-center justify-between gap-4">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-orange-500/20 bg-orange-500/10 text-[9px] font-bold tracking-widest uppercase text-orange-400">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-orange-500/20 bg-orange-500/10 text-[10px] sm:text-[9px] font-bold tracking-widest uppercase text-orange-400">
             <span className="h-1 w-1 rounded-full bg-orange-500 animate-ping" />
             Vocal Telemetry Equalizer
           </div>
@@ -434,14 +445,14 @@ function TelemetryTuner() {
         <h3 className="mt-4 text-xl font-black leading-tight text-white font-display">
           Pupitre Télémétrique Vocal
         </h3>
-        <p className="mt-1 text-[10px] text-white/45 leading-relaxed font-sans">
+        <p className="mt-1 text-[11px] sm:text-[10px] text-white/45 leading-relaxed font-sans">
           Ajustez en temps réel les filtres neuronaux et le comportement spectral de l&apos;assistant de service.
         </p>
       </div>
 
       <div className="mt-5 space-y-3.5 z-10">
         <div className="space-y-1">
-          <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-white/55">
+          <div className="flex items-center justify-between text-[11px] sm:text-[9px] font-bold uppercase tracking-wider text-white/55">
             <span className="font-sans">Vitesse de parole</span>
             <span className="font-mono text-orange-400">{speed.toFixed(2)}x</span>
           </div>
@@ -453,13 +464,14 @@ function TelemetryTuner() {
               step="0.05" 
               value={speed}
               onChange={(e) => setSpeed(parseFloat(e.target.value))}
-              className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
+              className="w-full h-2 sm:h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
+              style={{ minHeight: 44 }}
             />
           </div>
         </div>
 
         <div className="space-y-1">
-          <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-white/55">
+          <div className="flex items-center justify-between text-[11px] sm:text-[9px] font-bold uppercase tracking-wider text-white/55">
             <span className="font-sans">Tonalité (Pitch)</span>
             <span className="font-mono text-orange-400">{pitch.toFixed(2)} Hz</span>
           </div>
@@ -471,13 +483,14 @@ function TelemetryTuner() {
               step="0.05" 
               value={pitch}
               onChange={(e) => setPitch(parseFloat(e.target.value))}
-              className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
+              className="w-full h-2 sm:h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
+              style={{ minHeight: 44 }}
             />
           </div>
         </div>
 
         <div className="space-y-1">
-          <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-white/55">
+          <div className="flex items-center justify-between text-[11px] sm:text-[9px] font-bold uppercase tracking-wider text-white/55">
             <span className="font-sans">Sensibilité Micro</span>
             <span className="font-mono text-orange-400">{threshold} dB</span>
           </div>
@@ -489,13 +502,14 @@ function TelemetryTuner() {
               step="1" 
               value={threshold}
               onChange={(e) => setThreshold(parseInt(e.target.value, 10))}
-              className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
+              className="w-full h-2 sm:h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
+              style={{ minHeight: 44 }}
             />
           </div>
         </div>
 
         <div className="space-y-1">
-          <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-white/55">
+          <div className="flex items-center justify-between text-[11px] sm:text-[9px] font-bold uppercase tracking-wider text-white/55">
             <span className="font-sans">Latence cible</span>
             <span className="font-mono text-orange-400">{latency} ms</span>
           </div>
@@ -507,18 +521,19 @@ function TelemetryTuner() {
               step="5" 
               value={latency}
               onChange={(e) => setLatency(parseInt(e.target.value, 10))}
-              className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
+              className="w-full h-2 sm:h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
+              style={{ minHeight: 44 }}
             />
           </div>
         </div>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[9px] font-bold text-white/35 uppercase tracking-widest z-10 font-mono">
+      <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] sm:text-[9px] font-bold text-white/35 uppercase tracking-widest z-10 font-mono">
         <span className="flex items-center gap-1">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
           NEURONAL NETWORK ONLINE
         </span>
-        <span className="text-white/20 text-[8px]">
+        <span className="text-white/20 text-[9px] sm:text-[8px]">
           TEMP_CORE: 38°C
         </span>
       </div>
@@ -553,11 +568,22 @@ function MetricCard({
     setCoords({ x: e.clientX - rect.left, y: e.clientY - rect.top });
   };
 
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const touch = e.touches[0];
+    if (touch) {
+      setCoords({ x: touch.clientX - rect.left, y: touch.clientY - rect.top });
+    }
+  };
+
   return (
     <div 
       onMouseMove={handleMouseMove}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onTouchMove={handleTouchMove}
+      onTouchStart={() => setIsHovered(true)}
+      onTouchEnd={() => setIsHovered(false)}
       className={`relative overflow-hidden rounded-2xl border transition-all duration-300 p-5 select-none ${
         featured 
           ? 'border-orange-500/25 bg-orange-500/[0.01] shadow-[0_0_30px_rgba(249,115,22,0.03)]' 
@@ -571,10 +597,10 @@ function MetricCard({
         }}
       />
 
-      <div className="absolute top-1.5 left-2 text-[7px] text-white/10 tracking-widest font-mono pointer-events-none select-none">+</div >
-      <div className="absolute top-1.5 right-2 text-[7px] text-white/10 tracking-widest font-mono pointer-events-none select-none">+</div >
-      <div className="absolute bottom-1.5 left-2 text-[7px] text-white/10 tracking-widest font-mono pointer-events-none select-none">+</div >
-      <div className="absolute bottom-1.5 right-2 text-[7px] text-white/10 tracking-widest font-mono pointer-events-none select-none">+</div >
+      <div className="absolute top-1.5 left-2 text-[9px] sm:text-[7px] text-white/10 tracking-widest font-mono pointer-events-none select-none">+</div >
+      <div className="absolute top-1.5 right-2 text-[9px] sm:text-[7px] text-white/10 tracking-widest font-mono pointer-events-none select-none">+</div >
+      <div className="absolute bottom-1.5 left-2 text-[9px] sm:text-[7px] text-white/10 tracking-widest font-mono pointer-events-none select-none">+</div >
+      <div className="absolute bottom-1.5 right-2 text-[9px] sm:text-[7px] text-white/10 tracking-widest font-mono pointer-events-none select-none">+</div >
 
       {featured && (
         <div className="absolute -top-12 -right-12 w-24 h-24 rounded-full bg-orange-500/10 filter blur-xl pointer-events-none animate-pulse" />

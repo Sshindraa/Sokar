@@ -20,16 +20,16 @@ export default function Header() {
           href="/"
           className="flex min-w-0 items-center gap-2 rounded-full px-2 transition-all duration-200 hover:opacity-80"
         >
-          <img src="/logo-nav.png" alt="Sokar" className="h-9 w-9" />
+          <img src="/logo-nav.png" alt="Sokar" width={36} height={36} className="h-9 w-9" />
           <span className="text-sm font-semibold text-foreground">Sokar</span>
         </Link>
         <div className="flex items-center gap-1 sm:gap-2">
-          <Link href="/pricing" className="sokar-pill border-transparent bg-transparent px-3 py-1.5">
+          <Link href="/pricing" className="sokar-pill border-transparent bg-transparent px-3 py-2 min-h-[44px] inline-flex items-center justify-center">
             Tarifs
           </Link>
           <SignedOut>
             <SignInButton mode="redirect">
-              <Button size="sm" className="rounded-full transition-all duration-200">
+              <Button size="sm" className="rounded-full transition-all duration-200 min-h-[44px] px-4">
                 Connexion
               </Button>
             </SignInButton>

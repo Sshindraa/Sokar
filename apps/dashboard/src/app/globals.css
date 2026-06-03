@@ -53,10 +53,16 @@
   * {
     @apply border-border;
   }
+  html {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    scroll-padding-top: 6rem;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: Inter, system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
   }
 }
 
@@ -369,7 +375,7 @@ input[type="range"]::-moz-range-thumb:hover {
   position: relative;
   z-index: 1;
   margin-top: 1rem;
-  max-width: 18rem;
+  max-width: 100%;
   font-size: 0.74rem;
   color: rgba(255,255,255,0.68);
   line-height: 1.5;
@@ -435,6 +441,7 @@ input[type="range"]::-moz-range-thumb:hover {
   align-items: center;
   gap: 0.75rem;
   cursor: pointer;
+  min-height: 44px;
 }
 .pricing-toggle-track {
   width: 45px; height: 24px;
@@ -469,4 +476,14 @@ input[type="range"]::-moz-range-thumb:hover {
 
 @media (max-width: 768px) {
   .pricing-card { min-height: auto; }
+}
+
+/* Reduce heavy blur on mobile for performance */
+@media (max-width: 640px) {
+  .glass-card,
+  .pricing-card,
+  .sokar-card {
+    backdrop-filter: blur(12px) saturate(150%);
+    -webkit-backdrop-filter: blur(12px) saturate(150%);
+  }
 }

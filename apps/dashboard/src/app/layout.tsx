@@ -1,7 +1,14 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import Providers from '@/components/providers';
 import Header from '@/components/header';
 import './globals.css';
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  themeColor: '#030303',
+};
 
 export const metadata: Metadata = {
   title: 'Sokar — Restaurant Management',
