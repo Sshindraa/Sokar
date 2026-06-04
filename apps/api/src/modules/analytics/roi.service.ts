@@ -19,7 +19,7 @@ export async function computeRoi(restaurantId: string, period: string): Promise<
   const end   = new Date(year, month, 0, 23, 59, 59, 999);
 
   const [restaurant, reservations] = await Promise.all([
-    db.restaurant.findUniqueOrThrow({ where: { id: restaurantId } }),
+    db.restaurant.findUnique({ where: { id: restaurantId } }),
     db.reservation.findMany({
       where: {
         restaurantId,
@@ -28,6 +28,18 @@ export async function computeRoi(restaurantId: string, period: string): Promise<
       },
     }),
   ]);
+
+  if (!restaurant) {
+    return {
+      period,
+      totalReservations: 0,
+      totalCouverts: 0,
+      estimatedRevenue: 0,
+      theforkSavings: 0,
+      sokarMonthlyCost: PLAN_PRICES['STARTER'] ?? 149,
+      roiMultiplier: 0,
+    };
+  }
 
   const totalCouverts = reservations.reduce((s: number, r: any) => s + r.partySize, 0);
 

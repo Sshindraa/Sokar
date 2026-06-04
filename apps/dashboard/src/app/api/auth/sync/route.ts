@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 
 export async function POST(req: NextRequest) {
-  const API_URL = 'http://127.0.0.1:4000';
+  const API_URL = process.env.API_URL || 'http://127.0.0.1:4000';
 
   const res = await fetch(`${API_URL}/api/auth/sync`, {
     method: 'POST',
