@@ -4,6 +4,7 @@ import { SignUp, useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { ArrowLeft, Sparkles, PhoneCall, CalendarCheck, TrendingUp, CheckCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -92,8 +93,6 @@ export default function RegisterPage() {
   if (isLoaded && isSignedIn) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center relative overflow-hidden">
-        <style>{`body > header { display: none !important; }`}</style>
-        
         {/* Glow atmosphérique en arrière-plan */}
         <div className="absolute inset-0 bg-background" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[35rem] h-[35rem] rounded-full blur-3xl opacity-20 bg-primary" />
@@ -101,7 +100,7 @@ export default function RegisterPage() {
         <div className="relative flex flex-col items-center gap-6 z-10">
           <div className="relative flex items-center justify-center h-20 w-20 rounded-full border border-border bg-card/50 backdrop-blur-xl shadow-2xl">
             <div className="absolute inset-0 rounded-full border border-primary/30 border-t-primary animate-spin" />
-            <img src="/logo-nav.png" alt="Sokar" className="h-10 w-10 animate-pulse" />
+            <Image src="/logo-nav.png" alt="Sokar" width={40} height={40} className="h-10 w-10 animate-pulse" />
           </div>
           <p className="text-sm font-medium tracking-wider text-muted-foreground animate-pulse">
             Redirection vers votre espace...
@@ -113,8 +112,6 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen w-full bg-background text-foreground flex items-stretch">
-      <style>{`body > header { display: none !important; }`}</style>
-
       {/* Colonne gauche : Formulaire */}
       <div className="w-full lg:w-[45%] flex flex-col justify-between p-6 sm:p-10 relative z-10 bg-background">
         
@@ -129,7 +126,7 @@ export default function RegisterPage() {
           </Link>
           
           <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-90">
-            <img src="/logo-nav.png" alt="Sokar Logo" width={32} height={32} className="h-8 w-8" />
+            <Image src="/logo-nav.png" alt="Sokar Logo" width={32} height={32} className="h-8 w-8" />
             <span className="text-lg font-bold tracking-tight text-foreground">Sokar</span>
           </Link>
         </div>
@@ -255,7 +252,7 @@ export default function RegisterPage() {
             <div className="border-b border-border bg-secondary/20 px-5 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-full bg-primary/10 border border-border flex items-center justify-center shadow-inner">
-                  <img src="/logo-nav.png" alt="Sokar AI" className="h-5 w-5 animate-pulse" />
+                  <Image src="/logo-nav.png" alt="Sokar AI" width={20} height={20} className="h-5 w-5 animate-pulse" />
                 </div>
                 <div>
                   <h4 className="text-sm font-semibold tracking-tight text-foreground">Assistant Vocal Sokar</h4>

@@ -1,13 +1,24 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { Menu, X } from 'lucide-react';
 import { SignedIn, SignedOut } from '@clerk/nextjs';
 import { ArrowUpRight } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-export default function MobileNav() {
+interface MobileNavProps {
+  buttonStyle?: 'standalone' | 'flat';
+}
+
+export default function MobileNav({ buttonStyle = 'standalone' }: MobileNavProps) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -21,10 +32,10 @@ export default function MobileNav() {
   }, [open]);
 
   const links = [
-    { label: 'Services', href: '#services' },
-    { label: "Cas d'usage", href: '#demo' },
+    { label: 'Services', href: '/#services' },
+    { label: "Cas d'usage", href: '/#demo' },
     { label: 'Tarifs', href: '/pricing' },
-    { label: 'Contact', href: '#waitlist' },
+    { label: 'Contact', href: '/#waitlist' },
   ];
 
   return (
@@ -32,15 +43,20 @@ export default function MobileNav() {
       {/* Hamburger button — visible only on mobile */}
       <button
         onClick={() => setOpen(!open)}
-        className="flex md:hidden items-center justify-center h-11 w-11 rounded-full border border-white/10 bg-black/40 text-white/70 backdrop-blur-xl transition-all duration-200 hover:text-white hover:border-white/20 active:scale-95"
+        className={cn(
+          "flex md:hidden items-center justify-center transition-all duration-200 active:scale-95",
+          buttonStyle === 'standalone'
+            ? "h-11 w-11 rounded-full border border-white/10 bg-black/40 text-white/70 backdrop-blur-xl hover:text-white hover:border-white/20"
+            : "h-9 w-9 rounded-full text-white/70 hover:text-white hover:bg-white/5"
+        )}
         aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
       >
         {open ? <X size={20} /> : <Menu size={20} />}
       </button>
 
       {/* Mobile drawer */}
-      {open && (
-        <div className="fixed inset-0 z-40 md:hidden">
+      {open && mounted && createPortal(
+        <div className="fixed inset-0 z-[100] md:hidden">
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -80,7 +96,8 @@ export default function MobileNav() {
               </Link>
             </SignedIn>
           </nav>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

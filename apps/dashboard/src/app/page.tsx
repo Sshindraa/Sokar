@@ -33,23 +33,27 @@ export default function HomePage() {
       {/* Logo — top-left fixed */}
       <Link
         href="/"
-        className="fixed left-4 top-5 z-50 flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-80 sm:left-6"
+        className="fixed left-4 top-5 z-50 hidden md:flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-80 sm:left-6"
       >
         <Image src="/logo-nav.png" alt="Sokar" width={36} height={36} className="h-9 w-9 sm:h-11 sm:w-11" priority />
         <span className="hidden text-xl font-bold tracking-tight text-white font-display sm:inline">Sokar</span>
       </Link>
 
       {/* Floating navbar */}
-      <div className="fixed left-1/2 top-5 z-50 -translate-x-1/2 flex items-center gap-2">
-        {/* Mobile hamburger */}
-        <MobileNav />
-        <nav className="flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-2 shadow-2xl backdrop-blur-xl">
+      <div className="fixed left-1/2 top-5 z-50 -translate-x-1/2 flex items-center">
+        <nav className="flex items-center gap-2 rounded-full border border-white/10 bg-black/80 px-3 py-2 shadow-2xl backdrop-blur-xl">
+          {/* Logo inside navbar on mobile */}
+          <Link href="/" className="flex items-center gap-1.5 md:hidden pl-1 hover:opacity-80 transition-opacity">
+            <Image src="/logo-nav.png" alt="Sokar" width={28} height={28} className="h-7 w-7" priority />
+          </Link>
+          <span className="h-4 w-px bg-white/10 md:hidden mx-1" />
+
           <div className="hidden items-center gap-1 md:flex">
             {[
-              { label: 'Services', href: '#services' },
-              { label: "Cas d'usage", href: '#demo' },
+              { label: 'Services', href: '/#services' },
+              { label: "Cas d'usage", href: '/#demo' },
               { label: 'Tarifs', href: '/pricing' },
-              { label: 'Contact', href: '#waitlist' },
+              { label: 'Contact', href: '/#waitlist' },
             ].map((item) => (
               <Link
                 key={item.href}
@@ -78,6 +82,9 @@ export default function HomePage() {
               <ArrowUpRight size={14} />
             </Link>
           </SignedIn>
+
+          {/* Mobile hamburger inside the navbar */}
+          <MobileNav buttonStyle="flat" />
         </nav>
       </div>
 

@@ -1,6 +1,8 @@
 import { Worker }  from 'bullmq';
 import { redisQueue, redisSession } from '../../redis/client';
 import telnyx from '../../telnyx/client';
+import { logger } from '../../logger/pino';
+import { setupWorkerListeners } from './helper';
 
 // Vérifier le rate-limit Redis par restaurant avant d'envoyer
 async function checkManagerSmsRateLimit(restaurantId: string): Promise<boolean> {
@@ -16,7 +18,7 @@ export const smsManagerWorker = new Worker('sms-manager', async (job) => {
 
   const allowed = await checkManagerSmsRateLimit(restaurantId);
   if (!allowed) {
-    console.warn(`[SMS] Manager alert rate-limited for restaurant ${restaurantId}`);
+    logger.warn({ restaurantId }, '[SMS] Manager alert rate-limited for restaurant');
     return;
   }
 
@@ -29,3 +31,5 @@ export const smsManagerWorker = new Worker('sms-manager', async (job) => {
 
   await telnyx.messages.create({ from: process.env.TELNYX_FROM_NUMBER!, to, text: message });
 }, { connection: redisQueue });
+
+setupWorkerListeners(smsManagerWorker);

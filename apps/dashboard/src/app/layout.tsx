@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import Providers from '@/components/providers';
 import Header from '@/components/header';
+import PwaInstallBanner from '@/components/PwaInstallBanner';
 import './globals.css';
 
 export const viewport: Viewport = {
@@ -29,6 +30,9 @@ export const metadata: Metadata = {
     statusBarStyle: 'black-translucent',
     title: 'Sokar',
   },
+  other: {
+    'mobile-web-app-capable': 'yes',
+  },
 };
 
 export default function RootLayout({
@@ -41,6 +45,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-background antialiased">
         <Providers>
           <Header />
+          <PwaInstallBanner />
           {children}
         </Providers>
       </body>

@@ -1,8 +1,11 @@
 import { WebSocket } from 'ws';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import type { CallSession, FluxEvent, CallState } from './types';
 import { LLM_MODEL } from '@sokar/config'; // Resolved dynamically via tsconfig paths
 import { getRestaurantTools } from '../tools';
+import { ReservationService } from '../../reservations/reservation.service';
+import { logger } from '../../../shared/logger/pino';
+import * as Sentry from '@sentry/node';
 
 // Chargé paresseusement pour éviter les circular deps
 let _db: any = null;
@@ -138,7 +141,7 @@ export class CallSessionManager {
     this.sendTelnyxClear(session);
     this.transition(session, 'LISTENING');
     session.isSpeaking = false;
-    console.log(`[barge-in] Call ${session.callControlId} — interrupted`);
+    logger.info({ callId: session.callControlId }, '[barge-in] Call interrupted');
   }
 
   private sendTelnyxClear(session: CallSession): void {
@@ -448,30 +451,23 @@ export class CallSessionManager {
       switch (name) {
         case 'createReservation': {
           const { date, time, partySize, customerName, customerPhone } = args;
-          const reservationId = randomUUID();
 
-          // Exécution asynchrone / optimiste pour éliminer la latence d'écriture en base de données
-          db().then(async (database) => {
-            try {
-              await database.reservation.create({
-                data: {
-                  id: reservationId,
-                  restaurantId: session.restaurantId,
-                  reservedAt: new Date(`${date}T${time}`),
-                  partySize: partySize ?? 1,
-                  customerName: customerName ?? 'Client',
-                  customerPhone: customerPhone ?? session.from,
-                  status: 'CONFIRMED',
-                },
-              });
-            } catch (err: any) {
-              console.error(`[tool] Async reservation creation failed:`, err.message);
+          // Fire-and-forget via le service canonique pour inclure le SMS de confirmation
+          ReservationService.create({
+            restaurantId: session.restaurantId,
+            callId: session.callLegId,
+            reservedAt: new Date(`${date}T${time}`),
+            partySize: partySize ?? 1,
+            customerName: customerName ?? 'Client',
+            customerPhone: customerPhone ?? session.from,
+          }).catch((err: any) => {
+            logger.error({ err, callId: session.callControlId }, '[tool] ReservationService.create failed');
+            if (process.env.SENTRY_DSN) {
+              Sentry.captureException(err, { tags: { service: 'manager-tool' }, extra: { callId: session.callControlId } });
             }
-          }).catch((err) => {
-            console.error('[tool] Failed to load DB lazily:', err.message);
           });
 
-          return `Réservation confirmée pour ${customerName ?? 'le client'}, le ${date} à ${time}, pour ${partySize} personne(s). Un SMS de confirmation va être envoyé au client.`;
+          return `Réservation confirmée pour ${customerName ?? 'le client'}, le ${date} à ${time}, pour ${partySize ?? 1} personne(s). Un SMS de confirmation va être envoyé au client.`;
         }
 
         case 'handoffToManager':
@@ -481,7 +477,13 @@ export class CallSessionManager {
           return `Outil inconnu : ${name}`;
       }
     } catch (err: any) {
-      console.error(`[tool] Error executing ${name}:`, err.message);
+      logger.error({ err, toolName: name, callId: session.callControlId }, `[tool] Error executing ${name}: ${err.message}`);
+      if (process.env.SENTRY_DSN) {
+        Sentry.captureException(err, {
+          tags: { service: 'manager', tool: name },
+          extra: { callId: session.callControlId, argsJson },
+        });
+      }
       return `Erreur lors de l'exécution de ${name}.`;
     }
   }

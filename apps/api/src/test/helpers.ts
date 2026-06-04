@@ -36,16 +36,26 @@ vi.mock('../shared/db/client', () => ({
       findUnique: vi.fn(),
       upsert: vi.fn(),
     },
+    reservation: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+    },
   },
 }));
 
 vi.mock('../shared/redis/client', () => ({
   redisCache: {
-    del: vi.fn(),
+    get: vi.fn().mockResolvedValue(null),
+    getBuffer: vi.fn().mockResolvedValue(null),
+    set: vi.fn().mockResolvedValue('OK'),
+    del: vi.fn().mockResolvedValue(1),
+    status: 'ready',
   },
   redisQueue: {
     on: vi.fn(),
   },
+  getCachedContext: vi.fn().mockResolvedValue(null),
+  setCachedContext: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../shared/queue/queues', () => ({

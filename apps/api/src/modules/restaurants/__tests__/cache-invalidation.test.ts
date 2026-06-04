@@ -40,7 +40,7 @@ describe('Cache invalidation — PATCH /restaurants/:id', () => {
     const { getApp } = await import('../../../test/helpers');
 
     const mockRestaurant = {
-      id: 'rest-1',
+      id: 'test-rest-1',
       name: 'Chez Test Modifié',
       phoneNumber: 'pn-test',
       managerPhone: '+33600000000',
@@ -57,7 +57,7 @@ describe('Cache invalidation — PATCH /restaurants/:id', () => {
     const app = await getApp();
     const res = await app.inject({
       method: 'PATCH',
-      url: '/restaurants/rest-1',
+      url: '/restaurants/test-rest-1',
       headers: {
         'content-type': 'application/json',
         authorization: 'Bearer valid-token',

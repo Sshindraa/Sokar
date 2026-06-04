@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { BarChart3, CalendarCheck, PhoneCall, Settings, Users } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, triggerHaptic } from '@/lib/utils';
 
 const navItems = [
   { href: '/dashboard', label: 'Aperçu', icon: BarChart3 },
@@ -30,6 +30,7 @@ export default function MobileBottomNav() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => triggerHaptic(12)}
               className={cn(
                 'flex flex-1 flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[10px] font-medium transition-colors duration-200 touch-manipulation relative',
                 active
