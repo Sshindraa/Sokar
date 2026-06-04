@@ -54,6 +54,8 @@ NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database generate
 # ── 5. Build all ────────────────────────────────────────
 echo ""
 echo "📦 Building..."
+# Config d'abord (dépendance de l'API)
+NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/config build
 NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/api build
 NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/dashboard build
 
