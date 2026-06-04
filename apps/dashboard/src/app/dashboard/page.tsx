@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { 
   AlertCircle, 
   ArrowUpRight, 
@@ -24,20 +24,21 @@ type DashboardStats = {
   period: string;
 };
 
-const CHART_DATA = [
-  { day: 'Lundi', height: 44, calls: 44 },
-  { day: 'Mardi', height: 58, calls: 58 },
-  { day: 'Mercredi', height: 36, calls: 36 },
-  { day: 'Jeudi', height: 72, calls: 72 },
-  { day: 'Vendredi', height: 64, calls: 64 },
-  { day: 'Samedi', height: 88, calls: 88 },
-  { day: 'Dimanche', height: 52, calls: 52 },
+const DEFAULT_WEEKLY = [
+  { day: 'Lundi', height: 0, calls: 0 },
+  { day: 'Mardi', height: 0, calls: 0 },
+  { day: 'Mercredi', height: 0, calls: 0 },
+  { day: 'Jeudi', height: 0, calls: 0 },
+  { day: 'Vendredi', height: 0, calls: 0 },
+  { day: 'Samedi', height: 0, calls: 0 },
+  { day: 'Dimanche', height: 0, calls: 0 },
 ];
 
 export default function DashboardPage() {
   const { get, orgId } = useApi();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [activity, setActivity] = useState<any>(null);
+  const [weeklyData, setWeeklyData] = useState(DEFAULT_WEEKLY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -46,9 +47,10 @@ export default function DashboardPage() {
 
     async function fetchData() {
       try {
-        const [s, a] = await Promise.all([
+        const [s, a, w] = await Promise.all([
           get(`dashboard/stats?restaurantId=${orgId}`),
           get(`dashboard/recent-activity?restaurantId=${orgId}`),
+          get(`dashboard/weekly-calls?restaurantId=${orgId}`),
         ]);
 
         setStats({
@@ -61,6 +63,7 @@ export default function DashboardPage() {
           period: s.period ?? '',
         });
         setActivity(a);
+        setWeeklyData(w.data ?? DEFAULT_WEEKLY);
       } catch (err: any) {
         setError(err.message || 'Erreur de chargement');
       } finally {
@@ -88,14 +91,26 @@ export default function DashboardPage() {
     ? activity.reservations.slice(0, 4)
     : [];
 
+  const isNew = stats && stats.totalCalls === 0 && stats.totalReservations === 0;
+
   return (
     <div className="space-y-6 md:space-y-8 select-none">
+
+      {isNew && (
+        <div className="rounded-2xl border border-orange-500/20 bg-orange-500/[0.03] p-6 md:p-8 text-center animate-in fade-in slide-in-from-top-4 duration-500">
+          <Sparkles size={32} className="mx-auto text-orange-400 mb-3" />
+          <h2 className="text-lg md:text-xl font-bold text-white font-display">Bienvenue sur Sokar</h2>
+          <p className="mt-2 text-sm text-white/50 max-w-md mx-auto font-sans">
+            Votre assistant téléphonique est activé. Dès que vous recevrez votre premier appel, vos statistiques apparaîtront ici.
+          </p>
+        </div>
+      )}
 
       {/* ================= HEADER & OVERVIEW GRID ================= */}
       <section className="grid gap-4 md:gap-5 lg:grid-cols-[1.1fr_2fr]">
 
         {/* Pupitre Télémétrique Vocal HMI */}
-        <TelemetryTuner />
+        <TelemetryTuner orgId={orgId} />
 
         {/* 4 Metrics Grid */}
         <div className="grid gap-2.5 sm:gap-4 grid-cols-2 animate-in fade-in slide-in-from-right-4 duration-700 ease-out">
@@ -103,13 +118,11 @@ export default function DashboardPage() {
             label="Appels traités"
             value={stats?.totalCalls ?? 0}
             icon={PhoneCall}
-            trend="+12.4%"
           />
           <MetricCard
             label="Réservations prises"
             value={stats?.totalReservations ?? 0}
             icon={CalendarCheck}
-            trend="+15.8%"
           />
           <MetricCard
             label="Taux de réponse"
@@ -147,7 +160,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid h-48 sm:h-64 grid-cols-7 items-end gap-1.5 sm:gap-3 px-1 sm:px-2 pt-4 border-b border-white/5 pb-2">
-            {CHART_DATA.map((item, index) => (
+            {weeklyData.map((item, index) => (
               <AnimatedBar
                 key={item.day}
                 height={item.height}
@@ -401,13 +414,45 @@ function AudioWaveform() {
   );
 }
 
-function TelemetryTuner() {
+function TelemetryTuner({ orgId }: { orgId: string | undefined }) {
+  const { get, patch } = useApi();
   const [speed, setSpeed] = useState(1.15);
   const [pitch, setPitch] = useState(1.0);
   const [threshold, setThreshold] = useState(-42);
   const [latency, setLatency] = useState(140);
   const [coords, setCoords] = useState({ x: 0, y: 0 });
   const [isHovered, setIsHovered] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const saveRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    if (!orgId) return;
+    get(`restaurants/${orgId}/personality`).then((p: any) => {
+      if (!p) return;
+      setSpeed(Number(p.speakingRate ?? 1.15));
+      setPitch(Number(p.pitchShift ?? 1.0));
+      setThreshold(p.microphoneThreshold ?? -42);
+      setLatency(p.targetLatencyMs ?? 140);
+    }).catch(() => {});
+  }, [orgId, get]);
+
+  const save = useCallback(
+    (updates: Record<string, number>) => {
+      if (!orgId) return;
+      setSaving(true);
+      if (saveRef.current) clearTimeout(saveRef.current);
+      saveRef.current = setTimeout(async () => {
+        try {
+          await patch(`restaurants/${orgId}/personality`, updates);
+        } catch {
+          // silent
+        } finally {
+          setSaving(false);
+        }
+      }, 500);
+    },
+    [orgId, patch]
+  );
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -474,7 +519,7 @@ function TelemetryTuner() {
               max="1.5" 
               step="0.05" 
               value={speed}
-              onChange={(e) => setSpeed(parseFloat(e.target.value))}
+              onChange={(e) => { const v = parseFloat(e.target.value); setSpeed(v); save({ speakingRate: v }); }}
               className="w-full h-2 sm:h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
               style={{ minHeight: 44 }}
             />
@@ -493,7 +538,7 @@ function TelemetryTuner() {
               max="1.3" 
               step="0.05" 
               value={pitch}
-              onChange={(e) => setPitch(parseFloat(e.target.value))}
+              onChange={(e) => { const v = parseFloat(e.target.value); setPitch(v); save({ pitchShift: v }); }}
               className="w-full h-2 sm:h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
               style={{ minHeight: 44 }}
             />
@@ -512,7 +557,7 @@ function TelemetryTuner() {
               max="-20" 
               step="1" 
               value={threshold}
-              onChange={(e) => setThreshold(parseInt(e.target.value, 10))}
+              onChange={(e) => { const v = parseInt(e.target.value, 10); setThreshold(v); save({ microphoneThreshold: v }); }}
               className="w-full h-2 sm:h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
               style={{ minHeight: 44 }}
             />
@@ -531,7 +576,7 @@ function TelemetryTuner() {
               max="240" 
               step="5" 
               value={latency}
-              onChange={(e) => setLatency(parseInt(e.target.value, 10))}
+              onChange={(e) => { const v = parseInt(e.target.value, 10); setLatency(v); save({ targetLatencyMs: v }); }}
               className="w-full h-2 sm:h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
               style={{ minHeight: 44 }}
             />
