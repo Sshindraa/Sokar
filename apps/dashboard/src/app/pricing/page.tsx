@@ -91,7 +91,6 @@ export default function PricingPage() {
           <Link href="/" className="flex items-center gap-1.5 md:hidden pl-1 hover:opacity-80 transition-opacity">
             <Image src="/logo-nav.png" alt="Sokar" width={28} height={28} className="h-7 w-7" />
           </Link>
-          <span className="h-4 w-px bg-border md:hidden mx-1" />
 
           <div className="hidden items-center gap-1 md:flex">
             {[
@@ -118,7 +117,7 @@ export default function PricingPage() {
           <SignedOut>
             <Link
               href="/register"
-              className="inline-flex items-center gap-2 rounded-full border border-border/40 bg-foreground/5 px-4 py-1.5 text-sm font-medium transition-all duration-300 hover:-translate-y-0.5 hover:bg-foreground hover:text-background hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] active:scale-[0.98]"
+              className="hidden md:inline-flex items-center gap-2 rounded-full border border-border/40 bg-foreground/5 px-4 py-1.5 text-sm font-medium transition-all duration-300 hover:-translate-y-0.5 hover:bg-foreground hover:text-background hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] active:scale-[0.98]"
             >
               Essai gratuit
               <ArrowUpRight size={14} />
@@ -127,7 +126,7 @@ export default function PricingPage() {
           <SignedIn>
             <Link
               href="/dashboard"
-              className="inline-flex items-center gap-2 rounded-full border border-border/40 bg-foreground/5 px-4 py-1.5 text-sm font-medium transition-all duration-300 hover:-translate-y-0.5 hover:bg-foreground hover:text-background hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] active:scale-[0.98]"
+              className="hidden md:inline-flex items-center gap-2 rounded-full border border-border/40 bg-foreground/5 px-4 py-1.5 text-sm font-medium transition-all duration-300 hover:-translate-y-0.5 hover:bg-foreground hover:text-background hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] active:scale-[0.98]"
             >
               Dashboard
               <ArrowUpRight size={14} />
@@ -165,49 +164,60 @@ export default function PricingPage() {
               }
             }}
           />
-          <span className="flex items-center gap-1.5 select-none text-sm text-muted-foreground">
+          <span className="flex items-center gap-2 select-none text-sm text-muted-foreground font-medium">
             Facturation annuelle
-            <span className="px-2 py-0.5 text-xs bg-[hsl(var(--pricing-accent)/0.2)] text-[hsl(var(--pricing-accent))] border border-[hsl(var(--pricing-accent)/0.3)] rounded-full font-bold">
-              -20%
+            <span className="px-2.5 py-1 text-xs bg-[hsl(var(--pricing-accent))] text-black border border-[hsl(var(--pricing-accent-glow)/0.4)] rounded-full font-bold tracking-wide shadow-[0_0_15px_hsl(var(--pricing-accent)/0.4)]">
+              économisez 20%
             </span>
           </span>
         </label>
       </div>
 
       {/* ---- CARDS ---- */}
-      <section className="relative z-[2] mx-auto max-w-[1180px] px-8 pb-8 -mt-7" aria-label="Pricing plans">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <section className="relative z-[2] mx-auto max-w-[1180px] px-4 md:px-8 pb-8 -mt-7" aria-label="Pricing plans">
+        <div className="flex md:grid md:grid-cols-3 gap-6 overflow-x-auto md:overflow-x-visible snap-x snap-mandatory pb-10 scrollbar-none px-4 -mx-4 md:px-0 md:mx-0">
           {plans.map((plan) => (
             <div
               key={plan.label}
               className={cn(
-                'pricing-card',
+                'pricing-card snap-center shrink-0 w-[85vw] max-w-[340px] md:w-auto md:shrink md:max-w-none',
                 plan.featured && 'pricing-card-featured',
               )}
             >
               <div>
-                <div className="flex justify-between items-center">
-                  <p className="relative z-[1] text-xl font-medium text-foreground mb-0.5">
+                <div className="flex justify-between items-center mb-3">
+                  <p className="relative z-[1] text-lg font-semibold tracking-wide uppercase text-foreground/80">
                     {plan.label}
                   </p>
                   {plan.featured && (
-                    <span className="px-2 py-0.5 text-xs font-bold tracking-wide uppercase bg-[hsl(var(--pricing-accent)/0.1)] border border-[hsl(var(--pricing-accent)/0.2)] text-[hsl(var(--pricing-accent))] rounded-full">
+                    <span className="px-2.5 py-0.5 text-[10px] font-extrabold tracking-wider uppercase bg-[hsl(var(--pricing-accent))] text-black rounded-full shadow-[0_0_12px_hsl(var(--pricing-accent)/0.3)]">
                       Recommandé
                     </span>
                   )}
                 </div>
-                <p className="relative z-[1] text-[clamp(2.2rem,4vw,3.1rem)] font-semibold tracking-tight text-foreground leading-none">
-                  {displayPrice(plan.price, yearly)}
-                  <span className="text-[clamp(1rem,1.6vw,1.35rem)] font-normal text-foreground tracking-tight">
-                    {' '}{plan.period}
+                
+                {/* Price block anchor */}
+                <div className="relative z-[1] flex items-baseline gap-1.5 py-2 border-b border-border/10 mb-4">
+                  <span className="text-[clamp(2.5rem,5vw,3.5rem)] font-extrabold tracking-tight text-foreground leading-none">
+                    {displayPrice(plan.price, yearly)}
                   </span>
-                </p>
-                <p className="relative z-[1] mt-4 max-w-[18rem] text-sm text-foreground/70 leading-relaxed">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-semibold text-foreground/80">€</span>
+                    <span className="text-xs text-muted-foreground">/mois</span>
+                  </div>
+                  {plan.label === 'Multi-site' && (
+                    <span className="text-xs text-muted-foreground ml-2 font-medium bg-foreground/5 px-2 py-0.5 rounded-full border border-border/40 self-center">
+                      + 99€/site
+                    </span>
+                  )}
+                </div>
+
+                <p className="relative z-[1] text-sm text-foreground/70 leading-relaxed min-h-[40px]">
                   {plan.description}
                 </p>
               </div>
 
-              <ul className="list-none flex flex-col gap-3 flex-1 relative z-[1] m-0 p-0">
+              <ul className="list-none flex flex-col gap-3.5 flex-1 relative z-[1] m-0 p-0">
                 {plan.features.map((feat) => (
                   <li key={feat} className="flex items-start gap-3 text-sm text-foreground/80 leading-snug">
                     <CheckIcon />
@@ -222,7 +232,7 @@ export default function PricingPage() {
                   'self-center min-w-[9.25rem] px-6 py-[0.72rem] rounded-full text-[0.82rem] font-semibold cursor-pointer border-none relative z-[1] transition-all duration-200 text-center no-underline inline-block',
                   plan.featured
                     ? 'pricing-cta-featured'
-                    : 'bg-primary text-primary-foreground hover:opacity-95 hover:-translate-y-px hover:shadow-[0_0.75rem_1.8rem_rgba(255,255,255,0.12)] active:scale-[0.99]',
+                    : 'bg-primary text-primary-foreground hover:opacity-95 hover:-translate-y-px hover:shadow-[0_0.75rem_1.8rem_rgba(255,255,255,0.12)] active:scale-95 active:bg-primary/95',
                 )}
               >
                 Souscrire
@@ -232,8 +242,34 @@ export default function PricingPage() {
         </div>
       </section>
 
+      {/* Sticky Bottom Bar on Mobile */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 p-4 bg-background/80 backdrop-blur-lg border-t border-border/40 md:hidden pb-[calc(1rem+env(safe-area-inset-bottom,0px))] flex items-center justify-between gap-4 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+        <div className="flex flex-col">
+          <span className="text-[10px] uppercase tracking-wider text-[hsl(var(--pricing-accent))] font-bold">Sokar AI</span>
+          <span className="text-xs font-semibold text-foreground">Essai gratuit de 7 jours</span>
+        </div>
+        <SignedOut>
+          <Link
+            href="/register"
+            className="flex-1 max-w-[180px] text-center inline-flex items-center justify-center gap-1.5 rounded-full bg-[hsl(var(--pricing-accent))] text-black px-4 py-2.5 text-xs font-bold shadow-[0_0_15px_hsl(var(--pricing-accent)/0.35)] transition-all duration-150 active:scale-95 active:brightness-90"
+          >
+            Essai gratuit
+            <ArrowUpRight size={14} />
+          </Link>
+        </SignedOut>
+        <SignedIn>
+          <Link
+            href="/dashboard"
+            className="flex-1 max-w-[180px] text-center inline-flex items-center justify-center gap-1.5 rounded-full bg-[hsl(var(--pricing-accent))] text-black px-4 py-2.5 text-xs font-bold shadow-[0_0_15px_hsl(var(--pricing-accent)/0.35)] transition-all duration-150 active:scale-95 active:brightness-90"
+          >
+            Dashboard
+            <ArrowUpRight size={14} />
+          </Link>
+        </SignedIn>
+      </div>
+
       {/* ---- FOOTER ---- */}
-      <footer className="border-t border-border py-6 text-center text-sm text-muted-foreground">
+      <footer className="border-t border-border py-6 text-center text-sm text-muted-foreground pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-6">
         &copy; {new Date().getFullYear()} Sokar. Tous droits réservés.
       </footer>
     </div>
