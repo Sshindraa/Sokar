@@ -12,6 +12,7 @@ import { reservationRoutes } from './modules/reservations/reservation.routes';
 import { callRoutes }        from './modules/calls/call.routes';
 import { dashboardRoutes }   from './modules/dashboard/dashboard.routes';
 import { authSyncRoutes }    from './modules/auth/auth.routes';
+import { googleRoutes }      from './modules/integrations/google.routes';
 import { testRoutes }        from './modules/test/test.routes';
 import { registerCors }      from './plugins/cors';
 import { registerRateLimit } from './plugins/rate-limit';
@@ -68,6 +69,7 @@ export async function buildApp() {
   await app.register(callRoutes);
   await app.register(dashboardRoutes);
   await app.register(authSyncRoutes);
+  await app.register(googleRoutes);
 
   // Routes de test — uniquement en dev/test (simulation d'appel sans Telnyx)
   if (process.env.NODE_ENV !== 'production') {

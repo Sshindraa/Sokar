@@ -39,18 +39,15 @@ export async function reservationRoutes(app: FastifyInstance) {
   app.patch('/reservations/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id }  = req.params as { id: string };
     const body    = UpdateReservationSchema.parse(req.body);
-    const restaurantId = req.restaurantId;
-    const updated = await db.reservation.update({
-      where: { id, restaurantId },
-      data: body,
-    });
+    const restaurantId = req.restaurantId!;
+    const updated = await ReservationService.update(id, restaurantId, body);
     return reply.send(updated);
   });
 
   app.delete('/reservations/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const restaurantId = req.restaurantId;
-    await db.reservation.delete({ where: { id, restaurantId } });
+    const restaurantId = req.restaurantId!;
+    await ReservationService.delete(id, restaurantId);
     return reply.status(204).send();
   });
 }

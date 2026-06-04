@@ -12,6 +12,7 @@ const CreateRestaurantSchema = z.object({
     z.union([z.object({ open: z.string(), close: z.string() }), z.null()])
   ),
   plan: z.enum(['STARTER', 'PRO', 'PREMIUM']).default('STARTER'),
+  googleCalendarId: z.string().nullable().optional(),
 });
 
 const UpdatePersonalitySchema = z.object({
@@ -54,6 +55,24 @@ export async function restaurantRoutes(app: FastifyInstance) {
     return reply.send(
       await app.db.restaurant.findUniqueOrThrow({ where: { id }, include: { personality: true } })
     );
+  });
+
+  app.get('/restaurants/:id/public', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      const restaurant = await app.db.restaurant.findUniqueOrThrow({
+        where: { id },
+        select: {
+          id: true,
+          name: true,
+          openingHours: true,
+          phoneNumber: true,
+        },
+      });
+      return reply.send(restaurant);
+    } catch (err: any) {
+      return reply.status(404).send({ error: 'Restaurant not found' });
+    }
   });
 
   app.patch('/restaurants/:id', { preHandler: requireOrg() }, async (req, reply) => {

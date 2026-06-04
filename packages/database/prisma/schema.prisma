@@ -24,6 +24,8 @@ model Restaurant {
   carrier         String          @default("vapi")        // "vapi" | "telnyx" — rollback feature flag
   smsConfirmEnabled Boolean       @default(true) @map("sms_confirm_enabled")
   theforkSavings  Decimal         @default(0) @map("thefork_savings") @db.Decimal(10, 2)
+  googleCalendarId String?         @map("google_calendar_id")
+  googleRefreshToken String?       @map("google_refresh_token")
   createdAt       DateTime        @default(now()) @map("created_at")
   updatedAt       DateTime        @default(now()) @updatedAt @map("updated_at")
   calls           Call[]
@@ -67,6 +69,7 @@ model Reservation {
   status           ReservationStatus @default(CONFIRMED)
   estimatedRevenue Decimal?          @map("estimated_revenue") @db.Decimal(10, 2)
   confirmedRevenue Decimal?          @map("confirmed_revenue") @db.Decimal(10, 2)
+  googleEventId    String?           @map("google_event_id")
   createdAt        DateTime          @default(now()) @map("created_at")
   restaurant       Restaurant        @relation(fields: [restaurantId], references: [id])
   call             Call?             @relation(fields: [callId], references: [id])
