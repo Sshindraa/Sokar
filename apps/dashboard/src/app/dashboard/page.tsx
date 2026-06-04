@@ -94,20 +94,20 @@ export default function DashboardPage() {
   const isNew = stats && stats.totalCalls === 0 && stats.totalReservations === 0;
 
   return (
-    <div className="space-y-6 md:space-y-8 select-none">
+    <div className="space-y-4 md:space-y-5 select-none">
 
       {isNew && (
-        <div className="rounded-2xl border border-orange-500/20 bg-orange-500/[0.03] p-6 md:p-8 text-center animate-in fade-in slide-in-from-top-4 duration-500">
-          <Sparkles size={32} className="mx-auto text-orange-400 mb-3" />
-          <h2 className="text-lg md:text-xl font-bold text-white font-display">Bienvenue sur Sokar</h2>
-          <p className="mt-2 text-sm text-white/50 max-w-md mx-auto font-sans">
-            Votre assistant téléphonique est activé. Dès que vous recevrez votre premier appel, vos statistiques apparaîtront ici.
+        <div className="rounded-xl border border-orange-500/20 bg-orange-500/[0.03] p-4 md:p-5 text-center animate-in fade-in slide-in-from-top-4 duration-500">
+          <Sparkles size={20} className="mx-auto text-orange-400 mb-2" />
+          <h2 className="text-base md:text-lg font-bold text-white font-display">Bienvenue sur Sokar</h2>
+          <p className="mt-1 text-xs text-white/50 max-w-md mx-auto font-sans">
+            Votre assistant est activé. Les statistiques apparaîtront dès le premier appel.
           </p>
         </div>
       )}
 
       {/* ================= HEADER & OVERVIEW GRID ================= */}
-      <section className="grid gap-4 md:gap-5 lg:grid-cols-[1.1fr_2fr]">
+      <section className="grid gap-4 md:gap-5 lg:grid-cols-[1.3fr_2fr]">
 
         {/* Pupitre Télémétrique Vocal HMI */}
         <TelemetryTuner orgId={orgId} />
@@ -149,10 +149,10 @@ export default function DashboardPage() {
 
         {/* Weekly Activity Bar Chart */}
         <div className="rounded-2xl border border-white/5 bg-white/[0.01] backdrop-blur-xl p-4 md:p-6 shadow-xl animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100 ease-out">
-          <div className="mb-4 md:mb-6 flex items-center justify-between gap-4">
+          <div className="mb-3 md:mb-4 flex items-center justify-between gap-4">
             <div>
               <h3 className="text-base md:text-lg font-bold tracking-tight text-white font-display">Activité hebdomadaire</h3>
-              <p className="mt-1 text-[11px] md:text-xs text-white/40 font-sans font-medium">Répartition des demandes reçues ce mois-ci</p>
+              <p className="mt-0.5 text-[11px] md:text-xs text-white/40 font-sans font-medium">Répartition des demandes reçues ce mois-ci</p>
             </div>
             <button className="h-8 w-8 rounded-full border border-white/5 bg-white/5 text-white/60 flex items-center justify-center transition-all duration-200 hover:bg-white/10 hover:text-white flex-shrink-0" aria-label="Voir les rapports">
               <ArrowUpRight size={14} />
@@ -175,10 +175,10 @@ export default function DashboardPage() {
         {/* Recent Reservations List */}
         <div className="rounded-2xl border border-white/5 bg-white/[0.01] backdrop-blur-xl p-4 md:p-6 shadow-xl flex flex-col justify-between animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200 ease-out">
           <div>
-            <div className="mb-4 md:mb-6 flex items-center justify-between gap-4">
+            <div className="mb-3 md:mb-4 flex items-center justify-between gap-4">
               <div>
                 <h3 className="text-base md:text-lg font-bold tracking-tight text-white font-display">Dernières réservations</h3>
-                <p className="mt-1 text-[11px] md:text-xs text-white/40 font-sans font-medium">Créées automatiquement par l&apos;assistant</p>
+                <p className="mt-0.5 text-[11px] md:text-xs text-white/40 font-sans font-medium">Créées automatiquement par l&apos;assistant</p>
               </div>
               <MessageSquare size={16} className="text-white/40 flex-shrink-0" />
             </div>
@@ -475,7 +475,7 @@ function TelemetryTuner({ orgId }: { orgId: string | undefined }) {
       onTouchMove={handleTouchMove}
       onTouchStart={() => setIsHovered(true)}
       onTouchEnd={() => setIsHovered(false)}
-      className="rounded-2xl border border-white/5 bg-white/[0.01] p-4 md:p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group transition-all duration-300 hover:border-white/10"
+      className="rounded-2xl border border-white/5 bg-white/[0.01] p-4 md:p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group transition-all duration-300 hover:border-white/10 min-h-[420px] md:min-h-[480px]"
     >
       <div 
         className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${isHovered ? 'opacity-100' : 'opacity-0'}`}
@@ -498,15 +498,15 @@ function TelemetryTuner({ orgId }: { orgId: string | undefined }) {
           <AudioWaveform />
         </div>
         
-        <h3 className="mt-3 md:mt-4 text-lg md:text-xl font-black leading-tight text-white font-display">
+        <h3 className="mt-2 md:mt-2.5 text-base md:text-lg font-black leading-tight text-white font-display">
           Pupitre Télémétrique Vocal
         </h3>
-        <p className="mt-1 text-xs sm:text-[11px] text-white/45 leading-relaxed font-sans">
+        <p className="mt-0.5 text-[10px] sm:text-[11px] text-white/40 leading-relaxed font-sans">
           Ajustez en temps réel les filtres neuronaux et le comportement spectral de l&apos;assistant de service.
         </p>
       </div>
 
-      <div className="mt-4 md:mt-5 space-y-3 md:space-y-3.5 z-10">
+      <div className="mt-3 md:mt-4 space-y-2 md:space-y-2.5 z-10">
         <div className="space-y-1">
           <div className="flex items-center justify-between text-xs sm:text-[11px] font-bold uppercase tracking-wider text-white/55">
             <span className="font-sans">Vitesse de parole</span>
