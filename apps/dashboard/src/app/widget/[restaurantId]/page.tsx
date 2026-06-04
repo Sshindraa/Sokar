@@ -241,10 +241,10 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
       }}
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/55 to-transparent" />
-      <div className="pointer-events-none absolute -right-28 top-40 h-64 w-64 rounded-l-full border border-white/50 bg-[hsl(var(--reservation-blue)/0.14)] blur-sm" />
-      <div className="pointer-events-none absolute left-0 top-0 h-full w-full bg-[linear-gradient(90deg,hsl(var(--reservation-ink)/0.035)_1px,transparent_1px)] bg-[length:84px_84px] opacity-40" />
+      <div className="pointer-events-none absolute -right-36 top-48 h-64 w-64 rounded-l-full border border-white/40 bg-[hsl(var(--reservation-blue)/0.08)] blur-sm" />
+      <div className="pointer-events-none absolute left-0 top-0 h-full w-full bg-[linear-gradient(90deg,hsl(var(--reservation-ink)/0.03)_1px,transparent_1px)] bg-[length:84px_84px] opacity-35" />
 
-      <div className="relative z-10 flex flex-col gap-6 px-6 pb-6 pt-12 sm:px-8">
+      <div className="relative z-10 mx-auto flex w-full max-w-7xl flex-col gap-6 px-6 pb-6 pt-12 sm:px-8">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-full border border-white/70 bg-white/65 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-xl">
@@ -259,7 +259,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
           </span>
         </div>
 
-        <div className="flex items-end justify-between gap-5">
+        <div className="flex items-end gap-5 sm:gap-7">
           <div>
             <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-[hsl(var(--reservation-muted))]">
               {success ? 'Confirmation' : 'Choisissez votre table'}
@@ -287,11 +287,11 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
           </div>
 
           {!success && (
-            <div className="mb-1 hidden min-w-[8rem] rounded-[1.5rem] border border-white/70 bg-white/55 p-4 shadow-sm backdrop-blur-xl sm:block">
+            <div className="mb-2 hidden min-w-[7rem] rounded-[1.35rem] border border-white/70 bg-white/55 p-3.5 shadow-sm backdrop-blur-xl sm:block">
               <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--reservation-muted))]">
                 En cours
               </p>
-              <p className="mt-3 text-2xl font-black leading-none text-[hsl(var(--reservation-ink))]">
+              <p className="mt-2 text-2xl font-black leading-none text-[hsl(var(--reservation-ink))]">
                 {partySize}
               </p>
               <p className="mt-1 text-xs font-semibold text-[hsl(var(--reservation-soft))]">
@@ -302,13 +302,13 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
         </div>
       </div>
 
-      <div className="relative z-10 flex flex-1 flex-col justify-between rounded-t-[2rem] border-t border-white/70 bg-[hsl(var(--reservation-panel)/0.76)] px-6 pb-10 pt-7 shadow-2xl shadow-black/5 backdrop-blur-2xl sm:mx-8 sm:mb-8 sm:rounded-[2rem] sm:border sm:px-8">
-        <div className="pointer-events-none absolute -right-1 top-24 h-28 w-14 rounded-l-full bg-[hsl(var(--reservation-blue)/0.22)]" />
-        <div className="pointer-events-none absolute right-0 top-12 h-56 w-px bg-gradient-to-b from-transparent via-[hsl(var(--reservation-blue)/0.28)] to-transparent" />
+      <div className="relative z-10 mx-auto flex w-full max-w-7xl flex-1 flex-col justify-between rounded-t-[2rem] border-t border-white/70 bg-[hsl(var(--reservation-panel)/0.76)] px-6 pb-10 pt-7 shadow-2xl shadow-black/5 backdrop-blur-2xl sm:mb-8 sm:w-[calc(100%-4rem)] sm:rounded-[2rem] sm:border sm:px-8">
+        <div className="pointer-events-none absolute -right-1 top-32 h-24 w-10 rounded-l-full bg-[hsl(var(--reservation-blue)/0.14)]" />
+        <div className="pointer-events-none absolute right-0 top-20 h-44 w-px bg-gradient-to-b from-transparent via-[hsl(var(--reservation-blue)/0.18)] to-transparent" />
 
         {success ? (
           /* ─── SUCCESS VIEW ─── */
-          <div className="flex flex-1 flex-col items-center justify-center space-y-6 py-4 text-center">
+          <div className="mx-auto flex w-full max-w-xl flex-1 flex-col items-center justify-center space-y-6 py-4 text-center">
             <div className="relative">
               <div className="absolute inset-0 animate-pulse rounded-full bg-[hsl(var(--reservation-success)/0.14)] blur-xl" />
               <CheckCircle2
@@ -387,7 +387,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
           </div>
         ) : (
           /* ─── FORM VIEWS ─── */
-          <div className="flex flex-1 flex-col justify-between">
+          <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col justify-between">
             {error && (
               <div className="mb-4 flex items-center gap-2 rounded-2xl border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
                 <AlertCircle size={16} className="flex-shrink-0" />
@@ -447,7 +447,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                           )}
                         >
                           {isSelected && (
-                            <span className="absolute right-0 top-0 h-full w-3 bg-[hsl(var(--reservation-blue)/0.42)]" />
+                            <span className="absolute right-0 top-3 h-[calc(100%-1.5rem)] w-1.5 rounded-l-full bg-[hsl(var(--reservation-blue)/0.52)]" />
                           )}
                           <span className="relative text-[24px] font-black tracking-normal">
                             {date.getDate()}
