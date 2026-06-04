@@ -15,11 +15,14 @@ const CreateRestaurantSchema = z.object({
 });
 
 const UpdatePersonalitySchema = z.object({
-  profileType:       z.enum(['BISTROT_BRASSERIE', 'GASTRONOMIQUE', 'SEMI_GASTRO']).optional(),
-  fillerStyle:       z.enum(['CASUAL', 'FORMAL', 'WARM']).optional(),
-  speakingRate:      z.number().min(0.5).max(2.0).optional(),
-  voiceIdCa:         z.string().optional(),
-  systemPromptExtra: z.string().max(2000).optional(),
+  profileType:         z.enum(['BISTROT_BRASSERIE', 'GASTRONOMIQUE', 'SEMI_GASTRO']).optional(),
+  fillerStyle:         z.enum(['CASUAL', 'FORMAL', 'WARM']).optional(),
+  speakingRate:        z.number().min(0.5).max(2.0).optional(),
+  pitchShift:          z.number().min(0.5).max(2.0).optional(),
+  microphoneThreshold: z.number().int().min(-80).max(0).optional(),
+  targetLatencyMs:     z.number().int().min(40).max(500).optional(),
+  voiceIdCa:           z.string().optional(),
+  systemPromptExtra:   z.string().max(2000).optional(),
 });
 
 export async function restaurantRoutes(app: FastifyInstance) {

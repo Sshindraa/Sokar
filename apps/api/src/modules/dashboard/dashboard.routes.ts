@@ -57,6 +57,39 @@ export async function dashboardRoutes(app: FastifyInstance) {
     });
   });
 
+  app.get('/dashboard/weekly-calls', { preHandler: dashboardGuard }, async (req, reply) => {
+    const restaurantId = req.restaurantId as string;
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - 6);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const calls = await db.call.findMany({
+      where: {
+        restaurantId,
+        createdAt: { gte: startOfWeek },
+      },
+      select: { createdAt: true },
+    });
+
+    // Lundi=0 … Dimanche=6
+    const counts = [0, 0, 0, 0, 0, 0, 0];
+    const idxMap: Record<number, number> = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
+    for (const c of calls) {
+      counts[idxMap[c.createdAt.getDay()]]++;
+    }
+
+    const max = Math.max(...counts, 1);
+    const labels = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+    const data = counts.map((calls, i) => ({
+      day: labels[i],
+      calls,
+      height: Math.round((calls / max) * 88),
+    }));
+
+    return reply.send({ data, total: calls.length });
+  });
+
   app.get('/dashboard/recent-activity', { preHandler: dashboardGuard }, async (req, reply) => {
     const restaurantId = req.restaurantId;
     const query = ActivityQuerySchema.parse(req.query);
