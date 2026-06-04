@@ -3,11 +3,17 @@
 import { useState, useEffect } from 'react';
 import { Share, Plus, X, Sparkles } from 'lucide-react';
 import { triggerHaptic } from '@/lib/utils';
+import { usePathname } from 'next/navigation';
 
 export default function PwaInstallBanner() {
+  const pathname = usePathname();
   const [show, setShow] = useState(false);
 
   useEffect(() => {
+    if (pathname?.startsWith('/widget')) {
+      setShow(false);
+      return;
+    }
     // Check if running on client-side
     if (typeof window === 'undefined') return;
 
