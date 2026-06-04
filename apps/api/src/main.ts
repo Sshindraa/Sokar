@@ -1,3 +1,7 @@
+import dotenv from 'dotenv';
+import path from 'path';
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
 import Fastify               from 'fastify';
 import { ZodError }          from 'zod';
 import * as Sentry           from '@sentry/node';
