@@ -17,10 +17,17 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle, CalendarCheck, Check, Trash2 } from 'lucide-react';
+import { AlertCircle, CalendarCheck, Check, Trash2, X } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 export default function ReservationsPage() {
-  const { get, orgId } = useApi();
+  const { get, patch, del, orgId } = useApi();
   const isMobile = useIsMobile();
 
   const [reservations, setReservations] = useState<any[]>([]);
@@ -41,6 +48,29 @@ export default function ReservationsPage() {
     }
     fetchReservations();
   }, [orgId, get]);
+
+  async function updateStatus(id: string, newStatus: string) {
+    try {
+      setError('');
+      await patch(`reservations/${id}`, { status: newStatus });
+      setReservations((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r)),
+      );
+    } catch (err: any) {
+      setError(err.message || 'Impossible de mettre à jour le statut');
+    }
+  }
+
+  async function deleteReservation(id: string) {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cette réservation ?')) return;
+    try {
+      setError('');
+      await del(`reservations/${id}`);
+      setReservations((prev) => prev.filter((r) => r.id !== id));
+    } catch (err: any) {
+      setError(err.message || 'Impossible de supprimer la réservation');
+    }
+  }
 
   if (loading) {
     return (
@@ -103,21 +133,19 @@ export default function ReservationsPage() {
                   label: 'Confirmer',
                   icon: <Check size={14} />,
                   colorClass: 'bg-emerald-600',
-                  onClick: () => {
-                    setReservations((prev) =>
-                      prev.map((r) => (r.id === res.id ? { ...r, status: 'CONFIRMED' } : r)),
-                    );
-                  },
+                  onClick: () => updateStatus(res.id, 'CONFIRMED'),
                 },
                 {
                   label: 'Annuler',
+                  icon: <X size={14} />,
+                  colorClass: 'bg-orange-600',
+                  onClick: () => updateStatus(res.id, 'CANCELLED'),
+                },
+                {
+                  label: 'Supprimer',
                   icon: <Trash2 size={14} />,
                   colorClass: 'bg-red-600',
-                  onClick: () => {
-                    setReservations((prev) =>
-                      prev.map((r) => (r.id === res.id ? { ...r, status: 'CANCELLED' } : r)),
-                    );
-                  },
+                  onClick: () => deleteReservation(res.id),
                 },
               ]}
               details={[
@@ -142,37 +170,60 @@ export default function ReservationsPage() {
         <div className="sokar-card overflow-hidden">
           <div className="mobile-table-wrapper">
             <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Client</TableHead>
-                <TableHead>Téléphone</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Couverts</TableHead>
-                <TableHead>Revenu estimé</TableHead>
-                <TableHead>Statut</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {reservations.map((res: any) => (
-                <TableRow key={res.id} className="transition-all duration-200 hover:bg-accent">
-                  <TableCell className="font-medium">{res.customerName}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {res.customerPhone || <span className="opacity-50">—</span>}
-                  </TableCell>
-                  <TableCell>
-                    {format(new Date(res.reservedAt), 'dd MMM yyyy HH:mm', { locale: fr })}
-                  </TableCell>
-                  <TableCell>{res.partySize}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {res.estimatedRevenue ? `${res.estimatedRevenue}€` : <span className="opacity-50">—</span>}
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={res.status} />
-                  </TableCell>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Téléphone</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Couverts</TableHead>
+                  <TableHead>Revenu estimé</TableHead>
+                  <TableHead>Statut</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {reservations.map((res: any) => (
+                  <TableRow key={res.id} className="transition-all duration-200 hover:bg-accent">
+                    <TableCell className="font-medium">{res.customerName}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {res.customerPhone || <span className="opacity-50">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      {format(new Date(res.reservedAt), 'dd MMM yyyy HH:mm', { locale: fr })}
+                    </TableCell>
+                    <TableCell>{res.partySize}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {res.estimatedRevenue ? `${res.estimatedRevenue}€` : <span className="opacity-50">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      <Select
+                        value={res.status}
+                        onValueChange={(val) => updateStatus(res.id, val)}
+                      >
+                        <SelectTrigger className="w-[130px] h-8 bg-transparent border-white/10 text-white font-sans text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-popover border-white/10 text-white">
+                          <SelectItem value="CONFIRMED">Confirmée</SelectItem>
+                          <SelectItem value="CANCELLED">Annulée</SelectItem>
+                          <SelectItem value="SEATED">Installée</SelectItem>
+                          <SelectItem value="NO_SHOW">No-show</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <button
+                        onClick={() => deleteReservation(res.id)}
+                        className="p-2 text-white/50 hover:text-red-500 rounded-lg hover:bg-white/5 transition-all duration-200"
+                        title="Supprimer la réservation"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         </div>
       )}

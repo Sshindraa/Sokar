@@ -58,6 +58,7 @@ export function useApi() {
   const get = useCallback(<T = any>(path: string) => apiFetch<T>('GET', path), [apiFetch]);
   const post = useCallback(<T = any>(path: string, body?: any) => apiFetch<T>('POST', path, body), [apiFetch]);
   const patch = useCallback(<T = any>(path: string, body?: any) => apiFetch<T>('PATCH', path, body), [apiFetch]);
+  const del = useCallback(<T = any>(path: string) => apiFetch<T>('DELETE', path), [apiFetch]);
 
   return {
     orgId,
@@ -65,5 +66,6 @@ export function useApi() {
     get,
     post,
     patch,
+    del,
   };
 }
