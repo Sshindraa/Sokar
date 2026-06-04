@@ -103,18 +103,6 @@ Transitions :
 ### `POST /voice/telnyx` — `call.initiated`
 Point d'entrée. Charge contexte, vérifie circuit breaker, associe client, retourne `ai_config`.
 
-### `POST /voice/telnyx/function-call` — Tool execution
-Exécute les fonctions appelées par le LLM :
-
-| Tool | Paramètres | Description |
-|------|-----------|-------------|
-| `createReservation` | date, time, partySize (1-7), customerName, customerPhone | Crée une réservation. >= 8 → auto-handoff |
-| `checkAvailability` | date, time, partySize | Vérifie créneaux dispo |
-| `getOpeningHours` | — | Retourne horaires formatés |
-| `handoffToManager` | — | SMS alert au manager |
-
-Tous les retours sont en français (lus par TTS).
-
 ### `POST /voice/telnyx/end` — Fin d'appel
 Reçoit : `call_leg_id`, `transcript`, `ended_reason`, `started_at`, `ended_at`, `stt_provider`, `llm_provider`, `tts_provider`.
 

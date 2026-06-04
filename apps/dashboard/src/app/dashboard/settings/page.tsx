@@ -9,9 +9,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Save, Bot, Store, AlertCircle, CheckCircle2, ArrowUpRight } from 'lucide-react';
 
 const PLAN_FEATURES: Record<string, { label: string; calls: string }> = {
-  STARTER:  { label: 'Starter',  calls: '1 500 appels / mois' },
-  PRO:      { label: 'Pro',      calls: '5 000 appels / mois' },
-  PREMIUM:  { label: 'Premium',  calls: 'Appels illimités' },
+  STARTER:  { label: 'Essential',  calls: '1 500 appels / mois' },
+  PRO:      { label: 'Pro',        calls: 'Appels illimités' },
+  PREMIUM:  { label: 'Multi-site', calls: 'Appels illimités — 99€/site suppl.' },
 };
 
 const PROFILE_OPTIONS = [

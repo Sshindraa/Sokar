@@ -10,7 +10,7 @@ declare module 'fastify' {
   }
 
   interface FastifyRequest {
-    restaurantId?: string;
+    restaurantId: string;
     userId?:      string | null;
   }
 }
