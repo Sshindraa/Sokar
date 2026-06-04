@@ -452,22 +452,30 @@ export class CallSessionManager {
         case 'createReservation': {
           const { date, time, partySize, customerName, customerPhone } = args;
 
-          // Fire-and-forget via le service canonique pour inclure le SMS de confirmation
-          ReservationService.create({
-            restaurantId: session.restaurantId,
-            callId: session.callLegId,
-            reservedAt: new Date(`${date}T${time}`),
-            partySize: partySize ?? 1,
-            customerName: customerName ?? 'Client',
-            customerPhone: customerPhone ?? session.from,
-          }).catch((err: any) => {
-            logger.error({ err, callId: session.callControlId }, '[tool] ReservationService.create failed');
+          try {
+            await ReservationService.create({
+              restaurantId: session.restaurantId,
+              callId: session.callLegId,
+              reservedAt: new Date(`${date}T${time}`),
+              partySize: partySize ?? 1,
+              customerName: customerName ?? 'Client',
+              customerPhone: customerPhone ?? session.from,
+            });
+
+            return `Réservation confirmée pour ${customerName ?? 'le client'}, le ${date} à ${time}, pour ${partySize ?? 1} personne(s). Un SMS de confirmation va être envoyé au client.`;
+          } catch (err: any) {
+            logger.error({ err: err.message, callId: session.callControlId }, '[tool] ReservationService.create failed');
+            
             if (process.env.SENTRY_DSN) {
               Sentry.captureException(err, { tags: { service: 'manager-tool' }, extra: { callId: session.callControlId } });
             }
-          });
 
-          return `Réservation confirmée pour ${customerName ?? 'le client'}, le ${date} à ${time}, pour ${partySize ?? 1} personne(s). Un SMS de confirmation va être envoyé au client.`;
+            if (err.message === 'SLOT_NOT_AVAILABLE') {
+              return `Désolé, ce créneau horaire n'est pas disponible (il y a un conflit dans l'agenda). Veuillez proposer une autre date ou heure.`;
+            }
+
+            return `Désolé, une erreur technique est survenue lors de l'enregistrement de la réservation. Veuillez essayer un autre créneau ou demander à parler au gérant.`;
+          }
         }
 
         case 'handoffToManager':
