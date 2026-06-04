@@ -1,5 +1,5 @@
 import { db } from '../../shared/db/client';
-import { THEFORK_COMMISSION_PER_PAX } from '@sokar/config';
+import { THEFORK_COMMISSION_PER_PAX, DEFAULT_AVERAGE_TICKET, PLAN_PRICE_MAP } from '@sokar/config';
 
 export interface RoiReport {
   period:            string;
@@ -11,11 +11,7 @@ export interface RoiReport {
   roiMultiplier:     number;
 }
 
-const PLAN_PRICES: Record<string, number> = {
-  STARTER: 149,
-  PRO:     249,
-  PREMIUM: 349,
-};
+const PLAN_PRICES: Record<string, number> = PLAN_PRICE_MAP;
 
 export async function computeRoi(restaurantId: string, period: string): Promise<RoiReport> {
   const [year, month] = period.split('-').map(Number);
@@ -33,16 +29,22 @@ export async function computeRoi(restaurantId: string, period: string): Promise<
     }),
   ]);
 
-  const totalCouverts    = reservations.reduce((s: number, r: any) => s + r.partySize, 0);
-  const estimatedRevenue = reservations.reduce((s: number, r: any) => s + Number(r.estimatedRevenue ?? 0), 0);
-  const theforkSavings   = totalCouverts * THEFORK_COMMISSION_PER_PAX;
-  const monthlyCost      = PLAN_PRICES[restaurant.plan] ?? 149;
+  const totalCouverts = reservations.reduce((s: number, r: any) => s + r.partySize, 0);
+
+  // estimatedRevenue from DB if available, else fallback to partySize * DEFAULT_AVERAGE_TICKET
+  const estimatedRevenue = reservations.reduce((s: number, r: any) => {
+    const rev = Number(r.estimatedRevenue ?? 0);
+    return s + (rev > 0 ? rev : r.partySize * DEFAULT_AVERAGE_TICKET);
+  }, 0);
+
+  const theforkSavings = totalCouverts * THEFORK_COMMISSION_PER_PAX;
+  const monthlyCost    = PLAN_PRICES[restaurant.plan] ?? 149;
 
   return {
     period,
     totalReservations: reservations.length,
     totalCouverts,
-    estimatedRevenue,
+    estimatedRevenue: Math.round(estimatedRevenue),
     theforkSavings,
     sokarMonthlyCost: monthlyCost,
     roiMultiplier: monthlyCost > 0 ? Math.round((theforkSavings / monthlyCost) * 10) / 10 : 0,

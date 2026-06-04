@@ -91,7 +91,6 @@ Voir [[Database Schema]] pour le schéma complet.
 | Endpoint | Rôle |
 |----------|------|
 | `POST /voice/incoming` | Charge contexte restaurant, vérifie circuit breaker, retourne config assistant Vapi |
-| `POST /voice/function-call` | Exécute createReservation \| checkAvailability \| getOpeningHours \| handoffToManager |
 | `POST /voice/end` | Persiste durée + transcript + outcome en base |
 
 **Détails outcome detection** (`voice/outcome.ts`) :

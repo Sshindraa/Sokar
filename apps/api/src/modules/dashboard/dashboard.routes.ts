@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z }              from 'zod';
 import { db }             from '../../shared/db/client';
 import { getAuth }        from '@clerk/fastify';
+import { computeRoi }     from '../analytics/roi.service';
 
 const StatsQuerySchema = z.object({
   restaurantId: z.string(),
@@ -21,14 +22,20 @@ async function dashboardGuard(req: FastifyRequest, reply: FastifyReply) {
   req.userId = userId;
 }
 
+function currentPeriod(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export async function dashboardRoutes(app: FastifyInstance) {
 
   app.get('/dashboard/stats', { preHandler: dashboardGuard }, async (req, reply) => {
-    const restaurantId = req.restaurantId;
+    const restaurantId = req.restaurantId as string;
 
-    const [totalCalls, totalReservations] = await Promise.all([
+    const [totalCalls, totalReservations, roi] = await Promise.all([
       db.call.count({ where: { restaurantId } }),
       db.reservation.count({ where: { restaurantId } }),
+      computeRoi(restaurantId, currentPeriod()),
     ]);
 
     const answeredCalls = await db.call.count({
@@ -39,13 +46,14 @@ export async function dashboardRoutes(app: FastifyInstance) {
       ? Math.round((answeredCalls / totalCalls) * 100)
       : 0;
 
-    const revenueRecovered = Math.round(totalReservations * 35 * 2.5);
-
     return reply.send({
       total_calls:        totalCalls,
       total_reservations: totalReservations,
       answered_rate:      answeredRate,
-      revenue_recovered:  revenueRecovered,
+      revenue_recovered:  roi.estimatedRevenue,
+      thefork_savings:    roi.theforkSavings,
+      roi_multiplier:     roi.roiMultiplier,
+      period:             roi.period,
     });
   });
 

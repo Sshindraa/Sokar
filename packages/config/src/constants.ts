@@ -1,8 +1,21 @@
 export const PLANS = {
-  STARTER:  { label: 'Starter' },
-  PRO:      { label: 'Pro' },
-  PREMIUM:  { label: 'Premium' },
+  ESSENTIAL:  { label: 'Essential', price: 149 },
+  PRO:        { label: 'Pro',       price: 249 },
+  MULTI_SITE: { label: 'Multi-site', price: 249 },
 } as const;
+
+// Legacy mapping — DB still uses STARTER / PREMIUM until migration
+export const PLAN_LABEL_MAP: Record<string, string> = {
+  STARTER:  'Essential',
+  PRO:      'Pro',
+  PREMIUM:  'Multi-site',
+};
+
+export const PLAN_PRICE_MAP: Record<string, number> = {
+  STARTER:  149,
+  PRO:      249,
+  PREMIUM:  249, // Multi-site base price
+};
 
 export const INTERNAL_CALL_ALERT_THRESHOLD = 3000;
 export const CIRCUIT_BREAKER_HOURLY_LIMIT  = 200;
@@ -18,6 +31,7 @@ export const TTS_CACHE_MIN_LENGTH       = 8;
 
 // ─── Sprint 2 — ROI / TheFork ──────────────────────────────────────────────
 export const THEFORK_COMMISSION_PER_PAX = 3;
+export const DEFAULT_AVERAGE_TICKET      = 35; // € par personne — fallback si pas de estimatedRevenue en DB
 
 // ─── Sprint 2 — VIP / LLM ──────────────────────────────────────────────────
 export const VIP_PARTY_SIZE_THRESHOLD   = 6;

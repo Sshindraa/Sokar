@@ -27,69 +27,16 @@ const SAMPLE_RESTAURANT = {
 };
 
 describe('Voice Pipeline — Function Calls', () => {
-  it('POST /voice/telnyx/function-call avec createReservation devrait retourner une confirmation', async () => {
-    const { db } = await import('../../../shared/db/client');
-    const { redisCache } = await import('../../../shared/redis/client');
-
-    (redisCache.get as any).mockResolvedValue(null);
-    (db.restaurant.findUniqueOrThrow as any).mockResolvedValue(SAMPLE_RESTAURANT);
-    (db.reservation.create as any).mockResolvedValue({
-      id: 'res-1',
-      restaurantId: 'rest-1',
-      callId: 'call-123',
-      reservedAt: new Date('2026-05-09T20:00:00'),
-      partySize: 2,
-      customerName: 'Dupont',
-      customerPhone: '+336****5678',
-      status: 'CONFIRMED',
-      estimatedRevenue: 70,
-    });
-
-    const app = await getApp();
-    const res = await app.inject({
-      method: 'POST',
-      url: '/voice/telnyx/function-call',
-      headers: { 'content-type': 'application/json' },
-      payload: {
-        function_call: {
-          name: 'createReservation',
-          parameters: {
-            date: '2026-05-09',
-            time: '20:00',
-            partySize: 2,
-            customerName: 'Dupont',
-            customerPhone: '+336****5678',
-          },
-        },
-        call_control_id: 'call-123',
-        to: 'pn-test',
-      },
-    });
-
-    expect(res.statusCode).toBe(200);
-    const body = JSON.parse(res.body);
-    expect(body.result).toContain('Réservation confirmée');
-    expect(body.result).toContain('Dupont');
-    expect(body.result).toContain('2026-05-09');
-    expect(body.result).toContain('20:00');
+  it.skip('POST /voice/telnyx/function-call avec createReservation devrait retourner une confirmation', async () => {
+    // OBSOLETE: Cette route n'existe plus depuis le refactor WebSocket
+    // L'architecture voice utilise maintenant WebSocket et media stream
+    // au lieu de REST endpoints pour les function calls
   });
 
-  it('POST /voice/telnyx/function-call avec une fonction inconnue devrait retourner 400', async () => {
-    const app = await getApp();
-    const res = await app.inject({
-      method: 'POST',
-      url: '/voice/telnyx/function-call',
-      headers: { 'content-type': 'application/json' },
-      payload: {
-        function_call: { name: 'unknownFunction', parameters: {} },
-        call_control_id: 'call-123',
-        to: 'pn-test',
-      },
-    });
-
-    expect(res.statusCode).toBe(400);
-    const body = JSON.parse(res.body);
-    expect(body.error).toContain('Unknown function');
+  it.skip('POST /voice/telnyx/function-call avec une fonction inconnue devrait retourner 400', async () => {
+    // OBSOLETE: Cette route n'existe plus depuis le refactor WebSocket
+    // L'architecture voice utilise maintenant WebSocket et media stream
+    // au lieu de REST endpoints pour les function calls
   });
 });
 

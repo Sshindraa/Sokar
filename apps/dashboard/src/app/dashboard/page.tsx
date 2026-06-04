@@ -19,6 +19,9 @@ type DashboardStats = {
   totalReservations: number;
   answeredRate: number;
   revenueRecovered: number;
+  theforkSavings: number;
+  roiMultiplier: number;
+  period: string;
 };
 
 const CHART_DATA = [
@@ -53,6 +56,9 @@ export default function DashboardPage() {
           totalReservations: s.total_reservations ?? 0,
           answeredRate: s.answered_rate ?? 0,
           revenueRecovered: s.revenue_recovered ?? 0,
+          theforkSavings: s.thefork_savings ?? 0,
+          roiMultiplier: s.roi_multiplier ?? 0,
+          period: s.period ?? '',
         });
         setActivity(a);
       } catch (err: any) {
@@ -118,6 +124,9 @@ export default function DashboardPage() {
             icon={Euro}
             isRevenue
             featured
+            subtitle={stats?.theforkSavings
+              ? `+ ${stats.theforkSavings.toLocaleString('fr-FR')} € économisés sur TheFork`
+              : undefined}
           />
         </div>
       </section>
@@ -552,6 +561,7 @@ function MetricCard({
   dialValue,
   isRevenue,
   featured,
+  subtitle,
 }: {
   label: string;
   value: number;
@@ -561,6 +571,7 @@ function MetricCard({
   dialValue?: number;
   isRevenue?: boolean;
   featured?: boolean;
+  subtitle?: string;
 }) {
   const [coords, setCoords] = useState({ x: 0, y: 0 });
   const [isHovered, setIsHovered] = useState(false);
@@ -634,6 +645,11 @@ function MetricCard({
           <p className="mt-1 text-[11px] md:text-xs font-bold text-white/40 tracking-wider uppercase font-sans">
             {label}
           </p>
+          {subtitle && (
+            <p className="mt-0.5 text-[10px] text-white/25 font-sans truncate">
+              {subtitle}
+            </p>
+          )}
         </div>
 
         {isDial && dialValue !== undefined && (

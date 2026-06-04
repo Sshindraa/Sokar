@@ -7,60 +7,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id            String    @id @default(uuid())
-  email         String    @unique
-  name          String?
-  emailVerified Boolean   @default(false) @map("email_verified")
-  image         String?
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-  sessions      Session[]
-  accounts      Account[]
-  @@ignore // Clerk gère l'auth — table inutilisée par le code
-  @@map("users")
-}
-
-model Session {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  token     String   @unique
-  expiresAt DateTime @map("expires_at")
-  ipAddress String?  @map("ip_address")
-  userAgent String?  @map("user_agent")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  @@ignore // Clerk gère l'auth — table inutilisée par le code
-  @@map("sessions")
-}
-
-model Account {
-  id                    String    @id @default(uuid())
-  userId                String    @map("user_id")
-  accountId             String    @map("account_id")
-  providerId            String    @map("provider_id")
-  accessToken           String?   @map("access_token")
-  refreshToken          String?   @map("refresh_token")
-  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
-  scope                 String?
-  password              String?
-  createdAt             DateTime  @default(now()) @map("created_at")
-  updatedAt             DateTime  @updatedAt @map("updated_at")
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  @@ignore // Clerk gère l'auth — tokens/password jamais lus par le code
-  @@map("accounts")
-}
-
-model Verification {
-  id         String   @id @default(uuid())
-  identifier String
-  value      String
-  expiresAt  DateTime @map("expires_at")
-  createdAt  DateTime @default(now()) @map("created_at")
-  @@ignore // Non utilisé — Clerk gère les vérifications
-  @@map("verifications")
-}
+// ─── Auth tables supprimées ────────────────────────────────────────
+// User, Session, Account, Verification étaient marquées @@ignore
+// car Clerk gère 100% de l'authentification.
+// Les tables restent en DB mais ne polluent plus le schema Prisma.
+// Pour les dropper : DROP TABLE IF EXISTS users, sessions, accounts, verifications CASCADE;
 
 model Restaurant {
   id              String          @id @default(uuid())
@@ -71,8 +22,10 @@ model Restaurant {
   phoneNumber     String          @unique @map("phone_number")
   openingHours    Json            @map("opening_hours")
   carrier         String          @default("vapi")        // "vapi" | "telnyx" — rollback feature flag
+  smsConfirmEnabled Boolean       @default(true) @map("sms_confirm_enabled")
   theforkSavings  Decimal         @default(0) @map("thefork_savings") @db.Decimal(10, 2)
   createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @default(now()) @updatedAt @map("updated_at")
   calls           Call[]
   reservations    Reservation[]
   customers       Customer[]
@@ -94,6 +47,7 @@ model Call {
   ttsProvider   String?       @map("tts_provider")
   carrier       String?
   createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @default(now()) @updatedAt @map("updated_at")
   restaurant    Restaurant    @relation(fields: [restaurantId], references: [id])
   reservation   Reservation?
   latencyTrace  LatencyTrace?
@@ -118,6 +72,8 @@ model Reservation {
   call             Call?             @relation(fields: [callId], references: [id])
   customer         Customer?         @relation(fields: [customerId], references: [id])
   @@index([restaurantId, createdAt(sort: Desc)])
+  @@index([restaurantId, status, createdAt(sort: Desc)])
+  @@index([restaurantId, reservedAt])
   @@map("reservations")
 }
 
@@ -174,7 +130,6 @@ model LatencyTrace {
   totalE2eMs     Int?     @map("total_e2e_ms")
   createdAt      DateTime @default(now()) @map("created_at")
   call           Call     @relation(fields: [callId], references: [id])
-  @@index([callId])
   @@map("latency_traces")
 }
 
