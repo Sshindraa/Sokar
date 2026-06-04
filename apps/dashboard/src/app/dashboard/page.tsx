@@ -414,24 +414,68 @@ function AudioWaveform() {
   );
 }
 
-const PROFILE_OPTIONS = [
-  { value: 'BISTROT_BRASSERIE', label: 'Bistrot & Brasserie' },
-  { value: 'SEMI_GASTRO', label: 'Semi-gastro' },
-  { value: 'GASTRONOMIQUE', label: 'Gastronomique' },
-] as const;
+const PROFILE_VALUES = ['BISTROT_BRASSERIE', 'SEMI_GASTRO', 'GASTRONOMIQUE'];
+const PROFILE_LABELS = ['Bistrot & Brasserie', 'Semi-gastro', 'Gastronomique'];
 
-const PERSONALITY_OPTIONS = [
-  { value: 'WARM', label: 'Chaleureux' },
-  { value: 'FORMAL', label: 'Professionnel' },
-  { value: 'CASUAL', label: 'Décontracté' },
-] as const;
+const STYLE_VALUES = ['WARM', 'FORMAL', 'CASUAL'];
+const STYLE_LABELS = ['Chaleureux', 'Professionnel', 'Décontracté'];
+
+const SPEED_VALUES = [0.8, 1.15, 1.5];
+const SPEED_LABELS = ['Posé', 'Normal', 'Dynamique'];
+
+const PITCH_VALUES = [0.7, 1.0, 1.3];
+const PITCH_LABELS = ['Chaude', 'Neutre', 'Claire'];
+
+function SegmentedSlider({
+  label,
+  value,
+  labels,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  labels: string[];
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/55">
+        <span className="font-sans">{label}</span>
+        <span className="font-mono text-orange-400">{labels[value]}</span>
+      </div>
+      <div className="relative flex items-center h-6">
+        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-0.5 bg-white/10 rounded-full" />
+        <div className="absolute inset-x-[2px] top-1/2 -translate-y-1/2 flex justify-between pointer-events-none">
+          {labels.map((_, i) => (
+            <div
+              key={i}
+              className={`w-2 h-2 rounded-full transition-all duration-200 ${
+                i === value ? 'bg-orange-400 scale-125' : 'bg-white/25'
+              }`}
+            />
+          ))}
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={labels.length - 1}
+          step={1}
+          value={value}
+          onChange={(e) => onChange(parseInt(e.target.value, 10))}
+          className="relative z-10 w-full h-full appearance-none cursor-pointer accent-orange-500 bg-transparent transition-all focus:outline-none focus:ring-0"
+          style={{ minHeight: 44 }}
+        />
+      </div>
+    </div>
+  );
+}
 
 function TelemetryTuner({ orgId }: { orgId: string | undefined }) {
   const { get, patch } = useApi();
-  const [speed, setSpeed] = useState(1.15);
-  const [pitch, setPitch] = useState(1.0);
-  const [profileType, setProfileType] = useState('BISTROT_BRASSERIE');
-  const [fillerStyle, setFillerStyle] = useState('CASUAL');
+  const [profileIdx, setProfileIdx] = useState(0);
+  const [styleIdx, setStyleIdx] = useState(2);
+  const [speedIdx, setSpeedIdx] = useState(1);
+  const [pitchIdx, setPitchIdx] = useState(1);
   const [coords, setCoords] = useState({ x: 0, y: 0 });
   const [isHovered, setIsHovered] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -441,10 +485,14 @@ function TelemetryTuner({ orgId }: { orgId: string | undefined }) {
     if (!orgId) return;
     get(`restaurants/${orgId}/personality`).then((p: any) => {
       if (!p) return;
-      setSpeed(Number(p.speakingRate ?? 1.15));
-      setPitch(Number(p.pitchShift ?? 1.0));
-      setProfileType(p.profileType ?? 'BISTROT_BRASSERIE');
-      setFillerStyle(p.fillerStyle ?? 'CASUAL');
+      const pi = Math.max(0, PROFILE_VALUES.indexOf(p.profileType ?? 'BISTROT_BRASSERIE'));
+      const si = Math.max(0, STYLE_VALUES.indexOf(p.fillerStyle ?? 'CASUAL'));
+      const spi = Math.max(0, SPEED_VALUES.indexOf(Number(p.speakingRate ?? 1.15)));
+      const pi2 = Math.max(0, PITCH_VALUES.indexOf(Number(p.pitchShift ?? 1.0)));
+      setProfileIdx(pi);
+      setStyleIdx(si);
+      setSpeedIdx(spi >= 0 ? spi : 1);
+      setPitchIdx(pi2 >= 0 ? pi2 : 1);
     }).catch(() => {});
   }, [orgId, get]);
 
@@ -519,85 +567,30 @@ function TelemetryTuner({ orgId }: { orgId: string | undefined }) {
       </div>
 
       <div className="mt-3 md:mt-4 space-y-3 md:space-y-4 z-10">
-        {/* Ambiance établissement */}
-        <div className="space-y-1.5">
-          <span className="block text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/55 font-sans">Ambiance de l&apos;établissement</span>
-          <div className="flex flex-wrap gap-1.5">
-            {PROFILE_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => { setProfileType(opt.value); save({ profileType: opt.value }); }}
-                className={`px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-bold transition-all duration-200 border ${
-                  profileType === opt.value
-                    ? 'bg-orange-500/15 border-orange-500/30 text-orange-400'
-                    : 'bg-white/[0.03] border-white/5 text-white/40 hover:text-white/60 hover:border-white/10'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Personnalité */}
-        <div className="space-y-1.5">
-          <span className="block text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/55 font-sans">Personnalité de l&apos;agent</span>
-          <div className="flex flex-wrap gap-1.5">
-            {PERSONALITY_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => { setFillerStyle(opt.value); save({ fillerStyle: opt.value }); }}
-                className={`px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-bold transition-all duration-200 border ${
-                  fillerStyle === opt.value
-                    ? 'bg-orange-500/15 border-orange-500/30 text-orange-400'
-                    : 'bg-white/[0.03] border-white/5 text-white/40 hover:text-white/60 hover:border-white/10'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Rapidité de parole */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/55">
-            <span className="font-sans">Rapidité de parole</span>
-            <span className="font-mono text-orange-400">{speed <= 0.95 ? 'Posé' : speed <= 1.15 ? 'Normal' : 'Dynamique'}</span>
-          </div>
-          <div className="relative flex items-center">
-            <input 
-              type="range" 
-              min="0.8" 
-              max="1.5" 
-              step="0.05" 
-              value={speed}
-              onChange={(e) => { const v = parseFloat(e.target.value); setSpeed(v); save({ speakingRate: v }); }}
-              className="w-full h-2 sm:h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
-              style={{ minHeight: 44 }}
-            />
-          </div>
-        </div>
-
-        {/* Hauteur de la voix */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/55">
-            <span className="font-sans">Hauteur de la voix</span>
-            <span className="font-mono text-orange-400">{pitch <= 0.9 ? 'Chaude' : pitch <= 1.1 ? 'Neutre' : 'Claire'}</span>
-          </div>
-          <div className="relative flex items-center">
-            <input 
-              type="range" 
-              min="0.7" 
-              max="1.3" 
-              step="0.05" 
-              value={pitch}
-              onChange={(e) => { const v = parseFloat(e.target.value); setPitch(v); save({ pitchShift: v }); }}
-              className="w-full h-2 sm:h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
-              style={{ minHeight: 44 }}
-            />
-          </div>
-        </div>
+        <SegmentedSlider
+          label="Ambiance de l&apos;établissement"
+          value={profileIdx}
+          labels={PROFILE_LABELS}
+          onChange={(v) => { setProfileIdx(v); save({ profileType: PROFILE_VALUES[v] }); }}
+        />
+        <SegmentedSlider
+          label="Personnalité de l&apos;agent"
+          value={styleIdx}
+          labels={STYLE_LABELS}
+          onChange={(v) => { setStyleIdx(v); save({ fillerStyle: STYLE_VALUES[v] }); }}
+        />
+        <SegmentedSlider
+          label="Rapidité de parole"
+          value={speedIdx}
+          labels={SPEED_LABELS}
+          onChange={(v) => { setSpeedIdx(v); save({ speakingRate: SPEED_VALUES[v] }); }}
+        />
+        <SegmentedSlider
+          label="Timbre de la voix"
+          value={pitchIdx}
+          labels={PITCH_LABELS}
+          onChange={(v) => { setPitchIdx(v); save({ pitchShift: PITCH_VALUES[v] }); }}
+        />
       </div>
 
       <div className="mt-3 md:mt-4 pt-2 md:pt-3 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-0 text-[10px] md:text-[11px] font-bold text-white/35 uppercase tracking-widest z-10 font-mono">
