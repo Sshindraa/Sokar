@@ -20,6 +20,9 @@ export function formatOpeningHours(hours: OpeningHours): string {
 }
 
 export function buildSystemPrompt(ctx: any): string {
+  const customerPart = ctx.customerExtra ? `\n${ctx.customerExtra}\n` : '';
+  const extraPart = ctx.personality?.systemPromptExtra ? `\n${ctx.personality.systemPromptExtra}` : '';
+
   return `Tu es l'assistant vocal de ${ctx.name}.
 
 RÈGLE ABSOLUE : Au tout début de chaque appel, tu DOIS dire :
@@ -40,6 +43,5 @@ ${formatOpeningHours(ctx.openingHours)}
 OUTIL DISPONIBLE :
 - createReservation : finaliser une réservation (demande d'abord nom, date, heure, nombre)
 - handoffToManager : transférer l'appel au gérant
-
-${ctx.personality?.systemPromptExtra ?? ''}`;
+${customerPart}${extraPart}`;
 }
