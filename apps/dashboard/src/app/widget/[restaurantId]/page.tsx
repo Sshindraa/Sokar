@@ -224,7 +224,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
       </div>
 
       {/* Floating White Card at bottom */}
-      <div className="relative z-10 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 rounded-t-[2.5rem] px-6 pt-8 pb-10 flex-1 flex flex-col justify-between shadow-[0_-15px_30px_rgba(0,0,0,0.4)] transition-all duration-300">
+      <div className="relative z-10 bg-white text-zinc-900 rounded-t-[2.5rem] px-6 pt-8 pb-10 flex-1 flex flex-col justify-between shadow-[0_-15px_30px_rgba(0,0,0,0.15)] transition-all duration-300">
         
         {success ? (
           /* Confirmation / Success view */
@@ -234,33 +234,33 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
               <CheckCircle2 size={72} className="text-emerald-500 relative z-10 animate-bounce" />
             </div>
             <div className="space-y-2">
-              <h2 className="text-2xl font-bold tracking-tight">Table réservée !</h2>
-              <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+              <h2 className="text-2xl font-bold tracking-tight text-zinc-900">Table réservée !</h2>
+              <p className="text-sm text-zinc-500 max-w-xs mx-auto">
                 Votre réservation chez <strong>{restaurant?.name}</strong> est bien confirmée.
               </p>
             </div>
 
-            <div className="w-full bg-secondary/40 rounded-3xl p-5 space-y-4 border border-border text-left">
-              <div className="flex justify-between items-center pb-2 border-b border-border/50">
-                <span className="text-xs text-muted-foreground uppercase font-semibold">Date</span>
+            <div className="w-full bg-zinc-50 rounded-3xl p-5 space-y-4 border border-zinc-200/60 text-left text-zinc-900">
+              <div className="flex justify-between items-center pb-2 border-b border-zinc-200/60">
+                <span className="text-xs text-zinc-400 uppercase font-semibold">Date</span>
                 <span className="text-sm font-semibold">{selectedDate && formatDateFull(selectedDate)}</span>
               </div>
-              <div className="flex justify-between items-center pb-2 border-b border-border/50">
-                <span className="text-xs text-muted-foreground uppercase font-semibold">Heure</span>
-                <span className="text-sm font-semibold">{selectedTime}</span>
+              <div className="flex justify-between items-center pb-2 border-b border-zinc-200/60">
+                <span className="text-xs text-zinc-400 uppercase font-semibold">Heure</span>
+                <span className="text-sm font-semibold">{selectedTime.replace(':', 'h')}</span>
               </div>
-              <div className="flex justify-between items-center pb-2 border-b border-border/50">
-                <span className="text-xs text-muted-foreground uppercase font-semibold">Couverts</span>
+              <div className="flex justify-between items-center pb-2 border-b border-zinc-200/60">
+                <span className="text-xs text-zinc-400 uppercase font-semibold">Couverts</span>
                 <span className="text-sm font-semibold">{partySize} personne(s)</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-xs text-muted-foreground uppercase font-semibold">Nom</span>
+                <span className="text-xs text-zinc-400 uppercase font-semibold">Nom</span>
                 <span className="text-sm font-semibold">{customerName}</span>
               </div>
             </div>
 
             <div className="pt-4 w-full">
-              <p className="text-xs text-muted-foreground mb-4">
+              <p className="text-xs text-zinc-400 mb-4">
                 Un SMS de confirmation a été envoyé au {customerPhone}.
               </p>
               <Button 
@@ -271,7 +271,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                   setCustomerName('');
                   setCustomerPhone('');
                 }}
-                className="w-full rounded-full py-6 transition-all duration-200"
+                className="w-full rounded-full py-6 bg-zinc-950 hover:bg-zinc-900 text-white font-semibold transition-all duration-200"
               >
                 Faire une autre réservation
               </Button>
@@ -293,7 +293,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                 
                 {/* Party Size Selector */}
                 <div className="space-y-3">
-                  <label className="text-xs uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <label className="text-xs uppercase font-bold tracking-wider text-zinc-400 flex items-center gap-1.5">
                     <Users size={14} />
                     Nombre de personnes
                   </label>
@@ -301,11 +301,12 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                     {[1, 2, 3, 4, 5, 6, 7, 8].map((size) => (
                       <button
                         key={size}
+                        type="button"
                         onClick={() => setPartySize(size)}
                         className={`flex-shrink-0 h-11 w-11 rounded-full border text-sm font-semibold transition-all duration-200 ${
                           partySize === size
-                            ? 'border-primary bg-primary text-primary-foreground scale-105 shadow-md'
-                            : 'border-input hover:bg-secondary/80 text-muted-foreground'
+                            ? 'border-zinc-950 bg-zinc-950 text-white scale-105 shadow-md font-bold'
+                            : 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700'
                         }`}
                       >
                         {size}
@@ -316,7 +317,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
 
                 {/* Date Selector (Horizontal Scroll) */}
                 <div className="space-y-3">
-                  <label className="text-xs uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <label className="text-xs uppercase font-bold tracking-wider text-zinc-400 flex items-center gap-1.5">
                     <CalendarIcon size={14} />
                     Sélectionner la date
                   </label>
@@ -326,14 +327,15 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                       return (
                         <button
                           key={idx}
+                          type="button"
                           onClick={() => {
                             setSelectedDate(date);
                             setSelectedTime(''); // Reset selected time slot
                           }}
                           className={`flex-shrink-0 flex flex-col items-center justify-center min-w-[70px] h-[90px] rounded-2xl border transition-all duration-200 snap-center ${
                             isSelected
-                              ? 'border-primary bg-primary/5 text-primary scale-105 font-bold shadow-md'
-                              : 'border-border bg-card text-card-foreground hover:bg-secondary/40'
+                              ? 'border-zinc-950 bg-zinc-950 text-white scale-105 font-bold shadow-md'
+                              : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100/70'
                           }`}
                         >
                           <span className="text-2xl font-extrabold tracking-tight">
@@ -350,7 +352,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
 
                 {/* Time Slot Selector */}
                 <div className="space-y-3">
-                  <label className="text-xs uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <label className="text-xs uppercase font-bold tracking-wider text-zinc-400 flex items-center gap-1.5">
                     <Clock size={14} />
                     Créneau horaire
                   </label>
@@ -361,11 +363,12 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         return (
                           <button
                             key={time}
+                            type="button"
                             onClick={() => setSelectedTime(time)}
                             className={`py-3 px-1 rounded-xl text-sm font-semibold transition-all duration-200 text-center border ${
                               isSelected
-                                ? 'border-primary bg-primary text-primary-foreground font-bold shadow-md'
-                                : 'border-border bg-card text-muted-foreground hover:bg-secondary/60'
+                                ? 'border-zinc-950 bg-zinc-950 text-white font-bold shadow-md'
+                                : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100/70'
                             }`}
                           >
                             {time.replace(':', 'h')}
@@ -374,7 +377,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                       })}
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center p-6 border border-dashed border-border rounded-2xl text-muted-foreground">
+                    <div className="flex flex-col items-center justify-center p-6 border border-dashed border-zinc-200 rounded-2xl text-zinc-400">
                       <AlertCircle size={20} className="mb-2 opacity-55" />
                       <span className="text-sm">Restaurant fermé à cette date.</span>
                     </div>
@@ -385,12 +388,12 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
             ) : (
               /* Step 2: Contact Information Form */
               <form onSubmit={handleSubmit} className="space-y-5 flex-1 animate-fade-in pt-2">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+                <div className="flex items-center gap-2 text-sm text-zinc-500 mb-4">
                   <Button 
                     type="button" 
                     variant="ghost" 
                     onClick={() => setStep(1)} 
-                    className="p-1.5 h-auto rounded-full hover:bg-secondary"
+                    className="p-1.5 h-auto rounded-full hover:bg-zinc-100 text-zinc-500 hover:text-zinc-800"
                   >
                     <ChevronLeft size={20} />
                   </Button>
@@ -401,7 +404,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
 
                 {/* Name */}
                 <div className="space-y-2">
-                  <label className="text-xs uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <label className="text-xs uppercase font-bold tracking-wider text-zinc-400 flex items-center gap-1.5">
                     <User size={14} />
                     Votre Nom complet *
                   </label>
@@ -410,13 +413,13 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                     onChange={(e) => setCustomerName(e.target.value)}
                     placeholder="Ex: Alice Martin"
                     required
-                    className="h-12 rounded-xl focus-visible:ring-primary transition-all duration-200"
+                    className="h-12 rounded-xl border-zinc-200 bg-white text-zinc-900 placeholder:text-zinc-400 focus-visible:ring-zinc-950 transition-all duration-200"
                   />
                 </div>
 
                 {/* Phone */}
                 <div className="space-y-2">
-                  <label className="text-xs uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <label className="text-xs uppercase font-bold tracking-wider text-zinc-400 flex items-center gap-1.5">
                     <Phone size={14} />
                     Numéro de Téléphone *
                   </label>
@@ -426,16 +429,16 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                     onChange={(e) => setCustomerPhone(e.target.value)}
                     placeholder="Ex: 0612345678"
                     required
-                    className="h-12 rounded-xl focus-visible:ring-primary transition-all duration-200"
+                    className="h-12 rounded-xl border-zinc-200 bg-white text-zinc-900 placeholder:text-zinc-400 focus-visible:ring-zinc-950 transition-all duration-200"
                   />
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-[11px] text-zinc-400">
                     Utilisé pour vous envoyer un SMS de confirmation gratuit.
                   </p>
                 </div>
 
                 {/* Email */}
                 <div className="space-y-2">
-                  <label className="text-xs uppercase font-bold tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <label className="text-xs uppercase font-bold tracking-wider text-zinc-400 flex items-center gap-1.5">
                     <Mail size={14} />
                     Adresse Email (optionnel)
                   </label>
@@ -444,7 +447,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                     value={customerEmail}
                     onChange={(e) => setCustomerEmail(e.target.value)}
                     placeholder="Ex: client@sokar.fr"
-                    className="h-12 rounded-xl focus-visible:ring-primary transition-all duration-200"
+                    className="h-12 rounded-xl border-zinc-200 bg-white text-zinc-900 placeholder:text-zinc-400 focus-visible:ring-zinc-950 transition-all duration-200"
                   />
                 </div>
               </form>
@@ -456,7 +459,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                 <Button
                   onClick={() => setStep(2)}
                   disabled={!selectedTime}
-                  className="w-full py-6 rounded-full bg-primary text-primary-foreground font-semibold transition-all duration-200 hover:bg-primary/95 active:scale-95 shadow-lg flex items-center justify-center gap-2"
+                  className="w-full py-6 rounded-full bg-zinc-950 hover:bg-zinc-900 text-white font-semibold transition-all duration-200 active:scale-95 shadow-md flex items-center justify-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
                 >
                   Continuer
                   <ChevronRight size={18} />
@@ -465,7 +468,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                 <Button
                   onClick={handleSubmit}
                   disabled={submitting || !customerName || !customerPhone}
-                  className="w-full py-6 rounded-full bg-primary text-primary-foreground font-semibold transition-all duration-200 hover:bg-primary/95 active:scale-95 shadow-lg flex items-center justify-center gap-2"
+                  className="w-full py-6 rounded-full bg-zinc-950 hover:bg-zinc-900 text-white font-semibold transition-all duration-200 active:scale-95 shadow-md flex items-center justify-center gap-2 disabled:opacity-40 disabled:pointer-events-none"
                 >
                   {submitting ? 'Validation...' : 'Valider la réservation'}
                   <CheckCircle2 size={18} />

@@ -11,7 +11,7 @@ export default function Header() {
   const { isSignedIn } = useAuth();
 
   // Exclude pages that have their own specialized headers/navbars
-  const excludedPaths = ['/', '/pricing', '/login', '/register', '/dashboard'];
+  const excludedPaths = ['/', '/pricing', '/login', '/register', '/dashboard', '/widget'];
   const isExcluded = excludedPaths.some(p => pathname === p || pathname.startsWith(p + '/'));
 
   if (isExcluded) {
