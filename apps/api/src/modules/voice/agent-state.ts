@@ -19,6 +19,8 @@
  *   PROCESSING → IDLE      (fin d'appel)
  */
 
+import { logger } from '../../shared/logger/pino';
+
 export type AgentState = 'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING';
 
 const VALID_TRANSITIONS: Record<AgentState, AgentState[]> = {
@@ -43,7 +45,7 @@ export class AgentStateMachine {
   transition(to: AgentState): boolean {
     const allowed = VALID_TRANSITIONS[this.state];
     if (!allowed.includes(to)) {
-      console.warn(`[AgentState] Invalid transition: ${this.state} → ${to}`);
+      logger.warn(`[AgentState] Invalid transition: ${this.state} → ${to}`);
       return false;
     }
     const from = this.state;

@@ -477,49 +477,24 @@ HANDLERS = {
 
 def _send_message(msg: dict) -> None:
     payload = json.dumps(msg)
-    sys.stdout.write(f"Content-Length: {len(payload)}\r\n\r\n{payload}")
+    sys.stdout.buffer.write((payload + "\n").encode("utf-8"))
     sys.stdout.flush()
 
 
 def _read_message() -> Optional[dict]:
-    """Lit un message JSON-RPC au format MCP stdio (Content-Length).
+    """Lit un message JSON-RPC au format newline-delimited JSON (utilisé par la lib mcp Python).
 
-    Accepte \r\n\r\n, \n\n, ou \r\n comme terminateur d'en-tête.
-    Windsurf envoie parfois \n\n (sans \r) selon le transport stdio.
+    Le client Hermes (via mcp.client.stdio) envoie chaque message JSON suivi de \\n.
     """
-    header = b""
-    while True:
-        byte = sys.stdin.buffer.read(1)
-        if not byte:
-            log("_read_message: stdin closed (EOF)")
-            return None
-        header += byte
-        if len(header) > 4096:
-            log(f"_read_message: header too long ({len(header)} bytes), giving up")
-            return None
-        # Accepte \r\n\r\n, \n\n comme terminateur
-        if header.endswith(b"\r\n\r\n") or header.endswith(b"\n\n"):
-            break
-
-    # Parse Content-Length — split sur \n pour gérer \n\n et \r\n\n
-    raw_header = header.decode("ascii", errors="replace")
-    length = 0
-    for line in raw_header.split("\n"):
-        line = line.strip()
-        if line.lower().startswith("content-length:"):
-            length = int(line.split(":", 1)[1].strip())
-            break
-
-    if length <= 0:
-        return None
-
-    raw = sys.stdin.buffer.read(length)
-    if not raw or len(raw) != length:
+    line = sys.stdin.buffer.readline()
+    if not line:
+        log("_read_message: stdin closed (EOF)")
         return None
 
     try:
-        return json.loads(raw.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError):
+        return json.loads(line.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        log(f"_read_message: parse error: {e}")
         return None
 
 

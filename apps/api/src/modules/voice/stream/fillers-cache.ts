@@ -6,6 +6,7 @@
  * en mémoire pour être joués instantanément.
  */
 import { WebSocket } from 'ws';
+import { logger } from '../../../shared/logger/pino';
 
 interface FillerSet {
   casual: string[];
@@ -54,7 +55,7 @@ export async function initFillerCache(): Promise<void> {
 
   const apiKey = process.env.CARTESIA_API_KEY;
   if (!apiKey) {
-    console.warn('[fillers] No CARTESIA_API_KEY — fillers will not be cached');
+    logger.warn('[fillers] No CARTESIA_API_KEY — fillers will not be cached');
     initialized = true;
     return;
   }
@@ -72,7 +73,7 @@ export async function initFillerCache(): Promise<void> {
     }
   }));
 
-  console.log(`[fillers] Cached ${cached}/${allFillers.length} fillers`);
+  logger.info(`[fillers] Cached ${cached}/${allFillers.length} fillers`);
   initialized = true;
 }
 
@@ -97,7 +98,7 @@ export function playFiller(
     }
   } else {
     // Fallback textuel (le LLM peut lire ça)
-    console.warn('[fillers] No cached audio for:', text);
+    logger.warn({ text }, '[fillers] No cached audio for filler');
   }
 }
 

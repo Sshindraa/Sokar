@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle, CalendarCheck } from 'lucide-react';
+import { AlertCircle, CalendarCheck, Check, Trash2 } from 'lucide-react';
 
 export default function ReservationsPage() {
   const { get, orgId } = useApi();
@@ -98,6 +98,28 @@ export default function ReservationsPage() {
                       ? 'border-l-blue-400'
                       : 'border-l-white/10'
               }
+              actions={[
+                {
+                  label: 'Confirmer',
+                  icon: <Check size={14} />,
+                  colorClass: 'bg-emerald-600',
+                  onClick: () => {
+                    setReservations((prev) =>
+                      prev.map((r) => (r.id === res.id ? { ...r, status: 'CONFIRMED' } : r)),
+                    );
+                  },
+                },
+                {
+                  label: 'Annuler',
+                  icon: <Trash2 size={14} />,
+                  colorClass: 'bg-red-600',
+                  onClick: () => {
+                    setReservations((prev) =>
+                      prev.map((r) => (r.id === res.id ? { ...r, status: 'CANCELLED' } : r)),
+                    );
+                  },
+                },
+              ]}
               details={[
                 {
                   label: 'Date',

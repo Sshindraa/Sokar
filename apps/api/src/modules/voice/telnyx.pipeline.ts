@@ -1,6 +1,5 @@
 import { FastifyInstance }    from 'fastify';
 import { telnyxWebhookGuard } from './telnyx.guard';
-import { ReservationService } from '../reservations/reservation.service';
 import { RestaurantService }  from '../restaurants/restaurant.service';
 import { CustomerService }    from '../customers/customer.service';
 import { buildSystemPrompt }  from './prompts';
@@ -27,7 +26,7 @@ interface TelnyxCallPayload {
 
 export async function telnyxVoiceRoutes(app: FastifyInstance) {
 
-  app.post('/voice/telnyx', async (req, reply) => {
+  app.post('/voice/telnyx', { preHandler: telnyxWebhookGuard }, async (req, reply) => {
     const body      = req.body as TelnyxCallPayload;
     const eventType = body.data.event_type;
     const payload   = body.data.payload;

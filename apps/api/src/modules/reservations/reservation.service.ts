@@ -1,5 +1,6 @@
 import { db } from '../../shared/db/client';
 import { queues } from '../../shared/queue/queues';
+import { logger } from '../../shared/logger/pino';
 
 export interface CreateReservationInput {
   restaurantId:   string;
@@ -25,21 +26,23 @@ export class ReservationService {
       },
     });
 
-    // Enqueue SMS de confirmation au client si numéro fourni
+    // Enqueue SMS de confirmation au client si numéro fourni et toggle active
     if (input.customerPhone) {
       try {
         const restaurant = await db.restaurant.findUniqueOrThrow({ where: { id: input.restaurantId } });
-        await queues.smsClient.add('client-confirm', {
-          reservationId:  reservation.id,
-          customerPhone:  input.customerPhone,
-          customerName:   input.customerName,
-          restaurantName: restaurant.name,
-          date: input.reservedAt.toLocaleDateString('fr-FR'),
-          time: input.reservedAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-          partySize: input.partySize,
-        });
+        if (restaurant.smsConfirmEnabled) {
+          await queues.smsClient.add('client-confirm', {
+            reservationId:  reservation.id,
+            customerPhone:  input.customerPhone,
+            customerName:   input.customerName,
+            restaurantName: restaurant.name,
+            date: input.reservedAt.toLocaleDateString('fr-FR'),
+            time: input.reservedAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+            partySize: input.partySize,
+          });
+        }
       } catch (err) {
-        console.error('[ReservationService] Failed to enqueue SMS confirmation:', err);
+        logger.error({ err }, '[ReservationService] Failed to enqueue SMS confirmation');
       }
     }
 

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import Image from 'next/image';
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from '@clerk/nextjs';
 import { Button } from '@/components/ui/button';
 
@@ -9,7 +10,11 @@ export default function Header() {
   const pathname = usePathname();
   const { isSignedIn } = useAuth();
 
-  if (pathname === '/') {
+  // Exclude pages that have their own specialized headers/navbars
+  const excludedPaths = ['/', '/pricing', '/login', '/register', '/dashboard'];
+  const isExcluded = excludedPaths.some(p => pathname === p || pathname.startsWith(p + '/'));
+
+  if (isExcluded) {
     return null;
   }
 
@@ -20,7 +25,7 @@ export default function Header() {
           href="/"
           className="flex min-w-0 items-center gap-2 rounded-full px-2 transition-all duration-200 hover:opacity-80"
         >
-          <img src="/logo-nav.png" alt="Sokar" width={36} height={36} className="h-9 w-9" />
+          <Image src="/logo-nav.png" alt="Sokar" width={36} height={36} className="h-9 w-9" />
           <span className="text-sm font-semibold text-foreground">Sokar</span>
         </Link>
         <div className="flex items-center gap-1 sm:gap-2">

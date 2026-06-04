@@ -6,6 +6,9 @@
     "build": "prisma generate",
     "generate": "prisma generate",
     "push": "prisma db push",
+    "migrate": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "migrate:status": "prisma migrate status",
     "studio": "prisma studio",
     "lint": "tsc --noEmit",
     "clean": "rm -rf .turbo node_modules"

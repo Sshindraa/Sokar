@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { AlertCircle, Users, Search, RotateCcw, Star } from 'lucide-react';
+import { AlertCircle, Users, Search, RotateCcw, Star, Phone } from 'lucide-react';
 
 export default function CustomersPage() {
   const { get, patch, orgId } = useApi();
@@ -154,6 +154,24 @@ export default function CustomersPage() {
                     {c.isVip ? 'VIP' : 'Ajouter'}
                   </button>
                 }
+                actions={[
+                  {
+                    label: c.isVip ? 'Normal' : 'VIP',
+                    icon: <Star size={14} className={c.isVip ? '' : 'fill-current'} />,
+                    colorClass: c.isVip ? 'bg-zinc-800' : 'bg-orange-500',
+                    onClick: () => {
+                      toggleVip(c.id, c.isVip);
+                    },
+                  },
+                  {
+                    label: 'Appeler',
+                    icon: <Phone size={14} />,
+                    colorClass: 'bg-emerald-600',
+                    onClick: () => {
+                      alert(`Appel du client ${c.name || 'inconnu'} au ${c.phone}`);
+                    },
+                  },
+                ]}
                 details={[
                   { label: 'Visites', value: c.visitCount },
                   { label: 'Fidélité', value: Number(c.loyaltyScore).toFixed(1) },

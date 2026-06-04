@@ -1,3 +1,5 @@
+const { withSentryConfig } = require("@sentry/nextjs");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
@@ -11,4 +13,20 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+module.exports = withSentryConfig(
+  nextConfig,
+  {
+    silent: true,
+    org: "sokar",
+    project: "dashboard",
+  },
+  {
+    widenClientFileUpload: true,
+    transpileClientSDK: false,
+    tunnelRoute: "/monitoring",
+    hideSourceMaps: true,
+    disableLogger: true,
+    automaticVercelCronInstrumentation: true,
+  }
+);
+

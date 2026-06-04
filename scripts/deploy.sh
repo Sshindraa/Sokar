@@ -6,10 +6,22 @@ cd /opt/sokar
 
 CONFIG="${1:-prd}"
 
-# Token Doppler pour cet environnement
+# Token Doppler pour cet environnement (injecté via variable d'environnement)
 case "$CONFIG" in
-  stg) TOKEN="dp.st.stg.1zjgQmOCN1ocitLHvdEd5h77Cy5NzHR7zKVD52fog3a" ;;
-  prd) TOKEN="dp.st.prd.bJU83Bz0ENuyCyROo9EPvup6p6Nbq8CXGNwYbwGZ90Y" ;;
+  stg)
+    TOKEN="${DOPPLER_TOKEN_STG:-}"
+    if [[ -z "$TOKEN" ]]; then
+      echo "❌ Erreur: DOPPLER_TOKEN_STG n'est pas défini. Exportez-la avant de lancer le déploiement." >&2
+      exit 1
+    fi
+    ;;
+  prd)
+    TOKEN="${DOPPLER_TOKEN_PRD:-}"
+    if [[ -z "$TOKEN" ]]; then
+      echo "❌ Erreur: DOPPLER_TOKEN_PRD n'est pas défini. Exportez-la avant de lancer le déploiement." >&2
+      exit 1
+    fi
+    ;;
   *) echo "Usage: $0 [stg|prd]" && exit 1 ;;
 esac
 

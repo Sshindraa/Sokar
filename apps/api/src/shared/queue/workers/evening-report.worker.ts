@@ -3,6 +3,7 @@ import { redisQueue }       from '../../redis/client';
 import { db }               from '../../db/client';
 import { sendEmail }        from '../../email';
 import { buildReportEmail } from '../../../modules/analytics/report.service';
+import { setupWorkerListeners } from './helper';
 
 export const eveningReportWorker = new Worker('evening-report', async (job) => {
   const { restaurantId } = job.data;
@@ -31,3 +32,5 @@ export const eveningReportWorker = new Worker('evening-report', async (job) => {
     html:    buildReportEmail({ restaurantName: restaurant.name, totalCalls: calls.length, reserved, cancelled, estimatedRevenue, totalCouverts }),
   });
 }, { connection: redisQueue });
+
+setupWorkerListeners(eveningReportWorker);
