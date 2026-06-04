@@ -414,12 +414,24 @@ function AudioWaveform() {
   );
 }
 
+const PROFILE_OPTIONS = [
+  { value: 'BISTROT_BRASSERIE', label: 'Bistrot & Brasserie' },
+  { value: 'SEMI_GASTRO', label: 'Semi-gastro' },
+  { value: 'GASTRONOMIQUE', label: 'Gastronomique' },
+] as const;
+
+const PERSONALITY_OPTIONS = [
+  { value: 'WARM', label: 'Chaleureux' },
+  { value: 'FORMAL', label: 'Professionnel' },
+  { value: 'CASUAL', label: 'Décontracté' },
+] as const;
+
 function TelemetryTuner({ orgId }: { orgId: string | undefined }) {
   const { get, patch } = useApi();
   const [speed, setSpeed] = useState(1.15);
   const [pitch, setPitch] = useState(1.0);
-  const [threshold, setThreshold] = useState(-42);
-  const [latency, setLatency] = useState(140);
+  const [profileType, setProfileType] = useState('BISTROT_BRASSERIE');
+  const [fillerStyle, setFillerStyle] = useState('CASUAL');
   const [coords, setCoords] = useState({ x: 0, y: 0 });
   const [isHovered, setIsHovered] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -431,13 +443,13 @@ function TelemetryTuner({ orgId }: { orgId: string | undefined }) {
       if (!p) return;
       setSpeed(Number(p.speakingRate ?? 1.15));
       setPitch(Number(p.pitchShift ?? 1.0));
-      setThreshold(p.microphoneThreshold ?? -42);
-      setLatency(p.targetLatencyMs ?? 140);
+      setProfileType(p.profileType ?? 'BISTROT_BRASSERIE');
+      setFillerStyle(p.fillerStyle ?? 'CASUAL');
     }).catch(() => {});
   }, [orgId, get]);
 
   const save = useCallback(
-    (updates: Record<string, number>) => {
+    (updates: Record<string, any>) => {
       if (!orgId) return;
       setSaving(true);
       if (saveRef.current) clearTimeout(saveRef.current);
@@ -475,7 +487,7 @@ function TelemetryTuner({ orgId }: { orgId: string | undefined }) {
       onTouchMove={handleTouchMove}
       onTouchStart={() => setIsHovered(true)}
       onTouchEnd={() => setIsHovered(false)}
-      className="rounded-2xl border border-white/5 bg-white/[0.01] p-4 md:p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group transition-all duration-300 hover:border-white/10 min-h-[420px] md:min-h-[480px]"
+      className="rounded-2xl border border-white/5 bg-white/[0.01] p-4 md:p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group transition-all duration-300 hover:border-white/10"
     >
       <div 
         className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${isHovered ? 'opacity-100' : 'opacity-0'}`}
@@ -493,7 +505,7 @@ function TelemetryTuner({ orgId }: { orgId: string | undefined }) {
         <div className="flex items-center justify-between gap-4">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-orange-500/20 bg-orange-500/10 text-xs sm:text-[11px] font-bold tracking-widest uppercase text-orange-400">
             <span className="h-1 w-1 rounded-full bg-orange-500 animate-ping" />
-            Vocal Telemetry Equalizer
+            Personnalité de l&apos;Agent
           </div>
           <AudioWaveform />
         </div>
@@ -502,15 +514,56 @@ function TelemetryTuner({ orgId }: { orgId: string | undefined }) {
           Pupitre Télémétrique Vocal
         </h3>
         <p className="mt-0.5 text-[10px] sm:text-[11px] text-white/40 leading-relaxed font-sans">
-          Ajustez en temps réel les filtres neuronaux et le comportement spectral de l&apos;assistant de service.
+          Personnalisez le comportement et le style de votre assistant pour qu&apos;il corresponde à l&apos;ambiance de votre établissement.
         </p>
       </div>
 
-      <div className="mt-3 md:mt-4 space-y-2 md:space-y-2.5 z-10">
+      <div className="mt-3 md:mt-4 space-y-3 md:space-y-4 z-10">
+        {/* Ambiance établissement */}
+        <div className="space-y-1.5">
+          <span className="block text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/55 font-sans">Ambiance de l&apos;établissement</span>
+          <div className="flex flex-wrap gap-1.5">
+            {PROFILE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => { setProfileType(opt.value); save({ profileType: opt.value }); }}
+                className={`px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-bold transition-all duration-200 border ${
+                  profileType === opt.value
+                    ? 'bg-orange-500/15 border-orange-500/30 text-orange-400'
+                    : 'bg-white/[0.03] border-white/5 text-white/40 hover:text-white/60 hover:border-white/10'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Personnalité */}
+        <div className="space-y-1.5">
+          <span className="block text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/55 font-sans">Personnalité de l&apos;agent</span>
+          <div className="flex flex-wrap gap-1.5">
+            {PERSONALITY_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => { setFillerStyle(opt.value); save({ fillerStyle: opt.value }); }}
+                className={`px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-bold transition-all duration-200 border ${
+                  fillerStyle === opt.value
+                    ? 'bg-orange-500/15 border-orange-500/30 text-orange-400'
+                    : 'bg-white/[0.03] border-white/5 text-white/40 hover:text-white/60 hover:border-white/10'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Rapidité de parole */}
         <div className="space-y-1">
-          <div className="flex items-center justify-between text-xs sm:text-[11px] font-bold uppercase tracking-wider text-white/55">
-            <span className="font-sans">Vitesse de parole</span>
-            <span className="font-mono text-orange-400">{speed.toFixed(2)}x</span>
+          <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/55">
+            <span className="font-sans">Rapidité de parole</span>
+            <span className="font-mono text-orange-400">{speed <= 0.95 ? 'Posé' : speed <= 1.15 ? 'Normal' : 'Dynamique'}</span>
           </div>
           <div className="relative flex items-center">
             <input 
@@ -526,10 +579,11 @@ function TelemetryTuner({ orgId }: { orgId: string | undefined }) {
           </div>
         </div>
 
+        {/* Hauteur de la voix */}
         <div className="space-y-1">
-          <div className="flex items-center justify-between text-xs sm:text-[11px] font-bold uppercase tracking-wider text-white/55">
-            <span className="font-sans">Tonalité (Pitch)</span>
-            <span className="font-mono text-orange-400">{pitch.toFixed(2)} Hz</span>
+          <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/55">
+            <span className="font-sans">Hauteur de la voix</span>
+            <span className="font-mono text-orange-400">{pitch <= 0.9 ? 'Chaude' : pitch <= 1.1 ? 'Neutre' : 'Claire'}</span>
           </div>
           <div className="relative flex items-center">
             <input 
@@ -539,44 +593,6 @@ function TelemetryTuner({ orgId }: { orgId: string | undefined }) {
               step="0.05" 
               value={pitch}
               onChange={(e) => { const v = parseFloat(e.target.value); setPitch(v); save({ pitchShift: v }); }}
-              className="w-full h-2 sm:h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
-              style={{ minHeight: 44 }}
-            />
-          </div>
-        </div>
-
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-xs sm:text-[11px] font-bold uppercase tracking-wider text-white/55">
-            <span className="font-sans">Sensibilité Micro</span>
-            <span className="font-mono text-orange-400">{threshold} dB</span>
-          </div>
-          <div className="relative flex items-center">
-            <input 
-              type="range" 
-              min="-60" 
-              max="-20" 
-              step="1" 
-              value={threshold}
-              onChange={(e) => { const v = parseInt(e.target.value, 10); setThreshold(v); save({ microphoneThreshold: v }); }}
-              className="w-full h-2 sm:h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
-              style={{ minHeight: 44 }}
-            />
-          </div>
-        </div>
-
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-xs sm:text-[11px] font-bold uppercase tracking-wider text-white/55">
-            <span className="font-sans">Latence cible</span>
-            <span className="font-mono text-orange-400">{latency} ms</span>
-          </div>
-          <div className="relative flex items-center">
-            <input 
-              type="range" 
-              min="80" 
-              max="240" 
-              step="5" 
-              value={latency}
-              onChange={(e) => { const v = parseInt(e.target.value, 10); setLatency(v); save({ targetLatencyMs: v }); }}
               className="w-full h-2 sm:h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-orange-500 transition-all focus:outline-none focus:ring-0" 
               style={{ minHeight: 44 }}
             />
