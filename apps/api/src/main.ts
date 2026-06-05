@@ -21,8 +21,6 @@ import { testRoutes }        from './modules/test/test.routes';
 import { registerCors }      from './plugins/cors';
 import { registerRateLimit } from './plugins/rate-limit';
 import { registerClerk }     from './plugins/clerk';
-import { registerMediaStreamRoutes } from './modules/voice/stream/handler';
-import { initFillerCache } from './modules/voice/stream/fillers-cache';
 import './shared/queue/workers/evening-report.worker';
 import './shared/queue/workers/sms-confirmation.worker';
 import './shared/queue/workers/outbound-confirm.worker';
@@ -80,12 +78,8 @@ export async function buildApp() {
     await app.register(testRoutes);
   }
 
-  // WebSocket plugin + media stream routes (flux pipeline)
-  await app.register(import('@fastify/websocket'));
-  registerMediaStreamRoutes(app);
-
-  // Init filler cache (pré-génération des fillers audio)
-  await initFillerCache();
+  // Routes Telnyx Voice
+  await app.register(import('./modules/voice/telnyx.pipeline').then(m => m.telnyxVoiceRoutes));
 
   app.get('/health', async (_req, reply) => {
     let dbStatus = 'ok', redisStatus = 'ok';
