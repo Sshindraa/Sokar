@@ -42,7 +42,7 @@
     <main class="relative h-screen overflow-hidden">
 
       <!-- BOTTOM SHEET — no scroll, compact -->
-      <section class="absolute bottom-0 left-0 right-0 z-10 w-full max-w-none max-h-[55vh] rounded-t-[2.15rem] rounded-b-none border border-white/60 bg-white/48 p-4 pb-4 shadow-[0_-8px_40px_rgba(0,0,0,0.12)] backdrop-blur-2xl">
+      <section class="absolute bottom-0 left-0 right-0 z-10 w-full max-w-none max-h-[min(76dvh,42rem)] overflow-y-auto scrollbar-none rounded-t-[2.15rem] rounded-b-none border border-white/70 bg-white/[0.82] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3.5 shadow-[0_-12px_44px_rgba(0,0,0,0.18)] backdrop-blur-2xl">
 
         <!-- Drag handle -->
         <div class="mx-auto mb-3 mt-1 h-1 w-10 shrink-0 rounded-full bg-black/10"></div>
@@ -52,7 +52,7 @@
         <div class="relative z-10 space-y-3">
 
           <!-- Title Card -->
-          <div class="rounded-[1.6rem] border border-white/58 bg-white/34 shadow-sm backdrop-blur-2xl relative overflow-hidden p-3">
+          <div class="rounded-[1.6rem] border border-white/[0.62] bg-white/[0.58] shadow-sm backdrop-blur-2xl relative overflow-hidden p-3">
             <div class="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-[hsl(var(--reservation-glow)/0.12)] blur-2xl"></div>
             <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-[hsl(var(--reservation-muted))]">Choisissez votre table</p>
             <div class="mt-2 flex items-end justify-between gap-3">
@@ -74,14 +74,14 @@
               Nombre de personnes
             </label>
             <div class="scrollbar-none flex gap-1.5 overflow-x-auto pb-1">
-              <button class="h-10 w-10 shrink-0 rounded-full text-sm font-semibold border border-white/60 bg-white/36 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">1</button>
+              <button class="h-10 w-10 shrink-0 rounded-full text-sm font-semibold border border-white/60 bg-white/[0.52] text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">1</button>
               <button class="h-10 w-10 shrink-0 rounded-full text-sm font-semibold border border-[hsl(var(--reservation-ink))] bg-[hsl(var(--reservation-ink))] text-[hsl(var(--reservation-panel))] shadow-lg shadow-black/10">2</button>
-              <button class="h-10 w-10 shrink-0 rounded-full text-sm font-semibold border border-white/60 bg-white/36 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">3</button>
-              <button class="h-10 w-10 shrink-0 rounded-full text-sm font-semibold border border-white/60 bg-white/36 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">4</button>
-              <button class="h-10 w-10 shrink-0 rounded-full text-sm font-semibold border border-white/60 bg-white/36 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">5</button>
-              <button class="h-10 w-10 shrink-0 rounded-full text-sm font-semibold border border-white/60 bg-white/36 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">6</button>
-              <button class="h-10 w-10 shrink-0 rounded-full text-sm font-semibold border border-white/60 bg-white/36 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">7</button>
-              <button class="h-10 w-10 shrink-0 rounded-full text-sm font-semibold border border-white/60 bg-white/36 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">8</button>
+              <button class="h-10 w-10 shrink-0 rounded-full text-sm font-semibold border border-white/60 bg-white/[0.52] text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">3</button>
+              <button class="h-10 w-10 shrink-0 rounded-full text-sm font-semibold border border-white/60 bg-white/[0.52] text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">4</button>
+              <button class="h-10 w-10 shrink-0 rounded-full text-sm font-semibold border border-white/60 bg-white/[0.52] text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">5</button>
+              <button class="h-10 w-10 shrink-0 rounded-full text-sm font-semibold border border-white/60 bg-white/[0.52] text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">6</button>
+              <button class="h-10 w-10 shrink-0 rounded-full text-sm font-semibold border border-white/60 bg-white/[0.52] text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">7</button>
+              <button class="h-10 w-10 shrink-0 rounded-full text-sm font-semibold border border-white/60 bg-white/[0.52] text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">8</button>
             </div>
           </div>
 
@@ -92,24 +92,24 @@
               Sélectionner la date
             </label>
             <div class="scrollbar-none flex snap-x gap-1.5 overflow-x-auto pb-1">
-              <button class="relative flex h-[3.8rem] min-w-[3.8rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200 border-[hsl(var(--reservation-ink))] bg-white/58 text-[hsl(var(--reservation-ink))] shadow-lg shadow-black/10">
+              <button class="relative flex h-[3.8rem] min-w-[3.8rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200 border-[hsl(var(--reservation-ink))] bg-white/[0.58] text-[hsl(var(--reservation-ink))] shadow-lg shadow-black/10">
                 <span class="absolute bottom-2 left-1/2 h-1 w-5 -translate-x-1/2 rounded-full bg-[hsl(var(--reservation-blue))]"></span>
                 <span class="text-xl font-black leading-none tracking-normal">5</span>
                 <span class="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] opacity-75">VEN</span>
               </button>
-              <button class="relative flex h-[3.8rem] min-w-[3.8rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200 border border-white/60 bg-white/36 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">
+              <button class="relative flex h-[3.8rem] min-w-[3.8rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200 border border-white/60 bg-white/[0.52] text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">
                 <span class="text-xl font-black leading-none tracking-normal">6</span>
                 <span class="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] opacity-75">SAM</span>
               </button>
-              <button class="relative flex h-[3.8rem] min-w-[3.8rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200 border border-white/60 bg-white/36 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">
+              <button class="relative flex h-[3.8rem] min-w-[3.8rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200 border border-white/60 bg-white/[0.52] text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">
                 <span class="text-xl font-black leading-none tracking-normal">7</span>
                 <span class="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] opacity-75">DIM</span>
               </button>
-              <button class="relative flex h-[3.8rem] min-w-[3.8rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200 border border-white/60 bg-white/36 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">
+              <button class="relative flex h-[3.8rem] min-w-[3.8rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200 border border-white/60 bg-white/[0.52] text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">
                 <span class="text-xl font-black leading-none tracking-normal">8</span>
                 <span class="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] opacity-75">LUN</span>
               </button>
-              <button class="relative flex h-[3.8rem] min-w-[3.8rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200 border border-white/60 bg-white/36 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">
+              <button class="relative flex h-[3.8rem] min-w-[3.8rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200 border border-white/60 bg-white/[0.52] text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">
                 <span class="text-xl font-black leading-none tracking-normal">9</span>
                 <span class="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] opacity-75">MAR</span>
               </button>
@@ -122,7 +122,7 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               Créneau horaire
             </label>
-            <div class="flex items-center gap-3 rounded-2xl border border-white/58 bg-white/34 p-4 text-left shadow-sm backdrop-blur-2xl">
+            <div class="flex items-center gap-3 rounded-2xl border border-white/58 bg-white/[0.58] p-4 text-left shadow-sm backdrop-blur-2xl">
               <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/42 text-[hsl(var(--reservation-muted))]">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="opacity-50"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               </div>
