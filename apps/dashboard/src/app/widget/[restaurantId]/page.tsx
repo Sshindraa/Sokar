@@ -151,7 +151,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
       'radial-gradient(circle at 50% 20%, hsl(var(--reservation-glow)/0.2), transparent 18rem), linear-gradient(145deg, hsl(var(--reservation-wash)) 0%, hsl(var(--reservation-bg)) 46%, hsl(34 20% 86%) 100%)',
   };
   const consoleClass =
-    'relative z-10 w-full max-w-[33rem] overflow-hidden rounded-[2.15rem] border border-white/60 bg-white/42 p-4 shadow-2xl shadow-black/10 backdrop-blur-2xl sm:p-5';
+    'relative z-10 w-full max-w-[33rem] overflow-hidden rounded-[2.15rem] border border-white/60 bg-white/42 p-4 shadow-2xl shadow-black/10 backdrop-blur-2xl sm:p-5 lg:max-w-[60rem] lg:p-8';
   const glassCardClass =
     'rounded-[1.6rem] border border-white/58 bg-white/34 shadow-sm backdrop-blur-2xl';
 
@@ -250,10 +250,12 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
     );
   }
 
-  const dateTitle = selectedDate && !success ? FRENCH_DAYS[selectedDate.getDay()].substring(0, 3) : 'Votre';
-  const dateSubtitle = selectedDate && !success
-    ? `${selectedDate.getDate()} ${FRENCH_MONTHS[selectedDate.getMonth()].substring(0, 3)}`
-    : 'table.';
+  const dateTitle =
+    selectedDate && !success ? FRENCH_DAYS[selectedDate.getDay()].substring(0, 3) : 'Votre';
+  const dateSubtitle =
+    selectedDate && !success
+      ? `${selectedDate.getDate()} ${FRENCH_MONTHS[selectedDate.getMonth()].substring(0, 3)}`
+      : 'table.';
 
   return (
     <div className={backgroundClass} style={backgroundStyle}>
@@ -266,8 +268,8 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
           <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent" />
           <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-[hsl(var(--reservation-glow)/0.16)] blur-3xl" />
 
-          <div className="relative z-10 space-y-5">
-            <header className="flex items-center justify-between gap-3">
+          <div className="relative z-10 space-y-5 lg:space-y-6">
+            <header className="flex items-center justify-between gap-3 lg:mb-1">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/70 bg-white/50 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">
                   <Utensils size={18} />
@@ -285,33 +287,6 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                 Réservation
               </span>
             </header>
-
-            <div className={cn(glassCardClass, 'relative overflow-hidden p-5')}>
-              <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-[hsl(var(--reservation-glow)/0.12)] blur-2xl" />
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[hsl(var(--reservation-muted))]">
-                {success ? 'Table confirmée' : 'Choisissez votre table'}
-              </p>
-              <div className="mt-3 flex items-end justify-between gap-4">
-                <div>
-                  <h1 className="text-[3.8rem] font-black leading-[0.82] tracking-normal text-[hsl(var(--reservation-ink))]">
-                    {dateTitle}
-                  </h1>
-                  <p className="mt-1 text-[2.5rem] font-black leading-none tracking-normal text-[hsl(var(--reservation-muted))]">
-                    {dateSubtitle}
-                  </p>
-                </div>
-                {!success && (
-                  <div className="mb-1 rounded-[1.35rem] border border-white/60 bg-white/38 px-4 py-3 text-right shadow-sm backdrop-blur-2xl">
-                    <p className="text-2xl font-black leading-none text-[hsl(var(--reservation-ink))]">
-                      {partySize}
-                    </p>
-                    <p className="mt-1 text-[11px] font-semibold text-[hsl(var(--reservation-soft))]">
-                      pers.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
 
             {success ? (
               <div className="space-y-5 text-center">
@@ -377,143 +352,35 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                 </button>
               </div>
             ) : (
-              <div className="space-y-5">
-                {error && (
-                  <div className="flex items-center gap-2 rounded-2xl border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                    <AlertCircle size={16} className="shrink-0" />
-                    <span>{error}</span>
-                  </div>
-                )}
-
-                {step === 1 ? (
-                  <div className="space-y-5">
-                    <div className="space-y-2.5">
-                      <label className={labelClass}>
-                        <Users size={13} />
-                        Nombre de personnes
-                      </label>
-                      <div className="scrollbar-none flex gap-2 overflow-x-auto pb-1">
-                        {[1, 2, 3, 4, 5, 6, 7, 8].map((size) => (
-                          <button
-                            key={size}
-                            type="button"
-                            onClick={() => setPartySize(size)}
-                            className={cn(
-                              'h-10 w-10 shrink-0 rounded-full text-sm font-semibold',
-                              softPillClass,
-                              partySize === size && selectedPillClass,
-                            )}
-                          >
-                            {size}
-                          </button>
-                        ))}
+              <div className="space-y-5 lg:grid lg:grid-cols-2 lg:gap-8 lg:space-y-0">
+                {/* Colonne gauche */}
+                <div className="space-y-5">
+                  <div className={cn(glassCardClass, 'relative overflow-hidden p-5 lg:p-6')}>
+                    <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-[hsl(var(--reservation-glow)/0.12)] blur-2xl" />
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[hsl(var(--reservation-muted))]">
+                      {step === 2 ? 'Résumé' : 'Choisissez votre table'}
+                    </p>
+                    <div className="mt-3 flex items-end justify-between gap-4">
+                      <div>
+                        <h1 className="text-[3.8rem] font-black leading-[0.82] tracking-normal text-[hsl(var(--reservation-ink))] lg:text-[2.8rem] lg:leading-[0.9]">
+                          {dateTitle}
+                        </h1>
+                        <p className="mt-1 text-[2.5rem] font-black leading-none tracking-normal text-[hsl(var(--reservation-muted))] lg:text-[1.8rem]">
+                          {dateSubtitle}
+                        </p>
+                      </div>
+                      <div className="mb-1 rounded-[1.35rem] border border-white/60 bg-white/38 px-4 py-3 text-right shadow-sm backdrop-blur-2xl lg:px-5 lg:py-4">
+                        <p className="text-2xl font-black leading-none text-[hsl(var(--reservation-ink))]">
+                          {partySize}
+                        </p>
+                        <p className="mt-1 text-[11px] font-semibold text-[hsl(var(--reservation-soft))]">
+                          pers.
+                        </p>
                       </div>
                     </div>
-
-                    <div className="space-y-2.5">
-                      <label className={labelClass}>
-                        <CalendarIcon size={13} />
-                        Sélectionner la date
-                      </label>
-                      <div className="scrollbar-none flex snap-x gap-2 overflow-x-auto pb-1">
-                        {days.map((date, idx) => {
-                          const isSelected = selectedDate?.toDateString() === date.toDateString();
-                          return (
-                            <button
-                              key={idx}
-                              type="button"
-                              onClick={() => {
-                                setSelectedDate(date);
-                                setSelectedTime('');
-                              }}
-                              className={cn(
-                                'relative flex h-[4.65rem] min-w-[4.15rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200',
-                                softPillClass,
-                                isSelected && 'border-[hsl(var(--reservation-ink))] bg-white/58 text-[hsl(var(--reservation-ink))] shadow-lg shadow-black/10',
-                              )}
-                            >
-                              {isSelected && (
-                                <span className="absolute bottom-2 left-1/2 h-1 w-5 -translate-x-1/2 rounded-full bg-[hsl(var(--reservation-blue))]" />
-                              )}
-                              <span className="text-[23px] font-black leading-none tracking-normal">
-                                {date.getDate()}
-                              </span>
-                              <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] opacity-75">
-                                {FRENCH_DAYS[date.getDay()].substring(0, 3)}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2.5">
-                      <label className={labelClass}>
-                        <Clock size={13} />
-                        Créneau horaire
-                      </label>
-                      {timeSlots.length > 0 ? (
-                        <div className="scrollbar-none max-h-[12rem] space-y-3 overflow-y-auto pr-1">
-                          {[
-                            { title: 'Déjeuner', slots: lunchSlots },
-                            { title: 'Dîner', slots: dinnerSlots },
-                          ]
-                            .filter((group) => group.slots.length > 0)
-                            .map((group) => (
-                              <div key={group.title} className="space-y-2">
-                                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--reservation-muted))]">
-                                  {group.title}
-                                </p>
-                                <div className="grid grid-cols-3 gap-2">
-                                  {group.slots.map((time) => {
-                                    const isSelected = selectedTime === time;
-                                    return (
-                                      <button
-                                        key={time}
-                                        type="button"
-                                        onClick={() => setSelectedTime(time)}
-                                        className={cn(
-                                          'rounded-[1rem] px-1 py-3 text-center text-sm font-semibold',
-                                          softPillClass,
-                                          isSelected && selectedPillClass,
-                                        )}
-                                      >
-                                        {time.replace(':', 'h')}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      ) : (
-                        <div className={cn(glassCardClass, 'flex items-center gap-3 p-4 text-left')}>
-                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/42 text-[hsl(var(--reservation-muted))]">
-                            <Clock size={20} className="opacity-50" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-[hsl(var(--reservation-soft))]">
-                              Aucun service ce jour-là
-                            </p>
-                            <p className="mt-0.5 text-xs text-[hsl(var(--reservation-muted))]">
-                              Choisissez une autre date.
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    <button
-                      type="button"
-                      onClick={() => setStep(1)}
-                      className={cn('inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold', softPillClass)}
-                    >
-                      <ChevronLeft size={18} />
-                      Retour aux créneaux
-                    </button>
 
+                  {step === 2 && (
                     <div className={cn(glassCardClass, 'flex overflow-hidden')}>
                       <div className="flex w-[6.5rem] flex-col items-center justify-center border-r border-white/50 bg-white/24 p-4 text-center">
                         <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--reservation-muted))]">
@@ -538,76 +405,225 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         </p>
                       </div>
                     </div>
-
-                    <div className="space-y-1.5">
-                      <label className={cn(labelClass, 'ml-2')}>
-                        <User size={12} />
-                        Nom complet *
-                      </label>
-                      <input
-                        value={customerName}
-                        onChange={(e) => setCustomerName(e.target.value)}
-                        placeholder="Alice Martin"
-                        required
-                        className={fieldClass}
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className={cn(labelClass, 'ml-2')}>
-                        <Phone size={12} />
-                        Téléphone *
-                      </label>
-                      <input
-                        type="tel"
-                        value={customerPhone}
-                        onChange={(e) => setCustomerPhone(e.target.value)}
-                        placeholder="0612345678"
-                        required
-                        className={fieldClass}
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className={cn(labelClass, 'ml-2')}>
-                        <Mail size={12} />
-                        Adresse Email (optionnel)
-                      </label>
-                      <input
-                        type="email"
-                        value={customerEmail}
-                        onChange={(e) => setCustomerEmail(e.target.value)}
-                        placeholder="client@sokar.fr"
-                        className={fieldClass}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  onClick={step === 1 ? () => setStep(2) : handleSubmit}
-                  disabled={
-                    step === 1
-                      ? !selectedTime
-                      : submitting || !customerName || !customerPhone
-                  }
-                  className={cn(
-                    'flex w-full items-center justify-center gap-2 rounded-full py-4 text-sm font-semibold shadow-lg shadow-black/10 transition-all duration-200 active:scale-[0.97]',
-                    (step === 1 ? selectedTime : !submitting && customerName && customerPhone)
-                      ? 'bg-[hsl(var(--reservation-ink))] text-white hover:-translate-y-0.5'
-                      : 'cursor-not-allowed bg-white/42 text-[hsl(var(--reservation-muted))] opacity-80 shadow-none',
                   )}
-                >
-                  {step === 1 ? 'Continuer' : submitting ? 'Validation...' : 'Valider la réservation'}
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/12">
-                    {step === 1 ? <ChevronRight size={16} /> : <CheckCircle2 size={16} />}
-                  </span>
-                </button>
+                </div>
+
+                {/* Colonne droite */}
+                <div className="space-y-5">
+                  {error && (
+                    <div className="flex items-center gap-2 rounded-2xl border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                      <AlertCircle size={16} className="shrink-0" />
+                      <span>{error}</span>
+                    </div>
+                  )}
+
+                  {step === 1 ? (
+                    <div className="space-y-5">
+                      <div className="space-y-2.5">
+                        <label className={labelClass}>
+                          <Users size={13} />
+                          Nombre de personnes
+                        </label>
+                        <div className="scrollbar-none flex gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map((size) => (
+                            <button
+                              key={size}
+                              type="button"
+                              onClick={() => setPartySize(size)}
+                              className={cn(
+                                'h-10 w-10 shrink-0 rounded-full text-sm font-semibold',
+                                softPillClass,
+                                partySize === size && selectedPillClass,
+                              )}
+                            >
+                              {size}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        <label className={labelClass}>
+                          <CalendarIcon size={13} />
+                          Sélectionner la date
+                        </label>
+                        <div className="scrollbar-none flex snap-x gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
+                          {days.map((date, idx) => {
+                            const isSelected = selectedDate?.toDateString() === date.toDateString();
+                            return (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedDate(date);
+                                  setSelectedTime('');
+                                }}
+                                className={cn(
+                                  'relative flex h-[4.65rem] min-w-[4.15rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200',
+                                  softPillClass,
+                                  isSelected &&
+                                    'border-[hsl(var(--reservation-ink))] bg-white/58 text-[hsl(var(--reservation-ink))] shadow-lg shadow-black/10',
+                                )}
+                              >
+                                {isSelected && (
+                                  <span className="absolute bottom-2 left-1/2 h-1 w-5 -translate-x-1/2 rounded-full bg-[hsl(var(--reservation-blue))]" />
+                                )}
+                                <span className="text-[23px] font-black leading-none tracking-normal">
+                                  {date.getDate()}
+                                </span>
+                                <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] opacity-75">
+                                  {FRENCH_DAYS[date.getDay()].substring(0, 3)}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        <label className={labelClass}>
+                          <Clock size={13} />
+                          Créneau horaire
+                        </label>
+                        {timeSlots.length > 0 ? (
+                          <div className="scrollbar-none max-h-[12rem] space-y-3 overflow-y-auto pr-1 lg:max-h-none">
+                            {[
+                              { title: 'Déjeuner', slots: lunchSlots },
+                              { title: 'Dîner', slots: dinnerSlots },
+                            ]
+                              .filter((group) => group.slots.length > 0)
+                              .map((group) => (
+                                <div key={group.title} className="space-y-2">
+                                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--reservation-muted))]">
+                                    {group.title}
+                                  </p>
+                                  <div className="grid grid-cols-3 gap-2 lg:grid-cols-4">
+                                    {group.slots.map((time) => {
+                                      const isSelected = selectedTime === time;
+                                      return (
+                                        <button
+                                          key={time}
+                                          type="button"
+                                          onClick={() => setSelectedTime(time)}
+                                          className={cn(
+                                            'rounded-[1rem] px-1 py-3 text-center text-sm font-semibold',
+                                            softPillClass,
+                                            isSelected && selectedPillClass,
+                                          )}
+                                        >
+                                          {time.replace(':', 'h')}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        ) : (
+                          <div
+                            className={cn(glassCardClass, 'flex items-center gap-3 p-4 text-left')}
+                          >
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/42 text-[hsl(var(--reservation-muted))]">
+                              <Clock size={20} className="opacity-50" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-[hsl(var(--reservation-soft))]">
+                                Aucun service ce jour-là
+                              </p>
+                              <p className="mt-0.5 text-xs text-[hsl(var(--reservation-muted))]">
+                                Choisissez une autre date.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <button
+                        type="button"
+                        onClick={() => setStep(1)}
+                        className={cn(
+                          'inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold',
+                          softPillClass,
+                        )}
+                      >
+                        <ChevronLeft size={18} />
+                        Retour aux créneaux
+                      </button>
+
+                      <div className="space-y-1.5">
+                        <label className={cn(labelClass, 'ml-2')}>
+                          <User size={12} />
+                          Nom complet *
+                        </label>
+                        <input
+                          value={customerName}
+                          onChange={(e) => setCustomerName(e.target.value)}
+                          placeholder="Alice Martin"
+                          required
+                          className={fieldClass}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className={cn(labelClass, 'ml-2')}>
+                          <Phone size={12} />
+                          Téléphone *
+                        </label>
+                        <input
+                          type="tel"
+                          value={customerPhone}
+                          onChange={(e) => setCustomerPhone(e.target.value)}
+                          placeholder="0612345678"
+                          required
+                          className={fieldClass}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className={cn(labelClass, 'ml-2')}>
+                          <Mail size={12} />
+                          Adresse Email (optionnel)
+                        </label>
+                        <input
+                          type="email"
+                          value={customerEmail}
+                          onChange={(e) => setCustomerEmail(e.target.value)}
+                          placeholder="client@sokar.fr"
+                          className={fieldClass}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={step === 1 ? () => setStep(2) : handleSubmit}
+                    disabled={
+                      step === 1 ? !selectedTime : submitting || !customerName || !customerPhone
+                    }
+                    className={cn(
+                      'flex w-full items-center justify-center gap-2 rounded-full py-4 text-sm font-semibold shadow-lg shadow-black/10 transition-all duration-200 active:scale-[0.97]',
+                      (step === 1 ? selectedTime : !submitting && customerName && customerPhone)
+                        ? 'bg-[hsl(var(--reservation-ink))] text-white hover:-translate-y-0.5'
+                        : 'cursor-not-allowed bg-white/42 text-[hsl(var(--reservation-muted))] opacity-80 shadow-none',
+                    )}
+                  >
+                    {step === 1
+                      ? 'Continuer'
+                      : submitting
+                        ? 'Validation...'
+                        : 'Valider la réservation'}
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/12">
+                      {step === 1 ? <ChevronRight size={16} /> : <CheckCircle2 size={16} />}
+                    </span>
+                  </button>
+                </div>
               </div>
             )}
 
-            <div className="flex items-center justify-center gap-1.5 pt-1">
+            <div className="flex items-center justify-center gap-1.5 pt-1 lg:pt-2">
               <span className="text-[10px] tracking-wide text-[hsl(var(--reservation-muted)/0.72)]">
                 Propulsé par
               </span>
