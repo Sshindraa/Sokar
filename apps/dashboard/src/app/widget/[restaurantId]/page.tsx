@@ -174,7 +174,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   const labelClass =
     'flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--reservation-muted))]';
   const softPillClass =
-    'border border-white/60 bg-white/36 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl transition-all duration-200 hover:-translate-y-0.5 hover:border-white/80 hover:bg-white/56 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--reservation-blue)/0.22)]';
+    'border border-white/60 bg-white/[0.52] text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl transition-all duration-200 hover:-translate-y-0.5 hover:border-white/80 hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--reservation-blue)/0.22)]';
   const selectedPillClass =
     'border-[hsl(var(--reservation-ink))] bg-[hsl(var(--reservation-ink))] text-[hsl(var(--reservation-panel))] shadow-lg shadow-black/10';
   const fieldClass =
@@ -188,14 +188,14 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
       'radial-gradient(circle at 50% 20%, hsl(var(--reservation-glow)/0.2), transparent 18rem), linear-gradient(145deg, hsl(var(--reservation-wash)) 0%, hsl(var(--reservation-bg)) 46%, hsl(34 20% 86%) 100%)',
   };
   const consoleClass =
-    // Mobile: bottom sheet — absolute within main, max-height, scrollable, semi-transparent
-    'absolute bottom-0 left-0 right-0 z-10 w-full max-w-none max-h-[82dvh] overflow-y-auto scrollbar-none rounded-t-[2.15rem] rounded-b-none border border-white/60 bg-white/48 p-5 pb-10 shadow-[0_-8px_40px_rgba(0,0,0,0.12)] backdrop-blur-2xl ' +
+    // Mobile: bottom sheet — opaque enough for Safari, scrollable, and safe-area aware.
+    'absolute bottom-0 left-0 right-0 z-10 w-full max-w-none max-h-[min(76dvh,42rem)] overflow-y-auto scrollbar-none rounded-t-[2.15rem] rounded-b-none border border-white/70 bg-white/[0.82] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3.5 shadow-[0_-12px_44px_rgba(0,0,0,0.18)] backdrop-blur-2xl ' +
     // Tablet+: centered modal (restore original behaviour)
     'sm:relative sm:bottom-auto sm:left-auto sm:right-auto sm:max-w-[33rem] sm:max-h-none sm:rounded-[2.15rem] sm:overflow-visible sm:bg-white/42 sm:shadow-2xl sm:shadow-black/10 sm:p-5 ' +
     // Desktop: wider
     'lg:max-w-[56rem] lg:p-8';
   const glassCardClass =
-    'rounded-[1.6rem] border border-white/58 bg-white/34 shadow-sm backdrop-blur-2xl';
+    'rounded-[1.6rem] border border-white/[0.62] bg-white/[0.58] shadow-sm backdrop-blur-2xl sm:bg-white/[0.34]';
 
   // Generate Google and ICS Calendar exports
   const calendarUrls = useMemo(() => {
@@ -623,7 +623,13 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         className="space-y-1.5 sm:space-y-2.5"
                         onClickCapture={() => setActiveSection('party')}
                       >
-                        <label className={cn(labelClass, 'transition-opacity duration-300', activeSection !== 'party' && 'opacity-60')}>
+                        <label
+                          className={cn(
+                            labelClass,
+                            'transition-opacity duration-300',
+                            activeSection !== 'party' && 'lg:opacity-60',
+                          )}
+                        >
                           <Users size={13} />
                           Nombre de personnes
                         </label>
@@ -639,7 +645,9 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                               className={cn(
                                 'h-11 w-11 shrink-0 rounded-full text-sm font-bold transition-all duration-200 lg:h-9 lg:w-auto',
                                 softPillClass,
-                                partySize === size ? selectedPillClass : (activeSection !== 'party' && 'opacity-50'),
+                                partySize === size
+                                  ? selectedPillClass
+                                  : activeSection !== 'party' && 'lg:opacity-50',
                               )}
                             >
                               {size}
@@ -652,7 +660,13 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         className="space-y-2 sm:space-y-2.5"
                         onClickCapture={() => setActiveSection('date')}
                       >
-                        <label className={cn(labelClass, 'transition-opacity duration-300', activeSection !== 'date' && 'opacity-60')}>
+                        <label
+                          className={cn(
+                            labelClass,
+                            'transition-opacity duration-300',
+                            activeSection !== 'date' && 'lg:opacity-60',
+                          )}
+                        >
                           <CalendarIcon size={13} />
                           Sélectionner la date
                         </label>
@@ -673,7 +687,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                                   softPillClass,
                                   isSelected
                                     ? 'border-[hsl(var(--reservation-ink))] bg-[hsl(var(--reservation-ink))] text-[hsl(var(--reservation-panel))] shadow-lg shadow-black/10 hover:bg-[hsl(var(--reservation-ink))] hover:text-[hsl(var(--reservation-panel))]'
-                                    : (activeSection !== 'date' && 'opacity-50'),
+                                    : activeSection !== 'date' && 'lg:opacity-50',
                                 )}
                               >
                                 {isSelected && (
@@ -695,7 +709,13 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         className="space-y-2 sm:space-y-2.5"
                         onClickCapture={() => setActiveSection('time')}
                       >
-                        <label className={cn(labelClass, 'transition-opacity duration-300', activeSection !== 'time' && 'opacity-60')}>
+                        <label
+                          className={cn(
+                            labelClass,
+                            'transition-opacity duration-300',
+                            activeSection !== 'time' && 'lg:opacity-60',
+                          )}
+                        >
                           <Clock size={13} />
                           Créneau horaire
                         </label>
@@ -722,7 +742,9 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                                           className={cn(
                                             'rounded-[1rem] px-1 py-3 text-center text-sm font-semibold',
                                             softPillClass,
-                                            isSelected ? selectedPillClass : (activeSection !== 'time' && 'opacity-50'),
+                                            isSelected
+                                              ? selectedPillClass
+                                              : activeSection !== 'time' && 'lg:opacity-50',
                                           )}
                                         >
                                           {time.replace(':', 'h')}
@@ -738,7 +760,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                             className={cn(
                               glassCardClass,
                               'flex items-center gap-4 p-5 text-left border-dashed border-white/40 bg-white/20 transition-all duration-300 hover:bg-white/28',
-                              activeSection !== 'time' && 'opacity-50',
+                              activeSection !== 'time' && 'lg:opacity-50',
                             )}
                           >
                             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/30 text-[hsl(var(--reservation-muted))] shadow-inner">
