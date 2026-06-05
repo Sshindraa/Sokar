@@ -18,6 +18,9 @@ import {
   Utensils,
   Heart,
   Loader2,
+  X,
+  CalendarCheck,
+  Download,
 } from 'lucide-react';
 
 const reservationTheme: CSSProperties & Record<`--${string}`, string> = {
@@ -84,6 +87,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   const [partySize, setPartySize] = useState<number>(2);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string>('');
+  const [activeSection, setActiveSection] = useState<'party' | 'date' | 'time'>('party');
 
   // Contact details
   const [customerName, setCustomerName] = useState('');
@@ -96,6 +100,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   const [confirmedReservation, setConfirmedReservation] = useState<ConfirmedReservation | null>(
     null,
   );
+  const [showCalendarMenu, setShowCalendarMenu] = useState(false);
 
   // Load public restaurant info
   useEffect(() => {
@@ -173,7 +178,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   const selectedPillClass =
     'border-[hsl(var(--reservation-ink))] bg-[hsl(var(--reservation-ink))] text-[hsl(var(--reservation-panel))] shadow-lg shadow-black/10';
   const fieldClass =
-    'h-[3.25rem] w-full rounded-[1.35rem] border border-white/60 bg-white/38 px-5 text-sm font-medium text-[hsl(var(--reservation-ink))] shadow-inner outline-none backdrop-blur-2xl transition-all duration-200 placeholder:text-[hsl(var(--reservation-muted))] focus:border-white/80 focus:bg-white/62 focus:ring-2 focus:ring-[hsl(var(--reservation-blue)/0.18)]';
+    'h-[3.25rem] w-full rounded-2xl border border-white/60 bg-white/38 px-5 text-sm font-medium text-[hsl(var(--reservation-ink))] shadow-inner outline-none backdrop-blur-2xl transition-all duration-200 placeholder:text-[hsl(var(--reservation-muted))] focus:border-white/80 focus:bg-white/62 focus:ring-2 focus:ring-[hsl(var(--reservation-blue)/0.18)]';
 
   const backgroundClass =
     'relative min-h-screen overflow-hidden bg-[hsl(var(--reservation-bg))] font-sans text-[hsl(var(--reservation-ink))] antialiased';
@@ -191,6 +196,51 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
     'lg:max-w-[56rem] lg:p-8';
   const glassCardClass =
     'rounded-[1.6rem] border border-white/58 bg-white/34 shadow-sm backdrop-blur-2xl';
+
+  // Generate Google and ICS Calendar exports
+  const calendarUrls = useMemo(() => {
+    if (!selectedDate || !selectedTime || !restaurant) return { google: '', ics: '' };
+    try {
+      const [hours, minutes] = selectedTime.split(':').map(Number);
+      const start = new Date(selectedDate);
+      start.setHours(hours, minutes, 0, 0);
+
+      // End is 2 hours later
+      const end = new Date(start);
+      end.setHours(end.getHours() + 2);
+
+      const formatUTC = (date: Date) => {
+        return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+      };
+
+      const dtStart = formatUTC(start);
+      const dtEnd = formatUTC(end);
+      const title = `Table chez ${restaurant.name}`;
+      const details = `Réservation pour ${partySize} personnes.\nNom : ${customerName}\nTéléphone : ${customerPhone}`;
+      const location = restaurant.name;
+
+      const googleUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${dtStart}/${dtEnd}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(location)}`;
+
+      const icsContent = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'BEGIN:VEVENT',
+        `SUMMARY:${title}`,
+        `DTSTART:${dtStart}`,
+        `DTEND:${dtEnd}`,
+        `DESCRIPTION:${details}`,
+        `LOCATION:${location}`,
+        'END:VEVENT',
+        'END:VCALENDAR',
+      ].join('\r\n');
+
+      const icsUrl = `data:text/calendar;charset=utf-8,${encodeURIComponent(icsContent)}`;
+
+      return { google: googleUrl, ics: icsUrl };
+    } catch (e) {
+      return { google: '', ics: '' };
+    }
+  }, [selectedDate, selectedTime, restaurant, partySize, customerName, customerPhone]);
 
   // Submit Reservation
   async function handleSubmit() {
@@ -326,6 +376,25 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
         <section className={consoleClass}>
           {/* Drag handle — mobile only */}
           <div className="mx-auto mb-3 mt-1 h-1 w-10 shrink-0 rounded-full bg-black/10 sm:hidden" />
+
+          {/* Close button — mobile only */}
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                if (window.parent) {
+                  window.parent.postMessage({ type: 'sokar-widget-close' }, '*');
+                }
+              } catch (e) {}
+              try {
+                window.close();
+              } catch (e) {}
+            }}
+            className="absolute right-5 top-5 z-30 flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-white/40 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl transition-all duration-200 hover:bg-white/60 active:scale-95 sm:hidden"
+            aria-label="Fermer"
+          >
+            <X size={16} />
+          </button>
           <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent" />
           <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-[hsl(var(--reservation-glow)/0.16)] blur-3xl" />
 
@@ -351,7 +420,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
             </header>
 
             {success ? (
-              <div className="space-y-5 text-center">
+              <div className="animate-in fade-in zoom-in-95 duration-500 space-y-5 text-center">
                 <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-white/70 bg-white/46 text-[hsl(var(--reservation-success))] shadow-lg shadow-black/5 backdrop-blur-2xl">
                   <CheckCircle2 size={34} />
                 </div>
@@ -397,6 +466,42 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                   </div>
                 </div>
 
+                {/* Agenda Export Button & Dropdown */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowCalendarMenu(!showCalendarMenu)}
+                    className="flex w-full items-center justify-center gap-2 rounded-full border border-white/70 bg-white/44 py-3.5 text-sm font-semibold text-[hsl(var(--reservation-ink))] shadow-sm backdrop-blur-2xl transition-all duration-200 hover:bg-white/60 active:scale-[0.98]"
+                  >
+                    <CalendarCheck size={16} />
+                    Ajouter à mon agenda
+                  </button>
+
+                  {showCalendarMenu && (
+                    <div className="animate-in fade-in slide-in-from-top-2 duration-200 absolute left-0 right-0 z-20 mt-2 rounded-2xl border border-white/60 bg-white/90 p-2 shadow-xl backdrop-blur-2xl flex flex-col gap-1">
+                      <a
+                        href={calendarUrls.google}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setShowCalendarMenu(false)}
+                        className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-left text-sm font-medium text-[hsl(var(--reservation-ink))] hover:bg-black/5 transition-colors"
+                      >
+                        <span className="h-2 w-2 rounded-full bg-blue-500" />
+                        Google Calendar
+                      </a>
+                      <a
+                        href={calendarUrls.ics}
+                        download={`reservation-${restaurant?.name.replace(/\s+/g, '-').toLowerCase()}.ics`}
+                        onClick={() => setShowCalendarMenu(false)}
+                        className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-left text-sm font-medium text-[hsl(var(--reservation-ink))] hover:bg-black/5 transition-colors"
+                      >
+                        <Download size={14} className="text-[hsl(var(--reservation-soft))]" />
+                        Apple Calendar / Outlook (.ics)
+                      </a>
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex items-center justify-center gap-2 text-[hsl(var(--reservation-ink))]">
                   <Heart size={14} fill="currentColor" />
                   <span className="text-xs font-semibold text-[hsl(var(--reservation-soft))]">
@@ -416,6 +521,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                     setPartySize(2);
                     setError('');
                     setConfirmedReservation(null);
+                    setShowCalendarMenu(false);
                     const today = new Date();
                     setSelectedDate(today);
                   }}
@@ -512,8 +618,14 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                   )}
 
                   {step === 1 ? (
-                    <div className="space-y-2 sm:space-y-5">
-                      <div className="space-y-1.5 sm:space-y-2.5">
+                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-2 sm:space-y-5">
+                      <div
+                        className={cn(
+                          'space-y-1.5 sm:space-y-2.5 transition-all duration-300 ease-in-out',
+                          activeSection !== 'party' && 'opacity-40 blur-[0.4px] scale-[0.985] sm:opacity-100 sm:blur-0 sm:scale-100',
+                        )}
+                        onClickCapture={() => setActiveSection('party')}
+                      >
                         <label className={labelClass}>
                           <Users size={13} />
                           Nombre de personnes
@@ -523,7 +635,10 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                             <button
                               key={size}
                               type="button"
-                              onClick={() => setPartySize(size)}
+                              onClick={() => {
+                                setPartySize(size);
+                                setActiveSection('date');
+                              }}
                               className={cn(
                                 'h-11 w-11 shrink-0 rounded-full text-sm font-bold transition-all duration-200 lg:h-9 lg:w-auto',
                                 softPillClass,
@@ -536,7 +651,13 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         </div>
                       </div>
 
-                      <div className="space-y-2 sm:space-y-2.5">
+                      <div
+                        className={cn(
+                          'space-y-2 sm:space-y-2.5 transition-all duration-300 ease-in-out',
+                          activeSection !== 'date' && 'opacity-40 blur-[0.4px] scale-[0.985] sm:opacity-100 sm:blur-0 sm:scale-100',
+                        )}
+                        onClickCapture={() => setActiveSection('date')}
+                      >
                         <label className={labelClass}>
                           <CalendarIcon size={13} />
                           Sélectionner la date
@@ -551,6 +672,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                                 onClick={() => {
                                   setSelectedDate(date);
                                   setSelectedTime('');
+                                  setActiveSection('time');
                                 }}
                                 className={cn(
                                   'relative flex h-[3.4rem] min-w-[3.4rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200 lg:h-[4rem] lg:min-w-0',
@@ -574,7 +696,13 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         </div>
                       </div>
 
-                      <div className="space-y-2 sm:space-y-2.5">
+                      <div
+                        className={cn(
+                          'space-y-2 sm:space-y-2.5 transition-all duration-300 ease-in-out',
+                          activeSection !== 'time' && 'opacity-40 blur-[0.4px] scale-[0.985] sm:opacity-100 sm:blur-0 sm:scale-100',
+                        )}
+                        onClickCapture={() => setActiveSection('time')}
+                      >
                         <label className={labelClass}>
                           <Clock size={13} />
                           Créneau horaire
@@ -636,7 +764,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-3">
                       <button
                         type="button"
                         onClick={() => {
