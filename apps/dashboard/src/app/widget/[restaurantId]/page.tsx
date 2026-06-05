@@ -184,7 +184,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   };
   const consoleClass =
     // Mobile: bottom sheet — absolute within main, max-height, scrollable, semi-transparent
-    'absolute bottom-0 left-0 right-0 z-10 w-full max-w-none max-h-[58vh] overflow-y-auto rounded-t-[2.15rem] rounded-b-none border border-white/60 bg-white/55 p-4 pb-6 shadow-[0_-8px_40px_rgba(0,0,0,0.12)] backdrop-blur-2xl ' +
+    'absolute bottom-0 left-0 right-0 z-10 w-full max-w-none max-h-[52vh] overflow-y-auto rounded-t-[2.15rem] rounded-b-none border border-white/60 bg-white/48 p-4 pb-6 shadow-[0_-8px_40px_rgba(0,0,0,0.12)] backdrop-blur-2xl ' +
     // Tablet+: centered modal (restore original behaviour)
     'sm:relative sm:bottom-auto sm:left-auto sm:right-auto sm:max-w-[33rem] sm:max-h-none sm:rounded-[2.15rem] sm:overflow-visible sm:bg-white/42 sm:shadow-2xl sm:shadow-black/10 sm:p-5 ' +
     // Desktop: wider
@@ -312,7 +312,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
 
       <main className="relative h-screen overflow-hidden sm:flex sm:min-h-screen sm:items-center sm:justify-center sm:p-8">
         {/* Mobile: dark overlay on top half for contrast */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-[42vh] bg-gradient-to-b from-black/50 via-black/15 to-transparent sm:hidden" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-[42vh] bg-gradient-to-b from-black/70 via-black/30 to-transparent sm:hidden" />
 
         {/* Mobile restaurant hero visible above bottom sheet */}
         <div className="absolute inset-x-0 top-0 z-20 flex h-[38vh] flex-col items-center justify-center px-6 text-center sm:hidden">
@@ -329,9 +329,9 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
           <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent" />
           <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-[hsl(var(--reservation-glow)/0.16)] blur-3xl" />
 
-          <div className="relative z-10 space-y-5 lg:space-y-6">
-            {/* Header — visible uniquement mobile/tablette, masqué sur desktop */}
-            <header className="flex items-center justify-between gap-3 lg:hidden">
+          <div className="relative z-10 space-y-5 sm:space-y-6">
+            {/* Header — masqué sur mobile (nom déjà dans le hero), visible tablette+ */}
+            <header className="hidden items-center justify-between gap-3 sm:flex">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/70 bg-white/50 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">
                   <Utensils size={18} />
@@ -443,14 +443,14 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                     </div>
                   </div>
 
-                  <div className={cn(glassCardClass, 'relative overflow-hidden p-5')}>
+                  <div className={cn(glassCardClass, 'relative overflow-hidden p-4 sm:p-5')}>
                     <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-[hsl(var(--reservation-glow)/0.12)] blur-2xl" />
                     <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[hsl(var(--reservation-muted))]">
                       {step === 2 ? 'Résumé' : 'Choisissez votre table'}
                     </p>
                     <div className="mt-3 flex items-end justify-between gap-3">
                       <div className="min-w-0">
-                        <h1 className="truncate text-[3.2rem] font-black leading-[0.85] tracking-normal text-[hsl(var(--reservation-ink))] lg:text-[2.2rem] lg:leading-[0.9]">
+                        <h1 className="truncate text-[2.4rem] font-black leading-[0.85] tracking-normal text-[hsl(var(--reservation-ink))] sm:text-[3.2rem] lg:text-[2.2rem] lg:leading-[0.9]">
                           {dateTitle}
                         </h1>
                         <p className="mt-1 truncate text-[2rem] font-black leading-none tracking-normal text-[hsl(var(--reservation-muted))] lg:text-[1.5rem]">
@@ -497,7 +497,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                 </div>
 
                 {/* Colonne droite */}
-                <div className="space-y-5">
+                <div className="space-y-4 sm:space-y-5">
                   {/* Badge Réservation — desktop only, aligns with left col header */}
                   <div className="hidden lg:flex lg:items-center lg:justify-end">
                     <span className="rounded-full border border-white/70 bg-white/44 px-3.5 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--reservation-muted))] shadow-sm backdrop-blur-2xl">
@@ -512,8 +512,8 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                   )}
 
                   {step === 1 ? (
-                    <div className="space-y-5">
-                      <div className="space-y-2.5">
+                    <div className="space-y-4 sm:space-y-5">
+                      <div className="space-y-2 sm:space-y-2.5">
                         <label className={labelClass}>
                           <Users size={13} />
                           Nombre de personnes
@@ -536,7 +536,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         </div>
                       </div>
 
-                      <div className="space-y-2.5">
+                      <div className="space-y-2 sm:space-y-2.5">
                         <label className={labelClass}>
                           <CalendarIcon size={13} />
                           Sélectionner la date
@@ -574,7 +574,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         </div>
                       </div>
 
-                      <div className="space-y-2.5">
+                      <div className="space-y-2 sm:space-y-2.5">
                         <label className={labelClass}>
                           <Clock size={13} />
                           Créneau horaire
