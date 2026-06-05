@@ -184,7 +184,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   };
   const consoleClass =
     // Mobile: bottom sheet — absolute within main, max-height, scrollable, semi-transparent
-    'absolute bottom-0 left-0 right-0 z-10 w-full max-w-none max-h-[52vh] overflow-y-auto rounded-t-[2.15rem] rounded-b-none border border-white/60 bg-white/48 p-4 pb-6 shadow-[0_-8px_40px_rgba(0,0,0,0.12)] backdrop-blur-2xl ' +
+    'absolute bottom-0 left-0 right-0 z-10 w-full max-w-none max-h-[55vh] rounded-t-[2.15rem] rounded-b-none border border-white/60 bg-white/48 p-4 pb-4 shadow-[0_-8px_40px_rgba(0,0,0,0.12)] backdrop-blur-2xl ' +
     // Tablet+: centered modal (restore original behaviour)
     'sm:relative sm:bottom-auto sm:left-auto sm:right-auto sm:max-w-[33rem] sm:max-h-none sm:rounded-[2.15rem] sm:overflow-visible sm:bg-white/42 sm:shadow-2xl sm:shadow-black/10 sm:p-5 ' +
     // Desktop: wider
@@ -329,7 +329,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
           <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent" />
           <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-[hsl(var(--reservation-glow)/0.16)] blur-3xl" />
 
-          <div className="relative z-10 space-y-5 sm:space-y-6">
+          <div className="relative z-10 space-y-3 sm:space-y-6">
             {/* Header — masqué sur mobile (nom déjà dans le hero), visible tablette+ */}
             <header className="hidden items-center justify-between gap-3 sm:flex">
               <div className="flex min-w-0 items-center gap-3">
@@ -443,7 +443,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                     </div>
                   </div>
 
-                  <div className={cn(glassCardClass, 'relative overflow-hidden p-4 sm:p-5')}>
+                  <div className={cn(glassCardClass, 'relative overflow-hidden p-3 sm:p-5')}>
                     <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-[hsl(var(--reservation-glow)/0.12)] blur-2xl" />
                     <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[hsl(var(--reservation-muted))]">
                       {step === 2 ? 'Résumé' : 'Choisissez votre table'}
@@ -497,7 +497,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                 </div>
 
                 {/* Colonne droite */}
-                <div className="space-y-4 sm:space-y-5">
+                <div className="space-y-3 sm:space-y-5">
                   {/* Badge Réservation — desktop only, aligns with left col header */}
                   <div className="hidden lg:flex lg:items-center lg:justify-end">
                     <span className="rounded-full border border-white/70 bg-white/44 px-3.5 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--reservation-muted))] shadow-sm backdrop-blur-2xl">
@@ -512,13 +512,13 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                   )}
 
                   {step === 1 ? (
-                    <div className="space-y-4 sm:space-y-5">
+                    <div className="space-y-3 sm:space-y-5">
                       <div className="space-y-2 sm:space-y-2.5">
                         <label className={labelClass}>
                           <Users size={13} />
                           Nombre de personnes
                         </label>
-                        <div className="scrollbar-none flex gap-2 overflow-x-auto pb-1 lg:grid lg:grid-cols-8 lg:overflow-visible">
+                        <div className="scrollbar-none flex gap-1.5 overflow-x-auto pb-1 lg:grid lg:grid-cols-8 lg:overflow-visible">
                           {[1, 2, 3, 4, 5, 6, 7, 8].map((size) => (
                             <button
                               key={size}
@@ -541,7 +541,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                           <CalendarIcon size={13} />
                           Sélectionner la date
                         </label>
-                        <div className="scrollbar-none flex snap-x gap-2 overflow-x-auto pb-1 lg:grid lg:grid-cols-5 lg:overflow-visible">
+                        <div className="scrollbar-none flex snap-x gap-1.5 overflow-x-auto pb-1 lg:grid lg:grid-cols-5 lg:overflow-visible">
                           {days.map((date, idx) => {
                             const isSelected = selectedDate?.toDateString() === date.toDateString();
                             return (
@@ -553,7 +553,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                                   setSelectedTime('');
                                 }}
                                 className={cn(
-                                  'relative flex h-[4.65rem] min-w-[4.15rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200 lg:h-[4rem] lg:min-w-0',
+                                  'relative flex h-[3.8rem] min-w-[3.8rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200 lg:h-[4rem] lg:min-w-0',
                                   softPillClass,
                                   isSelected &&
                                     'border-[hsl(var(--reservation-ink))] bg-white/58 text-[hsl(var(--reservation-ink))] shadow-lg shadow-black/10',
@@ -562,7 +562,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                                 {isSelected && (
                                   <span className="absolute bottom-2 left-1/2 h-1 w-5 -translate-x-1/2 rounded-full bg-[hsl(var(--reservation-blue))]" />
                                 )}
-                                <span className="text-2xl font-black leading-none tracking-normal">
+                                <span className="text-xl font-black leading-none tracking-normal">
                                   {date.getDate()}
                                 </span>
                                 <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] opacity-75">
@@ -702,7 +702,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                     onClick={step === 1 ? () => setStep(2) : handleSubmit}
                     disabled={!canProceed}
                     className={cn(
-                      'flex w-full items-center justify-center gap-2 rounded-full py-4 text-sm font-semibold shadow-lg shadow-black/10 transition-all duration-200 active:scale-[0.97]',
+                      'flex w-full items-center justify-center gap-2 rounded-full py-3.5 text-sm font-semibold shadow-lg shadow-black/10 transition-all duration-200 active:scale-[0.97]',
                       canProceed
                         ? 'bg-[hsl(var(--reservation-ink))] text-white hover:-translate-y-0.5'
                         : 'cursor-not-allowed bg-white/42 text-[hsl(var(--reservation-muted))] opacity-80 shadow-none',
@@ -727,7 +727,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
               </div>
             )}
 
-            <div className="flex items-center justify-center gap-1.5 pt-1 lg:pt-2">
+            <div className="flex items-center justify-center gap-1.5 pt-0 lg:pt-2">
               <span className="text-[10px] tracking-wide text-[hsl(var(--reservation-muted)/0.72)]">
                 Propulsé par
               </span>
