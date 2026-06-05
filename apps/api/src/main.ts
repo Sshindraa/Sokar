@@ -79,7 +79,8 @@ export async function buildApp() {
   }
 
   // Routes Telnyx Voice
-  await app.register(import('./modules/voice/telnyx.pipeline').then(m => m.telnyxVoiceRoutes));
+  const { telnyxVoiceRoutes } = await import('./modules/voice/telnyx.pipeline');
+  await telnyxVoiceRoutes(app);
 
   app.get('/health', async (_req, reply) => {
     let dbStatus = 'ok', redisStatus = 'ok';
