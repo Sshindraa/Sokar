@@ -184,7 +184,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   };
   const consoleClass =
     // Mobile: bottom sheet — absolute within main, max-height, scrollable, semi-transparent
-    'absolute bottom-0 left-0 right-0 z-10 w-full max-w-none max-h-[60vh] rounded-t-[2.15rem] rounded-b-none border border-white/60 bg-white/48 p-3 pb-3 shadow-[0_-8px_40px_rgba(0,0,0,0.12)] backdrop-blur-2xl ' +
+    'absolute bottom-0 left-0 right-0 z-10 w-full max-w-none max-h-[82dvh] overflow-y-auto scrollbar-none rounded-t-[2.15rem] rounded-b-none border border-white/60 bg-white/48 p-5 pb-10 shadow-[0_-8px_40px_rgba(0,0,0,0.12)] backdrop-blur-2xl ' +
     // Tablet+: centered modal (restore original behaviour)
     'sm:relative sm:bottom-auto sm:left-auto sm:right-auto sm:max-w-[33rem] sm:max-h-none sm:rounded-[2.15rem] sm:overflow-visible sm:bg-white/42 sm:shadow-2xl sm:shadow-black/10 sm:p-5 ' +
     // Desktop: wider
@@ -310,7 +310,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
       <div className="pointer-events-none absolute left-1/2 top-1/2 h-[34rem] w-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[hsl(var(--reservation-glow)/0.11)] blur-3xl" />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,hsl(var(--reservation-ink)/0.025)_1px,transparent_1px)] bg-[length:96px_96px] opacity-30" />
 
-      <main className="relative h-screen overflow-hidden sm:flex sm:min-h-screen sm:items-center sm:justify-center sm:p-8">
+      <main className="relative h-[100dvh] overflow-hidden sm:flex sm:min-h-screen sm:items-center sm:justify-center sm:p-8">
         {/* Mobile: dark overlay on top half for contrast */}
         <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-[42vh] bg-gradient-to-b from-black/70 via-black/30 to-transparent sm:hidden" />
 
@@ -525,7 +525,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                               type="button"
                               onClick={() => setPartySize(size)}
                               className={cn(
-                                'h-9 w-9 shrink-0 rounded-full text-sm font-semibold lg:h-9 lg:w-auto',
+                                'h-11 w-11 shrink-0 rounded-full text-sm font-bold transition-all duration-200 lg:h-9 lg:w-auto',
                                 softPillClass,
                                 partySize === size && selectedPillClass,
                               )}
@@ -556,7 +556,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                                   'relative flex h-[3.4rem] min-w-[3.4rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200 lg:h-[4rem] lg:min-w-0',
                                   softPillClass,
                                   isSelected &&
-                                    'border-[hsl(var(--reservation-ink))] bg-white/58 text-[hsl(var(--reservation-ink))] shadow-lg shadow-black/10',
+                                    'border-[hsl(var(--reservation-ink))] bg-[hsl(var(--reservation-ink))] text-[hsl(var(--reservation-panel))] shadow-lg shadow-black/10 hover:bg-[hsl(var(--reservation-ink))] hover:text-[hsl(var(--reservation-panel))]',
                                 )}
                               >
                                 {isSelected && (
@@ -615,17 +615,20 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                           </div>
                         ) : (
                           <div
-                            className={cn(glassCardClass, 'flex items-center gap-3 p-3 text-left')}
+                            className={cn(
+                              glassCardClass,
+                              'flex items-center gap-4 p-5 text-left border-dashed border-white/40 bg-white/20 transition-all duration-300 hover:bg-white/28',
+                            )}
                           >
-                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/42 text-[hsl(var(--reservation-muted))]">
-                              <Clock size={20} className="opacity-50" />
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/30 text-[hsl(var(--reservation-muted))] shadow-inner">
+                              <Clock size={24} className="opacity-40" />
                             </div>
                             <div>
-                              <p className="text-sm font-bold text-[hsl(var(--reservation-soft))]">
+                              <p className="text-sm font-bold tracking-tight text-[hsl(var(--reservation-ink))]">
                                 Aucun service ce jour-là
                               </p>
-                              <p className="mt-0.5 text-xs text-[hsl(var(--reservation-muted))]">
-                                Choisissez une autre date.
+                              <p className="mt-0.5 text-xs leading-normal text-[hsl(var(--reservation-soft))]">
+                                {"L'établissement ne propose pas de réservations en ligne pour cette date. Choisissez une autre date ci-dessus."}
                               </p>
                             </div>
                           </div>
