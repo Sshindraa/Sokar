@@ -57,3 +57,5 @@ apps/api/scratch/
 
 # Shopify test directory
 Unboxxed/
+.git.backup.bak/
+agent 2
