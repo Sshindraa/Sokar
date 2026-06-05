@@ -49,12 +49,62 @@ function AudioWaveform() {
   );
 }
 
+/* ===== HELPER: SegmentedSlider ===== */
+function SegmentedSlider({
+  label,
+  value,
+  labels,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  labels: string[];
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/55">
+        <span className="font-sans">{label}</span>
+        <span className="font-mono text-cyan-400">{labels[value]}</span>
+      </div>
+      <div className="relative flex items-center h-6">
+        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-0.5 bg-white/10 rounded-full" />
+        <div className="absolute inset-x-[2px] top-1/2 -translate-y-1/2 flex justify-between pointer-events-none">
+          {labels.map((_, i) => (
+            <div
+              key={i}
+              className={`w-2 h-2 rounded-full transition-all duration-200 ${
+                i === value ? 'bg-cyan-400 scale-125' : 'bg-white/25'
+              }`}
+            />
+          ))}
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={labels.length - 1}
+          step={1}
+          value={value}
+          onChange={(e) => onChange(parseInt(e.target.value, 10))}
+          className="relative z-10 w-full h-full appearance-none cursor-pointer accent-cyan-500 bg-transparent transition-all focus:outline-none focus:ring-0"
+          style={{ minHeight: 44 }}
+        />
+      </div>
+    </div>
+  );
+}
+
+const PROFILE_LABELS = ['Bistrot & Brasserie', 'Semi-gastro', 'Gastronomique'];
+const STYLE_LABELS = ['Chaleureux', 'Professionnel', 'Décontracté'];
+const SPEED_LABELS = ['Posé', 'Normal', 'Dynamique'];
+const PITCH_LABELS = ['Chaude', 'Neutre', 'Claire'];
+
 /* ===== HELPER: TelemetryTuner ===== */
 function TelemetryTuner() {
-  const [speed, setSpeed] = useState(1.15);
-  const [pitch, setPitch] = useState(1.0);
-  const [threshold, setThreshold] = useState(-42);
-  const [latency, setLatency] = useState(140);
+  const [profileIdx, setProfileIdx] = useState(0);
+  const [styleIdx, setStyleIdx] = useState(2);
+  const [speedIdx, setSpeedIdx] = useState(1);
+  const [pitchIdx, setPitchIdx] = useState(1);
   const [coords, setCoords] = useState({ x: 0, y: 0 });
   const [isHovered, setIsHovered] = useState(false);
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -77,27 +127,38 @@ function TelemetryTuner() {
       <div className="absolute inset-0 pointer-events-none transition-opacity duration-300" style={{ opacity: isHovered ? 1 : 0, background: `radial-gradient(220px circle at ${coords.x}px ${coords.y}px, rgba(6, 182, 212, 0.06), transparent 80%)` }} />
       <div className="absolute top-2 left-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">+ 01_HMI_TUNER</div>
       <div className="absolute top-2 right-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">SYS_OK</div>
-      <div className="absolute bottom-2 left-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">THRESHOLD: DYNAMIC</div>
+      <div className="absolute bottom-2 left-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">SOKAR_OS</div>
       <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-cyan-500/20 bg-cyan-500/10 text-xs sm:text-[11px] font-bold tracking-widest uppercase text-cyan-400">
-        <span className="h-1 w-1 rounded-full bg-cyan-500 animate-ping" /> LIVE
+        <span className="h-1 w-1 rounded-full bg-cyan-500 animate-ping" /> Personnalité de l&apos;Agent
       </div>
       <div className="flex-1 flex items-center justify-center py-2 relative">
         <AudioWaveform />
       </div>
-      <div className="space-y-2.5 mt-3 z-10">
-        {[
-          { label: 'SPEED', value: speed, setter: setSpeed, min: 0.3, max: 3.0, unit: 'x', fmt: (v: number) => v.toFixed(2) + 'x' },
-          { label: 'PITCH', value: pitch, setter: setPitch, min: 0.5, max: 1.8, unit: 'Hz', fmt: (v: number) => v.toFixed(2) + ' Hz' },
-          { label: 'THRESH', value: threshold, setter: setThreshold, min: -70, max: -10, unit: 'dB', fmt: (v: number) => v + ' dB' },
-          { label: 'LATENCY', value: latency, setter: setLatency, min: 5, max: 500, unit: 'ms', fmt: (v: number) => v + ' ms' },
-        ].map(({ label, value, setter, min, max, fmt }) => (
-          <div key={label} className="flex items-center gap-2 sm:gap-3 text-xs sm:text-[11px] font-mono text-white/60">
-            <span className="w-12 sm:w-14 text-right tracking-widest text-white/40">{label}</span>
-            <input type="range" min={min} max={max} step={(max - min) / 200} value={value} onChange={(e) => setter(parseFloat(e.target.value))}
-              className="w-full h-2 sm:h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-cyan-500 transition-all focus:outline-none focus:ring-0" style={{ minHeight: 44 }} />
-            <span className="font-mono text-cyan-400 w-16 sm:w-18 text-right">{fmt(value)}</span>
-          </div>
-        ))}
+      <div className="space-y-3 mt-3 z-10">
+        <SegmentedSlider
+          label="Ambiance de l&apos;établissement"
+          value={profileIdx}
+          labels={PROFILE_LABELS}
+          onChange={setProfileIdx}
+        />
+        <SegmentedSlider
+          label="Personnalité de l&apos;agent"
+          value={styleIdx}
+          labels={STYLE_LABELS}
+          onChange={setStyleIdx}
+        />
+        <SegmentedSlider
+          label="Rapidité de parole"
+          value={speedIdx}
+          labels={SPEED_LABELS}
+          onChange={setSpeedIdx}
+        />
+        <SegmentedSlider
+          label="Timbre de la voix"
+          value={pitchIdx}
+          labels={PITCH_LABELS}
+          onChange={setPitchIdx}
+        />
       </div>
     </div>
   );
