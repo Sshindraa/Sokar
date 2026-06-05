@@ -43,7 +43,7 @@ export default function HomePage() {
         <nav className="flex items-center gap-2 rounded-full border border-white/10 bg-black/80 px-3 py-2 shadow-2xl backdrop-blur-xl">
           {/* Logo inside navbar on mobile */}
           <Link href="/" className="flex items-center gap-1.5 md:hidden pl-1 hover:opacity-80 transition-opacity">
-            <Image src="/logo-nav.png" alt="Sokar" width={28} height={28} className="h-7 w-7" priority />
+            <Image src="/logo-nav.png" alt="Sokar" width={28} height={28} className="h-7 w-7" />
           </Link>
           <span className="h-4 w-px bg-white/10 md:hidden mx-1" />
 
@@ -108,7 +108,7 @@ export default function HomePage() {
               <Phone size={18} />
             </span>
             <h3 className="text-lg font-bold text-white font-sans">100% des appels traités</h3>
-            <p className="text-[13px] text-white/60 leading-relaxed font-sans">Sokar gère plusieurs appels simultanés lors des pics de service. Finis les clients frustrés qui tombent sur messagerie.</p>
+            <p className="text-xs text-white/60 leading-relaxed font-sans">Sokar gère plusieurs appels simultanés lors des pics de service. Finis les clients frustrés qui tombent sur messagerie.</p>
           </div>
 
           <div className="glass-card p-6 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300 flex flex-col gap-4">
@@ -116,7 +116,7 @@ export default function HomePage() {
               <CalendarCheck size={18} />
             </span>
             <h3 className="text-lg font-bold text-white font-sans">Zéro double saisie</h3>
-            <p className="text-[13px] text-white/60 leading-relaxed font-sans">Intégration transparente et bidirectionnelle avec vos logiciels de réservation (ZenChef, TheFork) et de caisse.</p>
+            <p className="text-xs text-white/60 leading-relaxed font-sans">Intégration transparente et bidirectionnelle avec vos logiciels de réservation (ZenChef, TheFork) et de caisse.</p>
           </div>
 
           <div className="glass-card p-6 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300 flex flex-col gap-4">
@@ -124,7 +124,7 @@ export default function HomePage() {
               <Zap size={18} />
             </span>
             <h3 className="text-lg font-bold text-white font-sans">Intelligence locale</h3>
-            <p className="text-[13px] text-white/60 leading-relaxed font-sans">Sokar connaît vos plats du jour, vos allergènes et prend des décisions complexes selon les consignes que vous lui donnez.</p>
+            <p className="text-xs text-white/60 leading-relaxed font-sans">Sokar connaît vos plats du jour, vos allergènes et prend des décisions complexes selon les consignes que vous lui donnez.</p>
           </div>
         </section>
 
@@ -144,7 +144,7 @@ export default function HomePage() {
       {/* FOOTER — fully static, server-rendered */}
       <footer className="relative z-10 w-full border-t border-white/5 bg-black/40 backdrop-blur-md pt-16 pb-12 mt-20 px-6 flex flex-col items-center">
         <div className="absolute inset-x-0 bottom-0 overflow-hidden pointer-events-none select-none flex justify-center -z-10 opacity-30">
-          <span className="stroke-text font-black text-[12vw] tracking-[0.1em] uppercase leading-none select-none">SOKAR</span>
+          <span aria-hidden="true" className="stroke-text font-black text-[12vw] tracking-[0.1em] uppercase leading-none select-none">SOKAR</span>
         </div>
 
         <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
@@ -196,21 +196,21 @@ export default function HomePage() {
 
           <div className="flex flex-col gap-3">
             <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white/80 font-sans">Produit</h4>
-            <a href="#demo" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Démonstration</a>
-            <a href="#tarifs" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Tarifs</a>
-            <a href="#faq" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">FAQ</a>
+            <a href="#demo" className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Démonstration</a>
+            <a href="#tarifs" className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Tarifs</a>
+            <a href="#faq" className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">FAQ</a>
           </div>
 
           <div className="flex flex-col gap-3">
             <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white/80 font-sans">Entreprise</h4>
-            <a href="#waitlist" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Waitlist Bêta</a>
-            <Link href="/login" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Espace Partenaire</Link>
+            <a href="#waitlist" className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Waitlist Bêta</a>
+            <Link href="/login" className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Espace Partenaire</Link>
           </div>
 
           <div className="flex flex-col gap-3">
             <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white/80 font-sans">Légal</h4>
-            <a href="#" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Mentions Légales</a>
-            <a href="#" className="text-xs text-white/45 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Confidentialité</a>
+            <a href="#" className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Mentions Légales</a>
+            <a href="#" className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Confidentialité</a>
           </div>
         </div>
 
@@ -218,7 +218,7 @@ export default function HomePage() {
           <p className="text-xs tracking-[0.1em] uppercase text-white/30 font-sans">
             &copy; {new Date().getFullYear()} SOKAR OS. TOUS DROITS RÉSERVÉS.
           </p>
-          <div className="flex items-center gap-1.5 text-xs tracking-[0.15em] uppercase text-white/45 bg-white/5 border border-white/10 px-3 py-1 rounded-full font-bold">
+          <div className="flex items-center gap-1.5 text-xs tracking-[0.15em] uppercase text-white/40 bg-white/5 border border-white/10 px-3 py-1 rounded-full font-bold">
             <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
             Bêta Privée
           </div>

@@ -36,7 +36,7 @@ export default function PwaInstallBanner() {
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, []);
+  }, [pathname]);
 
   const handleDismiss = () => {
     triggerHaptic(10);
