@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useApi } from '../../../lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -17,6 +17,7 @@ import {
   Mail,
   Utensils,
   Heart,
+  Loader2,
 } from 'lucide-react';
 
 const reservationTheme: CSSProperties & Record<`--${string}`, string> = {
@@ -48,12 +49,33 @@ const FRENCH_MONTHS = [
   'Décembre',
 ];
 
+interface OpeningHours {
+  open: string;
+  close: string;
+}
+
+interface RestaurantPublic {
+  name: string;
+  openingHours: Record<string, OpeningHours | null>;
+}
+
+interface ConfirmedReservation {
+  id: string;
+  restaurantId: string;
+  reservedAt: string;
+  partySize: number;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string;
+  status: string;
+}
+
 export default function ReservationWidget({ params }: { params: { restaurantId: string } }) {
   const { get, post } = useApi();
   const restaurantId = params.restaurantId;
 
   // Restaurant public metadata
-  const [restaurant, setRestaurant] = useState<any>(null);
+  const [restaurant, setRestaurant] = useState<RestaurantPublic | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -71,7 +93,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   // Submission state
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [confirmedReservation, setConfirmedReservation] = useState<any>(null);
+  const [confirmedReservation, setConfirmedReservation] = useState<ConfirmedReservation | null>(null);
 
   // Load public restaurant info
   useEffect(() => {
@@ -91,18 +113,21 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   }, [restaurantId, get]);
 
   // Generate next 14 days
-  const days: Date[] = [];
-  for (let i = 0; i < 14; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() + i);
-    days.push(d);
-  }
+  const days = useMemo(() => {
+    const result: Date[] = [];
+    for (let i = 0; i < 14; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      result.push(d);
+    }
+    return result;
+  }, []);
 
   // Generate 30-min time slots based on opening hours
-  const generateSlots = (date: Date) => {
-    if (!restaurant?.openingHours) return [];
+  const timeSlots = useMemo(() => {
+    if (!selectedDate || !restaurant?.openingHours) return [];
     const daysMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-    const dayName = daysMap[date.getDay()];
+    const dayName = daysMap[selectedDate.getDay()];
     const hours = restaurant.openingHours[dayName];
 
     if (!hours || !hours.open || !hours.close) {
@@ -113,10 +138,10 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
     const [startHour, startMin] = hours.open.split(':').map(Number);
     const [endHour, endMin] = hours.close.split(':').map(Number);
 
-    const start = new Date(date);
+    const start = new Date(selectedDate);
     start.setHours(startHour, startMin, 0, 0);
 
-    const end = new Date(date);
+    const end = new Date(selectedDate);
     end.setHours(endHour, endMin, 0, 0);
 
     let current = new Date(start);
@@ -128,11 +153,16 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
     }
 
     return slots;
-  };
+  }, [selectedDate, restaurant]);
 
-  const timeSlots = selectedDate ? generateSlots(selectedDate) : [];
-  const lunchSlots = timeSlots.filter((time) => Number(time.split(':')[0]) < 15);
-  const dinnerSlots = timeSlots.filter((time) => Number(time.split(':')[0]) >= 15);
+  const lunchSlots = useMemo(
+    () => timeSlots.filter((time) => Number(time.split(':')[0]) < 15),
+    [timeSlots],
+  );
+  const dinnerSlots = useMemo(
+    () => timeSlots.filter((time) => Number(time.split(':')[0]) >= 15),
+    [timeSlots],
+  );
 
   const labelClass =
     'flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--reservation-muted))]';
@@ -162,6 +192,12 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
       return;
     }
 
+    const phoneDigits = customerPhone.replace(/\D/g, '');
+    if (phoneDigits.length < 10) {
+      setError('Veuillez entrer un numéro de téléphone valide (10 chiffres minimum).');
+      return;
+    }
+
     setSubmitting(true);
     setError('');
 
@@ -178,6 +214,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
         customerPhone: customerPhone.startsWith('+')
           ? customerPhone
           : `+33${customerPhone.replace(/^0/, '')}`,
+        customerEmail: customerEmail || undefined,
       });
 
       setConfirmedReservation(res);
@@ -257,6 +294,10 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
       ? `${selectedDate.getDate()} ${FRENCH_MONTHS[selectedDate.getMonth()].substring(0, 3)}`
       : 'table.';
 
+  const canProceed = step === 1
+    ? Boolean(selectedTime)
+    : Boolean(!submitting && customerName && customerPhone);
+
   return (
     <div className={backgroundClass} style={backgroundStyle}>
       <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/60 to-transparent" />
@@ -300,6 +341,11 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                   <p className="mx-auto mt-1 max-w-xs text-xs text-[hsl(var(--reservation-muted))]">
                     Un SMS de confirmation a été envoyé au {customerPhone}.
                   </p>
+                  {confirmedReservation?.id && (
+                    <p className="mt-2 text-[10px] font-mono text-[hsl(var(--reservation-soft))]">
+                      N° de réservation : {confirmedReservation.id.slice(0, 12)}...
+                    </p>
+                  )}
                 </div>
 
                 <div className={cn(glassCardClass, 'flex overflow-hidden text-left')}>
@@ -345,6 +391,12 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                     setSelectedTime('');
                     setCustomerName('');
                     setCustomerPhone('');
+                    setCustomerEmail('');
+                    setPartySize(2);
+                    setError('');
+                    setConfirmedReservation(null);
+                    const today = new Date();
+                    setSelectedDate(today);
                   }}
                   className="w-full rounded-full bg-[hsl(var(--reservation-ink))] py-4 text-sm font-semibold text-white shadow-lg shadow-black/10 transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.97]"
                 >
@@ -383,7 +435,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                   {step === 2 && (
                     <div className={cn(glassCardClass, 'flex overflow-hidden')}>
                       <div className="flex w-[6.5rem] flex-col items-center justify-center border-r border-white/50 bg-white/24 p-4 text-center">
-                        <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--reservation-muted))]">
+                        <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--reservation-muted))]">
                           {selectedDate && FRENCH_DAYS[selectedDate.getDay()].substring(0, 3)}
                         </span>
                         <span className="my-0.5 text-3xl font-black tracking-normal text-[hsl(var(--reservation-ink))]">
@@ -394,7 +446,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         </span>
                       </div>
                       <div className="min-w-0 flex-1 p-4">
-                        <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--reservation-blue))]">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--reservation-blue))]">
                           Résumé
                         </p>
                         <h4 className="mt-1 truncate text-sm font-extrabold text-[hsl(var(--reservation-ink))]">
@@ -468,7 +520,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                                 {isSelected && (
                                   <span className="absolute bottom-2 left-1/2 h-1 w-5 -translate-x-1/2 rounded-full bg-[hsl(var(--reservation-blue))]" />
                                 )}
-                                <span className="text-[23px] font-black leading-none tracking-normal">
+                                <span className="text-2xl font-black leading-none tracking-normal">
                                   {date.getDate()}
                                 </span>
                                 <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] opacity-75">
@@ -542,7 +594,10 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                     <div className="space-y-4">
                       <button
                         type="button"
-                        onClick={() => setStep(1)}
+                        onClick={() => {
+                          setStep(1);
+                          setError('');
+                        }}
                         className={cn(
                           'inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold',
                           softPillClass,
@@ -553,11 +608,12 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                       </button>
 
                       <div className="space-y-1.5">
-                        <label className={cn(labelClass, 'ml-2')}>
+                        <label htmlFor="customerName" className={cn(labelClass, 'ml-2')}>
                           <User size={12} />
                           Nom complet *
                         </label>
                         <input
+                          id="customerName"
                           value={customerName}
                           onChange={(e) => setCustomerName(e.target.value)}
                           placeholder="Alice Martin"
@@ -567,11 +623,12 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className={cn(labelClass, 'ml-2')}>
+                        <label htmlFor="customerPhone" className={cn(labelClass, 'ml-2')}>
                           <Phone size={12} />
                           Téléphone *
                         </label>
                         <input
+                          id="customerPhone"
                           type="tel"
                           value={customerPhone}
                           onChange={(e) => setCustomerPhone(e.target.value)}
@@ -582,11 +639,12 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className={cn(labelClass, 'ml-2')}>
+                        <label htmlFor="customerEmail" className={cn(labelClass, 'ml-2')}>
                           <Mail size={12} />
                           Adresse Email (optionnel)
                         </label>
                         <input
+                          id="customerEmail"
                           type="email"
                           value={customerEmail}
                           onChange={(e) => setCustomerEmail(e.target.value)}
@@ -600,12 +658,10 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                   <button
                     type="button"
                     onClick={step === 1 ? () => setStep(2) : handleSubmit}
-                    disabled={
-                      step === 1 ? !selectedTime : submitting || !customerName || !customerPhone
-                    }
+                    disabled={!canProceed}
                     className={cn(
                       'flex w-full items-center justify-center gap-2 rounded-full py-4 text-sm font-semibold shadow-lg shadow-black/10 transition-all duration-200 active:scale-[0.97]',
-                      (step === 1 ? selectedTime : !submitting && customerName && customerPhone)
+                      canProceed
                         ? 'bg-[hsl(var(--reservation-ink))] text-white hover:-translate-y-0.5'
                         : 'cursor-not-allowed bg-white/42 text-[hsl(var(--reservation-muted))] opacity-80 shadow-none',
                     )}
@@ -616,7 +672,13 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         ? 'Validation...'
                         : 'Valider la réservation'}
                     <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/12">
-                      {step === 1 ? <ChevronRight size={16} /> : <CheckCircle2 size={16} />}
+                      {step === 1 ? (
+                        <ChevronRight size={16} />
+                      ) : submitting ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <CheckCircle2 size={16} />
+                      )}
                     </span>
                   </button>
                 </div>
