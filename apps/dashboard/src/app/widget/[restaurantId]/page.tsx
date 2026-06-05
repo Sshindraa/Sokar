@@ -183,10 +183,10 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
       'radial-gradient(circle at 50% 20%, hsl(var(--reservation-glow)/0.2), transparent 18rem), linear-gradient(145deg, hsl(var(--reservation-wash)) 0%, hsl(var(--reservation-bg)) 46%, hsl(34 20% 86%) 100%)',
   };
   const consoleClass =
-    // Mobile: bottom sheet fixed at bottom with top rounding only
-    'fixed bottom-0 left-0 right-0 z-10 w-full max-w-none overflow-hidden rounded-t-[2.15rem] rounded-b-none border border-white/60 bg-white/72 p-4 shadow-[0_-8px_40px_rgba(0,0,0,0.12)] backdrop-blur-2xl ' +
+    // Mobile: bottom sheet — absolute within main, max-height, scrollable, semi-transparent
+    'absolute bottom-0 left-0 right-0 z-10 w-full max-w-none max-h-[58vh] overflow-y-auto rounded-t-[2.15rem] rounded-b-none border border-white/60 bg-white/55 p-4 pb-6 shadow-[0_-8px_40px_rgba(0,0,0,0.12)] backdrop-blur-2xl ' +
     // Tablet+: centered modal (restore original behaviour)
-    'sm:relative sm:bottom-auto sm:left-auto sm:right-auto sm:max-w-[33rem] sm:rounded-[2.15rem] sm:bg-white/42 sm:shadow-2xl sm:shadow-black/10 sm:p-5 ' +
+    'sm:relative sm:bottom-auto sm:left-auto sm:right-auto sm:max-w-[33rem] sm:max-h-none sm:rounded-[2.15rem] sm:overflow-visible sm:bg-white/42 sm:shadow-2xl sm:shadow-black/10 sm:p-5 ' +
     // Desktop: wider
     'lg:max-w-[56rem] lg:p-8';
   const glassCardClass =
@@ -310,20 +310,19 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
       <div className="pointer-events-none absolute left-1/2 top-1/2 h-[34rem] w-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[hsl(var(--reservation-glow)/0.11)] blur-3xl" />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,hsl(var(--reservation-ink)/0.025)_1px,transparent_1px)] bg-[length:96px_96px] opacity-30" />
 
-      {/* Mobile: dark overlay on top half for contrast */}
-      <div className="absolute inset-x-0 top-0 z-[1] h-[42vh] bg-gradient-to-b from-black/50 via-black/15 to-transparent lg:hidden" />
+      <main className="relative h-screen overflow-hidden sm:flex sm:min-h-screen sm:items-center sm:justify-center sm:p-8">
+        {/* Mobile: dark overlay on top half for contrast */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-[42vh] bg-gradient-to-b from-black/50 via-black/15 to-transparent sm:hidden" />
 
-      {/* Mobile restaurant hero visible above bottom sheet */}
-      <div className="absolute inset-x-0 top-0 z-[2] flex h-[38vh] flex-col items-center justify-center px-6 text-center lg:hidden">
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/60">
-          {success ? 'Confirmation' : 'Réserver'}
-        </p>
-        <h1 className="mt-1 text-3xl font-black leading-tight tracking-tight text-white drop-shadow-lg">
-          {restaurant?.name || 'Restaurant'}
-        </h1>
-      </div>
-
-      <main className="relative z-10 flex h-screen items-end justify-center sm:items-center sm:p-8">
+        {/* Mobile restaurant hero visible above bottom sheet */}
+        <div className="absolute inset-x-0 top-0 z-20 flex h-[38vh] flex-col items-center justify-center px-6 text-center sm:hidden">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/60">
+            {success ? 'Confirmation' : 'Réserver'}
+          </p>
+          <h1 className="mt-1 text-3xl font-black leading-tight tracking-tight text-white drop-shadow-lg">
+            {restaurant?.name || 'Restaurant'}
+          </h1>
+        </div>
         <section className={consoleClass}>
           {/* Drag handle — mobile only */}
           <div className="mx-auto mb-3 mt-1 h-1 w-10 shrink-0 rounded-full bg-black/10 sm:hidden" />
