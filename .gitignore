@@ -12,6 +12,10 @@ dist
 # Workspace agent Hermes
 .agent-workspace/
 
+# Python cache
+__pycache__/
+*.pyc
+
 # Redis
 dump.rdb
 
