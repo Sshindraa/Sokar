@@ -5,8 +5,6 @@ import { CustomerService }    from '../customers/customer.service';
 import { buildSystemPrompt }  from './prompts';
 import { detectOutcome }      from './outcome';
 import { LLM_MODEL } from '@sokar/config';
-import { CallSessionManager } from './stream/manager';
-import { connectDeepgramFlux } from './stream/deepgram-bridge';
 
 interface TelnyxCallPayload {
   data: {
@@ -78,28 +76,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           }
         });
 
-        // ─── Media Stream Pipeline ───
-        const mgr = CallSessionManager.getInstance();
-        mgr.create({
-          callControlId: payload.call_control_id,
-          callSessionId: payload.call_leg_id,
-          callLegId:     payload.call_leg_id,
-          from:          payload.from,
-          to:            payload.to,
-          restaurantId:  ctx.id,
-          systemPrompt:  systemPrompt,
-          isVip:         customer?.isVip ?? false,
-          telnyxWs:      null as any,
-          codec:         'PCMA',
-          personality:   ctx.personality,
-        });
-
-        app.log.info({ callId: payload.call_control_id }, 'Media stream pipeline — answering');
-
-        // Pre-warm Deepgram
-        connectDeepgramFlux(mgr.get(payload.call_control_id)!)
-          .then(() => app.log.info({ callId: payload.call_control_id }, 'Deepgram pre-warmed'))
-          .catch((err: Error) => app.log.error({ err: err.message }, 'Deepgram pre-warm failed'));
+        app.log.info({ callId: payload.call_control_id }, 'Answering call with media stream');
 
         // Answer with media streaming
         const publicUrl = process.env.PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? 4000}`;
