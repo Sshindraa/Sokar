@@ -151,7 +151,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
       'radial-gradient(circle at 50% 20%, hsl(var(--reservation-glow)/0.2), transparent 18rem), linear-gradient(145deg, hsl(var(--reservation-wash)) 0%, hsl(var(--reservation-bg)) 46%, hsl(34 20% 86%) 100%)',
   };
   const consoleClass =
-    'relative z-10 w-full max-w-[33rem] overflow-hidden rounded-[2.15rem] border border-white/60 bg-white/42 p-4 shadow-2xl shadow-black/10 backdrop-blur-2xl sm:p-5 lg:max-w-[60rem] lg:p-8';
+    'relative z-10 w-full max-w-[33rem] overflow-hidden rounded-[2.15rem] border border-white/60 bg-white/42 p-4 shadow-2xl shadow-black/10 backdrop-blur-2xl sm:p-5 lg:max-w-[56rem] lg:p-8';
   const glassCardClass =
     'rounded-[1.6rem] border border-white/58 bg-white/34 shadow-sm backdrop-blur-2xl';
 
@@ -352,28 +352,28 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                 </button>
               </div>
             ) : (
-              <div className="space-y-5 lg:grid lg:grid-cols-2 lg:gap-8 lg:space-y-0">
+              <div className="space-y-5 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] lg:gap-8 lg:space-y-0">
                 {/* Colonne gauche */}
                 <div className="space-y-5">
-                  <div className={cn(glassCardClass, 'relative overflow-hidden p-5 lg:p-6')}>
+                  <div className={cn(glassCardClass, 'relative overflow-hidden p-5 lg:p-5')}>
                     <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-[hsl(var(--reservation-glow)/0.12)] blur-2xl" />
                     <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[hsl(var(--reservation-muted))]">
                       {step === 2 ? 'Résumé' : 'Choisissez votre table'}
                     </p>
-                    <div className="mt-3 flex items-end justify-between gap-4">
-                      <div>
-                        <h1 className="text-[3.8rem] font-black leading-[0.82] tracking-normal text-[hsl(var(--reservation-ink))] lg:text-[2.8rem] lg:leading-[0.9]">
+                    <div className="mt-3 flex items-end justify-between gap-3">
+                      <div className="min-w-0">
+                        <h1 className="truncate text-[3.2rem] font-black leading-[0.85] tracking-normal text-[hsl(var(--reservation-ink))] lg:text-[2.2rem] lg:leading-[0.9]">
                           {dateTitle}
                         </h1>
-                        <p className="mt-1 text-[2.5rem] font-black leading-none tracking-normal text-[hsl(var(--reservation-muted))] lg:text-[1.8rem]">
+                        <p className="mt-1 truncate text-[2rem] font-black leading-none tracking-normal text-[hsl(var(--reservation-muted))] lg:text-[1.5rem]">
                           {dateSubtitle}
                         </p>
                       </div>
-                      <div className="mb-1 rounded-[1.35rem] border border-white/60 bg-white/38 px-4 py-3 text-right shadow-sm backdrop-blur-2xl lg:px-5 lg:py-4">
-                        <p className="text-2xl font-black leading-none text-[hsl(var(--reservation-ink))]">
+                      <div className="mb-1 shrink-0 rounded-[1.15rem] border border-white/60 bg-white/38 px-3.5 py-2.5 text-right shadow-sm backdrop-blur-2xl lg:px-4 lg:py-3">
+                        <p className="text-xl font-black leading-none text-[hsl(var(--reservation-ink))] lg:text-lg">
                           {partySize}
                         </p>
-                        <p className="mt-1 text-[11px] font-semibold text-[hsl(var(--reservation-soft))]">
+                        <p className="mt-0.5 text-[10px] font-semibold text-[hsl(var(--reservation-soft))]">
                           pers.
                         </p>
                       </div>
@@ -424,14 +424,14 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                           <Users size={13} />
                           Nombre de personnes
                         </label>
-                        <div className="scrollbar-none flex gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
+                        <div className="scrollbar-none flex gap-2 overflow-x-auto pb-1 lg:grid lg:grid-cols-8 lg:overflow-visible">
                           {[1, 2, 3, 4, 5, 6, 7, 8].map((size) => (
                             <button
                               key={size}
                               type="button"
                               onClick={() => setPartySize(size)}
                               className={cn(
-                                'h-10 w-10 shrink-0 rounded-full text-sm font-semibold',
+                                'h-10 w-10 shrink-0 rounded-full text-sm font-semibold lg:h-9 lg:w-auto',
                                 softPillClass,
                                 partySize === size && selectedPillClass,
                               )}
@@ -447,7 +447,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                           <CalendarIcon size={13} />
                           Sélectionner la date
                         </label>
-                        <div className="scrollbar-none flex snap-x gap-2 overflow-x-auto pb-1 lg:flex-wrap lg:overflow-visible">
+                        <div className="scrollbar-none flex snap-x gap-2 overflow-x-auto pb-1 lg:grid lg:grid-cols-5 lg:overflow-visible">
                           {days.map((date, idx) => {
                             const isSelected = selectedDate?.toDateString() === date.toDateString();
                             return (
@@ -459,7 +459,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                                   setSelectedTime('');
                                 }}
                                 className={cn(
-                                  'relative flex h-[4.65rem] min-w-[4.15rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200',
+                                  'relative flex h-[4.65rem] min-w-[4.15rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.25rem] text-center transition-all duration-200 lg:h-[4rem] lg:min-w-0',
                                   softPillClass,
                                   isSelected &&
                                     'border-[hsl(var(--reservation-ink))] bg-white/58 text-[hsl(var(--reservation-ink))] shadow-lg shadow-black/10',
