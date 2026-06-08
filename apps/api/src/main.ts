@@ -21,6 +21,8 @@ import { testRoutes }        from './modules/test/test.routes';
 import { registerCors }      from './plugins/cors';
 import { registerRateLimit } from './plugins/rate-limit';
 import { registerClerk }     from './plugins/clerk';
+import fastifyWebsocket from '@fastify/websocket';
+import { registerMediaStreamRoutes } from './modules/voice/stream/handler';
 import './shared/queue/workers/evening-report.worker';
 import './shared/queue/workers/sms-confirmation.worker';
 import './shared/queue/workers/outbound-confirm.worker';
@@ -62,6 +64,8 @@ export async function buildApp() {
   await registerCors(app);
   await registerRateLimit(app);
   await registerClerk(app);
+  await app.register(fastifyWebsocket);
+  registerMediaStreamRoutes(app);
 
   await app.register(telnyxVoiceRoutes);
   await app.register(restaurantRoutes);
