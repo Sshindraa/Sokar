@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { Sparkles, Phone, CalendarCheck, Zap } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { Outfit, Plus_Jakarta_Sans } from 'next/font/google';
 import PricingSection from '@/app/PricingSection';
 import FaqSection from '@/app/FaqSection';
@@ -98,33 +98,6 @@ export default function HomePage() {
                 Voir les tarifs
               </Link>
             </div>
-          </div>
-        </section>
-
-        {/* FEATURES — fully static, server-rendered */}
-        <section id="services" className="w-full py-16 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="glass-card p-6 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300 flex flex-col gap-4">
-            <span className="h-10 w-10 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
-              <Phone size={18} />
-            </span>
-            <h3 className="text-lg font-bold text-white font-sans">100% des appels traités</h3>
-            <p className="text-xs text-white/60 leading-relaxed font-sans">Sokar gère plusieurs appels simultanés lors des pics de service. Finis les clients frustrés qui tombent sur messagerie.</p>
-          </div>
-
-          <div className="glass-card p-6 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300 flex flex-col gap-4">
-            <span className="h-10 w-10 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
-              <CalendarCheck size={18} />
-            </span>
-            <h3 className="text-lg font-bold text-white font-sans">Zéro double saisie</h3>
-            <p className="text-xs text-white/60 leading-relaxed font-sans">Intégration transparente et bidirectionnelle avec vos logiciels de réservation (ZenChef, TheFork) et de caisse.</p>
-          </div>
-
-          <div className="glass-card p-6 rounded-2xl border border-white/5 hover:border-white/10 transition-all duration-300 flex flex-col gap-4">
-            <span className="h-10 w-10 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
-              <Zap size={18} />
-            </span>
-            <h3 className="text-lg font-bold text-white font-sans">Intelligence locale</h3>
-            <p className="text-xs text-white/60 leading-relaxed font-sans">Sokar connaît vos plats du jour, vos allergènes et prend des décisions complexes selon les consignes que vous lui donnez.</p>
           </div>
         </section>
 
