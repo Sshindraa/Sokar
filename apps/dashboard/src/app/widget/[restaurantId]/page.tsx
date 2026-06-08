@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useApi } from '../../../lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -78,6 +78,14 @@ function formatLongFrenchDate(date: Date) {
   ].toLowerCase()}`;
 }
 
+function escapeICS(value: string) {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\n/g, '\\n');
+}
+
 function formatShortFrenchDate(date: Date) {
   return `${date.getDate()} ${FRENCH_MONTHS_SHORT[date.getMonth()]}`;
 }
@@ -98,6 +106,7 @@ interface RestaurantPublic {
   heroImageUrl?: string;
   imageUrl?: string;
   coverImageUrl?: string;
+  galleryImages?: string[];
   cuisine?: string;
   city?: string;
   address?: string;
@@ -131,6 +140,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [activeSection, setActiveSection] = useState<'party' | 'date' | 'time'>('party');
   const [availabilityRefreshing, setAvailabilityRefreshing] = useState(false);
+  const timeSectionRef = useRef<HTMLDivElement | null>(null);
 
   // Contact details
   const [customerName, setCustomerName] = useState('');
@@ -231,11 +241,27 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   }, [days, selectedDate, getSlotsForDate]);
 
   const lunchSlots = useMemo(
-    () => timeSlots.filter((time) => Number(time.split(':')[0]) < 15),
+    () =>
+      timeSlots.filter((time) => {
+        const hour = Number(time.split(':')[0]);
+        return hour >= 11 && hour < 15;
+      }),
     [timeSlots],
   );
   const dinnerSlots = useMemo(
-    () => timeSlots.filter((time) => Number(time.split(':')[0]) >= 15),
+    () =>
+      timeSlots.filter((time) => {
+        const hour = Number(time.split(':')[0]);
+        return hour >= 18;
+      }),
+    [timeSlots],
+  );
+  const otherSlots = useMemo(
+    () =>
+      timeSlots.filter((time) => {
+        const hour = Number(time.split(':')[0]);
+        return hour < 11 || (hour >= 15 && hour < 18);
+      }),
     [timeSlots],
   );
 
@@ -285,7 +311,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
       const dtEnd = formatUTC(end);
       const title = `Table chez ${restaurant.name}`;
       const details = `Réservation pour ${partySize} personnes.\nNom : ${customerName}\nTéléphone : ${customerPhone}`;
-      const location = restaurant.name;
+      const location = restaurant.address || restaurant.name;
 
       const googleUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${dtStart}/${dtEnd}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(location)}`;
 
@@ -293,11 +319,11 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
         'BEGIN:VCALENDAR',
         'VERSION:2.0',
         'BEGIN:VEVENT',
-        `SUMMARY:${title}`,
+        `SUMMARY:${escapeICS(title)}`,
         `DTSTART:${dtStart}`,
         `DTEND:${dtEnd}`,
-        `DESCRIPTION:${details}`,
-        `LOCATION:${location}`,
+        `DESCRIPTION:${escapeICS(details)}`,
+        `LOCATION:${escapeICS(location)}`,
         'END:VEVENT',
         'END:VCALENDAR',
       ].join('\r\n');
@@ -331,14 +357,15 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
     reservedAt.setHours(hours, minutes, 0, 0);
 
     try {
+      const normalizedPhone = customerPhone.replace(/\s/g, '');
       const res = await post('reservations', {
         restaurantId,
         reservedAt: reservedAt.toISOString(),
         partySize,
         customerName,
-        customerPhone: customerPhone.startsWith('+')
-          ? customerPhone
-          : `+33${customerPhone.replace(/^0/, '')}`,
+        customerPhone: normalizedPhone.startsWith('+')
+          ? normalizedPhone
+          : `+33${normalizedPhone.replace(/^0/, '')}`,
         customerEmail: customerEmail || undefined,
       });
 
@@ -428,16 +455,30 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   const selectedDateLong = selectedDate ? formatLongFrenchDate(selectedDate) : 'Date à choisir';
   const selectedDateShort = selectedDate ? formatShortFrenchDate(selectedDate) : 'Date';
   const hasService = timeSlots.length > 0;
+  // TODO: brancher sur vraie API GET /restaurants/:id/availability?date=&partySize=
+  const isFullyBooked = false;
+  const serviceLabel =
+    dinnerSlots.length > 0 && lunchSlots.length > 0
+      ? 'Table'
+      : dinnerSlots.length > 0
+        ? 'Dîner'
+        : lunchSlots.length > 0
+          ? 'Déjeuner'
+          : 'Réservation';
   const reservationStatus = selectedTime
     ? 'À confirmer'
-    : hasService
-      ? 'Disponible'
-      : 'Indisponible';
+    : isFullyBooked
+      ? 'Complet'
+      : hasService
+        ? 'Disponible'
+        : 'Indisponible';
   const reservationTitle = selectedTime
     ? `Table à ${selectedTime.replace(':', 'h')}`
-    : hasService
-      ? `Dîner au ${restaurant?.name || 'restaurant'}`
-      : 'Aucun service ce jour-là';
+    : isFullyBooked
+      ? 'Toutes les tables sont réservées'
+      : hasService
+        ? `${serviceLabel} au ${restaurant?.name || 'restaurant'}`
+        : 'Aucun service ce jour-là';
   const nextAvailabilityLabel = nextAvailability
     ? `${formatLongFrenchDate(nextAvailability.date)} · ${nextAvailability.time.replace(':', 'h')}`
     : '';
@@ -447,35 +488,51 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   const primaryCtaLabel =
     step === 1
       ? selectedTime
-        ? 'Réserver cette table'
-        : hasService
-          ? 'Sélectionnez un horaire'
-          : nextAvailability
+        ? `Continuer · ${selectedTime.replace(':', 'h')}`
+        : isFullyBooked
+          ? nextAvailability
             ? 'Voir les prochaines disponibilités'
             : 'Voir les autres dates'
+          : hasService
+            ? 'Sélectionnez un horaire'
+            : nextAvailability
+              ? 'Voir les prochaines disponibilités'
+              : 'Voir les autres dates'
       : submitting
         ? 'Validation...'
         : 'Valider la réservation';
-  const primaryCtaDisabled =
-    step === 1 ? (hasService && !selectedTime) || (!hasService && !nextAvailability) : !canProceed;
+  const primaryCtaDisabled = step === 1 ? false : !canProceed;
 
   function goToNextAvailability() {
     if (!nextAvailability) return;
     triggerHaptic();
     setSelectedDate(nextAvailability.date);
-    setSelectedTime(nextAvailability.time);
+    setSelectedTime('');
     setActiveSection('time');
+    setTimeout(() => {
+      timeSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 80);
   }
 
   function handlePrimaryAction() {
-    if (step === 1 && !selectedTime && !hasService) {
+    if (step === 1 && !selectedTime && (!hasService || isFullyBooked)) {
       goToNextAvailability();
+      return;
+    }
+
+    if (step === 1 && hasService && !selectedTime && !isFullyBooked) {
+      setError('Choisissez un créneau horaire pour continuer.');
+      setActiveSection('time');
+      setTimeout(() => {
+        timeSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 80);
       return;
     }
 
     if (step === 1 && selectedTime) {
       triggerHaptic();
       setStep(2);
+      setError('');
       return;
     }
 
@@ -512,6 +569,17 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
         <section className={consoleClass}>
           {/* Drag handle — mobile only */}
           <div className="mx-auto mb-1.5 mt-0.5 h-1 w-10 shrink-0 rounded-full bg-black/10 sm:hidden" />
+
+          {/* Progress bar — mobile only */}
+          <div className="mx-auto mb-3 grid grid-cols-2 gap-2 px-1 sm:hidden">
+            <div className="h-1.5 rounded-full bg-[hsl(var(--reservation-ink))]" />
+            <div
+              className={cn(
+                'h-1.5 rounded-full transition-colors',
+                step === 2 ? 'bg-[hsl(var(--reservation-ink))]' : 'bg-black/10',
+              )}
+            />
+          </div>
 
           {/* Close button — mobile only */}
           <button
@@ -565,7 +633,8 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                     Table réservée !
                   </h2>
                   <p className="mx-auto mt-1 max-w-xs text-xs text-[hsl(var(--reservation-muted))]">
-                    Un SMS de confirmation a été envoyé au {customerPhone}.
+                    Un SMS de confirmation a été envoyé au{' '}
+                    {confirmedReservation?.customerPhone || customerPhone}.
                   </p>
                   {confirmedReservation?.id && (
                     <p className="mt-2 text-[10px] font-mono text-[hsl(var(--reservation-soft))]">
@@ -703,7 +772,9 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                               ? 'text-[hsl(var(--reservation-success))]'
                               : reservationStatus === 'Indisponible'
                                 ? 'text-[hsl(var(--reservation-soft))]'
-                                : 'text-[hsl(var(--reservation-ink))]',
+                                : reservationStatus === 'Complet'
+                                  ? 'text-red-600'
+                                  : 'text-[hsl(var(--reservation-ink))]',
                           )}
                         >
                           {reservationStatus}
@@ -730,17 +801,18 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         Ambiance
                       </p>
                       <div className="mt-2 flex items-center">
-                        {[0, 1, 2].map((item) => (
+                        {(restaurant?.galleryImages?.length
+                          ? restaurant.galleryImages.slice(0, 3)
+                          : [cardImage, restaurantImage, FALLBACK_DISH_IMAGE]
+                        ).map((img, idx) => (
                           <div
-                            key={item}
+                            key={idx}
                             className="-mr-2 h-8 w-8 rounded-full border-2 border-white/80 bg-cover bg-center shadow-sm"
-                            style={{
-                              backgroundImage: `url("${item === 0 ? cardImage : restaurantImage}")`,
-                            }}
+                            style={{ backgroundImage: `url("${img}")` }}
                           />
                         ))}
                         <span className="ml-3 text-[11px] font-extrabold text-[hsl(var(--reservation-soft))]">
-                          +8
+                          {restaurant?.tags?.slice(0, 2).join(' · ') || 'Terrasse'}
                         </span>
                       </div>
                     </div>
@@ -753,7 +825,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         {selectedDateShort}
                       </p>
                       <p className="text-xs font-semibold text-[hsl(var(--reservation-soft))]">
-                        {partySize} {partySize > 1 ? 'pers.' : 'pers.'}
+                        {partySize} pers.
                       </p>
                     </div>
                   </div>
@@ -787,7 +859,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                 </div>
 
                 {/* Colonne droite */}
-                <div className="space-y-1.5 sm:space-y-5">
+                <div className="space-y-3 sm:space-y-5">
                   {/* Badge Réservation — desktop only, aligns with left col header */}
                   <div className="hidden lg:flex lg:items-center lg:justify-end">
                     <span className="rounded-full border border-white/70 bg-white/44 px-3.5 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--reservation-muted))] shadow-sm backdrop-blur-2xl">
@@ -802,9 +874,12 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                   )}
 
                   {step === 1 ? (
-                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-1.5 sm:space-y-5">
+                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-3 sm:space-y-5">
                       <div
-                        className="space-y-1.5 sm:space-y-2.5"
+                        className={cn(
+                          'space-y-2 sm:space-y-2.5 transition-opacity duration-200',
+                          activeSection !== 'party' && 'opacity-90',
+                        )}
                         onClickCapture={() => setActiveSection('party')}
                       >
                         <label className={cn(labelClass)}>
@@ -816,10 +891,13 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                             <button
                               key={size}
                               type="button"
+                              aria-label={`${size} ${size > 1 ? 'personnes' : 'personne'}`}
+                              aria-pressed={partySize === size}
                               onClick={() => {
                                 triggerHaptic();
                                 setPartySize(size);
                                 setSelectedTime('');
+                                setError('');
                                 setActiveSection('date');
                               }}
                               className={cn(
@@ -835,7 +913,10 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                       </div>
 
                       <div
-                        className="space-y-1.5 sm:space-y-2.5"
+                        className={cn(
+                          'space-y-1.5 sm:space-y-2.5 transition-opacity duration-200',
+                          activeSection !== 'date' && 'opacity-90',
+                        )}
                         onClickCapture={() => setActiveSection('date')}
                       >
                         <label className={cn(labelClass)}>
@@ -851,12 +932,22 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                               <button
                                 key={idx}
                                 type="button"
+                                aria-label={`${formatLongFrenchDate(date)} ${isAvailable ? 'disponible' : 'indisponible'}`}
+                                aria-pressed={isSelected}
                                 onClick={() => {
                                   triggerHaptic();
                                   setSelectedDate(date);
                                   setSelectedTime('');
+                                  setError('');
                                   setActiveSection('time');
+                                  setTimeout(() => {
+                                    timeSectionRef.current?.scrollIntoView({
+                                      behavior: 'smooth',
+                                      block: 'nearest',
+                                    });
+                                  }, 80);
                                 }}
+                                aria-disabled={!isAvailable}
                                 className={cn(
                                   'relative flex h-[4.4rem] min-w-[4.75rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.35rem] text-center transition-all duration-200 active:scale-95 sm:h-[4.8rem] sm:min-w-[5rem] sm:rounded-[1.45rem] lg:min-w-0',
                                   softPillClass,
@@ -868,6 +959,9 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                               >
                                 {isAvailable && !isSelected && (
                                   <span className="absolute bottom-2 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-[hsl(var(--reservation-glow))]" />
+                                )}
+                                {!isAvailable && !isSelected && (
+                                  <span className="absolute bottom-2 left-1/2 h-1 w-5 -translate-x-1/2 rounded-full bg-black/15" />
                                 )}
                                 {isSelected && (
                                   <span className="absolute bottom-1.5 left-1/2 h-1 w-6 -translate-x-1/2 rounded-full bg-[hsl(var(--reservation-blue))] sm:bottom-2" />
@@ -885,7 +979,11 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                       </div>
 
                       <div
-                        className="space-y-1 sm:space-y-2.5"
+                        ref={timeSectionRef}
+                        className={cn(
+                          'space-y-2 sm:space-y-2.5 transition-opacity duration-200',
+                          activeSection !== 'time' && 'opacity-90',
+                        )}
                         onClickCapture={() => setActiveSection('time')}
                       >
                         <label className={cn(labelClass)}>
@@ -903,6 +1001,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                             {[
                               { title: 'Déjeuner', slots: lunchSlots },
                               { title: 'Dîner', slots: dinnerSlots },
+                              { title: 'Autres horaires', slots: otherSlots },
                             ]
                               .filter((group) => group.slots.length > 0)
                               .map((group) => (
@@ -917,9 +1016,12 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                                         <button
                                           key={time}
                                           type="button"
+                                          aria-label={`Choisir le créneau ${time.replace(':', 'h')}`}
+                                          aria-pressed={isSelected}
                                           onClick={() => {
                                             triggerHaptic();
                                             setSelectedTime(time);
+                                            setError('');
                                           }}
                                           className={cn(
                                             'h-12 rounded-full px-4 text-center text-sm font-extrabold transition-all duration-200 active:scale-95',
@@ -943,12 +1045,16 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                               </div>
                               <div className="min-w-0">
                                 <p className="text-sm font-black tracking-tight text-[hsl(var(--reservation-ink))]">
-                                  Aucun service ce jour-là
+                                  {isFullyBooked
+                                    ? 'Complet ce jour-là'
+                                    : 'Aucun service ce jour-là'}
                                 </p>
                                 <p className="mt-1 text-xs font-semibold leading-snug text-[hsl(var(--reservation-soft))]">
-                                  {nextAvailabilityLabel
-                                    ? `Prochaine disponibilité : ${nextAvailabilityLabel}`
-                                    : 'Essayez une autre date ou une autre taille de table.'}
+                                  {isFullyBooked
+                                    ? 'Toutes les tables sont réservées. Essayez une autre date.'
+                                    : nextAvailabilityLabel
+                                      ? `Prochaine disponibilité : ${nextAvailabilityLabel}`
+                                      : 'Essayez une autre date ou une autre taille de table.'}
                                 </p>
                               </div>
                             </div>
@@ -1030,6 +1136,17 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                     </div>
                   )}
 
+                  {step === 2 && selectedDate && selectedTime && (
+                    <div className="rounded-2xl border border-white/70 bg-white/45 p-3 text-sm font-semibold text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">
+                      <p className="font-black text-[hsl(var(--reservation-ink))]">
+                        {selectedDateLong} · {selectedTime.replace(':', 'h')}
+                      </p>
+                      <p>
+                        {partySize} {partySize > 1 ? 'personnes' : 'personne'} · {restaurant?.name}
+                      </p>
+                    </div>
+                  )}
+
                   <div className="sticky bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-20 pt-2">
                     <button
                       type="button"
@@ -1053,6 +1170,11 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         )}
                       </span>
                     </button>
+                    <p className="mt-2 px-4 text-center text-[11px] font-medium leading-snug text-[hsl(var(--reservation-soft))]">
+                      {step === 1
+                        ? 'Choisissez un créneau pour continuer votre réservation.'
+                        : 'Vous recevrez une confirmation par SMS après validation.'}
+                    </p>
                   </div>
                 </div>
               </div>
