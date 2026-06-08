@@ -12,10 +12,6 @@ export default function PricingSection() {
     <section
       id="tarifs"
       className="relative w-full py-20 scroll-mt-24 overflow-hidden"
-      style={{
-        background:
-          'radial-gradient(ellipse 80% 50% at 50% -20%, hsl(195 100% 55% / 0.15), transparent), hsl(var(--background))',
-      }}
     >
       {/* Ambient glow behind cards */}
       <div
