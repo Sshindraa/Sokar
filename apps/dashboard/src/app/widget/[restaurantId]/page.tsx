@@ -283,11 +283,11 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   };
   const consoleClass =
     // Mobile: bottom sheet — opaque enough for Safari, scrollable, and safe-area aware.
-    'absolute bottom-0 left-0 right-0 z-10 w-full max-w-none max-h-[min(68dvh,36rem)] overflow-y-auto scrollbar-none rounded-t-[2.25rem] rounded-b-none border border-white/70 bg-[hsl(var(--reservation-wash)/0.96)] px-3.5 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] pt-2 shadow-[0_-24px_80px_rgba(0,0,0,0.18)] backdrop-blur-2xl ' +
-    // Tablet+: centered modal (restore original behaviour)
-    'sm:relative sm:bottom-auto sm:left-auto sm:right-auto sm:max-w-[33rem] sm:max-h-none sm:rounded-[2.15rem] sm:overflow-visible sm:bg-white/42 sm:shadow-2xl sm:shadow-black/10 sm:p-5 ' +
-    // Desktop: wider
-    'lg:max-w-[64rem] lg:p-10';
+    'absolute bottom-0 left-1/2 -translate-x-1/2 z-10 w-full max-h-[min(68dvh,36rem)] sm:max-h-[50dvh] lg:max-h-[50dvh] overflow-y-auto scrollbar-none rounded-t-[2.25rem] rounded-b-none border border-white/70 bg-[hsl(var(--reservation-wash)/0.96)] px-3.5 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] pt-2 shadow-[0_-24px_80px_rgba(0,0,0,0.18)] backdrop-blur-2xl ' +
+    // Tablet+: bottom sheet styling and layout spacing
+    'sm:p-6 sm:pb-8 sm:max-w-[48rem] ' +
+    // Desktop: wider bottom sheet
+    'lg:max-w-[64rem] lg:p-8';
   const glassCardClass =
     'rounded-[1.6rem] border border-white/[0.62] bg-white/[0.58] shadow-sm backdrop-blur-2xl sm:bg-white/[0.34]';
 
@@ -387,8 +387,18 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   if (loading) {
     return (
       <div className={backgroundClass} style={backgroundStyle}>
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/60 to-transparent" />
-        <div className="flex min-h-screen items-center justify-center p-4 sm:p-8">
+        <div
+          className="absolute inset-x-0 top-0 z-[1] h-[50dvh] bg-cover bg-center"
+          style={{
+            backgroundImage: `linear-gradient(rgba(0,0,0,0.42), rgba(0,0,0,0.1), rgba(0,0,0,0.5)), url("${FALLBACK_RESTAURANT_IMAGE}")`,
+          }}
+        />
+        <div className="absolute inset-x-0 top-0 z-[2] flex h-[46dvh] flex-col items-center justify-center px-6 text-center">
+          <Skeleton className="h-4 w-20 bg-white/30" />
+          <Skeleton className="mt-2 h-10 w-48 bg-white/30" />
+          <Skeleton className="mt-2 h-4 w-32 bg-white/30" />
+        </div>
+        <main className="relative h-[100dvh] w-full overflow-hidden">
           <div className={consoleClass}>
             <div className="space-y-5">
               <div className="flex items-center justify-between gap-3">
@@ -418,7 +428,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
               <Skeleton className="h-[3.25rem] w-full rounded-full bg-white/50" />
             </div>
           </div>
-        </div>
+        </main>
       </div>
     );
   }
@@ -426,15 +436,15 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   if (error && !restaurant) {
     return (
       <div className={backgroundClass} style={backgroundStyle}>
-        <div className="flex min-h-screen items-center justify-center p-4 sm:p-8">
-          <div className={cn(consoleClass, 'p-6 text-center')}>
+        <main className="relative h-[100dvh] w-full overflow-hidden">
+          <div className={cn(consoleClass, 'p-6 text-center flex flex-col items-center justify-center min-h-[30dvh]')}>
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-destructive/50 bg-destructive/10 text-destructive">
               <AlertCircle size={28} />
             </div>
             <h1 className="text-xl font-bold text-[hsl(var(--reservation-ink))]">Oups !</h1>
             <p className="mt-2 text-sm text-[hsl(var(--reservation-soft))]">{error}</p>
           </div>
-        </div>
+        </main>
       </div>
     );
   }
@@ -547,22 +557,22 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
       <div className="pointer-events-none absolute left-1/2 top-1/2 h-[34rem] w-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[hsl(var(--reservation-glow)/0.11)] blur-3xl" />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,hsl(var(--reservation-ink)/0.025)_1px,transparent_1px)] bg-[length:96px_96px] opacity-30" />
 
-      <main className="relative h-[100dvh] overflow-hidden sm:flex sm:min-h-screen sm:items-center sm:justify-center sm:p-8">
+      <main className="relative h-[100dvh] w-full overflow-hidden">
         <div
-          className="absolute inset-x-0 top-0 z-[1] h-[42vh] bg-cover bg-center sm:hidden"
+          className="absolute inset-x-0 top-0 z-[1] h-[50dvh] bg-cover bg-center"
           style={{
             backgroundImage: `linear-gradient(rgba(0,0,0,0.42), rgba(0,0,0,0.1), rgba(0,0,0,0.5)), url("${restaurantImage}")`,
           }}
         />
 
-        <div className="absolute inset-x-0 top-0 z-[2] flex h-[36vh] flex-col items-center justify-center px-6 text-center sm:hidden">
-          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/70">
+        <div className="absolute inset-x-0 top-0 z-[2] flex h-[46dvh] flex-col items-center justify-center px-6 text-center">
+          <p className="text-[10px] sm:text-xs font-bold uppercase tracking-[0.22em] text-white/70">
             {success ? 'Confirmation' : 'Réserver'}
           </p>
-          <h1 className="mt-1 text-[2.35rem] font-black leading-none tracking-[-0.04em] text-white drop-shadow-lg">
+          <h1 className="mt-1 text-[2.35rem] sm:text-4xl md:text-5xl font-black leading-none tracking-[-0.04em] text-white drop-shadow-lg">
             {restaurant?.name || 'Restaurant'}
           </h1>
-          <p className="mt-2 max-w-[18rem] text-sm font-semibold text-white/78 drop-shadow">
+          <p className="mt-2 max-w-[18rem] sm:max-w-md text-sm sm:text-base font-semibold text-white/78 drop-shadow">
             {restaurantSubtitle}
           </p>
         </div>
@@ -594,7 +604,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                 window.close();
               } catch (e) {}
             }}
-            className="absolute right-3.5 top-2 z-30 flex h-12 w-12 items-center justify-center rounded-full border border-white/70 bg-white/75 text-[hsl(var(--reservation-ink)/0.55)] shadow-[0_8px_24px_rgba(0,0,0,0.08)] backdrop-blur-2xl transition-all duration-200 hover:bg-white/85 active:scale-95 sm:hidden"
+            className="absolute right-3.5 top-2 sm:right-4 sm:top-4 z-30 flex h-12 w-12 items-center justify-center rounded-full border border-white/70 bg-white/75 text-[hsl(var(--reservation-ink)/0.55)] shadow-[0_8px_24px_rgba(0,0,0,0.08)] backdrop-blur-2xl transition-all duration-200 hover:bg-white/85 active:scale-95"
             aria-label="Fermer"
           >
             <X size={18} />
