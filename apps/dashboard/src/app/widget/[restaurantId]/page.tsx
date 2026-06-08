@@ -390,7 +390,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                 window.close();
               } catch (e) {}
             }}
-            className="absolute right-5 top-5 z-30 flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-white/40 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl transition-all duration-200 hover:bg-white/60 active:scale-95 sm:hidden"
+            className="absolute right-4 top-3 z-30 flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-white/80 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl transition-all duration-200 hover:bg-white/90 active:scale-95 sm:hidden"
             aria-label="Fermer"
           >
             <X size={16} />
@@ -400,7 +400,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
 
           <div className="relative z-10 space-y-3 sm:space-y-6">
             {/* Header — visible partout pour indiquer le nom du restaurant */}
-            <header className="flex items-center justify-between gap-3">
+            <header className="hidden items-center justify-between gap-3 sm:flex">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/70 bg-white/50 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">
                   <Utensils size={18} />

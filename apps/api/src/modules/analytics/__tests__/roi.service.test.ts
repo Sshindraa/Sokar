@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 vi.mock('../../../shared/db/client', () => ({
   db: {
     restaurant: {
-      findUniqueOrThrow: vi.fn().mockResolvedValue({ id: 'r1', plan: 'STARTER' }),
+      findUnique: vi.fn().mockResolvedValue({ id: 'r1', plan: 'STARTER' }),
     },
     reservation: {
       findMany: vi.fn().mockResolvedValue([
