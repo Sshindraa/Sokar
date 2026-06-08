@@ -141,7 +141,6 @@ export default function PricingPage() {
       {/* ---- HERO ---- */}
       <section className="pricing-hero">
         <h1 className="pricing-hero-title">Tarifs</h1>
-        <p className="pricing-hero-kicker">Sokar AI</p>
       </section>
 
       {/* ---- BILLING ---- */}
@@ -185,20 +184,20 @@ export default function PricingPage() {
               )}
             >
               <div>
-                <div className="flex justify-between items-center mb-3">
-                  <p className="relative z-[1] text-lg font-semibold tracking-wide uppercase text-foreground/80">
+                <div className="flex justify-between items-start mb-3">
+                  <p className="relative z-[1] text-lg font-semibold tracking-wide uppercase text-foreground/90">
                     {plan.label}
                   </p>
                   {plan.featured && (
-                    <span className="px-2.5 py-0.5 text-[10px] font-extrabold tracking-wider uppercase bg-[hsl(var(--pricing-accent))] text-black rounded-full shadow-[0_0_12px_hsl(var(--pricing-accent)/0.3)]">
+                    <span className="px-2.5 py-0.5 text-[10px] font-extrabold tracking-wider uppercase bg-[hsl(var(--pricing-accent))] text-black rounded-full shadow-[0_0_12px_hsl(var(--pricing-accent)/0.3)] animate-pulse">
                       Recommandé
                     </span>
                   )}
                 </div>
-                
+
                 {/* Price block anchor */}
                 <div className="relative z-[1] flex items-baseline gap-1.5 py-2 border-b border-border/10 mb-4">
-                  <span className="text-[clamp(2.5rem,5vw,3.5rem)] font-extrabold tracking-tight text-foreground leading-none">
+                  <span className="text-[clamp(2.5rem,5vw,3.5rem)] font-extrabold tracking-tight leading-none bg-gradient-to-br from-foreground via-foreground to-muted-foreground bg-clip-text text-transparent">
                     {displayPrice(plan.price, yearly)}
                   </span>
                   <div className="flex flex-col">
