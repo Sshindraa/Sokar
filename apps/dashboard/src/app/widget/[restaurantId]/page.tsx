@@ -193,7 +193,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
     // Tablet+: centered modal (restore original behaviour)
     'sm:relative sm:bottom-auto sm:left-auto sm:right-auto sm:max-w-[33rem] sm:max-h-none sm:rounded-[2.15rem] sm:overflow-visible sm:bg-white/42 sm:shadow-2xl sm:shadow-black/10 sm:p-5 ' +
     // Desktop: wider
-    'lg:max-w-[56rem] lg:p-8';
+    'lg:max-w-[64rem] lg:p-10';
   const glassCardClass =
     'rounded-[1.6rem] border border-white/[0.62] bg-white/[0.58] shadow-sm backdrop-blur-2xl sm:bg-white/[0.34]';
 
@@ -400,7 +400,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
 
           <div className="relative z-10 space-y-3 sm:space-y-6">
             {/* Header — visible partout pour indiquer le nom du restaurant */}
-            <header className="hidden items-center justify-between gap-3 sm:flex">
+            <header className="hidden items-center justify-between gap-3 sm:flex lg:hidden">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/70 bg-white/50 text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl">
                   <Utensils size={18} />
@@ -623,13 +623,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         className="space-y-1.5 sm:space-y-2.5"
                         onClickCapture={() => setActiveSection('party')}
                       >
-                        <label
-                          className={cn(
-                            labelClass,
-                            'transition-opacity duration-300',
-                            activeSection !== 'party' && 'lg:opacity-60',
-                          )}
-                        >
+                        <label className={cn(labelClass)}>
                           <Users size={13} />
                           Nombre de personnes
                         </label>
@@ -647,7 +641,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                                 softPillClass,
                                 partySize === size
                                   ? selectedPillClass
-                                  : activeSection !== 'party' && 'lg:opacity-50',
+                                  : '',
                               )}
                             >
                               {size}
@@ -660,13 +654,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         className="space-y-2 sm:space-y-2.5"
                         onClickCapture={() => setActiveSection('date')}
                       >
-                        <label
-                          className={cn(
-                            labelClass,
-                            'transition-opacity duration-300',
-                            activeSection !== 'date' && 'lg:opacity-60',
-                          )}
-                        >
+                        <label className={cn(labelClass)}>
                           <CalendarIcon size={13} />
                           Sélectionner la date
                         </label>
@@ -687,7 +675,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                                   softPillClass,
                                   isSelected
                                     ? 'border-[hsl(var(--reservation-ink))] bg-[hsl(var(--reservation-ink))] text-[hsl(var(--reservation-panel))] shadow-lg shadow-black/10 hover:bg-[hsl(var(--reservation-ink))] hover:text-[hsl(var(--reservation-panel))]'
-                                    : activeSection !== 'date' && 'lg:opacity-50',
+                                    : '',
                                 )}
                               >
                                 {isSelected && (
@@ -709,13 +697,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                         className="space-y-2 sm:space-y-2.5"
                         onClickCapture={() => setActiveSection('time')}
                       >
-                        <label
-                          className={cn(
-                            labelClass,
-                            'transition-opacity duration-300',
-                            activeSection !== 'time' && 'lg:opacity-60',
-                          )}
-                        >
+                        <label className={cn(labelClass)}>
                           <Clock size={13} />
                           Créneau horaire
                         </label>
@@ -744,7 +726,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                                             softPillClass,
                                             isSelected
                                               ? selectedPillClass
-                                              : activeSection !== 'time' && 'lg:opacity-50',
+                                              : '',
                                           )}
                                         >
                                           {time.replace(':', 'h')}
@@ -759,19 +741,18 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                           <div
                             className={cn(
                               glassCardClass,
-                              'flex items-center gap-4 p-5 text-left border-dashed border-white/40 bg-white/20 transition-all duration-300 hover:bg-white/28',
-                              activeSection !== 'time' && 'lg:opacity-50',
+                              'flex flex-col items-center gap-3 p-6 text-center border-dashed border-white/40 bg-white/30',
                             )}
                           >
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/30 text-[hsl(var(--reservation-muted))] shadow-inner">
-                              <Clock size={24} className="opacity-40" />
+                            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white/50 text-[hsl(var(--reservation-muted))] shadow-inner">
+                              <Utensils size={24} className="opacity-70" />
                             </div>
                             <div>
                               <p className="text-sm font-bold tracking-tight text-[hsl(var(--reservation-ink))]">
                                 Aucun service ce jour-là
                               </p>
-                              <p className="mt-0.5 text-xs leading-normal text-[hsl(var(--reservation-soft))]">
-                                {"L'établissement ne propose pas de réservations en ligne pour cette date. Choisissez une autre date ci-dessus."}
+                              <p className="mt-1 text-xs leading-relaxed text-[hsl(var(--reservation-soft))] max-w-[18rem] mx-auto">
+                                {"L'établissement ne propose pas de réservations en ligne pour cette date. Choisissez une autre date dans le calendrier ci-dessus."}
                               </p>
                             </div>
                           </div>
@@ -848,10 +829,10 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                     onClick={step === 1 ? () => setStep(2) : handleSubmit}
                     disabled={!canProceed}
                     className={cn(
-                      'flex w-full items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold shadow-lg shadow-black/10 transition-all duration-200 active:scale-[0.97]',
+                      'flex w-full items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold transition-all duration-200 active:scale-[0.97]',
                       canProceed
-                        ? 'bg-[hsl(var(--reservation-ink))] text-white hover:-translate-y-0.5'
-                        : 'cursor-not-allowed bg-white/42 text-[hsl(var(--reservation-muted))] opacity-80 shadow-none',
+                        ? 'bg-[hsl(var(--reservation-ink))] text-white shadow-lg shadow-black/10 hover:-translate-y-0.5'
+                        : 'cursor-not-allowed bg-white/55 text-[hsl(var(--reservation-soft))] shadow-sm',
                     )}
                   >
                     {step === 1
