@@ -18,7 +18,7 @@ export const PLANS = [
   {
     label: 'Essential',
     price: '149',
-    period: '€',
+    period: '€/mois',
     features: [
       'Répond à chaque appel, 24h/24',
       'Réservations prises sans intervention',
@@ -30,7 +30,7 @@ export const PLANS = [
   {
     label: 'Pro',
     price: '249',
-    period: '€',
+    period: '€/mois',
     features: [
       "Tout l'Essential, sans limite",
       'Vos clients reconnus à chaque appel',
@@ -44,7 +44,7 @@ export const PLANS = [
   {
     label: 'Multi-site',
     price: '249',
-    period: '€ + 99€/site suppl.',
+    period: '€/mois + 99€/site',
     features: [
       'Plan Pro sur tous vos établissements',
       'Un seul dashboard pour tout piloter',

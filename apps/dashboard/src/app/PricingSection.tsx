@@ -40,8 +40,8 @@ export default function PricingSection() {
               className={cn(
                 'group relative flex flex-col rounded-[2rem] border p-7 backdrop-blur-xl transition-all duration-300',
                 plan.featured
-                  ? 'border-white/20 bg-white/[0.04] shadow-[0_0_40px_rgba(6,182,212,0.15)] hover:shadow-[0_0_60px_rgba(6,182,212,0.25)]'
-                  : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]',
+                  ? 'border-white/25 bg-white/[0.08] shadow-[0_0_40px_rgba(6,182,212,0.15)] hover:shadow-[0_0_60px_rgba(6,182,212,0.25)]'
+                  : 'border-white/15 bg-white/[0.06] hover:border-white/25 hover:bg-white/[0.10]',
               )}
             >
               {/* Corner glow for featured */}
@@ -76,7 +76,7 @@ export default function PricingSection() {
                     {DISPLAY_PRICE(plan.price, yearly)}
                   </span>
                   <span className="text-sm font-semibold text-white/60">
-                    €<span className="text-xs text-white/40">/mois</span>
+                    {plan.period}
                   </span>
                 </div>
 
