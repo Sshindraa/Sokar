@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { SignedIn, SignedOut } from '@clerk/nextjs';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, Check } from 'lucide-react';
 import MobileNav from '@/components/MobileNav';
 import { cn, triggerHaptic } from '@/lib/utils';
 
@@ -53,29 +53,10 @@ const plans = [
   },
 ];
 
-function CheckIcon() {
-  return (
-    <span className="check-icon">
-      <svg viewBox="0 0 12 12">
-        <polyline points="2,6 5,9 10,3" />
-      </svg>
-    </span>
-  );
-}
-
 /* ===== COMPONENT ===== */
 
 export default function PricingPage() {
   const [yearly, setYearly] = useState(true);
-
-  // Fix toggle ::after via CSS custom properties
-  useEffect(() => {
-    const track = document.getElementById('toggle-track');
-    if (track) {
-      track.style.setProperty('--tx', yearly ? '20px' : '0px');
-      track.style.setProperty('--handle-bg', yearly ? 'hsl(var(--background))' : 'hsl(var(--primary))');
-    }
-  }, [yearly]);
 
   const toggleBilling = () => {
     triggerHaptic(15);
@@ -143,101 +124,116 @@ export default function PricingPage() {
         <h1 className="pricing-hero-title">Tarifs</h1>
       </section>
 
-      {/* ---- BILLING ---- */}
-      <div className="flex items-center justify-center gap-3 px-8 pb-8 max-w-[1180px] mx-auto relative z-10">
-        <label
-          className="flex items-center gap-3 cursor-pointer"
-          aria-label="Toggle yearly billing"
-          onClick={toggleBilling}
-        >
-          <div
-            id="toggle-track"
-            className="pricing-toggle-track"
-            role="switch"
-            aria-checked={yearly}
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === ' ' || e.key === 'Enter') {
-                e.preventDefault();
-                toggleBilling();
-              }
-            }}
-          />
-          <span className="flex items-center gap-2 select-none text-sm text-muted-foreground font-medium">
-            Facturation annuelle
-            <span className="px-2.5 py-1 text-xs bg-[hsl(var(--pricing-accent))] text-black border border-[hsl(var(--pricing-accent-glow)/0.4)] rounded-full font-bold tracking-wide shadow-[0_0_15px_hsl(var(--pricing-accent)/0.4)]">
-              économisez 20%
-            </span>
-          </span>
-        </label>
-      </div>
-
       {/* ---- CARDS ---- */}
       <section className="relative z-[2] mx-auto max-w-[1180px] px-4 md:px-8 pb-8 -mt-7" aria-label="Pricing plans">
+        {/* Ambient glow behind cards */}
+        <div
+          className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/3 h-[600px] w-[900px] rounded-full -z-10"
+          style={{
+            background: 'radial-gradient(circle, hsl(195 100% 55% / 0.18), transparent 70%)',
+            filter: 'blur(80px)',
+          }}
+        />
         <div className="flex md:grid md:grid-cols-3 gap-6 overflow-x-auto md:overflow-x-visible snap-x snap-mandatory pb-10 scrollbar-none px-4 -mx-4 md:px-0 md:mx-0">
           {plans.map((plan) => (
             <div
               key={plan.label}
               className={cn(
-                'pricing-card snap-center shrink-0 w-[85vw] max-w-[340px] md:w-auto md:shrink md:max-w-none',
-                plan.featured && 'pricing-card-featured',
+                'group relative flex flex-col rounded-[2rem] border p-7 backdrop-blur-xl transition-all duration-300 snap-center shrink-0 w-[85vw] max-w-[340px] md:w-auto md:shrink md:max-w-none',
+                plan.featured
+                  ? 'border-white/20 bg-white/[0.04] shadow-[0_0_40px_rgba(6,182,212,0.15)] hover:shadow-[0_0_60px_rgba(6,182,212,0.25)]'
+                  : 'border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]',
               )}
             >
-              <div>
-                <div className="flex justify-between items-start mb-3">
-                  <p className="relative z-[1] text-lg font-semibold tracking-wide uppercase text-foreground/90">
+              {/* Corner glow for featured */}
+              {plan.featured && (
+                <div className="pointer-events-none absolute -inset-px rounded-[2rem] opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                  <div
+                    className="absolute inset-0 rounded-[2rem]"
+                    style={{
+                      background:
+                        'linear-gradient(135deg, hsl(195 100% 55% / 0.15), transparent 40%, transparent 60%, hsl(195 100% 70% / 0.1))',
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Header */}
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-6">
+                  <p className="text-sm font-semibold tracking-wide text-white/80">
                     {plan.label}
                   </p>
                   {plan.featured && (
-                    <span className="px-2.5 py-0.5 text-[10px] font-extrabold tracking-wider uppercase bg-[hsl(var(--pricing-accent))] text-black rounded-full shadow-[0_0_12px_hsl(var(--pricing-accent)/0.3)] animate-pulse">
+                    <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-cyan-300 border border-cyan-400/30 rounded-full bg-cyan-400/10">
                       Recommandé
                     </span>
                   )}
                 </div>
 
-                {/* Price block anchor */}
-                <div className="relative z-[1] flex items-baseline gap-1.5 py-2 border-b border-border/10 mb-4">
-                  <span className="text-[clamp(2.5rem,5vw,3.5rem)] font-extrabold tracking-tight leading-none bg-gradient-to-br from-foreground via-foreground to-muted-foreground bg-clip-text text-transparent">
+                {/* Price */}
+                <div className="flex items-baseline gap-1 mb-3">
+                  <span className="text-[2.5rem] font-extrabold tracking-tight text-white leading-none">
                     {displayPrice(plan.price, yearly)}
                   </span>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-foreground/80">€</span>
-                    <span className="text-xs text-muted-foreground">/mois</span>
-                  </div>
-                  {plan.label === 'Multi-site' && (
-                    <span className="text-xs text-muted-foreground ml-2 font-medium bg-foreground/5 px-2 py-0.5 rounded-full border border-border/40 self-center">
-                      + 99€/site
-                    </span>
-                  )}
+                  <span className="text-sm font-semibold text-white/60">
+                    €<span className="text-xs text-white/40">/mois</span>
+                  </span>
                 </div>
 
-                <p className="relative z-[1] text-sm text-foreground/70 leading-relaxed min-h-[40px]">
+                {/* Description */}
+                <p className="text-sm text-white/50 leading-relaxed mb-8">
                   {plan.description}
                 </p>
               </div>
 
-              <ul className="list-none flex flex-col gap-3.5 flex-1 relative z-[1] m-0 p-0">
+              {/* Features */}
+              <ul className="relative z-10 flex-1 space-y-4 mb-8">
                 {plan.features.map((feat) => (
-                  <li key={feat} className="flex items-start gap-3 text-sm text-foreground/80 leading-snug">
-                    <CheckIcon />
+                  <li key={feat} className="flex items-start gap-3 text-sm text-white/70">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-cyan-400/40 bg-cyan-400/10">
+                      <Check size={12} className="text-cyan-300" strokeWidth={3} />
+                    </span>
                     {feat}
                   </li>
                 ))}
               </ul>
 
+              {/* CTA */}
               <a
                 href="/register"
                 className={cn(
-                  'self-center min-w-[9.25rem] px-6 py-[0.72rem] rounded-full text-[0.82rem] font-semibold cursor-pointer border-none relative z-[1] transition-all duration-200 text-center no-underline inline-block',
+                  'relative z-10 w-full rounded-full py-3 text-sm font-semibold text-center transition-all duration-200',
                   plan.featured
-                    ? 'pricing-cta-featured'
-                    : 'bg-primary text-primary-foreground hover:opacity-95 hover:-translate-y-px hover:shadow-[0_0.75rem_1.8rem_rgba(255,255,255,0.12)] active:scale-95 active:bg-primary/95',
+                    ? 'bg-white text-black hover:bg-white/90 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] active:scale-[0.98]'
+                    : 'border border-white/20 text-white hover:bg-white/10 hover:border-white/30 active:scale-[0.98]',
                 )}
               >
                 Souscrire
               </a>
             </div>
           ))}
+        </div>
+
+        {/* Toggle Billing — bottom left */}
+        <div className="flex items-center gap-3 mt-6">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={yearly}
+            onClick={toggleBilling}
+            className="relative h-6 w-11 rounded-full border border-white/20 bg-white/10 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50"
+          >
+            <span
+              className={`pointer-events-none absolute left-[3px] top-[3px] h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform duration-200 ${yearly ? 'translate-x-5' : 'translate-x-0'}`}
+            />
+          </button>
+          <span className="text-sm font-medium text-white/60">
+            Annuel
+            <span className="ml-1.5 px-2 py-0.5 text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-full font-bold">
+              -20%
+            </span>
+          </span>
         </div>
       </section>
 
