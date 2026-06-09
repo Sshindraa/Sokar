@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import {
   ArrowRight,
   Bot,
@@ -14,8 +15,19 @@ import PricingSection from '@/app/PricingSection';
 import FaqSection from '@/app/FaqSection';
 import WaitlistSection from '@/app/WaitlistSection';
 import MobileNav from '@/components/MobileNav';
-import DemoSection from '@/app/DemoSection';
 import AuthCTA from '@/components/AuthCTA';
+import SectionSkeleton from '@/components/SectionSkeleton';
+
+// Defer heavy client sections to idle time — they hydrate framer-motion + chat timer
+// after the hero/footer are interactive. No CLS: skeletons reserve the same height.
+const ScrollStoryboardSection = dynamic(
+  () => import('@/app/ScrollStoryboardSection'),
+  { ssr: false, loading: () => <SectionSkeleton variant="storyboard" /> },
+);
+const DemoSection = dynamic(() => import('@/app/DemoSection'), {
+  ssr: false,
+  loading: () => <SectionSkeleton variant="demo" />,
+});
 
 const outfit = Outfit({
   subsets: ['latin'],
@@ -33,7 +45,7 @@ const jakarta = Plus_Jakarta_Sans({
 
 export default function HomePage() {
   return (
-    <div className={`relative min-h-screen w-full overflow-hidden bg-[#030303] text-foreground flex flex-col justify-between items-center font-sans antialiased ${outfit.variable} ${jakarta.variable}`}>
+    <div className={`relative min-h-screen w-full bg-[#030303] text-foreground flex flex-col justify-between items-center font-sans antialiased ${outfit.variable} ${jakarta.variable}`}>
       {/* Liquid Field Background */}
       <div className="liquid-field absolute inset-0 pointer-events-none z-0 overflow-hidden select-none" />
 
@@ -48,7 +60,7 @@ export default function HomePage() {
 
       {/* Floating navbar */}
       <div className="fixed left-1/2 top-5 z-50 -translate-x-1/2 flex items-center">
-        <nav className="flex items-center gap-2 rounded-full border border-white/10 bg-black/80 px-3 py-2 shadow-2xl backdrop-blur-xl">
+        <nav className="flex items-center gap-2 rounded-full border border-white/10 bg-black/85 px-3 py-2 shadow-2xl">
           {/* Logo inside navbar on mobile */}
           <Link href="/" className="flex items-center gap-1.5 md:hidden pl-1 hover:opacity-80 transition-opacity">
             <Image src="/logo-nav.png" alt="Sokar" width={28} height={28} className="h-7 w-7" />
@@ -95,7 +107,7 @@ export default function HomePage() {
               <div className="pointer-events-none absolute bottom-0 left-[53%] h-64 w-px bg-gradient-to-b from-white/36 via-white/10 to-transparent" />
 
               <div className="absolute left-4 top-24 hidden w-56 items-center gap-3 text-left text-white/65 md:flex">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-white/5 backdrop-blur-xl">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-white/8">
                   <PhoneCall size={14} />
                 </span>
                 <span className="h-px flex-1 bg-gradient-to-r from-white/20 to-transparent" />
@@ -111,13 +123,13 @@ export default function HomePage() {
                   <span className="block text-xs font-semibold text-white">Réservations</span>
                   <span className="text-[10px] text-white/40">Confirmées par SMS</span>
                 </span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-white/5 backdrop-blur-xl">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-white/8">
                   <CalendarCheck size={14} />
                 </span>
               </div>
 
               <div className="absolute bottom-32 left-6 hidden w-64 items-center gap-3 text-left text-white/65 md:flex">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-white/5 backdrop-blur-xl">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-white/8">
                   <Utensils size={14} />
                 </span>
                 <span className="h-px flex-1 bg-gradient-to-r from-white/20 to-transparent" />
@@ -133,13 +145,13 @@ export default function HomePage() {
                   <span className="block text-xs font-semibold text-white">Assistant vocal</span>
                   <span className="text-[10px] text-white/40">Toujours disponible</span>
                 </span>
-                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-white/5 backdrop-blur-xl">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-white/8">
                   <Bot size={14} />
                 </span>
               </div>
 
               <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-5 pb-28 pt-36 text-center sm:px-8 lg:pb-24">
-                <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-4 py-2 text-[11px] font-semibold text-white/76 shadow-2xl shadow-black/20 backdrop-blur-xl">
+                <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-4 py-2 text-[11px] font-semibold text-white/76 shadow-2xl shadow-black/20">
                   <Mic size={13} />
                   Sokar active votre standard
                   <ArrowRight size={12} />
@@ -163,7 +175,7 @@ export default function HomePage() {
                   </Link>
                   <Link
                     href="/#demo"
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/8 px-6 py-3 text-sm font-semibold text-white shadow-2xl shadow-black/20 backdrop-blur-xl transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 active:scale-[0.98] sm:w-auto"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/8 px-6 py-3 text-sm font-semibold text-white shadow-2xl shadow-black/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 active:scale-[0.98] sm:w-auto"
                   >
                     Découvrir
                     <ArrowRight size={14} />
@@ -172,7 +184,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="absolute inset-x-0 bottom-0 z-10 hidden grid-cols-2 gap-2 border-t border-white/8 bg-black/50 px-8 py-5 text-center text-[11px] font-semibold text-white/42 backdrop-blur-xl sm:grid sm:grid-cols-4 lg:grid-cols-7">
+            <div className="absolute inset-x-0 bottom-0 z-10 hidden grid-cols-2 gap-2 border-t border-white/8 bg-black/70 px-8 py-5 text-center text-[11px] font-semibold text-white/42 sm:grid sm:grid-cols-4 lg:grid-cols-7">
               {[
                 'Réservations',
                 'SMS',
@@ -191,11 +203,15 @@ export default function HomePage() {
           </div>
         </section>
 
-        <div className="relative w-full overflow-hidden border-t border-white/5 bg-black/80">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_18%,rgba(210,244,255,0.16),transparent_24rem),radial-gradient(circle_at_80%_42%,rgba(236,255,244,0.12),transparent_24rem),linear-gradient(180deg,rgba(255,255,255,0.03),transparent_28rem)]" />
+        <div className="relative w-full overflow-visible border-t border-white/5 bg-black/80">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_18%,rgba(210,244,255,0.16),transparent_24rem),radial-gradient(circle_at_80%_42%,rgba(236,255,244,0.12),transparent_24rem),linear-gradient(180deg,rgba(255,255,255,0.03),transparent_28rem)]" />
+          {/* backdrop-blur removed: was 4 instances here, replaced with bg-black/80 below */}
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(180deg,rgba(255,255,255,0.018)_1px,transparent_1px)] bg-[length:96px_96px] opacity-70" />
 
           <div className="relative mx-auto flex w-full flex-col items-center">
+            {/* SCROLL STORYBOARD — Framer Motion cinematic transition inspired by the reference */}
+            <ScrollStoryboardSection />
+
             {/* DEMO — client component with simulator chat */}
             <DemoSection />
 
@@ -212,7 +228,7 @@ export default function HomePage() {
       </main>
 
       {/* FOOTER — fully static, server-rendered */}
-      <footer className="relative z-10 mt-0 flex w-full flex-col items-center overflow-hidden border-t border-white/5 bg-black/90 px-6 pb-12 pt-16 backdrop-blur-md">
+      <footer className="relative z-10 mt-0 flex w-full flex-col items-center overflow-hidden border-t border-white/5 bg-black/95 px-6 pb-12 pt-16">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_28%_0%,rgba(210,244,255,0.12),transparent_26rem),radial-gradient(circle_at_78%_18%,rgba(236,255,244,0.08),transparent_24rem)]" />
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.018)_1px,transparent_1px)] bg-[length:96px_96px] opacity-60" />
         <div className="absolute inset-x-0 bottom-0 overflow-hidden pointer-events-none select-none flex justify-center -z-10 opacity-30">

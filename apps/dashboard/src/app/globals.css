@@ -69,7 +69,7 @@
     @apply bg-background text-foreground;
     font-family: Inter, system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 }
 
@@ -237,6 +237,9 @@ input[type="range"]::-moz-range-thumb:hover {
     radial-gradient(ellipse at 35% 88%, hsl(0 0% 100% / 0.28) 0%, hsl(0 0% 100% / 0.08) 15%, transparent 32%),
     linear-gradient(180deg, hsl(0 0% 2%) 0%, hsl(0 0% 0%) 100%);
 }
+/* OPTIMIZED: removed filter: blur(24px) — was the biggest paint cost.
+   Replaced with a soft radial-gradient blob that mimics the soft-glow look
+   without forcing GPU compositing on every frame. */
 .liquid-field::before {
   content: '';
   position: absolute;
@@ -247,12 +250,13 @@ input[type="range"]::-moz-range-thumb:hover {
   border-radius: 50%;
   transform: rotate(6deg);
   background:
-    radial-gradient(ellipse at 10% 44%, hsl(0 0% 100% / 0.64), transparent 17%),
-    radial-gradient(ellipse at 36% 64%, hsl(0 0% 100% / 0.42), transparent 15%),
-    radial-gradient(ellipse at 58% 46%, hsl(0 0% 100% / 0.32), transparent 18%),
-    radial-gradient(ellipse at 86% 54%, hsl(0 0% 100% / 0.5), transparent 17%);
-  filter: blur(24px);
+    radial-gradient(ellipse at 10% 44%, hsl(0 0% 100% / 0.18), transparent 30%),
+    radial-gradient(ellipse at 36% 64%, hsl(0 0% 100% / 0.12), transparent 28%),
+    radial-gradient(ellipse at 58% 46%, hsl(0 0% 100% / 0.10), transparent 32%),
+    radial-gradient(ellipse at 86% 54%, hsl(0 0% 100% / 0.14), transparent 30%);
   opacity: 0.9;
+  /* will-change is opt-in and was removed because the cost of the
+     persistent compositor layer outweighed the savings. */
 }
 .liquid-field::after {
   content: '';
@@ -267,7 +271,7 @@ input[type="range"]::-moz-range-thumb:hover {
     inset 0 0 80px hsl(0 0% 100% / 0.025),
     0 0 120px hsl(0 0% 100% / 0.045);
   transform: rotate(-14deg);
-  filter: blur(1.2px);
+  /* OPTIMIZED: removed filter: blur(1.2px) — negligible visual, real paint cost */
   opacity: 0.78;
 }
 
@@ -670,7 +674,7 @@ header {
 /* Prevent horizontal overflow globally */
 html,
 body {
-  overflow-x: hidden;
+  overflow-x: clip;
   max-width: 100vw;
 }
 
