@@ -12,7 +12,8 @@ export default function FaqSection() {
   };
 
   return (
-    <section id="faq" className="w-full py-12 sm:py-16 scroll-mt-24 flex flex-col items-center">
+    <section id="faq" className="relative flex min-h-screen w-full scroll-mt-24 flex-col items-center justify-center overflow-hidden px-4 py-20 sm:px-6 lg:px-10">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(255,255,255,0.08),transparent_28rem)]" />
       <div className="text-center max-w-lg mb-8 sm:mb-10 px-2">
         <h2 className="text-xl sm:text-2xl md:text-4xl font-bold tracking-tight text-white font-display">
           Foire Aux Questions
@@ -22,7 +23,7 @@ export default function FaqSection() {
         </p>
       </div>
 
-      <div className="w-full max-w-3xl flex flex-col gap-3 sm:gap-4 mt-4 sm:mt-6 px-2 sm:px-0">
+      <div className="relative z-10 mt-4 flex w-full max-w-4xl flex-col gap-3 px-2 sm:mt-6 sm:gap-4 sm:px-0">
         {FAQS.map((faq, idx) => (
           <div
             key={idx}

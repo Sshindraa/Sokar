@@ -11,7 +11,7 @@ export default function PricingSection() {
   return (
     <section
       id="tarifs"
-      className="relative w-full py-20 scroll-mt-24 overflow-hidden"
+      className="relative flex min-h-screen w-full scroll-mt-24 items-center overflow-hidden px-4 py-20 sm:px-6 lg:px-10"
     >
       {/* Ambient glow behind cards */}
       <div
@@ -22,7 +22,7 @@ export default function PricingSection() {
         }}
       />
 
-      <div className="relative z-10 flex flex-col items-center max-w-6xl mx-auto px-4">
+      <div className="relative z-10 mx-auto flex w-full flex-col items-center">
         {/* Mini Hero */}
         <div className="text-center mb-12 relative px-2">
           <h2 className="pricing-hero-title text-center leading-none">Tarifs</h2>
