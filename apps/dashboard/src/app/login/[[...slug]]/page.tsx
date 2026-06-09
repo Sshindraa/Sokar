@@ -111,9 +111,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen w-full bg-background text-foreground flex items-stretch">
+    <div className="relative flex min-h-screen w-full items-stretch overflow-hidden bg-background text-foreground">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_72%_30%,hsl(var(--foreground)/0.16),transparent_34%),linear-gradient(hsl(var(--border)/0.15)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.12)_1px,transparent_1px)] bg-[auto,76px_76px,76px_76px] opacity-60" />
       {/* Colonne gauche : Formulaire */}
-      <div className="w-full lg:w-[45%] flex flex-col justify-between p-6 sm:p-10 relative z-10 bg-background">
+      <div className="relative z-10 flex w-full flex-col justify-between bg-background/90 p-6 backdrop-blur-xl sm:p-10 lg:w-[45%]">
         
         {/* En-tête avec bouton retour & Logo */}
         <div className="flex items-center justify-between">
@@ -196,7 +197,7 @@ export default function LoginPage() {
       </div>
 
       {/* Colonne droite : Preview interactive / Design Premium */}
-      <div className="hidden lg:flex flex-1 relative overflow-hidden bg-muted flex-col justify-between p-8 xl:p-10 border-l border-border/40">
+      <div className="relative hidden flex-1 overflow-hidden border-l border-border/40 bg-background/55 p-8 backdrop-blur-sm lg:flex lg:flex-col lg:justify-between xl:p-10">
         
         {/* Atmosphère Lumineuse Dynamique */}
         <div className="absolute inset-0 bg-gradient-to-br from-background via-muted to-background z-0" />

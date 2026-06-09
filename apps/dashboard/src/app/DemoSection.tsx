@@ -38,12 +38,14 @@ function RadialDial({ value }: { value: number }) {
 }
 
 /* ===== HELPER: AudioWaveform ===== */
+const WAVE_HEIGHTS = [16, 24, 31, 37, 28, 18, 26, 34, 39, 30, 21, 27, 35, 23];
+
 function AudioWaveform() {
   return (
     <div className="flex items-end gap-[1.5px] h-10">
       {Array.from({ length: 14 }).map((_, i) => (
         <div key={i} className="w-[1.5px] min-h-[3px] bg-gradient-to-t from-cyan-600 via-cyan-400 to-white rounded-full transition-all duration-300 opacity-80"
-          style={{ height: `${12 + Math.sin(i * 0.8) * 18 + Math.random() * 6}px`, animation: `wave-bounce ${1.2 + i * 0.15}s ease-in-out infinite`, animationDelay: `${i * 0.1}s` }} />
+          style={{ height: `${WAVE_HEIGHTS[i]}px`, animation: `wave-bounce ${1.2 + i * 0.15}s ease-in-out infinite`, animationDelay: `${i * 0.1}s` }} />
       ))}
     </div>
   );
@@ -250,16 +252,17 @@ export default function DemoSection() {
   }, [currentStepIndex, visibleSteps]);
 
   return (
-    <section id="demo" className="w-full py-16 scroll-mt-24 flex flex-col items-center">
-      <div className="text-center max-w-lg mb-10">
+    <section id="demo" className="relative flex min-h-screen w-full scroll-mt-24 flex-col items-center justify-center overflow-hidden px-4 py-20 sm:px-6 lg:px-10">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_26%,rgba(6,182,212,0.14),transparent_28rem),radial-gradient(circle_at_78%_58%,rgba(255,255,255,0.08),transparent_30rem)]" />
+      <div className="relative z-10 mb-12 max-w-lg text-center">
         <h2 className="text-2xl md:text-4xl font-bold tracking-tight text-white font-display">Le Tableau de Bord en Action</h2>
         <p className="mt-2 text-xs md:text-sm text-white/50 leading-relaxed font-sans">
           Admirez l&apos;interface de pilotage Sokar en temps réel. Le moniteur d&apos;activité affiche les statistiques de l&apos;assistant vocal en parallèle de la console de dialogue.
         </p>
       </div>
 
-      <div className="w-full flex flex-col-reverse gap-4 lg:grid lg:grid-cols-[1.1fr_1fr] lg:gap-6 bg-white/[0.01] border border-white/5 p-3 sm:p-4 md:p-6 rounded-2xl md:rounded-3xl backdrop-blur-2xl shadow-2xl relative overflow-hidden">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[300px] bg-cyan-500/5 filter blur-3xl pointer-events-none rounded-full" />
+      <div className="relative z-10 grid w-full gap-4 lg:grid-cols-[1.08fr_1fr] lg:gap-6">
+        <div className="pointer-events-none absolute left-1/2 top-1/2 h-[34rem] w-[42rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-500/5 blur-3xl" />
         <div className="flex flex-col gap-4 justify-between">
           <TelemetryTuner />
           <div className="grid grid-cols-2 gap-3.5">

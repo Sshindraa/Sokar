@@ -36,8 +36,9 @@ export default function WaitlistSection() {
   };
 
   return (
-    <section id="waitlist" className="w-full py-16 scroll-mt-24 flex flex-col items-center">
-      <div className="glass-card w-full max-w-2xl p-8 md:p-12 rounded-3xl transition-all duration-500 hover:border-white/12 text-center">
+    <section id="waitlist" className="relative flex min-h-screen w-full scroll-mt-24 flex-col items-center justify-center overflow-hidden px-4 py-20 text-center sm:px-6 lg:px-10">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_38%,rgba(210,244,255,0.16),transparent_30rem),radial-gradient(circle_at_70%_70%,rgba(255,255,255,0.08),transparent_26rem)]" />
+      <div className="relative z-10 w-full max-w-4xl transition-all duration-500">
         {status !== 'success' ? (
           <>
             <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-white font-display">

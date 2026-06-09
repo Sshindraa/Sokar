@@ -18,7 +18,6 @@ import {
   Utensils,
   Heart,
   Loader2,
-  X,
   CalendarCheck,
   Download,
 } from 'lucide-react';
@@ -591,24 +590,6 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
             />
           </div>
 
-          {/* Close button — mobile only */}
-          <button
-            type="button"
-            onClick={() => {
-              try {
-                if (window.parent) {
-                  window.parent.postMessage({ type: 'sokar-widget-close' }, '*');
-                }
-              } catch (e) {}
-              try {
-                window.close();
-              } catch (e) {}
-            }}
-            className="absolute right-3.5 top-2 z-30 flex h-12 w-12 items-center justify-center rounded-full border border-white/70 bg-white/75 text-[hsl(var(--reservation-ink)/0.55)] shadow-[0_8px_24px_rgba(0,0,0,0.08)] backdrop-blur-2xl transition-all duration-200 hover:bg-white/85 active:scale-95 sm:hidden"
-            aria-label="Fermer"
-          >
-            <X size={18} />
-          </button>
           <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent" />
           <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-[hsl(var(--reservation-glow)/0.16)] blur-3xl" />
 
@@ -869,7 +850,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                 </div>
 
                 {/* Colonne droite */}
-                <div className="space-y-3 sm:space-y-5 lg:space-y-2.5">
+                <div className="space-y-3 pb-20 sm:space-y-5 lg:space-y-2.5 lg:pb-0">
                   {/* Badge Réservation — desktop only, aligns with left col header */}
                   <div className="hidden lg:flex lg:items-center lg:justify-end">
                     <span className="rounded-full border border-white/70 bg-white/44 px-3.5 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--reservation-muted))] shadow-sm backdrop-blur-2xl">
@@ -1157,7 +1138,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                     </div>
                   )}
 
-                  <div className="sticky bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-20 pt-2 lg:static lg:pt-0">
+                  <div className="relative z-20 pt-2 lg:pt-0">
                     <button
                       type="button"
                       onClick={handlePrimaryAction}

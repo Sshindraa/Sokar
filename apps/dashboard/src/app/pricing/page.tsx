@@ -125,7 +125,7 @@ export default function PricingPage() {
       </section>
 
       {/* ---- CARDS ---- */}
-      <section className="relative z-[2] mx-auto max-w-[1180px] px-4 md:px-8 pb-8 -mt-7" aria-label="Pricing plans">
+      <section className="relative z-[2] mx-auto max-w-[1180px] px-5 pb-28 md:px-8 md:pb-8 md:-mt-7" aria-label="Pricing plans">
         {/* Ambient glow behind cards */}
         <div
           className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/3 h-[600px] w-[900px] rounded-full -z-10"
@@ -134,12 +134,12 @@ export default function PricingPage() {
             filter: 'blur(80px)',
           }}
         />
-        <div className="flex md:grid md:grid-cols-3 gap-6 overflow-x-auto md:overflow-x-visible snap-x snap-mandatory pb-10 scrollbar-none px-4 -mx-4 md:px-0 md:mx-0">
+        <div className="grid grid-cols-1 gap-5 pb-8 md:grid-cols-3 md:gap-6 md:pb-10">
           {plans.map((plan) => (
             <div
               key={plan.label}
               className={cn(
-                'group relative flex flex-col rounded-[2rem] border p-7 backdrop-blur-xl transition-all duration-300 snap-center shrink-0 w-[85vw] max-w-[340px] md:w-auto md:shrink md:max-w-none',
+                'group relative flex w-full flex-col rounded-[2rem] border p-6 backdrop-blur-xl transition-all duration-300 md:p-7',
                 plan.featured
                   ? 'border-white/25 bg-white/[0.08] shadow-[0_0_40px_rgba(6,182,212,0.15)] hover:shadow-[0_0_60px_rgba(6,182,212,0.25)]'
                   : 'border-white/15 bg-white/[0.06] hover:border-white/25 hover:bg-white/[0.10]',
@@ -216,7 +216,7 @@ export default function PricingPage() {
         </div>
 
         {/* Toggle Billing — bottom left */}
-        <div className="flex items-center gap-3 mt-6">
+        <div className="flex items-center gap-3 mt-2 md:mt-6">
           <button
             type="button"
             role="switch"
@@ -237,8 +237,8 @@ export default function PricingPage() {
         </div>
       </section>
 
-      {/* Sticky Bottom Bar on Mobile */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 p-4 bg-background/80 backdrop-blur-lg border-t border-border/40 md:hidden pb-[calc(1rem+env(safe-area-inset-bottom,0px))] flex items-center justify-between gap-4 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+      {/* Mobile closing CTA */}
+      <div className="relative z-[2] mx-5 mb-8 flex items-center justify-between gap-4 rounded-3xl border border-border/40 bg-background/80 p-4 shadow-2xl backdrop-blur-lg md:hidden">
         <div className="flex flex-col">
           <span className="text-[10px] uppercase tracking-wider text-[hsl(var(--pricing-accent))] font-bold">Sokar AI</span>
           <span className="text-xs font-semibold text-foreground">Essai gratuit de 7 jours</span>
@@ -264,7 +264,7 @@ export default function PricingPage() {
       </div>
 
       {/* ---- FOOTER ---- */}
-      <footer className="border-t border-border py-6 text-center text-sm text-muted-foreground pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-6">
+      <footer className="border-t border-border py-6 text-center text-sm text-muted-foreground">
         &copy; {new Date().getFullYear()} Sokar. Tous droits réservés.
       </footer>
     </div>

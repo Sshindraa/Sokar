@@ -20,9 +20,10 @@ export default function DashboardLayoutClient({ children }: { children: ReactNod
   const pathname = usePathname();
  
   return (
-    <div className="dark sokar-page pt-4 md:pt-6">
+    <div className="dark sokar-page relative min-h-screen overflow-hidden pt-4 md:pt-6">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,hsl(var(--foreground)/0.10),transparent_36%),linear-gradient(hsl(var(--border)/0.18)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.14)_1px,transparent_1px)] bg-[auto,72px_72px,72px_72px] opacity-70" />
       <SyncOrganization />
-      <div className="sokar-container px-4 py-3 md:px-8 md:py-4 pb-24 md:pb-8">
+      <div className="sokar-container relative z-10 px-4 py-3 md:px-8 md:py-4 pb-24 md:pb-8">
         <div className="mb-3 md:mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-xs md:text-sm text-muted-foreground">Sokar OS</p>
