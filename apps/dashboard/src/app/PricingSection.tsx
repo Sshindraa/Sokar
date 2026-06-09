@@ -30,7 +30,16 @@ export default function PricingSection() {
 
         {/* Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
-          {PLANS.map((plan) => (
+          {PLANS.map((plan) => {
+            const monthlyPrice = parseInt(plan.price, 10);
+            const yearlyPrice = DISPLAY_PRICE(plan.price, yearly);
+            const sitePrice = plan.label === 'Multi-site' ? '99' : null;
+            const yearlySitePrice = sitePrice ? DISPLAY_PRICE(sitePrice, yearly) : null;
+            const monthlySavings = monthlyPrice - parseInt(yearlyPrice, 10);
+            const siteSavings =
+              sitePrice && yearlySitePrice ? parseInt(sitePrice, 10) - parseInt(yearlySitePrice, 10) : null;
+
+            return (
             <div
               key={plan.label}
               className={cn(
@@ -67,13 +76,36 @@ export default function PricingSection() {
                 </div>
 
                 {/* Price */}
-                <div className="flex items-baseline gap-1 mb-3">
+                <div className="mb-3">
+                  {yearly && (
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-cyan-300">
+                        -20% annuel
+                      </span>
+                      <span className="text-xs font-semibold text-white/45 line-through">
+                        {plan.price} {plan.period}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-baseline gap-x-1 gap-y-1">
                   <span className="text-[2.5rem] font-extrabold tracking-tight text-white leading-none">
-                    {DISPLAY_PRICE(plan.price, yearly)}
+                    {yearlyPrice}
                   </span>
                   <span className="text-sm font-semibold text-white/60">
-                    {plan.period}
+                    €/mois
                   </span>
+                    {yearlySitePrice && (
+                      <span className="text-sm font-semibold text-white/60">
+                        + {yearlySitePrice}€/site
+                      </span>
+                    )}
+                  </div>
+                  {yearly && (
+                    <p className="mt-2 text-xs font-medium text-cyan-200/80">
+                      Économisez {monthlySavings}€/mois
+                      {siteSavings ? ` + ${siteSavings}€/site` : ''} avec la facturation annuelle.
+                    </p>
+                  )}
                 </div>
 
                 {/* Description */}
@@ -112,7 +144,8 @@ export default function PricingSection() {
                 {plan.featured ? 'Souscrire' : 'Rejoindre la Waitlist'}
               </a>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Toggle Billing — bottom left */}
@@ -122,11 +155,19 @@ export default function PricingSection() {
             role="switch"
             aria-checked={yearly}
             onClick={() => setYearly((v) => !v)}
-            className="relative h-6 w-11 rounded-full border border-white/20 bg-white/10 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50"
+            className={cn(
+              'relative h-6 w-11 rounded-full border transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50',
+              yearly ? 'border-cyan-300/50 bg-cyan-400/30' : 'border-white/20 bg-white/10',
+            )}
           >
             <span
-              className={`pointer-events-none absolute left-[3px] top-[3px] h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform duration-200 ${yearly ? 'translate-x-5' : 'translate-x-0'}`}
-            />
+              className={cn(
+                'pointer-events-none absolute left-[3px] top-[3px] flex h-[18px] w-[18px] items-center justify-center rounded-full shadow-sm transition-all duration-200',
+                yearly ? 'translate-x-5 bg-white' : 'translate-x-0 bg-black',
+              )}
+            >
+              {yearly && <Check size={11} className="text-cyan-500" strokeWidth={3.5} />}
+            </span>
           </button>
           <span className="text-sm font-medium text-white/60">
             Annuel
