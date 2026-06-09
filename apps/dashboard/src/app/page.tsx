@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Mic,
   PhoneCall,
-  Play,
   Utensils,
 } from 'lucide-react';
 import { Outfit, Plus_Jakarta_Sans } from 'next/font/google';
@@ -139,27 +138,7 @@ export default function HomePage() {
                 </span>
               </div>
 
-              <div className="absolute bottom-16 left-5 hidden items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-2 text-[11px] font-medium text-white/70 backdrop-blur-xl sm:flex">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-black">
-                  <ArrowRight size={12} />
-                </span>
-                01/03 · Appels traités en direct
-              </div>
-
-              <div className="absolute bottom-20 right-8 hidden text-left md:block">
-                <p className="text-xs font-medium text-white/70">Service horizons</p>
-                <div className="mt-2 h-1 w-9 rounded-full bg-white" />
-              </div>
-
               <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-5 pb-28 pt-36 text-center sm:px-8 lg:pb-24">
-                <button
-                  type="button"
-                  aria-label="Voir la démonstration"
-                  className="mb-10 flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/8 text-white shadow-2xl shadow-white/10 backdrop-blur-xl transition-all duration-200 hover:scale-105 hover:bg-white/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
-                >
-                  <Play size={15} fill="currentColor" />
-                </button>
-
                 <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-4 py-2 text-[11px] font-semibold text-white/76 shadow-2xl shadow-black/20 backdrop-blur-xl">
                   <Mic size={13} />
                   Sokar active votre standard
@@ -167,11 +146,11 @@ export default function HomePage() {
                 </p>
 
                 <h1 className="mt-7 max-w-4xl text-[2.5rem] font-semibold leading-[0.98] tracking-tight text-white sm:text-6xl md:text-7xl lg:text-[5.5rem] font-display">
-                  One-click pour gérer vos appels
+                  L&apos;IA devient le nouveau levier de la restauration
                 </h1>
 
                 <p className="mx-auto mt-5 max-w-2xl text-sm leading-6 text-white/62 md:text-base">
-                  Sokar répond, qualifie les demandes, confirme les réservations et transmet les bonnes infos à votre équipe pendant que le service continue.
+                  Sokar aide les restaurants à capter chaque demande, fluidifier chaque service et transformer l&apos;accueil client en avantage opérationnel.
                 </p>
 
                 <div className="mt-8 flex w-full flex-col items-center justify-center gap-3 sm:w-auto sm:flex-row">
