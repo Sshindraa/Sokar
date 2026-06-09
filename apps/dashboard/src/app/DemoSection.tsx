@@ -64,12 +64,12 @@ function SegmentedSlider({
   onChange: (v: number) => void;
 }) {
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/55">
-        <span className="font-sans">{label}</span>
-        <span className="font-mono text-cyan-400">{labels[value]}</span>
+    <div className="space-y-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/55">
+        <span className="min-w-0 truncate font-sans">{label}</span>
+        <span className="shrink-0 text-right font-mono text-cyan-400">{labels[value]}</span>
       </div>
-      <div className="relative flex items-center h-6">
+      <div className="relative flex h-8 items-center">
         <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-0.5 bg-white/10 rounded-full" />
         <div className="absolute inset-x-[2px] top-1/2 -translate-y-1/2 flex justify-between pointer-events-none">
           {labels.map((_, i) => (
@@ -123,20 +123,20 @@ function TelemetryTuner() {
   };
 
   return (
-    <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 flex flex-col justify-between shadow-xl relative overflow-hidden group transition-all duration-300 hover:border-white/10"
+    <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5 sm:p-6 flex flex-col justify-between shadow-xl relative overflow-hidden group transition-all duration-300 hover:border-white/10"
       onMouseMove={handleMouseMove} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}
       onTouchMove={handleTouchMove} onTouchStart={() => setIsHovered(true)} onTouchEnd={() => setIsHovered(false)}>
       <div className="absolute inset-0 pointer-events-none transition-opacity duration-300" style={{ opacity: isHovered ? 1 : 0, background: `radial-gradient(220px circle at ${coords.x}px ${coords.y}px, rgba(6, 182, 212, 0.06), transparent 80%)` }} />
-      <div className="absolute top-2 left-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">+ 01_HMI_TUNER</div>
-      <div className="absolute top-2 right-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">SYS_OK</div>
-      <div className="absolute bottom-2 left-3.5 text-[9px] sm:text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none">SOKAR_OS</div>
-      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border border-cyan-500/20 bg-cyan-500/10 text-xs sm:text-[11px] font-bold tracking-widest uppercase text-cyan-400">
+      <div className="absolute top-3 left-4 text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none hidden sm:block">+ 01_HMI_TUNER</div>
+      <div className="absolute top-3 right-4 text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none hidden sm:block">SYS_OK</div>
+      <div className="absolute bottom-3 left-4 text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none hidden sm:block">SOKAR_OS</div>
+      <div className="relative z-10 mt-2 inline-flex max-w-full items-center gap-1.5 self-start rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-[10px] sm:text-[11px] font-bold tracking-widest uppercase text-cyan-400">
         <span className="h-1 w-1 rounded-full bg-cyan-500 animate-ping" /> Personnalité de l&apos;Agent
       </div>
-      <div className="flex-1 flex items-center justify-center py-2 relative">
+      <div className="relative flex flex-1 items-center justify-center py-5">
         <AudioWaveform />
       </div>
-      <div className="space-y-3 mt-3 z-10">
+      <div className="z-10 mt-1 space-y-4">
         <SegmentedSlider
           label="Ambiance de l&apos;établissement"
           value={profileIdx}
@@ -186,7 +186,7 @@ function ShowcaseMetricCard({ label, value, icon: Icon, trend, isDial, dialValue
   };
 
   return (
-    <div className={`rounded-2xl border transition-all duration-300 p-4 select-none ${featured ? 'border-cyan-500/25 bg-cyan-500/[0.01] shadow-[0_0_30px_rgba(6,182,212,0.03)]' : 'border-white/5 bg-white/[0.01] hover:border-white/10'}`}
+    <div className={`relative overflow-hidden rounded-2xl border transition-all duration-300 p-4 select-none ${featured ? 'border-cyan-500/25 bg-cyan-500/[0.01] shadow-[0_0_30px_rgba(6,182,212,0.03)]' : 'border-white/5 bg-white/[0.01] hover:border-white/10'}`}
       onMouseMove={handleMouseMove} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}
       onTouchMove={handleTouchMove} onTouchStart={() => setIsHovered(true)} onTouchEnd={() => setIsHovered(false)}>
       <div className="absolute inset-0 pointer-events-none transition-opacity duration-300" style={{ opacity: isHovered ? 1 : 0, background: `radial-gradient(150px circle at ${coords.x}px ${coords.y}px, rgba(6, 182, 212, 0.08), transparent 80%)` }} />

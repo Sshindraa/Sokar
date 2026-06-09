@@ -43,7 +43,7 @@ export default function PricingSection() {
             <div
               key={plan.label}
               className={cn(
-                'group relative flex flex-col rounded-[2rem] border p-7 backdrop-blur-xl transition-all duration-300',
+                'group relative flex flex-col rounded-[2rem] border p-7 transition-all duration-300',
                 plan.featured
                   ? 'border-white/25 bg-white/[0.08] shadow-[0_0_40px_rgba(6,182,212,0.15)] hover:shadow-[0_0_60px_rgba(6,182,212,0.25)]'
                   : 'border-white/15 bg-white/[0.06] hover:border-white/25 hover:bg-white/[0.10]',
