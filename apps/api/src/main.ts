@@ -34,6 +34,23 @@ export async function buildApp() {
   app.decorate('redisCache', redisCache);
   app.decorate('queues',     queues);
 
+  // Preserve raw body for webhook signature verification (Telnyx signs the
+  // exact bytes received — re-serializing JSON can change key order and
+  // invalidate the signature). The raw body is exposed as `request.rawBody`.
+  app.addContentTypeParser(
+    'application/json',
+    { parseAs: 'string' },
+    (req, body, done) => {
+      (req as any).rawBody = body;
+      try {
+        const json = body.length === 0 ? null : JSON.parse(body);
+        done(null, json);
+      } catch (err: any) {
+        done(err as Error, undefined);
+      }
+    },
+  );
+
   // Global error handler — Zod validation errors → 400 propre
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {

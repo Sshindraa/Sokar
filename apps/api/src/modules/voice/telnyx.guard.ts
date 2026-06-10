@@ -32,8 +32,15 @@ export async function telnyxWebhookGuard(
   }
   try {
     const { default: telnyx } = await import('telnyx');
+    // Use the raw body string (preserved by addContentTypeParser) to verify
+    // the signature. Re-serializing JSON.stringify(req.body) can change key
+    // order and break the Ed25519 signature check.
+    const rawBody = (req as any).rawBody as string | undefined;
+    if (!rawBody) {
+      throw new Error('rawBody not available — content-type parser not configured?');
+    }
     telnyx.webhooks.constructEvent(
-      JSON.stringify(req.body),
+      rawBody,
       fromBase64(signature),
       timestamp,
       fromBase64(process.env.TELNYX_PUBLIC_KEY!),
