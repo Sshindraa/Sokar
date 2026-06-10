@@ -29,6 +29,11 @@ export const DEFAULT_CARTESIA_VOICE_ID = 'f786b574-daa5-4673-aa0c-cbe3e8534c02';
 export const TTS_CACHE_TTL_SECONDS      = 86_400 * 7;  // 7 jours
 export const TTS_CACHE_MIN_LENGTH       = 8;
 
+// ─── Filler Cache (persistant en Redis) ────────────────────────────────────
+// Les fillers audio sont pré-générés au boot et cachés 30 jours pour éviter
+// de payer Cartesia à chaque restart pm2. 13 fillers × ~200 bytes = ~5 KB total.
+export const FILLER_CACHE_TTL_SECONDS   = 86_400 * 30;  // 30 jours
+
 // ─── Sprint 2 — ROI / TheFork ──────────────────────────────────────────────
 export const THEFORK_COMMISSION_PER_PAX = 3;
 export const DEFAULT_AVERAGE_TICKET      = 35; // € par personne — fallback si pas de estimatedRevenue en DB
