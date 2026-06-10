@@ -28,6 +28,16 @@
     "turbo": "^2.5.0",
     "typescript": "^5.8.0"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma",
+      "sharp"
+    ]
+  },
   "engines": {
     "node": ">=20.0.0 <23.0.0"
   },

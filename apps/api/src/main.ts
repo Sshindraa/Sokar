@@ -23,6 +23,7 @@ import { registerRateLimit } from './plugins/rate-limit';
 import { registerClerk }     from './plugins/clerk';
 import fastifyWebsocket from '@fastify/websocket';
 import { registerMediaStreamRoutes } from './modules/voice/stream/handler';
+import { initFillerCache } from './modules/voice/stream/fillers-cache';
 import './shared/queue/workers/evening-report.worker';
 import './shared/queue/workers/sms-confirmation.worker';
 import './shared/queue/workers/outbound-confirm.worker';
@@ -135,6 +136,15 @@ async function start() {
       process.exitCode = 1;
       return;
     }
+  });
+
+  // Warm-up Cartesia TTS au boot : pré-génère les fillers ET chauffe le modèle
+  // vocal Sonic 3.5 (évite le cold start de ~600ms sur le premier appel vocal).
+  // Fire-and-forget : on n'attend pas la fin avant d'écouter les requêtes HTTP.
+  setImmediate(() => {
+    initFillerCache().catch((err) => {
+      app.log.warn({ err }, 'Filler cache warmup failed (non-blocking)');
+    });
   });
 
   setImmediate(async () => {
