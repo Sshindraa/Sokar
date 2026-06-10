@@ -1,8 +1,8 @@
 import { FastifyInstance } from 'fastify';
-import { clerkClient, getAuth } from '@clerk/fastify';
+import { clerkClient } from '@clerk/fastify';
 import { db } from '../../shared/db/client';
-import { redisCache } from '../../shared/redis/client';
 import { queues } from '../../shared/queue/queues';
+import { requireOrg } from '../../plugins/clerk';
 
 export async function authSyncRoutes(app: FastifyInstance) {
   /**
@@ -10,15 +10,8 @@ export async function authSyncRoutes(app: FastifyInstance) {
    * Sync Clerk organization → Restaurant dans PostgreSQL.
    * Appelé depuis le dashboard après sign-up / login.
    */
-  app.post('/api/auth/sync', async (req, reply) => {
-    const { orgId, userId } = getAuth(req);
-
-    if (!userId) {
-      return reply.status(401).send({ error: 'Authentication required' });
-    }
-    if (!orgId) {
-      return reply.status(400).send({ error: 'No organization found. Did you create one?' });
-    }
+  app.post('/api/auth/sync', { preHandler: requireOrg() }, async (req, reply) => {
+    const orgId = req.restaurantId;
 
     // Vérifier si le restaurant existe déjà
     const existing = await db.restaurant.findUnique({ where: { id: orgId } });

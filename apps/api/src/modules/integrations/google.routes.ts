@@ -22,7 +22,8 @@ export async function googleRoutes(app: FastifyInstance) {
     });
 
     try {
-      const { code, state: restaurantId } = querySchema.parse(req.query);
+      const { code, state } = querySchema.parse(req.query);
+      const restaurantId = GoogleCalendarClient.resolveSignedState(state);
 
       const { refreshToken, googleCalendarId } = await GoogleCalendarClient.exchangeCodeForTokens(code);
 

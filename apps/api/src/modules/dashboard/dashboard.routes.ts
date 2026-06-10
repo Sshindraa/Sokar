@@ -1,7 +1,7 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyInstance } from 'fastify';
 import { z }              from 'zod';
 import { db }             from '../../shared/db/client';
-import { getAuth }        from '@clerk/fastify';
+import { requireOrg }     from '../../plugins/clerk';
 import { computeRoi }     from '../analytics/roi.service';
 
 const StatsQuerySchema = z.object({
@@ -13,15 +13,6 @@ const ActivityQuerySchema = z.object({
   limit:        z.coerce.number().int().min(1).max(100).default(10),
 });
 
-async function dashboardGuard(req: FastifyRequest, reply: FastifyReply) {
-  const { orgId, userId } = getAuth(req);
-  if (!orgId) {
-    return reply.status(401).send({ error: 'Organization required' });
-  }
-  req.restaurantId = orgId;
-  req.userId = userId;
-}
-
 function currentPeriod(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -29,7 +20,7 @@ function currentPeriod(): string {
 
 export async function dashboardRoutes(app: FastifyInstance) {
 
-  app.get('/dashboard/stats', { preHandler: dashboardGuard }, async (req, reply) => {
+  app.get('/dashboard/stats', { preHandler: requireOrg() }, async (req, reply) => {
     const restaurantId = req.restaurantId as string;
 
     const [totalCalls, totalReservations, roi] = await Promise.all([
@@ -57,7 +48,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get('/dashboard/weekly-calls', { preHandler: dashboardGuard }, async (req, reply) => {
+  app.get('/dashboard/weekly-calls', { preHandler: requireOrg() }, async (req, reply) => {
     const restaurantId = req.restaurantId as string;
     const now = new Date();
     const startOfWeek = new Date(now);
@@ -90,7 +81,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     return reply.send({ data, total: calls.length });
   });
 
-  app.get('/dashboard/recent-activity', { preHandler: dashboardGuard }, async (req, reply) => {
+  app.get('/dashboard/recent-activity', { preHandler: requireOrg() }, async (req, reply) => {
     const restaurantId = req.restaurantId;
     const query = ActivityQuerySchema.parse(req.query);
     const { limit } = query;
