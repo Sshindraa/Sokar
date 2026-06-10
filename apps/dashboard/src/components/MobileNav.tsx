@@ -3,9 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { Menu, X } from 'lucide-react';
-import { SignedIn, SignedOut } from '@clerk/nextjs';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MobileNavProps {
@@ -75,26 +73,14 @@ export default function MobileNav({ buttonStyle = 'standalone' }: MobileNavProps
               </Link>
             ))}
             <hr className="my-2 border-white/10" />
-            <SignedOut>
-              <Link
-                href="/register"
-                onClick={() => setOpen(false)}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition-all duration-200 hover:bg-white/90 active:scale-[0.98] min-h-[48px]"
-              >
-                Essai gratuit
-                <ArrowUpRight size={16} />
-              </Link>
-            </SignedOut>
-            <SignedIn>
-              <Link
-                href="/dashboard"
-                onClick={() => setOpen(false)}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition-all duration-200 hover:bg-white/90 active:scale-[0.98] min-h-[48px]"
-              >
-                Dashboard
-                <ArrowUpRight size={16} />
-              </Link>
-            </SignedIn>
+            <Link
+              href="/dashboard"
+              onClick={() => setOpen(false)}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition-all duration-200 hover:bg-white/90 active:scale-[0.98] min-h-[48px]"
+            >
+              Dashboard
+              <ArrowUpRight size={16} />
+            </Link>
           </nav>
         </div>,
         document.body
