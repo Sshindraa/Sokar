@@ -14,7 +14,19 @@ export async function telnyxWebhookGuard(
 ): Promise<void> {
   const signature = req.headers['telnyx-signature-ed25519'] as string | undefined;
   const timestamp = req.headers['telnyx-timestamp']          as string | undefined;
+  // Debug logging — TEMP to diagnose 403 on real Telnyx calls
+  req.log.info(
+    {
+      hasSignature: !!signature,
+      sigLength: signature?.length,
+      hasTimestamp: !!timestamp,
+      timestamp,
+      publicKeyLen: process.env.TELNYX_PUBLIC_KEY?.length,
+    },
+    'telnyx-guard: incoming',
+  );
   if (!signature || !timestamp) {
+    req.log.warn({ headers: Object.keys(req.headers) }, 'telnyx-guard: missing headers');
     reply.status(403).send({ error: 'Forbidden' });
     return;
   }
@@ -26,7 +38,18 @@ export async function telnyxWebhookGuard(
       timestamp,
       fromBase64(process.env.TELNYX_PUBLIC_KEY!),
     );
-  } catch {
+  } catch (err: any) {
+    req.log.error(
+      {
+        err: err?.message,
+        errType: err?.constructor?.name,
+        errStack: err?.stack?.split('\n').slice(0, 3).join(' | '),
+        signatureLen: signature.length,
+        timestamp,
+        publicKeyLen: process.env.TELNYX_PUBLIC_KEY?.length,
+      },
+      'telnyx-guard: signature verification failed',
+    );
     reply.status(403).send({ error: 'Forbidden' });
     return;
   }
