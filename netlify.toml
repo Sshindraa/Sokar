@@ -1,0 +1,16 @@
+[build]
+  command = "pnpm install --no-frozen-lockfile && pnpm build --filter @sokar/dashboard"
+  publish = "apps/dashboard/.next"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Map URL /_next/static/* → publish_dir/static/*
+# The publish dir is .next, so .next/static/css/X is at /static/css/X
+[[redirects]]
+  from = "/_next/static/*"
+  to = "/static/:splat"
+  status = 200

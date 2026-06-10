@@ -1,0 +1,52 @@
+{
+  "name": "sokar",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "clean": "turbo clean",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "db:generate": "prisma generate --schema=packages/database/prisma/schema.prisma",
+    "db:push": "prisma db push --schema=packages/database/prisma/schema.prisma",
+    "db:studio": "prisma studio --schema=packages/database/prisma/schema.prisma",
+    "db:seed": "pnpm --filter @sokar/api seed",
+    "test": "pnpm --filter @sokar/api test",
+    "test:diagnostic": "node scripts/test-stt-tts.mjs",
+    "tunnel:status": "cloudflared tunnel info sokar",
+    "tunnel:logs": "tail -n 50 -f ~/Library/Logs/com.cloudflare.cloudflared.err.log",
+    "redis:start": "brew services start redis",
+    "redis:stop": "brew services stop redis",
+    "redis:status": "brew services list | grep redis"
+  },
+  "devDependencies": {
+    "@netlify/plugin-nextjs": "^5",
+    "netlify-cli": "^26.1.0",
+    "prettier": "^3.5.0",
+    "prisma": "^6.0.0",
+    "rollup": "^4.30.0",
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma",
+      "sharp"
+    ]
+  },
+  "engines": {
+    "node": ">=20.0.0 <23.0.0"
+  },
+  "packageManager": "pnpm@10.8.0",
+  "prettier": {
+    "semi": true,
+    "singleQuote": true,
+    "trailingComma": "all",
+    "printWidth": 100,
+    "tabWidth": 2
+  }
+}

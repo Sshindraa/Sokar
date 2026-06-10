@@ -1,0 +1,61 @@
+node_modules
+dist
+*.tsbuildinfo
+.next
+.turbo
+*.local
+.env.local
+.env.*.local
+.env.production
+.env
+
+# Workspace agent Hermes
+.agent-workspace/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Redis
+dump.rdb
+
+# On versionne les .env.example et .env.test
+!.env.example
+!.env.test
+!apps/api/.env.example
+!apps/api/.env.test
+
+# Fichiers de compilation TS et maps à exclure
+apps/api/**/*.js
+apps/api/**/*.d.ts
+apps/api/**/*.js.map
+apps/api/**/*.d.ts.map
+!apps/api/src/types/*.d.ts
+
+apps/dashboard/**/*.js
+apps/dashboard/**/*.d.ts
+apps/dashboard/**/*.js.map
+apps/dashboard/**/*.d.ts.map
+!apps/dashboard/next.config.js
+!apps/dashboard/postcss.config.js
+!apps/dashboard/tailwind.config.js
+
+packages/**/*.js
+packages/**/*.d.ts
+packages/**/*.js.map
+packages/**/*.d.ts.map
+!packages/config/src/constants.js
+!packages/config/src/constants.d.ts
+!packages/types/src/call-event.js
+!packages/types/src/call-event.d.ts
+
+# Dossiers temporaires de scratch et logs
+scratch/
+apps/api/scratch/
+*.log
+*.mp3
+
+# Shopify test directory
+Unboxxed/
+.git.backup.bak/
+agent 2
