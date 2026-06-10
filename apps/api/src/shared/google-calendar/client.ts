@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from 'crypto';
 import { logger } from '../logger/pino';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
@@ -5,6 +6,7 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || '';
 
 const MOCK_CALENDAR_ID = 'mock-calendar-id-123';
+const STATE_MAX_AGE_MS = 15 * 60 * 1000;
 
 export interface CalendarEventDetails {
   start: Date;
@@ -18,10 +20,54 @@ export class GoogleCalendarClient {
     return !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && GOOGLE_REDIRECT_URI);
   }
 
+  private static stateSecret(): string {
+    return GOOGLE_CLIENT_SECRET || process.env.CLERK_SECRET_KEY || 'dev-google-calendar-state';
+  }
+
+  private static signStatePayload(payload: string): string {
+    return createHmac('sha256', this.stateSecret()).update(payload).digest('base64url');
+  }
+
+  static createSignedState(restaurantId: string): string {
+    const payload = Buffer.from(
+      JSON.stringify({ restaurantId, ts: Date.now() }),
+    ).toString('base64url');
+    return `${payload}.${this.signStatePayload(payload)}`;
+  }
+
+  static resolveSignedState(state: string): string {
+    const [payload, signature] = state.split('.');
+    if (!payload || !signature) {
+      throw new Error('Invalid OAuth state');
+    }
+
+    const expected = this.signStatePayload(payload);
+    const signatureBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expected);
+    if (
+      signatureBuffer.length !== expectedBuffer.length ||
+      !timingSafeEqual(signatureBuffer, expectedBuffer)
+    ) {
+      throw new Error('Invalid OAuth state signature');
+    }
+
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      restaurantId?: string;
+      ts?: number;
+    };
+    if (!parsed.restaurantId || !parsed.ts || Date.now() - parsed.ts > STATE_MAX_AGE_MS) {
+      throw new Error('Expired OAuth state');
+    }
+
+    return parsed.restaurantId;
+  }
+
   static getAuthUrl(restaurantId: string): string {
+    const state = this.createSignedState(restaurantId);
+
     if (!this.isConfigured()) {
       // Mock authorization flow redirection
-      const mockRedirect = `${GOOGLE_REDIRECT_URI || 'http://localhost:4000/integrations/google-calendar/callback'}?code=mock_code_for_${restaurantId}&state=${restaurantId}`;
+      const mockRedirect = `${GOOGLE_REDIRECT_URI || 'http://localhost:4000/integrations/google-calendar/callback'}?code=mock_code_for_${restaurantId}&state=${state}`;
       logger.info({ restaurantId }, '[GoogleCalendar] Using mock Auth URL redirection');
       return mockRedirect;
     }
@@ -33,7 +79,7 @@ export class GoogleCalendarClient {
     url.searchParams.append('scope', 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly');
     url.searchParams.append('access_type', 'offline');
     url.searchParams.append('prompt', 'consent');
-    url.searchParams.append('state', restaurantId);
+    url.searchParams.append('state', state);
 
     return url.toString();
   }
