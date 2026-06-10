@@ -7,6 +7,7 @@
  */
 import { WebSocket } from 'ws';
 import { logger } from '../../../shared/logger/pino';
+import { DEFAULT_CARTESIA_VOICE_ID } from '@sokar/config';
 
 interface FillerSet {
   casual: string[];
@@ -104,7 +105,16 @@ export function playFiller(
 
 /**
  * Génère un filler audio via Cartesia TTS et retourne les chunks base64.
+ * Format aligné sur le pipeline principal (G.711 8kHz) pour compatibilité
+ * directe avec Telnyx Media Stream. Le codec exact (PCMA/PCMU) est aligné
+ * sur la session Telnyx via `setFillerCodec()` avant `initFillerCache()`.
  */
+let fillerEncoding: 'pcm_alaw' | 'pcm_mulaw' = 'pcm_alaw';
+
+export function setFillerCodec(codec: 'PCMA' | 'PCMU'): void {
+  fillerEncoding = codec === 'PCMA' ? 'pcm_alaw' : 'pcm_mulaw';
+}
+
 async function generateFillerAudio(text: string): Promise<string[]> {
   const response = await fetch('https://api.cartesia.ai/tts/sse', {
     method: 'POST',
@@ -118,12 +128,12 @@ async function generateFillerAudio(text: string): Promise<string[]> {
       transcript: text,
       voice: {
         mode: 'id',
-        id: process.env.CARTESIA_VOICE_ID ?? 'f786b574-daa5-4673-aa0c-cbe3e8534c02',
+        id: process.env.CARTESIA_VOICE_ID ?? DEFAULT_CARTESIA_VOICE_ID,
       },
       output_format: {
         container: 'raw',
-        encoding: 'pcm_s16le',
-        sample_rate: 16000,
+        encoding: fillerEncoding,
+        sample_rate: 8000,
       },
     }),
   });

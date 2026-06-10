@@ -19,7 +19,6 @@ import { CallSessionManager } from './manager';
 import { connectDeepgramFlux, sendAudioToDeepgram, closeDeepgram } from './deepgram-bridge';
 import { playFiller } from './fillers-cache';
 import { getTtsCached, setTtsCached } from '../tts-cache';
-import { alaw, mulaw } from 'alawmulaw';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
 
@@ -767,7 +766,10 @@ async function speakTtsStreamed(
     return;
   }
 
-  const cacheVoiceId = `${voiceId}|sonic-3.5`;
+  // Clé de cache distincte par codec Telnyx (PCMA vs PCMU) — un buffer 24k pcm
+  // n'est PAS réutilisable en 8k alaw. Inclure le format garantit l'invalidation
+  // des anciens caches après migration 24k→8k.
+  const cacheVoiceId = `${voiceId}|sonic-3.5|${isAlaw ? 'alaw8k' : 'mulaw8k'}`;
 
   // ─── Traitement séquentiel avec pause inter-phrase ──────────────────
   for (let i = 0; i < sentences.length; i++) {
@@ -802,22 +804,22 @@ async function speakTtsStreamed(
       if (session.latencyTrace && !session.latencyTrace.ttsFirstByteMs) {
         session.latencyTrace.ttsFirstByteMs = Date.now() - session.latencyTrace.startTime;
       }
-      
-      const converted = convertPcm24kTo8kCodec(cachedBuffer, isAlaw ? 'PCMA' : 'PCMU');
+
+      // Cache contient déjà du G.711 8kHz (1 byte = 1 sample, 160 bytes = 20ms).
       const chunkSize = 160;
       let chunksSent = 0;
-      for (let offset = 0; offset < converted.length; offset += chunkSize) {
+      for (let offset = 0; offset < cachedBuffer.length; offset += chunkSize) {
         if (!isSessionActiveForTts(session)) {
           writeDebugLog(`[speakTtsStreamed] Session inactive during send, stopping`);
           break;
         }
-        const chunk = converted.slice(offset, offset + chunkSize);
+        const chunk = cachedBuffer.slice(offset, offset + chunkSize);
         session.telnyxWs.send(JSON.stringify({
           event: 'media',
           media: { payload: chunk.toString('base64') },
         }));
         chunksSent++;
-        
+
         // Measure E2E latency on first chunk sent
         if (session.latencyTrace && !session.latencyTrace.totalE2eMs) {
           session.latencyTrace.totalE2eMs = Date.now() - session.latencyTrace.startTime;
@@ -833,10 +835,13 @@ async function speakTtsStreamed(
     // 2. Cache MISS ➔ Requête de streaming à Cartesia
     writeDebugLog(`[speakTtsStreamed] Cache MISS. Streaming from Cartesia for sentence: "${trimmed}"`);
     try {
+      // Demander directement à Cartesia le format compatible Telnyx Media Stream
+      // (G.711 alaw/mulaw 8kHz) → supprime le downsampling applicatif 24k→8k
+      // et économise ~30% CPU sur le VPS.
       const response = await fetch('https://api.cartesia.ai/tts/bytes', {
         method: 'POST',
         headers: {
-          'Cartesia-Version': '2024-06-10',
+          'Cartesia-Version': '2026-03-01',
           'X-API-Key': apiKey,
           'Content-Type': 'application/json',
         },
@@ -846,8 +851,8 @@ async function speakTtsStreamed(
           voice: { mode: 'id', id: voiceId },
           output_format: {
             container: 'raw',
-            encoding: 'pcm_s16le',
-            sample_rate: 24000,
+            encoding: isAlaw ? 'pcm_alaw' : 'pcm_mulaw',
+            sample_rate: 8000,
           },
         }),
       });
@@ -876,7 +881,8 @@ async function speakTtsStreamed(
       let streamFinished = false;
       let firstByteReceived = false;
 
-      // Background playback loop (Consumer)
+      // Background playback loop (Consumer) — envoie des chunks de 160 octets
+      // (20ms d'audio 8kHz 8-bit) sur le WebSocket Telnyx.
       const playPromise = (async () => {
         let chunksSent = 0;
         while (true) {
@@ -911,9 +917,9 @@ async function speakTtsStreamed(
         writeDebugLog(`[speakTtsStreamed] Paced player sent ${chunksSent} chunks for sentence ${i}`);
       })();
 
-      // Streaming bytes reader (Producer)
-      let remaining24k = Buffer.alloc(0);
-      let remaining8k = Buffer.alloc(0);
+      // Streaming bytes reader (Producer) — audio G.711 8kHz, 1 byte = 1 sample.
+      // 160 bytes = 20ms d'audio.
+      let remainingBytes = Buffer.alloc(0);
       const accumulatedChunks: Buffer[] = [];
 
       while (true) {
@@ -933,52 +939,35 @@ async function speakTtsStreamed(
 
         const rawChunk = Buffer.from(value);
         accumulatedChunks.push(rawChunk);
-        
-        const chunk24k = Buffer.concat([remaining24k, rawChunk]);
 
-        // Downsampling progressif : multiples de 6 bytes (3 samples de 16-bit PCM)
-        const processableLength = Math.floor(chunk24k.length / 6) * 6;
-        const processable = chunk24k.slice(0, processableLength);
-        remaining24k = chunk24k.slice(processableLength);
+        const fullBytes = Buffer.concat([remainingBytes, rawChunk]);
 
-        if (processable.length > 0) {
-          const chunk8k = convertPcm24kTo8kCodec(processable, isAlaw ? 'PCMA' : 'PCMU');
-          const full8k = Buffer.concat([remaining8k, chunk8k]);
-
-          let offset = 0;
-          while (offset + 160 <= full8k.length) {
-            playbackQueue.push(full8k.slice(offset, offset + 160));
-            offset += 160;
-          }
-          remaining8k = full8k.slice(offset);
+        // Découpe en chunks de 160 bytes (20ms @ 8kHz 8-bit)
+        let offset = 0;
+        while (offset + 160 <= fullBytes.length) {
+          playbackQueue.push(fullBytes.slice(offset, offset + 160));
+          offset += 160;
         }
+        remainingBytes = fullBytes.slice(offset);
       }
 
-      // Flush final
-      if (remaining24k.length > 0 || remaining8k.length > 0) {
-        if (remaining24k.length > 0 && remaining24k.length < 6) {
-          const padded = Buffer.concat([remaining24k, Buffer.alloc(6 - remaining24k.length)]);
-          const chunk8k = convertPcm24kTo8kCodec(padded, isAlaw ? 'PCMA' : 'PCMU');
-          remaining8k = Buffer.concat([remaining8k, chunk8k]);
-        }
-
-        if (remaining8k.length > 0) {
-          if (remaining8k.length < 160) {
-            const padded8k = Buffer.concat([remaining8k, Buffer.alloc(160 - remaining8k.length)]);
-            playbackQueue.push(padded8k);
-          } else {
-            playbackQueue.push(remaining8k);
-          }
+      // Flush final — pad avec des zeros si on a un reste < 160 bytes
+      if (remainingBytes.length > 0) {
+        if (remainingBytes.length < 160) {
+          const padded = Buffer.concat([remainingBytes, Buffer.alloc(160 - remainingBytes.length)]);
+          playbackQueue.push(padded);
+        } else {
+          playbackQueue.push(remainingBytes);
         }
       }
 
       streamFinished = true;
       await playPromise; // Attendre la fin de la lecture progressive
 
-      // 3. Mettre en cache Redis le buffer 24kHz complet
-      const pcm24kFull = Buffer.concat(accumulatedChunks);
+      // 3. Mettre en cache Redis le buffer G.711 8kHz complet
+      const codec8kFull = Buffer.concat(accumulatedChunks);
       try {
-        await setTtsCached(trimmed, cacheVoiceId, pcm24kFull);
+        await setTtsCached(trimmed, cacheVoiceId, codec8kFull);
       } catch (err: any) {
         writeDebugLog(`[speakTtsStreamed] TTS cache write failed`, err);
       }
@@ -995,35 +984,4 @@ async function speakTtsStreamed(
       await speakTelnyxNative(session, "Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?");
     }
   }
-}
-
-function convertPcm24kTo8kCodec(pcm24k: Buffer, codec: 'PCMA' | 'PCMU'): Buffer {
-  const numSamples24k = pcm24k.length / 2;
-  const numSamples8k = Math.floor(numSamples24k / 3);
-  const output = Buffer.alloc(numSamples8k);
-  
-  for (let i = 0; i < numSamples8k; i++) {
-    const offset = i * 3 * 2;
-    
-    // Average 3 adjacent samples to act as a box-car low-pass filter (anti-aliasing)
-    let sum = 0;
-    let count = 0;
-    for (let s = 0; s < 3; s++) {
-      const sampleOffset = offset + (s * 2);
-      if (sampleOffset + 1 < pcm24k.length) {
-        sum += pcm24k.readInt16LE(sampleOffset);
-        count++;
-      }
-    }
-    
-    const sample = count > 0 ? Math.round(sum / count) : 0;
-    
-    if (codec === 'PCMA') {
-      output[i] = alaw.encodeSample(sample);
-    } else {
-      output[i] = mulaw.encodeSample(sample);
-    }
-  }
-  
-  return output;
 }
