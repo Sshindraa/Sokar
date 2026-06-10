@@ -70,8 +70,12 @@ L'ancienne clé Cartesia (32 chars, suffix `6KRN`) a été retirée de
 
 ## Nouvelle clé Cartesia
 
-L'utilisateur a fourni une nouvelle clé :
-- Clé : `sk_car_***` (29 chars, finit par `16zw`)
+L'utilisateur a fourni une nouvelle clé après que l'ancienne (stockée
+dans des fichiers de skills depuis mai 2026) ait été considérée comme
+potentiellement compromise.
+
+- Clé : `sk_car_<...>` (29 chars, valeur complète dans
+  `/opt/sokar/apps/api/.env` ligne 1)
 - Stockée dans `/opt/sokar/apps/api/.env` ligne 1
 - API redémarrée pour recharger l'env
 - **Mais** : le compte n'a plus de crédits, donc Cartesia renvoie 402
@@ -79,6 +83,34 @@ L'utilisateur a fourni une nouvelle clé :
 **Action utilisateur requise** : recharger les crédits Cartesia sur
 https://cartesia.ai → account → billing. Une fois fait, le pipeline
 vocal sera fonctionnel.
+
+## Sécurité — clés API
+
+L'ancienne clé Cartesia (32 chars) était stockée en clair dans 2
+fichiers de skills depuis mai 2026. Conséquence potentielle : la clé
+a pu fuiter, ce qui expliquerait l'usage Cartesia que l'utilisateur
+voit sur son dashboard alors qu'il n'a pas utilisé Cartesia
+personnellement.
+
+**Nettoyage effectué dans cette session** :
+
+1. `.env` du VPS : clé remplacée par la nouvelle (déjà fait plus haut)
+2. `~/.hermes/skills/devops/sokar-deployment/references/vps-session-2026-05-22.md` :
+   ligne credentials patchée
+3. `~/.hermes/skills/devops/sokar-deployment/references/vps-session-2026-05-23.md` :
+   ligne credentials patchée
+4. `~/.hermes/skills/devops/sokar-deployment/references/secret-pitfall-in-skill-files.md` :
+   réécrit sans aucune vraie clé (juste des placeholders)
+5. `~/.hermes/skills/software-development/hermes-agent-skill-authoring/SKILL.md` :
+   exemple "what not to do" modifié pour ne plus citer la clé
+
+**Règle dorénavant** (documentée dans le fichier post-mortem et la
+skill `hermes-agent-skill-authoring`) : **ne JAMAIS écrire une vraie
+clé API dans un fichier de skill**, même partiellement masquée (le
+prefix + length + suffix pattern peut être brute-forcé contre le
+validateur du provider). Toujours utiliser un placeholder
+synthétique type `<in Doppler — do NOT commit to disk>` ou
+`sk_car_...PLACEHOLDER`.
 
 ## TODO restants (non bloquants mais à fixer)
 
