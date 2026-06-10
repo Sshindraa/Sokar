@@ -4,6 +4,7 @@ import { RestaurantService }  from '../restaurants/restaurant.service';
 import { CustomerService }    from '../customers/customer.service';
 import { buildSystemPrompt }  from './prompts';
 import { detectOutcome }      from './outcome';
+import { CallSessionManager } from './stream/manager';
 import { LLM_MODEL } from '@sokar/config';
 
 interface TelnyxCallPayload {
@@ -75,6 +76,24 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             app.log.error({ err: err.message }, 'Failed to create call record at init');
           }
         });
+
+        // Pre-créer la session vocale pour que le WebSocket start event la trouve
+        // (sinon le handler log "No session found for start event" et reste silencieux).
+        // La session est en mode IDLE ici — le WebSocket start event y attachera le
+        // telnyxWs et déclenchera la première salutation.
+        CallSessionManager.getInstance().create({
+          callControlId: payload.call_control_id,
+          callSessionId: payload.call_leg_id,
+          from: payload.from,
+          to: payload.to,
+          restaurantId: ctx.id,
+          systemPrompt,
+          isVip: customer?.isVip ?? false,
+          telnyxWs: null as any, // Sera attaché dans le WebSocket start event
+          callLegId: payload.call_leg_id,
+          codec: 'PCMA',
+        });
+        app.log.info({ callId: payload.call_control_id }, 'Voice session pre-created in call.initiated');
 
         app.log.info({ callId: payload.call_control_id }, 'Answering call with media stream');
 
