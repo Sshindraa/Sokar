@@ -57,15 +57,19 @@ export const PLANS = [
 export const FAQS = [
   {
     question: "Comment fonctionne l'assistant vocal Sokar ?",
-    answer: "Sokar est branché directement sur votre ligne téléphonique actuelle. Lorsqu'un client vous appelle, Sokar répond automatiquement avec une voix chaleureuse et naturelle. Il comprend les demandes complexes, consulte vos disponibilités en temps réel sur votre logiciel de réservation, et valide la table. Le client reçoit ensuite un SMS de confirmation immédiat."
+    answer: "Sokar se branche sur votre numéro de téléphone professionnel (mise en service en cours de déploiement). Lorsqu'un client vous appelle, Sokar répond automatiquement avec une voix chaleureuse et naturelle. Il comprend les demandes complexes, consulte vos disponibilités en temps réel, et confirme la réservation. Le client reçoit ensuite un SMS de confirmation immédiat."
   },
   {
-    question: "S'intègre-t-il avec mon logiciel de réservation ou de caisse ?",
-    answer: "Oui, totalement. Sokar se connecte en lecture/écriture avec les API des principales solutions de réservation comme ZenChef, TheFork, ou Lightspeed. Toute réservation prise vocalement par Sokar est automatiquement ajoutée à votre planning. Aucune double saisie pour votre équipe."
+    question: "Avec quels outils Sokar s'intègre-t-il ?",
+    answer: "Sokar se connecte nativement à Google Calendar pour synchroniser vos disponibilités en temps réel. Les réservations prises par Sokar sont automatiquement ajoutées à votre planning, sans double saisie. D'autres intégrations (ZenChef, TheFork, Lightspeed) sont en cours de développement et arriveront progressivement."
   },
   {
     question: "Quel type de restaurant peut utiliser Sokar ?",
-    answer: "Tous. Des bistrots de quartier aux restaurants étoilés, Sokar s'adapte à votre flux d'appels. Il gère les réservations simples comme les demandes très spécifiques (allergies, anniversaire, table en terrasse, etc.). Il prend aussi les commandes à emporter si vous le souhaitez."
+    answer: "Tous. Des bistrots de quartier aux restaurants étoilés, Sokar s'adapte à votre flux d'appels. Il gère les réservations simples comme les demandes spécifiques (allergies, anniversaire, table en terrasse, etc.)."
+  },
+  {
+    question: "Combien coûte Sokar ?",
+    answer: "Trois forfaits, sans engagement : Essential à 149€/mois, Pro à 249€/mois (recommandé), et Multi-site à partir de 249€/mois + 99€/site supplémentaire. La facturation annuelle vous fait bénéficier de 20% de réduction. Le détail des fonctionnalités est sur notre page Tarifs."
   },
   {
     question: "Y a-t-il un engagement de durée ?",
@@ -73,7 +77,11 @@ export const FAQS = [
   },
   {
     question: "Comment se passe l'installation ?",
-    answer: "Tout se fait à distance en moins de 24h. Il vous suffit de nous fournir un accès en lecture à votre logiciel de réservation. Nous configurons votre agent vocal selon vos horaires, votre carte, et vos consignes. Le transfert d'appel est ensuite activé sur votre ligne existante. Aucun matériel à installer."
+    answer: "Tout se fait à distance, sans aucun matériel à installer. Nous configurons votre agent vocal selon vos horaires, votre carte, et vos consignes. Vous gardez votre numéro de téléphone existant, sur lequel le transfert d'appel est activé."
+  },
+  {
+    question: "Mes données et celles de mes clients sont-elles protégées ?",
+    answer: "Oui. Sokar est conforme au RGPD : les données sont hébergées en Europe, chiffrées au repos et en transit, et jamais partagées avec des tiers. Chaque restaurant dispose de son propre espace isolé, et vous pouvez exporter ou supprimer vos données à tout moment depuis votre dashboard."
   },
 ];
 

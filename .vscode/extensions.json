@@ -1,0 +1,9 @@
+{
+  "unwantedRecommendations": [
+    "google.geminicodeassist",
+    "google.gemini-cli-vscode-ide-companion",
+    "kilocode.kilo-code",
+    "openai.chatgpt",
+    "saoudrizwan.claude-dev"
+  ]
+}
