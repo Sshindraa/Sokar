@@ -40,7 +40,7 @@ export async function buildApp() {
   app.addContentTypeParser(
     'application/json',
     { parseAs: 'string' },
-    (req, body, done) => {
+    (req, body: string, done) => {
       (req as any).rawBody = body;
       try {
         const json = body.length === 0 ? null : JSON.parse(body);
