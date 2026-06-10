@@ -3,16 +3,14 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import Image from 'next/image';
-import { SignedIn, SignedOut, SignInButton, UserButton, useAuth } from '@clerk/nextjs';
 import { Button } from '@/components/ui/button';
 
 export default function Header() {
   const pathname = usePathname();
-  const { isSignedIn } = useAuth();
 
   // Exclude pages that have their own specialized headers/navbars
   const excludedPaths = ['/', '/pricing', '/login', '/register', '/dashboard', '/widget'];
-  const isExcluded = excludedPaths.some(p => pathname === p || pathname.startsWith(p + '/'));
+  const isExcluded = excludedPaths.some((p) => pathname === p || pathname.startsWith(p + '/'));
 
   if (isExcluded) {
     return null;
@@ -29,33 +27,21 @@ export default function Header() {
           <span className="text-sm font-semibold text-foreground">Sokar</span>
         </Link>
         <div className="flex items-center gap-1 sm:gap-2">
-          <Link href="/pricing" className="sokar-pill border-transparent bg-transparent px-3 py-2 min-h-[44px] inline-flex items-center justify-center">
+          <Link
+            href="/pricing"
+            className="sokar-pill border-transparent bg-transparent px-3 py-2 min-h-[44px] inline-flex items-center justify-center"
+          >
             Tarifs
           </Link>
-          <SignedOut>
-            <SignInButton mode="redirect">
-              <Button size="sm" className="rounded-full transition-all duration-200 min-h-[44px] px-4">
-                Connexion
-              </Button>
-            </SignInButton>
-          </SignedOut>
-          <SignedIn>
-            <div className="flex items-center gap-2">
-              <Link
-                href="/dashboard"
-                className="hidden rounded-full px-3 py-1.5 text-sm font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground sm:inline-flex"
-              >
-                Dashboard
-              </Link>
-              <UserButton
-                appearance={{
-                  elements: {
-                    avatarBox: 'h-8 w-8',
-                  },
-                }}
-              />
-            </div>
-          </SignedIn>
+          <Button asChild size="sm" className="rounded-full transition-all duration-200 min-h-[44px] px-4">
+            <Link href="/login">Connexion</Link>
+          </Button>
+          <Link
+            href="/dashboard"
+            className="hidden rounded-full px-3 py-1.5 text-sm font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground sm:inline-flex"
+          >
+            Dashboard
+          </Link>
         </div>
       </div>
     </header>

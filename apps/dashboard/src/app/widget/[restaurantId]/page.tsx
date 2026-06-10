@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { useApi } from '../../../lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import {
@@ -123,8 +122,37 @@ interface ConfirmedReservation {
   status: string;
 }
 
+async function publicApiFetch<T = any>(
+  method: 'GET' | 'POST',
+  path: string,
+  body?: any,
+): Promise<T> {
+  const url = `/api/proxy/${path.replace(/^\//, '')}`;
+
+  const res = await fetch(url, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  let data: any = {};
+  const text = await res.text();
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { message: text };
+    }
+  }
+
+  if (!res.ok) {
+    throw new Error(data.error || data.message || `Erreur ${res.status}`);
+  }
+
+  return data as T;
+}
+
 export default function ReservationWidget({ params }: { params: { restaurantId: string } }) {
-  const { get, post } = useApi();
   const restaurantId = params.restaurantId;
 
   // Restaurant public metadata
@@ -159,7 +187,10 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
     if (!restaurantId) return;
     (async () => {
       try {
-        const data = await get(`restaurants/${restaurantId}/public`);
+        const data = await publicApiFetch<RestaurantPublic>(
+          'GET',
+          `restaurants/${restaurantId}/public`,
+        );
         setRestaurant(data);
         const today = new Date();
         setSelectedDate(today);
@@ -169,7 +200,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
         setLoading(false);
       }
     })();
-  }, [restaurantId, get]);
+  }, [restaurantId]);
 
   // Generate next 14 days
   const days = useMemo(() => {
@@ -357,7 +388,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
 
     try {
       const normalizedPhone = customerPhone.replace(/\s/g, '');
-      const res = await post('reservations', {
+      const res = await publicApiFetch<ConfirmedReservation>('POST', 'reservations', {
         restaurantId,
         reservedAt: reservedAt.toISOString(),
         partySize,
