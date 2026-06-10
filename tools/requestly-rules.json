@@ -1,0 +1,236 @@
+{
+  "appVersion": "1.0.0",
+  "appDate": "2026-05-27",
+  "schemaVersion": "1.0",
+  "groups": [
+    {
+      "id": "sokar-webhooks",
+      "name": "Sokar — Webhooks",
+      "description": "Mock Telnyx + Vapi webhooks vers localhost",
+      "status": "Active",
+      "rules": [
+        {
+          "id": "telnyx-incoming-call",
+          "name": "Telnyx — Incoming Call",
+          "description": "Mock appel entrant Telnyx vers le pipeline vocal local",
+          "ruleType": "Mock",
+          "status": "Active",
+          "pairs": [
+            {
+              "source": {
+                "key": "url",
+                "operator": "Equals",
+                "value": "https://api.sokar.tech/voice/telnyx",
+                "sourceType": "Request"
+              },
+              "request": {
+                "method": "POST",
+                "body": "{\n  \"data\": {\n    \"event_type\": \"call.initiated\",\n    \"payload\": {\n      \"call_control_id\": \"call-001\",\n      \"call_leg_id\": \"leg-001\",\n      \"connection_id\": \"connection-001\",\n      \"from\": \"+33612345678\",\n      \"to\": \"+33123456789\",\n      \"direction\": \"inbound\",\n      \"state\": \"active\"\n    }\n  }\n}"
+              },
+              "response": {
+                "statusCode": 200,
+                "body": "{\"status\":\"ok\"}",
+                "headers": { "content-type": "application/json" }
+              }
+            }
+          ]
+        },
+        {
+          "id": "vapi-call-initiated",
+          "name": "Vapi — Call Initiated",
+          "description": "Mock webhook Vapi call.initiated",
+          "ruleType": "Mock",
+          "status": "Active",
+          "pairs": [
+            {
+              "source": {
+                "key": "url",
+                "operator": "Equals",
+                "value": "https://api.sokar.tech/webhooks/vapi",
+                "sourceType": "Request"
+              },
+              "request": {
+                "method": "POST",
+                "body": "{\n  \"event\": \"call_initiated\",\n  \"call_sid\": \"test-call-001\",\n  \"from\": \"+33612345678\",\n  \"to\": \"+33987654321\",\n  \"restaurant_id\": \"rest-001\"\n}"
+              },
+              "response": {
+                "statusCode": 200,
+                "body": "{\"status\":\"ok\"}",
+                "headers": { "content-type": "application/json" }
+              }
+            }
+          ]
+        },
+        {
+          "id": "vapi-call-ended",
+          "name": "Vapi — Call Ended",
+          "description": "Mock webhook Vapi call.ended",
+          "ruleType": "Mock",
+          "status": "Active",
+          "pairs": [
+            {
+              "source": {
+                "key": "url",
+                "operator": "Equals",
+                "value": "https://api.sokar.tech/webhooks/vapi",
+                "sourceType": "Request"
+              },
+              "request": {
+                "method": "POST",
+                "body": "{\n  \"event\": \"call_ended\",\n  \"call_sid\": \"test-call-001\",\n  \"duration\": 45,\n  \"reason\": \"customer_hangup\",\n  \"from\": \"+33612345678\",\n  \"to\": \"+33987654321\"\n}"
+              },
+              "response": {
+                "statusCode": 200,
+                "body": "{\"status\":\"ok\"}",
+                "headers": { "content-type": "application/json" }
+              }
+            }
+          ]
+        },
+        {
+          "id": "vapi-call-completed-transcript",
+          "name": "Vapi — Call Completed (with transcript)",
+          "description": "Mock webhook Vapi call.completed avec transcription",
+          "ruleType": "Mock",
+          "status": "Active",
+          "pairs": [
+            {
+              "source": {
+                "key": "url",
+                "operator": "Equals",
+                "value": "https://api.sokar.tech/webhooks/vapi",
+                "sourceType": "Request"
+              },
+              "request": {
+                "method": "POST",
+                "body": "{\n  \"event\": \"call_completed\",\n  \"call_sid\": \"test-call-001\",\n  \"duration\": 120,\n  \"transcript\": \"Bonjour, je voudrais réserver pour 4 personnes ce soir à 20h.\\nOui bien sûr, je vous réserve une table. Quel est votre nom ?\\nMartin.\\nTrès bien Monsieur Martin, c'est noté. Vous avez la table 7 à 20h.\",\n  \"summary\": \"Réservation de 4 couverts à 20h au nom de Martin\",\n  \"from\": \"+33612345678\"\n}"
+              },
+              "response": {
+                "statusCode": 200,
+                "body": "{\"status\":\"ok\"}",
+                "headers": { "content-type": "application/json" }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sokar-fallbacks",
+      "name": "Sokar — Test Fallbacks",
+      "description": "Forcer 503 pour tester les chaînes de fallback STT/LLM/TTS",
+      "status": "Active",
+      "rules": [
+        {
+          "id": "deepgram-503",
+          "name": "Deepgram — Force 503",
+          "description": "Bloque Deepgram pour tester fallback GPT-4o-Transcribe",
+          "ruleType": "Cancel",
+          "status": "Active",
+          "pairs": [
+            {
+              "source": {
+                "key": "url",
+                "operator": "Contains",
+                "value": "api.deepgram.com",
+                "sourceType": "Request"
+              },
+              "response": {
+                "statusCode": 503,
+                "body": "{\"error\":\"Service unavailable\"}"
+              }
+            }
+          ]
+        },
+        {
+          "id": "cartesia-503",
+          "name": "Cartesia — Force 503",
+          "description": "Bloque Cartesia pour tester fallback Deepgram Aura",
+          "ruleType": "Cancel",
+          "status": "Active",
+          "pairs": [
+            {
+              "source": {
+                "key": "url",
+                "operator": "Contains",
+                "value": "api.cartesia.ai",
+                "sourceType": "Request"
+              },
+              "response": {
+                "statusCode": 503,
+                "body": "{\"error\":\"Service unavailable\"}"
+              }
+            }
+          ]
+        },
+        {
+          "id": "openrouter-503",
+          "name": "OpenRouter — Force 503",
+          "description": "Bloque OpenRouter pour tester fallback LLM local",
+          "ruleType": "Cancel",
+          "status": "Active",
+          "pairs": [
+            {
+              "source": {
+                "key": "url",
+                "operator": "Contains",
+                "value": "openrouter.ai",
+                "sourceType": "Request"
+              },
+              "response": {
+                "statusCode": 503,
+                "body": "{\"error\":\"Service unavailable\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sokar-dev-redirect",
+      "name": "Sokar — Dev Redirect",
+      "description": "Rediriger les appels API vers le backend local pendant le dev",
+      "status": "Inactive",
+      "rules": [
+        {
+          "id": "api-redirect-localhost",
+          "name": "API → localhost:4000",
+          "description": "Redirige toutes les requêtes API vers le serveur local",
+          "ruleType": "Redirect",
+          "status": "Active",
+          "pairs": [
+            {
+              "source": {
+                "key": "url",
+                "operator": "Contains",
+                "value": "api.sokar.tech",
+                "sourceType": "Request"
+              },
+              "destination": "http://localhost:4000",
+              "preserveHostHeader": false
+            }
+          ]
+        },
+        {
+          "id": "dashboard-redirect-localhost",
+          "name": "Dashboard → localhost:3000",
+          "description": "Redirige le dashboard vers le serveur local",
+          "ruleType": "Redirect",
+          "status": "Active",
+          "pairs": [
+            {
+              "source": {
+                "key": "url",
+                "operator": "Contains",
+                "value": "app.sokar.tech",
+                "sourceType": "Request"
+              },
+              "destination": "http://localhost:3000",
+              "preserveHostHeader": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
