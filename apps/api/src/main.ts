@@ -103,16 +103,60 @@ export async function buildApp() {
   }
 
   app.get('/health', async (_req, reply) => {
-    let dbStatus = 'ok', redisStatus = 'ok';
-    try { await db.$queryRaw`SELECT 1`; }  catch { dbStatus    = 'error'; }
-    try { await redisCache.ping(); }        catch { redisStatus = 'error'; }
-    return reply.send({
-      status: dbStatus === 'ok' && redisStatus === 'ok' ? 'ok' : 'degraded',
-      db: dbStatus, redis: redisStatus,
-    });
+    const result = await checkHealth(app);
+    return reply.status(result.status === 'ok' ? 200 : 503).send(result);
+  });
+
+  // Alias K8s-style : /healthz (même handler)
+  app.get('/healthz', async (_req, reply) => {
+    const result = await checkHealth(app);
+    return reply.status(result.status === 'ok' ? 200 : 503).send(result);
+  });
+
+  // Liveness probe (toujours OK si le process tourne, sans check DB/Redis)
+  app.get('/livez', async (_req, reply) => {
+    return reply.send({ status: 'ok' });
   });
 
   return app;
+}
+
+async function checkHealth(app: any) {
+  const dbStatus: 'ok' | 'error' = await db
+    .$queryRaw`SELECT 1`
+    .then((): 'ok' => 'ok')
+    .catch((): 'error' => 'error');
+
+  const redisStatus: 'ok' | 'error' = await redisCache
+    .ping()
+    .then((): 'ok' => 'ok')
+    .catch((): 'error' => 'error');
+
+  // Vérifier que les workers BullMQ sont connectés (au moins la queue principale)
+  let workersStatus: 'ok' | 'error' = 'ok';
+  try {
+    const queues = app.queues as Record<string, { client: { status: string } }> | undefined;
+    if (queues) {
+      for (const [, queue] of Object.entries(queues)) {
+        const status = queue?.client?.status;
+        if (status !== 'ready' && status !== 'connecting') {
+          workersStatus = 'error';
+          break;
+        }
+      }
+    }
+  } catch {
+    workersStatus = 'error';
+  }
+
+  const allOk = dbStatus === 'ok' && redisStatus === 'ok' && workersStatus === 'ok';
+  return {
+    status: allOk ? 'ok' : 'degraded',
+    db: dbStatus,
+    redis: redisStatus,
+    workers: workersStatus,
+    timestamp: new Date().toISOString(),
+  };
 }
 
 async function start() {
