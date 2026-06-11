@@ -27,6 +27,8 @@ import { initFillerCache } from './modules/voice/stream/fillers-cache';
 import './shared/queue/workers/evening-report.worker';
 import './shared/queue/workers/sms-confirmation.worker';
 import './shared/queue/workers/outbound-confirm.worker';
+import './shared/queue/workers/analytics.worker';
+import './shared/queue/workers/reengagement.worker';
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
