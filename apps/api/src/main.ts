@@ -132,18 +132,29 @@ async function checkHealth(app: any) {
     .then((): 'ok' => 'ok')
     .catch((): 'error' => 'error');
 
-  // Vérifier que les workers BullMQ sont connectés (au moins la queue principale)
+  // Vérifier que les queues BullMQ sont connectées (test actif via getJobCounts)
   let workersStatus: 'ok' | 'error' = 'ok';
+  const queueErrors: string[] = [];
   try {
-    const queues = app.queues as Record<string, { client: { status: string } }> | undefined;
+    const queues = app.queues as Record<string, { getJobCounts?: () => Promise<unknown> }> | undefined;
     if (queues) {
-      for (const [, queue] of Object.entries(queues)) {
-        const status = queue?.client?.status;
-        if (status !== 'ready' && status !== 'connecting') {
-          workersStatus = 'error';
-          break;
-        }
-      }
+      await Promise.all(
+        Object.entries(queues).map(async ([name, queue]) => {
+          try {
+            if (typeof queue?.getJobCounts === 'function') {
+              await Promise.race([
+                queue.getJobCounts(),
+                new Promise((_, reject) =>
+                  setTimeout(() => reject(new Error('timeout')), 2000),
+                ),
+              ]);
+            }
+          } catch (err) {
+            workersStatus = 'error';
+            queueErrors.push(`${name}: ${(err as Error).message}`);
+          }
+        }),
+      );
     }
   } catch {
     workersStatus = 'error';
@@ -155,6 +166,7 @@ async function checkHealth(app: any) {
     db: dbStatus,
     redis: redisStatus,
     workers: workersStatus,
+    ...(queueErrors.length > 0 && { queueErrors }),
     timestamp: new Date().toISOString(),
   };
 }
