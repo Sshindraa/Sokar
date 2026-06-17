@@ -11,7 +11,8 @@ export default function Providers({ children }: { children: ReactNode }) {
   const needsClerk =
     pathname?.startsWith('/login') ||
     pathname?.startsWith('/register') ||
-    pathname?.startsWith('/dashboard');
+    pathname?.startsWith('/dashboard') ||
+    pathname?.startsWith('/onboarding');
 
   // Public marketing pages must not depend on Clerk. Auth is mounted only
   // where the route actually needs login/session state.

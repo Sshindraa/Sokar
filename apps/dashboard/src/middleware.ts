@@ -2,16 +2,23 @@ import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
 const isProtectedRoute = createRouteMatcher(['/dashboard(.*)']);
+const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
-export default clerkMiddleware(async (auth, req) => {
-  if (isProtectedRoute(req)) {
-    const { userId } = await auth();
-    if (!userId) {
-      const signInUrl = new URL('/login', req.url);
-      return NextResponse.redirect(signInUrl);
-    }
-  }
-});
+const middleware = hasClerkKey
+  ? clerkMiddleware(async (auth, req) => {
+      if (isProtectedRoute(req)) {
+        const { userId } = await auth();
+        if (!userId) {
+          const signInUrl = new URL('/login', req.url);
+          return NextResponse.redirect(signInUrl);
+        }
+      }
+    })
+  : function localPreviewMiddleware() {
+      return NextResponse.next();
+    };
+
+export default middleware;
 
 export const config = {
   matcher: [

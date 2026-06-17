@@ -4,6 +4,7 @@ import { useAuth, useOrganization } from '@clerk/nextjs';
 import { useCallback } from 'react';
 
 const PROXY = '/api/proxy';
+const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 interface ApiResult<T> {
   data: T | null;
@@ -18,8 +19,16 @@ interface ApiResult<T> {
  * - Gestion d'erreur centralisée
  */
 export function useApi() {
-  const { isSignedIn } = useAuth();
-  const { organization } = useOrganization();
+  // The environment flag is stable for the whole client bundle. Without Clerk
+  // keys we expose a no-op API client so local UI previews can render.
+  const clerk = hasClerkKey
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    ? useClerkContext()
+    : {
+        isSignedIn: false,
+        organization: null as ReturnType<typeof useOrganization>['organization'],
+      };
+  const { isSignedIn, organization } = clerk;
   const orgId = organization?.id;
 
   const apiFetch = useCallback(
@@ -28,6 +37,10 @@ export function useApi() {
       path: string,
       body?: any,
     ): Promise<T> => {
+      if (!hasClerkKey) {
+        return {} as T;
+      }
+
       const url = `${PROXY}/${path.replace(/^\//, '')}`;
 
       const res = await fetch(url, {
@@ -56,8 +69,14 @@ export function useApi() {
   );
 
   const get = useCallback(<T = any>(path: string) => apiFetch<T>('GET', path), [apiFetch]);
-  const post = useCallback(<T = any>(path: string, body?: any) => apiFetch<T>('POST', path, body), [apiFetch]);
-  const patch = useCallback(<T = any>(path: string, body?: any) => apiFetch<T>('PATCH', path, body), [apiFetch]);
+  const post = useCallback(
+    <T = any>(path: string, body?: any) => apiFetch<T>('POST', path, body),
+    [apiFetch],
+  );
+  const patch = useCallback(
+    <T = any>(path: string, body?: any) => apiFetch<T>('PATCH', path, body),
+    [apiFetch],
+  );
   const del = useCallback(<T = any>(path: string) => apiFetch<T>('DELETE', path), [apiFetch]);
 
   return {
@@ -68,4 +87,11 @@ export function useApi() {
     patch,
     del,
   };
+}
+
+function useClerkContext() {
+  const { isSignedIn } = useAuth();
+  const { organization } = useOrganization();
+
+  return { isSignedIn, organization };
 }

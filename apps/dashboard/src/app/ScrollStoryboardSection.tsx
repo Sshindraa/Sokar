@@ -1,15 +1,8 @@
 'use client';
 
 import { useRef } from 'react';
-import Image from 'next/image';
-import {
-  motion,
-  useReducedMotion,
-  useScroll,
-  useTransform,
-  type MotionValue,
-} from 'framer-motion';
-import { Bot, CalendarCheck, MessageSquare, PhoneCall, Sparkles, Utensils } from 'lucide-react';
+import { motion, useReducedMotion, useScroll, useTransform, type MotionValue } from 'framer-motion';
+import { Bot, CalendarCheck, MessageSquare, PhoneCall } from 'lucide-react';
 
 const storySteps = [
   {
@@ -86,14 +79,10 @@ export default function ScrollStoryboardSection() {
   });
 
   const screenScale = useTransform(scrollYProgress, [0, 0.1, 0.9, 1], [0.96, 1, 1, 0.97]);
-  const phoneY = useTransform(scrollYProgress, [0, 0.34, 0.66, 1], ['18%', '0%', '-18%', '-8%']);
-  const phoneRotate = useTransform(scrollYProgress, [0, 0.36, 0.68, 1], [-8, -2, 4, -5]);
-  const phoneScale = useTransform(scrollYProgress, [0, 0.48, 1], [0.96, 0.86, 0.92]);
-  const phoneOpacity = useTransform(scrollYProgress, [0, 0.08, 0.78, 0.94], [0.55, 1, 1, 0.35]);
-  const cardRowY = useTransform(scrollYProgress, [0.08, 0.24, 0.52], ['18%', '0%', '-10%']);
-  const cardRowOpacity = useTransform(scrollYProgress, [0, 0.12, 0.52, 0.6], [0, 1, 1, 0]);
-  const dashboardY = useTransform(scrollYProgress, [0.62, 0.74, 1], ['18%', '0%', '-4%']);
-  const dashboardOpacity = useTransform(scrollYProgress, [0, 0.62, 0.74, 1], [0, 0, 1, 1]);
+  const cardRowY = useTransform(scrollYProgress, [0.08, 0.24, 0.48], ['18%', '0%', '-14%']);
+  const cardRowOpacity = useTransform(scrollYProgress, [0, 0.12, 0.46, 0.56], [0, 1, 1, 0]);
+  const dashboardY = useTransform(scrollYProgress, [0.66, 0.78, 1], ['18%', '0%', '-4%']);
+  const dashboardOpacity = useTransform(scrollYProgress, [0, 0.66, 0.78, 1], [0, 0, 1, 1]);
 
   const textMotion0 = useStoryTextMotion(scrollYProgress, 0);
   const textMotion1 = useStoryTextMotion(scrollYProgress, 0.18);
@@ -136,15 +125,6 @@ export default function ScrollStoryboardSection() {
           className="relative h-full w-full overflow-hidden"
           style={{ scale: screenScale }}
         >
-          <div className="absolute left-1/2 top-5 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-2 shadow-2xl shadow-black/30">
-            <Image src="/logo-nav.png" alt="" width={24} height={24} className="h-6 w-6" />
-            {['Appels', 'Planning', 'Clients', 'Revenus'].map((item) => (
-              <span key={item} className="hidden rounded-full px-3 py-1 text-[11px] font-semibold text-white/60 sm:inline">
-                {item}
-              </span>
-            ))}
-          </div>
-
           <div className="absolute inset-x-6 top-24 z-20 text-center sm:top-28">
             {storySteps.map((step, index) => (
               <motion.div
@@ -167,26 +147,8 @@ export default function ScrollStoryboardSection() {
           </div>
 
           <motion.div
-            className="absolute left-1/2 top-[42%] z-10 h-[24rem] w-[13rem] -translate-x-1/2 rounded-[2rem] border border-white/18 bg-white/[0.08] p-3 shadow-[0_22px_64px_rgba(0,0,0,0.55)]"
-            style={{ y: phoneY, rotate: phoneRotate, scale: phoneScale, opacity: phoneOpacity }}
-          >
-            <div className="h-full overflow-hidden rounded-[1.55rem] border border-white/10 bg-black/80 p-4">
-              <div className="mx-auto mb-5 h-5 w-24 rounded-full bg-white/10" />
-              <p className="text-xs font-bold text-white/58">Assistant Sokar</p>
-              <p className="mt-2 text-3xl font-black leading-none text-white font-display">89%</p>
-              <p className="mt-1 text-[10px] uppercase tracking-widest text-cyan-300">demandes resolues</p>
-              <div className="mt-6 space-y-3">
-                {['Reservation 20h30', 'SMS envoye', 'Client reconnu'].map((item) => (
-                  <div key={item} className="rounded-2xl border border-white/8 bg-white/[0.04] p-3">
-                    <p className="text-[11px] font-semibold text-white/68">{item}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            className="absolute inset-x-10 top-[48%] z-0 hidden grid-cols-1 gap-4 md:grid md:grid-cols-3"
+            data-story-cards
+            className="absolute inset-x-10 top-[66%] z-0 hidden grid-cols-1 gap-4 md:grid md:grid-cols-3 md:top-[72%]"
             style={{ y: cardRowY, opacity: cardRowOpacity }}
           >
             {[
@@ -194,12 +156,12 @@ export default function ScrollStoryboardSection() {
               { icon: CalendarCheck, title: 'Tables reservees', text: 'Le planning se met a jour' },
               { icon: MessageSquare, title: 'SMS confirme', text: 'Le client repart rassure' },
             ].map(({ icon: Icon, title, text }) => (
-              <div key={title} className="rounded-3xl border border-white/10 bg-black/60 p-5 shadow-2xl shadow-black/30">
-                <span className="flex h-11 w-11 items-center justify-center rounded-full border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">
-                  <Icon size={18} />
+              <div key={title} className="rounded-3xl border border-white/10 bg-black/60 p-4 shadow-2xl shadow-black/30">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">
+                  <Icon size={17} />
                 </span>
-                <h3 className="mt-5 text-lg font-black text-white font-display">{title}</h3>
-                <p className="mt-2 text-sm text-white/48">{text}</p>
+                <h3 className="mt-4 text-lg font-black text-white font-display">{title}</h3>
+                <p className="mt-1.5 text-sm text-white/48">{text}</p>
               </div>
             ))}
           </motion.div>
@@ -227,15 +189,6 @@ export default function ScrollStoryboardSection() {
               <FloatingMetric label="Revenus" value="5.4k€" className="relative inset-auto" />
             </div>
           </motion.div>
-
-          <div className="absolute bottom-5 left-6 z-30 hidden items-center gap-2 text-xs font-semibold text-white/42 md:flex">
-            <Utensils size={14} />
-            Service fluide
-          </div>
-          <div className="absolute bottom-5 right-6 z-30 hidden items-center gap-2 text-xs font-semibold text-white/42 md:flex">
-            Simulation au scroll
-            <Sparkles size={14} />
-          </div>
         </motion.div>
       </div>
     </section>
