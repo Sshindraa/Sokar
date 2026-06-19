@@ -41,6 +41,14 @@ vi.mock('../shared/db/client', () => ({
       create: vi.fn(),
       findMany: vi.fn(),
     },
+    customer: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      count: vi.fn(),
+      upsert: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
     call: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
