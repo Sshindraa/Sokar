@@ -13,6 +13,7 @@ vi.mock('../../../shared/db/client', () => ({
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      findMany: vi.fn(),
       findUniqueOrThrow: vi.fn(),
     },
   },
@@ -42,10 +43,20 @@ describe('ReservationService - Google Calendar Sync', () => {
     smsConfirmEnabled: true,
     googleRefreshToken: 'refresh-token-xyz',
     googleCalendarId: 'primary',
+    openingHours: {
+      mon: { open: '12:00', close: '23:00' },
+      tue: { open: '12:00', close: '23:00' },
+      wed: { open: '12:00', close: '23:00' },
+      thu: { open: '12:00', close: '23:00' },
+      fri: { open: '12:00', close: '23:00' },
+      sat: { open: '12:00', close: '23:00' },
+      sun: { open: '12:00', close: '23:00' },
+    },
   };
 
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.mocked(db.reservation.findMany).mockResolvedValue([]);
   });
 
   describe('create', () => {
@@ -55,7 +66,7 @@ describe('ReservationService - Google Calendar Sync', () => {
 
       const input = {
         restaurantId: 'rest-123',
-        reservedAt: new Date('2026-06-05T19:00:00Z'),
+        reservedAt: new Date('2099-06-05T19:00:00'),
         partySize: 4,
         customerName: 'Alice',
         customerPhone: '+33612345678',
@@ -72,7 +83,7 @@ describe('ReservationService - Google Calendar Sync', () => {
       const mockReservation = {
         id: 'res-456',
         restaurantId: 'rest-123',
-        reservedAt: new Date('2026-06-05T19:00:00Z'),
+        reservedAt: new Date('2099-06-05T19:00:00'),
         partySize: 4,
         customerName: 'Alice',
         customerPhone: '+33612345678',
@@ -90,7 +101,7 @@ describe('ReservationService - Google Calendar Sync', () => {
 
       const input = {
         restaurantId: 'rest-123',
-        reservedAt: new Date('2026-06-05T19:00:00Z'),
+        reservedAt: new Date('2099-06-05T19:00:00'),
         partySize: 4,
         customerName: 'Alice',
         customerPhone: '+33612345678',
@@ -104,7 +115,7 @@ describe('ReservationService - Google Calendar Sync', () => {
         'primary',
         expect.objectContaining({
           summary: 'Réservation Sokar - Alice',
-        })
+        }),
       );
       expect(db.reservation.update).toHaveBeenCalledWith({
         where: { id: 'res-456' },
@@ -123,7 +134,7 @@ describe('ReservationService - Google Calendar Sync', () => {
       const mockReservation = {
         id: 'res-456',
         restaurantId: 'rest-123',
-        reservedAt: new Date('2026-06-05T19:00:00Z'),
+        reservedAt: new Date('2099-06-05T19:00:00'),
         partySize: 4,
         customerName: 'Alice',
         customerPhone: '+33612345678',
@@ -135,7 +146,7 @@ describe('ReservationService - Google Calendar Sync', () => {
 
       const input = {
         restaurantId: 'rest-123',
-        reservedAt: new Date('2026-06-05T19:00:00Z'),
+        reservedAt: new Date('2099-06-05T19:00:00'),
         partySize: 4,
         customerName: 'Alice',
         customerPhone: '+33612345678',
@@ -165,7 +176,7 @@ describe('ReservationService - Google Calendar Sync', () => {
         customerPhone: '+33612345678',
         status: 'CONFIRMED',
         googleEventId: 'event-789',
-        reservedAt: new Date('2026-06-05T19:00:00Z'),
+        reservedAt: new Date('2099-06-05T19:00:00'),
       };
 
       vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(mockReservationWithRest as any);
@@ -183,7 +194,7 @@ describe('ReservationService - Google Calendar Sync', () => {
         'event-789',
         expect.objectContaining({
           summary: 'Réservation Sokar - Alice Updated (CONFIRMED)',
-        })
+        }),
       );
       expect(result.customerName).toBe('Alice Updated');
     });
@@ -199,7 +210,7 @@ describe('ReservationService - Google Calendar Sync', () => {
         id: 'res-456',
         status: 'CANCELLED',
         googleEventId: 'event-789',
-        reservedAt: new Date('2026-06-05T19:00:00Z'),
+        reservedAt: new Date('2099-06-05T19:00:00'),
       };
 
       vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(mockReservationWithRest as any);
@@ -219,7 +230,7 @@ describe('ReservationService - Google Calendar Sync', () => {
       expect(GoogleCalendarClient.deleteEvent).toHaveBeenCalledWith(
         'refresh-token-xyz',
         'primary',
-        'event-789'
+        'event-789',
       );
       expect(db.reservation.update).toHaveBeenCalledWith({
         where: { id: 'res-456' },
@@ -243,11 +254,45 @@ describe('ReservationService - Google Calendar Sync', () => {
       expect(GoogleCalendarClient.deleteEvent).toHaveBeenCalledWith(
         'refresh-token-xyz',
         'primary',
-        'event-789'
+        'event-789',
       );
       expect(db.reservation.delete).toHaveBeenCalledWith({
         where: { id: 'res-456', restaurantId: 'rest-123' },
       });
+    });
+  });
+
+  describe('availability', () => {
+    it('should return only calendar-available slots', async () => {
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(mockRestaurant as any);
+      vi.mocked(GoogleCalendarClient.checkAvailability).mockImplementation(
+        async (_refreshToken, _calendarId, start) => start.getMinutes() !== 30,
+      );
+
+      const result = await ReservationService.availability('rest-123', '2099-06-05', 2);
+
+      expect(result.slots).toContain('12:00');
+      expect(result.slots).not.toContain('12:30');
+      expect(result.allSlots.find((slot) => slot.time === '12:30')).toMatchObject({
+        available: false,
+        reason: 'calendar_conflict',
+      });
+    });
+
+    it('should reject create outside opening hours', async () => {
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(mockRestaurant as any);
+
+      await expect(
+        ReservationService.create({
+          restaurantId: 'rest-123',
+          reservedAt: new Date('2099-06-05T10:00:00'),
+          partySize: 2,
+          customerName: 'Alice',
+        }),
+      ).rejects.toThrow('SLOT_NOT_AVAILABLE');
+
+      expect(db.reservation.create).not.toHaveBeenCalled();
+      expect(GoogleCalendarClient.checkAvailability).not.toHaveBeenCalled();
     });
   });
 });
