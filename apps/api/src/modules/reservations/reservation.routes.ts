@@ -1,6 +1,5 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { db } from '../../shared/db/client';
 import { requireOrg } from '../../plugins/clerk';
 import { ReservationService } from './reservation.service';
 import {

@@ -1,18 +1,11 @@
 import { WebSocket } from 'ws';
 import { createHash } from 'node:crypto';
-import type { CallSession, FluxEvent, CallState } from './types';
+import type { CallSession, CallState } from './types';
 import { LLM_MODEL } from '@sokar/config'; // Resolved dynamically via tsconfig paths
 import { getRestaurantTools } from '../tools';
 import { ReservationService } from '../../reservations/reservation.service';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
-
-// Chargé paresseusement pour éviter les circular deps
-let _db: any = null;
-async function db() {
-  if (!_db) _db = (await import('../../../shared/db/client')).db;
-  return _db;
-}
 
 export class CallSessionManager {
   private readonly sessions = new Map<string, CallSession>();
@@ -34,7 +27,10 @@ export class CallSessionManager {
     telnyxWs: WebSocket;
     callLegId: string;
     codec: 'PCMA' | 'PCMU';
-    personality?: { fillerStyle: 'CASUAL' | 'FORMAL' | 'WARM'; systemPromptExtra?: string | null } | null;
+    personality?: {
+      fillerStyle: 'CASUAL' | 'FORMAL' | 'WARM';
+      systemPromptExtra?: string | null;
+    } | null;
   }): CallSession {
     const restaurantName = opts.systemPrompt
       .split('\n')[0]
@@ -61,7 +57,7 @@ export class CallSessionManager {
       codec: opts.codec,
       history: [
         { role: 'system', content: opts.systemPrompt },
-        { role: 'assistant', content: greeting }
+        { role: 'assistant', content: greeting },
       ],
       deepgramWs: null,
       deepgramReady: null,
@@ -109,7 +105,11 @@ export class CallSessionManager {
       session.abortController = null;
     }
     if (session.deepgramWs && session.deepgramWs.readyState === WebSocket.OPEN) {
-      try { session.deepgramWs.close(); } catch { /* ignore */ }
+      try {
+        session.deepgramWs.close();
+      } catch {
+        /* ignore */
+      }
     }
     session.deepgramWs = null;
     session.audioBuffer = [];
@@ -121,10 +121,10 @@ export class CallSessionManager {
     if (session.ended && newState !== 'IDLE') return false;
 
     const valid: Record<CallState, CallState[]> = {
-      IDLE:       ['LISTENING', 'SPEAKING'],
-      LISTENING:  ['PROCESSING', 'IDLE'],
+      IDLE: ['LISTENING', 'SPEAKING'],
+      LISTENING: ['PROCESSING', 'IDLE'],
       PROCESSING: ['SPEAKING', 'LISTENING', 'IDLE'],
-      SPEAKING:   ['LISTENING', 'IDLE'],
+      SPEAKING: ['LISTENING', 'IDLE'],
     };
 
     if (!valid[session.state].includes(newState)) return false;
@@ -190,10 +190,7 @@ export class CallSessionManager {
    * Si le LLM décide d'appeler un outil, on l'exécute et on rappelle le LLM
    * avec le résultat — jusqu'à 3 rounds max.
    */
-  private async callLlm(
-    session: CallSession,
-    transcript: string,
-  ): Promise<string> {
+  private async callLlm(session: CallSession, _transcript: string): Promise<string> {
     const tools = getRestaurantTools(session.restaurantId);
     const messages = [...session.history];
 
@@ -212,9 +209,11 @@ export class CallSessionManager {
           temperature: 0.7,
           tools,
           tool_choice: 'auto',
-          ...(LLM_MODEL?.includes('mistral') ? {
-            provider: { order: ['mistral'], allow_fallbacks: false }
-          } : {})
+          ...(LLM_MODEL?.includes('mistral')
+            ? {
+                provider: { order: ['mistral'], allow_fallbacks: false },
+              }
+            : {}),
         }),
       });
 
@@ -222,7 +221,7 @@ export class CallSessionManager {
         throw new Error(`LLM ${response.status}: ${await response.text()}`);
       }
 
-      const data = await response.json() as any;
+      const data = (await response.json()) as any;
       const msg = data.choices?.[0]?.message;
 
       if (!msg) throw new Error('Empty LLM response');
@@ -251,7 +250,7 @@ export class CallSessionManager {
       return msg.content ?? '';
     }
 
-    const defaultErrorMsg = 'Désolé, je n\'ai pas pu traiter votre demande.';
+    const defaultErrorMsg = "Désolé, je n'ai pas pu traiter votre demande.";
     session.history.push({ role: 'assistant', content: defaultErrorMsg });
     return defaultErrorMsg;
   }
@@ -286,9 +285,11 @@ export class CallSessionManager {
           tools,
           tool_choice: 'auto',
           stream: true,
-          ...(LLM_MODEL?.includes('mistral') ? {
-            provider: { order: ['mistral'], allow_fallbacks: false }
-          } : {})
+          ...(LLM_MODEL?.includes('mistral')
+            ? {
+                provider: { order: ['mistral'], allow_fallbacks: false },
+              }
+            : {}),
         }),
       });
 
@@ -351,7 +352,9 @@ export class CallSessionManager {
                 const phrase = match[1].trim();
                 if (phrase) {
                   // Lancer onPhrase sans await pour ne pas bloquer le stream
-                  onPhrase(phrase);
+                  Promise.resolve(onPhrase(phrase)).catch((err) =>
+                    logger.error({ err }, 'onPhrase failed in sentence-buffered LLM stream'),
+                  );
                 }
                 sentenceBuffer = sentenceBuffer.slice(match[0].length);
               }
@@ -386,9 +389,11 @@ export class CallSessionManager {
             temperature: 0.7,
             tools,
             tool_choice: 'auto',
-            ...(LLM_MODEL?.includes('mistral') ? {
-              provider: { order: ['mistral'], allow_fallbacks: false }
-            } : {})
+            ...(LLM_MODEL?.includes('mistral')
+              ? {
+                  provider: { order: ['mistral'], allow_fallbacks: false },
+                }
+              : {}),
           }),
         });
 
@@ -396,7 +401,7 @@ export class CallSessionManager {
           throw new Error(`LLM ${response.status}: ${await response.text()}`);
         }
 
-        const data = await response.json() as any;
+        const data = (await response.json()) as any;
         const msg = data.choices?.[0]?.message;
 
         if (!msg) throw new Error('Empty LLM response');
@@ -431,7 +436,7 @@ export class CallSessionManager {
       return fullText.trim();
     }
 
-    const defaultErrorMsg = 'Désolé, je n\'ai pas pu traiter votre demande.';
+    const defaultErrorMsg = "Désolé, je n'ai pas pu traiter votre demande.";
     session.history.push({ role: 'assistant', content: defaultErrorMsg });
     await onPhrase(defaultErrorMsg);
     return defaultErrorMsg;
@@ -440,11 +445,7 @@ export class CallSessionManager {
   /**
    * Exécute un appel d'outil et retourne le résultat texte.
    */
-  private async executeTool(
-    session: CallSession,
-    name: string,
-    argsJson: string,
-  ): Promise<string> {
+  private async executeTool(session: CallSession, name: string, argsJson: string): Promise<string> {
     try {
       const args = JSON.parse(argsJson);
 
@@ -464,10 +465,16 @@ export class CallSessionManager {
 
             return `Réservation confirmée pour ${customerName ?? 'le client'}, le ${date} à ${time}, pour ${partySize ?? 1} personne(s). Un SMS de confirmation va être envoyé au client.`;
           } catch (err: any) {
-            logger.error({ err: err.message, callId: session.callControlId }, '[tool] ReservationService.create failed');
-            
+            logger.error(
+              { err: err.message, callId: session.callControlId },
+              '[tool] ReservationService.create failed',
+            );
+
             if (process.env.SENTRY_DSN) {
-              Sentry.captureException(err, { tags: { service: 'manager-tool' }, extra: { callId: session.callControlId } });
+              Sentry.captureException(err, {
+                tags: { service: 'manager-tool' },
+                extra: { callId: session.callControlId },
+              });
             }
 
             if (err.message === 'SLOT_NOT_AVAILABLE') {
@@ -485,7 +492,10 @@ export class CallSessionManager {
           return `Outil inconnu : ${name}`;
       }
     } catch (err: any) {
-      logger.error({ err, toolName: name, callId: session.callControlId }, `[tool] Error executing ${name}: ${err.message}`);
+      logger.error(
+        { err, toolName: name, callId: session.callControlId },
+        `[tool] Error executing ${name}: ${err.message}`,
+      );
       if (process.env.SENTRY_DSN) {
         Sentry.captureException(err, {
           tags: { service: 'manager', tool: name },

@@ -15,11 +15,9 @@ import {
   UpdateOnboardingSchema,
 } from './onboarding.service';
 
-const OnboardingTaskSchema = z.enum(['restaurant', 'hours', 'knowledge', 'calendar', 'phone']);
-
-const OnboardingStatusSchema = z.enum(['completed', 'current', 'blocked', 'skipped', 'pending']);
-
-const ONBOARDING_EVENT_BY_ACTION: Partial<Record<z.infer<typeof UpdateOnboardingSchema>['action'], OnboardingAnalyticsEvent>> = {
+const ONBOARDING_EVENT_BY_ACTION: Partial<
+  Record<z.infer<typeof UpdateOnboardingSchema>['action'], OnboardingAnalyticsEvent>
+> = {
   start: 'onboarding_step_started',
   complete: 'onboarding_step_completed',
   skip: 'onboarding_step_skipped',
@@ -148,7 +146,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     const updatedState = computeOnboardingState(updated);
     const event = ONBOARDING_EVENT_BY_ACTION[body.action];
     if (event) {
-      void trackOnboardingEvent({
+      trackOnboardingEvent({
         event,
         restaurantId,
         userId: req.userId,
@@ -160,7 +158,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
           onboardingDone: updatedState.onboardingDone,
           reason: body.reason,
         },
-      });
+      }).catch((err) => app.log.error({ err, restaurantId }, 'trackOnboardingEvent failed'));
     }
 
     // ─── Re-engagement : replace le timer à chaque interaction
@@ -233,7 +231,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
         },
       });
       return reply.send(restaurant);
-    } catch (err: any) {
+    } catch (err) {
+      app.log.error({ err }, 'Restaurant fetch failed');
       return reply.status(404).send({ error: 'Restaurant not found' });
     }
   });
@@ -288,9 +287,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
   // l'activation (première mise en service audible).
 
   const TestCallSchema = z.object({
-    phoneNumber: z
-      .string()
-      .regex(/^\+[1-9]\d{9,14}$/, 'Numéro E.164 requis (ex: +33612345678)'),
+    phoneNumber: z.string().regex(/^\+[1-9]\d{9,14}$/, 'Numéro E.164 requis (ex: +33612345678)'),
   });
 
   const postTestCall = async (req: any, reply: any) => {
@@ -308,8 +305,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
       });
     }
 
-    const baseUrl =
-      process.env.PUBLIC_API_URL ?? `${req.protocol}://${req.headers.host}`;
+    const baseUrl = process.env.PUBLIC_API_URL ?? `${req.protocol}://${req.headers.host}`;
     const webhookUrl = `${baseUrl}/voice/stream`;
 
     try {
@@ -333,7 +329,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
         include: { personality: true },
       });
 
-      void trackOnboardingEvent({
+      trackOnboardingEvent({
         event: 'onboarding_first_call',
         restaurantId,
         userId: req.userId,
@@ -343,7 +339,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
           phoneNumber: body.phoneNumber,
           progress: computeOnboardingState(updated).progress,
         },
-      });
+      }).catch((err) => app.log.error({ err, restaurantId }, 'trackOnboardingEvent failed'));
 
       return reply.send({
         ok: true,
@@ -362,14 +358,6 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
   };
 
-  app.post(
-    '/restaurant/onboarding/test-call',
-    { preHandler: requireOrg() },
-    postTestCall,
-  );
-  app.post(
-    '/api/restaurant/onboarding/test-call',
-    { preHandler: requireOrg() },
-    postTestCall,
-  );
+  app.post('/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
+  app.post('/api/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
 }

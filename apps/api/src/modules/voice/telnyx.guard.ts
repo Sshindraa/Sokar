@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 
-function toBytes(str: string): Uint8Array {
+function _toBytes(str: string): Uint8Array {
   return new TextEncoder().encode(str);
 }
 
@@ -8,12 +8,9 @@ function fromBase64(str: string): Uint8Array {
   return Uint8Array.from(atob(str), (c) => c.charCodeAt(0));
 }
 
-export async function telnyxWebhookGuard(
-  req: FastifyRequest,
-  reply: FastifyReply,
-): Promise<void> {
+export async function telnyxWebhookGuard(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   const signature = req.headers['telnyx-signature-ed25519'] as string | undefined;
-  const timestamp = req.headers['telnyx-timestamp']          as string | undefined;
+  const timestamp = req.headers['telnyx-timestamp'] as string | undefined;
   // Debug logging — TEMP to diagnose 403 on real Telnyx calls
   req.log.info(
     {
