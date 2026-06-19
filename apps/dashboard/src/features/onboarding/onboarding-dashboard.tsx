@@ -26,6 +26,8 @@ const STATUS_LABEL: Record<OnboardingStatus, string> = {
   pending: 'À faire',
 };
 
+const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+
 const ACTION_COPY: Record<string, { title: string; body: string; cta: string; impact: string }> = {
   restaurant: {
     title: 'Validez l’identité du restaurant',
@@ -73,6 +75,7 @@ export function DashboardOnboardingGate() {
   const { state, loading } = useOnboarding();
 
   useEffect(() => {
+    if (!hasClerkKey) return;
     if (loading || !state || state.onboardingDone || !pathname?.startsWith('/dashboard')) return;
     const target =
       state.currentStep.status === 'completed' || state.currentStep.status === 'skipped'
@@ -88,7 +91,7 @@ export function DashboardOnboardingGate() {
 export function DashboardOnboardingPanel() {
   const { state, loading, error } = useOnboarding();
 
-  if (loading || !state || state.onboardingDone) return null;
+  if (!hasClerkKey || loading || !state || state.onboardingDone) return null;
 
   return (
     <div className="mb-5 space-y-3">
