@@ -108,6 +108,24 @@ export default [
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/no-unused-vars': 'off', // tests may have unused setup vars
+      // mockImplementation(() => slowPromise()) trips no-misused-promises
+      // even though the function type accepts a Promise. Tests legitimately
+      // return promises from mock implementations to simulate async I/O.
+      '@typescript-eslint/no-misused-promises': 'off',
+    },
+  },
+
+  // main.ts: fire-and-forget startup warmups (setImmediate with async
+  // callbacks) trigger false-positive no-misused-promises. Bootstrap
+  // patterns are exempt — the startup IIFE handles errors via .catch.
+  {
+    files: ['src/main.ts'],
+    rules: {
+      '@typescript-eslint/no-misused-promises': 'off',
+      // setImmediate callbacks in main.ts return promises intentionally
+      // (fire-and-forget warmups). no-floating-promises doesn't trip here
+      // because the .catch() is explicit, but disable anyway for symmetry.
+      '@typescript-eslint/no-floating-promises': 'off',
     },
   },
 

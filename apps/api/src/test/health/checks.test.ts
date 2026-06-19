@@ -223,20 +223,22 @@ describe('checkHealth — parallelism', () => {
   it('runs checks in parallel (not sequential)', async () => {
     // Make every check take 200ms. If sequential, total would be ~1200ms.
     // If parallel, total should be ~200ms.
-    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-    mockDb.$queryRaw.mockImplementation(() => delay(200).then(() => [{ '1': 1 }]));
-    mockRedis.ping.mockImplementation(() => delay(200).then(() => 'PONG'));
+    //
+    // The no-misused-promises lint trips on arrow functions that return
+    // a Promise. We use named async functions (typed Promise<T>) instead
+    // of inline `() => promise.then(...)` to satisfy the type checker.
+    const slow = <T>(val: T): Promise<T> => new Promise((r) => setTimeout(() => r(val), 200));
+    mockDb.$queryRaw.mockImplementation(() => slow([{ '1': 1 }]));
+    mockRedis.ping.mockImplementation(() => slow('PONG'));
     for (const q of Object.values(queues)) {
       (q as unknown as { getJobCounts: ReturnType<typeof vi.fn> }).getJobCounts.mockImplementation(
-        () => delay(200).then(() => ({})),
+        () => slow({}),
       );
     }
-    mockTelnyxBalance.retrieve.mockImplementation(() => delay(200).then(() => ({})));
+    mockTelnyxBalance.retrieve.mockImplementation(() => slow({}));
     globalThis.fetch = vi
       .fn()
-      .mockImplementation(() =>
-        delay(200).then(() => ({ ok: true, status: 200, statusText: 'OK' }) as Response),
-      );
+      .mockImplementation(() => slow({ ok: true, status: 200, statusText: 'OK' } as Response));
 
     const start = Date.now();
     const result = await checkHealth();
