@@ -8,7 +8,7 @@ import {
   CreateReservationSchema,
   ReservationQuerySchema,
 } from './reservation.schema';
-import { RESERVATION_STATUS_VALUES } from '@sokar/shared';
+import { ERROR_CODE_MESSAGES, RESERVATION_STATUS_VALUES } from '@sokar/shared';
 
 // --- auth/public split ---
 // Les routes GET/PATCH/DELETE nécessitent une organisation (dashboard manager).
@@ -19,6 +19,12 @@ const UpdateReservationSchema = z.object({
   customerName: z.string().min(1).max(200).optional(),
   partySize: z.number().int().min(1).max(20).optional(),
 });
+
+function createSlotNotAvailableError() {
+  const error = new Error(ERROR_CODE_MESSAGES.SLOT_NOT_AVAILABLE);
+  error.name = 'SLOT_NOT_AVAILABLE';
+  return Object.assign(error, { statusCode: 409 });
+}
 
 export async function reservationRoutes(app: FastifyInstance) {
   app.get('/reservations', { preHandler: requireOrg() }, async (req, reply) => {
@@ -36,15 +42,22 @@ export async function reservationRoutes(app: FastifyInstance) {
 
   app.post('/reservations', async (req, reply) => {
     const body = CreateReservationSchema.parse(req.body);
-    const reservation = await ReservationService.create({
-      restaurantId: body.restaurantId,
-      callId: body.callId,
-      reservedAt: new Date(body.reservedAt),
-      partySize: body.partySize,
-      customerName: body.customerName,
-      customerPhone: body.customerPhone,
-    });
-    return reply.status(201).send(reservation);
+    try {
+      const reservation = await ReservationService.create({
+        restaurantId: body.restaurantId,
+        callId: body.callId,
+        reservedAt: new Date(body.reservedAt),
+        partySize: body.partySize,
+        customerName: body.customerName,
+        customerPhone: body.customerPhone,
+      });
+      return reply.status(201).send(reservation);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'SLOT_NOT_AVAILABLE') {
+        throw createSlotNotAvailableError();
+      }
+      throw err;
+    }
   });
 
   app.patch('/reservations/:id', { preHandler: requireOrg() }, async (req, reply) => {
