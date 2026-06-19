@@ -5,13 +5,16 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
     "clean": "turbo clean",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,md,json}\"",
+    "prepare": "husky",
     "db:generate": "prisma generate --schema=packages/database/prisma/schema.prisma",
     "db:push": "prisma db push --schema=packages/database/prisma/schema.prisma",
     "db:studio": "prisma studio --schema=packages/database/prisma/schema.prisma",
     "db:seed": "pnpm --filter @sokar/api seed",
-    "test": "pnpm --filter @sokar/api test",
     "test:diagnostic": "node scripts/test-stt-tts.mjs",
     "tunnel:status": "cloudflared tunnel info sokar",
     "tunnel:logs": "tail -n 50 -f ~/Library/Logs/com.cloudflare.cloudflared.err.log",
@@ -20,6 +23,8 @@
     "redis:status": "brew services list | grep redis"
   },
   "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.7",
     "prettier": "^3.5.0",
     "prisma": "^6.0.0",
     "rollup": "^4.30.0",
@@ -46,5 +51,13 @@
     "trailingComma": "all",
     "printWidth": 100,
     "tabWidth": 2
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "prettier --write"
+    ],
+    "*.{md,json,yml,yaml}": [
+      "prettier --write"
+    ]
   }
 }
