@@ -126,7 +126,7 @@ Voir [[Hermes Agent]] pour la configuration.
 | Datadog | — | APM/Logs |
 | PostHog | — | Analytics |
 | Doppler | — | Secrets |
-| Railway | — | Hosting |
+| VPS + Docker/PM2 | — | Hosting |
 | LocalStack | — | AWS emulation (Sprint 2) |
 
 ---
