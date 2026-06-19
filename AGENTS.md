@@ -12,8 +12,8 @@ Keep this file short: it is injected into every project session. Detailed histor
 - Monorepo: pnpm 10.8 + Turbo, Node 20+, TypeScript 5.8.
 - API: `apps/api` — Fastify 5, Prisma 6, Redis, BullMQ, Telnyx.
 - Dashboard: `apps/dashboard` — Next.js 14 App Router, React 18, Tailwind 3, Shadcn UI, Lucide.
-- Packages: `packages/database`, `packages/config`, `packages/types`, `packages/shared`.
-- Voice: Telnyx Media Stream, Deepgram Flux, Cartesia/ElevenLabs TTS.
+- Packages: `packages/database`, `packages/config`, `packages/types`.
+- Voice: Telnyx Media Stream, Deepgram Flux, Cartesia TTS.
 
 ## How to work
 

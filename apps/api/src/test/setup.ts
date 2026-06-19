@@ -92,14 +92,12 @@ vi.mock('../../lib/auth', () => ({
 }));
 
 // ── Set test env vars ──
-process.env.VAPI_WEBHOOK_SECRET = 'test-secret';
-process.env.BETTER_AUTH_SECRET = 'test-auth-secret';
-process.env.BETTER_AUTH_URL = 'http://localhost:3000';
 process.env.DATABASE_URL = 'postgresql://test:***@localhost:5432/test';
 process.env.REDIS_URL = 'redis://localhost:6379';
 process.env.NODE_ENV = 'test';
 process.env.TZ = 'Europe/Paris';
 process.env.TELNYX_API_KEY = 'test-telnyx-key';
+process.env.TELNYX_WEBHOOK_SECRET = 'test-telnyx-secret';
 process.env.TELNYX_FROM_NUMBER = '+331****0000';
 process.env.TTS_CACHE_ENABLED = 'false';
 process.env.VIP_PUSH_ENABLED = 'false';

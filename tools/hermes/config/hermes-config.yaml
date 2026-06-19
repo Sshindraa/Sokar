@@ -1,27 +1,27 @@
 # Hermes Agent — Configuration Sokar
-# Architecture: Hermes CLI (deepseek-v4-flash orchestrateur via OpenCode Go)
-# Copier vers ~/.hermes/config.yaml pour appliquer
+# Template sans secret. La configuration live est ~/.hermes/config.yaml.
+# Copier ce fichier vers ~/.hermes/config.yaml seulement si tu veux réinitialiser Hermes.
 
 model:
   provider: opencode-go
-  model: deepseek-v4-flash
+  model: minimax-m3
   base_url: https://opencode.ai/zen/go/v1
   key_env: OPENCODE_GO_API_KEY
-  api_mode: chat_completions
+  api_mode: anthropic_messages
   fallback:
     provider: opencode-go
-    model: deepseek-v4-pro
+    model: deepseek-v4-flash
     base_url: https://opencode.ai/zen/go/v1
     key_env: OPENCODE_GO_API_KEY
     api_mode: chat_completions
-  persistent: true
+  default: minimax-m3
 
 delegation:
-  model: deepseek-v4-flash
+  model: minimax-m3
   provider: opencode-go
   base_url: https://opencode.ai/zen/go/v1
-  key_env: OPENCODE_ZEN_API_KEY
-  api_mode: chat_completions
+  key_env: OPENCODE_GO_API_KEY
+  api_mode: anthropic_messages
   orchestrator_enabled: true
   max_iterations: 50
   child_timeout_seconds: 900
@@ -30,5 +30,3 @@ delegation:
   subagent_auto_approve: true
 
 skills_dir: /Users/hamza/Desktop/Sokar/tools/hermes/skills
-
-# Orchestrateur (OpenCode Go deepseek-v4-flash) planifie → Subagents (OpenCode Go deepseek-v4-flash) exécutent

@@ -20,8 +20,6 @@
     "redis:status": "brew services list | grep redis"
   },
   "devDependencies": {
-    "@netlify/plugin-nextjs": "^5",
-    "netlify-cli": "^26.1.0",
     "prettier": "^3.5.0",
     "prisma": "^6.0.0",
     "rollup": "^4.30.0",

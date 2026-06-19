@@ -19,17 +19,16 @@ if ! command -v hermes &> /dev/null; then
     exit 1
 fi
 
-if [ -z "${WINDSURF_TOKEN:-}" ]; then
-    echo "[ERROR] WINDSURF_TOKEN non défini."
-    echo "  Dans Windsurf: Ctrl+Shift+P → 'Provide auth token' → copie le token"
-    echo "  export WINDSURF_TOKEN=ton_token"
+if [ -z "${OPENCODE_GO_API_KEY:-}" ]; then
+    echo "[ERROR] OPENCODE_GO_API_KEY non défini."
+    echo "  Ajoute-le dans $REPO_ROOT/.env ou exporte-le dans ton shell."
     exit 1
 fi
 
 echo "[SOKAR-AGENT] Démarrage d'Hermes..."
-echo "  Config: $REPO_ROOT/tools/hermes/config/hermes-config.yaml"
-echo "  Token:  ${WINDSURF_TOKEN:0:10}..."
+echo "  Live config: ~/.hermes/config.yaml"
+echo "  Project template: $REPO_ROOT/tools/hermes/config/hermes-config.yaml"
 echo ""
 
-# Lancer Hermes (lit ~/.hermes/config.yaml — OpenCode Go primary, OpenRouter fallback)
+# Lancer Hermes (lit ~/.hermes/config.yaml)
 hermes

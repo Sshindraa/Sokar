@@ -3,12 +3,11 @@ from __future__ import annotations
 """
 Hermes MCP server — Sokar execution gateway.
 
-Windsurf Cascade (kimi-k2.6) planifie uniquement.
-Toute execution est deleguee a Hermes CLI (deepseek-v4-flash) via execute_task.
+Toute execution est deleguee a Hermes CLI via execute_task.
 
 Le MCP serveur expose 2 outils : execute_task (execution) et check_task (verification).
 Pas de run_shell, read_file, search_files, git_status.
-Cascade n'a aucun moyen de faire de l'execution via ce serveur.
+Le client MCP n'a aucun moyen de faire de l'execution via ce serveur.
 
 AUTO-DÉTECTION : Après chaque tâche, détecte automatiquement le type d'opération
 et met à jour la note Obsidian correspondante (API Endpoints, Database Schema,
@@ -233,11 +232,11 @@ def log(msg: str) -> None:
 
 
 def log_session(cascade_msg: str, hermes_result: str) -> None:
-    """Journaliser l'echange Cascade → Hermes pour debug/traçabilite."""
+    """Journaliser l'echange MCP → Hermes pour debug/traçabilite."""
     SESSION_LOG.parent.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(SESSION_LOG, "a") as f:
-        f.write(f"\n\n## [{ts}] Cascade -> Hermes\n\n")
+        f.write(f"\n\n## [{ts}] MCP -> Hermes\n\n")
         f.write(f"### Task\n\n```\n{cascade_msg}\n```\n\n")
         f.write(f"### Result\n\n```\n{hermes_result[:2000]}\n```\n")
 
@@ -295,7 +294,7 @@ def tool_execute_task(task: str, workdir: str | None = None) -> dict:
     Delegue une tache a Hermes CLI en mode ASYNCHRONE.
     Retourne immédiatement un task_id — utilise check_task pour récupérer le résultat.
 
-    Pourquoi asynchrone ? Le client MCP de Windsurf timeout après ~10s.
+    Pourquoi asynchrone ? Certains clients MCP timeout après ~10s.
     hermes -z prend 30-120s. Sans asynchrone, le MCP crashe avec EOF.
     """
     cwd = workdir or SOKAR_ROOT

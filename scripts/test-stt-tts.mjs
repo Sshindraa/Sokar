@@ -152,7 +152,7 @@ async function testOpenrouter() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OR_KEY}` },
       body: JSON.stringify({
-        model: 'deepseek/deepseek-v4-flash',
+        model: 'mistralai/ministral-3b-2512',
         messages: [
           { role: 'system', content: 'Tu es un agent vocal concis.' },
           { role: 'user', content: 'Dis bonjour en français.' },

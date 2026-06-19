@@ -14,7 +14,7 @@ CARTE NOTE → CHEMIN SOURCE :
   Sprint 1        → apps/api/ (via detection de module)
   Architecture    → packages/*, apps/*
   Dashboard       → apps/dashboard/src/*
-  Context.md      → agent/scripts/*, agent/skills/*
+  Context.md      → tools/hermes/scripts/*, tools/hermes/skills/*
   Journal.md      → toute tâche Hermes exécutée
 
 USAGE:
@@ -348,8 +348,6 @@ def scan_filesystem() -> list[dict]:
         "packages/database/prisma",
         "tools/hermes/skills",
         "tools/hermes/scripts",
-        "agent/skills",
-        "agent/scripts",
     ]
     now = time.time()
     recent = []

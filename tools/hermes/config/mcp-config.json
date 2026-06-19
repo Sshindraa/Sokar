@@ -3,7 +3,7 @@
     "hermes": {
       "command": "/usr/bin/python3",
       "args": ["-u", "/Users/hamza/Desktop/Sokar/tools/hermes/scripts/mcp_serve.py"],
-      "description": "Hermes orchestrateur — agents Sokar (planification Cascade, execution Hermes)"
+      "description": "Hermes orchestrateur — agents Sokar via MCP"
     },
     "sokar-postgres": {
       "command": "npx",

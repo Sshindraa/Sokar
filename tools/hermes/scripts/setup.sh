@@ -48,13 +48,9 @@ log "Vérification des variables d'environnement..."
 source "$REPO_ROOT/.env" 2>/dev/null || true
 
 missing=0
-if [ -z "${WINDSURF_TOKEN:-}" ]; then
-    warn "WINDSURF_TOKEN non défini (optionnel pour MCP Windsurf)"
-fi
-
-if [ -z "${OPENROUTER_API_KEY:-}" ] && [ -z "${CROF_API_KEY:-}" ]; then
-    error "Ni OPENROUTER_API_KEY ni CROF_API_KEY défini."
-    echo "  Ajoute-les dans $REPO_ROOT/.env"
+if [ -z "${OPENCODE_GO_API_KEY:-}" ]; then
+    error "OPENCODE_GO_API_KEY non défini."
+    echo "  Ajoute-le dans $REPO_ROOT/.env ou dans ton shell."
     missing=1
 fi
 
@@ -66,15 +62,12 @@ fi
 # ── 5. Créer les liens de configuration ────────────────────────────────────────
 log "Création des liens de configuration..."
 
-mkdir -p "$HOME/.codeium/windsurf"
-if [ ! -f "$HOME/.codeium/windsurf/mcp_config.json" ]; then
-    cp "$REPO_ROOT/tools/hermes/config/mcp-config.json" "$HOME/.codeium/windsurf/mcp_config.json"
-    log "MCP config copiée"
-fi
-
 if [ ! -f "$HOME/.hermes/config.yaml" ]; then
+    mkdir -p "$HOME/.hermes"
     cp "$REPO_ROOT/tools/hermes/config/hermes-config.yaml" "$HOME/.hermes/config.yaml"
     log "Hermes config copiée"
+else
+    warn "~/.hermes/config.yaml existe déjà ; template projet non copié"
 fi
 
 log ""
