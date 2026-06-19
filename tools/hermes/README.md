@@ -2,21 +2,20 @@
 
 Configuration Hermes CLI pour le monorepo Sokar.
 
-## Architecture 2 niveaux
+## Configuration
 
-- **Planner (cerveau)** : délégué via `delegate_task` — kimi-k2.6-precision (Crof AI)
-- **Executor (principal)** : deepseek/deepseek-v4-flash (OpenRouter) - modèle par défaut
-
-Cette architecture économise les tokens du modèle le plus cher (kimi-k2.6-precision)
-en ne l'utilisant que pour le planning, tandis que les modèles moins chers exécutent.
+Hermes lit sa configuration effective depuis `~/.hermes/config.yaml`.
+Le fichier `tools/hermes/config/hermes-config.yaml` sert de template projet sans secret.
+La direction courante est OpenCode Go avec `minimax-m3` en modèle principal
+et un fallback plus fort quand nécessaire.
 
 ## Structure
 
-```
-agent/
+```text
+tools/hermes/
 ├── config/
 │   ├── hermes-config.yaml      # Configuration Hermes CLI (LLM providers)
-│   └── mcp-config.json         # Configuration MCP (Windsurf integration)
+│   └── mcp-config.json         # Configuration MCP optionnelle
 ├── scripts/
 │   ├── setup.sh                # Installation et setup initial
 │   ├── start-hermes.sh         # Lancement Hermes CLI
@@ -38,10 +37,10 @@ Exemples :
 
 ### Via script
 ```zsh
-zsh agent/scripts/start-hermes.sh
+zsh tools/hermes/scripts/start-hermes.sh
 ```
 
-### Via MCP Windsurf (IDE)
+### Via MCP
 Les MCP servers configurés :
 - **hermes** : Orchestrateur Sokar
 - **sokar-postgres** : PostgreSQL
@@ -50,13 +49,16 @@ Les MCP servers configurés :
 ## Configuration
 
 ### Variables d'environnement
-Les API keys sont configurées directement dans `agent/config/hermes-config.yaml` :
-- `CROF_API_KEY` : Pour kimi-k2.6-precision (planner)
-- `OPENROUTER_API_KEY` : Pour deepseek/deepseek-v4-flash (executor)
+Ne mets pas de clé en clair dans les fichiers du repo.
+Le template utilise `key_env` :
+- `OPENCODE_GO_API_KEY` : modèle principal Hermes.
+- `GITHUB_TOKEN` : MCP GitHub, optionnel.
+- `DATABASE_URL` : MCP PostgreSQL, optionnel selon la tâche.
 
 ### Fichiers de configuration
-- `~/.hermes/config.yaml` : Copié depuis `agent/config/hermes-config.yaml`
-- `agent/config/mcp-config.json` : Configuration MCP pour Windsurf
+- `~/.hermes/config.yaml` : configuration live.
+- `tools/hermes/config/hermes-config.yaml` : template projet.
+- `tools/hermes/config/mcp-config.json` : MCP optionnel.
 
 ## Stack Sokar reconnu
 
@@ -65,7 +67,6 @@ Les API keys sont configurées directement dans `agent/config/hermes-config.yaml
 - **packages/database** : Prisma schema + client
 - **packages/config** : Shared config
 - **packages/types** : Shared TypeScript types
-- **packages/shared** : Shared utilities
 
 ## Commandes utiles
 
@@ -73,13 +74,13 @@ Les API keys sont configurées directement dans `agent/config/hermes-config.yaml
 hermes -z "tâche"              # Exécuter une tâche
 hermes status                  # Vérifier le status
 hermes doctor                  # Diagnostics détaillés
-zsh agent/scripts/check-hermes.sh  # Healthcheck
+zsh tools/hermes/scripts/check-hermes.sh  # Healthcheck
 ```
 
 ## Healthcheck
 
 ```zsh
-zsh agent/scripts/check-hermes.sh
+zsh tools/hermes/scripts/check-hermes.sh
 ```
 
 Vérifie :

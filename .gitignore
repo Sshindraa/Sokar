@@ -22,7 +22,6 @@ dump.rdb
 # On versionne les .env.example et .env.test
 !.env.example
 !.env.test
-!apps/api/.env.example
 !apps/api/.env.test
 
 # Fichiers de compilation TS et maps à exclure
@@ -44,10 +43,6 @@ packages/**/*.js
 packages/**/*.d.ts
 packages/**/*.js.map
 packages/**/*.d.ts.map
-!packages/config/src/constants.js
-!packages/config/src/constants.d.ts
-!packages/types/src/call-event.js
-!packages/types/src/call-event.d.ts
 
 # Dossiers temporaires de scratch et logs
 scratch/

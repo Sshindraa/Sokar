@@ -6,7 +6,7 @@ French-first restaurant reservation and AI call-management platform.
 
 - API: Fastify 5, Prisma 6, Redis, BullMQ, Telnyx.
 - Dashboard: Next.js 14 App Router, React 18, Tailwind 3, Shadcn UI.
-- Voice: Telnyx Media Stream, Deepgram Flux, Cartesia/ElevenLabs TTS.
+- Voice: Telnyx Media Stream, Deepgram Flux, Cartesia TTS.
 - Monorepo: pnpm 10.8, Turbo, TypeScript 5.8.
 
 ## Repository layout
@@ -17,7 +17,6 @@ apps/dashboard      Next.js dashboard/marketing app
 packages/database   Prisma schema/client
 packages/config     shared config
 packages/types      shared TypeScript types
-packages/shared     shared utilities
 tools/hermes        Hermes project-local docs/config/templates
 docs                product and implementation notes
 ```

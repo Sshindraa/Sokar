@@ -39,21 +39,18 @@ echo "=== Hermes Agent Sokar — Healthcheck ==="
 echo ""
 
 check "hermes CLI" "command -v hermes"
-check "Docker daemon" "docker info"
 check "Repo root" "test -d '$REPO_ROOT/tools/hermes'"
 
 echo ""
 echo "=== Variables ==="
 check_env "DATABASE_URL"
-check_env "WINDSURF_TOKEN"
-check_env "GITHUB_TOKEN"
+check_env "OPENCODE_GO_API_KEY"
 
-if [ -n "${OPENROUTER_API_KEY:-}" ] || [ -n "${CROF_API_KEY:-}" ]; then
-  echo "[OK] LLM provider key"
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  echo "[OK] GITHUB_TOKEN"
   ok=$((ok + 1))
 else
-    echo "[MISSING] LLM provider key: OPENROUTER_API_KEY or CROF_API_KEY"
-    fail=$((fail + 1))
+  echo "[MISSING] GITHUB_TOKEN (optionnel, requis seulement pour MCP GitHub)"
 fi
 
 echo ""

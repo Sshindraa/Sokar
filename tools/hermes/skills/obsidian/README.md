@@ -39,9 +39,9 @@ Le système d'automatisation Sokar élimine tout besoin de mise à jour manuelle
 
 ### 1. `mcp_serve.py` (MCP Gateway)
 
-**Chemin** : `/Users/hamza/Desktop/Sokar/agent/scripts/mcp_serve.py`
+**Chemin** : `/Users/hamza/Desktop/Sokar/tools/hermes/scripts/mcp_serve.py`
 
-Le point d'entrée unique pour toute exécution via Windsurf Cascade.
+Le point d'entrée unique pour toute exécution via un client MCP.
 
 **Ce qu'il fait automatiquement après chaque tâche** :
 1. **Classifie la tâche** — détecte si c'est une création de route, modification de schema, ajout de composant, pipeline vocal, job queue, etc.
@@ -65,7 +65,7 @@ Le point d'entrée unique pour toute exécution via Windsurf Cascade.
 
 ### 2. `auto_sync.py` (Git Watcher)
 
-**Chemin** : `/Users/hamza/Desktop/Sokar/agent/skills/obsidian/auto_sync.py`
+**Chemin** : `/Users/hamza/Desktop/Sokar/tools/hermes/skills/obsidian/auto_sync.py`
 
 Surveille les changements dans le code source et met à jour le vault Obsidian.
 
@@ -84,11 +84,11 @@ Surveille les changements dans le code source et met à jour le vault Obsidian.
 | `apps/api/src/modules/voice/` | Voice Pipeline.md | `voice` |
 | `apps/dashboard/` | Dashboard.md | `dashboard` |
 | `packages/` | Architecture.md | `packages` |
-| `agent/` | Hermes Agent.md | `agent` |
+| `tools/hermes/` | Hermes Agent.md | `agent` |
 
 ### 3. `notion_sync.py` (Bidirectional Sync)
 
-**Chemin** : `/Users/hamza/Desktop/Sokar/agent/skills/obsidian/notion_sync.py`
+**Chemin** : `/Users/hamza/Desktop/Sokar/tools/hermes/skills/obsidian/notion_sync.py`
 
 Synchronisation bidirectionnelle entre Notion et Obsidian.
 
@@ -106,7 +106,7 @@ Synchronisation bidirectionnelle entre Notion et Obsidian.
 ## Flux complet (exemple)
 
 ```
-1. Cascade envoie: "Ajoute une route GET /restaurants/:id"
+1. Le client MCP envoie: "Ajoute une route GET /restaurants/:id"
 2. mcp_serve.py exécute la tâche via Hermes
 3. ↓ Classification: create_route → API Endpoints.md
 4. ↓ Log: Journal.md ligne + Context.md activité
@@ -122,18 +122,18 @@ Résultat : **0 action manuelle** pour la documentation.
 ### Daemon complet (tout automatique)
 ```zsh
 # Démarrer les 3 daemons (recommandé)
-python3 agent/skills/obsidian/auto_sync.py daemon &
-python3 agent/skills/obsidian/notion_sync.py daemon &
-# mcp_serve.py est déjà actif via Windsurf MCP
+python3 tools/hermes/skills/obsidian/auto_sync.py daemon &
+python3 tools/hermes/skills/obsidian/notion_sync.py daemon &
+# mcp_serve.py est actif via le client MCP configuré
 ```
 
 ### Vérifier que tout fonctionne
 ```zsh
 # Tester auto_sync
-python3 agent/skills/obsidian/auto_sync.py diff
+python3 tools/hermes/skills/obsidian/auto_sync.py diff
 
 # Tester notion_sync
-NOTION_TOKEN="ntn_..." python3 agent/skills/obsidian/notion_sync.py map
+NOTION_TOKEN="ntn_..." python3 tools/hermes/skills/obsidian/notion_sync.py map
 
 # Voir les logs
 cat ~/.hermes/logs/auto_sync.log
@@ -145,9 +145,9 @@ cat ~/.hermes/logs/mcp_serve.log
 
 | Fichier | Rôle |
 |---|---|
-| `agent/scripts/mcp_serve.py` | MCP Gateway + classification + auto-logging |
-| `agent/skills/obsidian/auto_sync.py` | Git/filesystem watcher |
-| `agent/skills/obsidian/notion_sync.py` | Sync bidirectionnelle Notion |
-| `agent/skills/obsidian/auto_doc.py` | Helpers de documentation (Context.md, décisions) |
-| `agent/skills/obsidian/skill.py` | Tools Hermes pour le vault (list, read, write, search) |
+| `tools/hermes/scripts/mcp_serve.py` | MCP Gateway + classification + auto-logging |
+| `tools/hermes/skills/obsidian/auto_sync.py` | Git/filesystem watcher |
+| `tools/hermes/skills/obsidian/notion_sync.py` | Sync bidirectionnelle Notion |
+| `tools/hermes/skills/obsidian/auto_doc.py` | Helpers de documentation (Context.md, décisions) |
+| `tools/hermes/skills/obsidian/skill.py` | Tools Hermes pour le vault (list, read, write, search) |
 | `docs/obsidian/.notion_map.json` | Carte Obsidian → Notion |
