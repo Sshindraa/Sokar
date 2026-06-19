@@ -122,6 +122,20 @@ interface ConfirmedReservation {
   status: string;
 }
 
+interface AvailabilityResponse {
+  restaurantId: string;
+  date: string;
+  partySize: number;
+  slots: string[];
+}
+
+function formatDateParam(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 async function publicApiFetch<T = any>(
   method: 'GET' | 'POST',
   path: string,
@@ -167,6 +181,9 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [activeSection, setActiveSection] = useState<'party' | 'date' | 'time'>('party');
   const [availabilityRefreshing, setAvailabilityRefreshing] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState('');
+  const [availabilityDate, setAvailabilityDate] = useState('');
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const timeSectionRef = useRef<HTMLDivElement | null>(null);
 
   // Contact details
@@ -248,16 +265,43 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   );
 
   const timeSlots = useMemo(() => {
-    if (!selectedDate) return [];
-    return getSlotsForDate(selectedDate);
-  }, [selectedDate, getSlotsForDate]);
+    if (!selectedDate || availabilityDate !== formatDateParam(selectedDate)) return [];
+    return availableSlots;
+  }, [availableSlots, availabilityDate, selectedDate]);
 
   useEffect(() => {
-    if (!selectedDate || success) return;
+    if (!restaurantId || !selectedDate || success) return;
+    const date = formatDateParam(selectedDate);
+    let cancelled = false;
+
     setAvailabilityRefreshing(true);
-    const timeout = window.setTimeout(() => setAvailabilityRefreshing(false), 220);
-    return () => window.clearTimeout(timeout);
-  }, [selectedDate, partySize, success]);
+    setAvailabilityError('');
+    setAvailabilityDate(date);
+    setAvailableSlots([]);
+
+    (async () => {
+      try {
+        const data = await publicApiFetch<AvailabilityResponse>(
+          'GET',
+          `restaurants/${restaurantId}/availability?date=${date}&partySize=${partySize}`,
+        );
+        if (cancelled) return;
+        setAvailableSlots(data.slots);
+        setSelectedTime((current) => (current && !data.slots.includes(current) ? '' : current));
+      } catch (err: any) {
+        if (cancelled) return;
+        setAvailabilityError(err.message || 'Disponibilités indisponibles.');
+        setAvailableSlots([]);
+        setSelectedTime('');
+      } finally {
+        if (!cancelled) setAvailabilityRefreshing(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurantId, selectedDate, partySize, success]);
 
   const nextAvailability = useMemo(() => {
     for (const date of days) {
@@ -467,7 +511,12 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
     return (
       <div className={backgroundClass} style={backgroundStyle}>
         <main className="relative h-[100dvh] w-full overflow-hidden">
-          <div className={cn(consoleClass, 'p-6 text-center flex flex-col items-center justify-center min-h-[30dvh]')}>
+          <div
+            className={cn(
+              consoleClass,
+              'p-6 text-center flex flex-col items-center justify-center min-h-[30dvh]',
+            )}
+          >
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-destructive/50 bg-destructive/10 text-destructive">
               <AlertCircle size={28} />
             </div>
@@ -495,8 +544,9 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   const selectedDateLong = selectedDate ? formatLongFrenchDate(selectedDate) : 'Date à choisir';
   const selectedDateShort = selectedDate ? formatShortFrenchDate(selectedDate) : 'Date';
   const hasService = timeSlots.length > 0;
-  // TODO: brancher sur vraie API GET /restaurants/:id/availability?date=&partySize=
-  const isFullyBooked = false;
+  const selectedOpeningSlots = selectedDate ? getSlotsForDate(selectedDate) : [];
+  const isFullyBooked =
+    !availabilityRefreshing && selectedOpeningSlots.length > 0 && timeSlots.length === 0;
   const serviceLabel =
     dinnerSlots.length > 0 && lunchSlots.length > 0
       ? 'Table'
@@ -527,21 +577,23 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
     step === 1 ? Boolean(selectedTime) : Boolean(!submitting && customerName && customerPhone);
   const primaryCtaLabel =
     step === 1
-      ? selectedTime
-        ? `Continuer · ${selectedTime.replace(':', 'h')}`
-        : isFullyBooked
-          ? nextAvailability
-            ? 'Voir les prochaines disponibilités'
-            : 'Voir les autres dates'
-          : hasService
-            ? 'Sélectionnez un horaire'
-            : nextAvailability
+      ? availabilityRefreshing
+        ? 'Chargement des créneaux...'
+        : selectedTime
+          ? `Continuer · ${selectedTime.replace(':', 'h')}`
+          : isFullyBooked
+            ? nextAvailability
               ? 'Voir les prochaines disponibilités'
               : 'Voir les autres dates'
+            : hasService
+              ? 'Sélectionnez un horaire'
+              : nextAvailability
+                ? 'Voir les prochaines disponibilités'
+                : 'Voir les autres dates'
       : submitting
         ? 'Validation...'
         : 'Valider la réservation';
-  const primaryCtaDisabled = step === 1 ? false : !canProceed;
+  const primaryCtaDisabled = step === 1 ? availabilityRefreshing : !canProceed;
 
   function goToNextAvailability() {
     if (!nextAvailability) return;
@@ -990,6 +1042,10 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
                             {[1, 2, 3, 4, 5, 6].map((item) => (
                               <Skeleton key={item} className="h-12 rounded-full bg-white/55" />
                             ))}
+                          </div>
+                        ) : availabilityError ? (
+                          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 rounded-[1.5rem] border border-destructive/50 bg-destructive/10 p-3 text-sm font-semibold text-destructive shadow-sm backdrop-blur-2xl sm:p-5 lg:rounded-[1.1rem] lg:p-2.5">
+                            {availabilityError}
                           </div>
                         ) : timeSlots.length > 0 ? (
                           <div className="scrollbar-none max-h-[12rem] space-y-3 overflow-y-auto pr-1 lg:max-h-[7.5rem] lg:space-y-2">
