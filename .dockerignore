@@ -1,0 +1,59 @@
+# Files that should NEVER enter a Docker build context.
+# Without this, `COPY . .` would pull node_modules, .git, build
+# outputs, secrets, etc. — slowing builds and risking leaks.
+
+# ── Dependencies ──
+node_modules
+**/node_modules
+.pnpm-store
+
+# ── Build outputs (regenerated inside the container) ──
+dist
+**/dist
+.next
+**/.next
+.turbo
+**/.turbo
+*.tsbuildinfo
+
+# ── VCS ──
+.git
+.gitignore
+.gitattributes
+
+# ── Tests / coverage ──
+coverage
+**/coverage
+*.lcov
+**/__tests__
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+
+# ── Docs / scripts not needed in the image ──
+**/*.md
+docs
+**/README.md
+scripts
+
+# ── Editor / OS noise ──
+.DS_Store
+.idea
+.vscode
+*.swp
+*.swo
+
+# ── Local env / secrets — never copy into image ──
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# ── CI / Docker artefacts ──
+.github
+**/Dockerfile*
+**/docker-compose*.yml
+.dockerignore
