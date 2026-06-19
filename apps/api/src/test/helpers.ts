@@ -30,6 +30,7 @@ vi.mock('../shared/db/client', () => ({
     restaurant: {
       create: vi.fn(),
       update: vi.fn(),
+      findUnique: vi.fn(),
       findUniqueOrThrow: vi.fn(),
     },
     agentPersonality: {
@@ -39,6 +40,12 @@ vi.mock('../shared/db/client', () => ({
     reservation: {
       create: vi.fn(),
       findMany: vi.fn(),
+    },
+    call: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      count: vi.fn(),
+      delete: vi.fn(),
     },
   },
 }));
