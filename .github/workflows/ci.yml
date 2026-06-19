@@ -88,6 +88,21 @@ jobs:
       - name: Test
         run: pnpm turbo test --filter=@sokar/api...
 
+      - name: Test coverage
+        # vitest --coverage with v8 provider. Thresholds in vitest.config.ts
+        # (lines: 60, functions: 65, branches: 55, statements: 60) gate the
+        # build — a drop in coverage fails CI. Report is uploaded as an
+        # artifact for review.
+        run: pnpm --filter @sokar/api test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-coverage
+          path: apps/api/coverage/
+          retention-days: 14
+
       - name: Build
         run: pnpm --filter @sokar/api build
 
