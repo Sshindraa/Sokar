@@ -72,6 +72,53 @@ const EMPTY_STATS: DashboardStats = {
   estimatedRevenue: 0,
 };
 
+const DEMO_ANALYTICS_BY_PERIOD: Record<Period, AnalyticsPoint[]> = {
+  today: [
+    { label: '09h', calls: 2, reservations: 1, covers: 2, revenue: 86 },
+    { label: '10h', calls: 3, reservations: 2, covers: 5, revenue: 215 },
+    { label: '11h', calls: 5, reservations: 3, covers: 8, revenue: 344 },
+    { label: '12h', calls: 7, reservations: 4, covers: 11, revenue: 473 },
+    { label: '13h', calls: 4, reservations: 2, covers: 6, revenue: 258 },
+    { label: '18h', calls: 6, reservations: 4, covers: 10, revenue: 430 },
+    { label: '19h', calls: 8, reservations: 5, covers: 14, revenue: 602 },
+    { label: '20h', calls: 5, reservations: 3, covers: 7, revenue: 301 },
+  ],
+  '7d': [
+    { label: 'lun. 13', calls: 12, reservations: 7, covers: 18, revenue: 774 },
+    { label: 'mar. 14', calls: 16, reservations: 10, covers: 26, revenue: 1118 },
+    { label: 'mer. 15', calls: 14, reservations: 9, covers: 22, revenue: 946 },
+    { label: 'jeu. 16', calls: 21, reservations: 13, covers: 34, revenue: 1462 },
+    { label: 'ven. 17', calls: 28, reservations: 18, covers: 49, revenue: 2107 },
+    { label: 'sam. 18', calls: 31, reservations: 21, covers: 57, revenue: 2451 },
+    { label: 'dim. 19', calls: 18, reservations: 11, covers: 29, revenue: 1247 },
+  ],
+  '30d': [
+    { label: '01/06', calls: 44, reservations: 27, covers: 71, revenue: 3053 },
+    { label: '05/06', calls: 58, reservations: 36, covers: 96, revenue: 4128 },
+    { label: '10/06', calls: 63, reservations: 41, covers: 112, revenue: 4816 },
+    { label: '15/06', calls: 72, reservations: 46, covers: 128, revenue: 5504 },
+    { label: '20/06', calls: 69, reservations: 44, covers: 119, revenue: 5117 },
+    { label: '25/06', calls: 76, reservations: 51, covers: 141, revenue: 6063 },
+    { label: '30/06', calls: 84, reservations: 56, covers: 154, revenue: 6622 },
+  ],
+};
+
+function summarizeAnalytics(data: AnalyticsPoint[]): DashboardStats {
+  const totalCalls = data.reduce((sum, item) => sum + item.calls, 0);
+  const totalReservations = data.reduce((sum, item) => sum + item.reservations, 0);
+  const covers = data.reduce((sum, item) => sum + item.covers, 0);
+  const estimatedRevenue = data.reduce((sum, item) => sum + item.revenue, 0);
+
+  return {
+    totalCalls,
+    totalReservations,
+    covers,
+    conversionRate: totalCalls > 0 ? Math.round((totalReservations / totalCalls) * 100) : 0,
+    answeredRate: 94,
+    estimatedRevenue,
+  };
+}
+
 export default function DashboardPage() {
   const { get, orgId } = useApi();
   const [period, setPeriod] = useState<Period>('7d');
@@ -83,6 +130,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!orgId) {
+      const demoAnalytics = DEMO_ANALYTICS_BY_PERIOD[period];
+      setStats(summarizeAnalytics(demoAnalytics));
+      setAnalytics(demoAnalytics);
+      setError('');
       setIsLoading(false);
       return;
     }
