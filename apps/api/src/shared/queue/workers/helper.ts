@@ -1,6 +1,6 @@
 import { Worker, type Job } from 'bullmq';
 import { logger } from '../../logger/pino';
-import * as Sentry from '@sentry/node';
+import { captureException } from '../../sentry/client';
 
 /**
  * Returns a Pino child logger pre-bound with the job's context:
@@ -44,18 +44,16 @@ export function setupWorkerListeners(worker: Worker) {
       `[Worker:${worker.name}] Job ${job?.id ?? 'unknown'} failed`,
     );
 
-    if (process.env.SENTRY_DSN) {
-      Sentry.captureException(err, {
-        tags: {
-          queue: worker.name,
-          jobId: job?.id,
-          jobName: job?.name,
-        },
-        extra: {
-          jobData: job?.data,
-        },
-      });
-    }
+    captureException(err, {
+      tags: {
+        queue: worker.name,
+        jobId: job?.id,
+        jobName: job?.name,
+      },
+      extra: {
+        jobData: job?.data,
+      },
+    });
   });
 
   worker.on('error', (err) => {
@@ -63,13 +61,11 @@ export function setupWorkerListeners(worker: Worker) {
       { err, queueName: worker.name },
       `[Worker:${worker.name}] Worker connection/internal error`,
     );
-    if (process.env.SENTRY_DSN) {
-      Sentry.captureException(err, {
-        tags: {
-          queue: worker.name,
-          errorType: 'worker-internal',
-        },
-      });
-    }
+    captureException(err, {
+      tags: {
+        queue: worker.name,
+        errorType: 'worker-internal',
+      },
+    });
   });
 }
