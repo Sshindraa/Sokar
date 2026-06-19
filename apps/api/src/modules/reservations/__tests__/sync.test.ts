@@ -118,7 +118,7 @@ describe('ReservationService - Google Calendar Sync', () => {
         }),
       );
       expect(db.reservation.update).toHaveBeenCalledWith({
-        where: { id: 'res-456' },
+        where: { id: 'res-456', restaurantId: 'rest-123' },
         data: { googleEventId: 'event-789' },
       });
       expect(result.googleEventId).toBe('event-789');
@@ -233,7 +233,7 @@ describe('ReservationService - Google Calendar Sync', () => {
         'event-789',
       );
       expect(db.reservation.update).toHaveBeenCalledWith({
-        where: { id: 'res-456' },
+        where: { id: 'res-456', restaurantId: 'rest-123' },
         data: { googleEventId: null },
       });
     });

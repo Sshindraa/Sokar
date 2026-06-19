@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
-import { db }             from '../../shared/db/client';
-import { redisCache }     from '../../shared/redis/client';
-import { requireOrg }     from '../../plugins/clerk';
+import { db } from '../../shared/db/client';
+import { redisCache } from '../../shared/redis/client';
+import { requireOrg } from '../../plugins/clerk';
 import {
   CreateCustomerSchema,
   UpdateCustomerSchema,
@@ -32,11 +32,12 @@ export async function customerRoutes(app: FastifyInstance) {
 
   app.post('/customers', { preHandler: requireOrg() }, async (req, reply) => {
     const body = CreateCustomerSchema.parse(req.body);
+    const restaurantId = req.restaurantId!;
     try {
       const customer = await db.customer.upsert({
-        where: { restaurantId_phone: { restaurantId: body.restaurantId, phone: body.phone } },
+        where: { restaurantId_phone: { restaurantId, phone: body.phone } },
         create: {
-          restaurantId: body.restaurantId,
+          restaurantId,
           phone: body.phone,
           name: body.name,
           notes: body.notes,

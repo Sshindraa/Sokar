@@ -100,7 +100,7 @@ describe('customer.routes', () => {
   });
 
   describe('POST /customers (upsert)', () => {
-    it("crée un client (201) et ne touche pas l'upsert Prisma", async () => {
+    it("crée un client (201) avec le restaurantId issu de l'auth, pas du payload", async () => {
       const app = await getApp();
       const created = {
         id: 'c1',
@@ -115,7 +115,7 @@ describe('customer.routes', () => {
         url: '/customers',
         headers: { authorization: 'Bearer test' },
         payload: {
-          restaurantId: 'test-rest-1',
+          restaurantId: 'other-rest-should-be-ignored',
           phone: '+33612345678',
           name: 'Alice',
         },
@@ -123,11 +123,14 @@ describe('customer.routes', () => {
 
       expect(res.statusCode).toBe(201);
       expect(res.json()).toEqual(created);
-      expect(db.customer.upsert).toHaveBeenCalledWith({
-        where: { restaurantId_phone: { restaurantId: 'test-rest-1', phone: '+33612345678' } },
-        create: expect.objectContaining({ name: 'Alice' }),
-        update: expect.objectContaining({ name: 'Alice' }),
-      });
+      const upsertArgs = vi.mocked(db.customer.upsert).mock.calls[0][0] as any;
+      expect(upsertArgs.where.restaurantId_phone.restaurantId).toBe('test-rest-1');
+      expect(upsertArgs.where.restaurantId_phone.restaurantId).not.toBe(
+        'other-rest-should-be-ignored',
+      );
+      expect(upsertArgs.create.restaurantId).toBe('test-rest-1');
+      expect(upsertArgs.create.name).toBe('Alice');
+      expect(upsertArgs.update.name).toBe('Alice');
     });
 
     it('retourne 409 (Conflict) si Prisma soulève P2002', async () => {

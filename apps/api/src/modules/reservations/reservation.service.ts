@@ -126,7 +126,7 @@ export class ReservationService {
         );
 
         await db.reservation.update({
-          where: { id: reservation.id },
+          where: { id: reservation.id, restaurantId: input.restaurantId },
           data: { googleEventId: eventId },
         });
 
@@ -190,7 +190,7 @@ export class ReservationService {
           );
 
           await db.reservation.update({
-            where: { id },
+            where: { id, restaurantId },
             data: { googleEventId: null },
           });
 

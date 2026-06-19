@@ -55,6 +55,9 @@ vi.mock('../shared/db/client', () => ({
       count: vi.fn(),
       delete: vi.fn(),
     },
+    latencyTrace: {
+      findMany: vi.fn(),
+    },
   },
 }));
 
