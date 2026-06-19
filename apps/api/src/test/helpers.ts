@@ -78,6 +78,9 @@ vi.mock('../shared/queue/queues', () => ({
     eveningReport: {
       upsertJobScheduler: vi.fn(),
     },
+    onboarding: {
+      add: vi.fn(),
+    },
   },
 }));
 

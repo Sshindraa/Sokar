@@ -56,4 +56,11 @@ export type OnboardingState = {
   restaurant: OnboardingRestaurant;
 };
 
-export type OnboardingAction = 'seen' | 'start' | 'complete' | 'skip' | 'block' | 'activate';
+export type OnboardingAction =
+  | 'seen'
+  | 'start'
+  | 'complete'
+  | 'skip'
+  | 'block'
+  | 'activate'
+  | 'first_call';

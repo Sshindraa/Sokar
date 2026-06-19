@@ -470,7 +470,6 @@ function PhoneStep() {
   const router = useRouter();
   const { state, updateTask } = useOnboarding();
   const { post, orgId } = useApi();
-  const [saving, setSaving] = useState(false);
   const [calling, setCalling] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
@@ -488,26 +487,18 @@ function PhoneStep() {
     setTestError(null);
     setTestResult(null);
     try {
-      const res = await post<{ ok: boolean; message: string }>(
-        'restaurant/onboarding/test-call',
-        { phoneNumber: managerPhone },
-      );
-      setTestResult(res.message);
+      const res = await post<{ ok: boolean; message: string }>('restaurant/onboarding/test-call', {
+        phoneNumber: managerPhone,
+      });
+      await updateTask('first_call', 'phone');
+      await updateTask('complete', 'phone');
+      await updateTask('activate');
+      setTestResult(`${res.message} Redirection vers le dashboard…`);
+      window.setTimeout(() => router.push('/dashboard'), 900);
     } catch (err: any) {
       setTestError(err?.message ?? "L'appel test a échoué. Réessaie ou contacte le support.");
     } finally {
       setCalling(false);
-    }
-  }
-
-  async function handleComplete() {
-    setSaving(true);
-    try {
-      await updateTask('complete', 'phone');
-      await updateTask('activate');
-      router.push('/dashboard');
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -557,15 +548,6 @@ function PhoneStep() {
             {calling && <Loader2 className="animate-spin" size={16} />}
             {calling ? 'Appel en cours…' : 'Lancer un appel test'}
             <PhoneForwarded size={16} />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleComplete}
-            disabled={saving}
-            className="transition-all duration-200"
-          >
-            Terminer sans tester
           </Button>
         </div>
         {!hasAssignedPhone && (

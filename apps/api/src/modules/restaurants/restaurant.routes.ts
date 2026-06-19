@@ -113,7 +113,25 @@ export async function restaurantRoutes(app: FastifyInstance) {
       include: { personality: true },
     });
 
+    if (
+      body.action === 'complete' &&
+      body.task === 'phone' &&
+      !hasUsablePhone(restaurant.phoneNumber)
+    ) {
+      return reply.status(409).send({
+        error:
+          "Aucun numéro Sokar attribué. Cette étape sera déverrouillée dès qu'un numéro sera ajouté au restaurant.",
+      });
+    }
+
     const currentState = computeOnboardingState(restaurant);
+    if (body.action === 'activate' && !currentState.onboardingDone) {
+      return reply.status(409).send({
+        error:
+          "La mise en service ne peut pas être activée tant que l'onboarding n'est pas complet.",
+      });
+    }
+
     let tasks: Record<OnboardingTask, OnboardingTaskState>;
     try {
       tasks = applyOnboardingTransition(currentState.tasks, body);
