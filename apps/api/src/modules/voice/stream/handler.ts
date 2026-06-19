@@ -19,12 +19,12 @@ import { CallSessionManager } from './manager';
 import { connectDeepgramFlux, sendAudioToDeepgram, closeDeepgram } from './deepgram-bridge';
 // `connectDeepgramFlux` is imported for the speculative pipeline (re-introduced
 // when we wire it up); not currently called from this file.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+
 const _connectDeepgramFlux = connectDeepgramFlux;
 import { playFiller } from './fillers-cache';
 import { getTtsCached, setTtsCached } from '../tts-cache';
 import { logger } from '../../../shared/logger/pino';
-import * as Sentry from '@sentry/node';
+import { captureException } from '../../../shared/sentry/client';
 
 const recentTranscripts = new WeakMap<CallSession, { normalized: string; at: number }>();
 
@@ -109,12 +109,10 @@ async function persistFluxCall(session: CallSession): Promise<void> {
     });
   } catch (err) {
     logger.error({ err, callId: session.callLegId }, '[flux] Failed to persist call');
-    if (process.env.SENTRY_DSN) {
-      Sentry.captureException(err, {
-        tags: { service: 'handler', action: 'persistFluxCall' },
-        extra: { callId: session.callLegId },
-      });
-    }
+    captureException(err, {
+      tags: { service: 'handler', action: 'persistFluxCall' },
+      extra: { callId: session.callLegId },
+    });
   }
 }
 
@@ -160,12 +158,10 @@ async function persistLatencyTrace(session: CallSession): Promise<void> {
   } catch (err: any) {
     writeDebugLog(`[latency] Failed to persist latency trace`, err);
     logger.error({ err, callId: session.callLegId }, '[latency] Failed to persist latency trace');
-    if (process.env.SENTRY_DSN) {
-      Sentry.captureException(err, {
-        tags: { service: 'handler', action: 'persistLatencyTrace' },
-        extra: { callId: session.callLegId },
-      });
-    }
+    captureException(err, {
+      tags: { service: 'handler', action: 'persistLatencyTrace' },
+      extra: { callId: session.callLegId },
+    });
   }
 }
 
@@ -220,12 +216,10 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
 
     socket.on('error', (err: Error) => {
       log.error({ err }, `[stream] Error for call: ${err.message}`);
-      if (process.env.SENTRY_DSN) {
-        Sentry.captureException(err, {
-          tags: { service: 'handler', event: 'websocket-error' },
-          extra: { callId },
-        });
-      }
+      captureException(err, {
+        tags: { service: 'handler', event: 'websocket-error' },
+        extra: { callId },
+      });
       if (session) {
         session.ended = true;
         session.state = 'IDLE';
@@ -289,12 +283,10 @@ function handleTelnyxMessage(
             { err, callId: start.call_control_id },
             `[stream] Deepgram was not ready: ${err.message}`,
           );
-          if (process.env.SENTRY_DSN) {
-            Sentry.captureException(err, {
-              tags: { service: 'handler', action: 'deepgram-ready' },
-              extra: { callId: start.call_control_id },
-            });
-          }
+          captureException(err, {
+            tags: { service: 'handler', action: 'deepgram-ready' },
+            extra: { callId: start.call_control_id },
+          });
         });
 
       // Jouer le message d'accueil immédiatement (ne dépend pas de Deepgram)
@@ -315,12 +307,10 @@ function handleTelnyxMessage(
             { err, callId: session.callControlId },
             '[stream] Initial greeting TTS failed',
           );
-          if (process.env.SENTRY_DSN) {
-            Sentry.captureException(err, {
-              tags: { service: 'handler', action: 'greeting-tts' },
-              extra: { callId: session.callControlId },
-            });
-          }
+          captureException(err, {
+            tags: { service: 'handler', action: 'greeting-tts' },
+            extra: { callId: session.callControlId },
+          });
           mgr.transition(session, 'LISTENING');
         });
 
@@ -364,13 +354,11 @@ function handleTelnyxMessage(
 
     case 'error':
       logger.error({ callId, msg }, '[stream] Telnyx error event');
-      if (process.env.SENTRY_DSN) {
-        const errorDetail = new Error(`Telnyx error event for call ${callId}`);
-        Sentry.captureException(errorDetail, {
-          tags: { service: 'handler', event: 'telnyx-error' },
-          extra: { callId, payload: msg },
-        });
-      }
+      const errorDetail = new Error(`Telnyx error event for call ${callId}`);
+      captureException(errorDetail, {
+        tags: { service: 'handler', event: 'telnyx-error' },
+        extra: { callId, payload: msg },
+      });
       return;
 
     default:
@@ -427,12 +415,10 @@ function handleFluxEvent(event: FluxEvent, session: CallSession, mgr: CallSessio
             { err, callId: session.callControlId },
             `[speculative] LLM failed: ${err.message}`,
           );
-          if (process.env.SENTRY_DSN) {
-            Sentry.captureException(err, {
-              tags: { service: 'handler', action: 'speculative-llm' },
-              extra: { callId: session.callControlId, transcript: event.transcript },
-            });
-          }
+          captureException(err, {
+            tags: { service: 'handler', action: 'speculative-llm' },
+            extra: { callId: session.callControlId, transcript: event.transcript },
+          });
           session.speculativeLlm = null;
           session.speculativeResult = null;
           return '';
@@ -528,13 +514,11 @@ function handleFluxEvent(event: FluxEvent, session: CallSession, mgr: CallSessio
         { callId: session.callControlId, errorMsg: event.message },
         `[flux] Error: ${event.message}`,
       );
-      if (process.env.SENTRY_DSN) {
-        const err = new Error(`Flux error: ${event.message}`);
-        Sentry.captureException(err, {
-          tags: { service: 'handler', event: 'flux-error' },
-          extra: { callId: session.callControlId },
-        });
-      }
+      const err = new Error(`Flux error: ${event.message}`);
+      captureException(err, {
+        tags: { service: 'handler', event: 'flux-error' },
+        extra: { callId: session.callControlId },
+      });
       speakTtsStreamed(session, "Désolé, je n'ai pas bien compris. Pouvez-vous répéter ?").catch(
         (err) =>
           logger.error(
@@ -645,12 +629,10 @@ async function processTranscript(
   } catch (err: any) {
     writeDebugLog(`[processTranscript] Caught error`, err);
     logger.error({ err, callId: session.callControlId }, `[pipeline] Error: ${err.message}`);
-    if (process.env.SENTRY_DSN) {
-      Sentry.captureException(err, {
-        tags: { service: 'handler', action: 'processTranscript' },
-        extra: { callId: session.callControlId, transcript },
-      });
-    }
+    captureException(err, {
+      tags: { service: 'handler', action: 'processTranscript' },
+      extra: { callId: session.callControlId, transcript },
+    });
     mgr.transition(session, 'LISTENING');
   } finally {
     session.abortController = null;
@@ -734,12 +716,10 @@ async function processTranscriptStreaming(
       { err, callId: session.callControlId },
       `[pipeline] Streaming error: ${err.message}`,
     );
-    if (process.env.SENTRY_DSN) {
-      Sentry.captureException(err, {
-        tags: { service: 'handler', action: 'processTranscriptStreaming' },
-        extra: { callId: session.callControlId, transcript },
-      });
-    }
+    captureException(err, {
+      tags: { service: 'handler', action: 'processTranscriptStreaming' },
+      extra: { callId: session.callControlId, transcript },
+    });
     mgr.transition(session, 'LISTENING');
   } finally {
     session.abortController = null;
@@ -965,13 +945,11 @@ async function speakTtsStreamed(session: CallSession, text: string): Promise<voi
           { callId: session.callControlId, status: response.status },
           '[speakTtsStreamed] Cartesia stream failed',
         );
-        if (process.env.SENTRY_DSN) {
-          const err = new Error(`Cartesia stream failed with status ${response.status}`);
-          Sentry.captureException(err, {
-            tags: { service: 'handler', action: 'speakTtsStreamed', type: 'http-status' },
-            extra: { callId: session.callControlId, status: response.status, sentence: trimmed },
-          });
-        }
+        const err = new Error(`Cartesia stream failed with status ${response.status}`);
+        captureException(err, {
+          tags: { service: 'handler', action: 'speakTtsStreamed', type: 'http-status' },
+          extra: { callId: session.callControlId, status: response.status, sentence: trimmed },
+        });
         await speakTelnyxNative(
           session,
           'Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?',
@@ -1097,12 +1075,10 @@ async function speakTtsStreamed(session: CallSession, text: string): Promise<voi
         { err, callId: session.callControlId },
         `[speakTtsStreamed] Cartesia stream process error: ${err.message}`,
       );
-      if (process.env.SENTRY_DSN) {
-        Sentry.captureException(err, {
-          tags: { service: 'handler', action: 'speakTtsStreamed', type: 'exception' },
-          extra: { callId: session.callControlId, sentence: trimmed },
-        });
-      }
+      captureException(err, {
+        tags: { service: 'handler', action: 'speakTtsStreamed', type: 'exception' },
+        extra: { callId: session.callControlId, sentence: trimmed },
+      });
       await speakTelnyxNative(
         session,
         'Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?',
