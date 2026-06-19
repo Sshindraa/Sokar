@@ -1,16 +1,13 @@
 import { FastifyInstance } from 'fastify';
-import { z }              from 'zod';
-import { db }             from '../../shared/db/client';
-import { requireOrg }     from '../../plugins/clerk';
-import { computeRoi }     from '../analytics/roi.service';
-
-const StatsQuerySchema = z.object({
-  restaurantId: z.string(),
-});
+import { z } from 'zod';
+import { db } from '../../shared/db/client';
+import { requireOrg } from '../../plugins/clerk';
+import { computeRoi } from '../analytics/roi.service';
 
 const ActivityQuerySchema = z.object({
-  restaurantId: z.string(),
-  limit:        z.coerce.number().int().min(1).max(100).default(10),
+  // restaurantId is injected by requireOrg() from the Clerk orgId — never trust
+  // a client-supplied value. The handler scopes on req.restaurantId.
+  limit: z.coerce.number().int().min(1).max(100).default(10),
 });
 
 function currentPeriod(): string {
@@ -19,7 +16,6 @@ function currentPeriod(): string {
 }
 
 export async function dashboardRoutes(app: FastifyInstance) {
-
   app.get('/dashboard/stats', { preHandler: requireOrg() }, async (req, reply) => {
     const restaurantId = req.restaurantId as string;
 
@@ -33,18 +29,16 @@ export async function dashboardRoutes(app: FastifyInstance) {
       where: { restaurantId, outcome: { not: null } },
     });
 
-    const answeredRate = totalCalls > 0
-      ? Math.round((answeredCalls / totalCalls) * 100)
-      : 0;
+    const answeredRate = totalCalls > 0 ? Math.round((answeredCalls / totalCalls) * 100) : 0;
 
     return reply.send({
-      total_calls:        totalCalls,
+      total_calls: totalCalls,
       total_reservations: totalReservations,
-      answered_rate:      answeredRate,
-      revenue_recovered:  roi.estimatedRevenue,
-      thefork_savings:    roi.theforkSavings,
-      roi_multiplier:     roi.roiMultiplier,
-      period:             roi.period,
+      answered_rate: answeredRate,
+      revenue_recovered: roi.estimatedRevenue,
+      thefork_savings: roi.theforkSavings,
+      roi_multiplier: roi.roiMultiplier,
+      period: roi.period,
     });
   });
 
@@ -101,7 +95,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
 
     return reply.send({
       reservations: recentReservations,
-      calls:        recentCalls,
+      calls: recentCalls,
     });
   });
 }

@@ -5,11 +5,6 @@ import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
 import { buildSystemPrompt } from '../voice/prompts';
 
-// Modèle LLM unique
-const LLM_MODEL = 'mistralai/ministral-3b-2512';
-const CARTESIA_MODEL = 'sonic-3.5';
-const DEFAULT_CARTESIA_VOICE_ID = 'f786b574-daa5-4673-aa0c-cbe3e8534c02';
-
 const SimulateCallSchema = z.object({
   /** Ton numéro perso (l'appelant) */
   callerPhone: z.string().min(5),
@@ -37,7 +32,10 @@ export async function testRoutes(app: FastifyInstance) {
 
     // 1. Trouver ou créer un restaurant test
     const phone = restaurantPhone ?? `+336****0000${Math.floor(Math.random() * 9000 + 1000)}`;
-    let restaurant = await db.restaurant.findUnique({ where: { phoneNumber: phone }, include: { personality: true } });
+    let restaurant = await db.restaurant.findUnique({
+      where: { phoneNumber: phone },
+      include: { personality: true },
+    });
 
     if (!restaurant) {
       restaurant = await db.restaurant.create({
@@ -68,16 +66,12 @@ export async function testRoutes(app: FastifyInstance) {
     const safe = await RestaurantService.checkMarginHealth(ctx.id);
 
     if (!safe) {
-      return reply.send({ error: 'Circuit breaker triggered — trop d\'appels récents' });
+      return reply.send({ error: "Circuit breaker triggered — trop d'appels récents" });
     }
 
-    const customer = callerPhone
-      ? await CustomerService.lookupOrCreate(ctx.id, callerPhone)
-      : null;
+    const customer = callerPhone ? await CustomerService.lookupOrCreate(ctx.id, callerPhone) : null;
 
-    const customerExtra = customer
-      ? CustomerService.buildVipPromptExtra(customer)
-      : '';
+    const customerExtra = customer ? CustomerService.buildVipPromptExtra(customer) : '';
 
     const systemPrompt = buildSystemPrompt({ ...ctx, customerExtra });
 

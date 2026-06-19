@@ -189,8 +189,12 @@ async function start() {
     await app.close();
     process.exit(0);
   };
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => {
+    shutdown('SIGTERM').catch((err) => app.log.error({ err }, 'SIGTERM shutdown failed'));
+  });
+  process.on('SIGINT', () => {
+    shutdown('SIGINT').catch((err) => app.log.error({ err }, 'SIGINT shutdown failed'));
+  });
 
   app.listen({ port: 4000, host: '0.0.0.0' }, (err) => {
     if (err) {
@@ -210,19 +214,21 @@ async function start() {
     });
   });
 
-  setImmediate(async () => {
-    try {
-      const restaurants = await db.restaurant.findMany({ select: { id: true } });
-      for (const r of restaurants) {
-        await queues.eveningReport.upsertJobScheduler(
-          `nightly-${r.id}`,
-          { pattern: '0 23 * * *', tz: 'Europe/Paris' },
-          { name: 'nightly', data: { restaurantId: r.id } },
-        );
+  setImmediate(() => {
+    (async () => {
+      try {
+        const restaurants = await db.restaurant.findMany({ select: { id: true } });
+        for (const r of restaurants) {
+          await queues.eveningReport.upsertJobScheduler(
+            `nightly-${r.id}`,
+            { pattern: '0 23 * * *', tz: 'Europe/Paris' },
+            { name: 'nightly', data: { restaurantId: r.id } },
+          );
+        }
+      } catch (err) {
+        app.log.error(err, 'Failed to register schedulers on startup');
       }
-    } catch (err) {
-      app.log.error(err, 'Failed to register schedulers on startup');
-    }
+    })().catch((err) => app.log.error({ err }, 'Startup scheduler IIFE failed'));
   });
 }
 
@@ -231,5 +237,7 @@ process.on('unhandledRejection', (reason) => {
 });
 
 if (!process.env.VITEST) {
-  start();
+  // start() returns a Promise we don't await — the function logs its own
+  // errors and Fastify's listen() callback handles boot failures.
+  start().catch((err) => console.error('[start] failed:', err));
 }

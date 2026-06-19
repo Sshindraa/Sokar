@@ -80,6 +80,11 @@ jobs:
         # workspace deps (prisma generate is triggered via ^build).
         run: pnpm turbo typecheck --filter=@sokar/api...
 
+      - name: Lint
+        # Real ESLint (flat config, type-checked rules) — catches floating
+        # promises, unused vars, and misused promises that tsc misses.
+        run: pnpm --filter @sokar/api lint
+
       - name: Test
         run: pnpm turbo test --filter=@sokar/api...
 
