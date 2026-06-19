@@ -8,13 +8,14 @@ import {
   CreateReservationSchema,
   ReservationQuerySchema,
 } from './reservation.schema';
+import { RESERVATION_STATUS_VALUES } from '@sokar/shared';
 
 // --- auth/public split ---
 // Les routes GET/PATCH/DELETE nécessitent une organisation (dashboard manager).
 // POST /reservations est publique (appelée par le pipeline vocal Telnyx).
 
 const UpdateReservationSchema = z.object({
-  status: z.enum(['CONFIRMED', 'CANCELLED', 'NO_SHOW', 'SEATED']).optional(),
+  status: z.enum(RESERVATION_STATUS_VALUES).optional(),
   customerName: z.string().min(1).max(200).optional(),
   partySize: z.number().int().min(1).max(20).optional(),
 });

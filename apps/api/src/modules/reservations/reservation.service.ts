@@ -2,10 +2,10 @@ import { db } from '../../shared/db/client';
 import { queues } from '../../shared/queue/queues';
 import { logger } from '../../shared/logger/pino';
 import { GoogleCalendarClient } from '../../shared/google-calendar/client';
+import { ACTIVE_RESERVATION_STATUSES } from '@sokar/shared';
 
 const SLOT_STEP_MINUTES = 30;
 const RESERVATION_DURATION_MINUTES = 120;
-const ACTIVE_RESERVATION_STATUSES = ['CONFIRMED', 'SEATED'] as const;
 
 export interface CreateReservationInput {
   restaurantId: string;
