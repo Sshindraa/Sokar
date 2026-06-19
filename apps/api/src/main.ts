@@ -25,6 +25,7 @@ import { registerClerk } from './plugins/clerk';
 import fastifyWebsocket from '@fastify/websocket';
 import { registerMediaStreamRoutes } from './modules/voice/stream/handler';
 import { initFillerCache } from './modules/voice/stream/fillers-cache';
+import { checkHealth } from './shared/health/checks';
 import './shared/queue/workers/evening-report.worker';
 import './shared/queue/workers/sms-confirmation.worker';
 import './shared/queue/workers/outbound-confirm.worker';
@@ -163,14 +164,18 @@ export async function buildApp() {
   }
 
   app.get('/health', async (_req, reply) => {
-    const result = await checkHealth(app);
-    return reply.status(result.status === 'ok' ? 200 : 503).send(result);
+    const result = await checkHealth();
+    // 503 if any core check failed (db/redis/queues).
+    // 200 if only voice providers failed (api still serves non-voice).
+    const coreOk = ['db', 'redis', 'queues'].every((name) => result.checks[name]?.status === 'ok');
+    return reply.status(coreOk ? 200 : 503).send(result);
   });
 
   // Alias K8s-style : /healthz (même handler)
   app.get('/healthz', async (_req, reply) => {
-    const result = await checkHealth(app);
-    return reply.status(result.status === 'ok' ? 200 : 503).send(result);
+    const result = await checkHealth();
+    const coreOk = ['db', 'redis', 'queues'].every((name) => result.checks[name]?.status === 'ok');
+    return reply.status(coreOk ? 200 : 503).send(result);
   });
 
   // Liveness probe (toujours OK si le process tourne, sans check DB/Redis)
@@ -179,55 +184,6 @@ export async function buildApp() {
   });
 
   return app;
-}
-
-async function checkHealth(app: any) {
-  const dbStatus: 'ok' | 'error' = await db.$queryRaw`SELECT 1`
-    .then((): 'ok' => 'ok')
-    .catch((): 'error' => 'error');
-
-  const redisStatus: 'ok' | 'error' = await redisCache
-    .ping()
-    .then((): 'ok' => 'ok')
-    .catch((): 'error' => 'error');
-
-  // Vérifier que les queues BullMQ sont connectées (test actif via getJobCounts)
-  let workersStatus: 'ok' | 'error' = 'ok';
-  const queueErrors: string[] = [];
-  try {
-    const queues = app.queues as
-      | Record<string, { getJobCounts?: () => Promise<unknown> }>
-      | undefined;
-    if (queues) {
-      await Promise.all(
-        Object.entries(queues).map(async ([name, queue]) => {
-          try {
-            if (typeof queue?.getJobCounts === 'function') {
-              await Promise.race([
-                queue.getJobCounts(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000)),
-              ]);
-            }
-          } catch (err) {
-            workersStatus = 'error';
-            queueErrors.push(`${name}: ${(err as Error).message}`);
-          }
-        }),
-      );
-    }
-  } catch {
-    workersStatus = 'error';
-  }
-
-  const allOk = dbStatus === 'ok' && redisStatus === 'ok' && workersStatus === 'ok';
-  return {
-    status: allOk ? 'ok' : 'degraded',
-    db: dbStatus,
-    redis: redisStatus,
-    workers: workersStatus,
-    ...(queueErrors.length > 0 && { queueErrors }),
-    timestamp: new Date().toISOString(),
-  };
 }
 
 async function start() {
