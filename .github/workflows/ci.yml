@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs on the same ref (save minutes on rapid pushes)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TELEMETRY_DISABLED: 1
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # Foundation: workspace packages must build first
+  # (provides prisma generated client + types + config consumed by api/dashboard)
+  # ─────────────────────────────────────────────────────────────
+  packages:
+    name: Packages (types / config / database)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.8.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm --filter "@sokar/types" --filter "@sokar/config" --filter "@sokar/database" build
+
+      - name: Typecheck
+        run: |
+          pnpm --filter "@sokar/types" exec tsc --noEmit
+          pnpm --filter "@sokar/config" exec tsc --noEmit
+          pnpm --filter "@sokar/database" exec tsc --noEmit
+
+  # ─────────────────────────────────────────────────────────────
+  # API: typecheck (covers the bogus "lint" script which is tsc --noEmit),
+  # unit tests (mocks Prisma/Redis/BullMQ — no real services needed),
+  # and a production build.
+  # ─────────────────────────────────────────────────────────────
+  api:
+    name: API
+    runs-on: ubuntu-latest
+    needs: packages
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.8.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm --filter @sokar/api lint
+
+      - name: Test
+        run: pnpm --filter @sokar/api test
+
+      - name: Build
+        run: pnpm --filter @sokar/api build
+
+  # ─────────────────────────────────────────────────────────────
+  # Dashboard: real ESLint (next lint), TypeScript via tsc --noEmit,
+  # and next build (catches server/client component boundary errors).
+  # ─────────────────────────────────────────────────────────────
+  dashboard:
+    name: Dashboard
+    runs-on: ubuntu-latest
+    needs: packages
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.8.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm --filter @sokar/dashboard lint
+
+      - name: Typecheck
+        run: pnpm --filter @sokar/dashboard exec tsc --noEmit
+
+      - name: Build
+        run: pnpm --filter @sokar/dashboard build
