@@ -20,6 +20,13 @@ export async function registerClerk(app: FastifyInstance) {
 /**
  * Middleware qui exige une organisation (restaurant).
  * Injecte restaurantId (= orgId) et userId dans la requête.
+ *
+ * Logging: replaces the request's child logger with one enriched with
+ * `restaurant_id` and `user_id`. Every subsequent `req.log.info(...)`
+ * in the handler chain (and any DB/service call that uses the request
+ * logger) automatically carries these bindings, which makes it
+ * straightforward to filter production logs per tenant or per user
+ * when debugging a 5xx reported by a specific restaurant.
  */
 export function requireOrg() {
   return async (req: FastifyRequest, reply: FastifyReply) => {
@@ -33,6 +40,9 @@ export function requireOrg() {
     }
     req.restaurantId = orgId;
     req.userId = userId;
+    // Re-bind req.log to a child logger that carries restaurant + user.
+    // We keep request_id (already on the parent) by chaining .child().
+    (req as any).log = req.log.child({ restaurant_id: orgId, user_id: userId ?? null });
   };
 }
 
@@ -50,5 +60,6 @@ export function requireAuth() {
       return reply.status(401).send({ error: 'Authentication required' });
     }
     req.userId = userId;
+    (req as any).log = req.log.child({ user_id: userId });
   };
 }
