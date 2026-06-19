@@ -16,8 +16,10 @@ env:
 
 jobs:
   # ─────────────────────────────────────────────────────────────
-  # Foundation: workspace packages must build first
-  # (provides prisma generated client + types + config consumed by api/dashboard)
+  # Foundation: workspace packages typecheck + test first.
+  # (prisma generate runs as part of `build`, which typecheck depends on
+  #  via `^build`. tests in packages are stubs for now but the task exists
+  #  so turbo's graph is uniform and ready when specs land.)
   # ─────────────────────────────────────────────────────────────
   packages:
     name: Packages (types / config / database)
@@ -40,17 +42,14 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build
-        run: pnpm --filter "@sokar/types" --filter "@sokar/config" --filter "@sokar/database" build
-
       - name: Typecheck
-        run: |
-          pnpm --filter "@sokar/types" exec tsc --noEmit
-          pnpm --filter "@sokar/config" exec tsc --noEmit
-          pnpm --filter "@sokar/database" exec tsc --noEmit
+        run: pnpm turbo typecheck --filter=@sokar/types --filter=@sokar/config --filter=@sokar/database
+
+      - name: Test
+        run: pnpm turbo test --filter=@sokar/types --filter=@sokar/config --filter=@sokar/database
 
   # ─────────────────────────────────────────────────────────────
-  # API: typecheck (covers the bogus "lint" script which is tsc --noEmit),
+  # API: typecheck (turbo-orchestrated, includes workspace deps),
   # unit tests (mocks Prisma/Redis/BullMQ — no real services needed),
   # and a production build.
   # ─────────────────────────────────────────────────────────────
@@ -76,16 +75,13 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build workspace deps
-        # Prisma client + workspace packages (@sokar/config, @sokar/types)
-        # must be built before api can typecheck. Turbo handles the dep graph.
-        run: pnpm turbo build --filter=@sokar/api...
-
       - name: Typecheck
-        run: pnpm --filter @sokar/api lint
+        # turbo walks the dep graph and runs typecheck for api + all
+        # workspace deps (prisma generate is triggered via ^build).
+        run: pnpm turbo typecheck --filter=@sokar/api...
 
       - name: Test
-        run: pnpm --filter @sokar/api test
+        run: pnpm turbo test --filter=@sokar/api...
 
       - name: Build
         run: pnpm --filter @sokar/api build
@@ -118,16 +114,14 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Build workspace deps
-        # Workspace packages (@sokar/config, @sokar/types) must be built
-        # before dashboard can typecheck. Turbo handles the dep graph.
-        run: pnpm turbo build --filter=@sokar/dashboard...
+      - name: Typecheck
+        run: pnpm turbo typecheck --filter=@sokar/dashboard...
 
       - name: Lint
         run: pnpm --filter @sokar/dashboard lint
 
-      - name: Typecheck
-        run: pnpm --filter @sokar/dashboard exec tsc --noEmit
+      - name: Test
+        run: pnpm turbo test --filter=@sokar/dashboard...
 
       - name: Build
         run: pnpm --filter @sokar/dashboard build
