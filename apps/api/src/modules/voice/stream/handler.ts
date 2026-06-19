@@ -178,7 +178,14 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
     const callId = (req.params as any).callId as string;
     const mgr = CallSessionManager.getInstance();
 
-    logger.info({ callId }, '[stream] New Telnyx WS connection for call');
+    // Per-call child logger. Every log line emitted from this WS handler
+    // (and from any function it calls) will carry `call_id`, which makes
+    // it possible to grep a single call's full lifecycle in production:
+    //   pm2 logs | jq 'select(.call_id == "v3:abc123")'
+    // The base logger is the shared one (so secrets redaction and the
+    // service/env bindings still apply).
+    const log = logger.child({ call_id: callId });
+    log.info('[stream] New Telnyx WS connection for call');
 
     // Récupérer la session créée par call.initiated
     let session: CallSession | undefined;
@@ -188,12 +195,12 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
         const msg: TelnyxStreamMessage = JSON.parse(raw.toString());
         session = handleTelnyxMessage(msg, callId, socket, mgr) ?? session;
       } catch (err) {
-        logger.error({ err, callId }, '[stream] Parse error');
+        log.error({ err }, '[stream] Parse error');
       }
     });
 
     socket.on('close', () => {
-      logger.info({ callId }, '[stream] Telnyx WS closed');
+      log.info('[stream] Telnyx WS closed');
       if (session) {
         session.ended = true;
         session.state = 'IDLE';
@@ -201,10 +208,10 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
         // Persister les traces avant cleanup (fire-and-forget, mais avec catch
         // pour éviter unhandledRejection silencieux dans un WS handler).
         persistLatencyTrace(session).catch((err) =>
-          logger.error({ err, callId }, '[stream] persistLatencyTrace failed'),
+          log.error({ err }, '[stream] persistLatencyTrace failed'),
         );
         persistFluxCall(session).catch((err) =>
-          logger.error({ err, callId }, '[stream] persistFluxCall failed'),
+          log.error({ err }, '[stream] persistFluxCall failed'),
         );
         closeDeepgram(session);
         mgr.delete(session.callControlId);
@@ -212,7 +219,7 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
     });
 
     socket.on('error', (err: Error) => {
-      logger.error({ err, callId }, `[stream] Error for call: ${err.message}`);
+      log.error({ err }, `[stream] Error for call: ${err.message}`);
       if (process.env.SENTRY_DSN) {
         Sentry.captureException(err, {
           tags: { service: 'handler', event: 'websocket-error' },
@@ -224,10 +231,10 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
         session.state = 'IDLE';
         session.isSpeaking = false;
         persistLatencyTrace(session).catch((err) =>
-          logger.error({ err, callId }, '[stream] persistLatencyTrace failed (error path)'),
+          log.error({ err }, '[stream] persistLatencyTrace failed (error path)'),
         );
         persistFluxCall(session).catch((err) =>
-          logger.error({ err, callId }, '[stream] persistFluxCall failed (error path)'),
+          log.error({ err }, '[stream] persistFluxCall failed (error path)'),
         );
         closeDeepgram(session);
         mgr.delete(session.callControlId);
