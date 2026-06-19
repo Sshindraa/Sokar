@@ -1,16 +1,16 @@
 import { FastifyInstance } from 'fastify';
-import { z }              from 'zod';
-import { db }             from '../../shared/db/client';
-import { requireOrg }     from '../../plugins/clerk';
+import { z } from 'zod';
+import { db } from '../../shared/db/client';
+import { requireOrg } from '../../plugins/clerk';
 
 const CallQuerySchema = z.object({
-  restaurantId: z.string(),
-  limit:        z.coerce.number().int().min(1).max(100).default(50),
-  offset:       z.coerce.number().int().min(0).default(0),
+  // restaurantId is injected by requireOrg() from the Clerk orgId — never trust
+  // a client-supplied value here. Scope the Prisma queries with req.restaurantId.
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
 });
 
 export async function callRoutes(app: FastifyInstance) {
-
   app.get('/calls', { preHandler: requireOrg() }, async (req, reply) => {
     const restaurantId = req.restaurantId;
     const query = CallQuerySchema.parse(req.query);

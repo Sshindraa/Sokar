@@ -13,7 +13,8 @@ export const CreateReservationSchema = z.object({
 });
 
 export const ReservationQuerySchema = z.object({
-  restaurantId: z.string(),
+  // restaurantId is injected by requireOrg() from the Clerk orgId — never trust
+  // a client-supplied value. The handler scopes on req.restaurantId.
   date: z.string().date().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),

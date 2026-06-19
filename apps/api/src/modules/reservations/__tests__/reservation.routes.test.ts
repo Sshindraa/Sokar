@@ -35,7 +35,7 @@ describe('reservation.routes', () => {
 
       const res = await app.inject({
         method: 'GET',
-        url: '/reservations?restaurantId=test-rest-1&date=2099-06-05',
+        url: '/reservations?date=2099-06-05',
         headers: { authorization: 'Bearer test' },
       });
 
@@ -51,30 +51,28 @@ describe('reservation.routes', () => {
 
       const res = await app.inject({
         method: 'GET',
-        url: '/reservations?restaurantId=test-rest-1',
+        url: '/reservations',
       });
 
       expect(res.statusCode).toBe(401);
     });
 
-    it('BUG LATENT: la query string doit contenir restaurantId sinon 400', async () => {
-      // ReservationQuerySchema exige 'restaurantId' en query string
-      // alors que le handler utilise req.restaurantId (injecté par
-      // requireOrg). Une requête légitime du dashboard avec
-      // ?date=... (sans restaurantId) est rejetée en 400.
-      //
-      // À corriger : retirer 'restaurantId' du schema (le restaurantId
-      // est dans le contexte auth, pas dans l'URL).
-      // Tracking : TODO cleanup-call-and-reservation-routes
+    it('accepte une requête SANS restaurantId en query (restaurantId vient du contexte auth)', async () => {
+      // Fix appliqué : ReservationQuerySchema n'exige plus restaurantId dans
+      // l'URL. Le handler scope via req.restaurantId injecté par requireOrg.
+      // Une requête légitime du dashboard avec ?date=… (sans restaurantId)
+      // doit maintenant retourner 200.
       const app = await getApp();
+      vi.spyOn(ReservationService, 'findByRestaurant').mockResolvedValue([] as any);
 
       const res = await app.inject({
         method: 'GET',
-        url: '/reservations?date=2099-06-05', // pas de restaurantId
+        url: '/reservations?date=2099-06-05',
         headers: { authorization: 'Bearer test' },
       });
 
-      expect(res.statusCode).toBe(400);
+      expect(res.statusCode).toBe(200);
+      expect(ReservationService.findByRestaurant).toHaveBeenCalledWith('test-rest-1', '2099-06-05');
     });
 
     it('rejette une date invalide avec 400', async () => {
@@ -82,7 +80,7 @@ describe('reservation.routes', () => {
 
       const res = await app.inject({
         method: 'GET',
-        url: '/reservations?restaurantId=test-rest-1&date=not-a-date',
+        url: '/reservations?date=not-a-date',
         headers: { authorization: 'Bearer test' },
       });
 
@@ -249,10 +247,7 @@ describe('reservation.routes', () => {
       expect(res.statusCode).toBe(400);
     });
 
-    it('propage les erreurs métier du service (ex: SLOT_NOT_AVAILABLE → 500)', async () => {
-      // Le service throw 'SLOT_NOT_AVAILABLE' sur conflit d'horaire.
-      // La route ne le catch pas → Fastify le convertit en 500.
-      // C'est un behavior à corriger dans une PR future (mapper en 409).
+    it('mappe SLOT_NOT_AVAILABLE en 409 Conflict', async () => {
       const app = await getApp();
       vi.spyOn(ReservationService, 'create').mockRejectedValue(new Error('SLOT_NOT_AVAILABLE'));
 
@@ -267,7 +262,11 @@ describe('reservation.routes', () => {
         },
       });
 
-      expect(res.statusCode).toBe(500);
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toMatchObject({
+        error: 'SLOT_NOT_AVAILABLE',
+        statusCode: 409,
+      });
     });
   });
 
