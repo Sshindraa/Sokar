@@ -8,6 +8,7 @@ import * as Sentry from '@sentry/node';
 import { db } from './shared/db/client';
 import { redisCache } from './shared/redis/client';
 import { queues } from './shared/queue/queues';
+import { logger, newRequestId } from './shared/logger/pino';
 import { telnyxVoiceRoutes } from './modules/voice/telnyx.pipeline';
 import { restaurantRoutes } from './modules/restaurants/restaurant.routes';
 import { customerRoutes } from './modules/customers/customer.routes';
@@ -31,7 +32,66 @@ import './shared/queue/workers/analytics.worker';
 import './shared/queue/workers/reengagement.worker';
 
 export async function buildApp() {
-  const app = Fastify({ logger: true });
+  const isDev = process.env.NODE_ENV !== 'production';
+
+  // Use Fastify's default Pino logger (it already creates a Pino instance
+  // with sane defaults). We provide a `childLoggerFactory` so every request's
+  // child logger is enriched with `request_id` — and honours an inbound
+  // `x-request-id` header for end-to-end correlation across services.
+  //
+  // Our shared `logger` instance (imported above) is used by the application
+  // code (startup, shutdown, workers, etc.). Fastify's request-scoped
+  // loggers are children of the Fastify internal Pino instance. They share
+  // the same redaction patterns via the options below.
+  //
+  // The `as never` cast on `logger`: Fastify 5's type inference for the
+  // options object narrows the logger type to `never` when a child logger
+  // factory is provided. The runtime value is correct (Pino options), this
+  // only restores the right type at compile time.
+  const app = Fastify({
+    logger: {
+      level: process.env.LOG_LEVEL ?? (isDev ? 'debug' : 'info'),
+      base: { service: 'sokar-api', env: process.env.NODE_ENV ?? 'development' },
+      redact: {
+        paths: [
+          'req.headers.authorization',
+          'req.headers.cookie',
+          '*.password',
+          '*.secret',
+          '*.apiKey',
+          '*.api_key',
+          '*.token',
+          'env.SENTRY_DSN',
+          'env.CLERK_SECRET_KEY',
+          'env.OPENROUTER_API_KEY',
+          'env.CARTESIA_API_KEY',
+          'env.TELNYX_API_KEY',
+          'env.TELNYX_PUBLIC_KEY',
+        ],
+        censor: '[REDACTED]',
+      },
+    } as never,
+    childLoggerFactory: (loggerInstance, bindings, _opts, rawReq) => {
+      const headerId = (rawReq as { headers?: Record<string, unknown> }).headers?.['x-request-id'];
+      const headerStr = Array.isArray(headerId) ? headerId[0] : headerId;
+      const requestId =
+        typeof headerStr === 'string' && headerStr.length > 0 ? headerStr : newRequestId();
+      bindings.request_id = requestId;
+      // Stash on the raw request so the onRequest hook / handlers can read it.
+      (rawReq as { requestId?: string }).requestId = requestId;
+      return loggerInstance.child(bindings);
+    },
+  });
+
+  // Stamp every incoming request with a request_id (set by childLoggerFactory
+  // above). The request's logger (`req.log`) is a child of the base logger
+  // that automatically includes this id on every log line for that request.
+  // To trace a request end-to-end in production logs, grep for the request_id.
+  app.addHook('onRequest', (request, _reply, done) => {
+    // childLoggerFactory already attached requestId; this hook is a no-op
+    // kept for documentation and future per-request setup.
+    done();
+  });
 
   app.decorate('db', db);
   app.decorate('redisCache', redisCache);
@@ -66,12 +126,9 @@ export async function buildApp() {
     const statusCode = (err as any).statusCode ?? 500;
 
     if (statusCode >= 500) {
-      request.server.log.error({ err: error, path: request.url }, 'Unhandled error');
+      request.log.error({ err: error, path: request.url }, 'Unhandled error');
     } else {
-      request.server.log.warn(
-        { err: error, path: request.url, statusCode },
-        'Handled client error',
-      );
+      request.log.warn({ err: error, path: request.url, statusCode }, 'Handled client error');
     }
 
     reply.status(statusCode).send({
@@ -185,21 +242,21 @@ async function start() {
   }
 
   const shutdown = async (signal: string) => {
-    app.log.info({ signal }, 'Shutting down gracefully...');
+    logger.info({ signal }, 'Shutting down gracefully...');
     await app.close();
     process.exit(0);
   };
   process.on('SIGTERM', () => {
-    shutdown('SIGTERM').catch((err) => app.log.error({ err }, 'SIGTERM shutdown failed'));
+    shutdown('SIGTERM').catch((err) => logger.error({ err }, 'SIGTERM shutdown failed'));
   });
   process.on('SIGINT', () => {
-    shutdown('SIGINT').catch((err) => app.log.error({ err }, 'SIGINT shutdown failed'));
+    shutdown('SIGINT').catch((err) => logger.error({ err }, 'SIGINT shutdown failed'));
   });
 
   app.listen({ port: 4000, host: '0.0.0.0' }, (err) => {
     if (err) {
-      app.log.error(err);
-      app.log.warn('Failed to listen on port 4000 — will exit gracefully for PM2 restart');
+      logger.error(err);
+      logger.warn('Failed to listen on port 4000 — will exit gracefully for PM2 restart');
       process.exitCode = 1;
       return;
     }
@@ -210,7 +267,7 @@ async function start() {
   // Fire-and-forget : on n'attend pas la fin avant d'écouter les requêtes HTTP.
   setImmediate(() => {
     initFillerCache().catch((err) => {
-      app.log.warn({ err }, 'Filler cache warmup failed (non-blocking)');
+      logger.warn({ err }, 'Filler cache warmup failed (non-blocking)');
     });
   });
 
@@ -226,14 +283,14 @@ async function start() {
           );
         }
       } catch (err) {
-        app.log.error(err, 'Failed to register schedulers on startup');
+        logger.error(err, 'Failed to register schedulers on startup');
       }
-    })().catch((err) => app.log.error({ err }, 'Startup scheduler IIFE failed'));
+    })().catch((err) => logger.error({ err }, 'Startup scheduler IIFE failed'));
   });
 }
 
 process.on('unhandledRejection', (reason) => {
-  console.error('[unhandledRejection]', reason);
+  logger.error({ err: reason }, '[unhandledRejection]');
 });
 
 if (!process.env.VITEST) {
