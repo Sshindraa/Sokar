@@ -2,9 +2,10 @@ import dotenv from 'dotenv';
 import path from 'path';
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
+import { initSentry, captureException, closeSentry } from './shared/sentry/client';
 import Fastify from 'fastify';
 import { ZodError } from 'zod';
-import * as Sentry from '@sentry/node';
+import { setupFastifyErrorHandler } from '@sentry/node';
 import { db } from './shared/db/client';
 import { redisCache } from './shared/redis/client';
 import { queues } from './shared/queue/queues';
@@ -31,6 +32,10 @@ import './shared/queue/workers/sms-confirmation.worker';
 import './shared/queue/workers/outbound-confirm.worker';
 import './shared/queue/workers/analytics.worker';
 import './shared/queue/workers/reengagement.worker';
+
+// Initialize Sentry as early as possible so that instrumentation hooks are
+// registered before the Fastify app (and its error handler) are built.
+initSentry();
 
 export async function buildApp() {
   const isDev = process.env.NODE_ENV !== 'production';
@@ -128,6 +133,10 @@ export async function buildApp() {
 
     if (statusCode >= 500) {
       request.log.error({ err: error, path: request.url }, 'Unhandled error');
+      captureException(error, {
+        extra: { path: request.url, method: request.method, requestId: request.id },
+        tags: { route: request.url },
+      });
     } else {
       request.log.warn({ err: error, path: request.url, statusCode }, 'Handled client error');
     }
@@ -141,6 +150,10 @@ export async function buildApp() {
       statusCode,
     });
   });
+
+  // Install the Sentry Fastify error handler *after* our custom handler so it
+  // wraps and augments it. Sentry will send 500s to its own backend as well.
+  setupFastifyErrorHandler(app);
 
   await registerCors(app);
   await registerRateLimit(app);
@@ -189,17 +202,10 @@ export async function buildApp() {
 async function start() {
   const app = await buildApp();
 
-  // Initialisation Sentry (silent si SENTRY_DSN absent)
-  if (process.env.SENTRY_DSN) {
-    Sentry.init({
-      dsn: process.env.SENTRY_DSN,
-      environment: process.env.NODE_ENV ?? 'development',
-    });
-  }
-
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutting down gracefully...');
     await app.close();
+    await closeSentry();
     process.exit(0);
   };
   process.on('SIGTERM', () => {

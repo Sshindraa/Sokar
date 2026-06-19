@@ -57,6 +57,8 @@ vi.mock('@sentry/node', () => ({
   captureMessage: vi.fn(),
   captureException: vi.fn(),
   init: vi.fn(),
+  close: vi.fn(),
+  setupFastifyErrorHandler: vi.fn(),
 }));
 
 // ── Mock nodemailer ──
