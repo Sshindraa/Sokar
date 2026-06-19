@@ -2,7 +2,7 @@ import { Worker } from 'bullmq';
 import { redisQueue } from '../../redis/client';
 import { db } from '../../db/client';
 import { sendEmail } from '../../email';
-import { setupWorkerListeners } from './helper';
+import { setupWorkerListeners, jobLogger } from './helper';
 
 export interface ReengagementJobData {
   restaurantId: string;
@@ -66,12 +66,14 @@ function buildInactiveEmail(restaurantName: string) {
 export const reengagementWorker = new Worker(
   'onboarding',
   async (job) => {
+    const log = jobLogger(job);
     const data = job.data as ReengagementJobData;
     const restaurant = await db.restaurant.findUnique({
       where: { id: data.restaurantId },
     });
     if (!restaurant) {
       // Restaurant supprimé → on drop le job silencieusement
+      log.warn('restaurant not found, skipping reengagement');
       return;
     }
 
@@ -98,6 +100,7 @@ export const reengagementWorker = new Worker(
       subject: email.subject,
       html: email.html,
     });
+    log.info({ type: data.type }, 'reengagement email sent');
   },
   { connection: redisQueue },
 );
@@ -112,7 +115,12 @@ async function getCompletedCount(restaurantId: string): Promise<number> {
   // On compte rapidement sans passer par computeOnboardingState (perf acceptable ici)
   let count = 0;
   if (r.name && r.name !== 'Mon Restaurant' && r.managerPhone && r.managerEmail) count++;
-  if (r.openingHours && typeof r.openingHours === 'object' && Object.keys(r.openingHours as any).length > 0) count++;
+  if (
+    r.openingHours &&
+    typeof r.openingHours === 'object' &&
+    Object.keys(r.openingHours as any).length > 0
+  )
+    count++;
   if (r.personality) count++;
   if (r.googleRefreshToken) count++;
   if (r.phoneNumber && !r.phoneNumber.startsWith('+000')) count++;
