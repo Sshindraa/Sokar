@@ -2,7 +2,7 @@
  * Client AWS universel — LocalStack en dev, AWS réel en prod.
  *
  * Le switch se fait via USE_LOCALSTACK env var ou NODE_ENV.
- * Zéro refactoring au moment de la migration Railway → AWS.
+ * Zéro refactoring quand une intégration passe de LocalStack à AWS réel.
  *
  * Usage :
  *   import { s3, sqs, ses } from './shared/aws/client';

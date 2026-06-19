@@ -99,7 +99,7 @@ def classify_task(task: str) -> dict:
          "testing", "Testing Strategy.md", "info"),
 
         # Configuration / deployment
-        (r"(?:deploy|docker|railway|ci|cd|github|infra|railway\.toml|docker-compose)",
+        (r"(?:deploy|docker|ci|cd|github|infra|docker-compose)",
          "infrastructure", "Infrastructure.md", "update"),
     ]
 
