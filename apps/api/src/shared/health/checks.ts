@@ -223,11 +223,10 @@ export async function checkHealth(): Promise<HealthReport> {
 
   // Core failure = 503 (API can't serve anything).
   // Voice failure = degraded but 200 (API still serves non-voice traffic).
-  const coreFailed = CORE_CHECKS.some((name) => checks[name].status === 'error');
   const anyFailed = ALL_CHECKS.some((name) => checks[name].status === 'error');
 
   return {
-    status: coreFailed ? 'degraded' : anyFailed ? 'degraded' : 'ok',
+    status: anyFailed ? 'degraded' : 'ok',
     checks,
     timestamp: new Date().toISOString(),
   };
