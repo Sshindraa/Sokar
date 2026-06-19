@@ -11,6 +11,8 @@
     "migrate:status": "prisma migrate status",
     "studio": "prisma studio",
     "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"no tests yet\" && exit 0",
     "clean": "rm -rf .turbo node_modules"
   },
   "dependencies": {
