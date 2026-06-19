@@ -1,19 +1,19 @@
 import { FastifyInstance } from 'fastify';
-import { z }              from 'zod';
-import { db }             from '../../shared/db/client';
-import { requireOrg }     from '../../plugins/clerk';
-import { computeRoi }     from './roi.service';
+import { z } from 'zod';
+import { db } from '../../shared/db/client';
+import { requireOrg } from '../../plugins/clerk';
+import { computeRoi } from './roi.service';
 
 const AnalyticsQuerySchema = z.object({
-  restaurantId: z.string(),
-  period:       z.string().regex(/^\d{4}-\d{2}$/),
+  // restaurantId comes from requireOrg() / Clerk org context. Do not accept
+  // tenant scope from query string for protected analytics routes.
+  period: z.string().regex(/^\d{4}-\d{2}$/),
 });
 
 export async function analyticsRoutes(app: FastifyInstance) {
-
   app.get('/analytics/roi', { preHandler: requireOrg() }, async (req, reply) => {
     const query = AnalyticsQuerySchema.parse(req.query);
-    const roi   = await computeRoi(req.restaurantId!, query.period);
+    const roi = await computeRoi(req.restaurantId!, query.period);
     return reply.send(roi);
   });
 
@@ -22,7 +22,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
     const { period } = query;
     const [year, month] = period.split('-').map(Number);
     const start = new Date(year, month - 1, 1);
-    const end   = new Date(year, month, 0, 23, 59, 59, 999);
+    const end = new Date(year, month, 0, 23, 59, 59, 999);
 
     const traces = await db.latencyTrace.findMany({
       where: {
