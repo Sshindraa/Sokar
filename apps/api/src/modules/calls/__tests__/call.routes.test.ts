@@ -21,12 +21,11 @@ describe('call.routes', () => {
       vi.mocked(db.call.findMany).mockResolvedValue(calls as any);
       vi.mocked(db.call.count).mockResolvedValue(42);
 
-      // Note: CallQuerySchema requires `restaurantId` in query string even
-      // though the handler uses req.restaurantId (injected by requireOrg).
-      // Documented as a smell — see TODO below.
+      // restaurantId comes from the auth context (requireOrg), NOT the query
+      // string — never trust a client-supplied value for tenant scoping.
       const res = await app.inject({
         method: 'GET',
-        url: '/calls?restaurantId=test-rest-1&limit=10&offset=5',
+        url: '/calls?limit=10&offset=5',
         headers: { authorization: 'Bearer test' },
       });
 
@@ -59,7 +58,7 @@ describe('call.routes', () => {
 
       const res = await app.inject({
         method: 'GET',
-        url: '/calls?restaurantId=test-rest-1',
+        url: '/calls',
         headers: { authorization: 'Bearer test' },
       });
 
