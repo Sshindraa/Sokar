@@ -14,6 +14,7 @@ import {
   type OnboardingTaskState,
   UpdateOnboardingSchema,
 } from './onboarding.service';
+import { invalidateRestaurantContextCache } from './restaurant.service';
 
 const ONBOARDING_EVENT_BY_ACTION: Partial<
   Record<z.infer<typeof UpdateOnboardingSchema>['action'], OnboardingAnalyticsEvent>
@@ -262,8 +263,16 @@ export async function restaurantRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
     const body = CreateRestaurantSchema.partial().parse(req.body);
+    const current = await app.db.restaurant.findUniqueOrThrow({
+      where: { id },
+      select: { phoneNumber: true },
+    });
     const updated = await app.db.restaurant.update({ where: { id }, data: body });
-    await app.redisCache.del(`phone:${updated.phoneNumber}`);
+    await Promise.all(
+      Array.from(new Set([current.phoneNumber, updated.phoneNumber])).map((phoneNumber) =>
+        invalidateRestaurantContextCache(phoneNumber),
+      ),
+    );
     return reply.send(updated);
   });
 
@@ -295,7 +304,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
     // Invalider le cache du restaurant pour que le nouveau system prompt soit pris en compte
     const restaurant = await app.db.restaurant.findUniqueOrThrow({ where: { id } });
-    await app.redisCache.del(`phone:${restaurant.phoneNumber}`);
+    await invalidateRestaurantContextCache(restaurant.phoneNumber);
 
     return reply.send(personality);
   });
