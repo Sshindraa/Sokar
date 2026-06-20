@@ -22,6 +22,20 @@ describe('dashboard.routes tenant isolation', () => {
         status: 'CONFIRMED',
         createdAt: new Date(),
       },
+      {
+        partySize: 4,
+        estimatedRevenue: 180,
+        confirmedRevenue: 220,
+        status: 'CONFIRMED',
+        createdAt: new Date(),
+      },
+      {
+        partySize: 6,
+        estimatedRevenue: 300,
+        confirmedRevenue: null,
+        status: 'CANCELLED',
+        createdAt: new Date(),
+      },
     ] as any);
 
     const res = await app.inject({
@@ -31,6 +45,15 @@ describe('dashboard.routes tenant isolation', () => {
     });
 
     expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      period: '7d',
+      total_calls: 10,
+      total_reservations: 2,
+      covers: 6,
+      conversion_rate: 20,
+      answered_rate: 80,
+      estimated_revenue: 290,
+    });
     expect(db.call.count).toHaveBeenNthCalledWith(1, {
       where: {
         restaurantId: 'test-rest-1',
@@ -61,16 +84,34 @@ describe('dashboard.routes tenant isolation', () => {
 
   it('GET /dashboard/analytics ne lit jamais les données du restaurant passé en query', async () => {
     const app = await getApp();
-    vi.mocked(db.call.findMany).mockResolvedValue([]);
-    vi.mocked(db.reservation.findMany).mockResolvedValue([]);
+    vi.mocked(db.call.findMany).mockResolvedValue([
+      { createdAt: new Date() },
+      { createdAt: new Date() },
+    ] as any);
+    vi.mocked(db.reservation.findMany).mockResolvedValue([
+      {
+        createdAt: new Date(),
+        partySize: 3,
+        estimatedRevenue: 120,
+        confirmedRevenue: null,
+      },
+    ] as any);
 
     const res = await app.inject({
       method: 'GET',
-      url: '/dashboard/analytics?period=30d&restaurantId=other-rest',
+      url: '/dashboard/analytics?period=today&restaurantId=other-rest',
       headers: { authorization: 'Bearer test' },
     });
 
     expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.period).toBe('today');
+    expect(body.data).toHaveLength(24);
+    expect(body.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ calls: 2, reservations: 1, covers: 3, revenue: 120 }),
+      ]),
+    );
     expect(db.call.findMany).toHaveBeenCalledWith({
       where: { restaurantId: 'test-rest-1', createdAt: { gte: expect.any(Date) } },
       select: { createdAt: true },
