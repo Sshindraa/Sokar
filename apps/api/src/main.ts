@@ -32,6 +32,8 @@ import './shared/queue/workers/sms-confirmation.worker';
 import './shared/queue/workers/outbound-confirm.worker';
 import './shared/queue/workers/analytics.worker';
 import './shared/queue/workers/reengagement.worker';
+import './shared/queue/workers/reconciliation.worker';
+import './shared/queue/workers/telnyx-webhook.worker';
 
 // Initialize Sentry as early as possible so that instrumentation hooks are
 // registered before the Fastify app (and its error handler) are built.
@@ -244,6 +246,23 @@ async function start() {
             { name: 'nightly', data: { restaurantId: r.id } },
           );
         }
+
+        await queues.reconciliation.upsertJobScheduler(
+          'daily-call-reconciliation',
+          { pattern: '20 3 * * *', tz: 'Europe/Paris' },
+          {
+            name: 'calls',
+            data: { kind: 'calls' },
+          },
+        );
+        await queues.reconciliation.upsertJobScheduler(
+          'daily-sms-reconciliation',
+          { pattern: '35 3 * * *', tz: 'Europe/Paris' },
+          {
+            name: 'sms',
+            data: { kind: 'sms' },
+          },
+        );
       } catch (err) {
         logger.error(err, 'Failed to register schedulers on startup');
       }

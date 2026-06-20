@@ -84,6 +84,15 @@ vi.mock('../shared/queue/queues', () => ({
     onboarding: {
       add: vi.fn(),
     },
+    reconciliation: {
+      upsertJobScheduler: vi.fn(),
+    },
+    smsManager: {
+      add: vi.fn(),
+    },
+    telnyxWebhooks: {
+      add: vi.fn(),
+    },
   },
 }));
 
