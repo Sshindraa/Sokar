@@ -1,22 +1,38 @@
 import { Queue } from 'bullmq';
 import { redisQueue } from '../redis/client';
+import { defaultReliableJobOptions, highPriorityWebhookJobOptions } from './job-options';
 
 export const queues = {
   analytics: new Queue('analytics', {
     connection: redisQueue,
-    defaultJobOptions: { removeOnComplete: 1000, removeOnFail: 200 },
+    defaultJobOptions: defaultReliableJobOptions,
   }),
-  eveningReport: new Queue('evening-report', { connection: redisQueue }),
+  deadLetter: new Queue('dead-letter', {
+    connection: redisQueue,
+    defaultJobOptions: { removeOnComplete: 5000, removeOnFail: false },
+  }),
+  eveningReport: new Queue('evening-report', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
   onboarding: new Queue('onboarding', {
     connection: redisQueue,
-    defaultJobOptions: { removeOnComplete: 200, removeOnFail: 100 },
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
+  reconciliation: new Queue('reconciliation', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
   }),
   smsManager: new Queue('sms-manager', {
     connection: redisQueue,
-    defaultJobOptions: { removeOnComplete: 100, removeOnFail: 50 },
+    defaultJobOptions: defaultReliableJobOptions,
   }),
   smsClient: new Queue('sms-client', {
     connection: redisQueue,
-    defaultJobOptions: { removeOnComplete: 100, removeOnFail: 50 },
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
+  telnyxWebhooks: new Queue('telnyx-webhooks', {
+    connection: redisQueue,
+    defaultJobOptions: highPriorityWebhookJobOptions,
   }),
 };
