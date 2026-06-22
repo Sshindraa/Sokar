@@ -56,6 +56,9 @@ echo ""
 echo "📦 Building..."
 # Config d'abord (dépendance synchrone de l'API)
 NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/config build
+NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/types build
+NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database build
+NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/shared build
 NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/api build
 
 # Dashboard: skip lint (déjà fait en CI), disable Sentry telemetry
