@@ -1,0 +1,440 @@
+/**
+ * Admin service pour l'agentic reservations.
+ *
+ * - getOptIn / setOptIn : toggle des flags agenticOptIn / openaiReserveEnabled
+ * - getExposureSettings / setExposureSettings : CRUD sur RestaurantExposureSettings
+ * - Sécurité : OpenAI Reserve ne peut être activé que si MCP est activé
+ *   (le feed OpenAI consomme la même policy que MCP, et la résa MCP est
+ *   un pré-requis de la résa OpenAI côté UX)
+ * - Garde-fou : si le restaurant n'a pas lat/lng/websiteUrl, on refuse
+ *   d'activer OpenAI Reserve (requis par le business feed OpenAI).
+ * - Audit : chaque mutation log un event opt_in_changed ou
+ *   exposure_settings_changed avec diff before/after.
+ */
+
+import type { PrismaClient, Prisma } from '@prisma/client';
+import { createHash, randomBytes } from 'crypto';
+import { logger } from '../../../shared/logger/pino';
+import { PolicyValidationError, validateExposureSettings } from '../core/policies.service.js';
+import { AuditLogService } from '../core/audit-log.service.js';
+import {
+  type AgentClientCreateInput,
+  type ExposureSettingsInput,
+  type OptInInput,
+} from './schemas.js';
+
+export class OptInGuardError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+  ) {
+    super(message);
+    this.name = 'OptInGuardError';
+  }
+}
+
+export class AgenticAdminService {
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly audit: AuditLogService,
+  ) {}
+
+  async getOptIn(restaurantId: string): Promise<{
+    mcp: boolean;
+    openaiReserve: boolean;
+    policyVersion: string;
+  }> {
+    const r = await this.prisma.restaurant.findUniqueOrThrow({
+      where: { id: restaurantId },
+      select: {
+        agenticOptIn: true,
+        openaiReserveEnabled: true,
+        policyVersion: true,
+      },
+    });
+    return {
+      mcp: r.agenticOptIn,
+      openaiReserve: r.openaiReserveEnabled,
+      policyVersion: r.policyVersion,
+    };
+  }
+
+  async setOptIn(args: { restaurantId: string; input: OptInInput; actor: string }): Promise<void> {
+    const current = await this.prisma.restaurant.findUniqueOrThrow({
+      where: { id: args.restaurantId },
+      select: {
+        agenticOptIn: true,
+        openaiReserveEnabled: true,
+        lat: true,
+        lng: true,
+        websiteUrl: true,
+        formattedAddress: true,
+        phoneE164: true,
+      },
+    });
+
+    // Garde-fou : OpenAI Reserve requiert lat/lng/websiteUrl/phone/address
+    if (args.input.openaiReserve) {
+      const missing: string[] = [];
+      if (current.lat == null) missing.push('lat');
+      if (current.lng == null) missing.push('lng');
+      if (!current.websiteUrl) missing.push('websiteUrl');
+      if (!current.formattedAddress) missing.push('formattedAddress');
+      if (!current.phoneE164) missing.push('phoneE164');
+      if (missing.length > 0) {
+        throw new OptInGuardError(
+          `OpenAI Reserve requiert les champs suivants sur le restaurant : ${missing.join(', ')}`,
+          'OPENAI_RESERVE_MISSING_FIELDS',
+        );
+      }
+    }
+
+    const mcpChanged = args.input.mcp !== current.agenticOptIn;
+    const openaiChanged = args.input.openaiReserve !== current.openaiReserveEnabled;
+
+    if (!mcpChanged && !openaiChanged) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.restaurant.update({
+        where: { id: args.restaurantId },
+        data: {
+          agenticOptIn: args.input.mcp,
+          // Si MCP est désactivé, OpenAI Reserve doit l'être aussi
+          openaiReserveEnabled: args.input.mcp ? args.input.openaiReserve : false,
+        },
+      });
+
+      await tx.reservationAuditLog.create({
+        data: {
+          event: 'opt_in_changed',
+          actor: args.actor,
+          metadata: {
+            restaurantId: args.restaurantId,
+            before: {
+              mcp: current.agenticOptIn,
+              openaiReserve: current.openaiReserveEnabled,
+            },
+            after: {
+              mcp: args.input.mcp,
+              openaiReserve: args.input.mcp ? args.input.openaiReserve : false,
+            },
+          },
+        },
+      });
+    });
+  }
+
+  async getExposureSettings(restaurantId: string): Promise<{
+    maxPartySize: number;
+    minLeadTimeMinutes: number;
+    requireManualValidation: boolean;
+    quoteTtlSeconds: number;
+    holdTtlSeconds: number;
+    noShowPolicy: string;
+    notificationChannels: string[];
+    exposedCreneaux: unknown[];
+    capacitySpecials: Record<string, unknown>;
+  }> {
+    const s = await this.prisma.restaurantExposureSettings.findUnique({
+      where: { restaurantId },
+    });
+    if (!s) {
+      // Retourne les défauts sans créer de ligne en DB
+      return {
+        maxPartySize: 12,
+        minLeadTimeMinutes: 30,
+        requireManualValidation: false,
+        quoteTtlSeconds: 300,
+        holdTtlSeconds: 420,
+        noShowPolicy: 'warning',
+        notificationChannels: ['sms', 'email'],
+        exposedCreneaux: [],
+        capacitySpecials: {},
+      };
+    }
+    return {
+      maxPartySize: s.maxPartySize,
+      minLeadTimeMinutes: s.minLeadTimeMinutes,
+      requireManualValidation: s.requireManualValidation,
+      quoteTtlSeconds: s.quoteTtlSeconds,
+      holdTtlSeconds: s.holdTtlSeconds,
+      noShowPolicy: s.noShowPolicy,
+      notificationChannels: [...s.notificationChannels],
+      exposedCreneaux: (s.exposedCreneaux as unknown[]) ?? [],
+      capacitySpecials: (s.capacitySpecials as Record<string, unknown>) ?? {},
+    };
+  }
+
+  async setExposureSettings(args: {
+    restaurantId: string;
+    input: ExposureSettingsInput;
+    actor: string;
+  }): Promise<void> {
+    const before = await this.prisma.restaurantExposureSettings.findUnique({
+      where: { restaurantId: args.restaurantId },
+    });
+
+    const mergedSettings = {
+      maxPartySize: args.input.maxPartySize ?? before?.maxPartySize ?? 12,
+      minLeadTimeMinutes: args.input.minLeadTimeMinutes ?? before?.minLeadTimeMinutes ?? 30,
+      requireManualValidation:
+        args.input.requireManualValidation ?? before?.requireManualValidation ?? false,
+      quoteTtlSeconds: args.input.quoteTtlSeconds ?? before?.quoteTtlSeconds ?? 300,
+      holdTtlSeconds: args.input.holdTtlSeconds ?? before?.holdTtlSeconds ?? 420,
+      noShowPolicy: args.input.noShowPolicy ?? before?.noShowPolicy ?? 'warning',
+      notificationChannels: args.input.notificationChannels ??
+        before?.notificationChannels ?? ['sms', 'email'],
+      capacitySpecials:
+        args.input.capacitySpecials ??
+        (before?.capacitySpecials as Record<string, unknown> | null) ??
+        {},
+    };
+
+    // Validation sur l'état final, pas seulement sur le patch entrant.
+    try {
+      validateExposureSettings(mergedSettings);
+    } catch (err) {
+      if (err instanceof PolicyValidationError) {
+        throw err;
+      }
+      throw err;
+    }
+
+    // Garde-fou : si des réservations futures existent avec partySize > nouveau max,
+    // on refuse pour éviter de les invalider silencieusement
+    if (args.input.maxPartySize !== undefined) {
+      const future = await this.prisma.reservation.count({
+        where: {
+          restaurantId: args.restaurantId,
+          partySize: { gt: args.input.maxPartySize },
+          reservedAt: { gte: new Date() },
+          state: { in: ['PENDING', 'CONFIRMED', 'SEATED'] },
+        },
+      });
+      if (future > 0) {
+        throw new PolicyValidationError(
+          `${future} réservation(s) future(s) dépassent le nouveau maxPartySize=${args.input.maxPartySize}. Annule ou déplace ces résas avant de réduire la limite.`,
+          'FUTURE_RESERVATIONS_EXCEED_MAX',
+        );
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const updateData: Prisma.RestaurantExposureSettingsUpdateInput = {};
+      if (args.input.maxPartySize !== undefined) updateData.maxPartySize = args.input.maxPartySize;
+      if (args.input.minLeadTimeMinutes !== undefined)
+        updateData.minLeadTimeMinutes = args.input.minLeadTimeMinutes;
+      if (args.input.requireManualValidation !== undefined)
+        updateData.requireManualValidation = args.input.requireManualValidation;
+      if (args.input.quoteTtlSeconds !== undefined)
+        updateData.quoteTtlSeconds = args.input.quoteTtlSeconds;
+      if (args.input.holdTtlSeconds !== undefined)
+        updateData.holdTtlSeconds = args.input.holdTtlSeconds;
+      if (args.input.noShowPolicy !== undefined) updateData.noShowPolicy = args.input.noShowPolicy;
+      if (args.input.notificationChannels !== undefined)
+        updateData.notificationChannels = args.input.notificationChannels;
+      if (args.input.exposedCreneaux !== undefined)
+        updateData.exposedCreneaux = args.input.exposedCreneaux as Prisma.InputJsonValue;
+      if (args.input.capacitySpecials !== undefined)
+        updateData.capacitySpecials = args.input.capacitySpecials as Prisma.InputJsonValue;
+
+      await tx.restaurantExposureSettings.upsert({
+        where: { restaurantId: args.restaurantId },
+        create: {
+          restaurant: { connect: { id: args.restaurantId } },
+          maxPartySize: args.input.maxPartySize ?? 12,
+          minLeadTimeMinutes: args.input.minLeadTimeMinutes ?? 30,
+          requireManualValidation: args.input.requireManualValidation ?? false,
+          quoteTtlSeconds: args.input.quoteTtlSeconds ?? 300,
+          holdTtlSeconds: args.input.holdTtlSeconds ?? 420,
+          noShowPolicy: args.input.noShowPolicy ?? 'warning',
+          notificationChannels: args.input.notificationChannels ?? ['sms', 'email'],
+          exposedCreneaux: (args.input.exposedCreneaux ?? []) as Prisma.InputJsonValue,
+          capacitySpecials: (args.input.capacitySpecials ?? {}) as Prisma.InputJsonValue,
+        },
+        update: updateData,
+      });
+
+      await tx.reservationAuditLog.create({
+        data: {
+          event: 'exposure_settings_changed',
+          actor: args.actor,
+          metadata: {
+            restaurantId: args.restaurantId,
+            before: before ?? null,
+            after: args.input,
+          },
+        },
+      });
+    });
+
+    logger.info(
+      {
+        restaurantId: args.restaurantId,
+        actor: args.actor,
+        keys: Object.keys(args.input),
+      },
+      'exposure settings updated',
+    );
+  }
+
+  async listAgentClients(restaurantId: string): Promise<
+    Array<{
+      id: string;
+      name: string;
+      keyPrefix: string;
+      scopes: string[];
+      allowedOrigins: string[];
+      lastUsedAt: Date | null;
+      createdAt: Date;
+    }>
+  > {
+    const clients = await this.prisma.agentClient.findMany({
+      where: {
+        restaurantId,
+        revokedAt: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        keyPrefix: true,
+        scopes: true,
+        allowedOrigins: true,
+        lastUsedAt: true,
+        createdAt: true,
+      },
+    });
+
+    return clients.map((c) => ({
+      ...c,
+      scopes: [...c.scopes],
+      allowedOrigins: [...c.allowedOrigins],
+    }));
+  }
+
+  async createAgentClient(args: {
+    restaurantId: string;
+    input: AgentClientCreateInput;
+    actor: string;
+  }): Promise<{
+    client: {
+      id: string;
+      name: string;
+      keyPrefix: string;
+      scopes: string[];
+      allowedOrigins: string[];
+      lastUsedAt: Date | null;
+      createdAt: Date;
+    };
+    apiKey: string;
+  }> {
+    const apiKey = this.generateApiKey();
+    const keyPrefix = this.getApiKeyPrefix(apiKey);
+    const keyHash = this.hashApiKey(apiKey);
+
+    const client = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.agentClient.create({
+        data: {
+          restaurantId: args.restaurantId,
+          name: args.input.name,
+          keyPrefix,
+          keyHash,
+          scopes: args.input.scopes,
+          allowedOrigins: args.input.allowedOrigins,
+        },
+        select: {
+          id: true,
+          name: true,
+          keyPrefix: true,
+          scopes: true,
+          allowedOrigins: true,
+          lastUsedAt: true,
+          createdAt: true,
+        },
+      });
+
+      await tx.reservationAuditLog.create({
+        data: {
+          event: 'agent_client_created',
+          actor: args.actor,
+          metadata: {
+            restaurantId: args.restaurantId,
+            clientId: created.id,
+            keyPrefix: created.keyPrefix,
+            scopes: created.scopes,
+            allowedOrigins: created.allowedOrigins,
+          },
+        },
+      });
+
+      return created;
+    });
+
+    return {
+      client: {
+        ...client,
+        scopes: [...client.scopes],
+        allowedOrigins: [...client.allowedOrigins],
+      },
+      apiKey,
+    };
+  }
+
+  async revokeAgentClient(args: {
+    restaurantId: string;
+    clientId: string;
+    actor: string;
+  }): Promise<void> {
+    const existing = await this.prisma.agentClient.findFirst({
+      where: {
+        id: args.clientId,
+        restaurantId: args.restaurantId,
+        revokedAt: null,
+      },
+      select: {
+        id: true,
+        keyPrefix: true,
+        scopes: true,
+        allowedOrigins: true,
+      },
+    });
+
+    if (!existing) {
+      throw new OptInGuardError('Client MCP introuvable', 'AGENT_CLIENT_NOT_FOUND');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.agentClient.update({
+        where: { id: args.clientId },
+        data: { revokedAt: new Date() },
+      });
+
+      await tx.reservationAuditLog.create({
+        data: {
+          event: 'agent_client_revoked',
+          actor: args.actor,
+          metadata: {
+            restaurantId: args.restaurantId,
+            clientId: existing.id,
+            keyPrefix: existing.keyPrefix,
+            scopes: existing.scopes,
+            allowedOrigins: existing.allowedOrigins,
+          },
+        },
+      });
+    });
+  }
+
+  private generateApiKey(): string {
+    return `sk_sokar_agent_${randomBytes(32).toString('base64url')}`;
+  }
+
+  private hashApiKey(apiKey: string): string {
+    return createHash('sha256').update(apiKey).digest('hex');
+  }
+
+  private getApiKeyPrefix(apiKey: string): string {
+    return apiKey.slice(0, 'sk_sokar_agent_'.length + 8);
+  }
+}

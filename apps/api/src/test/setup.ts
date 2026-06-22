@@ -1,7 +1,8 @@
 import { vi } from 'vitest';
 
 // ── Mock @prisma/client ──
-vi.mock('@prisma/client', () => {
+vi.mock('@prisma/client', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
   class PrismaClient {
     restaurant = {
       findUniqueOrThrow: vi.fn(),
@@ -22,7 +23,10 @@ vi.mock('@prisma/client', () => {
     $queryRaw = vi.fn().mockResolvedValue([{ '1': 1 }]);
     $disconnect = vi.fn();
   }
-  return { PrismaClient };
+  return {
+    ...actual, // preserve Prisma namespace (PrismaClientKnownRequestError, Prisma.JsonNull, etc.)
+    PrismaClient,
+  };
 });
 
 // ── Mock ioredis ──
@@ -94,8 +98,10 @@ vi.mock('../../lib/auth', () => ({
 }));
 
 // ── Set test env vars ──
-process.env.DATABASE_URL = 'postgresql://test:***@localhost:5432/test';
-process.env.REDIS_URL = 'redis://localhost:6379';
+// DATABASE_URL par défaut : la DB locale sokar (Postgres brew).
+// Surchargeable via env si besoin (CI, autre host).
+process.env.DATABASE_URL ??= 'postgresql://sokar:***@localhost:5432/sokar';
+process.env.REDIS_URL ??= 'redis://localhost:6379';
 process.env.NODE_ENV = 'test';
 process.env.TZ = 'Europe/Paris';
 process.env.TELNYX_API_KEY = 'test-telnyx-key';

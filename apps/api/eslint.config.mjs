@@ -11,9 +11,12 @@ export default [
   {
     ignores: [
       'dist/**',
+      '**/dist/**',
       '.turbo/**',
       'node_modules/**',
+      '**/node_modules/**',
       'coverage/**',
+      '**/coverage/**',
       'vitest.config.ts',
       'eslint.config.mjs',
     ],

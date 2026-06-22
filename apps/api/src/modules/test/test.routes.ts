@@ -1,97 +1,167 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { WebSocket } from 'ws';
 import { db } from '../../shared/db/client';
 import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
 import { buildSystemPrompt } from '../voice/prompts';
+import { CallSessionManager } from '../voice/stream/manager';
+import { logger } from '../../shared/logger/pino';
 
 const SimulateCallSchema = z.object({
-  /** Ton numéro perso (l'appelant) */
+  /** Numéro de l'appelant */
   callerPhone: z.string().min(5),
-  /** Optionnel : numéro du restaurant (si laissé vide, on crée un restaurant test) */
+  /** Optionnel : numéro du restaurant (défaut = Chez Sokar démo) */
   restaurantPhone: z.string().min(5).optional(),
-  /** Optionnel : nom du restaurant test */
-  restaurantName: z.string().min(1).max(100).default('Mon Restaurant Test'),
+  /** Mode LLM : auto (clé OpenRouter requise) ou mock (réponses fixes) */
+  mode: z.enum(['auto', 'mock']).default('auto'),
+});
+
+const SimulateUtteranceSchema = z.object({
+  callControlId: z.string().min(1),
+  transcript: z.string().min(1),
 });
 
 /**
- * Route de test pour simuler un appel sans numéro Telnyx.
- *
- * Crée ou trouve un restaurant associé à restaurantPhone, puis exécute
- * la logique call.initiated du pipeline vocal (Media Stream).
+ * Crée un faux WebSocket utilisable par CallSessionManager en mode simulation.
+ * Il ignore les messages audio/TTS et logue ce qui serait envoyé à Telnyx.
+ */
+function createFakeTelnyxWs(): WebSocket {
+  const ws = {
+    readyState: WebSocket.OPEN,
+    send: (data: any) => {
+      try {
+        const parsed = JSON.parse(typeof data === 'string' ? data : data.toString());
+        if (parsed.event === 'media') {
+          // En mode simulation on ignore le flux audio retourné.
+          return;
+        }
+        logger.debug({ telnyxMsg: parsed }, '[test-sim] WS -> Telnyx');
+      } catch {
+        logger.debug({ raw: data }, '[test-sim] WS -> Telnyx (raw)');
+      }
+    },
+    close: () => {
+      // noop
+    },
+    on: () => {
+      // noop
+    },
+  } as unknown as WebSocket;
+  return ws;
+}
+
+/**
+ * Routes de test pour simuler un appel vocal sans Telnyx ni providers audio.
  *
  * Usage :
  *   curl -X POST http://localhost:4000/api/test/simulate-call \
  *     -H 'Content-Type: application/json' \
- *     -d '{"callerPhone": "+33612345678", "restaurantName": "Chez Michel"}'
+ *     -d '{"callerPhone": "+336****5678", "mode": "mock"}'
  */
 export async function testRoutes(app: FastifyInstance) {
   app.post('/api/test/simulate-call', async (req, reply) => {
     const body = SimulateCallSchema.parse(req.body);
-    const { callerPhone, restaurantPhone, restaurantName } = body;
+    const { callerPhone, restaurantPhone, mode } = body;
 
-    // 1. Trouver ou créer un restaurant test
-    const phone = restaurantPhone ?? `+336****0000${Math.floor(Math.random() * 9000 + 1000)}`;
-    let restaurant = await db.restaurant.findUnique({
+    const phone = restaurantPhone ?? '+331****0405';
+    const restaurant = await db.restaurant.findUnique({
       where: { phoneNumber: phone },
       include: { personality: true },
     });
 
     if (!restaurant) {
-      restaurant = await db.restaurant.create({
-        data: {
-          id: `test-${Date.now()}`,
-          name: restaurantName,
-          phoneNumber: phone,
-          managerPhone: callerPhone,
-          managerEmail: 'test@sokar.fr',
-          plan: 'STARTER',
-          openingHours: {
-            mon: { open: '09:00', close: '22:00' },
-            tue: { open: '09:00', close: '22:00' },
-            wed: { open: '09:00', close: '22:00' },
-            thu: { open: '09:00', close: '22:00' },
-            fri: { open: '09:00', close: '23:00' },
-            sat: { open: '10:00', close: '23:00' },
-            sun: null,
-          },
-        },
-        include: { personality: true },
-      });
-      app.log.info({ restaurantId: restaurant.id }, 'Test restaurant created');
+      return reply.status(404).send({ error: 'Restaurant not found', phone });
     }
 
-    // 2. Simuler la logique call.initiated
     const ctx = await RestaurantService.loadContext(phone);
     const safe = await RestaurantService.checkMarginHealth(ctx.id);
-
     if (!safe) {
-      return reply.send({ error: "Circuit breaker triggered — trop d'appels récents" });
+      return reply.status(429).send({ error: "Circuit breaker triggered — trop d'appels récents" });
     }
 
-    const customer = callerPhone ? await CustomerService.lookupOrCreate(ctx.id, callerPhone) : null;
-
-    const customerExtra = customer ? CustomerService.buildVipPromptExtra(customer) : '';
-
+    const customer = await CustomerService.lookupOrCreate(ctx.id, callerPhone);
+    const customerExtra = CustomerService.buildVipPromptExtra(customer);
     const systemPrompt = buildSystemPrompt({ ...ctx, customerExtra });
 
-    // 3. Retourner la config Media Stream
-    const publicUrl = process.env.PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? 4000}`;
-    const wsUrl = publicUrl.replace(/^https?/, 'wss') + `/voice/stream/test-${Date.now()}`;
+    // Créer un Call record en DB
+    const callControlId = `test-call-${Date.now()}`;
+    const callSessionId = `test-session-${Date.now()}`;
+    await db.call.create({
+      data: {
+        id: callControlId,
+        callSid: callControlId,
+        restaurantId: ctx.id,
+        carrier: 'test-simulation',
+        sttProvider: 'test',
+        llmProvider: mode,
+        ttsProvider: 'test',
+      },
+    });
+
+    // Créer la session en mémoire
+    const mgr = CallSessionManager.getInstance();
+    mgr.create({
+      callControlId,
+      callSessionId,
+      from: callerPhone,
+      to: phone,
+      restaurantId: ctx.id,
+      systemPrompt,
+      isVip: customer?.isVip ?? false,
+      telnyxWs: createFakeTelnyxWs(),
+      callLegId: callControlId,
+      codec: 'PCMU',
+      personality: restaurant.personality
+        ? {
+            fillerStyle: restaurant.personality.fillerStyle,
+            systemPromptExtra: restaurant.personality.systemPromptExtra,
+          }
+        : null,
+    });
+
+    // En mode mock, on active le flag interne sans toucher à la clé réelle.
+    if (mode === 'mock') {
+      process.env.SOKAR_SIMULATE_MOCK_LLM = 'true';
+    }
 
     return reply.send({
       test: true,
-      pipeline: 'media stream',
+      mode,
+      callControlId,
       restaurant: { id: ctx.id, name: ctx.name, plan: ctx.plan },
       caller: { phone: callerPhone, name: customer?.name ?? null, isVip: customer?.isVip ?? false },
-      mediaStream: {
-        stream_url: wsUrl,
-        stream_track: 'inbound_track',
-        stream_bidirectional_mode: 'rtp',
-        stream_bidirectional_codec: 'L16',
-      },
-      systemPrompt: systemPrompt.slice(0, 500) + '…',
+      nextStep: 'POST /api/test/simulate-utterance with { callControlId, transcript }',
     });
+  });
+
+  app.post('/api/test/simulate-utterance', async (req, reply) => {
+    const body = SimulateUtteranceSchema.parse(req.body);
+    const mgr = CallSessionManager.getInstance();
+
+    try {
+      const response = await mgr.simulateUtterance(body.callControlId, body.transcript);
+      return reply.send({
+        ok: true,
+        transcript: body.transcript,
+        response,
+      });
+    } catch (err: any) {
+      return reply.status(400).send({ ok: false, error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/test/simulate-call/:callControlId/reservations
+   * Vérifier les réservations créées pendant un appel simulé.
+   */
+  app.get('/api/test/simulate-call/:callControlId/reservations', async (req, reply) => {
+    const { callControlId } = req.params as { callControlId: string };
+    const reservations = await db.reservation.findMany({
+      where: { callId: callControlId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return reply.send(reservations);
   });
 
   /**

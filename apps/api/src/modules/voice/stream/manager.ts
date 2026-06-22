@@ -186,11 +186,46 @@ export class CallSessionManager {
   }
 
   /**
+   * Mode simulation sans clé OpenRouter : réponses fixes qui déclenchent
+   * createReservation sur demande explicite.
+   */
+  private async mockLlmResponse(session: CallSession, transcript: string): Promise<string> {
+    const t = transcript.toLowerCase();
+    const wantsReservation =
+      t.includes('réservation') ||
+      t.includes('réserver') ||
+      t.includes('table') ||
+      t.includes('place');
+
+    if (wantsReservation) {
+      // Simuler un appel d'outil créeReservation
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const date = tomorrow.toISOString().slice(0, 10);
+      const args = JSON.stringify({
+        date,
+        time: '19:30',
+        partySize: 2,
+        customerName: session.from ?? 'Client Test',
+        customerPhone: session.from,
+      });
+      const toolResult = await this.executeTool(session, 'createReservation', args);
+      return `Parfait, je note ça. ${toolResult}`;
+    }
+
+    return 'Bonjour, bienvenue au restaurant. Je peux vous aider à réserver une table. Pour combien de personnes et à quelle heure ?';
+  }
+
+  /**
    * Appelle le LLM avec outils (function calling).
    * Si le LLM décide d'appeler un outil, on l'exécute et on rappelle le LLM
    * avec le résultat — jusqu'à 3 rounds max.
    */
-  private async callLlm(session: CallSession, _transcript: string): Promise<string> {
+  private async callLlm(session: CallSession, transcript: string): Promise<string> {
+    if (process.env.SOKAR_SIMULATE_MOCK_LLM === 'true') {
+      return this.mockLlmResponse(session, transcript);
+    }
+
     const tools = getRestaurantTools(session.restaurantId);
     const messages = [...session.history];
 
@@ -504,6 +539,20 @@ export class CallSessionManager {
       }
       return `Erreur lors de l'exécution de ${name}.`;
     }
+  }
+
+  /**
+   * Simulation locale : traite un transcript texte comme si Deepgram l'avait
+   * reconnu, sans audio ni TTS. Retourne la réponse texte de l'assistant.
+   * Utile pour tester les prompts et les outils en local sans clés providers.
+   */
+  async simulateUtterance(callControlId: string, transcript: string): Promise<string> {
+    const session = this.get(callControlId);
+    if (!session) throw new Error(`Session ${callControlId} not found`);
+    if (session.ended) throw new Error(`Session ${callControlId} already ended`);
+
+    session.transcript += (session.transcript ? ' ' : '') + transcript;
+    return this.processUtterance(session, transcript);
   }
 }
 

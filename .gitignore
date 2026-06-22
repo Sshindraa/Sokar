@@ -9,6 +9,7 @@ coverage
 .env.*.local
 .env.production
 .env
+*.bak
 
 # Workspace agent Hermes
 .agent-workspace/
@@ -39,6 +40,8 @@ apps/dashboard/**/*.d.ts.map
 !apps/dashboard/next.config.js
 !apps/dashboard/postcss.config.js
 !apps/dashboard/tailwind.config.js
+
+apps/widget/out/
 
 packages/**/*.js
 packages/**/*.d.ts

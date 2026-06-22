@@ -25,41 +25,84 @@ vi.mock('../plugins/clerk', () => ({
   },
 }));
 
-vi.mock('../shared/db/client', () => ({
-  db: {
-    restaurant: {
+// db mock — contains all Prisma models used by tests.
+// We split $transaction's tx from the top-level db to avoid the
+// "object literal cannot have multiple properties with the same name"
+// TS error that would happen if `restaurant` appeared both at top
+// level and inside the transaction callback argument.
+vi.mock('../shared/db/client', () => {
+  const txMock = {
+    restaurant: { update: vi.fn() },
+    restaurantExposureSettings: { upsert: vi.fn() },
+    reservationAuditLog: { create: vi.fn() },
+    reservation: { count: vi.fn() },
+    agentClient: {
       create: vi.fn(),
       update: vi.fn(),
-      findUnique: vi.fn(),
-      findUniqueOrThrow: vi.fn(),
     },
-    agentPersonality: {
-      findUnique: vi.fn(),
-      upsert: vi.fn(),
+  };
+  return {
+    db: {
+      restaurant: {
+        create: vi.fn(),
+        update: vi.fn(),
+        findFirst: vi.fn(),
+        findUnique: vi.fn(),
+        findUniqueOrThrow: vi.fn(),
+        findMany: vi.fn(),
+        count: vi.fn(),
+      },
+      agentPersonality: {
+        findUnique: vi.fn(),
+        upsert: vi.fn(),
+      },
+      agentClient: {
+        findUnique: vi.fn(),
+        findMany: vi.fn(),
+        findFirst: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+      restaurantExposureSettings: {
+        findUnique: vi.fn(),
+        upsert: vi.fn(),
+      },
+      reservationAuditLog: {
+        create: vi.fn(),
+      },
+      reservation: {
+        create: vi.fn(),
+        findMany: vi.fn(),
+        count: vi.fn(),
+      },
+      customer: {
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        count: vi.fn(),
+        upsert: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+      },
+      call: {
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        count: vi.fn(),
+        delete: vi.fn(),
+      },
+      latencyTrace: {
+        findMany: vi.fn(),
+      },
+      customerConsent: {
+        create: vi.fn(),
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        count: vi.fn(),
+        updateMany: vi.fn(),
+      },
+      $transaction: vi.fn(async (fn: any) => fn(txMock)),
     },
-    reservation: {
-      create: vi.fn(),
-      findMany: vi.fn(),
-    },
-    customer: {
-      findMany: vi.fn(),
-      findUnique: vi.fn(),
-      count: vi.fn(),
-      upsert: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-    },
-    call: {
-      findMany: vi.fn(),
-      findUnique: vi.fn(),
-      count: vi.fn(),
-      delete: vi.fn(),
-    },
-    latencyTrace: {
-      findMany: vi.fn(),
-    },
-  },
-}));
+  };
+});
 
 vi.mock('../shared/redis/client', () => ({
   redisCache: {

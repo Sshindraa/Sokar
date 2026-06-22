@@ -80,6 +80,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { path: stri
   return proxyResponse(data, res.status);
 }
 
+export async function PUT(req: NextRequest, { params }: { params: { path: string[] } }) {
+  const path = params.path.join('/');
+  const search = req.nextUrl.search;
+  const url = `${API_ORIGIN}/${path}${search}`;
+
+  const body = await req.json();
+
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: req.headers.get('cookie') || '',
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data = await parseResponse(res);
+  return proxyResponse(data, res.status);
+}
+
 export async function DELETE(req: NextRequest, { params }: { params: { path: string[] } }) {
   const path = params.path.join('/');
   const search = req.nextUrl.search;
