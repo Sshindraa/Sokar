@@ -22,8 +22,8 @@ export function useApi() {
   // The environment flag is stable for the whole client bundle. Without Clerk
   // keys we expose a no-op API client so local UI previews can render.
   const clerk = hasClerkKey
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    ? useClerkContext()
+    ? // eslint-disable-next-line react-hooks/rules-of-hooks
+      useClerkContext()
     : {
         isSignedIn: false,
         organization: null as ReturnType<typeof useOrganization>['organization'],
@@ -33,7 +33,7 @@ export function useApi() {
 
   const apiFetch = useCallback(
     async <T = any>(
-      method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+      method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
       path: string,
       body?: any,
     ): Promise<T> => {
@@ -73,6 +73,10 @@ export function useApi() {
     <T = any>(path: string, body?: any) => apiFetch<T>('POST', path, body),
     [apiFetch],
   );
+  const put = useCallback(
+    <T = any>(path: string, body?: any) => apiFetch<T>('PUT', path, body),
+    [apiFetch],
+  );
   const patch = useCallback(
     <T = any>(path: string, body?: any) => apiFetch<T>('PATCH', path, body),
     [apiFetch],
@@ -84,6 +88,7 @@ export function useApi() {
     isSignedIn,
     get,
     post,
+    put,
     patch,
     del,
   };

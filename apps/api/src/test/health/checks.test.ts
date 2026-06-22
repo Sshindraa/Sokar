@@ -188,7 +188,7 @@ describe('checkHealth — voice provider failure (degraded, core ok)', () => {
 });
 
 describe('checkHealth — timeout', () => {
-  it('times out a check that hangs longer than 2s', async () => {
+  it('times out a voice provider check that hangs longer than 2s', async () => {
     // Make deepgram hang forever — the timeout in checks.ts should fire.
     globalThis.fetch = vi.fn().mockImplementation(
       () =>
@@ -197,10 +197,20 @@ describe('checkHealth — timeout', () => {
         }),
     );
     const result = await checkHealth();
-    // The test takes ~2s because we wait for the timeout. That's expected.
+    // The test takes ~2s because voice providers keep the short timeout.
     expect(result.checks.deepgram.status).toBe('error');
     expect(result.checks.deepgram.error).toMatch(/timeout/);
   }, 5000);
+
+  it('allows a slow cold core DB check under 10s', async () => {
+    mockDb.$queryRaw.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve([{ '1': 1 }]), 6000)),
+    );
+
+    const result = await checkHealth();
+
+    expect(result.checks.db.status).toBe('ok');
+  }, 12000);
 });
 
 describe('checkHealth — env not configured', () => {

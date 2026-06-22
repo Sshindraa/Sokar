@@ -5,6 +5,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    exclude: ['dist/**', 'coverage/**', 'node_modules/**'],
     setupFiles: ['./src/test/setup.ts'],
     fileParallelism: false,
     // Coverage: v8 is the fastest, accurate enough for our TS code.

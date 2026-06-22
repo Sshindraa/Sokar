@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
-import { BarChart3, CalendarCheck, PhoneCall, Settings, Users } from 'lucide-react';
+import { BarChart3, CalendarCheck, PhoneCall, Settings, Users, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SyncOrganization } from './SyncOrganization';
 import MobileBottomNav from '@/components/MobileBottomNav';
@@ -18,6 +18,7 @@ const navItems = [
   { href: '/dashboard/calls', label: 'Appels', icon: PhoneCall },
   { href: '/dashboard/reservations', label: 'Réservations', icon: CalendarCheck },
   { href: '/dashboard/customers', label: 'Clients', icon: Users },
+  { href: '/dashboard/agentic', label: 'Agents IA', icon: Sparkles },
   { href: '/dashboard/settings', label: 'Réglages', icon: Settings },
 ];
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);

@@ -2,10 +2,14 @@
   "name": "@sokar/database",
   "version": "0.0.1",
   "private": true,
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "scripts": {
     "build": "prisma generate",
     "generate": "prisma generate",
     "push": "prisma db push",
+    "seed": "prisma db seed",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
     "migrate:status": "prisma migrate status",
@@ -20,6 +24,7 @@
   },
   "devDependencies": {
     "prisma": "^6.0.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.8.0"
   }
 }

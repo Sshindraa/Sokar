@@ -27,16 +27,46 @@ Keep this file short: it is injected into every project session. Detailed histor
 ## Commands
 
 ```zsh
+# Node (>=20 <23, strict via .npmrc)
+pnpm node:check
+
+# Switch rapide vers Node 22 (Homebrew installé côte à côte)
+PATH="/usr/local/opt/node@22/bin:$PATH" pnpm node:check
+
+# Dev / build / test
 pnpm dev        # API + dashboard dev
 pnpm build      # production build
 pnpm test       # Vitest
 pnpm lint       # lint
-pnpm db:push    # Prisma db push
+
+# Base de données
+pnpm db:push    # synchroniser le schema
+pnpm db:seed    # créer le restaurant de démo "Chez Sokar"
 pnpm db:studio  # Prisma Studio
+
+# Agent
 hermes          # interactive agent
 hermes -z "task" # one-shot task
 hermes doctor   # Hermes diagnostics
 ```
+
+## Demo restaurant
+
+Le seed crée un restaurant fictif `Chez Sokar` (slug `chez-sokar-demo`) :
+
+- Numéro : `+331****0405`
+- Opt-in MCP + OpenAI Reserve activés
+- Horaires, personnalité, clients de test (dont un VIP)
+
+Utilisé pour les tests voice / MCP en local avant d'avoir un vrai pilote.
+
+## Node version
+
+- Repo constraint: `>=20.0.0 <23.0.0` (root `package.json` engines).
+- `.nvmrc` = `22`.
+- `.npmrc` has `engine-strict=true` — `pnpm` refuses to run under Node 26+.
+- Local Mac: Node 26 is the default, Node 22 is available at `/usr/local/opt/node@22/bin`.
+- Prefix any `pnpm` command with `PATH="/usr/local/opt/node@22/bin:$PATH"` until the default Node is switched.
 
 ## Code style
 

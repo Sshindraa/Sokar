@@ -4,7 +4,9 @@
  * Six independent checks: db, redis, queues, telnyx, deepgram, cartesia.
  * Each check has its own timeout and returns a uniform `CheckResult` shape.
  * The orchestrator runs them in parallel and never lets one slow check
- * block another.
+ * block another. Core dependencies have a slightly longer timeout to avoid
+ * false negatives on cold local connections; voice providers keep a short
+ * timeout because they are soft-fail checks.
  *
  * Design decisions:
  *
@@ -53,7 +55,8 @@ export interface HealthReport {
   timestamp: string;
 }
 
-const DEFAULT_TIMEOUT_MS = 2000;
+const CORE_TIMEOUT_MS = 10000;
+const VOICE_TIMEOUT_MS = 2000;
 
 /**
  * Wrap a check with a timeout. The wrapped promise resolves to a
@@ -85,11 +88,11 @@ async function withTimeout(
 // ─── Core dependencies (failure = 503) ─────────────────────────────────────
 
 async function checkDb(): Promise<CheckResult> {
-  return withTimeout('db', db.$queryRaw`SELECT 1`, DEFAULT_TIMEOUT_MS);
+  return withTimeout('db', db.$queryRaw`SELECT 1`, CORE_TIMEOUT_MS);
 }
 
 async function checkRedis(): Promise<CheckResult> {
-  return withTimeout('redis', redisCache.ping(), DEFAULT_TIMEOUT_MS);
+  return withTimeout('redis', redisCache.ping(), CORE_TIMEOUT_MS);
 }
 
 async function checkQueues(): Promise<CheckResult> {
@@ -105,7 +108,7 @@ async function checkQueues(): Promise<CheckResult> {
             await Promise.race([
               queue.getJobCounts(),
               new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error('timeout')), DEFAULT_TIMEOUT_MS),
+                setTimeout(() => reject(new Error('timeout')), CORE_TIMEOUT_MS),
               ),
             ]);
           }
@@ -146,7 +149,7 @@ async function checkTelnyx(): Promise<CheckResult> {
       // .balance.retrieve() works whether or not we've used the client before.
       await telnyx.balance.retrieve();
     })(),
-    DEFAULT_TIMEOUT_MS,
+    VOICE_TIMEOUT_MS,
   );
 }
 
@@ -170,7 +173,7 @@ async function checkDeepgram(): Promise<CheckResult> {
         throw new Error(`Deepgram API ${res.status}: ${res.statusText}`);
       }
     })(),
-    DEFAULT_TIMEOUT_MS,
+    VOICE_TIMEOUT_MS,
   );
 }
 
@@ -192,7 +195,7 @@ async function checkCartesia(): Promise<CheckResult> {
         throw new Error(`Cartesia API ${res.status}: ${res.statusText}`);
       }
     })(),
-    DEFAULT_TIMEOUT_MS,
+    VOICE_TIMEOUT_MS,
   );
 }
 

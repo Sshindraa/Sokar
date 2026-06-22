@@ -1,6 +1,4 @@
-import dotenv from 'dotenv';
-import path from 'path';
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+import './env';
 
 import { initSentry, captureException, closeSentry } from './shared/sentry/client';
 import Fastify from 'fastify';
@@ -20,6 +18,12 @@ import { dashboardRoutes } from './modules/dashboard/dashboard.routes';
 import { authSyncRoutes } from './modules/auth/auth.routes';
 import { googleRoutes } from './modules/integrations/google.routes';
 import { testRoutes } from './modules/test/test.routes';
+import { agenticAdminRoutes } from './modules/agentic-reservations/admin/admin.routes';
+import { mcpRoutes } from './modules/agentic-reservations/mcp/server';
+import { openaiReserveRoutes } from './modules/agentic-reservations/openai-reserve/openai-reserve.routes';
+import { rgpdRoutes } from './modules/rgpd/rgpd.routes';
+import { observabilityRoutes } from './shared/observability/observability.routes';
+import { pilotRoutes } from './modules/pilot/pilot.routes';
 import { registerCors } from './plugins/cors';
 import { registerRateLimit } from './plugins/rate-limit';
 import { registerClerk } from './plugins/clerk';
@@ -172,6 +176,12 @@ export async function buildApp() {
   await app.register(dashboardRoutes);
   await app.register(authSyncRoutes);
   await app.register(googleRoutes);
+  await app.register(agenticAdminRoutes);
+  await app.register(mcpRoutes);
+  await app.register(openaiReserveRoutes);
+  await app.register(rgpdRoutes);
+  await app.register(observabilityRoutes);
+  await app.register(pilotRoutes);
 
   // Routes de test — uniquement en dev/test (simulation d'appel sans Telnyx)
   if (process.env.NODE_ENV !== 'production') {
