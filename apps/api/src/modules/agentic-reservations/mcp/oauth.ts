@@ -87,7 +87,7 @@ async function setJson(key: string, value: unknown, ttlSec: number): Promise<voi
 
 type RegisteredClient = {
   clientId: string;
-  clientSecret: string;
+  clientSecretHash: string; // SHA-256 hash, jamais le plaintext
   redirectUris: string[];
   clientName: string;
   createdAt: string;
@@ -148,6 +148,26 @@ function matchKnownRedirect(uri: string): string | null {
   return null;
 }
 
+// ─── Rate limit simple pour endpoints OAuth ───────────
+// Anti-brute-force sur /token, anti-spam sur /register.
+// 10 req/min par IP pour /token, 5 req/min par IP pour /register.
+const oauthRateMap = new Map<string, { count: number; resetAt: number }>();
+const OAUTH_RATE_TOKEN = { max: 10, windowMs: 60_000 };
+const OAUTH_RATE_REGISTER = { max: 5, windowMs: 60_000 };
+
+function checkOauthRate(ip: string, config: { max: number; windowMs: number }): boolean {
+  const now = Date.now();
+  const key = `${ip}:${config.max}`;
+  const entry = oauthRateMap.get(key);
+  if (!entry || now > entry.resetAt) {
+    oauthRateMap.set(key, { count: 1, resetAt: now + config.windowMs });
+    return true;
+  }
+  if (entry.count >= config.max) return false;
+  entry.count++;
+  return true;
+}
+
 // ─── Routes ────────────────────────────────────────────
 
 export async function oauthRoutes(app: FastifyInstance): Promise<void> {
@@ -195,6 +215,9 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
   // ── 2. Dynamic Client Registration (RFC 7591) ────────
   app.post('/oauth/register', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!checkOauthRate(req.ip, OAUTH_RATE_REGISTER)) {
+      return reply.status(429).send({ error: 'too_many_requests', error_description: 'Too many registrations' });
+    }
     const body = req.body as {
       client_name?: string;
       redirect_uris?: string[];
@@ -216,10 +239,11 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
     const clientId = randomUUID();
     const clientSecret = randomUUID() + randomUUID();
+    const clientSecretHash = createHash('sha256').update(clientSecret).digest('hex');
 
     const client: RegisteredClient = {
       clientId,
-      clientSecret,
+      clientSecretHash,
       redirectUris: body.redirect_uris,
       clientName: body.client_name || 'mcp-client',
       createdAt: new Date().toISOString(),
@@ -436,6 +460,9 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
   // ── 4. Token endpoint ────────────────────────────────
   app.post('/oauth/token', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!checkOauthRate(req.ip, OAUTH_RATE_TOKEN)) {
+      return reply.status(429).send({ error: 'too_many_requests', error_description: 'Too many token requests' });
+    }
     const body = req.body as {
       grant_type?: string;
       code?: string;
@@ -467,11 +494,14 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     // Valider le client (optionnel pour les public clients sans DCR)
     const tokenClient = await getJson<RegisteredClient>(`sokar:oauth:client:${clientId}`);
 
-    // Pour les clients DCR, valider le secret
-    if (tokenClient && tokenClient.clientSecret && clientSecret !== tokenClient.clientSecret) {
+    // Pour les clients DCR, valider le secret par hash (jamais en plaintext)
+    if (tokenClient && tokenClient.clientSecretHash && clientSecret) {
+      const providedHash = createHash('sha256').update(clientSecret).digest('hex');
+      if (providedHash !== tokenClient.clientSecretHash) {
       return reply
         .status(401)
         .send({ error: 'invalid_client', error_description: 'Invalid client secret' });
+      }
     }
 
     const grantType = body.grant_type;

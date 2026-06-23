@@ -14,14 +14,27 @@ import type { FastifyRequest } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
 import { createHash } from 'crypto';
 
-export const ALLOWED_ORIGINS: ReadonlySet<string> = new Set([
+// Origins par défaut. Surchargeable via MCP_ALLOWED_ORIGINS
+// (comma-separated, ex: "https://claude.ai,https://chatgpt.com")
+const DEFAULT_ORIGINS = [
   'https://claude.ai',
   'https://cursor.sh',
   'http://localhost:3000',
   'http://localhost:4000',
   'http://127.0.0.1:3000',
   'http://127.0.0.1:4000',
-]);
+];
+
+function buildAllowedOrigins(): ReadonlySet<string> {
+  const envOrigins = process.env.MCP_ALLOWED_ORIGINS;
+  if (envOrigins) {
+    const extra = envOrigins.split(',').map((o) => o.trim()).filter(Boolean);
+    return new Set([...DEFAULT_ORIGINS, ...extra]);
+  }
+  return new Set(DEFAULT_ORIGINS);
+}
+
+export const ALLOWED_ORIGINS: ReadonlySet<string> = buildAllowedOrigins();
 
 export class McpAuthError extends Error {
   constructor(

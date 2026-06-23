@@ -230,12 +230,20 @@ export class McpToolRegistry {
         },
       });
 
+      // Pagination cursor: si on a exactement maxResults résultats,
+      // on encode le dernier ID comme cursor pour la page suivante.
+      const hasMore = exposedResults.length >= input.maxResults;
+      const nextCursor = hasMore && exposedResults.length > 0
+        ? Buffer.from(exposedResults[exposedResults.length - 1].restaurantId).toString('base64url')
+        : undefined;
+
       return ok({
         restaurants: exposedResults.map((r) => ({
           id: r.restaurantId,
           name: r.name,
           slug: r.slug,
         })),
+        nextCursor,
       });
     } catch (err: any) {
       logger.error({ err, clientId: ctx.clientId }, 'search_restaurants failed');
