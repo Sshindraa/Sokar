@@ -178,14 +178,12 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     '/.well-known/oauth-protected-resource',
     async (_req: FastifyRequest, reply: FastifyReply) => {
       const issuer = getIssuer();
-      return reply
-        .header('Cache-Control', 'public, max-age=3600')
-        .send({
-          resource: issuer,
-          authorization_servers: [issuer],
-          bearer_methods_supported: ['header'],
-          resource_documentation: `${issuer}/docs`,
-        });
+      return reply.header('Cache-Control', 'public, max-age=3600').send({
+        resource: issuer,
+        authorization_servers: [issuer],
+        bearer_methods_supported: ['header'],
+        resource_documentation: `${issuer}/docs`,
+      });
     },
   );
 
@@ -216,7 +214,9 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
   // ── 2. Dynamic Client Registration (RFC 7591) ────────
   app.post('/oauth/register', async (req: FastifyRequest, reply: FastifyReply) => {
     if (!checkOauthRate(req.ip, OAUTH_RATE_REGISTER)) {
-      return reply.status(429).send({ error: 'too_many_requests', error_description: 'Too many registrations' });
+      return reply
+        .status(429)
+        .send({ error: 'too_many_requests', error_description: 'Too many registrations' });
     }
     const body = req.body as {
       client_name?: string;
@@ -349,6 +349,14 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       ? query.scope.split(' ').filter(Boolean)
       : ['mcp:read', 'mcp:reserve', 'mcp:cancel'];
 
+    // Générer un token CSRF pour protéger le consent form
+    const csrfToken = randomUUID();
+    await setJson(
+      `sokar:oauth:csrf:${csrfToken}`,
+      { clientId: query.client_id, redirectUri: query.redirect_uri },
+      TTL_CODE, // 10 min — même TTL que les auth codes
+    );
+
     return reply.type('text/html').send(
       renderConsentPage({
         clientName: clientName,
@@ -360,6 +368,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         scope: scopes.join(' '),
         codeChallenge: query.code_challenge || '',
         codeChallengeMethod: query.code_challenge_method || '',
+        csrfToken,
       }),
     );
   });
@@ -374,7 +383,49 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       code_challenge?: string;
       code_challenge_method?: string;
       action?: string; // "approve" ou "deny"
+      csrf_token?: string;
     };
+
+    // Valider le token CSRF (protection contre les attaques cross-site
+    // sur le consent form — que ce soit approve ou deny)
+    if (!body.csrf_token) {
+      return reply
+        .status(403)
+        .type('text/html')
+        .send(renderError('Token CSRF manquant', 'Veuillez recharger la page de consentement.'));
+    }
+    const csrfData = await getJson<{ clientId: string; redirectUri: string }>(
+      `sokar:oauth:csrf:${body.csrf_token}`,
+    );
+    if (!csrfData) {
+      return reply
+        .status(403)
+        .type('text/html')
+        .send(
+          renderError(
+            'Token CSRF invalide',
+            'Le token de consentement a expiré. Veuillez recharger la page.',
+          ),
+        );
+    }
+    // Supprimer le token (one-time use)
+    await redisCache.del(`sokar:oauth:csrf:${body.csrf_token}`);
+
+    // Vérifier la cohérence client_id / redirect_uri entre le CSRF et le form
+    if (
+      (body.client_id && csrfData.clientId && body.client_id !== csrfData.clientId) ||
+      (body.redirect_uri && csrfData.redirectUri && body.redirect_uri !== csrfData.redirectUri)
+    ) {
+      return reply
+        .status(403)
+        .type('text/html')
+        .send(
+          renderError(
+            'Incohérence CSRF',
+            'Les paramètres ne correspondent pas au token de consentement.',
+          ),
+        );
+    }
 
     // Valider le client
     const postClient = await getJson<RegisteredClient>(`sokar:oauth:client:${body.client_id}`);
@@ -382,7 +433,10 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     if (!postClient) {
       const knownName = body.redirect_uri ? matchKnownRedirect(body.redirect_uri) : null;
       if (!knownName) {
-        return reply.status(400).type('text/html').send(renderError('Client inconnu', 'Client non trouvé.'));
+        return reply
+          .status(400)
+          .type('text/html')
+          .send(renderError('Client inconnu', 'Client non trouvé.'));
       }
     } else {
       if (!body.redirect_uri || !postClient.redirectUris.includes(body.redirect_uri)) {
@@ -421,7 +475,10 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
     // Refuser les requêtes sans client_id valide
     if (!body.client_id) {
-      return reply.status(400).type('text/html').send(renderError('Client manquant', 'client_id requis.'));
+      return reply
+        .status(400)
+        .type('text/html')
+        .send(renderError('Client manquant', 'client_id requis.'));
     }
 
     // Générer le code d'autorisation
@@ -461,7 +518,9 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
   // ── 4. Token endpoint ────────────────────────────────
   app.post('/oauth/token', async (req: FastifyRequest, reply: FastifyReply) => {
     if (!checkOauthRate(req.ip, OAUTH_RATE_TOKEN)) {
-      return reply.status(429).send({ error: 'too_many_requests', error_description: 'Too many token requests' });
+      return reply
+        .status(429)
+        .send({ error: 'too_many_requests', error_description: 'Too many token requests' });
     }
     const body = req.body as {
       grant_type?: string;
@@ -498,9 +557,9 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     if (tokenClient && tokenClient.clientSecretHash && clientSecret) {
       const providedHash = createHash('sha256').update(clientSecret).digest('hex');
       if (providedHash !== tokenClient.clientSecretHash) {
-      return reply
-        .status(401)
-        .send({ error: 'invalid_client', error_description: 'Invalid client secret' });
+        return reply
+          .status(401)
+          .send({ error: 'invalid_client', error_description: 'Invalid client secret' });
       }
     }
 
@@ -634,7 +693,9 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     }
 
     if (!revokeClientId) {
-      return reply.status(401).send({ error: 'invalid_client', error_description: 'client_id required' });
+      return reply
+        .status(401)
+        .send({ error: 'invalid_client', error_description: 'client_id required' });
     }
 
     if (body.token) {
@@ -657,6 +718,7 @@ function renderConsentPage(params: {
   scope: string;
   codeChallenge: string;
   codeChallengeMethod: string;
+  csrfToken: string;
 }): string {
   const {
     clientName,
@@ -668,6 +730,7 @@ function renderConsentPage(params: {
     scope,
     codeChallenge,
     codeChallengeMethod,
+    csrfToken,
   } = params;
 
   return `<!DOCTYPE html>
@@ -805,6 +868,7 @@ function renderConsentPage(params: {
       <input type="hidden" name="restaurant_id" value="${escapeAttr(restaurantId)}"/>
       <input type="hidden" name="code_challenge" value="${escapeAttr(codeChallenge)}"/>
       <input type="hidden" name="code_challenge_method" value="${escapeAttr(codeChallengeMethod)}"/>
+      <input type="hidden" name="csrf_token" value="${escapeAttr(csrfToken)}"/>
       <div class="actions">
         <button type="submit" class="btn-approve">Autoriser</button>
         <button type="submit" name="action" value="deny" class="btn-deny">Refuser</button>

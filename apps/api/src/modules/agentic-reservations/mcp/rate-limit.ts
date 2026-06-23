@@ -105,8 +105,41 @@ export class McpRateLimiter {
         resetMs,
         reason: allowed === 1 ? undefined : 'over_capacity',
       };
-    } catch {
-      // Si Redis down ou script erreur, fail-open
+    } catch (err: any) {
+      // NOSCRIPT: Redis a flushé les scripts (restart, FLUSHSCRIPT, etc.).
+      // On reload le script et on retry une fois. Si ça échec encore, fail-open.
+      if (err?.message?.includes('NOSCRIPT') || (err as any)?.code === 'NOSCRIPT') {
+        try {
+          this.scriptSha = (await this.redis.script('LOAD', LUA_SCRIPT)) as string;
+          const result = (await this.redis.evalsha(
+            this.scriptSha,
+            1,
+            key,
+            String(this.config.capacity),
+            String(this.config.refillPerSecond),
+            String(now),
+          )) as [number, number, number];
+
+          const [allowed, remaining, resetMs] = result;
+          return {
+            allowed: allowed === 1,
+            remaining,
+            resetMs,
+            reason: allowed === 1 ? undefined : 'over_capacity',
+          };
+        } catch {
+          // Reload ou retry échoué — fail-open
+          this.scriptSha = null;
+          return {
+            allowed: true,
+            remaining: this.config.capacity,
+            resetMs: 0,
+            reason: 'redis_down',
+          };
+        }
+      }
+      // Autre erreur Redis (down, timeout, etc.) — fail-open
+      this.scriptSha = null;
       return {
         allowed: true,
         remaining: this.config.capacity,

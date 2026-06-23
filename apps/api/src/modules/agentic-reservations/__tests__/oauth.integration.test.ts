@@ -29,6 +29,7 @@ describe('OAuth MCP integration flow', () => {
   let clientSecret: string;
   let authCode: string;
   let accessToken: string;
+  let csrfToken: string;
 
   beforeAll(() => {
     process.env.NODE_ENV = 'development';
@@ -94,6 +95,11 @@ describe('OAuth MCP integration flow', () => {
     expect(res.headers['content-type']).toContain('text/html');
     expect(res.body).toContain('Test Restaurant');
     expect(res.body).toContain('Autoriser');
+
+    // Extract CSRF token from the hidden input
+    const csrfMatch = res.body.match(/name="csrf_token" value="([^"]+)"/);
+    expect(csrfMatch).not.toBeNull();
+    csrfToken = csrfMatch![1];
   });
 
   // ── 4. Authorize (process consent → redirect with code) ──
@@ -108,7 +114,7 @@ describe('OAuth MCP integration flow', () => {
       method: 'POST',
       url: '/oauth/authorize',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      payload: `action=approve&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=test-state&scope=${encodeURIComponent(SCOPES)}&restaurant_id=test-resto-1`,
+      payload: `action=approve&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=test-state&scope=${encodeURIComponent(SCOPES)}&restaurant_id=test-resto-1&csrf_token=${csrfToken}`,
     });
 
     expect(res.statusCode).toBe(302);
