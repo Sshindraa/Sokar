@@ -185,7 +185,11 @@ function getDashboardUrl(): string {
 
 function buildLoginRedirect(req: FastifyRequest): string {
   const currentUrl = `${getIssuer()}${req.url}`;
-  const loginUrl = new URL('/sign-in', getDashboardUrl());
+  // Le sign-in de Clerk est servi sur /login (pas /sign-in). L'URL du dashboard
+  // est juste la base — le path /login est ajouté ici pour ne pas le coupler
+  // à getDashboardUrl().
+  const dashboardBase = getDashboardUrl().replace(/\/+$/, '');
+  const loginUrl = new URL('/login', dashboardBase);
   loginUrl.searchParams.set('redirect_url', currentUrl);
   return loginUrl.toString();
 }
