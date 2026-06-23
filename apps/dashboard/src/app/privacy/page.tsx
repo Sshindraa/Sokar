@@ -270,9 +270,9 @@ export default function PrivacyPage() {
         <Section title="3. Sous-traitants et transferts hors UE">
           <p>
             Sokar fait appel à des sous-traitants pour fournir certaines fonctionnalités. Tous
-            traitent les données conformément à nos instructions et, lorsqu'ils sont situés hors de
-            l'Union européenne, dans le cadre de clauses contractuelles types (SCC) ou de décisions
-            d'adéquation.
+            traitent les données conformément à nos instructions et, lorsqu&apos;ils sont situés
+            hors de l&apos;Union européenne, dans le cadre de clauses contractuelles types (SCC) ou
+            de décisions d&apos;adéquation.
           </p>
           <div className="mt-6 overflow-hidden rounded-2xl border border-white/8">
             <table className="w-full text-left text-sm">
@@ -309,7 +309,7 @@ export default function PrivacyPage() {
           <p>
             Conformément au RGPD (articles 15 à 22), vous disposez à tout moment des droits
             suivants. Leur exercice est gratuit et nous nous engageons à y répondre dans un délai
-            d'un mois.
+            d&apos;un mois.
           </p>
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             {USER_RIGHTS.map((r) => (
@@ -413,7 +413,7 @@ export default function PrivacyPage() {
 
         <div className="pt-8 text-center text-xs text-white/40">
           <Link href="/" className="hover:text-foreground transition-all duration-200">
-            ← Retour à l'accueil
+            ← Retour à l&apos;accueil
           </Link>
         </div>
       </main>
