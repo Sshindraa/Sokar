@@ -23,15 +23,17 @@
  * - Les redirect_uri sont validés contre ceux enregistrés lors du register.
  * - En production, l'issuer est lu depuis OAUTH_ISSUER_URL.
  *
- * TODO (P2) : remplacer l'auto-approve par une page de consentement
- * qui demande à l'utilisateur de sélectionner son restaurant après
- * authentification Clerk. Pour l'instant on utilise le premier restaurant
- * avec MCP activé.
+ * Production : le consentement est lié à l'organisation Clerk active.
+ * Sans session Clerk, /oauth/authorize redirige vers le dashboard sign-in.
+ * En dev/test, on garde le fallback local vers le premier restaurant MCP
+ * pour permettre les smoke tests sans navigateur Clerk.
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
+import { getAuth } from '@clerk/fastify';
 import { createHash, randomUUID } from 'crypto';
+import { isClerkConfigured } from '../../../plugins/clerk';
 import { redisCache } from '../../../shared/redis/client';
 import { logger } from '../../../shared/logger/pino';
 import type { AuthContext } from './auth';
@@ -166,6 +168,32 @@ function checkOauthRate(ip: string, config: { max: number; windowMs: number }): 
   if (entry.count >= config.max) return false;
   entry.count++;
   return true;
+}
+
+function shouldRequireClerkConsent(): boolean {
+  return process.env.NODE_ENV === 'production' && isClerkConfigured();
+}
+
+function getDashboardUrl(): string {
+  return process.env.DASHBOARD_URL || 'https://app.sokar.tech';
+}
+
+function buildLoginRedirect(req: FastifyRequest): string {
+  const currentUrl = `${getIssuer()}${req.url}`;
+  const loginUrl = new URL('/sign-in', getDashboardUrl());
+  loginUrl.searchParams.set('redirect_url', currentUrl);
+  return loginUrl.toString();
+}
+
+function getClerkOrgId(req: FastifyRequest): string | null {
+  if (!shouldRequireClerkConsent()) return null;
+  try {
+    const { orgId } = getAuth(req);
+    return orgId ?? null;
+  } catch (err) {
+    req.log.warn({ err }, 'oauth: Clerk auth unavailable during consent');
+    return null;
+  }
 }
 
 // ─── Routes ────────────────────────────────────────────
@@ -327,11 +355,22 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
-    // Trouver le premier restaurant avec MCP activé
-    const restaurant = await db.restaurantExposureSettings.findFirst({
-      where: { mcpEnabled: true },
-      include: { restaurant: { select: { id: true, name: true } } },
-    });
+    const scopedOrgId = getClerkOrgId(req);
+    if (shouldRequireClerkConsent() && !scopedOrgId) {
+      return reply.redirect(buildLoginRedirect(req));
+    }
+
+    // En production, le consentement OAuth est scoped au restaurant actif Clerk.
+    // En dev/test, on garde le fallback historique pour les smokes locaux.
+    const restaurant = scopedOrgId
+      ? await db.restaurantExposureSettings.findFirst({
+          where: { restaurantId: scopedOrgId, mcpEnabled: true },
+          include: { restaurant: { select: { id: true, name: true } } },
+        })
+      : await db.restaurantExposureSettings.findFirst({
+          where: { mcpEnabled: true },
+          include: { restaurant: { select: { id: true, name: true } } },
+        });
 
     if (!restaurant || !restaurant.restaurant) {
       return reply
@@ -456,6 +495,19 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       return reply.redirect(denyUrl.toString());
     }
 
+    const scopedOrgId = getClerkOrgId(req);
+    if (shouldRequireClerkConsent() && !scopedOrgId) {
+      return reply
+        .status(401)
+        .type('text/html')
+        .send(
+          renderError(
+            'Authentification requise',
+            'Reconnectez-vous à Sokar puis relancez la connexion MCP.',
+          ),
+        );
+    }
+
     // Récupérer le restaurant
     const restaurantId = body.restaurant_id;
     if (!restaurantId) {
@@ -463,6 +515,18 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         .status(400)
         .type('text/html')
         .send(renderError('Restaurant manquant', 'restaurant_id requis.'));
+    }
+
+    if (shouldRequireClerkConsent() && scopedOrgId !== restaurantId) {
+      return reply
+        .status(403)
+        .type('text/html')
+        .send(
+          renderError(
+            'Restaurant non autorisé',
+            'Ce restaurant ne correspond pas à votre session.',
+          ),
+        );
     }
 
     const restaurant = await db.restaurant.findUnique({

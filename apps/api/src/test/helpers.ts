@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { vi } from 'vitest';
 
 vi.mock('../plugins/clerk', () => ({
+  isClerkConfigured: vi.fn(() => true),
   registerClerk: vi.fn().mockResolvedValue(undefined),
   requireOrg: () => {
     return async (req: any, reply: any) => {
