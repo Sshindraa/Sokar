@@ -25,6 +25,7 @@ import { logger } from '../../../shared/logger/pino';
 import { McpAuthError, authenticateMcpRequest } from './auth';
 import { McpRateLimiter } from './rate-limit';
 import { McpToolRegistry, executeTool, type ToolContext } from './tools/registry';
+import { getIssuer } from './oauth';
 
 const TOOL_LIST = [
   {
@@ -166,6 +167,27 @@ export class McpServer {
   }
 
   registerRoutes(app: FastifyInstance): void {
+    // GET /mcp : utilisé par les clients MCP pour discovery (SSE init).
+    // Sans auth → 401 avec WWW-Authenticate pour pointer vers OAuth metadata.
+    // Avec auth → 405 car on ne supporte pas encore le streaming SSE.
+    app.get('/mcp', async (req: FastifyRequest, reply: FastifyReply) => {
+      try {
+        await authenticateMcpRequest(req, this.prisma);
+        return reply.status(405).send({ error: 'Method Not Allowed', code: 'METHOD_NOT_ALLOWED' });
+      } catch (err) {
+        if (err instanceof McpAuthError) {
+          return reply
+            .status(401)
+            .header(
+              'WWW-Authenticate',
+              `Bearer resource_metadata="${getIssuer()}/.well-known/oauth-authorization-server"`,
+            )
+            .send({ error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    });
+
     // POST /mcp : endpoint principal JSON-RPC
     app.post('/mcp', async (req: FastifyRequest, reply: FastifyReply) => {
       let authCtx: ToolContext;
@@ -180,7 +202,13 @@ export class McpServer {
         };
       } catch (err) {
         if (err instanceof McpAuthError) {
-          return reply.status(err.statusCode).send({ error: err.message, code: err.code });
+          return reply
+            .status(err.statusCode)
+            .header(
+              'WWW-Authenticate',
+              `Bearer resource_metadata="${getIssuer()}/.well-known/oauth-authorization-server"`,
+            )
+            .send({ error: err.message, code: err.code });
         }
         throw err;
       }

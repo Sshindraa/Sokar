@@ -20,6 +20,7 @@ import { googleRoutes } from './modules/integrations/google.routes';
 import { testRoutes } from './modules/test/test.routes';
 import { agenticAdminRoutes } from './modules/agentic-reservations/admin/admin.routes';
 import { mcpRoutes } from './modules/agentic-reservations/mcp/server';
+import { oauthRoutes } from './modules/agentic-reservations/mcp/oauth';
 import { openaiReserveRoutes } from './modules/agentic-reservations/openai-reserve/openai-reserve.routes';
 import { rgpdRoutes } from './modules/rgpd/rgpd.routes';
 import { observabilityRoutes } from './shared/observability/observability.routes';
@@ -178,6 +179,7 @@ export async function buildApp() {
   await app.register(googleRoutes);
   await app.register(agenticAdminRoutes);
   await app.register(mcpRoutes);
+  await app.register(oauthRoutes);
   await app.register(openaiReserveRoutes);
   await app.register(rgpdRoutes);
   await app.register(observabilityRoutes);
