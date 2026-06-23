@@ -95,6 +95,14 @@ export async function validateApiKey(
   key: string,
   prisma: PrismaClient,
 ): Promise<AuthContext | null> {
+  // 1. Essayer d'abord un token OAuth (opaque, stocké dans Redis)
+  //    Les tokens OAuth ne respectent pas le format sk_sokar_agent_, donc
+  //    on les check avant la validation de format.
+  const { validateOAuthToken } = await import('./oauth');
+  const oauthCtx = await validateOAuthToken(key);
+  if (oauthCtx) return oauthCtx;
+
+  // 2. Sinon, essayer une API key (format sk_sokar_agent_...)
   if (!validateApiKeyFormat(key)) return null;
 
   const client = await prisma.agentClient.findUnique({
