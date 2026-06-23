@@ -58,7 +58,8 @@ echo "📦 Building..."
 NODE_OPTIONS="--max-old-space-size=1536" pnpm -r --workspace-concurrency=1 build
 
 # Dashboard: skip lint (déjà fait en CI), disable Sentry telemetry
-NODE_OPTIONS="--max-old-space-size=1536" NEXT_TELEMETRY_DISABLED=1 SENTRY_SUPPRESS_GLOBAL_ERROR_HANDLER_FILE_WARNING=1 pnpm --filter @sokar/dashboard build
+# 2048MB pour éviter le timeout/OOM sur la phase type-checking de Next.js (VPS 4GB sans swap)
+NODE_OPTIONS="--max-old-space-size=2048" NEXT_TELEMETRY_DISABLED=1 SENTRY_SUPPRESS_GLOBAL_ERROR_HANDLER_FILE_WARNING=1 pnpm --filter @sokar/dashboard build
 
 # ── 6. Copy static assets to standalone ─────────────────
 echo ""
