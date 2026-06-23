@@ -125,6 +125,8 @@ export async function buildApp() {
 
   // OAuth 2.0 endpoints (token, register) reçoivent traditionnellement du
   // application/x-www-form-urlencoded. Sans ce parser, Fastify renvoie 415.
+  // Note: dans le form-urlencoded, les espaces sont encodés avec '+',
+  // decodeURIComponent ne les convertit pas → il faut remplacer '+' par '%20' avant.
   app.addContentTypeParser(
     'application/x-www-form-urlencoded',
     { parseAs: 'string' },
@@ -134,7 +136,8 @@ export async function buildApp() {
         for (const pair of body.split('&')) {
           if (!pair) continue;
           const [key, ...rest] = pair.split('=');
-          parsed[decodeURIComponent(key)] = decodeURIComponent(rest.join('='));
+          const val = rest.join('=').replace(/\+/g, '%20');
+          parsed[decodeURIComponent(key.replace(/\+/g, '%20'))] = decodeURIComponent(val);
         }
         done(null, parsed);
       } catch (err: any) {
