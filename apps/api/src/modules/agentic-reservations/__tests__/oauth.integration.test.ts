@@ -79,11 +79,10 @@ describe('OAuth MCP integration flow', () => {
 
   // ── 3. Authorize (consent page) ──────────────────────
   it('GET /oauth/authorize returns consent HTML', async () => {
-    // Mock: restaurant with MCP enabled
+    // Mock: at least one restaurant with MCP enabled
     vi.mocked(db.restaurantExposureSettings.findFirst).mockResolvedValue({
       restaurantId: 'test-resto-1',
       mcpEnabled: true,
-      restaurant: { id: 'test-resto-1', name: 'Test Restaurant' },
     } as any);
 
     const app = await getApp();
@@ -93,8 +92,8 @@ describe('OAuth MCP integration flow', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/html');
-    expect(res.body).toContain('Test Restaurant');
     expect(res.body).toContain('Autoriser');
+    expect(res.body).not.toContain('Restaurant connect'); // no restaurant block
 
     // Extract CSRF token from the hidden input
     const csrfMatch = res.body.match(/name="csrf_token" value="([^"]+)"/);
@@ -104,17 +103,12 @@ describe('OAuth MCP integration flow', () => {
 
   // ── 4. Authorize (process consent → redirect with code) ──
   it('POST /oauth/authorize (form-urlencoded) redirects with code', async () => {
-    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
-      id: 'test-resto-1',
-      name: 'Test Restaurant',
-    } as any);
-
     const app = await getApp();
     const res = await app.inject({
       method: 'POST',
       url: '/oauth/authorize',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      payload: `action=approve&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=test-state&scope=${encodeURIComponent(SCOPES)}&restaurant_id=test-resto-1&csrf_token=${csrfToken}`,
+      payload: `action=approve&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=test-state&scope=${encodeURIComponent(SCOPES)}&csrf_token=${csrfToken}`,
     });
 
     expect(res.statusCode).toBe(302);
@@ -234,7 +228,6 @@ describe('OAuth MCP integration flow', () => {
     vi.mocked(db.restaurantExposureSettings.findFirst).mockResolvedValue({
       restaurantId: 'test-resto-1',
       mcpEnabled: true,
-      restaurant: { id: 'test-resto-1', name: 'Test Restaurant' },
     } as any);
 
     const app = await getApp();
@@ -247,12 +240,15 @@ describe('OAuth MCP integration flow', () => {
     expect(res.body).toContain('Autoriser');
   });
 
-  // ── 10. Production consent requires Clerk org ─────────
-  it('GET /oauth/authorize redirects to Sokar sign-in in production without Clerk org', async () => {
+  // ── 10. Public consent in production (no Clerk required) ──
+  it('GET /oauth/authorize shows consent page in production without Clerk login', async () => {
     const previousNodeEnv = process.env.NODE_ENV;
-    const previousDashboardUrl = process.env.DASHBOARD_URL;
     process.env.NODE_ENV = 'production';
-    process.env.DASHBOARD_URL = 'https://app.sokar.tech';
+
+    vi.mocked(db.restaurantExposureSettings.findFirst).mockResolvedValue({
+      restaurantId: 'test-resto-1',
+      mcpEnabled: true,
+    } as any);
 
     const app = await getApp();
     const res = await app.inject({
@@ -260,15 +256,11 @@ describe('OAuth MCP integration flow', () => {
       url: `/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}`,
     });
 
-    expect(res.statusCode).toBe(302);
-    expect(res.headers.location).toContain('https://app.sokar.tech/login');
-    expect(res.headers.location).toContain('redirect_url=');
+    // No redirect to login — consent page shows directly
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('text/html');
+    expect(res.body).toContain('Autoriser');
 
     process.env.NODE_ENV = previousNodeEnv;
-    if (previousDashboardUrl === undefined) {
-      delete process.env.DASHBOARD_URL;
-    } else {
-      process.env.DASHBOARD_URL = previousDashboardUrl;
-    }
   });
 });

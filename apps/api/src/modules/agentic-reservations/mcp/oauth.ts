@@ -23,17 +23,14 @@
  * - Les redirect_uri sont validés contre ceux enregistrés lors du register.
  * - En production, l'issuer est lu depuis OAUTH_ISSUER_URL.
  *
- * Production : le consentement est lié à l'organisation Clerk active.
- * Sans session Clerk, /oauth/authorize redirige vers le dashboard sign-in.
- * En dev/test, on garde le fallback local vers le premier restaurant MCP
- * pour permettre les smoke tests sans navigateur Clerk.
+ * Production : le consentement est public (pas de login Clerk).
+ * Le restaurateur active MCP dans son dashboard (coté admin, avec Clerk).
+ * Le client (ChatGPT, Claude.ai, Mistral) fait un simple approve/deny.
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
-import { getAuth } from '@clerk/fastify';
 import { createHash, randomUUID } from 'crypto';
-import { isClerkConfigured } from '../../../plugins/clerk';
 import { redisCache } from '../../../shared/redis/client';
 import { logger } from '../../../shared/logger/pino';
 import type { AuthContext } from './auth';
@@ -97,8 +94,8 @@ type RegisteredClient = {
 
 type AuthCode = {
   clientId: string;
-  restaurantId: string;
-  restaurantName: string;
+  restaurantId: string | null; // null = public access (any MCP-enabled restaurant)
+  restaurantName: string | null;
   scopes: string[];
   redirectUri: string;
   codeChallenge?: string;
@@ -107,8 +104,8 @@ type AuthCode = {
 
 type StoredToken = {
   clientId: string;
-  restaurantId: string;
-  restaurantName: string;
+  restaurantId: string | null; // null = public access (any MCP-enabled restaurant)
+  restaurantName: string | null;
   scopes: string[];
 };
 
@@ -168,41 +165,6 @@ function checkOauthRate(ip: string, config: { max: number; windowMs: number }): 
   if (entry.count >= config.max) return false;
   entry.count++;
   return true;
-}
-
-function shouldRequireClerkConsent(): boolean {
-  return process.env.NODE_ENV === 'production' && isClerkConfigured();
-}
-
-function getDashboardUrl(): string {
-  // IMPORTANT : doit pointer sur un sous-domaine qui existe en DNS + nginx.
-  // Historiquement on utilisait `app.sokar.tech` mais ce sous-domaine n'a
-  // jamais été configuré (le dashboard est servi sur `sokar.tech`, pas sur
-  // un sous-domaine `app.`). En attendant de configurer `app.sokar.tech`
-  // proprement, on pointe sur la racine + page de sign-in existante.
-  return process.env.DASHBOARD_URL || 'https://sokar.tech/login';
-}
-
-function buildLoginRedirect(req: FastifyRequest): string {
-  const currentUrl = `${getIssuer()}${req.url}`;
-  // Le sign-in de Clerk est servi sur /login (pas /sign-in). L'URL du dashboard
-  // est juste la base — le path /login est ajouté ici pour ne pas le coupler
-  // à getDashboardUrl().
-  const dashboardBase = getDashboardUrl().replace(/\/+$/, '');
-  const loginUrl = new URL('/login', dashboardBase);
-  loginUrl.searchParams.set('redirect_url', currentUrl);
-  return loginUrl.toString();
-}
-
-function getClerkOrgId(req: FastifyRequest): string | null {
-  if (!shouldRequireClerkConsent()) return null;
-  try {
-    const { orgId } = getAuth(req);
-    return orgId ?? null;
-  } catch (err) {
-    req.log.warn({ err }, 'oauth: Clerk auth unavailable during consent');
-    return null;
-  }
 }
 
 // ─── Routes ────────────────────────────────────────────
@@ -364,24 +326,15 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       }
     }
 
-    const scopedOrgId = getClerkOrgId(req);
-    if (shouldRequireClerkConsent() && !scopedOrgId) {
-      return reply.redirect(buildLoginRedirect(req));
-    }
+    // Vérifier qu'au moins un restaurant a MCP activé — sinon le connector
+    // est inutile. Pas de scoping Clerk : le MCP est un API publique pour les
+    // clients (ChatGPT, Claude.ai, Mistral), pas pour les restaurateurs.
+    const anyMcp = await db.restaurantExposureSettings.findFirst({
+      where: { mcpEnabled: true },
+      select: { restaurantId: true },
+    });
 
-    // En production, le consentement OAuth est scoped au restaurant actif Clerk.
-    // En dev/test, on garde le fallback historique pour les smokes locaux.
-    const restaurant = scopedOrgId
-      ? await db.restaurantExposureSettings.findFirst({
-          where: { restaurantId: scopedOrgId, mcpEnabled: true },
-          include: { restaurant: { select: { id: true, name: true } } },
-        })
-      : await db.restaurantExposureSettings.findFirst({
-          where: { mcpEnabled: true },
-          include: { restaurant: { select: { id: true, name: true } } },
-        });
-
-    if (!restaurant || !restaurant.restaurant) {
+    if (!anyMcp) {
       return reply
         .status(400)
         .type('text/html')
@@ -408,8 +361,6 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     return reply.type('text/html').send(
       renderConsentPage({
         clientName: clientName,
-        restaurantName: restaurant.restaurant.name,
-        restaurantId: restaurant.restaurantId,
         clientId: query.client_id,
         redirectUri: query.redirect_uri,
         state: query.state || '',
@@ -504,48 +455,6 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       return reply.redirect(denyUrl.toString());
     }
 
-    const scopedOrgId = getClerkOrgId(req);
-    if (shouldRequireClerkConsent() && !scopedOrgId) {
-      return reply
-        .status(401)
-        .type('text/html')
-        .send(
-          renderError(
-            'Authentification requise',
-            'Reconnectez-vous à Sokar puis relancez la connexion MCP.',
-          ),
-        );
-    }
-
-    // Récupérer le restaurant
-    const restaurantId = body.restaurant_id;
-    if (!restaurantId) {
-      return reply
-        .status(400)
-        .type('text/html')
-        .send(renderError('Restaurant manquant', 'restaurant_id requis.'));
-    }
-
-    if (shouldRequireClerkConsent() && scopedOrgId !== restaurantId) {
-      return reply
-        .status(403)
-        .type('text/html')
-        .send(
-          renderError(
-            'Restaurant non autorisé',
-            'Ce restaurant ne correspond pas à votre session.',
-          ),
-        );
-    }
-
-    const restaurant = await db.restaurant.findUnique({
-      where: { id: restaurantId },
-      select: { id: true, name: true },
-    });
-    if (!restaurant) {
-      return reply.status(400).type('text/html').send(renderError('Restaurant introuvable', ''));
-    }
-
     // Refuser les requêtes sans client_id valide
     if (!body.client_id) {
       return reply
@@ -555,6 +464,9 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     }
 
     // Générer le code d'autorisation
+    // restaurantId = null : le token MCP est public, il donne accès à tous
+    // les restaurants qui ont MCP activé. Le scoping se fait au niveau des
+    // tools (getMcpExposure vérifie mcpEnabled par restaurant).
     const code = randomUUID();
     const scopes = body.scope
       ? body.scope.split(' ').filter(Boolean)
@@ -562,8 +474,8 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
     const authCode: AuthCode = {
       clientId: body.client_id || '',
-      restaurantId: restaurant.id,
-      restaurantName: restaurant.name,
+      restaurantId: null,
+      restaurantName: null,
       scopes,
       redirectUri: body.redirect_uri || '',
       codeChallenge: body.code_challenge || undefined,
@@ -572,10 +484,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
     await setJson(`sokar:oauth:code:${code}`, authCode, TTL_CODE);
 
-    logger.info(
-      { clientId: body.client_id, restaurantId: restaurant.id },
-      'oauth: authorization code issued',
-    );
+    logger.info({ clientId: body.client_id }, 'oauth: authorization code issued (public)');
 
     // Rediriger vers le client avec le code
     if (!body.redirect_uri) {
@@ -783,8 +692,6 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
 function renderConsentPage(params: {
   clientName: string;
-  restaurantName: string;
-  restaurantId: string;
   clientId: string;
   redirectUri: string;
   state: string;
@@ -795,8 +702,6 @@ function renderConsentPage(params: {
 }): string {
   const {
     clientName,
-    restaurantName,
-    restaurantId,
     clientId,
     redirectUri,
     state,
@@ -849,24 +754,6 @@ function renderConsentPage(params: {
       line-height: 1.6;
       margin-bottom: 16px;
     }
-    .restaurant {
-      background: #1c1c1c;
-      border: 1px solid #333;
-      border-radius: 10px;
-      padding: 16px;
-      margin-bottom: 24px;
-    }
-    .restaurant-label {
-      font-size: 12px;
-      color: #666;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 4px;
-    }
-    .restaurant-name {
-      font-size: 16px;
-      font-weight: 600;
-    }
     .scopes {
       margin-bottom: 24px;
     }
@@ -918,18 +805,13 @@ function renderConsentPage(params: {
   <div class="card">
     <div class="logo">Sokar<span>.</span></div>
     <h1>Connexion à ${escapeHtml(clientName)}</h1>
-    <p>${escapeHtml(clientName)} demande l'accès aux outils de réservation de votre restaurant sur Sokar.</p>
-
-    <div class="restaurant">
-      <div class="restaurant-label">Restaurant connecté</div>
-      <div class="restaurant-name">${escapeHtml(restaurantName)}</div>
-    </div>
+    <p>${escapeHtml(clientName)} demande l'acc&egrave;s &agrave; Sokar pour rechercher des restaurants et g&eacute;rer des r&eacute;servations.</p>
 
     <div class="scopes">
       <div class="scope-item"><span class="scope-dot"></span> Rechercher des restaurants</div>
-      <div class="scope-item"><span class="scope-dot"></span> Vérifier les disponibilités</div>
-      <div class="scope-item"><span class="scope-dot"></span> Créer des réservations</div>
-      <div class="scope-item"><span class="scope-dot"></span> Annuler des réservations</div>
+      <div class="scope-item"><span class="scope-dot"></span> V&eacute;rifier les disponibilit&eacute;s</div>
+      <div class="scope-item"><span class="scope-dot"></span> Cr&eacute;er des r&eacute;servations</div>
+      <div class="scope-item"><span class="scope-dot"></span> Annuler des r&eacute;servations</div>
     </div>
 
     <form method="POST" action="/oauth/authorize">
@@ -938,7 +820,6 @@ function renderConsentPage(params: {
       <input type="hidden" name="redirect_uri" value="${escapeAttr(redirectUri)}"/>
       <input type="hidden" name="state" value="${escapeAttr(state)}"/>
       <input type="hidden" name="scope" value="${escapeAttr(scope)}"/>
-      <input type="hidden" name="restaurant_id" value="${escapeAttr(restaurantId)}"/>
       <input type="hidden" name="code_challenge" value="${escapeAttr(codeChallenge)}"/>
       <input type="hidden" name="code_challenge_method" value="${escapeAttr(codeChallengeMethod)}"/>
       <input type="hidden" name="csrf_token" value="${escapeAttr(csrfToken)}"/>
