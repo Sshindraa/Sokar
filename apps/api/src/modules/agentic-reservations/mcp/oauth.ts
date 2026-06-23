@@ -130,6 +130,24 @@ export async function validateOAuthToken(token: string): Promise<AuthContext | n
   };
 }
 
+// ─── Pre-allowed redirect URIs for known MCP platforms ──
+// Si un client ne fait pas de DCR, on accepte ces redirect URIs
+const KNOWN_REDIRECT_PATTERNS: { pattern: RegExp; name: string }[] = [
+  { pattern: /^https:\/\/claude\.ai\/api\/mcp\/auth_callback$/, name: 'Claude' },
+  { pattern: /^https:\/\/claude\.ai\/api\/mcp\/auth_callback\/.+$/, name: 'Claude' },
+  { pattern: /^https:\/\/chatgpt\.com\/backend-api\/mcp\/.+\/callback$/, name: 'ChatGPT' },
+  { pattern: /^https:\/\/chat\.mistral\.ai\/.+\/callback$/, name: 'Mistral' },
+  { pattern: /^http:\/\/localhost:\d+\/callback$/, name: 'Claude Code' },
+  { pattern: /^http:\/\/127\.0\.0\.1:\d+\/callback$/, name: 'Claude Code' },
+];
+
+function matchKnownRedirect(uri: string): string | null {
+  for (const entry of KNOWN_REDIRECT_PATTERNS) {
+    if (entry.pattern.test(uri)) return entry.name;
+  }
+  return null;
+}
+
 // ─── Routes ────────────────────────────────────────────
 
 export async function oauthRoutes(app: FastifyInstance): Promise<void> {
@@ -240,27 +258,34 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     }
 
     // Valider le client
-    const client = await getJson<RegisteredClient>(`sokar:oauth:client:${query.client_id}`);
-    if (!client) {
-      return reply
-        .status(400)
-        .type('text/html')
-        .send(
-          renderError('Client inconnu', `Aucun client enregistré avec l'ID ${query.client_id}.`),
-        );
-    }
+    let client = await getJson<RegisteredClient>(`sokar:oauth:client:${query.client_id}`);
+    let clientName = query.client_id || 'Unknown';
 
-    // Valider le redirect_uri
-    if (!client.redirectUris.includes(query.redirect_uri)) {
-      return reply
-        .status(400)
-        .type('text/html')
-        .send(
-          renderError(
-            'Redirect URI non autorisé',
-            `L'URI ${query.redirect_uri} n'est pas enregistrée pour ce client.`,
-          ),
-        );
+    if (!client) {
+      const knownName = matchKnownRedirect(query.redirect_uri);
+      if (knownName) {
+        clientName = knownName;
+      } else {
+        return reply
+          .status(400)
+          .type('text/html')
+          .send(
+            renderError('Client inconnu', `Aucun client enregistré avec l'ID ${query.client_id}.`),
+          );
+      }
+    } else {
+      clientName = client.clientName;
+      if (!client.redirectUris.includes(query.redirect_uri)) {
+        return reply
+          .status(400)
+          .type('text/html')
+          .send(
+            renderError(
+              'Redirect URI non autorisé',
+              `L'URI ${query.redirect_uri} n'est pas enregistrée pour ce client.`,
+            ),
+          );
+      }
     }
 
     // Trouver le premier restaurant avec MCP activé
@@ -287,7 +312,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
     return reply.type('text/html').send(
       renderConsentPage({
-        clientName: client.clientName,
+        clientName: clientName,
         restaurantName: restaurant.restaurant.name,
         restaurantId: restaurant.restaurantId,
         clientId: query.client_id,
@@ -313,21 +338,24 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     };
 
     // Valider le client
-    const client = await getJson<RegisteredClient>(`sokar:oauth:client:${body.client_id}`);
-    if (!client) {
-      return reply
-        .status(400)
-        .type('text/html')
-        .send(renderError('Client inconnu', 'Client non trouvé.'));
-    }
+    const postClient = await getJson<RegisteredClient>(`sokar:oauth:client:${body.client_id}`);
 
-    // Valider le redirect_uri
-    if (!body.redirect_uri || !client.redirectUris.includes(body.redirect_uri)) {
-      return reply.status(400).type('text/html').send(renderError('Redirect URI invalide', ''));
+    if (!postClient) {
+      const knownName = body.redirect_uri ? matchKnownRedirect(body.redirect_uri) : null;
+      if (!knownName) {
+        return reply.status(400).type('text/html').send(renderError('Client inconnu', 'Client non trouvé.'));
+      }
+    } else {
+      if (!body.redirect_uri || !postClient.redirectUris.includes(body.redirect_uri)) {
+        return reply.status(400).type('text/html').send(renderError('Redirect URI invalide', ''));
+      }
     }
 
     // Si l'utilisateur a refusé
     if (body.action === 'deny') {
+      if (!body.redirect_uri) {
+        return reply.status(400).type('text/html').send(renderError('Redirect URI manquant', ''));
+      }
       const denyUrl = new URL(body.redirect_uri);
       denyUrl.searchParams.set('error', 'access_denied');
       denyUrl.searchParams.set('error_description', 'User denied access');
@@ -359,11 +387,11 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       : ['mcp:read', 'mcp:reserve', 'mcp:cancel'];
 
     const authCode: AuthCode = {
-      clientId: body.client_id!,
+      clientId: body.client_id || 'unknown',
       restaurantId: restaurant.id,
       restaurantName: restaurant.name,
       scopes,
-      redirectUri: body.redirect_uri,
+      redirectUri: body.redirect_uri || '',
       codeChallenge: body.code_challenge || undefined,
       codeChallengeMethod: body.code_challenge_method || undefined,
     };
@@ -376,6 +404,9 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     );
 
     // Rediriger vers le client avec le code
+    if (!body.redirect_uri) {
+      return reply.status(400).type('text/html').send(renderError('Redirect URI manquant', ''));
+    }
     const redirectUrl = new URL(body.redirect_uri);
     redirectUrl.searchParams.set('code', code);
     if (body.state) redirectUrl.searchParams.set('state', body.state);
@@ -413,16 +444,11 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         .send({ error: 'invalid_client', error_description: 'client_id required' });
     }
 
-    // Valider le client
-    const client = await getJson<RegisteredClient>(`sokar:oauth:client:${clientId}`);
-    if (!client) {
-      return reply
-        .status(401)
-        .send({ error: 'invalid_client', error_description: 'Client not found' });
-    }
+    // Valider le client (optionnel pour les public clients sans DCR)
+    const tokenClient = await getJson<RegisteredClient>(`sokar:oauth:client:${clientId}`);
 
-    // Pour les clients confidentiels, valider le secret
-    if (client.clientSecret && clientSecret !== client.clientSecret) {
+    // Pour les clients DCR, valider le secret
+    if (tokenClient && tokenClient.clientSecret && clientSecret !== tokenClient.clientSecret) {
       return reply
         .status(401)
         .send({ error: 'invalid_client', error_description: 'Invalid client secret' });

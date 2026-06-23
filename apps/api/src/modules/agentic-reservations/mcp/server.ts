@@ -30,7 +30,9 @@ import { getIssuer } from './oauth';
 const TOOL_LIST = [
   {
     name: 'search_restaurants',
-    description: 'Search restaurants available for a given party size, time, and city.',
+    title: 'Search Restaurants',
+    description:
+      'Search restaurants available for a given party size, time, and city. Returns matching restaurants with basic info.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -43,19 +45,25 @@ const TOOL_LIST = [
       },
       required: ['city', 'partySize', 'slotStart', 'slotEnd'],
     },
+    annotations: { readOnlyHint: true },
   },
   {
     name: 'get_restaurant_details',
-    description: 'Get details of a specific restaurant by ID.',
+    title: 'Get Restaurant Details',
+    description:
+      'Get details of a specific restaurant by ID, including name, address, phone, cuisine, and opening hours.',
     inputSchema: {
       type: 'object',
       properties: { restaurantId: { type: 'string', format: 'uuid' } },
       required: ['restaurantId'],
     },
+    annotations: { readOnlyHint: true },
   },
   {
     name: 'check_availability',
-    description: 'Check if a specific restaurant has availability for a party size and time slot.',
+    title: 'Check Availability',
+    description:
+      'Check if a specific restaurant has availability for a party size and time slot. Returns available time slots.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -66,10 +74,13 @@ const TOOL_LIST = [
       },
       required: ['restaurantId', 'partySize', 'slotStart', 'slotEnd'],
     },
+    annotations: { readOnlyHint: true },
   },
   {
     name: 'create_reservation',
-    description: 'Create a reservation at a restaurant. Requires explicit user consent.',
+    title: 'Create Reservation',
+    description:
+      'Create a reservation at a restaurant. Requires explicit user consent for data processing. Returns reservation confirmation with ID.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -104,10 +115,13 @@ const TOOL_LIST = [
         'consents',
       ],
     },
+    annotations: { destructiveHint: true },
   },
   {
     name: 'cancel_reservation',
-    description: 'Cancel an existing reservation.',
+    title: 'Cancel Reservation',
+    description:
+      'Cancel an existing reservation by ID. The reservation status changes to cancelled and the customer is notified.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -116,10 +130,13 @@ const TOOL_LIST = [
       },
       required: ['reservationId'],
     },
+    annotations: { destructiveHint: true },
   },
   {
     name: 'get_reservation_status',
-    description: 'Get the status of an existing reservation by ID.',
+    title: 'Get Reservation Status',
+    description:
+      'Get the status of an existing reservation by ID, including party size, date, and current state.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -127,6 +144,7 @@ const TOOL_LIST = [
       },
       required: ['reservationId'],
     },
+    annotations: { readOnlyHint: true },
   },
 ];
 
