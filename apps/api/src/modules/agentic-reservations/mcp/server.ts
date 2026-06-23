@@ -77,11 +77,14 @@ export class McpServer {
         return reply.status(405).send({ error: 'Method Not Allowed', code: 'METHOD_NOT_ALLOWED' });
       } catch (err) {
         if (err instanceof McpAuthError) {
+          // RFC 9728 : pointer vers /.well-known/oauth-protected-resource qui
+          // référence lui-même le serveur d'autorisation. C'est ce que Claude.ai,
+          // ChatGPT et Mistral attendent pour discovery automatique.
           return reply
             .status(401)
             .header(
               'WWW-Authenticate',
-              `Bearer resource_metadata="${getIssuer()}/.well-known/oauth-authorization-server"`,
+              `Bearer realm="sokar", resource_metadata="${getIssuer()}/.well-known/oauth-protected-resource"`,
             )
             .send({ error: err.message, code: err.code });
         }
@@ -107,7 +110,7 @@ export class McpServer {
             .status(err.statusCode)
             .header(
               'WWW-Authenticate',
-              `Bearer resource_metadata="${getIssuer()}/.well-known/oauth-authorization-server"`,
+              `Bearer realm="sokar", resource_metadata="${getIssuer()}/.well-known/oauth-protected-resource"`,
             )
             .send({ error: err.message, code: err.code });
         }
