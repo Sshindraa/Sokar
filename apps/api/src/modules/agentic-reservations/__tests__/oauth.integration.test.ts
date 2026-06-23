@@ -230,7 +230,7 @@ describe('OAuth MCP integration flow', () => {
   });
 
   // ── 9. Known redirect URI works without DCR ──────────
-  it('GET /oauth/authorize accepts Claude.ai callback without DCR client', async () => {
+  it('GET /oauth/authorize accepts Claude.ai callback without DCR client in dev/test', async () => {
     vi.mocked(db.restaurantExposureSettings.findFirst).mockResolvedValue({
       restaurantId: 'test-resto-1',
       mcpEnabled: true,
@@ -242,8 +242,33 @@ describe('OAuth MCP integration flow', () => {
       method: 'GET',
       url: `/oauth/authorize?response_type=code&client_id=nonexistent&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}`,
     });
-    // Should succeed because Claude.ai callback is a known redirect URI
+
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('Autoriser');
+  });
+
+  // ── 10. Production consent requires Clerk org ─────────
+  it('GET /oauth/authorize redirects to Sokar sign-in in production without Clerk org', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousDashboardUrl = process.env.DASHBOARD_URL;
+    process.env.NODE_ENV = 'production';
+    process.env.DASHBOARD_URL = 'https://app.sokar.tech';
+
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}`,
+    });
+
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toContain('https://app.sokar.tech/sign-in');
+    expect(res.headers.location).toContain('redirect_url=');
+
+    process.env.NODE_ENV = previousNodeEnv;
+    if (previousDashboardUrl === undefined) {
+      delete process.env.DASHBOARD_URL;
+    } else {
+      process.env.DASHBOARD_URL = previousDashboardUrl;
+    }
   });
 });
