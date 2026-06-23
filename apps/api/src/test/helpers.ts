@@ -66,6 +66,7 @@ vi.mock('../shared/db/client', () => {
       restaurantExposureSettings: {
         findUnique: vi.fn(),
         upsert: vi.fn(),
+        findFirst: vi.fn(),
       },
       reservationAuditLog: {
         create: vi.fn(),
@@ -104,20 +105,32 @@ vi.mock('../shared/db/client', () => {
   };
 });
 
-vi.mock('../shared/redis/client', () => ({
-  redisCache: {
-    get: vi.fn().mockResolvedValue(null),
-    getBuffer: vi.fn().mockResolvedValue(null),
-    set: vi.fn().mockResolvedValue('OK'),
-    del: vi.fn().mockResolvedValue(1),
-    status: 'ready',
-  },
-  redisQueue: {
-    on: vi.fn(),
-  },
-  getCachedContext: vi.fn().mockResolvedValue(null),
-  setCachedContext: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock('../shared/redis/client', () => {
+  // In-memory Map pour que les tests OAuth puissent faire set→get.
+  // Les tests existants qui font get sans set auront toujours null (comportement inchangé).
+  const store = new Map<string, string>();
+  return {
+    redisCache: {
+      get: vi.fn(async (key: string) => store.get(key) ?? null),
+      getBuffer: vi.fn().mockResolvedValue(null),
+      set: vi.fn(async (key: string, value: string) => {
+        store.set(key, value);
+        return 'OK';
+      }),
+      del: vi.fn(async (key: string) => {
+        const had = store.has(key);
+        store.delete(key);
+        return had ? 1 : 0;
+      }),
+      status: 'ready',
+    },
+    redisQueue: {
+      on: vi.fn(),
+    },
+    getCachedContext: vi.fn().mockResolvedValue(null),
+    setCachedContext: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 vi.mock('../shared/queue/queues', () => ({
   queues: {
