@@ -137,7 +137,7 @@ export default function McpPage() {
               href="/register"
               className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-black transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/90 active:scale-[0.98]"
             >
-              Démarrer l'intégration
+              Démarrer l&apos;intégration
               <ArrowRight size={14} />
             </Link>
           </div>
