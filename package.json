@@ -21,7 +21,11 @@
     "redis:start": "brew services start redis",
     "redis:stop": "brew services stop redis",
     "redis:status": "brew services list | grep redis",
-    "node:check": "node -e \"const v=process.versions.node.split('.').map(Number); if (v[0]<20 || v[0]>=23) { console.error('Node '+process.versions.node+' not supported. Use Node >=20 <23.'); process.exit(1); } console.log('Node '+process.versions.node+' OK');\""
+    "node:check": "node -e \"const v=process.versions.node.split('.').map(Number); if (v[0]<20 || v[0]>=23) { console.error('Node '+process.versions.node+' not supported. Use Node >=20 <23.'); process.exit(1); } console.log('Node '+process.versions.node+' OK');\"",
+    "verify:precommit": "scripts/precommit-review.sh",
+    "verify:prepush": "scripts/prepush-quality-gate.sh",
+    "verify:ai": "scripts/hermes-diff-review.sh head",
+    "dogfood:sokar": "scripts/dogfood-sokar.sh"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.2",

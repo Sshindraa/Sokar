@@ -1,1 +1,1 @@
-pnpm turbo typecheck
+scripts/prepush-quality-gate.sh
