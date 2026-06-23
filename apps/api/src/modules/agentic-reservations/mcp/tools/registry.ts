@@ -239,7 +239,7 @@ export class McpToolRegistry {
       });
     } catch (err: any) {
       logger.error({ err, clientId: ctx.clientId }, 'search_restaurants failed');
-      return toolError(err.message ?? 'Internal error', 'INTERNAL');
+      return toolError('Internal error', 'INTERNAL');
     }
   }
 
@@ -280,7 +280,7 @@ export class McpToolRegistry {
       return ok(r);
     } catch (err: any) {
       logger.error({ err, clientId: ctx.clientId }, 'get_restaurant_details failed');
-      return toolError(err.message ?? 'Internal error', 'INTERNAL');
+      return toolError('Internal error', 'INTERNAL');
     }
   }
 
@@ -319,7 +319,7 @@ export class McpToolRegistry {
       return ok(result);
     } catch (err: any) {
       logger.error({ err, clientId: ctx.clientId }, 'check_availability failed');
-      return toolError(err.message ?? 'Internal error', 'INTERNAL');
+      return toolError('Internal error', 'INTERNAL');
     } finally {
       checkAvailabilityDuration.observe(performance.now() - start);
     }
@@ -399,7 +399,7 @@ export class McpToolRegistry {
       if (err?.name === 'PolicyValidationError') return toolError(err.message, 'POLICY_VIOLATION');
       if (err?.name === 'IdempotencyConflictError')
         return toolError(err.message, 'IDEMPOTENCY_CONFLICT');
-      return toolError(err.message ?? 'Internal error', 'INTERNAL');
+      return toolError('Internal error', 'INTERNAL');
     }
   }
 
@@ -420,6 +420,13 @@ export class McpToolRegistry {
         select: { restaurantId: true },
       });
       if (!reservation) return toolError('Reservation not found', 'NOT_FOUND');
+
+      // IDOR protection: un client lié à un restaurant ne peut agir
+      // que sur les réservations de SON restaurant.
+      if (ctx.restaurantId && ctx.restaurantId !== reservation.restaurantId) {
+        return toolError('Reservation not found', 'NOT_FOUND');
+      }
+
       const exposure = await this.getMcpExposure(reservation.restaurantId, ctx);
       if (!exposure.ok) return exposure.error;
 
@@ -434,7 +441,7 @@ export class McpToolRegistry {
       if (err?.name === 'InvalidStateTransitionError')
         return toolError(err.message, 'INVALID_STATE');
       if (err?.name === 'ReservationNotFoundError') return toolError(err.message, 'NOT_FOUND');
-      return toolError(err.message ?? 'Internal error', 'INTERNAL');
+      return toolError('Internal error', 'INTERNAL');
     }
   }
 
@@ -463,6 +470,12 @@ export class McpToolRegistry {
         },
       });
       if (!reservation) return toolError('Reservation not found', 'NOT_FOUND');
+
+      // IDOR protection: même check que cancel_reservation
+      if (ctx.restaurantId && ctx.restaurantId !== reservation.restaurantId) {
+        return toolError('Reservation not found', 'NOT_FOUND');
+      }
+
       const exposure = await this.getMcpExposure(reservation.restaurantId, ctx);
       if (!exposure.ok) return exposure.error;
 
@@ -470,7 +483,7 @@ export class McpToolRegistry {
       return ok(publicReservation);
     } catch (err: any) {
       logger.error({ err, clientId: ctx.clientId }, 'get_reservation_status failed');
-      return toolError(err.message ?? 'Internal error', 'INTERNAL');
+      return toolError('Internal error', 'INTERNAL');
     }
   }
 
