@@ -303,7 +303,7 @@ export class McpServer {
       }
     } catch (err: any) {
       logger.error({ err, method: msg.method, clientId: ctx.clientId }, 'mcp handle error');
-      return jsonRpcError(id, -32603, 'Internal error', err?.message);
+      return jsonRpcError(id, -32603, 'Internal error');
     }
   }
 }

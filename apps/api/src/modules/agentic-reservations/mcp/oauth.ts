@@ -61,7 +61,7 @@ function verifyPkce(
   method: string | undefined,
 ): boolean {
   if (!codeChallenge) return true; // Pas de PKCE demandé
-  if (method === 'plain') return codeVerifier === codeChallenge;
+  // S256 uniquement — 'plain' est déprécié (RFC 7636) et refusé
   if (method === 'S256') {
     const computed = base64url(createHash('sha256').update(codeVerifier).digest());
     return computed === codeChallenge;
@@ -153,6 +153,22 @@ function matchKnownRedirect(uri: string): string | null {
 export async function oauthRoutes(app: FastifyInstance): Promise<void> {
   const { db } = await import('../../../shared/db/client');
 
+  // ── 0. Protected resource metadata (MCP spec 2025-06-18) ──
+  app.get(
+    '/.well-known/oauth-protected-resource',
+    async (_req: FastifyRequest, reply: FastifyReply) => {
+      const issuer = getIssuer();
+      return reply
+        .header('Cache-Control', 'public, max-age=3600')
+        .send({
+          resource: issuer,
+          authorization_servers: [issuer],
+          bearer_methods_supported: ['header'],
+          resource_documentation: `${issuer}/docs`,
+        });
+    },
+  );
+
   // ── 1. Metadata discovery (RFC 8414) ─────────────────
   app.get(
     '/.well-known/oauth-authorization-server',
@@ -170,10 +186,9 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
           'client_secret_basic',
           'none',
         ],
-        code_challenge_methods_supported: ['S256', 'plain'],
+        code_challenge_methods_supported: ['S256'],
         scopes_supported: ['mcp:read', 'mcp:reserve', 'mcp:cancel'],
         revocation_endpoint: `${issuer}/oauth/revoke`,
-        introspection_endpoint: `${issuer}/oauth/introspect`,
       });
     },
   );
@@ -380,6 +395,11 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).type('text/html').send(renderError('Restaurant introuvable', ''));
     }
 
+    // Refuser les requêtes sans client_id valide
+    if (!body.client_id) {
+      return reply.status(400).type('text/html').send(renderError('Client manquant', 'client_id requis.'));
+    }
+
     // Générer le code d'autorisation
     const code = randomUUID();
     const scopes = body.scope
@@ -387,7 +407,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       : ['mcp:read', 'mcp:reserve', 'mcp:cancel'];
 
     const authCode: AuthCode = {
-      clientId: body.client_id || 'unknown',
+      clientId: body.client_id || '',
       restaurantId: restaurant.id,
       restaurantName: restaurant.name,
       scopes,
@@ -471,10 +491,8 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
           .send({ error: 'invalid_grant', error_description: 'Invalid or expired code' });
       }
 
-      // Supprimer le code (one-time use)
-      await redisCache.del(`sokar:oauth:code:${body.code}`);
-
-      // Valider le client
+      // Valider le client AVANT de supprimer le code (sinon une typo
+      // consomme le code définitivement et l'utilisateur ne peut pas réessayer)
       if (authCode.clientId !== clientId) {
         return reply.status(400).send({
           error: 'invalid_grant',
@@ -502,6 +520,9 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
             .send({ error: 'invalid_grant', error_description: 'PKCE verification failed' });
         }
       }
+
+      // Toutes les validations sont passées → supprimer le code (one-time use)
+      await redisCache.del(`sokar:oauth:code:${body.code}`);
 
       // Générer les tokens
       const accessToken = randomUUID();
@@ -568,9 +589,24 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     });
   });
 
-  // ── 5. Revocation (RFC 7009) — minimal ───────────────
+  // ── 5. Revocation (RFC 7009) — minimal avec auth client ──
   app.post('/oauth/revoke', async (req: FastifyRequest, reply: FastifyReply) => {
     const body = req.body as { token?: string; token_type_hint?: string };
+
+    // Auth client obligatoire (Basic ou body) pour éviter que n'importe qui
+    // puisse révoquer les tokens des autres
+    let revokeClientId = (body as any).client_id;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Basic ')) {
+      const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf-8');
+      const [id] = decoded.split(':');
+      if (id) revokeClientId = id;
+    }
+
+    if (!revokeClientId) {
+      return reply.status(401).send({ error: 'invalid_client', error_description: 'client_id required' });
+    }
+
     if (body.token) {
       await redisCache.del(`sokar:oauth:token:${body.token}`);
       await redisCache.del(`sokar:oauth:refresh:${body.token}`);
