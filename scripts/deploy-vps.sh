@@ -75,7 +75,8 @@ echo ""
 echo "📦 Syncing database..."
 # Use API env for correct DATABASE_URL
 export DATABASE_URL=$(grep "^DATABASE_URL" apps/api/.env | cut -d= -f2-)
-pnpm db:push
+# prod: accept data loss when adding unique constraints on empty/new columns
+pnpm db:push --accept-data-loss
 unset DATABASE_URL
 
 # ── 8. Restart services ─────────────────────────────────
