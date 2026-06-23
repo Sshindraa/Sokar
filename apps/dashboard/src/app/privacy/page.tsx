@@ -30,10 +30,11 @@ const COMPANY = {
   legalRepresentative: '[À REMPLIR — Représentant légal]',
   // [À REMPLIR] Email de contact DPO/privacy
   dpoEmail: '[À REMPLIR — dpo@sokar.tech]',
-  // [À REMPLIR] Nom de l'hébergeur principal des données
-  hostingProvider: '[À REMPLIR — Hébergeur principal, ex : Scaleway, OVH, AWS]',
-  // [À REMPLIR] Localisation des serveurs (UE/hors UE)
-  hostingLocation: '[À REMPLIR — Localisation des serveurs, ex : Paris, France]',
+  // Hébergeur principal : DigitalOcean, LLC (datacenter nyc1, USA)
+  hostingProvider: 'DigitalOcean, LLC (datacenter nyc1, New York, USA)',
+  // Localisation des serveurs = hors UE (USA)
+  hostingLocation:
+    'New York, États-Unis — transfert hors UE couvert par SCC et EU-US Data Privacy Framework',
 };
 
 // Sous-traitants : nom → finalité → localisation
@@ -172,7 +173,7 @@ const SECURITY_MEASURES = [
   'PII redaction systématique dans les réponses du Model Context Protocol.',
   'Audit log horodaté pour les événements RGPD (export, effacement, consentement).',
   'Backups PostgreSQL chiffrés, restaurables, testés tous les 90 jours.',
-  'Hébergeur certifié ISO 27001 / SOC 2 (à confirmer selon fournisseur).',
+  'Hébergeur DigitalOcean certifié ISO 27001, SOC 2 Type II et PCI DSS (Level 1).',
   'Code audité (interne) avant chaque release, scan automatisé des secrets.',
 ];
 
@@ -273,6 +274,16 @@ export default function PrivacyPage() {
             traitent les données conformément à nos instructions et, lorsqu&apos;ils sont situés
             hors de l&apos;Union européenne, dans le cadre de clauses contractuelles types (SCC) ou
             de décisions d&apos;adéquation.
+          </p>
+          <p className="mt-3">
+            <strong>Note spécifique DigitalOcean (hébergeur principal) :</strong> les serveurs de
+            production sont situés à New York (USA). Le transfert de données vers les États-Unis est
+            encadré par les clauses contractuelles types (SCC) de la Commission européenne et
+            bénéficie du cadre de transfert de données UE-États-Unis (EU-US Data Privacy Framework)
+            adopté en juillet 2023, auquel DigitalOcean a adhéré. Les données sont chiffrées en
+            transit (TLS 1.3 systématique) ; les disques de stockage ne sont pas chiffrés au repos
+            (chiffrement LUKS non activé sur le droplet — décision documentée, à durcir avant le
+            passage à l&apos;hébergement en production à grande échelle).
           </p>
           <div className="mt-6 overflow-hidden rounded-2xl border border-white/8">
             <table className="w-full text-left text-sm">
