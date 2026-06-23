@@ -27,7 +27,7 @@ import { McpRateLimiter } from './rate-limit';
 import { McpToolRegistry, executeTool, type ToolContext } from './tools/registry';
 import { getIssuer } from './oauth';
 
-const TOOL_LIST = [
+export const TOOL_LIST = [
   {
     name: 'search_restaurants',
     title: 'Search Restaurants',
@@ -42,6 +42,7 @@ const TOOL_LIST = [
         slotEnd: { type: 'string', format: 'date-time' },
         cuisineType: { type: 'array', items: { type: 'string' } },
         maxResults: { type: 'integer', minimum: 1, maximum: 20, default: 5 },
+        cursor: { type: 'string', description: 'Opaque cursor from previous response nextCursor' },
       },
       required: ['city', 'partySize', 'slotStart', 'slotEnd'],
     },
@@ -239,12 +240,34 @@ export class McpServer {
       const isBatch = Array.isArray(body);
       const messages = isBatch ? body : [body];
 
-      const responses: JsonRpcResponse[] = [];
+      const responses: (JsonRpcResponse | null)[] = [];
       for (const msg of messages) {
         responses.push(await this.handleMessage(msg, authCtx));
       }
 
-      const payload = isBatch ? responses : responses[0];
+      // Filtrer les null (notifications sans response)
+      const filtered = responses.filter((r): r is JsonRpcResponse => r !== null);
+
+      // Si toutes les réponses sont des notifications (pas de response),
+      // retourner 202 Accepted sans body
+      if (filtered.length === 0) {
+        return reply.status(202).send();
+      }
+
+      const payload = isBatch ? filtered : filtered[0];
+
+      // Rate limit headers (best-effort, non-blocking)
+      try {
+        const rl = await this.rateLimiter.check(authCtx.clientId, 'global');
+        reply.header('X-RateLimit-Limit', '60');
+        reply.header('X-RateLimit-Remaining', String(rl.remaining));
+        if (!rl.allowed) {
+          reply.header('Retry-After', String(Math.ceil(rl.resetMs / 1000)));
+        }
+      } catch {
+        // Rate limiter down — fail-open, pas de headers
+      }
+
       return reply.send(payload);
     });
   }
@@ -269,8 +292,11 @@ export class McpServer {
           });
 
         case 'notifications/initialized':
-          // Notification client → serveur, on ne répond pas
-          return jsonRpcResult(id, {});
+          // Notification client → serveur (pas de response en JSON-RPC).
+          // Retourner un object vide avec id=null serait une réponse,
+          // ce qui violerait la spec. On renvoie null pour que le caller
+          // sache qu'il ne doit pas l'inclure dans le batch response.
+          return null as any;
 
         case 'ping':
           return jsonRpcResult(id, {});

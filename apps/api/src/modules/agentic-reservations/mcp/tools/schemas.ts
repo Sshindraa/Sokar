@@ -16,6 +16,7 @@ export const SearchRestaurantsInputSchema = z.object({
   slotEnd: z.string().datetime({ offset: true }),
   cuisineType: z.array(z.string()).max(10).optional(),
   maxResults: z.number().int().min(1).max(20).default(5),
+  cursor: z.string().optional(),
 });
 export type SearchRestaurantsInput = z.infer<typeof SearchRestaurantsInputSchema>;
 
