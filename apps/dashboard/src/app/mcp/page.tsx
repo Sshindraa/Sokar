@@ -230,32 +230,72 @@ export default function McpPage() {
             description="Trois étapes. OAuth 2.0 + PKCE S256. Aucun secret à copier."
           />
 
-          <ol className="mt-12 space-y-5">
-            <SetupStep
-              number={1}
-              title="Ouvrir les connecteurs de votre assistant"
-              items={[
-                { label: 'Claude.ai', body: 'Settings → Connectors → Add custom connector' },
-                { label: 'ChatGPT', body: 'Settings → Connectors → Create (Developer mode)' },
-                { label: 'Mistral Le Chat', body: 'Settings → Connectors → Custom MCP server' },
+          <p className="mx-auto mt-3 max-w-2xl text-center text-sm text-white/62">
+            OAuth 2.0 + PKCE S256. Aucun secret à copier-coller. Fonctionne sur les principaux
+            assistants IA.
+          </p>
+
+          {/* Grid de plateformes */}
+          <div className="mt-12 grid gap-4 md:grid-cols-2">
+            <PlatformCard
+              name="Claude.ai"
+              tag="Anthropic"
+              steps={[
+                'Settings → Connectors',
+                'Bouton "Add custom connector"',
+                "Coller l'URL ci-dessus",
+                'Cliquer "Connect" → écran de consentement Sokar',
+                'Une fois autorisé, le connecteur apparaît dans la liste',
               ]}
             />
-            <SetupStep
-              number={2}
-              title="Coller l'URL du MCP"
-              items={[{ label: 'URL', body: MCP_URL, mono: true }]}
-            />
-            <SetupStep
-              number={3}
-              title="S'authentifier"
-              items={[
-                {
-                  label: 'Flow',
-                  body: "Le client OAuth s'enregistre automatiquement (DCR RFC 7591), affiche l'écran de consentement Sokar, et vous redirige avec un code d'autorisation. Le consentement est lié à l'organisation Clerk du restaurant. Aucun mot de passe n'est partagé avec l'assistant.",
-                },
+            <PlatformCard
+              name="ChatGPT"
+              tag="OpenAI"
+              steps={[
+                'Settings → Connectors → "Create"',
+                'Mode "Developer" (nécessite un compte Pro/Team/Enterprise)',
+                "Coller l'URL ci-dessus",
+                'OAuth flow automatique → consentement Sokar',
+                'Le connecteur apparaît dans la liste des outils disponibles',
               ]}
             />
-          </ol>
+            <PlatformCard
+              name="Mistral Le Chat"
+              tag="Mistral AI"
+              steps={[
+                'Settings → Connectors → "Custom MCP server"',
+                "Coller l'URL ci-dessus",
+                'Bouton "Connect" → écran de consentement Sokar',
+                'Une fois autorisé, le serveur apparaît dans la liste',
+              ]}
+            />
+            <PlatformCard
+              name="Claude Code (CLI)"
+              tag="Terminal"
+              steps={[
+                "Ajout direct via variable d'environnement ou commande",
+                'claude mcp add sokar --transport http https://api.sokar.tech/mcp',
+                'Le flow OAuth se déclenche à la première utilisation',
+                'Le connecteur est persisté dans ~/.claude/mcp.json',
+              ]}
+              mono
+            />
+          </div>
+
+          <div className="mt-12 rounded-2xl border border-white/8 bg-white/[0.02] p-6">
+            <h3 className="text-base font-semibold text-white">Comment ça marche</h3>
+            <p className="mt-3 text-sm leading-6 text-white/70">
+              Quand vous ajoutez l&apos;URL, l&apos;assistant fait un GET sur{' '}
+              <code className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-xs">
+                /.well-known/oauth-protected-resource
+              </code>{' '}
+              pour découvrir le serveur d&apos;autorisation. Il s&apos;enregistre automatiquement
+              via Dynamic Client Registration (DCR, RFC 7591), génère un PKCE S256, affiche
+              l&apos;écran de consentement Sokar, et vous redirige avec un code d&apos;autorisation.
+              Le consentement est lié à votre organisation Clerk : aucun mot de passe n&apos;est
+              partagé avec l&apos;assistant, et l&apos;accès est limité à votre restaurant.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -367,6 +407,45 @@ function CodeBlock({ label, code }: { label: string; code: string }) {
         {label}
       </span>
       <code className="truncate text-white/90">{code}</code>
+    </div>
+  );
+}
+
+function PlatformCard({
+  name,
+  tag,
+  steps,
+  mono = false,
+}: {
+  name: string;
+  tag: string;
+  steps: string[];
+  mono?: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold text-white">{name}</h3>
+        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white/60">
+          {tag}
+        </span>
+      </div>
+      <ol className="mt-4 space-y-2">
+        {steps.map((s, idx) => (
+          <li key={idx} className="flex items-start gap-3 text-sm text-white/72">
+            <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-[10px] font-bold text-white/60">
+              {idx + 1}
+            </span>
+            {mono ? (
+              <code className="rounded-md border border-white/10 bg-black/40 px-2 py-0.5 font-mono text-xs text-[hsl(var(--pricing-accent))]">
+                {s}
+              </code>
+            ) : (
+              <span className="leading-6">{s}</span>
+            )}
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
