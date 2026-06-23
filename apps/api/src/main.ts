@@ -123,6 +123,26 @@ export async function buildApp() {
     }
   });
 
+  // OAuth 2.0 endpoints (token, register) reçoivent traditionnellement du
+  // application/x-www-form-urlencoded. Sans ce parser, Fastify renvoie 415.
+  app.addContentTypeParser(
+    'application/x-www-form-urlencoded',
+    { parseAs: 'string' },
+    (req, body: string, done) => {
+      try {
+        const parsed: Record<string, string> = {};
+        for (const pair of body.split('&')) {
+          if (!pair) continue;
+          const [key, ...rest] = pair.split('=');
+          parsed[decodeURIComponent(key)] = decodeURIComponent(rest.join('='));
+        }
+        done(null, parsed);
+      } catch (err: any) {
+        done(err as Error, undefined);
+      }
+    },
+  );
+
   // Global error handler — Zod validation errors → 400 propre
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {
