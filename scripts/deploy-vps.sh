@@ -76,7 +76,7 @@ echo "📦 Syncing database..."
 # Use API env for correct DATABASE_URL
 export DATABASE_URL=$(grep "^DATABASE_URL" apps/api/.env | cut -d= -f2-)
 # prod: accept data loss when adding unique constraints on empty/new columns
-pnpm db:push --accept-data-loss
+pnpm exec prisma db push --schema=packages/database/prisma/schema.prisma --accept-data-loss
 unset DATABASE_URL
 
 # ── 8. Restart services ─────────────────────────────────
