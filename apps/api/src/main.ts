@@ -123,28 +123,11 @@ export async function buildApp() {
     }
   });
 
-  // OAuth 2.0 endpoints (token, register) reçoivent traditionnellement du
-  // application/x-www-form-urlencoded. Sans ce parser, Fastify renvoie 415.
-  // Note: dans le form-urlencoded, les espaces sont encodés avec '+',
-  // decodeURIComponent ne les convertit pas → il faut remplacer '+' par '%20' avant.
-  app.addContentTypeParser(
-    'application/x-www-form-urlencoded',
-    { parseAs: 'string' },
-    (req, body: string, done) => {
-      try {
-        const parsed: Record<string, string> = {};
-        for (const pair of body.split('&')) {
-          if (!pair) continue;
-          const [key, ...rest] = pair.split('=');
-          const val = rest.join('=').replace(/\+/g, '%20');
-          parsed[decodeURIComponent(key.replace(/\+/g, '%20'))] = decodeURIComponent(val);
-        }
-        done(null, parsed);
-      } catch (err: any) {
-        done(err as Error, undefined);
-      }
-    },
-  );
+  // OAuth 2.0 endpoints (token, register) reçoivent du form-urlencoded.
+  // @fastify/formbody gère tous les edge cases d'encodage (notamment + → espace).
+  // Ne jamais remplacer par un parser custom — c'est comme ça qu'on a eu le bug
+  // des scopes collés ("mcp:read+mcp:reserve+mcp:cancel" au lieu de 3 séparés).
+  await app.register(import('@fastify/formbody'));
 
   // Global error handler — Zod validation errors → 400 propre
   app.setErrorHandler((error, request, reply) => {

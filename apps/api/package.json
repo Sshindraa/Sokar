@@ -22,6 +22,7 @@
     "@clerk/fastify": "^3.1.29",
     "@deepgram/sdk": "^3.13.0",
     "@fastify/cors": "^11.0.0",
+    "@fastify/formbody": "^8.0.2",
     "@fastify/rate-limit": "^10.2.0",
     "@fastify/websocket": "^11.2.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
