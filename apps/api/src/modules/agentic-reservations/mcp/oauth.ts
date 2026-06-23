@@ -175,7 +175,12 @@ function shouldRequireClerkConsent(): boolean {
 }
 
 function getDashboardUrl(): string {
-  return process.env.DASHBOARD_URL || 'https://app.sokar.tech';
+  // IMPORTANT : doit pointer sur un sous-domaine qui existe en DNS + nginx.
+  // Historiquement on utilisait `app.sokar.tech` mais ce sous-domaine n'a
+  // jamais été configuré (le dashboard est servi sur `sokar.tech`, pas sur
+  // un sous-domaine `app.`). En attendant de configurer `app.sokar.tech`
+  // proprement, on pointe sur la racine + page de sign-in existante.
+  return process.env.DASHBOARD_URL || 'https://sokar.tech/login';
 }
 
 function buildLoginRedirect(req: FastifyRequest): string {
