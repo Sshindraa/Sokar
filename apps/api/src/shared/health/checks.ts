@@ -189,6 +189,7 @@ async function checkCartesia(): Promise<CheckResult> {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${process.env.CARTESIA_API_KEY}`,
+          'Cartesia-Version': '2026-03-01',
         },
       });
       if (!res.ok) {
