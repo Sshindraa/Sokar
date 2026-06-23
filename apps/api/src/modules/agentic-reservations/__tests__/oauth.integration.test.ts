@@ -226,7 +226,7 @@ describe('OAuth MCP integration flow', () => {
     });
     expect(res.statusCode).toBe(401);
     expect(res.headers['www-authenticate']).toContain('resource_metadata');
-    expect(res.headers['www-authenticate']).toContain('.well-known/oauth-authorization-server');
+    expect(res.headers['www-authenticate']).toContain('.well-known/oauth-protected-resource');
   });
 
   // ── 9. Known redirect URI works without DCR ──────────
@@ -261,7 +261,7 @@ describe('OAuth MCP integration flow', () => {
     });
 
     expect(res.statusCode).toBe(302);
-    expect(res.headers.location).toContain('https://app.sokar.tech/sign-in');
+    expect(res.headers.location).toContain('https://app.sokar.tech/login');
     expect(res.headers.location).toContain('redirect_url=');
 
     process.env.NODE_ENV = previousNodeEnv;

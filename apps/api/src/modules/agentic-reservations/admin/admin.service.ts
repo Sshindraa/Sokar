@@ -104,6 +104,21 @@ export class AgenticAdminService {
         },
       });
 
+      // Synchroniser mcpEnabled sur RestaurantExposureSettings dans la même
+      // transaction. L'OAuth consent flow et le MCP registry checkent
+      // exposureSettings.mcpEnabled, pas restaurant.agenticOptIn. Sans ce
+      // upsert, le toggle dashboard MCP n'a aucun effet sur le flow OAuth.
+      await tx.restaurantExposureSettings.upsert({
+        where: { restaurantId: args.restaurantId },
+        create: {
+          restaurant: { connect: { id: args.restaurantId } },
+          mcpEnabled: args.input.mcp,
+        },
+        update: {
+          mcpEnabled: args.input.mcp,
+        },
+      });
+
       await tx.reservationAuditLog.create({
         data: {
           event: 'opt_in_changed',
