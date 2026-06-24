@@ -172,6 +172,8 @@ model Customer {
   notes           String?
   specialOccasion String?       @map("special_occasion")
   lastSeenAt      DateTime?     @map("last_seen_at")
+  lastCallAt      DateTime?     @map("last_call_at")
+  partySizeTypical Decimal?     @map("party_size_typical") @db.Decimal(5, 2)
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
   restaurant      Restaurant    @relation(fields: [restaurantId], references: [id])
@@ -180,6 +182,7 @@ model Customer {
   @@unique([restaurantId, phone])
   @@index([restaurantId, isVip])
   @@index([restaurantId, visitCount(sort: Desc)], map: "customers_restaurant_visit_count_idx")
+  @@index([restaurantId, lastCallAt(sort: Desc)], map: "customers_restaurant_last_call_at_idx")
   @@map("customers")
 }
 
