@@ -20,11 +20,13 @@ describe('buildSystemPrompt', () => {
     const prompt = buildSystemPrompt(baseCtx);
 
     expect(prompt).toContain("Tu es l'assistant vocal de Chez Michel.");
-    expect(prompt).toContain('Bonjour, Chez Michel, cet appel peut être enregistré à des fins de qualité de service.');
+    expect(prompt).toContain(
+      'Bonjour, Chez Michel, cet appel peut être enregistré à des fins de qualité de service.',
+    );
     expect(prompt).toContain('Lundi : 12:00–14:30');
     expect(prompt).toContain('Dimanche : fermé');
     // Ne doit pas contenir d'extra ni de CRM
-    expect(prompt.trim().endsWith('handoffToManager : transférer l\'appel au gérant')).toBe(true);
+    expect(prompt.trim().endsWith("handoffToManager : transférer l'appel au gérant")).toBe(true);
   });
 
   it('devrait inclure customerExtra quand fourni dans le contexte', () => {
@@ -34,14 +36,14 @@ describe('buildSystemPrompt', () => {
       customerExtra,
     });
 
-    expect(prompt).toContain("Jean-Pierre");
-    expect(prompt).toContain("5e visite");
-    expect(prompt).toContain("⭐ Client VIP.");
+    expect(prompt).toContain('Jean-Pierre');
+    expect(prompt).toContain('5e visite');
+    expect(prompt).toContain('⭐ Client VIP.');
     expect(prompt).toContain(customerExtra);
   });
 
   it('devrait inclure systemPromptExtra de la personnalité quand fourni', () => {
-    const systemPromptExtra = "Sois très jovial et plaisante sur les plats du jour.";
+    const systemPromptExtra = 'Sois très jovial et plaisante sur les plats du jour.';
     const prompt = buildSystemPrompt({
       ...baseCtx,
       personality: {
@@ -68,12 +70,34 @@ describe('buildSystemPrompt', () => {
 
     expect(prompt).toContain(customerExtra);
     expect(prompt).toContain(systemPromptExtra);
-    
-    const lines = prompt.split('\n').map(l => l.trim()).filter(Boolean);
+
+    const lines = prompt
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
     const lastLine = lines[lines.length - 1];
     const secondLastLine = lines[lines.length - 2];
 
     expect(lastLine).toBe(systemPromptExtra);
     expect(secondLastLine).toBe(customerExtra);
+  });
+
+  it('devrait injecter le customerGreeting VIP dans la règle absolue', () => {
+    const customerGreeting = ', content de vous revoir M. Jean';
+    const prompt = buildSystemPrompt({
+      ...baseCtx,
+      customerGreeting,
+    });
+
+    // The absolute rule is preserved and the greeting fragment is appended.
+    expect(prompt).toContain(
+      'Bonjour, Chez Michel, cet appel peut être enregistré à des fins de qualité de service.',
+    );
+    expect(prompt).toContain(customerGreeting);
+    // It's right after the absolute-rule quote, not at the end.
+    const ruleIdx = prompt.indexOf('à des fins de qualité de service.');
+    const greetIdx = prompt.indexOf(customerGreeting);
+    expect(greetIdx).toBeGreaterThan(ruleIdx);
+    expect(greetIdx).toBeLessThan(ruleIdx + 200);
   });
 });
