@@ -1,12 +1,22 @@
 type DaySlot = { open: string; close: string } | null;
 export type OpeningHours = {
-  mon?: DaySlot; tue?: DaySlot; wed?: DaySlot; thu?: DaySlot;
-  fri?: DaySlot; sat?: DaySlot; sun?: DaySlot;
+  mon?: DaySlot;
+  tue?: DaySlot;
+  wed?: DaySlot;
+  thu?: DaySlot;
+  fri?: DaySlot;
+  sat?: DaySlot;
+  sun?: DaySlot;
 };
 
 const DAY_LABELS: Record<string, string> = {
-  mon: 'Lundi', tue: 'Mardi', wed: 'Mercredi', thu: 'Jeudi',
-  fri: 'Vendredi', sat: 'Samedi', sun: 'Dimanche',
+  mon: 'Lundi',
+  tue: 'Mardi',
+  wed: 'Mercredi',
+  thu: 'Jeudi',
+  fri: 'Vendredi',
+  sat: 'Samedi',
+  sun: 'Dimanche',
 };
 
 export function formatOpeningHours(hours: OpeningHours): string {
@@ -14,19 +24,26 @@ export function formatOpeningHours(hours: OpeningHours): string {
     .map(([day, slot]) =>
       slot
         ? `${DAY_LABELS[day] ?? day} : ${slot.open}–${slot.close}`
-        : `${DAY_LABELS[day] ?? day} : fermé`
+        : `${DAY_LABELS[day] ?? day} : fermé`,
     )
     .join('\n');
 }
 
 export function buildSystemPrompt(ctx: any): string {
   const customerPart = ctx.customerExtra ? `\n${ctx.customerExtra}\n` : '';
-  const extraPart = ctx.personality?.systemPromptExtra ? `\n${ctx.personality.systemPromptExtra}` : '';
+  const extraPart = ctx.personality?.systemPromptExtra
+    ? `\n${ctx.personality.systemPromptExtra}`
+    : '';
+  // Optional first-utterance VIP/returning greeting injected by the pipeline
+  // (empty string if we don't recognise the caller — see buildReturningGreeting).
+  const vipGreeting = ctx.customerGreeting
+    ? `\nGREETING: à ta toute première réponse, ajoute ce fragment APRÈS la règle absolue : "${ctx.customerGreeting}".`
+    : '';
 
   return `Tu es l'assistant vocal de ${ctx.name}.
 
 RÈGLE ABSOLUE : Au tout début de chaque appel, tu DOIS dire :
-"Bonjour, ${ctx.name}, cet appel peut être enregistré à des fins de qualité de service."
+"Bonjour, ${ctx.name}, cet appel peut être enregistré à des fins de qualité de service."${vipGreeting}
 
 Ensuite seulement, tu demandes en quoi tu peux aider.
 

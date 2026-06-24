@@ -13,7 +13,11 @@ describe('dashboard.routes tenant isolation', () => {
 
   it('GET /dashboard/stats scope appels et réservations au restaurant auth', async () => {
     const app = await getApp();
-    vi.mocked(db.call.count).mockResolvedValueOnce(10).mockResolvedValueOnce(8);
+    // 1: totalCalls (10), 2: answeredCalls (8), 3: recoverableCalls (3)
+    vi.mocked(db.call.count)
+      .mockResolvedValueOnce(10)
+      .mockResolvedValueOnce(8)
+      .mockResolvedValueOnce(3);
     vi.mocked(db.reservation.findMany).mockResolvedValue([
       {
         partySize: 2,
@@ -53,6 +57,8 @@ describe('dashboard.routes tenant isolation', () => {
       conversion_rate: 20,
       answered_rate: 80,
       estimated_revenue: 290,
+      // 2 confirmed reservations × 290/2 = 145 avg × 3 recoverable = 435
+      revenue_recovered: 435,
     });
     expect(db.call.count).toHaveBeenNthCalledWith(1, {
       where: {
@@ -78,6 +84,13 @@ describe('dashboard.routes tenant isolation', () => {
         restaurantId: 'test-rest-1',
         createdAt: { gte: expect.any(Date) },
         outcome: { not: null },
+      },
+    });
+    expect(db.call.count).toHaveBeenNthCalledWith(3, {
+      where: {
+        restaurantId: 'test-rest-1',
+        createdAt: { gte: expect.any(Date) },
+        outcome: { in: ['NO_ACTION', 'HANDOFF', 'ERROR'] },
       },
     });
   });

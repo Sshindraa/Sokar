@@ -87,7 +87,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const start = periodStart(query.period);
     const where = { restaurantId, createdAt: { gte: start } };
 
-    const [totalCalls, reservations, answeredCalls] = await Promise.all([
+    const [totalCalls, reservations, answeredCalls, recoverableCalls] = await Promise.all([
       db.call.count({ where }),
       db.reservation.findMany({
         where,
@@ -100,6 +100,12 @@ export async function dashboardRoutes(app: FastifyInstance) {
         },
       }),
       db.call.count({ where: { ...where, outcome: { not: null } } }),
+      db.call.count({
+        where: {
+          ...where,
+          outcome: { in: ['NO_ACTION', 'HANDOFF', 'ERROR'] },
+        },
+      }),
     ]);
 
     const confirmedReservations = reservations.filter(
@@ -118,6 +124,17 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const conversionRate = totalCalls > 0 ? Math.round((totalReservations / totalCalls) * 100) : 0;
     const answeredRate = totalCalls > 0 ? Math.round((answeredCalls / totalCalls) * 100) : 0;
 
+    // ─── Revenue Engine: revenue_recovered ──────────────────────────────
+    // Approximation: the average revenue of a confirmed reservation in the
+    // period × the number of recoverable calls (non-RESERVED, non-INFO).
+    // This is the gross opportunity value sitting in the recovery queue —
+    // i.e. the revenue at risk if the recovery SMS / follow-up never lands.
+    // When we add a CallOutcome=RECOVERED state in a future sprint this
+    // becomes the actual realized value, but for now it's a stable proxy
+    // that gives the merchant a meaningful single number.
+    const avgReservationValue = totalReservations > 0 ? estimatedRevenue / totalReservations : 0;
+    const revenueRecovered = Math.round(avgReservationValue * recoverableCalls);
+
     return reply.send({
       period: query.period,
       total_calls: totalCalls,
@@ -126,6 +143,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
       conversion_rate: conversionRate,
       answered_rate: answeredRate,
       estimated_revenue: Math.round(estimatedRevenue),
+      revenue_recovered: revenueRecovered,
     });
   });
 

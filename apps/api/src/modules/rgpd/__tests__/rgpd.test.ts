@@ -9,6 +9,7 @@ import { ErasureService, ErasureSubjectNotFoundError } from '../erasure.service'
 import { ExportService, ExportSubjectNotFoundError } from '../export.service';
 import { runAnonymization, ANONYMIZATION_RETENTION_DAYS } from '../anonymization.worker';
 import { CURRENT_PRIVACY_POLICY_VERSION } from '../privacy-policy';
+import { queues } from '../../../shared/queue/queues';
 
 function makeMockPrisma() {
   return {
@@ -137,6 +138,63 @@ describe('RGPD', () => {
       expect(result.reservationsAnonymized).toBe(5);
       expect(result.callsAnonymized).toBe(2);
       expect(result.consentsRetained).toBe(0);
+    });
+
+    it('émet un event rgpd_erasure sur la queue analytics (OBLIGATOIRE)', async () => {
+      // Setup : données présentes, audit + analytics event doivent être déclenchés.
+      prisma.reservation.findFirst.mockResolvedValueOnce({ id: 'res-1' });
+      prisma.customerConsent.findFirst.mockResolvedValueOnce(null);
+      prisma.$transaction.mockImplementationOnce(async (fn: any) =>
+        fn({ reservation: { updateMany: vi.fn().mockResolvedValueOnce({ count: 3 }) } }),
+      );
+      prisma.call.updateMany.mockResolvedValueOnce({ count: 1 });
+      prisma.customerConsent.count.mockResolvedValueOnce(0);
+      prisma.reservationAuditLog = { create: vi.fn().mockResolvedValueOnce({ id: 'audit-1' }) };
+
+      const analyticsAdd = vi.mocked(queues.analytics.add);
+      analyticsAdd.mockClear();
+
+      const service = new ErasureService(prisma);
+      await service.eraseSubject({
+        subject: '+33****0000',
+        reason: 'user_request',
+        actor: 'rgpd:user',
+      });
+
+      // L'event doit avoir été ajouté à la queue `analytics` avec le bon
+      // discriminant + aucun PII brute (uniquement subjectHashPrefix).
+      const rgpdEventCall = analyticsAdd.mock.calls.find(
+        (call) => call[0] === 'track' && (call[1] as { event?: string })?.event === 'rgpd_erasure',
+      );
+      expect(rgpdEventCall).toBeDefined();
+      const payload = rgpdEventCall![1] as Record<string, unknown>;
+      expect(payload.intent).toBe('erase');
+      expect(payload.actor).toBe('rgpd:user');
+      expect(typeof payload.subjectHashPrefix).toBe('string');
+      expect((payload.subjectHashPrefix as string).length).toBe(8);
+      // Pas de PII brute dans le payload
+      expect(JSON.stringify(payload)).not.toContain('+33****0000');
+      // Comptages propagés pour le dashboard pilot
+      const meta = payload.metadata as Record<string, number>;
+      expect(meta.reservationsAnonymized).toBe(3);
+      expect(meta.callsAnonymized).toBe(1);
+    });
+
+    it("n'émet PAS d'event analytics quand aucune donnée trouvée (404 avant)", async () => {
+      prisma.reservation.findFirst.mockResolvedValueOnce(null);
+      prisma.customerConsent.findFirst.mockResolvedValueOnce(null);
+      const analyticsAdd = vi.mocked(queues.analytics.add);
+      analyticsAdd.mockClear();
+
+      const service = new ErasureService(prisma);
+      await expect(
+        service.eraseSubject({ subject: '+33****9999', reason: 'test', actor: 'rgpd:test' }),
+      ).rejects.toThrow(ErasureSubjectNotFoundError);
+
+      const rgpdEventCall = analyticsAdd.mock.calls.find(
+        (call) => (call[1] as { event?: string })?.event === 'rgpd_erasure',
+      );
+      expect(rgpdEventCall).toBeUndefined();
     });
   });
 

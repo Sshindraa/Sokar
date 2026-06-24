@@ -25,6 +25,7 @@ import { openaiReserveRoutes } from './modules/agentic-reservations/openai-reser
 import { rgpdRoutes } from './modules/rgpd/rgpd.routes';
 import { observabilityRoutes } from './shared/observability/observability.routes';
 import { pilotRoutes } from './modules/pilot/pilot.routes';
+import { flagsRoutes } from './modules/admin/flags.routes';
 import { registerCors } from './plugins/cors';
 import { registerRateLimit } from './plugins/rate-limit';
 import { registerClerk } from './plugins/clerk';
@@ -39,6 +40,7 @@ import './shared/queue/workers/analytics.worker';
 import './shared/queue/workers/reengagement.worker';
 import './shared/queue/workers/reconciliation.worker';
 import './shared/queue/workers/telnyx-webhook.worker';
+import './shared/queue/workers/call-recovery.worker';
 
 // Initialize Sentry as early as possible so that instrumentation hooks are
 // registered before the Fastify app (and its error handler) are built.
@@ -190,6 +192,7 @@ export async function buildApp() {
   await app.register(rgpdRoutes);
   await app.register(observabilityRoutes);
   await app.register(pilotRoutes);
+  await app.register(flagsRoutes);
 
   // Routes de test — uniquement en dev/test (simulation d'appel sans Telnyx)
   if (process.env.NODE_ENV !== 'production') {
