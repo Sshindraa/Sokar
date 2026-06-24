@@ -29,7 +29,6 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import type { PrismaClient } from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
 import { redisCache } from '../../../shared/redis/client';
 import { logger } from '../../../shared/logger/pino';
@@ -296,7 +295,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
     }
 
     // Valider le client
-    let client = await getJson<RegisteredClient>(`sokar:oauth:client:${query.client_id}`);
+    const client = await getJson<RegisteredClient>(`sokar:oauth:client:${query.client_id}`);
     let clientName = query.client_id || 'Unknown';
 
     if (!client) {

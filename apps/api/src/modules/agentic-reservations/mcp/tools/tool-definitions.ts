@@ -93,7 +93,7 @@ const toJsonSchema = zodToJsonSchema as unknown as (
 // zodToJsonSchema ajoute $schema et définitions $ref qu'on ne veut pas
 // dans la réponse MCP. On strip ces clés pour garder un schema propre.
 function cleanJsonSchema(schema: Record<string, unknown>): Record<string, unknown> {
-  const { $schema, definitions, ...rest } = schema;
+  const { $schema: _$schema, definitions: _definitions, ...rest } = schema;
   return rest;
 }
 
