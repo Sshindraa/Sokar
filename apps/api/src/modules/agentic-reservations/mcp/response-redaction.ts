@@ -10,6 +10,10 @@
  *
  * Le redactor est défensif : on préfère redacter trop que pas assez.
  * Si un objet contient une clé qui matche la regex, on redact la valeur.
+ *
+ * Attention aux faux positifs : la PHONE_REGEX peut matcher des dates ISO
+ * (ex: "2026-06-23" ou "2026-06-23T17:30:00.000Z"). Ces dates sont
+ * préservées avant le passage de PHONE_REGEX.
  */
 
 const SECRET_KEY_PATTERNS = [/api[_-]?key/i, /token/i, /secret/i, /password/i, /bearer/i];
@@ -28,6 +32,7 @@ const EMAIL_REGEX = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
 const PHONE_REGEX = /(\+?\d[\d\s\-().*]{8,}\d)/g;
 const LONG_HEX_REGEX = /\b[a-f0-9]{32,}\b/gi;
 const UUID_REGEX = /\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b/gi;
+const ISO_DATE_REGEX = /\b(?:19|20)\d{2}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z?)?\b/g;
 
 export function redactValue(key: string, value: unknown): unknown {
   if (SECRET_KEY_PATTERNS.some((p) => p.test(key))) return '[REDACTED]';
@@ -37,16 +42,25 @@ export function redactValue(key: string, value: unknown): unknown {
 }
 
 export function redactPiiInString(value: string): string {
+  // 1. Préserver les UUIDs (PHONE_REGEX peut matcher leur contenu)
   const preservedUuids: string[] = [];
-  const withPlaceholders = value.replace(UUID_REGEX, (match) => {
+  const withUuids = value.replace(UUID_REGEX, (match) => {
     preservedUuids.push(match);
     return `__SOKAR_UUID_${preservedUuids.length - 1}__`;
   });
 
-  return withPlaceholders
+  // 2. Préserver les dates ISO (PHONE_REGEX peut matcher "2026-06-23")
+  const preservedDates: string[] = [];
+  const withDates = withUuids.replace(ISO_DATE_REGEX, (match) => {
+    preservedDates.push(match);
+    return `__SOKAR_DATE_${preservedDates.length - 1}__`;
+  });
+
+  return withDates
     .replace(EMAIL_REGEX, '[REDACTED_EMAIL]')
     .replace(PHONE_REGEX, '[REDACTED_PHONE]')
     .replace(LONG_HEX_REGEX, '[REDACTED_HEX]')
+    .replace(/__SOKAR_DATE_(\d+)__/g, (_match, idx) => preservedDates[Number(idx)] ?? _match)
     .replace(/__SOKAR_UUID_(\d+)__/g, (_match, idx) => preservedUuids[Number(idx)] ?? _match);
 }
 

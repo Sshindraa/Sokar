@@ -68,6 +68,7 @@ vi.mock('../shared/db/client', () => {
         findUnique: vi.fn(),
         upsert: vi.fn(),
         findFirst: vi.fn(),
+        update: vi.fn(),
       },
       reservationAuditLog: {
         create: vi.fn(),
@@ -75,6 +76,9 @@ vi.mock('../shared/db/client', () => {
       reservation: {
         create: vi.fn(),
         findMany: vi.fn(),
+        findFirst: vi.fn(),
+        findUnique: vi.fn(),
+        update: vi.fn(),
         count: vi.fn(),
       },
       customer: {
@@ -83,6 +87,7 @@ vi.mock('../shared/db/client', () => {
         findUnique: vi.fn(),
         count: vi.fn(),
         upsert: vi.fn(),
+        create: vi.fn(),
         update: vi.fn(),
         updateMany: vi.fn(),
         delete: vi.fn(),
@@ -106,7 +111,27 @@ vi.mock('../shared/db/client', () => {
         count: vi.fn(),
         updateMany: vi.fn(),
       },
-      $transaction: vi.fn(async (fn: any) => fn(txMock)),
+      agenticHold: {
+        findFirst: vi.fn(),
+        findUnique: vi.fn(),
+        findMany: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        updateMany: vi.fn(),
+      },
+      restaurantImage: {
+        findMany: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        updateMany: vi.fn(),
+        delete: vi.fn(),
+      },
+      $transaction: vi.fn(async (fn: any) => {
+        if (Array.isArray(fn)) {
+          return Promise.all(fn);
+        }
+        return fn(txMock);
+      }),
     },
   };
 });
@@ -127,6 +152,10 @@ vi.mock('../shared/redis/client', () => {
         const had = store.has(key);
         store.delete(key);
         return had ? 1 : 0;
+      }),
+      flushall: vi.fn(async () => {
+        store.clear();
+        return 'OK';
       }),
       status: 'ready',
     },

@@ -31,46 +31,55 @@ const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
 const PREVIEW_STATE: OnboardingState = {
   onboardingDone: false,
+  voiceOnboardingDone: false,
+  canalAOnboardingDone: false,
   onboardingCompletedAt: null,
   onboardingActivatedAt: null,
   onboardingLastSeenAt: new Date().toISOString(),
   firstCallAt: null,
   completedCount: 1,
-  totalCount: 5,
-  progress: 20,
+  totalCount: 10,
+  progress: 10,
+  voiceProgress: 20,
+  canalAProgress: 0,
   currentStep: {
     key: 'hours',
     title: 'Quand répondre et réserver',
-    description: 'Créneaux d’ouverture que l’assistant peut proposer.',
+    description: "Créneaux d'ouverture que l'assistant peut proposer.",
     required: false,
+    group: 'voice',
     index: 2,
     status: 'current',
     state: { status: 'current' },
   },
   steps: [
+    // Voice group
     {
       key: 'restaurant',
-      title: 'Identité du restaurant',
-      description: 'Nom, gérant et coordonnées de contact.',
+      title: "Identité du restaurant",
+      description: "Nom, gérant et coordonnées de contact.",
       required: true,
+      group: 'voice',
       index: 1,
       status: 'completed',
       state: { status: 'completed' },
     },
     {
       key: 'hours',
-      title: 'Quand répondre et réserver',
-      description: 'Créneaux d’ouverture que l’assistant peut proposer.',
+      title: "Quand répondre et réserver",
+      description: "Créneaux d'ouverture que l'assistant peut proposer.",
       required: false,
+      group: 'voice',
       index: 2,
       status: 'current',
       state: { status: 'current' },
     },
     {
       key: 'knowledge',
-      title: 'Ce que l’assistant doit savoir',
+      title: "Ce que l'assistant doit savoir",
       description: 'Ton, ambiance et consignes commerciales.',
       required: false,
+      group: 'voice',
       index: 3,
       status: 'pending',
       state: { status: 'pending' },
@@ -80,6 +89,7 @@ const PREVIEW_STATE: OnboardingState = {
       title: 'Connexion au planning',
       description: 'Google Calendar ou fallback manuel.',
       required: false,
+      group: 'voice',
       index: 4,
       status: 'blocked',
       state: {
@@ -92,6 +102,58 @@ const PREVIEW_STATE: OnboardingState = {
       title: 'Mise en service des appels',
       description: 'Numéro Sokar et consignes de renvoi opérateur.',
       required: false,
+      group: 'voice',
+      index: 5,
+      status: 'pending',
+      state: { status: 'pending' },
+    },
+    // Canal A group
+    {
+      key: 'canal-a-identity',
+      title: 'Identité publique',
+      description: 'Slug, description et photo de couverture.',
+      required: false,
+      group: 'canal-a',
+      index: 1,
+      status: 'pending',
+      state: { status: 'pending' },
+    },
+    {
+      key: 'canal-a-location',
+      title: 'Localisation',
+      description: 'Adresse, coordonnées et carte.',
+      required: false,
+      group: 'canal-a',
+      index: 2,
+      status: 'pending',
+      state: { status: 'pending' },
+    },
+    {
+      key: 'canal-a-cuisine',
+      title: 'Cuisine & ambiance',
+      description: 'Type de cuisine, tarifs et spécificités.',
+      required: false,
+      group: 'canal-a',
+      index: 3,
+      status: 'pending',
+      state: { status: 'pending' },
+    },
+    {
+      key: 'canal-a-capacity',
+      title: 'Capacité & règles',
+      description: "Capacité d'accueil, durée de service et acompte.",
+      required: false,
+      group: 'canal-a',
+      index: 4,
+      status: 'pending',
+      state: { status: 'pending' },
+    },
+    {
+      key: 'canal-a-activation',
+      title: 'Activation & preview',
+      description: 'Mise en ligne de la page et des métadonnées.',
+      required: false,
+      group: 'canal-a',
       index: 5,
       status: 'pending',
       state: { status: 'pending' },
@@ -162,6 +224,19 @@ function updatePreviewStep(
     return step;
   });
 
+  const voiceKeys = ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'];
+  const canalAKeys = ['canal-a-identity', 'canal-a-location', 'canal-a-cuisine', 'canal-a-capacity', 'canal-a-activation'];
+
+  const voiceSteps = steps.filter((s) => voiceKeys.includes(s.key));
+  const voiceCompleted = voiceSteps.filter((s) => s.status === 'completed').length;
+  const voiceOnboardingDone = voiceCompleted === voiceSteps.length;
+  const voiceProgress = Math.round((voiceCompleted / voiceSteps.length) * 100);
+
+  const canalASteps = steps.filter((s) => canalAKeys.includes(s.key));
+  const canalACompleted = canalASteps.filter((s) => s.status === 'completed').length;
+  const canalAOnboardingDone = canalACompleted === canalASteps.length;
+  const canalAProgress = Math.round((canalACompleted / canalASteps.length) * 100);
+
   const completedCount = steps.filter((step) => step.status === 'completed').length;
   const currentStep =
     steps.find((step) => step.status === 'current') ??
@@ -175,7 +250,11 @@ function updatePreviewStep(
     currentStep,
     completedCount,
     progress: Math.round((completedCount / steps.length) * 100),
-    onboardingDone: completedCount === steps.length,
+    onboardingDone: voiceOnboardingDone,
+    voiceOnboardingDone,
+    canalAOnboardingDone,
+    voiceProgress,
+    canalAProgress,
   };
 }
 

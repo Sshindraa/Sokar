@@ -166,6 +166,15 @@ function checkOauthRate(ip: string, config: { max: number; windowMs: number }): 
   return true;
 }
 
+// Nettoyage périodique des entrées expirées (toutes les 60s)
+const RATE_CLEANUP_INTERVAL = 60_000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of oauthRateMap) {
+    if (now > entry.resetAt) oauthRateMap.delete(key);
+  }
+}, RATE_CLEANUP_INTERVAL).unref();
+
 // ─── Routes ────────────────────────────────────────────
 
 export async function oauthRoutes(app: FastifyInstance): Promise<void> {

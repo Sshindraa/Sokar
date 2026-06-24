@@ -37,12 +37,19 @@ vi.mock('../../customers/customer.service', () => ({
   CustomerService: {
     lookupOrCreate: vi.fn(),
     buildVipPromptExtra: vi.fn(),
+    buildReturningGreeting: vi.fn(() => 'Bonjour'),
+    recordCallActivity: vi.fn(() => Promise.resolve()),
     incrementVisit: vi.fn(),
   },
 }));
 
 vi.mock('../../../shared/configcat', () => ({
   isVoicePipelineEnabled: vi.fn(),
+  FLAGS: {
+    VOICE_PIPELINE_ENABLED: 'voice_pipeline_enabled',
+    SPECULATIVE_LLM: 'speculative_llm',
+    RESTAURANT_PLAN: 'restaurant_plan',
+  },
 }));
 
 // ── Imports under test (must come AFTER the vi.mock calls) ─────────────────

@@ -41,16 +41,16 @@ describe('computeOnboardingState', () => {
     expect(state.completedCount).toBe(1);
     expect(getStatus(state.tasks, 'restaurant')).toBe('completed');
     expect(state.onboardingDone).toBe(false);
-    expect(state.progress).toBe(20);
+    expect(state.progress).toBe(10);
     expect(state.currentStep.key).not.toBe('restaurant');
   });
 
-  it('cas 2 : restaurant pleinement configuré → onboardingDone = true, progress = 100', () => {
+  it('cas 2 : restaurant pleinement configuré (Voice) → onboardingDone = true, progress = 50', () => {
     const state = computeOnboardingState(fullRestaurant);
-    expect(state.completedCount).toBe(ONBOARDING_STEPS.length);
+    expect(state.completedCount).toBe(5);
     expect(state.onboardingDone).toBe(true);
-    expect(state.progress).toBe(100);
-    for (const step of state.steps) {
+    expect(state.progress).toBe(50);
+    for (const step of state.steps.filter((s) => s.group === 'voice')) {
       expect(step.status).toBe('completed');
     }
   });
@@ -145,5 +145,35 @@ describe('applyOnboardingTransition', () => {
       const after = applyOnboardingTransition(tasks, { action });
       expect(JSON.stringify(after)).toBe(before);
     }
+  });
+
+  it('gère l’onboarding Canal A : complétion et calcul des progrès indépendants', () => {
+    const emptyState = computeOnboardingState(baseEmpty);
+    expect(emptyState.voiceOnboardingDone).toBe(false);
+    expect(emptyState.canalAOnboardingDone).toBe(false);
+    expect(emptyState.voiceProgress).toBe(20);
+    expect(emptyState.canalAProgress).toBe(0);
+
+    const withCanalAInfo = {
+      ...baseEmpty,
+      slug: 'bistrot-test',
+      description: 'Super description',
+      coverImageUrl: 'http://image.url/cover.jpg',
+      formattedAddress: '1 rue test',
+      city: 'Lyon',
+      postalCode: '69001',
+      lat: 45.76,
+      lng: 4.83,
+      cuisineType: ['Français'],
+      priceRange: 2,
+      exposureSettings: {
+        capacitySpecials: { totalCapacity: 30 },
+        canalAPublished: true,
+      },
+    };
+
+    const state = computeOnboardingState(withCanalAInfo);
+    expect(state.canalAProgress).toBe(100);
+    expect(state.canalAOnboardingDone).toBe(true);
   });
 });

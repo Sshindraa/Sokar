@@ -51,9 +51,45 @@ const UpdatePersonalitySchema = z.object({
   systemPromptExtra: z.string().max(2000).optional(),
 });
 
+const UpdateCanalASchema = z.object({
+  slug: z.string().regex(/^[a-z0-9-]+$/).optional(),
+  description: z.string().max(200).optional().nullable(),
+  formattedAddress: z.string().max(200).optional().nullable(),
+  city: z.string().max(100).optional().nullable(),
+  postalCode: z.string().max(20).optional().nullable(),
+  country: z.string().max(10).default('FR').optional(),
+  lat: z.number().optional().nullable(),
+  lng: z.number().optional().nullable(),
+  cuisineType: z.array(z.string()).optional(),
+  priceRange: z.number().min(1).max(4).optional().nullable(),
+  ambiance: z.array(z.string()).optional(),
+  dietary: z.array(z.string()).optional(),
+  coverImageUrl: z.string().optional().nullable(),
+  maxPartySize: z.number().int().min(1).max(100).optional(),
+  canalAPublished: z.boolean().optional(),
+  canalAAgentic: z.boolean().optional(),
+  capacitySpecials: z.object({
+    totalCapacity: z.number().int().optional(),
+    serviceDuration: z.number().int().optional(),
+    cancellationPolicy: z.string().max(280).optional(),
+    depositRequired: z.boolean().optional(),
+    depositAmount: z.number().optional(),
+    depositThreshold: z.number().int().optional(),
+  }).optional(),
+});
+
+const PostImageSchema = z.object({
+  url: z.string(),
+  isCover: z.boolean().default(false),
+  position: z.number().int().default(0),
+  alt: z.string().optional(),
+});
+
 function onboardingPayload(restaurant: any, state = computeOnboardingState(restaurant)) {
   return {
     onboardingDone: state.onboardingDone,
+    voiceOnboardingDone: state.voiceOnboardingDone,
+    canalAOnboardingDone: state.canalAOnboardingDone,
     onboardingCompletedAt: restaurant.onboardingCompletedAt,
     onboardingActivatedAt: restaurant.onboardingActivatedAt,
     onboardingLastSeenAt: restaurant.onboardingLastSeenAt,
@@ -62,6 +98,8 @@ function onboardingPayload(restaurant: any, state = computeOnboardingState(resta
     completedCount: state.completedCount,
     totalCount: ONBOARDING_STEPS.length,
     progress: state.progress,
+    voiceProgress: state.voiceProgress,
+    canalAProgress: state.canalAProgress,
     steps: state.steps,
     defaultHours: DEFAULT_HOURS,
     restaurant: {
@@ -75,6 +113,22 @@ function onboardingPayload(restaurant: any, state = computeOnboardingState(resta
       googleCalendarId: restaurant.googleCalendarId,
       googleConnected: Boolean(restaurant.googleRefreshToken),
       personality: restaurant.personality,
+      // Canal A
+      slug: restaurant.slug,
+      description: restaurant.description,
+      formattedAddress: restaurant.formattedAddress,
+      city: restaurant.city,
+      postalCode: restaurant.postalCode,
+      country: restaurant.country,
+      lat: restaurant.lat ? Number(restaurant.lat) : null,
+      lng: restaurant.lng ? Number(restaurant.lng) : null,
+      cuisineType: restaurant.cuisineType,
+      priceRange: restaurant.priceRange,
+      ambiance: restaurant.ambiance,
+      dietary: restaurant.dietary,
+      coverImageUrl: restaurant.coverImageUrl,
+      images: restaurant.images || [],
+      exposureSettings: restaurant.exposureSettings || null,
     },
   };
 }
@@ -84,7 +138,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     const restaurantId = req.restaurantId;
     const restaurant = await app.db.restaurant.findUniqueOrThrow({
       where: { id: restaurantId },
-      include: { personality: true },
+      include: { personality: true, exposureSettings: true, images: true },
     });
     const state = computeOnboardingState(restaurant);
     const completedAt =
@@ -100,7 +154,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
         onboardingCompletedAt: completedAt,
         onboardingLastSeenAt: new Date(),
       },
-      include: { personality: true },
+      include: { personality: true, exposureSettings: true, images: true },
     });
 
     return reply.send(onboardingPayload(updated, computeOnboardingState(updated)));
@@ -111,7 +165,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     const body = UpdateOnboardingSchema.parse(req.body ?? {});
     const restaurant = await app.db.restaurant.findUniqueOrThrow({
       where: { id: restaurantId },
-      include: { personality: true },
+      include: { personality: true, exposureSettings: true, images: true },
     });
 
     if (
@@ -159,7 +213,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
           body.action === 'first_call' && !restaurant.firstCallAt ? now : restaurant.firstCallAt,
         onboardingLastSeenAt: now,
       },
-      include: { personality: true },
+      include: { personality: true, exposureSettings: true, images: true },
     });
 
     const updatedState = computeOnboardingState(updated);
@@ -385,6 +439,156 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
   };
 
+  const patchCanalA = async (req: any, reply: any) => {
+    const { id } = req.params as { id: string };
+    const restaurantId = req.restaurantId;
+    if (id !== restaurantId) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+    const body = UpdateCanalASchema.parse(req.body ?? {});
+
+    // 1. Check slug uniqueness if provided
+    if (body.slug) {
+      const existing = await app.db.restaurant.findUnique({
+        where: { slug: body.slug },
+      });
+      if (existing && existing.id !== restaurantId) {
+        return reply.status(409).send({ error: 'Ce slug est déjà utilisé par un autre restaurant.' });
+      }
+    }
+
+    // 2. Fetch existing settings to merge capacitySpecials
+    const currentSettings = await app.db.restaurantExposureSettings.upsert({
+      where: { restaurantId },
+      create: { restaurantId },
+      update: {},
+    });
+
+    const currentCapacitySpecials = (currentSettings.capacitySpecials as Record<string, any>) || {};
+    const newCapacitySpecials = {
+      ...currentCapacitySpecials,
+      ...(body.capacitySpecials || {}),
+    };
+
+    // 3. Prepare updates
+    const now = new Date();
+    const restaurantData: any = {};
+    if (body.slug !== undefined) restaurantData.slug = body.slug;
+    if (body.description !== undefined) restaurantData.description = body.description;
+    if (body.formattedAddress !== undefined) restaurantData.formattedAddress = body.formattedAddress;
+    if (body.city !== undefined) restaurantData.city = body.city;
+    if (body.postalCode !== undefined) restaurantData.postalCode = body.postalCode;
+    if (body.country !== undefined) restaurantData.country = body.country;
+    if (body.lat !== undefined) restaurantData.lat = body.lat;
+    if (body.lng !== undefined) restaurantData.lng = body.lng;
+    if (body.cuisineType !== undefined) restaurantData.cuisineType = body.cuisineType;
+    if (body.priceRange !== undefined) restaurantData.priceRange = body.priceRange;
+    if (body.ambiance !== undefined) restaurantData.ambiance = body.ambiance;
+    if (body.dietary !== undefined) restaurantData.dietary = body.dietary;
+    if (body.coverImageUrl !== undefined) restaurantData.coverImageUrl = body.coverImageUrl;
+
+    // Gating activation / publication
+    if (body.canalAPublished) {
+      restaurantData.publishedAt = now;
+      restaurantData.agenticOptIn = true;
+    }
+
+    const settingsData: any = {
+      capacitySpecials: newCapacitySpecials,
+    };
+    if (body.maxPartySize !== undefined) settingsData.maxPartySize = body.maxPartySize;
+    if (body.canalAPublished !== undefined) {
+      settingsData.canalAPublished = body.canalAPublished;
+      if (body.canalAPublished) {
+        settingsData.canalAPublishedAt = now;
+      }
+    }
+    if (body.canalAAgentic !== undefined) settingsData.canalAAgentic = body.canalAAgentic;
+
+    // 4. Update Database in a transaction
+    const [updatedRestaurant, updatedSettings] = await app.db.$transaction([
+      app.db.restaurant.update({
+        where: { id: restaurantId },
+        data: restaurantData,
+        include: { personality: true, images: true },
+      }),
+      app.db.restaurantExposureSettings.update({
+        where: { restaurantId },
+        data: settingsData,
+      }),
+    ]);
+
+    // Invalidate caches
+    await invalidateRestaurantContextCache(updatedRestaurant.phoneNumber);
+    if (updatedRestaurant.slug) {
+      const cacheKey = `canal-a:restaurant:${updatedRestaurant.slug}`;
+      await app.redisCache.del(cacheKey);
+    }
+
+    return reply.send({
+      restaurant: updatedRestaurant,
+      exposureSettings: updatedSettings,
+    });
+  };
+
+  const postImage = async (req: any, reply: any) => {
+    const { id } = req.params as { id: string };
+    const restaurantId = req.restaurantId;
+    if (id !== restaurantId) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+    const body = PostImageSchema.parse(req.body ?? {});
+
+    if (body.isCover) {
+      await app.db.restaurantImage.updateMany({
+        where: { restaurantId, isCover: true },
+        data: { isCover: false },
+      });
+    }
+
+    const image = await app.db.restaurantImage.create({
+      data: {
+        restaurantId,
+        url: body.url,
+        isCover: body.isCover,
+        position: body.position,
+        alt: body.alt,
+      },
+    });
+
+    if (body.isCover) {
+      await app.db.restaurant.update({
+        where: { id: restaurantId },
+        data: { coverImageUrl: body.url },
+      });
+    }
+
+    return reply.status(201).send(image);
+  };
+
+  const checkSlug = async (req: any, reply: any) => {
+    const { slug } = req.query as { slug?: string };
+    if (!slug) {
+      return reply.status(400).send({ error: 'Slug requis' });
+    }
+    const regex = /^[a-z0-9-]+$/;
+    if (!regex.test(slug)) {
+      return reply.status(400).send({ error: 'Format du slug invalide (lettres minuscules, chiffres, tirets uniquement)' });
+    }
+    const existing = await app.db.restaurant.findUnique({
+      where: { slug },
+    });
+    const available = !existing || existing.id === req.restaurantId;
+    return reply.send({ available });
+  };
+
   app.post('/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
   app.post('/api/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
+
+  app.patch('/restaurants/:id/canal-a', { preHandler: requireOrg() }, patchCanalA);
+  app.patch('/api/restaurants/:id/canal-a', { preHandler: requireOrg() }, patchCanalA);
+  app.post('/restaurants/:id/images', { preHandler: requireOrg() }, postImage);
+  app.post('/api/restaurants/:id/images', { preHandler: requireOrg() }, postImage);
+  app.get('/restaurants/check-slug', { preHandler: requireOrg() }, checkSlug);
+  app.get('/api/restaurants/check-slug', { preHandler: requireOrg() }, checkSlug);
 }

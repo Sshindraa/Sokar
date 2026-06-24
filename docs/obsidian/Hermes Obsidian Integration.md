@@ -1,181 +1,144 @@
-# Hermes x Obsidian — Intégration Sokar
+# Hermes × Obsidian — Intégration Sokar
 
-**Dernière mise à jour** : Mai 2025
-**Statut** : Actif — utilisé quotidiennement
-
----
-
-## Pourquoi
-
-L'intégration Hermes-Obsidian est le pont entre l'agent IA et la documentation persistante du projet Sokar. Elle permet :
-
-- **Mémoire persistante** — Hermes lit et écrit dans le vault Obsidian, ce qui lui donne accès à l'historique des décisions, sprints et notes de réunion au-delà de sa propre mémoire éphémère.
-- **Brainstorming et exploration** — Lancer des commandes `hermes -z` pour brainstormer dans une note, structurer des idées, ou faire des recherches dans toute la doc sans ouvrir l'IDE.
-- **Documentation vivante** — Les notes générées par Hermes (`write_note`, `append_note`) sont directement exploitables dans Obsidian avec les wikilinks, tags et graph view intacts.
-- **Automatisation** — Création de daily notes, journaux de sprint, et rapports techniques sans friction.
-
-Le vault réside dans le monorepo (`docs/obsidian/`), donc versionné avec le code — pas de dérive entre la doc et l'implémentation.
+> **Dernière mise à jour** : 2026-06-24
+> **Statut** : **fonctionnel** via skill `obsidian` (filesystem-first).
+> Le système "auto-sync" décrit en 2025 (mcp_serve.py, auto_sync.py,
+> notion_sync.py) **n'a jamais été livré en prod**. Cette note décrit
+> l'état réel.
 
 ---
 
-## Commandes disponibles
+## Comment ça marche aujourd'hui
 
-Le skill Hermes-Obsidian expose **6 fonctions** accessibles via `hermes -z` ou le MCP server `obsidian-vault` :
+L'agent Hermes lit/écrit dans le vault via la **skill `obsidian`** :
 
-| Fonction | Signature | Description |
-|---|---|---|
-| `list_notes` | `list_notes()` | Liste tous les fichiers `.md` du vault (hors `.obsidian/`). Retourne un tableau JSON des chemins relatifs. |
-| `read_note` | `read_note(note_path)` | Lit une note par chemin relatif ou titre. Ajoute `.md` automatiquement si omis. Cherche par titre dans tout le vault si le chemin exact n'existe pas. |
-| `write_note` | `write_note(note_path, content)` | Écrit ou écrase une note. Crée les dossiers intermédiaires si nécessaire. Le contenu est passé tel quel (markdown, frontmatter, wikilinks). |
-| `append_note` | `append_note(note_path, content)` | Ajoute du texte à la fin d'une note existante. Erreur si la note n'existe pas. |
-| `search_vault` | `search_vault(query)` | Cherche une chaîne (case-insensitive) dans tout le vault. Retourne les notes avec un snippet de 160 caractères autour du match. |
-| `daily_note` | `daily_note()` | Crée ou ouvre la note du jour dans `Daily/YYYY-MM-DD.md` avec un template (notes, tâches, liens). |
+| Opération | Outil Hermes |
+|-----------|--------------|
+| Lister les notes | `search_files` (target: files) |
+| Lire une note | `read_file` (path absolu résolu) |
+| Chercher un mot | `search_files` (target: content) |
+| Écrire / écraser | `write_file` |
+| Append | `read_file` + `patch` (ancre) ou `write_file` (rewrite) |
+| Édition ciblée | `patch` (old_string → new_string) |
+| Wikilinks | `[[Note Name]]` (markdown standard Obsidian) |
 
-**Conseil** : Le MCP server `obsidian-vault` (via `@modelcontextprotocol/server-filesystem`) est aussi configuré dans Windsurf Cascade — il permet la lecture/écriture directe de fichiers depuis l'IDE. Le skill Hermes est plus riche (search, daily note, fuzzy title lookup).
+**Pas de daemon**, **pas de classification auto**, **pas de sync Notion
+auto**. C'est l'agent qui appelle les outils à chaque modif
+significative, en suivant la skill `obsidian-doc` (règle absolue :
+"Ne PAS attendre qu'on te demande").
 
----
+## Vault
 
-## Exemples d'utilisation
-
-### 1. Lister toutes les notes disponibles
-
-```zsh
-hermes -z "Liste toutes les notes du vault Obsidian Sokar et affiche les 5 plus récentes par date de modification"
+```
+Chemin : /Users/hamza/Desktop/Sokar/docs/obsidian/
+Format : markdown standard (.md), pas de formatting exotique
+Versionné : oui (dans le monorepo git)
 ```
 
-Sortie typique :
-```
-Architecture.md
-README.md
-Sprint 1.md
-Hermes Obsidian Integration.md
+### Variable d'env
+
+```bash
+OBSIDIAN_VAULT_PATH=/Users/hamza/Desktop/Sokar/docs/obsidian
 ```
 
-### 2. Chercher une information dans toute la doc
+Convention documentée dans la skill `obsidian` (skill Hermes). Si
+unset, fallback `~/Documents/Obsidian Vault` (pas utilisé par Sokar).
 
-```zsh
-hermes -z "Cherche 'Telnyx' dans le vault Obsidian. Résume chaque mention dans un tableau avec la note source, le snippet et le contexte."
-```
+## Skill `obsidian-doc` — règle d'or
 
-Utilise `search_vault("Telnyx")` pour trouver tous les endroits où Telnyx est mentionné.
+> **Après chaque modification significative, documenter immédiatement
+> dans Obsidian. C'est automatique, pas facultatif.**
 
-### 3. Brainstormer et persister dans une note
+### Déclencheurs de documentation
 
-```zsh
-hermes -z "Crée une note 'Archives/Sprint 3 Ideas.md' dans le vault Obsidian. Fais un brainstorming structuré : section ## Revenue Tracking avec 3 idées, section ## Post-Call Analysis avec 3 idées, section ## AWS Migration avec les services concernés. Ajoute des tags #brainstorm et #sprint3 en frontmatter YAML."
-```
+Toute modif concernant : architecture, schema Prisma, provider,
+feature flag, route API, décision technique, suppression de code
+legacy.
 
-Utilise `write_note` pour créer la note avec contenu markdown structuré, frontmatter et wikilinks vers les notes existantes.
+**Ne PAS documenter** : typos, renommage de variable, cleanup
+trivial, install de deps.
 
----
+### Procédure
 
-## Configuration
+1. **Mettre à jour la note ciblée** (la plus pertinente pour le
+   changement). Exemples :
+   - Voice → [[Telnyx Pipeline]] ou [[Flux Pipeline Media Stream]]
+   - Schema → [[Architecture]] (vue d'ensemble) ou note dédiée
+   - Route → [[API Endpoints]]
+   - Spec nouvelle → nouvelle note dans le vault + lien depuis [[Context]]
+2. **Logger dans [[Journal]]** — ajouter une ligne en fin de tableau
+   `| YYYY-MM-DD HH:MM | Description courte | ✅/❌ | module |`
+3. **Mettre à jour [[Context]]** — section `## Dernière activité`
+   (ligne unique) + section `## Décisions récentes` (liste
+   chronologique inverse)
 
-### Chemins
+### Style
 
-| Élément | Chemin |
-|---|---|
-| **Vault racine** | `/Users/hamza/Desktop/Sokar/docs/obsidian/` |
-| **Skill Hermes** | `/Users/hamza/Desktop/Sokar/agent/skills/obsidian/skill.py` |
-| **MCP Config** | `/Users/hamza/Desktop/Sokar/agent/config/mcp-config.json` (serveur `obsidian-vault`) |
-| **Variable d'env** | `OBSIDIAN_VAULT` (optionnelle, override du chemin par défaut) |
+- Dates `YYYY-MM-DD HH:MM`
+- Préfixer les entrées Context avec `[module]` : `[voice]`, `[api]`, `[docs]`, `[agent]`
+- Wikilinks entre notes existantes
+- Tableaux markdown pour les logs
+- Pas de formatting exotique
 
-### MCP Server (Windsurf)
+## Outils MCP `obsidian-vault` (optionnel)
 
+La skill `obsidian` est la voie officielle. Un MCP server
+`obsidian-vault` peut être configuré dans Hermes (basé sur
+`@modelcontextprotocol/server-filesystem`) pour exposer les
+opérations fichiers standard, mais la skill reste plus riche
+(recherche plein texte avec snippets, daily note template, fuzzy
+title lookup).
+
+Configuration type (optionnelle) :
 ```json
 "obsidian-vault": {
   "command": "npx",
   "args": ["-y", "@modelcontextprotocol/server-filesystem",
-           "/Users/hamza/Desktop/Sokar/docs/obsidian"],
-  "description": "Sokar Obsidian vault — lecture et écriture des notes"
+           "/Users/hamza/Desktop/Sokar/docs/obsidian"]
 }
 ```
 
-Le MCP server Filesystem expose les opérations fichiers standard (read, write, edit, search). Le skill Hermes (`skill.py`) ajoute `search_vault` (recherche plein texte avec snippets) et `daily_note` (template auto).
+## Notes principales du vault
 
----
+| Note | Rôle |
+|------|------|
+| [[Context]] | Décisions récentes, TODOs, dernière activité |
+| [[Journal]] | Log chronologique des tâches |
+| [[Architecture]] | Stack globale, monorepo |
+| [[API Endpoints]] | Routes Fastify exhaustives |
+| [[Telnyx Pipeline]] | ai_config, machine à états, webhooks |
+| [[Flux Pipeline Media Stream]] | Pipeline Flux + barge-in |
+| [[Fillers Audio]] | Cache fillers LLM |
+| [[Canal A P0]] | Spec phase 0 + tickets T1-T10 |
+| [[Session Telnyx Debug 2026-06-10]] | Post-mortem Telnyx |
+
+Notes archivées : `docs/obsidian/_archive/` (Vapi, Sprint 1, stubs,
+Git Auto-Commit — outils/scripts qui n'existent plus).
+
+## Historique du système d'auto-logging
+
+En 2025, un système d'auto-classification a été décrit dans la
+version originale de cette note :
+
+| Composant | Statut réel |
+|-----------|-------------|
+| `agent/scripts/mcp_serve.py` (gateway) | **N'existe plus** |
+| `agent/skills/obsidian/auto_sync.py` (git watcher) | **N'existe plus** |
+| `agent/skills/obsidian/notion_sync.py` (Notion sync) | **N'existe plus** |
+| `agent/skills/obsidian/auto_doc.py` (helpers) | **N'existe plus** |
+| `agent/skills/obsidian/skill.py` (tools Hermes) | **Remplacé** par la skill `obsidian` (filesystem-first) |
+| Windsurf Cascade MCP `obsidian-vault` | **N'utilise plus Windsurf** |
+
+Le système "auto-géré" décrit en 2025 n'a jamais été livré en prod.
+La conséquence visible : le [[Journal]] a sauté 5 semaines
+(2026-05-22 → 2026-06-23) sans aucune entrée. C'est l'agent
+Hermes (skill `obsidian-doc`) qui maintient le vault maintenant,
+manuellement, à chaque modif significative.
 
 ## Liens
 
-- [[README]] — Guide de démarrage et structure du projet
-- [[Architecture]] — Stack complète et organisation du monorepo
-- [[Sprint 1]] — Objectifs et suivi du MVP en cours
-
----
-
-## Automatisation — Everything Auto-Géré
-
-Depuis la v2.1 du MCP server, **plus aucune mise à jour manuelle n'est nécessaire**. Le système auto-logging Sokar gère tout :
-
-### Comment ça marche
-
-Chaque fois qu'une tâche est exécutée via `mcp_serve.py` (le MCP gateway), **3 actions automatiques** se déclenchent :
-
-1. **Classification intelligente** — la tâche est analysée pour déterminer son type : création de route API, modification de schéma Prisma, ajout de composant dashboard, pipeline vocal, job queue, etc.
-2. **Mise à jour de la note ciblée** — par exemple, si vous modifiez `restaurant.routes.ts`, la note `API Endpoints.md` est automatiquement mise à jour avec les nouvelles routes.
-3. **Logging dans le journal** — une ligne est ajoutée à `Journal.md` et `Context.md` est mis à jour.
-
-### Composants du système
-
-| Composant | Fichier | Rôle |
-|---|---|---|
-| **MCP Gateway** | `agent/scripts/mcp_serve.py` | Point d'entrée unique — classification + auto-logging |
-| **Git Watcher** | `agent/skills/obsidian/auto_sync.py` | Surveille git diff, met à jour les notes selon les fichiers modifiés |
-| **Notion Sync** | `agent/skills/obsidian/notion_sync.py` | Sync bidirectionnelle Notion ↔ Obsidian |
-| **Doc Helpers** | `agent/skills/obsidian/auto_doc.py` | Helpers pour Context.md, décisions, liens |
-| **Skill Vault** | `agent/skills/obsidian/skill.py` | Tools Hermes : list, read, write, search, daily |
-
-### Carte de détection auto
-
-| Mot-clé dans la tâche | Note mise à jour | Type |
-|---|---|---|
-| route, endpoint, crud, fastify | `API Endpoints.md` | `create_route` |
-| prisma, schema, model, migration | `Database Schema.md` | `modify_schema` |
-| voice, stt, tts, telnyx, deepgram | `Voice Pipeline.md` | `voice_pipeline` |
-| dashboard, ui, component, tailwind | `Dashboard.md` | `add_component` |
-| bullmq, queue, worker, scheduler | `BullMQ Jobs.md` | `queue_job` |
-| hermes, agent, skill, mcp | `Hermes Agent.md` | `agent_config` |
-| auth, clerk, webhook, jwt | `Security.md` | `security` |
-| test, vitest, coverage | `Testing Strategy.md` | `testing` |
-
-### Architecture visuelle
-
-```
-Tâche Hermes → mcp_serve.py → classification
-                                   │
-                    ┌──────────────┼──────────────┐
-                    ▼              ▼              ▼
-              Journal.md    Context.md    Note ciblée
-                                          (API Endpoints, etc.)
-                                           │
-                                           ▼
-                                     auto_sync.py
-                                     (git watcher)
-                                           │
-                                           ▼
-                                     notion_sync.py
-                                     (Notion sync)
-```
-
-### Usage quotidien
-
-Vous n'avez **rien à faire**. Le système est intégré directement dans `mcp_serve.py` qui est le point d'entrée obligatoire pour toute tâche Hermes.
-
-Si vous voulez lancer la surveillance en arrière-plan :
-```zsh
-# Optionnel : daemon auto_sync (git watcher)
-python3 agent/skills/obsidian/auto_sync.py daemon &
-
-# Optionnel : daemon notion_sync (bidirectionnel, nécessite NOTION_TOKEN)
-NOTION_TOKEN="ntn_..." python3 agent/skills/obsidian/notion_sync.py daemon &
-```
-
-### Voir aussi
-
-- [[auto_sync]] — Détails du git watcher
-- [[notion_sync]] — Détails de la sync Notion
-- [[Journal]] — Le journal d'exécution automatique
-
----
-
-*Documentation générée et maintenue par Hermes Agent. Éditer via Obsidian ou `hermes -z`.*
+- Skill `obsidian` (Hermes) : `~/.hermes/skills/note-taking/obsidian/SKILL.md`
+- Skill `obsidian-doc` (Hermes) : `~/.hermes/skills/documentation/obsidian-doc/SKILL.md`
+- [[README]] — Index du vault
+- [[Context]] — État courant
+- [[Journal]] — Historique

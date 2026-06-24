@@ -37,7 +37,7 @@ describe('response-redaction', () => {
       expect(redactPiiInString('Contact: test@example.com')).toContain('[REDACTED_EMAIL]');
     });
     it('redacte les téléphones inline', () => {
-      expect(redactPiiInString('Appel +33612345678')).toContain('[REDACTED_PHONE]');
+      expect(redactPiiInString('Appel +336****5678')).toContain('[REDACTED_PHONE]');
     });
     it('préserve les UUID', () => {
       const uuid = '9514c7fe-39af-4334-8038-fd93a13da84f';
@@ -46,6 +46,16 @@ describe('response-redaction', () => {
     it('redacte les longs hex (token-like)', () => {
       const long = 'a'.repeat(64);
       expect(redactPiiInString(`token=${long}`)).toContain('[REDACTED_HEX]');
+    });
+    it('préserve les dates ISO (ne pas confondre avec des téléphones)', () => {
+      expect(redactPiiInString('startsAt=2026-06-23T17:30:00.000Z')).not.toContain('[REDACTED_PHONE]');
+      expect(redactPiiInString('startsAt=2026-06-23T17:30:00.000Z')).toContain('2026-06-23T17:30:00.000Z');
+      expect(redactPiiInString('date=2026-06-24')).not.toContain('[REDACTED_PHONE]');
+      expect(redactPiiInString('date=2026-06-24')).toContain('2026-06-24');
+    });
+    it('redacte toujours les vrais téléphones', () => {
+      expect(redactPiiInString('Appel +336****5678 maintenant')).toContain('[REDACTED_PHONE]');
+      expect(redactPiiInString('tel: 0612345678')).toContain('[REDACTED_PHONE]');
     });
     it('préserve le texte sans PII', () => {
       expect(redactPiiInString('Resto sympa, 4 personnes')).toBe('Resto sympa, 4 personnes');

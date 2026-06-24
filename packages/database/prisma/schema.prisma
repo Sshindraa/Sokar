@@ -62,8 +62,32 @@ model Restaurant {
   policyVersion         String            @default("2026-06-20") @map("policy_version")
   exposureSettings      RestaurantExposureSettings?
   agentClients          AgentClient[]
+  images                RestaurantImage[]
 
+  // Canal A (P0) — données publiques structurées, pas de flags de gating ici
+  description           String?           @map("description")
+  city                  String?           @map("city")
+  country               String            @default("FR") @map("country")
+  postalCode            String?           @map("postal_code")
+  coverImageUrl         String?           @map("cover_image_url")
+  publishedAt           DateTime?         @map("published_at")
+
+  @@index([city, publishedAt], map: "restaurants_city_published_at_idx")
   @@map("restaurants")
+}
+
+model RestaurantImage {
+  id           String     @id @default(uuid())
+  restaurantId String     @map("restaurant_id")
+  url          String
+  alt          String?
+  isCover      Boolean    @default(false) @map("is_cover")
+  position     Int        @default(0)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, isCover, position], map: "restaurant_images_restaurant_id_is_cover_position_idx")
+  @@map("restaurant_images")
 }
 
 model Call {
@@ -121,7 +145,8 @@ model Reservation {
   idempotencyScope        String?             @map("idempotency_scope")
   idempotencyKey          String?             @map("idempotency_key")
   idempotencyPayloadHash  String?             @map("idempotency_payload_hash")
-  consumedHoldId          String?             @unique @map("consumed_hold_id")
+  consumedHoldId          String?            @unique @map("consumed_hold_id")
+  source                  String?            @map("source") // google|chatgpt|perplexity|bing|restaurant_website|instagram|qr_code|direct|unknown|web
 
   auditLog                ReservationAuditLog[]
 
@@ -404,6 +429,11 @@ model RestaurantExposureSettings {
   noShowPolicy            String   @default("warning") @map("no_show_policy")
   notificationChannels    String[] @default(["sms", "email"]) @map("notification_channels")
   capacitySpecials        Json     @default("{}") @map("capacity_specials")
+  // Canal A (P0) — source de vérité unique pour le gating
+  canalAPublished         Boolean   @default(false) @map("canal_a_published")
+  canalAAgentic           Boolean   @default(false) @map("canal_a_agentic")
+  canalAPublishedAt       DateTime? @map("canal_a_published_at")
+  canalADescription       String?   @map("canal_a_description")
   updatedAt               DateTime @updatedAt @map("updated_at")
   restaurant              Restaurant @relation(fields: [restaurantId], references: [id])
 
