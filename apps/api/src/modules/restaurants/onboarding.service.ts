@@ -6,6 +6,11 @@ export const ONBOARDING_TASK_KEYS = [
   'knowledge',
   'calendar',
   'phone',
+  'canal-a-identity',
+  'canal-a-location',
+  'canal-a-cuisine',
+  'canal-a-capacity',
+  'canal-a-activation',
 ] as const;
 
 export type OnboardingTask = (typeof ONBOARDING_TASK_KEYS)[number];
@@ -24,36 +29,90 @@ export const ONBOARDING_STEPS: ReadonlyArray<{
   title: string;
   description: string;
   required: boolean;
+  group: 'voice' | 'canal-a';
+  index: number;
 }> = [
+  // Voice group
   {
     key: 'restaurant',
     title: 'Identité du restaurant',
     description: 'Nom, gérant et coordonnées de contact.',
     required: true,
+    group: 'voice',
+    index: 1,
   },
   {
     key: 'hours',
     title: 'Quand répondre et réserver',
     description: "Créneaux d'ouverture que l'assistant peut proposer.",
     required: false,
+    group: 'voice',
+    index: 2,
   },
   {
     key: 'knowledge',
     title: "Ce que l'assistant doit savoir",
     description: 'Ton, ambiance et consignes commerciales.',
     required: false,
+    group: 'voice',
+    index: 3,
   },
   {
     key: 'calendar',
     title: 'Connexion au planning',
     description: 'Google Calendar ou fallback manuel.',
     required: false,
+    group: 'voice',
+    index: 4,
   },
   {
     key: 'phone',
     title: 'Mise en service des appels',
     description: 'Numéro Sokar et consignes de renvoi opérateur.',
     required: false,
+    group: 'voice',
+    index: 5,
+  },
+  // Canal A group
+  {
+    key: 'canal-a-identity',
+    title: 'Identité publique',
+    description: 'Slug, description et photo de couverture.',
+    required: false,
+    group: 'canal-a',
+    index: 1,
+  },
+  {
+    key: 'canal-a-location',
+    title: 'Localisation',
+    description: 'Adresse, coordonnées et carte.',
+    required: false,
+    group: 'canal-a',
+    index: 2,
+  },
+  {
+    key: 'canal-a-cuisine',
+    title: 'Cuisine & ambiance',
+    description: 'Type de cuisine, tarifs et spécificités.',
+    required: false,
+    group: 'canal-a',
+    index: 3,
+  },
+  {
+    key: 'canal-a-capacity',
+    title: 'Capacité & règles',
+    description: 'Capacité d’accueil, durée de service et acompte.',
+    required: false,
+    group: 'canal-a',
+    index: 4,
+  },
+  {
+    key: 'canal-a-activation',
+    title: 'Activation & preview',
+    description: 'Mise en ligne de la page et des métadonnées.',
+    required: false,
+    group: 'canal-a',
+    index: 5,
   },
 ];
 
@@ -150,6 +209,26 @@ export type RestaurantLike = {
   googleCalendarId?: string | null;
   phoneNumber?: string | null;
   onboardingTasks?: unknown;
+  // Canal A fields
+  slug?: string | null;
+  description?: string | null;
+  formattedAddress?: string | null;
+  city?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  lat?: unknown;
+  lng?: unknown;
+  cuisineType?: string[];
+  priceRange?: number | null;
+  ambiance?: string[];
+  dietary?: string[];
+  coverImageUrl?: string | null;
+  images?: Array<unknown>;
+  exposureSettings?: {
+    canalAPublished?: boolean;
+    canalAAgentic?: boolean;
+    capacitySpecials?: unknown;
+  } | null;
 };
 
 export type OnboardingStepView = {
@@ -157,6 +236,7 @@ export type OnboardingStepView = {
   title: string;
   description: string;
   required: boolean;
+  group: 'voice' | 'canal-a';
   index: number;
   status: OnboardingStatus;
   state: OnboardingTaskState;
@@ -168,13 +248,18 @@ export type OnboardingStateView = {
   currentStep: OnboardingStepView;
   completedCount: number;
   progress: number;
-  onboardingDone: boolean;
+  onboardingDone: boolean; // voice onboarding done
+  voiceOnboardingDone: boolean;
+  canalAOnboardingDone: boolean;
+  voiceProgress: number;
+  canalAProgress: number;
 };
 
 export function computeOnboardingState(restaurant: RestaurantLike): OnboardingStateView {
   const now = new Date().toISOString();
   const tasks = normalizeTasks(restaurant.onboardingTasks);
 
+  // Auto-completion Voice
   if (
     restaurant.name &&
     restaurant.name !== 'Mon Restaurant' &&
@@ -200,31 +285,102 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
     markCompleted(tasks, 'phone', now);
   }
 
-  const current = ONBOARDING_STEPS.find((step) => tasks[step.key].status === 'current');
-  if (!current || tasks[current.key].status === 'completed') {
-    const next = ONBOARDING_STEPS.find(
+  // Auto-completion Canal A
+  const hasCoverImage = restaurant.coverImageUrl || (restaurant.images && restaurant.images.length > 0);
+  if (restaurant.slug && restaurant.description && hasCoverImage) {
+    markCompleted(tasks, 'canal-a-identity', now);
+  }
+
+  if (
+    restaurant.formattedAddress &&
+    restaurant.city &&
+    restaurant.postalCode &&
+    restaurant.lat !== null &&
+    restaurant.lat !== undefined &&
+    restaurant.lng !== null &&
+    restaurant.lng !== undefined
+  ) {
+    markCompleted(tasks, 'canal-a-location', now);
+  }
+
+  if (
+    restaurant.cuisineType &&
+    restaurant.cuisineType.length > 0 &&
+    restaurant.priceRange !== null &&
+    restaurant.priceRange !== undefined
+  ) {
+    markCompleted(tasks, 'canal-a-cuisine', now);
+  }
+
+  const exposure = restaurant.exposureSettings;
+  const hasCapacitySpecials =
+    exposure?.capacitySpecials &&
+    typeof exposure.capacitySpecials === 'object' &&
+    Object.keys(exposure.capacitySpecials).length > 0;
+  if (hasCapacitySpecials) {
+    markCompleted(tasks, 'canal-a-capacity', now);
+  }
+
+  if (exposure?.canalAPublished) {
+    markCompleted(tasks, 'canal-a-activation', now);
+  }
+
+  // Progression Voice group
+  const voiceSteps = ONBOARDING_STEPS.filter((step) => step.group === 'voice');
+  const voiceCurrent = voiceSteps.find((step) => tasks[step.key].status === 'current');
+  if (!voiceCurrent || tasks[voiceCurrent.key].status === 'completed') {
+    const nextVoice = voiceSteps.find(
       (step) => !['completed', 'skipped'].includes(tasks[step.key].status),
     );
-    for (const step of ONBOARDING_STEPS) {
+    for (const step of voiceSteps) {
       if (tasks[step.key].status === 'current') {
         tasks[step.key] = { ...tasks[step.key], status: 'pending' };
       }
     }
-    if (next && tasks[next.key].status !== 'blocked') {
-      tasks[next.key] = { ...tasks[next.key], status: 'current' };
+    if (nextVoice && tasks[nextVoice.key].status !== 'blocked') {
+      tasks[nextVoice.key] = { ...tasks[nextVoice.key], status: 'current' };
     }
   }
+
+  // Progression Canal A group
+  const canalASteps = ONBOARDING_STEPS.filter((step) => step.group === 'canal-a');
+  const canalACurrent = canalASteps.find((step) => tasks[step.key].status === 'current');
+  if (!canalACurrent || tasks[canalACurrent.key].status === 'completed') {
+    const nextCanalA = canalASteps.find(
+      (step) => !['completed', 'skipped'].includes(tasks[step.key].status),
+    );
+    for (const step of canalASteps) {
+      if (tasks[step.key].status === 'current') {
+        tasks[step.key] = { ...tasks[step.key], status: 'pending' };
+      }
+    }
+    if (nextCanalA && tasks[nextCanalA.key].status !== 'blocked') {
+      tasks[nextCanalA.key] = { ...tasks[nextCanalA.key], status: 'current' };
+    }
+  }
+
+  const steps: OnboardingStepView[] = ONBOARDING_STEPS.map((step) => ({
+    ...step,
+    status: tasks[step.key].status,
+    state: tasks[step.key],
+  }));
+
+  const voiceCompletedCount = voiceSteps.filter(
+    (step) => tasks[step.key].status === 'completed',
+  ).length;
+  const voiceOnboardingDone = voiceCompletedCount === voiceSteps.length;
+  const voiceProgress = Math.round((voiceCompletedCount / voiceSteps.length) * 100);
+
+  const canalACompletedCount = canalASteps.filter(
+    (step) => tasks[step.key].status === 'completed',
+  ).length;
+  const canalAOnboardingDone = canalACompletedCount === canalASteps.length;
+  const canalAProgress = Math.round((canalACompletedCount / canalASteps.length) * 100);
 
   const completedCount = ONBOARDING_STEPS.filter(
     (step) => tasks[step.key].status === 'completed',
   ).length;
-  const onboardingDone = completedCount === ONBOARDING_STEPS.length;
-  const steps: OnboardingStepView[] = ONBOARDING_STEPS.map((step, index) => ({
-    ...step,
-    index: index + 1,
-    status: tasks[step.key].status,
-    state: tasks[step.key],
-  }));
+
   const currentStep =
     steps.find((step) => step.status === 'current') ??
     steps.find((step) => step.status === 'blocked') ??
@@ -237,7 +393,11 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
     currentStep,
     completedCount,
     progress: Math.round((completedCount / ONBOARDING_STEPS.length) * 100),
-    onboardingDone,
+    onboardingDone: voiceOnboardingDone,
+    voiceOnboardingDone,
+    canalAOnboardingDone,
+    voiceProgress,
+    canalAProgress,
   };
 }
 
@@ -261,9 +421,13 @@ export function applyOnboardingTransition(
   }
 
   if (body.action === 'start') {
-    for (const step of ONBOARDING_STEPS) {
-      if (tasks[step.key].status === 'current') {
-        tasks[step.key] = { ...tasks[step.key], status: 'pending' };
+    const stepDef = ONBOARDING_STEPS.find((s) => s.key === task);
+    if (stepDef) {
+      const groupSteps = ONBOARDING_STEPS.filter((s) => s.group === stepDef.group);
+      for (const step of groupSteps) {
+        if (tasks[step.key].status === 'current') {
+          tasks[step.key] = { ...tasks[step.key], status: 'pending' };
+        }
       }
     }
     if (tasks[task].status !== 'completed') {
@@ -302,12 +466,17 @@ export function applyOnboardingTransition(
     };
   }
 
-  const next = ONBOARDING_STEPS.find((step) => tasks[step.key].status === 'pending');
-  if (
-    !ONBOARDING_STEPS.some((step) => tasks[step.key].status === 'current') &&
-    next
-  ) {
-    tasks[next.key] = { ...tasks[next.key], status: 'current' };
+  // Auto-progression pour le groupe concerné
+  const stepDef = ONBOARDING_STEPS.find((s) => s.key === task);
+  if (stepDef) {
+    const groupSteps = ONBOARDING_STEPS.filter((s) => s.group === stepDef.group);
+    const next = groupSteps.find((step) => tasks[step.key].status === 'pending');
+    if (
+      !groupSteps.some((step) => tasks[step.key].status === 'current') &&
+      next
+    ) {
+      tasks[next.key] = { ...tasks[next.key], status: 'current' };
+    }
   }
 
   return tasks;

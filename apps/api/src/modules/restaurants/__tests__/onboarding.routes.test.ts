@@ -145,4 +145,159 @@ describe('restaurant.routes - onboarding', () => {
       expect.objectContaining({ jobId: 'reengagement-stalled-test-rest-1' }),
     );
   });
+
+  describe('GET /restaurants/check-slug', () => {
+    it('renvoie 400 si le paramètre slug est absent', async () => {
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: '/restaurants/check-slug',
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/slug requis/i);
+    });
+
+    it('renvoie 400 si le format du slug est invalide', async () => {
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: '/restaurants/check-slug',
+        query: { slug: 'Bistrot_Sokar' },
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/format/i);
+    });
+
+    it('renvoie available: true si le slug est disponible ou appartient au restaurant courant', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue(null);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/restaurants/check-slug',
+        query: { slug: 'bistrot-dispo' },
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ available: true });
+    });
+
+    it('renvoie available: false si le slug est déjà utilisé par un autre restaurant', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: 'autre-rest-id',
+        slug: 'bistrot-pris',
+      } as any);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/restaurants/check-slug',
+        query: { slug: 'bistrot-pris' },
+        headers: { authorization: 'Bearer test' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ available: false });
+    });
+  });
+
+  describe('PATCH /restaurants/:id/canal-a', () => {
+    it('renvoie 409 si le slug est déjà utilisé par un autre restaurant', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: 'autre-rest-id',
+        slug: 'slug-pris',
+      } as any);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/restaurants/test-rest-1/canal-a',
+        headers: { authorization: 'Bearer test' },
+        payload: { slug: 'slug-pris' },
+      });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toMatch(/déjà utilisé/i);
+    });
+
+    it('met à jour les infos du restaurant et de ses exposure settings', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue(null);
+      
+      vi.mocked(db.restaurantExposureSettings.upsert).mockResolvedValue({
+        restaurantId: 'test-rest-1',
+        capacitySpecials: {},
+      } as any);
+
+      const updatedRest = {
+        ...baseRestaurant,
+        slug: 'nouveau-slug',
+        description: 'Bistrot sympa',
+        coverImageUrl: 'http://img.url',
+      };
+      
+      const updatedSettings = {
+        restaurantId: 'test-rest-1',
+        maxPartySize: 8,
+        canalAPublished: true,
+        capacitySpecials: { totalCapacity: 35 },
+      };
+
+      vi.mocked(db.restaurant.update).mockResolvedValue(updatedRest as any);
+      vi.mocked(db.restaurantExposureSettings.update).mockResolvedValue(updatedSettings as any);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/restaurants/test-rest-1/canal-a',
+        headers: { authorization: 'Bearer test' },
+        payload: {
+          slug: 'nouveau-slug',
+          description: 'Bistrot sympa',
+          coverImageUrl: 'http://img.url',
+          maxPartySize: 8,
+          canalAPublished: true,
+          capacitySpecials: { totalCapacity: 35 },
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({
+        restaurant: expect.objectContaining({ slug: 'nouveau-slug', description: 'Bistrot sympa' }),
+        exposureSettings: expect.objectContaining({ maxPartySize: 8, canalAPublished: true }),
+      });
+    });
+  });
+
+  describe('POST /restaurants/:id/images', () => {
+    it('ajoute une image et met à jour coverImageUrl si isCover est true', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurantImage.create).mockResolvedValue({
+        id: 'img-1',
+        restaurantId: 'test-rest-1',
+        url: 'http://image.url/cover.jpg',
+        isCover: true,
+      } as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/images',
+        headers: { authorization: 'Bearer test' },
+        payload: {
+          url: 'http://image.url/cover.jpg',
+          isCover: true,
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.json()).toEqual(expect.objectContaining({ id: 'img-1', isCover: true }));
+      expect(db.restaurantImage.updateMany).toHaveBeenCalledWith({
+        where: { restaurantId: 'test-rest-1', isCover: true },
+        data: { isCover: false },
+      });
+      expect(db.restaurant.update).toHaveBeenCalledWith({
+        where: { id: 'test-rest-1' },
+        data: { coverImageUrl: 'http://image.url/cover.jpg' },
+      });
+    });
+  });
 });

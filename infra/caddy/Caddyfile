@@ -1,0 +1,26 @@
+# Sokar — Caddyfile principal
+#
+# Cf. spec canal-a-v1.1 §3.3 hébergement : VPS + Caddy/Nginx + Cloudflare proxy cache.
+# Caddy gère TLS auto (Let's Encrypt) + reverse-proxy vers les services internes.
+#
+# Architecture :
+#   sokar.tech (HTTPS, port 443)
+#     ├─ /, /pricing, /login, /dashboard/*  → sokar-dashboard (PM2, port 3000)
+#     ├─ /r/*, /restaurants/*, /sitemap.xml, /robots.txt → sokar-canal-a (port 4002)
+#     └─ /api/*, /api/mcp/*  → sokar-api (PM2, port 4000)
+#
+# Cloudflare est en proxy/cache devant Caddy (mode "Full" ou "Full (Strict)").
+# Le cache Cloudflare se base sur les Cache-Control headers de Caddy.
+
+{
+    # Global options
+    email contact@sokar.tech
+    admin off
+    # Cloudflare trusted proxies — permet de lire la vraie IP du client
+    # Cf. https://github.com/caddyserver/caddy/issues/4085
+    servers {
+        trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22
+    }
+}
+
+import sites/*.caddy

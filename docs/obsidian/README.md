@@ -1,62 +1,94 @@
 # Sokar — Guide de Démarrage
 
-Bienvenue dans le vault Obsidian Sokar. Ce vault centralise la documentation, les objectifs de sprint, les décisions d'architecture et les notes de réunion du projet.
+> **Vault Obsidian** : `/Users/hamza/Desktop/Sokar/docs/obsidian/`
+> **Dernière mise à jour** : 2026-06-24
+> **Statut** : vault ré-activé après rétro-documentation des 5 semaines
+> 2026-05-22 → 2026-06-23 (cf. [[Journal]]).
+
+Ce vault centralise la documentation vivante du projet Sokar. Il est
+versionné avec le code, donc toute modif passe par `write_file` /
+`patch` (skill `obsidian` Hermes).
 
 ---
 
 ## Architecture
 
-Sokar est un monorepo (pnpm workspace + Turborepo) dédié à la gestion de réservations de restaurants avec un assistant vocal IA.
+Sokar est un monorepo (pnpm workspace + Turborepo) de gestion de
+réservations de restaurants avec assistant vocal IA.
 
-- **Backend API** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx → [[Architecture#API]]
-- **Dashboard** : Next.js 14 (App Router) + React 18 + Tailwind 3 → [[Architecture#Dashboard]]
-- **Voice Pipeline** : Telnyx (carrier), Deepgram (STT), LLM via OpenRouter, ElevenLabs/Cartesia (TTS) → [[Architecture#Voice]]
+- **Backend API** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx
+- **Dashboard** : Next.js 14 (App Router) + React 18 + Tailwind 3 — privé, Clerk auth
+- **Widget B2B** : Next.js 14, port 4001, `output: 'export'`, Cloudflare CDN
+- **Canal A** (en cours T1) : Next.js 14, port 4002, `output: 'standalone'`, VPS + Caddy + Cloudflare proxy
+- **Voice Pipeline** : Telnyx (carrier), Deepgram Nova-3 (STT),
+  OpenRouter (LLM `deepseek-v4-flash` / `PRO`), Cartesia Sonic 3.5 (TTS)
 - **Jobs Queue** : BullMQ (evening report, SMS confirmation, outbound confirm)
-- **Agent IA** : Hermes CLI (deepseek/deepseek-v4-flash) pour automatisation dev
+- **Agent IA** : Hermes CLI sur `minimax-m3` via `opencode-go` (depuis 2026-06-23)
 
-Voir [[Architecture]] pour les détails complets.
+Voir [[Architecture]] pour les détails.
 
 ## API Endpoints
 
-L'API Fastify expose les modules suivants :
+L'API Fastify expose **~30 routes** réparties dans :
 
-| Module | Routes | Description |
-|--------|--------|-------------|
-| Restaurants | `restaurant.routes.ts` | CRUD restaurants, quotas, availability |
-| Calls | `call.routes.ts` | Historique des appels, transcripts |
-| Reservations | `reservation.routes.ts` | Création, confirmation, annulation |
-| Customers | `customer.routes.ts` | Profil clients, VIP, loyalty |
-| Analytics | `analytics.routes.ts` | ROI, KPIs, reports |
-| Dashboard | `dashboard.routes.ts` | Métriques temps réel |
-| Voice (Telnyx) | `telnyx.pipeline.ts` | Webhooks, pipeline STT/LLM/TTS |
+| Module | Fichier | Rôle |
+|--------|---------|------|
+| Restaurants | `modules/restaurants/` | CRUD + onboarding + sign-in + availability |
+| Reservations | `modules/reservations/` | Création, confirmation, annulation |
+| Calls | `modules/calls/` | Historique des appels, transcripts |
+| Customers | `modules/customers/` | Profil clients, VIP, loyalty |
+| Dashboard | `modules/dashboard/` | Métriques temps réel (KPIs) |
+| Analytics | `modules/analytics/` | ROI, KPIs agrégés |
+| Voice | `modules/voice/` | Webhooks Telnyx, Flux Pipeline, Fillers cache |
+| Agentic Reservations | `modules/agentic-reservations/` | Core (hold/reservation/policies/audit) + MCP + OpenAI Reserve |
+| Auth | `modules/auth/` | Sync Clerk |
+| RGPD | `modules/rgpd/` | Identity verification, erase, export |
+| Admin | `modules/admin/` | Flags, configcat, feature toggles |
+| Canal A (T2) | `modules/canal-a/` (à créer) | Pages publiques, JSON-LD, hold/confirm web |
+| Integrations | `modules/integrations/` | Google Calendar |
+| Pilot | `modules/pilot/` | KPIs internes pilote |
 
-Voir [[API Endpoints]] pour la documentation complète des routes et schémas Zod.
+Voir [[API Endpoints]] pour la doc exhaustive (générée depuis le code).
 
 ## Database Schema
 
-Prisma 6 avec PostgreSQL. Modèles principaux :
+Prisma 6 + PostgreSQL. Modèles actifs (cf. `packages/database/prisma/schema.prisma`) :
 
-- **User** / **Session** / **Account** — Auth Clerk (multi-tenant)
-- **Restaurant** — Établissement avec plan (STARTER/PRO/PREMIUM), opening hours, carrier (vapi/telnyx)
-- **Call** — Appel vocal avec transcript, intent, outcome, latencies
-- **Reservation** — Réservation liée à un call et/ou customer
-- **Customer** — Client restaurant avec loyalty score, isVip
-- **AgentPersonality** — Configuration vocale (profile type, speaking rate, filler style)
-- **CallQuota** — Quotas mensuels par restaurant
-- **LatencyTrace** — Métriques de latence STT → LLM → TTS
+- **Restaurant** — Établissement, slug, cuisineType, priceRange, ambiance, dietary, lat/lng, agenticOptIn, exposureSettings, **Canal A fields** (description, city, country, postalCode, coverImageUrl, publishedAt)
+- **Reservation** — channel (PHONE/WEB/MCP/OPENAI_RESERVE/ADMIN/API), state machine (PENDING/CONFIRMED/SEATED/HONORED/CANCELLED/NO_SHOW/FAILED/EXPIRED), **source** (Google/ChatGPT/Perplexity/etc.), idempotency scoped
+- **Call** — Transcript, intent, outcome, latencies, carrier (telnyx)
+- **Customer** — Phone, name, visitCount, loyaltyScore, isVip
+- **AgenticHold** — Quote 5min / Hold 7min, partial unique index `one_active_hold_per_slot`
+- **RestaurantExposureSettings** — mcpEnabled, openaiReserveEnabled, **canalAPublished**, **canalAAgentic**, etc.
+- **CustomerConsent** — Structured RGPD consents, channel-scoped
+- **ReservationAuditLog** — Append-only state transitions
+- **IdentityVerificationOtp** + **SignedTokenUsage** — Three-token pattern (RGPD)
+- **RestaurantImage** — Galerie photos (Canal A)
+- Tables legacy : AgentPersonality, CallQuota, LatencyTrace, IdempotencyRecord, AgentClient
 
-Voir [[Database Schema]] pour le schema complet et les indexes.
+> User/Session/Account/Verification : supprimées du schema Prisma (Clerk gère 100%).
 
-## TODOs
+## Notes principales du vault
 
-- [[Sprint 1]] — MVP en cours (Vapi voice, Clerk auth, dashboard minimal, evening report)
-- [[Sprint 2]] — Telnyx migration, memory client cache, TTS Redis cache, VIP mode
-- [[Sprint 3]] — Revenue tracking, Hermes post-call analysis, LocalStack AWS
-- [[Figma Design]] — UI/UX design system
-- [[Testing Strategy]] — Vitest, test coverage, integration tests
+| Note | Rôle |
+|------|------|
+| [[Context]] | Décisions récentes, TODOs actifs, dernière activité |
+| [[Journal]] | Log chronologique des tâches Hermes |
+| [[Architecture]] | Stack globale, monorepo |
+| [[Telnyx Pipeline]] | ai_config, machine à états, webhooks |
+| [[Flux Pipeline Media Stream]] | Pipeline Flux custom + barge-in |
+| [[Fillers Audio]] | Cache RAM + Redis pour silences LLM |
+| [[Canal A P0]] | Spec phase 0 + tickets T1-T10 |
+| [[API Endpoints]] | Routes Fastify exhaustives |
+| [[Session Telnyx Debug 2026-06-10]] | Post-mortem bugs Telnyx + clés API |
 
-## Meeting Notes
+Notes archivées : `docs/obsidian/_archive/` (Vapi legacy, Sprint 1, stubs).
 
-- [[Meeting Notes Template]]
-- [[2025-05-15 Sprint Planning]]
-- [[2025-05-19 Architecture Review]]
+## Liens externes
+
+- Spec Canal A v1.1 : `docs/canal-a-v1.1.md`
+- Spec agentic-reservations v3.2 : `docs/sokar-mcp-agentic-reservations-v3.2.md`
+- Runbook transversal : `docs/runbook.md`
+- Audit migration P0 : `docs/sokar-mcp-p0-migration-audit.md`
+- Guide intégrateurs externes (Claude/ChatGPT/Mistral) : `docs/sokar-mcp-integrator-guide.md`
+- Automation Hermes : `docs/hermes-automation.md`

@@ -1,6 +1,16 @@
 export type OnboardingStatus = 'completed' | 'current' | 'blocked' | 'skipped' | 'pending';
 
-export type OnboardingTaskKey = 'restaurant' | 'hours' | 'knowledge' | 'calendar' | 'phone';
+export type OnboardingTaskKey =
+  | 'restaurant'
+  | 'hours'
+  | 'knowledge'
+  | 'calendar'
+  | 'phone'
+  | 'canal-a-identity'
+  | 'canal-a-location'
+  | 'canal-a-cuisine'
+  | 'canal-a-capacity'
+  | 'canal-a-activation';
 
 export type OnboardingTaskState = {
   status: OnboardingStatus;
@@ -16,6 +26,7 @@ export type OnboardingStep = {
   title: string;
   description: string;
   required: boolean;
+  group: 'voice' | 'canal-a';
   index: number;
   status: OnboardingStatus;
   state: OnboardingTaskState;
@@ -39,10 +50,38 @@ export type OnboardingRestaurant = {
     systemPromptExtra?: string | null;
     voiceIdCa?: string | null;
   } | null;
+  // Canal A fields
+  slug?: string;
+  description?: string | null;
+  formattedAddress?: string | null;
+  city?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  cuisineType?: string[];
+  priceRange?: number | null;
+  ambiance?: string[];
+  dietary?: string[];
+  coverImageUrl?: string | null;
+  images?: Array<{ url: string; isCover: boolean; position: number; alt?: string | null }>;
+  exposureSettings?: {
+    canalAPublished: boolean;
+    canalAAgentic: boolean;
+    holdTtlSeconds?: number;
+    cancellationWindowMinutes?: number;
+    noShowFeeCents?: number;
+    depositRequired?: boolean;
+    requiresDepositAbove?: number | null;
+    maxPartySize?: number;
+    capacitySpecials?: Record<string, unknown> | null;
+  } | null;
 };
 
 export type OnboardingState = {
-  onboardingDone: boolean;
+  onboardingDone: boolean; // Voice onboarding done
+  voiceOnboardingDone: boolean;
+  canalAOnboardingDone: boolean;
   onboardingCompletedAt: string | null;
   onboardingActivatedAt: string | null;
   onboardingLastSeenAt: string | null;
@@ -51,6 +90,8 @@ export type OnboardingState = {
   completedCount: number;
   totalCount: number;
   progress: number;
+  voiceProgress: number;
+  canalAProgress: number;
   steps: OnboardingStep[];
   defaultHours: Record<string, { open: string; close: string }>;
   restaurant: OnboardingRestaurant;

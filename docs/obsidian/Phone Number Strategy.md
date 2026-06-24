@@ -1,8 +1,10 @@
 # Phone Number Strategy — Sokar
 
-> Décision architecture : comment gérer les numéros de téléphone à l'échelle.
-> Date : 2026-05-20
-> Statut : En discussion — MVP utilise numéro de test gratuit Vapi
+> **Date originale** : 2026-05-20
+> **Statut original** : En discussion — MVP utilise numéro de test gratuit Vapi
+> **Statut 2026-06-24** : **DÉPASSÉ** — Telnyx FR est en prod depuis Sprint 2
+> (cf. [[Telnyx Pipeline]]). Ce document est conservé comme **trace
+> de la décision initiale** et pour les projections de coût.
 
 ## Le problème
 
@@ -183,18 +185,21 @@ Restaurant demande portage
 | Coût numéros qui grimpe | Faible | Élevé | Négociation volume, SIP trunking |
 | Numéro partagé = confusion client | Moyenne | Moyen | IVR clair, fallback humain |
 
-## Décision actuelle (2026-05-20)
+## Décision actuelle (état 2026-06-24)
 
-> **Sprint 1-2** : Utiliser le **numéro de test gratuit Vapi** (US) pour valider le produit. Aucun achat de numéro.
+> **Sprint 1-2 (mai 2026)** : ✅ Fait — Vapi US pour valider le MVP, mais abandonné.
 >
-> **Sprint 3** : Évaluer le passage à des numéros FR dédiés (Telnyx) pour la Beta.
+> **Sprint 2 (juin 2026)** : ✅ Fait — Migration Telnyx FR complète.
+> `apps/api/src/modules/voice/telnyx.pipeline.ts` est le pipeline prod.
+> Numéro actuel visible : `+33 4 51 22 15 28` (cf. [[Session Telnyx Debug 2026-06-10]]).
 >
-> **Avant Scale** : Choisir entre pool rotatif ou porting selon le profil des restaurants signés.
-
----
+> **Avant Scale (P1+)** : Non tranché. Les projections de coût du
+> tableau initial (1 numéro/resto = $3/mois Telnyx) restent valides
+> comme référence. La décision "pool rotatif vs portage" est
+> repoussée au moment où on signe > 10 restos.
 
 ## Liens
 
-- [[Vapi Integration]] — Test technique en cours
-- [[Telnyx Pipeline]] — Pipeline custom existant
-- [[Sprint 1]] — Objectifs MVP
+- [[Telnyx Pipeline]] — Pipeline custom Telnyx (référence actuelle)
+- [[Session Telnyx Debug 2026-06-10]] — Post-mortem Telnyx prod
+- ~~[[Vapi Integration]]~~ — Archivé, Vapi legacy

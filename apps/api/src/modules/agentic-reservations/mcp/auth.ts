@@ -18,6 +18,8 @@ import { createHash } from 'crypto';
 // (comma-separated, ex: "https://claude.ai,https://chatgpt.com")
 const DEFAULT_ORIGINS = [
   'https://claude.ai',
+  'https://chatgpt.com',
+  'https://chat.mistral.ai',
   'https://cursor.sh',
   'http://localhost:3000',
   'http://localhost:4000',

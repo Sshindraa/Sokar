@@ -97,4 +97,33 @@ export function __resetMetrics(): void {
   idempotencyHitsTotal.reset();
   piiLeaksTotal.reset();
   doubleBookingAttemptsTotal.reset();
+  canalAEventsTotal.reset();
+  canalAReservationsConfirmedTotal.reset();
 }
+
+// ─── Canal A (Phase 1) ────────────────────────────────────────
+
+/**
+ * Compteur global des events Canal A. Labels limités pour éviter la
+ * cardinalité infinie (cf. spec v1.1 §16.1 — events standardisés).
+ * Labels : event (page_view, cta_clicked, availability_requested,
+ *                hold_created, hold_expired, reservation_confirmed,
+ *                reservation_failed) × source (web, google, chatgpt, ...).
+ */
+export const canalAEventsTotal = new Counter({
+  name: 'sokar_canal_a_events_total',
+  help: 'Total Canal A events received',
+  labelNames: ['event', 'source'] as const,
+  registers: [getRegistry()],
+});
+
+/**
+ * Réservations confirmées via Canal A (par source).
+ * Permet de calculer la conversion par canal SEO/agentic.
+ */
+export const canalAReservationsConfirmedTotal = new Counter({
+  name: 'sokar_canal_a_reservations_confirmed_total',
+  help: 'Total reservations confirmed via Canal A',
+  labelNames: ['source', 'city'] as const,
+  registers: [getRegistry()],
+});

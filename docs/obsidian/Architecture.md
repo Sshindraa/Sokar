@@ -1,7 +1,14 @@
 # Architecture Sokar
 
-**Dernière mise à jour** : Mai 2025  
-**Stack** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx / Next.js 14 + React 18 + Tailwind 3
+**Dernière mise à jour** : 2026-06-24
+**Stack** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx / Next.js 14 + React 18 + Tailwind 3 / Cartesia Sonic 3.5 + Deepgram Nova-3 / OpenRouter (deepseek-v4-flash / PRO)
+**Carrier** : Telnyx (production) — Vapi legacy purgé
+**TTS** : Cartesia Sonic 3.5 (depuis 2026-05-20)
+**Model switch** : Hermes sur `minimax-m3` via `opencode-go` (depuis 2026-06-23)
+
+> Note 2026-06-24 : rétro-référence aux changements majeurs depuis
+> 2026-05-21 (agentic P0, MCP, OpenAI Reserve, Canal A). Pour le
+> détail des phases, voir [[Canal A P0]] et `docs/sokar-mcp-agentic-reservations-v3.2.md`.
 
 ---
 
@@ -12,12 +19,14 @@ sokar/
 ├── apps/
 │   ├── api/              # Fastify 5 backend
 │   │   └── src/
-│   │       ├── modules/      # Domain modules (restaurants, calls, etc.)
+│   │       ├── modules/      # Domain modules (voice, agentic-reservations, mcp, canal-a, ...)
 │   │       ├── plugins/      # Fastify plugins (cors, rate-limit)
-│   │       ├── shared/       # Shared services (redis, queue, telnyx, security)
+│   │       ├── shared/       # Shared services (redis, queue, telnyx, observability, auth)
 │   │       ├── lib/          # Auth helpers
 │   │       └── types/        # TypeScript declarations
-│   └── dashboard/        # Next.js 14 dashboard
+│   ├── dashboard/        # Next.js 14 dashboard (Clerk auth, privé restaurateur)
+│   ├── widget/           # Next.js 14 widget B2B (port 4001, output:export, Cloudflare CDN)
+│   └── canal-a/          # Next.js 14 app publique (port 4002, output:standalone, à venir T4)
 │       └── src/
 │           └── app/         # App Router pages
 ├── packages/
