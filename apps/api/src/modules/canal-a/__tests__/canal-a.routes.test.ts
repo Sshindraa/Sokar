@@ -484,7 +484,7 @@ describe('Canal A — Routes publiques', () => {
           holdToken: 'hold-test-expired',
           customer: {
             firstName: 'Hamza',
-            phone: '+336****5678',
+            phone: '+33612345678',
           },
         },
       });
