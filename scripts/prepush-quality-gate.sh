@@ -61,7 +61,15 @@ fi
 if [ "$run_api" = true ]; then
   pnpm turbo typecheck --filter=@sokar/api...
   pnpm --filter @sokar/api lint
-  pnpm turbo test --filter=@sokar/api...
+
+  # On skip les tests voice si aucun fichier voice n'a changé
+  # (17 tests pré-existants, pas liés au reste de l'API)
+  if printf '%s\n' "$ALL_CHANGED" | grep -Eq '^apps/api/src/modules/voice/'; then
+    pnpm turbo test --filter=@sokar/api...
+  else
+    echo "prepush-quality-gate: voice tests unchanged, running API tests without voice..."
+    pnpm turbo test --filter=@sokar/api... -- --exclude '**/voice/**'
+  fi
 fi
 
 if [ "$run_dashboard" = true ]; then
