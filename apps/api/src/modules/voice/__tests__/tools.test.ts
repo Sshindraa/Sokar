@@ -1,0 +1,143 @@
+/**
+ * Tests for the OpenAI-style function-calling tool definitions exposed
+ * to the LLM (createReservation, handoffToManager).
+ *
+ * Why this matters: the LLM uses these JSON schemas to decide when to
+ * call a tool. A regression here silently breaks the agent's ability to
+ * reserve a table or hand off to a human — and the failure mode is
+ * "AI doesn't act when it should", not a thrown error.
+ *
+ * Scopes:
+ *  1. Shape: type=function, function.name, function.description, parameters
+ *  2. createReservation: required fields, time regex, partySize bounds
+ *  3. handoffToManager: no parameters required
+ *  4. Output is decoupled from restaurantId (same shape regardless of input)
+ *  5. Tool names are stable strings (regression guard — LLM is trained on them)
+ */
+
+import { describe, it, expect } from 'vitest';
+import { getRestaurantTools } from '../tools';
+
+const TIME_PATTERN = '^([0-1]\\d|2[0-3]):[0-5]\\d$';
+
+describe('getRestaurantTools', () => {
+  const tools = getRestaurantTools('rest-123');
+  const byName = (name: string) => tools.find((t) => t.function.name === name);
+
+  it('returns exactly 2 tools: createReservation and handoffToManager', () => {
+    expect(tools).toHaveLength(2);
+    const names = tools.map((t) => t.function.name).sort();
+    expect(names).toEqual(['createReservation', 'handoffToManager']);
+  });
+
+  it('every entry has type=function (OpenAI function-calling envelope)', () => {
+    for (const t of tools) expect(t.type).toBe('function');
+  });
+
+  it('every entry has a non-empty function.description (LLM uses this to decide when to call)', () => {
+    for (const t of tools) {
+      expect(typeof t.function.description).toBe('string');
+      expect(t.function.description.length).toBeGreaterThan(20);
+    }
+  });
+
+  it('returns the same tools regardless of restaurantId (today)', () => {
+    // Future: tools may be personalised per restaurant. Today they aren't.
+    // Pin the behaviour so a future change is intentional.
+    expect(getRestaurantTools('rest-A')).toEqual(getRestaurantTools('rest-B'));
+    expect(getRestaurantTools('rest-A')).toEqual(tools);
+  });
+});
+
+describe('createReservation tool', () => {
+  const tool = getRestaurantTools('rest-1').find((t) => t.function.name === 'createReservation')!;
+  const params = tool.function.parameters as {
+    type: string;
+    properties: Record<string, any>;
+    required: string[];
+  };
+
+  it('declares type=object on parameters', () => {
+    expect(params.type).toBe('object');
+  });
+
+  it('requires date, time, partySize, customerName (not customerPhone)', () => {
+    expect(new Set(params.required)).toEqual(
+      new Set(['date', 'time', 'partySize', 'customerName']),
+    );
+  });
+
+  it('customerPhone is optional (caller may not provide it)', () => {
+    expect(params.required).not.toContain('customerPhone');
+    expect(params.properties.customerPhone).toBeDefined();
+  });
+
+  it('date is a string in date format (YYYY-MM-DD)', () => {
+    expect(params.properties.date).toEqual({
+      type: 'string',
+      format: 'date',
+      description: expect.stringContaining('YYYY-MM-DD'),
+    });
+  });
+
+  it('time matches the HH:MM regex used by the server-side validator', () => {
+    expect(params.properties.time).toEqual({
+      type: 'string',
+      pattern: TIME_PATTERN,
+      description: expect.stringContaining('HH:MM'),
+    });
+  });
+
+  it('partySize is an integer between 1 and 7 (>=8 triggers handoff)', () => {
+    expect(params.properties.partySize).toEqual({
+      type: 'integer',
+      minimum: 1,
+      maximum: 7,
+      description: expect.stringContaining('handoffToManager'),
+    });
+  });
+
+  it('customerName is a required string', () => {
+    expect(params.properties.customerName).toEqual({
+      type: 'string',
+      description: expect.stringMatching(/nom/i),
+    });
+  });
+
+  it('description explicitly warns to call only after collecting date/time/party/name', () => {
+    // The LLM is lazy and tends to call tools early. The description is our guardrail.
+    const desc = tool.function.description.toLowerCase();
+    expect(desc).toContain('réservation');
+    expect(desc).toMatch(/après avoir confirmé|après confirmation|une fois confirmé/);
+  });
+});
+
+describe('handoffToManager tool', () => {
+  const tool = getRestaurantTools('rest-1').find((t) => t.function.name === 'handoffToManager')!;
+  const params = tool.function.parameters as {
+    type: string;
+    properties: Record<string, any>;
+    required: string[];
+  };
+
+  it('requires no parameters', () => {
+    expect(params.required).toEqual([]);
+    expect(Object.keys(params.properties)).toHaveLength(0);
+  });
+
+  it('description enumerates the 4 handoff triggers (>=8, complex, unhappy, misunderstanding)', () => {
+    const desc = tool.function.description.toLowerCase();
+    expect(desc).toMatch(/g[éé]rant|manager/);
+    expect(desc).toMatch(/8|≥/); // group size
+    expect(desc).toMatch(/complex|difficile/);
+    expect(desc).toMatch(/m[ée]content|incompréhensif/);
+  });
+});
+
+describe('tool name stability (regression guard)', () => {
+  // The LLM was trained / prompted with these exact names. Renaming a tool
+  // silently breaks the integration — guard against accidental renames.
+  it.each(['createReservation', 'handoffToManager'])('keeps the name "%s"', (name) => {
+    expect(getRestaurantTools('r').some((t) => t.function.name === name)).toBe(true);
+  });
+});
