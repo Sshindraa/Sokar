@@ -22,7 +22,7 @@ const storySteps = [
   },
   {
     kicker: 'Croissance mesurable',
-    title: 'Visualisez ce que Sokar recupere',
+    title: 'Visualisez ce que Sokar récupère',
     accent: 'appels, tables, revenus',
   },
 ];
@@ -50,22 +50,21 @@ function useStoryTextMotion(progress: MotionValue<number>, start: number) {
   const opacityInput =
     start === 0
       ? [0, 0.08, 0.16, 1]
-      : [0, Math.max(0, start - 0.08), start + 0.02, Math.min(1, start + 0.14), Math.min(1, start + 0.24), 1];
+      : [
+          0,
+          Math.max(0, start - 0.08),
+          start + 0.02,
+          Math.min(1, start + 0.14),
+          Math.min(1, start + 0.24),
+          1,
+        ];
   const opacityOutput = start === 0 ? [1, 1, 0, 0] : [0, 0, 1, 1, 0, 0];
   const yOutput =
     start === 0
       ? ['0rem', '0rem', '-2.5rem', '-2.5rem']
       : ['2.5rem', '2.5rem', '0rem', '0rem', '-2.5rem', '-2.5rem'];
-  const opacity = useTransform(
-    progress,
-    opacityInput,
-    opacityOutput,
-  );
-  const y = useTransform(
-    progress,
-    opacityInput,
-    yOutput,
-  );
+  const opacity = useTransform(progress, opacityInput, opacityOutput);
+  const y = useTransform(progress, opacityInput, yOutput);
 
   return { opacity, y };
 }
@@ -94,7 +93,9 @@ export default function ScrollStoryboardSection() {
     return (
       <section className="relative w-full overflow-hidden px-4 py-24 sm:px-6 lg:px-10">
         <div className="mx-auto max-w-6xl p-8 text-center">
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">Experience Sokar</p>
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">
+            Experience Sokar
+          </p>
           <h2 className="mx-auto mt-4 max-w-3xl text-4xl font-black tracking-tight text-white font-display">
             Une interface qui transforme chaque appel en reservation.
           </h2>
@@ -152,11 +153,14 @@ export default function ScrollStoryboardSection() {
             style={{ y: cardRowY, opacity: cardRowOpacity }}
           >
             {[
-              { icon: PhoneCall, title: 'Appels entrants', text: 'Sokar repond instantanement' },
-              { icon: CalendarCheck, title: 'Tables reservees', text: 'Le planning se met a jour' },
-              { icon: MessageSquare, title: 'SMS confirme', text: 'Le client repart rassure' },
+              { icon: PhoneCall, title: 'Appels entrants', text: 'Sokar répond instantanément' },
+              { icon: CalendarCheck, title: 'Tables réservées', text: 'Le planning se met à jour' },
+              { icon: MessageSquare, title: 'SMS confirmé', text: 'Le client repart rassuré' },
             ].map(({ icon: Icon, title, text }) => (
-              <div key={title} className="rounded-3xl border border-white/10 bg-black/60 p-4 shadow-2xl shadow-black/30">
+              <div
+                key={title}
+                className="rounded-3xl border border-white/10 bg-black/60 p-4 shadow-2xl shadow-black/30"
+              >
                 <span className="flex h-10 w-10 items-center justify-center rounded-full border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">
                   <Icon size={17} />
                 </span>
@@ -176,7 +180,7 @@ export default function ScrollStoryboardSection() {
                   <Bot size={18} />
                 </span>
                 <div>
-                  <p className="text-sm font-bold text-white">Console temps reel</p>
+                  <p className="text-sm font-bold text-white">Console temps réel</p>
                   <p className="text-xs text-emerald-400">Assistant en communication</p>
                 </div>
               </div>

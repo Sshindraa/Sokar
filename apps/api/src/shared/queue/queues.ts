@@ -7,6 +7,10 @@ export const queues = {
     connection: redisQueue,
     defaultJobOptions: defaultReliableJobOptions,
   }),
+  callRecovery: new Queue('call-recovery', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
   deadLetter: new Queue('dead-letter', {
     connection: redisQueue,
     defaultJobOptions: { removeOnComplete: 5000, removeOnFail: false },

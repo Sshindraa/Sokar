@@ -24,6 +24,7 @@ import type { PrismaClient } from '@prisma/client';
 import { logger } from '../../shared/logger/pino';
 import { ConsentService } from './consent.service';
 import { AuditLogService } from '../agentic-reservations/core/audit-log.service';
+import { trackRgpdEvent } from '../analytics/events.service';
 
 export class ErasureSubjectNotFoundError extends Error {
   constructor(message: string) {
@@ -118,6 +119,24 @@ export class ErasureService {
       actor: args.actor,
       metadata: {
         subjectHashPrefix: subjectHash.slice(0, 8),
+        reason: args.reason,
+        reservationsAnonymized,
+        callsAnonymized,
+        consentsRetained,
+      },
+    });
+
+    // 6. Analytics event (rgpd_erasure obligatoire).
+    // L'audit log reste la preuve légale ; l'event sert à l'observabilité
+    // (dashboard pilot, alertes, comptage SLA). On ne stocke AUCUN PII.
+    // On best-effort : si la queue est down, l'erasure a déjà eu lieu
+    // (étapes 1-5), donc on ne fait pas échouer la réponse.
+    await trackRgpdEvent({
+      event: 'rgpd_erasure',
+      intent: 'erase',
+      subjectHashPrefix: subjectHash.slice(0, 8),
+      actor: args.actor,
+      metadata: {
         reason: args.reason,
         reservationsAnonymized,
         callsAnonymized,

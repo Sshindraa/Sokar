@@ -9,6 +9,7 @@ import {
   LLM_MODEL,
   REDIS_CTX_TTL_SECONDS,
 } from '@sokar/config';
+import { getRestaurantPlanOverride } from '../../shared/configcat';
 
 interface SafeProviderConfig {
   readonly carrier: string;
@@ -149,8 +150,15 @@ export class RestaurantService {
       },
     });
     const context = toCachedRestaurantContext(restaurant);
-    await setCachedContext(cacheKey, context, REDIS_CTX_TTL_SECONDS);
-    return context;
+
+    // Apply plan override from ConfigCat. Fail-open: if SDK is absent or the
+    // dashboard returns an invalid value, the DB plan is preserved.
+    const effectivePlan = await getRestaurantPlanOverride(restaurant.id, context.plan);
+    const contextWithPlan =
+      effectivePlan === context.plan ? context : { ...context, plan: effectivePlan };
+
+    await setCachedContext(cacheKey, contextWithPlan, REDIS_CTX_TTL_SECONDS);
+    return contextWithPlan;
   }
 
   static async checkMarginHealth(restaurantId: string): Promise<boolean> {

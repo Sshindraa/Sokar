@@ -79,16 +79,21 @@ vi.mock('../shared/db/client', () => {
       },
       customer: {
         findMany: vi.fn(),
+        findFirst: vi.fn(),
         findUnique: vi.fn(),
         count: vi.fn(),
         upsert: vi.fn(),
         update: vi.fn(),
+        updateMany: vi.fn(),
         delete: vi.fn(),
       },
       call: {
+        create: vi.fn(),
         findMany: vi.fn(),
         findUnique: vi.fn(),
+        upsert: vi.fn(),
         count: vi.fn(),
+        update: vi.fn(),
         delete: vi.fn(),
       },
       latencyTrace: {
@@ -147,8 +152,14 @@ vi.mock('../shared/queue/queues', () => ({
     smsManager: {
       add: vi.fn(),
     },
+    callRecovery: {
+      add: vi.fn().mockResolvedValue({}),
+    },
     telnyxWebhooks: {
       add: vi.fn(),
+    },
+    analytics: {
+      add: vi.fn().mockResolvedValue({}),
     },
   },
 }));

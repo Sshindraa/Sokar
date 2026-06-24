@@ -3,10 +3,15 @@ import { telnyxWebhookGuard } from './telnyx.guard';
 import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
 import { buildSystemPrompt } from './prompts';
-import { detectOutcome } from './outcome';
+import { detectOutcome, hadReservationIntent } from './outcome';
 import { CallSessionManager } from './stream/manager';
 import { LLM_MODEL } from '@sokar/config';
 import { buildSmsJobId, buildTelnyxWebhookJobId } from '../../shared/queue/job-options';
+import { isVoicePipelineEnabled } from '../../shared/configcat';
+
+function buildRecoveryJobId(callLegId: string): string {
+  return `recovery:${callLegId}`;
+}
 
 interface TelnyxCallPayload {
   data: {
@@ -49,6 +54,17 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           return reply.send({ result: 'ok' });
         }
 
+        // Kill switch — drop the call before any expensive work (DB write,
+        // session create, queue enqueue). Telnyx will fall back to voicemail
+        // / configured fallback flow.
+        if (!(await isVoicePipelineEnabled(ctx.id))) {
+          app.log.warn(
+            { restaurantId: ctx.id, callId: payload.call_control_id },
+            'Voice pipeline killed by feature flag — dropping call',
+          );
+          return reply.send({ result: 'ok' });
+        }
+
         const customer = payload.from
           ? await CustomerService.lookupOrCreate(ctx.id, payload.from)
           : null;
@@ -66,8 +82,9 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         }
 
         const customerExtra = customer ? CustomerService.buildVipPromptExtra(customer) : '';
+        const customerGreeting = customer ? CustomerService.buildReturningGreeting(customer) : '';
 
-        const systemPrompt = buildSystemPrompt({ ...ctx, customerExtra });
+        const systemPrompt = buildSystemPrompt({ ...ctx, customerExtra, customerGreeting });
 
         // Créer un enregistrement Call minimal dès l'init
         await app.db.call
@@ -153,6 +170,18 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           await CustomerService.incrementVisit(ctx.id, payload.from);
         }
 
+        // Record call activity on every hangup (with or without reservation)
+        // so we have lastCallAt + partySizeTypical for the next call's greeting.
+        if (payload.from) {
+          try {
+            const ctx = await RestaurantService.loadContext(payload.to);
+            const partySize = callRecord?.reservation?.partySize ?? null;
+            await CustomerService.recordCallActivity(ctx.id, payload.from, partySize);
+          } catch (err: any) {
+            app.log.warn({ err: err.message }, 'failed to record call activity');
+          }
+        }
+
         return reply.send({ result: 'ok' });
       }
 
@@ -171,9 +200,12 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
       stt_provider,
       llm_provider,
       tts_provider,
+      from,
     } = req.body as any;
 
-    await app.db.call.upsert({
+    const outcome = detectOutcome({ transcript, endedReason: ended_reason });
+
+    const callRow = await app.db.call.upsert({
       where: { callSid: call_leg_id },
       update: {
         durationSec: Math.round(
@@ -182,7 +214,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             : 0,
         ),
         transcript: transcript ?? null,
-        outcome: detectOutcome({ transcript, endedReason: ended_reason }),
+        outcome,
         sttProvider: stt_provider ?? 'deepgram-nova3',
         llmProvider: llm_provider ?? LLM_MODEL,
         ttsProvider: tts_provider ?? 'cartesia-sonic3.5',
@@ -197,13 +229,56 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             : 0,
         ),
         transcript: transcript ?? null,
-        outcome: detectOutcome({ transcript, endedReason: ended_reason }),
+        outcome,
         sttProvider: stt_provider ?? 'deepgram-nova3',
         llmProvider: llm_provider ?? LLM_MODEL,
         ttsProvider: tts_provider ?? 'cartesia-sonic3.5',
         carrier: 'telnyx',
       },
     });
+
+    // ─── Revenue Engine: recovery dispatch ──────────────────────────────
+    // If the call ended without a reservation but the transcript shows clear
+    // reservation intent, enqueue a follow-up SMS so the caller's booking
+    // attempt is recovered. Idempotent on call_leg_id.
+    const shouldRecover =
+      outcome !== 'RESERVED' &&
+      outcome !== 'INFO' &&
+      hadReservationIntent({ transcript, endedReason: ended_reason });
+
+    if (shouldRecover && callRow.id && from) {
+      try {
+        const ctx = await RestaurantService.loadContext(req.body?.to ?? '');
+        const customer = await app.db.customer.findFirst({
+          where: { restaurantId: ctx.id, phone: from },
+          select: { name: true },
+        });
+        const reason: 'no_action_with_intent' | 'handoff_dropped' | 'transport_error' =
+          outcome === 'HANDOFF'
+            ? 'handoff_dropped'
+            : outcome === 'ERROR'
+              ? 'transport_error'
+              : 'no_action_with_intent';
+
+        const jobId = buildRecoveryJobId(call_leg_id);
+        await app.queues.callRecovery.add(
+          'send-recovery-sms',
+          {
+            callId: callRow.id,
+            restaurantId: ctx.id,
+            customerPhone: from,
+            customerName: customer?.name ?? null,
+            restaurantName: ctx.name,
+            restaurantPhone: ctx.phone ?? null,
+            reason,
+          },
+          { jobId },
+        );
+      } catch (err: any) {
+        app.log.warn({ err: err.message, callId: call_leg_id }, 'failed to enqueue recovery SMS');
+      }
+    }
+
     return reply.send({ received: true });
   });
 }
