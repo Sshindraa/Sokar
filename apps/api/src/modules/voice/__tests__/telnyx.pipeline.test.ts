@@ -157,6 +157,8 @@ describe('POST /voice/telnyx — call.initiated', () => {
       isVip: false,
       specialOccasion: null,
       notes: null,
+      lastCallAt: null,
+      partySizeTypical: null,
     });
     mockBuildVipPromptExtra.mockReturnValue('');
 
@@ -269,6 +271,8 @@ describe('POST /voice/telnyx — call.initiated', () => {
       isVip: true,
       specialOccasion: null,
       notes: null,
+      lastCallAt: null,
+      partySizeTypical: null,
     });
     mockBuildVipPromptExtra.mockReturnValue('⭐ VIP — Mme Dupont, 12 visites.');
 
@@ -301,6 +305,8 @@ describe('POST /voice/telnyx — call.initiated', () => {
       isVip: true,
       specialOccasion: null,
       notes: null,
+      lastCallAt: null,
+      partySizeTypical: null,
     });
     mockBuildVipPromptExtra.mockReturnValue('');
 
@@ -347,6 +353,8 @@ describe('POST /voice/telnyx — call.initiated', () => {
       isVip: false,
       specialOccasion: null,
       notes: null,
+      lastCallAt: null,
+      partySizeTypical: null,
     });
     mockBuildVipPromptExtra.mockReturnValue('');
 
