@@ -489,7 +489,7 @@ export class McpToolRegistry {
       const exposure = await this.getMcpExposure(reservation.restaurantId, ctx);
       if (!exposure.ok) return exposure.error;
 
-      const { restaurantId, ...publicReservation } = reservation;
+      const { restaurantId: _restaurantId, ...publicReservation } = reservation;
       return ok(publicReservation);
     } catch (err: any) {
       logger.error({ err, clientId: ctx.clientId }, 'get_reservation_status failed');
