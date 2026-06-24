@@ -26,14 +26,14 @@ vi.mock('../telnyx.guard', () => ({
   telnyxWebhookGuard: vi.fn(async (_req: any, _reply: any) => undefined),
 }));
 
-vi.mock('../restaurants/restaurant.service', () => ({
+vi.mock('../../restaurants/restaurant.service', () => ({
   RestaurantService: {
     loadContext: vi.fn(),
     checkMarginHealth: vi.fn(),
   },
 }));
 
-vi.mock('../customers/customer.service', () => ({
+vi.mock('../../customers/customer.service', () => ({
   CustomerService: {
     lookupOrCreate: vi.fn(),
     buildVipPromptExtra: vi.fn(),
@@ -41,7 +41,7 @@ vi.mock('../customers/customer.service', () => ({
   },
 }));
 
-vi.mock('../../shared/configcat', () => ({
+vi.mock('../../../shared/configcat', () => ({
   isVoicePipelineEnabled: vi.fn(),
 }));
 
@@ -50,9 +50,9 @@ vi.mock('../../shared/configcat', () => ({
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { queues } from '../../../shared/queue/queues';
-import { RestaurantService } from '../restaurants/restaurant.service';
-import { CustomerService } from '../customers/customer.service';
-import { isVoicePipelineEnabled } from '../../shared/configcat';
+import { RestaurantService } from '../../restaurants/restaurant.service';
+import { CustomerService } from '../../customers/customer.service';
+import { isVoicePipelineEnabled } from '../../../shared/configcat';
 import { CallSessionManager } from '../stream/manager';
 
 const mockLoadContext = vi.mocked(RestaurantService.loadContext);

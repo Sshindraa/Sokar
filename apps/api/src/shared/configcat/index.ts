@@ -90,7 +90,7 @@ export async function isFlagEnabled(
   try {
     return await c.getValueAsync(flagKey, defaultValue, buildUser(restaurantId));
   } catch (err) {
-    logger.error(`[configcat] Error getting flag "${flagKey}":`, err);
+    logger.error({ err }, `[configcat] Error getting flag "${flagKey}"`);
     return defaultValue;
   }
 }
@@ -108,7 +108,7 @@ export async function getFlag<T extends string | number | boolean>(
   try {
     return (await c.getValueAsync(flagKey, defaultValue, buildUser(restaurantId))) as T;
   } catch (err) {
-    logger.error(`[configcat] Error getting flag "${flagKey}":`, err);
+    logger.error({ err }, `[configcat] Error getting flag "${flagKey}"`);
     return defaultValue;
   }
 }
@@ -139,11 +139,7 @@ export async function getRestaurantPlanOverride(
   restaurantId: string,
   dbPlan: string,
 ): Promise<string> {
-  const override = await getFlag<string | undefined>(
-    FLAGS.RESTAURANT_PLAN,
-    undefined,
-    restaurantId,
-  );
+  const override = await getFlag<string>(FLAGS.RESTAURANT_PLAN, '', restaurantId);
   if (override && isValidPlan(override)) {
     return override;
   }

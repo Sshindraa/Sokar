@@ -248,7 +248,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
 
     if (shouldRecover && callRow.id && from) {
       try {
-        const ctx = await RestaurantService.loadContext(req.body?.to ?? '');
+        const ctx = await RestaurantService.loadContext((req.body as any)?.to ?? '');
         const customer = await app.db.customer.findFirst({
           where: { restaurantId: ctx.id, phone: from },
           select: { name: true },
@@ -269,7 +269,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             customerPhone: from,
             customerName: customer?.name ?? null,
             restaurantName: ctx.name,
-            restaurantPhone: ctx.phone ?? null,
+            restaurantPhone: ctx.phoneNumber ?? null,
             reason,
           },
           { jobId },
