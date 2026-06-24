@@ -481,10 +481,10 @@ describe('Canal A — Routes publiques', () => {
         method: 'POST',
         url: `/public/r/${SLUG}/confirm`,
         payload: {
-          holdToken: 'tok_expired_123',
+          holdToken: 'hold-test-expired',
           customer: {
             firstName: 'Hamza',
-            phone: '+33612345678',
+            phone: '+336****5678',
           },
         },
       });

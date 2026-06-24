@@ -138,7 +138,7 @@ describe.skip('Canal A — Smoke test end-to-end', () => {
     } as never);
     vi.mocked(db.agenticHold.create).mockResolvedValue({
       id: 'hold-1',
-      token: 'tok-e2e-1234567890',
+      token: 'hold-e2e-1234567890',
       restaurantId: RESTAURANT_ID,
       slotStart: new Date('2026-06-25T19:00:00Z'),
       slotEnd: new Date('2026-06-25T21:00:00Z'),
