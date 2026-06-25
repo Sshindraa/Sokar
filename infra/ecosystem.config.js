@@ -29,6 +29,7 @@ module.exports = {
       script: 'bin/run-dashboard.sh',
       env: {
         NODE_ENV: 'production',
+        HOSTNAME: '127.0.0.1',
       },
       watch: false,
       max_memory_restart: '500M',
