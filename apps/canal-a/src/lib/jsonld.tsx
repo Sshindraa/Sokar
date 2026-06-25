@@ -49,6 +49,8 @@ export function buildPublicRestaurantJsonLd(input: {
     acceptsReservations: boolean;
     publishedAt: string;
     canalAAgentic: boolean;
+    lat?: number;
+    lng?: number;
   };
   attributesConfidence: unknown;
 }): RestaurantJsonLd {
@@ -101,6 +103,15 @@ export function buildPublicRestaurantJsonLd(input: {
               '@type': 'FoodEstablishmentReservation',
               name: 'Réservation de table',
             },
+          },
+        }
+      : {}),
+    ...(r.lat != null && r.lng != null
+      ? {
+          geo: {
+            '@type': 'GeoCoordinates' as const,
+            latitude: r.lat,
+            longitude: r.lng,
           },
         }
       : {}),

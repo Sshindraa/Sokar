@@ -38,6 +38,8 @@ const baseRestaurant: PublicRestaurantDto = {
   acceptsReservations: true,
   publishedAt: '2026-06-24T00:00:00.000Z',
   canalAAgentic: false,
+  lat: 45.764,
+  lng: 4.8357,
 };
 
 describe('buildPublicRestaurantJsonLd', () => {
@@ -104,6 +106,25 @@ describe('buildPublicRestaurantJsonLd', () => {
     });
     // L'objet JSON-LD ne doit pas avoir de propriété aggregateRating
     expect((jsonLd as unknown as Record<string, unknown>).aggregateRating).toBeUndefined();
+  });
+
+  it('inclut geo (GeoCoordinates) si lat/lng présents', () => {
+    const jsonLd = buildPublicRestaurantJsonLd({
+      restaurant: baseRestaurant,
+      attributesConfidence: null,
+    });
+    expect(jsonLd.geo).toBeDefined();
+    expect(jsonLd.geo!['@type']).toBe('GeoCoordinates');
+    expect(jsonLd.geo!.latitude).toBe(45.764);
+    expect(jsonLd.geo!.longitude).toBe(4.8357);
+  });
+
+  it('omet geo si lat/lng absents', () => {
+    const jsonLd = buildPublicRestaurantJsonLd({
+      restaurant: { ...baseRestaurant, lat: undefined, lng: undefined },
+      attributesConfidence: null,
+    });
+    expect(jsonLd.geo).toBeUndefined();
   });
 
   it("omet cuisineType si pas de source de confidence", () => {

@@ -151,4 +151,7 @@ export type PublicRestaurantDto = {
   publishedAt: string; // ISO 8601
   // Métadonnées internes (utiles pour le front, pas pour le SEO)
   canalAAgentic: boolean;
+  // Géolocalisation (exposée dans JSON-LD GeoCoordinates)
+  lat?: number;
+  lng?: number;
 };

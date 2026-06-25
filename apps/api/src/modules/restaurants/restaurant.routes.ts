@@ -587,6 +587,37 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   app.patch('/restaurants/:id/canal-a', { preHandler: requireOrg() }, patchCanalA);
   app.patch('/api/restaurants/:id/canal-a', { preHandler: requireOrg() }, patchCanalA);
+
+  // Canal A — GET settings
+  // Returns the restaurant's Canal A configuration (gating flags, slug, page URL).
+  const getCanalA = async (req: any, reply: any) => {
+    const restaurantId = req.restaurantId;
+
+    const restaurant = await app.db.restaurant.findUnique({
+      where: { id: restaurantId },
+      include: { exposureSettings: true },
+    });
+
+    if (!restaurant) {
+      return reply.status(404).send({ error: 'Restaurant not found' });
+    }
+
+    const slug = restaurant.slug;
+    const exposure = restaurant.exposureSettings;
+
+    return reply.send({
+      restaurantId,
+      slug,
+      name: restaurant.name,
+      canalAPublished: exposure?.canalAPublished ?? false,
+      canalAAgentic: exposure?.canalAAgentic ?? false,
+      canalAPublishedAt: exposure?.canalAPublishedAt?.toISOString() ?? null,
+      pageUrl: slug ? `https://sokar.tech/r/${slug}` : null,
+    });
+  };
+
+  app.get('/restaurants/:id/canal-a', { preHandler: requireOrg() }, getCanalA);
+  app.get('/api/restaurants/:id/canal-a', { preHandler: requireOrg() }, getCanalA);
   app.post('/restaurants/:id/images', { preHandler: requireOrg() }, postImage);
   app.post('/api/restaurants/:id/images', { preHandler: requireOrg() }, postImage);
   app.get('/restaurants/check-slug', { preHandler: requireOrg() }, checkSlug);
