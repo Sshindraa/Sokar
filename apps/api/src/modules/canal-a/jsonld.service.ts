@@ -160,6 +160,15 @@ export function buildPublicRestaurantJsonLd(input: BuildJsonLdInput): Restaurant
     };
   }
 
+  // GeoCoordinates : inclus uniquement si les deux coordonnées sont présentes
+  if (restaurant.lat != null && restaurant.lng != null) {
+    jsonLd.geo = {
+      '@type': 'GeoCoordinates',
+      latitude: restaurant.lat,
+      longitude: restaurant.lng,
+    };
+  }
+
   return jsonLd;
 }
 

@@ -40,4 +40,9 @@ export type RestaurantJsonLd = {
       name: string;
     };
   };
+  geo?: {
+    '@type': 'GeoCoordinates';
+    latitude: number;
+    longitude: number;
+  };
 };

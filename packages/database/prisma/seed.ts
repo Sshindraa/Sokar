@@ -129,6 +129,10 @@ async function main() {
       minLeadTimeMinutes: 30,
       quoteTtlSeconds: 300,
       holdTtlSeconds: 420,
+      // Canal A
+      canalAPublished: true,
+      canalAPublishedAt: new Date(),
+      canalAAgentic: false,
       capacitySpecials: {
         default: { tables: 10, seats: 40 },
         '2026-12-31': { tables: 8, seats: 32, reason: 'Réveillon' },
@@ -154,6 +158,10 @@ async function main() {
       minLeadTimeMinutes: 30,
       quoteTtlSeconds: 300,
       holdTtlSeconds: 420,
+      // Canal A
+      canalAPublished: true,
+      canalAPublishedAt: new Date(),
+      canalAAgentic: false,
       capacitySpecials: {
         default: { tables: 10, seats: 40 },
         '2026-12-31': { tables: 8, seats: 32, reason: 'Réveillon' },
@@ -209,6 +217,150 @@ async function main() {
   });
 
   console.log(`Demo restaurant seeded: ${restaurant.id} (${DEMO_SLUG})`);
+
+  // ─── Canal A — Seed 4 restos supplémentaires à Lyon ──────────
+  // Pour tester les pages locales (/restaurants/lyon) qui requièrent ≥5 restos.
+  // canalAPublished=true, canalAAgentic=false.
+  // SKIP en production : NODE_ENV=production → ne pas polluer l'index.
+  // (cf. spec canal-a-v1.1 §11.1)
+  if (process.env.NODE_ENV !== 'production') {
+    const LYON_RESTOS = [
+      {
+        slug: 'chez-sokar-bouchon-lyon',
+        name: 'Chez Sokar — Bouchon Lyonnais',
+        cuisine: ['Bistrot', 'Lyonnaise'],
+        description: 'Bouchon lyonnais traditionnel dans le Vieux Lyon.',
+        address: '5 Rue du Bœuf, 69005 Lyon',
+        phone: '+334****0505',
+        lat: 45.7638,
+        lng: 4.8272,
+      },
+      {
+        slug: 'chez-sokar-italien-lyon',
+        name: 'Chez Sokar — Trattoria Italienne',
+        cuisine: ['Italien', 'Pizza', 'Pâtes'],
+        description: 'Trattoria italienne authentique dans le quartier de la Presqu\'île.',
+        address: '22 Rue Mercière, 69002 Lyon',
+        phone: '+334****0606',
+        lat: 45.764,
+        lng: 4.833,
+      },
+      {
+        slug: 'chez-sokar-sushi-lyon',
+        name: 'Chez Sokar — Sushi Bar',
+        cuisine: ['Japonais', 'Sushi', 'Poisson'],
+        description: 'Bar à sushi moderne avec produits frais, situé à Confluence.',
+        address: '112 Cours Charlemagne, 69002 Lyon',
+        phone: '+334****0707',
+        lat: 45.7307,
+        lng: 4.8183,
+      },
+      {
+        slug: 'chez-sokar-terrasse-lyon',
+        name: 'Chez Sokar — Terrasse Croix-Rousse',
+        cuisine: ['Française', 'Méditerranéenne'],
+        description: 'Restaurant avec grande terrasse ombragée sur les pentes de la Croix-Rousse.',
+        address: '5 Montée de la Grande Côte, 69001 Lyon',
+        phone: '+334****0808',
+        lat: 45.7715,
+        lng: 4.8279,
+      },
+    ];
+
+    const seedOpeningHours = {
+      tue: { open: '12:00', close: '14:30' },
+      wed: { open: '12:00', close: '14:30' },
+      thu: { open: '12:00', close: '14:30' },
+      fri: { open: '12:00', close: '14:30' },
+      sat: { open: '12:00', close: '23:00' },
+    } as Prisma.JsonValue;
+
+    for (const r of LYON_RESTOS) {
+      const resto = await prisma.restaurant.upsert({
+        where: { slug: r.slug },
+        update: {
+          name: r.name,
+          description: r.description,
+          formattedAddress: r.address,
+          city: 'Lyon',
+          country: 'FR',
+          postalCode: r.address.match(/\b\d{5}\b/)?.[0] ?? '69002',
+          phoneNumber: r.phone,
+          phoneE164: r.phone,
+          cuisineType: r.cuisine,
+          priceRange: 2,
+          ambiance: ['Convivial'],
+          noiseLevel: 'ANIME',
+          openingHours: seedOpeningHours,
+          timezone: 'Europe/Paris',
+          agenticOptIn: true,
+          publishedAt: new Date(),
+          managerPhone: r.phone,
+          managerEmail: 'canal-a-demo@sokar.com',
+        },
+        create: {
+          slug: r.slug,
+          name: r.name,
+          description: r.description,
+          formattedAddress: r.address,
+          city: 'Lyon',
+          country: 'FR',
+          postalCode: r.address.match(/\b\d{5}\b/)?.[0] ?? '69002',
+          phoneNumber: r.phone,
+          phoneE164: r.phone,
+          cuisineType: r.cuisine,
+          priceRange: 2,
+          ambiance: ['Convivial'],
+          noiseLevel: 'ANIME',
+          openingHours: seedOpeningHours,
+          timezone: 'Europe/Paris',
+          agenticOptIn: true,
+          publishedAt: new Date(),
+          managerPhone: r.phone,
+          managerEmail: 'canal-a-demo@sokar.com',
+        },
+      });
+
+      await prisma.restaurantExposureSettings.upsert({
+        where: { restaurantId: resto.id },
+        update: {
+          canalAPublished: true,
+          canalAAgentic: false,
+          canalAPublishedAt: new Date(),
+          maxPartySize: 12,
+          minLeadTimeMinutes: 30,
+          exposedCreneaux: [
+            { day: 'tue', start: '12:00', end: '14:00' },
+            { day: 'wed', start: '12:00', end: '14:00' },
+            { day: 'thu', start: '12:00', end: '14:00' },
+            { day: 'fri', start: '12:00', end: '14:00' },
+            { day: 'sat', start: '12:00', end: '23:00' },
+          ] as Prisma.JsonValue,
+        },
+        create: {
+          restaurantId: resto.id,
+          canalAPublished: true,
+          canalAAgentic: false,
+          canalAPublishedAt: new Date(),
+          maxPartySize: 12,
+          minLeadTimeMinutes: 30,
+          exposedCreneaux: [
+            { day: 'tue', start: '12:00', end: '14:00' },
+            { day: 'wed', start: '12:00', end: '14:00' },
+            { day: 'thu', start: '12:00', end: '14:00' },
+            { day: 'fri', start: '12:00', end: '14:00' },
+            { day: 'sat', start: '12:00', end: '23:00' },
+          ] as Prisma.JsonValue,
+        },
+      });
+
+      console.log(`Canal A seed: ${resto.slug} (Lyon, canalAPublished=true)`);
+    }
+
+    console.log('Canal A seed complete — 5 restaurants in Lyon');
+  } else {
+    console.log('Canal A seed skipped (NODE_ENV=production)');
+  }
 }
 
 main()

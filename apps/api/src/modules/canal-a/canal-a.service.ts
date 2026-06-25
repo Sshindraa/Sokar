@@ -9,7 +9,7 @@
  * - cache Redis 60s
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { logger } from '../../shared/logger/pino';
@@ -160,6 +160,8 @@ export class CanalAService {
       acceptsReservations: true,
       publishedAt: r.publishedAt!.toISOString(),
       canalAAgentic: r.exposureSettings?.canalAAgentic ?? false,
+      lat: r.lat ? Number(r.lat) : undefined,
+      lng: r.lng ? Number(r.lng) : undefined,
     };
   }
 }
@@ -184,6 +186,8 @@ export type PublicRestaurantSource = {
   noiseLevel: string | null;
   agenticOptIn: boolean;
   publishedAt: Date | null;
+  lat: Prisma.Decimal | null;
+  lng: Prisma.Decimal | null;
   exposureSettings: {
     canalAPublished: boolean;
     canalAAgentic: boolean;
