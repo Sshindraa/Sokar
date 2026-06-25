@@ -106,12 +106,33 @@ DASH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/de
 echo "   api (localhost:4000/health) → $API_STATUS"
 echo "   dashboard (localhost:3000)  → $DASH_STATUS"
 
+# Vérification post-déploiement : un asset CSS/JS réel doit répondre 200.
+# Bug historique : `curl -I /` répond 200 même si .next/static n'a pas été
+# copié dans le standalone → page blanche côté client. On extrait le premier
+# chunk JS du HTML rendu et on vérifie qu'il est servi.
+DASH_CSS_STATUS="N/A"
+FIRST_CHUNK=$(curl -s http://localhost:3000 2>/dev/null | grep -oE '/_next/static/[^"]+\.(js|css)' | head -1 || true)
+if [ -n "$FIRST_CHUNK" ]; then
+  DASH_CSS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000${FIRST_CHUNK}" 2>/dev/null || echo "FAIL")
+  echo "   dashboard asset ${FIRST_CHUNK} → $DASH_CSS_STATUS"
+else
+  echo "   ⚠️  Aucun chunk JS/CSS trouvé dans le HTML du dashboard (build cassé ?)"
+fi
+
 FREE_AFTER=$(free -m | awk '/^Mem:/ {print $4}')
 echo "   Memory free: ${FREE_AFTER}MB"
 
-if [ "$API_STATUS" = "200" ] && [ "$DASH_STATUS" = "200" ]; then
+# Le dashboard est OK SEULEMENT si l'HTML et un asset statique répondent 200.
+# Si l'asset est 404, c'est le bug pitfall #29 (static non copiés dans standalone).
+if [ "$API_STATUS" = "200" ] && [ "$DASH_STATUS" = "200" ] && [ "$DASH_CSS_STATUS" = "200" ]; then
     echo ""
-    echo "✅ Deploy complete — both services OK"
+    echo "✅ Deploy complete — api + dashboard (HTML + assets) OK"
+elif [ "$DASH_STATUS" = "200" ] && [ "$DASH_CSS_STATUS" != "200" ]; then
+    echo ""
+    echo "🔴 Deploy REGRESSED : dashboard HTML répond 200 mais assets statiques 404."
+    echo "   Cause probable : scripts/copy-static.sh non exécuté ou .next/static manquant."
+    echo "   Fix manuel : cd /opt/sokar/apps/dashboard && bash scripts/copy-static.sh && sudo pm2 restart sokar-dashboard"
+    exit 1
 else
     echo ""
     echo "⚠️  Deploy finished but some checks failed"

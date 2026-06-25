@@ -20,8 +20,13 @@ module.exports = {
     {
       name: 'sokar-dashboard',
       cwd: '/opt/sokar/apps/dashboard',
-      script: 'node_modules/next/dist/bin/next',
-      args: 'start -p 3000',
+      // Wrapper bin/run-dashboard.sh (pas `next start`) :
+      //   - copie les static assets via scripts/copy-static.sh
+      //     (cf. pitfall #29 de la skill sokar-deployment — Next 14
+      //     standalone ne copie PAS auto .next/static + public/)
+      //   - lance le binaire standalone (node .next/standalone/.../server.js)
+      // Aligné sur apps/canal-a/bin/run-canal-a.sh.
+      script: 'bin/run-dashboard.sh',
       env: {
         NODE_ENV: 'production',
       },
