@@ -129,7 +129,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     // period × the number of recoverable calls (non-RESERVED, non-INFO).
     // This is the gross opportunity value sitting in the recovery queue —
     // i.e. the revenue at risk if the recovery SMS / follow-up never lands.
-    // When we add a CallOutcome=RECOVERED state in a future sprint this
+    // When we add a CallOutcome=RECOVERED state in a future phase this
     // becomes the actual realized value, but for now it's a stable proxy
     // that gives the merchant a meaningful single number.
     const avgReservationValue = totalReservations > 0 ? estimatedRevenue / totalReservations : 0;

@@ -5,7 +5,7 @@ import { CustomerService } from '../customers/customer.service';
 import { buildSystemPrompt } from './prompts';
 import { detectOutcome, hadReservationIntent } from './outcome';
 import { CallSessionManager } from './stream/manager';
-import { LLM_MODEL } from '@sokar/config';
+import { VOICE_LLM_MODEL } from '@sokar/config';
 import { buildSmsJobId, buildTelnyxWebhookJobId } from '../../shared/queue/job-options';
 import { isVoicePipelineEnabled } from '../../shared/configcat';
 
@@ -216,7 +216,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         transcript: transcript ?? null,
         outcome,
         sttProvider: stt_provider ?? 'deepgram-nova3',
-        llmProvider: llm_provider ?? LLM_MODEL,
+        llmProvider: llm_provider ?? VOICE_LLM_MODEL,
         ttsProvider: tts_provider ?? 'cartesia-sonic3.5',
         carrier: 'telnyx',
       },
@@ -231,7 +231,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         transcript: transcript ?? null,
         outcome,
         sttProvider: stt_provider ?? 'deepgram-nova3',
-        llmProvider: llm_provider ?? LLM_MODEL,
+        llmProvider: llm_provider ?? VOICE_LLM_MODEL,
         ttsProvider: tts_provider ?? 'cartesia-sonic3.5',
         carrier: 'telnyx',
       },

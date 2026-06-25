@@ -196,4 +196,4 @@ apps/api/src/modules/voice/
 └── pipeline.ts           # Vapi pipeline legacy
 ```
 
-Voir aussi : [[Architecture]], [[Sprint 1#Pipeline Vocal]]
+Voir aussi : [[Architecture]], [[Phase 1#Pipeline Vocal]]

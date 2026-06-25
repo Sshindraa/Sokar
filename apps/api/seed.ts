@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { CARTESIA_MODEL, LLM_MODEL } from '@sokar/config';
+import { CARTESIA_MODEL, VOICE_LLM_MODEL } from '@sokar/config';
 
 const db = new PrismaClient();
 
@@ -101,7 +101,7 @@ async function seed() {
         intent: 'RESERVATION',
         outcome: 'RESERVED',
         sttProvider: 'deepgram-nova3',
-        llmProvider: LLM_MODEL,
+        llmProvider: VOICE_LLM_MODEL,
         ttsProvider: `cartesia-${CARTESIA_MODEL}`,
         carrier: 'telnyx',
         createdAt: new Date(now.getTime() - 2 * 3600000),
@@ -116,7 +116,7 @@ async function seed() {
         intent: 'RESERVATION',
         outcome: 'RESERVED',
         sttProvider: 'deepgram-nova3',
-        llmProvider: LLM_MODEL,
+        llmProvider: VOICE_LLM_MODEL,
         ttsProvider: `cartesia-${CARTESIA_MODEL}`,
         carrier: 'telnyx',
         createdAt: new Date(now.getTime() - 5 * 3600000),
@@ -131,7 +131,7 @@ async function seed() {
         intent: 'OTHER',
         outcome: 'INFO',
         sttProvider: 'deepgram-nova3',
-        llmProvider: LLM_MODEL,
+        llmProvider: VOICE_LLM_MODEL,
         ttsProvider: `cartesia-${CARTESIA_MODEL}`,
         carrier: 'telnyx',
         createdAt: new Date(now.getTime() - 24 * 3600000),
@@ -146,7 +146,7 @@ async function seed() {
         intent: 'OTHER',
         outcome: 'NO_ACTION',
         sttProvider: 'deepgram-nova3',
-        llmProvider: LLM_MODEL,
+        llmProvider: VOICE_LLM_MODEL,
         ttsProvider: `cartesia-${CARTESIA_MODEL}`,
         carrier: 'telnyx',
         createdAt: new Date(now.getTime() - 48 * 3600000),

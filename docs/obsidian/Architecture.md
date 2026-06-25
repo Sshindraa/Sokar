@@ -4,7 +4,7 @@
 **Stack** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx / Next.js 14 + React 18 + Tailwind 3 / Cartesia Sonic 3.5 + Deepgram Nova-3 / OpenRouter (deepseek-v4-flash / PRO)
 **Carrier** : Telnyx (production) — Vapi legacy purgé
 **TTS** : Cartesia Sonic 3.5 (depuis 2026-05-20)
-**Model switch** : Hermes sur `minimax-m3` via `opencode-go` (depuis 2026-06-23)
+**Model switch** : Hermes sur `glm-5.2` via `opencode-go` (depuis 2026-06-25)
 
 > Note 2026-06-24 : rétro-référence aux changements majeurs depuis
 > 2026-05-21 (agentic P0, MCP, OpenAI Reserve, Canal A). Pour le
@@ -106,8 +106,8 @@ Voir [[Dashboard]] pour le plan UI/UX.
 
 ## Agent IA (Hermes CLI)
 
-- **Modèle unique** : deepseek/deepseek-v4-flash (OpenRouter)
-- **Workflow** : Windsurf Cascade (kimi-k2.6) planifie → MCP `execute_task` → Hermes exécute
+- **Modèle unique** : glm-5.2 via opencode-go (chat_completions)
+- **Workflow** : brain (glm-5.2) planifie/review → MiniMax M3 workers exécutent
 - **Logs** : `~/.hermes/logs/cascade_hermes_bridge.md`
 
 Voir [[Hermes Agent]] pour la configuration.
@@ -125,8 +125,8 @@ Voir [[Hermes Agent]] pour la configuration.
 | Prisma | 6 | ORM |
 | Redis | 7 | Cache + Queue |
 | BullMQ | — | Job queue |
-| Telnyx | — | Carrier vocal (Sprint 2) |
-| Vapi | — | Carrier vocal (Sprint 1) |
+| Telnyx | — | Carrier vocal (Phase 2) |
+| Vapi | — | Carrier vocal (Phase 1, legacy purgé) |
 | Next.js | 14 | Dashboard |
 | React | 18 | UI |
 | Tailwind | 3 | CSS |
@@ -136,14 +136,14 @@ Voir [[Hermes Agent]] pour la configuration.
 | PostHog | — | Analytics |
 | Doppler | — | Secrets |
 | VPS + Docker/PM2 | — | Hosting |
-| LocalStack | — | AWS emulation (Sprint 2) |
+| LocalStack | — | AWS emulation (Phase 2) |
 
 ---
 
 ## Liens
 
 - [[README]] — Guide de démarrage
-- [[Sprint 1]] — Objectifs en cours
+- [[Phase 1]] — Objectifs en cours
 - [[API Endpoints]] — Documentation des routes
 - [[Database Schema]] — Schéma Prisma complet
 - [[Voice Pipeline]] — Architecture vocale

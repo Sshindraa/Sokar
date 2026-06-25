@@ -185,9 +185,9 @@ En cas de problème grave (P0) :
 
 6. **Réactivation** : resto par resto, après validation manuelle
 
-Scripts SQL à créer dans `scripts/` :
-- `emergency-disable.sql` (à créer)
-- `reactivation.sql` (à créer)
+Scripts SQL d'urgence :
+- `scripts/emergency-disable.sql` (existe)
+- `scripts/reactivation.sql` (à créer)
 
 ---
 
