@@ -7,6 +7,7 @@ const nextConfig = {
   // Pas de basePath global (cf. spec v1.1 §2.1) : le reverse-proxy route
   // /r/*, /restaurants/*, /sitemap.xml, /robots.txt vers ce serveur.
   poweredByHeader: false,
+  assetPrefix: '/canal-a-assets',
   // Sécurité — headers ajoutés via middleware.ts (CSP/HSTS/Stripe-frame-blockers).
   // next.config ne les porte pas car ils dépendent du contexte request.
   images: {

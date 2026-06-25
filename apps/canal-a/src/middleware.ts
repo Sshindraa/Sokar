@@ -59,6 +59,6 @@ export const config = {
      * Match toutes les routes SAUF les assets statiques (Next les sert
      * sans passer par le middleware pour la perf).
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico)).*)',
+    '/((?!canal-a-assets|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico)).*)',
   ],
 };
