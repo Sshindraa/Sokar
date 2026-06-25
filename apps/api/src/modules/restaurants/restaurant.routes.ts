@@ -52,7 +52,10 @@ const UpdatePersonalitySchema = z.object({
 });
 
 const UpdateCanalASchema = z.object({
-  slug: z.string().regex(/^[a-z0-9-]+$/).optional(),
+  slug: z
+    .string()
+    .regex(/^[a-z0-9-]+$/)
+    .optional(),
   description: z.string().max(200).optional().nullable(),
   formattedAddress: z.string().max(200).optional().nullable(),
   city: z.string().max(100).optional().nullable(),
@@ -68,14 +71,16 @@ const UpdateCanalASchema = z.object({
   maxPartySize: z.number().int().min(1).max(100).optional(),
   canalAPublished: z.boolean().optional(),
   canalAAgentic: z.boolean().optional(),
-  capacitySpecials: z.object({
-    totalCapacity: z.number().int().optional(),
-    serviceDuration: z.number().int().optional(),
-    cancellationPolicy: z.string().max(280).optional(),
-    depositRequired: z.boolean().optional(),
-    depositAmount: z.number().optional(),
-    depositThreshold: z.number().int().optional(),
-  }).optional(),
+  capacitySpecials: z
+    .object({
+      totalCapacity: z.number().int().optional(),
+      serviceDuration: z.number().int().optional(),
+      cancellationPolicy: z.string().max(280).optional(),
+      depositRequired: z.boolean().optional(),
+      depositAmount: z.number().optional(),
+      depositThreshold: z.number().int().optional(),
+    })
+    .optional(),
 });
 
 const PostImageSchema = z.object({
@@ -310,6 +315,38 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
   });
 
+  // Public route by slug — used by the embeddable widget (sokar.tech/widget/{slug}).
+  // Renvoie les champs nécessaires au rendu de l'iframe + l'id Prisma
+  // pour que le widget puisse enchaîner sur les routes /restaurants/{id}/*.
+  // Pas d'auth : endpoint public, même politique que /restaurants/:id/public.
+  //
+  // Note : on n'utilise PAS /public/r/:slug (déjà déclaré par Canal A) parce
+  // que ce dernier filtre sur canalAPublished. Le widget doit fonctionner
+  // pour tous les restos, pas seulement ceux publiés sur Canal A.
+  app.get('/public/widget/:slug', async (req, reply) => {
+    const { slug } = req.params as { slug: string };
+    try {
+      const restaurant = await app.db.restaurant.findUniqueOrThrow({
+        where: { slug },
+        select: {
+          id: true,
+          name: true,
+          openingHours: true,
+          phoneNumber: true,
+          // Champs Canal A utiles pour le rendu
+          city: true,
+          cuisineType: true,
+          coverImageUrl: true,
+          formattedAddress: true,
+        },
+      });
+      return reply.send(restaurant);
+    } catch (err) {
+      app.log.error({ err, slug }, 'Restaurant fetch by slug (widget) failed');
+      return reply.status(404).send({ error: 'Restaurant not found' });
+    }
+  });
+
   app.patch('/restaurants/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const restaurantId = req.restaurantId;
@@ -453,7 +490,9 @@ export async function restaurantRoutes(app: FastifyInstance) {
         where: { slug: body.slug },
       });
       if (existing && existing.id !== restaurantId) {
-        return reply.status(409).send({ error: 'Ce slug est déjà utilisé par un autre restaurant.' });
+        return reply
+          .status(409)
+          .send({ error: 'Ce slug est déjà utilisé par un autre restaurant.' });
       }
     }
 
@@ -475,7 +514,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
     const restaurantData: any = {};
     if (body.slug !== undefined) restaurantData.slug = body.slug;
     if (body.description !== undefined) restaurantData.description = body.description;
-    if (body.formattedAddress !== undefined) restaurantData.formattedAddress = body.formattedAddress;
+    if (body.formattedAddress !== undefined)
+      restaurantData.formattedAddress = body.formattedAddress;
     if (body.city !== undefined) restaurantData.city = body.city;
     if (body.postalCode !== undefined) restaurantData.postalCode = body.postalCode;
     if (body.country !== undefined) restaurantData.country = body.country;
@@ -573,7 +613,11 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
     const regex = /^[a-z0-9-]+$/;
     if (!regex.test(slug)) {
-      return reply.status(400).send({ error: 'Format du slug invalide (lettres minuscules, chiffres, tirets uniquement)' });
+      return reply
+        .status(400)
+        .send({
+          error: 'Format du slug invalide (lettres minuscules, chiffres, tirets uniquement)',
+        });
     }
     const existing = await app.db.restaurant.findUnique({
       where: { slug },
