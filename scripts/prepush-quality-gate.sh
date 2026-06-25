@@ -8,6 +8,14 @@ export PATH="/usr/local/opt/node@22/bin:$PATH"
 export TURBO_TELEMETRY_DISABLED=1
 export NEXT_TELEMETRY_DISABLED=1
 
+# Garde-fou : alerte si le système est sous pression mémoire avant le push.
+# git pack-objects peut planter avec SIGBUS (signal 10) si le swap est saturé,
+# même avec pack.threads=1. On warn, on ne fail pas (le fix est déjà en place
+# via git config --global pack.threads 1).
+if [ -x "$ROOT/scripts/check-memory.sh" ]; then
+  bash "$ROOT/scripts/check-memory.sh" warn || true
+fi
+
 BASE_REF="${SOKAR_BASE_REF:-origin/main}"
 if ! git rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
   BASE_REF="HEAD~1"
