@@ -116,6 +116,7 @@ bash "$SOKAR_ROOT/apps/canal-a/scripts/copy-static.sh"
 # ── 7. DB backup + migrations ───────────────────────────
 echo ""
 echo "📦 Backing up database..."
+sudo install -d -m 0700 -o deploy -g deploy /var/backups/sokar
 bash "$SOKAR_ROOT/scripts/backup-postgres.sh"
 
 sudo install -m 0750 "$SOKAR_ROOT/scripts/backup-postgres.sh" \
