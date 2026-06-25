@@ -31,6 +31,6 @@ fi
 
 # 3. Lancer le serveur standalone
 export PORT="${PORT:-3000}"
-export HOSTNAME="${HOSTNAME:-0.0.0.0}"
+export HOSTNAME="${HOSTNAME:-127.0.0.1}"
 echo "→ Starting dashboard standalone on ${HOSTNAME}:${PORT}"
 exec node .next/standalone/apps/dashboard/server.js

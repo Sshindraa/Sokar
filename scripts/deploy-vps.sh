@@ -2,6 +2,10 @@
 # Deploy script pour VPS Sokar
 # Usage: bash scripts/deploy-vps.sh [branch]
 # Gère la mémoire limitée, les trois apps PM2 et le routage Nginx.
+#
+# Zero-downtime: l'API reste en ligne pendant le build. Seuls dashboard et
+# Canal A sont arrêtés (Next.js standalone ne peut pas servir pendant que
+# `next build` écrase .next). Le redémarrage final prend ~5s.
 
 set -Eeuo pipefail
 BRANCH="${1:-main}"
@@ -43,29 +47,35 @@ recover_services() {
     trap - ERR
     echo ""
     echo "🔴 Déploiement interrompu (code ${exit_code}). Tentative de remise en ligne..."
-    sudo pm2 restart sokar-api sokar-dashboard sokar-canal-a 2>/dev/null \
-        || sudo pm2 resurrect 2>/dev/null \
+    pm2 restart sokar-api sokar-dashboard sokar-canal-a 2>/dev/null \
+        || pm2 resurrect 2>/dev/null \
         || true
+    # Rollback Nginx si un backup existe
+    if [ -f /etc/nginx/sites-available/sokar.bak ]; then
+        echo "   Rollback Nginx vers la configuration précédente..."
+        sudo cp /etc/nginx/sites-available/sokar.bak /etc/nginx/sites-available/sokar
+        sudo nginx -t 2>/dev/null && sudo systemctl reload nginx || true
+    fi
     docker start infra-localstack-1 2>/dev/null || true
     exit "$exit_code"
 }
 trap recover_services ERR
 
-# ── 1. Free memory ──────────────────────────────────────
+# ── 1. Free memory (keep API running) ──────────────────
 echo ""
 echo "📦 Freeing memory before build..."
 
-# Stop PM2 services before the memory-heavy Next.js builds.
-echo "   Stopping PM2 services..."
-sudo pm2 stop sokar-api sokar-dashboard sokar-canal-a 2>/dev/null || true
+# Stop ONLY Next.js apps — API stays up (it doesn't use .next).
+echo "   Stopping dashboard + Canal A (API stays up)..."
+pm2 stop sokar-dashboard sokar-canal-a 2>/dev/null || true
 
 # Stop LocalStack (libère ~420MB)
 echo "   Stopping LocalStack..."
 docker stop infra-localstack-1 2>/dev/null || true
 
-# Les runtimes PM2 tournent encore en root et peuvent écrire des caches dans
-# les bundles standalone. Nettoyer après leur arrêt évite les EACCES au build.
-sudo rm -rf apps/dashboard/.next apps/canal-a/.next
+# PM2 tourne désormais comme deploy → plus de caches root-owned.
+# Nettoyer .next pour éviter les artefacts obsolètes du build précédent.
+rm -rf apps/dashboard/.next apps/canal-a/.next
 
 FREE_BEFORE=$(free -m | awk '/^Mem:/ {print $4}')
 echo "   Memory free: ${FREE_BEFORE}MB"
@@ -134,13 +144,27 @@ unset DATABASE_URL
 echo ""
 echo "📦 Installing Nginx routing..."
 sudo install -d -m 0755 /etc/nginx/snippets /etc/nginx/sites-available /etc/nginx/sites-enabled
+
+# Backup current config before overwriting (pour rollback automatique).
+if [ -f /etc/nginx/sites-available/sokar ]; then
+    sudo cp /etc/nginx/sites-available/sokar /etc/nginx/sites-available/sokar.bak
+fi
+
 sudo install -m 0644 infra/nginx/snippets/sokar-proxy.conf \
     /etc/nginx/snippets/sokar-proxy.conf
 sudo install -m 0644 infra/nginx/snippets/sokar-cloudflare-real-ip.conf \
     /etc/nginx/snippets/sokar-cloudflare-real-ip.conf
 sudo install -m 0644 infra/nginx/sokar.conf /etc/nginx/sites-available/sokar
 sudo ln -sfn /etc/nginx/sites-available/sokar /etc/nginx/sites-enabled/sokar
-sudo nginx -t
+
+if ! sudo nginx -t 2>&1; then
+    echo "❌ nginx -t échoué. Rollback de la configuration précédente."
+    if [ -f /etc/nginx/sites-available/sokar.bak ]; then
+        sudo cp /etc/nginx/sites-available/sokar.bak /etc/nginx/sites-available/sokar
+        sudo nginx -t 2>/dev/null && sudo systemctl reload nginx || true
+    fi
+    exit 1
+fi
 
 # Un seul virtual host doit posséder api.sokar.tech. Un doublon peut envoyer
 # les requêtes vers une ancienne configuration dashboard.
@@ -152,12 +176,20 @@ if [ "$API_VHOST_COUNT" -ne 1 ]; then
     exit 1
 fi
 
+# Nettoyer le backup après validation.
+sudo rm -f /etc/nginx/sites-available/sokar.bak
+
+# ── 8b. Install logrotate ───────────────────────────────
+echo ""
+echo "📦 Installing logrotate..."
+sudo install -m 0644 "$SOKAR_ROOT/infra/logrotate/sokar" /etc/logrotate.d/sokar
+
 # ── 9. Restart services ─────────────────────────────────
 echo ""
 echo "📦 Restarting services..."
-sudo pm2 start infra/ecosystem.config.js --update-env
+pm2 start infra/ecosystem.config.js --update-env
 sleep 4
-sudo pm2 save
+pm2 save
 sudo systemctl reload nginx
 
 # Restart LocalStack
@@ -169,7 +201,7 @@ docker start infra-localstack-1 2>/dev/null || true
 echo ""
 echo "📦 Verifying..."
 sleep 3
-sudo pm2 status
+pm2 status
 
 echo ""
 echo "=== Checking HTTP endpoints ==="
@@ -207,7 +239,7 @@ echo "   widget iframe headers → $WIDGET_IFRAME_STATUS"
 # chunk JS du HTML rendu et on vérifie qu'il est servi.
 DASH_CSS_STATUS="N/A"
 FIRST_CHUNK=$(curl -s -H "Host: sokar.tech" http://127.0.0.1/ 2>/dev/null \
-  | grep -oE '/_next/static/[^"]+\.(js|css)' \
+  | grep -oE '/_next/static/[^\"]+\.(js|css)' \
   | head -1 || true)
 if [ -n "$FIRST_CHUNK" ]; then
   DASH_CSS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -237,7 +269,7 @@ elif [ "$DASH_STATUS" = "200" ] && [ "$DASH_CSS_STATUS" != "200" ]; then
     echo ""
     echo "🔴 Deploy REGRESSED : dashboard HTML répond 200 mais assets statiques 404."
     echo "   Cause probable : scripts/copy-static.sh non exécuté ou .next/static manquant."
-    echo "   Fix manuel : cd /opt/sokar/apps/dashboard && bash scripts/copy-static.sh && sudo pm2 restart sokar-dashboard"
+    echo "   Fix manuel : cd /opt/sokar/apps/dashboard && bash scripts/copy-static.sh && pm2 restart sokar-dashboard"
     exit 1
 else
     echo ""

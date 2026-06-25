@@ -1,0 +1,10 @@
+/var/log/sokar/*.log {
+  daily
+  rotate 14
+  compress
+  delaycompress
+  missingok
+  notifempty
+  copytruncate
+  su deploy deploy
+}

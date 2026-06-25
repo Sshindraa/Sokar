@@ -25,6 +25,6 @@ fi
 
 # 3. Lancer le serveur
 export PORT="${PORT:-4002}"
-export HOSTNAME="${HOSTNAME:-0.0.0.0}"
+export HOSTNAME="${HOSTNAME:-127.0.0.1}"
 echo "→ Starting Canal A standalone on ${HOSTNAME}:${PORT}"
 exec node .next/standalone/apps/canal-a/server.js

@@ -16,6 +16,26 @@ env:
 
 jobs:
   # ─────────────────────────────────────────────────────────────
+  # Secret scanning: detect committed secrets before they reach prod.
+  # Runs first, in parallel with packages — fails fast if a secret is found.
+  # ─────────────────────────────────────────────────────────────
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: 'true'
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
+
+  # ─────────────────────────────────────────────────────────────
   # Foundation: workspace packages typecheck + test first.
   # (prisma generate runs as part of `build`, which typecheck depends on
   #  via `^build`. tests in packages are stubs for now but the task exists
@@ -172,6 +192,9 @@ jobs:
 
       - name: Typecheck
         run: pnpm turbo typecheck --filter=@sokar/canal-a...
+
+      - name: Lint
+        run: pnpm --filter @sokar/canal-a lint
 
       - name: Test
         run: pnpm turbo test --filter=@sokar/canal-a...
