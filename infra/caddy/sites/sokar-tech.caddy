@@ -53,6 +53,41 @@ sokar.tech, www.sokar.tech {
         }
     }
 
+    # ─── Widget de réservation embarquable (iframe tiers) ─────
+    # /widget/{restaurantId} → page Next.js du dashboard, mais avec
+    # headers de sécurité assouplis pour autoriser l'embed iframe.
+    # L'API proxy est servie par la route @api au-dessus (same-origin
+    # depuis l'iframe puisque tout vient de sokar.tech).
+    @widget path /widget/*
+    reverse_proxy @widget 127.0.0.1:3000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 30s
+        }
+    }
+    # Override des headers de sécurité globaux pour le widget.
+    # - Retire X-Frame-Options (sinon DENY/SAMEORIGIN bloquerait l'embed)
+    # - CSP frame-ancestors * : autorise n'importe quel site tiers à embed
+    #   (standard industrie : Calendly, OpenTable, Resy font pareil).
+    #   À durcir en allowlist par restaurant si besoin.
+    # - Cache-Control : no-store pour éviter de servir des pages widget
+    #   cachées d'un autre restaurant.
+    header @widget {
+        # Retire le X-Frame-Options hérité du bloc global
+        X-Frame-Options ""
+        # CSP minimale orientée embed iframe (le widget n'utilise pas
+        # d'eval / object, juste son propre bundle Next).
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' data:; connect-src 'self'; frame-ancestors *; base-uri 'self'; form-action 'self'"
+        # Pas de cache : le widget est dynamique par restaurant
+        Cache-Control "no-store, no-cache, must-revalidate"
+        # Désactive l'HSTS sur cette route (inutile dans un iframe, et on
+        # ne veut pas qu'un 503 sur /widget casse l'HSTS du host tiers)
+        Strict-Transport-Security ""
+    }
+
     # ─── Dashboard Sokar (Next.js port 3000) ──────────────────
     # Tout le reste (landing marketing, /pricing, /login, /dashboard/*, /mcp, etc.)
     reverse_proxy 127.0.0.1:3000 {
