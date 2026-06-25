@@ -3,7 +3,7 @@
 # Usage: bash scripts/deploy-vps.sh [branch]
 # Gère la mémoire limitée, les trois apps PM2 et le routage Nginx.
 
-set -euo pipefail
+set -Eeuo pipefail
 BRANCH="${1:-main}"
 SOKAR_ROOT="/opt/sokar"
 DATE=$(date '+%Y-%m-%d %H:%M:%S')
@@ -63,6 +63,10 @@ sudo pm2 stop sokar-api sokar-dashboard sokar-canal-a 2>/dev/null || true
 echo "   Stopping LocalStack..."
 docker stop infra-localstack-1 2>/dev/null || true
 
+# Les runtimes PM2 tournent encore en root et peuvent écrire des caches dans
+# les bundles standalone. Nettoyer après leur arrêt évite les EACCES au build.
+sudo rm -rf apps/dashboard/.next apps/canal-a/.next
+
 FREE_BEFORE=$(free -m | awk '/^Mem:/ {print $4}')
 echo "   Memory free: ${FREE_BEFORE}MB"
 
@@ -91,8 +95,13 @@ NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database generate
 # ── 5. Build all ────────────────────────────────────────
 echo ""
 echo "📦 Building..."
-# API + dépendances workspace, puis les deux applications Next séquentiellement.
-NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/api... build
+# Workspaces explicites, puis les deux applications Next séquentiellement.
+# Évite le sélecteur `@sokar/api...`, qui inclut aussi des dépendants.
+NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/config build
+NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/types build
+NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database build
+NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/shared build
+NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/api build
 NODE_OPTIONS="--max-old-space-size=2048" NEXT_TELEMETRY_DISABLED=1 SENTRY_SUPPRESS_GLOBAL_ERROR_HANDLER_FILE_WARNING=1 \
     pnpm --filter @sokar/dashboard build
 NODE_OPTIONS="--max-old-space-size=2048" NEXT_TELEMETRY_DISABLED=1 \
