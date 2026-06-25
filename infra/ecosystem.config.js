@@ -37,5 +37,21 @@ module.exports = {
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
     },
+    {
+      name: 'sokar-canal-a',
+      cwd: '/opt/sokar/apps/canal-a',
+      script: 'bin/run-canal-a.sh',
+      env: {
+        NODE_ENV: 'production',
+        PORT: '4002',
+        HOSTNAME: '127.0.0.1',
+      },
+      watch: false,
+      max_memory_restart: '400M',
+      error_file: '/var/log/sokar/canal-a-error.log',
+      out_file: '/var/log/sokar/canal-a-out.log',
+      merge_logs: true,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+    },
   ],
 };

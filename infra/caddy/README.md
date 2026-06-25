@@ -1,6 +1,10 @@
 # infra/caddy/README.md
 #
-# Reverse-proxy Caddy pour Sokar (VPS).
+# Reverse-proxy Caddy alternatif pour Sokar.
+#
+# La production actuelle utilise Nginx. La source canonique est
+# `infra/nginx/sokar.conf`. Ces fichiers restent maintenus comme option de
+# migration, mais ne doivent pas être activés en parallèle avec Nginx.
 #
 # Cf. spec canal-a-v1.1 §3.3 hébergement :
 #   "P0 : VPS / Node Next standalone derrière Caddy ou Nginx
@@ -24,5 +28,5 @@
 #   - SSL/TLS mode : "Full" (Caddy gère le certificat, Cloudflare trust)
 #   - Cache : respect des Cache-Control headers de Caddy
 
-Sites actifs :
+Sites fournis :
 - sokar-tech.caddy : sokar.tech + www.sokar.tech (dashboard + canal-a + api)
