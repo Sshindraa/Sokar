@@ -86,7 +86,7 @@ let app: FastifyInstance;
 describe.skip('Canal A — Smoke test end-to-end', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    redisCache.flushall();
+    await redisCache.flushall();
     app = await getApp();
   });
   afterAll(async () => {
@@ -95,14 +95,14 @@ describe.skip('Canal A — Smoke test end-to-end', () => {
 
   it('Flow complet : GET → availability → hold → confirm', async () => {
     // ── 1. GET /public/r/:slug ──────────────────────────────────
-    vi.mocked(db.restaurant.findUnique).mockImplementation(
-      ((args: { where: { slug?: string; id?: string } }) => {
-        if (args.where.slug === SLUG || args.where.id === RESTAURANT_ID) {
-          return Promise.resolve(FULL_RESTAURANT as never);
-        }
-        return Promise.resolve(null as never);
-      }) as never,
-    );
+    vi.mocked(db.restaurant.findUnique).mockImplementation(((args: {
+      where: { slug?: string; id?: string };
+    }) => {
+      if (args.where.slug === SLUG || args.where.id === RESTAURANT_ID) {
+        return Promise.resolve(FULL_RESTAURANT as never);
+      }
+      return Promise.resolve(null as never);
+    }) as never);
 
     const getRes = await app.inject({ method: 'GET', url: `/public/r/${SLUG}` });
     expect(getRes.statusCode).toBe(200);

@@ -26,11 +26,16 @@ import { ReservationService } from '../agentic-reservations/core/reservation.ser
 import { AuditLogService } from '../agentic-reservations/core/audit-log.service';
 import { IdempotencyService } from '../agentic-reservations/core/idempotency.service';
 import { PrismaIdempotencyStore } from '../agentic-reservations/core/prisma-store';
-import { buildPolicySnapshot, type PolicySnapshot } from '../agentic-reservations/core/policies.service';
-import { ConsentService } from '../rgpd/consent.service';
-import { computeIdempotencyScope, hashPayload } from '../agentic-reservations/core/idempotency.service';
 import {
-  AGENTIC_SOURCES,
+  buildPolicySnapshot,
+  type PolicySnapshot,
+} from '../agentic-reservations/core/policies.service';
+import { ConsentService } from '../rgpd/consent.service';
+import {
+  computeIdempotencyScope,
+  hashPayload,
+} from '../agentic-reservations/core/idempotency.service';
+import {
   AvailabilityQuerySchema,
   ConfirmInputSchema,
   HoldInputSchema,
@@ -148,9 +153,7 @@ export async function canalARoutes(app: FastifyInstance): Promise<void> {
     if (!isValidCitySlug(params.slug)) {
       return reply.status(400).send({ error: 'Invalid city slug' });
     }
-    const queryParse = z
-      .object({ cuisine: z.string().optional() })
-      .safeParse(req.query);
+    const queryParse = z.object({ cuisine: z.string().optional() }).safeParse(req.query);
     if (!queryParse.success) {
       return reply.status(400).send({ error: 'Invalid query' });
     }
@@ -320,72 +323,70 @@ export async function canalARoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) => {
-    const slugParse = SlugParamSchema.safeParse(req.params);
-    if (!slugParse.success) {
-      return reply.status(400).send({ error: 'Invalid slug', details: slugParse.error.format() });
-    }
-    const bodyParse = HoldInputSchema.safeParse(req.body);
-    if (!bodyParse.success) {
-      return reply.status(400).send({ error: 'Invalid body', details: bodyParse.error.format() });
-    }
-
-    const restaurant = await canal.getPublishedBySlug(slugParse.data.slug);
-    if (!restaurant) {
-      return reply.status(404).send({ error: 'Restaurant not found or not published' });
-    }
-
-    // Source normalization (cf. spec v1.1 §5.9 + feedback Hamza)
-    // - Si canalAAgentic=false, on neutralise chatgpt/perplexity/bing/google(bing_ai)
-    // - On garde google (organic SEO), instagram, qr_code, restaurant_website, direct
-    // - Pour google spécifiquement, c'est un canal SEO normal, pas agentic
-    const AGENTIC_NEUTRAL: ReadonlySet<Source> = new Set(['chatgpt', 'perplexity', 'bing']);
-    const requestedSource: Source = bodyParse.data.source;
-    const isAgenticSource = AGENTIC_SOURCES.has(requestedSource);
-    const isAgenticNeutral = AGENTIC_NEUTRAL.has(requestedSource);
-    const source: Source =
-      !restaurant.canalAAgentic && isAgenticNeutral ? 'web' : requestedSource;
-    // isAgenticSource is referenced to keep the linter aware
-    void isAgenticSource;
-
-    const policy = await loadPolicy(restaurant.id);
-    if (!policy) {
-      return reply.status(409).send({ error: 'No policy configured for this restaurant' });
-    }
-    if (bodyParse.data.partySize > policy.maxPartySize) {
-      return reply.status(409).send({
-        error: `Party size ${bodyParse.data.partySize} exceeds max (${policy.maxPartySize})`,
-      });
-    }
-
-    const slotStart = new Date(`${bodyParse.data.date}T${bodyParse.data.time}:00.000Z`);
-    const slotEnd = new Date(slotStart.getTime() + 90 * 60 * 1000);
-
-    try {
-      const hold = await holds.createHold({
-        restaurantId: restaurant.id,
-        partySize: bodyParse.data.partySize,
-        slotStart,
-        slotEnd,
-        channel: 'WEB',
-        policy,
-        actor: 'canal-a:web',
-      });
-
-      return reply.send({
-        holdId: hold.id,
-        holdToken: hold.holdToken,
-        expiresAt: hold.expiresAt.toISOString(),
-        status: 'pending',
-        sourceNormalized: source,
-      });
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'HoldConflictError') {
-        return reply.status(409).send({ error: 'Slot already held or reserved' });
+      const slugParse = SlugParamSchema.safeParse(req.params);
+      if (!slugParse.success) {
+        return reply.status(400).send({ error: 'Invalid slug', details: slugParse.error.format() });
       }
-      logger.error({ err, slug: slugParse.data.slug }, 'canal-a hold creation failed');
-      return reply.status(500).send({ error: 'Internal error' });
-    }
-  });
+      const bodyParse = HoldInputSchema.safeParse(req.body);
+      if (!bodyParse.success) {
+        return reply.status(400).send({ error: 'Invalid body', details: bodyParse.error.format() });
+      }
+
+      const restaurant = await canal.getPublishedBySlug(slugParse.data.slug);
+      if (!restaurant) {
+        return reply.status(404).send({ error: 'Restaurant not found or not published' });
+      }
+
+      // Source normalization (cf. spec v1.1 §5.9 + feedback Hamza)
+      // - Si canalAAgentic=false, on neutralise chatgpt/perplexity/bing/google(bing_ai)
+      // - On garde google (organic SEO), instagram, qr_code, restaurant_website, direct
+      // - Pour google spécifiquement, c'est un canal SEO normal, pas agentic
+      const AGENTIC_NEUTRAL: ReadonlySet<Source> = new Set(['chatgpt', 'perplexity', 'bing']);
+      const requestedSource: Source = bodyParse.data.source;
+      const isAgenticNeutral = AGENTIC_NEUTRAL.has(requestedSource);
+      const source: Source =
+        !restaurant.canalAAgentic && isAgenticNeutral ? 'web' : requestedSource;
+
+      const policy = await loadPolicy(restaurant.id);
+      if (!policy) {
+        return reply.status(409).send({ error: 'No policy configured for this restaurant' });
+      }
+      if (bodyParse.data.partySize > policy.maxPartySize) {
+        return reply.status(409).send({
+          error: `Party size ${bodyParse.data.partySize} exceeds max (${policy.maxPartySize})`,
+        });
+      }
+
+      const slotStart = new Date(`${bodyParse.data.date}T${bodyParse.data.time}:00.000Z`);
+      const slotEnd = new Date(slotStart.getTime() + 90 * 60 * 1000);
+
+      try {
+        const hold = await holds.createHold({
+          restaurantId: restaurant.id,
+          partySize: bodyParse.data.partySize,
+          slotStart,
+          slotEnd,
+          channel: 'WEB',
+          policy,
+          actor: 'canal-a:web',
+        });
+
+        return reply.send({
+          holdId: hold.id,
+          holdToken: hold.holdToken,
+          expiresAt: hold.expiresAt.toISOString(),
+          status: 'pending',
+          sourceNormalized: source,
+        });
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'HoldConflictError') {
+          return reply.status(409).send({ error: 'Slot already held or reserved' });
+        }
+        logger.error({ err, slug: slugParse.data.slug }, 'canal-a hold creation failed');
+        return reply.status(500).send({ error: 'Internal error' });
+      }
+    },
+  );
 
   // ─── 4. POST /public/r/:slug/confirm ────────────────────────
 
@@ -400,130 +401,128 @@ export async function canalARoutes(app: FastifyInstance): Promise<void> {
       },
     },
     async (req, reply) => {
-    const slugParse = SlugParamSchema.safeParse(req.params);
-    if (!slugParse.success) {
-      return reply.status(400).send({ error: 'Invalid slug', details: slugParse.error.format() });
-    }
-    const bodyParse = ConfirmInputSchema.safeParse(req.body);
-    if (!bodyParse.success) {
-      return reply.status(400).send({ error: 'Invalid body', details: bodyParse.error.format() });
-    }
+      const slugParse = SlugParamSchema.safeParse(req.params);
+      if (!slugParse.success) {
+        return reply.status(400).send({ error: 'Invalid slug', details: slugParse.error.format() });
+      }
+      const bodyParse = ConfirmInputSchema.safeParse(req.body);
+      if (!bodyParse.success) {
+        return reply.status(400).send({ error: 'Invalid body', details: bodyParse.error.format() });
+      }
 
-    const restaurant = await canal.getPublishedBySlug(slugParse.data.slug);
-    if (!restaurant) {
-      return reply.status(404).send({ error: 'Restaurant not found or not published' });
-    }
+      const restaurant = await canal.getPublishedBySlug(slugParse.data.slug);
+      if (!restaurant) {
+        return reply.status(404).send({ error: 'Restaurant not found or not published' });
+      }
 
-    // Lookup hold
-    const hold = await db.agenticHold.findFirst({
-      where: { holdToken: bodyParse.data.holdToken, restaurantId: restaurant.id },
-    });
-    if (!hold || hold.status !== 'ACTIVE' || hold.expiresAt < new Date()) {
-      return reply.status(410).send({ error: 'Hold expired or not found' });
-    }
-
-    const policy = await loadPolicy(restaurant.id);
-    if (!policy) {
-      return reply.status(409).send({ error: 'No policy configured for this restaurant' });
-    }
-
-    // Customer name
-    const customerName = bodyParse.data.customer.lastName
-      ? `${bodyParse.data.customer.firstName} ${bodyParse.data.customer.lastName}`.trim()
-      : bodyParse.data.customer.firstName;
-
-    // RGPD consent (channel=WEB, context=web_booking_intent)
-    const ipHash = req.ip ? hashIp(req.ip) : undefined;
-    await consents.recordConsent({
-      restaurantId: restaurant.id,
-      customerId: null,
-      reservationId: null,
-      subject: bodyParse.data.customer.phone,
-      channel: 'WEB',
-      context: 'web_booking_intent',
-      consents: {
-        reservationProcessing: true,
-        transactionalSms: true,
-        transactionalEmail: !!bodyParse.data.customer.email,
-        marketingOptIn: false,
-      },
-      consentIpHash: ipHash,
-    });
-
-    // Idempotency: scope = web:{restaurantId}:{phoneHash}, key = holdId
-    // (le hold est unique, donc 2 confirms du même hold = même réponse)
-    const phoneHash = hashPhone(bodyParse.data.customer.phone);
-    const idempotencyScope = computeIdempotencyScope({
-      restaurantId: restaurant.id,
-      channel: 'WEB',
-      clientId: phoneHash,
-    });
-    const idempotencyKey = bodyParse.data.idempotencyKey ?? hold.id;
-    const payloadHash = hashPayload({
-      holdId: hold.id,
-      customerPhone: bodyParse.data.customer.phone,
-      customerName,
-    });
-
-    try {
-      const result = await reservations.createReservation(
-        {
-          restaurantId: restaurant.id,
-          partySize: hold.partySize,
-          startsAt: hold.slotStart,
-          endsAt: hold.slotEnd,
-          customerName,
-          customerPhone: bodyParse.data.customer.phone,
-          channel: 'WEB',
-          policy,
-          actor: 'canal-a:web',
-          holdToken: bodyParse.data.holdToken,
-          specialRequests: bodyParse.data.specialRequests,
-          consents: {
-            reservationProcessing: true,
-            transactionalSms: true,
-            transactionalEmail: !!bodyParse.data.customer.email,
-            marketingOptIn: false,
-          },
-        },
-        {
-          scope: idempotencyScope,
-          key: idempotencyKey,
-          payloadHash,
-          ttlSeconds: 86400,
-        },
-      );
-
-      // Update source separately (pas dans CreateReservationInput, on patch direct)
-      // La source est déduite du ?source= URL → on la retrouve via le hold.actor
-      // Pour P0, on enregistre 'web' par défaut. Source agentic = extension P2.
-      // (Le tracking fin se fera côté T9 via Redis analytics)
-
-      return reply.send({
-        reservationId: result.reservationId,
-        status: 'confirmed',
-        state: result.state,
-        reused: result.reused,
-        restaurantName: restaurant.name,
-        date: hold.slotStart.toISOString().slice(0, 10),
-        time: hold.slotStart.toISOString().slice(11, 16),
-        partySize: hold.partySize,
+      // Lookup hold
+      const hold = await db.agenticHold.findFirst({
+        where: { holdToken: bodyParse.data.holdToken, restaurantId: restaurant.id },
       });
-    } catch (err: unknown) {
-      logger.error(
-        { err, slug: slugParse.data.slug, holdId: hold.id },
-        'canal-a confirm failed',
-      );
-      const message = err instanceof Error ? err.message : 'Internal error';
-      if (message.toLowerCase().includes('idempot')) {
-        return reply.status(409).send({ error: message });
+      if (!hold || hold.status !== 'ACTIVE' || hold.expiresAt < new Date()) {
+        return reply.status(410).send({ error: 'Hold expired or not found' });
       }
-      if (message.toLowerCase().includes('hold')) {
-        return reply.status(410).send({ error: message });
+
+      const policy = await loadPolicy(restaurant.id);
+      if (!policy) {
+        return reply.status(409).send({ error: 'No policy configured for this restaurant' });
       }
-      return reply.status(500).send({ error: message });
-    }
-  });
+
+      // Customer name
+      const customerName = bodyParse.data.customer.lastName
+        ? `${bodyParse.data.customer.firstName} ${bodyParse.data.customer.lastName}`.trim()
+        : bodyParse.data.customer.firstName;
+
+      // RGPD consent (channel=WEB, context=web_booking_intent)
+      const ipHash = req.ip ? hashIp(req.ip) : undefined;
+      await consents.recordConsent({
+        restaurantId: restaurant.id,
+        customerId: null,
+        reservationId: null,
+        subject: bodyParse.data.customer.phone,
+        channel: 'WEB',
+        context: 'web_booking_intent',
+        consents: {
+          reservationProcessing: true,
+          transactionalSms: true,
+          transactionalEmail: !!bodyParse.data.customer.email,
+          marketingOptIn: false,
+        },
+        consentIpHash: ipHash,
+      });
+
+      // Idempotency: scope = web:{restaurantId}:{phoneHash}, key = holdId
+      // (le hold est unique, donc 2 confirms du même hold = même réponse)
+      const phoneHash = hashPhone(bodyParse.data.customer.phone);
+      const idempotencyScope = computeIdempotencyScope({
+        restaurantId: restaurant.id,
+        channel: 'WEB',
+        clientId: phoneHash,
+      });
+      const idempotencyKey = bodyParse.data.idempotencyKey ?? hold.id;
+      const payloadHash = hashPayload({
+        holdId: hold.id,
+        customerPhone: bodyParse.data.customer.phone,
+        customerName,
+      });
+
+      try {
+        const result = await reservations.createReservation(
+          {
+            restaurantId: restaurant.id,
+            partySize: hold.partySize,
+            startsAt: hold.slotStart,
+            endsAt: hold.slotEnd,
+            customerName,
+            customerPhone: bodyParse.data.customer.phone,
+            channel: 'WEB',
+            policy,
+            actor: 'canal-a:web',
+            holdToken: bodyParse.data.holdToken,
+            specialRequests: bodyParse.data.specialRequests,
+            consents: {
+              reservationProcessing: true,
+              transactionalSms: true,
+              transactionalEmail: !!bodyParse.data.customer.email,
+              marketingOptIn: false,
+            },
+          },
+          {
+            scope: idempotencyScope,
+            key: idempotencyKey,
+            payloadHash,
+            ttlSeconds: 86400,
+          },
+        );
+
+        // Update source separately (pas dans CreateReservationInput, on patch direct)
+        // La source est déduite du ?source= URL → on la retrouve via le hold.actor
+        // Pour P0, on enregistre 'web' par défaut. Source agentic = extension P2.
+        // (Le tracking fin se fera côté T9 via Redis analytics)
+
+        return reply.send({
+          reservationId: result.reservationId,
+          status: 'confirmed',
+          state: result.state,
+          reused: result.reused,
+          restaurantName: restaurant.name,
+          date: hold.slotStart.toISOString().slice(0, 10),
+          time: hold.slotStart.toISOString().slice(11, 16),
+          partySize: hold.partySize,
+        });
+      } catch (err: unknown) {
+        logger.error({ err, slug: slugParse.data.slug, holdId: hold.id }, 'canal-a confirm failed');
+        const message = err instanceof Error ? err.message : 'Internal error';
+        if (message.toLowerCase().includes('idempot')) {
+          return reply.status(409).send({ error: message });
+        }
+        if (message.toLowerCase().includes('hold')) {
+          return reply.status(410).send({ error: message });
+        }
+        return reply.status(500).send({ error: message });
+      }
+    },
+  );
 }
 
 /**
