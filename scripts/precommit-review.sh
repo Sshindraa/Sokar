@@ -45,12 +45,20 @@ UI_HITS=$(git diff --cached -- apps/dashboard ':(exclude)**/*.md' | grep '^+' | 
 [ -z "$UI_HITS" ] || { echo "$UI_HITS"; fail "dashboard must use design tokens, not arbitrary hex Tailwind classes"; }
 
 # 3) Formatting on staged files — un seul appel prettier au lieu de lint-staged.
-TS_FILES=$(printf '%s\n' "$STAGED_FILES" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|md|json|yml|yaml)$' || true)
-if [ -n "$TS_FILES" ]; then
-  pnpm exec prettier --write $TS_FILES
+FORMAT_FILES=()
+while IFS= read -r -d '' file; do
+  case "$file" in
+    *.ts | *.tsx | *.js | *.jsx | *.mjs | *.cjs | *.md | *.json | *.yml | *.yaml)
+      FORMAT_FILES+=("$file")
+      ;;
+  esac
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+
+if [ "${#FORMAT_FILES[@]}" -gt 0 ]; then
+  pnpm exec prettier --write -- "${FORMAT_FILES[@]}"
 fi
 
 # Re-stage files rewritten by lint-staged.
-printf '%s\n' "$STAGED_FILES" | xargs git add -- 2>/dev/null || true
+git diff --cached --name-only --diff-filter=ACMR -z | xargs -0 git add -- 2>/dev/null || true
 
 echo "precommit-review: PASS"

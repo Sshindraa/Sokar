@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Canal A est servi par un Node Next standalone derrière Caddy/Nginx
+  // Canal A est servi par un Node Next standalone derrière Nginx
   // (cf. spec canal-a-v1.1 §3.3 hébergement). PAS static export.
   output: 'standalone',
   // Pas de basePath global (cf. spec v1.1 §2.1) : le reverse-proxy route

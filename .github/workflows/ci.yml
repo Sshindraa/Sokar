@@ -145,3 +145,36 @@ jobs:
 
       - name: Build
         run: pnpm --filter @sokar/dashboard build
+
+  canal-a:
+    name: Canal A
+    runs-on: ubuntu-latest
+    needs: packages
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.8.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm turbo typecheck --filter=@sokar/canal-a...
+
+      - name: Test
+        run: pnpm turbo test --filter=@sokar/canal-a...
+
+      - name: Build
+        run: pnpm --filter @sokar/canal-a build

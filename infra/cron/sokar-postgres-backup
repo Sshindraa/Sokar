@@ -1,0 +1,5 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Sauvegarde quotidienne à 03:20 UTC, restauration temporaire incluse.
+20 3 * * * root /usr/local/sbin/sokar-backup-postgres >> /var/log/sokar/postgres-backup.log 2>&1

@@ -19,6 +19,13 @@ fi
 
 cd "$SOKAR_ROOT"
 
+if [ ! -f /etc/letsencrypt/live/sokar.tech/fullchain.pem ] \
+    || [ ! -f /etc/letsencrypt/live/sokar.tech/privkey.pem ]; then
+    echo "❌ Certificat origine absent. Lance d'abord :"
+    echo "   sudo bash scripts/setup-origin-tls.sh"
+    exit 1
+fi
+
 if ! git diff --quiet || ! git diff --cached --quiet; then
     echo "❌ Fichiers suivis modifiés sur le VPS. Refus de les stasher automatiquement."
     git status --short
@@ -70,6 +77,12 @@ echo ""
 echo "📦 Installing dependencies..."
 pnpm install --frozen-lockfile
 
+for env_file in apps/api/.env apps/dashboard/.env apps/canal-a/.env.prod infra/.env; do
+    if [ -f "$env_file" ]; then
+        chmod 0600 "$env_file"
+    fi
+done
+
 # ── 4. Generate Prisma ──────────────────────────────────
 echo ""
 echo "📦 Generating Prisma client..."
@@ -91,13 +104,20 @@ echo "📦 Copying static assets to standalone..."
 bash "$SOKAR_ROOT/apps/dashboard/scripts/copy-static.sh"
 bash "$SOKAR_ROOT/apps/canal-a/scripts/copy-static.sh"
 
-# ── 7. DB Sync ──────────────────────────────────────────
+# ── 7. DB backup + migrations ───────────────────────────
 echo ""
-echo "📦 Syncing database..."
-# Use API env for correct DATABASE_URL
+echo "📦 Backing up database..."
+bash "$SOKAR_ROOT/scripts/backup-postgres.sh"
+
+sudo install -m 0750 "$SOKAR_ROOT/scripts/backup-postgres.sh" \
+    /usr/local/sbin/sokar-backup-postgres
+sudo install -m 0644 "$SOKAR_ROOT/infra/cron/sokar-postgres-backup" \
+    /etc/cron.d/sokar-postgres-backup
+
+echo ""
+echo "📦 Applying database migrations..."
 export DATABASE_URL=$(grep "^DATABASE_URL" apps/api/.env | cut -d= -f2-)
-# prod: accept data loss when adding unique constraints on empty/new columns
-pnpm exec prisma db push --schema=packages/database/prisma/schema.prisma --accept-data-loss
+pnpm exec prisma migrate deploy --schema=packages/database/prisma/schema.prisma
 unset DATABASE_URL
 
 # ── 8. Install and validate Nginx routing ───────────────
