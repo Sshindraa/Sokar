@@ -64,11 +64,7 @@ NODE_OPTIONS="--max-old-space-size=2048" NEXT_TELEMETRY_DISABLED=1 SENTRY_SUPPRE
 # ── 6. Copy static assets to standalone ─────────────────
 echo ""
 echo "📦 Copying static assets to standalone..."
-cd "$SOKAR_ROOT/apps/dashboard"
-if [ -f scripts/copy-static.sh ]; then
-    bash scripts/copy-static.sh
-fi
-cd "$SOKAR_ROOT"
+bash "$SOKAR_ROOT/apps/dashboard/scripts/copy-static.sh"
 
 # ── 7. DB Sync ──────────────────────────────────────────
 echo ""
@@ -111,9 +107,12 @@ echo "   dashboard (localhost:3000)  → $DASH_STATUS"
 # copié dans le standalone → page blanche côté client. On extrait le premier
 # chunk JS du HTML rendu et on vérifie qu'il est servi.
 DASH_CSS_STATUS="N/A"
-FIRST_CHUNK=$(curl -s http://localhost:3000 2>/dev/null | grep -oE '/_next/static/[^"]+\.(js|css)' | head -1 || true)
+FIRST_CHUNK=$(curl -s -H "Host: sokar.tech" http://127.0.0.1/ 2>/dev/null \
+  | grep -oE '/_next/static/[^"]+\.(js|css)' \
+  | head -1 || true)
 if [ -n "$FIRST_CHUNK" ]; then
-  DASH_CSS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000${FIRST_CHUNK}" 2>/dev/null || echo "FAIL")
+  DASH_CSS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+    -H "Host: sokar.tech" "http://127.0.0.1${FIRST_CHUNK}" 2>/dev/null || echo "FAIL")
   echo "   dashboard asset ${FIRST_CHUNK} → $DASH_CSS_STATUS"
 else
   echo "   ⚠️  Aucun chunk JS/CSS trouvé dans le HTML du dashboard (build cassé ?)"
