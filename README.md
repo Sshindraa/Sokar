@@ -17,7 +17,6 @@ apps/dashboard      Next.js dashboard/marketing app
 packages/database   Prisma schema/client
 packages/config     shared config
 packages/types      shared TypeScript types
-tools/hermes        Hermes project-local docs/config/templates
 docs                product and implementation notes
 ```
 

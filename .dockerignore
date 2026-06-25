@@ -43,6 +43,7 @@ scripts
 .vscode
 *.swp
 *.swo
+*.cpuprofile
 
 # ── Local env / secrets — never copy into image ──
 .env

@@ -2,7 +2,7 @@
 
 > **Date originale** : 2026-05-20
 > **Statut original** : En discussion — MVP utilise numéro de test gratuit Vapi
-> **Statut 2026-06-24** : **DÉPASSÉ** — Telnyx FR est en prod depuis Sprint 2
+> **Statut 2026-06-24** : **DÉPASSÉ** — Telnyx FR est en prod depuis Phase 2
 > (cf. [[Telnyx Pipeline]]). Ce document est conservé comme **trace
 > de la décision initiale** et pour les projections de coût.
 
@@ -128,7 +128,7 @@ Un seul "trunk" SIP avec plusieurs DID (numéros virtuels). Les DID sont ~$0.50-
 
 | Phase | Nombre | Stratégie | Numéro/restaurant | Justification |
 |-------|--------|-----------|-------------------|---------------|
-| **MVP Sprint 1-2** | 1-5 | Test gratuit Vapi | $0 | Validation produit, pas de coût |
+| **MVP Phase 1-2** | 1-5 | Test gratuit Vapi | $0 | Validation produit, pas de coût |
 | **Beta** | 10-20 | Numéro dédié Telnyx | ~$1-3/mois | Professionnel, test acquisition |
 | **Growth** | 20-50 | Pool rotatif + porting | ~$0.50-3/mois | Équilibre coût/expérience |
 | **Scale** | 50-500 | Pool + porting mixte | ~$0.50-1/mois | Optimisation, SIP trunking |
@@ -187,9 +187,9 @@ Restaurant demande portage
 
 ## Décision actuelle (état 2026-06-24)
 
-> **Sprint 1-2 (mai 2026)** : ✅ Fait — Vapi US pour valider le MVP, mais abandonné.
+> **Phase 1-2 (mai 2026)** : ✅ Fait — Vapi US pour valider le MVP, mais abandonné.
 >
-> **Sprint 2 (juin 2026)** : ✅ Fait — Migration Telnyx FR complète.
+> **Phase 2 (juin 2026)** : ✅ Fait — Migration Telnyx FR complète.
 > `apps/api/src/modules/voice/telnyx.pipeline.ts` est le pipeline prod.
 > Numéro actuel visible : `+33 4 51 22 15 28` (cf. [[Session Telnyx Debug 2026-06-10]]).
 >

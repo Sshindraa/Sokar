@@ -84,7 +84,6 @@ INIT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$MCP_URL" \
 ok "401 sur initialize sans auth (attendu)"
 
 step "8/8 — Test tools/list avec un token dev (si disponible)"
-step "8/8 — Test tools/list avec un token dev (si disponible)"
 # Le AGENT_DEV_KEY permet de bypasser OAuth en dev. On le récupère depuis l'env
 # si on est sur le serveur, sinon on skip cette étape.
 if [ -n "${AGENT_DEV_KEY:-}" ]; then

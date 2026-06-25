@@ -54,6 +54,7 @@ scratch/
 apps/api/scratch/
 *.log
 *.mp3
+*.cpuprofile
 
 # Shopify test directory
 Unboxxed/

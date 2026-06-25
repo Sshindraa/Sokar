@@ -1,7 +1,7 @@
 import { WebSocket } from 'ws';
 import { createHash } from 'node:crypto';
 import type { CallSession, CallState } from './types';
-import { LLM_MODEL } from '@sokar/config'; // Resolved dynamically via tsconfig paths
+import { VOICE_LLM_MODEL } from '@sokar/config'; // Resolved dynamically
 import { getRestaurantTools } from '../tools';
 import { ReservationService } from '../../reservations/reservation.service';
 import { logger } from '../../../shared/logger/pino';
@@ -238,13 +238,13 @@ export class CallSessionManager {
         },
         signal: session.abortController?.signal,
         body: JSON.stringify({
-          model: LLM_MODEL,
+          model: VOICE_LLM_MODEL,
           messages,
           max_tokens: 150,
           temperature: 0.7,
           tools,
           tool_choice: 'auto',
-          ...(LLM_MODEL?.includes('mistral')
+          ...(VOICE_LLM_MODEL?.includes('mistral')
             ? {
                 provider: { order: ['mistral'], allow_fallbacks: false },
               }
@@ -313,14 +313,14 @@ export class CallSessionManager {
         },
         signal: session.abortController?.signal,
         body: JSON.stringify({
-          model: LLM_MODEL,
+          model: VOICE_LLM_MODEL,
           messages,
           max_tokens: 150,
           temperature: 0.7,
           tools,
           tool_choice: 'auto',
           stream: true,
-          ...(LLM_MODEL?.includes('mistral')
+          ...(VOICE_LLM_MODEL?.includes('mistral')
             ? {
                 provider: { order: ['mistral'], allow_fallbacks: false },
               }
@@ -418,13 +418,13 @@ export class CallSessionManager {
             Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
           },
           body: JSON.stringify({
-            model: LLM_MODEL,
+            model: VOICE_LLM_MODEL,
             messages,
             max_tokens: 150,
             temperature: 0.7,
             tools,
             tool_choice: 'auto',
-            ...(LLM_MODEL?.includes('mistral')
+            ...(VOICE_LLM_MODEL?.includes('mistral')
               ? {
                   provider: { order: ['mistral'], allow_fallbacks: false },
                 }

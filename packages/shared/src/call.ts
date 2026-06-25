@@ -42,7 +42,7 @@ export const CALL_OUTCOME_LABELS: Record<CallOutcome, string> = {
 };
 
 /**
- * Reasons a call can end, as emitted by the carrier (Telnyx/Vapi).
+ * Reasons a call can end, as emitted by the carrier (Telnyx).
  * Telnyx in particular uses freeform strings; this is the canonical
  * subset we treat as terminal, anything else is bucketed as 'other'.
  */
