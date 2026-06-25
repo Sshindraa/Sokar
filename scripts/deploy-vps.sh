@@ -19,8 +19,8 @@ fi
 
 cd "$SOKAR_ROOT"
 
-if [ ! -f /etc/letsencrypt/live/sokar.tech/fullchain.pem ] \
-    || [ ! -f /etc/letsencrypt/live/sokar.tech/privkey.pem ]; then
+if ! sudo test -f /etc/letsencrypt/live/sokar.tech/fullchain.pem \
+    || ! sudo test -f /etc/letsencrypt/live/sokar.tech/privkey.pem; then
     echo "❌ Certificat origine absent. Lance d'abord :"
     echo "   sudo bash scripts/setup-origin-tls.sh"
     exit 1
