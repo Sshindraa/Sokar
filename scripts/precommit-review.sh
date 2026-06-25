@@ -44,8 +44,11 @@ CONSOLE_HITS=$(printf '%s\n' "$CODE_ADDED" | grep '^+' | grep -v '^+++' | grep -
 UI_HITS=$(git diff --cached -- apps/dashboard ':(exclude)**/*.md' | grep '^+' | grep -v '^+++' | grep -E "(bg|text|border|from|to|via)-\[#[0-9A-Fa-f]{3,8}\]" || true)
 [ -z "$UI_HITS" ] || { echo "$UI_HITS"; fail "dashboard must use design tokens, not arbitrary hex Tailwind classes"; }
 
-# 3) Formatting on staged files via existing lint-staged.
-pnpm exec lint-staged
+# 3) Formatting on staged files — un seul appel prettier au lieu de lint-staged.
+TS_FILES=$(printf '%s\n' "$STAGED_FILES" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|md|json|yml|yaml)$' || true)
+if [ -n "$TS_FILES" ]; then
+  pnpm exec prettier --write $TS_FILES
+fi
 
 # Re-stage files rewritten by lint-staged.
 printf '%s\n' "$STAGED_FILES" | xargs git add -- 2>/dev/null || true

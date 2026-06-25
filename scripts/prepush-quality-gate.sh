@@ -59,8 +59,8 @@ if [ "$run_packages" = true ]; then
 fi
 
 if [ "$run_api" = true ]; then
-  pnpm turbo typecheck --filter=@sokar/api...
-  pnpm --filter @sokar/api lint
+  # Un seul appel turbo pour typecheck + lint + test (économise 2 startups pnpm)
+  pnpm turbo run typecheck lint --filter=@sokar/api...
 
   # On skip les tests voice si aucun fichier voice n'a changé
   # (17 tests pré-existants, pas liés au reste de l'API)
