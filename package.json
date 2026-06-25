@@ -11,7 +11,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,md,json}\"",
     "prepare": "husky",
-    "db:generate": "prisma generate --schema=packages/database/prisma/schema.prisma",
+    "db:generate": "prisma generate --schema=packages/database/prisma/schema.prisma --no-hints",
     "db:push": "prisma db push --schema=packages/database/prisma/schema.prisma",
     "db:studio": "prisma studio --schema=packages/database/prisma/schema.prisma",
     "db:seed": "pnpm --filter @sokar/database seed",
@@ -34,7 +34,6 @@
     "lint-staged": "^17.0.7",
     "prettier": "^3.5.0",
     "prisma": "^6.0.0",
-    "rollup": "^4.30.0",
     "turbo": "^2.5.0",
     "typescript": "^5.8.0"
   },
