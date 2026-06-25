@@ -122,7 +122,7 @@ if [ -n "${AGENT_DEV_KEY:-}" ]; then
   ok "tools/call search_restaurants (isError=$IS_ERROR — OK si on a un restaurant seed)"
 else
   echo -e "${YELLOW}⊘ AGENT_DEV_KEY non défini — skip du test tools/list. Pour le tester :${RESET}"
-  echo "  export AGENT_DEV_KEY=\$(ssh pmbtc 'grep ^AGENT_DEV_KEY /opt/sokar/apps/api/.env | cut -d= -f2-')"
+  echo "  Définis AGENT_DEV_KEY depuis ton gestionnaire de secrets (ne l'extrais pas du VPS)."
   echo "  bash $0"
 fi
 

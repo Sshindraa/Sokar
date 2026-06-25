@@ -7,7 +7,7 @@
 - Cible Sokar: monorepo Fastify 5 + Prisma 6 + Next.js 14
 - Domaine public: `sokar.tech` (corrigé depuis `sokar.app` du brief)
 - v1 → v1.1 corrections: cf. §15 (changelog)
-- Décisions v1.1: `apps/canal-a` Next standalone · `agentic_reuse` · `sokar.tech` · `phase_1_seed_puis_attendre` · `redis_prometheus` · `optin_double_volet` corrigé · VPS + Caddy/Nginx + Cloudflare proxy cache
+- Décisions v1.1: `apps/canal-a` Next standalone · `agentic_reuse` · `sokar.tech` · `phase_1_seed_puis_attendre` · `redis_prometheus` · `optin_double_volet` corrigé · VPS + Nginx + Cloudflare proxy cache
 
 ---
 
@@ -28,7 +28,7 @@ structurées et au fonctionnement réel d'OAI-SearchBot.
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ COUCHE PUBLIQUE — apps/canal-a (Next.js 14, output:standalone)   │
-│ Hébergement: VPS Node self-hosté + Caddy/Nginx reverse proxy     │
+│ Hébergement: VPS Node self-hosté + Nginx reverse proxy           │
 │ Cloudflare devant en proxy/CDN cache (pas static export)        │
 │                                                                 │
 │  /r/[slug]                  page restaurant (SSR + ISR 60s)     │
@@ -70,6 +70,7 @@ des caches), les données portent déjà la vérité du métier. Canal A
 ### Pourquoi Next standalone (et pas static export)
 
 La spec demande :
+
 - ISR `revalidate=60` sur `/r/[slug]` (Next ISR requiert le runtime Node)
 - SSR avec `searchParams` sur `/r/[slug]/book` (deep-link)
 - Route handlers dynamiques pour `/sitemap.xml` et `/robots.txt`
@@ -80,7 +81,7 @@ non-GET, ni la lecture de `searchParams` au runtime. C'est incompatible
 avec la spec.
 
 **Hébergement P0** : `apps/canal-a` en `output: 'standalone'` (Next.js
-Node server) sur le VPS, derrière Caddy/Nginx comme reverse proxy
+Node server) sur le VPS, derrière Nginx comme reverse proxy
 (sécurité, rate limit, validation transport, gestion requêtes lentes),
 Cloudflare devant en proxy/CDN cache pour l'edge. C'est exactement le
 pattern recommandé par Next pour un self-hosting prod-safe.
@@ -90,6 +91,7 @@ pattern recommandé par Next pour un self-hosting prod-safe.
 `basePath: '/r'` aurait forcé l'API publique à servir aussi
 `/restaurants`, `/sitemap.xml` et `/robots.txt` sous `/r/`, ce qui est
 moche. À la place :
+
 - `apps/canal-a` sert nativement `/r/*`, `/restaurants/*`,
   `/sitemap.xml`, `/robots.txt`
 - Le reverse proxy route `sokar.tech/{r,restaurants,sitemap.xml,robots.txt}`
@@ -102,38 +104,38 @@ moche. À la place :
 
 ### 2.1 Champs `Restaurant` réutilisables tels quels
 
-| Champ spec | Champ Prisma | Type | OK ? |
-|------------|--------------|------|------|
-| `name` | `name` | String | ✓ |
-| `slug` | `slug` | String? @unique | ✓ nullable, à backfiller |
-| `description` | (manquant) | — | ❌ P0 |
-| `addressLine1` | `formattedAddress` | String? | ⚠️ structurel à plat vs structuré |
-| `city` | (manquant) | — | ❌ P0 |
-| `country` | (manquant) | — | ❌ P0 |
-| `postalCode` | (manquant) | — | ❌ P0 |
-| `latitude` | `lat` | Decimal? | ✓ |
-| `longitude` | `lng` | Decimal? | ✓ |
-| `phone` | `phoneNumber`/`phoneE164` | String/String? | ✓ |
-| `cuisineTypes` | `cuisineType` | String[] | ✓ |
-| `priceRange` `€`/`€€`/`€€€`/`€€€€` | `priceRange` | Int? (1..4) | ✓ sémantique à clarifier |
-| `openingHours` | `openingHours` | Json | ✓ structure JSON libre |
-| `acceptsReservations` | `agenticOptIn` | Boolean | ✓ utilisé comme flag métier legacy |
-| `coverImageUrl` | (manquant) | — | ❌ P0 |
-| `publishedAt` | (manquant) | — | ❌ P0 |
-| `images` | (manquant côté table) | — | ❌ P0 — modèle séparé `RestaurantImage` |
-| `ambiance`, `dietary` | `ambiance`, `dietary` | String[] | ✓ |
-| `noiseLevel` | `noiseLevel` | NoiseLevel? | ✓ |
+| Champ spec                         | Champ Prisma              | Type            | OK ?                                    |
+| ---------------------------------- | ------------------------- | --------------- | --------------------------------------- |
+| `name`                             | `name`                    | String          | ✓                                       |
+| `slug`                             | `slug`                    | String? @unique | ✓ nullable, à backfiller                |
+| `description`                      | (manquant)                | —               | ❌ P0                                   |
+| `addressLine1`                     | `formattedAddress`        | String?         | ⚠️ structurel à plat vs structuré       |
+| `city`                             | (manquant)                | —               | ❌ P0                                   |
+| `country`                          | (manquant)                | —               | ❌ P0                                   |
+| `postalCode`                       | (manquant)                | —               | ❌ P0                                   |
+| `latitude`                         | `lat`                     | Decimal?        | ✓                                       |
+| `longitude`                        | `lng`                     | Decimal?        | ✓                                       |
+| `phone`                            | `phoneNumber`/`phoneE164` | String/String?  | ✓                                       |
+| `cuisineTypes`                     | `cuisineType`             | String[]        | ✓                                       |
+| `priceRange` `€`/`€€`/`€€€`/`€€€€` | `priceRange`              | Int? (1..4)     | ✓ sémantique à clarifier                |
+| `openingHours`                     | `openingHours`            | Json            | ✓ structure JSON libre                  |
+| `acceptsReservations`              | `agenticOptIn`            | Boolean         | ✓ utilisé comme flag métier legacy      |
+| `coverImageUrl`                    | (manquant)                | —               | ❌ P0                                   |
+| `publishedAt`                      | (manquant)                | —               | ❌ P0                                   |
+| `images`                           | (manquant côté table)     | —               | ❌ P0 — modèle séparé `RestaurantImage` |
+| `ambiance`, `dietary`              | `ambiance`, `dietary`     | String[]        | ✓                                       |
+| `noiseLevel`                       | `noiseLevel`              | NoiseLevel?     | ✓                                       |
 
 ### 2.2 Champs ajoutés à `Restaurant` (P0, données publiques uniquement)
 
-| Besoin | Proposition | Type | Raison |
-|--------|-------------|------|--------|
-| `description` courte | `Restaurant.description` | String? | SEO + JSON-LD `description` |
-| `city` structuré | `Restaurant.city` | String? | pages locales, pas d'analyse de `formattedAddress` |
-| `country` | `Restaurant.country` | String @default("FR") | structuration |
-| `postalCode` | `Restaurant.postalCode` | String? | structuration + page locale |
-| `coverImageUrl` | `Restaurant.coverImageUrl` | String? | JSON-LD image principale + OG |
-| `publishedAt` | `Restaurant.publishedAt` | DateTime? | sitemap lastmod (≠ canalAPublishedAt qui est sur ExposureSettings) |
+| Besoin               | Proposition                | Type                  | Raison                                                             |
+| -------------------- | -------------------------- | --------------------- | ------------------------------------------------------------------ |
+| `description` courte | `Restaurant.description`   | String?               | SEO + JSON-LD `description`                                        |
+| `city` structuré     | `Restaurant.city`          | String?               | pages locales, pas d'analyse de `formattedAddress`                 |
+| `country`            | `Restaurant.country`       | String @default("FR") | structuration                                                      |
+| `postalCode`         | `Restaurant.postalCode`    | String?               | structuration + page locale                                        |
+| `coverImageUrl`      | `Restaurant.coverImageUrl` | String?               | JSON-LD image principale + OG                                      |
+| `publishedAt`        | `Restaurant.publishedAt`   | DateTime?             | sitemap lastmod (≠ canalAPublishedAt qui est sur ExposureSettings) |
 
 **Pas** de `Restaurant.canalAPublished` — la source de vérité unique
 pour le gating est `RestaurantExposureSettings.canalAPublished`. Voir
@@ -141,12 +143,12 @@ pour le gating est `RestaurantExposureSettings.canalAPublished`. Voir
 
 ### 2.3 Champs ajoutés à `RestaurantExposureSettings` (P0)
 
-| Champ | Type | Default | Rôle |
-|-------|------|---------|------|
-| `canalAPublished` | Boolean | false | autorise la page publique + réservation web |
-| `canalAAgentic` | Boolean | false | autorise l'exposition agentic avancée (JSON-LD `ReserveAction`, OAI-SearchBot allow, deep-link) |
-| `canalAPublishedAt` | DateTime? | — | date de première publication (audit) |
-| `canalADescription` | String? | — | override éditorial de la description publique |
+| Champ               | Type      | Default | Rôle                                                                                            |
+| ------------------- | --------- | ------- | ----------------------------------------------------------------------------------------------- |
+| `canalAPublished`   | Boolean   | false   | autorise la page publique + réservation web                                                     |
+| `canalAAgentic`     | Boolean   | false   | autorise l'exposition agentic avancée (JSON-LD `ReserveAction`, OAI-SearchBot allow, deep-link) |
+| `canalAPublishedAt` | DateTime? | —       | date de première publication (audit)                                                            |
+| `canalADescription` | String?   | —       | override éditorial de la description publique                                                   |
 
 **Source de vérité unique** : tous les flags de gating Canal A vivent
 ici. Pas de duplication sur `Restaurant`.
@@ -331,38 +333,16 @@ module.exports = nextConfig;
 }
 ```
 
-### 3.3 Reverse proxy (Caddyfile ou nginx.conf)
+### 3.3 Reverse proxy Nginx
 
-```
-# sokar.tech/r/* et sokar.tech/restaurants/* et métadonnées publiques
-sokar.tech {
-  # Pages publiques Canal A
-  reverse_proxy /r/*             localhost:4002
-  reverse_proxy /restaurants/*   localhost:4002
-  route /sitemap.xml             localhost:4002
-  route /robots.txt              localhost:4002
-  route /llms.txt                localhost:4002
+La configuration canonique est `infra/nginx/sokar.conf` :
 
-  # API publique Canal A (JSON)
-  reverse_proxy /public/*        localhost:3001
-
-  # API privée Sokar (Clerk auth)
-  reverse_proxy /api/*           localhost:3001
-
-  # Dashboard (Clerk auth, header restaurateur)
-  reverse_proxy /dashboard/*     localhost:3000
-  reverse_proxy /onboarding/*    localhost:3000
-  reverse_proxy /login           localhost:3000
-  reverse_proxy /register        localhost:3000
-  reverse_proxy /pricing         localhost:3000
-  reverse_proxy /privacy         localhost:3000
-  reverse_proxy /mcp             localhost:3000
-
-  # Widget B2B (CDN Cloudflare, mais root sert aussi)
-  reverse_proxy /widget/*        localhost:3000
-  reverse_proxy /                localhost:3000
-}
-```
+- `/r/*`, `/restaurants/*`, `/sitemap.xml`, `/robots.txt` → Canal A `:4002`
+- `/api/proxy/*`, `/api/auth/sync` → route handlers Next.js `:3000`
+- `/api/*` et `api.sokar.tech/*` → Fastify `:4000`
+- `/widget/*` → dashboard `:3000` avec politique iframe dédiée
+- le reste de `sokar.tech` → dashboard `:3000`
+- TLS origine Let’s Encrypt sur `:443`, accès direct filtré par UFW
 
 `apps/dashboard` et `apps/widget` continuent d'exister tels quels.
 Aucune modification de leur code. Cloudflare est devant le VPS
@@ -410,37 +390,34 @@ Trois prédicats calculés côté service:
 
 ```ts
 canPublicPageRender =
-  exposure.canalAPublished === true &&
-  restaurant.slug != null &&
-  restaurant.publishedAt != null;
+  exposure.canalAPublished === true && restaurant.slug != null && restaurant.publishedAt != null;
 
 canWebBookingWork =
   exposure.canalAPublished === true &&
   restaurant.acceptsReservations === true &&
   restaurant.publishedAt != null;
 
-canAgenticMetadataExpose =
-  exposure.canalAPublished === true &&
-  exposure.canalAAgentic === true;
+canAgenticMetadataExpose = exposure.canalAPublished === true && exposure.canalAAgentic === true;
 ```
 
 **Différence avec v1** : `/book` ne dépend plus de `canalAAgentic`.
 Un restaurateur peut activer la page publique + réservation web sans
 activer l'exposition agentic avancée. `canalAAgentic` ne contrôle
 **que** :
+
 - l'inclusion du JSON-LD `ReserveAction` + `EntryPoint.urlTemplate`
 - l'autorisation explicite OAI-SearchBot dans robots.txt
 - la propagation du paramètre `source=` dans les réservations
 - les deep-links agentic pré-remplis (sortie en search results)
 
-| Page / Action | Condition | Réponse si KO |
-|---------------|-----------|---------------|
-| `/r/[slug]` GET | `canPublicPageRender` | 404 (slug inexistant) ou noindex (preview restaurateur via `?preview=...`) |
-| `/r/[slug]/book` GET (page) | `canPublicPageRender` | 404 |
-| `/r/[slug]/book` POST (hold/confirm) | `canWebBookingWork` | 503 formulaire lecture seule + message "page publique désactivée" |
-| `/r/[slug]` JSON-LD `ReserveAction` | `canAgenticMetadataExpose` | JSON-LD sans `potentialAction` (la page reste visible et le CTA marche, mais sans signal agentic) |
-| `robots.txt` allow OAI-SearchBot | `canAgenticMetadataExpose` global (au moins 1 resto du réseau) | robots.txt ne mentionne pas OAI-SearchBot |
-| `Reservation.source` tracking | `canAgenticMetadataExpose` | source=`web` par défaut, pas `chatgpt`/`perplexity` |
+| Page / Action                        | Condition                                                      | Réponse si KO                                                                                     |
+| ------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `/r/[slug]` GET                      | `canPublicPageRender`                                          | 404 (slug inexistant) ou noindex (preview restaurateur via `?preview=...`)                        |
+| `/r/[slug]/book` GET (page)          | `canPublicPageRender`                                          | 404                                                                                               |
+| `/r/[slug]/book` POST (hold/confirm) | `canWebBookingWork`                                            | 503 formulaire lecture seule + message "page publique désactivée"                                 |
+| `/r/[slug]` JSON-LD `ReserveAction`  | `canAgenticMetadataExpose`                                     | JSON-LD sans `potentialAction` (la page reste visible et le CTA marche, mais sans signal agentic) |
+| `robots.txt` allow OAI-SearchBot     | `canAgenticMetadataExpose` global (au moins 1 resto du réseau) | robots.txt ne mentionne pas OAI-SearchBot                                                         |
+| `Reservation.source` tracking        | `canAgenticMetadataExpose`                                     | source=`web` par défaut, pas `chatgpt`/`perplexity`                                               |
 
 ### 4.3 Defaults
 
@@ -462,14 +439,14 @@ discuter en P2** pour clarifier, mais hors scope Canal A).
 
 ### 4.5 API publiques — auth
 
-| Endpoint | Auth requise | Rate limit |
-|----------|-------------|------------|
-| `GET /public/r/[slug]` | **Aucune** | 60 req/IP/min |
-| `GET /public/r/[slug]/availability` | Aucune | 30 req/IP/min |
-| `POST /public/r/[slug]/hold` | Aucune | 10 req/IP/min, 20 req/phone/jour |
-| `POST /public/r/[slug]/confirm` | Aucune + header `Idempotency-Key` | 5 req/phone/heure |
-| `GET /sitemap.xml` | Aucune | bypass |
-| `GET /robots.txt` | Aucune | bypass |
+| Endpoint                            | Auth requise                      | Rate limit                       |
+| ----------------------------------- | --------------------------------- | -------------------------------- |
+| `GET /public/r/[slug]`              | **Aucune**                        | 60 req/IP/min                    |
+| `GET /public/r/[slug]/availability` | Aucune                            | 30 req/IP/min                    |
+| `POST /public/r/[slug]/hold`        | Aucune                            | 10 req/IP/min, 20 req/phone/jour |
+| `POST /public/r/[slug]/confirm`     | Aucune + header `Idempotency-Key` | 5 req/phone/heure                |
+| `GET /sitemap.xml`                  | Aucune                            | bypass                           |
+| `GET /robots.txt`                   | Aucune                            | bypass                           |
 
 Les endpoints publics ne sont **pas** derrière Clerk. Le risque
 d'abus est couvert par rate limit + anti-spam (voir §8).
@@ -493,9 +470,10 @@ confirmation SMS/email n'est pas faite, puis on bascule en
 attend une vérif OTP (à ajouter si Phase 2).
 
 > Pour Canal A MVP, on **ne demande pas d'OTP** (phone déjà collecté
-> + email en option). Le client est `CONFIRMED` direct. RGPD: le
-> `CustomerConsent` est créé en `web_booking_intent` avec
-> `reservation_processing=true`.
+>
+> - email en option). Le client est `CONFIRMED` direct. RGPD: le
+>   `CustomerConsent` est créé en `web_booking_intent` avec
+>   `reservation_processing=true`.
 
 ### 5.3 Idempotency (déjà en place)
 
@@ -514,14 +492,14 @@ On la **garde** pour les réservations web, pas de lock séparé.
 Le champ `attributeConfidence` existe déjà sur `Restaurant` (Json).
 Pour Canal A, on consomme cette confidence pour décider quoi exposer:
 
-| Attribut | Confidence min pour exposer |
-|----------|----------------------------|
-| `cuisineType` | 0.5 (merchant_declared ou review_inferred) |
-| `priceRange` | 0.7 |
-| `openingHours` | 0.9 (merchant_declared) |
-| `ambiance` | 0.5 |
-| `dietary` | 0.7 |
-| `noiseLevel` | 0.5 |
+| Attribut       | Confidence min pour exposer                |
+| -------------- | ------------------------------------------ |
+| `cuisineType`  | 0.5 (merchant_declared ou review_inferred) |
+| `priceRange`   | 0.7                                        |
+| `openingHours` | 0.9 (merchant_declared)                    |
+| `ambiance`     | 0.5                                        |
+| `dietary`      | 0.7                                        |
+| `noiseLevel`   | 0.5                                        |
 
 Si confidence < seuil, on n'inclut pas dans JSON-LD. Le HTML visible
 reste autorisé mais on évite les claims que le moteur pourrait juger
@@ -582,12 +560,12 @@ attributions.
 
 ### 6.2 Endpoints API
 
-| Method | Path | Body / Query | Response | Notes |
-|--------|------|--------------|----------|-------|
-| GET | `/public/r/:slug` | — | `PublicRestaurantDto` | 200 ou 404 |
-| GET | `/public/r/:slug/availability` | `?date=YYYY-MM-DD&partySize=N` | `AvailabilityDto` | respecte horaires + capacity + holds |
-| POST | `/public/r/:slug/hold` | `{date, time, partySize, source}` | `{holdId, holdToken, expiresAt}` | TTL 5 min |
-| POST | `/public/r/:slug/confirm` | `{holdToken, customer, specialRequests, idempotencyKey}` | `{reservationId, status}` | PENDING→CONFIRMED |
+| Method | Path                           | Body / Query                                             | Response                         | Notes                                |
+| ------ | ------------------------------ | -------------------------------------------------------- | -------------------------------- | ------------------------------------ |
+| GET    | `/public/r/:slug`              | —                                                        | `PublicRestaurantDto`            | 200 ou 404                           |
+| GET    | `/public/r/:slug/availability` | `?date=YYYY-MM-DD&partySize=N`                           | `AvailabilityDto`                | respecte horaires + capacity + holds |
+| POST   | `/public/r/:slug/hold`         | `{date, time, partySize, source}`                        | `{holdId, holdToken, expiresAt}` | TTL 5 min                            |
+| POST   | `/public/r/:slug/confirm`      | `{holdToken, customer, specialRequests, idempotencyKey}` | `{reservationId, status}`        | PENDING→CONFIRMED                    |
 
 ### 6.3 Fichiers
 
@@ -638,6 +616,7 @@ pré-calcule les slugs publiés au build pour les pages les plus
 trafic, le reste est rendu à la demande.
 
 **Props visibles** :
+
 - H1: `{name} — Restaurant {cuisineType[0]} à {city}`
 - Adresse, téléphone cliquable (`tel:`)
 - Horaires (table jour-par-jour)
@@ -649,6 +628,7 @@ trafic, le reste est rendu à la demande.
 - Lien Instagram si `instagramUrl`
 
 **Sémantique** :
+
 - `<main>` racine
 - `<h1>` unique
 - Sections `<section>` avec `<h2>` explicites
@@ -657,6 +637,7 @@ trafic, le reste est rendu à la demande.
 - OpenGraph + Twitter Card
 
 **Meta** :
+
 - title: `{name} — Réservation en ligne à {city} | Sokar`
 - description: `Réservez une table chez {name}, restaurant {cuisineType[0]} à {city}. Horaires, adresse et réservation en ligne via Sokar.`
 - robots: `index, follow` si published, sinon `noindex, follow`
@@ -667,6 +648,7 @@ trafic, le reste est rendu à la demande.
 `utm_source`, `utm_medium`, `utm_campaign`.
 
 **Flow** :
+
 1. Read querystring → préremplir le state
 2. Stepper 3 étapes: `Choisis ton créneau` → `Tes coordonnées` → `Confirmation`
 3. Step 1: date picker + party size picker → fetch
@@ -699,6 +681,7 @@ BullMQ `canal_a_analytics` (nouvelle, créée en P0).
 Sinon, retourne 200 mais avec `<meta name="robots" content="noindex,follow">`.
 
 **Sections** :
+
 - H1: `Restaurants réservables à {city}`
 - Texte SEO court (généré, pas inventé): "{n} restaurants à {city}
   réservables en ligne via Sokar."
@@ -775,8 +758,8 @@ LLMs qui le liraient. Phase 5 — pas en P0.
 
 ### 8.2 Transport hardening
 
-- HTTPS obligatoire (VPS Caddy/Nginx + certbot, déjà en place)
-- HSTS sur `sokar.tech` (à ajouter dans la conf Caddy)
+- HTTPS obligatoire (Cloudflare + Nginx avec certificat d'origine)
+- HSTS sur `sokar.tech`
 - CORS: origines autorisées (cf. §8.7, **pas de `Origin: null` en P0**)
 - `Content-Security-Policy`: `default-src 'self'; img-src 'self' https: data:;`
 - `X-Content-Type-Options: nosniff`
@@ -784,12 +767,12 @@ LLMs qui le liraient. Phase 5 — pas en P0.
 
 ### 8.3 Rate limits (par IP, par phone, par slot)
 
-| Endpoint | Limite |
-|----------|--------|
-| `GET /public/r/:slug` | 60 req/IP/min |
-| `GET availability` | 30 req/IP/min |
-| `POST hold` | 10 req/IP/min, 20 req/phone/jour |
-| `POST confirm` | 5 req/phone/heure, 1 req/IP/sec |
+| Endpoint              | Limite                           |
+| --------------------- | -------------------------------- |
+| `GET /public/r/:slug` | 60 req/IP/min                    |
+| `GET availability`    | 30 req/IP/min                    |
+| `POST hold`           | 10 req/IP/min, 20 req/phone/jour |
+| `POST confirm`        | 5 req/phone/heure, 1 req/IP/sec  |
 
 Implémentation: Redis `INCR` + `EXPIRE` (même pattern que les autres
 rate limits Sokar). Pas de Redis Cluster pour P0.
@@ -806,17 +789,17 @@ réponse stockée. Si payload différent → 409 Conflict.
 **Le `reservation_audit_log` ne devient PAS une table analytics.** Il
 documente les transitions métier liées à un hold ou une réservation.
 
-| Événement | Destination |
-|-----------|-------------|
-| `restaurant_page_view` | Redis (queue `canal_a_analytics`) — 30j rolling |
-| `restaurant_book_cta_clicked` | Redis |
-| `booking_page_view` | Redis |
-| `availability_requested` | Redis + prom-client counter `canal_a_availability_requested_total` |
-| `availability_slot_selected` | Redis |
-| `reservation_hold_created` | Redis + `reservation_audit_log` (event=`hold_created`) |
-| `reservation_hold_expired` | Redis + `reservation_audit_log` (event=`hold_expired`) |
-| `reservation_confirmed` | Redis + `reservation_audit_log` (event=`reservation_confirmed`) + DB `Reservation` row |
-| `reservation_failed` | Redis + `reservation_audit_log` (event=`reservation_failed`) si lié à un hold |
+| Événement                     | Destination                                                                            |
+| ----------------------------- | -------------------------------------------------------------------------------------- |
+| `restaurant_page_view`        | Redis (queue `canal_a_analytics`) — 30j rolling                                        |
+| `restaurant_book_cta_clicked` | Redis                                                                                  |
+| `booking_page_view`           | Redis                                                                                  |
+| `availability_requested`      | Redis + prom-client counter `canal_a_availability_requested_total`                     |
+| `availability_slot_selected`  | Redis                                                                                  |
+| `reservation_hold_created`    | Redis + `reservation_audit_log` (event=`hold_created`)                                 |
+| `reservation_hold_expired`    | Redis + `reservation_audit_log` (event=`hold_expired`)                                 |
+| `reservation_confirmed`       | Redis + `reservation_audit_log` (event=`reservation_confirmed`) + DB `Reservation` row |
+| `reservation_failed`          | Redis + `reservation_audit_log` (event=`reservation_failed`) si lié à un hold          |
 
 Les `page_view` n'écrivent **jamais** en DB. Le coût de stockage
 serait prohibitif (1 visit = 1 row) et ça n'apporte rien d'analytique
@@ -893,6 +876,7 @@ await db.customerConsent.create({
 ### 9.2 Données publiques
 
 Peuvent être publics (parce que publiées par le restaurateur):
+
 - nom, adresse, téléphone pro, horaires, cuisine, photos fournies,
   lien réservation, prix, ambiance, dietary, noiseLevel, websiteUrl,
   instagramUrl.
@@ -922,12 +906,12 @@ ses données contacte `dpo@sokar.tech`.
 
 ### 9.6 Sous-traitants
 
-| Sous-traitant | Finalité | DPA |
-|---------------|----------|-----|
-| Telnyx (carrier voix) | Pas utilisé par Canal A direct, mais SMS confirmation | À formaliser |
-| Twilio / autre SMS | SMS confirmation (futur) | À formaliser |
-| Cloudflare (CDN + proxy) | Servir `apps/canal-a` static + edge cache | DPA Cloudflare standard |
-| VPS hébergeur | Host Next standalone | DPA VPS |
+| Sous-traitant            | Finalité                                              | DPA                     |
+| ------------------------ | ----------------------------------------------------- | ----------------------- |
+| Telnyx (carrier voix)    | Pas utilisé par Canal A direct, mais SMS confirmation | À formaliser            |
+| Twilio / autre SMS       | SMS confirmation (futur)                              | À formaliser            |
+| Cloudflare (CDN + proxy) | Servir `apps/canal-a` static + edge cache             | DPA Cloudflare standard |
+| VPS hébergeur            | Host Next standalone                                  | DPA VPS                 |
 
 > Le brief a noté "DPA sous-traitants à formaliser". Canal A n'ajoute
 > pas de nouveau sous-traitant par rapport à l'existant. À cocher
@@ -942,6 +926,7 @@ ses données contacte `dpo@sokar.tech`.
 ### Ticket 1 — Migration DB Canal A (P0)
 
 **Scope** :
+
 - 3 migrations additives sous `packages/database/prisma/migrations/`:
   - `20260624000001_canal_a_columns_restaurant` — colonnes nullable:
     `description`, `city`, `country`, `postalCode`, `coverImageUrl`,
@@ -962,6 +947,7 @@ ses données contacte `dpo@sokar.tech`.
 `sokar-prisma-migrate` § ".env : ne JAMAIS pré-remplir par l'agent".
 
 **Acceptance** :
+
 - [ ] `prisma migrate deploy` applique les 3 fichiers sans erreur
 - [ ] `RestaurantExposureSettings.canalAPublished` existe, default false
 - [ ] `Restaurant.description`, `city`, `country`, `postalCode`,
@@ -974,6 +960,7 @@ ses données contacte `dpo@sokar.tech`.
 ### Ticket 2 — API publique Canal A (P0)
 
 **Scope** :
+
 - Créer `apps/api/src/modules/canal-a/`
 - `canal-a.routes.ts` enregistré dans `main.ts` (ou router global)
   sous le préfixe `/public`
@@ -986,6 +973,7 @@ ses données contacte `dpo@sokar.tech`.
 - CORS: origines `https://sokar.tech`, `https://www.sokar.tech` (cf. §8.7)
 
 **Acceptance** :
+
 - [ ] `GET /public/r/chez-sokar-demo` retourne 200 + DTO
 - [ ] `GET /public/r/inexistant` retourne 404
 - [ ] `GET /public/r/chez-sokar-demo/availability?date=...&partySize=2`
@@ -1002,6 +990,7 @@ ses données contacte `dpo@sokar.tech`.
 ### Ticket 3 — JSON-LD Service (P0)
 
 **Scope** :
+
 - `jsonld.service.ts` avec `buildPublicRestaurantJsonLd(restaurant, opts)`
 - Respecte `attributeConfidence` (§5.5) : pas de claims non sourcés
 - Inclut `Restaurant`, `PostalAddress`, `GeoCoordinates` si lat/lng,
@@ -1014,6 +1003,7 @@ ses données contacte `dpo@sokar.tech`.
   le cas `canalAAgentic=false` (pas de `potentialAction`)
 
 **Acceptance** :
+
 - [ ] JSON.parse du output = OK
 - [ ] `acceptsReservations` est l'URL `/book` (pas un booléen)
 - [ ] `potentialAction.target.urlTemplate` contient `{partySize}`,
@@ -1022,9 +1012,10 @@ ses données contacte `dpo@sokar.tech`.
 - [ ] `geo` absent si pas de lat/lng (pas `null`)
 - [ ] `potentialAction` absent si `canalAAgentic=false`
 
-### Ticket 4 — `apps/canal-a` setup + Caddy (P0)
+### Ticket 4 — `apps/canal-a` setup + Nginx (P0)
 
 **Scope** :
+
 - Nouvelle app Next.js 14 App Router
 - `package.json` `@sokar/canal-a` + workspace dep sur
   `@sokar/shared` (pour les types)
@@ -1033,16 +1024,17 @@ ses données contacte `dpo@sokar.tech`.
 - `tailwind.config.js` (réutilise les design tokens du dashboard —
   `bg-background`, `text-foreground`, etc.)
 - `tsconfig.json` strict
-- `pnpm-workspace.yaml` déjà OK (apps/* wildcard)
+- `pnpm-workspace.yaml` déjà OK (apps/\* wildcard)
 - Turbo task `canal-a#dev` (port 4002), `canal-a#build`,
   `canal-a#typecheck`
 - Lint config cohérente avec le reste
-- Caddyfile (ou nginx.conf) mis à jour pour router
+- `infra/nginx/sokar.conf` mis à jour pour router
   `/r/*`, `/restaurants/*`, `/sitemap.xml`, `/robots.txt` vers
   `apps/canal-a` (cf. §3.3)
 - HSTS sur sokar.tech
 
 **Acceptance** :
+
 - [ ] `pnpm --filter @sokar/canal-a dev` lance l'app sur :4002
 - [ ] `pnpm --filter @sokar/canal-a build` produit
       `apps/canal-a/.next/standalone/`
@@ -1054,6 +1046,7 @@ ses données contacte `dpo@sokar.tech`.
 ### Ticket 5 — Page `/r/[slug]` (P0)
 
 **Scope** :
+
 - `apps/canal-a/src/app/r/[slug]/page.tsx` Server Component
 - `generateStaticParams` lit `/public/r/index` (nouveau endpoint
   batch) ou cache les slugs
@@ -1066,6 +1059,7 @@ ses données contacte `dpo@sokar.tech`.
 - LCP < 2.5s, HTML initial < 100KB
 
 **Acceptance** :
+
 - [ ] `curl -s localhost:4002/r/chez-sokar-demo` → HTML avec H1
 - [ ] JSON-LD `<script type="application/ld+json">` présent
 - [ ] `<link rel="canonical">` présent, sans query params
@@ -1076,8 +1070,9 @@ ses données contacte `dpo@sokar.tech`.
 ### Ticket 6 — Page `/r/[slug]/book` (P0)
 
 **Scope** :
+
 - `apps/canal-a/src/app/r/[slug]/book/page.tsx`
-- Lit `searchParams` (partySize, date, time, source, utm_*)
+- Lit `searchParams` (partySize, date, time, source, utm\_\*)
 - Composants: `BookingStepper`, `DatePicker`, `PartySizePicker`,
   `SlotGrid`, `CustomerForm`, `ConfirmationView`
 - Appels API: `GET availability`, `POST hold`, `POST confirm`
@@ -1087,6 +1082,7 @@ ses données contacte `dpo@sokar.tech`.
   capacity exceeded
 
 **Acceptance** :
+
 - [ ] Deep-link
       `/r/chez-sokar-demo/book?partySize=4&date=2026-06-24&time=20:00&source=chatgpt`
       pré-remplit le formulaire
@@ -1099,6 +1095,7 @@ ses données contacte `dpo@sokar.tech`.
 ### Ticket 7 — Pages locales `/restaurants/[city]` (P0, noindex par défaut)
 
 **Scope** :
+
 - `apps/canal-a/src/app/restaurants/[city]/page.tsx`
 - `apps/canal-a/src/app/restaurants/[city]/[cuisine]/page.tsx`
 - `index-rules.ts` (Phase 1 code la mécanique, threshold à 5/10/20
@@ -1112,6 +1109,7 @@ ses données contacte `dpo@sokar.tech`.
 - Sections internes: "Cuisines populaires", "Avec terrasse", etc.
 
 **Acceptance** :
+
 - [ ] Avec <5 restos dans une ville: 200 noindex
 - [ ] Avec ≥5 restos: 200 index
 - [ ] Page cuisine: ≥10 index, <10 noindex
@@ -1126,6 +1124,7 @@ ses données contacte `dpo@sokar.tech`.
 ### Ticket 8 — Sitemap + Robots (P0)
 
 **Scope** :
+
 - Route handlers Next.js : `apps/canal-a/src/app/sitemap.xml/route.ts`
   et `apps/canal-a/src/app/robots.txt/route.ts`
 - `sitemapService` et `robotsService` consommés par Next (ré-export
@@ -1139,6 +1138,7 @@ ses données contacte `dpo@sokar.tech`.
 - `OAI-SearchBot` explicit allow (sera conditionnel P5)
 
 **Acceptance** :
+
 - [ ] `GET /sitemap.xml` retourne XML valide
 - [ ] URLs canonical uniquement (pas de query params)
 - [ ] `<lastmod>` ISO 8601
@@ -1150,6 +1150,7 @@ ses données contacte `dpo@sokar.tech`.
 ### Ticket 9 — Tracking Canal A (P0)
 
 **Scope** :
+
 - Nouvelle queue BullMQ `canal_a_analytics` dans
   `apps/api/src/shared/queue/queues.ts`
 - Helper `emitCanalAEvent(event, payload)` côté API
@@ -1162,6 +1163,7 @@ ses données contacte `dpo@sokar.tech`.
   audit log (hold/confirm/failed/expired) cf. §8.5
 
 **Acceptance** :
+
 - [ ] `reservation_confirmed` avec `source=chatgpt` apparaît dans
       le compteur `canal_a_reservations_confirmed_total{source="chatgpt"}`
 - [ ] `page_view` n'est PAS enregistré en DB (Redis uniquement)
@@ -1173,6 +1175,7 @@ ses données contacte `dpo@sokar.tech`.
 ### Ticket 10 — RGPD + sécurité (P0)
 
 **Scope** :
+
 - Headers sécurité sur `apps/canal-a` (CSP, HSTS, X-Content-Type-Options,
   Referrer-Policy)
 - Cookies first-party uniquement (no third-party)
@@ -1185,6 +1188,7 @@ ses données contacte `dpo@sokar.tech`.
   `https://www.sokar.tech` (cf. §8.7 — **PAS de `Origin: null`**)
 
 **Acceptance** :
+
 - [ ] `curl -I` sur `/r/chez-sokar-demo` montre les headers
 - [ ] POST `/hold` rate-limited à 11e req/min = 429
 - [ ] Phone `+000000` refusé en validation
@@ -1196,26 +1200,27 @@ ses données contacte `dpo@sokar.tech`.
 
 ## 11. Plan d'exécution — 5 semaines
 
-| Semaine | Phase | Livrables | Stop revue |
-|---------|-------|-----------|------------|
-| 1 | P0 DB | Ticket 1 | ✓ Revue schema + migrations |
-| 1-2 | P0 API publique | Ticket 2 + 3 | ✓ Revue endpoints + JSON-LD |
-| 2 | P0 App + Caddy | Ticket 4 | ✓ Revue scaffold + reverse proxy |
-| 2-3 | P0 Pages | Ticket 5 + 6 | ✓ Revue page resto + book |
-| 3 | P0 Pages locales | Ticket 7 | ✓ Revue seuils indexation + seed |
-| 3-4 | P0 Sitemap + Tracking | Ticket 8 + 9 | ✓ Revue SEO + analytics |
-| 4 | P0 RGPD + sécurité | Ticket 10 | ✓ Revue sécurité |
-| 5 | P1 Pilote fermé | 10 restos réels, sitemap soumis GSC, monitoring | ✓ Go/no-go pilote |
+| Semaine | Phase                 | Livrables                                       | Stop revue                       |
+| ------- | --------------------- | ----------------------------------------------- | -------------------------------- |
+| 1       | P0 DB                 | Ticket 1                                        | ✓ Revue schema + migrations      |
+| 1-2     | P0 API publique       | Ticket 2 + 3                                    | ✓ Revue endpoints + JSON-LD      |
+| 2       | P0 App + Nginx        | Ticket 4                                        | ✓ Revue scaffold + reverse proxy |
+| 2-3     | P0 Pages              | Ticket 5 + 6                                    | ✓ Revue page resto + book        |
+| 3       | P0 Pages locales      | Ticket 7                                        | ✓ Revue seuils indexation + seed |
+| 3-4     | P0 Sitemap + Tracking | Ticket 8 + 9                                    | ✓ Revue SEO + analytics          |
+| 4       | P0 RGPD + sécurité    | Ticket 10                                       | ✓ Revue sécurité                 |
+| 5       | P1 Pilote fermé       | 10 restos réels, sitemap soumis GSC, monitoring | ✓ Go/no-go pilote                |
 
 ### 11.1 Distinction local / staging / production pour le seed
 
-| Env | Seed Lyon 5 restos | `canalAPublished` | `canalAAgentic` | Dans sitemap |
-|-----|---------------------|-------------------|-----------------|---------------|
-| local dev | oui | true | **false** | oui (noindex test) |
-| staging | oui | true | **false** | oui (noindex test) |
-| production | **non** | n/a | n/a | n/a |
+| Env        | Seed Lyon 5 restos | `canalAPublished` | `canalAAgentic` | Dans sitemap       |
+| ---------- | ------------------ | ----------------- | --------------- | ------------------ |
+| local dev  | oui                | true              | **false**       | oui (noindex test) |
+| staging    | oui                | true              | **false**       | oui (noindex test) |
+| production | **non**            | n/a               | n/a             | n/a                |
 
 Le seed `packages/database/prisma/seed.ts` check `process.env.NODE_ENV` :
+
 - `development` ou `staging` : seed 5 restos Lyon avec `canalAPublished=true`,
   `canalAAgentic=false`, dans le sitemap
 - `production` : seed le seul "Chez Sokar" canonique (backfill), les
@@ -1259,33 +1264,33 @@ en production. Le seed ne le fait jamais.
 
 ### 12.1 KPIs Phase 1
 
-| Métrique | Cible MVP | Source |
-|----------|-----------|--------|
-| Pages `/r/[slug]` indexées | 10/10 | Google Search Console |
-| Rich Results Test | 10/10 OK | Google Rich Results |
-| Lighthouse Perf mobile | > 90 | Lighthouse |
-| LCP p75 | < 2.5s | RUM (P2) |
-| Taux page_view → book click | > 8% | Redis analytics |
-| Taux book → hold | > 60% | Redis analytics |
-| Taux hold → confirm | > 50% | DB |
-| Réservations `channel=WEB` / jour | > 5 (pilote) | DB |
-| 0 PII dans prom-client labels | 100% | Audit mensuel |
+| Métrique                          | Cible MVP    | Source                |
+| --------------------------------- | ------------ | --------------------- |
+| Pages `/r/[slug]` indexées        | 10/10        | Google Search Console |
+| Rich Results Test                 | 10/10 OK     | Google Rich Results   |
+| Lighthouse Perf mobile            | > 90         | Lighthouse            |
+| LCP p75                           | < 2.5s       | RUM (P2)              |
+| Taux page_view → book click       | > 8%         | Redis analytics       |
+| Taux book → hold                  | > 60%        | Redis analytics       |
+| Taux hold → confirm               | > 50%        | DB                    |
+| Réservations `channel=WEB` / jour | > 5 (pilote) | DB                    |
+| 0 PII dans prom-client labels     | 100%         | Audit mensuel         |
 
 ### 12.2 Risques × Impact × Mitigation
 
-| Risque | Impact | Mitigation |
-|--------|--------|-----------|
-| Google ne crawl/indexe pas `/r/[slug]` | Aucun trafic | Soumission sitemap, backlinks depuis `apps/dashboard`, demander indexation manuelle 5 URLs |
-| ChatGPT search n'utilise pas OAI-SearchBot sur notre domaine | Pas d'acquisition agent | Étude P5, test avec 5 URLs dans Perplexity/ChatGPT manuellement |
-| Restaurateur publie infos fausses (adresse, horaires) | Réputation, SEO négatif | Backoffice: validation manuelle avant `canalAPublished=true`, signalement utilisateur |
-| Spam de réservations | Capacity épuisée, no-show | Rate limit phone, honeypot, blocage si >3 echec/heure |
-| Double booking (race condition hold→confirm) | UX dégradée | Contrainte partielle SQL existe déjà |
-| `attributeConfidence` < 0.5 partout | Pages maigres | Onboarding force la saisie; minimum 4 champs requis pour publier |
-| Drain SEO par pages locales pauvres | Pénalité Google | `noindex` strict si <seuil; pas d'URLs en double |
-| Faux restos seed en prod | Pollution index | `NODE_ENV=production` skip le seed 5 restos Lyon (§11.1) |
-| VPS down | Tout Canal A down | On est sur `sokar.tech` qui est déjà monitoré |
-| Vitest suite timeout sur 10 fichiers | CI rouge | Background + notify_on_complete pattern (cf. skill) |
-| `aggregateRating` inventé par erreur | Pénalité Google | Test unitaire strict, lint custom qui refuse le mot `aggregateRating` hors contexte |
+| Risque                                                       | Impact                    | Mitigation                                                                                 |
+| ------------------------------------------------------------ | ------------------------- | ------------------------------------------------------------------------------------------ |
+| Google ne crawl/indexe pas `/r/[slug]`                       | Aucun trafic              | Soumission sitemap, backlinks depuis `apps/dashboard`, demander indexation manuelle 5 URLs |
+| ChatGPT search n'utilise pas OAI-SearchBot sur notre domaine | Pas d'acquisition agent   | Étude P5, test avec 5 URLs dans Perplexity/ChatGPT manuellement                            |
+| Restaurateur publie infos fausses (adresse, horaires)        | Réputation, SEO négatif   | Backoffice: validation manuelle avant `canalAPublished=true`, signalement utilisateur      |
+| Spam de réservations                                         | Capacity épuisée, no-show | Rate limit phone, honeypot, blocage si >3 echec/heure                                      |
+| Double booking (race condition hold→confirm)                 | UX dégradée               | Contrainte partielle SQL existe déjà                                                       |
+| `attributeConfidence` < 0.5 partout                          | Pages maigres             | Onboarding force la saisie; minimum 4 champs requis pour publier                           |
+| Drain SEO par pages locales pauvres                          | Pénalité Google           | `noindex` strict si <seuil; pas d'URLs en double                                           |
+| Faux restos seed en prod                                     | Pollution index           | `NODE_ENV=production` skip le seed 5 restos Lyon (§11.1)                                   |
+| VPS down                                                     | Tout Canal A down         | On est sur `sokar.tech` qui est déjà monitoré                                              |
+| Vitest suite timeout sur 10 fichiers                         | CI rouge                  | Background + notify_on_complete pattern (cf. skill)                                        |
+| `aggregateRating` inventé par erreur                         | Pénalité Google           | Test unitaire strict, lint custom qui refuse le mot `aggregateRating` hors contexte        |
 
 ---
 
@@ -1294,7 +1299,7 @@ en production. Le seed ne le fait jamais.
 1. **Domaine final**: `sokar.tech` confirmé.
    - Action: mettre à jour `openai-reserve.service.ts` ligne 172
      (`https://app.sokar.com/r/${slug}` → `https://sokar.tech/r/${slug}`)
-   - Action: Caddyfile `sokar.tech` avec HSTS, certbot
+   - Action: Nginx `sokar.tech` avec HSTS et certificat d'origine
    - **Mon avis**: cleanup, pas une nouvelle décision.
 
 2. **Phase 1 seed Lyon ≥5 restos**: oui, mais noindex par défaut et
@@ -1302,9 +1307,7 @@ en production. Le seed ne le fait jamais.
    l'indexation conditionnelle de `/restaurants/lyon`. **Aucun
    faux resto en production.**
 
-3. **Caddyfile ou nginx.conf**: la stack actuelle est Caddy (cf.
-   mémoire VPS). On l'utilise.
-   - **Mon avis**: Caddy (déjà là, plus simple, auto-HTTPS).
+3. **Reverse proxy**: Nginx est la source canonique et le seul proxy actif.
 
 4. **Tracking event durée de vie Redis**: 30 jours rolling.
    - **Mon avis**: OK, conforme aux autres analytics Sokar.
@@ -1357,13 +1360,13 @@ archivée dans `canal-a-v1.md.archived`.
    `output: 'standalone'`. La spec demande SSR/ISR, route handlers
    dynamiques pour sitemap/robots, et `searchParams` au runtime,
    ce qui est incompatible avec static export. Hébergement P0 =
-   VPS Node self-hosté + Caddy reverse proxy + Cloudflare proxy
+   VPS Node self-hosté + Nginx reverse proxy + Cloudflare proxy
    cache.
 2. **Suppression de `basePath: '/r'`** : l'app sert nativement
    `/r/*`, `/restaurants/*`, `/sitemap.xml`, `/robots.txt`. Le
    reverse proxy route vers `apps/canal-a` selon le préfixe.
-3. **Hébergement P0 clarifié** : VPS + Node Next standalone + Caddy
-   ou Nginx + Cloudflare proxy cache. Pas de static export.
+3. **Hébergement P0 clarifié** : VPS + Node Next standalone + Nginx
+   - Cloudflare proxy cache. Pas de static export.
 4. **Gating corrigé** : `canalAPublished` autorise page publique +
    réservation web. `canalAAgentic` autorise exposition agentic
    avancée (JSON-LD `ReserveAction`, OAI-SearchBot, deep-link

@@ -44,34 +44,35 @@ et au fonctionnement réel d'OAI-SearchBot.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Hébergement** : VPS + Caddy reverse proxy + Cloudflare proxy/cache
+**Hébergement** : VPS + Nginx reverse proxy + Cloudflare proxy/cache
 devant. **Pas de static export** (incompatible avec ISR/SSR).
 
 ## Gating double volet
 
-| Flag | Rôle | Défaut |
-|------|------|--------|
-| `canalAPublished` (ExposureSettings) | autorise page publique + réservation web | false |
-| `canalAAgentic` (ExposureSettings) | autorise JSON-LD `ReserveAction` + OAI-SearchBot + deep-link `source=` | false |
-| `agenticOptIn` (Restaurant) | legacy, non utilisé pour Canal A | false |
+| Flag                                 | Rôle                                                                   | Défaut |
+| ------------------------------------ | ---------------------------------------------------------------------- | ------ |
+| `canalAPublished` (ExposureSettings) | autorise page publique + réservation web                               | false  |
+| `canalAAgentic` (ExposureSettings)   | autorise JSON-LD `ReserveAction` + OAI-SearchBot + deep-link `source=` | false  |
+| `agenticOptIn` (Restaurant)          | legacy, non utilisé pour Canal A                                       | false  |
 
 3 prédicats calculés :
+
 - `canPublicPageRender` = `canalAPublished && slug && publishedAt`
 - `canWebBookingWork` = `canalAPublished && acceptsReservations && publishedAt`
 - `canAgenticMetadataExpose` = `canalAPublished && canalAAgentic`
 
 ## Plan d'exécution (5 semaines)
 
-| Sem | Phase | Tickets | STOP revue |
-|-----|-------|---------|------------|
-| 1 | P0 DB | T1 | ✓ |
-| 1-2 | P0 API | T2 + T3 | ✓ |
-| 2 | P0 App + Caddy | T4 | ✓ |
-| 2-3 | P0 Pages | T5 + T6 | ✓ |
-| 3 | P0 Pages locales | T7 | ✓ |
-| 3-4 | P0 Sitemap + Tracking | T8 + T9 | ✓ |
-| 4 | P0 RGPD + sécurité | T10 | ✓ |
-| 5 | P1 Pilote fermé | 10 restos réels | Go/no-go |
+| Sem | Phase                 | Tickets         | STOP revue |
+| --- | --------------------- | --------------- | ---------- |
+| 1   | P0 DB                 | T1              | ✓          |
+| 1-2 | P0 API                | T2 + T3         | ✓          |
+| 2   | P0 App + Nginx        | T4              | ✓          |
+| 2-3 | P0 Pages              | T5 + T6         | ✓          |
+| 3   | P0 Pages locales      | T7              | ✓          |
+| 3-4 | P0 Sitemap + Tracking | T8 + T9         | ✓          |
+| 4   | P0 RGPD + sécurité    | T10             | ✓          |
+| 5   | P1 Pilote fermé       | 10 restos réels | Go/no-go   |
 
 ## T1 — Migration DB (EN COURS)
 
@@ -82,6 +83,7 @@ devant. **Pas de static export** (incompatible avec ISR/SSR).
 3. `20260624000003_canal_a_restaurant_images` — table `RestaurantImage`
 
 **Schéma `prisma` étendu** :
+
 - `Restaurant` : + `description`, `city`, `country`, `postalCode`,
   `coverImageUrl`, `publishedAt`, relation `images[]`
 - `RestaurantExposureSettings` : + `canalAPublished`, `canalAAgentic`,
@@ -90,6 +92,7 @@ devant. **Pas de static export** (incompatible avec ISR/SSR).
 - Nouveau modèle `RestaurantImage` (Cascade delete, index `isCover,position`)
 
 **Vérifications** :
+
 - `prisma generate` ✅ (exit 0)
 - `pnpm typecheck` global ✅ (api, dashboard, widget, database, types, shared)
 

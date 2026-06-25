@@ -19,7 +19,7 @@ réservations de restaurants avec assistant vocal IA.
 - **Backend API** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx
 - **Dashboard** : Next.js 14 (App Router) + React 18 + Tailwind 3 — privé, Clerk auth
 - **Widget B2B** : Next.js 14, port 4001, `output: 'export'`, Cloudflare CDN
-- **Canal A** (en cours T1) : Next.js 14, port 4002, `output: 'standalone'`, VPS + Caddy + Cloudflare proxy
+- **Canal A** : Next.js 14, port 4002, `output: 'standalone'`, VPS + Nginx + Cloudflare
 - **Voice Pipeline** : Telnyx (carrier), Deepgram Nova-3 (STT),
   OpenRouter (LLM `deepseek-v4-flash` / `PRO`), Cartesia Sonic 3.5 (TTS)
 - **Jobs Queue** : BullMQ (evening report, SMS confirmation, outbound confirm)
@@ -31,22 +31,22 @@ Voir [[Architecture]] pour les détails.
 
 L'API Fastify expose **~30 routes** réparties dans :
 
-| Module | Fichier | Rôle |
-|--------|---------|------|
-| Restaurants | `modules/restaurants/` | CRUD + onboarding + sign-in + availability |
-| Reservations | `modules/reservations/` | Création, confirmation, annulation |
-| Calls | `modules/calls/` | Historique des appels, transcripts |
-| Customers | `modules/customers/` | Profil clients, VIP, loyalty |
-| Dashboard | `modules/dashboard/` | Métriques temps réel (KPIs) |
-| Analytics | `modules/analytics/` | ROI, KPIs agrégés |
-| Voice | `modules/voice/` | Webhooks Telnyx, Flux Pipeline, Fillers cache |
+| Module               | Fichier                         | Rôle                                                          |
+| -------------------- | ------------------------------- | ------------------------------------------------------------- |
+| Restaurants          | `modules/restaurants/`          | CRUD + onboarding + sign-in + availability                    |
+| Reservations         | `modules/reservations/`         | Création, confirmation, annulation                            |
+| Calls                | `modules/calls/`                | Historique des appels, transcripts                            |
+| Customers            | `modules/customers/`            | Profil clients, VIP, loyalty                                  |
+| Dashboard            | `modules/dashboard/`            | Métriques temps réel (KPIs)                                   |
+| Analytics            | `modules/analytics/`            | ROI, KPIs agrégés                                             |
+| Voice                | `modules/voice/`                | Webhooks Telnyx, Flux Pipeline, Fillers cache                 |
 | Agentic Reservations | `modules/agentic-reservations/` | Core (hold/reservation/policies/audit) + MCP + OpenAI Reserve |
-| Auth | `modules/auth/` | Sync Clerk |
-| RGPD | `modules/rgpd/` | Identity verification, erase, export |
-| Admin | `modules/admin/` | Flags, configcat, feature toggles |
-| Canal A (T2) | `modules/canal-a/` (à créer) | Pages publiques, JSON-LD, hold/confirm web |
-| Integrations | `modules/integrations/` | Google Calendar |
-| Pilot | `modules/pilot/` | KPIs internes pilote |
+| Auth                 | `modules/auth/`                 | Sync Clerk                                                    |
+| RGPD                 | `modules/rgpd/`                 | Identity verification, erase, export                          |
+| Admin                | `modules/admin/`                | Flags, configcat, feature toggles                             |
+| Canal A (T2)         | `modules/canal-a/` (à créer)    | Pages publiques, JSON-LD, hold/confirm web                    |
+| Integrations         | `modules/integrations/`         | Google Calendar                                               |
+| Pilot                | `modules/pilot/`                | KPIs internes pilote                                          |
 
 Voir [[API Endpoints]] pour la doc exhaustive (générée depuis le code).
 
@@ -70,17 +70,17 @@ Prisma 6 + PostgreSQL. Modèles actifs (cf. `packages/database/prisma/schema.pri
 
 ## Notes principales du vault
 
-| Note | Rôle |
-|------|------|
-| [[Context]] | Décisions récentes, TODOs actifs, dernière activité |
-| [[Journal]] | Log chronologique des tâches Hermes |
-| [[Architecture]] | Stack globale, monorepo |
-| [[Telnyx Pipeline]] | ai_config, machine à états, webhooks |
-| [[Flux Pipeline Media Stream]] | Pipeline Flux custom + barge-in |
-| [[Fillers Audio]] | Cache RAM + Redis pour silences LLM |
-| [[Canal A P0]] | Spec phase 0 + tickets T1-T10 |
-| [[API Endpoints]] | Routes Fastify exhaustives |
-| [[Session Telnyx Debug 2026-06-10]] | Post-mortem bugs Telnyx + clés API |
+| Note                                | Rôle                                                |
+| ----------------------------------- | --------------------------------------------------- |
+| [[Context]]                         | Décisions récentes, TODOs actifs, dernière activité |
+| [[Journal]]                         | Log chronologique des tâches Hermes                 |
+| [[Architecture]]                    | Stack globale, monorepo                             |
+| [[Telnyx Pipeline]]                 | ai_config, machine à états, webhooks                |
+| [[Flux Pipeline Media Stream]]      | Pipeline Flux custom + barge-in                     |
+| [[Fillers Audio]]                   | Cache RAM + Redis pour silences LLM                 |
+| [[Canal A P0]]                      | Spec phase 0 + tickets T1-T10                       |
+| [[API Endpoints]]                   | Routes Fastify exhaustives                          |
+| [[Session Telnyx Debug 2026-06-10]] | Post-mortem bugs Telnyx + clés API                  |
 
 Notes archivées : `docs/obsidian/_archive/` (Vapi legacy, Sprint 1, stubs).
 
