@@ -52,6 +52,11 @@ async function main() {
       onboardingActivatedAt: new Date(),
       agenticOptIn: true,
       openaiReserveEnabled: true,
+      description: 'Bistrot français à Lyon, convivial et branché.',
+      city: 'Lyon',
+      country: 'FR',
+      postalCode: '69001',
+      publishedAt: new Date(),
     },
     create: {
       slug: DEMO_SLUG,
@@ -76,6 +81,11 @@ async function main() {
       onboardingActivatedAt: new Date(),
       agenticOptIn: true,
       openaiReserveEnabled: true,
+      description: 'Bistrot français à Lyon, convivial et branché.',
+      city: 'Lyon',
+      country: 'FR',
+      postalCode: '69001',
+      publishedAt: new Date(),
     },
   });
 
