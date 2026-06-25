@@ -16,13 +16,11 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${APP_DIR}"
 
-# 1. Copier les assets statiques si pas déjà fait.
+# 1. Copier les assets statiques à chaque démarrage.
 #    Next.js 14 standalone ne copie PAS auto .next/static ni public/
 #    dans le bundle standalone → page blanche si oublié.
-if [ ! -d ".next/standalone/apps/dashboard/.next/static" ]; then
-  echo "→ Running copy-static.sh"
-  bash scripts/copy-static.sh
-fi
+echo "→ Running copy-static.sh"
+bash scripts/copy-static.sh
 
 # 2. Charger .env.prod si présent
 if [ -f ".env.prod" ]; then
