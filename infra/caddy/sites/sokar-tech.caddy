@@ -1,4 +1,8 @@
-# sokar.tech — routeur principal
+# Alternative Caddy configuration.
+#
+# Production currently uses infra/nginx/sokar.conf as the canonical proxy.
+# Keep this file behaviorally equivalent so a deliberate Caddy migration does
+# not break Next route handlers or api.sokar.tech.
 #
 # Reverse-proxy les chemins publics vers les services internes.
 # Le dashboard (sokar-dashboard) garde les routes auth et marketing.
@@ -29,7 +33,7 @@ sokar.tech, www.sokar.tech {
     }
 
     # ─── Canal A static assets ────────────────────────────────
-    handle_path /canal-a-assets/* {
+    handle /canal-a-assets/* {
         reverse_proxy 127.0.0.1:4002 {
             header_up X-Real-IP {remote_host}
             header_up X-Forwarded-For {remote_host}
@@ -41,8 +45,20 @@ sokar.tech, www.sokar.tech {
         }
     }
 
+    # ─── Next.js API route handlers ───────────────────────────
+    # Kept separate from the Fastify matcher below.
+    @nextApi path /api/proxy/* /api/auth/sync
+    reverse_proxy @nextApi 127.0.0.1:3000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
     # ─── API Fastify ──────────────────────────────────────────
-    @api path /api/*
+    @api {
+        path /api/*
+        not path /api/proxy/* /api/auth/sync
+    }
     reverse_proxy @api 127.0.0.1:4000 {
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
@@ -56,7 +72,7 @@ sokar.tech, www.sokar.tech {
     # ─── Widget de réservation embarquable (iframe tiers) ─────
     # /widget/{restaurantId} → page Next.js du dashboard, mais avec
     # headers de sécurité assouplis pour autoriser l'embed iframe.
-    # L'API proxy est servie par la route @api au-dessus (same-origin
+    # L'API proxy est servie par la route @nextApi au-dessus (same-origin
     # depuis l'iframe puisque tout vient de sokar.tech).
     @widget path /widget/*
     reverse_proxy @widget 127.0.0.1:3000 {
@@ -77,7 +93,7 @@ sokar.tech, www.sokar.tech {
     #   cachées d'un autre restaurant.
     header @widget {
         # Retire le X-Frame-Options hérité du bloc global
-        X-Frame-Options ""
+        -X-Frame-Options
         # CSP minimale orientée embed iframe (le widget n'utilise pas
         # d'eval / object, juste son propre bundle Next).
         Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' data:; connect-src 'self'; frame-ancestors *; base-uri 'self'; form-action 'self'"
@@ -126,5 +142,25 @@ sokar.tech, www.sokar.tech {
             roll_size 100MiB
             roll_keep 5
         }
+    }
+}
+
+# Public API, MCP, OAuth, OpenAI Reserve and Telnyx WebSockets.
+api.sokar.tech {
+    reverse_proxy 127.0.0.1:4000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 86400s
+        }
+    }
+
+    encode zstd gzip
+    header {
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
     }
 }

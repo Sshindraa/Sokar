@@ -8,18 +8,16 @@ function parseCorsOrigins(): string | string[] {
     return origins.length === 1 ? origins[0] : origins;
   }
 
-  // 2. PUBLIC_URL fallback
-  if (process.env.PUBLIC_URL) {
-    return process.env.PUBLIC_URL;
-  }
-
-  // 3. Dev localhost
+  // 2. Dev localhost
   if (process.env.NODE_ENV !== 'production') {
     return ['http://localhost:3000', 'http://127.0.0.1:3000'];
   }
 
-  // 4. Sécurité : dernier recours (ne devrait jamais arriver si configuré correctement)
-  return 'https://app.sokar.fr';
+  // 3. Production Sokar. PUBLIC_URL is intentionally not used here: it is
+  // commonly the API's own canonical URL, not a browser client origin.
+  // Keep this fallback aligned with the public browser
+  // clients (dashboard/widget and Canal A booking flow).
+  return ['https://sokar.tech', 'https://www.sokar.tech'];
 }
 
 export async function registerCors(app: FastifyInstance) {

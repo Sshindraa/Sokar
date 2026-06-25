@@ -1,7 +1,7 @@
 # Canal A — Déploiement production
 
 > Guide de déploiement pour la nouvelle app `apps/canal-a` (Next.js
-> standalone port 4002) derrière Caddy + Cloudflare.
+> standalone port 4002) derrière Nginx + Cloudflare.
 > Cf. spec `docs/canal-a-v1.1.md` §3.3 hébergement.
 
 ## Architecture cible
@@ -9,7 +9,7 @@
 ```
 Cloudflare (proxy + cache)
     ↓ HTTPS
-VPS (pmbtc) — Caddy :443
+VPS (pmbtc) — Nginx :80, derrière Cloudflare
     ├─ /, /pricing, /dashboard/*  → 127.0.0.1:3000 (sokar-dashboard, PM2)
     ├─ /r/*, /restaurants/*, /sitemap.xml, /robots.txt
     │                              → 127.0.0.1:4002 (sokar-canal-a, PM2)
@@ -18,9 +18,9 @@ VPS (pmbtc) — Caddy :443
 
 ## Process PM2
 
-`pm2 start` doit être exécuté en mode `fork` (root) car Caddy lit
-`/var/log/caddy/` et le serveur Canal A a besoin d'accéder au réseau
-interne (API sur 127.0.0.1:3000).
+Le déploiement normal passe par `scripts/deploy-vps.sh`, qui construit les
+trois applications, installe la configuration Nginx, puis démarre les trois
+processus depuis `infra/ecosystem.config.js`.
 
 ```bash
 # Sur le VPS, en tant que deploy
@@ -52,16 +52,11 @@ NEXT_TELEMETRY_DISABLED=1
 
 > **NE PAS** committer `.env.prod`. Chmod 600 sur le VPS.
 
-## Caddyfile
+## Nginx
 
-`/etc/caddy/Caddyfile` doit contenir :
-
-```caddyfile
-import sites/*.caddy
-```
-
-Et `/etc/caddy/sites/sokar-tech.caddy` (version complète) :
-voir `infra/caddy/sites/sokar-tech.caddy` du monorepo.
+La source canonique est `infra/nginx/sokar.conf`. Le script de déploiement
+l'installe dans `/etc/nginx/sites-available/sokar`, installe les snippets,
+valide avec `nginx -t`, puis recharge Nginx.
 
 ## Vérification post-deploy (à CHAQUE release)
 
@@ -74,8 +69,8 @@ pm2 list | grep sokar-canal-a
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:4002/
 # Attendu : 200
 
-# 3. Health check via Caddy (interne)
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1/sitemap.xml
+# 3. Health check via Nginx (interne)
+curl -s -o /dev/null -w "%{http_code}\n" -H "Host: sokar.tech" http://127.0.0.1/sitemap.xml
 # Attendu : 200
 
 # 4. Health check via Cloudflare (URL publique, ajouter le host)
@@ -98,7 +93,7 @@ PATH=/usr/local/opt/node@22/bin:$PATH \
 
 ## Rollback
 
-Si Canal A crash, **Caddy sert un 502 aux clients**. Caddy ne fail
+Si Canal A crash, **Nginx sert un 502 aux clients**. Nginx ne fail
 pas : les autres routes (`/`, `/pricing`, `/api/*`) continuent de
 fonctionner.
 
@@ -108,10 +103,10 @@ pm2 stop sokar-canal-a
 # Les pages /r/* renverront un 502 transparent. Le reste de sokar.tech est OK.
 ```
 
-Rollback complet (retirer Caddy route) :
+Rollback complet (restaurer le routage Nginx précédent) :
 ```bash
-# Commenter le bloc @canalA dans /etc/caddy/sites/sokar-tech.caddy
-systemctl reload caddy
+# Restaurer la version précédente de /etc/nginx/sites-available/sokar
+nginx -t && systemctl reload nginx
 ```
 
 ## Logs
@@ -133,7 +128,7 @@ curl -s http://127.0.0.1:3001/metrics | grep sokar_canal_a
 - `sokar_canal_a_events_total{event, source}` — taux d'events par source
 - `sokar_canal_a_reservations_confirmed_total{source, city}` — conversion
 - `pm2 monit` — RAM, CPU, restarts du process
-- Caddy log access — 4xx/5xx sur `/r/*` et `/restaurants/*`
+- Nginx access log — 4xx/5xx sur `/r/*` et `/restaurants/*`
 
 ## Critères de go/no-go (Phase 1 → Pilote)
 
