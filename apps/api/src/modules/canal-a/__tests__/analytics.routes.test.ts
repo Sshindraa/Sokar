@@ -20,7 +20,7 @@ let app: FastifyInstance;
 describe('Canal A — Analytics T8', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    redisCache.flushall();
+    await redisCache.flushall();
     app = await getApp();
   });
   afterAll(async () => {
@@ -60,7 +60,7 @@ describe('Canal A — Analytics T8', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it('POST /public/analytics/events → pas d\'auth requise (endpoint public)', async () => {
+  it("POST /public/analytics/events → pas d'auth requise (endpoint public)", async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/public/analytics/events',

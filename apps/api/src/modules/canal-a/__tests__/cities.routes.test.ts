@@ -69,7 +69,7 @@ let app: FastifyInstance;
 describe('Canal A — Pages locales T7', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    redisCache.flushall();
+    await redisCache.flushall();
     app = await getApp();
   });
   afterAll(async () => {
@@ -149,17 +149,15 @@ describe('Canal A — Pages locales T7', () => {
       { city: 'Lyon', cuisineType: ['Japonais'] },
     ];
     vi.mocked(db.restaurant.findMany).mockResolvedValueOnce(cityRows as never);
-    vi.mocked(db.restaurant.findMany).mockResolvedValueOnce([
-      { slug: 'rest-1' },
-    ] as never);
-    vi.mocked(db.restaurant.findUnique).mockImplementation(
-      ((args: { where: { slug?: string } }) => {
-        if (args.where.slug === 'rest-1') {
-          return Promise.resolve(RESTAURANT_BASE as never);
-        }
-        return Promise.resolve(null as never);
-      }) as never,
-    );
+    vi.mocked(db.restaurant.findMany).mockResolvedValueOnce([{ slug: 'rest-1' }] as never);
+    vi.mocked(db.restaurant.findUnique).mockImplementation(((args: {
+      where: { slug?: string };
+    }) => {
+      if (args.where.slug === 'rest-1') {
+        return Promise.resolve(RESTAURANT_BASE as never);
+      }
+      return Promise.resolve(null as never);
+    }) as never);
 
     const res = await app.inject({
       method: 'GET',

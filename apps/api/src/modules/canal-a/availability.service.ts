@@ -19,12 +19,9 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { computeAttributeConfidence } from '../agentic-reservations/core/confidence.service';
-import type { AvailabilityDto, AvailabilitySlot, OpeningHoursSpec } from './canal-a.types';
-import { logger } from '../../shared/logger/pino';
+import type { AvailabilityDto, AvailabilitySlot } from './canal-a.types';
 
 const SLOT_MINUTES = 30;
-const DEFAULT_CAPACITY = 1;
 
 export class CanalAAvailabilityService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -44,14 +41,24 @@ export class CanalAAvailabilityService {
     });
 
     if (!restaurant || !restaurant.exposureSettings?.canalAPublished) {
-      return { restaurantId: args.restaurantId, date: args.date, partySize: args.partySize, slots: [] };
+      return {
+        restaurantId: args.restaurantId,
+        date: args.date,
+        partySize: args.partySize,
+        slots: [],
+      };
     }
 
     // Récupérer exposure pour maxPartySize + minLeadTimeMinutes
     const maxPartySize = restaurant.exposureSettings.maxPartySize ?? 12;
     if (args.partySize > maxPartySize) {
       // Pas de slots si party size dépasse la limite du resto
-      return { restaurantId: args.restaurantId, date: args.date, partySize: args.partySize, slots: [] };
+      return {
+        restaurantId: args.restaurantId,
+        date: args.date,
+        partySize: args.partySize,
+        slots: [],
+      };
     }
     const minLeadTimeMinutes = restaurant.exposureSettings.minLeadTimeMinutes ?? 30;
 
@@ -63,13 +70,23 @@ export class CanalAAvailabilityService {
     const dayHours = openingHours.find((d) => d.dayIndex === dayOfWeek);
 
     if (!dayHours) {
-      return { restaurantId: args.restaurantId, date: args.date, partySize: args.partySize, slots: [] };
+      return {
+        restaurantId: args.restaurantId,
+        date: args.date,
+        partySize: args.partySize,
+        slots: [],
+      };
     }
 
     // Générer les slots entre open et close par pas de 30min
     const allSlots = generateSlots(dayHours.open, dayHours.close, SLOT_MINUTES);
     if (allSlots.length === 0) {
-      return { restaurantId: args.restaurantId, date: args.date, partySize: args.partySize, slots: [] };
+      return {
+        restaurantId: args.restaurantId,
+        date: args.date,
+        partySize: args.partySize,
+        slots: [],
+      };
     }
 
     // Fenêtre [start, end] du jour pour filtrer holds/résas
@@ -92,11 +109,7 @@ export class CanalAAvailabilityService {
     const confirmedReservations = await this.prisma.reservation.findMany({
       where: {
         restaurantId: args.restaurantId,
-        OR: [
-          { status: 'CONFIRMED' },
-          { state: 'CONFIRMED' },
-          { state: 'PENDING' },
-        ],
+        OR: [{ status: 'CONFIRMED' }, { state: 'CONFIRMED' }, { state: 'PENDING' }],
         startsAt: { gte: dayStart, lte: dayEnd },
       },
       select: { startsAt: true },
@@ -144,13 +157,20 @@ function normalizeOpeningHours(raw: unknown): NormalizedHours {
   if (!raw || typeof raw !== 'object') return [];
 
   const dayToIndex: Record<string, number> = {
-    sunday: 0, sun: 0,
-    monday: 1, mon: 1,
-    tuesday: 2, tue: 2,
-    wednesday: 3, wed: 3,
-    thursday: 4, thu: 4,
-    friday: 5, fri: 5,
-    saturday: 6, sat: 6,
+    sunday: 0,
+    sun: 0,
+    monday: 1,
+    mon: 1,
+    tuesday: 2,
+    tue: 2,
+    wednesday: 3,
+    wed: 3,
+    thursday: 4,
+    thu: 4,
+    friday: 5,
+    fri: 5,
+    saturday: 6,
+    sat: 6,
   };
 
   if (Array.isArray(raw)) {
