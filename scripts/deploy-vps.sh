@@ -23,6 +23,14 @@ fi
 
 cd "$SOKAR_ROOT"
 
+# ── 0. Swap check ───────────────────────────────────────
+# Le VPS a 4GB RAM ; sans swap les builds Next.js sont tués par OOM (exit 137).
+if ! swapon --show | grep -q swapfile 2>/dev/null; then
+    echo "❌ Aucun swap détecté. Les builds Next.js seront tués par OOM."
+    echo "   Lance d'abord (en root) : sudo bash scripts/setup-swap.sh"
+    exit 1
+fi
+
 if ! sudo test -f /etc/letsencrypt/live/sokar.tech/fullchain.pem \
     || ! sudo test -f /etc/letsencrypt/live/sokar.tech/privkey.pem; then
     echo "❌ Certificat origine absent. Lance d'abord :"
