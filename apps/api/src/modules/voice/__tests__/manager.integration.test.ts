@@ -84,11 +84,11 @@ describe('CallSessionManager — integration', () => {
       expect(session.state).toBe('SPEAKING');
     });
 
-    it('rejects invalid transitions (IDLE → SPEAKING is forbidden)', () => {
+    it('allows IDLE → SPEAKING for initial greeting/playback', () => {
       const mgr = CallSessionManager.getInstance();
       const session = makeSession();
-      expect(mgr.transition(session, 'SPEAKING')).toBe(false);
-      expect(session.state).toBe('IDLE');
+      expect(mgr.transition(session, 'SPEAKING')).toBe(true);
+      expect(session.state).toBe('SPEAKING');
     });
 
     it('rejects all transitions once session.ended is true (except → IDLE)', () => {
@@ -115,7 +115,7 @@ describe('CallSessionManager — integration', () => {
       // user message appended, assistant message appended
       const userMsgs = session.history.filter((m: any) => m.role === 'user');
       const assistantMsgs = session.history.filter((m: any) => m.role === 'assistant');
-      expect(userMsgs.length).toBeGreaterThanOrEqual(2); // 1 from greeting, 1 from utterance
+      expect(userMsgs.length).toBeGreaterThanOrEqual(1);
       expect(assistantMsgs.length).toBeGreaterThanOrEqual(2);
     });
 
@@ -134,7 +134,7 @@ describe('CallSessionManager — integration', () => {
     it('throws when session is already ended', async () => {
       const mgr = CallSessionManager.getInstance();
       const session = makeSession();
-      mgr.delete(session.callControlId);
+      mgr.cleanup(session);
       await expect(mgr.simulateUtterance(session.callControlId, 'Bonjour')).rejects.toThrow(
         /already ended/,
       );

@@ -43,9 +43,9 @@ const FILLERS: FillerSet = {
     "Alors, je vérifie…",
   ],
   warm: [
-    "Pas de souci, je regarde ça !",
+    "Pas de souci, je regarde ça…",
     "Je m'en occupe, une seconde…",
-    "Je vous dis ça tout de suite !",
+    "Je vous dis ça tout de suite…",
     "Alors laissez-moi checker…",
   ],
   formal: [
@@ -70,6 +70,13 @@ let fillerEncoding: 'pcm_alaw' | 'pcm_mulaw' = 'pcm_alaw';
  */
 export function setFillerCodec(codec: 'PCMA' | 'PCMU'): void {
   fillerEncoding = codec === 'PCMA' ? 'pcm_alaw' : 'pcm_mulaw';
+}
+
+export function __resetFillerCacheForTests(): void {
+  if (process.env.NODE_ENV !== 'test') return;
+  fillerCache.clear();
+  initialized = false;
+  fillerEncoding = 'pcm_alaw';
 }
 
 /**

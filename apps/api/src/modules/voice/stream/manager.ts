@@ -210,10 +210,14 @@ export class CallSessionManager {
         customerPhone: session.from,
       });
       const toolResult = await this.executeTool(session, 'createReservation', args);
-      return `Parfait, je note ça. ${toolResult}`;
+      const reply = `Parfait, je note ça. ${toolResult}`;
+      session.history.push({ role: 'assistant', content: reply });
+      return reply;
     }
 
-    return 'Bonjour, bienvenue au restaurant. Je peux vous aider à réserver une table. Pour combien de personnes et à quelle heure ?';
+    const reply = 'Bonjour, bienvenue au restaurant. Je peux vous aider à réserver une table. Pour combien de personnes et à quelle heure ?';
+    session.history.push({ role: 'assistant', content: reply });
+    return reply;
   }
 
   /**

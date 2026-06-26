@@ -26,11 +26,11 @@ export const FORMAL_FILLERS = [
 ];
 
 export const WARM_FILLERS = [
-  "Pas de souci, je regarde ça !",
+  "Pas de souci, je regarde ça…",
   "Je m'en occupe tout de suite…",
   "Je vous dis ça dans une seconde…",
   "Je vérifie ça en un clin d'œil…",
-  "Je regarde ça avec plaisir !",
+  "Je regarde ça avec plaisir…",
   "Laissez-moi jeter un œil…",
   "Je vous trouve ça tout de suite…",
   "Alors, voyons ça ensemble…",
