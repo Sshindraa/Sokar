@@ -109,7 +109,7 @@ WHERE id = '<restaurantId>'
 
 ### Désactiver tout (urgence)
 
-Voir `scripts/emergency-disable.sql` (à créer).
+Voir `scripts/sql/emergency-disable.sql`.
 
 ---
 

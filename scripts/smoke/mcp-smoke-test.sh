@@ -1,8 +1,8 @@
 #!/bin/bash
 # Smoke test complet du MCP Sokar contre la prod.
 # Simule un client MCP qui fait : discovery → DCR → authorize → token → initialize → tools/list → tools/call
-# Usage : bash scripts/mcp-smoke-test.sh [BASE_URL]
-# Ex    : bash scripts/mcp-smoke-test.sh https://api.sokar.tech
+# Usage : bash scripts/smoke/mcp-smoke-test.sh [BASE_URL]
+# Ex    : bash scripts/smoke/mcp-smoke-test.sh https://api.sokar.tech
 
 set -euo pipefail
 

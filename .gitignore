@@ -11,6 +11,9 @@ coverage
 .env
 *.bak
 
+# Local one-shot secrets/bootstrap helper (do not commit)
+scripts/ops/setup-doppler.sh
+
 # Workspace agent Hermes
 .agent-workspace/
 .hermes/

@@ -5,7 +5,7 @@
 -- Checks opérationnels à exécuter avant chaque pilote ou après incident.
 --
 -- Usage :
---   psql $DATABASE_URL -f scripts/audit-checks.sql
+--   psql $DATABASE_URL -f scripts/sql/audit-checks.sql
 --
 
 \set ON_ERROR_STOP on

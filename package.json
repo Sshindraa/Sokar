@@ -15,7 +15,7 @@
     "db:push": "prisma db push --schema=packages/database/prisma/schema.prisma",
     "db:studio": "prisma studio --schema=packages/database/prisma/schema.prisma",
     "db:seed": "pnpm --filter @sokar/database seed",
-    "test:diagnostic": "node scripts/test-stt-tts.mjs",
+    "test:diagnostic": "node scripts/smoke/test-stt-tts.mjs",
     "tunnel:status": "cloudflared tunnel info sokar",
     "tunnel:logs": "tail -n 50 -f ~/Library/Logs/com.cloudflare.cloudflared.err.log",
     "redis:start": "brew services start redis",
@@ -24,8 +24,8 @@
     "node:check": "node -e \"const v=process.versions.node.split('.').map(Number); if (v[0]<20 || v[0]>=23) { console.error('Node '+process.versions.node+' not supported. Use Node >=20 <23.'); process.exit(1); } console.log('Node '+process.versions.node+' OK');\"",
     "verify:precommit": "scripts/precommit-review.sh",
     "verify:prepush": "scripts/prepush-quality-gate.sh",
-    "verify:ai": "scripts/hermes-diff-review.sh head",
-    "dogfood:sokar": "scripts/dogfood-sokar.sh"
+    "verify:ai": "scripts/agent/hermes-diff-review.sh head",
+    "dogfood:sokar": "scripts/smoke/dogfood-sokar.sh"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.2",

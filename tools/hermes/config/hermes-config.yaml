@@ -1,0 +1,32 @@
+# Hermes Agent — Configuration Sokar
+# Template sans secret. La configuration live est ~/.hermes/config.yaml.
+# Copier ce fichier vers ~/.hermes/config.yaml seulement si tu veux réinitialiser Hermes.
+
+model:
+  provider: opencode-go
+  model: minimax-m3
+  base_url: https://opencode.ai/zen/go/v1
+  key_env: OPENCODE_GO_API_KEY
+  api_mode: anthropic_messages
+  fallback:
+    provider: opencode-go
+    model: deepseek-v4-flash
+    base_url: https://opencode.ai/zen/go/v1
+    key_env: OPENCODE_GO_API_KEY
+    api_mode: chat_completions
+  default: minimax-m3
+
+delegation:
+  model: minimax-m3
+  provider: opencode-go
+  base_url: https://opencode.ai/zen/go/v1
+  key_env: OPENCODE_GO_API_KEY
+  api_mode: anthropic_messages
+  orchestrator_enabled: true
+  max_iterations: 50
+  child_timeout_seconds: 900
+  max_concurrent_children: 5
+  max_spawn_depth: 2
+  subagent_auto_approve: true
+
+skills_dir: /Users/hamza/Desktop/Sokar/tools/hermes/skills
