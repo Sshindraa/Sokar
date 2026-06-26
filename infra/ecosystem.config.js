@@ -29,10 +29,12 @@ module.exports = {
       script: 'bin/run-dashboard.sh',
       env: {
         NODE_ENV: 'production',
-        // 0.0.0.0 requis : le middleware Clerk (Edge Runtime) deadlock
-        // quand le serveur écoute sur 127.0.0.1. UFW bloque le port 3000
-        // aux IP externes — seul Nginx (localhost) peut joindre ce port.
-        HOSTNAME: '0.0.0.0',
+        // :: = dual-stack IPv4+IPv6. Next.js middleware proxy se connecte
+        // via ::1 (IPv6 localhost) ; Nginx via 127.0.0.1 (IPv4). Les deux
+        // fonctionnent car :: écoute sur toutes les interfaces.
+        // 127.0.0.1 seul provoque un deadlock : le proxy interne tente ::1
+        // qui est refusé (bug Next.js #524, IPv4/IPv6 mismatch).
+        HOSTNAME: '::',
       },
       watch: false,
       max_memory_restart: '500M',

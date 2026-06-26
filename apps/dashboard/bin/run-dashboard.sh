@@ -31,8 +31,10 @@ fi
 
 # 3. Lancer le serveur standalone
 export PORT="${PORT:-3000}"
-# 0.0.0.0 requis : le middleware Clerk deadlock sur 127.0.0.1.
+# :: = dual-stack IPv4+IPv6. Next.js middleware proxy utilise ::1 (IPv6),
+# Nginx utilise 127.0.0.1 (IPv4). 127.0.0.1 seul provoque un deadlock
+# car le proxy interne tente ::1 qui est refusé (bug Next.js IPv4/IPv6).
 # UFW bloque le port 3000 aux IP externes.
-export HOSTNAME="${HOSTNAME:-0.0.0.0}"
+export HOSTNAME="${HOSTNAME:-::}"
 echo "→ Starting dashboard standalone on ${HOSTNAME}:${PORT}"
 exec node .next/standalone/apps/dashboard/server.js
