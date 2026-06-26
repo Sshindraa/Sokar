@@ -2,7 +2,7 @@
  * Client CLI pour simuler un appel vocal local.
  *
  * Usage :
- *   pnpm exec tsx scripts/simulate-voice-call.ts
+ *   pnpm exec tsx scripts/smoke/simulate-voice-call.ts
  *
  * Variables d'environnement :
  *   SOKAR_API_BASE      (défaut http://localhost:4000)

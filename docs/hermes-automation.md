@@ -29,7 +29,7 @@ pnpm verify:prepush
 pnpm verify:ai
 ```
 
-`pnpm verify:ai` calls `scripts/hermes-diff-review.sh head` for an independent Hermes review of the current diff.
+`pnpm verify:ai` calls `scripts/agent/hermes-diff-review.sh head` for an independent Hermes review of the current diff.
 
 ## 2. Event-driven webhooks
 

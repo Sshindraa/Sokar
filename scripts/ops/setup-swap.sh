@@ -6,7 +6,7 @@
 # car le swap n'est utilisé que pendant les pics de build.
 #
 # Usage (en root) :
-#   bash scripts/setup-swap.sh
+#   bash scripts/ops/setup-swap.sh
 #
 # Idempotent : ne recrée pas le swap s'il existe déjà.
 

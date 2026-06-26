@@ -2,7 +2,7 @@
 /**
  * Test pipeline vocal — STT (Deepgram) ↔ TTS (Cartesia) ↔ LLM (OpenRouter)
  *
- * Usage : node scripts/test-stt-tts.mjs
+ * Usage : node scripts/smoke/test-stt-tts.mjs
  *
  * Valide chaque API indépendamment pour vérifier que les clés .env sont valides.
  */
@@ -33,12 +33,26 @@ const CA_KEY = getEnv('CARTESIA_API_KEY');
 const OR_KEY = getEnv('OPENROUTER_API_KEY');
 const CA_VOICE = getEnv('CARTESIA_VOICE_ID') || 'f786b574-daa5-4673-aa0c-cbe3e8534c02';
 
-function keyOk(k) { return k && k.length > 10 && k !== '...' && !k.includes('***'); }
+function keyOk(k) {
+  return k && k.length > 10 && k !== '...' && !k.includes('***');
+}
 
-let passed = 0, failed = 0, skipped = 0;
-function ok(label) { console.log(`  ✅ ${label}`); passed++; }
-function no(label, detail) { console.log(`  ❌ ${label}`); if (detail) console.log(`     ${detail}`); failed++; }
-function skip(label, reason) { console.log(`  ⏭️  ${label} — ${reason}`); skipped++; }
+let passed = 0,
+  failed = 0,
+  skipped = 0;
+function ok(label) {
+  console.log(`  ✅ ${label}`);
+  passed++;
+}
+function no(label, detail) {
+  console.log(`  ❌ ${label}`);
+  if (detail) console.log(`     ${detail}`);
+  failed++;
+}
+function skip(label, reason) {
+  console.log(`  ⏭️  ${label} — ${reason}`);
+  skipped++;
+}
 
 // ─── 1. Deepgram STT ────────────────────────────────────────────────────────────
 async function testDeepgram() {
@@ -46,34 +60,46 @@ async function testDeepgram() {
   if (!keyOk(DG_KEY)) return skip('Deepgram API', 'clé API manquante ou invalide dans .env');
 
   // Générer un fichier WAV 16-bit PCM 8kHz avec un signal test
-  const sr = 8000, dur = 0.5;
+  const sr = 8000,
+    dur = 0.5;
   const header = Buffer.alloc(44);
-  header.write('RIFF', 0); header.writeUInt32LE(36 + dur * sr * 2, 4);
-  header.write('WAVE', 8); header.write('fmt ', 12);
-  header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20);
-  header.writeUInt16LE(1, 22); header.writeUInt32LE(sr, 24);
-  header.writeUInt32LE(sr * 2, 28); header.writeUInt16LE(2, 32);
-  header.writeUInt16LE(16, 34); header.write('data', 36);
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + dur * sr * 2, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(sr, 24);
+  header.writeUInt32LE(sr * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write('data', 36);
   header.writeUInt32LE(dur * sr * 2, 40);
 
   const audio = Buffer.alloc(dur * sr * 2);
   for (let i = 0; i < dur * sr; i++) {
-    const s = Math.sin(2 * Math.PI * 440 * i / sr) * 0.3;
+    const s = Math.sin((2 * Math.PI * 440 * i) / sr) * 0.3;
     audio.writeInt16LE(Math.floor(s * 32767), i * 2);
   }
   const wav = Buffer.concat([header, audio]);
 
   try {
-    const res = await fetch('https://api.deepgram.com/v1/listen?model=nova-3&language=fr&punctuate=true', {
-      method: 'POST',
-      headers: { 'Authorization': `Token ${DG_KEY}`, 'Content-Type': 'audio/wav' },
-      body: wav,
-    });
+    const res = await fetch(
+      'https://api.deepgram.com/v1/listen?model=nova-3&language=fr&punctuate=true',
+      {
+        method: 'POST',
+        headers: { Authorization: `Token ${DG_KEY}`, 'Content-Type': 'audio/wav' },
+        body: wav,
+      },
+    );
     const txt = await res.text();
     if (res.ok) {
       const data = JSON.parse(txt);
       const transcript = data?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? '';
-      ok(`HTTP ${res.status} — "${transcript.slice(0, 60)}" (${res.headers.get('x-ratelimit-remaining') || '?'} req restantes)`);
+      ok(
+        `HTTP ${res.status} — "${transcript.slice(0, 60)}" (${res.headers.get('x-ratelimit-remaining') || '?'} req restantes)`,
+      );
     } else {
       no(`HTTP ${res.status}`, txt.slice(0, 200));
     }
@@ -85,7 +111,11 @@ async function testDeepgram() {
 // ─── 2. Cartesia TTS ────────────────────────────────────────────────────────────
 async function testCartesia() {
   console.log('\n━━━ 2. Cartesia TTS ━━━');
-  if (!keyOk(CA_KEY)) return skip('Cartesia TTS', `CARTESIA_API_KEY manquante → créer un compte sur cartesia.ai, générer une clé, ajouter dans .env`);
+  if (!keyOk(CA_KEY))
+    return skip(
+      'Cartesia TTS',
+      `CARTESIA_API_KEY manquante → créer un compte sur cartesia.ai, générer une clé, ajouter dans .env`,
+    );
 
   try {
     const res = await fetch('https://api.cartesia.ai/tts/sse', {
@@ -123,7 +153,10 @@ async function testCartesia() {
               if (!line.startsWith('data: ')) continue;
               const data = JSON.parse(line.slice(6));
               if (data.type === 'chunk' && data.data) chunks++;
-              if (data.type === 'done') { resolvePromise('done'); return; }
+              if (data.type === 'done') {
+                resolvePromise('done');
+                return;
+              }
             }
           }
           resolvePromise('end');
@@ -150,7 +183,7 @@ async function testOpenrouter() {
   try {
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OR_KEY}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OR_KEY}` },
       body: JSON.stringify({
         model: 'mistralai/ministral-3b-2512',
         messages: [
@@ -196,8 +229,10 @@ async function main() {
   // Recommandations
   if (!keyOk(DG_KEY) || !keyOk(CA_KEY)) {
     console.log('\n📋 Clés API nécessaires :');
-    if (!keyOk(DG_KEY)) console.log('  • Deepgram : https://console.deepgram.com → générer une clé API');
-    if (!keyOk(CA_KEY)) console.log('  • Cartesia : https://cartesia.ai → API Keys → créer une clé');
+    if (!keyOk(DG_KEY))
+      console.log('  • Deepgram : https://console.deepgram.com → générer une clé API');
+    if (!keyOk(CA_KEY))
+      console.log('  • Cartesia : https://cartesia.ai → API Keys → créer une clé');
     console.log('');
     console.log('  Ajoute-les dans .env :');
     console.log('    DEEPGRAM_API_KEY="ta_cle"');
