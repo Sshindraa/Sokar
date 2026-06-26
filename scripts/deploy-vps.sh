@@ -53,7 +53,7 @@ recover_services() {
     # Rollback Nginx si un backup existe
     if [ -f /etc/nginx/sites-available/sokar.bak ]; then
         echo "   Rollback Nginx vers la configuration précédente..."
-        sudo cp /etc/nginx/sites-available/sokar.bak /etc/nginx/sites-available/sokar
+        sudo install -m 0644 /etc/nginx/sites-available/sokar.bak /etc/nginx/sites-available/sokar
         sudo nginx -t 2>/dev/null && sudo systemctl reload nginx || true
     fi
     docker start infra-localstack-1 2>/dev/null || true
@@ -147,7 +147,7 @@ sudo install -d -m 0755 /etc/nginx/snippets /etc/nginx/sites-available /etc/ngin
 
 # Backup current config before overwriting (pour rollback automatique).
 if [ -f /etc/nginx/sites-available/sokar ]; then
-    sudo cp /etc/nginx/sites-available/sokar /etc/nginx/sites-available/sokar.bak
+    sudo install -m 0644 /etc/nginx/sites-available/sokar /etc/nginx/sites-available/sokar.bak
 fi
 
 sudo install -m 0644 infra/nginx/snippets/sokar-proxy.conf \
@@ -160,7 +160,7 @@ sudo ln -sfn /etc/nginx/sites-available/sokar /etc/nginx/sites-enabled/sokar
 if ! sudo nginx -t 2>&1; then
     echo "❌ nginx -t échoué. Rollback de la configuration précédente."
     if [ -f /etc/nginx/sites-available/sokar.bak ]; then
-        sudo cp /etc/nginx/sites-available/sokar.bak /etc/nginx/sites-available/sokar
+        sudo install -m 0644 /etc/nginx/sites-available/sokar.bak /etc/nginx/sites-available/sokar
         sudo nginx -t 2>/dev/null && sudo systemctl reload nginx || true
     fi
     exit 1
@@ -177,7 +177,7 @@ if [ "$API_VHOST_COUNT" -ne 1 ]; then
 fi
 
 # Nettoyer le backup après validation.
-sudo rm -f /etc/nginx/sites-available/sokar.bak
+sudo find /etc/nginx/sites-available -name sokar.bak -delete 2>/dev/null || true
 
 # ── 8b. Install logrotate ───────────────────────────────
 echo ""
