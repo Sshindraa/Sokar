@@ -31,6 +31,8 @@ fi
 
 # 3. Lancer le serveur standalone
 export PORT="${PORT:-3000}"
-export HOSTNAME="${HOSTNAME:-127.0.0.1}"
+# 0.0.0.0 requis : le middleware Clerk deadlock sur 127.0.0.1.
+# UFW bloque le port 3000 aux IP externes.
+export HOSTNAME="${HOSTNAME:-0.0.0.0}"
 echo "→ Starting dashboard standalone on ${HOSTNAME}:${PORT}"
 exec node .next/standalone/apps/dashboard/server.js
