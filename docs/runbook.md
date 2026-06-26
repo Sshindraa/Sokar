@@ -11,30 +11,30 @@
 
 ## Contacts
 
-| Rôle               | Qui                            | Quand                                       |
-| ------------------ | ------------------------------ | ------------------------------------------- |
-| On-call P1         | Hamza                          | Tout incident actif listé dans ce runbook  |
-| Backup on-call     | (à définir si l'équipe grandit) | Quand Hamza indispo                        |
-| Restaurant contact | Base clients Sokar (Dashboard) | Pour chaque resto individuellement          |
-| DPO                | `dpo@sokar.tech`               | Tout incident PII (cf. §PII leak ci-dessous)|
+| Rôle               | Qui                             | Quand                                        |
+| ------------------ | ------------------------------- | -------------------------------------------- |
+| On-call P1         | Hamza                           | Tout incident actif listé dans ce runbook    |
+| Backup on-call     | (à définir si l'équipe grandit) | Quand Hamza indispo                          |
+| Restaurant contact | Base clients Sokar (Dashboard)  | Pour chaque resto individuellement           |
+| DPO                | `dpo@sokar.tech`                | Tout incident PII (cf. §PII leak ci-dessous) |
 
 ## Canaux d'alerte
 
-| Canal                  | Usage                                      | Statut                |
-| ---------------------- | ------------------------------------------ | --------------------- |
-| Sentry                 | Erreurs applicatives                       | Configuré             |
-| Prometheus `/metrics`  | Scraping interne                           | Configuré             |
-| Discord/Slack incidents| Alertes ops temps réel                     | **Pas encore créé** (voir `_archive/channel-setup.md`) |
-| Status page public     | Communication incident aux restos          | **Pas encore créé**   |
+| Canal                   | Usage                             | Statut                                                 |
+| ----------------------- | --------------------------------- | ------------------------------------------------------ |
+| Sentry                  | Erreurs applicatives              | Configuré                                              |
+| Prometheus `/metrics`   | Scraping interne                  | Configuré                                              |
+| Discord/Slack incidents | Alertes ops temps réel            | **Pas encore créé** (voir `_archive/channel-setup.md`) |
+| Status page public      | Communication incident aux restos | **Pas encore créé**                                    |
 
 ## Health SLO summary
 
-| KPI                                  | Target   | Action si breach                                  |
-| ------------------------------------ | -------- | ------------------------------------------------- |
-| `sokar_agentic_double_booking_attempts_total` | = 0      | Investigate immédiat (cf. §Double booking)        |
-| `sokar_agentic_pii_leaks_total`      | = 0      | Investigate immédiat (cf. §PII leak)              |
-| `sokar_agentic_check_availability_duration_ms` p95 | < 800ms | Check Telnyx, Deepgram, Prisma, Redis            |
-| 5xx rate                             | < 1%     | Check providers externes + dernière release      |
+| KPI                                                | Target  | Action si breach                            |
+| -------------------------------------------------- | ------- | ------------------------------------------- |
+| `sokar_agentic_double_booking_attempts_total`      | = 0     | Investigate immédiat (cf. §Double booking)  |
+| `sokar_agentic_pii_leaks_total`                    | = 0     | Investigate immédiat (cf. §PII leak)        |
+| `sokar_agentic_check_availability_duration_ms` p95 | < 800ms | Check Telnyx, Deepgram, Prisma, Redis       |
+| 5xx rate                                           | < 1%    | Check providers externes + dernière release |
 
 Source : `GET /metrics` (scrape Prometheus) ou endpoint interne
 `/api/internal/pilot-kpis` quand l'auth VPN sera en place.
@@ -103,6 +103,7 @@ Source : `GET /metrics` (scrape Prometheus) ou endpoint interne
 ### P2 — 5xx rate > 1%
 
 **Symptôme** : alert `error_rate_high` OU Grafana panneau "Taux erreur"
+
 > 1% sur 5 min glissantes.
 
 **Diagnostic** :
@@ -156,24 +157,72 @@ interne.
 
 ---
 
+## Rollback de déploiement
+
+Le script `scripts/deploy-vps.sh` snapshot les artefacts buildés (dist, .next,
+static) dans `/opt/sokar/releases/<timestamp>/` à chaque déploiement réussi.
+Les 5 dernières releases sont conservées.
+
+### Rollback automatique (sur échec de build)
+
+Si le build échoue en cours de déploiement, le trap ERR restore
+automatiquement les artefacts d'avant le build et redémarre les services.
+**Aucune action manuelle requise** — l'app revient à l'état précédent.
+
+### Rollback manuel (deploy réussi mais régression en prod)
+
+```bash
+# Lister les releases disponibles
+ssh pmbtc 'bash /opt/sokar/scripts/deploy-vps.sh rollback'
+
+# Rollback vers la release précédente (recommandé)
+ssh pmbtc 'bash /opt/sokar/scripts/deploy-vps.sh rollback'
+
+# Rollback vers une release spécifique
+ssh pmbtc 'bash /opt/sokar/scripts/deploy-vps.sh rollback 20260626T130000Z'
+```
+
+Le rollback :
+
+1. Stoppe dashboard + Canal A (l'API reste up le temps du swap)
+2. Restore les artefacts (dist, .next, public) depuis la release
+3. Redémarre tous les services via PM2
+4. Vérifie les endpoints health
+
+**Durée typique** : ~15s (stop + cp 750MB + restart + health check).
+
+### Vérifier l'état après rollback
+
+```bash
+ssh pmbtc 'pm2 list | grep sokar'
+ssh pmbtc 'curl -s -o /dev/null -w "api: %{http_code}\n" http://localhost:4000/health'
+ssh pmbtc 'curl -s -o /dev/null -w "dash: %{http_code}\n" http://localhost:3000'
+```
+
+---
+
 ## Procédure de désactivation d'urgence
 
 En cas de problème grave (P0) :
 
 1. **Désactiver MCP pour tous les restos** :
+
    ```sql
    UPDATE restaurants SET agentic_opt_in = false;
    ```
+
    (Note : la colonne est `agentic_opt_in` pour la rétrocompat avec
    l'agentic P0. Renommage à `acceptsReservations` prévu en P5 — cf.
    spec Canal A v1.1 §13.7.)
 
 2. **Désactiver OpenAI Reserve** :
+
    ```sql
    UPDATE restaurants SET openai_reserve_enabled = false;
    ```
 
 3. **Désactiver Canal A** (nouveau) :
+
    ```sql
    UPDATE restaurant_exposure_settings
    SET canal_a_published = false, canal_a_agentic = false;
@@ -186,8 +235,123 @@ En cas de problème grave (P0) :
 6. **Réactivation** : resto par resto, après validation manuelle
 
 Scripts SQL d'urgence :
-- `scripts/emergency-disable.sql` (existe)
+
+- `scripts/sql/emergency-disable.sql` (existe)
 - `scripts/reactivation.sql` (à créer)
+
+---
+
+## Backups et restauration
+
+### Topologie des backups
+
+| Type    | Script                          | Cible                        | Fréquence      | Rétention |
+| ------- | ------------------------------- | ---------------------------- | -------------- | --------- |
+| Local   | `scripts/backup-postgres.sh`    | `/var/backups/sokar` (VPS)   | cron 03:20 UTC | 14 jours  |
+| Offsite | `scripts/backup-postgres-r2.sh` | `r2:sokar-backups/postgres/` | cron 04:00 UTC | 30 jours  |
+
+- **Local** : dump `pg_dump --format=custom --compress=6`, vérifié par
+  restauration temporaire (compare le nombre de tables source vs restauré).
+- **Offsite R2** : dump identique, upload via `rclone`, **vérification
+  d'intégrité par hash SHA256 local vs distant**, rotation automatique,
+  garde-fou de quota (5 GB / 10 GB free tier), alerte optionnelle via
+  `ALERT_CMD`.
+- Cron installé sur le VPS par `scripts/deploy-r2-backup.sh`.
+- Logs : `/var/log/sokar/postgres-r2-backup.log` (rotaté par
+  `infra/logrotate/sokar`).
+
+### Vérifier qu'un backup est restaurable (test régulier)
+
+Le script `scripts/test-restore-vierge.sh` prouve bout-en-bout qu'on sait
+restaurer sur une base vierge :
+
+1. Télécharge le dump R2 le plus récent
+2. Crée une base temporaire from scratch
+3. Restore via `pg_restore --exit-on-error`
+4. Vérifie : nombre de tables > 0, contraintes présentes, index présents,
+   index critique `one_active_hold_per_slot`, comptage de lignes sur
+   `restaurants` / `reservation_hold` / `voice_call`, jointure test
+5. Nettoie la base temporaire
+
+```bash
+# Sur le VPS (ou en local avec Docker + rclone configuré)
+bash scripts/test-restore-vierge.sh
+
+# Conserver la base de test pour debug
+KEEP_DB=1 bash scripts/test-restore-vierge.sh
+```
+
+**À exécuter au moins une fois après chaque changement de schéma
+(migration Prisma) et idéalement une fois par semaine.**
+
+### Procédure de restauration en production (P0 — perte de données)
+
+> ⚠️ Cette procédure écrase la base de production. À n'utiliser qu'en cas
+> de perte de données confirmée (corruption, drop accidentel, ransomware).
+
+1. **Identifier le dump à restaurer** :
+
+   ```bash
+   rclone lsf r2:sokar-backups/postgres/ --sort-by modtime --max-depth 1 | tail -5
+   ```
+
+2. **Télécharger le dump** :
+
+   ```bash
+   rclone copyto r2:sokar-backups/postgres/<TIMESTAMP>.dump /tmp/restore.dump
+   ```
+
+3. **Stopper l'API** (éviter les écritures pendant le restore) :
+
+   ```bash
+   pm2 stop sokar-api
+   ```
+
+4. **Sauvegarder la base cassée** (pour forensic) :
+
+   ```bash
+   docker exec infra-postgres-1 psql -U sokar -c \
+     'ALTER DATABASE sokar RENAME TO sokar_broken_$(date +%Y%m%d);'
+   ```
+
+5. **Restaurer** (la garde anti-prod est levée explicitement) :
+
+   ```bash
+   SKIP_PROD_GUARD=1 bash scripts/restore-postgres-backup.sh /tmp/restore.dump sokar
+   ```
+
+6. **Vérifier l'intégrité** :
+
+   ```bash
+   docker exec infra-postgres-1 psql -U sokar -c \
+     "SELECT count(*) FROM pg_tables WHERE schemaname = 'public';"
+   docker exec infra-postgres-1 psql -U sokar -c \
+     "SELECT count(*) FROM restaurants;"
+   ```
+
+7. **Relancer l'API** :
+
+   ```bash
+   pm2 start sokar-api
+   curl -fsS https://api.sokar.tech/health
+   ```
+
+8. **Post-mortem** : documenter la cause de la perte, le RTO/RPO observé,
+   et vérifier que le backup suivant s'exécute normalement.
+
+### Vérifier que le cron tourne sur le VPS
+
+```bash
+ssh pmbtc 'crontab -l | grep backup'
+ssh pmbtc 'tail -20 /var/log/sokar/postgres-r2-backup.log'
+rclone ls r2:sokar-backups/postgres/ | tail -5
+```
+
+Si le dernier dump date de plus de 24h, redéployer :
+
+```bash
+VPS_HOST=pmbtc bash scripts/deploy-r2-backup.sh --test
+```
 
 ---
 
@@ -230,8 +394,12 @@ Scripts SQL d'urgence :
 ---
 
 **Changelog** :
+
 - 2026-06-24 : squopé. Retiré "On-call P1 (24/7)", "9h daily async",
   "Weekly retro (1h)", "status.sokar.com (à créer)". Ajouté procédure
   désactivation Canal A. Ajouté référence aux specs v3.2 agentic et
   v1.1 Canal A. Renommé "Runbook opérationnel — Pilote Lyon" en
   "Runbook opérationnel Sokar" (transversal, plus seulement pilote).
+- 2026-06-26 : ajout section "Backups et restauration" (topologie,
+  test de restore sur base vierge, procédure P0, vérification cron VPS).
+  Ajout section "Rollback de déploiement" (release dirs, rollback auto/manuel).

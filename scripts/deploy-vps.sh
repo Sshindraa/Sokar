@@ -1,16 +1,160 @@
 #!/bin/bash
 # Deploy script pour VPS Sokar
 # Usage: bash scripts/deploy-vps.sh [branch]
+#        bash scripts/deploy-vps.sh rollback [release-timestamp]
 # Gère la mémoire limitée, les trois apps PM2 et le routage Nginx.
 #
 # Zero-downtime: l'API reste en ligne pendant le build. Seuls dashboard et
 # Canal A sont arrêtés (Next.js standalone ne peut pas servir pendant que
 # `next build` écrase .next). Le redémarrage final prend ~5s.
+#
+# Release dirs: snapshot des artefacts avant/après build dans
+# /opt/sokar/releases/. Rollback instantané si build échoue ou sur commande.
 
 set -Eeuo pipefail
 BRANCH="${1:-main}"
 SOKAR_ROOT="/opt/sokar"
+RELEASES_DIR="$SOKAR_ROOT/releases"
 DATE=$(date '+%Y-%m-%d %H:%M:%S')
+
+# Artefacts à snapshoter (chemins relatifs à SOKAR_ROOT)
+ARTIFACT_PATHS=(
+    "apps/api/dist"
+    "apps/dashboard/.next"
+    "apps/dashboard/public"
+    "apps/canal-a/.next"
+    "apps/canal-a/public"
+)
+
+# ── Helpers release dirs ─────────────────────────────────
+snapshot_artifacts() {
+    local target="$1"
+    local label="${2:-snapshot}"
+    echo "   → Snapshot artefacts vers $target ($label)"
+    install -d -m 0755 "$target"
+    for p in "${ARTIFACT_PATHS[@]}"; do
+        if [ -e "$SOKAR_ROOT/$p" ]; then
+            install -d -m 0755 "$target/$(dirname "$p")"
+            cp -a "$SOKAR_ROOT/$p" "$target/$(dirname "$p")/"
+        fi
+    done
+    # Metadata
+    {
+        echo "timestamp=$(basename "$target")"
+        echo "label=$label"
+        echo "date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+        echo "git_hash=$(cd "$SOKAR_ROOT" && git rev-parse HEAD 2>/dev/null || echo 'unknown')"
+        echo "git_branch=$(cd "$SOKAR_ROOT" && git branch --show-current 2>/dev/null || echo 'unknown')"
+    } > "$target/META"
+}
+
+restore_artifacts() {
+    local source="$1"
+    if [ ! -d "$source" ]; then
+        echo "   ❌ Release $source introuvable" >&2
+        return 1
+    fi
+    echo "   → Restore artefacts depuis $source"
+    for p in "${ARTIFACT_PATHS[@]}"; do
+        if [ -e "$source/$p" ]; then
+            rm -rf "$SOKAR_ROOT/$p"
+            install -d -m 0755 "$SOKAR_ROOT/$(dirname "$p")"
+            cp -a "$source/$p" "$SOKAR_ROOT/$(dirname "$p")/"
+        fi
+    done
+}
+
+cleanup_releases() {
+    local keep="${1:-5}"
+    local count
+    count=$(ls -1 "$RELEASES_DIR" 2>/dev/null | grep -E '^[0-9]{8}T[0-9]{6}Z' | sort -r | wc -l)
+    if [ "$count" -le "$keep" ]; then
+        return
+    fi
+    echo "   → Nettoyage releases (garde $keep sur $count)"
+    ls -1 "$RELEASES_DIR" 2>/dev/null \
+        | grep -E '^[0-9]{8}T[0-9]{6}Z' \
+        | sort -r \
+        | tail -n +"$((keep + 1))" \
+        | while read -r old; do
+            rm -rf "$RELEASES_DIR/$old"
+            echo "     supprimé: $old"
+        done
+}
+
+list_releases() {
+    echo "Releases disponibles (plus récent en premier) :"
+    ls -1 "$RELEASES_DIR" 2>/dev/null \
+        | grep -E '^[0-9]{8}T[0-9]{6}Z' \
+        | sort -r \
+        | while read -r ts; do
+            local meta="$RELEASES_DIR/$ts/META"
+            local hash="" branch=""
+            if [ -f "$meta" ]; then
+                hash=$(grep '^git_hash=' "$meta" | cut -d= -f2- | cut -c1-8)
+                branch=$(grep '^git_branch=' "$meta" | cut -d= -f2-)
+            fi
+            printf "   %s  %s  %s\n" "$ts" "${hash:-????????}" "${branch:-?}"
+        done
+}
+
+# ── Commande rollback ────────────────────────────────────
+if [ "${1:-}" = "rollback" ]; then
+    cd "$SOKAR_ROOT"
+    TARGET_RELEASE="${2:-}"
+    if [ -z "$TARGET_RELEASE" ]; then
+        # Pas de release spécifiée → prendre l'avant-dernière
+        # (la dernière est potentiellement celle qui vient de casser)
+        echo "=== Rollback Sokar — recherche de la release précédente ==="
+        list_releases
+        echo ""
+        TARGET_RELEASE=$(ls -1 "$RELEASES_DIR" 2>/dev/null \
+            | grep -E '^[0-9]{8}T[0-9]{6}Z' \
+            | sort -r \
+            | sed -n '2p')
+        if [ -z "$TARGET_RELEASE" ]; then
+            echo "❌ Aucune release précédente trouvée dans $RELEASES_DIR"
+            exit 1
+        fi
+        echo "→ Rollback vers : $TARGET_RELEASE"
+    fi
+
+    RELEASE_PATH="$RELEASES_DIR/$TARGET_RELEASE"
+    if [ ! -d "$RELEASE_PATH" ]; then
+        echo "❌ Release $TARGET_RELEASE introuvable"
+        list_releases
+        exit 1
+    fi
+
+    echo "→ Stop services..."
+    pm2 stop sokar-dashboard sokar-canal-a 2>/dev/null || true
+
+    echo "→ Restore artefacts..."
+    restore_artifacts "$RELEASE_PATH"
+
+    echo "→ Restart services..."
+    pm2 start infra/ecosystem.config.js --update-env
+    sleep 8
+    pm2 save
+    sudo systemctl reload nginx 2>/dev/null || true
+
+    echo ""
+    echo "→ Vérification..."
+    API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/health 2>/dev/null || echo "FAIL")
+    DASH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null || echo "FAIL")
+    echo "   api → $API_STATUS | dashboard → $DASH_STATUS"
+
+    if [ "$API_STATUS" = "200" ] && [ "$DASH_STATUS" = "200" ]; then
+        echo ""
+        echo "✅ Rollback vers $TARGET_RELEASE terminé"
+        echo "   Meta: $(cat "$RELEASE_PATH/META" 2>/dev/null | tr '\n' ' ')"
+    else
+        echo ""
+        echo "🔴 Rollback terminé mais vérifications échouées — investiguer manuellement"
+        exit 1
+    fi
+    exit 0
+fi
 
 echo "=== Sokar Deploy $DATE ==="
 echo "Branch: $BRANCH"
@@ -27,14 +171,14 @@ cd "$SOKAR_ROOT"
 # Le VPS a 4GB RAM ; sans swap les builds Next.js sont tués par OOM (exit 137).
 if ! swapon --show | grep -q swapfile 2>/dev/null; then
     echo "❌ Aucun swap détecté. Les builds Next.js seront tués par OOM."
-    echo "   Lance d'abord (en root) : sudo bash scripts/setup-swap.sh"
+    echo "   Lance d'abord (en root) : sudo bash scripts/ops/setup-swap.sh"
     exit 1
 fi
 
 if ! sudo test -f /etc/letsencrypt/live/sokar.tech/fullchain.pem \
     || ! sudo test -f /etc/letsencrypt/live/sokar.tech/privkey.pem; then
     echo "❌ Certificat origine absent. Lance d'abord :"
-    echo "   sudo bash scripts/setup-origin-tls.sh"
+    echo "   sudo bash scripts/ops/setup-origin-tls.sh"
     exit 1
 fi
 
@@ -50,11 +194,31 @@ if [ -n "$UNTRACKED_FILES" ]; then
     printf '%s\n' "$UNTRACKED_FILES" | sed 's/^/   /'
 fi
 
+# ── 0b. Snapshot avant build (pour rollback) ────────────
+PREV_TIMESTAMP="$(date -u '+%Y%m%dT%H%M%SZ')-pre"
+PREV_RELEASE="$RELEASES_DIR/$PREV_TIMESTAMP"
+install -d -m 0755 "$RELEASES_DIR"
+echo ""
+echo "📦 Snapshot pré-build (rollback safety net)..."
+snapshot_artifacts "$PREV_RELEASE" "pre-build"
+
+# Variable globale pour le trap ERR
+RESTORE_ON_FAIL="$PREV_RELEASE"
+
 recover_services() {
-    exit_code=$?
+    local exit_code=$?
     trap - ERR
     echo ""
-    echo "🔴 Déploiement interrompu (code ${exit_code}). Tentative de remise en ligne..."
+    echo "🔴 Déploiement interrompu (code ${exit_code})."
+
+    # Restore les artefacts d'avant le build si un snapshot existe
+    if [ -n "${RESTORE_ON_FAIL:-}" ] && [ -d "${RESTORE_ON_FAIL}" ]; then
+        echo "   → Restore artefacts pré-build (${RESTORE_ON_FAIL##*/})..."
+        pm2 stop sokar-dashboard sokar-canal-a 2>/dev/null || true
+        restore_artifacts "${RESTORE_ON_FAIL}"
+    fi
+
+    echo "   → Remise en ligne des services..."
     pm2 restart sokar-api sokar-dashboard sokar-canal-a 2>/dev/null \
         || pm2 resurrect 2>/dev/null \
         || true
@@ -65,6 +229,12 @@ recover_services() {
         sudo nginx -t 2>/dev/null && sudo systemctl reload nginx || true
     fi
     docker start infra-localstack-1 2>/dev/null || true
+
+    # Nettoyer le snapshot pré-build (il n'a pas servi)
+    rm -rf "${RESTORE_ON_FAIL}" 2>/dev/null || true
+
+    echo ""
+    echo "🔴 Services restaurés à l'état pré-build. Le déploiement a échoué."
     exit "$exit_code"
 }
 trap recover_services ERR
@@ -262,7 +432,7 @@ fi
 FREE_AFTER=$(free -m | awk '/^Mem:/ {print $4}')
 echo "   Memory free: ${FREE_AFTER}MB"
 
-# Le dashboard est OK SEULEMENT si l'HTML et un asset statique répondent 200.
+# Le dashboard est OK SEULELEMENT si l'HTML et un asset statique répondent 200.
 # Si l'asset est 404, c'est le bug pitfall #29 (static non copiés dans standalone).
 if [ "$API_STATUS" = "200" ] \
     && [ "$DASH_STATUS" = "200" ] \
@@ -275,6 +445,25 @@ if [ "$API_STATUS" = "200" ] \
     echo ""
     echo "✅ Deploy complete — API + dashboard + Canal A + routing OK"
     trap - ERR
+
+    # ── 11. Snapshot post-build réussi + cleanup ─────────
+    NEW_TIMESTAMP="$(date -u '+%Y%m%dT%H%M%SZ')"
+    NEW_RELEASE="$RELEASES_DIR/$NEW_TIMESTAMP"
+    echo ""
+    echo "📦 Snapshot post-build (release $NEW_TIMESTAMP)..."
+    snapshot_artifacts "$NEW_RELEASE" "deploy-ok"
+    echo "$NEW_TIMESTAMP" > "$RELEASES_DIR/.latest"
+    cleanup_releases 5
+
+    # Le snapshot pré-build a servi de safety net et n'est plus needed
+    rm -rf "$PREV_RELEASE" 2>/dev/null || true
+
+    echo ""
+    echo "📦 Releases disponibles pour rollback :"
+    list_releases
+    echo ""
+    echo "   Pour rollback : bash scripts/deploy-vps.sh rollback"
+
 elif [ "$DASH_STATUS" = "200" ] && [ "$DASH_CSS_STATUS" != "200" ]; then
     echo ""
     echo "🔴 Deploy REGRESSED : dashboard HTML répond 200 mais assets statiques 404."
