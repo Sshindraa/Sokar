@@ -18,6 +18,9 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+// Telnyx guard requires TELNYX_PUBLIC_KEY (used by fromBase64 before constructEvent).
+process.env.TELNYX_PUBLIC_KEY ??= 'MCowBQYDK2VwAyEAGb9ECWmEzf6FQbrBZ9w7lshQhqowtrbLDFw4rXAxZuE=';
+
 // Mock the `telnyx` module so the dynamic import inside the guard resolves
 // to our fake. We don't need to mock the default export shape precisely —
 // the guard only uses `default.webhooks.constructEvent`.

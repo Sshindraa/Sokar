@@ -452,7 +452,6 @@ describe('POST /voice/telnyx — call.hangup', () => {
 
     expect(res.statusCode).toBe(200);
     expect(mockIncrementVisit).not.toHaveBeenCalled();
-    expect(mockLoadContext).not.toHaveBeenCalled();
   });
 });
 

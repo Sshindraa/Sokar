@@ -21,7 +21,12 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WebSocket } from 'ws';
-import { initFillerCache, playFiller, setFillerCodec } from '../stream/fillers-cache';
+import {
+  __resetFillerCacheForTests,
+  initFillerCache,
+  playFiller,
+  setFillerCodec,
+} from '../stream/fillers-cache';
 import { redisCache } from '../../../shared/redis/client';
 
 // We assign env-vars through a helper to avoid the agent-level env-var
@@ -74,6 +79,7 @@ describe('playFiller', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetFillerCacheForTests();
     setFillerCodec('PCMA');
     setEnv('CARTESIA_API_KEY', 'test-key');
     originalFetch = globalThis.fetch;
@@ -98,7 +104,9 @@ describe('playFiller', () => {
     // Mock the Cartesia SSE response used during init
     globalThis.fetch = vi
       .fn()
-      .mockResolvedValue(cartesiaSseResponse(['YWxhdw==', 'YWxhdw==', 'YWxhdw==']));
+      .mockImplementation(() =>
+        Promise.resolve(cartesiaSseResponse(['YWxhdw==', 'YWxhdw==', 'YWxhdw=='])),
+      );
     vi.mocked(redisCache.get).mockResolvedValue(null); // no Redis hit
 
     await initFillerCache();
@@ -115,7 +123,9 @@ describe('playFiller', () => {
   });
 
   it('can be called repeatedly without throwing (state isolation between calls)', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(cartesiaSseResponse(['Y2FjaGU=']));
+    globalThis.fetch = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(cartesiaSseResponse(['Y2FjaGU='])));
     vi.mocked(redisCache.get).mockResolvedValue(null);
     await initFillerCache();
 
@@ -149,6 +159,7 @@ describe('initFillerCache', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetFillerCacheForTests();
     setFillerCodec('PCMA');
     originalFetch = globalThis.fetch;
   });
@@ -183,7 +194,9 @@ describe('initFillerCache', () => {
     setEnv('CARTESIA_API_KEY', 'test-key');
     // Cold cache: everything in Redis is null → must generate
     vi.mocked(redisCache.get).mockResolvedValue(null);
-    const fetchSpy = vi.fn().mockResolvedValue(cartesiaSseResponse(['Y2FjaGU=']));
+    const fetchSpy = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(cartesiaSseResponse(['Y2FjaGU='])));
     globalThis.fetch = fetchSpy as any;
 
     await initFillerCache();

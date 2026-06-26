@@ -87,19 +87,19 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         const systemPrompt = buildSystemPrompt({ ...ctx, customerExtra, customerGreeting });
 
         // Créer un enregistrement Call minimal dès l'init
-        await app.db.call
-          .create({
+        try {
+          await app.db.call.create({
             data: {
               callSid: payload.call_leg_id,
               restaurantId: ctx.id,
               carrier: 'telnyx',
             },
-          })
-          .catch((err: Error) => {
-            if ((err as any)?.code !== 'P2002') {
-              app.log.error({ err: err.message }, 'Failed to create call record at init');
-            }
           });
+        } catch (err: any) {
+          if (err?.code !== 'P2002') {
+            app.log.error({ err: err.message }, 'Failed to create call record at init');
+          }
+        }
 
         // Pre-créer la session vocale pour que le WebSocket start event la trouve
         // (sinon le handler log "No session found for start event" et reste silencieux).
@@ -152,12 +152,14 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         const durationSec = payload.duration_sec ? Math.round(payload.duration_sec) : null;
 
         if (durationSec !== null) {
-          await app.db.call
-            .update({
+          try {
+            await app.db.call.update({
               where: { callSid: payload.call_leg_id },
               data: { durationSec },
-            })
-            .catch(() => {});
+            });
+          } catch {
+            // Swallow — call record may not exist (e.g. pipeline killed early).
+          }
         }
 
         const callRecord = await app.db.call.findUnique({
