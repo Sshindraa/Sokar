@@ -13,6 +13,6 @@ Cmnd_Alias SOKAR_NGINX = /usr/sbin/nginx, /bin/systemctl reload nginx
 Cmnd_Alias SOKAR_INSTALL = /usr/bin/install
 Cmnd_Alias SOKAR_CERT = /usr/bin/test -f /etc/letsencrypt/live/sokar.tech/fullchain.pem, /usr/bin/test -f /etc/letsencrypt/live/sokar.tech/privkey.pem
 Cmnd_Alias SOKAR_SYMLINK = /bin/ln -sfn /etc/nginx/sites-available/sokar /etc/nginx/sites-enabled/sokar
-Cmnd_Alias SOKAR_CLEANUP = /usr/bin/find /etc/nginx/sites-available -name sokar.bak -delete
+Cmnd_Alias SOKAR_CLEANUP = /usr/bin/find /etc/nginx/sites-available -name sokar.bak -delete, /usr/bin/find /opt/sokar/apps/dashboard/.next -delete, /usr/bin/find /opt/sokar/apps/canal-a/.next -delete
 
 deploy ALL=(root) NOPASSWD: SOKAR_NGINX, SOKAR_INSTALL, SOKAR_CERT, SOKAR_SYMLINK, SOKAR_CLEANUP
