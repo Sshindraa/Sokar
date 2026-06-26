@@ -241,7 +241,7 @@ async function start() {
     shutdown('SIGINT').catch((err) => logger.error({ err }, 'SIGINT shutdown failed'));
   });
 
-  app.listen({ port: 4000, host: '0.0.0.0' }, (err) => {
+  app.listen({ port: Number(process.env.PORT ?? 4000), host: process.env.HOST ?? '0.0.0.0' }, (err) => {
     if (err) {
       logger.error(err);
       logger.warn('Failed to listen on port 4000 — will exit gracefully for PM2 restart');
