@@ -75,7 +75,9 @@ docker stop infra-localstack-1 2>/dev/null || true
 
 # PM2 tourne désormais comme deploy → plus de caches root-owned.
 # Nettoyer .next pour éviter les artefacts obsolètes du build précédent.
-rm -rf apps/dashboard/.next apps/canal-a/.next
+# sudo find -delete : certains caches sont encore root-owned (legacy PM2 root).
+sudo find /opt/sokar/apps/dashboard/.next -delete 2>/dev/null || true
+sudo find /opt/sokar/apps/canal-a/.next -delete 2>/dev/null || true
 
 FREE_BEFORE=$(free -m | awk '/^Mem:/ {print $4}')
 echo "   Memory free: ${FREE_BEFORE}MB"
