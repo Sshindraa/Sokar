@@ -8,7 +8,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: '4000',
-        HOST: '127.0.0.1',
+        HOST: '0.0.0.0',
       },
       watch: false,
       max_memory_restart: '500M',
@@ -29,7 +29,10 @@ module.exports = {
       script: 'bin/run-dashboard.sh',
       env: {
         NODE_ENV: 'production',
-        HOSTNAME: '127.0.0.1',
+        // 0.0.0.0 requis : le middleware Clerk (Edge Runtime) deadlock
+        // quand le serveur écoute sur 127.0.0.1. UFW bloque le port 3000
+        // aux IP externes — seul Nginx (localhost) peut joindre ce port.
+        HOSTNAME: '0.0.0.0',
       },
       watch: false,
       max_memory_restart: '500M',
