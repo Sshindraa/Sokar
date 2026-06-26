@@ -14,9 +14,13 @@ if [ -z "${BACKUP_PATH}" ] || [ -z "${TARGET_DB}" ]; then
   exit 1
 fi
 
-if [ "${TARGET_DB}" = "sokar" ]; then
+if [ "${TARGET_DB}" = "sokar" ] && [ "${SKIP_PROD_GUARD:-0}" != "1" ]; then
   echo "❌ Restauration directe sur la production interdite par ce script." >&2
+  echo "   En cas d'urgence P0 confirmée, relance avec SKIP_PROD_GUARD=1" >&2
   exit 1
+fi
+if [ "${TARGET_DB}" = "sokar" ] && [ "${SKIP_PROD_GUARD:-0}" = "1" ]; then
+  echo "⚠️  SKIP_PROD_GUARD=1 — restauration sur la prod sokar autorisée" >&2
 fi
 
 test -s "${BACKUP_PATH}"
