@@ -9,7 +9,15 @@ export default function Header() {
   const pathname = usePathname();
 
   // Exclude pages that have their own specialized headers/navbars
-  const excludedPaths = ['/', '/pricing', '/login', '/register', '/dashboard', '/widget'];
+  const excludedPaths = [
+    '/',
+    '/pricing',
+    '/login',
+    '/register',
+    '/dashboard',
+    '/onboarding',
+    '/widget',
+  ];
   const isExcluded = excludedPaths.some((p) => pathname === p || pathname.startsWith(p + '/'));
 
   if (isExcluded) {
@@ -33,7 +41,11 @@ export default function Header() {
           >
             Tarifs
           </Link>
-          <Button asChild size="sm" className="rounded-full transition-all duration-200 min-h-[44px] px-4">
+          <Button
+            asChild
+            size="sm"
+            className="rounded-full transition-all duration-200 min-h-[44px] px-4"
+          >
             <Link href="/login">Connexion</Link>
           </Button>
           <Link
