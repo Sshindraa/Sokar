@@ -23,7 +23,7 @@ les opérations de production récurrentes :
 ## Sous-dossiers
 
 - `ops/` — scripts one-shot d'installation ou de durcissement infra.
-- `smoke/` — tests manuels, dogfood, diagnostics intégration.
+- `smoke/` — outils manuels (dogfood IA, simulation voice, bridge MCP stdio, diagnostic clés API). Pas des tests automatisés — la couverture MCP/OAuth est dans `apps/api/src/modules/agentic-reservations/__tests__/` (Vitest).
 - `sql/` — requêtes SQL opérationnelles ou d'urgence.
 - `agent/` — automatisations liées aux agents locaux.
 
