@@ -22,12 +22,23 @@ cd "${APP_DIR}"
 echo "→ Running copy-static.sh"
 bash scripts/copy-static.sh
 
-# 2. Charger .env.prod si présent
-if [ -f ".env.prod" ]; then
-  set -a
-  source .env.prod
-  set +a
-fi
+# 2. Charger les variables d'environnement.
+#    Le serveur standalone Next.js ne charge PAS automatiquement les fichiers
+#    .env (contrairement à `next dev`/`next start`). Sans CLERK_SECRET_KEY au
+#    runtime, le middleware Clerk ne peut pas vérifier le session token →
+#    boucle de redirection /login ↔ /dashboard (le client useAuth() voit
+#    l'utilisateur connecté via le publishable key inliné au build, mais le
+#    middleware le rejette côté serveur).
+#
+#    On source .env (créé par deploy-vps.sh) puis .env.prod en override si
+#    présent (chemin historique, non utilisé actuellement).
+for env_file in .env .env.prod; do
+  if [ -f "$env_file" ]; then
+    set -a
+    source "$env_file"
+    set +a
+  fi
+done
 
 # 3. Lancer le serveur standalone
 export PORT="${PORT:-3000}"
