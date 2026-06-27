@@ -16,12 +16,16 @@ if [ ! -d ".next/standalone/apps/canal-a/.next/static" ]; then
   bash scripts/copy-static.sh
 fi
 
-# 2. Charger .env.prod si présent
-if [ -f ".env.prod" ]; then
-  set -a
-  source .env.prod
-  set +a
-fi
+# 2. Charger les variables d'environnement.
+#    Le serveur standalone Next.js ne charge PAS automatiquement les fichiers
+#    .env. On source .env.prod (créé sur le VPS) puis .env en fallback.
+for env_file in .env.prod .env; do
+  if [ -f "$env_file" ]; then
+    set -a
+    source "$env_file"
+    set +a
+  fi
+done
 
 # 3. Lancer le serveur
 export PORT="${PORT:-4002}"
