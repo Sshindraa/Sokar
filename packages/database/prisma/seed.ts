@@ -228,8 +228,9 @@ async function main() {
 
   console.log(`Demo restaurant seeded: ${restaurant.id} (${DEMO_SLUG})`);
 
-  // ─── Canal A — Seed 4 restos supplémentaires à Lyon ──────────
-  // Pour tester les pages locales (/restaurants/lyon) qui requièrent ≥5 restos.
+  // ─── Canal A — Seed restos supplémentaires (Lyon + Paris) ────
+  // Pour tester les pages locales (/restaurants/lyon, /restaurants/paris)
+  // qui requièrent ≥5 restos par ville.
   // canalAPublished=true, canalAAgentic=false.
   // SKIP en production : NODE_ENV=production → ne pas polluer l'index.
   // (cf. spec canal-a-v1.1 §11.1)
@@ -241,6 +242,7 @@ async function main() {
         cuisine: ['Bistrot', 'Lyonnaise'],
         description: 'Bouchon lyonnais traditionnel dans le Vieux Lyon.',
         address: '5 Rue du Bœuf, 69005 Lyon',
+        city: 'Lyon',
         phone: '+334****0505',
         lat: 45.7638,
         lng: 4.8272,
@@ -251,6 +253,7 @@ async function main() {
         cuisine: ['Italien', 'Pizza', 'Pâtes'],
         description: 'Trattoria italienne authentique dans le quartier de la Presqu\'île.',
         address: '22 Rue Mercière, 69002 Lyon',
+        city: 'Lyon',
         phone: '+334****0606',
         lat: 45.764,
         lng: 4.833,
@@ -261,6 +264,7 @@ async function main() {
         cuisine: ['Japonais', 'Sushi', 'Poisson'],
         description: 'Bar à sushi moderne avec produits frais, situé à Confluence.',
         address: '112 Cours Charlemagne, 69002 Lyon',
+        city: 'Lyon',
         phone: '+334****0707',
         lat: 45.7307,
         lng: 4.8183,
@@ -271,11 +275,72 @@ async function main() {
         cuisine: ['Française', 'Méditerranéenne'],
         description: 'Restaurant avec grande terrasse ombragée sur les pentes de la Croix-Rousse.',
         address: '5 Montée de la Grande Côte, 69001 Lyon',
+        city: 'Lyon',
         phone: '+334****0808',
         lat: 45.7715,
         lng: 4.8279,
       },
     ];
+
+    const PARIS_RESTOS = [
+      {
+        slug: 'chez-sokar-bistrot-paris',
+        name: 'Chez Sokar — Bistrot Montmartre',
+        cuisine: ['Bistrot', 'Française'],
+        description: 'Bistrot de quartier au pied de la butte Montmartre.',
+        address: '18 Rue des Abbesses, 75018 Paris',
+        city: 'Paris',
+        phone: '+331****0909',
+        lat: 48.8842,
+        lng: 2.3396,
+      },
+      {
+        slug: 'chez-sokar-neo-paris',
+        name: 'Chez Sokar — Néo-Bistrot Marais',
+        cuisine: ['Néo-bistrot', 'Française', 'Moderne'],
+        description: 'Cuisine moderne de saison dans le Marais, cave nature pointue.',
+        address: '34 Rue du Temple, 75004 Paris',
+        city: 'Paris',
+        phone: '+331****1010',
+        lat: 48.8606,
+        lng: 2.3522,
+      },
+      {
+        slug: 'chez-sokar-ramen-paris',
+        name: 'Chez Sokar — Ramen Izakaya',
+        cuisine: ['Japonais', 'Ramen', 'Izakaya'],
+        description: 'Izakaya et ramen maison dans le 2e arrondissement.',
+        address: '12 Rue Sainte-Anne, 75002 Paris',
+        city: 'Paris',
+        phone: '+331****1111',
+        lat: 48.8656,
+        lng: 2.3362,
+      },
+      {
+        slug: 'chez-sokar-tapas-paris',
+        name: 'Chez Sokar — Tapas Bar Bastille',
+        cuisine: ['Espagnol', 'Tapas', 'Bar à vins'],
+        description: 'Tapas et petits producteurs ibériques près de la Bastille.',
+        address: '27 Rue de la Roquette, 75011 Paris',
+        city: 'Paris',
+        phone: '+331****1212',
+        lat: 48.8531,
+        lng: 2.3781,
+      },
+      {
+        slug: 'chez-sokar-veggie-paris',
+        name: 'Chez Sokar — Végétarien Canal Saint-Martin',
+        cuisine: ['Végétarien', 'Bio', 'Moderne'],
+        description: 'Table végétarienne 100% bio le long du Canal Saint-Martin.',
+        address: '40 Rue de Lancry, 75010 Paris',
+        city: 'Paris',
+        phone: '+331****1313',
+        lat: 48.8705,
+        lng: 2.3631,
+      },
+    ];
+
+    const CANAL_A_RESTOS = [...LYON_RESTOS, ...PARIS_RESTOS];
 
     const seedOpeningHours = {
       tue: { open: '12:00', close: '14:30' },
@@ -285,14 +350,14 @@ async function main() {
       sat: { open: '12:00', close: '23:00' },
     } as Prisma.JsonValue;
 
-    for (const r of LYON_RESTOS) {
+    for (const r of CANAL_A_RESTOS) {
       const resto = await prisma.restaurant.upsert({
         where: { slug: r.slug },
         update: {
           name: r.name,
           description: r.description,
           formattedAddress: r.address,
-          city: 'Lyon',
+          city: r.city,
           country: 'FR',
           postalCode: r.address.match(/\b\d{5}\b/)?.[0] ?? '69002',
           phoneNumber: r.phone,
@@ -313,7 +378,7 @@ async function main() {
           name: r.name,
           description: r.description,
           formattedAddress: r.address,
-          city: 'Lyon',
+          city: r.city,
           country: 'FR',
           postalCode: r.address.match(/\b\d{5}\b/)?.[0] ?? '69002',
           phoneNumber: r.phone,
@@ -364,10 +429,10 @@ async function main() {
         },
       });
 
-      console.log(`Canal A seed: ${resto.slug} (Lyon, canalAPublished=true)`);
+      console.log(`Canal A seed: ${resto.slug} (${r.city}, canalAPublished=true)`);
     }
 
-    console.log('Canal A seed complete — 5 restaurants in Lyon');
+    console.log('Canal A seed complete — 5 restaurants in Lyon + 5 in Paris');
   } else {
     console.log('Canal A seed skipped (NODE_ENV=production)');
   }
