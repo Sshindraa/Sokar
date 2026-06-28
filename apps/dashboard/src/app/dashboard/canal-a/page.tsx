@@ -157,20 +157,41 @@ export default function CanalADashboardPage() {
                 />
               </div>
 
-              {/* Preview + URL */}
-              <div className="flex flex-wrap gap-3 pt-2">
-                <Button variant="outline" size="sm" asChild>
-                  <a href={settings.pageUrl} target="_blank" rel="noopener noreferrer">
-                    <Eye className="mr-2 h-4 w-4" />
-                    Voir la page
-                  </a>
-                </Button>
-                <Button variant="ghost" size="sm" asChild>
-                  <a href={settings.pageUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="mr-2 h-4 w-4" />
-                    {settings.pageUrl}
-                  </a>
-                </Button>
+              {/* Preview iframe + URL externe */}
+              <div className="space-y-3 pt-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-sm font-medium text-muted-foreground">Aperçu de la page</span>
+                  <Button variant="outline" size="sm" asChild>
+                    <a
+                      href={`${settings.pageUrl}?preview=1`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <ExternalLink className="mr-2 h-4 w-4" />
+                      Ouvrir en plein écran
+                    </a>
+                  </Button>
+                </div>
+                {settings.canalAPublished ? (
+                  <div className="overflow-hidden rounded-lg border border-border bg-muted/30">
+                    <iframe
+                      src={`${settings.pageUrl}?preview=1`}
+                      title={`Aperçu — ${settings.name}`}
+                      className="h-[480px] w-full"
+                      loading="lazy"
+                      sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex h-[480px] items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 text-center">
+                    <div className="space-y-2">
+                      <Eye className="mx-auto h-8 w-8 text-muted-foreground/50" />
+                      <p className="text-sm text-muted-foreground">
+                        Activez la page publique pour voir l&apos;aperçu.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Status */}

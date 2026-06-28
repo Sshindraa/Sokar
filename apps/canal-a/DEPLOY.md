@@ -137,7 +137,8 @@ curl -s http://127.0.0.1:3001/metrics | grep sokar_canal_a
 | Page `/r/[slug]` accessible sans auth | ✅ | Test 200 |
 | JSON-LD Restaurant valide (Rich Results Test) | ✅ | Cf. spec v1.1 §19 |
 | Page `/r/[slug]/book` interactive | ✅ | T6 flow complet |
-| 10 restos seedés minimum | ⏳ | Seed `chez-sokar-demo` créé, besoin de 9 autres |
+| 10 restos en local/staging (seed) | ✅ | Seed: Chez Sokar demo + 5 Lyon + 5 Paris, `canalAPublished=true`, `canalAAgentic=false`. Skip en prod (§11.1) |
+| 10 restos réels onboardés (pilote) | ⏳ | Pilote fermé §11.2 — onboarding manuel de vrais restaurants, pas du seed |
 | Pages locales indexables conditionnellement | ✅ | Règle 5/10/20 active |
 | Tracking `page_view` et `cta_clicked` | ✅ | Queue `canal-a-analytics` + prom-client |
 | RGPD : consent + IP hash + audit log | ✅ | `ConsentService` + `hold`/`confirm` |
