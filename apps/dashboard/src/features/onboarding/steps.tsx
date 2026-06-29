@@ -668,8 +668,8 @@ export function PhoneStep({ onComplete }: StepProps) {
             </div>
             <p className="mt-4 text-sm leading-6 text-muted-foreground">
               Une fois le renvoi activé, les appels arrivant sur votre téléphone seront
-              automatiquement transférés vers Sokar. L'assistant vocal répond à votre place, prend
-              les réservations et gère les annulations.
+              automatiquement transférés vers Sokar. L&apos;assistant vocal répond à votre place,
+              prend les réservations et gère les annulations.
             </p>
           </div>
 
@@ -691,8 +691,8 @@ export function PhoneStep({ onComplete }: StepProps) {
 
           {!hasAssignedPhone && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-200 transition-all duration-200">
-              Votre numéro dédié sera attribué par l'équipe Sokar. Une fois attribué, vous pourrez
-              activer le renvoi et lancer l'appel test.
+              Votre numéro dédié sera attribué par l&apos;équipe Sokar. Une fois attribué, vous
+              pourrez activer le renvoi et lancer l&apos;appel test.
             </div>
           )}
 
@@ -703,7 +703,7 @@ export function PhoneStep({ onComplete }: StepProps) {
               disabled={!hasAssignedPhone}
               className="transition-all duration-200"
             >
-              J'ai compris, continuer
+              J&apos;ai compris, continuer
               <ArrowRight size={16} />
             </Button>
             <Button onClick={handleSkip} variant="ghost" className="transition-all duration-200">
