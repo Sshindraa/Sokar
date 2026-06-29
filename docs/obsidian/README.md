@@ -19,7 +19,7 @@ réservations de restaurants avec assistant vocal IA.
 - **Backend API** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx
 - **Dashboard** : Next.js 14 (App Router) + React 18 + Tailwind 3 — privé, Clerk auth
 - **Widget B2B** : Next.js 14, port 4001, `output: 'export'`, Cloudflare CDN
-- **Canal A** : Next.js 14, port 4002, `output: 'standalone'`, VPS + Nginx + Cloudflare
+- **Sokar Connect** : Next.js 14, port 4002, `output: 'standalone'`, VPS + Nginx + Cloudflare
 - **Voice Pipeline** : Telnyx (carrier), Deepgram Nova-3 (STT),
   OpenRouter (LLM `deepseek-v4-flash` / `PRO`), Cartesia Sonic 3.5 (TTS)
 - **Jobs Queue** : BullMQ (evening report, SMS confirmation, outbound confirm)
@@ -44,7 +44,7 @@ L'API Fastify expose **~30 routes** réparties dans :
 | Auth                 | `modules/auth/`                 | Sync Clerk                                                    |
 | RGPD                 | `modules/rgpd/`                 | Identity verification, erase, export                          |
 | Admin                | `modules/admin/`                | Flags, configcat, feature toggles                             |
-| Canal A (T2)         | `modules/canal-a/` (à créer)    | Pages publiques, JSON-LD, hold/confirm web                    |
+| Sokar Connect (T2)   | `modules/connect/` (à créer)    | Pages publiques, JSON-LD, hold/confirm web                    |
 | Integrations         | `modules/integrations/`         | Google Calendar                                               |
 | Pilot                | `modules/pilot/`                | KPIs internes pilote                                          |
 
@@ -54,16 +54,16 @@ Voir [[API Endpoints]] pour la doc exhaustive (générée depuis le code).
 
 Prisma 6 + PostgreSQL. Modèles actifs (cf. `packages/database/prisma/schema.prisma`) :
 
-- **Restaurant** — Établissement, slug, cuisineType, priceRange, ambiance, dietary, lat/lng, agenticOptIn, exposureSettings, **Canal A fields** (description, city, country, postalCode, coverImageUrl, publishedAt)
+- **Restaurant** — Établissement, slug, cuisineType, priceRange, ambiance, dietary, lat/lng, agenticOptIn, exposureSettings, **Sokar Connect fields** (description, city, country, postalCode, coverImageUrl, publishedAt)
 - **Reservation** — channel (PHONE/WEB/MCP/OPENAI_RESERVE/ADMIN/API), state machine (PENDING/CONFIRMED/SEATED/HONORED/CANCELLED/NO_SHOW/FAILED/EXPIRED), **source** (Google/ChatGPT/Perplexity/etc.), idempotency scoped
 - **Call** — Transcript, intent, outcome, latencies, carrier (telnyx)
 - **Customer** — Phone, name, visitCount, loyaltyScore, isVip
 - **AgenticHold** — Quote 5min / Hold 7min, partial unique index `one_active_hold_per_slot`
-- **RestaurantExposureSettings** — mcpEnabled, openaiReserveEnabled, **canalAPublished**, **canalAAgentic**, etc.
+- **RestaurantExposureSettings** — mcpEnabled, openaiReserveEnabled, **connectPublished**, **connectAgentic**, etc.
 - **CustomerConsent** — Structured RGPD consents, channel-scoped
 - **ReservationAuditLog** — Append-only state transitions
 - **IdentityVerificationOtp** + **SignedTokenUsage** — Three-token pattern (RGPD)
-- **RestaurantImage** — Galerie photos (Canal A)
+- **RestaurantImage** — Galerie photos (Sokar Connect)
 - Tables legacy : AgentPersonality, CallQuota, LatencyTrace, IdempotencyRecord, AgentClient
 
 > User/Session/Account/Verification : supprimées du schema Prisma (Clerk gère 100%).
@@ -78,7 +78,7 @@ Prisma 6 + PostgreSQL. Modèles actifs (cf. `packages/database/prisma/schema.pri
 | [[Telnyx Pipeline]]                 | ai_config, machine à états, webhooks                |
 | [[Flux Pipeline Media Stream]]      | Pipeline Flux custom + barge-in                     |
 | [[Fillers Audio]]                   | Cache RAM + Redis pour silences LLM                 |
-| [[Canal A P0]]                      | Spec phase 0 + tickets T1-T10                       |
+| [[Sokar Connect P0]]                | Spec phase 0 + tickets T1-T10                       |
 | [[API Endpoints]]                   | Routes Fastify exhaustives                          |
 | [[Session Telnyx Debug 2026-06-10]] | Post-mortem bugs Telnyx + clés API                  |
 
@@ -86,7 +86,7 @@ Notes archivées : `docs/obsidian/_archive/` (Vapi legacy, Sprint 1, stubs).
 
 ## Liens externes
 
-- Spec Canal A v1.1 : `docs/canal-a-v1.1.md`
+- Spec Sokar Connect v1.1 : `docs/connect-v1.1.md`
 - Spec agentic-reservations v3.2 : `docs/sokar-mcp-agentic-reservations-v3.2.md`
 - Runbook transversal : `docs/runbook.md`
 - Audit migration P0 : `docs/sokar-mcp-p0-migration-audit.md`

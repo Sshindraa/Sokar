@@ -84,6 +84,7 @@ Utilisé pour les tests voice / MCP en local avant d'avoir un vrai pilote.
 - Interactive elements should include `transition-all duration-200`.
 - Layouts should be spacious (`p-6`/`p-8`) and responsive at iPad width.
 - Marketing pages should stay static when possible (`○`, not `ƒ`).
+- **Ton copy : `vous` partout, jamais `tu`.** Sokar est un SaaS B2B facturé mensuellement à des gérants de restaurant (40-60 ans, non-dev). Le `tu` sent le consumer/developer-tool. Inclut : onboarding (steps, modal, guard, dashboard), tooltips, messages d'erreur, bannières, copy marketing. Le pronom indéfini `on` → `nous` dans le copy user-facing (OK dans les commentaires de code). Un test Vitest (`onboarding-tone.test.ts`) verrouille la convention.
 
 ## Hermes/model notes
 

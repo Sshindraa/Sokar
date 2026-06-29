@@ -6,11 +6,11 @@ export type OnboardingTaskKey =
   | 'knowledge'
   | 'calendar'
   | 'phone'
-  | 'canal-a-identity'
-  | 'canal-a-location'
-  | 'canal-a-cuisine'
-  | 'canal-a-capacity'
-  | 'canal-a-activation';
+  | 'connect-identity'
+  | 'connect-location'
+  | 'connect-cuisine'
+  | 'connect-capacity'
+  | 'connect-activation';
 
 export type OnboardingTaskState = {
   status: OnboardingStatus;
@@ -26,7 +26,7 @@ export type OnboardingStep = {
   title: string;
   description: string;
   required: boolean;
-  group: 'voice' | 'canal-a';
+  group: 'voice' | 'connect';
   index: number;
   status: OnboardingStatus;
   state: OnboardingTaskState;
@@ -50,7 +50,7 @@ export type OnboardingRestaurant = {
     systemPromptExtra?: string | null;
     voiceIdCa?: string | null;
   } | null;
-  // Canal A fields
+  // Sokar Connect fields
   slug?: string;
   description?: string | null;
   formattedAddress?: string | null;
@@ -66,8 +66,8 @@ export type OnboardingRestaurant = {
   coverImageUrl?: string | null;
   images?: Array<{ url: string; isCover: boolean; position: number; alt?: string | null }>;
   exposureSettings?: {
-    canalAPublished: boolean;
-    canalAAgentic: boolean;
+    connectPublished: boolean;
+    connectAgentic: boolean;
     holdTtlSeconds?: number;
     cancellationWindowMinutes?: number;
     noShowFeeCents?: number;
@@ -81,7 +81,7 @@ export type OnboardingRestaurant = {
 export type OnboardingState = {
   onboardingDone: boolean; // Voice onboarding done
   voiceOnboardingDone: boolean;
-  canalAOnboardingDone: boolean;
+  connectOnboardingDone: boolean;
   minimumViableDone: boolean; // restaurant + hours completed
   onboardingCompletedAt: string | null;
   onboardingActivatedAt: string | null;
@@ -92,7 +92,7 @@ export type OnboardingState = {
   totalCount: number;
   progress: number;
   voiceProgress: number;
-  canalAProgress: number;
+  connectProgress: number;
   steps: OnboardingStep[];
   defaultHours: Record<string, { open: string; close: string }>;
   restaurant: OnboardingRestaurant;

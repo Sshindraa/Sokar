@@ -1,0 +1,34 @@
+{
+  "name": "@sokar/connect",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sokar Connect — Agent-Ready Pages (Sokar public pages for AI/SEO indexability)",
+  "scripts": {
+    "dev": "next dev -p 4002",
+    "build": "next build",
+    "start": "next start -p 4002",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "echo 'no tests yet' && exit 0",
+    "copy-static": "bash scripts/copy-static.sh"
+  },
+  "dependencies": {
+    "@sokar/shared": "workspace:*",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^1.16.0",
+    "next": "^14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "tailwind-merge": "^3.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.8.0"
+  }
+}

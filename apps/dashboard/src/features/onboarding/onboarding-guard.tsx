@@ -36,7 +36,7 @@ export function OnboardingGuard({
 
   if (!isBlocked) return <>{children}</>;
 
-  const defaultMessage = `Termine l'étape « ${step?.title} » pour activer cette action`;
+  const defaultMessage = `Terminez l'étape « ${step?.title} » pour activer cette action`;
   const tooltip = message || defaultMessage;
 
   return (
@@ -65,7 +65,7 @@ export function OnboardingGuard({
 }
 
 /**
- * Bannière affichée en haut des pages de configuration (agentic, canal-a, settings)
+ * Bannière affichée en haut des pages de configuration (agentic, connect, settings)
  * pour indiquer que certaines actions sont bloquées par l'onboarding.
  */
 export function OnboardingLockBanner({ task }: { task: OnboardingTaskKey }) {
@@ -80,7 +80,7 @@ export function OnboardingLockBanner({ task }: { task: OnboardingTaskKey }) {
       <div className="flex items-center gap-2">
         <Lock className="text-amber-400 shrink-0" size={16} />
         <span className="text-amber-200">
-          Action bloquée — termine l&apos;étape « {step.title} » pour déverrouiller cette section.
+          Action bloquée — terminez l&apos;étape « {step.title} » pour déverrouiller cette section.
         </span>
       </div>
       <button

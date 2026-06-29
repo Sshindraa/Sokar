@@ -5,7 +5,7 @@
 # Gère la mémoire limitée, les trois apps PM2 et le routage Nginx.
 #
 # Zero-downtime: l'API reste en ligne pendant le build. Seuls dashboard et
-# Canal A sont arrêtés (Next.js standalone ne peut pas servir pendant que
+# Sokar Connect sont arrêtés (Next.js standalone ne peut pas servir pendant que
 # `next build` écrase .next). Le redémarrage final prend ~5s.
 #
 # Release dirs: snapshot des artefacts avant/après build dans
@@ -22,8 +22,8 @@ ARTIFACT_PATHS=(
     "apps/api/dist"
     "apps/dashboard/.next"
     "apps/dashboard/public"
-    "apps/canal-a/.next"
-    "apps/canal-a/public"
+    "apps/connect/.next"
+    "apps/connect/public"
 )
 
 # ── Helpers release dirs ─────────────────────────────────
@@ -127,7 +127,7 @@ if [ "${1:-}" = "rollback" ]; then
     fi
 
     echo "→ Stop services..."
-    pm2 stop sokar-dashboard sokar-canal-a 2>/dev/null || true
+    pm2 stop sokar-dashboard sokar-connect 2>/dev/null || true
 
     echo "→ Restore artefacts..."
     restore_artifacts "$RELEASE_PATH"
@@ -214,12 +214,12 @@ recover_services() {
     # Restore les artefacts d'avant le build si un snapshot existe
     if [ -n "${RESTORE_ON_FAIL:-}" ] && [ -d "${RESTORE_ON_FAIL}" ]; then
         echo "   → Restore artefacts pré-build (${RESTORE_ON_FAIL##*/})..."
-        pm2 stop sokar-dashboard sokar-canal-a 2>/dev/null || true
+        pm2 stop sokar-dashboard sokar-connect 2>/dev/null || true
         restore_artifacts "${RESTORE_ON_FAIL}"
     fi
 
     echo "   → Remise en ligne des services..."
-    pm2 restart sokar-api sokar-dashboard sokar-canal-a 2>/dev/null \
+    pm2 restart sokar-api sokar-dashboard sokar-connect 2>/dev/null \
         || pm2 resurrect 2>/dev/null \
         || true
     # Rollback Nginx si un backup existe
@@ -244,8 +244,8 @@ echo ""
 echo "📦 Freeing memory before build..."
 
 # Stop ONLY Next.js apps — API stays up (it doesn't use .next).
-echo "   Stopping dashboard + Canal A (API stays up)..."
-pm2 stop sokar-dashboard sokar-canal-a 2>/dev/null || true
+echo "   Stopping dashboard + Sokar Connect (API stays up)..."
+pm2 stop sokar-dashboard sokar-connect 2>/dev/null || true
 
 # Stop LocalStack (libère ~420MB)
 echo "   Stopping LocalStack..."
@@ -255,7 +255,7 @@ docker stop infra-localstack-1 2>/dev/null || true
 # Nettoyer .next pour éviter les artefacts obsolètes du build précédent.
 # sudo find -delete : certains caches sont encore root-owned (legacy PM2 root).
 sudo find /opt/sokar/apps/dashboard/.next -delete 2>/dev/null || true
-sudo find /opt/sokar/apps/canal-a/.next -delete 2>/dev/null || true
+sudo find /opt/sokar/apps/connect/.next -delete 2>/dev/null || true
 
 FREE_BEFORE=$(free -m | awk '/^Mem:/ {print $4}')
 echo "   Memory free: ${FREE_BEFORE}MB"
@@ -271,7 +271,7 @@ echo ""
 echo "📦 Installing dependencies..."
 pnpm install --frozen-lockfile
 
-for env_file in apps/api/.env apps/dashboard/.env apps/canal-a/.env.prod infra/.env; do
+for env_file in apps/api/.env apps/dashboard/.env apps/connect/.env.prod infra/.env; do
     if [ -f "$env_file" ]; then
         chmod 0600 "$env_file"
     fi
@@ -295,13 +295,13 @@ NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/api build
 NODE_OPTIONS="--max-old-space-size=2048" NEXT_TELEMETRY_DISABLED=1 SENTRY_SUPPRESS_GLOBAL_ERROR_HANDLER_FILE_WARNING=1 \
     pnpm --filter @sokar/dashboard build
 NODE_OPTIONS="--max-old-space-size=2048" NEXT_TELEMETRY_DISABLED=1 \
-    pnpm --filter @sokar/canal-a build
+    pnpm --filter @sokar/connect build
 
 # ── 6. Copy static assets to standalone ─────────────────
 echo ""
 echo "📦 Copying static assets to standalone..."
 bash "$SOKAR_ROOT/apps/dashboard/scripts/copy-static.sh"
-bash "$SOKAR_ROOT/apps/canal-a/scripts/copy-static.sh"
+bash "$SOKAR_ROOT/apps/connect/scripts/copy-static.sh"
 
 # ── 7. DB backup + migrations ───────────────────────────
 echo ""
@@ -387,7 +387,7 @@ echo ""
 echo "=== Checking HTTP endpoints ==="
 API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/health 2>/dev/null || echo "FAIL")
 DASH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null || echo "FAIL")
-CANAL_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4002/r/chez-sokar-demo 2>/dev/null || echo "FAIL")
+CONNECT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4002/r/chez-sokar-demo 2>/dev/null || echo "FAIL")
 API_VHOST_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: api.sokar.tech" \
     http://127.0.0.1/health 2>/dev/null || echo "FAIL")
 WIDGET_API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: sokar.tech" \
@@ -396,10 +396,10 @@ PUBLIC_PAGE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: sokar.tech
     http://127.0.0.1/r/chez-sokar-demo 2>/dev/null || echo "FAIL")
 echo "   api (localhost:4000/health) → $API_STATUS"
 echo "   dashboard (localhost:3000)  → $DASH_STATUS"
-echo "   canal-a (localhost:4002/r/chez-sokar-demo) → $CANAL_STATUS"
+echo "   connect (localhost:4002/r/chez-sokar-demo) → $CONNECT_STATUS"
 echo "   api.sokar.tech/health via Nginx → $API_VHOST_STATUS"
 echo "   widget slug API via Next proxy → $WIDGET_API_STATUS"
-echo "   public Canal A page via Nginx → $PUBLIC_PAGE_STATUS"
+echo "   public Sokar Connect page via Nginx → $PUBLIC_PAGE_STATUS"
 
 WIDGET_HEADERS=$(curl -sSI -H "Host: sokar.tech" \
     http://127.0.0.1/widget/chez-sokar-demo 2>/dev/null || true)
@@ -436,14 +436,14 @@ echo "   Memory free: ${FREE_AFTER}MB"
 # Si l'asset est 404, c'est le bug pitfall #29 (static non copiés dans standalone).
 if [ "$API_STATUS" = "200" ] \
     && [ "$DASH_STATUS" = "200" ] \
-    && [ "$CANAL_STATUS" = "200" ] \
+    && [ "$CONNECT_STATUS" = "200" ] \
     && [ "$API_VHOST_STATUS" = "200" ] \
     && [ "$WIDGET_API_STATUS" = "200" ] \
     && [ "$PUBLIC_PAGE_STATUS" = "200" ] \
     && [ "$WIDGET_IFRAME_STATUS" = "OK" ] \
     && [ "$DASH_CSS_STATUS" = "200" ]; then
     echo ""
-    echo "✅ Deploy complete — API + dashboard + Canal A + routing OK"
+    echo "✅ Deploy complete — API + dashboard + Sokar Connect + routing OK"
     trap - ERR
 
     # ── 11. Snapshot post-build réussi + cleanup ─────────

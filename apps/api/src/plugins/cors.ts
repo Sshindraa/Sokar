@@ -16,7 +16,7 @@ function parseCorsOrigins(): string | string[] {
   // 3. Production Sokar. PUBLIC_URL is intentionally not used here: it is
   // commonly the API's own canonical URL, not a browser client origin.
   // Keep this fallback aligned with the public browser
-  // clients (dashboard/widget and Canal A booking flow).
+  // clients (dashboard/widget and Sokar Connect booking flow).
   return ['https://sokar.tech', 'https://www.sokar.tech'];
 }
 

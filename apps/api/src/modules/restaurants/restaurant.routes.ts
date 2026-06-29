@@ -15,7 +15,7 @@ import {
   UpdateOnboardingSchema,
 } from './onboarding.service';
 import { invalidateRestaurantContextCache } from './restaurant.service';
-import { computeConnectScore } from '../canal-a/connect-score.service';
+import { computeConnectScore } from '../connect/connect-score.service';
 
 const ONBOARDING_EVENT_BY_ACTION: Partial<
   Record<z.infer<typeof UpdateOnboardingSchema>['action'], OnboardingAnalyticsEvent>
@@ -52,7 +52,7 @@ const UpdatePersonalitySchema = z.object({
   systemPromptExtra: z.string().max(2000).optional(),
 });
 
-const UpdateCanalASchema = z.object({
+const UpdateConnectSchema = z.object({
   slug: z
     .string()
     .regex(/^[a-z0-9-]+$/)
@@ -70,8 +70,8 @@ const UpdateCanalASchema = z.object({
   dietary: z.array(z.string()).optional(),
   coverImageUrl: z.string().optional().nullable(),
   maxPartySize: z.number().int().min(1).max(100).optional(),
-  canalAPublished: z.boolean().optional(),
-  canalAAgentic: z.boolean().optional(),
+  connectPublished: z.boolean().optional(),
+  connectAgentic: z.boolean().optional(),
   capacitySpecials: z
     .object({
       totalCapacity: z.number().int().optional(),
@@ -95,7 +95,7 @@ function onboardingPayload(restaurant: any, state = computeOnboardingState(resta
   return {
     onboardingDone: state.onboardingDone,
     voiceOnboardingDone: state.voiceOnboardingDone,
-    canalAOnboardingDone: state.canalAOnboardingDone,
+    connectOnboardingDone: state.connectOnboardingDone,
     minimumViableDone: state.minimumViableDone,
     onboardingCompletedAt: restaurant.onboardingCompletedAt,
     onboardingActivatedAt: restaurant.onboardingActivatedAt,
@@ -106,7 +106,7 @@ function onboardingPayload(restaurant: any, state = computeOnboardingState(resta
     totalCount: ONBOARDING_STEPS.length,
     progress: state.progress,
     voiceProgress: state.voiceProgress,
-    canalAProgress: state.canalAProgress,
+    connectProgress: state.connectProgress,
     steps: state.steps,
     defaultHours: DEFAULT_HOURS,
     restaurant: {
@@ -120,7 +120,7 @@ function onboardingPayload(restaurant: any, state = computeOnboardingState(resta
       googleCalendarId: restaurant.googleCalendarId,
       googleConnected: Boolean(restaurant.googleRefreshToken),
       personality: restaurant.personality,
-      // Canal A
+      // Sokar Connect
       slug: restaurant.slug,
       description: restaurant.description,
       formattedAddress: restaurant.formattedAddress,
@@ -322,9 +322,9 @@ export async function restaurantRoutes(app: FastifyInstance) {
   // pour que le widget puisse enchaîner sur les routes /restaurants/{id}/*.
   // Pas d'auth : endpoint public, même politique que /restaurants/:id/public.
   //
-  // Note : on n'utilise PAS /public/r/:slug (déjà déclaré par Canal A) parce
-  // que ce dernier filtre sur canalAPublished. Le widget doit fonctionner
-  // pour tous les restos, pas seulement ceux publiés sur Canal A.
+  // Note : on n'utilise PAS /public/r/:slug (déjà déclaré par Sokar Connect) parce
+  // que ce dernier filtre sur connectPublished. Le widget doit fonctionner
+  // pour tous les restos, pas seulement ceux publiés sur Sokar Connect.
   app.get('/public/widget/:slug', async (req, reply) => {
     const { slug } = req.params as { slug: string };
     try {
@@ -335,7 +335,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
           name: true,
           openingHours: true,
           phoneNumber: true,
-          // Champs Canal A utiles pour le rendu
+          // Champs Sokar Connect utiles pour le rendu
           city: true,
           cuisineType: true,
           coverImageUrl: true,
@@ -383,8 +383,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
           personality: { select: { profileType: true, fillerStyle: true, speakingRate: true } },
           exposureSettings: {
             select: {
-              canalAPublished: true,
-              canalAAgentic: true,
+              connectPublished: true,
+              connectAgentic: true,
               maxPartySize: true,
               capacitySpecials: true,
             },
@@ -535,8 +535,9 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
     if (!hasUsablePhone(restaurant.phoneNumber)) {
       return reply.status(409).send({
+        code: 'NO_PHONE_ASSIGNED',
         error:
-          "Aucun numéro Sokar attribué. Active d'abord la mise en service du téléphone avec l'équipe Sokar.",
+          "Aucun numéro Sokar attribué à ce restaurant. L'équipe Sokar doit d'abord vous attribuer un numéro dédié. Contactez le support si l'attribution tarde.",
       });
     }
 
@@ -579,7 +580,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
       return reply.send({
         ok: true,
         callControlId,
-        message: 'Appel test déclenché. Tu vas recevoir un appel sous quelques secondes.',
+        message: 'Appel test déclenché. Vous allez recevoir un appel sous quelques secondes.',
       });
     } catch (err: any) {
       logger.error(
@@ -587,19 +588,21 @@ export async function restaurantRoutes(app: FastifyInstance) {
         '[onboarding] test call failed',
       );
       return reply.status(502).send({
-        error: "L'appel test n'a pas pu être déclenché. Réessaie ou contacte le support.",
+        code: 'TELNYX_FAILED',
+        error:
+          "L'appel test n'a pas pu être déclenché (opérateur injoignable ou erreur réseau). Réessayez dans quelques minutes, ou contactez le support si le problème persiste.",
         detail: process.env.NODE_ENV === 'production' ? undefined : String(err?.message ?? err),
       });
     }
   };
 
-  const patchCanalA = async (req: any, reply: any) => {
+  const patchConnect = async (req: any, reply: any) => {
     const { id } = req.params as { id: string };
     const restaurantId = req.restaurantId;
     if (id !== restaurantId) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
-    const body = UpdateCanalASchema.parse(req.body ?? {});
+    const body = UpdateConnectSchema.parse(req.body ?? {});
 
     // 1. Check slug uniqueness if provided
     if (body.slug) {
@@ -645,7 +648,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     if (body.coverImageUrl !== undefined) restaurantData.coverImageUrl = body.coverImageUrl;
 
     // Gating activation / publication
-    if (body.canalAPublished) {
+    if (body.connectPublished) {
       restaurantData.publishedAt = now;
       restaurantData.agenticOptIn = true;
     }
@@ -654,13 +657,13 @@ export async function restaurantRoutes(app: FastifyInstance) {
       capacitySpecials: newCapacitySpecials,
     };
     if (body.maxPartySize !== undefined) settingsData.maxPartySize = body.maxPartySize;
-    if (body.canalAPublished !== undefined) {
-      settingsData.canalAPublished = body.canalAPublished;
-      if (body.canalAPublished) {
-        settingsData.canalAPublishedAt = now;
+    if (body.connectPublished !== undefined) {
+      settingsData.connectPublished = body.connectPublished;
+      if (body.connectPublished) {
+        settingsData.connectPublishedAt = now;
       }
     }
-    if (body.canalAAgentic !== undefined) settingsData.canalAAgentic = body.canalAAgentic;
+    if (body.connectAgentic !== undefined) settingsData.connectAgentic = body.connectAgentic;
 
     // 4. Update Database in a transaction
     const [updatedRestaurant, updatedSettings] = await app.db.$transaction([
@@ -678,7 +681,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     // Invalidate caches
     await invalidateRestaurantContextCache(updatedRestaurant.phoneNumber);
     if (updatedRestaurant.slug) {
-      const cacheKey = `canal-a:restaurant:${updatedRestaurant.slug}`;
+      const cacheKey = `connect:restaurant:${updatedRestaurant.slug}`;
       await app.redisCache.del(cacheKey);
     }
 
@@ -744,12 +747,12 @@ export async function restaurantRoutes(app: FastifyInstance) {
   app.post('/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
   app.post('/api/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
 
-  app.patch('/restaurants/:id/canal-a', { preHandler: requireOrg() }, patchCanalA);
-  app.patch('/api/restaurants/:id/canal-a', { preHandler: requireOrg() }, patchCanalA);
+  app.patch('/restaurants/:id/connect', { preHandler: requireOrg() }, patchConnect);
+  app.patch('/api/restaurants/:id/connect', { preHandler: requireOrg() }, patchConnect);
 
-  // Canal A — GET settings
-  // Returns the restaurant's Canal A configuration (gating flags, slug, page URL).
-  const getCanalA = async (req: any, reply: any) => {
+  // Sokar Connect — GET settings
+  // Returns the restaurant's Sokar Connect configuration (gating flags, slug, page URL).
+  const getConnect = async (req: any, reply: any) => {
     const restaurantId = req.restaurantId;
 
     const restaurant = await app.db.restaurant.findUnique({
@@ -768,15 +771,15 @@ export async function restaurantRoutes(app: FastifyInstance) {
       restaurantId,
       slug,
       name: restaurant.name,
-      canalAPublished: exposure?.canalAPublished ?? false,
-      canalAAgentic: exposure?.canalAAgentic ?? false,
-      canalAPublishedAt: exposure?.canalAPublishedAt?.toISOString() ?? null,
+      connectPublished: exposure?.connectPublished ?? false,
+      connectAgentic: exposure?.connectAgentic ?? false,
+      connectPublishedAt: exposure?.connectPublishedAt?.toISOString() ?? null,
       pageUrl: slug ? `https://sokar.tech/r/${slug}` : null,
     });
   };
 
-  app.get('/restaurants/:id/canal-a', { preHandler: requireOrg() }, getCanalA);
-  app.get('/api/restaurants/:id/canal-a', { preHandler: requireOrg() }, getCanalA);
+  app.get('/restaurants/:id/connect', { preHandler: requireOrg() }, getConnect);
+  app.get('/api/restaurants/:id/connect', { preHandler: requireOrg() }, getConnect);
 
   // Sokar Connect — GET score de complétude
   // Calcule le score de profil 0-100% + items manquants + copy contextuel.

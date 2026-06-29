@@ -68,13 +68,13 @@ export function RestaurantStep({ onComplete }: StepProps) {
       <StepHeader
         icon={Store}
         title="Identité du restaurant"
-        body="On valide uniquement les informations utiles pour contacter le gérant et signer les messages."
+        body="Nous validons uniquement les informations utiles pour contacter le restaurant et signer les messages."
       />
       <div className="space-y-4">
         <Field label="Nom du restaurant">
           <Input value={name} onChange={(e) => setName(e.target.value)} required />
         </Field>
-        <Field label="Téléphone du gérant">
+        <Field label="Téléphone du restaurant">
           <Input
             type="tel"
             value={managerPhone}
@@ -82,7 +82,7 @@ export function RestaurantStep({ onComplete }: StepProps) {
             required
           />
         </Field>
-        <Field label="Email du gérant">
+        <Field label="Email du restaurant">
           <Input
             type="email"
             value={managerEmail}
@@ -131,7 +131,7 @@ export function HoursStep({ onComplete }: StepProps) {
       <StepHeader
         icon={Calendar}
         title="Quand répondre et réserver"
-        body="On propose une base réaliste, jamais une identité inventée. Ajustez les créneaux et Sokar suivra."
+        body="Nous proposons une base réaliste, jamais une identité inventée. Ajustez les créneaux et Sokar suivra."
       />
       <div className="space-y-3">
         {DAY_LABELS.map(([day, label]) => {
@@ -221,7 +221,7 @@ export function KnowledgeStep({ onComplete }: StepProps) {
       <StepHeader
         icon={Globe}
         title="Ce que l'assistant doit savoir"
-        body="Tu configure ici le ton, l'ambiance et les consignes commerciales que l'IA doit respecter."
+        body="Vous configurez ici le ton, l'ambiance et les consignes commerciales que l'IA doit respecter."
       />
       <div className="space-y-5">
         <Segmented
@@ -336,7 +336,7 @@ export function CalendarStep({ onComplete }: StepProps) {
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          En choisissant le planning manuel, tu gères les arrivées depuis l&apos;onglet
+          En choisissant le planning manuel, vous gérez les arrivées depuis l&apos;onglet
           Réservations.
         </p>
       </div>
@@ -357,7 +357,7 @@ export function PhoneStep({ onComplete }: StepProps) {
 
   async function handleTestCall() {
     if (!managerPhone) {
-      setTestError("Numéro du gérant manquant. Reviens à l'étape 1.");
+      setTestError("Numéro du restaurant manquant. Revenez à l'étape « Identité du restaurant ».");
       return;
     }
     setCalling(true);
@@ -370,10 +370,30 @@ export function PhoneStep({ onComplete }: StepProps) {
       await updateTask('first_call', 'phone');
       await updateTask('complete', 'phone');
       await updateTask('activate');
-      setTestResult(`${res.message} Redirection vers la configuration internet…`);
-      window.setTimeout(() => onComplete('canal-a-identity'), 1200);
+      setTestResult(
+        'Assistant vocal configuré. Votre IA répond maintenant au téléphone. Passons à la mise en ligne de votre fiche réservable…',
+      );
+      window.setTimeout(() => onComplete('connect-identity'), 2000);
     } catch (err: any) {
-      setTestError(err?.message ?? "L'appel test a échoué. Réessaie ou contacte le support.");
+      // L'API renvoie un code structuré pour différencier les causes d'échec.
+      // NO_PHONE_ASSIGNED : action Sokar (pas un retry utilisateur)
+      // TELNYX_FAILED    : erreur réseau/opérateur (réessayer)
+      // fallback         : message générique
+      const code = err?.code ?? err?.response?.data?.code;
+      const apiMessage = err?.response?.data?.error ?? err?.message;
+      if (code === 'NO_PHONE_ASSIGNED') {
+        setTestError(
+          apiMessage ??
+            "Aucun numéro Sokar attribué. L'équipe Sokar doit d'abord vous attribuer un numéro dédié.",
+        );
+      } else if (code === 'TELNYX_FAILED') {
+        setTestError(
+          apiMessage ??
+            "L'appel test n'a pas pu être déclenché (opérateur injoignable). Réessayez dans quelques minutes.",
+        );
+      } else {
+        setTestError(apiMessage ?? "L'appel test a échoué. Réessayez ou contactez le support.");
+      }
     } finally {
       setCalling(false);
     }
@@ -381,7 +401,7 @@ export function PhoneStep({ onComplete }: StepProps) {
 
   async function handleSkip() {
     await updateTask('skip', 'phone', { reason: 'Pas de test immédiat' });
-    onComplete('canal-a-identity');
+    onComplete('connect-identity');
   }
 
   return (
@@ -389,24 +409,24 @@ export function PhoneStep({ onComplete }: StepProps) {
       <StepHeader
         icon={PhoneForwarded}
         title="Mise en service des appels"
-        body="Le dernier jalon vocal : ton numéro Sokar, le renvoi d'appel opérateur et ton premier test IA."
+        body="Le dernier jalon vocal : votre numéro Sokar, le renvoi d'appel opérateur et votre premier test IA."
       />
       <div className="space-y-4">
         <div className="rounded-lg border border-border bg-background/60 p-4 transition-all duration-200">
-          <p className="text-sm text-muted-foreground font-semibold">Numéro Sokar attribué</p>
+          <p className="text-sm text-muted-foreground font-semibold">Numéro Sokar</p>
           <p className="mt-1 text-2xl font-semibold tracking-tight">
             {hasAssignedPhone ? phoneNumber : 'À attribuer'}
           </p>
           {!hasAssignedPhone && (
             <p className="mt-2 text-sm text-amber-300">
-              Le numéro peut être ajouté depuis les réglages ou par l&apos;équipe Sokar avant la
-              mise en production.
+              Votre numéro dédié sera attribué par l&apos;équipe Sokar. Une fois attribué, vous
+              pourrez lancer l&apos;appel test et activer le service vocal.
             </p>
           )}
         </div>
         <div className="rounded-lg border border-border bg-background/60 p-4 text-sm text-muted-foreground transition-all duration-200">
-          Active le renvoi d&apos;appel depuis l&apos;opérateur du restaurant vers le numéro Sokar,
-          puis lance le test.
+          Activez le renvoi d&apos;appel depuis l&apos;opérateur du restaurant vers le numéro Sokar,
+          puis lancez le test.
         </div>
 
         {testResult && (
@@ -438,7 +458,7 @@ export function PhoneStep({ onComplete }: StepProps) {
         {!hasAssignedPhone && (
           <p className="text-xs text-muted-foreground">
             L&apos;appel test sera disponible dès qu&apos;un numéro Sokar sera attribué à ce
-            restaurant.
+            restaurant par notre équipe.
           </p>
         )}
       </div>
@@ -446,9 +466,9 @@ export function PhoneStep({ onComplete }: StepProps) {
   );
 }
 
-// ─── CANAL A STEPS ────────────────────────────────────────────
+// ─── CONNECT STEPS ────────────────────────────────────────────
 
-export function CanalAIdentityStep({ onComplete }: StepProps) {
+export function ConnectIdentityStep({ onComplete }: StepProps) {
   const { patch, post, get, orgId } = useApi();
   const { state, updateTask } = useOnboarding();
   const restaurant = state!.restaurant;
@@ -525,9 +545,9 @@ export function CanalAIdentityStep({ onComplete }: StepProps) {
       if (coverImageUrl && coverImageUrl !== restaurant.coverImageUrl) {
         await post(`restaurants/${orgId}/images`, { url: coverImageUrl, isCover: true });
       }
-      await patch(`restaurants/${orgId}/canal-a`, { slug, description, coverImageUrl });
-      await updateTask('complete', 'canal-a-identity');
-      onComplete('canal-a-location');
+      await patch(`restaurants/${orgId}/connect`, { slug, description, coverImageUrl });
+      await updateTask('complete', 'connect-identity');
+      onComplete('connect-location');
     } finally {
       setSaving(false);
     }
@@ -538,7 +558,7 @@ export function CanalAIdentityStep({ onComplete }: StepProps) {
       <StepHeader
         icon={Globe}
         title="Identité publique"
-        body="C'est ce que tes clients verront sur les fiches d'assistants IA et ton URL personnalisée."
+        body="C'est ce que vos clients verront sur les fiches d'assistants IA et votre URL personnalisée."
       />
       <div className="space-y-4">
         <Field label="Adresse web (Slug)">
@@ -633,7 +653,7 @@ export function CanalAIdentityStep({ onComplete }: StepProps) {
   );
 }
 
-export function CanalALocationStep({ onComplete }: StepProps) {
+export function ConnectLocationStep({ onComplete }: StepProps) {
   const { patch, orgId } = useApi();
   const { state, updateTask } = useOnboarding();
   const restaurant = state!.restaurant;
@@ -703,7 +723,7 @@ export function CanalALocationStep({ onComplete }: StepProps) {
     e.preventDefault();
     setSaving(true);
     try {
-      await patch(`restaurants/${orgId}/canal-a`, {
+      await patch(`restaurants/${orgId}/connect`, {
         formattedAddress,
         postalCode,
         city,
@@ -711,8 +731,8 @@ export function CanalALocationStep({ onComplete }: StepProps) {
         lat,
         lng,
       });
-      await updateTask('complete', 'canal-a-location');
-      onComplete('canal-a-cuisine');
+      await updateTask('complete', 'connect-location');
+      onComplete('connect-cuisine');
     } finally {
       setSaving(false);
     }
@@ -732,7 +752,7 @@ export function CanalALocationStep({ onComplete }: StepProps) {
       <StepHeader
         icon={MapPin}
         title="Localisation"
-        body="Renseigne l'adresse physique de ton établissement pour apparaître dans les recherches de proximité."
+        body="Renseignez l'adresse physique de votre établissement pour apparaître dans les recherches de proximité."
       />
       <div className="space-y-4">
         <Field label="Adresse (Ligne 1)">
@@ -832,7 +852,7 @@ export function CanalALocationStep({ onComplete }: StepProps) {
   );
 }
 
-export function CanalACuisineStep({ onComplete }: StepProps) {
+export function ConnectCuisineStep({ onComplete }: StepProps) {
   const { patch, orgId } = useApi();
   const { state, updateTask } = useOnboarding();
   const restaurant = state!.restaurant;
@@ -868,14 +888,14 @@ export function CanalACuisineStep({ onComplete }: StepProps) {
     e.preventDefault();
     setSaving(true);
     try {
-      await patch(`restaurants/${orgId}/canal-a`, {
+      await patch(`restaurants/${orgId}/connect`, {
         cuisineType,
         priceRange,
         dietary,
         ambiance,
       });
-      await updateTask('complete', 'canal-a-cuisine');
-      onComplete('canal-a-capacity');
+      await updateTask('complete', 'connect-cuisine');
+      onComplete('connect-capacity');
     } finally {
       setSaving(false);
     }
@@ -886,7 +906,7 @@ export function CanalACuisineStep({ onComplete }: StepProps) {
       <StepHeader
         icon={Utensils}
         title="Cuisine & ambiance"
-        body="Dis-nous ce que tu sers et dans quel cadre pour correspondre aux attentes des utilisateurs d'assistants IA."
+        body="Dites-nous ce que vous servez et dans quel cadre pour correspondre aux attentes des utilisateurs d'assistants IA."
       />
       <div className="space-y-5">
         <div>
@@ -1015,7 +1035,7 @@ export function CanalACuisineStep({ onComplete }: StepProps) {
   );
 }
 
-export function CanalACapacityStep({ onComplete }: StepProps) {
+export function ConnectCapacityStep({ onComplete }: StepProps) {
   const { patch, orgId } = useApi();
   const { state, updateTask } = useOnboarding();
   const restaurant = state!.restaurant;
@@ -1041,7 +1061,7 @@ export function CanalACapacityStep({ onComplete }: StepProps) {
     e.preventDefault();
     setSaving(true);
     try {
-      await patch(`restaurants/${orgId}/canal-a`, {
+      await patch(`restaurants/${orgId}/connect`, {
         maxPartySize,
         capacitySpecials: {
           totalCapacity,
@@ -1052,8 +1072,8 @@ export function CanalACapacityStep({ onComplete }: StepProps) {
           depositThreshold,
         },
       });
-      await updateTask('complete', 'canal-a-capacity');
-      onComplete('canal-a-activation');
+      await updateTask('complete', 'connect-capacity');
+      onComplete('connect-activation');
     } finally {
       setSaving(false);
     }
@@ -1064,7 +1084,7 @@ export function CanalACapacityStep({ onComplete }: StepProps) {
       <StepHeader
         icon={Gauge}
         title="Capacité & règles"
-        body="Contrôle le flux des réservations internet et protège ton activité contre les no-shows."
+        body="Contrôlez le flux des réservations internet et protégez votre activité contre les no-shows."
       />
       <div className="space-y-4">
         <div className="grid gap-3 grid-cols-3">
@@ -1111,7 +1131,7 @@ export function CanalACapacityStep({ onComplete }: StepProps) {
             <div>
               <p className="text-sm font-semibold">Garantie par acompte bancaire</p>
               <p className="text-xs text-muted-foreground">
-                Demande une empreinte de carte à tes clients.
+                Demandez une empreinte de carte à vos clients.
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -1155,16 +1175,16 @@ export function CanalACapacityStep({ onComplete }: StepProps) {
   );
 }
 
-export function CanalAActivationStep({ onComplete }: StepProps) {
+export function ConnectActivationStep({ onComplete }: StepProps) {
   const { patch, orgId } = useApi();
   const { state, updateTask } = useOnboarding();
   const restaurant = state!.restaurant;
   const exposure = restaurant.exposureSettings;
 
-  const [canalAPublished, setCanalAPublished] = useState<boolean>(
-    exposure?.canalAPublished || false,
+  const [connectPublished, setConnectPublished] = useState<boolean>(
+    exposure?.connectPublished || false,
   );
-  const [canalAAgentic, setCanalAAgentic] = useState<boolean>(exposure?.canalAAgentic || false);
+  const [connectAgentic, setConnectAgentic] = useState<boolean>(exposure?.connectAgentic || false);
   const [saving, setSaving] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -1175,16 +1195,16 @@ export function CanalAActivationStep({ onComplete }: StepProps) {
   async function handleToggleActivation() {
     setSaving(true);
     try {
-      const nextPublished = !canalAPublished;
-      await patch(`restaurants/${orgId}/canal-a`, {
-        canalAPublished: nextPublished,
-        canalAAgentic: nextPublished ? canalAAgentic : false,
+      const nextPublished = !connectPublished;
+      await patch(`restaurants/${orgId}/connect`, {
+        connectPublished: nextPublished,
+        connectAgentic: nextPublished ? connectAgentic : false,
       });
-      setCanalAPublished(nextPublished);
-      if (!nextPublished) setCanalAAgentic(false);
+      setConnectPublished(nextPublished);
+      if (!nextPublished) setConnectAgentic(false);
 
       if (nextPublished) {
-        await updateTask('complete', 'canal-a-activation');
+        await updateTask('complete', 'connect-activation');
         setCelebrate(true);
       }
     } finally {
@@ -1195,11 +1215,11 @@ export function CanalAActivationStep({ onComplete }: StepProps) {
   async function handleToggleAgentic() {
     setSaving(true);
     try {
-      const nextAgentic = !canalAAgentic;
-      await patch(`restaurants/${orgId}/canal-a`, {
-        canalAAgentic: nextAgentic,
+      const nextAgentic = !connectAgentic;
+      await patch(`restaurants/${orgId}/connect`, {
+        connectAgentic: nextAgentic,
       });
-      setCanalAAgentic(nextAgentic);
+      setConnectAgentic(nextAgentic);
     } finally {
       setSaving(false);
     }
@@ -1212,7 +1232,7 @@ export function CanalAActivationStep({ onComplete }: StepProps) {
   }
 
   async function handleSkip() {
-    await updateTask('skip', 'canal-a-activation', { reason: 'Publication reportée' });
+    await updateTask('skip', 'connect-activation', { reason: 'Publication reportée' });
     onComplete(null);
   }
 
@@ -1221,7 +1241,7 @@ export function CanalAActivationStep({ onComplete }: StepProps) {
       <StepHeader
         icon={Globe}
         title="Activation & preview"
-        body="Valide le rendu final de ta fiche publique et active son référencement en ligne."
+        body="Validez le rendu final de votre fiche publique et activez son référencement en ligne."
       />
       <div className="space-y-4">
         <div className="rounded-lg border border-border bg-background/40 p-4 space-y-4">
@@ -1235,7 +1255,7 @@ export function CanalAActivationStep({ onComplete }: StepProps) {
             <label className="relative inline-flex items-center cursor-pointer">
               <input
                 type="checkbox"
-                checked={canalAPublished}
+                checked={connectPublished}
                 onChange={handleToggleActivation}
                 disabled={saving || !restaurant.slug}
                 className="sr-only peer"
@@ -1247,7 +1267,7 @@ export function CanalAActivationStep({ onComplete }: StepProps) {
           <div
             className={cn(
               'flex items-center justify-between transition-opacity duration-200',
-              !canalAPublished && 'opacity-40 pointer-events-none',
+              !connectPublished && 'opacity-40 pointer-events-none',
             )}
           >
             <div>
@@ -1259,9 +1279,9 @@ export function CanalAActivationStep({ onComplete }: StepProps) {
             <label className="relative inline-flex items-center cursor-pointer">
               <input
                 type="checkbox"
-                checked={canalAAgentic}
+                checked={connectAgentic}
                 onChange={handleToggleAgentic}
-                disabled={saving || !canalAPublished}
+                disabled={saving || !connectPublished}
                 className="sr-only peer"
               />
               <div className="w-11 h-6 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
@@ -1270,7 +1290,7 @@ export function CanalAActivationStep({ onComplete }: StepProps) {
         </div>
 
         <div className="flex gap-2">
-          {canalAPublished ? (
+          {connectPublished ? (
             <Button asChild>
               <a
                 href={publicUrl}
@@ -1314,9 +1334,9 @@ export function CanalAActivationStep({ onComplete }: StepProps) {
           <div className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm transition-all animate-fade-in">
             <div className="bg-card border border-border rounded-xl max-w-md w-full p-6 text-center shadow-2xl space-y-4">
               <div className="text-5xl">🎉</div>
-              <h3 className="text-xl font-bold text-foreground">Ton restaurant est en ligne !</h3>
+              <h3 className="text-xl font-bold text-foreground">Votre restaurant est en ligne !</h3>
               <p className="text-sm text-muted-foreground">
-                La page de ton établissement est maintenant prête à recevoir ses premières
+                La page de votre établissement est maintenant prête à recevoir ses premières
                 réservations en ligne et à être découverte par les assistants IA.
               </p>
               <div className="bg-background/60 border border-border rounded-lg p-3 text-sm font-mono flex items-center justify-between select-all">
@@ -1362,11 +1382,11 @@ export const STEP_COMPONENTS: Record<OnboardingTaskKey, (props: StepProps) => Re
   knowledge: KnowledgeStep,
   calendar: CalendarStep,
   phone: PhoneStep,
-  'canal-a-identity': CanalAIdentityStep,
-  'canal-a-location': CanalALocationStep,
-  'canal-a-cuisine': CanalACuisineStep,
-  'canal-a-capacity': CanalACapacityStep,
-  'canal-a-activation': CanalAActivationStep,
+  'connect-identity': ConnectIdentityStep,
+  'connect-location': ConnectLocationStep,
+  'connect-cuisine': ConnectCuisineStep,
+  'connect-capacity': ConnectCapacityStep,
+  'connect-activation': ConnectActivationStep,
 };
 
 export const STEP_KEYS: OnboardingTaskKey[] = [
@@ -1375,25 +1395,25 @@ export const STEP_KEYS: OnboardingTaskKey[] = [
   'knowledge',
   'calendar',
   'phone',
-  'canal-a-identity',
-  'canal-a-location',
-  'canal-a-cuisine',
-  'canal-a-capacity',
-  'canal-a-activation',
+  'connect-identity',
+  'connect-location',
+  'connect-cuisine',
+  'connect-capacity',
+  'connect-activation',
 ];
 
 export const STEP_META: Record<
   OnboardingTaskKey,
-  { title: string; group: 'voice' | 'canal-a'; index: number }
+  { title: string; group: 'voice' | 'connect'; index: number }
 > = {
   restaurant: { title: 'Identité du restaurant', group: 'voice', index: 1 },
   hours: { title: 'Quand répondre et réserver', group: 'voice', index: 2 },
   knowledge: { title: "Ce que l'assistant doit savoir", group: 'voice', index: 3 },
   calendar: { title: 'Connexion au planning', group: 'voice', index: 4 },
   phone: { title: 'Mise en service des appels', group: 'voice', index: 5 },
-  'canal-a-identity': { title: 'Identité publique', group: 'canal-a', index: 1 },
-  'canal-a-location': { title: 'Localisation', group: 'canal-a', index: 2 },
-  'canal-a-cuisine': { title: 'Cuisine & ambiance', group: 'canal-a', index: 3 },
-  'canal-a-capacity': { title: 'Capacité & règles', group: 'canal-a', index: 4 },
-  'canal-a-activation': { title: 'Activation & preview', group: 'canal-a', index: 5 },
+  'connect-identity': { title: 'Identité publique', group: 'connect', index: 1 },
+  'connect-location': { title: 'Localisation', group: 'connect', index: 2 },
+  'connect-cuisine': { title: 'Cuisine & ambiance', group: 'connect', index: 3 },
+  'connect-capacity': { title: 'Capacité & règles', group: 'connect', index: 4 },
+  'connect-activation': { title: 'Activation & preview', group: 'connect', index: 5 },
 };

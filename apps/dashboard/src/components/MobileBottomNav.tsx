@@ -10,7 +10,7 @@ const navItems = [
   { href: '/dashboard/calls', label: 'Appels', icon: PhoneCall },
   { href: '/dashboard/reservations', label: 'Résa', icon: CalendarCheck },
   { href: '/dashboard/customers', label: 'Clients', icon: Users },
-  { href: '/dashboard/canal-a', label: 'Connect', icon: Zap },
+  { href: '/dashboard/connect', label: 'Connect', icon: Zap },
 ];
 
 export default function MobileBottomNav() {
@@ -33,9 +33,7 @@ export default function MobileBottomNav() {
               onClick={() => triggerHaptic(12)}
               className={cn(
                 'flex flex-1 flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[10px] font-medium transition-colors duration-200 touch-manipulation relative',
-                active
-                  ? 'text-orange-400'
-                  : 'text-white/40 active:text-white/60',
+                active ? 'text-orange-400' : 'text-white/40 active:text-white/60',
               )}
             >
               {/* Active indicator dot */}
@@ -45,10 +43,7 @@ export default function MobileBottomNav() {
               <Icon
                 size={20}
                 strokeWidth={active ? 2.2 : 1.5}
-                className={cn(
-                  'transition-all duration-200',
-                  active && 'scale-110',
-                )}
+                className={cn('transition-all duration-200', active && 'scale-110')}
               />
               <span className="tracking-wide">{item.label}</span>
             </Link>

@@ -63,8 +63,9 @@ model Restaurant {
   exposureSettings      RestaurantExposureSettings?
   agentClients          AgentClient[]
   images                RestaurantImage[]
+  onboardingEvents      OnboardingEvent[]
 
-  // Canal A (P0) — données publiques structurées, pas de flags de gating ici
+  // Sokar Connect (P0) — données publiques structurées, pas de flags de gating ici
   description           String?           @map("description")
   city                  String?           @map("city")
   country               String            @default("FR") @map("country")
@@ -429,11 +430,11 @@ model RestaurantExposureSettings {
   noShowPolicy            String   @default("warning") @map("no_show_policy")
   notificationChannels    String[] @default(["sms", "email"]) @map("notification_channels")
   capacitySpecials        Json     @default("{}") @map("capacity_specials")
-  // Canal A (P0) — source de vérité unique pour le gating
-  canalAPublished         Boolean   @default(false) @map("canal_a_published")
-  canalAAgentic           Boolean   @default(false) @map("canal_a_agentic")
-  canalAPublishedAt       DateTime? @map("canal_a_published_at")
-  canalADescription       String?   @map("canal_a_description")
+  // Sokar Connect (P0) — source de vérité unique pour le gating
+  connectPublished         Boolean   @default(false) @map("connect_published")
+  connectAgentic           Boolean   @default(false) @map("connect_agentic")
+  connectPublishedAt       DateTime? @map("connect_published_at")
+  connectDescription       String?   @map("connect_description")
   updatedAt               DateTime @updatedAt @map("updated_at")
   restaurant              Restaurant @relation(fields: [restaurantId], references: [id])
 
@@ -457,4 +458,22 @@ model AgentClient {
   @@index([restaurantId])
   @@index([keyPrefix])
   @@map("agent_clients")
+}
+
+/// Events d'analytics persistés pour le funnel onboarding.
+/// Alimenté par le worker BullMQ `analytics` (queue partagée avec RGPD).
+/// Permet de mesurer les drop-offs par étape sans outil externe.
+model OnboardingEvent {
+  id           String   @id @default(uuid())
+  restaurantId String   @map("restaurant_id")
+  userId       String?  @map("user_id")
+  event        String
+  task         String?
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at")
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, createdAt(sort: Desc)])
+  @@index([event, createdAt(sort: Desc)])
+  @@map("onboarding_events")
 }

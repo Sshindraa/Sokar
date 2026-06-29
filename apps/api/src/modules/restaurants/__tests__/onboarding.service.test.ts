@@ -12,7 +12,7 @@ import {
 const baseEmpty = {
   name: 'Le Bistrot Sokar',
   managerPhone: '+33600000000',
-  managerEmail: 'gerant@sokar.tech',
+  managerEmail: 'restaurant@sokar.tech',
   openingHours: {},
   personality: null,
   googleRefreshToken: null,
@@ -23,7 +23,7 @@ const baseEmpty = {
 const fullRestaurant = {
   name: 'Le Bistrot Sokar',
   managerPhone: '+33600000000',
-  managerEmail: 'gerant@sokar.tech',
+  managerEmail: 'restaurant@sokar.tech',
   openingHours: { mon: { open: '12:00', close: '22:00' } },
   personality: { id: 'p1' },
   googleRefreshToken: 'rt-123',
@@ -188,14 +188,14 @@ describe('applyOnboardingTransition', () => {
     }
   });
 
-  it('gère l’onboarding Canal A : complétion et calcul des progrès indépendants', () => {
+  it('gère l’onboarding Sokar Connect : complétion et calcul des progrès indépendants', () => {
     const emptyState = computeOnboardingState(baseEmpty);
     expect(emptyState.voiceOnboardingDone).toBe(false);
-    expect(emptyState.canalAOnboardingDone).toBe(false);
+    expect(emptyState.connectOnboardingDone).toBe(false);
     expect(emptyState.voiceProgress).toBe(20);
-    expect(emptyState.canalAProgress).toBe(0);
+    expect(emptyState.connectProgress).toBe(0);
 
-    const withCanalAInfo = {
+    const withConnectInfo = {
       ...baseEmpty,
       slug: 'bistrot-test',
       description: 'Super description',
@@ -209,12 +209,12 @@ describe('applyOnboardingTransition', () => {
       priceRange: 2,
       exposureSettings: {
         capacitySpecials: { totalCapacity: 30 },
-        canalAPublished: true,
+        connectPublished: true,
       },
     };
 
-    const state = computeOnboardingState(withCanalAInfo);
-    expect(state.canalAProgress).toBe(100);
-    expect(state.canalAOnboardingDone).toBe(true);
+    const state = computeOnboardingState(withConnectInfo);
+    expect(state.connectProgress).toBe(100);
+    expect(state.connectOnboardingDone).toBe(true);
   });
 });

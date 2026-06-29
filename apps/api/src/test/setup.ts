@@ -20,6 +20,10 @@ vi.mock('@prisma/client', async (importOriginal) => {
       findMany: vi.fn(),
       create: vi.fn(),
     };
+    onboardingEvent = {
+      create: vi.fn().mockResolvedValue({ id: 'test-evt-1' }),
+      findMany: vi.fn().mockResolvedValue([]),
+    };
     $queryRaw = vi.fn().mockResolvedValue([{ '1': 1 }]);
     $disconnect = vi.fn();
   }

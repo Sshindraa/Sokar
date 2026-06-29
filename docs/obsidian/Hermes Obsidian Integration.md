@@ -12,15 +12,15 @@
 
 L'agent Hermes lit/écrit dans le vault via la **skill `obsidian`** :
 
-| Opération | Outil Hermes |
-|-----------|--------------|
-| Lister les notes | `search_files` (target: files) |
-| Lire une note | `read_file` (path absolu résolu) |
-| Chercher un mot | `search_files` (target: content) |
-| Écrire / écraser | `write_file` |
-| Append | `read_file` + `patch` (ancre) ou `write_file` (rewrite) |
-| Édition ciblée | `patch` (old_string → new_string) |
-| Wikilinks | `[[Note Name]]` (markdown standard Obsidian) |
+| Opération        | Outil Hermes                                            |
+| ---------------- | ------------------------------------------------------- |
+| Lister les notes | `search_files` (target: files)                          |
+| Lire une note    | `read_file` (path absolu résolu)                        |
+| Chercher un mot  | `search_files` (target: content)                        |
+| Écrire / écraser | `write_file`                                            |
+| Append           | `read_file` + `patch` (ancre) ou `write_file` (rewrite) |
+| Édition ciblée   | `patch` (old_string → new_string)                       |
+| Wikilinks        | `[[Note Name]]` (markdown standard Obsidian)            |
 
 **Pas de daemon**, **pas de classification auto**, **pas de sync Notion
 auto**. C'est l'agent qui appelle les outils à chaque modif
@@ -90,6 +90,7 @@ opérations fichiers standard, mais la skill reste plus riche
 title lookup).
 
 Configuration type (optionnelle) :
+
 ```json
 "obsidian-vault": {
   "command": "npx",
@@ -100,17 +101,17 @@ Configuration type (optionnelle) :
 
 ## Notes principales du vault
 
-| Note | Rôle |
-|------|------|
-| [[Context]] | Décisions récentes, TODOs, dernière activité |
-| [[Journal]] | Log chronologique des tâches |
-| [[Architecture]] | Stack globale, monorepo |
-| [[API Endpoints]] | Routes Fastify exhaustives |
-| [[Telnyx Pipeline]] | ai_config, machine à états, webhooks |
-| [[Flux Pipeline Media Stream]] | Pipeline Flux + barge-in |
-| [[Fillers Audio]] | Cache fillers LLM |
-| [[Canal A P0]] | Spec phase 0 + tickets T1-T10 |
-| [[Session Telnyx Debug 2026-06-10]] | Post-mortem Telnyx |
+| Note                                | Rôle                                         |
+| ----------------------------------- | -------------------------------------------- |
+| [[Context]]                         | Décisions récentes, TODOs, dernière activité |
+| [[Journal]]                         | Log chronologique des tâches                 |
+| [[Architecture]]                    | Stack globale, monorepo                      |
+| [[API Endpoints]]                   | Routes Fastify exhaustives                   |
+| [[Telnyx Pipeline]]                 | ai_config, machine à états, webhooks         |
+| [[Flux Pipeline Media Stream]]      | Pipeline Flux + barge-in                     |
+| [[Fillers Audio]]                   | Cache fillers LLM                            |
+| [[Sokar Connect P0]]                | Spec phase 0 + tickets T1-T10                |
+| [[Session Telnyx Debug 2026-06-10]] | Post-mortem Telnyx                           |
 
 Notes archivées : `docs/obsidian/_archive/` (Vapi, Sprint 1, stubs,
 Git Auto-Commit — outils/scripts qui n'existent plus).
@@ -120,14 +121,14 @@ Git Auto-Commit — outils/scripts qui n'existent plus).
 En 2025, un système d'auto-classification a été décrit dans la
 version originale de cette note :
 
-| Composant | Statut réel |
-|-----------|-------------|
-| `agent/scripts/mcp_serve.py` (gateway) | **N'existe plus** |
-| `agent/skills/obsidian/auto_sync.py` (git watcher) | **N'existe plus** |
-| `agent/skills/obsidian/notion_sync.py` (Notion sync) | **N'existe plus** |
-| `agent/skills/obsidian/auto_doc.py` (helpers) | **N'existe plus** |
-| `agent/skills/obsidian/skill.py` (tools Hermes) | **Remplacé** par la skill `obsidian` (filesystem-first) |
-| Windsurf Cascade MCP `obsidian-vault` | **N'utilise plus Windsurf** |
+| Composant                                            | Statut réel                                             |
+| ---------------------------------------------------- | ------------------------------------------------------- |
+| `agent/scripts/mcp_serve.py` (gateway)               | **N'existe plus**                                       |
+| `agent/skills/obsidian/auto_sync.py` (git watcher)   | **N'existe plus**                                       |
+| `agent/skills/obsidian/notion_sync.py` (Notion sync) | **N'existe plus**                                       |
+| `agent/skills/obsidian/auto_doc.py` (helpers)        | **N'existe plus**                                       |
+| `agent/skills/obsidian/skill.py` (tools Hermes)      | **Remplacé** par la skill `obsidian` (filesystem-first) |
+| Windsurf Cascade MCP `obsidian-vault`                | **N'utilise plus Windsurf**                             |
 
 Le système "auto-géré" décrit en 2025 n'a jamais été livré en prod.
 La conséquence visible : le [[Journal]] a sauté 5 semaines

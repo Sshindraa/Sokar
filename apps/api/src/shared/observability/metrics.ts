@@ -97,33 +97,33 @@ export function __resetMetrics(): void {
   idempotencyHitsTotal.reset();
   piiLeaksTotal.reset();
   doubleBookingAttemptsTotal.reset();
-  canalAEventsTotal.reset();
-  canalAReservationsConfirmedTotal.reset();
+  connectEventsTotal.reset();
+  connectReservationsConfirmedTotal.reset();
 }
 
-// ─── Canal A (Phase 1) ────────────────────────────────────────
+// ─── Sokar Connect (Phase 1) ────────────────────────────────────────
 
 /**
- * Compteur global des events Canal A. Labels limités pour éviter la
+ * Compteur global des events Sokar Connect. Labels limités pour éviter la
  * cardinalité infinie (cf. spec v1.1 §16.1 — events standardisés).
  * Labels : event (page_view, cta_clicked, availability_requested,
  *                hold_created, hold_expired, reservation_confirmed,
  *                reservation_failed) × source (web, google, chatgpt, ...).
  */
-export const canalAEventsTotal = new Counter({
-  name: 'sokar_canal_a_events_total',
-  help: 'Total Canal A events received',
+export const connectEventsTotal = new Counter({
+  name: 'sokar_connect_events_total',
+  help: 'Total Sokar Connect events received',
   labelNames: ['event', 'source'] as const,
   registers: [getRegistry()],
 });
 
 /**
- * Réservations confirmées via Canal A (par source).
+ * Réservations confirmées via Sokar Connect (par source).
  * Permet de calculer la conversion par canal SEO/agentic.
  */
-export const canalAReservationsConfirmedTotal = new Counter({
-  name: 'sokar_canal_a_reservations_confirmed_total',
-  help: 'Total reservations confirmed via Canal A',
+export const connectReservationsConfirmedTotal = new Counter({
+  name: 'sokar_connect_reservations_confirmed_total',
+  help: 'Total reservations confirmed via Sokar Connect',
   labelNames: ['source', 'city'] as const,
   registers: [getRegistry()],
 });

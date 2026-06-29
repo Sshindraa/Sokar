@@ -36,7 +36,7 @@ const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 const PREVIEW_STATE: OnboardingState = {
   onboardingDone: false,
   voiceOnboardingDone: false,
-  canalAOnboardingDone: false,
+  connectOnboardingDone: false,
   minimumViableDone: false,
   onboardingCompletedAt: null,
   onboardingActivatedAt: null,
@@ -46,7 +46,7 @@ const PREVIEW_STATE: OnboardingState = {
   totalCount: 10,
   progress: 10,
   voiceProgress: 20,
-  canalAProgress: 0,
+  connectProgress: 0,
   currentStep: {
     key: 'hours',
     title: 'Quand répondre et réserver',
@@ -62,7 +62,7 @@ const PREVIEW_STATE: OnboardingState = {
     {
       key: 'restaurant',
       title: 'Identité du restaurant',
-      description: 'Nom, gérant et coordonnées de contact.',
+      description: 'Nom et coordonnées de contact du restaurant.',
       required: true,
       group: 'voice',
       index: 1,
@@ -112,53 +112,53 @@ const PREVIEW_STATE: OnboardingState = {
       status: 'pending',
       state: { status: 'pending' },
     },
-    // Canal A group
+    // Sokar Connect group
     {
-      key: 'canal-a-identity',
+      key: 'connect-identity',
       title: 'Identité publique',
       description: 'Slug, description et photo de couverture.',
       required: false,
-      group: 'canal-a',
+      group: 'connect',
       index: 1,
       status: 'pending',
       state: { status: 'pending' },
     },
     {
-      key: 'canal-a-location',
+      key: 'connect-location',
       title: 'Localisation',
       description: 'Adresse, coordonnées et carte.',
       required: false,
-      group: 'canal-a',
+      group: 'connect',
       index: 2,
       status: 'pending',
       state: { status: 'pending' },
     },
     {
-      key: 'canal-a-cuisine',
+      key: 'connect-cuisine',
       title: 'Cuisine & ambiance',
       description: 'Type de cuisine, tarifs et spécificités.',
       required: false,
-      group: 'canal-a',
+      group: 'connect',
       index: 3,
       status: 'pending',
       state: { status: 'pending' },
     },
     {
-      key: 'canal-a-capacity',
+      key: 'connect-capacity',
       title: 'Capacité & règles',
       description: "Capacité d'accueil, durée de service et acompte.",
       required: false,
-      group: 'canal-a',
+      group: 'connect',
       index: 4,
       status: 'pending',
       state: { status: 'pending' },
     },
     {
-      key: 'canal-a-activation',
+      key: 'connect-activation',
       title: 'Activation & preview',
       description: 'Mise en ligne de la page et des métadonnées.',
       required: false,
-      group: 'canal-a',
+      group: 'connect',
       index: 5,
       status: 'pending',
       state: { status: 'pending' },
@@ -175,7 +175,7 @@ const PREVIEW_STATE: OnboardingState = {
     id: 'preview',
     name: 'Le Bistrot Sokar',
     managerPhone: '+33600000000',
-    managerEmail: 'gerant@sokar.local',
+    managerEmail: 'restaurant@sokar.local',
     phoneNumber: '+33100000000',
     phoneAssigned: true,
     openingHours: {},
@@ -230,12 +230,12 @@ function updatePreviewStep(
   });
 
   const voiceKeys = ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'];
-  const canalAKeys = [
-    'canal-a-identity',
-    'canal-a-location',
-    'canal-a-cuisine',
-    'canal-a-capacity',
-    'canal-a-activation',
+  const connectKeys = [
+    'connect-identity',
+    'connect-location',
+    'connect-cuisine',
+    'connect-capacity',
+    'connect-activation',
   ];
 
   const voiceSteps = steps.filter((s) => voiceKeys.includes(s.key));
@@ -243,10 +243,10 @@ function updatePreviewStep(
   const voiceOnboardingDone = voiceCompleted === voiceSteps.length;
   const voiceProgress = Math.round((voiceCompleted / voiceSteps.length) * 100);
 
-  const canalASteps = steps.filter((s) => canalAKeys.includes(s.key));
-  const canalACompleted = canalASteps.filter((s) => s.status === 'completed').length;
-  const canalAOnboardingDone = canalACompleted === canalASteps.length;
-  const canalAProgress = Math.round((canalACompleted / canalASteps.length) * 100);
+  const connectSteps = steps.filter((s) => connectKeys.includes(s.key));
+  const connectCompleted = connectSteps.filter((s) => s.status === 'completed').length;
+  const connectOnboardingDone = connectCompleted === connectSteps.length;
+  const connectProgress = Math.round((connectCompleted / connectSteps.length) * 100);
 
   const completedCount = steps.filter((step) => step.status === 'completed').length;
   const currentStep =
@@ -268,9 +268,9 @@ function updatePreviewStep(
     progress: Math.round((completedCount / steps.length) * 100),
     onboardingDone: voiceOnboardingDone,
     voiceOnboardingDone,
-    canalAOnboardingDone,
+    connectOnboardingDone,
     voiceProgress,
-    canalAProgress,
+    connectProgress,
     minimumViableDone,
   };
 }

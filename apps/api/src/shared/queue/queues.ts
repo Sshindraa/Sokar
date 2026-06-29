@@ -39,7 +39,7 @@ export const queues = {
     connection: redisQueue,
     defaultJobOptions: highPriorityWebhookJobOptions,
   }),
-  canalAAnalytics: new Queue('canal-a-analytics', {
+  connectAnalytics: new Queue('connect-analytics', {
     connection: redisQueue,
     defaultJobOptions: {
       // Best-effort : on perd l'event si Redis tombe, c'est OK pour analytics
