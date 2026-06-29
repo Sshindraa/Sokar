@@ -145,7 +145,7 @@ export function HoursStep({ onComplete }: StepProps) {
           return (
             <div
               key={day}
-              className="grid gap-3 rounded-lg border border-border bg-background/60 p-3 transition-all duration-200 md:grid-cols-[8rem_1fr]"
+              className="grid gap-3 rounded-lg border border-border bg-background/60 p-3 transition-colors duration-200 md:grid-cols-[8rem_1fr]"
             >
               <label className="flex items-center gap-2 text-sm font-medium font-semibold select-none cursor-pointer">
                 <input
@@ -272,7 +272,7 @@ export function KnowledgeStep({ onComplete }: StepProps) {
           <button
             type="button"
             onClick={() => setShowAdvanced((v) => !v)}
-            className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-all duration-200 hover:text-foreground"
+            className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors duration-200 hover:text-foreground"
           >
             <ChevronDown
               size={16}
@@ -311,13 +311,13 @@ export function KnowledgeStep({ onComplete }: StepProps) {
         ) : (
           <div className="space-y-4">
             <DemoCallPlayer onPlayed={() => setDemoPlayed(true)} />
-            <div className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200 transition-all duration-200">
+            <div className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200 transition-colors duration-200">
               <Check size={16} />
               <span>Personnalité enregistrée. Écoutez l&apos;aperçu, puis continuez.</span>
             </div>
 
             {demoPlayed && (
-              <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 transition-all duration-300">
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 transition-opacity duration-300">
                 <div className="flex items-start gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
                     H
@@ -349,7 +349,7 @@ export function KnowledgeStep({ onComplete }: StepProps) {
             <Button
               type="button"
               onClick={handleContinue}
-              className="w-full transition-all duration-200"
+              className="w-full transition-colors duration-200"
             >
               Continuer vers l&apos;agenda
             </Button>
@@ -445,7 +445,7 @@ function DemoCallPlayer({ onPlayed }: { onPlayed?: () => void }) {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-background/60 p-4 transition-all duration-200">
+    <div className="rounded-lg border border-border bg-background/60 p-4 transition-colors duration-200">
       <div className="flex items-center gap-3">
         <div className="rounded-lg bg-primary/10 p-2 text-primary">
           <Volume2 size={18} />
@@ -462,7 +462,7 @@ function DemoCallPlayer({ onPlayed }: { onPlayed?: () => void }) {
           size="sm"
           onClick={handlePlay}
           disabled={demo.loading}
-          className="transition-all duration-200"
+          className="transition-colors duration-200"
         >
           {demo.loading ? <Loader2 size={16} className="animate-spin" /> : <Volume2 size={16} />}
           {demo.loading ? 'Génération…' : demo.audioUrl || demo.transcript ? 'Rejouer' : 'Écouter'}
@@ -478,7 +478,7 @@ function DemoCallPlayer({ onPlayed }: { onPlayed?: () => void }) {
             type="button"
             onClick={() => setActiveScript(script.id)}
             className={cn(
-              'rounded-md border px-3 py-1.5 text-xs font-medium transition-all duration-200',
+              'rounded-md border px-3 py-1.5 text-xs font-medium transition-colors duration-200',
               activeScript === script.id
                 ? 'border-primary/50 bg-primary/10 text-foreground'
                 : 'border-border bg-background/60 text-muted-foreground hover:bg-accent hover:text-foreground',
@@ -534,7 +534,7 @@ export function CalendarStep({ onComplete }: StepProps) {
         body="Google Calendar nous permet de vérifier la disponibilité en temps réel avant d'attribuer une table."
       />
       <div className="space-y-4">
-        <div className="rounded-lg border border-border bg-background/60 p-4 transition-all duration-200">
+        <div className="rounded-lg border border-border bg-background/60 p-4 transition-colors duration-200">
           <p className="text-sm text-muted-foreground font-semibold">Statut de la connexion</p>
           <div className="mt-2 flex items-center gap-2">
             <span
@@ -551,7 +551,7 @@ export function CalendarStep({ onComplete }: StepProps) {
 
         <div className="flex flex-col gap-2 sm:flex-row">
           {!connected && (
-            <Button variant="outline" className="transition-all duration-200" disabled>
+            <Button variant="outline" className="transition-colors duration-200" disabled>
               <Globe size={16} />
               Connexion Google Calendar (Aperçu)
             </Button>
@@ -649,7 +649,7 @@ export function PhoneStep({ onComplete }: StepProps) {
         />
         <div className="space-y-4">
           {/* Schéma visuel : du téléphone du restaurant vers Sokar */}
-          <div className="rounded-lg border border-border bg-background/60 p-5 transition-all duration-200">
+          <div className="rounded-lg border border-border bg-background/60 p-5 transition-colors duration-200">
             <p className="text-sm font-semibold text-foreground">Ce qui va se passer</p>
             <div className="mt-4 flex items-center gap-3">
               <div className="flex-1 rounded-md border border-border bg-muted/30 p-3 text-center">
@@ -674,7 +674,7 @@ export function PhoneStep({ onComplete }: StepProps) {
           </div>
 
           {/* Rassurance réversibilité */}
-          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 transition-all duration-200">
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 transition-colors duration-200">
             <div className="flex items-start gap-3">
               <ShieldCheck size={18} className="mt-0.5 shrink-0 text-emerald-400" />
               <div className="space-y-1">
@@ -690,7 +690,7 @@ export function PhoneStep({ onComplete }: StepProps) {
           </div>
 
           {!hasAssignedPhone && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-200 transition-all duration-200">
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-200 transition-colors duration-200">
               Votre numéro dédié sera attribué par l&apos;équipe Sokar. Une fois attribué, vous
               pourrez activer le renvoi et lancer l&apos;appel test.
             </div>
@@ -701,12 +701,12 @@ export function PhoneStep({ onComplete }: StepProps) {
               type="button"
               onClick={() => setConfirmed(true)}
               disabled={!hasAssignedPhone}
-              className="transition-all duration-200"
+              className="transition-colors duration-200"
             >
               J&apos;ai compris, continuer
               <ArrowRight size={16} />
             </Button>
-            <Button onClick={handleSkip} variant="ghost" className="transition-all duration-200">
+            <Button onClick={handleSkip} variant="ghost" className="transition-colors duration-200">
               Plus tard
             </Button>
           </div>
@@ -724,13 +724,13 @@ export function PhoneStep({ onComplete }: StepProps) {
         body="Activez le renvoi d'appel depuis votre opérateur, puis lancez le test pour entendre l'assistant répondre."
       />
       <div className="space-y-4">
-        <div className="rounded-lg border border-border bg-background/60 p-4 transition-all duration-200">
+        <div className="rounded-lg border border-border bg-background/60 p-4 transition-colors duration-200">
           <p className="text-sm text-muted-foreground font-semibold">Numéro Sokar</p>
           <p className="mt-1 text-2xl font-semibold tracking-tight">
             {hasAssignedPhone ? phoneNumber : 'À attribuer'}
           </p>
         </div>
-        <div className="rounded-lg border border-border bg-background/60 p-4 text-sm text-muted-foreground transition-all duration-200">
+        <div className="rounded-lg border border-border bg-background/60 p-4 text-sm text-muted-foreground transition-colors duration-200">
           Activez le renvoi d&apos;appel depuis l&apos;opérateur du restaurant vers le numéro Sokar,
           puis lancez le test.
         </div>
@@ -751,13 +751,13 @@ export function PhoneStep({ onComplete }: StepProps) {
             type="button"
             onClick={handleTestCall}
             disabled={calling || !hasAssignedPhone || !managerPhone}
-            className="transition-all duration-200"
+            className="transition-colors duration-200"
           >
             {calling && <Loader2 className="animate-spin" size={16} />}
             {calling ? 'Appel en cours…' : 'Lancer un appel test'}
             <PhoneForwarded size={16} />
           </Button>
-          <Button onClick={handleSkip} variant="ghost" className="transition-all duration-200">
+          <Button onClick={handleSkip} variant="ghost" className="transition-colors duration-200">
             Plus tard
           </Button>
         </div>
@@ -906,7 +906,7 @@ export function ConnectIdentityStep({ onComplete }: StepProps) {
           <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleFileDrop}
-            className="border-2 border-dashed border-border rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 transition-all bg-background/40 relative min-h-[160px]"
+            className="border-2 border-dashed border-border rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 transition-colors bg-background/40 relative min-h-[160px]"
           >
             {coverImageUrl ? (
               <div className="absolute inset-0 p-2">
@@ -1226,7 +1226,7 @@ export function ConnectCuisineStep({ onComplete }: StepProps) {
                   type="button"
                   onClick={() => toggleItem(cuisineType, setCuisineType, c)}
                   className={cn(
-                    'px-3 py-1 text-xs rounded-full border border-border bg-background hover:border-primary/50 transition-all',
+                    'px-3 py-1 text-xs rounded-full border border-border bg-background hover:border-primary/50 transition-colors',
                     active && 'border-primary/50 bg-primary/10 text-primary',
                   )}
                 >
@@ -1274,7 +1274,7 @@ export function ConnectCuisineStep({ onComplete }: StepProps) {
                   type="button"
                   onClick={() => setPriceRange(p)}
                   className={cn(
-                    'px-3 py-2 text-xs rounded-lg border border-border bg-background hover:bg-accent transition-all font-medium',
+                    'px-3 py-2 text-xs rounded-lg border border-border bg-background hover:bg-accent transition-colors font-medium',
                     active && 'border-primary/50 bg-primary/10 text-primary',
                   )}
                 >
@@ -1298,7 +1298,7 @@ export function ConnectCuisineStep({ onComplete }: StepProps) {
                   type="button"
                   onClick={() => toggleItem(dietary, setDietary, d)}
                   className={cn(
-                    'px-3 py-1 text-xs rounded-full border border-border bg-background hover:border-primary/50 transition-all capitalize',
+                    'px-3 py-1 text-xs rounded-full border border-border bg-background hover:border-primary/50 transition-colors capitalize',
                     active && 'border-primary/50 bg-primary/10 text-primary',
                   )}
                 >
@@ -1322,7 +1322,7 @@ export function ConnectCuisineStep({ onComplete }: StepProps) {
                   type="button"
                   onClick={() => toggleItem(ambiance, setAmbiance, f)}
                   className={cn(
-                    'px-3 py-1 text-xs rounded-full border border-border bg-background hover:border-primary/50 transition-all capitalize',
+                    'px-3 py-1 text-xs rounded-full border border-border bg-background hover:border-primary/50 transition-colors capitalize',
                     active && 'border-primary/50 bg-primary/10 text-primary',
                   )}
                 >
