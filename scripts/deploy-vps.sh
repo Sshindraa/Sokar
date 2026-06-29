@@ -271,11 +271,31 @@ echo ""
 echo "📦 Installing dependencies..."
 pnpm install --frozen-lockfile
 
-for env_file in apps/api/.env apps/dashboard/.env apps/connect/.env.prod infra/.env; do
-    if [ -f "$env_file" ]; then
+# Env files critiques — fail fast si absent (silence = app démarre sans config)
+REQUIRED_ENV_FILES=(
+    "apps/api/.env"
+    "apps/dashboard/.env"
+    "apps/connect/.env.prod"
+)
+OPTIONAL_ENV_FILES=(
+    "infra/.env"
+)
+
+for env_file in "${REQUIRED_ENV_FILES[@]}"; do
+    if [ ! -f "$env_file" ]; then
+        echo "❌ Env file manquant : $env_file — l'app correspondante démarrera sans config."
+        echo "   Créez-le sur le VPS avec les valeurs de prod (voir .env.example du repo)."
+        FAIL_MISSING_ENV=1
+    else
         chmod 0600 "$env_file"
     fi
 done
+for env_file in "${OPTIONAL_ENV_FILES[@]}"; do
+    [ -f "$env_file" ] && chmod 0600 "$env_file"
+done
+if [ "${FAIL_MISSING_ENV:-0}" = "1" ]; then
+    exit 1
+fi
 
 # ── 4. Generate Prisma ──────────────────────────────────
 echo ""
