@@ -67,7 +67,7 @@ function OnboardingStepContent() {
           <div>
             <p className="text-sm text-muted-foreground">Sokar OS</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">
-              Mise en service de l'assistant
+              Mise en service de l&apos;assistant
             </h1>
           </div>
           <Button variant="outline" asChild className="transition-all duration-200">

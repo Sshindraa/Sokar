@@ -80,7 +80,7 @@ export function OnboardingLockBanner({ task }: { task: OnboardingTaskKey }) {
       <div className="flex items-center gap-2">
         <Lock className="text-amber-400 shrink-0" size={16} />
         <span className="text-amber-200">
-          Action bloquée — termine l'étape « {step.title} » pour déverrouiller cette section.
+          Action bloquée — termine l&apos;étape « {step.title} » pour déverrouiller cette section.
         </span>
       </div>
       <button

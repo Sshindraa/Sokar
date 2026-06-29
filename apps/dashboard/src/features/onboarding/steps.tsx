@@ -181,7 +181,7 @@ export function HoursStep({ onComplete }: StepProps) {
           );
         })}
         <div className="pt-3">
-          <SubmitButton saving={saving}>Valider et passer à l'assistant</SubmitButton>
+          <SubmitButton saving={saving}>Valider et passer à l&apos;assistant</SubmitButton>
         </div>
       </div>
     </form>
@@ -276,7 +276,7 @@ export function KnowledgeStep({ onComplete }: StepProps) {
           </div>
         </Field>
 
-        <SubmitButton saving={saving}>Valider et connecter l'agenda</SubmitButton>
+        <SubmitButton saving={saving}>Valider et connecter l&apos;agenda</SubmitButton>
       </div>
     </form>
   );
@@ -336,7 +336,8 @@ export function CalendarStep({ onComplete }: StepProps) {
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          En choisissant le planning manuel, tu gères les arrivées depuis l'onglet Réservations.
+          En choisissant le planning manuel, tu gères les arrivées depuis l&apos;onglet
+          Réservations.
         </p>
       </div>
     </div>
@@ -398,14 +399,14 @@ export function PhoneStep({ onComplete }: StepProps) {
           </p>
           {!hasAssignedPhone && (
             <p className="mt-2 text-sm text-amber-300">
-              Le numéro peut être ajouté depuis les réglages ou par l'équipe Sokar avant la mise en
-              production.
+              Le numéro peut être ajouté depuis les réglages ou par l&apos;équipe Sokar avant la
+              mise en production.
             </p>
           )}
         </div>
         <div className="rounded-lg border border-border bg-background/60 p-4 text-sm text-muted-foreground transition-all duration-200">
-          Active le renvoi d'appel depuis l'opérateur du restaurant vers le numéro Sokar, puis lance
-          le test.
+          Active le renvoi d&apos;appel depuis l&apos;opérateur du restaurant vers le numéro Sokar,
+          puis lance le test.
         </div>
 
         {testResult && (
@@ -436,7 +437,8 @@ export function PhoneStep({ onComplete }: StepProps) {
         </div>
         {!hasAssignedPhone && (
           <p className="text-xs text-muted-foreground">
-            L'appel test sera disponible dès qu'un numéro Sokar sera attribué à ce restaurant.
+            L&apos;appel test sera disponible dès qu&apos;un numéro Sokar sera attribué à ce
+            restaurant.
           </p>
         )}
       </div>
@@ -983,7 +985,7 @@ export function CanalACuisineStep({ onComplete }: StepProps) {
 
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
-            Atouts de l'établissement
+            Atouts de l&apos;établissement
           </label>
           <div className="flex flex-wrap gap-2">
             {FEATURES_PRESETS.map((f) => {
