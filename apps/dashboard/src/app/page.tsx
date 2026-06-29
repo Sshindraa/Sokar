@@ -18,14 +18,14 @@ import MobileNav from '@/components/MobileNav';
 import AuthCTA from '@/components/AuthCTA';
 import SectionSkeleton from '@/components/SectionSkeleton';
 
-// Defer heavy client sections to idle time — they hydrate framer-motion + chat timer
-// after the hero/footer are interactive. No CLS: skeletons reserve the same height.
-const ScrollStoryboardSection = dynamic(
-  () => import('@/app/ScrollStoryboardSection'),
-  { ssr: false, loading: () => <SectionSkeleton variant="storyboard" /> },
-);
+// SSR les sections pour éviter le flash de skeleton sur 4G.
+// ScrollStoryboardSection : Framer Motion useScroll retourne progress=0 en SSR,
+//   l'état initial (1er story step) est rendu serveur, hydration client-side.
+// DemoSection : useState/useEffect seulement, pas de window/document direct.
+const ScrollStoryboardSection = dynamic(() => import('@/app/ScrollStoryboardSection'), {
+  loading: () => <SectionSkeleton variant="storyboard" />,
+});
 const DemoSection = dynamic(() => import('@/app/DemoSection'), {
-  ssr: false,
   loading: () => <SectionSkeleton variant="demo" />,
 });
 
@@ -45,7 +45,9 @@ const jakarta = Plus_Jakarta_Sans({
 
 export default function HomePage() {
   return (
-    <div className={`relative min-h-screen w-full bg-[#030303] text-foreground flex flex-col justify-between items-center font-sans antialiased ${outfit.variable} ${jakarta.variable}`}>
+    <div
+      className={`relative min-h-screen w-full bg-background text-foreground flex flex-col justify-between items-center font-sans antialiased ${outfit.variable} ${jakarta.variable}`}
+    >
       {/* Liquid Field Background */}
       <div className="liquid-field absolute inset-0 pointer-events-none z-0 overflow-hidden select-none" />
 
@@ -54,15 +56,27 @@ export default function HomePage() {
         href="/"
         className="fixed left-4 top-5 z-50 hidden md:flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-80 sm:left-6"
       >
-        <Image src="/logo-nav.png" alt="Sokar" width={36} height={36} className="h-9 w-9 sm:h-11 sm:w-11" priority />
-        <span className="hidden text-xl font-bold tracking-tight text-white font-display sm:inline">Sokar</span>
+        <Image
+          src="/logo-nav.png"
+          alt="Sokar"
+          width={36}
+          height={36}
+          className="h-9 w-9 sm:h-11 sm:w-11"
+          priority
+        />
+        <span className="hidden text-xl font-bold tracking-tight text-white font-display sm:inline">
+          Sokar
+        </span>
       </Link>
 
       {/* Floating navbar */}
       <div className="fixed left-1/2 top-5 z-50 -translate-x-1/2 flex items-center">
         <nav className="flex items-center gap-2 rounded-full border border-white/10 bg-black/85 px-3 py-2 shadow-2xl">
           {/* Logo inside navbar on mobile */}
-          <Link href="/" className="flex items-center gap-1.5 md:hidden pl-1 hover:opacity-80 transition-opacity">
+          <Link
+            href="/"
+            className="flex items-center gap-1.5 md:hidden pl-1 hover:opacity-80 transition-opacity"
+          >
             <Image src="/logo-nav.png" alt="Sokar" width={28} height={28} className="h-7 w-7" />
           </Link>
           <span className="h-4 w-px bg-white/10 md:hidden mx-1" />
@@ -92,7 +106,6 @@ export default function HomePage() {
 
       {/* Main Content */}
       <main className="relative z-10 flex w-full flex-col items-center">
-        
         {/* HERO — fully static, server-rendered */}
         <section className="relative flex min-h-screen w-full items-stretch justify-center overflow-hidden px-0 pb-0 pt-0">
           <div className="relative flex w-full overflow-hidden bg-black shadow-[0_40px_120px_rgba(0,0,0,0.75)]">
@@ -162,7 +175,8 @@ export default function HomePage() {
                 </h1>
 
                 <p className="mx-auto mt-5 max-w-2xl text-sm leading-6 text-white/62 md:text-base">
-                  Sokar aide les restaurants à capter chaque demande, fluidifier chaque service et transformer l&apos;accueil client en avantage opérationnel.
+                  Sokar aide les restaurants à capter chaque demande, fluidifier chaque service et
+                  transformer l&apos;accueil client en avantage opérationnel.
                 </p>
 
                 <div className="mt-8 flex w-full flex-col items-center justify-center gap-3 sm:w-auto sm:flex-row">
@@ -232,17 +246,29 @@ export default function HomePage() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_28%_0%,rgba(210,244,255,0.12),transparent_26rem),radial-gradient(circle_at_78%_18%,rgba(236,255,244,0.08),transparent_24rem)]" />
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.018)_1px,transparent_1px)] bg-[length:96px_96px] opacity-60" />
         <div className="absolute inset-x-0 bottom-0 overflow-hidden pointer-events-none select-none flex justify-center -z-10 opacity-30">
-          <span aria-hidden="true" className="stroke-text font-black text-[12vw] tracking-[0.1em] uppercase leading-none select-none">SOKAR</span>
+          <span
+            aria-hidden="true"
+            className="stroke-text font-black text-[12vw] tracking-[0.1em] uppercase leading-none select-none"
+          >
+            SOKAR
+          </span>
         </div>
 
         <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
           <div className="flex flex-col gap-4">
             <Link href="/" className="flex items-center gap-2">
-              <Image src="/logo-nav.png" alt="Sokar" width={32} height={32} className="h-8 w-8 filter drop-shadow-[0_0_10px_rgba(255,255,255,0.15)]" />
+              <Image
+                src="/logo-nav.png"
+                alt="Sokar"
+                width={32}
+                height={32}
+                className="h-8 w-8 filter drop-shadow-[0_0_10px_rgba(255,255,255,0.15)]"
+              />
               <span className="text-lg font-bold text-white font-display">Sokar</span>
             </Link>
             <p className="text-xs text-white/40 leading-relaxed font-sans max-w-xs">
-              L&apos;assistant vocal intelligent qui révolutionne la prise de réservations et la gestion des appels de votre restaurant.
+              L&apos;assistant vocal intelligent qui révolutionne la prise de réservations et la
+              gestion des appels de votre restaurant.
             </p>
             <div className="flex items-center gap-3 mt-2">
               {[
@@ -250,21 +276,27 @@ export default function HomePage() {
                   name: 'Twitter',
                   href: '#',
                   icon: (
-                    <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                    <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                    </svg>
                   ),
                 },
                 {
                   name: 'Facebook',
                   href: '#',
                   icon: (
-                    <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                    <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
+                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                    </svg>
                   ),
                 },
                 {
                   name: 'Instagram',
                   href: '#',
                   icon: (
-                    <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24"><path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.281.63 4.07C.333 4.835.132 5.705.072 6.983.015 8.263 0 8.67 0 12s.015 3.737.072 5.017c.06 1.278.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.078 2.126 1.384.765.297 1.635.499 2.913.558C8.333 23.985 8.74 24 12 24s3.737-.015 5.017-.072c1.278-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.078-1.335 1.384-2.126.297-.765.499-1.635.558-2.913.06-1.28.072-1.687.072-5.017s-.015-3.737-.072-5.017c-.06-1.278-.262-2.148-.557-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.635-.499-2.913-.558C15.667.015 15.26 0 12 0zm0 2.162c3.204 0 3.584.012 4.85.07 1.17.054 1.805.249 2.227.415.562.217.96.477 1.378.896.419.42.679.819.896 1.378.164.422.36 1.057.414 2.227.058 1.266.07 1.646.07 4.85s-.012 3.584-.07 4.85c-.054 1.17-.249 1.805-.415 2.227-.217.562-.477.96-.896 1.378-.42.419-.819.679-1.378.896-.422.164-1.057.36-2.227.414-1.266.058-1.646.07-4.85.07s-3.584-.012-4.85-.07c-1.17-.054-1.805-.249-2.227-.415-.562-.217-.96-.477-1.378-.896-.419-.42-.679-.819-.896-1.378-.164-.422-.36-1.057-.414-2.227-.058-1.266-.07-1.646-.07-4.85s.012-3.584.07-4.85c.054-1.17.249-1.805.415-2.227.217-.562.477-.96.896-1.378.42-.419.819-.679 1.378-.896.422-.164 1.057-.36 2.227-.414 1.266-.058 1.646-.07 4.85-.07zM12 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm7.846-10.405a1.44 1.44 0 1 1-2.88 0 1.44 1.44 0 0 1 2.88 0z"/></svg>
+                    <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
+                      <path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.281.63 4.07C.333 4.835.132 5.705.072 6.983.015 8.263 0 8.67 0 12s.015 3.737.072 5.017c.06 1.278.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.078 2.126 1.384.765.297 1.635.499 2.913.558C8.333 23.985 8.74 24 12 24s3.737-.015 5.017-.072c1.278-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.078-1.335 1.384-2.126.297-.765.499-1.635.558-2.913.06-1.28.072-1.687.072-5.017s-.015-3.737-.072-5.017c-.06-1.278-.262-2.148-.557-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.635-.499-2.913-.558C15.667.015 15.26 0 12 0zm0 2.162c3.204 0 3.584.012 4.85.07 1.17.054 1.805.249 2.227.415.562.217.96.477 1.378.896.419.42.679.819.896 1.378.164.422.36 1.057.414 2.227.058 1.266.07 1.646.07 4.85s-.012 3.584-.07 4.85c-.054 1.17-.249 1.805-.415 2.227-.217.562-.477.96-.896 1.378-.42.419-.819.679-1.378.896-.422.164-1.057.36-2.227.414-1.266.058-1.646.07-4.85.07s-3.584-.012-4.85-.07c-1.17-.054-1.805-.249-2.227-.415-.562-.217-.96-.477-1.378-.896-.419-.42-.679-.819-.896-1.378-.164-.422-.36-1.057-.414-2.227-.058-1.266-.07-1.646-.07-4.85s.012-3.584.07-4.85c.054-1.17.249-1.805.415-2.227.217-.562.477-.96.896-1.378.42-.419.819-.679 1.378-.896.422-.164 1.057-.36 2.227-.414 1.266-.058 1.646-.07 4.85-.07zM12 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm7.846-10.405a1.44 1.44 0 1 1-2.88 0 1.44 1.44 0 0 1 2.88 0z" />
+                    </svg>
                   ),
                 },
               ].map((social) => (
@@ -283,22 +315,63 @@ export default function HomePage() {
           </div>
 
           <div className="flex flex-col gap-3">
-            <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white/80 font-sans">Produit</h4>
-            <a href="#demo" className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Démonstration</a>
-            <a href="#tarifs" className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Tarifs</a>
-            <a href="#faq" className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">FAQ</a>
+            <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white/80 font-sans">
+              Produit
+            </h4>
+            <a
+              href="#demo"
+              className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center"
+            >
+              Démonstration
+            </a>
+            <a
+              href="#tarifs"
+              className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center"
+            >
+              Tarifs
+            </a>
+            <a
+              href="#faq"
+              className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center"
+            >
+              FAQ
+            </a>
           </div>
 
           <div className="flex flex-col gap-3">
-            <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white/80 font-sans">Entreprise</h4>
-            <a href="#waitlist" className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Waitlist Bêta</a>
-            <Link href="/login" className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Espace Partenaire</Link>
+            <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white/80 font-sans">
+              Entreprise
+            </h4>
+            <a
+              href="#waitlist"
+              className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center"
+            >
+              Waitlist Bêta
+            </a>
+            <Link
+              href="/login"
+              className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center"
+            >
+              Espace Partenaire
+            </Link>
           </div>
 
           <div className="flex flex-col gap-3">
-            <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white/80 font-sans">Légal</h4>
-            <a href="#" className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Mentions Légales</a>
-            <a href="#" className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center">Confidentialité</a>
+            <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white/80 font-sans">
+              Légal
+            </h4>
+            <a
+              href="#"
+              className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center"
+            >
+              Mentions Légales
+            </a>
+            <a
+              href="#"
+              className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center"
+            >
+              Confidentialité
+            </a>
           </div>
         </div>
 
