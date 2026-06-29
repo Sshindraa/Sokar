@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowRight,
@@ -100,18 +99,23 @@ function StatusIcon({ status }: { status: OnboardingStatus }) {
 }
 
 export function DashboardOnboardingGate() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const { state, loading } = useOnboarding();
+  const { state, loading, activeStep, openStepModal } = useOnboarding();
 
+  // Soft gate : si le minimum viable (restaurant + hours) n'est pas atteint,
+  // on ouvre automatiquement la modale d'onboarding au montage du dashboard.
+  // L'utilisateur reste sur /dashboard (le panneau s'affiche derrière la modale)
+  // et peut fermer la modale s'il le souhaite — il reviendra via le panneau.
   useEffect(() => {
     if (!hasClerkKey) return;
-    if (loading || !state || state.voiceOnboardingDone || !pathname?.startsWith('/dashboard')) return;
+    if (loading || !state) return;
+    if (state.minimumViableDone) return;
+    if (activeStep) return; // déjà ouverte
     const voiceKeys = ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'];
     const voiceSteps = state.steps.filter((s) => voiceKeys.includes(s.key));
-    const targetStep = voiceSteps.find((s) => s.status === 'current' || s.status === 'pending') ?? voiceSteps[0];
-    router.replace(`/onboarding/${targetStep.key}`);
-  }, [loading, pathname, router, state]);
+    const targetStep =
+      voiceSteps.find((s) => s.status === 'current' || s.status === 'pending') ?? voiceSteps[0];
+    openStepModal(targetStep.key);
+  }, [loading, state, activeStep, openStepModal]);
 
   return null;
 }
@@ -139,17 +143,29 @@ export function DashboardOnboardingPanel() {
 }
 
 export function OnboardingBanners() {
-  const { state, openStep } = useOnboarding();
+  const { state, openStepModal } = useOnboarding();
   if (!state) return null;
 
   const showVoiceBanner = !state.voiceOnboardingDone;
   const showCanalABanner = !state.canalAOnboardingDone;
 
-  const voiceCurrent = state.steps.filter((s) => ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'].includes(s.key))
-    .find((s) => s.status === 'current' || s.status === 'pending') ?? state.steps[0];
+  const voiceCurrent =
+    state.steps
+      .filter((s) => ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'].includes(s.key))
+      .find((s) => s.status === 'current' || s.status === 'pending') ?? state.steps[0];
 
-  const canalACurrent = state.steps.filter((s) => ['canal-a-identity', 'canal-a-location', 'canal-a-cuisine', 'canal-a-capacity', 'canal-a-activation'].includes(s.key))
-    .find((s) => s.status === 'current' || s.status === 'pending') ?? state.steps[5];
+  const canalACurrent =
+    state.steps
+      .filter((s) =>
+        [
+          'canal-a-identity',
+          'canal-a-location',
+          'canal-a-cuisine',
+          'canal-a-capacity',
+          'canal-a-activation',
+        ].includes(s.key),
+      )
+      .find((s) => s.status === 'current' || s.status === 'pending') ?? state.steps[5];
 
   return (
     <div className="flex flex-col gap-3">
@@ -161,7 +177,15 @@ export function OnboardingBanners() {
             </div>
             <div>
               <p className="text-sm font-semibold text-foreground">
-                Assistant Vocal Sokar · {state.steps.filter(s => ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'].includes(s.key) && s.status === 'completed').length}/5 terminées
+                Assistant Vocal Sokar ·{' '}
+                {
+                  state.steps.filter(
+                    (s) =>
+                      ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'].includes(s.key) &&
+                      s.status === 'completed',
+                  ).length
+                }
+                /5 terminées
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 Prochaine action : {voiceCurrent.title.toLowerCase()} · {state.voiceProgress}% prêt.
@@ -170,7 +194,7 @@ export function OnboardingBanners() {
           </div>
           <Button
             type="button"
-            onClick={() => openStep(voiceCurrent.key)}
+            onClick={() => openStepModal(voiceCurrent.key)}
             className="w-full transition-all duration-200 md:w-auto"
           >
             Continuer la configuration de la Voice
@@ -187,16 +211,30 @@ export function OnboardingBanners() {
             </div>
             <div>
               <p className="text-sm font-semibold text-foreground">
-                Sokar Connect · {state.steps.filter(s => ['canal-a-identity', 'canal-a-location', 'canal-a-cuisine', 'canal-a-capacity', 'canal-a-activation'].includes(s.key) && s.status === 'completed').length}/5 terminées
+                Sokar Connect ·{' '}
+                {
+                  state.steps.filter(
+                    (s) =>
+                      [
+                        'canal-a-identity',
+                        'canal-a-location',
+                        'canal-a-cuisine',
+                        'canal-a-capacity',
+                        'canal-a-activation',
+                      ].includes(s.key) && s.status === 'completed',
+                  ).length
+                }
+                /5 terminées
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Prochaine action : {canalACurrent.title.toLowerCase()} · {state.canalAProgress}% prêt.
+                Prochaine action : {canalACurrent.title.toLowerCase()} · {state.canalAProgress}%
+                prêt.
               </p>
             </div>
           </div>
           <Button
             type="button"
-            onClick={() => openStep(canalACurrent.key)}
+            onClick={() => openStepModal(canalACurrent.key)}
             className="w-full transition-all duration-200 md:w-auto bg-amber-600 hover:bg-amber-700 text-white"
           >
             Configurer Connect
@@ -209,11 +247,21 @@ export function OnboardingBanners() {
 }
 
 export function OnboardingStepper() {
-  const { state, openStep } = useOnboarding();
+  const { state, openStepModal } = useOnboarding();
   if (!state) return null;
 
-  const voiceSteps = state.steps.filter((s) => ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'].includes(s.key));
-  const canalASteps = state.steps.filter((s) => ['canal-a-identity', 'canal-a-location', 'canal-a-cuisine', 'canal-a-capacity', 'canal-a-activation'].includes(s.key));
+  const voiceSteps = state.steps.filter((s) =>
+    ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'].includes(s.key),
+  );
+  const canalASteps = state.steps.filter((s) =>
+    [
+      'canal-a-identity',
+      'canal-a-location',
+      'canal-a-cuisine',
+      'canal-a-capacity',
+      'canal-a-activation',
+    ].includes(s.key),
+  );
 
   return (
     <section className="rounded-lg border border-border bg-card/80 p-4 backdrop-blur-xl transition-all duration-200 md:p-5">
@@ -230,7 +278,7 @@ export function OnboardingStepper() {
           </div>
           <div className="grid gap-2 md:grid-cols-5">
             {voiceSteps.map((step) => (
-              <StepperButton key={step.key} step={step} onClick={() => openStep(step.key)} />
+              <StepperButton key={step.key} step={step} onClick={() => openStepModal(step.key)} />
             ))}
           </div>
         </div>
@@ -243,7 +291,7 @@ export function OnboardingStepper() {
           </div>
           <div className="grid gap-2 md:grid-cols-5">
             {canalASteps.map((step) => (
-              <StepperButton key={step.key} step={step} onClick={() => openStep(step.key)} />
+              <StepperButton key={step.key} step={step} onClick={() => openStepModal(step.key)} />
             ))}
           </div>
         </div>
@@ -283,7 +331,7 @@ function StepperButton({ step, onClick }: { step: OnboardingStep; onClick: () =>
 }
 
 export function CurrentActionCard() {
-  const { state, openStep, updateTask } = useOnboarding();
+  const { state, openStepModal, updateTask } = useOnboarding();
   if (!state) return null;
 
   const step = state.currentStep;
@@ -318,10 +366,10 @@ export function CurrentActionCard() {
       <div className="mt-5 flex flex-col gap-2 sm:flex-row">
         <Button
           type="button"
-          onClick={() => openStep(step.key)}
+          onClick={() => openStepModal(step.key)}
           className={cn(
-            "transition-all duration-200",
-            step.key.startsWith('canal-a') && "bg-amber-600 hover:bg-amber-700 text-white"
+            'transition-all duration-200',
+            step.key.startsWith('canal-a') && 'bg-amber-600 hover:bg-amber-700 text-white',
           )}
         >
           {copy.cta}
@@ -331,7 +379,7 @@ export function CurrentActionCard() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => openStep('calendar')}
+            onClick={() => openStepModal('calendar')}
             className="transition-all duration-200"
           >
             Réessayer Google

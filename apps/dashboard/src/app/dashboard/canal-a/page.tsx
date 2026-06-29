@@ -7,6 +7,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
+import { OnboardingLockBanner } from '@/features/onboarding/onboarding-guard';
 import {
   AlertCircle,
   CheckCircle2,
@@ -185,6 +186,7 @@ export default function ConnectDashboardPage() {
 
   return (
     <div className="space-y-6">
+      <OnboardingLockBanner task="canal-a-identity" />
       {/* ── Header ────────────────────────────────────── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>

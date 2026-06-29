@@ -82,6 +82,7 @@ export type OnboardingState = {
   onboardingDone: boolean; // Voice onboarding done
   voiceOnboardingDone: boolean;
   canalAOnboardingDone: boolean;
+  minimumViableDone: boolean; // restaurant + hours completed
   onboardingCompletedAt: string | null;
   onboardingActivatedAt: string | null;
   onboardingLastSeenAt: string | null;

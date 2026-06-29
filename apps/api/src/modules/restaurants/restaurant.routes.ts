@@ -96,6 +96,7 @@ function onboardingPayload(restaurant: any, state = computeOnboardingState(resta
     onboardingDone: state.onboardingDone,
     voiceOnboardingDone: state.voiceOnboardingDone,
     canalAOnboardingDone: state.canalAOnboardingDone,
+    minimumViableDone: state.minimumViableDone,
     onboardingCompletedAt: restaurant.onboardingCompletedAt,
     onboardingActivatedAt: restaurant.onboardingActivatedAt,
     onboardingLastSeenAt: restaurant.onboardingLastSeenAt,
@@ -345,6 +346,121 @@ export async function restaurantRoutes(app: FastifyInstance) {
     } catch (err) {
       app.log.error({ err, slug }, 'Restaurant fetch by slug (widget) failed');
       return reply.status(404).send({ error: 'Restaurant not found' });
+    }
+  });
+
+  // ─── Preview public (mode démo hybride) ───────────────────────────
+  // Sert les données du restaurant démo "Chez Sokar" (slug: chez-sokar-demo)
+  // aux utilisateurs non-onboardés pour explorer le produit en lecture seule.
+  // Pas d'auth : endpoint public. Aucune donnée sensible (pas de tokens,
+  // pas d'API keys MCP, pas de refresh tokens Google).
+  app.get('/public/preview/restaurant', async (_req, reply) => {
+    try {
+      const restaurant = await app.db.restaurant.findFirst({
+        where: { slug: 'chez-sokar-demo' },
+        select: {
+          id: true,
+          name: true,
+          managerPhone: true,
+          managerEmail: true,
+          phoneNumber: true,
+          openingHours: true,
+          googleCalendarId: true,
+          slug: true,
+          description: true,
+          formattedAddress: true,
+          city: true,
+          postalCode: true,
+          country: true,
+          lat: true,
+          lng: true,
+          cuisineType: true,
+          priceRange: true,
+          ambiance: true,
+          dietary: true,
+          coverImageUrl: true,
+          plan: true,
+          personality: { select: { profileType: true, fillerStyle: true, speakingRate: true } },
+          exposureSettings: {
+            select: {
+              canalAPublished: true,
+              canalAAgentic: true,
+              maxPartySize: true,
+              capacitySpecials: true,
+            },
+          },
+          images: { select: { url: true, isCover: true, position: true, alt: true } },
+        },
+      });
+
+      if (!restaurant) {
+        return reply.status(404).send({ error: 'Demo restaurant not found' });
+      }
+
+      // Récupère quelques appels, réservations et clients fictifs pour la démo
+      const [calls, reservations, customers] = await Promise.all([
+        app.db.call
+          .findMany({
+            where: { restaurantId: restaurant.id },
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+            select: {
+              id: true,
+              createdAt: true,
+              durationSec: true,
+              intent: true,
+              outcome: true,
+              carrier: true,
+            },
+          })
+          .catch(() => []),
+        app.db.reservation
+          .findMany({
+            where: { restaurantId: restaurant.id },
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+            select: {
+              id: true,
+              customerName: true,
+              customerPhone: true,
+              partySize: true,
+              reservedAt: true,
+              status: true,
+              estimatedRevenue: true,
+            },
+          })
+          .catch(() => []),
+        app.db.customer
+          .findMany({
+            where: { restaurantId: restaurant.id },
+            take: 10,
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              visitCount: true,
+              isVip: true,
+              notes: true,
+              lastSeenAt: true,
+            },
+          })
+          .catch(() => []),
+      ]);
+
+      return reply.send({
+        restaurant: {
+          ...restaurant,
+          lat: restaurant.lat ? Number(restaurant.lat) : null,
+          lng: restaurant.lng ? Number(restaurant.lng) : null,
+        },
+        calls,
+        reservations,
+        customers,
+        isPreview: true,
+      });
+    } catch (err) {
+      app.log.error({ err }, 'Preview restaurant fetch failed');
+      return reply.status(500).send({ error: 'Failed to load preview' });
     }
   });
 
@@ -614,11 +730,9 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
     const regex = /^[a-z0-9-]+$/;
     if (!regex.test(slug)) {
-      return reply
-        .status(400)
-        .send({
-          error: 'Format du slug invalide (lettres minuscules, chiffres, tirets uniquement)',
-        });
+      return reply.status(400).send({
+        error: 'Format du slug invalide (lettres minuscules, chiffres, tirets uniquement)',
+      });
     }
     const existing = await app.db.restaurant.findUnique({
       where: { slug },

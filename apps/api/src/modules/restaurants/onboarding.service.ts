@@ -157,26 +157,23 @@ export function normalizeTasks(raw: unknown): OnboardingTasksMap {
       ? (raw as Record<string, Partial<OnboardingTaskState>>)
       : {};
 
-  return ONBOARDING_STEPS.reduce(
-    (acc, step, index) => {
-      const stored = source[step.key] ?? {};
-      const parsed = z.enum(ONBOARDING_STATUSES).safeParse(stored.status);
-      acc[step.key] = {
-        ...stored,
-        status: parsed.success ? parsed.data : index === 0 ? 'current' : 'pending',
-      };
-      return acc;
-    },
-    {} as OnboardingTasksMap,
-  );
+  return ONBOARDING_STEPS.reduce((acc, step, index) => {
+    const stored = source[step.key] ?? {};
+    const parsed = z.enum(ONBOARDING_STATUSES).safeParse(stored.status);
+    acc[step.key] = {
+      ...stored,
+      status: parsed.success ? parsed.data : index === 0 ? 'current' : 'pending',
+    };
+    return acc;
+  }, {} as OnboardingTasksMap);
 }
 
 export function hasOpeningHours(openingHours: unknown): boolean {
   return Boolean(
     openingHours &&
-      typeof openingHours === 'object' &&
-      !Array.isArray(openingHours) &&
-      Object.keys(openingHours).length > 0,
+    typeof openingHours === 'object' &&
+    !Array.isArray(openingHours) &&
+    Object.keys(openingHours).length > 0,
   );
 }
 
@@ -184,11 +181,7 @@ export function hasUsablePhone(phoneNumber: string | null | undefined): boolean 
   return Boolean(phoneNumber && !phoneNumber.startsWith('+000'));
 }
 
-function markCompleted(
-  tasks: OnboardingTasksMap,
-  task: OnboardingTask,
-  now: string,
-): void {
+function markCompleted(tasks: OnboardingTasksMap, task: OnboardingTask, now: string): void {
   if (tasks[task].status === 'completed') return;
   tasks[task] = {
     ...tasks[task],
@@ -253,6 +246,12 @@ export type OnboardingStateView = {
   canalAOnboardingDone: boolean;
   voiceProgress: number;
   canalAProgress: number;
+  /**
+   * Seuil minimum pour accéder au dashboard sans modale bloquante.
+   * Requiert que les étapes `restaurant` ET `hours` soient `completed`
+   * (skip ne compte pas — l'utilisateur doit vraiment configurer ces deux).
+   */
+  minimumViableDone: boolean;
 };
 
 export function computeOnboardingState(restaurant: RestaurantLike): OnboardingStateView {
@@ -286,7 +285,8 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
   }
 
   // Auto-completion Canal A
-  const hasCoverImage = restaurant.coverImageUrl || (restaurant.images && restaurant.images.length > 0);
+  const hasCoverImage =
+    restaurant.coverImageUrl || (restaurant.images && restaurant.images.length > 0);
   if (restaurant.slug && restaurant.description && hasCoverImage) {
     markCompleted(tasks, 'canal-a-identity', now);
   }
@@ -387,6 +387,9 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
     steps.find((step) => step.status !== 'completed') ??
     steps[steps.length - 1];
 
+  const minimumViableDone =
+    tasks['restaurant'].status === 'completed' && tasks['hours'].status === 'completed';
+
   return {
     steps,
     tasks,
@@ -398,6 +401,7 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
     canalAOnboardingDone,
     voiceProgress,
     canalAProgress,
+    minimumViableDone,
   };
 }
 
@@ -471,10 +475,7 @@ export function applyOnboardingTransition(
   if (stepDef) {
     const groupSteps = ONBOARDING_STEPS.filter((s) => s.group === stepDef.group);
     const next = groupSteps.find((step) => tasks[step.key].status === 'pending');
-    if (
-      !groupSteps.some((step) => tasks[step.key].status === 'current') &&
-      next
-    ) {
+    if (!groupSteps.some((step) => tasks[step.key].status === 'current') && next) {
       tasks[next.key] = { ...tasks[next.key], status: 'current' };
     }
   }
