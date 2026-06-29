@@ -86,7 +86,7 @@ const ACTION_COPY: Record<string, { title: string; body: string; cta: string; im
   'canal-a-activation': {
     title: 'Activez la page internet et son mode agent',
     body: 'Visualisez le rendu final de votre page publique et activez sa publication pour la rendre réservable.',
-    cta: 'Vérifier et activer le Canal A',
+    cta: 'Vérifier et activer Connect',
     impact: 'Met instantanément votre établissement en ligne.',
   },
 };
@@ -187,7 +187,7 @@ export function OnboardingBanners() {
             </div>
             <div>
               <p className="text-sm font-semibold text-foreground">
-                Page Internet & Assistants (Canal A) · {state.steps.filter(s => ['canal-a-identity', 'canal-a-location', 'canal-a-cuisine', 'canal-a-capacity', 'canal-a-activation'].includes(s.key) && s.status === 'completed').length}/5 terminées
+                Sokar Connect · {state.steps.filter(s => ['canal-a-identity', 'canal-a-location', 'canal-a-cuisine', 'canal-a-capacity', 'canal-a-activation'].includes(s.key) && s.status === 'completed').length}/5 terminées
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 Prochaine action : {canalACurrent.title.toLowerCase()} · {state.canalAProgress}% prêt.
@@ -199,7 +199,7 @@ export function OnboardingBanners() {
             onClick={() => openStep(canalACurrent.key)}
             className="w-full transition-all duration-200 md:w-auto bg-amber-600 hover:bg-amber-700 text-white"
           >
-            Configurer le Canal A
+            Configurer Connect
             <ArrowRight size={16} />
           </Button>
         </div>
@@ -238,7 +238,7 @@ export function OnboardingStepper() {
         <div className="border-t border-border pt-4">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              2. Référencement & Réservations IA (Canal A - {state.canalAProgress}%)
+              2. Sokar Connect ({state.canalAProgress}%)
             </span>
           </div>
           <div className="grid gap-2 md:grid-cols-5">
