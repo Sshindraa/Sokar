@@ -30,15 +30,12 @@ bash scripts/copy-static.sh
 #    l'utilisateur connecté via le publishable key inliné au build, mais le
 #    middleware le rejette côté serveur).
 #
-#    On source .env (créé par deploy-vps.sh) puis .env.prod en override si
-#    présent (chemin historique, non utilisé actuellement).
-for env_file in .env .env.prod; do
-  if [ -f "$env_file" ]; then
-    set -a
-    source "$env_file"
-    set +a
-  fi
-done
+#    On source .env (créé sur le VPS, convention uniforme avec API et Connect).
+if [ -f ".env" ]; then
+  set -a
+  source ".env"
+  set +a
+fi
 
 # 3. Lancer le serveur standalone
 export PORT="${PORT:-3000}"

@@ -91,3 +91,30 @@ Utilisé pour les tests voice / MCP en local avant d'avoir un vrai pilote.
 - Live model/provider state is not documented here. Check `/model` or `~/.hermes/config.yaml` when it matters.
 - Current preferred direction: use a strong model briefly for architecture/context optimization, then run daily work on MiniMax M3 via OpenCode Go when configured.
 - Old IDE-orchestration/provider notes are historical only; do not resurrect them unless the user asks.
+
+## Environment variables
+
+Convention : un seul fichier `.env` par app, sourcé au démarrage. Pas de `.env.prod`.
+
+### Dev local
+
+| Fichier                  | Rôle                                                                | Chargé par                                                       |
+| ------------------------ | ------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `.env.local` (racine)    | Source de vérité : `DATABASE_URL`, `REDIS_URL`, `POSTGRES_PASSWORD` | `apps/api/src/env.ts` (fallback), `pnpm infra:up` (`--env-file`) |
+| `packages/database/.env` | `DATABASE_URL` pour Prisma CLI (db:push, db:seed, db:studio)        | Prisma auto (depuis `packages/database/`)                        |
+| `apps/connect/.env`      | Vars Connect en dev (`SITE_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`)  | `next dev` auto                                                  |
+
+### Prod (VPS `/opt/sokar/`)
+
+| Fichier               | Rôle                                                              | Chargé par                           |
+| --------------------- | ----------------------------------------------------------------- | ------------------------------------ |
+| `apps/api/.env`       | Toutes les vars API (Telnyx, Deepgram, Cartesia, DB, Redis, etc.) | PM2 `--env-file=.env` + `src/env.ts` |
+| `apps/dashboard/.env` | Clerk keys, `API_URL`, Sentry                                     | `bin/run-dashboard.sh` source `.env` |
+| `apps/connect/.env`   | `SITE_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`, `DASHBOARD_URL`     | `bin/run-connect.sh` source `.env`   |
+
+### Règles
+
+- `NEXT_PUBLIC_*` est baked au build time — doit être présent lors de `next build`, pas seulement au runtime.
+- Le deploy script fail-fast si un `.env` critique manque (API, dashboard, connect).
+- Ne pas créer de `.env.prod` — convention uniformisée sur `.env`.
+- `packages/database/.env` est le seul doublon intentionnel : Prisma CLI ne suit pas les symlinks et ne lit pas `.env.local` depuis la racine.

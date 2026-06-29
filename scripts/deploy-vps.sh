@@ -275,7 +275,7 @@ pnpm install --frozen-lockfile
 REQUIRED_ENV_FILES=(
     "apps/api/.env"
     "apps/dashboard/.env"
-    "apps/connect/.env.prod"
+    "apps/connect/.env"
 )
 OPTIONAL_ENV_FILES=(
     "infra/.env"

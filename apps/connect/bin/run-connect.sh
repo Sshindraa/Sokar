@@ -18,14 +18,13 @@ fi
 
 # 2. Charger les variables d'environnement.
 #    Le serveur standalone Next.js ne charge PAS automatiquement les fichiers
-#    .env. On source .env.prod (créé sur le VPS) puis .env en fallback.
-for env_file in .env.prod .env; do
-  if [ -f "$env_file" ]; then
-    set -a
-    source "$env_file"
-    set +a
-  fi
-done
+#    .env. On source .env (créé sur le VPS, convention uniforme avec API et
+#    dashboard).
+if [ -f ".env" ]; then
+  set -a
+  source ".env"
+  set +a
+fi
 
 # 3. Lancer le serveur
 export PORT="${PORT:-4002}"
