@@ -126,6 +126,10 @@ vi.mock('../shared/db/client', () => {
         updateMany: vi.fn(),
         delete: vi.fn(),
       },
+      onboardingEvent: {
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn().mockResolvedValue({ id: 'test-evt-1' }),
+      },
       $transaction: vi.fn(async (fn: any) => {
         if (Array.isArray(fn)) {
           return Promise.all(fn);

@@ -27,6 +27,7 @@ import { observabilityRoutes } from './shared/observability/observability.routes
 import { connectRoutes } from './modules/connect/connect.routes';
 import { pilotRoutes } from './modules/pilot/pilot.routes';
 import { flagsRoutes } from './modules/admin/flags.routes';
+import { onboardingFunnelRoutes } from './modules/admin/onboarding-funnel.routes';
 import { registerCors } from './plugins/cors';
 import { registerRateLimit } from './plugins/rate-limit';
 import { registerClerk } from './plugins/clerk';
@@ -196,6 +197,7 @@ export async function buildApp() {
   await app.register(observabilityRoutes);
   await app.register(pilotRoutes);
   await app.register(flagsRoutes);
+  await app.register(onboardingFunnelRoutes);
 
   // Routes de test — uniquement en dev/test (simulation d'appel sans Telnyx)
   if (process.env.NODE_ENV !== 'production') {
