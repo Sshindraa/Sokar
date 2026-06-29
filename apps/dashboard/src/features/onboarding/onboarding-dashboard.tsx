@@ -124,7 +124,14 @@ export function DashboardOnboardingPanel() {
   const { state, loading, error } = useOnboarding();
 
   if (!hasClerkKey || loading || !state) return null;
-  if (state.voiceOnboardingDone && state.connectOnboardingDone) return null;
+
+  // Pattern Mural (+10% rétention J7) : la checklist ne disparaît pas
+  // brutalement à la fin. On affiche un panneau "résumé" compact avec
+  // les checkmarks verts qui persiste, rappelant que tout est configuré
+  // et invitant à découvrir les fonctionnalités du dashboard.
+  if (state.voiceOnboardingDone && state.connectOnboardingDone) {
+    return <OnboardingCompletedSummary />;
+  }
 
   return (
     <div className="mb-5 space-y-4">
@@ -138,6 +145,68 @@ export function DashboardOnboardingPanel() {
           {error}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Panneau de résumé affiché après complétion de tout l'onboarding.
+ * Persiste sur le dashboard — pattern Mural (+10% rétention J7).
+ * Compact, non-bloquant, rappelle que tout est prêt.
+ */
+function OnboardingCompletedSummary() {
+  const { state } = useOnboarding();
+  if (!state) return null;
+
+  const voiceSteps = state.steps.filter((s) =>
+    ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'].includes(s.key),
+  );
+  const connectSteps = state.steps.filter((s) =>
+    [
+      'connect-identity',
+      'connect-location',
+      'connect-cuisine',
+      'connect-capacity',
+      'connect-activation',
+    ].includes(s.key),
+  );
+
+  return (
+    <div className="mb-5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 transition-all duration-200">
+      <div className="flex items-center gap-3">
+        <div className="rounded-lg bg-emerald-500/10 p-2 text-emerald-400">
+          <CheckCircle2 size={18} />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-semibold text-foreground">
+            Configuration terminée — votre assistant est prêt
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Voice {state.voiceProgress}% · Connect {state.connectProgress}%
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+        {voiceSteps.map((step) => (
+          <span
+            key={step.key}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+          >
+            <Check size={12} className="text-emerald-400" />
+            {step.title.toLowerCase()}
+          </span>
+        ))}
+        {connectSteps.map((step) => (
+          <span
+            key={step.key}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+          >
+            <Check size={12} className="text-emerald-400" />
+            {step.title.toLowerCase()}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
