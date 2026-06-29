@@ -1,7 +1,7 @@
 # Runbook opérationnel Sokar
 
 > Procédures d'incident transversales (agentic, MCP, OpenAI Reserve,
-> Canal A, voice). Pas un document "pilote Lyon" : c'est le runbook
+> Sokar Connect, voice). Pas un document "pilote Lyon" : c'est le runbook
 > de prod, applicable à tout ce qui tourne sur Sokar.
 >
 > **Statut** : squopé en juin 2026 pour retirer la fiction (24/7,
@@ -184,7 +184,7 @@ ssh pmbtc 'bash /opt/sokar/scripts/deploy-vps.sh rollback 20260626T130000Z'
 
 Le rollback :
 
-1. Stoppe dashboard + Canal A (l'API reste up le temps du swap)
+1. Stoppe dashboard + Sokar Connect (l'API reste up le temps du swap)
 2. Restore les artefacts (dist, .next, public) depuis la release
 3. Redémarre tous les services via PM2
 4. Vérifie les endpoints health
@@ -213,7 +213,7 @@ En cas de problème grave (P0) :
 
    (Note : la colonne est `agentic_opt_in` pour la rétrocompat avec
    l'agentic P0. Renommage à `acceptsReservations` prévu en P5 — cf.
-   spec Canal A v1.1 §13.7.)
+   spec Sokar Connect v1.1 §13.7.)
 
 2. **Désactiver OpenAI Reserve** :
 
@@ -221,11 +221,11 @@ En cas de problème grave (P0) :
    UPDATE restaurants SET openai_reserve_enabled = false;
    ```
 
-3. **Désactiver Canal A** (nouveau) :
+3. **Désactiver Sokar Connect** (nouveau) :
 
    ```sql
    UPDATE restaurant_exposure_settings
-   SET canal_a_published = false, canal_a_agentic = false;
+   SET connect_published = false, connect_agentic = false;
    ```
 
 4. **Communication** : status page (à créer) + canaux restos (à créer)
@@ -384,7 +384,7 @@ VPS_HOST=pmbtc bash scripts/deploy-r2-backup.sh --test
 ## Liens utiles
 
 - Spec agentic-reservations v3.2 : `docs/sokar-mcp-agentic-reservations-v3.2.md`
-- Spec Canal A v1.1 : `docs/canal-a-v1.1.md`
+- Spec Sokar Connect v1.1 : `docs/connect-v1.1.md`
 - Code metrics : `apps/api/src/shared/observability/metrics.ts`
 - Code PII leak detector : `apps/api/src/shared/observability/pii-leak.ts`
 - Code hold service : `apps/api/src/modules/agentic-reservations/core/hold.service.ts`
@@ -397,8 +397,8 @@ VPS_HOST=pmbtc bash scripts/deploy-r2-backup.sh --test
 
 - 2026-06-24 : squopé. Retiré "On-call P1 (24/7)", "9h daily async",
   "Weekly retro (1h)", "status.sokar.com (à créer)". Ajouté procédure
-  désactivation Canal A. Ajouté référence aux specs v3.2 agentic et
-  v1.1 Canal A. Renommé "Runbook opérationnel — Pilote Lyon" en
+  désactivation Sokar Connect. Ajouté référence aux specs v3.2 agentic et
+  v1.1 Sokar Connect. Renommé "Runbook opérationnel — Pilote Lyon" en
   "Runbook opérationnel Sokar" (transversal, plus seulement pilote).
 - 2026-06-26 : ajout section "Backups et restauration" (topologie,
   test de restore sur base vierge, procédure P0, vérification cron VPS).

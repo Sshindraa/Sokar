@@ -31,7 +31,7 @@ const navItems = [
   { href: '/dashboard/reservations', label: 'Réservations', icon: CalendarCheck },
   { href: '/dashboard/customers', label: 'Clients', icon: Users },
   { href: '/dashboard/agentic', label: 'Agents IA', icon: Sparkles },
-  { href: '/dashboard/canal-a', label: 'Connect', icon: Zap },
+  { href: '/dashboard/connect', label: 'Connect', icon: Zap },
   { href: '/dashboard/settings', label: 'Réglages', icon: Settings },
 ];
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);

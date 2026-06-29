@@ -25,7 +25,7 @@ module.exports = {
       //     (cf. pitfall #29 de la skill sokar-deployment — Next 14
       //     standalone ne copie PAS auto .next/static + public/)
       //   - lance le binaire standalone (node .next/standalone/.../server.js)
-      // Aligné sur apps/canal-a/bin/run-canal-a.sh.
+      // Aligné sur apps/connect/bin/run-connect.sh.
       script: 'bin/run-dashboard.sh',
       env: {
         NODE_ENV: 'production',
@@ -44,9 +44,9 @@ module.exports = {
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
     },
     {
-      name: 'sokar-canal-a',
-      cwd: '/opt/sokar/apps/canal-a',
-      script: 'bin/run-canal-a.sh',
+      name: 'sokar-connect',
+      cwd: '/opt/sokar/apps/connect',
+      script: 'bin/run-connect.sh',
       env: {
         NODE_ENV: 'production',
         PORT: '4002',
@@ -54,8 +54,8 @@ module.exports = {
       },
       watch: false,
       max_memory_restart: '400M',
-      error_file: '/var/log/sokar/canal-a-error.log',
-      out_file: '/var/log/sokar/canal-a-out.log',
+      error_file: '/var/log/sokar/connect-error.log',
+      out_file: '/var/log/sokar/connect-out.log',
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
     },

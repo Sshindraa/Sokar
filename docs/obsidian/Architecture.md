@@ -7,8 +7,8 @@
 **Model switch** : Hermes sur `glm-5.2` via `opencode-go` (depuis 2026-06-25)
 
 > Note 2026-06-24 : rétro-référence aux changements majeurs depuis
-> 2026-05-21 (agentic P0, MCP, OpenAI Reserve, Canal A). Pour le
-> détail des phases, voir [[Canal A P0]] et `docs/sokar-mcp-agentic-reservations-v3.2.md`.
+> 2026-05-21 (agentic P0, MCP, OpenAI Reserve, Sokar Connect). Pour le
+> détail des phases, voir [[Sokar Connect P0]] et `docs/sokar-mcp-agentic-reservations-v3.2.md`.
 
 ---
 
@@ -19,14 +19,14 @@ sokar/
 ├── apps/
 │   ├── api/              # Fastify 5 backend
 │   │   └── src/
-│   │       ├── modules/      # Domain modules (voice, agentic-reservations, mcp, canal-a, ...)
+│   │       ├── modules/      # Domain modules (voice, agentic-reservations, mcp, connect, ...)
 │   │       ├── plugins/      # Fastify plugins (cors, rate-limit)
 │   │       ├── shared/       # Shared services (redis, queue, telnyx, observability, auth)
 │   │       ├── lib/          # Auth helpers
 │   │       └── types/        # TypeScript declarations
 │   ├── dashboard/        # Next.js 14 dashboard (Clerk auth, privé restaurateur)
 │   ├── widget/           # Next.js 14 widget B2B (port 4001, output:export, Cloudflare CDN)
-│   └── canal-a/          # Next.js 14 app publique (port 4002, output:standalone, à venir T4)
+│   └── connect/          # Next.js 14 app publique (port 4002, output:standalone, à venir T4)
 │       └── src/
 │           └── app/         # App Router pages
 ├── packages/
@@ -50,15 +50,15 @@ sokar/
 
 ### Modules
 
-| Module | Routes | Service | Description |
-|--------|--------|---------|-------------|
-| Restaurants | `restaurant.routes.ts` | `restaurant.service.ts` | CRUD, availability, cache invalidation |
-| Calls | `call.routes.ts` | — | Historique, transcripts |
-| Reservations | `reservation.routes.ts` | `reservation.service.ts` | Réservation, confirmation |
-| Customers | `customer.routes.ts` | `customer.service.ts` | Profil, loyalty, VIP |
-| Analytics | `analytics.routes.ts` | `roi.service.ts`, `report.service.ts` | ROI, KPIs |
-| Dashboard | `dashboard.routes.ts` | — | Métriques temps réel |
-| Voice | `telnyx.pipeline.ts` | `pipeline.ts`, `agent-state.ts` | Pipeline vocal complet |
+| Module       | Routes                  | Service                               | Description                            |
+| ------------ | ----------------------- | ------------------------------------- | -------------------------------------- |
+| Restaurants  | `restaurant.routes.ts`  | `restaurant.service.ts`               | CRUD, availability, cache invalidation |
+| Calls        | `call.routes.ts`        | —                                     | Historique, transcripts                |
+| Reservations | `reservation.routes.ts` | `reservation.service.ts`              | Réservation, confirmation              |
+| Customers    | `customer.routes.ts`    | `customer.service.ts`                 | Profil, loyalty, VIP                   |
+| Analytics    | `analytics.routes.ts`   | `roi.service.ts`, `report.service.ts` | ROI, KPIs                              |
+| Dashboard    | `dashboard.routes.ts`   | —                                     | Métriques temps réel                   |
+| Voice        | `telnyx.pipeline.ts`    | `pipeline.ts`, `agent-state.ts`       | Pipeline vocal complet                 |
 
 ### Sécurité
 
@@ -93,6 +93,7 @@ Voir [[Voice Pipeline]] pour le détail.
 **Auth** : Clerk (login, register, middleware).
 
 Pages :
+
 - `/login` — Authentification
 - `/register` — Inscription
 - `/` — Dashboard métriques
@@ -116,27 +117,27 @@ Voir [[Hermes Agent]] pour la configuration.
 
 ## Technologies Clés
 
-| Technologie | Version | Usage |
-|-------------|---------|-------|
-| Node.js | 20+ | Runtime |
-| pnpm | 10.8 | Package manager |
-| TypeScript | 5.8 | Langage |
-| Fastify | 5 | API framework |
-| Prisma | 6 | ORM |
-| Redis | 7 | Cache + Queue |
-| BullMQ | — | Job queue |
-| Telnyx | — | Carrier vocal (Phase 2) |
-| Vapi | — | Carrier vocal (Phase 1, legacy purgé) |
-| Next.js | 14 | Dashboard |
-| React | 18 | UI |
-| Tailwind | 3 | CSS |
-| Clerk | — | Auth + Billing |
-| ConfigCat | — | Feature flags |
-| Datadog | — | APM/Logs |
-| PostHog | — | Analytics |
-| Doppler | — | Secrets |
-| VPS + Docker/PM2 | — | Hosting |
-| LocalStack | — | AWS emulation (Phase 2) |
+| Technologie      | Version | Usage                                 |
+| ---------------- | ------- | ------------------------------------- |
+| Node.js          | 20+     | Runtime                               |
+| pnpm             | 10.8    | Package manager                       |
+| TypeScript       | 5.8     | Langage                               |
+| Fastify          | 5       | API framework                         |
+| Prisma           | 6       | ORM                                   |
+| Redis            | 7       | Cache + Queue                         |
+| BullMQ           | —       | Job queue                             |
+| Telnyx           | —       | Carrier vocal (Phase 2)               |
+| Vapi             | —       | Carrier vocal (Phase 1, legacy purgé) |
+| Next.js          | 14      | Dashboard                             |
+| React            | 18      | UI                                    |
+| Tailwind         | 3       | CSS                                   |
+| Clerk            | —       | Auth + Billing                        |
+| ConfigCat        | —       | Feature flags                         |
+| Datadog          | —       | APM/Logs                              |
+| PostHog          | —       | Analytics                             |
+| Doppler          | —       | Secrets                               |
+| VPS + Docker/PM2 | —       | Hosting                               |
+| LocalStack       | —       | AWS emulation (Phase 2)               |
 
 ---
 
@@ -151,4 +152,4 @@ Voir [[Hermes Agent]] pour la configuration.
 - [[BullMQ Jobs]] — Workers et queues
 - [[Testing Strategy]] — Tests et coverage
 - [[Hermes Agent]] — Configuration IA
-[[Context]]
+  [[Context]]

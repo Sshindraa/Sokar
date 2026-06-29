@@ -6,11 +6,11 @@ export const ONBOARDING_TASK_KEYS = [
   'knowledge',
   'calendar',
   'phone',
-  'canal-a-identity',
-  'canal-a-location',
-  'canal-a-cuisine',
-  'canal-a-capacity',
-  'canal-a-activation',
+  'connect-identity',
+  'connect-location',
+  'connect-cuisine',
+  'connect-capacity',
+  'connect-activation',
 ] as const;
 
 export type OnboardingTask = (typeof ONBOARDING_TASK_KEYS)[number];
@@ -29,14 +29,14 @@ export const ONBOARDING_STEPS: ReadonlyArray<{
   title: string;
   description: string;
   required: boolean;
-  group: 'voice' | 'canal-a';
+  group: 'voice' | 'connect';
   index: number;
 }> = [
   // Voice group
   {
     key: 'restaurant',
     title: 'Identité du restaurant',
-    description: 'Nom, gérant et coordonnées de contact.',
+    description: 'Nom et coordonnées de contact du restaurant.',
     required: true,
     group: 'voice',
     index: 1,
@@ -73,45 +73,45 @@ export const ONBOARDING_STEPS: ReadonlyArray<{
     group: 'voice',
     index: 5,
   },
-  // Canal A group
+  // Sokar Connect group
   {
-    key: 'canal-a-identity',
+    key: 'connect-identity',
     title: 'Identité publique',
     description: 'Slug, description et photo de couverture.',
     required: false,
-    group: 'canal-a',
+    group: 'connect',
     index: 1,
   },
   {
-    key: 'canal-a-location',
+    key: 'connect-location',
     title: 'Localisation',
     description: 'Adresse, coordonnées et carte.',
     required: false,
-    group: 'canal-a',
+    group: 'connect',
     index: 2,
   },
   {
-    key: 'canal-a-cuisine',
+    key: 'connect-cuisine',
     title: 'Cuisine & ambiance',
     description: 'Type de cuisine, tarifs et spécificités.',
     required: false,
-    group: 'canal-a',
+    group: 'connect',
     index: 3,
   },
   {
-    key: 'canal-a-capacity',
+    key: 'connect-capacity',
     title: 'Capacité & règles',
     description: 'Capacité d’accueil, durée de service et acompte.',
     required: false,
-    group: 'canal-a',
+    group: 'connect',
     index: 4,
   },
   {
-    key: 'canal-a-activation',
+    key: 'connect-activation',
     title: 'Activation & preview',
     description: 'Mise en ligne de la page et des métadonnées.',
     required: false,
-    group: 'canal-a',
+    group: 'connect',
     index: 5,
   },
 ];
@@ -202,7 +202,7 @@ export type RestaurantLike = {
   googleCalendarId?: string | null;
   phoneNumber?: string | null;
   onboardingTasks?: unknown;
-  // Canal A fields
+  // Sokar Connect fields
   slug?: string | null;
   description?: string | null;
   formattedAddress?: string | null;
@@ -218,8 +218,8 @@ export type RestaurantLike = {
   coverImageUrl?: string | null;
   images?: Array<unknown>;
   exposureSettings?: {
-    canalAPublished?: boolean;
-    canalAAgentic?: boolean;
+    connectPublished?: boolean;
+    connectAgentic?: boolean;
     capacitySpecials?: unknown;
   } | null;
 };
@@ -229,7 +229,7 @@ export type OnboardingStepView = {
   title: string;
   description: string;
   required: boolean;
-  group: 'voice' | 'canal-a';
+  group: 'voice' | 'connect';
   index: number;
   status: OnboardingStatus;
   state: OnboardingTaskState;
@@ -243,9 +243,9 @@ export type OnboardingStateView = {
   progress: number;
   onboardingDone: boolean; // voice onboarding done
   voiceOnboardingDone: boolean;
-  canalAOnboardingDone: boolean;
+  connectOnboardingDone: boolean;
   voiceProgress: number;
-  canalAProgress: number;
+  connectProgress: number;
   /**
    * Seuil minimum pour accéder au dashboard sans modale bloquante.
    * Requiert que les étapes `restaurant` ET `hours` soient `completed`
@@ -284,11 +284,11 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
     markCompleted(tasks, 'phone', now);
   }
 
-  // Auto-completion Canal A
+  // Auto-completion Sokar Connect
   const hasCoverImage =
     restaurant.coverImageUrl || (restaurant.images && restaurant.images.length > 0);
   if (restaurant.slug && restaurant.description && hasCoverImage) {
-    markCompleted(tasks, 'canal-a-identity', now);
+    markCompleted(tasks, 'connect-identity', now);
   }
 
   if (
@@ -300,7 +300,7 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
     restaurant.lng !== null &&
     restaurant.lng !== undefined
   ) {
-    markCompleted(tasks, 'canal-a-location', now);
+    markCompleted(tasks, 'connect-location', now);
   }
 
   if (
@@ -309,7 +309,7 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
     restaurant.priceRange !== null &&
     restaurant.priceRange !== undefined
   ) {
-    markCompleted(tasks, 'canal-a-cuisine', now);
+    markCompleted(tasks, 'connect-cuisine', now);
   }
 
   const exposure = restaurant.exposureSettings;
@@ -318,11 +318,11 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
     typeof exposure.capacitySpecials === 'object' &&
     Object.keys(exposure.capacitySpecials).length > 0;
   if (hasCapacitySpecials) {
-    markCompleted(tasks, 'canal-a-capacity', now);
+    markCompleted(tasks, 'connect-capacity', now);
   }
 
-  if (exposure?.canalAPublished) {
-    markCompleted(tasks, 'canal-a-activation', now);
+  if (exposure?.connectPublished) {
+    markCompleted(tasks, 'connect-activation', now);
   }
 
   // Progression Voice group
@@ -342,20 +342,20 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
     }
   }
 
-  // Progression Canal A group
-  const canalASteps = ONBOARDING_STEPS.filter((step) => step.group === 'canal-a');
-  const canalACurrent = canalASteps.find((step) => tasks[step.key].status === 'current');
-  if (!canalACurrent || tasks[canalACurrent.key].status === 'completed') {
-    const nextCanalA = canalASteps.find(
+  // Progression Sokar Connect group
+  const connectSteps = ONBOARDING_STEPS.filter((step) => step.group === 'connect');
+  const connectCurrent = connectSteps.find((step) => tasks[step.key].status === 'current');
+  if (!connectCurrent || tasks[connectCurrent.key].status === 'completed') {
+    const nextConnect = connectSteps.find(
       (step) => !['completed', 'skipped'].includes(tasks[step.key].status),
     );
-    for (const step of canalASteps) {
+    for (const step of connectSteps) {
       if (tasks[step.key].status === 'current') {
         tasks[step.key] = { ...tasks[step.key], status: 'pending' };
       }
     }
-    if (nextCanalA && tasks[nextCanalA.key].status !== 'blocked') {
-      tasks[nextCanalA.key] = { ...tasks[nextCanalA.key], status: 'current' };
+    if (nextConnect && tasks[nextConnect.key].status !== 'blocked') {
+      tasks[nextConnect.key] = { ...tasks[nextConnect.key], status: 'current' };
     }
   }
 
@@ -371,11 +371,11 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
   const voiceOnboardingDone = voiceCompletedCount === voiceSteps.length;
   const voiceProgress = Math.round((voiceCompletedCount / voiceSteps.length) * 100);
 
-  const canalACompletedCount = canalASteps.filter(
+  const connectCompletedCount = connectSteps.filter(
     (step) => tasks[step.key].status === 'completed',
   ).length;
-  const canalAOnboardingDone = canalACompletedCount === canalASteps.length;
-  const canalAProgress = Math.round((canalACompletedCount / canalASteps.length) * 100);
+  const connectOnboardingDone = connectCompletedCount === connectSteps.length;
+  const connectProgress = Math.round((connectCompletedCount / connectSteps.length) * 100);
 
   const completedCount = ONBOARDING_STEPS.filter(
     (step) => tasks[step.key].status === 'completed',
@@ -398,9 +398,9 @@ export function computeOnboardingState(restaurant: RestaurantLike): OnboardingSt
     progress: Math.round((completedCount / ONBOARDING_STEPS.length) * 100),
     onboardingDone: voiceOnboardingDone,
     voiceOnboardingDone,
-    canalAOnboardingDone,
+    connectOnboardingDone,
     voiceProgress,
-    canalAProgress,
+    connectProgress,
     minimumViableDone,
   };
 }

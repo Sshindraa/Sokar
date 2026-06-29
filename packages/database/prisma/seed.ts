@@ -139,10 +139,10 @@ async function main() {
       minLeadTimeMinutes: 30,
       quoteTtlSeconds: 300,
       holdTtlSeconds: 420,
-      // Canal A
-      canalAPublished: true,
-      canalAPublishedAt: new Date(),
-      canalAAgentic: false,
+      // Sokar Connect
+      connectPublished: true,
+      connectPublishedAt: new Date(),
+      connectAgentic: false,
       capacitySpecials: {
         default: { tables: 10, seats: 40 },
         '2026-12-31': { tables: 8, seats: 32, reason: 'Réveillon' },
@@ -168,10 +168,10 @@ async function main() {
       minLeadTimeMinutes: 30,
       quoteTtlSeconds: 300,
       holdTtlSeconds: 420,
-      // Canal A
-      canalAPublished: true,
-      canalAPublishedAt: new Date(),
-      canalAAgentic: false,
+      // Sokar Connect
+      connectPublished: true,
+      connectPublishedAt: new Date(),
+      connectAgentic: false,
       capacitySpecials: {
         default: { tables: 10, seats: 40 },
         '2026-12-31': { tables: 8, seats: 32, reason: 'Réveillon' },
@@ -228,12 +228,12 @@ async function main() {
 
   console.log(`Demo restaurant seeded: ${restaurant.id} (${DEMO_SLUG})`);
 
-  // ─── Canal A — Seed restos supplémentaires (Lyon + Paris) ────
+  // ─── Sokar Connect — Seed restos supplémentaires (Lyon + Paris) ────
   // Pour tester les pages locales (/restaurants/lyon, /restaurants/paris)
   // qui requièrent ≥5 restos par ville.
-  // canalAPublished=true, canalAAgentic=false.
+  // connectPublished=true, connectAgentic=false.
   // SKIP en production : NODE_ENV=production → ne pas polluer l'index.
-  // (cf. spec canal-a-v1.1 §11.1)
+  // (cf. spec connect-v1.1 §11.1)
   if (process.env.NODE_ENV !== 'production') {
     const LYON_RESTOS = [
       {
@@ -251,7 +251,7 @@ async function main() {
         slug: 'chez-sokar-italien-lyon',
         name: 'Chez Sokar — Trattoria Italienne',
         cuisine: ['Italien', 'Pizza', 'Pâtes'],
-        description: 'Trattoria italienne authentique dans le quartier de la Presqu\'île.',
+        description: "Trattoria italienne authentique dans le quartier de la Presqu'île.",
         address: '22 Rue Mercière, 69002 Lyon',
         city: 'Lyon',
         phone: '+334****0606',
@@ -340,7 +340,7 @@ async function main() {
       },
     ];
 
-    const CANAL_A_RESTOS = [...LYON_RESTOS, ...PARIS_RESTOS];
+    const CONNECT_RESTOS = [...LYON_RESTOS, ...PARIS_RESTOS];
 
     const seedOpeningHours = {
       tue: { open: '12:00', close: '14:30' },
@@ -350,7 +350,7 @@ async function main() {
       sat: { open: '12:00', close: '23:00' },
     } as Prisma.JsonValue;
 
-    for (const r of CANAL_A_RESTOS) {
+    for (const r of CONNECT_RESTOS) {
       const resto = await prisma.restaurant.upsert({
         where: { slug: r.slug },
         update: {
@@ -371,7 +371,7 @@ async function main() {
           agenticOptIn: true,
           publishedAt: new Date(),
           managerPhone: r.phone,
-          managerEmail: 'canal-a-demo@sokar.com',
+          managerEmail: 'connect-demo@sokar.com',
         },
         create: {
           slug: r.slug,
@@ -392,16 +392,16 @@ async function main() {
           agenticOptIn: true,
           publishedAt: new Date(),
           managerPhone: r.phone,
-          managerEmail: 'canal-a-demo@sokar.com',
+          managerEmail: 'connect-demo@sokar.com',
         },
       });
 
       await prisma.restaurantExposureSettings.upsert({
         where: { restaurantId: resto.id },
         update: {
-          canalAPublished: true,
-          canalAAgentic: false,
-          canalAPublishedAt: new Date(),
+          connectPublished: true,
+          connectAgentic: false,
+          connectPublishedAt: new Date(),
           maxPartySize: 12,
           minLeadTimeMinutes: 30,
           exposedCreneaux: [
@@ -414,9 +414,9 @@ async function main() {
         },
         create: {
           restaurantId: resto.id,
-          canalAPublished: true,
-          canalAAgentic: false,
-          canalAPublishedAt: new Date(),
+          connectPublished: true,
+          connectAgentic: false,
+          connectPublishedAt: new Date(),
           maxPartySize: 12,
           minLeadTimeMinutes: 30,
           exposedCreneaux: [
@@ -429,12 +429,12 @@ async function main() {
         },
       });
 
-      console.log(`Canal A seed: ${resto.slug} (${r.city}, canalAPublished=true)`);
+      console.info(`Sokar Connect seed: ${resto.slug} (${r.city}, connectPublished=true)`);
     }
 
-    console.log('Canal A seed complete — 5 restaurants in Lyon + 5 in Paris');
+    console.info('Sokar Connect seed complete — 5 restaurants in Lyon + 5 in Paris');
   } else {
-    console.log('Canal A seed skipped (NODE_ENV=production)');
+    console.info('Sokar Connect seed skipped (NODE_ENV=production)');
   }
 }
 

@@ -12,7 +12,7 @@ const baseRestaurant = {
   id: 'test-rest-1',
   name: 'Le Bistrot',
   managerPhone: '+33612345678',
-  managerEmail: 'gerant@sokar.tech',
+  managerEmail: 'restaurant@sokar.tech',
   phoneNumber: '+33123456789',
   openingHours: { tue: { open: '12:00', close: '22:00' } },
   googleRefreshToken: 'google-refresh-token',
@@ -54,7 +54,7 @@ describe('restaurant.routes - onboarding', () => {
     expect(db.restaurant.update).not.toHaveBeenCalled();
   });
 
-  it('déclenche un vrai appel test Telnyx vers le téléphone du gérant', async () => {
+  it('déclenche un vrai appel test Telnyx vers le téléphone du restaurant', async () => {
     const app = await getApp();
     vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(baseRestaurant as any);
     vi.mocked(db.restaurant.update).mockResolvedValue({
@@ -74,7 +74,7 @@ describe('restaurant.routes - onboarding', () => {
     expect(res.json()).toEqual({
       ok: true,
       callControlId: 'call-control-1',
-      message: 'Appel test déclenché. Tu vas recevoir un appel sous quelques secondes.',
+      message: 'Appel test déclenché. Vous allez recevoir un appel sous quelques secondes.',
     });
     expect(placeOutboundCall).toHaveBeenCalledWith(
       '+33611112222',
@@ -109,8 +109,29 @@ describe('restaurant.routes - onboarding', () => {
     });
 
     expect(res.statusCode).toBe(502);
+    expect(res.json().code).toBe('TELNYX_FAILED');
     expect(res.json().error).toMatch(/appel test/i);
     expect(db.restaurant.update).not.toHaveBeenCalled();
+  });
+
+  it('renvoie 409 + code NO_PHONE_ASSIGNED quand test-call est appelé sans numéro Sokar', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+      ...baseRestaurant,
+      phoneNumber: '+000test-rest',
+    } as any);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/restaurant/onboarding/test-call',
+      headers: { authorization: 'Bearer test', host: 'api.test.local' },
+      payload: { phoneNumber: '+33611112222' },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe('NO_PHONE_ASSIGNED');
+    expect(res.json().error).toMatch(/numéro Sokar attribué/i);
+    expect(placeOutboundCall).not.toHaveBeenCalled();
   });
 
   it('planifie une relance J+3 quand une étape onboarding avance sans être terminé', async () => {
@@ -202,7 +223,7 @@ describe('restaurant.routes - onboarding', () => {
     });
   });
 
-  describe('PATCH /restaurants/:id/canal-a', () => {
+  describe('PATCH /restaurants/:id/connect', () => {
     it('renvoie 409 si le slug est déjà utilisé par un autre restaurant', async () => {
       const app = await getApp();
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
@@ -212,7 +233,7 @@ describe('restaurant.routes - onboarding', () => {
 
       const res = await app.inject({
         method: 'PATCH',
-        url: '/restaurants/test-rest-1/canal-a',
+        url: '/restaurants/test-rest-1/connect',
         headers: { authorization: 'Bearer test' },
         payload: { slug: 'slug-pris' },
       });
@@ -223,7 +244,7 @@ describe('restaurant.routes - onboarding', () => {
     it('met à jour les infos du restaurant et de ses exposure settings', async () => {
       const app = await getApp();
       vi.mocked(db.restaurant.findUnique).mockResolvedValue(null);
-      
+
       vi.mocked(db.restaurantExposureSettings.upsert).mockResolvedValue({
         restaurantId: 'test-rest-1',
         capacitySpecials: {},
@@ -235,11 +256,11 @@ describe('restaurant.routes - onboarding', () => {
         description: 'Bistrot sympa',
         coverImageUrl: 'http://img.url',
       };
-      
+
       const updatedSettings = {
         restaurantId: 'test-rest-1',
         maxPartySize: 8,
-        canalAPublished: true,
+        connectPublished: true,
         capacitySpecials: { totalCapacity: 35 },
       };
 
@@ -248,14 +269,14 @@ describe('restaurant.routes - onboarding', () => {
 
       const res = await app.inject({
         method: 'PATCH',
-        url: '/restaurants/test-rest-1/canal-a',
+        url: '/restaurants/test-rest-1/connect',
         headers: { authorization: 'Bearer test' },
         payload: {
           slug: 'nouveau-slug',
           description: 'Bistrot sympa',
           coverImageUrl: 'http://img.url',
           maxPartySize: 8,
-          canalAPublished: true,
+          connectPublished: true,
           capacitySpecials: { totalCapacity: 35 },
         },
       });
@@ -263,7 +284,7 @@ describe('restaurant.routes - onboarding', () => {
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({
         restaurant: expect.objectContaining({ slug: 'nouveau-slug', description: 'Bistrot sympa' }),
-        exposureSettings: expect.objectContaining({ maxPartySize: 8, canalAPublished: true }),
+        exposureSettings: expect.objectContaining({ maxPartySize: 8, connectPublished: true }),
       });
     });
   });

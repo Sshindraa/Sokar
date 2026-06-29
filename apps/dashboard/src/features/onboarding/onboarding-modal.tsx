@@ -1,8 +1,6 @@
 'use client';
 
 import { useEffect, useMemo } from 'react';
-import { ArrowLeft, ArrowRight } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -13,6 +11,7 @@ import {
 import { useOnboarding } from './onboarding-provider';
 import type { OnboardingTaskKey } from './types';
 import { STEP_COMPONENTS, STEP_KEYS, STEP_META } from './steps';
+import { OnboardingNavFooter } from './onboarding-nav-footer';
 
 /**
  * Modal centré qui héberge une étape d'onboarding.
@@ -20,6 +19,7 @@ import { STEP_COMPONENTS, STEP_KEYS, STEP_META } from './steps';
  * - L'utilisateur peut fermer (X / Esc / overlay) : closeStepModal()
  * - À la complétion d'une étape, le step appelle onComplete(nextKey|null)
  *   qui ouvre l'étape suivante ou ferme le modal.
+ * - Footer de navigation partagé avec la page dédiée via OnboardingNavFooter.
  */
 export function OnboardingModal() {
   const { state, activeStep, openStepModal, closeStepModal, updateTask } = useOnboarding();
@@ -83,9 +83,6 @@ export function OnboardingModal() {
             )}
             {meta?.title ?? 'Mise en service'}
           </DialogTitle>
-          <DialogDescription>
-            {completedCount}/{totalCount} étapes validées · {progress}% prêt
-          </DialogDescription>
         </DialogHeader>
 
         {StepComponent && activeStep && (
@@ -94,40 +91,15 @@ export function OnboardingModal() {
           </div>
         )}
 
-        {/* Footer navigation */}
-        <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={!prev}
-            onClick={handlePrev}
-            className="transition-all duration-200"
-          >
-            <ArrowLeft size={16} />
-            Étape précédente
-          </Button>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={closeStepModal}
-              className="transition-all duration-200"
-            >
-              Retour au dashboard
-            </Button>
-            {next && (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={handleNext}
-                className="transition-all duration-200"
-              >
-                Étape suivante
-                <ArrowRight size={16} />
-              </Button>
-            )}
-          </div>
-        </div>
+        <OnboardingNavFooter
+          currentStep={activeStep ?? 'restaurant'}
+          onPrev={prev ? handlePrev : null}
+          onNext={next ? handleNext : null}
+          onExit={closeStepModal}
+          completedCount={completedCount}
+          totalCount={totalCount}
+          progress={progress}
+        />
       </DialogContent>
     </Dialog>
   );

@@ -2,8 +2,8 @@
  * Route-level tests for the public widget endpoint.
  *
  * GET /public/widget/:slug — utilisé par l'iframe sokar.tech/widget/{slug}.
- * Doit fonctionner pour tous les restos (publiés ou pas sur Canal A),
- * contrairement à /public/r/:slug qui filtre sur canalAPublished.
+ * Doit fonctionner pour tous les restos (publiés ou pas sur Sokar Connect),
+ * contrairement à /public/r/:slug qui filtre sur connectPublished.
  */
 import { describe, it, expect, vi, afterAll, beforeEach } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
@@ -17,7 +17,7 @@ describe('GET /public/widget/:slug', () => {
     await closeApp();
   });
 
-  it('renvoie 200 + restaurant quand le slug existe (peu importe canalAPublished)', async () => {
+  it('renvoie 200 + restaurant quand le slug existe (peu importe connectPublished)', async () => {
     const app = await getApp();
     const fakeRestaurant = {
       id: 'rest-uuid-123',

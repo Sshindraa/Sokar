@@ -207,7 +207,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
       try {
         // Le path param peut être un slug (URL friendly) ou un id Prisma.
         // On essaie d'abord /public/widget/{slug} qui résout via le slug
-        // (endpoint ajouté pour le widget, ne filtre pas sur canalAPublished).
+        // (endpoint ajouté pour le widget, ne filtre pas sur connectPublished).
         // Si 404, fallback sur /restaurants/{id}/public pour rétrocompat.
         let data: RestaurantPublic;
         try {

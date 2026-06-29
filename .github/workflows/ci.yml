@@ -166,8 +166,8 @@ jobs:
       - name: Build
         run: pnpm --filter @sokar/dashboard build
 
-  canal-a:
-    name: Canal A
+  connect:
+    name: Sokar Connect
     runs-on: ubuntu-latest
     needs: packages
     timeout-minutes: 20
@@ -191,13 +191,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        run: pnpm turbo typecheck --filter=@sokar/canal-a...
+        run: pnpm turbo typecheck --filter=@sokar/connect...
 
       - name: Lint
-        run: pnpm --filter @sokar/canal-a lint
+        run: pnpm --filter @sokar/connect lint
 
       - name: Test
-        run: pnpm turbo test --filter=@sokar/canal-a...
+        run: pnpm turbo test --filter=@sokar/connect...
 
       - name: Build
-        run: pnpm --filter @sokar/canal-a build
+        run: pnpm --filter @sokar/connect build

@@ -58,31 +58,31 @@ const ACTION_COPY: Record<string, { title: string; body: string; cta: string; im
     cta: 'Activer le téléphone',
     impact: 'Dernière étape avant le test grandeur nature.',
   },
-  'canal-a-identity': {
+  'connect-identity': {
     title: 'Configurez l’identité publique de votre page',
     body: 'Déterminez l’adresse web unique (slug) de votre fiche, écrivez une description attrayante pour vos clients et ajoutez une photo de couverture.',
     cta: 'Remplir l’identité publique',
     impact: 'Améliore le référencement sur Google, ChatGPT et Perplexity.',
   },
-  'canal-a-location': {
+  'connect-location': {
     title: 'Définissez la localisation exacte',
     body: 'Renseignez l’adresse de l’établissement et validez les coordonnées géographiques sur la carte interactive.',
     cta: 'Renseigner la localisation',
     impact: 'Permet d’apparaître dans les recherches géolocalisées des clients.',
   },
-  'canal-a-cuisine': {
+  'connect-cuisine': {
     title: 'Précisez votre cuisine et l’ambiance',
     body: 'Sélectionnez vos types de cuisine, la gamme de prix, les options de régime et les atouts du restaurant (terrasse, privatisation, etc.).',
     cta: 'Configurer la cuisine et l’ambiance',
     impact: 'Aide les assistants IA à recommander votre restaurant selon les critères clients.',
   },
-  'canal-a-capacity': {
+  'connect-capacity': {
     title: 'Établissez les règles de réservation',
     body: 'Indiquez la capacité d’accueil, les limites de groupe et configurez d’éventuels acomptes pour sécuriser vos tables.',
     cta: 'Configurer les règles',
     impact: 'Prévient le no-show et évite les surréservations indésirables.',
   },
-  'canal-a-activation': {
+  'connect-activation': {
     title: 'Activez la page internet et son mode agent',
     body: 'Visualisez le rendu final de votre page publique et activez sa publication pour la rendre réservable.',
     cta: 'Vérifier et activer Connect',
@@ -124,7 +124,7 @@ export function DashboardOnboardingPanel() {
   const { state, loading, error } = useOnboarding();
 
   if (!hasClerkKey || loading || !state) return null;
-  if (state.voiceOnboardingDone && state.canalAOnboardingDone) return null;
+  if (state.voiceOnboardingDone && state.connectOnboardingDone) return null;
 
   return (
     <div className="mb-5 space-y-4">
@@ -147,22 +147,22 @@ export function OnboardingBanners() {
   if (!state) return null;
 
   const showVoiceBanner = !state.voiceOnboardingDone;
-  const showCanalABanner = !state.canalAOnboardingDone;
+  const showConnectBanner = !state.connectOnboardingDone;
 
   const voiceCurrent =
     state.steps
       .filter((s) => ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'].includes(s.key))
       .find((s) => s.status === 'current' || s.status === 'pending') ?? state.steps[0];
 
-  const canalACurrent =
+  const connectCurrent =
     state.steps
       .filter((s) =>
         [
-          'canal-a-identity',
-          'canal-a-location',
-          'canal-a-cuisine',
-          'canal-a-capacity',
-          'canal-a-activation',
+          'connect-identity',
+          'connect-location',
+          'connect-cuisine',
+          'connect-capacity',
+          'connect-activation',
         ].includes(s.key),
       )
       .find((s) => s.status === 'current' || s.status === 'pending') ?? state.steps[5];
@@ -203,7 +203,7 @@ export function OnboardingBanners() {
         </div>
       )}
 
-      {showCanalABanner && (
+      {showConnectBanner && (
         <div className="flex flex-col gap-3 rounded-lg border border-border bg-card/90 p-4 shadow-lg backdrop-blur-xl transition-all duration-200 md:flex-row md:items-center md:justify-between">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 rounded-lg bg-amber-500/10 p-2 text-amber-500">
@@ -216,25 +216,25 @@ export function OnboardingBanners() {
                   state.steps.filter(
                     (s) =>
                       [
-                        'canal-a-identity',
-                        'canal-a-location',
-                        'canal-a-cuisine',
-                        'canal-a-capacity',
-                        'canal-a-activation',
+                        'connect-identity',
+                        'connect-location',
+                        'connect-cuisine',
+                        'connect-capacity',
+                        'connect-activation',
                       ].includes(s.key) && s.status === 'completed',
                   ).length
                 }
                 /5 terminées
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Prochaine action : {canalACurrent.title.toLowerCase()} · {state.canalAProgress}%
+                Prochaine action : {connectCurrent.title.toLowerCase()} · {state.connectProgress}%
                 prêt.
               </p>
             </div>
           </div>
           <Button
             type="button"
-            onClick={() => openStepModal(canalACurrent.key)}
+            onClick={() => openStepModal(connectCurrent.key)}
             className="w-full transition-all duration-200 md:w-auto bg-amber-600 hover:bg-amber-700 text-white"
           >
             Configurer Connect
@@ -253,13 +253,13 @@ export function OnboardingStepper() {
   const voiceSteps = state.steps.filter((s) =>
     ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'].includes(s.key),
   );
-  const canalASteps = state.steps.filter((s) =>
+  const connectSteps = state.steps.filter((s) =>
     [
-      'canal-a-identity',
-      'canal-a-location',
-      'canal-a-cuisine',
-      'canal-a-capacity',
-      'canal-a-activation',
+      'connect-identity',
+      'connect-location',
+      'connect-cuisine',
+      'connect-capacity',
+      'connect-activation',
     ].includes(s.key),
   );
 
@@ -286,11 +286,11 @@ export function OnboardingStepper() {
         <div className="border-t border-border pt-4">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              2. Sokar Connect ({state.canalAProgress}%)
+              2. Sokar Connect ({state.connectProgress}%)
             </span>
           </div>
           <div className="grid gap-2 md:grid-cols-5">
-            {canalASteps.map((step) => (
+            {connectSteps.map((step) => (
               <StepperButton key={step.key} step={step} onClick={() => openStepModal(step.key)} />
             ))}
           </div>
@@ -369,7 +369,7 @@ export function CurrentActionCard() {
           onClick={() => openStepModal(step.key)}
           className={cn(
             'transition-all duration-200',
-            step.key.startsWith('canal-a') && 'bg-amber-600 hover:bg-amber-700 text-white',
+            step.key.startsWith('connect') && 'bg-amber-600 hover:bg-amber-700 text-white',
           )}
         >
           {copy.cta}

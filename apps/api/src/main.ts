@@ -24,7 +24,7 @@ import { oauthRoutes } from './modules/agentic-reservations/mcp/oauth';
 import { openaiReserveRoutes } from './modules/agentic-reservations/openai-reserve/openai-reserve.routes';
 import { rgpdRoutes } from './modules/rgpd/rgpd.routes';
 import { observabilityRoutes } from './shared/observability/observability.routes';
-import { canalARoutes } from './modules/canal-a/canal-a.routes';
+import { connectRoutes } from './modules/connect/connect.routes';
 import { pilotRoutes } from './modules/pilot/pilot.routes';
 import { flagsRoutes } from './modules/admin/flags.routes';
 import { registerCors } from './plugins/cors';
@@ -42,7 +42,7 @@ import './shared/queue/workers/reengagement.worker';
 import './shared/queue/workers/reconciliation.worker';
 import './shared/queue/workers/telnyx-webhook.worker';
 import './shared/queue/workers/call-recovery.worker';
-import './shared/queue/workers/canal-a-analytics.worker';
+import './shared/queue/workers/connect-analytics.worker';
 
 // Initialize Sentry as early as possible so that instrumentation hooks are
 // registered before the Fastify app (and its error handler) are built.
@@ -192,7 +192,7 @@ export async function buildApp() {
   await app.register(oauthRoutes);
   await app.register(openaiReserveRoutes);
   await app.register(rgpdRoutes);
-  await app.register(canalARoutes);
+  await app.register(connectRoutes);
   await app.register(observabilityRoutes);
   await app.register(pilotRoutes);
   await app.register(flagsRoutes);
@@ -241,14 +241,17 @@ async function start() {
     shutdown('SIGINT').catch((err) => logger.error({ err }, 'SIGINT shutdown failed'));
   });
 
-  app.listen({ port: Number(process.env.PORT ?? 4000), host: process.env.HOST ?? '0.0.0.0' }, (err) => {
-    if (err) {
-      logger.error(err);
-      logger.warn('Failed to listen on port 4000 — will exit gracefully for PM2 restart');
-      process.exitCode = 1;
-      return;
-    }
-  });
+  app.listen(
+    { port: Number(process.env.PORT ?? 4000), host: process.env.HOST ?? '0.0.0.0' },
+    (err) => {
+      if (err) {
+        logger.error(err);
+        logger.warn('Failed to listen on port 4000 — will exit gracefully for PM2 restart');
+        process.exitCode = 1;
+        return;
+      }
+    },
+  );
 
   // Warm-up Cartesia TTS au boot : pré-génère les fillers ET chauffe le modèle
   // vocal Sonic 3.5 (évite le cold start de ~600ms sur le premier appel vocal).
