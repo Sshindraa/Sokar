@@ -1386,7 +1386,7 @@ function CanalAActivationStep() {
 
           <div className={cn("flex items-center justify-between transition-opacity duration-200", !canalAPublished && "opacity-40 pointer-events-none")}>
             <div>
-              <p className="text-sm font-semibold">Référencement IA (Canal Agentic)</p>
+              <p className="text-sm font-semibold">Découverte IA</p>
               <p className="text-xs text-muted-foreground">Rend la page indexable par Google, ChatGPT et Perplexity.</p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -1413,7 +1413,7 @@ function CanalAActivationStep() {
           ) : (
             <Button onClick={handleToggleActivation} disabled={saving || !restaurant.slug} className="bg-amber-600 hover:bg-amber-700 text-white">
               {saving ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}
-              Activer le Canal A
+              Activer Connect
             </Button>
           )}
           <Button onClick={handleSkip} variant="ghost">Plus tard</Button>
