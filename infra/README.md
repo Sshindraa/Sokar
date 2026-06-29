@@ -8,12 +8,14 @@ TS compilation behave like a normal dev setup.
 ## Quick start
 
 ```sh
-# 1. Create the env file (one-time)
-cp infra/.env.example infra/.env
-# edit infra/.env — at minimum set POSTGRES_PASSWORD
+# 1. Create the root env file (one-time)
+#    .env.local at the repo root is the single source of truth for dev infra.
+#    See infra/.env.example for which vars are expected.
+cp infra/.env.example .env.local  # then edit .env.local with real values
 
 # 2. Start the infrastructure stack
-docker compose -f infra/docker-compose.yml --env-file infra/.env up -d
+pnpm infra:up
+# (equivalent to: docker compose --env-file .env.local -f infra/docker-compose.yml up -d)
 
 # 3. Verify health
 docker compose -f infra/docker-compose.yml ps
@@ -54,10 +56,11 @@ Node for the apps.
 
 ```sh
 # Stop and delete everything (containers + volumes)
-docker compose -f infra/docker-compose.yml --env-file infra/.env down -v
+pnpm infra:down -v
+# (equivalent to: docker compose -f infra/docker-compose.yml down -v)
 
 # Just restart one service
-docker compose -f infra/docker-compose.yml --env-file infra/.env restart postgres
+docker compose -f infra/docker-compose.yml restart postgres
 ```
 
 ## Common commands

@@ -76,7 +76,7 @@ if [ "$run_api" = true ]; then
     pnpm turbo test --filter=@sokar/api...
   else
     echo "prepush-quality-gate: voice tests unchanged, running API tests without voice..."
-    pnpm turbo test --filter=@sokar/api... -- --exclude '**/voice/**'
+    pnpm turbo test --filter=@sokar/api -- --exclude '**/voice/**'
   fi
 fi
 
