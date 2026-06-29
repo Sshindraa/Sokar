@@ -88,6 +88,47 @@ describe('computeOnboardingState', () => {
     // calendar est bloqué manuellement → ne devient pas completed même si googleRefreshToken
     expect(getStatus(state.tasks, 'calendar')).toBe('blocked');
   });
+
+  it('cas 7 : minimumViableDone est false quand restaurant OU hours est incomplet', () => {
+    // baseEmpty a name/managerPhone/managerEmail mais pas d'openingHours
+    // → restaurant completed, hours current (auto-progression) → minimumViableDone = false
+    const state = computeOnboardingState(baseEmpty);
+    expect(getStatus(state.tasks, 'restaurant')).toBe('completed');
+    expect(getStatus(state.tasks, 'hours')).toBe('current');
+    expect(state.minimumViableDone).toBe(false);
+  });
+
+  it('cas 8 : minimumViableDone est true quand restaurant ET hours sont completed', () => {
+    const state = computeOnboardingState({
+      ...baseEmpty,
+      openingHours: { mon: { open: '12:00', close: '22:00' } },
+    });
+    expect(getStatus(state.tasks, 'restaurant')).toBe('completed');
+    expect(getStatus(state.tasks, 'hours')).toBe('completed');
+    expect(state.minimumViableDone).toBe(true);
+  });
+
+  it('cas 9 : skip de hours ne compte pas pour minimumViableDone (skip ≠ completed)', () => {
+    const tasks = normalizeTasks(null);
+    const after = applyOnboardingTransition(tasks, {
+      action: 'skip',
+      task: 'hours',
+      reason: 'Plus tard',
+    });
+    const state = computeOnboardingState({ ...baseEmpty, onboardingTasks: after });
+    expect(getStatus(state.tasks, 'hours')).toBe('skipped');
+    expect(state.minimumViableDone).toBe(false);
+  });
+
+  it('cas 10 : minimumViableDone reste false si restaurant est "Mon Restaurant" (placeholder)', () => {
+    const state = computeOnboardingState({
+      ...baseEmpty,
+      name: 'Mon Restaurant',
+      openingHours: { mon: { open: '12:00', close: '22:00' } },
+    });
+    expect(getStatus(state.tasks, 'restaurant')).toBe('current');
+    expect(state.minimumViableDone).toBe(false);
+  });
 });
 
 describe('applyOnboardingTransition', () => {
@@ -113,9 +154,9 @@ describe('applyOnboardingTransition', () => {
 
   it('skip : impossible sur restaurant (étape required)', () => {
     const tasks = normalizeTasks(null);
-    expect(() =>
-      applyOnboardingTransition(tasks, { action: 'skip', task: 'restaurant' }),
-    ).toThrow(/obligatoire/i);
+    expect(() => applyOnboardingTransition(tasks, { action: 'skip', task: 'restaurant' })).toThrow(
+      /obligatoire/i,
+    );
   });
 
   it('skip : autorisé sur hours, et passe l’étape suivante en current (après compute)', () => {

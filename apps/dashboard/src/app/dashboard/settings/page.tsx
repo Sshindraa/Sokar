@@ -6,24 +6,25 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { OnboardingLockBanner } from '@/features/onboarding/onboarding-guard';
 import { Save, Bot, Store, AlertCircle, CheckCircle2, ArrowUpRight, Calendar } from 'lucide-react';
 
 const PLAN_FEATURES: Record<string, { label: string; calls: string }> = {
-  STARTER:  { label: 'Essential',  calls: '1 500 appels / mois' },
-  PRO:      { label: 'Pro',        calls: 'Appels illimités' },
-  PREMIUM:  { label: 'Multi-site', calls: 'Appels illimités — 99€/site suppl.' },
+  STARTER: { label: 'Essential', calls: '1 500 appels / mois' },
+  PRO: { label: 'Pro', calls: 'Appels illimités' },
+  PREMIUM: { label: 'Multi-site', calls: 'Appels illimités — 99€/site suppl.' },
 };
 
 const PROFILE_OPTIONS = [
   { value: 'BISTROT_BRASSERIE', label: 'Bistrot / Brasserie' },
-  { value: 'GASTRONOMIQUE',     label: 'Gastronomique' },
-  { value: 'SEMI_GASTRO',       label: 'Semi-gastronomique' },
+  { value: 'GASTRONOMIQUE', label: 'Gastronomique' },
+  { value: 'SEMI_GASTRO', label: 'Semi-gastronomique' },
 ];
 
 const FILLER_OPTIONS = [
   { value: 'CASUAL', label: 'Décontracté', desc: 'Je regarde ça…' },
-  { value: 'WARM',   label: 'Chaleureux',  desc: 'Pas de souci, je regarde ça !' },
-  { value: 'FORMAL', label: 'Formel',      desc: 'Veuillez patienter un instant…' },
+  { value: 'WARM', label: 'Chaleureux', desc: 'Pas de souci, je regarde ça !' },
+  { value: 'FORMAL', label: 'Formel', desc: 'Veuillez patienter un instant…' },
 ];
 
 export default function SettingsPage() {
@@ -103,7 +104,9 @@ export default function SettingsPage() {
       <div className="space-y-8">
         <Skeleton className="h-8 w-40" />
         <Card className="sokar-card">
-          <CardHeader><Skeleton className="h-5 w-32" /></CardHeader>
+          <CardHeader>
+            <Skeleton className="h-5 w-32" />
+          </CardHeader>
           <CardContent className="space-y-4">
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
@@ -166,7 +169,11 @@ export default function SettingsPage() {
   }
 
   async function handleDisconnectCalendar() {
-    if (!confirm('Êtes-vous sûr de vouloir déconnecter votre agenda Google ? Vos réservations ne seront plus synchronisées.')) {
+    if (
+      !confirm(
+        'Êtes-vous sûr de vouloir déconnecter votre agenda Google ? Vos réservations ne seront plus synchronisées.',
+      )
+    ) {
       return;
     }
     setDisconnecting(true);
@@ -216,6 +223,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-8">
+      <OnboardingLockBanner task="restaurant" />
       <h1 className="text-2xl font-semibold tracking-tight">Paramètres</h1>
 
       {error && (
@@ -241,11 +249,19 @@ export default function SettingsPage() {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Téléphone du gérant</label>
-              <Input type="tel" value={managerPhone} onChange={(e) => setManagerPhone(e.target.value)} />
+              <Input
+                type="tel"
+                value={managerPhone}
+                onChange={(e) => setManagerPhone(e.target.value)}
+              />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Email du gérant</label>
-              <Input type="email" value={managerEmail} onChange={(e) => setManagerEmail(e.target.value)} />
+              <Input
+                type="email"
+                value={managerEmail}
+                onChange={(e) => setManagerEmail(e.target.value)}
+              />
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" disabled={saving}>
@@ -303,7 +319,8 @@ export default function SettingsPage() {
               <div>
                 <p className="font-semibold text-base">Google Calendar</p>
                 <p className="text-sm text-muted-foreground mt-1 max-w-md">
-                  Synchronisez automatiquement vos réservations avec votre agenda Google et vérifiez la disponibilité en temps réel avant de confirmer.
+                  Synchronisez automatiquement vos réservations avec votre agenda Google et vérifiez
+                  la disponibilité en temps réel avant de confirmer.
                 </p>
                 {googleRefreshToken ? (
                   <div className="mt-3 flex items-center gap-2 transition-all duration-200">
@@ -325,19 +342,16 @@ export default function SettingsPage() {
 
             <div>
               {googleRefreshToken ? (
-                <Button 
-                  variant="outline" 
-                  onClick={handleDisconnectCalendar} 
+                <Button
+                  variant="outline"
+                  onClick={handleDisconnectCalendar}
                   disabled={disconnecting}
                   className="text-destructive border-destructive/20 hover:bg-destructive/10 hover:text-destructive transition-all duration-200"
                 >
                   {disconnecting ? 'Déconnexion...' : 'Déconnecter'}
                 </Button>
               ) : (
-                <Button 
-                  onClick={handleConnectCalendar}
-                  className="transition-all duration-200"
-                >
+                <Button onClick={handleConnectCalendar} className="transition-all duration-200">
                   Connecter
                   <ArrowUpRight size={16} className="ml-1" />
                 </Button>
@@ -346,25 +360,37 @@ export default function SettingsPage() {
           </div>
 
           {googleRefreshToken && (
-            <form onSubmit={handleSaveCalendarSettings} className="max-w-full sm:max-w-lg space-y-4 pt-6 border-t border-border animate-fade-in">
+            <form
+              onSubmit={handleSaveCalendarSettings}
+              className="max-w-full sm:max-w-lg space-y-4 pt-6 border-t border-border animate-fade-in"
+            >
               <div className="space-y-2">
                 <label className="text-sm font-medium flex items-center gap-1.5 text-foreground">
                   ID de l&apos;agenda Google
                 </label>
-                <Input 
-                  value={googleCalendarId} 
-                  onChange={(e) => setGoogleCalendarId(e.target.value)} 
+                <Input
+                  value={googleCalendarId}
+                  onChange={(e) => setGoogleCalendarId(e.target.value)}
                   placeholder="primary"
-                  required 
+                  required
                   className="transition-all duration-200 focus-visible:ring-primary"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Utilisez <code className="font-mono text-primary bg-primary/5 px-1 py-0.5 rounded">primary</code> pour votre agenda principal, ou spécifiez un ID d&apos;agenda spécifique (ex: adresse email ou ID d&apos;agenda Google partagé).
+                  Utilisez{' '}
+                  <code className="font-mono text-primary bg-primary/5 px-1 py-0.5 rounded">
+                    primary
+                  </code>{' '}
+                  pour votre agenda principal, ou spécifiez un ID d&apos;agenda spécifique (ex:
+                  adresse email ou ID d&apos;agenda Google partagé).
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <Button type="submit" disabled={savingCalendar} className="transition-all duration-200">
+                <Button
+                  type="submit"
+                  disabled={savingCalendar}
+                  className="transition-all duration-200"
+                >
                   <Save size={16} className="mr-1" />
                   {savingCalendar ? 'Enregistrement...' : 'Enregistrer les paramètres'}
                 </Button>
@@ -385,7 +411,7 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Bot size={18} />
-Personnalité de l&apos;agent vocal
+            Personnalité de l&apos;agent vocal
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -398,7 +424,9 @@ Personnalité de l&apos;agent vocal
                 className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 {PROFILE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
                 ))}
               </select>
             </div>
@@ -411,7 +439,9 @@ Personnalité de l&apos;agent vocal
                 className="flex h-10 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 {FILLER_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label} — {opt.desc}</option>
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label} — {opt.desc}
+                  </option>
                 ))}
               </select>
             </div>
@@ -439,7 +469,9 @@ Personnalité de l&apos;agent vocal
             <div className="space-y-2">
               <label className="text-sm font-medium">
                 ID voix Cartesia
-                <span className="ml-1 text-xs text-muted-foreground">(laisser vide pour la voix par défaut)</span>
+                <span className="ml-1 text-xs text-muted-foreground">
+                  (laisser vide pour la voix par défaut)
+                </span>
               </label>
               <Input
                 value={voiceIdCa}

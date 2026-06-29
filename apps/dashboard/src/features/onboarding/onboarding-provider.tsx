@@ -24,6 +24,10 @@ type OnboardingContextValue = {
     options?: { reason?: string; metadata?: Record<string, unknown> },
   ) => Promise<OnboardingState | null>;
   openStep: (task: OnboardingTaskKey) => Promise<void>;
+  // In-dashboard modal flow
+  activeStep: OnboardingTaskKey | null;
+  openStepModal: (task: OnboardingTaskKey) => void;
+  closeStepModal: () => void;
 };
 
 const OnboardingContext = createContext<OnboardingContextValue | null>(null);
@@ -33,6 +37,7 @@ const PREVIEW_STATE: OnboardingState = {
   onboardingDone: false,
   voiceOnboardingDone: false,
   canalAOnboardingDone: false,
+  minimumViableDone: false,
   onboardingCompletedAt: null,
   onboardingActivatedAt: null,
   onboardingLastSeenAt: new Date().toISOString(),
@@ -56,8 +61,8 @@ const PREVIEW_STATE: OnboardingState = {
     // Voice group
     {
       key: 'restaurant',
-      title: "Identité du restaurant",
-      description: "Nom, gérant et coordonnées de contact.",
+      title: 'Identité du restaurant',
+      description: 'Nom, gérant et coordonnées de contact.',
       required: true,
       group: 'voice',
       index: 1,
@@ -66,7 +71,7 @@ const PREVIEW_STATE: OnboardingState = {
     },
     {
       key: 'hours',
-      title: "Quand répondre et réserver",
+      title: 'Quand répondre et réserver',
       description: "Créneaux d'ouverture que l'assistant peut proposer.",
       required: false,
       group: 'voice',
@@ -225,7 +230,13 @@ function updatePreviewStep(
   });
 
   const voiceKeys = ['restaurant', 'hours', 'knowledge', 'calendar', 'phone'];
-  const canalAKeys = ['canal-a-identity', 'canal-a-location', 'canal-a-cuisine', 'canal-a-capacity', 'canal-a-activation'];
+  const canalAKeys = [
+    'canal-a-identity',
+    'canal-a-location',
+    'canal-a-cuisine',
+    'canal-a-capacity',
+    'canal-a-activation',
+  ];
 
   const voiceSteps = steps.filter((s) => voiceKeys.includes(s.key));
   const voiceCompleted = voiceSteps.filter((s) => s.status === 'completed').length;
@@ -244,6 +255,11 @@ function updatePreviewStep(
     steps.find((step) => step.status !== 'completed') ??
     steps[steps.length - 1];
 
+  const restaurantStep = steps.find((s) => s.key === 'restaurant');
+  const hoursStep = steps.find((s) => s.key === 'hours');
+  const minimumViableDone =
+    restaurantStep?.status === 'completed' && hoursStep?.status === 'completed';
+
   return {
     ...current,
     steps,
@@ -255,6 +271,7 @@ function updatePreviewStep(
     canalAOnboardingDone,
     voiceProgress,
     canalAProgress,
+    minimumViableDone,
   };
 }
 
@@ -269,6 +286,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 function PreviewOnboardingProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState | null>(PREVIEW_STATE);
+  const [activeStep, setActiveStep] = useState<OnboardingTaskKey | null>(null);
 
   const refresh = useCallback(async () => {
     setState((current) => current ?? PREVIEW_STATE);
@@ -291,6 +309,14 @@ function PreviewOnboardingProvider({ children }: { children: ReactNode }) {
     [router, updateTask],
   );
 
+  const openStepModal = useCallback((task: OnboardingTaskKey) => {
+    setActiveStep(task);
+  }, []);
+
+  const closeStepModal = useCallback(() => {
+    setActiveStep(null);
+  }, []);
+
   const value = useMemo(
     () => ({
       state,
@@ -299,8 +325,11 @@ function PreviewOnboardingProvider({ children }: { children: ReactNode }) {
       refresh,
       updateTask,
       openStep,
+      activeStep,
+      openStepModal,
+      closeStepModal,
     }),
-    [state, refresh, updateTask, openStep],
+    [state, refresh, updateTask, openStep, activeStep, openStepModal, closeStepModal],
   );
 
   return <OnboardingContext.Provider value={value}>{children}</OnboardingContext.Provider>;
@@ -312,6 +341,7 @@ function ApiOnboardingProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<OnboardingState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [activeStep, setActiveStep] = useState<OnboardingTaskKey | null>(null);
 
   const refresh = useCallback(async () => {
     if (!orgId) return;
@@ -380,9 +410,37 @@ function ApiOnboardingProvider({ children }: { children: ReactNode }) {
     [router, updateTask],
   );
 
+  const openStepModal = useCallback((task: OnboardingTaskKey) => {
+    setActiveStep(task);
+  }, []);
+
+  const closeStepModal = useCallback(() => {
+    setActiveStep(null);
+  }, []);
+
   const value = useMemo(
-    () => ({ state, loading, error, refresh, updateTask, openStep }),
-    [state, loading, error, refresh, updateTask, openStep],
+    () => ({
+      state,
+      loading,
+      error,
+      refresh,
+      updateTask,
+      openStep,
+      activeStep,
+      openStepModal,
+      closeStepModal,
+    }),
+    [
+      state,
+      loading,
+      error,
+      refresh,
+      updateTask,
+      openStep,
+      activeStep,
+      openStepModal,
+      closeStepModal,
+    ],
   );
 
   return <OnboardingContext.Provider value={value}>{children}</OnboardingContext.Provider>;

@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { OnboardingLockBanner } from '@/features/onboarding/onboarding-guard';
 import {
   Save,
   Bot,
@@ -247,6 +248,7 @@ export default function AgenticSettingsPage() {
 
   return (
     <div className="space-y-8">
+      <OnboardingLockBanner task="phone" />
       <h1 className="text-2xl font-semibold tracking-tight">Réservations par les agents</h1>
 
       {error && (
