@@ -16,6 +16,7 @@ import {
 } from './onboarding.service';
 import { invalidateRestaurantContextCache } from './restaurant.service';
 import { computeConnectScore } from '../connect/connect-score.service';
+import { synthesizeText, isCartesiaConfigured } from '../voice/cartesia-synth';
 
 const ONBOARDING_EVENT_BY_ACTION: Partial<
   Record<z.infer<typeof UpdateOnboardingSchema>['action'], OnboardingAnalyticsEvent>
@@ -596,6 +597,80 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
   };
 
+  // ─── Demo call (audio preview, pas d'appel Telnyx réel) ────────────────
+  // Synthétise un script fixe avec la personnalité courante du restaurant
+  // pour donner un aha moment mid-onboarding (étape 3, avant l'étape phone).
+  // Fallback transcript-only si CARTESIA_API_KEY absente (dev local par design).
+  const DemoCallSchema = z.object({
+    scriptId: z.enum(['reservation', 'cancellation', 'menu']).default('reservation'),
+  });
+
+  const DEMO_SCRIPTS: Record<string, (name: string) => string> = {
+    reservation: (name) =>
+      `Bonjour, ${name}. Oui, une table pour quatre personnes ce vendredi à dix-neuf heures, c'est noté. À vendredi !`,
+    cancellation: (name) =>
+      `Bonjour, ${name}. Bien sûr, j'annule votre réservation de ce soir. Souhaitez-vous la reporter à une autre date ?`,
+    menu: (name) =>
+      `Bonjour, ${name}. Ce soir, en plat du jour, nous avons un confit de canard avec pommes sarladaises. Souhaitez-vous réserver une table ?`,
+  };
+
+  const postDemoCall = async (req: any, reply: any) => {
+    const restaurantId = req.restaurantId;
+    const body = DemoCallSchema.parse(req.body ?? {});
+    const restaurant = await app.db.restaurant.findUniqueOrThrow({
+      where: { id: restaurantId },
+      include: { personality: true },
+    });
+
+    const scriptFn = DEMO_SCRIPTS[body.scriptId] ?? DEMO_SCRIPTS.reservation;
+    const transcript = scriptFn(restaurant.name);
+
+    if (!isCartesiaConfigured()) {
+      // Dev local par design : pas de clé Cartesia → transcript seul.
+      return reply.send({
+        audio: null,
+        transcript,
+        scriptId: body.scriptId,
+        fallback: true,
+        message: 'Audio disponible après configuration de la clé Cartesia.',
+      });
+    }
+
+    try {
+      const speed = restaurant.personality?.speakingRate
+        ? Number(restaurant.personality.speakingRate)
+        : undefined;
+      const audio = await synthesizeText({ text: transcript, speed });
+
+      if (!audio) {
+        return reply.send({ audio: null, transcript, scriptId: body.scriptId, fallback: true });
+      }
+
+      trackOnboardingEvent({
+        event: 'onboarding_demo_call_played',
+        restaurantId,
+        userId: req.userId,
+        task: 'knowledge',
+        metadata: { scriptId: body.scriptId, hasAudio: true },
+      }).catch((err) => app.log.error({ err, restaurantId }, 'trackOnboardingEvent failed'));
+
+      reply.type('audio/mpeg');
+      return reply.send(audio);
+    } catch (err: any) {
+      logger.error(
+        { err, restaurantId, scriptId: body.scriptId },
+        '[onboarding] demo call TTS failed',
+      );
+      return reply.status(502).send({
+        code: 'CARTESIA_FAILED',
+        error:
+          "La synthèse vocale n'a pas pu être générée. Réessayez dans quelques minutes, ou contactez le support si le problème persiste.",
+        transcript,
+        detail: process.env.NODE_ENV === 'production' ? undefined : String(err?.message ?? err),
+      });
+    }
+  };
+
   const patchConnect = async (req: any, reply: any) => {
     const { id } = req.params as { id: string };
     const restaurantId = req.restaurantId;
@@ -746,6 +821,9 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   app.post('/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
   app.post('/api/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
+
+  app.post('/restaurant/onboarding/demo-call', { preHandler: requireOrg() }, postDemoCall);
+  app.post('/api/restaurant/onboarding/demo-call', { preHandler: requireOrg() }, postDemoCall);
 
   app.patch('/restaurants/:id/connect', { preHandler: requireOrg() }, patchConnect);
   app.patch('/api/restaurants/:id/connect', { preHandler: requireOrg() }, patchConnect);

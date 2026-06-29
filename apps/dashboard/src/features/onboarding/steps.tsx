@@ -14,6 +14,7 @@ import {
   PhoneForwarded,
   Store,
   Utensils,
+  Volume2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -198,8 +199,9 @@ export function KnowledgeStep({ onComplete }: StepProps) {
   const [speakingRate, setSpeakingRate] = useState(Number(personality?.speakingRate || 1.0));
   const [systemPromptExtra, setSystemPromptExtra] = useState(personality?.systemPromptExtra || '');
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSave(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
     try {
@@ -210,14 +212,18 @@ export function KnowledgeStep({ onComplete }: StepProps) {
         systemPromptExtra,
       });
       await updateTask('complete', 'knowledge');
-      onComplete('calendar');
+      setSaved(true);
     } finally {
       setSaving(false);
     }
   }
 
+  function handleContinue() {
+    onComplete('calendar');
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
+    <form onSubmit={handleSave} className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
       <StepHeader
         icon={Globe}
         title="Ce que l'assistant doit savoir"
@@ -276,9 +282,143 @@ export function KnowledgeStep({ onComplete }: StepProps) {
           </div>
         </Field>
 
-        <SubmitButton saving={saving}>Valider et connecter l&apos;agenda</SubmitButton>
+        {!saved ? (
+          <SubmitButton saving={saving}>Sauvegarder et écouter un aperçu</SubmitButton>
+        ) : (
+          <div className="space-y-4">
+            <DemoCallPlayer scriptId="reservation" />
+            <div className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200 transition-all duration-200">
+              <Check size={16} />
+              <span>Personnalité enregistrée. Écoutez l&apos;aperçu, puis continuez.</span>
+            </div>
+            <Button
+              type="button"
+              onClick={handleContinue}
+              className="w-full transition-all duration-200"
+            >
+              Continuer vers l&apos;agenda
+            </Button>
+          </div>
+        )}
       </div>
     </form>
+  );
+}
+
+// ─── DEMO CALL PLAYER ──────────────────────────────────────────
+// Aha moment mid-onboarding : l'utilisateur écoute l'assistant vocal
+// avec sa personnalité courante avant d'avoir fini la config.
+// Fallback transcript-only si Cartesia n'est pas configurée (dev local).
+
+type DemoCallState = {
+  loading: boolean;
+  audioUrl: string | null;
+  transcript: string | null;
+  fallback: boolean;
+  error: string | null;
+};
+
+const INITIAL_DEMO_STATE: DemoCallState = {
+  loading: false,
+  audioUrl: null,
+  transcript: null,
+  fallback: false,
+  error: null,
+};
+
+function DemoCallPlayer({
+  scriptId = 'reservation',
+}: {
+  scriptId?: 'reservation' | 'cancellation' | 'menu';
+}) {
+  const [demo, setDemo] = useState<DemoCallState>(INITIAL_DEMO_STATE);
+
+  // Révoque l'object URL précédente pour éviter les fuites mémoire.
+  useEffect(() => {
+    return () => {
+      if (demo.audioUrl) URL.revokeObjectURL(demo.audioUrl);
+    };
+  }, [demo.audioUrl]);
+
+  async function handlePlay() {
+    setDemo({ ...INITIAL_DEMO_STATE, loading: true });
+    try {
+      const res = await fetch('/api/proxy/restaurant/onboarding/demo-call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scriptId }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Erreur ${res.status}`);
+      }
+
+      const contentType = res.headers.get('content-type') ?? '';
+
+      if (contentType.includes('audio/')) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        setDemo({ loading: false, audioUrl: url, transcript: null, fallback: false, error: null });
+      } else {
+        const data = await res.json();
+        setDemo({
+          loading: false,
+          audioUrl: null,
+          transcript: data.transcript ?? null,
+          fallback: Boolean(data.fallback),
+          error: null,
+        });
+      }
+    } catch (err: any) {
+      setDemo({ ...INITIAL_DEMO_STATE, error: err?.message ?? 'Erreur inconnue' });
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-background/60 p-4 transition-all duration-200">
+      <div className="flex items-center gap-3">
+        <div className="rounded-lg bg-primary/10 p-2 text-primary">
+          <Volume2 size={18} />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-semibold text-foreground">Écouter un appel démo</p>
+          <p className="text-xs text-muted-foreground">
+            Voici comment Sokar répondra avec le ton et la vitesse que vous avez choisis.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handlePlay}
+          disabled={demo.loading}
+          className="transition-all duration-200"
+        >
+          {demo.loading ? <Loader2 size={16} className="animate-spin" /> : <Volume2 size={16} />}
+          {demo.loading ? 'Génération…' : demo.audioUrl || demo.transcript ? 'Rejouer' : 'Écouter'}
+        </Button>
+      </div>
+
+      {demo.audioUrl && (
+        <audio controls autoPlay src={demo.audioUrl} className="mt-3 w-full">
+          <track kind="captions" />
+        </audio>
+      )}
+
+      {demo.transcript && (
+        <div className="mt-3 rounded-md border border-border bg-background p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {demo.fallback ? 'Transcript (audio indisponible en local)' : 'Transcript'}
+          </p>
+          <p className="mt-1 text-sm italic text-foreground">
+            &laquo;&nbsp;{demo.transcript}&nbsp;&raquo;
+          </p>
+        </div>
+      )}
+
+      {demo.error && <p className="mt-3 text-sm text-destructive">{demo.error}</p>}
+    </div>
   );
 }
 
