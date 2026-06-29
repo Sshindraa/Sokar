@@ -328,7 +328,7 @@ export function KnowledgeStep({ onComplete }: StepProps) {
                     </p>
                     <p className="text-sm leading-6 text-muted-foreground">
                       Bienvenue chez Sokar. Si l&apos;assistant ne répond pas comme vous le
-                      souhaitez — ton trop formel, phrase mal coupée, information manquante —
+                      souhaitez — style trop formel, phrase mal coupée, information manquante —
                       écrivez-moi directement à{' '}
                       <a
                         href="mailto:hamza@sokar.tech"
