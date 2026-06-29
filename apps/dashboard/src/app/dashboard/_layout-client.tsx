@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
@@ -18,12 +19,19 @@ import { cn } from '@/lib/utils';
 import { SyncOrganization } from './SyncOrganization';
 import MobileBottomNav from '@/components/MobileBottomNav';
 import { OnboardingProvider, useOnboarding } from '@/features/onboarding/onboarding-provider';
-import { OnboardingModal } from '@/features/onboarding/onboarding-modal';
 import {
   DashboardOnboardingGate,
   DashboardOnboardingPanel,
 } from '@/features/onboarding/onboarding-dashboard';
 import { DemoModeProvider, useDemoMode } from '@/features/onboarding/use-demo-mode';
+
+// OnboardingModal importe steps.tsx (1725 lignes, tous les composants de step).
+// Lazy-load pour éviter de charger tout l'onboarding dans le bundle du dashboard
+// quand l'utilisateur n'ouvre jamais le modal.
+const OnboardingModal = dynamic(
+  () => import('@/features/onboarding/onboarding-modal').then((m) => m.OnboardingModal),
+  { ssr: false },
+);
 
 const navItems = [
   { href: '/dashboard', label: 'Aperçu', icon: BarChart3 },
