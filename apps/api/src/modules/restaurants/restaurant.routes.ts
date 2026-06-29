@@ -15,6 +15,7 @@ import {
   UpdateOnboardingSchema,
 } from './onboarding.service';
 import { invalidateRestaurantContextCache } from './restaurant.service';
+import { computeConnectScore } from '../canal-a/connect-score.service';
 
 const ONBOARDING_EVENT_BY_ACTION: Partial<
   Record<z.infer<typeof UpdateOnboardingSchema>['action'], OnboardingAnalyticsEvent>
@@ -662,6 +663,36 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   app.get('/restaurants/:id/canal-a', { preHandler: requireOrg() }, getCanalA);
   app.get('/api/restaurants/:id/canal-a', { preHandler: requireOrg() }, getCanalA);
+
+  // Sokar Connect — GET score de complétude
+  // Calcule le score de profil 0-100% + items manquants + copy contextuel.
+  const getConnectScore = async (req: any, reply: any) => {
+    const restaurantId = req.restaurantId;
+
+    const restaurant = await app.db.restaurant.findUnique({
+      where: { id: restaurantId },
+      include: {
+        exposureSettings: true,
+        images: { select: { id: true } },
+      },
+    });
+
+    if (!restaurant) {
+      return reply.status(404).send({ error: 'Restaurant not found' });
+    }
+
+    const score = computeConnectScore({
+      restaurant,
+      exposure: restaurant.exposureSettings,
+      images: restaurant.images,
+    });
+
+    return reply.send(score);
+  };
+
+  app.get('/restaurants/:id/connect/score', { preHandler: requireOrg() }, getConnectScore);
+  app.get('/api/restaurants/:id/connect/score', { preHandler: requireOrg() }, getConnectScore);
+
   app.post('/restaurants/:id/images', { preHandler: requireOrg() }, postImage);
   app.post('/api/restaurants/:id/images', { preHandler: requireOrg() }, postImage);
   app.get('/restaurants/check-slug', { preHandler: requireOrg() }, checkSlug);

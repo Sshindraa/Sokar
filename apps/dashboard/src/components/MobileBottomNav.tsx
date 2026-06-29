@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, CalendarCheck, PhoneCall, Settings, Users } from 'lucide-react';
+import { BarChart3, CalendarCheck, PhoneCall, Users, Zap } from 'lucide-react';
 import { cn, triggerHaptic } from '@/lib/utils';
 
 const navItems = [
@@ -10,7 +10,7 @@ const navItems = [
   { href: '/dashboard/calls', label: 'Appels', icon: PhoneCall },
   { href: '/dashboard/reservations', label: 'Résa', icon: CalendarCheck },
   { href: '/dashboard/customers', label: 'Clients', icon: Users },
-  { href: '/dashboard/settings', label: 'Réglages', icon: Settings },
+  { href: '/dashboard/canal-a', label: 'Connect', icon: Zap },
 ];
 
 export default function MobileBottomNav() {
