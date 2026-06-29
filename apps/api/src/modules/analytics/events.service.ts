@@ -7,7 +7,8 @@ export type OnboardingAnalyticsEvent =
   | 'onboarding_step_skipped'
   | 'onboarding_step_blocked'
   | 'onboarding_activated'
-  | 'onboarding_first_call';
+  | 'onboarding_first_call'
+  | 'onboarding_demo_call_played';
 
 type TrackOnboardingEventInput = {
   event: OnboardingAnalyticsEvent;
