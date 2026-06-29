@@ -68,6 +68,16 @@ function OnboardingStepContent() {
     <main className="dark sokar-page relative min-h-screen overflow-hidden p-4 pt-28 md:p-8 md:pt-32">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,hsl(var(--foreground)/0.10),transparent_36%),linear-gradient(hsl(var(--border)/0.18)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.14)_1px,transparent_1px)] bg-[auto,72px_72px,72px_72px] opacity-70" />
       <div className="relative z-10 mx-auto max-w-6xl space-y-5">
+        <OnboardingNavFooter
+          currentStep={step}
+          onPrev={prevStep ? () => goToStep(prevStep) : null}
+          onNext={nextStep ? () => goToStep(nextStep) : null}
+          onExit={() => router.push('/dashboard')}
+          completedCount={state.completedCount}
+          totalCount={state.totalCount}
+          progress={state.progress}
+        />
+
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-sm text-muted-foreground">Sokar OS</p>
@@ -102,16 +112,6 @@ function OnboardingStepContent() {
         <section className="rounded-lg border border-border bg-card/90 p-4 shadow-xl backdrop-blur-xl transition-all duration-200 md:p-6">
           {StepComponent && <StepComponent onComplete={handleComplete} />}
         </section>
-
-        <OnboardingNavFooter
-          currentStep={step}
-          onPrev={prevStep ? () => goToStep(prevStep) : null}
-          onNext={nextStep ? () => goToStep(nextStep) : null}
-          onExit={() => router.push('/dashboard')}
-          completedCount={state.completedCount}
-          totalCount={state.totalCount}
-          progress={state.progress}
-        />
       </div>
     </main>
   );
