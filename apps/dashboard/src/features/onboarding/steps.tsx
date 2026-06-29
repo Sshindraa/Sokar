@@ -6,6 +6,7 @@ import {
   Calendar,
   Check,
   CheckCircle2,
+  ChevronDown,
   Copy,
   ExternalLink,
   Gauge,
@@ -203,6 +204,7 @@ export function KnowledgeStep({ onComplete }: StepProps) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [demoPlayed, setDemoPlayed] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   async function handleSave(e: FormEvent) {
     e.preventDefault();
@@ -263,33 +265,52 @@ export function KnowledgeStep({ onComplete }: StepProps) {
           </div>
         </Field>
 
-        <Field label="Consignes particulières (ex: suggestions, plats signatures)">
-          <textarea
-            value={systemPromptExtra}
-            onChange={(e) => setSystemPromptExtra(e.target.value)}
-            placeholder="Exemple : Toujours proposer notre formule midi en semaine. Parler de notre terrasse ombragée."
-            className="flex min-h-[96px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            maxLength={1000}
-          />
-          <div className="mt-2 flex flex-wrap gap-2">
-            {SUGGESTIONS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setSystemPromptExtra((current) => `${current} ${s}`.trim())}
-                className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-              >
-                + {s}
-              </button>
-            ))}
-          </div>
-        </Field>
+        {/* Progressive disclosure : le champ systemPromptExtra est intimidant
+            pour un gérant non-tech. On le fold derrière un toggle, et on ne
+            le révèle qu'aux utilisateurs qui veulent affiner. */}
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="flex items-center gap-2 text-sm font-medium text-muted-foreground transition-all duration-200 hover:text-foreground"
+          >
+            <ChevronDown
+              size={16}
+              className={cn('transition-transform duration-200', showAdvanced && 'rotate-180')}
+            />
+            Affiner le comportement (optionnel)
+          </button>
+
+          {showAdvanced && (
+            <Field label="Consignes particulières (ex: suggestions, plats signatures)">
+              <textarea
+                value={systemPromptExtra}
+                onChange={(e) => setSystemPromptExtra(e.target.value)}
+                placeholder="Exemple : Toujours proposer notre formule midi en semaine. Parler de notre terrasse ombragée."
+                className="flex min-h-[96px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                maxLength={1000}
+              />
+              <div className="mt-2 flex flex-wrap gap-2">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setSystemPromptExtra((current) => `${current} ${s}`.trim())}
+                    className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    + {s}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
+        </div>
 
         {!saved ? (
           <SubmitButton saving={saving}>Sauvegarder et écouter un aperçu</SubmitButton>
         ) : (
           <div className="space-y-4">
-            <DemoCallPlayer scriptId="reservation" onPlayed={() => setDemoPlayed(true)} />
+            <DemoCallPlayer onPlayed={() => setDemoPlayed(true)} />
             <div className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200 transition-all duration-200">
               <Check size={16} />
               <span>Personnalité enregistrée. Écoutez l&apos;aperçu, puis continuez.</span>
@@ -360,13 +381,16 @@ const INITIAL_DEMO_STATE: DemoCallState = {
   error: null,
 };
 
-function DemoCallPlayer({
-  scriptId = 'reservation',
-  onPlayed,
-}: {
-  scriptId?: 'reservation' | 'cancellation' | 'menu';
-  onPlayed?: () => void;
-}) {
+const DEMO_SCRIPTS = [
+  { id: 'reservation', label: 'Réservation' },
+  { id: 'cancellation', label: 'Annulation' },
+  { id: 'menu', label: 'Question menu' },
+] as const;
+
+function DemoCallPlayer({ onPlayed }: { onPlayed?: () => void }) {
+  const [activeScript, setActiveScript] = useState<'reservation' | 'cancellation' | 'menu'>(
+    'reservation',
+  );
   const [demo, setDemo] = useState<DemoCallState>(INITIAL_DEMO_STATE);
 
   // Révoque l'object URL précédente pour éviter les fuites mémoire.
@@ -376,13 +400,20 @@ function DemoCallPlayer({
     };
   }, [demo.audioUrl]);
 
+  // Reset l'audio quand on change de script.
+  useEffect(() => {
+    if (demo.audioUrl) URL.revokeObjectURL(demo.audioUrl);
+    setDemo(INITIAL_DEMO_STATE);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeScript]);
+
   async function handlePlay() {
     setDemo({ ...INITIAL_DEMO_STATE, loading: true });
     try {
       const res = await fetch('/api/proxy/restaurant/onboarding/demo-call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scriptId }),
+        body: JSON.stringify({ scriptId: activeScript }),
       });
 
       if (!res.ok) {
@@ -436,6 +467,26 @@ function DemoCallPlayer({
           {demo.loading ? <Loader2 size={16} className="animate-spin" /> : <Volume2 size={16} />}
           {demo.loading ? 'Génération…' : demo.audioUrl || demo.transcript ? 'Rejouer' : 'Écouter'}
         </Button>
+      </div>
+
+      {/* Sélecteur de scénario — montre comment les choix de personnalité
+          se traduisent en comportement sur 3 types d'appels différents. */}
+      <div className="mt-3 flex gap-1.5">
+        {DEMO_SCRIPTS.map((script) => (
+          <button
+            key={script.id}
+            type="button"
+            onClick={() => setActiveScript(script.id)}
+            className={cn(
+              'rounded-md border px-3 py-1.5 text-xs font-medium transition-all duration-200',
+              activeScript === script.id
+                ? 'border-primary/50 bg-primary/10 text-foreground'
+                : 'border-border bg-background/60 text-muted-foreground hover:bg-accent hover:text-foreground',
+            )}
+          >
+            {script.label}
+          </button>
+        ))}
       </div>
 
       {demo.audioUrl && (
