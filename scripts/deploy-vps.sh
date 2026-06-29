@@ -284,7 +284,7 @@ OPTIONAL_ENV_FILES=(
 for env_file in "${REQUIRED_ENV_FILES[@]}"; do
     if [ ! -f "$env_file" ]; then
         echo "❌ Env file manquant : $env_file — l'app correspondante démarrera sans config."
-        echo "   Créez-le sur le VPS avec les valeurs de prod (voir .env.example du repo)."
+        echo "   Créez-le sur le VPS avec les valeurs de prod (voir apps/api/.env.example du repo)."
         FAIL_MISSING_ENV=1
     else
         chmod 0600 "$env_file"
