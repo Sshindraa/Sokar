@@ -17,6 +17,7 @@ import {
 import { invalidateRestaurantContextCache } from './restaurant.service';
 import { computeConnectScore } from '../connect/connect-score.service';
 import { synthesizeText, isCartesiaConfigured } from '../voice/cartesia-synth';
+import { redisCache } from '../../shared/redis/client';
 
 const ONBOARDING_EVENT_BY_ACTION: Partial<
   Record<z.infer<typeof UpdateOnboardingSchema>['action'], OnboardingAnalyticsEvent>
@@ -636,15 +637,37 @@ export async function restaurantRoutes(app: FastifyInstance) {
       });
     }
 
+    // Cache Redis 5 min : évite un 2e call Cartesia (~1s) quand l'utilisateur
+    // rejoue le même scénario ou change puis revient. La clé inclut le
+    // scriptId + le speakingRate pour invalider si la personnalité change.
+    const speed = restaurant.personality?.speakingRate
+      ? Number(restaurant.personality.speakingRate)
+      : undefined;
+    const cacheKey = `demo-call:${restaurantId}:${body.scriptId}:${speed ?? 'default'}`;
+    const cached = await redisCache.getBuffer(cacheKey);
+    if (cached) {
+      // Hit cache : on track l'event quand même (l'utilisateur a écouté)
+      trackOnboardingEvent({
+        event: 'onboarding_demo_call_played',
+        restaurantId,
+        userId: req.userId,
+        task: 'knowledge',
+        metadata: { scriptId: body.scriptId, hasAudio: true, cached: true },
+      }).catch((err) => app.log.error({ err, restaurantId }, 'trackOnboardingEvent failed'));
+
+      reply.type('audio/mpeg');
+      return reply.send(cached);
+    }
+
     try {
-      const speed = restaurant.personality?.speakingRate
-        ? Number(restaurant.personality.speakingRate)
-        : undefined;
       const audio = await synthesizeText({ text: transcript, speed });
 
       if (!audio) {
         return reply.send({ audio: null, transcript, scriptId: body.scriptId, fallback: true });
       }
+
+      // Stocke l'audio en cache pour 5 minutes
+      await redisCache.set(cacheKey, audio, 'EX', 300);
 
       trackOnboardingEvent({
         event: 'onboarding_demo_call_played',

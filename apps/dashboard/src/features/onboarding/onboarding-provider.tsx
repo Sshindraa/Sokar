@@ -349,6 +349,14 @@ function ApiOnboardingProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setError('');
     try {
+      // Fire-and-forget : sync l'org Clerk en parallèle du fetch onboarding.
+      // Avant, le sync n'était appelé qu'en cas de 404 (waterfall de 3 calls
+      // séquentiels). Maintenant les 2 calls partent en même temps.
+      const syncPromise = fetch('/api/auth/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }).catch(() => null); // sync est idempotent, erreur non bloquante
+
       let data: OnboardingState;
       try {
         data = await get<OnboardingState>('restaurant/onboarding');
@@ -359,10 +367,8 @@ function ApiOnboardingProvider({ children }: { children: ReactNode }) {
             .includes('not found')
         )
           throw err;
-        await fetch('/api/auth/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        });
+        // 404 : attendre le sync puis retry une seule fois
+        await syncPromise;
         data = await get<OnboardingState>('restaurant/onboarding');
       }
       setState(data);
