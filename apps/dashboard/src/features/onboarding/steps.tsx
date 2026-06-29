@@ -202,6 +202,7 @@ export function KnowledgeStep({ onComplete }: StepProps) {
   const [systemPromptExtra, setSystemPromptExtra] = useState(personality?.systemPromptExtra || '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [demoPlayed, setDemoPlayed] = useState(false);
 
   async function handleSave(e: FormEvent) {
     e.preventDefault();
@@ -288,11 +289,42 @@ export function KnowledgeStep({ onComplete }: StepProps) {
           <SubmitButton saving={saving}>Sauvegarder et écouter un aperçu</SubmitButton>
         ) : (
           <div className="space-y-4">
-            <DemoCallPlayer scriptId="reservation" />
+            <DemoCallPlayer scriptId="reservation" onPlayed={() => setDemoPlayed(true)} />
             <div className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200 transition-all duration-200">
               <Check size={16} />
               <span>Personnalité enregistrée. Écoutez l&apos;aperçu, puis continuez.</span>
             </div>
+
+            {demoPlayed && (
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 transition-all duration-300">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                    H
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-foreground">
+                      Un mot de Hamza, fondateur
+                    </p>
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      Bienvenue chez Sokar. Si l&apos;assistant ne répond pas comme vous le
+                      souhaitez — ton trop formel, phrase mal coupée, information manquante —
+                      écrivez-moi directement à{' '}
+                      <a
+                        href="mailto:hamza@sokar.tech"
+                        className="font-medium text-primary underline-offset-2 hover:underline"
+                      >
+                        hamza@sokar.tech
+                      </a>
+                      . J&apos;ajuste la configuration pour vous, sans intermédiaire.
+                    </p>
+                    <p className="pt-1 text-xs text-muted-foreground">
+                      — Hamza, fondateur de Sokar
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <Button
               type="button"
               onClick={handleContinue}
@@ -330,8 +362,10 @@ const INITIAL_DEMO_STATE: DemoCallState = {
 
 function DemoCallPlayer({
   scriptId = 'reservation',
+  onPlayed,
 }: {
   scriptId?: 'reservation' | 'cancellation' | 'menu';
+  onPlayed?: () => void;
 }) {
   const [demo, setDemo] = useState<DemoCallState>(INITIAL_DEMO_STATE);
 
@@ -362,6 +396,7 @@ function DemoCallPlayer({
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         setDemo({ loading: false, audioUrl: url, transcript: null, fallback: false, error: null });
+        onPlayed?.();
       } else {
         const data = await res.json();
         setDemo({
@@ -371,6 +406,7 @@ function DemoCallPlayer({
           fallback: Boolean(data.fallback),
           error: null,
         });
+        onPlayed?.();
       }
     } catch (err: any) {
       setDemo({ ...INITIAL_DEMO_STATE, error: err?.message ?? 'Erreur inconnue' });
