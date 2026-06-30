@@ -256,4 +256,150 @@ export async function dashboardRoutes(app: FastifyInstance) {
       calls: recentCalls,
     });
   });
+
+  // ─── Empty slots analysis : jours sous-réservés sur 7 jours ───────────
+  // Montre le gap entre "restaurant ouvert" et "réservations effectives".
+  // Estimation du CA non réalisé basée sur l'historique du restaurant
+  // (pas un chiffre inventé).
+  app.get('/dashboard/empty-slots', { preHandler: requireOrg() }, async (req, reply) => {
+    const restaurantId = req.restaurantId as string;
+
+    const restaurant = await db.restaurant.findUniqueOrThrow({
+      where: { id: restaurantId },
+      select: { openingHours: true },
+    });
+
+    const openingHours = restaurant.openingHours as Record<
+      string,
+      { open: string; close: string } | null
+    > | null;
+    if (!openingHours || typeof openingHours !== 'object') {
+      return reply.send({
+        days: [],
+        summary: { underbookedDays: 0, totalOpenDays: 0, revenueAtRisk: 0 },
+      });
+    }
+
+    // Fenêtre : 7 prochains jours à partir d'aujourd'hui
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(today);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+
+    // Réservations confirmées sur les 7 prochains jours
+    const upcomingReservations = await db.reservation.findMany({
+      where: {
+        restaurantId,
+        status: 'CONFIRMED',
+        reservedAt: { gte: today, lt: weekEnd },
+      },
+      select: { reservedAt: true, partySize: true, estimatedRevenue: true, confirmedRevenue: true },
+    });
+
+    // Historique : 30 derniers jours pour calculer le ticket moyen réel
+    const historyStart = new Date(today);
+    historyStart.setDate(historyStart.getDate() - 30);
+    const historicalReservations = await db.reservation.findMany({
+      where: {
+        restaurantId,
+        status: 'CONFIRMED',
+        reservedAt: { gte: historyStart, lt: today },
+      },
+      select: { partySize: true, estimatedRevenue: true, confirmedRevenue: true },
+    });
+
+    // Ticket moyen par réservation sur l'historique
+    const avgRevenuePerReservation =
+      historicalReservations.length > 0
+        ? historicalReservations.reduce(
+            (sum, r) => sum + numberFromDecimal(r.confirmedRevenue ?? r.estimatedRevenue),
+            0,
+          ) / historicalReservations.length
+        : 0;
+
+    // Seuil "sous-réservé" : moins de 3 réservations sur une journée d'ouverture
+    const UNDERBOOKED_THRESHOLD = 3;
+
+    const dayLabels = ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'];
+    const days: Array<{
+      date: string;
+      dayName: string;
+      isOpen: boolean;
+      openTime: string | null;
+      closeTime: string | null;
+      reservationCount: number;
+      covers: number;
+      isUnderbooked: boolean;
+      revenueAtRisk: number;
+    }> = [];
+
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(today);
+      date.setDate(date.getDate() + i);
+      const dayKey = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][date.getDay()];
+      const slot = openingHours[dayKey];
+
+      if (!slot || !slot.open || !slot.close) {
+        days.push({
+          date: date.toISOString().split('T')[0],
+          dayName: dayLabels[date.getDay()],
+          isOpen: false,
+          openTime: null,
+          closeTime: null,
+          reservationCount: 0,
+          covers: 0,
+          isUnderbooked: false,
+          revenueAtRisk: 0,
+        });
+        continue;
+      }
+
+      // Réservations pour ce jour
+      const dayStart = new Date(date);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(date);
+      dayEnd.setHours(23, 59, 59, 999);
+
+      const dayReservations = upcomingReservations.filter(
+        (r) => r.reservedAt >= dayStart && r.reservedAt <= dayEnd,
+      );
+
+      const reservationCount = dayReservations.length;
+      const covers = dayReservations.reduce((sum, r) => sum + r.partySize, 0);
+      const isUnderbooked = reservationCount < UNDERBOOKED_THRESHOLD;
+
+      // CA non réalisé = (seuil - réservations) × ticket moyen
+      // Plafonné à 0 si au-dessus du seuil
+      const revenueAtRisk = isUnderbooked
+        ? Math.round((UNDERBOOKED_THRESHOLD - reservationCount) * avgRevenuePerReservation)
+        : 0;
+
+      days.push({
+        date: date.toISOString().split('T')[0],
+        dayName: dayLabels[date.getDay()],
+        isOpen: true,
+        openTime: slot.open,
+        closeTime: slot.close,
+        reservationCount,
+        covers,
+        isUnderbooked,
+        revenueAtRisk,
+      });
+    }
+
+    const openDays = days.filter((d) => d.isOpen);
+    const underbookedDays = openDays.filter((d) => d.isUnderbooked);
+    const totalRevenueAtRisk = underbookedDays.reduce((sum, d) => sum + d.revenueAtRisk, 0);
+
+    return reply.send({
+      days,
+      summary: {
+        underbookedDays: underbookedDays.length,
+        totalOpenDays: openDays.length,
+        revenueAtRisk: totalRevenueAtRisk,
+        avgRevenuePerReservation: Math.round(avgRevenuePerReservation),
+        threshold: UNDERBOOKED_THRESHOLD,
+      },
+    });
+  });
 }

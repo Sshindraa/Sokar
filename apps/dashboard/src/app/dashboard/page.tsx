@@ -32,6 +32,10 @@ const DashboardCharts = dynamic(() => import('./DashboardCharts'), {
   ),
 });
 
+const EmptySlotsWidget = dynamic(() => import('./EmptySlotsWidget'), {
+  ssr: false,
+});
+
 type Period = 'today' | '7d' | '30d';
 
 interface DashboardStatsResponse {
@@ -258,6 +262,8 @@ export default function DashboardPage() {
           featured
         />
       </section>
+
+      <EmptySlotsWidget />
 
       <DashboardCharts analytics={analytics} />
 
