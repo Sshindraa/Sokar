@@ -9,6 +9,7 @@ import { redisCache } from './shared/redis/client';
 import { queues } from './shared/queue/queues';
 import { logger, newRequestId } from './shared/logger/pino';
 import { telnyxVoiceRoutes } from './modules/voice/telnyx.pipeline';
+import { smsInboundRoutes } from './modules/sms/sms-inbound.routes';
 import { restaurantRoutes } from './modules/restaurants/restaurant.routes';
 import { customerRoutes } from './modules/customers/customer.routes';
 import { analyticsRoutes } from './modules/analytics/analytics.routes';
@@ -44,6 +45,7 @@ import './shared/queue/workers/reconciliation.worker';
 import './shared/queue/workers/telnyx-webhook.worker';
 import './shared/queue/workers/call-recovery.worker';
 import './shared/queue/workers/connect-analytics.worker';
+import './shared/queue/workers/confirmation-sms.worker';
 
 // Initialize Sentry as early as possible so that instrumentation hooks are
 // registered before the Fastify app (and its error handler) are built.
@@ -180,6 +182,7 @@ export async function buildApp() {
   registerMediaStreamRoutes(app);
 
   await app.register(telnyxVoiceRoutes);
+  await app.register(smsInboundRoutes);
   await app.register(restaurantRoutes);
   await app.register(customerRoutes);
   await app.register(analyticsRoutes);
@@ -291,6 +294,20 @@ async function start() {
             name: 'sms',
             data: { kind: 'sms' },
           },
+        );
+
+        // SMS confirmation J-1 : envoie les SMS à 17h chaque jour
+        await queues.confirmationSms.upsertJobScheduler(
+          'daily-confirmation-scan',
+          { pattern: '0 17 * * *', tz: 'Europe/Paris' },
+          { name: 'confirmation-scan', data: { kind: 'scan' } },
+        );
+
+        // No-reply check à 11h le jour J : marque les sans-réponse et notifie le gérant
+        await queues.confirmationSms.upsertJobScheduler(
+          'daily-noreply-check',
+          { pattern: '0 11 * * *', tz: 'Europe/Paris' },
+          { name: 'noreply-check', data: { kind: 'noreply-check' } },
         );
       } catch (err) {
         logger.error(err, 'Failed to register schedulers on startup');
