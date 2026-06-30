@@ -1,11 +1,13 @@
 import { Worker } from 'bullmq';
 import { redisQueue } from '../../redis/client';
 import { db } from '../../db/client';
-import { sendSms } from '../../telnyx/client';
+import { sendReactivation } from '../../messaging/sender';
 import { setupWorkerListeners, jobLogger } from './helper';
 
 /**
  * Worker pour la réactivation des VIPs dormants.
+ *
+ * Canal : toujours SMS (WhatsApp marketing coûte 5x plus cher + opt-in requis).
  *
  * Jobs :
  * 1. { kind: 'scan' } — Cron hebdo (lundi 10h). Pour chaque restaurant, scanne
@@ -21,15 +23,6 @@ interface ReactivationJobData {
 
 const DORMANT_MIN_DAYS = 90;
 const DORMANT_MAX_DAYS = 180;
-
-function formatReactivationSms(
-  restaurantName: string,
-  customerName: string,
-  restaurantPhone: string,
-): string {
-  const firstName = customerName.split(' ')[0] || customerName;
-  return `Bonjour ${firstName}, cela fait un moment qu'on ne vous a pas vu chez ${restaurantName}. On serait ravis de vous revoir ! Réservez au ${restaurantPhone}.`;
-}
 
 export const reactivationWorker = new Worker(
   'reactivation',
@@ -112,13 +105,13 @@ export const reactivationWorker = new Worker(
       for (const customer of customers) {
         if (!customer.phone) continue;
         try {
-          const sms = formatReactivationSms(
+          const result = await sendReactivation(
+            customer.phone,
             campaign.restaurant.name,
             customer.name || 'cher client',
             campaign.restaurant.phoneNumber,
           );
-          await sendSms(customer.phone, sms);
-          sent++;
+          if (result.success) sent++;
         } catch (err: any) {
           log.error(
             { err: err.message, customerId: customer.id },

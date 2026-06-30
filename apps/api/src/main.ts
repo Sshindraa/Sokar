@@ -10,6 +10,7 @@ import { queues } from './shared/queue/queues';
 import { logger, newRequestId } from './shared/logger/pino';
 import { telnyxVoiceRoutes } from './modules/voice/telnyx.pipeline';
 import { smsInboundRoutes } from './modules/sms/sms-inbound.routes';
+import { whatsappWebhookRoutes } from './modules/whatsapp/whatsapp-webhook.routes';
 import { restaurantRoutes } from './modules/restaurants/restaurant.routes';
 import { customerRoutes } from './modules/customers/customer.routes';
 import { analyticsRoutes } from './modules/analytics/analytics.routes';
@@ -185,6 +186,7 @@ export async function buildApp() {
 
   await app.register(telnyxVoiceRoutes);
   await app.register(smsInboundRoutes);
+  await app.register(whatsappWebhookRoutes);
   await app.register(restaurantRoutes);
   await app.register(customerRoutes);
   await app.register(analyticsRoutes);
