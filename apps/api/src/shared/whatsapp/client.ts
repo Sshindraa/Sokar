@@ -1,119 +1,84 @@
 /**
- * WhatsApp Business Cloud API client (direct Meta, pas de provider intermédiaire).
+ * WhatsApp Business messaging via Telnyx BSP.
  *
- * Docs: https://developers.facebook.com/docs/whatsapp/cloud-api
+ * Telnyx est BSP WhatsApp officiel — l'embedded signup gère le Meta Business
+ * Manager de bout en bout. On utilise la même API key Telnyx que pour les SMS.
+ *
+ * Docs: https://developers.telnyx.com/docs/messaging/whatsapp/send-messages
+ * Endpoint: POST https://api.telnyx.com/v2/messages/whatsapp
  *
  * Prérequis (.env) :
- * - WHATSAPP_ACCESS_TOKEN : token permanent Meta
- * - WHATSAPP_PHONE_NUMBER_ID : ID du numéro WhatsApp Business
- * - WHATSAPP_BUSINESS_ACCOUNT_ID : WABA ID (pour webhook verification)
- * - WHATSAPP_VERIFY_TOKEN : token arbitraire pour vérifier le webhook inbound
+ * - TELNYX_API_KEY : déjà présent (utilisé pour SMS + voice)
+ * - TELNYX_FROM_NUMBER : déjà présent (numéro WhatsApp-enabled via embedded signup)
+ * - WHATSAPP_ENABLED : flag "true" pour activer WhatsApp (sinon fallback SMS)
  *
- * Si ces vars ne sont pas set, isWhatsAppConfigured() retourne false
- * et le système fallback sur SMS automatiquement.
+ * Setup côté Telnyx Mission Control :
+ * 1. Messaging → WhatsApp → Get Started (embedded signup, 15 min)
+ * 2. Sélectionner le numéro Telnyx existant comme WhatsApp sender
+ * 3. Créer le template "reservation_reminder" (UTILITY, fr)
+ * 4. Attendre approbation Meta (24-48h)
+ * 5. Set WHATSAPP_ENABLED=true dans .env
  */
 
-const WHATSAPP_API_BASE = 'https://graph.facebook.com/v21.0';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const createTelnyx: (key: string) => any = require('telnyx');
+
+type TelnyxClient = any;
+
+let _telnyx: TelnyxClient | null = null;
+
+function getTelnyx(): TelnyxClient {
+  if (!_telnyx) {
+    if (!process.env.TELNYX_API_KEY) {
+      throw new Error('TELNYX_API_KEY is required');
+    }
+    _telnyx = createTelnyx(process.env.TELNYX_API_KEY);
+  }
+  return _telnyx;
+}
 
 export function isWhatsAppConfigured(): boolean {
-  return Boolean(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
+  return (
+    process.env.WHATSAPP_ENABLED === 'true' &&
+    Boolean(process.env.TELNYX_API_KEY && process.env.TELNYX_FROM_NUMBER)
+  );
 }
 
 /**
- * Envoie un message template (utility) à un client.
+ * Envoie un message template (utility) via Telnyx WhatsApp API.
  *
- * Les templates doivent être approuvés par Meta avant utilisation.
- * Pour Sokar, le template "reservation_reminder" est en catégorie UTILITY.
- *
- * @param to Numéro du client au format international (ex: +33612345678)
- * @param templateName Nom du template approuvé par Meta (ex: "reservation_reminder")
+ * @param to Numéro du client (E.164, ex: +33612345678)
+ * @param templateName Nom du template approuvé (ex: "reservation_reminder")
  * @param languageCode Code langue (ex: "fr")
- * @param components Variables du template au format WhatsApp Cloud API
+ * @param params Variables du template dans l'ordre ({{1}}, {{2}}, ...)
  */
 export async function sendWhatsAppTemplate(
   to: string,
   templateName: string,
   languageCode: string,
-  components: Array<{
-    type: 'body';
-    parameters: Array<{ type: 'text'; text: string }>;
-  }>,
+  params: string[],
 ): Promise<void> {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const t = getTelnyx();
+  const from = process.env.TELNYX_FROM_NUMBER!;
 
-  if (!token || !phoneNumberId) {
-    throw new Error(
-      'WhatsApp not configured: missing WHATSAPP_ACCESS_TOKEN or WHATSAPP_PHONE_NUMBER_ID',
-    );
-  }
-
-  // WhatsApp exige le numéro sans le "+" initial
-  const normalizedTo = to.replace(/^\+/, '');
-
-  const body = {
-    messaging_product: 'whatsapp',
-    to: normalizedTo,
-    type: 'template',
-    template: {
-      name: templateName,
-      language: { code: languageCode },
-      components,
+  await t.messages.sendWhatsapp({
+    from,
+    to,
+    whatsapp_message: {
+      type: 'template',
+      template: {
+        name: templateName,
+        language: {
+          policy: 'deterministic',
+          code: languageCode,
+        },
+        components: [
+          {
+            type: 'body',
+            parameters: params.map((text) => ({ type: 'text', text })),
+          },
+        ],
+      },
     },
-  };
-
-  const res = await fetch(`${WHATSAPP_API_BASE}/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
   });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`WhatsApp API error ${res.status}: ${errText}`);
-  }
-}
-
-/**
- * Envoie un message texte simple (free-form) à un client.
- *
- * Uniquement possible dans la fenêtre de service de 24h après que le client
- * a envoyé un message. Hors de cette fenêtre, il faut utiliser un template.
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function _sendWhatsAppText(to: string, text: string): Promise<void> {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-
-  if (!token || !phoneNumberId) {
-    throw new Error(
-      'WhatsApp not configured: missing WHATSAPP_ACCESS_TOKEN or WHATSAPP_PHONE_NUMBER_ID',
-    );
-  }
-
-  const normalizedTo = to.replace(/^\+/, '');
-
-  const body = {
-    messaging_product: 'whatsapp',
-    to: normalizedTo,
-    type: 'text',
-    text: { body: text },
-  };
-
-  const res = await fetch(`${WHATSAPP_API_BASE}/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`WhatsApp API error ${res.status}: ${errText}`);
-  }
 }
