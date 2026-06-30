@@ -853,9 +853,11 @@ async function speakTtsStreamed(session: CallSession, text: string): Promise<voi
     }
 
     // Pause inter-phrase (sauf pour la première)
+    // 80ms : pause naturelle suffisante entre phrases, sans ajouter de latence perçue.
+    // (précédemment 150ms — réduit pour améliorer la réactivité perçue)
     if (i > 0) {
-      writeDebugLog(`[speakTtsStreamed] Inter-sentence pause of 150ms...`);
-      await new Promise((r) => setTimeout(r, 150));
+      writeDebugLog(`[speakTtsStreamed] Inter-sentence pause of 80ms...`);
+      await new Promise((r) => setTimeout(r, 80));
       if (!isSessionActiveForTts(session)) {
         writeDebugLog(`[speakTtsStreamed] Session inactive after pause, breaking loop`);
         break;
@@ -912,7 +914,7 @@ async function speakTtsStreamed(session: CallSession, text: string): Promise<voi
       continue;
     }
 
-    // 2. Cache MISS ➔ Requête de streaming à Cartesia
+    // 2. Cache MISS ➔ Requête de streaming à Cartesia (avec 1 retry)
     writeDebugLog(
       `[speakTtsStreamed] Cache MISS. Streaming from Cartesia for sentence: "${trimmed}"`,
     );
@@ -920,35 +922,48 @@ async function speakTtsStreamed(session: CallSession, text: string): Promise<voi
       // Demander directement à Cartesia le format compatible Telnyx Media Stream
       // (G.711 alaw/mulaw 8kHz) → supprime le downsampling applicatif 24k→8k
       // et économise ~30% CPU sur le VPS.
-      const response = await fetch('https://api.cartesia.ai/tts/bytes', {
-        method: 'POST',
-        headers: {
-          'Cartesia-Version': '2026-03-01',
-          'X-API-Key': apiKey,
-          'Content-Type': 'application/json',
+      const cartesiaBody = JSON.stringify({
+        model_id: 'sonic-3.5',
+        transcript: trimmed,
+        voice: { mode: 'id', id: voiceId },
+        output_format: {
+          container: 'raw',
+          encoding: isAlaw ? 'pcm_alaw' : 'pcm_mulaw',
+          sample_rate: 8000,
         },
-        body: JSON.stringify({
-          model_id: 'sonic-3.5',
-          transcript: trimmed,
-          voice: { mode: 'id', id: voiceId },
-          output_format: {
-            container: 'raw',
-            encoding: isAlaw ? 'pcm_alaw' : 'pcm_mulaw',
-            sample_rate: 8000,
-          },
-        }),
       });
 
-      if (!response.ok) {
-        writeDebugLog(`[speakTtsStreamed] Cartesia stream failed: ${response.status}`);
+      let response: Response | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        response = await fetch('https://api.cartesia.ai/tts/bytes', {
+          method: 'POST',
+          headers: {
+            'Cartesia-Version': '2026-03-01',
+            'X-API-Key': apiKey,
+            'Content-Type': 'application/json',
+          },
+          body: cartesiaBody,
+        });
+        if (response.ok) break;
+        if (attempt === 0 && (response.status >= 500 || response.status === 429)) {
+          writeDebugLog(`[speakTtsStreamed] Cartesia ${response.status}, retrying in 200ms...`);
+          await new Promise((r) => setTimeout(r, 200));
+          continue;
+        }
+        break; // 4xx non-retryable ou 2e échec
+      }
+
+      if (!response || !response.ok) {
+        const status = response?.status ?? 0;
+        writeDebugLog(`[speakTtsStreamed] Cartesia stream failed after retry: ${status}`);
         logger.error(
-          { callId: session.callControlId, status: response.status },
-          '[speakTtsStreamed] Cartesia stream failed',
+          { callId: session.callControlId, status },
+          '[speakTtsStreamed] Cartesia stream failed after retry',
         );
-        const err = new Error(`Cartesia stream failed with status ${response.status}`);
+        const err = new Error(`Cartesia stream failed with status ${status}`);
         captureException(err, {
           tags: { service: 'handler', action: 'speakTtsStreamed', type: 'http-status' },
-          extra: { callId: session.callControlId, status: response.status, sentence: trimmed },
+          extra: { callId: session.callControlId, status, sentence: trimmed },
         });
         await speakTelnyxNative(
           session,
