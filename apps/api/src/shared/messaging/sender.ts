@@ -39,15 +39,10 @@ export async function sendReminder(params: SendReminderParams): Promise<SendResu
   if (isWhatsAppConfigured()) {
     try {
       await sendWhatsAppTemplate(to, 'reservation_reminder', 'fr', [
-        {
-          type: 'body',
-          parameters: [
-            { type: 'text', text: restaurantName },
-            { type: 'text', text: date },
-            { type: 'text', text: time },
-            { type: 'text', text: String(partySize) },
-          ],
-        },
+        restaurantName,
+        date,
+        time,
+        String(partySize),
       ]);
       return { channel: 'whatsapp', success: true };
     } catch (err: any) {
