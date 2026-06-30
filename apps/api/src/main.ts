@@ -296,18 +296,11 @@ async function start() {
           },
         );
 
-        // SMS confirmation J-1 : envoie les SMS à 17h chaque jour
+        // SMS de rappel J-1 : envoie les SMS à 17h chaque jour
         await queues.confirmationSms.upsertJobScheduler(
           'daily-confirmation-scan',
           { pattern: '0 17 * * *', tz: 'Europe/Paris' },
           { name: 'confirmation-scan', data: { kind: 'scan' } },
-        );
-
-        // No-reply check à 11h le jour J : marque les sans-réponse et notifie le gérant
-        await queues.confirmationSms.upsertJobScheduler(
-          'daily-noreply-check',
-          { pattern: '0 11 * * *', tz: 'Europe/Paris' },
-          { name: 'noreply-check', data: { kind: 'noreply-check' } },
         );
       } catch (err) {
         logger.error(err, 'Failed to register schedulers on startup');

@@ -8,14 +8,15 @@ import { logger } from '../../shared/logger/pino';
 /**
  * Handler pour les SMS entrants de Telnyx (réponses clients).
  *
- * Quand un client répond OUI / NON au SMS de confirmation J-1,
- * Telnyx envoie un webhook `message.received` ici.
+ * Le client reçoit un SMS de rappel J-1. S'il répond NON, on annule la résa.
+ * S'il répond OUI, on marque comme confirmé (bonus, pas requis).
+ * Pas de réponse = normal, la résa reste confirmée.
  *
  * Logique :
- * 1. Parser le texte (OUI/CONFIRME/OK → confirmé, NON/ANNUL/CANCEL → annulé)
+ * 1. Parser le texte (NON/ANNUL/CANCEL → annulé, OUI/OK → confirmé)
  * 2. Trouver la réservation PENDING par numéro de téléphone + date du jour
- * 3. Mettre à jour le statut de confirmation
- * 4. Si annulé → status = CANCELLED + SMS au gérant
+ * 3. Si annulé → status = CANCELLED + SMS au gérant
+ * 4. Si confirmé → confirmationStatus = CONFIRMED (silencieux)
  */
 
 const POSITIVE_PATTERNS = /\b(oui|ok|confirme?|yes|oui\b|ouais)\b/i;
