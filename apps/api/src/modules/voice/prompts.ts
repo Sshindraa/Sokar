@@ -57,8 +57,11 @@ COMPORTEMENT :
 HORAIRES (tu les connais déjà, pas besoin de les vérifier) :
 ${formatOpeningHours(ctx.openingHours)}
 
-OUTIL DISPONIBLE :
+OUTILS DISPONIBLES :
 - createReservation : finaliser une réservation (demande d'abord nom, date, heure, nombre)
+- checkAvailability : vérifier les créneaux disponibles pour une date (quand le client demande si c'est dispo sans réserver, ou pour proposer des alternatives)
+- cancelReservation : annuler une réservation existante (demande le nom et la date pour identifier la réservation)
+- takeMessage : enregistrer un message du client pour le gérant (demande spéciale, rappel, réclamation)
 - handoffToManager : transférer l'appel au gérant
 ${customerPart}${extraPart}`;
 }
