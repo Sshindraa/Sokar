@@ -10,7 +10,8 @@ function writeDebugLog(msg: string, err?: any) {
   const timestamp = new Date().toISOString();
   const logMsg = `[${timestamp}] ${msg}${err ? ' | ERROR: ' + err.message + '\n' + err.stack : ''}\n`;
   try {
-    const logPath = process.env.DEBUG_LOG_PATH || path.join(process.cwd(), 'scratch', 'call_debug.log');
+    const logPath =
+      process.env.DEBUG_LOG_PATH || path.join(process.cwd(), 'scratch', 'call_debug.log');
     fs.mkdirSync(path.dirname(logPath), { recursive: true });
     fs.appendFileSync(logPath, logMsg);
   } catch (e) {
@@ -61,8 +62,21 @@ export function connectDeepgramFlux(
 
     // Boost critical reservation vocabulary for Nova-3
     const keyterms = [
-      'réservation', 'personnes', 'soir', 'heures', 'midi', 'couverts',
-      'deux', 'trois', 'quatre', 'cinq', 'six', 'sept', 'huit', 'neuf', 'dix'
+      'réservation',
+      'personnes',
+      'soir',
+      'heures',
+      'midi',
+      'couverts',
+      'deux',
+      'trois',
+      'quatre',
+      'cinq',
+      'six',
+      'sept',
+      'huit',
+      'neuf',
+      'dix',
     ];
     for (const term of keyterms) {
       params.append('keyterm', term);
@@ -76,7 +90,9 @@ export function connectDeepgramFlux(
     session.deepgramWs = ws;
 
     ws.on('open', () => {
-      writeDebugLog(`[deepgram] Connected successfully for call ${session.callControlId}. Sending ${session.audioBuffer.length} buffered chunks`);
+      writeDebugLog(
+        `[deepgram] Connected successfully for call ${session.callControlId}. Sending ${session.audioBuffer.length} buffered chunks`,
+      );
       logger.info({ callId: session.callControlId }, '[deepgram] Connected for call');
 
       // Envoyer tous les buffers audio accumulés pendant la connexion
@@ -91,7 +107,9 @@ export function connectDeepgramFlux(
     ws.on('message', (raw: Buffer) => {
       try {
         const msg = JSON.parse(raw.toString());
-        writeDebugLog(`[deepgram] Message received: type=${msg.type} is_final=${msg.is_final} speech_final=${msg.speech_final} channel_trans="${msg.channel?.alternatives?.[0]?.transcript}"`);
+        writeDebugLog(
+          `[deepgram] Message received: type=${msg.type} is_final=${msg.is_final} speech_final=${msg.speech_final} channel_trans="${msg.channel?.alternatives?.[0]?.transcript}"`,
+        );
         handleDeepgramMessage(session, msg);
       } catch (err) {
         writeDebugLog(`[deepgram] Parse error in message`, err);
@@ -100,7 +118,10 @@ export function connectDeepgramFlux(
     });
 
     ws.on('error', (err: Error) => {
-      logger.error({ err, callId: session.callControlId }, `[deepgram] Error for call: ${err.message}`);
+      logger.error(
+        { err, callId: session.callControlId },
+        `[deepgram] Error for call: ${err.message}`,
+      );
       if (process.env.SENTRY_DSN) {
         Sentry.captureException(err, {
           tags: { service: 'deepgram-bridge' },
@@ -124,9 +145,10 @@ export function connectDeepgramFlux(
 
 /**
  * Limite du buffer audio Deepgram (en chunks) avant de drop les plus vieux.
- * ~200 chunks = ~4s d'audio à 50chunks/s (20ms par chunk)
+ * ~400 chunks = ~8s d'audio à 50chunks/s (20ms par chunk)
+ * Augmenté de 200→400 pour éviter la perte d'audio si Deepgram met >4s à se connecter.
  */
-const DEEPGRAM_AUDIO_BUFFER_MAX = 200;
+const DEEPGRAM_AUDIO_BUFFER_MAX = 400;
 
 /**
  * Envoie un chunk audio Telnyx à Deepgram.
@@ -181,10 +203,7 @@ interface DeepgramMessage {
   speech_final?: boolean;
 }
 
-function handleDeepgramMessage(
-  session: CallSession,
-  msg: DeepgramMessage,
-): void {
+function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage): void {
   const mgr = CallSessionManager.getInstance();
 
   switch (msg.type) {
@@ -214,7 +233,10 @@ function handleDeepgramMessage(
     case 'UtteranceEnd': {
       const transcript = msg.channel?.alternatives?.[0]?.transcript ?? '';
       if (transcript.trim()) {
-        logger.info({ callId: session.callControlId, transcript: transcript.slice(0, 100) }, '[deepgram] Utterance end');
+        logger.info(
+          { callId: session.callControlId, transcript: transcript.slice(0, 100) },
+          '[deepgram] Utterance end',
+        );
         session.onDeepgramEvent?.({ type: 'UtteranceEnd', transcript });
       }
       break;
@@ -229,7 +251,10 @@ function handleDeepgramMessage(
 
       // Barge-in: si on est en train de parler et que l'utilisateur dit quelque chose (transcript non vide)
       if (session.state === 'SPEAKING' && transcript.trim().length > 0) {
-        logger.info({ callId: session.callControlId, transcript: transcript.trim() }, '[barge-in] User spoke while assistant was speaking. Interrupting.');
+        logger.info(
+          { callId: session.callControlId, transcript: transcript.trim() },
+          '[barge-in] User spoke while assistant was speaking. Interrupting.',
+        );
         if (session.abortController) {
           session.abortController.abort();
           session.abortController = null;
@@ -240,7 +265,14 @@ function handleDeepgramMessage(
       if (isFinal) {
         if (transcript.trim()) {
           session.turnTranscript += (session.turnTranscript ? ' ' : '') + transcript.trim();
-          logger.info({ callId: session.callControlId, segment: transcript.slice(0, 100), speechFinal: isSpeechFinal }, '[deepgram] Segment finalized');
+          logger.info(
+            {
+              callId: session.callControlId,
+              segment: transcript.slice(0, 100),
+              speechFinal: isSpeechFinal,
+            },
+            '[deepgram] Segment finalized',
+          );
         }
 
         if (isSpeechFinal) {
@@ -253,7 +285,10 @@ function handleDeepgramMessage(
           if (session.turnTranscript.trim()) {
             const fullTurnTranscript = session.turnTranscript;
             session.turnTranscript = '';
-            logger.info({ callId: session.callControlId, transcript: fullTurnTranscript.slice(0, 100) }, '[deepgram] Speech final (turn completed)');
+            logger.info(
+              { callId: session.callControlId, transcript: fullTurnTranscript.slice(0, 100) },
+              '[deepgram] Speech final (turn completed)',
+            );
             session.onDeepgramEvent?.({ type: 'UtteranceEnd', transcript: fullTurnTranscript });
           }
         } else if (session.turnTranscript.trim()) {
@@ -268,14 +303,25 @@ function handleDeepgramMessage(
             clearTimeout(session.speechFinalTimer);
           }
 
-          writeDebugLog(`[deepgram] Starting ${timeoutMs}ms smart timer (punctuation=${endsWithPunctuation})`);
+          writeDebugLog(
+            `[deepgram] Starting ${timeoutMs}ms smart timer (punctuation=${endsWithPunctuation})`,
+          );
           session.speechFinalTimer = setTimeout(() => {
             if (session.turnTranscript.trim()) {
               const fallbackTranscript = session.turnTranscript;
               session.turnTranscript = '';
               session.speechFinalTimer = null;
-              writeDebugLog(`[deepgram] Smart timer fired! (${timeoutMs}ms) UtteranceEnd: "${fallbackTranscript.slice(0, 80)}"`);
-              logger.info({ callId: session.callControlId, transcript: fallbackTranscript.slice(0, 100), timeoutMs }, '[deepgram] Speech final (smart timer)');
+              writeDebugLog(
+                `[deepgram] Smart timer fired! (${timeoutMs}ms) UtteranceEnd: "${fallbackTranscript.slice(0, 80)}"`,
+              );
+              logger.info(
+                {
+                  callId: session.callControlId,
+                  transcript: fallbackTranscript.slice(0, 100),
+                  timeoutMs,
+                },
+                '[deepgram] Speech final (smart timer)',
+              );
               session.onDeepgramEvent?.({ type: 'UtteranceEnd', transcript: fallbackTranscript });
             }
           }, timeoutMs);
@@ -290,7 +336,10 @@ function handleDeepgramMessage(
         }
         const fullTurnTranscript = session.turnTranscript;
         session.turnTranscript = '';
-        logger.info({ callId: session.callControlId, transcript: fullTurnTranscript.slice(0, 100) }, '[deepgram] Speech final (forced fallback)');
+        logger.info(
+          { callId: session.callControlId, transcript: fullTurnTranscript.slice(0, 100) },
+          '[deepgram] Speech final (forced fallback)',
+        );
         session.onDeepgramEvent?.({ type: 'UtteranceEnd', transcript: fullTurnTranscript });
       }
 
