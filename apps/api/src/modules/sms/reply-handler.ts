@@ -49,10 +49,15 @@ export async function handleReply(
     return { intent };
   }
 
-  // Trouver la réservation PENDING pour ce numéro, pour aujourd'hui ou demain
+  // Fenêtre de recherche élargie : [hier 00:00, J+1 23:59]
+  // Couvre les edge cases :
+  // - client répond J+1 pour une résa d'hier (résa hors fenêtre = pas matchée, OK)
+  // - client répond tard le J-1 pour une résa du lendemain
+  // - client répond tôt le jour J pour une résa du soir
   const now = new Date();
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
+  const yesterdayStart = new Date(now);
+  yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+  yesterdayStart.setHours(0, 0, 0, 0);
   const tomorrowEnd = new Date(now);
   tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
   tomorrowEnd.setHours(23, 59, 59, 999);
@@ -62,7 +67,7 @@ export async function handleReply(
       customerPhone: from,
       status: 'CONFIRMED',
       confirmationStatus: 'PENDING',
-      reservedAt: { gte: todayStart, lte: tomorrowEnd },
+      reservedAt: { gte: yesterdayStart, lte: tomorrowEnd },
     },
     include: {
       restaurant: { select: { id: true, name: true, managerPhone: true } },

@@ -80,14 +80,21 @@ export const confirmationSmsWorker = new Worker(
             sent++;
             if (result.channel === 'whatsapp') whatsappCount++;
             else smsCount++;
+            // Marquer PENDING uniquement si le rappel a effectivement été envoyé.
+            // Sinon on garde le statut inchangé pour retry au prochain scan.
+            await db.reservation.update({
+              where: { id: r.id },
+              data: {
+                confirmationStatus: 'PENDING',
+                confirmationSentAt: new Date(),
+              },
+            });
+          } else {
+            log.warn(
+              { reservationId: r.id, channel: result.channel, error: result.error },
+              'reminder send failed, status not updated — will retry next scan',
+            );
           }
-          await db.reservation.update({
-            where: { id: r.id },
-            data: {
-              confirmationStatus: 'PENDING',
-              confirmationSentAt: new Date(),
-            },
-          });
         } catch (err: any) {
           log.error({ err: err.message, reservationId: r.id }, 'failed to send reminder');
         }
@@ -118,14 +125,21 @@ export const confirmationSmsWorker = new Worker(
         time: formatTime(r.reservedAt),
         partySize: r.partySize,
       });
-      await db.reservation.update({
-        where: { id: r.id },
-        data: {
-          confirmationStatus: 'PENDING',
-          confirmationSentAt: new Date(),
-        },
-      });
-      log.info({ reservationId: r.id, channel: result.channel }, 'reminder sent');
+      if (result.success) {
+        await db.reservation.update({
+          where: { id: r.id },
+          data: {
+            confirmationStatus: 'PENDING',
+            confirmationSentAt: new Date(),
+          },
+        });
+        log.info({ reservationId: r.id, channel: result.channel }, 'reminder sent');
+      } else {
+        log.warn(
+          { reservationId: r.id, channel: result.channel, error: result.error },
+          'reminder send failed, status not updated',
+        );
+      }
       return;
     }
   },
