@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { CARTESIA_MODEL, VOICE_LLM_MODEL } from '@sokar/config';
+import { CARTESIA_MODEL, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
 
 const db = new PrismaClient();
 
@@ -101,7 +101,7 @@ async function seed() {
         intent: 'RESERVATION',
         outcome: 'RESERVED',
         sttProvider: 'deepgram-nova3',
-        llmProvider: VOICE_LLM_MODEL,
+        llmProvider: VOICE_LLM_MODEL_DEFAULT,
         ttsProvider: `cartesia-${CARTESIA_MODEL}`,
         carrier: 'telnyx',
         createdAt: new Date(now.getTime() - 2 * 3600000),
@@ -116,7 +116,7 @@ async function seed() {
         intent: 'RESERVATION',
         outcome: 'RESERVED',
         sttProvider: 'deepgram-nova3',
-        llmProvider: VOICE_LLM_MODEL,
+        llmProvider: VOICE_LLM_MODEL_DEFAULT,
         ttsProvider: `cartesia-${CARTESIA_MODEL}`,
         carrier: 'telnyx',
         createdAt: new Date(now.getTime() - 5 * 3600000),
@@ -127,11 +127,11 @@ async function seed() {
         restaurantId: restaurant.id,
         callSid: 'CA-test-003',
         durationSec: 45,
-        transcript: 'Bonjour, quels sont vos horaires d\'ouverture ce week-end ?',
+        transcript: "Bonjour, quels sont vos horaires d'ouverture ce week-end ?",
         intent: 'OTHER',
         outcome: 'INFO',
         sttProvider: 'deepgram-nova3',
-        llmProvider: VOICE_LLM_MODEL,
+        llmProvider: VOICE_LLM_MODEL_DEFAULT,
         ttsProvider: `cartesia-${CARTESIA_MODEL}`,
         carrier: 'telnyx',
         createdAt: new Date(now.getTime() - 24 * 3600000),
@@ -146,7 +146,7 @@ async function seed() {
         intent: 'OTHER',
         outcome: 'NO_ACTION',
         sttProvider: 'deepgram-nova3',
-        llmProvider: VOICE_LLM_MODEL,
+        llmProvider: VOICE_LLM_MODEL_DEFAULT,
         ttsProvider: `cartesia-${CARTESIA_MODEL}`,
         carrier: 'telnyx',
         createdAt: new Date(now.getTime() - 48 * 3600000),
@@ -215,7 +215,9 @@ async function seed() {
   console.log('\n✅ Seed terminé !');
   console.log(`   Dashboard: http://localhost:3001/dashboard`);
   console.log(`   API health: http://localhost:4000/health`);
-  console.log(`   Dashboard stats: curl http://localhost:4000/dashboard/stats?restaurantId=${restaurant.id}`);
+  console.log(
+    `   Dashboard stats: curl http://localhost:4000/dashboard/stats?restaurantId=${restaurant.id}`,
+  );
 }
 
 seed()
