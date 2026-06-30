@@ -402,4 +402,90 @@ export async function dashboardRoutes(app: FastifyInstance) {
       },
     });
   });
+
+  // ─── No-show tracking : taux de no-show et impact du rappel SMS ────────
+  // Compare les réservations qui ont reçu un rappel SMS (confirmationStatus
+  // PENDING/CONFIRMED) vs celles qui n'en ont pas reçu (NOT_REQUIRED).
+  // Le gérant doit marquer les no-shows dans le dashboard pour que ça marche.
+  app.get('/dashboard/no-show-stats', { preHandler: requireOrg() }, async (req, reply) => {
+    const restaurantId = req.restaurantId as string;
+
+    // Fenêtre : 90 derniers jours (assez large pour avoir du volume)
+    const since = new Date();
+    since.setDate(since.getDate() - 90);
+
+    const reservations = await db.reservation.findMany({
+      where: {
+        restaurantId,
+        createdAt: { gte: since },
+        // On ne compte que les réservations qui ont eu le temps d'arriver
+        // (reservedAt dans le passé)
+        reservedAt: { lt: new Date() },
+      },
+      select: {
+        status: true,
+        confirmationStatus: true,
+        partySize: true,
+        estimatedRevenue: true,
+        confirmedRevenue: true,
+      },
+    });
+
+    if (reservations.length === 0) {
+      return reply.send({
+        total: 0,
+        noShows: 0,
+        noShowRate: 0,
+        revenueLost: 0,
+        withSms: { total: 0, noShows: 0, rate: 0 },
+        withoutSms: { total: 0, noShows: 0, rate: 0 },
+        impact: null,
+      });
+    }
+
+    // Groupes : avec SMS (PENDING/CONFIRMED) vs sans SMS (NOT_REQUIRED)
+    const withSms = reservations.filter(
+      (r) => r.confirmationStatus === 'PENDING' || r.confirmationStatus === 'CONFIRMED',
+    );
+    const withoutSms = reservations.filter((r) => r.confirmationStatus === 'NOT_REQUIRED');
+
+    const noShowsTotal = reservations.filter((r) => r.status === 'NO_SHOW');
+    const noShowsWithSms = withSms.filter((r) => r.status === 'NO_SHOW');
+    const noShowsWithoutSms = withoutSms.filter((r) => r.status === 'NO_SHOW');
+
+    const rateWithSms = withSms.length > 0 ? (noShowsWithSms.length / withSms.length) * 100 : 0;
+    const rateWithoutSms =
+      withoutSms.length > 0 ? (noShowsWithoutSms.length / withoutSms.length) * 100 : 0;
+
+    // CA perdu = somme des estimatedRevenue des no-shows
+    const revenueLost = noShowsTotal.reduce(
+      (sum, r) => sum + numberFromDecimal(r.confirmedRevenue ?? r.estimatedRevenue),
+      0,
+    );
+
+    // Impact : réduction absolue du taux de no-show grâce au SMS
+    // null si pas assez de données dans un des deux groupes
+    const impact =
+      withSms.length >= 5 && withoutSms.length >= 5
+        ? Math.round((rateWithoutSms - rateWithSms) * 10) / 10
+        : null;
+
+    return reply.send({
+      total: reservations.length,
+      noShows: noShowsTotal.length,
+      noShowRate: Math.round((noShowsTotal.length / reservations.length) * 1000) / 10,
+      revenueLost: Math.round(revenueLost),
+      withSms: {
+        total: withSms.length,
+        noShows: noShowsWithSms.length,
+        rate: Math.round(rateWithSms * 10) / 10,
+      },
+      withoutSms: {
+        total: withoutSms.length,
+        noShows: noShowsWithoutSms.length,
+        rate: Math.round(rateWithoutSms * 10) / 10,
+      },
+      impact, // points de pourcentage de réduction (peut être négatif si SMS inefficace)
+    });
+  });
 }
