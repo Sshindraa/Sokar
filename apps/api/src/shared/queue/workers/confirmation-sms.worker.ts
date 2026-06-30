@@ -7,9 +7,8 @@ import { setupWorkerListeners, jobLogger } from './helper';
 /**
  * Worker pour l'envoi des SMS de rappel J-1.
  *
- * Le SMS est un rappel simple — pas une demande de confirmation.
- * Le client PEUT répondre NON pour annuler, mais n'est pas obligé de répondre.
- * Pas de réponse ≠ absence. On n'alerte le gérant qu'en cas d'annulation explicite.
+ * Le SMS est un rappel simple — aucun call to action.
+ * Le client n'a rien à faire, c'est juste un courtesy reminder qui réduit les no-shows.
  *
  * Jobs :
  * 1. { kind: 'scan' } — Scanne les réservations de demain et envoie un rappel SMS.
@@ -31,7 +30,7 @@ function formatReminderSms(restaurantName: string, date: Date, partySize: number
     hour: '2-digit',
     minute: '2-digit',
   });
-  return `Rappel ${restaurantName}: votre réservation ${dateStr} à ${timeStr} pour ${partySize} pers. Pour annuler, répondez NON.`;
+  return `Rappel ${restaurantName}: votre réservation ${dateStr} à ${timeStr} pour ${partySize} pers. Nous avons hâte de vous accueillir.`;
 }
 
 export const confirmationSmsWorker = new Worker(
