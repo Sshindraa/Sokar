@@ -68,3 +68,35 @@ export async function trackRgpdEvent(input: TrackRgpdEventInput): Promise<void> 
     logger.warn({ err, event: input.event }, '[analytics] rgpd track failed');
   }
 }
+
+/**
+ * Events messaging — tracking du canal utilisé pour les rappels et réactivations.
+ *
+ *   - reminder_sent : rappel J-1 envoyé (WhatsApp ou SMS)
+ *   - whatsapp_fallback_to_sms : WhatsApp a échoué, fallback SMS déclenché
+ *
+ * Permet de comparer open rate SMS vs WhatsApp et justifier l'économie.
+ */
+export type MessagingAnalyticsEvent = 'reminder_sent' | 'whatsapp_fallback_to_sms';
+
+type TrackMessagingEventInput = {
+  event: MessagingAnalyticsEvent;
+  channel: 'whatsapp' | 'sms';
+  restaurantId?: string;
+  reservationId?: string;
+  customerId?: string;
+  success: boolean;
+  error?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export async function trackMessagingEvent(input: TrackMessagingEventInput): Promise<void> {
+  try {
+    await queues.analytics.add('track', {
+      ...input,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    logger.warn({ err, event: input.event }, '[analytics] messaging track failed');
+  }
+}

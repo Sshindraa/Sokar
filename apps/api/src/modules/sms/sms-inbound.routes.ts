@@ -1,33 +1,13 @@
 import { FastifyInstance } from 'fastify';
 import { telnyxWebhookGuard } from '../voice/telnyx.guard';
-import { db } from '../../shared/db/client';
-import { sendSms } from '../../shared/telnyx/client';
-import { ReservationService } from '../reservations/reservation.service';
-import { logger } from '../../shared/logger/pino';
+import { handleReply } from './reply-handler';
 
 /**
  * Handler pour les SMS entrants de Telnyx (réponses clients).
  *
- * Le client reçoit un SMS de rappel J-1. S'il répond NON, on annule la résa.
- * S'il répond OUI, on marque comme confirmé (bonus, pas requis).
- * Pas de réponse = normal, la résa reste confirmée.
- *
- * Logique :
- * 1. Parser le texte (NON/ANNUL/CANCEL → annulé, OUI/OK → confirmé)
- * 2. Trouver la réservation PENDING par numéro de téléphone + date du jour
- * 3. Si annulé → status = CANCELLED + SMS au gérant
- * 4. Si confirmé → confirmationStatus = CONFIRMED (silencieux)
+ * Délègue le parsing OUI/NON et la logique métier à reply-handler.ts,
+ * partagé avec le webhook WhatsApp inbound.
  */
-
-const POSITIVE_PATTERNS = /\b(oui|ok|confirme?|yes|oui\b|ouais)\b/i;
-const NEGATIVE_PATTERNS = /\b(non|annul\w*|cancel\w*|no\b|non\b)\b/i;
-
-function parseReply(text: string): 'CONFIRMED' | 'CANCELLED' | 'UNKNOWN' {
-  const trimmed = text.trim();
-  if (POSITIVE_PATTERNS.test(trimmed)) return 'CONFIRMED';
-  if (NEGATIVE_PATTERNS.test(trimmed)) return 'CANCELLED';
-  return 'UNKNOWN';
-}
 
 export async function smsInboundRoutes(app: FastifyInstance) {
   app.post('/sms/telnyx/inbound', { preHandler: telnyxWebhookGuard }, async (req, reply) => {
@@ -39,7 +19,8 @@ export async function smsInboundRoutes(app: FastifyInstance) {
       return reply.send({ result: 'ignored' });
     }
 
-    const from = payload?.from;
+    // Telnyx SMS: from est un objet avec phone_number
+    const from = payload?.from?.phone_number ?? payload?.from;
     const text = payload?.text;
 
     if (!from || !text) {
@@ -49,87 +30,7 @@ export async function smsInboundRoutes(app: FastifyInstance) {
 
     req.log.info({ from, textLength: text?.length }, 'sms inbound received');
 
-    const intent = parseReply(text);
-
-    if (intent === 'UNKNOWN') {
-      req.log.info({ from, text }, 'sms inbound: unparseable reply, ignoring');
-      return reply.send({ result: 'ok' });
-    }
-
-    // Trouver la réservation PENDING pour ce numéro, pour aujourd'hui ou demain
-    const now = new Date();
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    const tomorrowEnd = new Date(now);
-    tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
-    tomorrowEnd.setHours(23, 59, 59, 999);
-
-    const reservation = await db.reservation.findFirst({
-      where: {
-        customerPhone: from,
-        status: 'CONFIRMED',
-        confirmationStatus: 'PENDING',
-        reservedAt: { gte: todayStart, lte: tomorrowEnd },
-      },
-      include: {
-        restaurant: { select: { id: true, name: true, managerPhone: true } },
-      },
-    });
-
-    if (!reservation) {
-      req.log.info({ from }, 'sms inbound: no pending reservation found for this number');
-      return reply.send({ result: 'ok' });
-    }
-
-    if (intent === 'CONFIRMED') {
-      await db.reservation.update({
-        where: { id: reservation.id },
-        data: {
-          confirmationStatus: 'CONFIRMED',
-          confirmedAt: new Date(),
-        },
-      });
-      req.log.info({ reservationId: reservation.id, from }, 'reservation confirmed via SMS');
-      return reply.send({ result: 'ok' });
-    }
-
-    // intent === 'CANCELLED'
-    try {
-      await ReservationService.update(reservation.id, reservation.restaurantId, {
-        status: 'CANCELLED',
-      });
-      await db.reservation.update({
-        where: { id: reservation.id },
-        data: {
-          confirmationStatus: 'CANCELLED',
-          confirmedAt: new Date(),
-        },
-      });
-
-      // SMS au gérant : table libérée
-      if (reservation.restaurant.managerPhone) {
-        const dateStr = reservation.reservedAt.toLocaleDateString('fr-FR', {
-          weekday: 'short',
-          day: 'numeric',
-          month: 'short',
-        });
-        const timeStr = reservation.reservedAt.toLocaleTimeString('fr-FR', {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-        await sendSms(
-          reservation.restaurant.managerPhone,
-          `✅ Table libérée : ${reservation.customerName} a annulé sa résa de ${dateStr} ${timeStr} (${reservation.partySize} pers.) via SMS de confirmation.`,
-        );
-      }
-
-      req.log.info({ reservationId: reservation.id, from }, 'reservation cancelled via SMS');
-    } catch (err: any) {
-      logger.error(
-        { err: err.message, reservationId: reservation.id },
-        'failed to cancel reservation via SMS reply',
-      );
-    }
+    await handleReply(from, text, 'sms');
 
     return reply.send({ result: 'ok' });
   });

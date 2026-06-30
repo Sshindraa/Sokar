@@ -1,21 +1,19 @@
 import { FastifyInstance } from 'fastify';
+import { handleReply } from '../sms/reply-handler';
 
 /**
- * Webhook Telnyx messaging — gère les messages entrants SMS ET WhatsApp.
+ * Webhook Telnyx messaging — gère les messages entrants WhatsApp.
  *
  * Telnyx envoie tous les messages entrants au même format :
  * { data: { event_type: "message.received", payload: { text, from, type, ... } } }
  *
- * Le champ payload.type distingue SMS ("SMS"/"MMS") de WhatsApp ("whatsapp").
+ * Le parsing OUI/NON est partagé avec le webhook SMS via reply-handler.ts.
+ * Un client qui répond "NON" sur WhatsApp annule sa résa, exactement comme SMS.
  *
  * Configuration côté Telnyx Mission Control :
  * - Messaging → Profiles → ton profile → Webhooks → Add URL
  * - URL: https://api.sokar.tech/whatsapp/webhook
  * - Events: message.received
- *
- * Pas de verify token comme Meta — Telnyx utilise un webhook secret signé
- * dans le header `telnyx-signature-ed25519` (optionnel, déjà géré par le
- * middleware Telnyx webhook si configuré).
  */
 
 export async function whatsappWebhookRoutes(app: FastifyInstance) {
@@ -29,25 +27,20 @@ export async function whatsappWebhookRoutes(app: FastifyInstance) {
       return reply.send({ result: 'ok' });
     }
 
-    // Telnyx WhatsApp: from est une string, SMS: from est un objet avec phone_number
+    // Telnyx WhatsApp: from est une string (E.164)
     const from = typeof payload.from === 'string' ? payload.from : payload.from?.phone_number;
     const text = payload.text;
-    const messageType = payload.type; // "SMS", "MMS", "whatsapp"
 
-    req.log.info(
-      { from, messageType, textLength: text?.length },
-      '[whatsapp] inbound message received',
-    );
-
-    if (text) {
-      // Le client a répondu — fenêtre de service 24h ouverte pour WhatsApp
-      // Le handler SMS inbound existant gère déjà le parsing OUI/NON.
-      // On log seulement pour l'instant — on pourrait étendre plus tard
-      // pour parser les réponses WhatsApp comme on le fait pour les SMS.
-      req.log.info({ from, text, messageType }, '[whatsapp] client reply received');
+    if (!from || !text) {
+      req.log.warn({ from, hasText: !!text }, 'whatsapp inbound: missing from or text');
+      return reply.send({ result: 'ok' });
     }
 
-    // Toujours retourner 200 rapidement — Telnyx retry si pas de 200
+    req.log.info({ from, textLength: text?.length }, 'whatsapp inbound received');
+
+    // Même handler que SMS — parse OUI/NON et agit sur la résa
+    await handleReply(from, text, 'whatsapp');
+
     return reply.send({ result: 'ok' });
   });
 }
