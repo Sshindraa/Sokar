@@ -1,17 +1,17 @@
 import { Worker } from 'bullmq';
 import { redisQueue } from '../../redis/client';
 import { db } from '../../db/client';
-import { sendSms } from '../../telnyx/client';
+import { sendReminder } from '../../messaging/sender';
 import { setupWorkerListeners, jobLogger } from './helper';
 
 /**
- * Worker pour l'envoi des SMS de rappel J-1.
+ * Worker pour l'envoi des rappels de réservation J-1.
  *
- * Le SMS est un rappel simple — aucun call to action.
- * Le client n'a rien à faire, c'est juste un courtesy reminder qui réduit les no-shows.
+ * Canal : WhatsApp (utility template) si configuré, sinon SMS.
+ * Le fallback est automatique — voir shared/messaging/sender.ts.
  *
  * Jobs :
- * 1. { kind: 'scan' } — Scanne les réservations de demain et envoie un rappel SMS.
+ * 1. { kind: 'scan' } — Scanne les réservations de demain et envoie un rappel.
  * 2. { kind: 'send', reservationId } — Envoie un rappel pour une résa spécifique.
  */
 
@@ -20,17 +20,19 @@ interface ConfirmationSmsJobData {
   reservationId?: string;
 }
 
-function formatReminderSms(restaurantName: string, date: Date, partySize: number): string {
-  const dateStr = date.toLocaleDateString('fr-FR', {
+function formatDate(date: Date): string {
+  return date.toLocaleDateString('fr-FR', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
   });
-  const timeStr = date.toLocaleTimeString('fr-FR', {
+}
+
+function formatTime(date: Date): string {
+  return date.toLocaleTimeString('fr-FR', {
     hour: '2-digit',
     minute: '2-digit',
   });
-  return `Rappel ${restaurantName}: votre réservation ${dateStr} à ${timeStr} pour ${partySize} pers. Nous avons hâte de vous accueillir.`;
 }
 
 export const confirmationSmsWorker = new Worker(
@@ -59,11 +61,23 @@ export const confirmationSmsWorker = new Worker(
       log.info({ count: reservations.length }, 'rappel scan: reservations to remind');
 
       let sent = 0;
+      let whatsappCount = 0;
+      let smsCount = 0;
       for (const r of reservations) {
         if (!r.customerPhone) continue;
         try {
-          const sms = formatReminderSms(r.restaurant.name, r.reservedAt, r.partySize);
-          await sendSms(r.customerPhone, sms);
+          const result = await sendReminder({
+            to: r.customerPhone,
+            restaurantName: r.restaurant.name,
+            date: formatDate(r.reservedAt),
+            time: formatTime(r.reservedAt),
+            partySize: r.partySize,
+          });
+          if (result.success) {
+            sent++;
+            if (result.channel === 'whatsapp') whatsappCount++;
+            else smsCount++;
+          }
           await db.reservation.update({
             where: { id: r.id },
             data: {
@@ -71,13 +85,15 @@ export const confirmationSmsWorker = new Worker(
               confirmationSentAt: new Date(),
             },
           });
-          sent++;
         } catch (err: any) {
-          log.error({ err: err.message, reservationId: r.id }, 'failed to send reminder SMS');
+          log.error({ err: err.message, reservationId: r.id }, 'failed to send reminder');
         }
       }
-      log.info({ sent, total: reservations.length }, 'rappel scan complete');
-      return { sent, total: reservations.length };
+      log.info(
+        { sent, whatsappCount, smsCount, total: reservations.length },
+        'rappel scan complete',
+      );
+      return { sent, whatsappCount, smsCount, total: reservations.length };
     }
 
     if (data.kind === 'send' && data.reservationId) {
@@ -89,8 +105,13 @@ export const confirmationSmsWorker = new Worker(
         log.warn({ reservationId: r.id }, 'no customer phone, skipping');
         return;
       }
-      const sms = formatReminderSms(r.restaurant.name, r.reservedAt, r.partySize);
-      await sendSms(r.customerPhone, sms);
+      const result = await sendReminder({
+        to: r.customerPhone,
+        restaurantName: r.restaurant.name,
+        date: formatDate(r.reservedAt),
+        time: formatTime(r.reservedAt),
+        partySize: r.partySize,
+      });
       await db.reservation.update({
         where: { id: r.id },
         data: {
@@ -98,7 +119,7 @@ export const confirmationSmsWorker = new Worker(
           confirmationSentAt: new Date(),
         },
       });
-      log.info({ reservationId: r.id }, 'reminder SMS sent');
+      log.info({ reservationId: r.id, channel: result.channel }, 'reminder sent');
       return;
     }
   },
