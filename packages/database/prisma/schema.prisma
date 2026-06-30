@@ -37,6 +37,7 @@ model Restaurant {
   calls                 Call[]
   reservations          Reservation[]
   customers             Customer[]
+  messages              Message[]
   personality           AgentPersonality?
   callQuotas            CallQuota[]
   agenticHolds          AgenticHold[]
@@ -108,6 +109,7 @@ model Call {
   restaurant   Restaurant    @relation(fields: [restaurantId], references: [id])
   reservation  Reservation?
   latencyTrace LatencyTrace?
+  messages     Message[]
 
   @@index([restaurantId, createdAt(sort: Desc)])
   @@index([restaurantId, outcome, createdAt(sort: Desc)], map: "calls_restaurant_outcome_created_at_idx")
@@ -210,6 +212,23 @@ model Customer {
   @@index([restaurantId, visitCount(sort: Desc)], map: "customers_restaurant_visit_count_idx")
   @@index([restaurantId, lastCallAt(sort: Desc)], map: "customers_restaurant_last_call_at_idx")
   @@map("customers")
+}
+
+model Message {
+  id           String   @id @default(uuid())
+  restaurantId String   @map("restaurant_id")
+  callId       String?  @map("call_id")
+  customerName String   @map("customer_name")
+  customerPhone String? @map("customer_phone")
+  content      String
+  status       String   @default("PENDING")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  call         Call?      @relation(fields: [callId], references: [id])
+
+  @@index([restaurantId, status, createdAt(sort: Desc)], map: "messages_restaurant_status_created_at_idx")
+  @@map("messages")
 }
 
 model LatencyTrace {

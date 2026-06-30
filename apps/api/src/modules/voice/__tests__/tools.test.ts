@@ -24,10 +24,16 @@ describe('getRestaurantTools', () => {
   const tools = getRestaurantTools('rest-123');
   const byName = (name: string) => tools.find((t) => t.function.name === name);
 
-  it('returns exactly 2 tools: createReservation and handoffToManager', () => {
-    expect(tools).toHaveLength(2);
+  it('returns exactly 5 tools: createReservation, checkAvailability, cancelReservation, takeMessage, handoffToManager', () => {
+    expect(tools).toHaveLength(5);
     const names = tools.map((t) => t.function.name).sort();
-    expect(names).toEqual(['createReservation', 'handoffToManager']);
+    expect(names).toEqual([
+      'cancelReservation',
+      'checkAvailability',
+      'createReservation',
+      'handoffToManager',
+      'takeMessage',
+    ]);
   });
 
   it('every entry has type=function (OpenAI function-calling envelope)', () => {
@@ -112,6 +118,106 @@ describe('createReservation tool', () => {
   });
 });
 
+describe('checkAvailability tool', () => {
+  const tool = getRestaurantTools('rest-1').find((t) => t.function.name === 'checkAvailability')!;
+  const params = tool.function.parameters as {
+    type: string;
+    properties: Record<string, any>;
+    required: string[];
+  };
+
+  it('requires date and partySize', () => {
+    expect(new Set(params.required)).toEqual(new Set(['date', 'partySize']));
+  });
+
+  it('date is a string in date format', () => {
+    expect(params.properties.date).toEqual({
+      type: 'string',
+      format: 'date',
+      description: expect.stringContaining('YYYY-MM-DD'),
+    });
+  });
+
+  it('partySize is an integer between 1 and 7', () => {
+    expect(params.properties.partySize).toEqual({
+      type: 'integer',
+      minimum: 1,
+      maximum: 7,
+      description: expect.stringContaining('personnes'),
+    });
+  });
+
+  it('description mentions checking availability without booking', () => {
+    const desc = tool.function.description.toLowerCase();
+    expect(desc).toMatch(/disponib|cr[ée]neau|available/);
+  });
+});
+
+describe('cancelReservation tool', () => {
+  const tool = getRestaurantTools('rest-1').find((t) => t.function.name === 'cancelReservation')!;
+  const params = tool.function.parameters as {
+    type: string;
+    properties: Record<string, any>;
+    required: string[];
+  };
+
+  it('requires customerName and date', () => {
+    expect(new Set(params.required)).toEqual(new Set(['customerName', 'date']));
+  });
+
+  it('customerName is a string', () => {
+    expect(params.properties.customerName).toEqual({
+      type: 'string',
+      description: expect.stringMatching(/nom/i),
+    });
+  });
+
+  it('date is a string in date format', () => {
+    expect(params.properties.date).toEqual({
+      type: 'string',
+      format: 'date',
+      description: expect.stringContaining('YYYY-MM-DD'),
+    });
+  });
+
+  it('description mentions cancellation and identifying the reservation', () => {
+    const desc = tool.function.description.toLowerCase();
+    expect(desc).toMatch(/annul/);
+    expect(desc).toMatch(/nom.*date|identifier/);
+  });
+});
+
+describe('takeMessage tool', () => {
+  const tool = getRestaurantTools('rest-1').find((t) => t.function.name === 'takeMessage')!;
+  const params = tool.function.parameters as {
+    type: string;
+    properties: Record<string, any>;
+    required: string[];
+  };
+
+  it('requires customerName and message', () => {
+    expect(new Set(params.required)).toEqual(new Set(['customerName', 'message']));
+  });
+
+  it('callbackPhone is optional', () => {
+    expect(params.required).not.toContain('callbackPhone');
+    expect(params.properties.callbackPhone).toBeDefined();
+  });
+
+  it('message is a string', () => {
+    expect(params.properties.message).toEqual({
+      type: 'string',
+      description: expect.stringContaining('gérant'),
+    });
+  });
+
+  it('description mentions recording a message for the manager', () => {
+    const desc = tool.function.description.toLowerCase();
+    expect(desc).toMatch(/message|transmet/);
+    expect(desc).toMatch(/g[ée]rant/);
+  });
+});
+
 describe('handoffToManager tool', () => {
   const tool = getRestaurantTools('rest-1').find((t) => t.function.name === 'handoffToManager')!;
   const params = tool.function.parameters as {
@@ -137,7 +243,13 @@ describe('handoffToManager tool', () => {
 describe('tool name stability (regression guard)', () => {
   // The LLM was trained / prompted with these exact names. Renaming a tool
   // silently breaks the integration — guard against accidental renames.
-  it.each(['createReservation', 'handoffToManager'])('keeps the name "%s"', (name) => {
+  it.each([
+    'createReservation',
+    'checkAvailability',
+    'cancelReservation',
+    'takeMessage',
+    'handoffToManager',
+  ])('keeps the name "%s"', (name) => {
     expect(getRestaurantTools('r').some((t) => t.function.name === name)).toBe(true);
   });
 });

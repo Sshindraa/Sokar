@@ -4,6 +4,7 @@ import type { CallSession, CallState } from './types';
 import { VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
 import { getRestaurantTools } from '../tools';
 import { ReservationService } from '../../reservations/reservation.service';
+import { db } from '../../../shared/db/client';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
 
@@ -530,6 +531,107 @@ export class CallSessionManager {
             }
 
             return `Désolé, une erreur technique est survenue lors de l'enregistrement de la réservation. Veuillez essayer un autre créneau ou demander à parler au gérant.`;
+          }
+        }
+
+        case 'checkAvailability': {
+          const { date, partySize } = args;
+
+          try {
+            const result = await ReservationService.availability(
+              session.restaurantId,
+              date,
+              partySize ?? 2,
+            );
+
+            if (result.slots.length === 0) {
+              return `Désolé, il n'y a plus de créneaux disponibles le ${date} pour ${partySize ?? 2} personne(s). Le restaurant est soit fermé, soit complet à cette date.`;
+            }
+
+            // Limiter à 8 créneaux pour ne pas noyer l'LLM
+            const slots = result.slots.slice(0, 8);
+            const slotsText = slots.join(', ');
+            return `Créneaux disponibles le ${date} pour ${partySize ?? 2} personne(s) : ${slotsText}.${result.slots.length > 8 ? ` (et ${result.slots.length - 8} autres créneaux)` : ''}`;
+          } catch (err: any) {
+            logger.error(
+              { err: err.message, callId: session.callControlId },
+              '[tool] checkAvailability failed',
+            );
+            return `Désolé, je n'ai pas pu vérifier les disponibilités pour le ${date}. Veuillez proposer une autre date ou demander à parler au gérant.`;
+          }
+        }
+
+        case 'cancelReservation': {
+          const { customerName, date } = args;
+
+          try {
+            // Trouver la réservation par nom + date
+            const dayStart = new Date(`${date}T00:00:00`);
+            const dayEnd = new Date(`${date}T23:59:59`);
+
+            const reservations = await db.reservation.findMany({
+              where: {
+                restaurantId: session.restaurantId,
+                customerName: { contains: customerName, mode: 'insensitive' },
+                reservedAt: { gte: dayStart, lte: dayEnd },
+                status: 'CONFIRMED',
+              },
+            });
+
+            if (reservations.length === 0) {
+              return `Je n'ai trouvé aucune réservation au nom de ${customerName} pour le ${date}. Vérifiez l'orthographe du nom ou la date.`;
+            }
+
+            // Annuler la première réservation trouvée
+            const reservation = reservations[0];
+            await ReservationService.update(reservation.id, session.restaurantId, {
+              status: 'CANCELLED',
+            });
+
+            return `J'ai bien annulé la réservation de ${customerName} pour le ${date}. Un message de confirmation sera envoyé.`;
+          } catch (err: any) {
+            logger.error(
+              { err: err.message, callId: session.callControlId },
+              '[tool] cancelReservation failed',
+            );
+            if (process.env.SENTRY_DSN) {
+              Sentry.captureException(err, {
+                tags: { service: 'manager-tool', tool: 'cancelReservation' },
+                extra: { callId: session.callControlId, customerName, date },
+              });
+            }
+            return `Désolé, une erreur est survenue lors de l'annulation. Je vais vous transférer au gérant qui pourra s'en occuper.`;
+          }
+        }
+
+        case 'takeMessage': {
+          const { customerName, message, callbackPhone } = args;
+
+          try {
+            await db.message.create({
+              data: {
+                restaurantId: session.restaurantId,
+                callId: session.callLegId,
+                customerName: customerName ?? 'Client',
+                customerPhone: callbackPhone ?? session.from,
+                content: message,
+                status: 'PENDING',
+              },
+            });
+
+            return `J'ai bien noté votre message pour le gérant : "${message}". Il vous recontactera${callbackPhone ? ` au ${callbackPhone}` : ''} dès que possible. Merci de votre appel.`;
+          } catch (err: any) {
+            logger.error(
+              { err: err.message, callId: session.callControlId },
+              '[tool] takeMessage failed',
+            );
+            if (process.env.SENTRY_DSN) {
+              Sentry.captureException(err, {
+                tags: { service: 'manager-tool', tool: 'takeMessage' },
+                extra: { callId: session.callControlId, customerName },
+              });
+            }
+            return `Je n'ai pas pu enregistrer votre message. Je vais vous transférer au gérant.`;
           }
         }
 
