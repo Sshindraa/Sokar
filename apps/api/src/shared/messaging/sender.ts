@@ -43,6 +43,8 @@ export async function sendReminder(params: SendReminderParams): Promise<SendResu
   const { to, restaurantName, restaurantId, reservationId, customerId, date, time, partySize } =
     params;
 
+  let fellBackFromWhatsApp = false;
+
   if (isWhatsAppConfigured()) {
     try {
       await sendWhatsAppTemplate(to, 'reservation_reminder', 'fr', [
@@ -63,6 +65,7 @@ export async function sendReminder(params: SendReminderParams): Promise<SendResu
       return result;
     } catch (err: any) {
       // Fallback SMS si WhatsApp échoue
+      fellBackFromWhatsApp = true;
       logger.warn(
         { err: err.message, reservationId, restaurantId },
         '[messaging] WhatsApp failed, falling back to SMS',
@@ -91,6 +94,7 @@ export async function sendReminder(params: SendReminderParams): Promise<SendResu
       reservationId,
       customerId,
       success: true,
+      metadata: fellBackFromWhatsApp ? { fellBackFromWhatsApp: true } : undefined,
     });
     return result;
   } catch (err: any) {
@@ -102,6 +106,7 @@ export async function sendReminder(params: SendReminderParams): Promise<SendResu
       customerId,
       success: false,
       error: err.message,
+      metadata: fellBackFromWhatsApp ? { fellBackFromWhatsApp: true } : undefined,
     });
     return { channel: 'sms', success: false, error: err.message };
   }
