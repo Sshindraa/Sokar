@@ -53,4 +53,8 @@ export const queues = {
     connection: redisQueue,
     defaultJobOptions: defaultReliableJobOptions,
   }),
+  reactivation: new Queue('reactivation', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
 };

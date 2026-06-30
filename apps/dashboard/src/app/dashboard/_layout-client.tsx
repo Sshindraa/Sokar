@@ -14,6 +14,7 @@ import {
   Zap,
   Eye,
   EyeOff,
+  HeartHandshake,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SyncOrganization } from './SyncOrganization';
@@ -38,6 +39,7 @@ const navItems = [
   { href: '/dashboard/calls', label: 'Appels', icon: PhoneCall },
   { href: '/dashboard/reservations', label: 'Réservations', icon: CalendarCheck },
   { href: '/dashboard/customers', label: 'Clients', icon: Users },
+  { href: '/dashboard/reactivation', label: 'Réactivation', icon: HeartHandshake },
   { href: '/dashboard/agentic', label: 'Agents IA', icon: Sparkles },
   { href: '/dashboard/connect', label: 'Connect', icon: Zap },
   { href: '/dashboard/settings', label: 'Réglages', icon: Settings },

@@ -16,6 +16,7 @@ import { analyticsRoutes } from './modules/analytics/analytics.routes';
 import { reservationRoutes } from './modules/reservations/reservation.routes';
 import { callRoutes } from './modules/calls/call.routes';
 import { dashboardRoutes } from './modules/dashboard/dashboard.routes';
+import { reactivationRoutes } from './modules/dashboard/reactivation.routes';
 import { authSyncRoutes } from './modules/auth/auth.routes';
 import { googleRoutes } from './modules/integrations/google.routes';
 import { testRoutes } from './modules/test/test.routes';
@@ -46,6 +47,7 @@ import './shared/queue/workers/telnyx-webhook.worker';
 import './shared/queue/workers/call-recovery.worker';
 import './shared/queue/workers/connect-analytics.worker';
 import './shared/queue/workers/confirmation-sms.worker';
+import './shared/queue/workers/reactivation.worker';
 
 // Initialize Sentry as early as possible so that instrumentation hooks are
 // registered before the Fastify app (and its error handler) are built.
@@ -189,6 +191,7 @@ export async function buildApp() {
   await app.register(reservationRoutes);
   await app.register(callRoutes);
   await app.register(dashboardRoutes);
+  await app.register(reactivationRoutes);
   await app.register(authSyncRoutes);
   await app.register(googleRoutes);
   await app.register(agenticAdminRoutes);
@@ -301,6 +304,13 @@ async function start() {
           'daily-confirmation-scan',
           { pattern: '0 17 * * *', tz: 'Europe/Paris' },
           { name: 'confirmation-scan', data: { kind: 'scan' } },
+        );
+
+        // Réactivation VIP dormant : scan hebdo le lundi à 10h
+        await queues.reactivation.upsertJobScheduler(
+          'weekly-vip-reactivation',
+          { pattern: '0 10 * * 1', tz: 'Europe/Paris' },
+          { name: 'reactivation-scan', data: { kind: 'scan' } },
         );
       } catch (err) {
         logger.error(err, 'Failed to register schedulers on startup');

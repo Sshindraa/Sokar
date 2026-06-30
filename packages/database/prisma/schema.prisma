@@ -38,6 +38,7 @@ model Restaurant {
   reservations          Reservation[]
   customers             Customer[]
   messages              Message[]
+  reactivationCampaigns ReactivationCampaign[]
   personality           AgentPersonality?
   callQuotas            CallQuota[]
   agenticHolds          AgenticHold[]
@@ -235,6 +236,20 @@ model Message {
 
   @@index([restaurantId, status, createdAt(sort: Desc)], map: "messages_restaurant_status_created_at_idx")
   @@map("messages")
+}
+
+model ReactivationCampaign {
+  id           String    @id @default(uuid())
+  restaurantId String    @map("restaurant_id")
+  status       String    @default("PENDING") // PENDING | SENT | DISMISSED
+  customerIds  String[]  @map("customer_ids") // snapshot des VIPs dormants
+  sentAt       DateTime? @map("sent_at")
+  sentCount    Int       @default(0) @map("sent_count")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId, status, createdAt(sort: Desc)], map: "reactivation_campaigns_restaurant_status_created_at_idx")
+  @@map("reactivation_campaigns")
 }
 
 model LatencyTrace {
