@@ -177,7 +177,7 @@ export default function NoShowWidget() {
       {data.total > 0 && data.noShows === 0 && (
         <p className="mt-4 text-xs text-muted-foreground">
           Aucun no-show enregistré. Marquez les absences dans{' '}
-          <span className="font-medium">Réservations</span> pour suivre l'impact du rappel SMS.
+          <span className="font-medium">Réservations</span> pour suivre l&apos;impact du rappel SMS.
         </p>
       )}
     </section>
