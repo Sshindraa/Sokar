@@ -69,6 +69,9 @@ export const confirmationSmsWorker = new Worker(
           const result = await sendReminder({
             to: r.customerPhone,
             restaurantName: r.restaurant.name,
+            restaurantId: r.restaurantId,
+            reservationId: r.id,
+            customerId: r.customerId ?? undefined,
             date: formatDate(r.reservedAt),
             time: formatTime(r.reservedAt),
             partySize: r.partySize,
@@ -99,7 +102,7 @@ export const confirmationSmsWorker = new Worker(
     if (data.kind === 'send' && data.reservationId) {
       const r = await db.reservation.findUniqueOrThrow({
         where: { id: data.reservationId },
-        include: { restaurant: { select: { name: true } } },
+        include: { restaurant: { select: { name: true, id: true } } },
       });
       if (!r.customerPhone) {
         log.warn({ reservationId: r.id }, 'no customer phone, skipping');
@@ -108,6 +111,9 @@ export const confirmationSmsWorker = new Worker(
       const result = await sendReminder({
         to: r.customerPhone,
         restaurantName: r.restaurant.name,
+        restaurantId: r.restaurantId,
+        reservationId: r.id,
+        customerId: r.customerId ?? undefined,
         date: formatDate(r.reservedAt),
         time: formatTime(r.reservedAt),
         partySize: r.partySize,

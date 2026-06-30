@@ -37,11 +37,11 @@ function getTelnyx(): TelnyxClient {
   return _telnyx;
 }
 
+// Résolu une fois au boot du module, pas à chaque sendReminder.
+const WHATSAPP_ENABLED = process.env.WHATSAPP_ENABLED === 'true';
+
 export function isWhatsAppConfigured(): boolean {
-  return (
-    process.env.WHATSAPP_ENABLED === 'true' &&
-    Boolean(process.env.TELNYX_API_KEY && process.env.TELNYX_FROM_NUMBER)
-  );
+  return WHATSAPP_ENABLED && Boolean(process.env.TELNYX_API_KEY && process.env.TELNYX_FROM_NUMBER);
 }
 
 /**

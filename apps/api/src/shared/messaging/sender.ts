@@ -7,17 +7,23 @@
  * - Messages transactionnels (annulation, etc.) → WhatsApp si configuré, sinon SMS
  *
  * Le fallback SMS est automatique si WhatsApp n'est pas configuré ou si l'envoi échoue.
+ * Chaque envoi émet un event analytics `reminder_sent` avec le canal pour comparer
+ * open rate SMS vs WhatsApp et justifier l'économie.
  */
 
 import { sendSms } from '../telnyx/client';
 import { isWhatsAppConfigured, sendWhatsAppTemplate } from '../whatsapp/client';
+import { trackMessagingEvent } from '../../modules/analytics/events.service';
+import { logger } from '../logger/pino';
 
 export type MessageChannel = 'whatsapp' | 'sms';
-export type MessagePurpose = 'utility' | 'marketing';
 
 export interface SendReminderParams {
   to: string;
   restaurantName: string;
+  restaurantId?: string;
+  reservationId?: string;
+  customerId?: string;
   date: string; // déjà formaté en français
   time: string;
   partySize: number;
@@ -34,7 +40,8 @@ export interface SendResult {
  * WhatsApp (utility template) si configuré, sinon SMS.
  */
 export async function sendReminder(params: SendReminderParams): Promise<SendResult> {
-  const { to, restaurantName, date, time, partySize } = params;
+  const { to, restaurantName, restaurantId, reservationId, customerId, date, time, partySize } =
+    params;
 
   if (isWhatsAppConfigured()) {
     try {
@@ -44,19 +51,58 @@ export async function sendReminder(params: SendReminderParams): Promise<SendResu
         time,
         String(partySize),
       ]);
-      return { channel: 'whatsapp', success: true };
+      const result: SendResult = { channel: 'whatsapp', success: true };
+      await trackMessagingEvent({
+        event: 'reminder_sent',
+        channel: 'whatsapp',
+        restaurantId,
+        reservationId,
+        customerId,
+        success: true,
+      });
+      return result;
     } catch (err: any) {
       // Fallback SMS si WhatsApp échoue
-      console.warn(`[messaging] WhatsApp failed, falling back to SMS: ${err.message}`);
+      logger.warn(
+        { err: err.message, reservationId, restaurantId },
+        '[messaging] WhatsApp failed, falling back to SMS',
+      );
+      await trackMessagingEvent({
+        event: 'whatsapp_fallback_to_sms',
+        channel: 'whatsapp',
+        restaurantId,
+        reservationId,
+        customerId,
+        success: false,
+        error: err.message,
+      });
     }
   }
 
-  // SMS fallback
+  // SMS fallback (ou canal par défaut si WhatsApp non configuré)
   try {
     const smsText = `Rappel ${restaurantName}: votre réservation ${date} à ${time} pour ${partySize} pers. Nous avons hâte de vous accueillir.`;
     await sendSms(to, smsText);
-    return { channel: 'sms', success: true };
+    const result: SendResult = { channel: 'sms', success: true };
+    await trackMessagingEvent({
+      event: 'reminder_sent',
+      channel: 'sms',
+      restaurantId,
+      reservationId,
+      customerId,
+      success: true,
+    });
+    return result;
   } catch (err: any) {
+    await trackMessagingEvent({
+      event: 'reminder_sent',
+      channel: 'sms',
+      restaurantId,
+      reservationId,
+      customerId,
+      success: false,
+      error: err.message,
+    });
     return { channel: 'sms', success: false, error: err.message };
   }
 }
