@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { REDIS_CTX_TTL_SECONDS } from '@sokar/config';
+import { REDIS_CTX_TTL_SECONDS, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
 
 vi.mock('../../../shared/db/client', () => ({
   db: {
@@ -63,7 +63,7 @@ describe('RestaurantService context cache', () => {
       name: 'Chez Cache',
       openingHours: {},
       personality: null,
-      providerConfig: { llmModel: 'mistralai/ministral-3b-2512' },
+      providerConfig: { llmModel: VOICE_LLM_MODEL_DEFAULT },
     };
     vi.mocked(getCachedContext).mockResolvedValue(cached);
 
@@ -94,7 +94,7 @@ describe('RestaurantService context cache', () => {
     expect(cachedPayload).toContain('Suggère les plats du jour.');
     expect(cachedPayload).toContain('calendar-safe-id');
     expect(cachedPayload).toContain('voice-from-personality');
-    expect(cachedPayload).toContain('mistralai/ministral-3b-2512');
+    expect(cachedPayload).toContain(VOICE_LLM_MODEL_DEFAULT);
     expect(cachedPayload).toContain('cartesia');
     expect(cachedPayload).toContain('nova-3');
     expect(cachedPayload).not.toContain('secret-refresh-token-never-cache');

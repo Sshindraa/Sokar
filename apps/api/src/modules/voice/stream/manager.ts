@@ -1,11 +1,19 @@
 import { WebSocket } from 'ws';
 import { createHash } from 'node:crypto';
 import type { CallSession, CallState } from './types';
-import { VOICE_LLM_MODEL } from '@sokar/config'; // Resolved dynamically
+import { VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
 import { getRestaurantTools } from '../tools';
 import { ReservationService } from '../../reservations/reservation.service';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
+
+/**
+ * Résout le modèle LLM au runtime : env var VOICE_LLM_MODEL si définie,
+ * sinon le défaut de @sokar/config.
+ */
+function getVoiceLlmModel(): string {
+  return process.env.VOICE_LLM_MODEL ?? VOICE_LLM_MODEL_DEFAULT;
+}
 
 export class CallSessionManager {
   private readonly sessions = new Map<string, CallSession>();
@@ -215,7 +223,8 @@ export class CallSessionManager {
       return reply;
     }
 
-    const reply = 'Bonjour, bienvenue au restaurant. Je peux vous aider à réserver une table. Pour combien de personnes et à quelle heure ?';
+    const reply =
+      'Bonjour, bienvenue au restaurant. Je peux vous aider à réserver une table. Pour combien de personnes et à quelle heure ?';
     session.history.push({ role: 'assistant', content: reply });
     return reply;
   }
@@ -242,13 +251,13 @@ export class CallSessionManager {
         },
         signal: session.abortController?.signal,
         body: JSON.stringify({
-          model: VOICE_LLM_MODEL,
+          model: getVoiceLlmModel(),
           messages,
           max_tokens: 150,
           temperature: 0.7,
           tools,
           tool_choice: 'auto',
-          ...(VOICE_LLM_MODEL?.includes('mistral')
+          ...(getVoiceLlmModel()?.includes('mistral')
             ? {
                 provider: { order: ['mistral'], allow_fallbacks: false },
               }
@@ -317,14 +326,14 @@ export class CallSessionManager {
         },
         signal: session.abortController?.signal,
         body: JSON.stringify({
-          model: VOICE_LLM_MODEL,
+          model: getVoiceLlmModel(),
           messages,
           max_tokens: 150,
           temperature: 0.7,
           tools,
           tool_choice: 'auto',
           stream: true,
-          ...(VOICE_LLM_MODEL?.includes('mistral')
+          ...(getVoiceLlmModel()?.includes('mistral')
             ? {
                 provider: { order: ['mistral'], allow_fallbacks: false },
               }
@@ -422,13 +431,13 @@ export class CallSessionManager {
             Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
           },
           body: JSON.stringify({
-            model: VOICE_LLM_MODEL,
+            model: getVoiceLlmModel(),
             messages,
             max_tokens: 150,
             temperature: 0.7,
             tools,
             tool_choice: 'auto',
-            ...(VOICE_LLM_MODEL?.includes('mistral')
+            ...(getVoiceLlmModel()?.includes('mistral')
               ? {
                   provider: { order: ['mistral'], allow_fallbacks: false },
                 }
