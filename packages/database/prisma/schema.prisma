@@ -151,6 +151,11 @@ model Reservation {
   consumedHoldId          String?            @unique @map("consumed_hold_id")
   source                  String?            @map("source") // google|chatgpt|perplexity|bing|restaurant_website|instagram|qr_code|direct|unknown|web
 
+  // SMS confirmation J-1
+  confirmationStatus      ConfirmationStatus @default(NOT_REQUIRED) @map("confirmation_status")
+  confirmationSentAt      DateTime?          @map("confirmation_sent_at")
+  confirmedAt             DateTime?          @map("confirmed_at")
+
   auditLog                ReservationAuditLog[]
 
   @@index([restaurantId, createdAt(sort: Desc)])
@@ -159,6 +164,7 @@ model Reservation {
   @@index([restaurantId, status, reservedAt], map: "reservations_restaurant_status_reserved_at_idx")
   @@index([customerId], map: "reservations_customer_id_idx")
   @@index([restaurantId, customerId], map: "reservations_restaurant_customer_id_idx")
+  @@index([confirmationStatus, reservedAt], map: "reservations_confirmation_status_reserved_at_idx")
   @@map("reservations")
 }
 
@@ -274,6 +280,14 @@ enum ReservationStatus {
   CANCELLED
   NO_SHOW
   SEATED
+}
+
+enum ConfirmationStatus {
+  NOT_REQUIRED
+  PENDING
+  CONFIRMED
+  CANCELLED
+  NO_REPLY
 }
 
 enum ProfileType {

@@ -49,4 +49,8 @@ export const queues = {
       removeOnFail: 5000,
     },
   }),
+  confirmationSms: new Queue('confirmation-sms', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
 };
