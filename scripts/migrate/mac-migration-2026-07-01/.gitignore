@@ -1,0 +1,8 @@
+# Generated bundle artifacts (encrypted archives, passphrases, README outputs)
+# These contain secrets and should NEVER be committed.
+/out/
+*.enc
+*.sha256
+PASSPHRASE-*.txt
+README-LATEST.txt
+sokar-mac-migration-*.README.txt
