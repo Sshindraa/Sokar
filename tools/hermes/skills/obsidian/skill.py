@@ -14,7 +14,7 @@ def find_sokar_root() -> Path:
     for parent in [current] + list(current.parents):
         if (parent / "package.json").exists() and (parent / "pnpm-workspace.yaml").exists():
             return parent
-    return Path("/Users/hamza/Desktop/Sokar")
+    return Path(os.environ.get("SOKAR_ROOT", str(Path.home() / "Projects" / "Sokar")))
 
 SOKAR_ROOT = find_sokar_root()
 VAULT_PATH = os.environ.get("OBSIDIAN_VAULT", str(SOKAR_ROOT / "docs" / "obsidian"))

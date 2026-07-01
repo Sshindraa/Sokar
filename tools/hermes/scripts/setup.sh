@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
-REPO_ROOT="/Users/hamza/Desktop/Sokar"
-HERMES_BIN_DIR="$HOME/Library/Python/3.14/bin"
+REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+HERMES_BIN_DIR="$HOME/.local/bin"
 
 # Couleurs
 RED='\033[0;31m'
@@ -45,7 +45,7 @@ fi
 
 # ── 4. Vérifier variables d'environnement ────────────────────────────────────
 log "Vérification des variables d'environnement..."
-source "$REPO_ROOT/.env" 2>/dev/null || true
+source "$REPO_ROOT/.env" 2>/dev/null || source "$REPO_ROOT/.env.local" 2>/dev/null || true
 
 missing=0
 if [ -z "${OPENCODE_GO_API_KEY:-}" ]; then

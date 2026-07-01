@@ -2,11 +2,11 @@
 
 set -euo pipefail
 
-REPO_ROOT="/Users/hamza/Desktop/Sokar"
-HERMES_BIN_DIR="$HOME/Library/Python/3.14/bin"
+REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+HERMES_BIN_DIR="$HOME/.local/bin"
 export PATH="$HERMES_BIN_DIR:$PATH"
 
-source "$REPO_ROOT/.env" 2>/dev/null || true
+source "$REPO_ROOT/.env" 2>/dev/null || source "$REPO_ROOT/.env.local" 2>/dev/null || true
 
 ok=0
 fail=0
