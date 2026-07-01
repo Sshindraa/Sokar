@@ -86,6 +86,27 @@ Utilisé pour les tests voice / MCP en local avant d'avoir un vrai pilote.
 - Marketing pages should stay static when possible (`○`, not `ƒ`).
 - **Ton copy : `vous` partout, jamais `tu`.** Sokar est un SaaS B2B facturé mensuellement à des gérants de restaurant (40-60 ans, non-dev). Le `tu` sent le consumer/developer-tool. Inclut : onboarding (steps, modal, guard, dashboard), tooltips, messages d'erreur, bannières, copy marketing. Le pronom indéfini `on` → `nous` dans le copy user-facing (OK dans les commentaires de code). Un test Vitest (`onboarding-tone.test.ts`) verrouille la convention.
 
+## Mac migration (one-off)
+
+Procédure chiffrée pour cloner l'environnement d'un Mac vers un autre (Hermes config + profils, clés SSH, `.env` Sokar, alias `.zshrc`). Pas pour usage quotidien.
+
+```zsh
+# Sur le Mac SOURCE :
+cd /Users/hamza/Desktop/Sokar/scripts/migrate/mac-migration-<DATE>
+./bundle.sh
+# → produit ./out/sokar-mac-migration-<TS>.tar.gz.enc + .sha256 + PASSPHRASE-<TS>.txt
+
+# Transporte l'archive + la passphrase (canal séparé) sur le Mac CIBLE,
+# puis après avoir cloné ce repo (pour avoir install.sh) :
+cd scripts/migrate/mac-migration-<DATE>
+./install.sh /chemin/vers/sokar-mac-migration-*.tar.gz.enc
+# → déchiffre, restaure, vérifie (config.yaml, auth.json, SSH pmbtc, profils)
+source ~/.zshrc
+hermes doctor && ssh pmbtc 'hostname && pwd'
+```
+
+Détails, contenu, et ce qui N'est PAS dans le bundle (sessions de debug, `node_modules`, DB locales) : `scripts/migrate/mac-migration-<DATE>/README.md`.
+
 ## Hermes/model notes
 
 - Live model/provider state is not documented here. Check `/model` or `~/.hermes/config.yaml` when it matters.
