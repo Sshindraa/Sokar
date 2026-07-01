@@ -31,10 +31,12 @@ export default async function BookPage({
   params,
   searchParams,
 }: {
-  params: { slug: string };
-  searchParams: SearchParams;
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
-  const restaurant = await fetchPublicRestaurant(params.slug);
+  const { slug } = await params;
+  const sp = await searchParams;
+  const restaurant = await fetchPublicRestaurant(slug);
   if (!restaurant) {
     notFound();
   }
@@ -44,12 +46,12 @@ export default async function BookPage({
     event: 'booking_page_view',
     restaurantId: restaurant.id,
     restaurantSlug: restaurant.slug,
-    source: searchParams.source,
+    source: sp.source,
   });
 
-  const partySize = searchParams.partySize ? Number(searchParams.partySize) : undefined;
-  const date = searchParams.date;
-  const time = searchParams.time;
+  const partySize = sp.partySize ? Number(sp.partySize) : undefined;
+  const date = sp.date;
+  const time = sp.time;
 
   return (
     <main className="mx-auto max-w-xl px-6 py-12">
@@ -68,7 +70,7 @@ export default async function BookPage({
 
       <BookingWidget
         slug={restaurant.slug}
-        initialSource={searchParams.source}
+        initialSource={sp.source}
         initialPartySize={partySize}
         initialDate={date}
         initialTime={time}

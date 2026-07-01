@@ -25,8 +25,8 @@ function proxyResponse(data: unknown, status: number) {
  * Proxy universel : /api/proxy/customers?phone=xxx → http://localhost:4000/customers?phone=xxx
  * Forward le cookie Clerk pour l'authentification.
  */
-export async function GET(req: NextRequest, { params }: { params: { path: string[] } }) {
-  const path = params.path.join('/');
+export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  const { path } = await params;
   const search = req.nextUrl.search;
   const url = `${API_ORIGIN}/${path}${search}`;
 
@@ -38,8 +38,8 @@ export async function GET(req: NextRequest, { params }: { params: { path: string
   return proxyResponse(data, res.status);
 }
 
-export async function POST(req: NextRequest, { params }: { params: { path: string[] } }) {
-  const path = params.path.join('/');
+export async function POST(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  const { path } = await params;
   const search = req.nextUrl.search;
   const url = `${API_ORIGIN}/${path}${search}`;
 
@@ -60,8 +60,8 @@ export async function POST(req: NextRequest, { params }: { params: { path: strin
   return proxyResponse(data, res.status);
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { path: string[] } }) {
-  const path = params.path.join('/');
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  const { path } = await params;
   const search = req.nextUrl.search;
   const url = `${API_ORIGIN}/${path}${search}`;
 
@@ -80,8 +80,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { path: stri
   return proxyResponse(data, res.status);
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { path: string[] } }) {
-  const path = params.path.join('/');
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  const { path } = await params;
   const search = req.nextUrl.search;
   const url = `${API_ORIGIN}/${path}${search}`;
 
@@ -100,8 +100,11 @@ export async function PUT(req: NextRequest, { params }: { params: { path: string
   return proxyResponse(data, res.status);
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { path: string[] } }) {
-  const path = params.path.join('/');
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> },
+) {
+  const { path } = await params;
   const search = req.nextUrl.search;
   const url = `${API_ORIGIN}/${path}${search}`;
 

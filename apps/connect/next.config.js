@@ -21,10 +21,7 @@ const nextConfig = {
       { protocol: 'https', hostname: 'sokar.app' },
     ],
   },
-  experimental: {
-    // Server Actions sont en preview, on les évite pour le SEO public.
-    serverActions: { allowedOrigins: ['sokar.tech', 'www.sokar.tech'] },
-  },
+  // Server Actions : allowedOrigins est auto-détecté en Next 15.
 };
 
 module.exports = nextConfig;

@@ -23,9 +23,10 @@ export const dynamicParams = true;
 export async function generateMetadata({
   params,
 }: {
-  params: { city: string };
+  params: Promise<{ city: string }>;
 }): Promise<Metadata> {
-  const data = await fetchCityPage(params.city);
+  const { city } = await params;
+  const data = await fetchCityPage(city);
   if (!data) {
     return {
       title: 'Ville introuvable',
@@ -48,8 +49,9 @@ export async function generateMetadata({
   };
 }
 
-export default async function CityPage({ params }: { params: { city: string } }) {
-  const data = await fetchCityPage(params.city);
+export default async function CityPage({ params }: { params: Promise<{ city: string }> }) {
+  const { city } = await params;
+  const data = await fetchCityPage(city);
   if (!data) {
     notFound();
   }

@@ -20,9 +20,10 @@ export const dynamicParams = true;
 export async function generateMetadata({
   params,
 }: {
-  params: { city: string; cuisine: string };
+  params: Promise<{ city: string; cuisine: string }>;
 }): Promise<Metadata> {
-  const data = await fetchCityPage(params.city, params.cuisine);
+  const { city, cuisine } = await params;
+  const data = await fetchCityPage(city, cuisine);
   if (!data || !data.cuisine) {
     return {
       title: 'Page introuvable',
@@ -30,7 +31,7 @@ export async function generateMetadata({
     };
   }
 
-  const canonical = `${SITE_URL}/restaurants/${data.citySlug}/${params.cuisine}`;
+  const canonical = `${SITE_URL}/restaurants/${data.citySlug}/${cuisine}`;
   return {
     title: `Restaurants ${data.cuisine.toLowerCase()} réservables à ${data.city} | Sokar`,
     description: `Découvrez les restaurants ${data.cuisine.toLowerCase()} réservables en ligne à ${data.city} via Sokar.`,
@@ -47,9 +48,10 @@ export async function generateMetadata({
 export default async function CityCuisinePage({
   params,
 }: {
-  params: { city: string; cuisine: string };
+  params: Promise<{ city: string; cuisine: string }>;
 }) {
-  const data = await fetchCityPage(params.city, params.cuisine);
+  const { city, cuisine } = await params;
+  const data = await fetchCityPage(city, cuisine);
   if (!data || !data.cuisine) {
     notFound();
   }
