@@ -413,7 +413,7 @@ Les appels sont audités via le core agentic.
 Terminal 1:
 
 ```zsh
-cd /Users/hamza/Desktop/Sokar/apps/api
+cd ~/Projects/Sokar/apps/api
 PATH="/usr/local/opt/node@22/bin:$PATH" \
 pnpm --filter @sokar/api exec tsx src/main.ts
 ```
@@ -421,12 +421,12 @@ pnpm --filter @sokar/api exec tsx src/main.ts
 Terminal 2:
 
 ```zsh
-cd /Users/hamza/Desktop/Sokar
+cd ~/Projects/Sokar
 DATABASE_URL="$(awk -F= '$1=="DATABASE_URL"{sub(/^[^=]*=/,""); gsub(/^"|"$/,""); print; exit}' .env.local)" \
 PATH="/usr/local/opt/node@22/bin:$PATH" \
 pnpm db:seed
 
-cd /Users/hamza/Desktop/Sokar/apps/api
+cd ~/Projects/Sokar/apps/api
 SOKAR_MCP_KEY="sk_sokar_agent_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
 PATH="/usr/local/opt/node@22/bin:$PATH" \
 pnpm --filter @sokar/api exec tsx ../../scripts/smoke/test-mcp-client.ts
@@ -450,7 +450,7 @@ Le bridge stdio local expose les mêmes 6 tools et proxy les appels vers
 Commande manuelle:
 
 ```zsh
-cd /Users/hamza/Desktop/Sokar/apps/api
+cd ~/Projects/Sokar/apps/api
 SOKAR_API_BASE="http://localhost:4000" \
 SOKAR_MCP_KEY="sk_sokar_agent_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
 PATH="/usr/local/opt/node@22/bin:$PATH" \
@@ -466,7 +466,7 @@ Exemple `claude_desktop_config.json`:
       "command": "/Users/hamza/.npm-global/bin/pnpm",
       "args": [
         "--dir",
-        "/Users/hamza/Desktop/Sokar/apps/api",
+        "~/Projects/Sokar/apps/api",
         "exec",
         "tsx",
         "../../scripts/smoke/sokar-mcp-stdio.ts"

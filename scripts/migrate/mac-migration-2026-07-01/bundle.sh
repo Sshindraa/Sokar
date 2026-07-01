@@ -69,6 +69,8 @@ cp -p ~/.hermes/kanban.db              "$ROOT/hermes/" 2>/dev/null || true
 cp -p ~/.hermes/cron/jobs.json         "$ROOT/hermes/cron_jobs.json" 2>/dev/null || true
 # Plugins (kanban etc.)
 [[ -d ~/.hermes/plugins ]] && cp -pR ~/.hermes/plugins "$ROOT/hermes/" 2>/dev/null || true
+# Skills (catalogue SKILL.md + curator state + usage)
+[[ -d ~/.hermes/skills ]] && cp -pR ~/.hermes/skills "$ROOT/hermes/" 2>/dev/null || true
 
 # 2b. Profils Hermes : on garde config + auth + bin + state.db + lsp (sans sessions)
 # Le profil "default" n'est pas dans ~/.hermes/profiles/, c'est la racine ~/.hermes/
@@ -155,7 +157,7 @@ macOS     : $(sw_vers -productVersion)
 
 === Contenu ===
   mac-migration/
-    hermes/         config.yaml, auth.json, .env, memories/, kanban.db, cron_jobs.json
+    hermes/         config.yaml, auth.json, .env, memories/, kanban.db, cron_jobs.json, skills/
     profiles/       default + backend + dashboard + database + supervisor (config+auth+bin+state)
     ssh/            config, known_hosts, digitalocean_pmbtc{,.pub}, mac_tunnel_key
     sokar/          .env.local + database.env

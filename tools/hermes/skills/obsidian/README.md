@@ -39,7 +39,7 @@ Le système d'automatisation Sokar élimine tout besoin de mise à jour manuelle
 
 ### 1. `mcp_serve.py` (MCP Gateway)
 
-**Chemin** : `/Users/hamza/Desktop/Sokar/tools/hermes/scripts/mcp_serve.py`
+**Chemin** : `~/Projects/Sokar/tools/hermes/scripts/mcp_serve.py`
 
 Le point d'entrée unique pour toute exécution via un client MCP.
 
@@ -66,7 +66,7 @@ Le point d'entrée unique pour toute exécution via un client MCP.
 
 ### 2. `auto_sync.py` (Git Watcher)
 
-**Chemin** : `/Users/hamza/Desktop/Sokar/tools/hermes/skills/obsidian/auto_sync.py`
+**Chemin** : `~/Projects/Sokar/tools/hermes/skills/obsidian/auto_sync.py`
 
 Surveille les changements dans le code source et met à jour le vault Obsidian.
 
@@ -90,7 +90,7 @@ Surveille les changements dans le code source et met à jour le vault Obsidian.
 
 ### 3. `notion_sync.py` (Bidirectional Sync)
 
-**Chemin** : `/Users/hamza/Desktop/Sokar/tools/hermes/skills/obsidian/notion_sync.py`
+**Chemin** : `~/Projects/Sokar/tools/hermes/skills/obsidian/notion_sync.py`
 
 Synchronisation bidirectionnelle entre Notion et Obsidian.
 

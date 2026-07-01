@@ -68,7 +68,7 @@ A Hermes cron job is scheduled:
 - name: `Sokar Dogfood QA — Weekly`
 - schedule: Monday 08:00 Europe/Paris
 - target: `https://sokar.tech`
-- output: `/Users/hamza/Desktop/Sokar/.hermes/dogfood/YYYYMMDD-HHMM/report.md`
+- output: `~/Projects/Sokar/.hermes/dogfood/YYYYMMDD-HHMM/report.md`
 - delivery: Telegram
 
 Manual equivalent:
