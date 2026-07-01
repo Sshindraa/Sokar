@@ -13,7 +13,6 @@ import {
 import { Outfit, Plus_Jakarta_Sans } from 'next/font/google';
 import PricingSection from '@/app/PricingSection';
 import FaqSection from '@/app/FaqSection';
-import WaitlistSection from '@/app/WaitlistSection';
 import MobileNav from '@/components/MobileNav';
 import AuthCTA from '@/components/AuthCTA';
 import SectionSkeleton from '@/components/SectionSkeleton';
@@ -86,7 +85,6 @@ export default function HomePage() {
               { label: 'Services', href: '/#services' },
               { label: "Cas d'usage", href: '/#demo' },
               { label: 'Tarifs', href: '/pricing' },
-              { label: 'Contact', href: '/#waitlist' },
             ].map((item) => (
               <Link
                 key={item.href}
@@ -234,9 +232,6 @@ export default function HomePage() {
 
             {/* FAQ — client component for accordion */}
             <FaqSection />
-
-            {/* WAITLIST — client component for form */}
-            <WaitlistSection />
           </div>
         </div>
       </main>
@@ -342,12 +337,6 @@ export default function HomePage() {
             <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white/80 font-sans">
               Entreprise
             </h4>
-            <a
-              href="#waitlist"
-              className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center"
-            >
-              Waitlist Bêta
-            </a>
             <Link
               href="/login"
               className="text-xs text-white/40 hover:text-white transition-colors duration-200 font-sans py-2 min-h-[44px] flex items-center"
