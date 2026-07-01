@@ -1,6 +1,22 @@
 import { FastifyInstance } from 'fastify';
 import { handleReply } from '../sms/reply-handler';
 
+interface TelnyxFromObject {
+  phone_number?: string;
+}
+
+interface TelnyxMessagePayload {
+  from?: string | TelnyxFromObject;
+  text?: string;
+}
+
+interface TelnyxWebhookBody {
+  data?: {
+    event_type?: string;
+    payload?: TelnyxMessagePayload;
+  };
+}
+
 /**
  * Webhook Telnyx messaging — gère les messages entrants WhatsApp.
  *
@@ -18,7 +34,7 @@ import { handleReply } from '../sms/reply-handler';
 
 export async function whatsappWebhookRoutes(app: FastifyInstance) {
   app.post('/whatsapp/webhook', async (req, reply) => {
-    const body = req.body as any;
+    const body = req.body as TelnyxWebhookBody;
     const eventType = body?.data?.event_type;
     const payload = body?.data?.payload;
 
@@ -28,7 +44,8 @@ export async function whatsappWebhookRoutes(app: FastifyInstance) {
     }
 
     // Telnyx WhatsApp: from est une string (E.164)
-    const from = typeof payload.from === 'string' ? payload.from : payload.from?.phone_number;
+    const fromObj = payload.from;
+    const from = typeof fromObj === 'string' ? fromObj : fromObj?.phone_number;
     const text = payload.text;
 
     if (!from || !text) {
@@ -36,7 +53,7 @@ export async function whatsappWebhookRoutes(app: FastifyInstance) {
       return reply.send({ result: 'ok' });
     }
 
-    req.log.info({ from, textLength: text?.length }, 'whatsapp inbound received');
+    req.log.info({ from, textLength: text.length }, 'whatsapp inbound received');
 
     // Même handler que SMS — parse OUI/NON et agit sur la résa
     await handleReply(from, text, 'whatsapp');

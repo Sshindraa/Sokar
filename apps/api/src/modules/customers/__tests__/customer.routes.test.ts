@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { Prisma } from '@prisma/client';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { redisCache } from '../../../shared/redis/client';
@@ -136,7 +137,10 @@ describe('customer.routes', () => {
     it('retourne 409 (Conflict) si Prisma soulève P2002', async () => {
       // Le code wrap P2002 en 409 — vérifions le mapping.
       const app = await getApp();
-      const prismaError = Object.assign(new Error('Unique constraint'), { code: 'P2002' });
+      const prismaError = new Prisma.PrismaClientKnownRequestError('Unique constraint', {
+        code: 'P2002',
+        clientVersion: '6.0.0',
+      });
       vi.mocked(db.customer.upsert).mockRejectedValue(prismaError);
 
       const res = await app.inject({

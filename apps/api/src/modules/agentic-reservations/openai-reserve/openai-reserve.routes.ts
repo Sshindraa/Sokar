@@ -34,7 +34,7 @@ export async function openaiReserveRoutes(app: FastifyInstance): Promise<void> {
     try {
       const feed = await service.getBusinessFeed(parsed.data);
       return reply.send(feed);
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error({ err }, 'openai-reserve feed failed');
       return reply.status(500).send({ error: 'Internal error' });
     }
@@ -62,9 +62,10 @@ export async function openaiReserveRoutes(app: FastifyInstance): Promise<void> {
           },
         },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error({ err }, 'openai-reserve tool failed');
-      return reply.status(404).send({ error: err.message });
+      const message = err instanceof Error ? err.message : String(err);
+      return reply.status(404).send({ error: message });
     }
   });
 

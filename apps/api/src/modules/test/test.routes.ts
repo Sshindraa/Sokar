@@ -4,7 +4,7 @@ import { WebSocket } from 'ws';
 import { db } from '../../shared/db/client';
 import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
-import { buildSystemPrompt } from '../voice/prompts';
+import { buildSystemPrompt, type OpeningHours } from '../voice/prompts';
 import { CallSessionManager } from '../voice/stream/manager';
 import { logger } from '../../shared/logger/pino';
 
@@ -29,9 +29,9 @@ const SimulateUtteranceSchema = z.object({
 function createFakeTelnyxWs(): WebSocket {
   const ws = {
     readyState: WebSocket.OPEN,
-    send: (data: any) => {
+    send: (data: unknown) => {
       try {
-        const parsed = JSON.parse(typeof data === 'string' ? data : data.toString());
+        const parsed = JSON.parse(typeof data === 'string' ? data : String(data));
         if (parsed.event === 'media') {
           // En mode simulation on ignore le flux audio retourné.
           return;
@@ -82,7 +82,11 @@ export async function testRoutes(app: FastifyInstance) {
 
     const customer = await CustomerService.lookupOrCreate(ctx.id, callerPhone);
     const customerExtra = CustomerService.buildVipPromptExtra(customer);
-    const systemPrompt = buildSystemPrompt({ ...ctx, customerExtra });
+    const systemPrompt = buildSystemPrompt({
+      ...ctx,
+      openingHours: ctx.openingHours as OpeningHours,
+      customerExtra,
+    });
 
     // Créer un Call record en DB
     const callControlId = `test-call-${Date.now()}`;
@@ -146,8 +150,9 @@ export async function testRoutes(app: FastifyInstance) {
         transcript: body.transcript,
         response,
       });
-    } catch (err: any) {
-      return reply.status(400).send({ ok: false, error: err.message });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return reply.status(400).send({ ok: false, error: message });
     }
   });
 

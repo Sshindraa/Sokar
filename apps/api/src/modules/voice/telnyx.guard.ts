@@ -21,7 +21,7 @@ export async function telnyxWebhookGuard(req: FastifyRequest, reply: FastifyRepl
     // Use the raw body string (preserved by addContentTypeParser) to verify
     // the signature. Re-serializing JSON.stringify(req.body) can change key
     // order and break the Ed25519 signature check.
-    const rawBody = (req as any).rawBody as string | undefined;
+    const rawBody = req.rawBody as string | undefined;
     if (!rawBody) {
       throw new Error('rawBody not available — content-type parser not configured?');
     }
@@ -31,12 +31,16 @@ export async function telnyxWebhookGuard(req: FastifyRequest, reply: FastifyRepl
       timestamp,
       fromBase64(process.env.TELNYX_PUBLIC_KEY!),
     );
-  } catch (err: any) {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const errName = err instanceof Error ? err.constructor.name : undefined;
+    const errStack =
+      err instanceof Error ? err.stack?.split('\n').slice(0, 3).join(' | ') : undefined;
     req.log.error(
       {
-        err: err?.message,
-        errType: err?.constructor?.name,
-        errStack: err?.stack?.split('\n').slice(0, 3).join(' | '),
+        err: message,
+        errType: errName,
+        errStack,
         signatureLen: signature.length,
         timestamp,
         publicKeyLen: process.env.TELNYX_PUBLIC_KEY?.length,

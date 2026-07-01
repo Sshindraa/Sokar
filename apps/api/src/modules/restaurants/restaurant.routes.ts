@@ -1,5 +1,6 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import type { Prisma } from '@prisma/client';
 import { requireOrg } from '../../plugins/clerk';
 import { trackOnboardingEvent, type OnboardingAnalyticsEvent } from '../analytics/events.service';
 import { placeOutboundCall } from '../../shared/telnyx/client';
@@ -18,6 +19,10 @@ import { invalidateRestaurantContextCache } from './restaurant.service';
 import { computeConnectScore } from '../connect/connect-score.service';
 import { synthesizeText, isCartesiaConfigured } from '../voice/cartesia-synth';
 import { redisCache } from '../../shared/redis/client';
+
+type RestaurantWithIncludes = Prisma.RestaurantGetPayload<{
+  include: { personality: true; exposureSettings: true; images: true };
+}>;
 
 const ONBOARDING_EVENT_BY_ACTION: Partial<
   Record<z.infer<typeof UpdateOnboardingSchema>['action'], OnboardingAnalyticsEvent>
@@ -93,7 +98,10 @@ const PostImageSchema = z.object({
   alt: z.string().optional(),
 });
 
-function onboardingPayload(restaurant: any, state = computeOnboardingState(restaurant)) {
+function onboardingPayload(
+  restaurant: RestaurantWithIncludes,
+  state = computeOnboardingState(restaurant),
+) {
   return {
     onboardingDone: state.onboardingDone,
     voiceOnboardingDone: state.voiceOnboardingDone,
@@ -143,7 +151,7 @@ function onboardingPayload(restaurant: any, state = computeOnboardingState(resta
 }
 
 export async function restaurantRoutes(app: FastifyInstance) {
-  const getOnboarding = async (req: any, reply: any) => {
+  const getOnboarding = async (req: FastifyRequest, reply: FastifyReply) => {
     const restaurantId = req.restaurantId;
     const restaurant = await app.db.restaurant.findUniqueOrThrow({
       where: { id: restaurantId },
@@ -158,7 +166,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     const updated = await app.db.restaurant.update({
       where: { id: restaurantId },
       data: {
-        onboardingTasks: state.tasks as any,
+        onboardingTasks: state.tasks as unknown as Prisma.InputJsonValue,
         onboardingDone: state.onboardingDone,
         onboardingCompletedAt: completedAt,
         onboardingLastSeenAt: new Date(),
@@ -169,7 +177,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     return reply.send(onboardingPayload(updated, computeOnboardingState(updated)));
   };
 
-  const patchOnboarding = async (req: any, reply: any) => {
+  const patchOnboarding = async (req: FastifyRequest, reply: FastifyReply) => {
     const restaurantId = req.restaurantId;
     const body = UpdateOnboardingSchema.parse(req.body ?? {});
     const restaurant = await app.db.restaurant.findUniqueOrThrow({
@@ -199,8 +207,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
     let tasks: Record<OnboardingTask, OnboardingTaskState>;
     try {
       tasks = applyOnboardingTransition(currentState.tasks, body);
-    } catch (err: any) {
-      return reply.status(400).send({ error: err.message });
+    } catch (err: unknown) {
+      return reply.status(400).send({ error: err instanceof Error ? err.message : String(err) });
     }
 
     const nextState = computeOnboardingState({ ...restaurant, onboardingTasks: tasks });
@@ -208,7 +216,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     const updated = await app.db.restaurant.update({
       where: { id: restaurantId },
       data: {
-        onboardingTasks: nextState.tasks as any,
+        onboardingTasks: nextState.tasks as unknown as Prisma.InputJsonValue,
         onboardingDone: nextState.onboardingDone,
         onboardingCompletedAt:
           nextState.onboardingDone && !restaurant.onboardingCompletedAt
@@ -269,15 +277,17 @@ export async function restaurantRoutes(app: FastifyInstance) {
   app.post('/restaurants', { preHandler: requireOrg() }, async (req, reply) => {
     const body = CreateRestaurantSchema.parse(req.body);
     try {
-      const restaurant = await app.db.restaurant.create({ data: body as any });
+      const restaurant = await app.db.restaurant.create({
+        data: body as Prisma.RestaurantUncheckedCreateInput,
+      });
       await app.queues.eveningReport.upsertJobScheduler(
         `nightly-${restaurant.id}`,
         { pattern: '0 23 * * *', tz: 'Europe/Paris' },
         { name: 'nightly', data: { restaurantId: restaurant.id } },
       );
       return reply.status(201).send(restaurant);
-    } catch (err: any) {
-      if (err.code === 'P2002') {
+    } catch (err: unknown) {
+      if ((err as { code?: string })?.code === 'P2002') {
         return reply.status(409).send({ error: 'Phone number already registered' });
       }
       throw err;
@@ -527,7 +537,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     phoneNumber: z.string().regex(/^\+[1-9]\d{9,14}$/, 'Numéro E.164 requis (ex: +33612345678)'),
   });
 
-  const postTestCall = async (req: any, reply: any) => {
+  const postTestCall = async (req: FastifyRequest, reply: FastifyReply) => {
     const restaurantId = req.restaurantId;
     const body = TestCallSchema.parse(req.body ?? {});
     const restaurant = await app.db.restaurant.findUniqueOrThrow({
@@ -584,7 +594,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
         callControlId,
         message: 'Appel test déclenché. Vous allez recevoir un appel sous quelques secondes.',
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error(
         { err, restaurantId, target: body.phoneNumber },
         '[onboarding] test call failed',
@@ -593,7 +603,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
         code: 'TELNYX_FAILED',
         error:
           "L'appel test n'a pas pu être déclenché (opérateur injoignable ou erreur réseau). Réessayez dans quelques minutes, ou contactez le support si le problème persiste.",
-        detail: process.env.NODE_ENV === 'production' ? undefined : String(err?.message ?? err),
+        detail:
+          process.env.NODE_ENV === 'production'
+            ? undefined
+            : String(err instanceof Error ? err.message : err),
       });
     }
   };
@@ -615,7 +628,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
       `Bonjour, ${name}. Ce soir, en plat du jour, nous avons un confit de canard avec pommes sarladaises. Souhaitez-vous réserver une table ?`,
   };
 
-  const postDemoCall = async (req: any, reply: any) => {
+  const postDemoCall = async (req: FastifyRequest, reply: FastifyReply) => {
     const restaurantId = req.restaurantId;
     const body = DemoCallSchema.parse(req.body ?? {});
     const restaurant = await app.db.restaurant.findUniqueOrThrow({
@@ -679,7 +692,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
       reply.type('audio/mpeg');
       return reply.send(audio);
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error(
         { err, restaurantId, scriptId: body.scriptId },
         '[onboarding] demo call TTS failed',
@@ -689,12 +702,15 @@ export async function restaurantRoutes(app: FastifyInstance) {
         error:
           "La synthèse vocale n'a pas pu être générée. Réessayez dans quelques minutes, ou contactez le support si le problème persiste.",
         transcript,
-        detail: process.env.NODE_ENV === 'production' ? undefined : String(err?.message ?? err),
+        detail:
+          process.env.NODE_ENV === 'production'
+            ? undefined
+            : String(err instanceof Error ? err.message : err),
       });
     }
   };
 
-  const patchConnect = async (req: any, reply: any) => {
+  const patchConnect = async (req: FastifyRequest, reply: FastifyReply) => {
     const { id } = req.params as { id: string };
     const restaurantId = req.restaurantId;
     if (id !== restaurantId) {
@@ -721,7 +737,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
       update: {},
     });
 
-    const currentCapacitySpecials = (currentSettings.capacitySpecials as Record<string, any>) || {};
+    const currentCapacitySpecials =
+      (currentSettings.capacitySpecials as Record<string, unknown>) || {};
     const newCapacitySpecials = {
       ...currentCapacitySpecials,
       ...(body.capacitySpecials || {}),
@@ -729,7 +746,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
     // 3. Prepare updates
     const now = new Date();
-    const restaurantData: any = {};
+    const restaurantData: Prisma.RestaurantUpdateInput = {};
     if (body.slug !== undefined) restaurantData.slug = body.slug;
     if (body.description !== undefined) restaurantData.description = body.description;
     if (body.formattedAddress !== undefined)
@@ -751,8 +768,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
       restaurantData.agenticOptIn = true;
     }
 
-    const settingsData: any = {
-      capacitySpecials: newCapacitySpecials,
+    const settingsData: Prisma.RestaurantExposureSettingsUpdateInput = {
+      capacitySpecials: newCapacitySpecials as unknown as Prisma.InputJsonValue,
     };
     if (body.maxPartySize !== undefined) settingsData.maxPartySize = body.maxPartySize;
     if (body.connectPublished !== undefined) {
@@ -789,7 +806,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     });
   };
 
-  const postImage = async (req: any, reply: any) => {
+  const postImage = async (req: FastifyRequest, reply: FastifyReply) => {
     const { id } = req.params as { id: string };
     const restaurantId = req.restaurantId;
     if (id !== restaurantId) {
@@ -824,7 +841,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
     return reply.status(201).send(image);
   };
 
-  const checkSlug = async (req: any, reply: any) => {
+  const checkSlug = async (req: FastifyRequest, reply: FastifyReply) => {
     const { slug } = req.query as { slug?: string };
     if (!slug) {
       return reply.status(400).send({ error: 'Slug requis' });
@@ -853,7 +870,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   // Sokar Connect — GET settings
   // Returns the restaurant's Sokar Connect configuration (gating flags, slug, page URL).
-  const getConnect = async (req: any, reply: any) => {
+  const getConnect = async (req: FastifyRequest, reply: FastifyReply) => {
     const restaurantId = req.restaurantId;
 
     const restaurant = await app.db.restaurant.findUnique({
@@ -884,7 +901,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   // Sokar Connect — GET score de complétude
   // Calcule le score de profil 0-100% + items manquants + copy contextuel.
-  const getConnectScore = async (req: any, reply: any) => {
+  const getConnectScore = async (req: FastifyRequest, reply: FastifyReply) => {
     const restaurantId = req.restaurantId;
 
     const restaurant = await app.db.restaurant.findUnique({

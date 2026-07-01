@@ -29,7 +29,15 @@ export function formatOpeningHours(hours: OpeningHours): string {
     .join('\n');
 }
 
-export function buildSystemPrompt(ctx: any): string {
+export interface SystemPromptContext {
+  name: string;
+  openingHours: OpeningHours;
+  customerExtra?: string;
+  customerGreeting?: string;
+  personality?: { fillerStyle?: string; systemPromptExtra?: string | null } | null;
+}
+
+export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const customerPart = ctx.customerExtra ? `\n${ctx.customerExtra}\n` : '';
   const extraPart = ctx.personality?.systemPromptExtra
     ? `\n${ctx.personality.systemPromptExtra}`

@@ -1,4 +1,5 @@
 import { db } from '../../shared/db/client';
+import type { Prisma, Restaurant } from '@prisma/client';
 import { queues } from '../../shared/queue/queues';
 import { logger } from '../../shared/logger/pino';
 import { GoogleCalendarClient } from '../../shared/google-calendar/client';
@@ -131,9 +132,9 @@ export class ReservationService {
         });
 
         reservation.googleEventId = eventId;
-      } catch (err: any) {
+      } catch (err: unknown) {
         logger.error(
-          { err: err.message, reservationId: reservation.id },
+          { err: err instanceof Error ? err.message : String(err), reservationId: reservation.id },
           '[ReservationService] Failed to sync to Google Calendar',
         );
       }
@@ -164,7 +165,7 @@ export class ReservationService {
     return reservation;
   }
 
-  static async update(id: string, restaurantId: string, data: any) {
+  static async update(id: string, restaurantId: string, data: Prisma.ReservationUpdateInput) {
     const reservation = await db.reservation.findUniqueOrThrow({
       where: { id, restaurantId },
       include: { restaurant: true },
@@ -211,9 +212,9 @@ export class ReservationService {
             },
           );
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         logger.error(
-          { err: err.message, reservationId: id },
+          { err: err instanceof Error ? err.message : String(err), reservationId: id },
           '[ReservationService] Failed to update Google Calendar event',
         );
       }
@@ -240,9 +241,9 @@ export class ReservationService {
           reservation.restaurant.googleCalendarId,
           reservation.googleEventId,
         );
-      } catch (err: any) {
+      } catch (err: unknown) {
         logger.error(
-          { err: err.message, reservationId: id },
+          { err: err instanceof Error ? err.message : String(err), reservationId: id },
           '[ReservationService] Failed to delete Google Calendar event',
         );
       }
@@ -252,7 +253,7 @@ export class ReservationService {
   }
 
   static async findByRestaurant(restaurantId: string, date?: string) {
-    const where: any = { restaurantId };
+    const where: Prisma.ReservationWhereInput = { restaurantId };
     if (date) {
       const start = new Date(date);
       start.setHours(0, 0, 0, 0);
@@ -292,7 +293,7 @@ export class ReservationService {
   }
 
   private static async checkSlotAvailability(
-    restaurant: any,
+    restaurant: Restaurant,
     startTime: Date,
     _partySize: number,
   ): Promise<{ available: boolean; reason?: AvailabilitySlot['reason'] }> {

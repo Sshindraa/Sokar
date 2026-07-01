@@ -1,11 +1,10 @@
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const createTelnyx: (key: string) => any = require('telnyx');
+const createTelnyx: (key: string) => import('telnyx').TelnyxClient = require('telnyx');
 
-type TelnyxClient = any;
+type TelnyxClient = import('telnyx').TelnyxClient;
 
 let _telnyx: TelnyxClient | null = null;
 
-function getTelnyx() {
+function getTelnyx(): TelnyxClient {
   if (!_telnyx) {
     if (!process.env.TELNYX_API_KEY) {
       throw new Error('TELNYX_API_KEY is required');
@@ -15,9 +14,9 @@ function getTelnyx() {
   return _telnyx;
 }
 
-const telnyx = new Proxy({} as ReturnType<typeof createTelnyx>, {
+const telnyx = new Proxy({} as TelnyxClient, {
   get(_, prop: string | symbol) {
-    return (getTelnyx() as any)[prop];
+    return (getTelnyx() as unknown as Record<string | symbol, unknown>)[prop];
   },
 });
 

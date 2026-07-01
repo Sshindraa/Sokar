@@ -28,9 +28,15 @@ import { captureException } from '../../../shared/sentry/client';
 
 const recentTranscripts = new WeakMap<CallSession, { normalized: string; at: number }>();
 
-function writeDebugLog(msg: string, err?: any) {
+function writeDebugLog(msg: string, err?: unknown) {
   const timestamp = new Date().toISOString();
-  const logMsg = `[${timestamp}] ${msg}${err ? ' | ERROR: ' + err.message + '\n' + err.stack : ''}\n`;
+  const errStr =
+    err instanceof Error
+      ? ` | ERROR: ${err.message}\n${err.stack}`
+      : err
+        ? ` | ERROR: ${String(err)}`
+        : '';
+  const logMsg = `[${timestamp}] ${msg}${errStr}\n`;
   try {
     const logPath =
       process.env.DEBUG_LOG_PATH || path.join(process.cwd(), 'scratch', 'call_debug.log');
@@ -155,7 +161,7 @@ async function persistLatencyTrace(session: CallSession): Promise<void> {
     writeDebugLog(
       `[latency] Saved latency trace for call ${callRecord.id}: E2E ${trace.totalE2eMs}ms`,
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     writeDebugLog(`[latency] Failed to persist latency trace`, err);
     logger.error({ err, callId: session.callLegId }, '[latency] Failed to persist latency trace');
     captureException(err, {
@@ -171,7 +177,7 @@ async function persistLatencyTrace(session: CallSession): Promise<void> {
  */
 export function registerMediaStreamRoutes(app: FastifyInstance): void {
   app.get('/voice/stream/:callId', { websocket: true }, (socket, req) => {
-    const callId = (req.params as any).callId as string;
+    const callId = (req.params as { callId: string }).callId;
     const mgr = CallSessionManager.getInstance();
 
     // Per-call child logger. Every log line emitted from this WS handler
@@ -626,9 +632,12 @@ async function processTranscript(
 
     mgr.transition(session, 'LISTENING');
     writeDebugLog(`[processTranscript] Transitioned back to LISTENING`);
-  } catch (err: any) {
+  } catch (err: unknown) {
     writeDebugLog(`[processTranscript] Caught error`, err);
-    logger.error({ err, callId: session.callControlId }, `[pipeline] Error: ${err.message}`);
+    logger.error(
+      { err, callId: session.callControlId },
+      `[pipeline] Error: ${err instanceof Error ? err.message : String(err)}`,
+    );
     captureException(err, {
       tags: { service: 'handler', action: 'processTranscript' },
       extra: { callId: session.callControlId, transcript },
@@ -698,7 +707,7 @@ async function processTranscriptStreaming(
       }
 
       // Lancer TTS en background pour ne pas bloquer le stream LLM
-      const ttsPromise = speakTtsStreamed(session, cleanPhrase).catch((err: any) => {
+      const ttsPromise = speakTtsStreamed(session, cleanPhrase).catch((err: unknown) => {
         writeDebugLog(`[processTranscriptStreaming] TTS error for phrase: "${cleanPhrase}"`, err);
       });
       ttsPromises.push(ttsPromise);
@@ -710,11 +719,11 @@ async function processTranscriptStreaming(
 
     mgr.transition(session, 'LISTENING');
     writeDebugLog(`[processTranscriptStreaming] Transitioned back to LISTENING`);
-  } catch (err: any) {
+  } catch (err: unknown) {
     writeDebugLog(`[processTranscriptStreaming] Caught error`, err);
     logger.error(
       { err, callId: session.callControlId },
-      `[pipeline] Streaming error: ${err.message}`,
+      `[pipeline] Streaming error: ${err instanceof Error ? err.message : String(err)}`,
     );
     captureException(err, {
       tags: { service: 'handler', action: 'processTranscriptStreaming' },
@@ -796,7 +805,7 @@ async function speakTelnyxNative(session: CallSession, text: string): Promise<vo
     } else {
       writeDebugLog(`[speakTelnyxNative] Telnyx native speak command sent successfully`);
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     writeDebugLog(`[speakTelnyxNative] Error in Telnyx native speak`, err);
   }
 }
@@ -868,7 +877,7 @@ async function speakTtsStreamed(session: CallSession, text: string): Promise<voi
     let cachedBuffer: Buffer | null = null;
     try {
       cachedBuffer = await getTtsCached(trimmed, cacheVoiceId);
-    } catch (err: any) {
+    } catch (err: unknown) {
       writeDebugLog(`[speakTtsStreamed] TTS cache read failed`, err);
     }
 
@@ -1078,17 +1087,17 @@ async function speakTtsStreamed(session: CallSession, text: string): Promise<voi
       const codec8kFull = Buffer.concat(accumulatedChunks);
       try {
         await setTtsCached(trimmed, cacheVoiceId, codec8kFull);
-      } catch (err: any) {
+      } catch (err: unknown) {
         writeDebugLog(`[speakTtsStreamed] TTS cache write failed`, err);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       writeDebugLog(
         `[speakTtsStreamed] Cartesia stream process error for sentence: "${trimmed}"`,
         err,
       );
       logger.error(
         { err, callId: session.callControlId },
-        `[speakTtsStreamed] Cartesia stream process error: ${err.message}`,
+        `[speakTtsStreamed] Cartesia stream process error: ${err instanceof Error ? err.message : String(err)}`,
       );
       captureException(err, {
         tags: { service: 'handler', action: 'speakTtsStreamed', type: 'exception' },

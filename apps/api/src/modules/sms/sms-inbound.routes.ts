@@ -2,6 +2,22 @@ import { FastifyInstance } from 'fastify';
 import { telnyxWebhookGuard } from '../voice/telnyx.guard';
 import { handleReply } from './reply-handler';
 
+interface TelnyxFromObject {
+  phone_number?: string;
+}
+
+interface TelnyxMessagePayload {
+  from?: string | TelnyxFromObject;
+  text?: string;
+}
+
+interface TelnyxWebhookBody {
+  data?: {
+    event_type?: string;
+    payload?: TelnyxMessagePayload;
+  };
+}
+
 /**
  * Handler pour les SMS entrants de Telnyx (réponses clients).
  *
@@ -11,7 +27,7 @@ import { handleReply } from './reply-handler';
 
 export async function smsInboundRoutes(app: FastifyInstance) {
   app.post('/sms/telnyx/inbound', { preHandler: telnyxWebhookGuard }, async (req, reply) => {
-    const body = req.body as any;
+    const body = req.body as TelnyxWebhookBody;
     const eventType = body?.data?.event_type;
     const payload = body?.data?.payload;
 
@@ -20,7 +36,8 @@ export async function smsInboundRoutes(app: FastifyInstance) {
     }
 
     // Telnyx SMS: from est un objet avec phone_number
-    const from = payload?.from?.phone_number ?? payload?.from;
+    const fromObj = payload?.from;
+    const from = typeof fromObj === 'string' ? fromObj : fromObj?.phone_number;
     const text = payload?.text;
 
     if (!from || !text) {
@@ -28,7 +45,7 @@ export async function smsInboundRoutes(app: FastifyInstance) {
       return reply.send({ result: 'ok' });
     }
 
-    req.log.info({ from, textLength: text?.length }, 'sms inbound received');
+    req.log.info({ from, textLength: text.length }, 'sms inbound received');
 
     await handleReply(from, text, 'sms');
 

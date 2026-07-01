@@ -124,11 +124,11 @@ export async function buildApp() {
   // exact bytes received — re-serializing JSON can change key order and
   // invalidate the signature). The raw body is exposed as `request.rawBody`.
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body: string, done) => {
-    (req as any).rawBody = body;
+    (req as { rawBody?: string }).rawBody = body;
     try {
       const json = body.length === 0 ? null : JSON.parse(body);
       done(null, json);
-    } catch (err: any) {
+    } catch (err: unknown) {
       done(err as Error, undefined);
     }
   });
@@ -152,7 +152,7 @@ export async function buildApp() {
     }
 
     const err = error as Error;
-    const statusCode = (err as any).statusCode ?? 500;
+    const statusCode = (error as { statusCode?: number }).statusCode ?? 500;
 
     if (statusCode >= 500) {
       request.log.error({ err: error, path: request.url }, 'Unhandled error');

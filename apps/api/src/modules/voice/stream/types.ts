@@ -36,6 +36,14 @@ export interface TelnyxStreamMessage {
   stream_id?: string;
 }
 
+/** Message de chat au format OpenRouter/OpenAI */
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  tool_calls?: Array<{ id: string; type?: string; function: { name: string; arguments: string } }>;
+  tool_call_id?: string;
+}
+
 /** Session d'un appel avec flux audio */
 export interface CallSession {
   callControlId: string;
@@ -51,7 +59,7 @@ export interface CallSession {
   turnCount: number;
   isVip: boolean;
   codec: 'PCMA' | 'PCMU';
-  history: any[];
+  history: ChatMessage[];
 
   // WebSockets
   telnyxWs: WebSocket;
@@ -101,7 +109,10 @@ export interface CallSession {
     ttsFirstByteMs?: number;
     totalE2eMs?: number;
   };
-  personality: { fillerStyle: 'CASUAL' | 'FORMAL' | 'WARM'; systemPromptExtra?: string | null } | null;
+  personality: {
+    fillerStyle: 'CASUAL' | 'FORMAL' | 'WARM';
+    systemPromptExtra?: string | null;
+  } | null;
 }
 
 /** Config retournée à Telnyx pour lancer le media stream */

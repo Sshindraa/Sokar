@@ -29,9 +29,9 @@ export class GoogleCalendarClient {
   }
 
   static createSignedState(restaurantId: string): string {
-    const payload = Buffer.from(
-      JSON.stringify({ restaurantId, ts: Date.now() }),
-    ).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({ restaurantId, ts: Date.now() })).toString(
+      'base64url',
+    );
     return `${payload}.${this.signStatePayload(payload)}`;
   }
 
@@ -76,7 +76,10 @@ export class GoogleCalendarClient {
     url.searchParams.append('client_id', GOOGLE_CLIENT_ID);
     url.searchParams.append('redirect_uri', GOOGLE_REDIRECT_URI);
     url.searchParams.append('response_type', 'code');
-    url.searchParams.append('scope', 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly');
+    url.searchParams.append(
+      'scope',
+      'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly',
+    );
     url.searchParams.append('access_type', 'offline');
     url.searchParams.append('prompt', 'consent');
     url.searchParams.append('state', state);
@@ -84,7 +87,9 @@ export class GoogleCalendarClient {
     return url.toString();
   }
 
-  static async exchangeCodeForTokens(code: string): Promise<{ refreshToken: string; googleCalendarId: string }> {
+  static async exchangeCodeForTokens(
+    code: string,
+  ): Promise<{ refreshToken: string; googleCalendarId: string }> {
     if (!this.isConfigured() || code.startsWith('mock_')) {
       logger.info('[GoogleCalendar] Mock code exchange for tokens');
       return {
@@ -111,7 +116,7 @@ export class GoogleCalendarClient {
       throw new Error(`Google OAuth error: ${response.status} - ${errText}`);
     }
 
-    const tokens = await response.json() as any;
+    const tokens = (await response.json()) as { refresh_token?: string };
     return {
       refreshToken: tokens.refresh_token || '',
       googleCalendarId: 'primary',
@@ -140,7 +145,7 @@ export class GoogleCalendarClient {
       throw new Error(`Google Refresh Token error: ${response.status} - ${errText}`);
     }
 
-    const data = await response.json() as any;
+    const data = (await response.json()) as { access_token: string };
     return data.access_token;
   }
 
@@ -148,10 +153,10 @@ export class GoogleCalendarClient {
     refreshToken: string,
     calendarId: string,
     start: Date,
-    end: Date
+    end: Date,
   ): Promise<boolean> {
     logger.info({ calendarId, start, end }, '[GoogleCalendar] Checking availability');
-    
+
     if (refreshToken.startsWith('mock_')) {
       // Mock checking: check if start minute is exactly 45 (for manual mock testing conflict)
       if (start.getMinutes() === 45) {
@@ -182,16 +187,18 @@ export class GoogleCalendarClient {
       throw new Error(`Google freebusy error: ${response.status} - ${errText}`);
     }
 
-    const data = await response.json() as any;
+    const data = (await response.json()) as {
+      calendars?: Record<string, { busy?: unknown[] }>;
+    };
     const busyEvents = data.calendars?.[calendarId]?.busy || [];
-    
+
     return busyEvents.length === 0;
   }
 
   static async createEvent(
     refreshToken: string,
     calendarId: string,
-    details: CalendarEventDetails
+    details: CalendarEventDetails,
   ): Promise<string> {
     logger.info({ calendarId, summary: details.summary }, '[GoogleCalendar] Creating event');
 
@@ -203,23 +210,26 @@ export class GoogleCalendarClient {
 
     const accessToken = await this.getAccessToken(refreshToken);
 
-    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          summary: details.summary,
+          description: details.description,
+          start: {
+            dateTime: details.start.toISOString(),
+          },
+          end: {
+            dateTime: details.end.toISOString(),
+          },
+        }),
       },
-      body: JSON.stringify({
-        summary: details.summary,
-        description: details.description,
-        start: {
-          dateTime: details.start.toISOString(),
-        },
-        end: {
-          dateTime: details.end.toISOString(),
-        },
-      }),
-    });
+    );
 
     if (!response.ok) {
       const errText = await response.text();
@@ -227,7 +237,7 @@ export class GoogleCalendarClient {
       throw new Error(`Google createEvent error: ${response.status} - ${errText}`);
     }
 
-    const data = await response.json() as any;
+    const data = (await response.json()) as { id: string };
     return data.id;
   }
 
@@ -235,9 +245,12 @@ export class GoogleCalendarClient {
     refreshToken: string,
     calendarId: string,
     eventId: string,
-    details: CalendarEventDetails
+    details: CalendarEventDetails,
   ): Promise<void> {
-    logger.info({ calendarId, eventId, summary: details.summary }, '[GoogleCalendar] Updating event');
+    logger.info(
+      { calendarId, eventId, summary: details.summary },
+      '[GoogleCalendar] Updating event',
+    );
 
     if (refreshToken.startsWith('mock_') || eventId.startsWith('mock_')) {
       logger.info('[GoogleCalendar] Mock event updated successfully');
@@ -246,23 +259,26 @@ export class GoogleCalendarClient {
 
     const accessToken = await this.getAccessToken(refreshToken);
 
-    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          summary: details.summary,
+          description: details.description,
+          start: {
+            dateTime: details.start.toISOString(),
+          },
+          end: {
+            dateTime: details.end.toISOString(),
+          },
+        }),
       },
-      body: JSON.stringify({
-        summary: details.summary,
-        description: details.description,
-        start: {
-          dateTime: details.start.toISOString(),
-        },
-        end: {
-          dateTime: details.end.toISOString(),
-        },
-      }),
-    });
+    );
 
     if (!response.ok) {
       const errText = await response.text();
@@ -274,7 +290,7 @@ export class GoogleCalendarClient {
   static async deleteEvent(
     refreshToken: string,
     calendarId: string,
-    eventId: string
+    eventId: string,
   ): Promise<void> {
     logger.info({ calendarId, eventId }, '[GoogleCalendar] Deleting event');
 
@@ -285,12 +301,15 @@ export class GoogleCalendarClient {
 
     const accessToken = await this.getAccessToken(refreshToken);
 
-    const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, {
-      method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+      {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
       },
-    });
+    );
 
     if (!response.ok && response.status !== 404) {
       const errText = await response.text();

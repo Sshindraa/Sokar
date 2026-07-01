@@ -134,8 +134,12 @@ export class OpenaiReserveService {
 
   private toNumberSafe(v: unknown): number {
     if (v == null) return 0;
-    if (typeof v === 'object' && typeof (v as any).toNumber === 'function') {
-      return (v as any).toNumber();
+    if (
+      typeof v === 'object' &&
+      v !== null &&
+      typeof (v as { toNumber?: unknown }).toNumber === 'function'
+    ) {
+      return (v as { toNumber: () => number }).toNumber();
     }
     return Number(v);
   }
@@ -147,11 +151,11 @@ export class OpenaiReserveService {
     formattedAddress: string | null;
     phoneE164: string | null;
     websiteUrl: string | null;
-    lat: any;
-    lng: any;
-    cuisineType: any;
+    lat: unknown;
+    lng: unknown;
+    cuisineType: string[] | null;
     priceRange: number | null;
-    openingHours: any;
+    openingHours: unknown;
   }): Business {
     // lat/lng sont stockés en Decimal dans Prisma → on appelle toNumber() si
     // présent, sinon Number() qui marche pour number et string.
@@ -172,7 +176,7 @@ export class OpenaiReserveService {
       platform_url: `https://app.sokar.com/r/${r.slug ?? r.id}`,
       cuisine_type: r.cuisineType,
       price_range: r.priceRange,
-      opening_hours: r.openingHours,
+      opening_hours: r.openingHours as Record<string, string[]> | null,
     };
   }
 

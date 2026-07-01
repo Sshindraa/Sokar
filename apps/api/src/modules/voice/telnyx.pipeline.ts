@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { telnyxWebhookGuard } from './telnyx.guard';
 import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
-import { buildSystemPrompt } from './prompts';
+import { buildSystemPrompt, type OpeningHours } from './prompts';
 import { detectOutcome, hadReservationIntent } from './outcome';
 import { CallSessionManager } from './stream/manager';
 import { VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
@@ -29,6 +29,19 @@ interface TelnyxCallPayload {
   };
 }
 
+interface TelnyxCallEndPayload {
+  call_leg_id: string;
+  transcript?: string;
+  ended_reason?: string;
+  started_at?: string;
+  ended_at?: string;
+  stt_provider?: string;
+  llm_provider?: string;
+  tts_provider?: string;
+  from?: string;
+  to?: string;
+}
+
 export async function telnyxVoiceRoutes(app: FastifyInstance) {
   app.post('/voice/telnyx', { preHandler: telnyxWebhookGuard }, async (req, reply) => {
     const body = req.body as TelnyxCallPayload;
@@ -37,12 +50,12 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
 
     switch (eventType) {
       case 'call.initiated': {
-        let ctx: any;
+        let ctx: Awaited<ReturnType<typeof RestaurantService.loadContext>>;
         try {
           ctx = await RestaurantService.loadContext(payload.to);
-        } catch (err: any) {
+        } catch (err: unknown) {
           app.log.error(
-            { err: err.message, to: payload.to },
+            { err: err instanceof Error ? err.message : String(err), to: payload.to },
             'Restaurant not found for phone number',
           );
           return reply.send({ result: 'ok' });
@@ -84,7 +97,12 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         const customerExtra = customer ? CustomerService.buildVipPromptExtra(customer) : '';
         const customerGreeting = customer ? CustomerService.buildReturningGreeting(customer) : '';
 
-        const systemPrompt = buildSystemPrompt({ ...ctx, customerExtra, customerGreeting });
+        const systemPrompt = buildSystemPrompt({
+          ...ctx,
+          openingHours: ctx.openingHours as OpeningHours,
+          customerExtra,
+          customerGreeting,
+        });
 
         // Créer un enregistrement Call minimal dès l'init
         try {
@@ -95,9 +113,12 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
               carrier: 'telnyx',
             },
           });
-        } catch (err: any) {
-          if (err?.code !== 'P2002') {
-            app.log.error({ err: err.message }, 'Failed to create call record at init');
+        } catch (err: unknown) {
+          if ((err as { code?: string })?.code !== 'P2002') {
+            app.log.error(
+              { err: err instanceof Error ? err.message : String(err) },
+              'Failed to create call record at init',
+            );
           }
         }
 
@@ -113,7 +134,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           restaurantId: ctx.id,
           systemPrompt,
           isVip: customer?.isVip ?? false,
-          telnyxWs: null as any, // Sera attaché dans le WebSocket start event
+          telnyxWs: null as unknown as import('ws').WebSocket, // Sera attaché dans le WebSocket start event
           callLegId: payload.call_leg_id,
           codec: 'PCMA',
         });
@@ -179,8 +200,11 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             const ctx = await RestaurantService.loadContext(payload.to);
             const partySize = callRecord?.reservation?.partySize ?? null;
             await CustomerService.recordCallActivity(ctx.id, payload.from, partySize);
-          } catch (err: any) {
-            app.log.warn({ err: err.message }, 'failed to record call activity');
+          } catch (err: unknown) {
+            app.log.warn(
+              { err: err instanceof Error ? err.message : String(err) },
+              'failed to record call activity',
+            );
           }
         }
 
@@ -203,7 +227,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
       llm_provider,
       tts_provider,
       from,
-    } = req.body as any;
+    } = req.body as TelnyxCallEndPayload;
 
     const outcome = detectOutcome({ transcript, endedReason: ended_reason });
 
@@ -250,7 +274,9 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
 
     if (shouldRecover && callRow.id && from) {
       try {
-        const ctx = await RestaurantService.loadContext((req.body as any)?.to ?? '');
+        const ctx = await RestaurantService.loadContext(
+          (req.body as TelnyxCallEndPayload)?.to ?? '',
+        );
         const customer = await app.db.customer.findFirst({
           where: { restaurantId: ctx.id, phone: from },
           select: { name: true },
@@ -276,8 +302,11 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           },
           { jobId },
         );
-      } catch (err: any) {
-        app.log.warn({ err: err.message, callId: call_leg_id }, 'failed to enqueue recovery SMS');
+      } catch (err: unknown) {
+        app.log.warn(
+          { err: err instanceof Error ? err.message : String(err), callId: call_leg_id },
+          'failed to enqueue recovery SMS',
+        );
       }
     }
 

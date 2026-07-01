@@ -129,9 +129,10 @@ export async function handleReply(
       'reservation cancelled via reply',
     );
     return { intent, reservationId: reservation.id, action: 'cancelled' };
-  } catch (err: any) {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     logger.error(
-      { err: err.message, reservationId: reservation.id, channel },
+      { err: message, reservationId: reservation.id, channel },
       'failed to cancel reservation via reply',
     );
     return { intent, reservationId: reservation.id };

@@ -2,13 +2,13 @@ import { db } from '../../shared/db/client';
 import { THEFORK_COMMISSION_PER_PAX, DEFAULT_AVERAGE_TICKET, PLAN_PRICE_MAP } from '@sokar/config';
 
 export interface RoiReport {
-  period:            string;
+  period: string;
   totalReservations: number;
-  totalCouverts:     number;
-  estimatedRevenue:  number;
-  theforkSavings:    number;
+  totalCouverts: number;
+  estimatedRevenue: number;
+  theforkSavings: number;
   sokarMonthlyCost: number;
-  roiMultiplier:     number;
+  roiMultiplier: number;
 }
 
 const PLAN_PRICES: Record<string, number> = PLAN_PRICE_MAP;
@@ -16,14 +16,14 @@ const PLAN_PRICES: Record<string, number> = PLAN_PRICE_MAP;
 export async function computeRoi(restaurantId: string, period: string): Promise<RoiReport> {
   const [year, month] = period.split('-').map(Number);
   const start = new Date(year, month - 1, 1);
-  const end   = new Date(year, month, 0, 23, 59, 59, 999);
+  const end = new Date(year, month, 0, 23, 59, 59, 999);
 
   const [restaurant, reservations] = await Promise.all([
     db.restaurant.findUnique({ where: { id: restaurantId } }),
     db.reservation.findMany({
       where: {
         restaurantId,
-        status:    'CONFIRMED',
+        status: 'CONFIRMED',
         createdAt: { gte: start, lte: end },
       },
     }),
@@ -41,16 +41,16 @@ export async function computeRoi(restaurantId: string, period: string): Promise<
     };
   }
 
-  const totalCouverts = reservations.reduce((s: number, r: any) => s + r.partySize, 0);
+  const totalCouverts = reservations.reduce((s, r) => s + r.partySize, 0);
 
   // estimatedRevenue from DB if available, else fallback to partySize * DEFAULT_AVERAGE_TICKET
-  const estimatedRevenue = reservations.reduce((s: number, r: any) => {
+  const estimatedRevenue = reservations.reduce((s, r) => {
     const rev = Number(r.estimatedRevenue ?? 0);
     return s + (rev > 0 ? rev : r.partySize * DEFAULT_AVERAGE_TICKET);
   }, 0);
 
   const theforkSavings = totalCouverts * THEFORK_COMMISSION_PER_PAX;
-  const monthlyCost    = PLAN_PRICES[restaurant.plan] ?? 149;
+  const monthlyCost = PLAN_PRICES[restaurant.plan] ?? 149;
 
   return {
     period,

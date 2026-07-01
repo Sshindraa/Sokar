@@ -95,8 +95,9 @@ export const confirmationSmsWorker = new Worker(
               'reminder send failed, status not updated — will retry next scan',
             );
           }
-        } catch (err: any) {
-          log.error({ err: err.message, reservationId: r.id }, 'failed to send reminder');
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          log.error({ err: message, reservationId: r.id }, 'failed to send reminder');
         }
       }
       log.info(

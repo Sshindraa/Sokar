@@ -105,10 +105,12 @@ export class McpRateLimiter {
         resetMs,
         reason: allowed === 1 ? undefined : 'over_capacity',
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       // NOSCRIPT: Redis a flushé les scripts (restart, FLUSHSCRIPT, etc.).
       // On reload le script et on retry une fois. Si ça échec encore, fail-open.
-      if (err?.message?.includes('NOSCRIPT') || (err as any)?.code === 'NOSCRIPT') {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const errCode = (err as { code?: string })?.code;
+      if (errMsg.includes('NOSCRIPT') || errCode === 'NOSCRIPT') {
         try {
           this.scriptSha = (await this.redis.script('LOAD', LUA_SCRIPT)) as string;
           const result = (await this.redis.evalsha(
