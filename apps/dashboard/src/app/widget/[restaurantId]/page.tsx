@@ -99,7 +99,6 @@ interface OpeningHours {
 }
 
 interface RestaurantPublic {
-  id: string;
   name: string;
   openingHours: Record<string, OpeningHours | null>;
   heroImageUrl?: string;
@@ -205,20 +204,10 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
     if (!restaurantId) return;
     (async () => {
       try {
-        // Le path param peut être un slug (URL friendly) ou un id Prisma.
-        // On essaie d'abord /public/widget/{slug} qui résout via le slug
-        // (endpoint ajouté pour le widget, ne filtre pas sur connectPublished).
-        // Si 404, fallback sur /restaurants/{id}/public pour rétrocompat.
-        let data: RestaurantPublic;
-        try {
-          data = await publicApiFetch<RestaurantPublic>('GET', `public/widget/${restaurantId}`);
-        } catch (slugErr: any) {
-          // Fallback : on tente avec l'id direct (rétrocompat avec les URLs /widget/{uuid})
-          data = await publicApiFetch<RestaurantPublic>(
-            'GET',
-            `restaurants/${restaurantId}/public`,
-          );
-        }
+        const data = await publicApiFetch<RestaurantPublic>(
+          'GET',
+          `restaurants/${restaurantId}/public`,
+        );
         setRestaurant(data);
         const today = new Date();
         setSelectedDate(today);
@@ -281,11 +270,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
   }, [availableSlots, availabilityDate, selectedDate]);
 
   useEffect(() => {
-    // Attend que le restaurant soit chargé (= on a l'id Prisma résolu depuis
-    // le slug) avant de fetch les dispos. Sinon on passerait le slug à une
-    // route qui attend un id → 404.
-    if (!restaurant || !selectedDate || success) return;
-    const resolvedId = restaurant.id;
+    if (!restaurantId || !selectedDate || success) return;
     const date = formatDateParam(selectedDate);
     let cancelled = false;
 
@@ -298,7 +283,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
       try {
         const data = await publicApiFetch<AvailabilityResponse>(
           'GET',
-          `restaurants/${resolvedId}/availability?date=${date}&partySize=${partySize}`,
+          `restaurants/${restaurantId}/availability?date=${date}&partySize=${partySize}`,
         );
         if (cancelled) return;
         setAvailableSlots(data.slots);
@@ -316,7 +301,7 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
     return () => {
       cancelled = true;
     };
-  }, [restaurant, selectedDate, partySize, success]);
+  }, [restaurantId, selectedDate, partySize, success]);
 
   const nextAvailability = useMemo(() => {
     for (const date of days) {
@@ -427,10 +412,6 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
 
   // Submit Reservation
   async function handleSubmit() {
-    if (!restaurant) {
-      setError('Restaurant introuvable. Rafraîchissez la page.');
-      return;
-    }
     if (!selectedDate || !selectedTime || !customerName || !customerPhone) {
       setError('Veuillez remplir tous les champs requis');
       return;
@@ -451,14 +432,8 @@ export default function ReservationWidget({ params }: { params: { restaurantId: 
 
     try {
       const normalizedPhone = customerPhone.replace(/\s/g, '');
-      // restaurantId (path param) peut être un slug — on utilise l'id Prisma
-      // résolu dans le state. Guard explicite pour le type narrowing TS.
-      if (!restaurant) {
-        setError('Restaurant introuvable. Rafraîchissez la page.');
-        return;
-      }
       const res = await publicApiFetch<ConfirmedReservation>('POST', 'reservations', {
-        restaurantId: restaurant.id,
+        restaurantId,
         reservedAt: reservedAt.toISOString(),
         partySize,
         customerName,
