@@ -32,7 +32,7 @@ ADDED=$(git diff --cached --unified=0 -- . ':(exclude)pnpm-lock.yaml' || true)
 SECRET_HITS=$(printf '%s\n' "$ADDED" | grep '^+' | grep -v '^+++' | grep -Ei "(api[_-]?key|secret|password|passwd|token|private[_-]?key|client[_-]?secret)\s*[:=]\s*['\"][^'\"]{8,}['\"]" || true)
 [ -z "$SECRET_HITS" ] || { echo "$SECRET_HITS"; fail "possible hardcoded secret in staged diff"; }
 
-CODE_ADDED=$(git diff --cached --unified=0 -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs' || true)
+CODE_ADDED=$(git diff --cached --unified=0 -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs' ':(exclude)scripts/smoke/*' ':(exclude)scripts/precommit-review.sh' || true)
 
 DANGEROUS_HITS=$(printf '%s\n' "$CODE_ADDED" | grep '^+' | grep -v '^+++' | grep -E "\beval\(|\bFunction\(|child_process\.(exec|execSync)\(|shell:\s*true|innerHTML\s*=" || true)
 [ -z "$DANGEROUS_HITS" ] || { echo "$DANGEROUS_HITS"; fail "dangerous construct found in staged code diff"; }

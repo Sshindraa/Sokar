@@ -27,18 +27,17 @@ processus depuis `infra/ecosystem.config.js`.
 cd /opt/sokar/apps/connect
 
 # 1. Build
-export PATH=/usr/local/opt/node@22/bin:$PATH
 pnpm install --frozen-lockfile --filter @sokar/connect...
 pnpm --filter @sokar/connect build
 bash scripts/copy-static.sh
 
-# 2. Démarrer (le wrapper prend .env.prod si présent)
+# 2. Démarrer (le wrapper source .env)
 pm2 delete sokar-connect 2>/dev/null || true
 pm2 start bin/run-connect.sh --name sokar-connect --update-env
 pm2 save
 ```
 
-## Variables d'env (apps/connect/.env.prod)
+## Variables d'env (apps/connect/.env)
 
 ```bash
 SITE_URL=https://sokar.tech
@@ -50,7 +49,7 @@ NODE_ENV=production
 NEXT_TELEMETRY_DISABLED=1
 ```
 
-> **NE PAS** committer `.env.prod`. Chmod 600 sur le VPS.
+> **NE PAS** committer `.env`. Chmod 600 sur le VPS.
 
 ## Nginx
 
@@ -87,8 +86,7 @@ curl -s https://sokar.tech/r/chez-sokar-demo | grep -o 'application/ld+json'
 ```bash
 # Sur le VPS
 cd /opt/sokar/apps/connect
-PATH=/usr/local/opt/node@22/bin:$PATH \
-  pnpm exec tsx scripts/post-deploy-smoke.ts  # à créer
+pnpm exec tsx scripts/post-deploy-smoke.ts  # à créer
 ```
 
 ## Rollback

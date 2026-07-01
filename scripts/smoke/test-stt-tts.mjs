@@ -9,10 +9,10 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-// ─── Load .env ────────────────────────────────────────────────────────────────
-const envPath = resolve(process.cwd(), '.env');
+// ─── Load .env.local (convention Sokar — source de vérité en dev) ─────────────
+const envPath = resolve(process.cwd(), '.env.local');
 if (!existsSync(envPath)) {
-  console.log('❌ .env introuvable');
+  console.log('❌ .env.local introuvable');
   process.exit(1);
 }
 
@@ -57,7 +57,7 @@ function skip(label, reason) {
 // ─── 1. Deepgram STT ────────────────────────────────────────────────────────────
 async function testDeepgram() {
   console.log('\n━━━ 1. Deepgram STT ━━━');
-  if (!keyOk(DG_KEY)) return skip('Deepgram API', 'clé API manquante ou invalide dans .env');
+  if (!keyOk(DG_KEY)) return skip('Deepgram API', 'clé API manquante ou invalide dans .env.local');
 
   // Générer un fichier WAV 16-bit PCM 8kHz avec un signal test
   const sr = 8000,
@@ -114,7 +114,7 @@ async function testCartesia() {
   if (!keyOk(CA_KEY))
     return skip(
       'Cartesia TTS',
-      `CARTESIA_API_KEY manquante → créer un compte sur cartesia.ai, générer une clé, ajouter dans .env`,
+      `CARTESIA_API_KEY manquante → créer un compte sur cartesia.ai, générer une clé, ajouter dans .env.local`,
     );
 
   try {
@@ -211,7 +211,7 @@ async function main() {
   console.log('  TTS : Cartesia sonic-3.5 | STT : Deepgram nova-3 | LLM : OpenRouter');
   console.log('═'.repeat(60));
   console.log('');
-  console.log('  État des clés API dans .env :');
+  console.log('  État des clés API dans .env.local :');
   console.log(`  • DEEPGRAM_API_KEY  : ${keyOk(DG_KEY) ? '✓' : '✗'}`);
   console.log(`  • CARTESIA_API_KEY  : ${keyOk(CA_KEY) ? '✓' : '✗ (placeholder)'}`);
   console.log(`  • OPENROUTER_API_KEY: ${keyOk(OR_KEY) ? '✓' : '✗'}`);

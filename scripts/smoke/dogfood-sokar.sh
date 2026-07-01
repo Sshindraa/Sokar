@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TARGET_URL="${SOKAR_DOGFOOD_URL:-https://sokar.tech}"
-OUTPUT_DIR="${SOKAR_DOGFOOD_OUTPUT:-/Users/hamza/Desktop/Sokar/.hermes/dogfood}"
+OUTPUT_DIR="${SOKAR_DOGFOOD_OUTPUT:-$HOME/Projects/Sokar/.hermes/dogfood}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 REPORT_DIR="$OUTPUT_DIR/$STAMP"
 mkdir -p "$REPORT_DIR"

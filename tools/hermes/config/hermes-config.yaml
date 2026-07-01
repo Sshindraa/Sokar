@@ -29,4 +29,6 @@ delegation:
   max_spawn_depth: 2
   subagent_auto_approve: true
 
-skills_dir: /Users/hamza/Desktop/Sokar/tools/hermes/skills
+# skills_dir: chemin absolu vers tools/hermes/skills dans le repo Sokar.
+# Adapter selon la machine (iCloud vs ~/Desktop) après copie vers ~/.hermes/config.yaml.
+skills_dir: /Users/hamza/Library/Mobile Documents/com~apple~CloudDocs/Desktop/Sokar/tools/hermes/skills
