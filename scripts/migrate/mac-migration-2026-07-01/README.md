@@ -60,7 +60,7 @@ ssh pmbtc 'hostname && pwd'
 
 ## Ce qui est restauré
 
-- **Hermes racine** : `config.yaml`, `auth.json`, `.env`, `memories/`, `kanban.db`, `cron_jobs.json`, `plugins/`
+- **Hermes racine** : `config.yaml`, `auth.json`, `.env`, `memories/`, `kanban.db`, `cron_jobs.json`, `plugins/`, `skills/`
 - **5 profils** (`default`, `backend`, `dashboard`, `database`, `supervisor`) : `config.yaml`, `auth.json`, `bin/`, `state.db`, `lsp/`, caches
 - **SSH** : `config`, `known_hosts`, `digitalocean_pmbtc{,.pub}`, `mac_tunnel_key`
 - **Sokar** : `.env.local`, `packages/database/.env`

@@ -11,6 +11,9 @@ coverage
 .env
 *.bak
 
+# macOS
+.DS_Store
+
 # Workspace agent Hermes
 .agent-workspace/
 .hermes/
@@ -18,9 +21,6 @@ coverage
 # Python cache
 __pycache__/
 *.pyc
-
-# Redis
-dump.rdb
 
 # On versionne les .env.example et .env.test
 !.env.example
@@ -50,13 +50,7 @@ packages/**/*.js.map
 packages/**/*.d.ts.map
 
 # Dossiers temporaires de scratch et logs
-scratch/
 apps/api/scratch/
 *.log
 *.mp3
 *.cpuprofile
-
-# Shopify test directory
-Unboxxed/
-.git.backup.bak/
-agent 2

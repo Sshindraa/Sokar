@@ -30,9 +30,6 @@ Keep this file short: it is injected into every project session. Detailed histor
 # Node (>=20 <23, strict via .npmrc)
 pnpm node:check
 
-# Switch rapide vers Node 22 (Homebrew installé côte à côte)
-PATH="/usr/local/opt/node@22/bin:$PATH" pnpm node:check
-
 # Dev / build / test
 pnpm dev        # API + dashboard dev
 pnpm build      # production build
@@ -65,8 +62,8 @@ Utilisé pour les tests voice / MCP en local avant d'avoir un vrai pilote.
 - Repo constraint: `>=20.0.0 <23.0.0` (root `package.json` engines).
 - `.nvmrc` = `22`.
 - `.npmrc` has `engine-strict=true` — `pnpm` refuses to run under Node 26+.
-- Local Mac: Node 26 is the default, Node 22 is available at `/usr/local/opt/node@22/bin`.
-- Prefix any `pnpm` command with `PATH="/usr/local/opt/node@22/bin:$PATH"` until the default Node is switched.
+- Local Mac (post-migration 2026-07-01): Node 22.23.1 is the default at `~/.local/bin/node` (symlink to `~/.hermes/node/bin/node`). No PATH prefix needed for `pnpm`.
+- pnpm 10.33.3 installed via `npm i -g pnpm@10.33.3`, symlinked at `~/.local/bin/pnpm`.
 
 ## Code style
 
@@ -92,7 +89,7 @@ Procédure chiffrée pour cloner l'environnement d'un Mac vers un autre (Hermes 
 
 ```zsh
 # Sur le Mac SOURCE :
-cd /Users/hamza/Desktop/Sokar/scripts/migrate/mac-migration-<DATE>
+cd ~/Projects/Sokar/scripts/migrate/mac-migration-<DATE>
 ./bundle.sh
 # → produit ./out/sokar-mac-migration-<TS>.tar.gz.enc + .sha256 + PASSPHRASE-<TS>.txt
 

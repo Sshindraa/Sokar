@@ -59,6 +59,7 @@ chmod 600 ~/.hermes/.env ~/.hermes/auth.json 2>/dev/null || true
 [[ -f "$BUNDLE/hermes/kanban.db" ]] && cp -p "$BUNDLE/hermes/kanban.db" ~/.hermes/
 [[ -f "$BUNDLE/hermes/cron_jobs.json" ]] && mkdir -p ~/.hermes/cron && cp -p "$BUNDLE/hermes/cron_jobs.json" ~/.hermes/cron/jobs.json
 [[ -d "$BUNDLE/hermes/plugins" ]] && cp -pR "$BUNDLE/hermes/plugins" ~/.hermes/
+[[ -d "$BUNDLE/hermes/skills" ]] && cp -pR "$BUNDLE/hermes/skills" ~/.hermes/
 
 # ---------- 2. Profils custom ----------
 # (le profil "default" est la racine ~/.hermes/ déjà restaurée en [1])
