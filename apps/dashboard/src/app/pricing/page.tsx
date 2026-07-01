@@ -234,7 +234,7 @@ export default function PricingPage() {
                       : 'border border-white/20 text-white hover:bg-white/10 hover:border-white/30 active:scale-[0.98]',
                   )}
                 >
-                  S'inscrire
+                  S&apos;inscrire
                 </Link>
               </div>
             );

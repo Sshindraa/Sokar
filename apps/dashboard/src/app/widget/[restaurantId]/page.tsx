@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useParams } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import {
@@ -166,7 +167,8 @@ async function publicApiFetch<T = any>(
   return data as T;
 }
 
-export default function ReservationWidget({ params }: { params: { restaurantId: string } }) {
+export default function ReservationWidget() {
+  const params = useParams<{ restaurantId: string }>();
   const restaurantId = params.restaurantId;
 
   // Restaurant public metadata

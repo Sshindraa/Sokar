@@ -33,11 +33,13 @@ export async function generateMetadata({
   params,
   searchParams,
 }: {
-  params: { slug: string };
-  searchParams: { preview?: string };
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ preview?: string }>;
 }): Promise<Metadata> {
-  const isPreview = searchParams.preview === '1';
-  const restaurant = await fetchPublicRestaurant(params.slug, { preview: isPreview });
+  const { slug } = await params;
+  const { preview } = await searchParams;
+  const isPreview = preview === '1';
+  const restaurant = await fetchPublicRestaurant(slug, { preview: isPreview });
 
   if (!restaurant) {
     return {
@@ -103,17 +105,19 @@ export default async function RestaurantPage({
   params,
   searchParams,
 }: {
-  params: { slug: string };
-  searchParams: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{
     source?: string;
     utm_source?: string;
     utm_medium?: string;
     utm_campaign?: string;
     preview?: string;
-  };
+  }>;
 }) {
-  const isPreview = searchParams.preview === '1';
-  const restaurant = await fetchPublicRestaurant(params.slug, { preview: isPreview });
+  const { slug } = await params;
+  const sp = await searchParams;
+  const isPreview = sp.preview === '1';
+  const restaurant = await fetchPublicRestaurant(slug, { preview: isPreview });
 
   if (!restaurant) {
     notFound();
@@ -124,10 +128,10 @@ export default async function RestaurantPage({
     restaurantId: restaurant.id,
     restaurantSlug: restaurant.slug,
     city: restaurant.address.city,
-    source: searchParams.source,
-    utmSource: searchParams.utm_source,
-    utmMedium: searchParams.utm_medium,
-    utmCampaign: searchParams.utm_campaign,
+    source: sp.source,
+    utmSource: sp.utm_source,
+    utmMedium: sp.utm_medium,
+    utmCampaign: sp.utm_campaign,
   });
 
   const jsonLd = buildPublicRestaurantJsonLd({
@@ -185,10 +189,10 @@ export default async function RestaurantPage({
             {/* CTA principal — au-dessus de la ligne de flottaison (acceptance T5) */}
             <div className="mt-6">
               <BookCtaLink
-                href={`/r/${restaurant.slug}/book${searchParams.source ? `?source=${searchParams.source}` : ''}`}
+                href={`/r/${restaurant.slug}/book${sp.source ? `?source=${sp.source}` : ''}`}
                 restaurantId={restaurant.id}
                 restaurantSlug={restaurant.slug}
-                source={searchParams.source}
+                source={sp.source}
                 className="inline-flex items-center justify-center rounded-lg bg-ember px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:bg-ember/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               >
                 Réserver une table
@@ -316,10 +320,10 @@ export default async function RestaurantPage({
             <h2 className="mb-3 text-xl font-semibold text-ink">Réservation</h2>
             <p className="text-ink">Réservation en ligne avec confirmation rapide.</p>
             <BookCtaLink
-              href={`/r/${restaurant.slug}/book${searchParams.source ? `?source=${searchParams.source}` : ''}`}
+              href={`/r/${restaurant.slug}/book${sp.source ? `?source=${sp.source}` : ''}`}
               restaurantId={restaurant.id}
               restaurantSlug={restaurant.slug}
-              source={searchParams.source}
+              source={sp.source}
               className="mt-4 inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-2 text-sm font-semibold text-ink transition-all duration-200 hover:bg-muted"
             >
               Voir les disponibilités
