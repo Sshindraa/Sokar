@@ -37,7 +37,6 @@ export default defineConfig({
       '@sokar/config': path.resolve(__dirname, '../../packages/config/dist/constants.js'),
       '@sokar/database': path.resolve(__dirname, '../../packages/database/src/index.ts'),
       '@sokar/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
-      '@sokar/types': path.resolve(__dirname, '../../packages/types/dist/call-event.js'),
     },
   },
 });

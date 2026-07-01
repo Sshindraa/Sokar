@@ -1,4 +1,4 @@
-import type { CallEvent } from '@sokar/types';
+import type { CallEvent } from '@sokar/shared';
 
 export type CallOutcome = 'RESERVED' | 'INFO' | 'NO_ACTION' | 'HANDOFF' | 'ERROR';
 

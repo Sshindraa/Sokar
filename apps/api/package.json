@@ -31,7 +31,6 @@
     "@sokar/config": "workspace:*",
     "@sokar/database": "workspace:*",
     "@sokar/shared": "workspace:*",
-    "@sokar/types": "workspace:*",
     "alawmulaw": "^6.0.0",
     "bullmq": "^5.48.0",
     "configcat-node": "^11.4.1",
