@@ -26,8 +26,7 @@ export function SyncOrganization() {
         });
 
         if (res.ok) {
-          const data = await res.json();
-          console.log('[sync] Organization synced:', data.restaurant?.name);
+          // Sync successful — no action needed
         } else {
           const err = await res.json();
           console.warn('[sync] Failed:', err);

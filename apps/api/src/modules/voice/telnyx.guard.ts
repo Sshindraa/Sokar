@@ -11,17 +11,6 @@ function fromBase64(str: string): Uint8Array {
 export async function telnyxWebhookGuard(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   const signature = req.headers['telnyx-signature-ed25519'] as string | undefined;
   const timestamp = req.headers['telnyx-timestamp'] as string | undefined;
-  // Debug logging — TEMP to diagnose 403 on real Telnyx calls
-  req.log.info(
-    {
-      hasSignature: !!signature,
-      sigLength: signature?.length,
-      hasTimestamp: !!timestamp,
-      timestamp,
-      publicKeyLen: process.env.TELNYX_PUBLIC_KEY?.length,
-    },
-    'telnyx-guard: incoming',
-  );
   if (!signature || !timestamp) {
     req.log.warn({ headers: Object.keys(req.headers) }, 'telnyx-guard: missing headers');
     reply.status(403).send({ error: 'Forbidden' });
