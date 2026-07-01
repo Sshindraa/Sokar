@@ -118,7 +118,7 @@ async function getCompletedCount(restaurantId: string): Promise<number> {
   if (
     r.openingHours &&
     typeof r.openingHours === 'object' &&
-    Object.keys(r.openingHours as any).length > 0
+    Object.keys(r.openingHours as Record<string, unknown>).length > 0
   )
     count++;
   if (r.personality) count++;

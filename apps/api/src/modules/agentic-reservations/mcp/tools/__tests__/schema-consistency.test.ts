@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import type { ZodTypeAny } from 'zod';
 import { TOOL_LIST } from '../../server';
 import {
   SearchRestaurantsInputSchema,
@@ -19,8 +20,7 @@ import {
 } from '../schemas';
 
 describe('TOOL_LIST ↔ Zod schema consistency', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const schemas: Record<string, any> = {
+  const schemas: Record<string, ZodTypeAny> = {
     search_restaurants: SearchRestaurantsInputSchema,
     get_restaurant_details: GetRestaurantDetailsInputSchema,
     check_availability: CheckAvailabilityInputSchema,
@@ -64,10 +64,10 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
       const schema = schemas[tool.name];
       if (!schema) continue;
 
-      const jsonRequired = (tool.inputSchema as any).required as string[] | undefined;
+      const jsonRequired = (tool.inputSchema as { required?: string[] }).required;
       if (!jsonRequired) continue;
 
-      const zodShape = schema.shape as Record<string, any>;
+      const zodShape = (schema as unknown as { shape: Record<string, unknown> }).shape;
       for (const field of jsonRequired) {
         expect(
           zodShape[field],

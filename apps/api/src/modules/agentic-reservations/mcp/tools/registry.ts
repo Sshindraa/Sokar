@@ -220,7 +220,7 @@ export class McpToolRegistry {
       }
 
       await this.audit.record({
-        event: 'state_transition' as any,
+        event: 'state_transition',
         actor: ctx.actor,
         metadata: {
           tool: 'search_restaurants',
@@ -248,7 +248,7 @@ export class McpToolRegistry {
         })),
         nextCursor,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error({ err, clientId: ctx.clientId }, 'search_restaurants failed');
       return toolError('Internal error', 'INTERNAL');
     }
@@ -288,7 +288,7 @@ export class McpToolRegistry {
       if (!r) return toolError('Restaurant not found', 'NOT_FOUND');
 
       return ok(r);
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error({ err, clientId: ctx.clientId }, 'get_restaurant_details failed');
       return toolError('Internal error', 'INTERNAL');
     }
@@ -327,7 +327,7 @@ export class McpToolRegistry {
       });
 
       return ok(result);
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error({ err, clientId: ctx.clientId }, 'check_availability failed');
       return toolError('Internal error', 'INTERNAL');
     } finally {
@@ -402,13 +402,13 @@ export class McpToolRegistry {
         state: result.state,
         reused: result.reused,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error({ err, clientId: ctx.clientId }, 'create_reservation failed');
-      if (err?.name === 'InvalidStateTransitionError')
-        return toolError(err.message, 'INVALID_STATE');
-      if (err?.name === 'PolicyValidationError') return toolError(err.message, 'POLICY_VIOLATION');
-      if (err?.name === 'IdempotencyConflictError')
-        return toolError(err.message, 'IDEMPOTENCY_CONFLICT');
+      const errName = (err as { name?: string })?.name;
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (errName === 'InvalidStateTransitionError') return toolError(errMsg, 'INVALID_STATE');
+      if (errName === 'PolicyValidationError') return toolError(errMsg, 'POLICY_VIOLATION');
+      if (errName === 'IdempotencyConflictError') return toolError(errMsg, 'IDEMPOTENCY_CONFLICT');
       return toolError('Internal error', 'INTERNAL');
     }
   }
@@ -446,11 +446,12 @@ export class McpToolRegistry {
         reason: input.reason,
       });
       return ok({ cancelled: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error({ err, clientId: ctx.clientId }, 'cancel_reservation failed');
-      if (err?.name === 'InvalidStateTransitionError')
-        return toolError(err.message, 'INVALID_STATE');
-      if (err?.name === 'ReservationNotFoundError') return toolError(err.message, 'NOT_FOUND');
+      const errName = (err as { name?: string })?.name;
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (errName === 'InvalidStateTransitionError') return toolError(errMsg, 'INVALID_STATE');
+      if (errName === 'ReservationNotFoundError') return toolError(errMsg, 'NOT_FOUND');
       return toolError('Internal error', 'INTERNAL');
     }
   }
@@ -491,7 +492,7 @@ export class McpToolRegistry {
 
       const { restaurantId: _restaurantId, ...publicReservation } = reservation;
       return ok(publicReservation);
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error({ err, clientId: ctx.clientId }, 'get_reservation_status failed');
       return toolError('Internal error', 'INTERNAL');
     }

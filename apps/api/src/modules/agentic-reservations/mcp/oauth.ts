@@ -674,7 +674,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
     // Auth client obligatoire (Basic ou body) pour éviter que n'importe qui
     // puisse révoquer les tokens des autres
-    let revokeClientId = (body as any).client_id;
+    let revokeClientId = (body as { client_id?: string }).client_id;
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Basic ')) {
       const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf-8');

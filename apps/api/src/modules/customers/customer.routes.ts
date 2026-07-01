@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { Prisma } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { redisCache } from '../../shared/redis/client';
 import { requireOrg } from '../../plugins/clerk';
@@ -14,7 +15,7 @@ export async function customerRoutes(app: FastifyInstance) {
   app.get('/customers', { preHandler: requireOrg() }, async (req, reply) => {
     const query = CustomerQuerySchema.parse(req.query);
     const restaurantId = req.restaurantId;
-    const where: any = { restaurantId };
+    const where: Prisma.CustomerWhereInput = { restaurantId };
     if (query.phone) where.phone = query.phone;
 
     const [customers, total] = await Promise.all([
@@ -52,8 +53,9 @@ export async function customerRoutes(app: FastifyInstance) {
         },
       });
       return reply.status(201).send(customer);
-    } catch (err: any) {
-      if (err.code === 'P2002') return reply.status(409).send({ error: 'Customer already exists' });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')
+        return reply.status(409).send({ error: 'Customer already exists' });
       throw err;
     }
   });

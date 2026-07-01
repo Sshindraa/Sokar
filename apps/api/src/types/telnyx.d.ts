@@ -1,9 +1,25 @@
 declare module 'telnyx' {
+  interface TelnyxMessageResult {
+    data?: { id: string; [key: string]: unknown };
+  }
+
+  interface TelnyxCallResult {
+    data?: { call_control_id: string; [key: string]: unknown };
+    call_control_id?: string;
+  }
+
+  interface TelnyxWebhookEvent {
+    data: {
+      event_type: string;
+      payload: Record<string, unknown>;
+    };
+  }
+
   export function createTelnyx(apiKey: string): TelnyxClient;
 
-  interface TelnyxClient {
+  export interface TelnyxClient {
     messages: {
-      create(params: { from: string; to: string; text: string }): Promise<any>;
+      create(params: { from: string; to: string; text: string }): Promise<TelnyxMessageResult>;
     };
     calls: {
       create(params: {
@@ -12,12 +28,20 @@ declare module 'telnyx' {
         connection_id?: string;
         webhook_url?: string;
         webhook_url_method?: string;
-        answering_machine_detection?: 'disabled' | 'detect' | 'detect_beep' | 'always' | 'greeting_end';
+        answering_machine_detection?:
+          | 'disabled'
+          | 'detect'
+          | 'detect_beep'
+          | 'always'
+          | 'greeting_end';
         client_state?: string;
         command_timeout_secs?: number;
         timeout?: number;
-      }): Promise<any>;
-      retrieve(id: string): Promise<any>;
+      }): Promise<TelnyxCallResult>;
+      retrieve(id: string): Promise<TelnyxCallResult>;
+    };
+    balance: {
+      retrieve(): Promise<unknown>;
     };
     webhooks: {
       constructEvent(
@@ -26,7 +50,7 @@ declare module 'telnyx' {
         timestamp: string | undefined,
         publicKey: Uint8Array,
         tolerance?: number,
-      ): any;
+      ): TelnyxWebhookEvent;
     };
   }
 }
@@ -40,7 +64,7 @@ declare module 'telnyx/dist/Webhooks.js' {
       timestampHeader: string,
       publicKey: string,
       tolerance?: number,
-    ): any;
+    ): TelnyxWebhookEvent;
   };
   export default Webhooks;
 }

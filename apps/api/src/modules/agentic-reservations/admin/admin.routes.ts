@@ -68,9 +68,10 @@ export async function agenticAdminRoutes(app: FastifyInstance) {
       });
       const settings = await admin.getExposureSettings(req.restaurantId);
       return reply.send(settings);
-    } catch (err: any) {
-      if (err?.name === 'PolicyValidationError') {
-        return reply.status(409).send({ error: err.message, code: err.code });
+    } catch (err) {
+      if (err instanceof Error && err.name === 'PolicyValidationError') {
+        const code = (err as { code?: string }).code;
+        return reply.status(409).send({ error: err.message, code });
       }
       logger.error({ err, restaurantId: req.restaurantId }, 'exposure settings update failed');
       throw err;

@@ -49,14 +49,15 @@ export async function googleRoutes(app: FastifyInstance) {
         : publicUrl.replace('/api', '').replace('api.', 'app.');
 
       return reply.redirect(`${frontendUrl}/dashboard/settings?google_sync=success`);
-    } catch (err: any) {
-      logger.error({ err: err.message }, '[GoogleCalendar] OAuth Callback failed');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message }, '[GoogleCalendar] OAuth Callback failed');
       const publicUrl = process.env.PUBLIC_URL || 'http://localhost:4000';
       const frontendUrl = publicUrl.includes('localhost:4000')
         ? 'http://localhost:3000'
         : publicUrl;
       return reply.redirect(
-        `${frontendUrl}/dashboard/settings?google_sync=error&message=${encodeURIComponent(err.message)}`,
+        `${frontendUrl}/dashboard/settings?google_sync=error&message=${encodeURIComponent(message)}`,
       );
     }
   });
@@ -79,11 +80,10 @@ export async function googleRoutes(app: FastifyInstance) {
 
         logger.info({ restaurantId }, '[GoogleCalendar] Successfully disconnected Google Calendar');
         return reply.send({ success: true });
-      } catch (err: any) {
-        logger.error({ err: err.message }, '[GoogleCalendar] Disconnection failed');
-        return reply
-          .status(500)
-          .send({ error: 'Failed to disconnect integration', message: err.message });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error({ err: message }, '[GoogleCalendar] Disconnection failed');
+        return reply.status(500).send({ error: 'Failed to disconnect integration', message });
       }
     },
   );

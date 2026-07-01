@@ -1,12 +1,16 @@
 import { WebSocket } from 'ws';
 import { createHash } from 'node:crypto';
-import type { CallSession, CallState } from './types';
+import type { CallSession, CallState, ChatMessage } from './types';
 import { VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
 import { getRestaurantTools } from '../tools';
 import { ReservationService } from '../../reservations/reservation.service';
 import { db } from '../../../shared/db/client';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
+
+interface LlmResponse {
+  choices?: Array<{ message: ChatMessage }>;
+}
 
 /**
  * Résout le modèle LLM au runtime : env var VOICE_LLM_MODEL si définie,
@@ -270,7 +274,7 @@ export class CallSessionManager {
         throw new Error(`LLM ${response.status}: ${await response.text()}`);
       }
 
-      const data = (await response.json()) as any;
+      const data = (await response.json()) as LlmResponse;
       const msg = data.choices?.[0]?.message;
 
       if (!msg) throw new Error('Empty LLM response');
@@ -282,12 +286,13 @@ export class CallSessionManager {
       }
 
       // Si le LLM appelle un outil
-      if (msg.tool_calls?.length > 0) {
+      const toolCalls = msg.tool_calls;
+      if (toolCalls && toolCalls.length > 0) {
         session.history.push(msg);
         messages.push(msg);
-        for (const tc of msg.tool_calls) {
+        for (const tc of toolCalls) {
           const result = await this.executeTool(session, tc.function.name, tc.function.arguments);
-          const toolMsg = { role: 'tool', tool_call_id: tc.id, content: result };
+          const toolMsg: ChatMessage = { role: 'tool', tool_call_id: tc.id, content: result };
           session.history.push(toolMsg);
           messages.push(toolMsg);
         }
@@ -450,7 +455,7 @@ export class CallSessionManager {
           throw new Error(`LLM ${response.status}: ${await response.text()}`);
         }
 
-        const data = (await response.json()) as any;
+        const data = (await response.json()) as LlmResponse;
         const msg = data.choices?.[0]?.message;
 
         if (!msg) throw new Error('Empty LLM response');
@@ -462,12 +467,13 @@ export class CallSessionManager {
           return text;
         }
 
-        if (msg.tool_calls?.length > 0) {
+        const toolCalls = msg.tool_calls;
+        if (toolCalls && toolCalls.length > 0) {
           session.history.push(msg);
           messages.push(msg);
-          for (const tc of msg.tool_calls) {
+          for (const tc of toolCalls) {
             const result = await this.executeTool(session, tc.function.name, tc.function.arguments);
-            const toolMsg = { role: 'tool', tool_call_id: tc.id, content: result };
+            const toolMsg: ChatMessage = { role: 'tool', tool_call_id: tc.id, content: result };
             session.history.push(toolMsg);
             messages.push(toolMsg);
           }
@@ -513,9 +519,10 @@ export class CallSessionManager {
             });
 
             return `Réservation confirmée pour ${customerName ?? 'le client'}, le ${date} à ${time}, pour ${partySize ?? 1} personne(s). Un SMS de confirmation va être envoyé au client.`;
-          } catch (err: any) {
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
             logger.error(
-              { err: err.message, callId: session.callControlId },
+              { err: message, callId: session.callControlId },
               '[tool] ReservationService.create failed',
             );
 
@@ -526,7 +533,7 @@ export class CallSessionManager {
               });
             }
 
-            if (err.message === 'SLOT_NOT_AVAILABLE') {
+            if (message === 'SLOT_NOT_AVAILABLE') {
               return `Désolé, ce créneau horaire n'est pas disponible (il y a un conflit dans l'agenda). Veuillez proposer une autre date ou heure.`;
             }
 
@@ -552,9 +559,12 @@ export class CallSessionManager {
             const slots = result.slots.slice(0, 8);
             const slotsText = slots.join(', ');
             return `Créneaux disponibles le ${date} pour ${partySize ?? 2} personne(s) : ${slotsText}.${result.slots.length > 8 ? ` (et ${result.slots.length - 8} autres créneaux)` : ''}`;
-          } catch (err: any) {
+          } catch (err: unknown) {
             logger.error(
-              { err: err.message, callId: session.callControlId },
+              {
+                err: err instanceof Error ? err.message : String(err),
+                callId: session.callControlId,
+              },
               '[tool] checkAvailability failed',
             );
             return `Désolé, je n'ai pas pu vérifier les disponibilités pour le ${date}. Veuillez proposer une autre date ou demander à parler au gérant.`;
@@ -589,9 +599,12 @@ export class CallSessionManager {
             });
 
             return `J'ai bien annulé la réservation de ${customerName} pour le ${date}. Un message de confirmation sera envoyé.`;
-          } catch (err: any) {
+          } catch (err: unknown) {
             logger.error(
-              { err: err.message, callId: session.callControlId },
+              {
+                err: err instanceof Error ? err.message : String(err),
+                callId: session.callControlId,
+              },
               '[tool] cancelReservation failed',
             );
             if (process.env.SENTRY_DSN) {
@@ -620,9 +633,12 @@ export class CallSessionManager {
             });
 
             return `J'ai bien noté votre message pour le gérant : "${message}". Il vous recontactera${callbackPhone ? ` au ${callbackPhone}` : ''} dès que possible. Merci de votre appel.`;
-          } catch (err: any) {
+          } catch (err: unknown) {
             logger.error(
-              { err: err.message, callId: session.callControlId },
+              {
+                err: err instanceof Error ? err.message : String(err),
+                callId: session.callControlId,
+              },
               '[tool] takeMessage failed',
             );
             if (process.env.SENTRY_DSN) {
@@ -641,10 +657,11 @@ export class CallSessionManager {
         default:
           return `Outil inconnu : ${name}`;
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       logger.error(
         { err, toolName: name, callId: session.callControlId },
-        `[tool] Error executing ${name}: ${err.message}`,
+        `[tool] Error executing ${name}: ${message}`,
       );
       if (process.env.SENTRY_DSN) {
         Sentry.captureException(err, {

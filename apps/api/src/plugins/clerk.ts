@@ -42,7 +42,7 @@ export function requireOrg() {
     req.userId = userId;
     // Re-bind req.log to a child logger that carries restaurant + user.
     // We keep request_id (already on the parent) by chaining .child().
-    (req as any).log = req.log.child({ restaurant_id: orgId, user_id: userId ?? null });
+    req.log = req.log.child({ restaurant_id: orgId, user_id: userId ?? null });
   };
 }
 
@@ -60,6 +60,6 @@ export function requireAuth() {
       return reply.status(401).send({ error: 'Authentication required' });
     }
     req.userId = userId;
-    (req as any).log = req.log.child({ user_id: userId });
+    req.log = req.log.child({ user_id: userId });
   };
 }

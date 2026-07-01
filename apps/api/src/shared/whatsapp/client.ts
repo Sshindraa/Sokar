@@ -20,10 +20,29 @@
  * 5. Set WHATSAPP_ENABLED=true dans .env
  */
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const createTelnyx: (key: string) => any = require('telnyx');
+const createTelnyx: (key: string) => TelnyxClient = require('telnyx');
 
-type TelnyxClient = any;
+interface TelnyxWhatsappTemplateMessage {
+  from: string;
+  to: string;
+  whatsapp_message: {
+    type: 'template';
+    template: {
+      name: string;
+      language: { policy: 'deterministic'; code: string };
+      components: Array<{
+        type: 'body';
+        parameters: Array<{ type: 'text'; text: string }>;
+      }>;
+    };
+  };
+}
+
+interface TelnyxClient {
+  messages: {
+    sendWhatsapp: (payload: TelnyxWhatsappTemplateMessage) => Promise<unknown>;
+  };
+}
 
 let _telnyx: TelnyxClient | null = null;
 

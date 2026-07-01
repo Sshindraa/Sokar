@@ -112,11 +112,9 @@ export const reactivationWorker = new Worker(
             campaign.restaurant.phoneNumber,
           );
           if (result.success) sent++;
-        } catch (err: any) {
-          log.error(
-            { err: err.message, customerId: customer.id },
-            'failed to send reactivation SMS',
-          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          log.error({ err: message, customerId: customer.id }, 'failed to send reactivation SMS');
         }
       }
 

@@ -35,26 +35,26 @@ type JsonRpcRequest = {
   jsonrpc: '2.0';
   id?: string | number;
   method: string;
-  params?: any;
+  params?: { name?: string; arguments?: Record<string, unknown> } & Record<string, unknown>;
 };
 
 type JsonRpcResponse = {
   jsonrpc: '2.0';
   id: string | number | null;
-  result?: any;
-  error?: { code: number; message: string; data?: any };
+  result?: unknown;
+  error?: { code: number; message: string; data?: unknown };
 };
 
 function jsonRpcError(
   id: string | number | null,
   code: number,
   message: string,
-  data?: any,
+  data?: unknown,
 ): JsonRpcResponse {
   return { jsonrpc: '2.0', id, error: { code, message, data } };
 }
 
-function jsonRpcResult(id: string | number | null, result: any): JsonRpcResponse {
+function jsonRpcResult(id: string | number | null, result: unknown): JsonRpcResponse {
   return { jsonrpc: '2.0', id, result };
 }
 
@@ -181,7 +181,7 @@ export class McpServer {
           // Retourner un object vide avec id=null serait une réponse,
           // ce qui violerait la spec. On renvoie null pour que le caller
           // sache qu'il ne doit pas l'inclure dans le batch response.
-          return null as any;
+          return null as unknown as JsonRpcResponse;
 
         case 'ping':
           return jsonRpcResult(id, {});
@@ -212,7 +212,7 @@ export class McpServer {
         default:
           return jsonRpcError(id, -32601, `Method not found: ${msg.method}`);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.error({ err, method: msg.method, clientId: ctx.clientId }, 'mcp handle error');
       return jsonRpcError(id, -32603, 'Internal error');
     }

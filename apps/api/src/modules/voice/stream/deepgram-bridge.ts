@@ -6,9 +6,10 @@ import { CallSessionManager } from './manager';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
 
-function writeDebugLog(msg: string, err?: any) {
+function writeDebugLog(msg: string, err?: unknown) {
+  const e = err instanceof Error ? err : err ? new Error(String(err)) : undefined;
   const timestamp = new Date().toISOString();
-  const logMsg = `[${timestamp}] ${msg}${err ? ' | ERROR: ' + err.message + '\n' + err.stack : ''}\n`;
+  const logMsg = `[${timestamp}] ${msg}${e ? ' | ERROR: ' + e.message + '\n' + e.stack : ''}\n`;
   try {
     const logPath =
       process.env.DEBUG_LOG_PATH || path.join(process.cwd(), 'scratch', 'call_debug.log');
@@ -365,7 +366,7 @@ function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage): void
         transcript !== lastTranscript
       ) {
         session.speculativeTranscript = transcript;
-        session.onDeepgramEvent?.({ type: 'InterimHighConfidence', transcript } as any);
+        session.onDeepgramEvent?.({ type: 'InterimHighConfidence', transcript });
       }
       break;
     }

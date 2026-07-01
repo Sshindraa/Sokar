@@ -63,11 +63,12 @@ export async function sendReminder(params: SendReminderParams): Promise<SendResu
         success: true,
       });
       return result;
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Fallback SMS si WhatsApp échoue
       fellBackFromWhatsApp = true;
+      const message = err instanceof Error ? err.message : String(err);
       logger.warn(
-        { err: err.message, reservationId, restaurantId },
+        { err: message, reservationId, restaurantId },
         '[messaging] WhatsApp failed, falling back to SMS',
       );
       await trackMessagingEvent({
@@ -77,7 +78,7 @@ export async function sendReminder(params: SendReminderParams): Promise<SendResu
         reservationId,
         customerId,
         success: false,
-        error: err.message,
+        error: message,
       });
     }
   }
@@ -97,7 +98,8 @@ export async function sendReminder(params: SendReminderParams): Promise<SendResu
       metadata: fellBackFromWhatsApp ? { fellBackFromWhatsApp: true } : undefined,
     });
     return result;
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     await trackMessagingEvent({
       event: 'reminder_sent',
       channel: 'sms',
@@ -105,10 +107,10 @@ export async function sendReminder(params: SendReminderParams): Promise<SendResu
       reservationId,
       customerId,
       success: false,
-      error: err.message,
+      error: message,
       metadata: fellBackFromWhatsApp ? { fellBackFromWhatsApp: true } : undefined,
     });
-    return { channel: 'sms', success: false, error: err.message };
+    return { channel: 'sms', success: false, error: message };
   }
 }
 
@@ -128,7 +130,8 @@ export async function sendReactivation(
   try {
     await sendSms(to, text);
     return { channel: 'sms', success: true };
-  } catch (err: any) {
-    return { channel: 'sms', success: false, error: err.message };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { channel: 'sms', success: false, error: message };
   }
 }
