@@ -7,30 +7,18 @@
  * Source of truth: `packages/database/prisma/schema.prisma`.
  */
 
-export const CALL_INTENT_VALUES = [
-  'RESERVATION',
-  'HOURS',
-  'MENU',
-  'CANCEL',
-  'OTHER',
-] as const;
+export const CALL_INTENT_VALUES = ['RESERVATION', 'HOURS', 'MENU', 'CANCEL', 'OTHER'] as const;
 export type CallIntent = (typeof CALL_INTENT_VALUES)[number];
 
 export const CALL_INTENT_LABELS: Record<CallIntent, string> = {
   RESERVATION: 'Réservation',
-  HOURS: "Horaires",
+  HOURS: 'Horaires',
   MENU: 'Carte',
   CANCEL: 'Annulation',
   OTHER: 'Autre',
 };
 
-export const CALL_OUTCOME_VALUES = [
-  'RESERVED',
-  'INFO',
-  'NO_ACTION',
-  'HANDOFF',
-  'ERROR',
-] as const;
+export const CALL_OUTCOME_VALUES = ['RESERVED', 'INFO', 'NO_ACTION', 'HANDOFF', 'ERROR'] as const;
 export type CallOutcome = (typeof CALL_OUTCOME_VALUES)[number];
 
 export const CALL_OUTCOME_LABELS: Record<CallOutcome, string> = {
@@ -61,4 +49,17 @@ export function normalizeCallEndedReason(raw: string | null | undefined): CallEn
     return raw as CallEndedReason;
   }
   return 'other';
+}
+
+/**
+ * Raw call event as emitted by the carrier webhook.
+ * Moved from @sokar/types — kept here for shared API/dashboard typing.
+ */
+export interface CallEvent {
+  id: string;
+  phoneNumberId: string;
+  endedReason?: CallEndedReason | string;
+  transcript?: string;
+  startedAt?: string;
+  endedAt?: string;
 }

@@ -9,8 +9,7 @@
     "skipLibCheck": true,
     "types": ["node"],
     "paths": {
-      "@sokar/config": ["../../packages/config/dist/constants.d.ts"],
-      "@sokar/types": ["../../packages/types/dist/call-event.d.ts"]
+      "@sokar/config": ["../../packages/config/dist/constants.d.ts"]
     }
   },
   "include": ["src/**/*", "src/types/fastify.d.ts"]

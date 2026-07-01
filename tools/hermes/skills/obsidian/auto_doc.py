@@ -2,7 +2,7 @@
 auto_doc — Obsidian auto-documentation helpers for Sokar.
 
 Usage:
-    from agent.skills.obsidian.auto_doc import (
+    from tools.hermes.skills.obsidian.auto_doc import (
         update_context,
         add_decision,
         link_notes,
