@@ -37,7 +37,7 @@
     "lint-staged": "^17.0.7",
     "prettier": "^3.5.0",
     "prisma": "^6.0.0",
-    "turbo": "^2.5.0",
+    "turbo": "^2.10.2",
     "typescript": "^5.8.0"
   },
   "pnpm": {
@@ -48,7 +48,17 @@
       "esbuild",
       "prisma",
       "sharp"
-    ]
+    ],
+    "overrides": {
+      "js-cookie": ">=3.0.7",
+      "glob": ">=10.5.0",
+      "uuid": ">=11.1.1",
+      "qs": ">=6.15.2",
+      "postcss": ">=8.5.10",
+      "js-yaml": ">=4.2.0",
+      "esbuild": ">=0.28.1",
+      "@opentelemetry/core": ">=2.8.0"
+    }
   },
   "engines": {
     "node": ">=20.0.0 <23.0.0"
