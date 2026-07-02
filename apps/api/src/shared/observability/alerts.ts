@@ -12,7 +12,7 @@
  */
 
 import { captureException, captureMessage } from '../sentry/client';
-import { doubleBookingAttemptsTotal, piiLeaksTotal } from './metrics';
+import { doubleBookingAttemptsTotal, piiLeaksTotal, failOpenTotal } from './metrics';
 import { logger } from '../logger/pino';
 
 export type AlertKind =
@@ -22,7 +22,8 @@ export type AlertKind =
   | 'agent_unavailable'
   | 'connect_latency_high'
   | 'connect_queue_backlog'
-  | 'connect_5xx_rate_high';
+  | 'connect_5xx_rate_high'
+  | 'fail_open';
 
 export function alertDoubleBooking(args: {
   restaurantId: string;
@@ -133,4 +134,27 @@ export function alertConnect5xxRateHigh(args: { rate5xx: number; windowMin: numb
     tags: { alert: 'connect_5xx_rate_high' },
     extra: args,
   });
+}
+
+/**
+ * Alerte fail-open : un service Redis/cache est down et le service a
+ * continué en mode dégradé (laisse passer plutôt que de bloquer).
+ *
+ * Comportement :
+ *   - Incrémente le compteur Prometheus sokar_fail_open_total{source}
+ *   - logger.warn avec le détail
+ *   - NE PAS appeler captureException à chaque fail-open individuel
+ *     (ce serait du bruit Sentry à chaque hoquet Redis). L'alerte Sentry
+ *     viendra de la règle de seuil agrégée (étape 3), pas de l'événement unitaire.
+ *
+ * @param source  - 'mcp_rate_limit' | 'connect_rate_limit' | 'openai_reserve_cache' | 'idempotency' | ...
+ * @param reason  - cause lisible ('redis_down', 'cache_get_failed', 'cache_set_failed', ...)
+ * @param err     - erreur originale (optionnel)
+ */
+export function alertFailOpen(args: { source: string; reason: string; err?: unknown }): void {
+  failOpenTotal.inc({ source: args.source });
+  logger.warn(
+    { alert: 'fail_open', source: args.source, reason: args.reason, err: args.err },
+    `Fail-open: ${args.source} ${args.reason} — service continues in degraded mode`,
+  );
 }

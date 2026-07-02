@@ -77,6 +77,21 @@ export const doubleBookingAttemptsTotal = new Counter({
   registers: [getRegistry()],
 });
 
+// ─── Fail-open (Redis/cache down) ────────────────────────────────────
+
+/**
+ * Compteur des fail-open Redis/cache. Permet de detecter un Redis down
+ * prolonge sans attendre qu'un humain le remarque par hasard.
+ * Labels : source (mcp_rate_limit, connect_rate_limit, openai_reserve_cache,
+ *           idempotency, ...). Cardinalite bornee par le nombre de sources.
+ */
+export const failOpenTotal = new Counter({
+  name: 'sokar_fail_open_total',
+  help: 'Total fail-open events (Redis/cache down, request allowed through)',
+  labelNames: ['source'] as const,
+  registers: [getRegistry()],
+});
+
 // ─── OpenAI Reserve feed (visibilite, pas de blocage) ───────────────
 
 /**
@@ -119,6 +134,7 @@ export function __resetMetrics(): void {
   mcpToolCallsTotal.reset();
   connectIaBotHitsTotal.reset();
   openaiReserveFeedRequestsTotal.reset();
+  failOpenTotal.reset();
 }
 
 // ─── Sokar Connect (Phase 1) ────────────────────────────────────────
