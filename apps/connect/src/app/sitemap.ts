@@ -16,9 +16,8 @@ import { fetchPublishedSlugs, fetchCities } from '@/lib/api-client';
 
 const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
 
-// Sitemap dynamique — pas de pre-render au build (l'API peut ne pas être
-// dispo). Cloudflare cache en edge, donc 1 appel API toutes les 5min.
-export const dynamic = 'force-dynamic';
+// Sitemap dynamique — ISR 5min (Cloudflare cache en edge en plus).
+// Pas de force-dynamic : revalidate=300 suffit pour le cache ISR.
 export const revalidate = 300;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

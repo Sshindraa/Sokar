@@ -1,48 +1,7 @@
 /**
- * Sokar Connect — types JSON-LD (copie locale des types de l'API).
- * Source unique à terme : packages/shared (TBD P1).
+ * Sokar Connect — types JSON-LD.
+ *
+ * Source unique : packages/shared (depuis la migration C6).
+ * Cf. packages/shared/src/jsonld.ts pour la définition complète.
  */
-export type RestaurantJsonLd = {
-  '@context': 'https://schema.org';
-  '@type': 'Restaurant';
-  '@id': string;
-  name: string;
-  description?: string;
-  url: string;
-  telephone: string;
-  servesCuisine: string[];
-  priceRange?: string;
-  image?: string[];
-  acceptsReservations: boolean;
-  address: {
-    '@type': 'PostalAddress';
-    streetAddress: string;
-    addressLocality: string;
-    postalCode?: string;
-    addressCountry: string;
-  };
-  openingHoursSpecification: Array<{
-    '@type': 'OpeningHoursSpecification';
-    dayOfWeek: string[];
-    opens: string;
-    closes: string;
-  }>;
-  potentialAction?: {
-    '@type': 'ReserveAction';
-    target: {
-      '@type': 'EntryPoint';
-      urlTemplate: string;
-      inLanguage: string;
-      actionPlatform: string[];
-    };
-    result: {
-      '@type': 'FoodEstablishmentReservation';
-      name: string;
-    };
-  };
-  geo?: {
-    '@type': 'GeoCoordinates';
-    latitude: number;
-    longitude: number;
-  };
-};
+export type { RestaurantJsonLd } from '@sokar/shared';

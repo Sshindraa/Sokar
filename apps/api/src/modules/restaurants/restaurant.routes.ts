@@ -493,6 +493,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
         invalidateRestaurantContextCache(phoneNumber),
       ),
     );
+    // Invalider le cache Connect (données publiques du restaurant)
+    if (updated.slug) {
+      await app.redisCache.del(`connect:restaurant:${updated.slug}`).catch(() => {});
+    }
     return reply.send(updated);
   });
 

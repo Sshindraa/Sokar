@@ -15,3 +15,4 @@ export * from './reservation';
 export * from './call';
 export * from './agent';
 export * from './api';
+export * from './jsonld';
