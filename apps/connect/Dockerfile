@@ -12,15 +12,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 build-essential ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy workspace config
+# Copy workspace config + package.json ONLY (maximise Docker layer cache).
+# Le source est copié au stage build, pas ici.
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json .npmrc ./
-COPY packages ./packages
+COPY packages/config/package.json ./packages/config/
+COPY packages/database/package.json ./packages/database/
+COPY packages/shared/package.json ./packages/shared/
 COPY apps/connect/package.json ./apps/connect/
 
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@10.8.0 --activate
 
-# Install deps
+# Install deps (cache layer : ne re-run que si package.json changent)
 RUN pnpm install --frozen-lockfile --filter @sokar/connect...
 
 # ─── Stage 2: build ──────────────────────────────────────────

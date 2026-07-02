@@ -15,7 +15,14 @@ import { captureException, captureMessage } from '../sentry/client';
 import { doubleBookingAttemptsTotal, piiLeaksTotal } from './metrics';
 import { logger } from '../logger/pino';
 
-export type AlertKind = 'double_booking' | 'pii_leak' | 'error_rate_high' | 'agent_unavailable';
+export type AlertKind =
+  | 'double_booking'
+  | 'pii_leak'
+  | 'error_rate_high'
+  | 'agent_unavailable'
+  | 'connect_latency_high'
+  | 'connect_queue_backlog'
+  | 'connect_5xx_rate_high';
 
 export function alertDoubleBooking(args: {
   restaurantId: string;
@@ -76,6 +83,54 @@ export function alertAgentUnavailable(args: { agent: string; reason: string }): 
   logger.error({ alert: 'agent_unavailable', ...args }, 'Agent IA indisponible');
   captureException(new Error('Agent unavailable'), {
     tags: { alert: 'agent_unavailable', agent: args.agent },
+    extra: args,
+  });
+}
+
+/**
+ * Alerte : latence p95 des routes Connect > 500ms.
+ * Déclenchée par un cron ou un check périodique (cf. connect-alerts.worker.ts).
+ */
+export function alertConnectLatencyHigh(args: { p95Ms: number; route: string }): void {
+  if (args.p95Ms < 500) return;
+  logger.error(
+    { alert: 'connect_latency_high', ...args },
+    `Connect p95 latency ${args.p95Ms}ms > 500ms threshold on ${args.route}`,
+  );
+  captureMessage(`Connect p95 latency high: ${args.p95Ms}ms on ${args.route}`, 'warning', {
+    tags: { alert: 'connect_latency_high', route: args.route },
+    extra: args,
+  });
+}
+
+/**
+ * Alerte : backlog de la queue connect-analytics > 1000 events.
+ * Indique que l'worker ne suit pas (Redis down, worker crash, ou pic de trafic).
+ */
+export function alertConnectQueueBacklog(args: { queueLength: number }): void {
+  if (args.queueLength < 1000) return;
+  logger.error(
+    { alert: 'connect_queue_backlog', ...args },
+    `Connect analytics queue backlog ${args.queueLength} > 1000 threshold`,
+  );
+  captureMessage(`Connect queue backlog: ${args.queueLength} events`, 'warning', {
+    tags: { alert: 'connect_queue_backlog' },
+    extra: args,
+  });
+}
+
+/**
+ * Alerte : taux de 5xx sur les routes Connect > 1%.
+ * Détecte les pannes API qui impactent le booking.
+ */
+export function alertConnect5xxRateHigh(args: { rate5xx: number; windowMin: number }): void {
+  if (args.rate5xx < 0.01) return;
+  logger.error(
+    { alert: 'connect_5xx_rate_high', ...args },
+    `Connect 5xx rate ${(args.rate5xx * 100).toFixed(2)}% exceeds 1% threshold`,
+  );
+  captureMessage(`Connect 5xx rate high: ${(args.rate5xx * 100).toFixed(2)}%`, 'error', {
+    tags: { alert: 'connect_5xx_rate_high' },
     extra: args,
   });
 }
