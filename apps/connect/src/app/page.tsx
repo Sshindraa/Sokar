@@ -61,7 +61,7 @@ export default async function HomePage() {
             Restaurant démo
           </Link>
           <span aria-hidden>·</span>
-          <Link className="text-ember underline" href="/ia">
+          <Link className="text-ember underline" href="/assistant">
             Réserver avec votre IA
           </Link>
           <span aria-hidden>·</span>

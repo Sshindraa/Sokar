@@ -41,12 +41,14 @@ L'utilisateur clique sur ce lien et complète le formulaire sur la page Sokar.
 
 ### Option 2 : MCP Server (réservation directe dans la conversation)
 
-Sokar expose un serveur MCP (Model Context Protocol) qui permet aux IA
-de rechercher et réserver directement, sans page web.
+Sokar expose un serveur MCP (Model Context Protocol) qui permet aux clients
+MCP (Claude Desktop, Cursor, etc.) de rechercher et réserver directement,
+sans page web. L'authentification se fait par API key (contact@sokar.tech).
 
 - URL du serveur MCP : ${API_URL}/mcp
 - Discovery OAuth2 : ${API_URL}/.well-known/oauth-authorization-server
 - Scopes disponibles : mcp:read, mcp:reserve, mcp:cancel
+- Auth : API key (Bearer token), contactez contact@sokar.tech pour obtenir une clé
 
 Tools disponibles :
 
