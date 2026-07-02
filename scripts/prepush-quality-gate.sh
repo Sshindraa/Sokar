@@ -71,7 +71,7 @@ if [ "$run_api" = true ]; then
   pnpm turbo run typecheck lint --filter=@sokar/api...
 
   # On skip les tests voice si aucun fichier voice n'a changé
-  # (17 tests pré-existants, pas liés au reste de l'API)
+  # (119 tests voice, isolation pour gagner du temps prepush)
   if printf '%s\n' "$ALL_CHANGED" | grep -Eq '^apps/api/src/modules/voice/'; then
     pnpm turbo test --filter=@sokar/api...
   else
