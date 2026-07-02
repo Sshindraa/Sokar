@@ -44,6 +44,7 @@ import {
   type Source,
 } from './connect.types';
 import { emitConnectEvent } from './connect-analytics';
+import { canConfirm, recordFailedConfirm } from './connect-rate-limit';
 
 export async function connectRoutes(app: FastifyInstance): Promise<void> {
   const canal = new ConnectService(db, redisCache);
@@ -60,22 +61,28 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     preview: z.string().optional(),
   });
 
-  app.get('/public/r/:slug', async (req, reply) => {
-    const parse = SlugParamSchema.safeParse(req.params);
-    if (!parse.success) {
-      return reply.status(400).send({ error: 'Invalid slug', details: parse.error.format() });
-    }
+  app.get(
+    '/public/r/:slug',
+    {
+      config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
+      const parse = SlugParamSchema.safeParse(req.params);
+      if (!parse.success) {
+        return reply.status(400).send({ error: 'Invalid slug', details: parse.error.format() });
+      }
 
-    const query = PreviewQuerySchema.parse(req.query ?? {});
-    const isPreview = query.preview === '1';
+      const query = PreviewQuerySchema.parse(req.query ?? {});
+      const isPreview = query.preview === '1';
 
-    const restaurant = await canal.getPublishedBySlug(parse.data.slug, { preview: isPreview });
-    if (!restaurant) {
-      return reply.status(404).send({ error: 'Restaurant not found or not published' });
-    }
+      const restaurant = await canal.getPublishedBySlug(parse.data.slug, { preview: isPreview });
+      if (!restaurant) {
+        return reply.status(404).send({ error: 'Restaurant not found or not published' });
+      }
 
-    return reply.send(restaurant);
-  });
+      return reply.send(restaurant);
+    },
+  );
 
   // ─── 1b. GET /public/sitemap-data ────────────────────────────
   // Liste minimale (slug + updatedAt + publishedAt) des restaurants publiés.
@@ -272,29 +279,37 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   // ─── 2. GET /public/r/:slug/availability ────────────────────
 
-  app.get('/public/r/:slug/availability', async (req, reply) => {
-    const slugParse = SlugParamSchema.safeParse(req.params);
-    if (!slugParse.success) {
-      return reply.status(400).send({ error: 'Invalid slug', details: slugParse.error.format() });
-    }
-    const queryParse = AvailabilityQuerySchema.safeParse(req.query);
-    if (!queryParse.success) {
-      return reply.status(400).send({ error: 'Invalid query', details: queryParse.error.format() });
-    }
+  app.get(
+    '/public/r/:slug/availability',
+    {
+      config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+    },
+    async (req, reply) => {
+      const slugParse = SlugParamSchema.safeParse(req.params);
+      if (!slugParse.success) {
+        return reply.status(400).send({ error: 'Invalid slug', details: slugParse.error.format() });
+      }
+      const queryParse = AvailabilityQuerySchema.safeParse(req.query);
+      if (!queryParse.success) {
+        return reply
+          .status(400)
+          .send({ error: 'Invalid query', details: queryParse.error.format() });
+      }
 
-    const restaurant = await canal.getPublishedBySlug(slugParse.data.slug);
-    if (!restaurant) {
-      return reply.status(404).send({ error: 'Restaurant not found or not published' });
-    }
+      const restaurant = await canal.getPublishedBySlug(slugParse.data.slug);
+      if (!restaurant) {
+        return reply.status(404).send({ error: 'Restaurant not found or not published' });
+      }
 
-    const dto = await availability.getAvailability({
-      restaurantId: restaurant.id,
-      date: queryParse.data.date,
-      partySize: queryParse.data.partySize,
-    });
+      const dto = await availability.getAvailability({
+        restaurantId: restaurant.id,
+        date: queryParse.data.date,
+        partySize: queryParse.data.partySize,
+      });
 
-    return reply.send(dto);
-  });
+      return reply.send(dto);
+    },
+  );
 
   // ─── 3. POST /public/r/:slug/hold ───────────────────────────
   // Crée un hold temporaire 5min (TTL via policies.holdTtlSeconds)
@@ -381,6 +396,16 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           return reply.status(409).send({ error: 'Slot already held or reserved' });
         }
         logger.error({ err, slug: slugParse.data.slug }, 'connect hold creation failed');
+        await emitConnectEvent(app.queues.connectAnalytics, {
+          event: 'reservation_failed',
+          restaurantId: restaurant.id,
+          restaurantSlug: restaurant.slug,
+          city: restaurant.address.city,
+          source,
+          date: bodyParse.data.date,
+          time: bodyParse.data.time,
+          partySize: bodyParse.data.partySize,
+        });
         return reply.status(500).send({ error: 'Internal error' });
       }
     },
@@ -418,6 +443,15 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         where: { holdToken: bodyParse.data.holdToken, restaurantId: restaurant.id },
       });
       if (!hold || hold.status !== 'ACTIVE' || hold.expiresAt < new Date()) {
+        // Analytics : émettre reservation_hold_expired si le hold existait (spec §8.5)
+        if (hold) {
+          await emitConnectEvent(app.queues.connectAnalytics, {
+            event: 'reservation_hold_expired',
+            restaurantId: restaurant.id,
+            restaurantSlug: restaurant.slug,
+            city: restaurant.address.city,
+          });
+        }
         return reply.status(410).send({ error: 'Hold expired or not found' });
       }
 
@@ -458,6 +492,15 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       // Idempotency: scope = web:{restaurantId}:{phoneHash}, key = holdId
       // (le hold est unique, donc 2 confirms du même hold = même réponse)
       const phoneHash = hashPhone(bodyParse.data.customer.phone);
+
+      // Rate limit per-phone (spec §8.3: 5 confirmations/heure + anti-spam §8.6)
+      const allowed = await canConfirm(phoneHash);
+      if (!allowed) {
+        return reply.status(429).send({
+          error: 'Trop de tentatives. Réessayez plus tard ou appelez le restaurant.',
+        });
+      }
+
       const idempotencyScope = computeIdempotencyScope({
         restaurantId: restaurant.id,
         channel: 'WEB',
@@ -535,6 +578,19 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         });
       } catch (err: unknown) {
         logger.error({ err, slug: slugParse.data.slug, holdId: hold.id }, 'connect confirm failed');
+        // Anti-spam : enregistrer l'échec (spec §8.6)
+        await recordFailedConfirm(phoneHash);
+        // Analytics : émettre l'événement reservation_failed (spec §8.5)
+        await emitConnectEvent(app.queues.connectAnalytics, {
+          event: 'reservation_failed',
+          restaurantId: restaurant.id,
+          restaurantSlug: restaurant.slug,
+          city: restaurant.address.city,
+          source,
+          date: hold.slotStart.toISOString().slice(0, 10),
+          time: hold.slotStart.toISOString().slice(11, 16),
+          partySize: hold.partySize,
+        });
         const message = err instanceof Error ? err.message : 'Internal error';
         if (message.toLowerCase().includes('idempot')) {
           return reply.status(409).send({ error: message });

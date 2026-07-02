@@ -38,6 +38,15 @@ export type AnalyticsEvent =
       partySize: number;
     }
   | {
+      event: 'availability_slot_selected';
+      restaurantId: string;
+      restaurantSlug: string;
+      date: string;
+      time: string;
+      partySize: number;
+      source?: string;
+    }
+  | {
       event: 'reservation_hold_created';
       restaurantId: string;
       restaurantSlug: string;

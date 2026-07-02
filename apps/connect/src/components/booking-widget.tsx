@@ -25,6 +25,7 @@ import { PartySizePicker } from './booking/party-size-picker';
 import { SlotGrid } from './booking/slot-grid';
 import { CustomerForm } from './booking/customer-form';
 import { ConfirmationView, type ConfirmDto } from './booking/confirmation-view';
+import { trackEvent } from '@/lib/tracking';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -309,6 +310,17 @@ export function BookingWidget({
         onSelect={(time) => {
           setSelectedTime(time);
           setStep('confirm');
+          if (restaurant) {
+            trackEvent({
+              event: 'availability_slot_selected',
+              restaurantId: restaurant.id,
+              restaurantSlug: restaurant.slug,
+              date,
+              time,
+              partySize,
+              source,
+            });
+          }
         }}
       />
 

@@ -25,8 +25,8 @@ export function middleware(request: NextRequest) {
   // ?preview=1 — mode preview dashboard (noindex, framing autorisé)
   const isPreview = request.nextUrl.searchParams.get('preview') === '1';
 
-  // HSTS — force HTTPS pendant 1 an
-  response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  // HSTS — force HTTPS pendant 2 ans (aligné avec nginx, spec §8.2)
+  response.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
 
   // Anti-MIME sniffing
   response.headers.set('X-Content-Type-Options', 'nosniff');
