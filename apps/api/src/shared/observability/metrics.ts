@@ -100,6 +100,7 @@ export function __resetMetrics(): void {
   connectEventsTotal.reset();
   connectReservationsConfirmedTotal.reset();
   connectRequestDuration.reset();
+  mcpToolCallsTotal.reset();
 }
 
 // ─── Sokar Connect (Phase 1) ────────────────────────────────────────
@@ -139,5 +140,21 @@ export const connectRequestDuration = new Histogram({
   help: 'Duration of Sokar Connect public API requests in milliseconds',
   labelNames: ['route', 'status'] as const,
   buckets: [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
+  registers: [getRegistry()],
+});
+
+// ─── MCP Server (agentic reservations) ─────────────────────────────
+
+/**
+ * Compteur des appels par tool MCP. Permet de savoir quels tools sont
+ * réellement utilisés par les clients MCP (Claude Desktop, Cursor, etc.)
+ * et par quel agent (label agentClient).
+ * Labels : tool (search, details, availability, create, cancel, status)
+ *          × status (success, error, denied).
+ */
+export const mcpToolCallsTotal = new Counter({
+  name: 'sokar_mcp_tool_calls_total',
+  help: 'Total MCP tool calls by tool name and status',
+  labelNames: ['tool', 'status'] as const,
   registers: [getRegistry()],
 });

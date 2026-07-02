@@ -19,8 +19,58 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+// Bots IA à tracker (pour mesurer l'efficacité réelle du web crawl).
+// Loggué côté serveur via console.log (récupéré par PM2 / Docker logs).
+const IA_BOTS = [
+  'OAI-SearchBot',
+  'GPTBot',
+  'ClaudeBot',
+  'anthropic-ai',
+  'PerplexityBot',
+  'Perplexity-User',
+  'Bytespider',
+  'CCBot',
+  'Googlebot',
+  'Bingbot',
+  'Applebot',
+];
+
+function detectBot(userAgent: string): string | null {
+  for (const bot of IA_BOTS) {
+    if (userAgent.includes(bot)) return bot;
+  }
+  return null;
+}
+
 export function middleware(request: NextRequest) {
   const response = NextResponse.next();
+
+  // Instrumentation : log les hits par bot IA sur les pages publiques.
+  // Permet de savoir quels bots crawlent réellement Sokar (vs hypothèse).
+  const userAgent = request.headers.get('user-agent') ?? '';
+  const bot = detectBot(userAgent);
+  if (bot) {
+    const path = request.nextUrl.pathname;
+    // Ne log que les pages intéressantes (pas les assets)
+    if (
+      path.startsWith('/r/') ||
+      path === '/llms.txt' ||
+      path === '/robots.txt' ||
+      path === '/sitemap.xml' ||
+      path.startsWith('/.well-known/')
+    ) {
+      // Log structuré pour PM2/Docker logs (instrumentation bots IA)
+      process.stdout.write(
+        JSON.stringify({
+          type: 'ia_bot_hit',
+          bot,
+          path,
+          method: request.method,
+          ts: new Date().toISOString(),
+        }) + '\n',
+      );
+    }
+  }
 
   // ?preview=1 — mode preview dashboard (noindex, framing autorisé)
   const isPreview = request.nextUrl.searchParams.get('preview') === '1';

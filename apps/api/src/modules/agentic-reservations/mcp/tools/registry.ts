@@ -23,7 +23,10 @@ import { computeIdempotencyScope, hashPayload } from '../../core/idempotency.ser
 import { redactResponse } from '../response-redaction';
 import { McpRateLimiter } from '../rate-limit';
 import { assertNoPiiLeak } from '../../../../shared/observability/pii-leak';
-import { checkAvailabilityDuration } from '../../../../shared/observability/metrics';
+import {
+  checkAvailabilityDuration,
+  mcpToolCallsTotal,
+} from '../../../../shared/observability/metrics';
 import {
   CancelReservationInputSchema,
   CheckAvailabilityInputSchema,
@@ -619,8 +622,12 @@ export async function executeTool(
       result = await registry.getReservationStatus(rawInput, ctx);
       break;
     default:
+      mcpToolCallsTotal.inc({ tool: toolName, status: 'error' });
       return toolError(`Unknown tool: ${toolName}`, 'UNKNOWN_TOOL');
   }
+
+  // Metric : tracker quels tools MCP sont réellement utilisés
+  mcpToolCallsTotal.inc({ tool: toolName, status: result.ok ? 'success' : 'error' });
 
   // Redacte la réponse avant retour
   if (result.ok) {

@@ -78,9 +78,10 @@ export default function AssistantPage() {
         <h2 className="text-lg font-semibold text-ink">Aucune configuration nécessaire</h2>
         <p className="mt-2 text-sm text-muted-foreground">
           Vous n&apos;avez rien à configurer. Les pages restaurants Sokar sont publiques et
-          optimisées pour les moteurs de recherche et les assistants IA. Si votre IA ne trouve pas
-          encore un restaurant Sokar, c&apos;est normal : nous venons de lancer et l&apos;indexation
-          prend quelques jours. Revenez bientôt.
+          optimisées pour les moteurs de recherche et les assistants IA. L&apos;indexation par
+          Google et les IA prend du temps — plus le réseau compte de restaurants, plus Sokar devient
+          visible. Si votre IA ne trouve pas encore de restaurant Sokar, c&apos;est que le réseau
+          est encore en déploiement.
         </p>
       </section>
 
