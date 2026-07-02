@@ -52,14 +52,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         })),
     );
 
-  const home: MetadataRoute.Sitemap = [
+  const staticPages: MetadataRoute.Sitemap = [
     {
       url: SITE_URL,
       lastModified: new Date(),
       changeFrequency: 'daily' as const,
       priority: 0.5,
     },
+    {
+      url: `${SITE_URL}/ia`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly' as const,
+      priority: 0.4,
+    },
   ];
 
-  return [...home, ...restaurantUrls, ...cityUrls, ...cuisineUrls];
+  return [...staticPages, ...restaurantUrls, ...cityUrls, ...cuisineUrls];
 }

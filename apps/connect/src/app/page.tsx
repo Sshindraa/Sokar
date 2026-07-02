@@ -54,13 +54,21 @@ export default async function HomePage() {
       </section>
 
       <footer className="mt-16 border-t border-border pt-6 text-sm text-muted-foreground">
-        <p>
-          Sokar Connect — Phase 0 scaffold. Pour voir une page restaurant, ouvrez par exemple{' '}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <span>Sokar Connect</span>
+          <span aria-hidden>·</span>
           <Link className="text-ember underline" href="/r/chez-sokar-demo">
-            /r/chez-sokar-demo
+            Restaurant démo
           </Link>
-          .
-        </p>
+          <span aria-hidden>·</span>
+          <Link className="text-ember underline" href="/ia">
+            Réserver avec votre IA
+          </Link>
+          <span aria-hidden>·</span>
+          <Link className="text-ember underline" href="/privacy">
+            Confidentialité
+          </Link>
+        </div>
       </footer>
     </main>
   );
