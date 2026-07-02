@@ -77,6 +77,22 @@ export const doubleBookingAttemptsTotal = new Counter({
   registers: [getRegistry()],
 });
 
+// ─── OpenAI Reserve feed (visibilite, pas de blocage) ───────────────
+
+/**
+ * Compteur des requetes sur GET /v1/businesses (business feed public).
+ * Permet de detecter un volume anormal (scraping massif, DoS applicatif)
+ * sans bloquer personne a priori. La decision de bloquer viendra plus tard
+ * si les metriques montrent un abus reel.
+ * Labels : status (200, 400, 429, 500, cache_hit, cache_miss).
+ */
+export const openaiReserveFeedRequestsTotal = new Counter({
+  name: 'sokar_openai_reserve_feed_requests_total',
+  help: 'Total requests on GET /v1/businesses (OpenAI Reserve business feed)',
+  labelNames: ['status'] as const,
+  registers: [getRegistry()],
+});
+
 // ─── Render ───────────────────────────────────────────────────
 
 /**
@@ -102,6 +118,7 @@ export function __resetMetrics(): void {
   connectRequestDuration.reset();
   mcpToolCallsTotal.reset();
   connectIaBotHitsTotal.reset();
+  openaiReserveFeedRequestsTotal.reset();
 }
 
 // ─── Sokar Connect (Phase 1) ────────────────────────────────────────
