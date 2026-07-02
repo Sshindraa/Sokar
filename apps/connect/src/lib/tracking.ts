@@ -61,6 +61,22 @@ export type AnalyticsEvent =
       restaurantSlug: string;
       reservationId: string;
       source?: string;
+    }
+  | {
+      event: 'availability_preview_shown';
+      restaurantId: string;
+      restaurantSlug: string;
+      date: string;
+      partySize: number;
+      availableCount: number;
+    }
+  | {
+      event: 'availability_preview_clicked';
+      restaurantId: string;
+      restaurantSlug: string;
+      date: string;
+      time: string;
+      partySize: number;
     };
 
 /**

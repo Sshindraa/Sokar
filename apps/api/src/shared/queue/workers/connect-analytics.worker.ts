@@ -50,6 +50,8 @@ const VALID_EVENTS = new Set([
   'reservation_confirmed',
   'reservation_failed',
   'ia_bot_hit',
+  'availability_preview_shown',
+  'availability_preview_clicked',
 ]);
 
 /**

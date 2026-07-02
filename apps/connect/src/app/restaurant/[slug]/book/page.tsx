@@ -22,6 +22,7 @@ type SearchParams = {
   date?: string;
   time?: string;
   source?: string;
+  from?: string;
   utm_source?: string;
   utm_medium?: string;
   utm_campaign?: string;
@@ -48,6 +49,19 @@ export default async function BookPage({
     restaurantSlug: restaurant.slug,
     source: sp.source,
   });
+
+  // Track availability_preview_clicked si l'utilisateur vient de l'aperçu
+  // inline de la page restaurant (Phase 2).
+  if (sp.from === 'preview' && sp.date && sp.time) {
+    trackEvent({
+      event: 'availability_preview_clicked',
+      restaurantId: restaurant.id,
+      restaurantSlug: restaurant.slug,
+      date: sp.date,
+      time: sp.time,
+      partySize: sp.partySize ? Number(sp.partySize) : 2,
+    });
+  }
 
   const partySize = sp.partySize ? Number(sp.partySize) : undefined;
   const date = sp.date;

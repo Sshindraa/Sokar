@@ -20,9 +20,9 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { fetchPublicRestaurant, fetchPublishedSlugs } from '@/lib/api-client';
+import { fetchPublicRestaurant, fetchPublishedSlugs, fetchAvailability } from '@/lib/api-client';
 import { ReservationJsonLd, buildPublicRestaurantJsonLd } from '@/lib/jsonld';
-import { trackPageView } from '@/lib/tracking';
+import { trackPageView, trackEvent } from '@/lib/tracking';
 import { BookCtaLink } from '@/components/book-cta-link';
 import { PageViewTracker } from '@/components/page-view-tracker';
 
@@ -153,6 +153,30 @@ export default async function RestaurantPage({
     .slice()
     .sort((a, b) => DAY_ORDER.indexOf(a.day) - DAY_ORDER.indexOf(b.day));
 
+  // Disponibilités inline (Phase 2) : aperçu des créneaux du jour pour
+  // éviter le clic supplémentaire vers /book. ISR 30s côté API (cache Next 30s).
+  const today = new Date().toISOString().slice(0, 10);
+  const previewPartySize = 2;
+  const availability = await fetchAvailability(
+    restaurant.slug,
+    { date: today, partySize: previewPartySize },
+    { revalidate: 30 },
+  );
+  const availableSlots = availability?.slots.filter((s) => s.available).slice(0, 4) ?? [];
+  const previewShown = availableSlots.length > 0;
+
+  // Track availability_preview_shown (fire-and-forget, best-effort)
+  if (previewShown) {
+    trackEvent({
+      event: 'availability_preview_shown',
+      restaurantId: restaurant.id,
+      restaurantSlug: restaurant.slug,
+      date: today,
+      partySize: previewPartySize,
+      availableCount: availableSlots.length,
+    });
+  }
+
   // JSON-LD FAQ (1 Q/R pour Schema.org FAQPage — bonus SEO sans sur-promesse)
   const faqJsonLd = {
     '@context': 'https://schema.org',
@@ -239,6 +263,47 @@ export default async function RestaurantPage({
               ))}
             </section>
           )}
+
+          {/* Disponibilités inline (Phase 2) — aperçu des créneaux du jour */}
+          <section className="mb-8 rounded-xl border border-border bg-background p-6">
+            <h2 className="mb-3 text-xl font-semibold text-ink">Disponibilités aujourd&apos;hui</h2>
+            {availableSlots.length > 0 ? (
+              <>
+                <p className="mb-3 text-sm text-muted-foreground">
+                  Table de {previewPartySize} — {availableSlots.length} créneau
+                  {availableSlots.length > 1 ? 'x' : ''} disponible
+                  {availableSlots.length > 1 ? 's' : ''} :
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {availableSlots.map((slot) => (
+                    <Link
+                      key={slot.time}
+                      href={`/restaurant/${restaurant.slug}/book?date=${today}&time=${slot.time}&partySize=${previewPartySize}&from=preview${sp.source ? `&source=${sp.source}` : ''}`}
+                      className="rounded-lg border border-border bg-background px-4 py-2 text-sm font-semibold text-ink transition-all duration-200 hover:border-ember hover:bg-ember/5"
+                    >
+                      {slot.time}
+                    </Link>
+                  ))}
+                </div>
+                <Link
+                  href={`/restaurant/${restaurant.slug}/book${sp.source ? `?source=${sp.source}` : ''}`}
+                  className="mt-3 inline-block text-sm text-ember underline hover:no-underline"
+                >
+                  Voir tous les créneaux et tailles de table
+                </Link>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Aucun créneau disponible pour aujourd&apos;hui (table de {previewPartySize}).{' '}
+                <Link
+                  href={`/restaurant/${restaurant.slug}/book${sp.source ? `?source=${sp.source}` : ''}`}
+                  className="text-ember underline hover:no-underline"
+                >
+                  Vérifier un autre jour
+                </Link>
+              </p>
+            )}
+          </section>
 
           <section className="mb-8 rounded-xl border border-border bg-cream p-6">
             <h2 className="mb-3 text-xl font-semibold text-ink">Informations</h2>
