@@ -59,15 +59,17 @@ export function middleware(request: NextRequest) {
       path === '/sitemap.xml' ||
       path.startsWith('/.well-known/')
     ) {
-      // Log structuré pour PM2/Docker logs (instrumentation bots IA)
-      process.stdout.write(
+      // Log structuré pour PM2/Docker logs (instrumentation bots IA).
+      // console.log est supporté par l'Edge Runtime (pas process.stdout).
+      // eslint-disable-next-line no-console
+      console.log(
         JSON.stringify({
           type: 'ia_bot_hit',
           bot,
           path,
           method: request.method,
           ts: new Date().toISOString(),
-        }) + '\n',
+        }),
       );
     }
   }

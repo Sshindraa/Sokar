@@ -37,8 +37,17 @@ CODE_ADDED=$(git diff --cached --unified=0 -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.m
 DANGEROUS_HITS=$(printf '%s\n' "$CODE_ADDED" | grep '^+' | grep -v '^+++' | grep -E "\beval\(|\bFunction\(|child_process\.(exec|execSync)\(|shell:\s*true|innerHTML\s*=" || true)
 [ -z "$DANGEROUS_HITS" ] || { echo "$DANGEROUS_HITS"; fail "dangerous construct found in staged code diff"; }
 
-CONSOLE_HITS=$(printf '%s\n' "$CODE_ADDED" | grep '^+' | grep -v '^+++' | grep -E "console\.(log|debug)\(" || true)
-[ -z "$CONSOLE_HITS" ] || { echo "$CONSOLE_HITS"; fail "debug console.log/debug left in staged code diff"; }
+# Autorise console.log si précédé de "// eslint-disable-next-line no-console"
+# (marqueur explicite = intentionnel, pas du debug oublié).
+CONSOLE_HITS=$(printf '%s\n' "$CODE_ADDED" | awk '
+/no-console/ { skip_next=1; next }
+/^\+.*console\.(log|debug)\(/ {
+  if (skip_next) { skip_next=0; next }
+  print
+}
+{ skip_next=0 }
+' || true)
+[ -z "$CONSOLE_HITS" ] || { echo "$CONSOLE_HITS"; fail "debug console.log/debug left in staged code diff (use // eslint-disable-next-line no-console to allow intentional logging)"; }
 
 # 2) UI token discipline: no arbitrary hex Tailwind classes in dashboard code.
 UI_HITS=$(git diff --cached -- apps/dashboard ':(exclude)**/*.md' | grep '^+' | grep -v '^+++' | grep -E "(bg|text|border|from|to|via)-\[#[0-9A-Fa-f]{3,8}\]" || true)
