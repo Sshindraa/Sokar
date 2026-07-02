@@ -80,13 +80,10 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
   const consents = new ConsentService(db);
 
   // ─── Versioning : /public/v1/* → alias de /public/* (Phase 6) ───
-  // Réécriture légère : tout /public/v1/foo est servi par la route /public/foo.
+  // La réécriture se fait au niveau du serveur (rewriteUrl dans main.ts),
+  // exécutée AVANT le routing Fastify. Un hook onRequest ici serait trop tard
+  // (le routing a déjà matché la route /public/v1/foo → 404).
   // Les anciens chemins /public/* restent fonctionnels (transition).
-  app.addHook('onRequest', async (req) => {
-    if (req.raw.url?.startsWith('/public/v1/')) {
-      req.raw.url = `/public/${req.raw.url.slice('/public/v1/'.length)}`;
-    }
-  });
 
   // ─── Hook latence : enregistre la durée de chaque requête Connect ───
   // Spec v1.1 §11.2 : p95 < 500ms cible pour le pilote P1.

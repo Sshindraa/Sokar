@@ -166,6 +166,61 @@ describe('Sokar Connect — Routes publiques', () => {
     });
   });
 
+  describe('GET /public/v1/r/:slug (alias versioning Phase 6)', () => {
+    // La réécriture /public/v1/* -> /public/* se fait via rewriteUrl au niveau
+    // du serveur Fastify (main.ts), exécutée AVANT le routing. Un hook onRequest
+    // serait trop tard (route déjà matchée -> 404). Ce test verrouille le bon
+    // fonctionnement de l'alias en conditions réelles (app.inject).
+    it('retourne 200 + DTO via l alias /public/v1/ (réécriture rewriteUrl)', async () => {
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: RESTAURANT_ID,
+        slug: SLUG,
+        name: 'Chez Sokar',
+        description: 'Bistrot français à Lyon',
+        formattedAddress: '12 Rue de la République, 69001 Lyon',
+        city: 'Lyon',
+        country: 'FR',
+        postalCode: '69001',
+        phoneNumber: '+334****0000',
+        phoneE164: '+334****0000',
+        cuisineType: ['Bistrot', 'Française'],
+        priceRange: 2,
+        openingHours: { mon: { open: '12:00', close: '14:30' } },
+        ambiance: [],
+        dietary: [],
+        noiseLevel: null,
+        agenticOptIn: true,
+        publishedAt: new Date('2026-06-24'),
+        exposureSettings: {
+          connectPublished: true,
+          connectAgentic: false,
+        },
+        images: [],
+      } as any);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/public/v1/r/${SLUG}`,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.slug).toBe(SLUG);
+      expect(body.name).toBe('Chez Sokar');
+    });
+
+    it('retourne 404 via l alias /public/v1/ si restaurant inexistant', async () => {
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue(null);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/public/v1/r/inexistant',
+      });
+
+      expect(res.statusCode).toBe(404);
+    });
+  });
+
   describe('GET /public/sitemap-data', () => {
     it('retourne la liste des slugs publiés', async () => {
       vi.mocked(db.restaurant.findMany).mockResolvedValue([
