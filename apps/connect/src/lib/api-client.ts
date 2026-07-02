@@ -129,6 +129,39 @@ export async function fetchAvailability(
   }
 }
 
+export type PaginatedRestaurantsDto = {
+  restaurants: PublicRestaurantDto[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+/**
+ * Liste paginée des restaurants publiés (Phase 6 — scalabilité homepage).
+ * Endpoint : GET /public/restaurants?page=1&limit=12
+ * Pagination réelle en DB, pas en mémoire.
+ */
+export async function fetchPublicRestaurants(
+  page = 1,
+  limit = 12,
+  options: { revalidate?: number } = {},
+): Promise<PaginatedRestaurantsDto> {
+  try {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    const res = await fetch(`${await getApiUrl()}/public/restaurants?${params}`, {
+      next: { revalidate: options.revalidate ?? 300 },
+    });
+    if (!res.ok) {
+      console.error(`[connect] fetch restaurants failed: ${res.status}`);
+      return { restaurants: [], total: 0, page, limit };
+    }
+    return (await res.json()) as PaginatedRestaurantsDto;
+  } catch (err) {
+    console.error('[connect] fetch restaurants error:', err);
+    return { restaurants: [], total: 0, page, limit };
+  }
+}
+
 /**
  * Liste tous les slugs publiés pour le sitemap.
  * Endpoint : GET /public/sitemap-data

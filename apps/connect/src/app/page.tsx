@@ -1,28 +1,18 @@
 /**
  * Sokar Connect — Root page (sokar.tech/).
  *
- * Pour T4 (scaffold), c'est une landing qui liste les restos publiés
- * (via l'API publique, pas Prisma direct).
+ * Landing qui liste les restos publiés via l'API publique paginée
+ * (Phase 6 : un seul fetch au lieu de N+1, ISR 5min).
  */
 
 import Link from 'next/link';
-import { fetchPublishedSlugs, fetchPublicRestaurant } from '@/lib/api-client';
+import { fetchPublicRestaurants } from '@/lib/api-client';
 import { RestaurantCard } from '@/components/restaurant-card';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 300;
 
 export default async function HomePage() {
-  const slugs = await fetchPublishedSlugs();
-
-  // Récupère les détails pour la grille (limité à 12)
-  const restaurants = await Promise.all(
-    slugs.slice(0, 12).map(async (entry) => {
-      const dto = await fetchPublicRestaurant(entry.slug);
-      return dto;
-    }),
-  );
-
-  const valid = restaurants.filter((r): r is NonNullable<typeof r> => r !== null);
+  const { restaurants, total } = await fetchPublicRestaurants(1, 12);
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-12">
@@ -35,16 +25,14 @@ export default async function HomePage() {
       </header>
 
       <section>
-        <h2 className="mb-4 text-2xl font-semibold text-ink">
-          Restaurants publiés ({valid.length})
-        </h2>
-        {valid.length === 0 ? (
+        <h2 className="mb-4 text-2xl font-semibold text-ink">Restaurants publiés ({total})</h2>
+        {restaurants.length === 0 ? (
           <p className="text-muted-foreground">
             Aucun restaurant n&apos;a encore activé sa page publique.
           </p>
         ) : (
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {valid.map((r) => (
+            {restaurants.map((r) => (
               <li key={r.id}>
                 <RestaurantCard restaurant={r} />
               </li>

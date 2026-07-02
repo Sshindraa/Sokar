@@ -60,6 +60,7 @@ function routeLabel(url: string): string {
   if (url === '/public/cities') return 'cities';
   if (url === '/public/sitemap-data') return 'sitemap-data';
   if (url === '/public/analytics/events') return 'analytics-events';
+  if (url.startsWith('/public/restaurants')) return 'restaurants';
   return 'other';
 }
 
@@ -77,6 +78,15 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
   const idempotency = new IdempotencyService(new PrismaIdempotencyStore(db));
   const reservations = new ReservationService(db, audit, holds, idempotency);
   const consents = new ConsentService(db);
+
+  // ─── Versioning : /public/v1/* → alias de /public/* (Phase 6) ───
+  // Réécriture légère : tout /public/v1/foo est servi par la route /public/foo.
+  // Les anciens chemins /public/* restent fonctionnels (transition).
+  app.addHook('onRequest', async (req) => {
+    if (req.raw.url?.startsWith('/public/v1/')) {
+      req.raw.url = `/public/${req.raw.url.slice('/public/v1/'.length)}`;
+    }
+  });
 
   // ─── Hook latence : enregistre la durée de chaque requête Connect ───
   // Spec v1.1 §11.2 : p95 < 500ms cible pour le pilote P1.
@@ -145,6 +155,26 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           publishedAt: (r.publishedAt ?? new Date()).toISOString(),
         }));
       return reply.send({ restaurants });
+    },
+  );
+
+  // ─── 1b.ter GET /public/restaurants (Phase 6 — pagination) ───
+  // Liste paginée des restaurants publiés (DTO complet pour la grille homepage).
+  // Pagination réelle en DB (skip/take), pas en mémoire.
+  // Query params : page (default 1), limit (default 12, max 50).
+
+  const RestaurantsQuerySchema = z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(12),
+  });
+
+  app.get(
+    '/public/restaurants',
+    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const query = RestaurantsQuerySchema.parse(req.query ?? {});
+      const result = await canal.getPublishedRestaurants(query.page, query.limit);
+      return reply.send(result);
     },
   );
 
