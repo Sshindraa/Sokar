@@ -13,6 +13,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { logger } from '../../shared/logger/pino';
+import { env } from '../../env';
 import {
   type OpeningHoursDay,
   type OpeningHoursSpec,
@@ -191,7 +192,7 @@ export class ConnectService {
       cuisineTypes: r.cuisineType,
       priceRange: priceRangeToSymbol(r.priceRange),
       openingHours,
-      reservationUrl: `https://sokar.tech/restaurant/${r.slug}/book`,
+      reservationUrl: `${env.SITE_URL}/restaurant/${r.slug}/book`,
       images: {
         cover,
         gallery,

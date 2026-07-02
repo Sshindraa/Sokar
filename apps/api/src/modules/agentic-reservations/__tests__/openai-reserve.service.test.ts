@@ -65,7 +65,7 @@ describe('OpenaiReserveService', () => {
         location: { latitude: 48.86, longitude: 2.35 },
         phone_number: '+33****0000',
         website_url: 'https://bistrot.example',
-        platform_url: 'https://sokar.tech/restaurant/le-bistrot',
+        platform_url: 'http://localhost:3001/restaurant/le-bistrot',
         cuisine_type: ['french'],
         price_range: 2,
       });

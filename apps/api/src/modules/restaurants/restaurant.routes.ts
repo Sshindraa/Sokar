@@ -5,6 +5,7 @@ import { requireOrg } from '../../plugins/clerk';
 import { trackOnboardingEvent, type OnboardingAnalyticsEvent } from '../analytics/events.service';
 import { placeOutboundCall } from '../../shared/telnyx/client';
 import { logger } from '../../shared/logger/pino';
+import { env } from '../../env';
 import {
   applyOnboardingTransition,
   computeOnboardingState,
@@ -896,7 +897,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
       connectPublished: exposure?.connectPublished ?? false,
       connectAgentic: exposure?.connectAgentic ?? false,
       connectPublishedAt: exposure?.connectPublishedAt?.toISOString() ?? null,
-      pageUrl: slug ? `https://sokar.tech/restaurant/${slug}` : null,
+      pageUrl: slug ? `${env.SITE_URL}/restaurant/${slug}` : null,
     });
   };
 
