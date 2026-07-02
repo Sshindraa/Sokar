@@ -61,10 +61,10 @@ export async function GET(_req: NextRequest) {
     },
     // Comment un client final peut réserver
     user_flows: {
-      // Flow 1 : l'IA trouve le resto via crawl et donne un lien
-      web: "L'utilisateur demande à son IA, qui trouve le restaurant sur Sokar et propose un lien de réservation pré-rempli.",
-      // Flow 2 : l'IA réserve directement via MCP (si configuré)
-      mcp: "L'utilisateur demande à son IA, qui réserve directement via le protocole MCP. Aucune page web nécessaire.",
+      // Flow 1 : l'IA trouve le resto via crawl et donne un lien (aucune config)
+      web: "L'utilisateur demande à son IA, qui trouve le restaurant sur Sokar et propose un lien de réservation pré-rempli. L'utilisateur clique et confirme sur la page.",
+      // Flow 2 : l'IA réserve directement via MCP (API key requise, pour clients MCP)
+      mcp: "L'utilisateur demande à son IA, qui réserve directement via le protocole MCP. Nécessite une API key Sokar (attribution par contact@sokar.tech). Aucune page web nécessaire.",
       // Flow 3 : l'utilisateur va directement sur la page
       direct:
         "L'utilisateur va sur sokar.tech/r/[restaurant] et réserve via le formulaire en ligne.",
