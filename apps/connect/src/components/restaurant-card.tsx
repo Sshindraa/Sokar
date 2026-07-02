@@ -6,6 +6,7 @@
  * Prisma. On est strict sur le contrat.
  */
 import Link from 'next/link';
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import type { PublicRestaurantDto } from '@/lib/api-client';
 
@@ -28,12 +29,12 @@ export function RestaurantCard({ restaurant, className }: Props) {
     >
       {cover && (
         <div className="aspect-[4/3] w-full overflow-hidden bg-muted">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <Image
             src={cover}
             alt={restaurant.name}
+            width={400}
+            height={300}
             className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-            loading="lazy"
           />
         </div>
       )}

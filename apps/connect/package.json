@@ -13,6 +13,7 @@
     "copy-static": "bash scripts/copy-static.sh"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.63.0",
     "@sokar/shared": "workspace:*",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",

@@ -107,11 +107,12 @@ export class ConnectAvailabilityService {
     });
     const heldSlotStarts = new Set(activeHolds.map((h) => h.slotStart.toISOString()));
 
-    // 2. Réservations actives (state=CONFIRMED + channel=WEB, ou state=PENDING)
+    // 2. Réservations actives (state=CONFIRMED ou PENDING, non CANCELLED)
+    // state est le champ canonique (default CONFIRMED via migration backfill).
     const confirmedReservations = await this.prisma.reservation.findMany({
       where: {
         restaurantId: args.restaurantId,
-        OR: [{ status: 'CONFIRMED' }, { state: 'CONFIRMED' }, { state: 'PENDING' }],
+        state: { in: ['CONFIRMED', 'PENDING'] },
         startsAt: { gte: dayStart, lte: dayEnd },
       },
       select: { startsAt: true },

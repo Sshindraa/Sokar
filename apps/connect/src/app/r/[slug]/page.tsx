@@ -19,6 +19,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { fetchPublicRestaurant, fetchPublishedSlugs } from '@/lib/api-client';
 import { ReservationJsonLd, buildPublicRestaurantJsonLd } from '@/lib/jsonld';
 import { trackPageView } from '@/lib/tracking';
@@ -212,12 +213,13 @@ export default async function RestaurantPage({
 
           {restaurant.images.cover && (
             <figure className="mb-8 overflow-hidden rounded-xl">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <Image
                 src={restaurant.images.cover}
                 alt={restaurant.name}
+                width={1200}
+                height={320}
                 className="h-64 w-full object-cover sm:h-80"
-                loading="eager"
+                priority
               />
             </figure>
           )}
@@ -226,12 +228,12 @@ export default async function RestaurantPage({
             <section className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3">
               {restaurant.images.gallery.slice(0, 6).map((url, idx) => (
                 <figure key={idx} className="overflow-hidden rounded-lg">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <Image
                     src={url}
                     alt={`${restaurant.name} — photo ${idx + 2}`}
+                    width={400}
+                    height={160}
                     className="h-32 w-full object-cover transition-transform duration-200 hover:scale-105 sm:h-40"
-                    loading="lazy"
                   />
                 </figure>
               ))}
