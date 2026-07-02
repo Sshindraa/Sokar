@@ -7,6 +7,7 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
+import type { Redis } from 'ioredis';
 import {
   type Business,
   type BusinessAddress,
@@ -17,9 +18,23 @@ import {
 } from './schemas';
 import { WIDGET_PUBLIC_URL } from './constants';
 import { env } from '../../../env';
+import { redisCache } from '../../../shared/redis/client';
+
+// TTL du cache Redis pour le business feed (en secondes).
+// Le feed ne change pas a chaque requete (les restaurants n'activent/desactivent
+// pas openaiReserveEnabled en continu). 120s = bon compromis fraicheur/charge DB.
+const FEED_CACHE_TTL_SECONDS = 120;
 
 export class OpenaiReserveService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly cache:
+      | Redis
+      | {
+          get: (k: string) => Promise<string | null>;
+          set: (k: string, v: string, mode?: string, ttl?: number) => Promise<string>;
+        } = redisCache,
+  ) {}
 
   /**
    * Business feed : retourne la liste paginée des restos qui ont
@@ -29,6 +44,18 @@ export class OpenaiReserveService {
    * C'est volontaire — c'est l'admin (Phase 2) qui gate opt-in sur ces champs.
    */
   async getBusinessFeed(query: FeedQuery): Promise<FeedResponse> {
+    // Cache Redis : si la meme requete (page + page_size + changes_token) arrive
+    // dans les 120s, on sert le cache sans taper Prisma. Fail-open si Redis down.
+    const cacheKey = `openai-reserve:feed:${query.page}:${query.page_size}:${query.changes_token ?? ''}`;
+    try {
+      const cached = await this.cache.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached) as FeedResponse;
+      }
+    } catch {
+      // Redis down — fail-open, on continue sans cache
+    }
+
     const where = {
       openaiReserveEnabled: true,
       // Filtre les restos qui n'ont pas tous les champs requis.
@@ -73,7 +100,7 @@ export class OpenaiReserveService {
     // on stockerait un hash ETag et on comparerait.
     const checksum = query.changes_token ? this.computeChecksum(businesses) : true;
 
-    return {
+    const response: FeedResponse = {
       checksum,
       page: query.page,
       page_size: query.page_size,
@@ -82,6 +109,15 @@ export class OpenaiReserveService {
       businesses,
       changes_token: query.changes_token || new Date().toISOString(),
     };
+
+    // Met a jour le cache Redis (fail-open si Redis down)
+    try {
+      await this.cache.set(cacheKey, JSON.stringify(response), 'EX', FEED_CACHE_TTL_SECONDS);
+    } catch {
+      // Redis down — fail-open, on continue sans cacher
+    }
+
+    return response;
   }
 
   /**

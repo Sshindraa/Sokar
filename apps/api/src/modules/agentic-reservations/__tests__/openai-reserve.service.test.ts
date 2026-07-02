@@ -17,13 +17,27 @@ function makeMockPrisma() {
   } as any;
 }
 
+function makeMockCache() {
+  const store = new Map<string, string>();
+  return {
+    get: vi.fn(async (key: string) => store.get(key) ?? null),
+    set: vi.fn(async (key: string, value: string, _mode?: string, _ttl?: number) => {
+      store.set(key, value);
+      return 'OK';
+    }),
+    _store: store,
+  } as any;
+}
+
 describe('OpenaiReserveService', () => {
   let prisma: ReturnType<typeof makeMockPrisma>;
+  let cache: ReturnType<typeof makeMockCache>;
   let service: OpenaiReserveService;
 
   beforeEach(() => {
     prisma = makeMockPrisma();
-    service = new OpenaiReserveService(prisma);
+    cache = makeMockCache();
+    service = new OpenaiReserveService(prisma, cache);
     vi.clearAllMocks();
   });
 
@@ -180,6 +194,50 @@ describe('OpenaiReserveService', () => {
     it('jette si restaurant introuvable', async () => {
       prisma.restaurant.findUnique.mockResolvedValue(null);
       await expect(service.restaurantReservation({ restaurant_id: 'r-x' })).rejects.toThrow();
+    });
+  });
+
+  describe('cache Redis sur getBusinessFeed', () => {
+    it('sert le cache au 2e appel sans re-frapper Prisma', async () => {
+      prisma.restaurant.count.mockResolvedValue(1);
+      prisma.restaurant.findMany.mockResolvedValue([
+        {
+          id: 'r-1',
+          name: 'Le Bistrot',
+          slug: 'le-bistrot',
+          formattedAddress: '1 rue de Paris, 75001 Paris, France',
+          phoneE164: '+33123456789',
+          websiteUrl: 'https://bistrot.example',
+          lat: { toNumber: () => 48.86 },
+          lng: { toNumber: () => 2.35 },
+          cuisineType: ['french'],
+          priceRange: 2,
+          openingHours: { lun: ['12:00-14:30'] },
+        },
+      ]);
+
+      const query = { page: 1, page_size: 20 };
+      const feed1 = await service.getBusinessFeed(query);
+      expect(feed1.businesses).toHaveLength(1);
+      expect(prisma.restaurant.findMany).toHaveBeenCalledTimes(1);
+
+      // 2e appel : doit servir le cache, findMany ne doit pas être rappelé
+      const feed2 = await service.getBusinessFeed(query);
+      expect(feed2.businesses).toHaveLength(1);
+      expect(prisma.restaurant.findMany).toHaveBeenCalledTimes(1); // toujours 1
+      expect(cache.get).toHaveBeenCalledTimes(2);
+      expect(cache.set).toHaveBeenCalledTimes(1);
+    });
+
+    it('fail-open si Redis down (continue sans cacher)', async () => {
+      prisma.restaurant.count.mockResolvedValue(0);
+      prisma.restaurant.findMany.mockResolvedValue([]);
+      cache.get.mockRejectedValue(new Error('Redis connection refused'));
+      cache.set.mockRejectedValue(new Error('Redis connection refused'));
+
+      const feed = await service.getBusinessFeed({ page: 1, page_size: 20 });
+      expect(feed.total).toBe(0);
+      expect(prisma.restaurant.findMany).toHaveBeenCalledTimes(1);
     });
   });
 });
