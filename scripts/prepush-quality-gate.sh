@@ -62,8 +62,8 @@ if [ "$run_all" = true ]; then
 fi
 
 if [ "$run_packages" = true ]; then
-  pnpm turbo typecheck --filter=@sokar/types --filter=@sokar/config --filter=@sokar/database --filter=@sokar/shared
-  pnpm turbo test --filter=@sokar/types --filter=@sokar/config --filter=@sokar/database --filter=@sokar/shared
+  pnpm turbo typecheck --filter=@sokar/config --filter=@sokar/database --filter=@sokar/shared
+  pnpm turbo test --filter=@sokar/config --filter=@sokar/database --filter=@sokar/shared
 fi
 
 if [ "$run_api" = true ]; then

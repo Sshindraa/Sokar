@@ -308,7 +308,6 @@ echo "📦 Building..."
 # Workspaces explicites, puis les deux applications Next séquentiellement.
 # Évite le sélecteur `@sokar/api...`, qui inclut aussi des dépendants.
 NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/config build
-NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/types build
 NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database build
 NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/shared build
 NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/api build
