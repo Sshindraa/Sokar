@@ -49,7 +49,20 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr">
-      <body className="min-h-screen bg-background text-foreground antialiased">{children}</body>
+      <body className="min-h-screen bg-background text-foreground antialiased">
+        {children}
+        <footer className="border-t border-border bg-background px-6 py-8 text-center text-sm text-muted-foreground">
+          <p>
+            Sokar — Réservation en ligne pour restaurants ·{' '}
+            <a
+              href="/privacy"
+              className="text-foreground underline transition-all duration-200 hover:text-ember"
+            >
+              Politique de confidentialité
+            </a>
+          </p>
+        </footer>
+      </body>
     </html>
   );
 }

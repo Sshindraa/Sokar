@@ -1,12 +1,18 @@
 /**
  * Sokar Connect — Sitemap dynamique Next.js.
  *
- * Utilise l'endpoint public /public/sitemap-data (apps/api) plutôt que
- * Prisma direct. Cf. spec v1.1 §6.6.
+ * Utilise les endpoints publics /public/sitemap-data et /public/cities
+ * (apps/api) plutôt que Prisma direct. Cf. spec v1.1 §6.6 + §7.5.
+ *
+ * Inclut :
+ * - Page d'accueil
+ * - Pages restaurant /r/[slug] (tous les publiés)
+ * - Pages ville /restaurants/[city] (si ≥5 restos → indexable)
+ * - Pages cuisine /restaurants/[city]/[cuisine] (si ville ≥10 ET cuisine ≥5)
  */
 
 import type { MetadataRoute } from 'next';
-import { fetchPublishedSlugs } from '@/lib/api-client';
+import { fetchPublishedSlugs, fetchCities } from '@/lib/api-client';
 
 const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
 
@@ -16,7 +22,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 300;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const slugs = await fetchPublishedSlugs();
+  const [slugs, cities] = await Promise.all([fetchPublishedSlugs(), fetchCities()]);
 
   const restaurantUrls: MetadataRoute.Sitemap = slugs.map((entry) => ({
     url: `${SITE_URL}/r/${entry.slug}`,
@@ -24,6 +30,28 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: 'daily' as const,
     priority: 0.8,
   }));
+
+  // Pages ville indexables (≥5 restos dans la ville)
+  const cityUrls: MetadataRoute.Sitemap = cities.map((city) => ({
+    url: `${SITE_URL}/restaurants/${city.citySlug}`,
+    lastModified: new Date(),
+    changeFrequency: 'weekly' as const,
+    priority: 0.6,
+  }));
+
+  // Pages cuisine indexables (ville ≥10 restos ET cuisine ≥5)
+  const cuisineUrls: MetadataRoute.Sitemap = cities
+    .filter((city) => city.total >= 10)
+    .flatMap((city) =>
+      city.cuisines
+        .filter((cuisine) => cuisine.count >= 5)
+        .map((cuisine) => ({
+          url: `${SITE_URL}/restaurants/${city.citySlug}/${cuisine.slug}`,
+          lastModified: new Date(),
+          changeFrequency: 'weekly' as const,
+          priority: 0.5,
+        })),
+    );
 
   const home: MetadataRoute.Sitemap = [
     {
@@ -34,5 +62,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
-  return [...home, ...restaurantUrls];
+  return [...home, ...restaurantUrls, ...cityUrls, ...cuisineUrls];
 }

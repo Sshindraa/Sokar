@@ -1,12 +1,10 @@
 /**
  * Sokar Connect — Tracking helpers.
  *
- * En P0, on tracke page_view et cta_clicked via des requêtes fetch
- * asynchrones vers l'API interne (apps/api).
- *
- * En T8 (livré après Phase 1), on branchera la queue `connect_analytics`
- * (BullMQ) + prom-client côté API. Pour P0, l'API agrège en mémoire
- * via les routes /public/analytics/events.
+ * On tracke page_view et cta_clicked via des requêtes fetch asynchrones
+ * vers l'API interne (apps/api). L'API pousse ces events dans la queue
+ * BullMQ `connect-analytics` qui incrémente les compteurs prom-client
+ * (cf. apps/api/src/shared/queue/workers/connect-analytics.worker.ts).
  *
  * Pas de PII : on hashe IP côté client (subresource integrity), pas de
  * cookie tracking, pas de third-party script.
