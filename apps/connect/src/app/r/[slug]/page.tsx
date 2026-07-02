@@ -19,7 +19,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { fetchPublicRestaurant } from '@/lib/api-client';
+import { fetchPublicRestaurant, fetchPublishedSlugs } from '@/lib/api-client';
 import { ReservationJsonLd, buildPublicRestaurantJsonLd } from '@/lib/jsonld';
 import { trackPageView } from '@/lib/tracking';
 import { BookCtaLink } from '@/components/book-cta-link';
@@ -28,6 +28,14 @@ const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
 
 export const revalidate = 60;
 export const dynamicParams = true;
+
+// Pre-render les pages restaurant publiées au build time.
+// Les nouvelles publications sont rendues à la demande (dynamicParams=true)
+// puis mises en cache ISR (revalidate=60).
+export async function generateStaticParams(): Promise<Array<{ slug: string }>> {
+  const slugs = await fetchPublishedSlugs();
+  return slugs.map((entry) => ({ slug: entry.slug }));
+}
 
 export async function generateMetadata({
   params,

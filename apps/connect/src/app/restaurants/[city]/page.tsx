@@ -107,7 +107,37 @@ export default async function CityPage({ params }: { params: Promise<{ city: str
         </section>
       )}
 
+      {/* Sections thématiques : terrasse, végétarien, etc. */}
+      {(() => {
+        const withTerrace = data.restaurants.filter(
+          (r) =>
+            r.ambiance?.some((a) => a.toLowerCase().includes('terrasse')) ||
+            r.description?.toLowerCase().includes('terrasse'),
+        );
+        const withVeggie = data.restaurants.filter((r) =>
+          r.dietary?.some((d) => d.toLowerCase().includes('végétarien')),
+        );
+        const sections: Array<{ title: string; items: typeof data.restaurants }> = [];
+        if (withTerrace.length > 0) sections.push({ title: 'Avec terrasse', items: withTerrace });
+        if (withVeggie.length > 0)
+          sections.push({ title: 'Options végétariennes', items: withVeggie });
+        if (sections.length === 0) return null;
+        return sections.map((section) => (
+          <section key={section.title} className="mb-8">
+            <h2 className="mb-3 text-lg font-semibold text-ink">{section.title}</h2>
+            <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {section.items.map((r) => (
+                <li key={r.id}>
+                  <RestaurantCard restaurant={r} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        ));
+      })()}
+
       <section>
+        <h2 className="mb-3 text-lg font-semibold text-ink">Tous les restaurants</h2>
         {data.restaurants.length === 0 ? (
           <p className="text-muted-foreground">Aucun restaurant à afficher pour l&apos;instant.</p>
         ) : (
