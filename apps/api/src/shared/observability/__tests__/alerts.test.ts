@@ -4,8 +4,10 @@ import {
   alertPiiLeak,
   alertErrorRateHigh,
   alertAgentUnavailable,
+  alertFailOpen,
 } from '../alerts';
-import { piiLeaksTotal, renderMetrics } from '../metrics';
+import { piiLeaksTotal, failOpenTotal, renderMetrics } from '../metrics';
+import { captureException } from '../../sentry/client';
 
 // Mocks minimaux pour Sentry et metrics
 vi.mock('../../sentry/client', () => ({
@@ -16,6 +18,7 @@ vi.mock('../../sentry/client', () => ({
 describe('Alerts service', () => {
   beforeEach(() => {
     piiLeaksTotal.reset();
+    failOpenTotal.reset();
   });
 
   it('alertDoubleBooking ne throw pas et incrémente le compteur', () => {
@@ -52,5 +55,24 @@ describe('Alerts service', () => {
 
   it('alertAgentUnavailable ne throw pas', () => {
     expect(() => alertAgentUnavailable({ agent: 'claude', reason: 'rate_limited' })).not.toThrow();
+  });
+
+  it('alertFailOpen incrémente sokar_fail_open_total{source} et ne throw pas', async () => {
+    expect(() => alertFailOpen({ source: 'mcp_rate_limit', reason: 'redis_down' })).not.toThrow();
+    expect(() => alertFailOpen({ source: 'mcp_rate_limit', reason: 'redis_down' })).not.toThrow();
+    expect(() =>
+      alertFailOpen({ source: 'openai_reserve_cache', reason: 'cache_get_failed' }),
+    ).not.toThrow();
+
+    const payload = await renderMetrics();
+    expect(payload).toContain('sokar_fail_open_total');
+    expect(payload).toMatch(/sokar_fail_open_total\{[^}]*source="mcp_rate_limit"[^}]*\} 2/);
+    expect(payload).toMatch(/sokar_fail_open_total\{[^}]*source="openai_reserve_cache"[^}]*\} 1/);
+  });
+
+  it('alertFailOpen ne appelle pas captureException (bruit Sentry évité)', () => {
+    (captureException as any).mockClear();
+    alertFailOpen({ source: 'idempotency', reason: 'cache_down' });
+    expect(captureException).not.toHaveBeenCalled();
   });
 });
