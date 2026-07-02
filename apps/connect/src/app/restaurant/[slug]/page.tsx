@@ -153,6 +153,21 @@ export default async function RestaurantPage({
     .slice()
     .sort((a, b) => DAY_ORDER.indexOf(a.day) - DAY_ORDER.indexOf(b.day));
 
+  // Groupe les horaires par jour (support multi-créneaux : midi + soir).
+  // [{day: monday, open: 12:00, close: 14:30}, {day: monday, open: 19:00, close: 22:30}]
+  // → [{day: monday, slots: [{open: 12:00, close: 14:30}, {open: 19:00, close: 22:30}]}]
+  const hoursGrouped = hoursByDay.reduce<
+    Array<{ day: string; slots: Array<{ open: string; close: string }> }>
+  >((acc, h) => {
+    const existing = acc.find((g) => g.day === h.day);
+    if (existing) {
+      existing.slots.push({ open: h.open, close: h.close });
+    } else {
+      acc.push({ day: h.day, slots: [{ open: h.open, close: h.close }] });
+    }
+    return acc;
+  }, []);
+
   // Disponibilités inline (Phase 2) : aperçu des créneaux du jour pour
   // éviter le clic supplémentaire vers /book. ISR 30s côté API (cache Next 30s).
   const today = new Date().toISOString().slice(0, 10);
@@ -355,16 +370,14 @@ export default async function RestaurantPage({
             </dl>
           </section>
 
-          {hoursByDay.length > 0 && (
+          {hoursGrouped.length > 0 && (
             <section className="mb-8 rounded-xl border border-border bg-background p-6">
               <h2 className="mb-3 text-xl font-semibold text-ink">Horaires</h2>
               <ul className="space-y-1 text-ink">
-                {hoursByDay.map((h) => (
-                  <li key={h.day} className="flex justify-between">
-                    <span className="font-medium">{DAY_LABELS_FR[h.day] ?? h.day}</span>
-                    <span>
-                      {h.open}–{h.close}
-                    </span>
+                {hoursGrouped.map((g) => (
+                  <li key={g.day} className="flex justify-between">
+                    <span className="font-medium">{DAY_LABELS_FR[g.day] ?? g.day}</span>
+                    <span>{g.slots.map((s) => `${s.open}–${s.close}`).join(', ')}</span>
                   </li>
                 ))}
               </ul>

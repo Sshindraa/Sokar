@@ -183,6 +183,30 @@ describe('buildPublicRestaurantJsonLd', () => {
     });
   });
 
+  it('multi-créneaux : 2 OpeningHoursSpecification pour le même jour (midi + soir)', () => {
+    // Un restaurant avec coupure (midi + soir le même jour) doit produire
+    // 2 objets OpeningHoursSpecification pour ce jour, pas un seul fusionné.
+    const jsonLd = buildPublicRestaurantJsonLd({
+      restaurant: {
+        ...baseRestaurant,
+        openingHours: [
+          { day: 'monday', open: '12:00', close: '14:30' },
+          { day: 'monday', open: '19:00', close: '22:30' },
+        ],
+      },
+      attributesConfidence: {
+        openingHours: [{ source: 'merchant_declared', verifiedAt: null }],
+      },
+    });
+    expect(jsonLd.openingHoursSpecification).toHaveLength(2);
+    expect(jsonLd.openingHoursSpecification[0].dayOfWeek).toEqual(['Monday']);
+    expect(jsonLd.openingHoursSpecification[0].opens).toBe('12:00');
+    expect(jsonLd.openingHoursSpecification[0].closes).toBe('14:30');
+    expect(jsonLd.openingHoursSpecification[1].dayOfWeek).toEqual(['Monday']);
+    expect(jsonLd.openingHoursSpecification[1].opens).toBe('19:00');
+    expect(jsonLd.openingHoursSpecification[1].closes).toBe('22:30');
+  });
+
   it('omet openingHoursSpecification si confidence < 0.9', () => {
     // review_inferred capped à 0.7 < 0.9 threshold
     const jsonLd = buildPublicRestaurantJsonLd({
