@@ -68,6 +68,27 @@ export const AGENTIC_SOURCES: ReadonlySet<Source> = new Set([
   'google', // google organic search = trafic SEO, pas agentic — MAIS traité comme agentic dans notre taxonomie pour le tracking IA-crawlers
 ]);
 
+/**
+ * Sources "agentic neutres" : neutralisées en 'web' si connectAgentic=false.
+ * Google est EXCLU car c'est du trafic SEO organic (pas agentic).
+ * Cf. spec v1.1 §5.9.
+ */
+export const AGENTIC_NEUTRAL_SOURCES: ReadonlySet<Source> = new Set([
+  'chatgpt',
+  'perplexity',
+  'bing',
+]);
+
+/**
+ * Normalise la source d'une réservation Connect.
+ * - Si connectAgentic=false et la source est agentic-neutre → 'web'
+ * - Sinon → source inchangée (google, instagram, qr_code, etc. préservés)
+ * Cf. spec v1.1 §5.9.
+ */
+export function normalizeConnectSource(requestedSource: Source, connectAgentic: boolean): Source {
+  return !connectAgentic && AGENTIC_NEUTRAL_SOURCES.has(requestedSource) ? 'web' : requestedSource;
+}
+
 export const HoldInputSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^\d{2}:\d{2}$/),
@@ -95,6 +116,7 @@ export const ConfirmInputSchema = z.object({
   }),
   specialRequests: z.string().max(500).optional(),
   idempotencyKey: z.string().uuid().optional(),
+  source: SourceEnum.optional().default('web'),
 });
 export type ConfirmInput = z.infer<typeof ConfirmInputSchema>;
 
