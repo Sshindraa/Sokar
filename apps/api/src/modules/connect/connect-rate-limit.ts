@@ -13,6 +13,7 @@
 
 import { redisCache } from '../../shared/redis/client';
 import { logger } from '../../shared/logger/pino';
+import { alertFailOpen } from '../../shared/observability/alerts';
 
 const HOLD_DAILY_LIMIT = 20;
 const CONFIRM_HOURLY_LIMIT = 5;
@@ -54,7 +55,7 @@ export async function canCreateHold(phoneHash: string): Promise<boolean> {
     }
     return count <= HOLD_DAILY_LIMIT;
   } catch (err) {
-    logger.warn({ err }, '[connect-rate-limit] Redis down, canCreateHold fail-open');
+    alertFailOpen({ source: 'connect_rate_limit', reason: 'canCreateHold_redis_down', err });
     return true;
   }
 }
@@ -79,7 +80,7 @@ export async function canConfirm(phoneHash: string): Promise<boolean> {
     }
     return count <= CONFIRM_HOURLY_LIMIT;
   } catch (err) {
-    logger.warn({ err }, '[connect-rate-limit] Redis down, canConfirm fail-open');
+    alertFailOpen({ source: 'connect_rate_limit', reason: 'canConfirm_redis_down', err });
     return true;
   }
 }
@@ -99,6 +100,6 @@ export async function recordFailedConfirm(phoneHash: string): Promise<void> {
       await redisCache.set(blockedKey(phoneHash), '1', 'EX', DAY_SECONDS);
     }
   } catch (err) {
-    logger.warn({ err }, '[connect-rate-limit] Redis down, recordFailedConfirm skipped');
+    alertFailOpen({ source: 'connect_rate_limit', reason: 'recordFailedConfirm_redis_down', err });
   }
 }

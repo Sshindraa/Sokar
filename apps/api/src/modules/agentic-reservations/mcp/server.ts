@@ -27,6 +27,7 @@ import { McpRateLimiter } from './rate-limit';
 import { McpToolRegistry, executeTool, type ToolContext } from './tools/registry';
 import { TOOL_LIST } from './tools/tool-definitions';
 import { getIssuer } from './oauth';
+import { alertFailOpen } from '../../../shared/observability/alerts';
 
 // Re-export pour les tests qui importent depuis server.ts
 export { TOOL_LIST };
@@ -149,8 +150,9 @@ export class McpServer {
         if (!rl.allowed) {
           reply.header('Retry-After', String(Math.ceil(rl.resetMs / 1000)));
         }
-      } catch {
+      } catch (err) {
         // Rate limiter down — fail-open, pas de headers
+        alertFailOpen({ source: 'mcp_rate_limit', reason: 'server_rate_check_failed', err });
       }
 
       return reply.send(payload);
