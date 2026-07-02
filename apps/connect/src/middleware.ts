@@ -125,7 +125,7 @@ export function middleware(request: NextRequest) {
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline'", // JSON-LD inline (cf. spec v1.1 §8)
     "style-src 'self' 'unsafe-inline'", // Tailwind inline styles
-    "img-src 'self' https://res.cloudinary.com https://images.unsplash.com https://sokar.app data:",
+    "img-src 'self' https://res.cloudinary.com https://images.unsplash.com data:",
     "font-src 'self' data:",
     "connect-src 'self'",
     `frame-ancestors ${frameAncestors}`,
