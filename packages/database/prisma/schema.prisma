@@ -75,6 +75,14 @@ model Restaurant {
   coverImageUrl         String?           @map("cover_image_url")
   publishedAt           DateTime?         @map("published_at")
 
+  // Google Places — rating importé (aggregateRating JSON-LD, Phase 3)
+  // Sync périodique via worker google-places-sync. Respect CGU Google :
+  // attribution obligatoire, pas de republication du texte des avis.
+  googlePlaceId         String?           @map("google_place_id")
+  googleRating          Float?            @map("google_rating")
+  googleReviewCount     Int?              @map("google_review_count")
+  googleRatingSyncedAt  DateTime?         @map("google_rating_synced_at")
+
   @@index([city, publishedAt], map: "restaurants_city_published_at_idx")
   @@map("restaurants")
 }

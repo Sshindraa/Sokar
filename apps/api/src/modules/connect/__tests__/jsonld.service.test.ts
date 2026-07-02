@@ -8,7 +8,7 @@
  * - potentialAction présent et conforme si connectAgentic=true
  * - openingHoursSpecification absent si pas de openingHours
  * - confidence gate : cuisineType/priceRange/etc. omis si pas de source
- * - aggregateRating JAMAIS inclus (anti-hallucination Google sd-policies)
+ * - aggregateRating inclus uniquement si sourcé Google Places (Phase 3)
  */
 
 import { describe, it, expect } from 'vitest';
@@ -33,7 +33,7 @@ const baseRestaurant: PublicRestaurantDto = {
     { day: 'monday', open: '19:00', close: '22:30' },
     { day: 'tuesday', open: '12:00', close: '14:30' },
   ],
-  reservationUrl: 'https://sokar.tech/r/chez-mario-lyon/book',
+  reservationUrl: 'https://sokar.tech/restaurant/chez-mario-lyon/book',
   images: { cover: 'https://sokar.app/img/cover.jpg', gallery: [] },
   acceptsReservations: true,
   publishedAt: '2026-06-24T00:00:00.000Z',
@@ -55,9 +55,9 @@ describe('buildPublicRestaurantJsonLd', () => {
 
     expect(jsonLd['@context']).toBe('https://schema.org');
     expect(jsonLd['@type']).toBe('Restaurant');
-    expect(jsonLd['@id']).toBe('https://sokar.tech/r/chez-mario-lyon');
+    expect(jsonLd['@id']).toBe('https://sokar.tech/restaurant/chez-mario-lyon');
     expect(jsonLd.name).toBe('Chez Mario');
-    expect(jsonLd.url).toBe('https://sokar.tech/r/chez-mario-lyon');
+    expect(jsonLd.url).toBe('https://sokar.tech/restaurant/chez-mario-lyon');
     expect(jsonLd.telephone).toBe('+33400000000');
   });
 
@@ -66,7 +66,7 @@ describe('buildPublicRestaurantJsonLd', () => {
       restaurant: baseRestaurant,
       attributesConfidence: null,
     });
-    expect(jsonLd.acceptsReservations).toBe('https://sokar.tech/r/chez-mario-lyon/book');
+    expect(jsonLd.acceptsReservations).toBe('https://sokar.tech/restaurant/chez-mario-lyon/book');
     expect(typeof jsonLd.acceptsReservations).toBe('string');
   });
 
@@ -93,13 +93,29 @@ describe('buildPublicRestaurantJsonLd', () => {
     expect(jsonLd.potentialAction!.result['@type']).toBe('FoodEstablishmentReservation');
   });
 
-  it("n'inclut JAMAIS aggregateRating (anti-hallucination)", () => {
+  it("n'inclut PAS aggregateRating si absent du DTO", () => {
     const jsonLd = buildPublicRestaurantJsonLd({
       restaurant: baseRestaurant,
       attributesConfidence: null,
     });
-    // L'objet JSON-LD ne doit pas avoir de propriété aggregateRating
+    // Pas de aggregateRating si le restaurant n'a pas de note Google
     expect((jsonLd as unknown as Record<string, unknown>).aggregateRating).toBeUndefined();
+  });
+
+  it('inclut aggregateRating si sourcé Google Places (Phase 3)', () => {
+    const jsonLd = buildPublicRestaurantJsonLd({
+      restaurant: {
+        ...baseRestaurant,
+        aggregateRating: { ratingValue: 4.5, reviewCount: 128, provider: 'google' },
+      },
+      attributesConfidence: null,
+    });
+    expect(jsonLd.aggregateRating).toBeDefined();
+    expect(jsonLd.aggregateRating!['@type']).toBe('AggregateRating');
+    expect(jsonLd.aggregateRating!.ratingValue).toBe(4.5);
+    expect(jsonLd.aggregateRating!.reviewCount).toBe(128);
+    // Attribution Google obligatoire (CGU Google Places API)
+    expect(jsonLd.aggregateRating!.author).toEqual({ '@type': 'Organization', name: 'Google' });
   });
 
   it('inclut geo (GeoCoordinates) si lat/lng présents', () => {

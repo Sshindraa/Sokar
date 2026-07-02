@@ -49,6 +49,7 @@ import './shared/queue/workers/call-recovery.worker';
 import './shared/queue/workers/connect-analytics.worker';
 import './shared/queue/workers/confirmation-sms.worker';
 import './shared/queue/workers/reactivation.worker';
+import './shared/queue/workers/google-places-sync.worker';
 
 // Initialize Sentry as early as possible so that instrumentation hooks are
 // registered before the Fastify app (and its error handler) are built.
@@ -90,6 +91,7 @@ export async function buildApp() {
           'env.CARTESIA_API_KEY',
           'env.TELNYX_API_KEY',
           'env.TELNYX_PUBLIC_KEY',
+          'env.GOOGLE_PLACES_API_KEY',
         ],
         censor: '[REDACTED]',
       },
