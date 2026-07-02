@@ -16,7 +16,7 @@ export const PRIVACY_POLICY_SUMMARY = {
   retentionDays: 730, // 2 ans
   dataController: 'Sokar SAS',
   hosting: 'France (OVHcloud)',
-  dpo: 'dpo@sokar.com',
+  dpo: 'dpo@sokar.tech',
 } as const;
 
 /**
@@ -27,7 +27,7 @@ export const PRIVACY_POLICY_TEXT = `
 # Politique de confidentialité Sokar
 
 ## Responsable du traitement
-Sokar SAS, contact DPO : dpo@sokar.com
+Sokar SAS, contact DPO : dpo@sokar.tech
 
 ## Données collectées
 - Numéro de téléphone (E.164)
