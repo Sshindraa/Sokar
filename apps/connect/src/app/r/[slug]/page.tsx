@@ -23,6 +23,7 @@ import { fetchPublicRestaurant, fetchPublishedSlugs } from '@/lib/api-client';
 import { ReservationJsonLd, buildPublicRestaurantJsonLd } from '@/lib/jsonld';
 import { trackPageView } from '@/lib/tracking';
 import { BookCtaLink } from '@/components/book-cta-link';
+import { PageViewTracker } from '@/components/page-view-tracker';
 
 const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
 
@@ -131,16 +132,8 @@ export default async function RestaurantPage({
     notFound();
   }
 
-  // Track page_view (fire-and-forget, ne bloque pas le rendu)
-  trackPageView({
-    restaurantId: restaurant.id,
-    restaurantSlug: restaurant.slug,
-    city: restaurant.address.city,
-    source: sp.source,
-    utmSource: sp.utm_source,
-    utmMedium: sp.utm_medium,
-    utmCampaign: sp.utm_campaign,
-  });
+  // Track page_view côté client (en ISR, le server-side ne s'exécute qu'au revalidate)
+  // PageViewTracker est un composant client qui track au mount — chaque visite est comptée
 
   const jsonLd = buildPublicRestaurantJsonLd({
     restaurant,
@@ -185,6 +178,15 @@ export default async function RestaurantPage({
       />
 
       <main className="mx-auto max-w-4xl px-6 py-12">
+        <PageViewTracker
+          restaurantId={restaurant.id}
+          restaurantSlug={restaurant.slug}
+          city={restaurant.address.city}
+          source={sp.source}
+          utmSource={sp.utm_source}
+          utmMedium={sp.utm_medium}
+          utmCampaign={sp.utm_campaign}
+        />
         <article>
           <header className="mb-8">
             <h1 className="text-3xl font-bold text-ink sm:text-4xl">

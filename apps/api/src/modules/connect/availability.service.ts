@@ -89,9 +89,11 @@ export class ConnectAvailabilityService {
       };
     }
 
-    // Fenêtre [start, end] du jour pour filtrer holds/résas
-    const dayStart = new Date(`${args.date}T00:00:00.000Z`);
-    const dayEnd = new Date(`${args.date}T23:59:59.999Z`);
+    // Fenêtre [start, end] du jour LOCAL du restaurant pour filtrer holds/résas.
+    // On convertit minuit et 23:59 en UTC via la timezone du resto.
+    const timeZone = restaurant.timezone ?? 'Europe/Paris';
+    const dayStart = zonedTimeToUtc(args.date, '00:00', timeZone);
+    const dayEnd = zonedTimeToUtc(args.date, '23:59', timeZone);
 
     // 1. Holds actifs
     const activeHolds = await this.prisma.agenticHold.findMany({
@@ -121,9 +123,9 @@ export class ConnectAvailabilityService {
     const minLeadTimeMs = minLeadTimeMinutes * 60 * 1000;
     const minBookingTime = new Date(now.getTime() + minLeadTimeMs);
 
-    // Construire les slots avec leur état
+    // Construire les slots avec leur état (conversion local → UTC via timezone)
     const slots: AvailabilitySlot[] = allSlots.map((time) => {
-      const slotStart = new Date(`${args.date}T${time}:00.000Z`);
+      const slotStart = zonedTimeToUtc(args.date, time, timeZone);
       const isHeld = heldSlotStarts.has(slotStart.toISOString());
       const isReserved = reservedStarts.has(slotStart.toISOString());
       const isBeforeLeadTime = slotStart < minBookingTime;
@@ -218,4 +220,52 @@ function generateSlots(open: string, close: string, stepMinutes: number): string
 }
 
 // Export util pour les tests
-export const __test_only__ = { computeDayOfWeek, normalizeOpeningHours, generateSlots };
+export const __test_only__ = {
+  computeDayOfWeek,
+  normalizeOpeningHours,
+  generateSlots,
+  zonedTimeToUtc,
+};
+
+/**
+ * Convertit une date locale (ex: "2026-07-02" + "19:00") dans une timezone
+ * donnée en Date UTC.
+ *
+ * Ex: ("2026-07-02", "19:00", "Europe/Paris") → 17:00 UTC (été, UTC+2)
+ *     ("2026-01-02", "19:00", "Europe/Paris") → 18:00 UTC (hiver, UTC+1)
+ *
+ * Utilise Intl.DateTimeFormat pour calculer l'offset DST au moment donné.
+ */
+function zonedTimeToUtc(dateStr: string, timeStr: string, timeZone: string): Date {
+  const [h, m] = timeStr.split(':').map(Number);
+  // Date "naive" : comme si l'heure locale était UTC
+  const naive = new Date(
+    `${dateStr}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`,
+  );
+
+  // Formater cette date dans la timezone cible pour voir l'heure locale réelle
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(naive);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '0';
+  const localYear = parseInt(get('year'), 10);
+  const localMonth = parseInt(get('month'), 10) - 1; // 0-indexed
+  const localDay = parseInt(get('day'), 10);
+  const localHour = parseInt(get('hour'), 10) % 24; // Intl peut retourner "24" pour minuit
+  const localMinute = parseInt(get('minute'), 10);
+
+  // Construire la date UTC qui correspond à cette heure locale affichée
+  const localAsUtc = Date.UTC(localYear, localMonth, localDay, localHour, localMinute, 0);
+  // L'offset = différence entre l'heure locale affichée et l'heure naive
+  const offsetMs = localAsUtc - naive.getTime();
+
+  // Ajuster : si la timezone est en avance (ex: +2h), on retire 2h de la naive
+  return new Date(naive.getTime() - offsetMs);
+}
