@@ -1,7 +1,7 @@
 /**
  * Sokar Connect — Page restaurant publique (T5 complète).
  *
- * URL : /r/[slug]
+ * URL : /restaurant/[slug]
  *
  * Sections :
  * - Header (H1, description, CTA Réserver)
@@ -59,7 +59,7 @@ export async function generateMetadata({
   }
 
   const cuisine = restaurant.cuisineTypes[0] ?? 'Restaurant';
-  const canonical = `${SITE_URL}/r/${restaurant.slug}`;
+  const canonical = `${SITE_URL}/restaurant/${restaurant.slug}`;
 
   return {
     title: `${restaurant.name} — Réservation en ligne à ${restaurant.address.city} | Sokar`,
@@ -200,7 +200,7 @@ export default async function RestaurantPage({
             {/* CTA principal — au-dessus de la ligne de flottaison (acceptance T5) */}
             <div className="mt-6">
               <BookCtaLink
-                href={`/r/${restaurant.slug}/book${sp.source ? `?source=${sp.source}` : ''}`}
+                href={`/restaurant/${restaurant.slug}/book${sp.source ? `?source=${sp.source}` : ''}`}
                 restaurantId={restaurant.id}
                 restaurantSlug={restaurant.slug}
                 source={sp.source}
@@ -332,7 +332,7 @@ export default async function RestaurantPage({
             <h2 className="mb-3 text-xl font-semibold text-ink">Réservation</h2>
             <p className="text-ink">Réservation en ligne avec confirmation rapide.</p>
             <BookCtaLink
-              href={`/r/${restaurant.slug}/book${sp.source ? `?source=${sp.source}` : ''}`}
+              href={`/restaurant/${restaurant.slug}/book${sp.source ? `?source=${sp.source}` : ''}`}
               restaurantId={restaurant.id}
               restaurantSlug={restaurant.slug}
               source={sp.source}

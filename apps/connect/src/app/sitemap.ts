@@ -6,7 +6,7 @@
  *
  * Inclut :
  * - Page d'accueil
- * - Pages restaurant /r/[slug] (tous les publiés)
+ * - Pages restaurant /restaurant/[slug] (tous les publiés)
  * - Pages ville /restaurants/[city] (si ≥5 restos → indexable)
  * - Pages cuisine /restaurants/[city]/[cuisine] (si ville ≥10 ET cuisine ≥5)
  */
@@ -24,7 +24,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [slugs, cities] = await Promise.all([fetchPublishedSlugs(), fetchCities()]);
 
   const restaurantUrls: MetadataRoute.Sitemap = slugs.map((entry) => ({
-    url: `${SITE_URL}/r/${entry.slug}`,
+    url: `${SITE_URL}/restaurant/${entry.slug}`,
     lastModified: new Date(entry.updatedAt ?? entry.publishedAt),
     changeFrequency: 'daily' as const,
     priority: 0.8,

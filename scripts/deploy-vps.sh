@@ -408,16 +408,16 @@ echo ""
 echo "=== Checking HTTP endpoints ==="
 API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/health 2>/dev/null || echo "FAIL")
 DASH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null || echo "FAIL")
-CONNECT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4002/r/chez-sokar-demo 2>/dev/null || echo "FAIL")
+CONNECT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4002/restaurant/chez-sokar-demo 2>/dev/null || echo "FAIL")
 API_VHOST_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: api.sokar.tech" \
     http://127.0.0.1/health 2>/dev/null || echo "FAIL")
 WIDGET_API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: sokar.tech" \
     http://127.0.0.1/api/proxy/public/widget/chez-sokar-demo 2>/dev/null || echo "FAIL")
 PUBLIC_PAGE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: sokar.tech" \
-    http://127.0.0.1/r/chez-sokar-demo 2>/dev/null || echo "FAIL")
+    http://127.0.0.1/restaurant/chez-sokar-demo 2>/dev/null || echo "FAIL")
 echo "   api (localhost:4000/health) → $API_STATUS"
 echo "   dashboard (localhost:3000)  → $DASH_STATUS"
-echo "   connect (localhost:4002/r/chez-sokar-demo) → $CONNECT_STATUS"
+echo "   connect (localhost:4002/restaurant/chez-sokar-demo) → $CONNECT_STATUS"
 echo "   api.sokar.tech/health via Nginx → $API_VHOST_STATUS"
 echo "   widget slug API via Next proxy → $WIDGET_API_STATUS"
 echo "   public Sokar Connect page via Nginx → $PUBLIC_PAGE_STATUS"

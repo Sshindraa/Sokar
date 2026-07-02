@@ -53,7 +53,7 @@ export function middleware(request: NextRequest) {
     const path = request.nextUrl.pathname;
     // Ne log que les pages intéressantes (pas les assets)
     if (
-      path.startsWith('/r/') ||
+      path.startsWith('/restaurant/') ||
       path === '/llms.txt' ||
       path === '/robots.txt' ||
       path === '/sitemap.xml' ||

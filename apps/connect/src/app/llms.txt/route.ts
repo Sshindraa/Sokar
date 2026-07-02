@@ -25,17 +25,17 @@ export async function GET(_req: NextRequest) {
 
 ### Option 1 : Web crawl (aucune configuration requise)
 
-Les pages restaurant sont publiquement crawlables sur ${SITE_URL}/r/[slug].
+Les pages restaurant sont publiquement crawlables sur ${SITE_URL}/restaurant/[slug].
 Chaque page contient du JSON-LD Schema.org (type Restaurant) avec :
 - Le nom, l'adresse, le téléphone, la cuisine, les horaires
 - Un champ acceptsReservations avec l'URL de réservation
 - Un potentialAction ReserveAction (si le restaurant a activé l'exposition IA) avec un EntryPoint.urlTemplate
 
 Format du deep-link de réservation :
-${SITE_URL}/r/{slug}/book?partySize={partySize}&date={date}&time={time}
+${SITE_URL}/restaurant/{slug}/book?partySize={partySize}&date={date}&time={time}
 
 Exemple :
-${SITE_URL}/r/chez-mario/book?partySize=4&date=2026-06-25&time=20:00
+${SITE_URL}/restaurant/chez-mario/book?partySize=4&date=2026-06-25&time=20:00
 
 L'utilisateur clique sur ce lien et complète le formulaire sur la page Sokar.
 
@@ -73,7 +73,7 @@ Tools disponibles :
 
 ### Option 3 : Page web directe
 
-L'utilisateur peut aussi réserver directement sur ${SITE_URL}/r/[slug]
+L'utilisateur peut aussi réserver directement sur ${SITE_URL}/restaurant/[slug]
 sans passer par une IA. Le formulaire de réservation est sur la page.
 
 ## Sitemap

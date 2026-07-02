@@ -39,7 +39,7 @@ export function ConfirmationView({ result, slug }: { result: ConfirmDto; slug: s
         Un SMS de confirmation vous a été envoyé.
       </p>
       <Link
-        href={`/r/${slug}`}
+        href={`/restaurant/${slug}`}
         className="mt-6 inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-2 text-sm font-semibold text-ink transition-all duration-200 hover:bg-muted"
       >
         ← Retour à la fiche

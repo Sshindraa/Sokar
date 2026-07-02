@@ -21,7 +21,7 @@ export function RestaurantCard({ restaurant, className }: Props) {
 
   return (
     <Link
-      href={`/r/${restaurant.slug}`}
+      href={`/restaurant/${restaurant.slug}`}
       className={cn(
         'group block overflow-hidden rounded-xl border border-border bg-background transition-all duration-200 hover:border-ember/30 hover:shadow-md',
         className,

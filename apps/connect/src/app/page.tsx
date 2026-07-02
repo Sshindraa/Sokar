@@ -57,7 +57,7 @@ export default async function HomePage() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <span>Sokar Connect</span>
           <span aria-hidden>·</span>
-          <Link className="text-ember underline" href="/r/chez-sokar-demo">
+          <Link className="text-ember underline" href="/restaurant/chez-sokar-demo">
             Restaurant démo
           </Link>
           <span aria-hidden>·</span>

@@ -60,12 +60,12 @@ export function buildPublicRestaurantJsonLd(input: {
   return {
     '@context': 'https://schema.org',
     '@type': 'Restaurant',
-    '@id': `${SITE_URL}/r/${r.slug}`,
+    '@id': `${SITE_URL}/restaurant/${r.slug}`,
     name: r.name,
-    url: `${SITE_URL}/r/${r.slug}`,
+    url: `${SITE_URL}/restaurant/${r.slug}`,
     mainEntityOfPage: {
       '@type': 'WebPage',
-      '@id': `${SITE_URL}/r/${r.slug}`,
+      '@id': `${SITE_URL}/restaurant/${r.slug}`,
     },
     telephone: r.phone,
     servesCuisine: r.cuisineTypes,
@@ -97,7 +97,7 @@ export function buildPublicRestaurantJsonLd(input: {
             '@type': 'ReserveAction',
             target: {
               '@type': 'EntryPoint',
-              urlTemplate: `${SITE_URL}/r/${r.slug}/book?partySize={partySize}&date={date}&time={time}`,
+              urlTemplate: `${SITE_URL}/restaurant/${r.slug}/book?partySize={partySize}&date={date}&time={time}`,
               inLanguage: 'fr-FR',
               actionPlatform: [
                 'https://schema.org/DesktopWebPlatform',
