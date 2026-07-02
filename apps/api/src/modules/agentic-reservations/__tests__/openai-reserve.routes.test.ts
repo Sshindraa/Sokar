@@ -97,6 +97,13 @@ describe('OpenAI Reserve routes', () => {
       });
       expect(res.statusCode).toBe(400);
     });
+
+    // Note : le rate limit (30 req/min/IP) est configuré via
+    // config: { rateLimit: { max: 30, timeWindow: '1 minute' } } dans
+    // openai-reserve.routes.ts. Un test fonctionnel 429 complet est difficile
+    // à isoler car le store mémoire du rate limiter est partagé entre tous
+    // les tests (singleton app via getApp). Le rate limit est vérifié en
+    // production par le plugin @fastify/rate-limit.
   });
 
   describe('POST /v1/tools/restaurant_reservation', () => {
