@@ -173,7 +173,7 @@ export class OpenaiReserveService {
       location: { latitude, longitude },
       phone_number: r.phoneE164 || '',
       website_url: r.websiteUrl,
-      platform_url: `https://app.sokar.com/r/${r.slug ?? r.id}`,
+      platform_url: `https://sokar.tech/restaurant/${r.slug ?? r.id}`,
       cuisine_type: r.cuisineType,
       price_range: r.priceRange,
       opening_hours: r.openingHours as Record<string, string[]> | null,

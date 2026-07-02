@@ -896,7 +896,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
       connectPublished: exposure?.connectPublished ?? false,
       connectAgentic: exposure?.connectAgentic ?? false,
       connectPublishedAt: exposure?.connectPublishedAt?.toISOString() ?? null,
-      pageUrl: slug ? `https://sokar.tech/r/${slug}` : null,
+      pageUrl: slug ? `https://sokar.tech/restaurant/${slug}` : null,
     });
   };
 
