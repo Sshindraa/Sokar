@@ -19,9 +19,9 @@ Cette app est un prototype expérimental (OpenAI Apps SDK). Elle **ne doit pas
 
 3. **Aucun pipeline de déploiement CDN configuré** — la constante
    `WIDGET_PUBLIC_URL` dans `apps/api/src/modules/agentic-reservations/openai-reserve/constants.ts`
-   pointe vers `https://widget.sokar.app/` (domaine inexistant). Aucun
-   déploiement Cloudflare/CDN n'est configuré pour servir le build statique
-   (`next export`).
+   pointe vers `https://widget.sokar.tech/`, mais ce sous-domaine n'a aucun
+   DNS/CDN configuré derrière lui aujourd'hui. Aucun déploiement
+   Cloudflare/CDN n'est configuré pour servir le build statique (`next export`).
 
 ## Que faire pour rendre ce widget fonctionnel ?
 
