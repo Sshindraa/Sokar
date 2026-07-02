@@ -127,6 +127,72 @@
         }
       },
       "options": { "legend": { "displayMode": "table", "placement": "bottom" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Appels MCP par tool (rate/s)",
+      "description": "Taux d'appels aux tools MCP par tool et statut. Permet de savoir quels tools sont réellement utilisés par les clients MCP (Claude Desktop, Cursor, etc.).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(sokar_mcp_tool_calls_total[5m])) by (tool, status)",
+          "legendFormat": "{{tool}} / {{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "lineInterpolation": "linear", "fillOpacity": 10 }
+        }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right" } }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Hits bots IA par user-agent (rate/s)",
+      "description": "Taux de crawl par bot IA sur les pages publiques Connect (restaurant, llms.txt, sitemap, robots, well-known). Permet de mesurer quels bots crawlent réellement Sokar.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(sokar_connect_ia_bot_hits_total[5m])) by (bot)",
+          "legendFormat": "{{bot}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "lineInterpolation": "linear", "fillOpacity": 10 }
+        }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right" } }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Hits bots IA par path_class (total)",
+      "description": "Répartition des hits bots IA par catégorie de path (restaurant, llms.txt, sitemap, robots, well-known).",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 30 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(sokar_connect_ia_bot_hits_total) by (path_class)",
+          "legendFormat": "{{path_class}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "blue" }] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" }
     }
   ],
   "schemaVersion": 39,
@@ -137,6 +203,6 @@
   "timezone": "browser",
   "title": "Sokar Connect — Pilot Dashboard",
   "uid": "sokar-connect-pilot",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

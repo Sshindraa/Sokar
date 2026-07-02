@@ -1,0 +1,55 @@
+# ── Sokar Prometheus alerting rules ──────────────────────────────────────────
+# Alertes sur l'observabilité Connect + MCP (Phase 1).
+#
+# Ces règles sont consommées par Prometheus quand il sera déployé sur le VPS.
+# En attendant, elles documentent les seuils et sont prêtes à l'emploi.
+#
+# Chargement : ajouter dans prometheus.yml :
+#   rule_files:
+#     - /etc/prometheus/alerts.yml
+#
+# Cf. docs/pilot/grafana-dashboard-connect.json pour les panels associés.
+
+groups:
+  - name: sokar-connect-observability
+    interval: 5m
+    rules:
+      # MCP : si aucun tool MCP n'est appelé pendant 72h après déploiement,
+      # c'est que le serveur MCP n'est pas découvert/utilisé par les clients.
+      - alert: McpToolCallsStale
+        expr: increase(sokar_mcp_tool_calls_total[72h]) == 0
+        for: 72h
+        labels:
+          severity: warning
+          team: sokar
+        annotations:
+          summary: 'Aucun appel MCP tool depuis 72h'
+          description: "sokar_mcp_tool_calls_total n'a pas augmenté pendant 72h. Le serveur MCP n'est peut-être pas découvert par les clients MCP (Claude Desktop, Cursor), ou l'auth/API key n'est pas configurée."
+
+      # IA crawl : si aucun bot IA ne crawl les pages publiques pendant 72h,
+      # c'est que le crawl IA ne se produit pas (robots.txt bloquant, DNS, ou
+      # les bots n'ont pas encore découvert le site).
+      - alert: IaBotHitsStale
+        expr: increase(sokar_connect_ia_bot_hits_total[72h]) == 0
+        for: 72h
+        labels:
+          severity: warning
+          team: sokar
+        annotations:
+          summary: 'Aucun hit bot IA depuis 72h'
+          description: "sokar_connect_ia_bot_hits_total n'a pas augmenté pendant 72h. Les bots IA (GPTBot, ClaudeBot, OAI-SearchBot...) ne crawlent pas Sokar. Vérifier robots.txt, le sitemap, et que les pages sont indexables."
+
+      # MCP error rate : si >10% des appels MCP sont en erreur sur 1h.
+      - alert: McpToolErrorRateHigh
+        expr: |
+          sum(rate(sokar_mcp_tool_calls_total{status="error"}[1h]))
+          /
+          clamp_min(sum(rate(sokar_mcp_tool_calls_total[1h])), 0.001)
+          > 0.10
+        for: 1h
+        labels:
+          severity: critical
+          team: sokar
+        annotations:
+          summary: "Taux d'erreur MCP > 10% sur 1h"
+          description: "Plus de 10% des appels MCP tool échouent. Vérifier les logs API et l'état des services dépendants (DB, Redis, Telnyx)."

@@ -101,6 +101,7 @@ export function __resetMetrics(): void {
   connectReservationsConfirmedTotal.reset();
   connectRequestDuration.reset();
   mcpToolCallsTotal.reset();
+  connectIaBotHitsTotal.reset();
 }
 
 // ─── Sokar Connect (Phase 1) ────────────────────────────────────────
@@ -156,5 +157,19 @@ export const mcpToolCallsTotal = new Counter({
   name: 'sokar_mcp_tool_calls_total',
   help: 'Total MCP tool calls by tool name and status',
   labelNames: ['tool', 'status'] as const,
+  registers: [getRegistry()],
+});
+
+/**
+ * Hits par bot IA sur les pages publiques Connect (crawl web).
+ * Détecté côté Connect middleware (Edge), forwardé en fire-and-forget vers
+ * l'endpoint analytics API qui incrémente ce compteur via la queue BullMQ.
+ * Labels : bot (GPTBot, ClaudeBot, ...) × path_class (restaurant, llms.txt,
+ *           sitemap, robots, well-known) — cardinalité bornée.
+ */
+export const connectIaBotHitsTotal = new Counter({
+  name: 'sokar_connect_ia_bot_hits_total',
+  help: 'Total IA bot hits on Sokar Connect public pages',
+  labelNames: ['bot', 'path_class'] as const,
   registers: [getRegistry()],
 });
