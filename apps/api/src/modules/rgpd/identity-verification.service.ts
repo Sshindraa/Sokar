@@ -34,6 +34,7 @@ import crypto from 'crypto';
 import type Redis from 'ioredis';
 import { logger } from '../../shared/logger/pino';
 import { sendSms } from '../../shared/telnyx/client';
+import { env } from '../../env';
 import { sendEmail } from '../../shared/email';
 
 const OTP_LENGTH = 6;
@@ -410,7 +411,7 @@ export class IdentityVerificationService {
   }
 
   private async sendSignedLinkEmail(email: string, token: string, intent: string): Promise<void> {
-    const baseUrl = process.env.PUBLIC_URL ?? 'https://sokar.tech';
+    const baseUrl = env.PUBLIC_URL;
     const link = `${baseUrl}/api/rgpd/confirm-link?token=${encodeURIComponent(token)}`;
     const subject =
       intent === 'erase'

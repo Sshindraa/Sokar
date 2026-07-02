@@ -55,9 +55,9 @@ describe('buildPublicRestaurantJsonLd', () => {
 
     expect(jsonLd['@context']).toBe('https://schema.org');
     expect(jsonLd['@type']).toBe('Restaurant');
-    expect(jsonLd['@id']).toBe('https://sokar.tech/restaurant/chez-mario-lyon');
+    expect(jsonLd['@id']).toBe('http://localhost:3001/restaurant/chez-mario-lyon');
     expect(jsonLd.name).toBe('Chez Mario');
-    expect(jsonLd.url).toBe('https://sokar.tech/restaurant/chez-mario-lyon');
+    expect(jsonLd.url).toBe('http://localhost:3001/restaurant/chez-mario-lyon');
     expect(jsonLd.telephone).toBe('+33400000000');
   });
 
