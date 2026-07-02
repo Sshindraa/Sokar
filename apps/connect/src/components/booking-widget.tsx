@@ -86,6 +86,8 @@ export function BookingWidget({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmResult, setConfirmResult] = useState<ConfirmDto | null>(null);
+  // Idempotency key générée une fois par tentative de réservation (pas à chaque submit)
+  const [idempotencyKey, setIdempotencyKey] = useState<string>('');
 
   // Load restaurant info once
   useEffect(() => {
@@ -169,8 +171,7 @@ export function BookingWidget({
       }
       const hold: HoldDto = await holdRes.json();
 
-      // 2. Confirm — Idempotency-Key généré côté client (uuidv4)
-      const idempotencyKey = crypto.randomUUID();
+      // 2. Confirm — Idempotency-Key réutilisée (générée au step "confirm")
       const confirmRes = await fetch(`${API_URL}/public/r/${slug}/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -310,6 +311,9 @@ export function BookingWidget({
         onSelect={(time) => {
           setSelectedTime(time);
           setStep('confirm');
+          // Générer l'idempotency key une fois par sélection de slot.
+          // Réutilisée pour hold + confirm → protège contre le double submit.
+          setIdempotencyKey(crypto.randomUUID());
           if (restaurant) {
             trackEvent({
               event: 'availability_slot_selected',

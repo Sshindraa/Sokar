@@ -65,7 +65,7 @@ export function buildPublicRestaurantJsonLd(input: {
     url: `${SITE_URL}/r/${r.slug}`,
     telephone: r.phone,
     servesCuisine: r.cuisineTypes,
-    acceptsReservations: r.reservationUrl,
+    acceptsReservations: true,
     address: {
       '@type': 'PostalAddress',
       streetAddress: r.address.line1,

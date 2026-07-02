@@ -39,12 +39,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.6,
   }));
 
-  // Pages cuisine indexables (ville ≥10 restos ET cuisine ≥5)
+  // Pages cuisine indexables (ville ≥10 restos ET cuisine ≥10, spec §7.4)
   const cuisineUrls: MetadataRoute.Sitemap = cities
     .filter((city) => city.total >= 10)
     .flatMap((city) =>
       city.cuisines
-        .filter((cuisine) => cuisine.count >= 5)
+        .filter((cuisine) => cuisine.count >= 10)
         .map((cuisine) => ({
           url: `${SITE_URL}/restaurants/${city.citySlug}/${cuisine.slug}`,
           lastModified: new Date(),

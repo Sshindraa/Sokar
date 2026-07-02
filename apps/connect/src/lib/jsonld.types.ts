@@ -13,7 +13,7 @@ export type RestaurantJsonLd = {
   servesCuisine: string[];
   priceRange?: string;
   image?: string[];
-  acceptsReservations: string;
+  acceptsReservations: boolean;
   address: {
     '@type': 'PostalAddress';
     streetAddress: string;
