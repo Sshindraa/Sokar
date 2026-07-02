@@ -16,6 +16,10 @@ module.exports = {
       out_file: '/var/log/sokar/api-out.log',
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      // Restart strategy : évite crash loop en cas de panne persistante
+      restart_delay: 4000,
+      max_restarts: 10,
+      min_uptime: '10s',
     },
     {
       name: 'sokar-dashboard',
@@ -42,6 +46,9 @@ module.exports = {
       out_file: '/var/log/sokar/dashboard-out.log',
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      restart_delay: 4000,
+      max_restarts: 10,
+      min_uptime: '10s',
     },
     {
       name: 'sokar-connect',
@@ -58,6 +65,10 @@ module.exports = {
       out_file: '/var/log/sokar/connect-out.log',
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      // Restart strategy : évite crash loop en cas de panne persistante
+      restart_delay: 4000,
+      max_restarts: 10,
+      min_uptime: '10s',
     },
   ],
 };
