@@ -36,23 +36,23 @@ interface FillerSet {
 
 const FILLERS: FillerSet = {
   casual: [
-    "Je regarde ça…",
-    "Laissez-moi voir…",
-    "Un instant…",
-    "Voyons voir…",
-    "Alors, je vérifie…",
+    'Je regarde ça…',
+    'Laissez-moi voir…',
+    'Un instant…',
+    'Voyons voir…',
+    'Alors, je vérifie…',
   ],
   warm: [
-    "Pas de souci, je regarde ça…",
+    'Pas de souci, je regarde ça…',
     "Je m'en occupe, une seconde…",
-    "Je vous dis ça tout de suite…",
-    "Alors laissez-moi checker…",
+    'Je vous dis ça tout de suite…',
+    'Alors laissez-moi checker…',
   ],
   formal: [
-    "Veuillez patienter un instant…",
-    "Je consulte nos disponibilités…",
+    'Veuillez patienter un instant…',
+    'Je consulte nos disponibilités…',
     "Un moment, s'il vous plaît…",
-    "Je regarde cela pour vous…",
+    'Je regarde cela pour vous…',
   ],
 };
 
@@ -157,7 +157,12 @@ export async function initFillerCache(): Promise<void> {
             fillerCache.set(text, chunks);
             // Redis ensuite (persistance cross-restart)
             const key = redisKey(text, voiceId, fillerEncoding);
-            await redisCache.set(key, JSON.stringify(chunks), 'EX', FILLER_CACHE_TTL_SECONDS);
+            await redisCache.set(
+              key,
+              JSON.stringify(chunks),
+              'EX',
+              FILLER_CACHE_TTL_SECONDS ?? 2_592_000,
+            );
             return true;
           }
         } catch (err) {
@@ -272,7 +277,9 @@ async function generateFillerAudio(text: string): Promise<string[]> {
         if (parsed.type === 'chunk' && parsed.data) {
           chunks.push(parsed.data);
         }
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
     }
   }
 
