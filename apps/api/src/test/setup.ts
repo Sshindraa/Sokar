@@ -112,7 +112,7 @@ process.env.TZ = 'Europe/Paris';
 // Valeurs localhost pour les tests — le .refine() prod allowlist ne s'active
 // qu'en NODE_ENV=production.
 process.env.PUBLIC_URL ??= 'http://localhost:4000';
-process.env.SITE_URL ??= 'http://localhost:3001';
+process.env.SITE_URL ??= 'http://localhost:4002';
 process.env.DASHBOARD_URL ??= 'http://localhost:3000';
 process.env.API_URL ??= 'http://localhost:4000';
 process.env.TELNYX_API_KEY = 'test-telnyx-key';
