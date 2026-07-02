@@ -66,4 +66,13 @@ export const queues = {
       removeOnFail: 500,
     },
   }),
+  alertEvaluation: new Queue('alert-evaluation', {
+    connection: redisQueue,
+    defaultJobOptions: {
+      attempts: 2,
+      backoff: { type: 'fixed', delay: 10_000 },
+      removeOnComplete: 100,
+      removeOnFail: 500,
+    },
+  }),
 };

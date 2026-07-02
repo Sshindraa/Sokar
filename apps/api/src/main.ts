@@ -27,6 +27,7 @@ import { oauthRoutes } from './modules/agentic-reservations/mcp/oauth';
 import { openaiReserveRoutes } from './modules/agentic-reservations/openai-reserve/openai-reserve.routes';
 import { rgpdRoutes } from './modules/rgpd/rgpd.routes';
 import { observabilityRoutes } from './shared/observability/observability.routes';
+import { httpRequestsTotal } from './shared/observability/metrics';
 import { connectRoutes } from './modules/connect/connect.routes';
 import { pilotRoutes } from './modules/pilot/pilot.routes';
 import { flagsRoutes } from './modules/admin/flags.routes';
@@ -50,6 +51,7 @@ import './shared/queue/workers/connect-analytics.worker';
 import './shared/queue/workers/confirmation-sms.worker';
 import './shared/queue/workers/reactivation.worker';
 import './shared/queue/workers/google-places-sync.worker';
+import './shared/queue/workers/alert-evaluation.worker';
 
 // Initialize Sentry as early as possible so that instrumentation hooks are
 // registered before the Fastify app (and its error handler) are built.
@@ -127,6 +129,15 @@ export async function buildApp() {
   app.addHook('onRequest', (request, _reply, done) => {
     // childLoggerFactory already attached requestId; this hook is a no-op
     // kept for documentation and future per-request setup.
+    done();
+  });
+
+  // Global HTTP request counter — alimente alertErrorRateHigh via le worker
+  // alert-evaluation. Exécuté après toutes les routes (y compris 404).
+  app.addHook('onResponse', (request, reply, done) => {
+    const code = reply.statusCode;
+    const statusClass = code < 400 ? '2xx' : code < 500 ? '4xx' : '5xx';
+    httpRequestsTotal.inc({ status_class: statusClass });
     done();
   });
 
@@ -327,6 +338,15 @@ async function start() {
           'weekly-vip-reactivation',
           { pattern: '0 10 * * 1', tz: 'Europe/Paris' },
           { name: 'reactivation-scan', data: { kind: 'scan' } },
+        );
+
+        // Alert evaluation : toutes les 5 minutes. Lit les métriques Prometheus,
+        // compare avec le snapshot précédent (Redis), déclenche les alertes
+        // Sentry avec cooldown 30 min. Cf. alert-evaluation.worker.ts.
+        await queues.alertEvaluation.upsertJobScheduler(
+          'alert-evaluation-5min',
+          { pattern: '*/5 * * * *', tz: 'Europe/Paris' },
+          { name: 'evaluate-alerts' },
         );
       } catch (err) {
         logger.error(err, 'Failed to register schedulers on startup');

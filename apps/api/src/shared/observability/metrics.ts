@@ -77,6 +77,20 @@ export const doubleBookingAttemptsTotal = new Counter({
   registers: [getRegistry()],
 });
 
+// ─── Global HTTP requests (for alertErrorRateHigh) ───────────────────
+
+/**
+ * Compteur global des requêtes HTTP traitées par l'API (toutes routes).
+ * Permet de calculer le taux de 5xx global pour alertErrorRateHigh.
+ * Labels : status_class (2xx, 4xx, 5xx) — cardinalité bornée à 3.
+ */
+export const httpRequestsTotal = new Counter({
+  name: 'sokar_http_requests_total',
+  help: 'Total HTTP requests processed by the API (all routes)',
+  labelNames: ['status_class'] as const,
+  registers: [getRegistry()],
+});
+
 // ─── Fail-open (Redis/cache down) ────────────────────────────────────
 
 /**
@@ -135,6 +149,7 @@ export function __resetMetrics(): void {
   connectIaBotHitsTotal.reset();
   openaiReserveFeedRequestsTotal.reset();
   failOpenTotal.reset();
+  httpRequestsTotal.reset();
 }
 
 // ─── Sokar Connect (Phase 1) ────────────────────────────────────────
