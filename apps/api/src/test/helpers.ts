@@ -194,6 +194,15 @@ vi.mock('../shared/queue/queues', () => ({
     analytics: {
       add: vi.fn().mockResolvedValue({}),
     },
+    connectAnalytics: {
+      add: vi.fn().mockResolvedValue({}),
+    },
+    confirmationSms: {
+      add: vi.fn().mockResolvedValue({}),
+    },
+    reactivation: {
+      add: vi.fn().mockResolvedValue({}),
+    },
   },
 }));
 

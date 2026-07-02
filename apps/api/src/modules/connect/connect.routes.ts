@@ -40,8 +40,10 @@ import {
   ConfirmInputSchema,
   HoldInputSchema,
   SlugParamSchema,
+  normalizeConnectSource,
   type Source,
 } from './connect.types';
+import { emitConnectEvent } from './connect-analytics';
 
 export async function connectRoutes(app: FastifyInstance): Promise<void> {
   const canal = new ConnectService(db, redisCache);
@@ -251,34 +253,20 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     }
     // Validation soft : on accepte les events inconnus (forward compat) mais
     // on log un warning. Le worker drop les events invalides.
-    try {
-      await app.queues.connectAnalytics.add(
-        'connect-event',
-        {
-          event: body.event,
-          restaurantId: body.restaurantId as string | undefined,
-          restaurantSlug: body.restaurantSlug as string | undefined,
-          city: body.city as string | undefined,
-          source: (body.source as string | undefined) ?? 'web',
-          utmSource: body.utmSource as string | undefined,
-          utmMedium: body.utmMedium as string | undefined,
-          utmCampaign: body.utmCampaign as string | undefined,
-          date: body.date as string | undefined,
-          time: body.time as string | undefined,
-          partySize: body.partySize as number | undefined,
-          reservationId: body.reservationId as string | undefined,
-          sentAt: (body.sentAt as string | undefined) ?? new Date().toISOString(),
-        },
-        // Haute priorité pour les reservations_confirmed (tracking fin)
-        { priority: body.event === 'reservation_confirmed' ? 1 : 5 },
-      );
-    } catch (err) {
-      // Queue down : on log mais on renvoie 202 quand même (best-effort)
-      logger.warn(
-        { err: err instanceof Error ? err.message : err, event: body.event },
-        'connect queue add failed',
-      );
-    }
+    await emitConnectEvent(app.queues.connectAnalytics, {
+      event: body.event,
+      restaurantId: body.restaurantId as string | undefined,
+      restaurantSlug: body.restaurantSlug as string | undefined,
+      city: body.city as string | undefined,
+      source: (body.source as string | undefined) ?? 'web',
+      utmSource: body.utmSource as string | undefined,
+      utmMedium: body.utmMedium as string | undefined,
+      utmCampaign: body.utmCampaign as string | undefined,
+      date: body.date as string | undefined,
+      time: body.time as string | undefined,
+      partySize: body.partySize as number | undefined,
+      reservationId: body.reservationId as string | undefined,
+    });
     return reply.status(202).send({ ok: true });
   });
 
@@ -310,14 +298,14 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   // ─── 3. POST /public/r/:slug/hold ───────────────────────────
   // Crée un hold temporaire 5min (TTL via policies.holdTtlSeconds)
-  // Rate limit serré : 5 holds/min/IP pour éviter le squatting de créneaux.
+  // Rate limit : 11 holds/min/IP (cf. spec v1.1 §10 T2 + §8.3).
 
   app.post(
     '/public/r/:slug/hold',
     {
       config: {
         rateLimit: {
-          max: 5,
+          max: 11,
           timeWindow: '1 minute',
         },
       },
@@ -337,15 +325,13 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: 'Restaurant not found or not published' });
       }
 
-      // Source normalization (cf. spec v1.1 §5.9 + feedback Hamza)
-      // - Si connectAgentic=false, on neutralise chatgpt/perplexity/bing/google(bing_ai)
-      // - On garde google (organic SEO), instagram, qr_code, restaurant_website, direct
-      // - Pour google spécifiquement, c'est un canal SEO normal, pas agentic
-      const AGENTIC_NEUTRAL: ReadonlySet<Source> = new Set(['chatgpt', 'perplexity', 'bing']);
-      const requestedSource: Source = bodyParse.data.source;
-      const isAgenticNeutral = AGENTIC_NEUTRAL.has(requestedSource);
-      const source: Source =
-        !restaurant.connectAgentic && isAgenticNeutral ? 'web' : requestedSource;
+      // Source normalization (cf. spec v1.1 §5.9)
+      // - Si connectAgentic=false, on neutralise chatgpt/perplexity/bing → 'web'
+      // - On préserve google (organic SEO), instagram, qr_code, etc.
+      const source: Source = normalizeConnectSource(
+        bodyParse.data.source,
+        restaurant.connectAgentic,
+      );
 
       const policy = await loadPolicy(restaurant.id);
       if (!policy) {
@@ -369,6 +355,18 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           channel: 'WEB',
           policy,
           actor: 'connect:web',
+        });
+
+        // Émettre l'événement analytics reservation_hold_created (T9)
+        await emitConnectEvent(app.queues.connectAnalytics, {
+          event: 'reservation_hold_created',
+          restaurantId: restaurant.id,
+          restaurantSlug: restaurant.slug,
+          city: restaurant.address.city,
+          source,
+          date: bodyParse.data.date,
+          time: bodyParse.data.time,
+          partySize: bodyParse.data.partySize,
         });
 
         return reply.send({
@@ -433,6 +431,12 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         ? `${bodyParse.data.customer.firstName} ${bodyParse.data.customer.lastName}`.trim()
         : bodyParse.data.customer.firstName;
 
+      // Source normalization (même logique que /hold, cf. spec v1.1 §5.9)
+      const source: Source = normalizeConnectSource(
+        bodyParse.data.source,
+        restaurant.connectAgentic,
+      );
+
       // RGPD consent (channel=WEB, context=web_booking_intent)
       const ipHash = req.ip ? hashIp(req.ip) : undefined;
       await consents.recordConsent({
@@ -495,10 +499,28 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           },
         );
 
-        // Update source separately (pas dans CreateReservationInput, on patch direct)
-        // La source est déduite du ?source= URL → on la retrouve via le hold.actor
-        // Pour P0, on enregistre 'web' par défaut. Source agentic = extension P2.
-        // (Le tracking fin se fera côté T9 via Redis analytics)
+        // Persister la source normalisée sur la réservation
+        // (CreateReservationInput ne porte pas source, on patch direct)
+        if (!result.reused) {
+          await db.reservation.update({
+            where: { id: result.reservationId },
+            data: { source },
+          });
+        }
+
+        // Émettre l'événement analytics reservation_confirmed (T9)
+        // Best-effort : si la queue est down, on log un warning mais on ne fail pas.
+        await emitConnectEvent(app.queues.connectAnalytics, {
+          event: 'reservation_confirmed',
+          restaurantId: restaurant.id,
+          restaurantSlug: restaurant.slug,
+          city: restaurant.address.city,
+          source,
+          date: hold.slotStart.toISOString().slice(0, 10),
+          time: hold.slotStart.toISOString().slice(11, 16),
+          partySize: hold.partySize,
+          reservationId: result.reservationId,
+        });
 
         return reply.send({
           reservationId: result.reservationId,
@@ -509,6 +531,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           date: hold.slotStart.toISOString().slice(0, 10),
           time: hold.slotStart.toISOString().slice(11, 16),
           partySize: hold.partySize,
+          source,
         });
       } catch (err: unknown) {
         logger.error({ err, slug: slugParse.data.slug, holdId: hold.id }, 'connect confirm failed');
