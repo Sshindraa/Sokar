@@ -99,6 +99,7 @@ export function __resetMetrics(): void {
   doubleBookingAttemptsTotal.reset();
   connectEventsTotal.reset();
   connectReservationsConfirmedTotal.reset();
+  connectRequestDuration.reset();
 }
 
 // ─── Sokar Connect (Phase 1) ────────────────────────────────────────
@@ -125,5 +126,18 @@ export const connectReservationsConfirmedTotal = new Counter({
   name: 'sokar_connect_reservations_confirmed_total',
   help: 'Total reservations confirmed via Sokar Connect',
   labelNames: ['source', 'city'] as const,
+  registers: [getRegistry()],
+});
+
+/**
+ * Latence des requêtes sur les routes publiques Sokar Connect.
+ * Permet de calculer le p95 (cible < 500ms, spec v1.1 §11.2).
+ * Labels : route (slug, availability, hold, confirm) × status (2xx, 4xx, 5xx).
+ */
+export const connectRequestDuration = new Histogram({
+  name: 'sokar_connect_request_duration_ms',
+  help: 'Duration of Sokar Connect public API requests in milliseconds',
+  labelNames: ['route', 'status'] as const,
+  buckets: [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
   registers: [getRegistry()],
 });

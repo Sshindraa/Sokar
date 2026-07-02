@@ -45,6 +45,29 @@ import {
 } from './connect.types';
 import { emitConnectEvent } from './connect-analytics';
 import { canConfirm, recordFailedConfirm } from './connect-rate-limit';
+import { connectRequestDuration } from '../../shared/observability/metrics';
+
+/**
+ * Map une URL vers un nom de route lisible pour les labels Prometheus.
+ * Évite la cardinalité infinie (pas de slug dans le label).
+ */
+function routeLabel(url: string): string {
+  if (url.startsWith('/public/r/') && url.endsWith('/availability')) return 'availability';
+  if (url.startsWith('/public/r/') && url.endsWith('/hold')) return 'hold';
+  if (url.startsWith('/public/r/') && url.endsWith('/confirm')) return 'confirm';
+  if (url.startsWith('/public/r/')) return 'slug';
+  if (url.startsWith('/public/cities/')) return 'city';
+  if (url === '/public/cities') return 'cities';
+  if (url === '/public/sitemap-data') return 'sitemap-data';
+  if (url === '/public/analytics/events') return 'analytics-events';
+  return 'other';
+}
+
+function statusClass(code: number): string {
+  if (code < 400) return '2xx';
+  if (code < 500) return '4xx';
+  return '5xx';
+}
 
 export async function connectRoutes(app: FastifyInstance): Promise<void> {
   const canal = new ConnectService(db, redisCache);
@@ -54,6 +77,15 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
   const idempotency = new IdempotencyService(new PrismaIdempotencyStore(db));
   const reservations = new ReservationService(db, audit, holds, idempotency);
   const consents = new ConsentService(db);
+
+  // ─── Hook latence : enregistre la durée de chaque requête Connect ───
+  // Spec v1.1 §11.2 : p95 < 500ms cible pour le pilote P1.
+  app.addHook('onResponse', async (req, reply) => {
+    const route = routeLabel(req.url);
+    if (route === 'other') return; // ignore les routes non-Connect
+    const durationMs = reply.elapsedTime;
+    connectRequestDuration.observe({ route, status: statusClass(reply.statusCode) }, durationMs);
+  });
 
   // ─── 1. GET /public/r/:slug ─────────────────────────────────
 
