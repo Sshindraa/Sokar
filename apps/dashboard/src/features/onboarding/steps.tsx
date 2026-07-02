@@ -810,6 +810,7 @@ export function ConnectIdentityStep({ onComplete }: StepProps) {
     }, 300);
 
     return () => clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- get is stable from useApi()
   }, [slug]);
 
   async function handleFileDrop(e: React.DragEvent) {
