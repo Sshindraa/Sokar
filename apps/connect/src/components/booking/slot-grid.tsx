@@ -1,0 +1,35 @@
+/**
+ * Sokar Connect — SlotGrid.
+ *
+ * Grille de créneaux horaires. L'utilisateur clique sur un slot
+ * disponible pour passer à l'étape suivante.
+ */
+
+type Slot = { time: string; available: boolean };
+
+export function SlotGrid({ slots, onSelect }: { slots: Slot[]; onSelect: (time: string) => void }) {
+  if (slots.length === 0) return null;
+
+  return (
+    <div>
+      <h3 className="mb-2 text-sm font-medium text-ink">Choisissez un horaire</h3>
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+        {slots.map((slot) => (
+          <button
+            key={slot.time}
+            type="button"
+            disabled={!slot.available}
+            onClick={() => onSelect(slot.time)}
+            className={`rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-200 ${
+              slot.available
+                ? 'border-border bg-background text-ink hover:border-ember hover:bg-ember/5'
+                : 'cursor-not-allowed border-border bg-muted text-muted-foreground line-through'
+            }`}
+          >
+            {slot.time}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}

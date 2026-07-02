@@ -15,10 +15,16 @@
  * Le hold est côté serveur (5 min TTL), le confirm aussi.
  *
  * Honeypot : un input `website` caché. Si rempli, on abort (bot signal).
+ *
+ * Sous-composants : PartySizePicker, SlotGrid, CustomerForm, ConfirmationView
+ * (cf. apps/connect/src/components/booking/).
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
+import { PartySizePicker } from './booking/party-size-picker';
+import { SlotGrid } from './booking/slot-grid';
+import { CustomerForm } from './booking/customer-form';
+import { ConfirmationView, type ConfirmDto } from './booking/confirmation-view';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -32,13 +38,12 @@ type PublicRestaurant = {
   address: { city: string };
 };
 
-type HoldDto = { holdToken: string; expiresAt: string; status: 'pending' };
-type ConfirmDto = {
-  reservationId: string;
-  restaurantName: string;
-  date: string;
-  time: string;
-  partySize: number;
+type HoldDto = {
+  holdId: string;
+  holdToken: string;
+  expiresAt: string;
+  status: 'pending';
+  sourceNormalized?: string;
 };
 
 type Props = {
@@ -48,8 +53,6 @@ type Props = {
   initialDate?: string;
   initialTime?: string;
 };
-
-const PARTY_SIZES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -165,12 +168,15 @@ export function BookingWidget({
       }
       const hold: HoldDto = await holdRes.json();
 
-      // 2. Confirm
+      // 2. Confirm — Idempotency-Key généré côté client (uuidv4)
+      const idempotencyKey = crypto.randomUUID();
       const confirmRes = await fetch(`${API_URL}/public/r/${slug}/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           holdToken: hold.holdToken,
+          idempotencyKey,
+          source,
           customer: {
             firstName: firstName.trim(),
             phone: phone.trim(),
@@ -181,6 +187,17 @@ export function BookingWidget({
       });
       if (!confirmRes.ok) {
         const data = await confirmRes.json().catch(() => ({}));
+        // 410 = hold expiré → retour step 1 avec message clair
+        if (confirmRes.status === 410) {
+          setStep('pick');
+          setSelectedTime(null);
+          setSlots([]);
+          setError(
+            'Votre créneau a expiré (délai de 5 minutes dépassé). ' +
+              'Veuillez sélectionner un nouvel horaire.',
+          );
+          return;
+        }
         setError(data.error || 'La réservation a échoué. Réessayez ou appelez le restaurant.');
         return;
       }
@@ -196,38 +213,7 @@ export function BookingWidget({
 
   // Confirmation screen
   if (step === 'done' && confirmResult) {
-    return (
-      <div className="rounded-xl border border-border bg-cream p-6">
-        <div className="mb-4 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-ember text-white">
-            ✓
-          </div>
-          <h2 className="text-xl font-semibold text-ink">Réservation confirmée</h2>
-        </div>
-        <p className="text-ink">
-          Votre table chez <strong>{confirmResult.restaurantName}</strong> est réservée pour{' '}
-          <strong>
-            {confirmResult.partySize} personne{confirmResult.partySize > 1 ? 's' : ''}
-          </strong>{' '}
-          le <strong>{confirmResult.date}</strong> à <strong>{confirmResult.time}</strong>.
-        </p>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Code de réservation :{' '}
-          <code className="rounded bg-muted px-1 py-0.5 text-xs">
-            {confirmResult.reservationId}
-          </code>
-        </p>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Un SMS de confirmation vous a été envoyé.
-        </p>
-        <Link
-          href={`/r/${slug}`}
-          className="mt-6 inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-2 text-sm font-semibold text-ink transition-all duration-200 hover:bg-muted"
-        >
-          ← Retour à la fiche
-        </Link>
-      </div>
-    );
+    return <ConfirmationView result={confirmResult} slug={slug} />;
   }
 
   // Confirm step (form)
@@ -241,83 +227,18 @@ export function BookingWidget({
           </p>
         </div>
 
-        <div>
-          <label htmlFor="firstName" className="block text-sm font-medium text-ink">
-            Prénom *
-          </label>
-          <input
-            id="firstName"
-            type="text"
-            required
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-ink focus:border-ember focus:outline-none focus:ring-1 focus:ring-ember"
-            autoComplete="given-name"
-            maxLength={100}
-          />
-        </div>
-
-        <div>
-          <label htmlFor="phone" className="block text-sm font-medium text-ink">
-            Téléphone *{' '}
-            <span className="font-normal text-muted-foreground">(format international)</span>
-          </label>
-          <input
-            id="phone"
-            type="tel"
-            required
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="+33612345678"
-            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-ink focus:border-ember focus:outline-none focus:ring-1 focus:ring-ember"
-            autoComplete="tel"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="email" className="block text-sm font-medium text-ink">
-            Email{' '}
-            <span className="font-normal text-muted-foreground">
-              (optionnel, pour confirmation)
-            </span>
-          </label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-ink focus:border-ember focus:outline-none focus:ring-1 focus:ring-ember"
-            autoComplete="email"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="specialRequests" className="block text-sm font-medium text-ink">
-            Demandes spéciales{' '}
-            <span className="font-normal text-muted-foreground">(optionnel)</span>
-          </label>
-          <textarea
-            id="specialRequests"
-            value={specialRequests}
-            onChange={(e) => setSpecialRequests(e.target.value)}
-            rows={2}
-            maxLength={500}
-            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-ink focus:border-ember focus:outline-none focus:ring-1 focus:ring-ember"
-          />
-        </div>
-
-        {/* Honeypot — invisible, leave empty (bots fill all inputs) */}
-        <div className="hidden" aria-hidden="true">
-          <label htmlFor="website">Website</label>
-          <input
-            id="website"
-            type="text"
-            tabIndex={-1}
-            autoComplete="off"
-            value={honeypot}
-            onChange={(e) => setHoneypot(e.target.value)}
-          />
-        </div>
+        <CustomerForm
+          firstName={firstName}
+          setFirstName={setFirstName}
+          phone={phone}
+          setPhone={setPhone}
+          email={email}
+          setEmail={setEmail}
+          specialRequests={specialRequests}
+          setSpecialRequests={setSpecialRequests}
+          honeypot={honeypot}
+          setHoneypot={setHoneypot}
+        />
 
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -352,23 +273,7 @@ export function BookingWidget({
   // Pick step
   return (
     <div className="space-y-4">
-      <div>
-        <label htmlFor="partySize" className="block text-sm font-medium text-ink">
-          Nombre de personnes
-        </label>
-        <select
-          id="partySize"
-          value={partySize}
-          onChange={(e) => setPartySize(Number(e.target.value))}
-          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-ink focus:border-ember focus:outline-none focus:ring-1 focus:ring-ember"
-        >
-          {PARTY_SIZES.map((n) => (
-            <option key={n} value={n}>
-              {n} {n === 1 ? 'personne' : 'personnes'}
-            </option>
-          ))}
-        </select>
-      </div>
+      <PartySizePicker value={partySize} onChange={setPartySize} />
 
       <div>
         <label htmlFor="date" className="block text-sm font-medium text-ink">
@@ -399,31 +304,13 @@ export function BookingWidget({
         </div>
       )}
 
-      {slots.length > 0 && (
-        <div>
-          <h3 className="mb-2 text-sm font-medium text-ink">Choisissez un horaire</h3>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-            {slots.map((slot) => (
-              <button
-                key={slot.time}
-                type="button"
-                disabled={!slot.available}
-                onClick={() => {
-                  setSelectedTime(slot.time);
-                  setStep('confirm');
-                }}
-                className={`rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-200 ${
-                  slot.available
-                    ? 'border-border bg-background text-ink hover:border-ember hover:bg-ember/5'
-                    : 'cursor-not-allowed border-border bg-muted text-muted-foreground line-through'
-                }`}
-              >
-                {slot.time}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      <SlotGrid
+        slots={slots}
+        onSelect={(time) => {
+          setSelectedTime(time);
+          setStep('confirm');
+        }}
+      />
 
       {restaurant && !restaurant.connectAgentic && (
         <p className="text-xs text-muted-foreground">
