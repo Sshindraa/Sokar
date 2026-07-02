@@ -53,3 +53,18 @@ groups:
         annotations:
           summary: "Taux d'erreur MCP > 10% sur 1h"
           description: "Plus de 10% des appels MCP tool échouent. Vérifier les logs API et l'état des services dépendants (DB, Redis, Telnyx)."
+
+      # Fail-open Redis/cache : si une source donnée fail-open plus de 10 fois
+      # en 5 minutes, c'est qu'un service Redis/cache est down prolongé (pas un
+      # simple hoquet). Déclenche une alerte critique pour investigation.
+      # Seuil de 10/5min = évite le bruit d'un hoquet isolé, détecte un down
+      # réel (Redis down → chaque requête rate-limit/cache fail-open).
+      - alert: FailOpenBurst
+        expr: increase(sokar_fail_open_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: critical
+          team: sokar
+        annotations:
+          summary: 'Fail-open Redis/cache en rafale ({{ $value }} en 5min)'
+          description: "sokar_fail_open_total a augmenté de plus de 10 sur 5 minutes. Un service Redis/cache (rate limiter MCP, connect rate limit, cache OpenAI Reserve, idempotency) est probablement down. Vérifier l'état Redis et les logs API (grep 'fail_open')."

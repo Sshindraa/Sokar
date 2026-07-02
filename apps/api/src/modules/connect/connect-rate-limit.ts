@@ -12,7 +12,6 @@
  */
 
 import { redisCache } from '../../shared/redis/client';
-import { logger } from '../../shared/logger/pino';
 import { alertFailOpen } from '../../shared/observability/alerts';
 
 const HOLD_DAILY_LIMIT = 20;
