@@ -94,6 +94,8 @@ export const HoldInputSchema = z.object({
   time: z.string().regex(/^\d{2}:\d{2}$/),
   partySize: z.number().int().min(1).max(50),
   source: SourceEnum.optional().default('web'),
+  // Honeypot anti-bot : doit être vide. Si rempli → bot.
+  website: z.string().optional(),
 });
 export type HoldInput = z.infer<typeof HoldInputSchema>;
 
@@ -117,6 +119,8 @@ export const ConfirmInputSchema = z.object({
   specialRequests: z.string().max(500).optional(),
   idempotencyKey: z.string().uuid().optional(),
   source: SourceEnum.optional().default('web'),
+  // Honeypot anti-bot : doit être vide. Si rempli → bot.
+  website: z.string().optional(),
 });
 export type ConfirmInput = z.infer<typeof ConfirmInputSchema>;
 

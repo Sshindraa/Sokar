@@ -28,6 +28,17 @@ import { ConfirmationView, type ConfirmDto } from './booking/confirmation-view';
 import { trackEvent } from '@/lib/tracking';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+const FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Fetch avec timeout via AbortController.
+ * Si la requête dépasse FETCH_TIMEOUT_MS, elle est abortée et throw une erreur.
+ */
+function fetchWithTimeout(url: string, options?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
 
 type Slot = { time: string; available: boolean };
 type AvailabilityDto = { date: string; partySize: number; slots: Slot[] };
@@ -108,7 +119,7 @@ export function BookingWidget({
     setSlots([]);
     setSelectedTime(null);
     try {
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `${API_URL}/public/r/${slug}/availability?date=${date}&partySize=${partySize}`,
       );
       if (!res.ok) {
@@ -122,7 +133,11 @@ export function BookingWidget({
         setSelectedTime(initialTime);
       }
     } catch (err) {
-      setError('Erreur réseau. Réessayez.');
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError('La requête a expiré. Vérifiez votre connexion et réessayez.');
+      } else {
+        setError('Erreur réseau. Vérifiez votre connexion et réessayez.');
+      }
     } finally {
       setLoading(false);
     }
@@ -159,10 +174,10 @@ export function BookingWidget({
     setError(null);
     try {
       // 1. Hold
-      const holdRes = await fetch(`${API_URL}/public/r/${slug}/hold`, {
+      const holdRes = await fetchWithTimeout(`${API_URL}/public/r/${slug}/hold`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, time: selectedTime, partySize, source }),
+        body: JSON.stringify({ date, time: selectedTime, partySize, source, website: honeypot }),
       });
       if (!holdRes.ok) {
         const data = await holdRes.json().catch(() => ({}));
@@ -172,13 +187,14 @@ export function BookingWidget({
       const hold: HoldDto = await holdRes.json();
 
       // 2. Confirm — Idempotency-Key réutilisée (générée au step "confirm")
-      const confirmRes = await fetch(`${API_URL}/public/r/${slug}/confirm`, {
+      const confirmRes = await fetchWithTimeout(`${API_URL}/public/r/${slug}/confirm`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           holdToken: hold.holdToken,
           idempotencyKey,
           source,
+          website: honeypot,
           customer: {
             firstName: firstName.trim(),
             phone: phone.trim(),
@@ -200,6 +216,23 @@ export function BookingWidget({
           );
           return;
         }
+        // 409 = conflit (déjà réservé ou idempotency mismatch)
+        if (confirmRes.status === 409) {
+          setStep('pick');
+          setSelectedTime(null);
+          setSlots([]);
+          setError(
+            data.error || 'Ce créneau vient d\u2019être réservé. Veuillez en choisir un autre.',
+          );
+          return;
+        }
+        // 429 = rate limit per-phone
+        if (confirmRes.status === 429) {
+          setError(
+            'Trop de tentatives. Veuillez réessayer dans une heure ou appelez le restaurant.',
+          );
+          return;
+        }
         setError(data.error || 'La réservation a échoué. Réessayez ou appelez le restaurant.');
         return;
       }
@@ -207,7 +240,11 @@ export function BookingWidget({
       setConfirmResult(result);
       setStep('done');
     } catch (err) {
-      setError('Erreur réseau. Réessayez.');
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError('La requête a expiré. Vérifiez votre connexion et réessayez.');
+      } else {
+        setError('Erreur réseau. Vérifiez votre connexion et réessayez.');
+      }
     } finally {
       setLoading(false);
     }

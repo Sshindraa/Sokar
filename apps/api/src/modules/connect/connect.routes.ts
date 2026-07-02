@@ -121,159 +121,171 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
   // Utilisé par apps/connect/src/app/sitemap.ts (cf. spec v1.1 §6.6).
   // Pas de PII, pas de description : juste ce qu'il faut pour le sitemap XML.
 
-  app.get('/public/sitemap-data', async (_req, reply) => {
-    const rows = await db.restaurant.findMany({
-      where: {
-        exposureSettings: { connectPublished: true },
-        publishedAt: { not: null },
-      },
-      select: {
-        slug: true,
-        updatedAt: true,
-        publishedAt: true,
-      },
-      orderBy: { updatedAt: 'desc' },
-    });
-    const restaurants = rows
-      .filter((r) => r.slug !== null)
-      .map((r) => ({
-        slug: r.slug!,
-        updatedAt: (r.updatedAt ?? new Date()).toISOString(),
-        publishedAt: (r.publishedAt ?? new Date()).toISOString(),
-      }));
-    return reply.send({ restaurants });
-  });
+  app.get(
+    '/public/sitemap-data',
+    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    async (_req, reply) => {
+      const rows = await db.restaurant.findMany({
+        where: {
+          exposureSettings: { connectPublished: true },
+          publishedAt: { not: null },
+        },
+        select: {
+          slug: true,
+          updatedAt: true,
+          publishedAt: true,
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+      const restaurants = rows
+        .filter((r) => r.slug !== null)
+        .map((r) => ({
+          slug: r.slug!,
+          updatedAt: (r.updatedAt ?? new Date()).toISOString(),
+          publishedAt: (r.publishedAt ?? new Date()).toISOString(),
+        }));
+      return reply.send({ restaurants });
+    },
+  );
 
   // ─── 1b.bis GET /public/cities (T7) ─────────────────────────
   // Liste des villes avec compteurs + cuisines (règle 5/10/20 §3.3)
 
-  app.get('/public/cities', async (_req, reply) => {
-    const rows = await db.restaurant.findMany({
-      where: {
-        exposureSettings: { connectPublished: true },
-        publishedAt: { not: null },
-        city: { not: null },
-      },
-      select: { city: true, cuisineType: true },
-    });
+  app.get(
+    '/public/cities',
+    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (_req, reply) => {
+      const rows = await db.restaurant.findMany({
+        where: {
+          exposureSettings: { connectPublished: true },
+          publishedAt: { not: null },
+          city: { not: null },
+        },
+        select: { city: true, cuisineType: true },
+      });
 
-    const byCity = new Map<string, CityRow>();
-    for (const r of rows) {
-      if (!r.city) continue;
-      const slug = slugifyCity(r.city);
-      let entry = byCity.get(slug);
-      if (!entry) {
-        entry = { city: r.city, citySlug: slug, total: 0, cuisines: [] };
-        byCity.set(slug, entry);
-      }
-      entry.total += 1;
-      for (const cuisine of r.cuisineType) {
-        const cSlug = slugifyCuisine(cuisine);
-        const existing = entry.cuisines.find((c) => c.slug === cSlug);
-        if (existing) {
-          existing.count += 1;
-        } else {
-          entry.cuisines.push({ name: cuisine, slug: cSlug, count: 1 });
+      const byCity = new Map<string, CityRow>();
+      for (const r of rows) {
+        if (!r.city) continue;
+        const slug = slugifyCity(r.city);
+        let entry = byCity.get(slug);
+        if (!entry) {
+          entry = { city: r.city, citySlug: slug, total: 0, cuisines: [] };
+          byCity.set(slug, entry);
+        }
+        entry.total += 1;
+        for (const cuisine of r.cuisineType) {
+          const cSlug = slugifyCuisine(cuisine);
+          const existing = entry.cuisines.find((c) => c.slug === cSlug);
+          if (existing) {
+            existing.count += 1;
+          } else {
+            entry.cuisines.push({ name: cuisine, slug: cSlug, count: 1 });
+          }
         }
       }
-    }
 
-    const cities = Array.from(byCity.values())
-      .filter((c) => c.total >= 5)
-      .sort((a, b) => b.total - a.total);
+      const cities = Array.from(byCity.values())
+        .filter((c) => c.total >= 5)
+        .sort((a, b) => b.total - a.total);
 
-    return reply.send({ cities });
-  });
+      return reply.send({ cities });
+    },
+  );
 
   // ─── 1b.ter GET /public/cities/:slug (T7) ────────────────────
   // Restaurants d'une ville (avec filtre cuisine optionnel).
   // Renvoie shouldIndex=false si pas assez d'inventaire.
 
-  app.get('/public/cities/:slug', async (req, reply) => {
-    const params = req.params as { slug: string };
-    if (!isValidCitySlug(params.slug)) {
-      return reply.status(400).send({ error: 'Invalid city slug' });
-    }
-    const queryParse = z.object({ cuisine: z.string().optional() }).safeParse(req.query);
-    if (!queryParse.success) {
-      return reply.status(400).send({ error: 'Invalid query' });
-    }
-
-    const allCities = await db.restaurant.findMany({
-      where: { exposureSettings: { connectPublished: true }, city: { not: null } },
-      select: { city: true, cuisineType: true },
-    });
-    const cityRow = allCities.find((r) => slugifyCity(r.city ?? '') === params.slug);
-    if (!cityRow?.city) {
-      return reply.status(404).send({ error: 'City not found' });
-    }
-    const cityName = cityRow.city;
-    const cityRows = allCities.filter((r) => r.city === cityName);
-    const totalInCity = cityRows.length;
-
-    const cuisineFilter = queryParse.data.cuisine?.toLowerCase();
-    let cuisineName: string | null = null;
-    let cuisineCount = 0;
-    if (cuisineFilter) {
-      cuisineName =
-        cityRows.flatMap((r) => r.cuisineType).find((c) => slugifyCuisine(c) === cuisineFilter) ??
-        null;
-      if (cuisineName) {
-        cuisineCount = cityRows.filter((r) =>
-          r.cuisineType.some((c) => slugifyCuisine(c) === cuisineFilter),
-        ).length;
+  app.get(
+    '/public/cities/:slug',
+    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const params = req.params as { slug: string };
+      if (!isValidCitySlug(params.slug)) {
+        return reply.status(400).send({ error: 'Invalid city slug' });
       }
-    }
+      const queryParse = z.object({ cuisine: z.string().optional() }).safeParse(req.query);
+      if (!queryParse.success) {
+        return reply.status(400).send({ error: 'Invalid query' });
+      }
 
-    const shouldIndexCity = totalInCity >= 5;
-    const shouldIndexCuisine = !!cuisineFilter && totalInCity >= 10 && cuisineCount >= 5;
+      const allCities = await db.restaurant.findMany({
+        where: { exposureSettings: { connectPublished: true }, city: { not: null } },
+        select: { city: true, cuisineType: true },
+      });
+      const cityRow = allCities.find((r) => slugifyCity(r.city ?? '') === params.slug);
+      if (!cityRow?.city) {
+        return reply.status(404).send({ error: 'City not found' });
+      }
+      const cityName = cityRow.city;
+      const cityRows = allCities.filter((r) => r.city === cityName);
+      const totalInCity = cityRows.length;
 
-    if (cuisineFilter && !shouldIndexCuisine) {
+      const cuisineFilter = queryParse.data.cuisine?.toLowerCase();
+      let cuisineName: string | null = null;
+      let cuisineCount = 0;
+      if (cuisineFilter) {
+        cuisineName =
+          cityRows.flatMap((r) => r.cuisineType).find((c) => slugifyCuisine(c) === cuisineFilter) ??
+          null;
+        if (cuisineName) {
+          cuisineCount = cityRows.filter((r) =>
+            r.cuisineType.some((c) => slugifyCuisine(c) === cuisineFilter),
+          ).length;
+        }
+      }
+
+      const shouldIndexCity = totalInCity >= 5;
+      const shouldIndexCuisine = !!cuisineFilter && totalInCity >= 10 && cuisineCount >= 5;
+
+      if (cuisineFilter && !shouldIndexCuisine) {
+        return reply.send({
+          citySlug: params.slug,
+          city: cityName,
+          cuisine: cuisineName,
+          totalInCity,
+          cuisineCount,
+          restaurants: [],
+          shouldIndex: false,
+          reason: 'not_enough_inventory',
+        });
+      }
+      if (!cuisineFilter && !shouldIndexCity) {
+        return reply.send({
+          citySlug: params.slug,
+          city: cityName,
+          totalInCity,
+          restaurants: [],
+          shouldIndex: false,
+          reason: 'not_enough_inventory',
+        });
+      }
+
+      const restaurantsRaw = await db.restaurant.findMany({
+        where: {
+          city: cityName,
+          exposureSettings: { connectPublished: true },
+          publishedAt: { not: null },
+          ...(cuisineFilter && cuisineName ? { cuisineType: { has: cuisineName } } : {}),
+        },
+        select: { slug: true },
+      });
+      const restaurantSlugs = restaurantsRaw.map((r) => r.slug).filter((s): s is string => !!s);
+      const dtos = (
+        await Promise.all(restaurantSlugs.map((s) => canal.getPublishedBySlug(s)))
+      ).filter((d): d is NonNullable<typeof d> => d !== null);
+
       return reply.send({
         citySlug: params.slug,
         city: cityName,
-        cuisine: cuisineName,
+        ...(cuisineFilter && cuisineName ? { cuisine: cuisineName, cuisineCount } : {}),
         totalInCity,
-        cuisineCount,
-        restaurants: [],
-        shouldIndex: false,
-        reason: 'not_enough_inventory',
+        restaurants: dtos,
+        shouldIndex: cuisineFilter ? shouldIndexCuisine : shouldIndexCity,
       });
-    }
-    if (!cuisineFilter && !shouldIndexCity) {
-      return reply.send({
-        citySlug: params.slug,
-        city: cityName,
-        totalInCity,
-        restaurants: [],
-        shouldIndex: false,
-        reason: 'not_enough_inventory',
-      });
-    }
-
-    const restaurantsRaw = await db.restaurant.findMany({
-      where: {
-        city: cityName,
-        exposureSettings: { connectPublished: true },
-        publishedAt: { not: null },
-        ...(cuisineFilter && cuisineName ? { cuisineType: { has: cuisineName } } : {}),
-      },
-      select: { slug: true },
-    });
-    const restaurantSlugs = restaurantsRaw.map((r) => r.slug).filter((s): s is string => !!s);
-    const dtos = (
-      await Promise.all(restaurantSlugs.map((s) => canal.getPublishedBySlug(s)))
-    ).filter((d): d is NonNullable<typeof d> => d !== null);
-
-    return reply.send({
-      citySlug: params.slug,
-      city: cityName,
-      ...(cuisineFilter && cuisineName ? { cuisine: cuisineName, cuisineCount } : {}),
-      totalInCity,
-      restaurants: dtos,
-      shouldIndex: cuisineFilter ? shouldIndexCuisine : shouldIndexCity,
-    });
-  });
+    },
+  );
 
   // ─── 1c. POST /public/analytics/events ──────────────────────
   // Endpoint léger pour les events page_view / cta_clicked / etc.
@@ -282,32 +294,36 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
   // Cf. spec v1.1 §16. Pas d'auth (events publics).
   // Best-effort : si la queue est down, on log et on renvoie 202 quand même.
 
-  app.post('/public/analytics/events', async (req, reply) => {
-    const body = (req.body ?? {}) as { event?: string; [key: string]: unknown };
-    if (!body.event || typeof body.event !== 'string') {
-      return reply.status(400).send({ error: 'event field required' });
-    }
-    if (body.event.length > 64) {
-      return reply.status(400).send({ error: 'event name too long' });
-    }
-    // Validation soft : on accepte les events inconnus (forward compat) mais
-    // on log un warning. Le worker drop les events invalides.
-    await emitConnectEvent(app.queues.connectAnalytics, {
-      event: body.event,
-      restaurantId: body.restaurantId as string | undefined,
-      restaurantSlug: body.restaurantSlug as string | undefined,
-      city: body.city as string | undefined,
-      source: (body.source as string | undefined) ?? 'web',
-      utmSource: body.utmSource as string | undefined,
-      utmMedium: body.utmMedium as string | undefined,
-      utmCampaign: body.utmCampaign as string | undefined,
-      date: body.date as string | undefined,
-      time: body.time as string | undefined,
-      partySize: body.partySize as number | undefined,
-      reservationId: body.reservationId as string | undefined,
-    });
-    return reply.status(202).send({ ok: true });
-  });
+  app.post(
+    '/public/analytics/events',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const body = (req.body ?? {}) as { event?: string; [key: string]: unknown };
+      if (!body.event || typeof body.event !== 'string') {
+        return reply.status(400).send({ error: 'event field required' });
+      }
+      if (body.event.length > 64) {
+        return reply.status(400).send({ error: 'event name too long' });
+      }
+      // Validation soft : on accepte les events inconnus (forward compat) mais
+      // on log un warning. Le worker drop les events invalides.
+      await emitConnectEvent(app.queues.connectAnalytics, {
+        event: body.event,
+        restaurantId: body.restaurantId as string | undefined,
+        restaurantSlug: body.restaurantSlug as string | undefined,
+        city: body.city as string | undefined,
+        source: (body.source as string | undefined) ?? 'web',
+        utmSource: body.utmSource as string | undefined,
+        utmMedium: body.utmMedium as string | undefined,
+        utmCampaign: body.utmCampaign as string | undefined,
+        date: body.date as string | undefined,
+        time: body.time as string | undefined,
+        partySize: body.partySize as number | undefined,
+        reservationId: body.reservationId as string | undefined,
+      });
+      return reply.status(202).send({ ok: true });
+    },
+  );
 
   // ─── 2. GET /public/r/:slug/availability ────────────────────
 
@@ -365,6 +381,15 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       const bodyParse = HoldInputSchema.safeParse(req.body);
       if (!bodyParse.success) {
         return reply.status(400).send({ error: 'Invalid body', details: bodyParse.error.format() });
+      }
+
+      // Honeypot anti-bot : si le champ website est rempli, c'est un bot.
+      // On retourne 202 (accepted) pour ne pas alerter le bot, mais on ne crée pas de hold.
+      if (bodyParse.data.website) {
+        logger.warn({ slug: slugParse.data.slug }, '[connect] Honeypot triggered on /hold');
+        return reply
+          .status(202)
+          .send({ holdId: '', holdToken: '', expiresAt: '', status: 'pending' });
       }
 
       const restaurant = await canal.getPublishedBySlug(slugParse.data.slug);
@@ -463,6 +488,13 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       const bodyParse = ConfirmInputSchema.safeParse(req.body);
       if (!bodyParse.success) {
         return reply.status(400).send({ error: 'Invalid body', details: bodyParse.error.format() });
+      }
+
+      // Honeypot anti-bot : si le champ website est rempli, c'est un bot.
+      // On retourne 202 (accepted) pour ne pas alerter le bot, mais on ne crée pas de résa.
+      if (bodyParse.data.website) {
+        logger.warn({ slug: slugParse.data.slug }, '[connect] Honeypot triggered on /confirm');
+        return reply.status(202).send({ reservationId: '', status: 'confirmed' });
       }
 
       const restaurant = await canal.getPublishedBySlug(slugParse.data.slug);
