@@ -63,9 +63,14 @@ export function buildPublicRestaurantJsonLd(input: {
     '@id': `${SITE_URL}/r/${r.slug}`,
     name: r.name,
     url: `${SITE_URL}/r/${r.slug}`,
+    mainEntityOfPage: {
+      '@type': 'WebPage',
+      '@id': `${SITE_URL}/r/${r.slug}`,
+    },
     telephone: r.phone,
     servesCuisine: r.cuisineTypes,
     acceptsReservations: true,
+    bookingUrl: r.reservationUrl,
     address: {
       '@type': 'PostalAddress',
       streetAddress: r.address.line1,
