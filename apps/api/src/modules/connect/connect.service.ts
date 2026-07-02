@@ -105,6 +105,47 @@ export class ConnectService {
   }
 
   /**
+   * Liste paginée des restaurants publiés (Phase 6 — scalabilité homepage).
+   * Pagination réelle en DB (skip/take), pas en mémoire.
+   * Retourne le DTO complet pour chaque restaurant (pour la grille homepage).
+   */
+  async getPublishedRestaurants(
+    page: number,
+    limit: number,
+  ): Promise<{
+    restaurants: PublicRestaurantDto[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const where = {
+      exposureSettings: { connectPublished: true },
+      publishedAt: { not: null },
+      slug: { not: null },
+      agenticOptIn: true,
+    };
+
+    const [total, rows] = await Promise.all([
+      this.prisma.restaurant.count({ where }),
+      this.prisma.restaurant.findMany({
+        where,
+        include: {
+          exposureSettings: true,
+          images: {
+            orderBy: [{ isCover: 'desc' }, { position: 'asc' }],
+          },
+        },
+        orderBy: { publishedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ]);
+
+    const restaurants = rows.map((r) => this.toPublicDto(r));
+    return { restaurants, total, page, limit };
+  }
+
+  /**
    * Invalide le cache d'un restaurant (à appeler sur update).
    * Le nom de la méthode matche le pattern des autres services Sokar.
    */
