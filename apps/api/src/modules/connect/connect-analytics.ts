@@ -24,6 +24,8 @@ export type EmitConnectEventInput = {
   time?: string;
   partySize?: number;
   reservationId?: string;
+  bot?: string;
+  path?: string;
 };
 
 /**
@@ -50,6 +52,8 @@ export async function emitConnectEvent(
         time: input.time,
         partySize: input.partySize,
         reservationId: input.reservationId,
+        bot: input.bot,
+        path: input.path,
         sentAt: new Date().toISOString(),
       },
       {

@@ -71,6 +71,22 @@ export function middleware(request: NextRequest) {
           ts: new Date().toISOString(),
         }),
       );
+
+      // Forward en fire-and-forget vers l'API analytics pour incrémenter
+      // la métrique Prometheus sokar_connect_ia_bot_hits_total (cf. Phase 1
+      // observabilité). Best-effort : ne bloque pas la réponse.
+      const apiUrl = process.env.API_URL;
+      if (apiUrl) {
+        fetch(`${apiUrl}/public/analytics/events`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ event: 'ia_bot_hit', bot, path }),
+          cache: 'no-store',
+          keepalive: true,
+        }).catch(() => {
+          // Best-effort : on ignore les erreurs (API down, réseau)
+        });
+      }
     }
   }
 
