@@ -6,10 +6,25 @@
  * Routes :
  *   GET  /v1/businesses           : feed paginé (filtre openaiReserveEnabled)
  *   POST /v1/tools/restaurant_reservation : tool Apps SDK conforme spec
+ *   GET  /v1/tools                : discovery (liste les tools publics)
  *
- * Auth : pas d'auth sur le feed (OpenAI l'ingère publiquement).
- * Le tool a un auth léger (API key ChatGPT Apps) — Phase 4 simplifié,
- * la vraie auth Apps SDK viendra quand on aura le partner access.
+ * ─── Risque accepté ─────────────────────────────────────────────────
+ *
+ * Ce feed est intentionnellement public et sans auth (requis par OpenAI
+ * Apps SDK). Risque accepté : un tiers non-partenaire peut scraper cette
+ * liste de restaurants (nom, adresse, téléphone, coordonnées GPS, cuisine,
+ * prix, horaires).
+ *
+ * Mitigations en place :
+ *   1. Rate limit 30 req/min/IP sur toutes les routes /v1/* (étape 1)
+ *   2. Cache Redis TTL 120s sur getBusinessFeed() — le scraping répété
+ *      tape le cache, pas la DB (étape 2)
+ *   3. Métrique Prometheus sokar_openai_reserve_feed_requests_total{status}
+ *      pour détecter un volume anormal (étape 3)
+ *
+ * Pas de bearer token car OpenAI ingère ce endpoint publiquement sans
+ * authentification, cf. spec Apps SDK. Ne PAS ajouter d'auth obligatoire
+ * sans une coordination explicite avec OpenAI — ça casserait l'ingestion.
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
