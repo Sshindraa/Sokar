@@ -106,6 +106,18 @@ export async function buildApp() {
       (rawReq as { requestId?: string }).requestId = requestId;
       return loggerInstance.child(bindings);
     },
+    // Versioning des endpoints publics Connect (Phase 6) :
+    // /public/v1/* est un alias de /public/* (transition progressive).
+    // rewriteUrl s'exécute AVANT le routing Fastify (contrairement à un hook
+    // onRequest, qui s'exécute après que la route a été matchée — trop tard).
+    // Cf. https://fastify.dev/docs/latest/Reference/Server/#rewriteurl
+    rewriteUrl(req) {
+      const url = req.url ?? '/';
+      if (url.startsWith('/public/v1/')) {
+        return `/public/${url.slice('/public/v1/'.length)}`;
+      }
+      return url;
+    },
   });
 
   // Stamp every incoming request with a request_id (set by childLoggerFactory
