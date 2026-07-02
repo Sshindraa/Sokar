@@ -18,6 +18,7 @@ import { WIDGET_RESOURCE_URI, TOOL_NAME } from './constants';
 import { FeedQuerySchema, RestaurantReservationInputSchema } from './schemas';
 import { logger } from '../../../shared/logger/pino';
 import { db } from '../../../shared/db/client';
+import { openaiReserveFeedRequestsTotal } from '../../../shared/observability/metrics';
 
 export async function openaiReserveRoutes(app: FastifyInstance): Promise<void> {
   const service = new OpenaiReserveService(db);
@@ -32,6 +33,7 @@ export async function openaiReserveRoutes(app: FastifyInstance): Promise<void> {
     async (req: FastifyRequest, reply: FastifyReply) => {
       const parsed = FeedQuerySchema.safeParse(req.query);
       if (!parsed.success) {
+        openaiReserveFeedRequestsTotal.inc({ status: '400' });
         return reply.status(400).send({
           error: 'Invalid query',
           details: parsed.error.format(),
@@ -39,9 +41,11 @@ export async function openaiReserveRoutes(app: FastifyInstance): Promise<void> {
       }
       try {
         const feed = await service.getBusinessFeed(parsed.data);
+        openaiReserveFeedRequestsTotal.inc({ status: '200' });
         return reply.send(feed);
       } catch (err: unknown) {
         logger.error({ err }, 'openai-reserve feed failed');
+        openaiReserveFeedRequestsTotal.inc({ status: '500' });
         return reply.status(500).send({ error: 'Internal error' });
       }
     },
