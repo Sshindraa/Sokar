@@ -10,7 +10,7 @@
  * - Le tool `restaurant_reservation` retourne une structure que le widget
  *   charge en iframe (resource URI `ui://widget/restaurant-reservation.html`).
  * - Le widget tourne en standalone dans `apps/widget/`, servi sur
- *   https://api.sokar.app/widget/ (CDN Cloudflare) et référencé par
+ *   https://widget.sokar.tech/ (CDN Cloudflare) et référencé par
  *   `_meta.ui.resourceUri` dans le tool response.
  */
 
@@ -18,4 +18,4 @@ export const WIDGET_RESOURCE_URI = 'ui://widget/restaurant-reservation.html';
 export const TOOL_NAME = 'restaurant_reservation';
 
 export const WIDGET_PUBLIC_URL =
-  process.env.OPENAI_WIDGET_PUBLIC_URL || 'https://widget.sokar.app/restaurant-reservation.html';
+  process.env.OPENAI_WIDGET_PUBLIC_URL || 'https://widget.sokar.tech/restaurant-reservation.html';
