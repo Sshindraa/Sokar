@@ -19,6 +19,7 @@ import {
 import { WIDGET_PUBLIC_URL } from './constants';
 import { env } from '../../../env';
 import { redisCache } from '../../../shared/redis/client';
+import { alertFailOpen } from '../../../shared/observability/alerts';
 
 // TTL du cache Redis pour le business feed (en secondes).
 // Le feed ne change pas a chaque requete (les restaurants n'activent/desactivent
@@ -52,8 +53,9 @@ export class OpenaiReserveService {
       if (cached) {
         return JSON.parse(cached) as FeedResponse;
       }
-    } catch {
+    } catch (err) {
       // Redis down — fail-open, on continue sans cache
+      alertFailOpen({ source: 'openai_reserve_cache', reason: 'cache_get_failed', err });
     }
 
     const where = {
@@ -113,8 +115,9 @@ export class OpenaiReserveService {
     // Met a jour le cache Redis (fail-open si Redis down)
     try {
       await this.cache.set(cacheKey, JSON.stringify(response), 'EX', FEED_CACHE_TTL_SECONDS);
-    } catch {
+    } catch (err) {
       // Redis down — fail-open, on continue sans cacher
+      alertFailOpen({ source: 'openai_reserve_cache', reason: 'cache_set_failed', err });
     }
 
     return response;

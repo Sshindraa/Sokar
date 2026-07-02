@@ -15,6 +15,7 @@
  */
 
 import type Redis from 'ioredis';
+import { alertFailOpen } from '../../../shared/observability/alerts';
 
 export type RateLimitConfig = {
   capacity: number;
@@ -129,9 +130,14 @@ export class McpRateLimiter {
             resetMs,
             reason: allowed === 1 ? undefined : 'over_capacity',
           };
-        } catch {
+        } catch (err2) {
           // Reload ou retry échoué — fail-open
           this.scriptSha = null;
+          alertFailOpen({
+            source: 'mcp_rate_limit',
+            reason: 'redis_down_noscript_retry',
+            err: err2,
+          });
           return {
             allowed: true,
             remaining: this.config.capacity,
@@ -142,6 +148,7 @@ export class McpRateLimiter {
       }
       // Autre erreur Redis (down, timeout, etc.) — fail-open
       this.scriptSha = null;
+      alertFailOpen({ source: 'mcp_rate_limit', reason: 'redis_down', err });
       return {
         allowed: true,
         remaining: this.config.capacity,

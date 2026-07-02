@@ -21,6 +21,7 @@
 
 import { createHash } from 'node:crypto';
 import type { ReservationChannel } from './state-machine.js';
+import { alertFailOpen } from '../../../shared/observability/alerts';
 
 export type IdempotencyScope = string;
 
@@ -188,8 +189,9 @@ export class IdempotencyService {
           }
           return { kind: 'hit', reservationId: cached.reservationId, payloadHash };
         }
-      } catch {
+      } catch (err) {
         // Cache down : on continue vers Postgres
+        alertFailOpen({ source: 'idempotency', reason: 'cache_get_failed', err });
       }
     }
 
@@ -288,8 +290,9 @@ export class IdempotencyService {
           reservationId: args.reservationId,
           payloadHash: args.payloadHash,
         });
-      } catch {
+      } catch (err) {
         // Cache down : pas critique, Postgres est la source de vérité
+        alertFailOpen({ source: 'idempotency', reason: 'cache_set_failed', err });
       }
     }
   }
