@@ -52,6 +52,12 @@ export type PublicRestaurantDto = {
   acceptsReservations: boolean;
   publishedAt: string;
   connectAgentic: boolean;
+  // Note agrégée (importée Google Places, Phase 3). Absent si pas de Place ID.
+  aggregateRating?: {
+    ratingValue: number;
+    reviewCount: number;
+    provider: 'google';
+  };
 };
 
 export type AvailabilityDto = {

@@ -7,7 +7,7 @@
  * Règles :
  * - acceptsReservations est un booléen (Schema.org spec)
  * - potentialAction (ReserveAction) uniquement si connectAgentic=true
- * - Pas d'aggregateRating inventé (Google sd-policies)
+ * - aggregateRating uniquement si sourcé Google Places (Phase 3)
  */
 
 export type RestaurantJsonLd = {
@@ -59,5 +59,11 @@ export type RestaurantJsonLd = {
     '@type': 'GeoCoordinates';
     latitude: number;
     longitude: number;
+  };
+  aggregateRating?: {
+    '@type': 'AggregateRating';
+    ratingValue: number;
+    reviewCount: number;
+    author?: { '@type': 'Organization'; name: string };
   };
 };

@@ -57,4 +57,13 @@ export const queues = {
     connection: redisQueue,
     defaultJobOptions: defaultReliableJobOptions,
   }),
+  googlePlacesSync: new Queue('google-places-sync', {
+    connection: redisQueue,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 60000 },
+      removeOnComplete: 100,
+      removeOnFail: 500,
+    },
+  }),
 };

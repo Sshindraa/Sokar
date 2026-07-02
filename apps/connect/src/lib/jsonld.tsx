@@ -51,6 +51,11 @@ export function buildPublicRestaurantJsonLd(input: {
     connectAgentic: boolean;
     lat?: number;
     lng?: number;
+    aggregateRating?: {
+      ratingValue: number;
+      reviewCount: number;
+      provider: 'google';
+    };
   };
   attributesConfidence: unknown;
 }): RestaurantJsonLd {
@@ -117,6 +122,16 @@ export function buildPublicRestaurantJsonLd(input: {
             '@type': 'GeoCoordinates' as const,
             latitude: r.lat,
             longitude: r.lng,
+          },
+        }
+      : {}),
+    ...(r.aggregateRating
+      ? {
+          aggregateRating: {
+            '@type': 'AggregateRating' as const,
+            ratingValue: r.aggregateRating.ratingValue,
+            reviewCount: r.aggregateRating.reviewCount,
+            author: { '@type': 'Organization' as const, name: 'Google' },
           },
         }
       : {}),

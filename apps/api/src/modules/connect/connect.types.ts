@@ -180,4 +180,10 @@ export type PublicRestaurantDto = {
   // Géolocalisation (exposée dans JSON-LD GeoCoordinates)
   lat?: number;
   lng?: number;
+  // Note agrégée (importée Google Places, Phase 3). Absent si pas de Place ID.
+  aggregateRating?: {
+    ratingValue: number;
+    reviewCount: number;
+    provider: 'google';
+  };
 };

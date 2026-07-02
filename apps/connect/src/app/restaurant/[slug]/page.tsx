@@ -217,6 +217,14 @@ export default async function RestaurantPage({
             <h1 className="text-3xl font-bold text-ink sm:text-4xl">
               {restaurant.name} — Restaurant {cuisine.toLowerCase()} à {restaurant.address.city}
             </h1>
+            {restaurant.aggregateRating && (
+              <p className="mt-2 text-sm text-muted-foreground">
+                <span className="font-semibold text-ember">
+                  {restaurant.aggregateRating.ratingValue.toFixed(1)} ★
+                </span>{' '}
+                · {restaurant.aggregateRating.reviewCount} avis Google
+              </p>
+            )}
             {restaurant.description && (
               <p className="mt-3 text-lg text-muted-foreground">{restaurant.description}</p>
             )}

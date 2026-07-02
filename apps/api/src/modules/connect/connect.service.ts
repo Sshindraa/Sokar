@@ -150,7 +150,7 @@ export class ConnectService {
       cuisineTypes: r.cuisineType,
       priceRange: priceRangeToSymbol(r.priceRange),
       openingHours,
-      reservationUrl: `https://sokar.tech/r/${r.slug}/book`,
+      reservationUrl: `https://sokar.tech/restaurant/${r.slug}/book`,
       images: {
         cover,
         gallery,
@@ -163,6 +163,14 @@ export class ConnectService {
       connectAgentic: r.exposureSettings?.connectAgentic ?? false,
       lat: r.lat ? Number(r.lat) : undefined,
       lng: r.lng ? Number(r.lng) : undefined,
+      aggregateRating:
+        r.googleRating != null && r.googleReviewCount != null
+          ? {
+              ratingValue: r.googleRating,
+              reviewCount: r.googleReviewCount,
+              provider: 'google' as const,
+            }
+          : undefined,
     };
   }
 }
@@ -189,6 +197,9 @@ export type PublicRestaurantSource = {
   publishedAt: Date | null;
   lat: Prisma.Decimal | null;
   lng: Prisma.Decimal | null;
+  googleRating: number | null;
+  googleReviewCount: number | null;
+  googlePlaceId: string | null;
   exposureSettings: {
     connectPublished: boolean;
     connectAgentic: boolean;

@@ -4,7 +4,7 @@
  * Génère le Schema.org Restaurant JSON-LD pour /r/[slug].
  *
  * Règles strictes (cf. spec v1.1 §8) :
- * - Pas d'`aggregateRating` inventé (Google sd-policies)
+ * - `aggregateRating` uniquement si sourcé Google Places (Phase 3)
  * - Pas de claims non sourcés : `attributeConfidence` gate chaque champ
  * - `acceptsReservations` = URL /book (pas un bool)
  * - `potentialAction` (ReserveAction) UNIQUEMENT si connectAgentic=true
@@ -89,6 +89,12 @@ export type RestaurantJsonLd = {
       name: string;
     };
   };
+  aggregateRating?: {
+    '@type': 'AggregateRating';
+    ratingValue: number;
+    reviewCount: number;
+    author?: { '@type': 'Organization'; name: string };
+  };
 };
 
 /**
@@ -104,14 +110,14 @@ export function buildPublicRestaurantJsonLd(input: BuildJsonLdInput): Restaurant
   const jsonLd: RestaurantJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Restaurant',
-    '@id': `${SITE_URL}/r/${restaurant.slug}`,
+    '@id': `${SITE_URL}/restaurant/${restaurant.slug}`,
     name: restaurant.name,
-    url: `${SITE_URL}/r/${restaurant.slug}`,
+    url: `${SITE_URL}/restaurant/${restaurant.slug}`,
     // mainEntityOfPage : signal fort que cette page EST le restaurant,
     // pas un article qui en parle. Aide les crawlers IA à comprendre le type.
     mainEntityOfPage: {
       '@type': 'WebPage',
-      '@id': `${SITE_URL}/r/${restaurant.slug}`,
+      '@id': `${SITE_URL}/restaurant/${restaurant.slug}`,
     },
     telephone: restaurant.phone,
     servesCuisine: filterByConfidence(
@@ -164,7 +170,7 @@ export function buildPublicRestaurantJsonLd(input: BuildJsonLdInput): Restaurant
       '@type': 'ReserveAction',
       target: {
         '@type': 'EntryPoint',
-        urlTemplate: `${SITE_URL}/r/${restaurant.slug}/book?partySize={partySize}&date={date}&time={time}`,
+        urlTemplate: `${SITE_URL}/restaurant/${restaurant.slug}/book?partySize={partySize}&date={date}&time={time}`,
         inLanguage: 'fr-FR',
         actionPlatform: [
           'https://schema.org/DesktopWebPlatform',
@@ -184,6 +190,17 @@ export function buildPublicRestaurantJsonLd(input: BuildJsonLdInput): Restaurant
       '@type': 'GeoCoordinates',
       latitude: restaurant.lat,
       longitude: restaurant.lng,
+    };
+  }
+
+  // aggregateRating : uniquement si sourcé Google Places (Phase 3).
+  // Respect CGU Google : attribution obligatoire (author.name = "Google").
+  if (restaurant.aggregateRating) {
+    jsonLd.aggregateRating = {
+      '@type': 'AggregateRating',
+      ratingValue: restaurant.aggregateRating.ratingValue,
+      reviewCount: restaurant.aggregateRating.reviewCount,
+      author: { '@type': 'Organization', name: 'Google' },
     };
   }
 

@@ -45,6 +45,14 @@ export function RestaurantCard({ restaurant, className }: Props) {
           {restaurant.priceRange ? ` · ${restaurant.priceRange}` : ''}
           {restaurant.address.city ? ` · ${restaurant.address.city}` : ''}
         </p>
+        {restaurant.aggregateRating && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            <span className="font-semibold text-ember">
+              {restaurant.aggregateRating.ratingValue.toFixed(1)} ★
+            </span>{' '}
+            · {restaurant.aggregateRating.reviewCount} avis Google
+          </p>
+        )}
         <p className="mt-1 truncate text-xs text-muted-foreground">{restaurant.address.line1}</p>
       </div>
     </Link>
