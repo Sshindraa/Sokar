@@ -410,7 +410,7 @@ export class IdentityVerificationService {
   }
 
   private async sendSignedLinkEmail(email: string, token: string, intent: string): Promise<void> {
-    const baseUrl = process.env.PUBLIC_URL ?? 'https://app.sokar.com';
+    const baseUrl = process.env.PUBLIC_URL ?? 'https://sokar.tech';
     const link = `${baseUrl}/api/rgpd/confirm-link?token=${encodeURIComponent(token)}`;
     const subject =
       intent === 'erase'
