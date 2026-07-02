@@ -25,7 +25,7 @@ export async function GET(_req: NextRequest) {
     url: SITE_URL,
     contact_email: 'contact@sokar.tech',
     capabilities: {
-      // Web crawl : les pages /r/[slug] sont publiquement crawlables
+      // Web crawl : les pages /restaurant/[slug] sont publiquement crawlables
       // et contiennent du JSON-LD Schema.org Restaurant + ReserveAction.
       web_crawl: {
         enabled: true,
@@ -34,7 +34,7 @@ export async function GET(_req: NextRequest) {
         json_ld_schema: 'https://schema.org/Restaurant',
         reservation_schema: 'https://schema.org/ReserveAction',
         // Format du deep-link de réservation (pré-rempli par l'IA)
-        booking_url_template: `${SITE_URL}/r/{slug}/book?partySize={partySize}&date={date}&time={time}`,
+        booking_url_template: `${SITE_URL}/restaurant/{slug}/book?partySize={partySize}&date={date}&time={time}`,
       },
       // MCP : les IA qui supportent le Model Context Protocol peuvent
       // appeler directement les tools de réservation.
@@ -67,7 +67,7 @@ export async function GET(_req: NextRequest) {
       mcp: "L'utilisateur demande à son IA, qui réserve directement via le protocole MCP. Nécessite une API key Sokar (attribution par contact@sokar.tech). Aucune page web nécessaire.",
       // Flow 3 : l'utilisateur va directement sur la page
       direct:
-        "L'utilisateur va sur sokar.tech/r/[restaurant] et réserve via le formulaire en ligne.",
+        "L'utilisateur va sur sokar.tech/restaurant/[restaurant] et réserve via le formulaire en ligne.",
     },
   };
 

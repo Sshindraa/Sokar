@@ -1,7 +1,7 @@
 /**
  * Sokar Connect — Page réservation.
  *
- * URL : /r/[slug]/book?partySize=4&date=2026-06-24&time=20:00&source=chatgpt
+ * URL : /restaurant/[slug]/book?partySize=4&date=2026-06-24&time=20:00&source=chatgpt
  *
  * Server Component qui lit les searchParams, puis monte le BookingWidget
  * (client component) qui gère le flow interactif.
@@ -57,7 +57,7 @@ export default async function BookPage({
     <main className="mx-auto max-w-xl px-6 py-12">
       <div className="mb-6">
         <Link
-          href={`/r/${restaurant.slug}`}
+          href={`/restaurant/${restaurant.slug}`}
           className="text-sm text-ember underline hover:no-underline"
         >
           ← {restaurant.name}
