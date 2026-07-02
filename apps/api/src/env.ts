@@ -15,6 +15,20 @@ const envFile = fs.existsSync(appEnv) ? appEnv : fs.existsSync(rootEnv) ? rootEn
 
 dotenv.config({ path: envFile });
 
+// ─── Defaults dev (ergonomie out-of-the-box) ─────────────────────────────
+// En dev/test, si les 4 vars URL ne sont pas positionnées (pas de apps/api/.env
+// ni .env.local complet), on injecte des valeurs localhost avant le parse Zod.
+// Cela restaure le confort "pnpm dev marche sans .env dédié" qui existait avant
+// la validation centralisée, sans réintroduire le risque en prod (où le refine
+// sur l'allowlist s'applique et où ces defaults ne sont jamais injectés).
+const nodeEnv = process.env.NODE_ENV ?? 'development';
+if (nodeEnv !== 'production') {
+  process.env.PUBLIC_URL ??= 'http://localhost:4000';
+  process.env.SITE_URL ??= 'http://localhost:3001';
+  process.env.DASHBOARD_URL ??= 'http://localhost:3000';
+  process.env.API_URL ??= 'http://localhost:4000';
+}
+
 // ─── Validation centralisée (fail-fast au démarrage) ─────────────────────
 // Remplace les fallbacks dispersés `process.env.X ?? 'https://...'` qui ont
 // causé plusieurs bugs de domaine en prod (commits d8849c3, c6d4ebe, 5bf1137,
