@@ -17,11 +17,18 @@ export type RestaurantJsonLd = {
   name: string;
   description?: string;
   url: string;
+  // mainEntityOfPage : signal que cette page EST le restaurant (pas un article)
+  mainEntityOfPage?: {
+    '@type': 'WebPage';
+    '@id': string;
+  };
   telephone: string;
   servesCuisine: string[];
   priceRange?: string;
   image?: string[];
-  acceptsReservations: boolean;
+  acceptsReservations: boolean | string;
+  // bookingUrl : URL directe de réservation (complémentaire de acceptsReservations)
+  bookingUrl?: string;
   address: {
     '@type': 'PostalAddress';
     streetAddress: string;

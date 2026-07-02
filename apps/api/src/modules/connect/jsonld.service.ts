@@ -48,11 +48,16 @@ export type RestaurantJsonLd = {
   name: string;
   description?: string;
   url: string;
+  mainEntityOfPage?: {
+    '@type': 'WebPage';
+    '@id': string;
+  };
   telephone: string;
   servesCuisine: string[];
   priceRange?: string;
   image?: string[];
   acceptsReservations: string;
+  bookingUrl?: string;
   address: {
     '@type': 'PostalAddress';
     streetAddress: string;
@@ -102,6 +107,12 @@ export function buildPublicRestaurantJsonLd(input: BuildJsonLdInput): Restaurant
     '@id': `${SITE_URL}/r/${restaurant.slug}`,
     name: restaurant.name,
     url: `${SITE_URL}/r/${restaurant.slug}`,
+    // mainEntityOfPage : signal fort que cette page EST le restaurant,
+    // pas un article qui en parle. Aide les crawlers IA à comprendre le type.
+    mainEntityOfPage: {
+      '@type': 'WebPage',
+      '@id': `${SITE_URL}/r/${restaurant.slug}`,
+    },
     telephone: restaurant.phone,
     servesCuisine: filterByConfidence(
       restaurant.cuisineTypes,
@@ -110,6 +121,9 @@ export function buildPublicRestaurantJsonLd(input: BuildJsonLdInput): Restaurant
       now,
     ),
     acceptsReservations: restaurant.reservationUrl,
+    // bookingUrl explicite pour les crawlers IA qui ne parsent pas ReserveAction.
+    // Double signal : acceptsReservations (bool/URL) + bookingUrl (URL directe).
+    bookingUrl: restaurant.reservationUrl,
     address: {
       '@type': 'PostalAddress',
       streetAddress: restaurant.address.line1,
