@@ -343,6 +343,8 @@ unset DATABASE_URL
 echo ""
 echo "📦 Installing Nginx routing..."
 sudo install -d -m 0755 /etc/nginx/snippets /etc/nginx/sites-available /etc/nginx/sites-enabled
+# Cache dirs for origin caching (sokar.tech vhost — spec §D2)
+sudo install -d -m 0755 -o www-data -g www-data /var/cache/nginx/connect
 
 # Backup current config before overwriting (pour rollback automatique).
 if [ -f /etc/nginx/sites-available/sokar ]; then
