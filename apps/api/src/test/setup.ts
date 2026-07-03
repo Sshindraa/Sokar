@@ -19,6 +19,13 @@ vi.mock('@prisma/client', async (importOriginal) => {
       count: vi.fn(),
       update: vi.fn(),
     };
+    giftCardPack = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
     call = {
       findMany: vi.fn(),
       findUnique: vi.fn(),
@@ -101,6 +108,60 @@ vi.mock('../../shared/telnyx/client', () => ({
   sendSms: vi.fn().mockResolvedValue(undefined),
 }));
 
+// ── Mock Stripe (SDK non nécessaire en tests unitaires) ──
+vi.mock('stripe', () => {
+  class Stripe {
+    paymentIntents = {
+      create: vi.fn().mockResolvedValue({ id: 'pi_test', client_secret: 'pi_t_s' }),
+      retrieve: vi.fn().mockResolvedValue({ id: 'pi_test', status: 'succeeded' }),
+    };
+    webhooks = {
+      constructEvent: vi.fn().mockReturnValue({
+        type: 'payment_intent.succeeded',
+        data: { object: { id: 'pi_test', status: 'succeeded' } },
+      }),
+    };
+  }
+  return { default: Stripe };
+});
+
+// ── Mock pdfkit (génération PDF non nécessaire en tests unitaires) ──
+vi.mock('pdfkit', () => {
+  class PDFDocument {
+    page = { width: 297, height: 420 }; // A6 approx
+    private handlers: Record<string, Function[]> = {};
+    constructor(_opts?: unknown) {}
+    pipe = vi.fn();
+    fontSize = vi.fn().mockReturnThis();
+    font = vi.fn().mockReturnThis();
+    text = vi.fn().mockReturnThis();
+    image = vi.fn().mockReturnThis();
+    rect = vi.fn().mockReturnThis();
+    fill = vi.fn().mockReturnThis();
+    fillColor = vi.fn().mockReturnThis();
+    strokeColor = vi.fn().mockReturnThis();
+    moveTo = vi.fn().mockReturnThis();
+    lineTo = vi.fn().mockReturnThis();
+    stroke = vi.fn().mockReturnThis();
+    moveDown = vi.fn().mockReturnThis();
+    lineWidth = vi.fn().mockReturnThis();
+    on(event: string, cb: Function) {
+      if (!this.handlers[event]) this.handlers[event] = [];
+      this.handlers[event].push(cb);
+      return this;
+    }
+    end() {
+      if (this.handlers['data']) {
+        for (const cb of this.handlers['data']) cb(Buffer.from('mock-pdf'));
+      }
+      if (this.handlers['end']) {
+        for (const cb of this.handlers['end']) cb();
+      }
+    }
+  }
+  return { default: PDFDocument };
+});
+
 // ── Mock lib/auth — valeur par défaut (surchargeable par les fichiers de test) ──
 vi.mock('../../lib/auth', () => ({
   auth: {
@@ -133,3 +194,10 @@ process.env.CLERK_PUBLISHABLE_KEY = 'pk_test_dummy-test-key';
 process.env.CLERK_SECRET_KEY = 'sk_test_dummy-secret-key';
 process.env.OPENROUTER_API_KEY = 'sk-or-test';
 process.env.CARTESIA_API_KEY = 'test-cartesia-key';
+process.env.STRIPE_SECRET_KEY = 'sk_test';
+process.env.STRIPE_WEBHOOK_SECRET = 'whsec_t';
+process.env.SMTP_HOST ??= 'localhost';
+process.env.SMTP_PORT ??= '465';
+process.env.SMTP_USER ??= 'test';
+process.env.SMTP_PASS ??= 'test';
+process.env.EMAIL_FROM ??= 'noreply@test.sokar.fr';

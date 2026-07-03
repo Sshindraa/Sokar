@@ -70,6 +70,11 @@ export class GiftCardService {
         customerId: input.customerId ?? null,
         createdBy: input.createdBy ?? 'CLIENT',
         purchaseReference: input.purchaseReference ?? null,
+        stripePaymentIntentId: input.stripePaymentIntentId ?? null,
+        stripePaymentStatus: input.stripePaymentStatus ?? 'pending',
+        templateId: input.templateId ?? null,
+        customImageUrl: input.customImageUrl ?? null,
+        sokarCommissionAmount: input.sokarCommissionAmount ?? 0,
       },
     });
   }

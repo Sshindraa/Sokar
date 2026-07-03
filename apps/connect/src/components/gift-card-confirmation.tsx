@@ -105,6 +105,18 @@ export function GiftCardConfirmation({
           réservation.
         </p>
 
+        {result.pdfUrl && (
+          <a
+            href={result.pdfUrl}
+            target="_parent"
+            rel="noopener noreferrer"
+            className="mt-3 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all duration-200 hover:opacity-90"
+            style={{ backgroundColor: accentColor }}
+          >
+            📄 Télécharger la carte cadeau (PDF)
+          </a>
+        )}
+
         {!bookNow && (
           <p className="mt-3 text-sm text-muted-foreground">
             Le destinataire pourra réserver sa table quand il le souhaite en utilisant ce code sur

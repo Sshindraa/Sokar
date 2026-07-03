@@ -3,22 +3,28 @@
 /**
  * Sokar Connect — GiftCardPurchase.
  *
- * Flow d'achat d'une carte cadeau en 4 étapes :
+ * Flow d'achat d'une carte cadeau en 6 étapes :
  *   1. Choix du type (montant libre ou pack expérience)
  *   2. Informations (expéditeur, destinataire, message)
  *   3. Option "réserver maintenant" (date + party size + heure)
- *   4. Confirmation + achat
+ *   4. Design (template ou image personnalisée)
+ *   5. Paiement (Stripe Elements)
+ *   6. Confirmation + achat
  *
- * Après achat, affiche GiftCardConfirmation avec le code complet.
+ * Après achat, affiche GiftCardConfirmation avec le code complet + lien PDF.
  */
 
 import { useEffect, useState } from 'react';
+import { Elements } from '@stripe/react-stripe-js';
+import { loadStripe, type Stripe as StripeType } from '@stripe/stripe-js';
 import type { GiftCardPack, GiftCardPurchaseResult } from '@/lib/api/gift-cards';
-import { listGiftCardPacks, purchaseGiftCard } from '@/lib/api/gift-cards';
+import { listGiftCardPacks, createPaymentIntent, purchaseGiftCard } from '@/lib/api/gift-cards';
 import { GiftCardConfirmation } from './gift-card-confirmation';
+import { GiftCardTemplatePicker } from './gift-card-template-picker';
+import { GiftCardPaymentForm } from './gift-card-payment-form';
 import { trackEvent } from '@/lib/tracking';
 
-type Step = 'type' | 'info' | 'slots' | 'confirm' | 'done';
+type Step = 'type' | 'info' | 'slots' | 'template' | 'payment' | 'done';
 
 type Props = {
   slug: string;
@@ -60,6 +66,13 @@ export function GiftCardPurchase({
   // Honeypot (anti-bot). Si rempli, on bloque la soumission.
   const [honeypot, setHoneypot] = useState('');
 
+  // Template + paiement
+  const [templateId, setTemplateId] = useState<string | null>(null);
+  const [customImageUrl, setCustomImageUrl] = useState<string | undefined>(undefined);
+  const [stripePromise, setStripePromise] = useState<Promise<StripeType | null> | null>(null);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GiftCardPurchaseResult | null>(null);
@@ -70,6 +83,14 @@ export function GiftCardPurchase({
       .catch(() => setPacks([]))
       .finally(() => setPacksLoading(false));
   }, [slug]);
+
+  // Initialiser Stripe.js au montage
+  useEffect(() => {
+    const pk = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+    if (pk) {
+      setStripePromise(loadStripe(pk));
+    }
+  }, []);
 
   function handleNextFromType() {
     setError(null);
@@ -90,7 +111,7 @@ export function GiftCardPurchase({
 
   function handleNextFromInfo() {
     setError(null);
-    setStep(bookNow ? 'slots' : 'confirm');
+    setStep(bookNow ? 'slots' : 'template');
   }
 
   function handleNextFromSlots() {
@@ -99,12 +120,16 @@ export function GiftCardPurchase({
       setError('Veuillez choisir une date préférée');
       return;
     }
-    setStep('confirm');
+    setStep('template');
   }
 
-  async function handlePurchase() {
+  function handleNextFromTemplate() {
+    setError(null);
+    setStep('payment');
+  }
+
+  async function handleStartPayment() {
     if (honeypot) {
-      // Bot detected. Silent fail.
       setError('Une erreur est survenue. Réessayez.');
       return;
     }
@@ -119,8 +144,31 @@ export function GiftCardPurchase({
     });
 
     try {
+      const piInput: Parameters<typeof createPaymentIntent>[0] = { restaurantId };
+      if (mode === 'free') {
+        piInput.amount = parseFloat(amount);
+      } else {
+        piInput.packId = packId;
+      }
+
+      const pi = await createPaymentIntent(piInput);
+      setClientSecret(pi.clientSecret);
+      setPaymentIntentId(pi.paymentIntentId);
+    } catch (err: any) {
+      setError(err.message || 'Impossible de démarrer le paiement. Réessayez.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handlePaymentSuccess(piId: string) {
+    setError(null);
+    setLoading(true);
+
+    try {
       const input: Parameters<typeof purchaseGiftCard>[0] = {
         restaurantId,
+        paymentIntentId: piId,
         occasion: occasion || undefined,
         senderName: senderName || undefined,
         senderEmail: senderEmail || undefined,
@@ -129,6 +177,8 @@ export function GiftCardPurchase({
         recipientEmail: recipientEmail || undefined,
         recipientPhone: recipientPhone || undefined,
         message: message || undefined,
+        templateId: templateId ?? undefined,
+        customImageUrl,
       };
 
       if (mode === 'free') {
@@ -188,10 +238,10 @@ export function GiftCardPurchase({
     <div style={widgetStyle} className="space-y-6">
       {/* Stepper */}
       <div className="flex items-center gap-2 text-xs">
-        {(['type', 'info', 'slots', 'confirm'] as Step[])
+        {(['type', 'info', 'slots', 'template', 'payment'] as Step[])
           .filter((s) => s !== 'done')
           .map((s, idx) => {
-            const stepOrder = ['type', 'info', 'slots', 'confirm'];
+            const stepOrder = ['type', 'info', 'slots', 'template', 'payment'];
             const currentIdx = stepOrder.indexOf(step);
             const isActive = idx === currentIdx;
             const isDone = idx < currentIdx;
@@ -579,11 +629,51 @@ export function GiftCardPurchase({
         </div>
       )}
 
-      {/* Étape 4 : Confirmation */}
-      {step === 'confirm' && (
+      {/* Étape 4 : Design / Template */}
+      {step === 'template' && (
         <div className="space-y-4">
           <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
-            Récapitulatif
+            Personnalisez votre carte
+          </h2>
+
+          <GiftCardTemplatePicker
+            selectedTemplate={templateId}
+            onSelect={(id) => {
+              setTemplateId(id);
+              if (id === 'custom') {
+                // L'URL personnalisée est gérée dans le picker
+              }
+            }}
+            primaryColor={primaryColor}
+            accentColor={accentColor}
+          />
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setStep(bookNow ? 'slots' : 'info')}
+              className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-3 text-base font-semibold transition-all duration-200 hover:bg-muted"
+              style={{ color: primaryColor }}
+            >
+              ← Retour
+            </button>
+            <button
+              type="button"
+              onClick={handleNextFromTemplate}
+              className="inline-flex flex-1 items-center justify-center rounded-lg px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90"
+              style={{ backgroundColor: accentColor }}
+            >
+              Continuer →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Étape 5 : Paiement */}
+      {step === 'payment' && (
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
+            Récapitulatif & Paiement
           </h2>
 
           <div className="rounded-xl border border-border bg-cream p-4 space-y-2 text-sm">
@@ -619,31 +709,60 @@ export function GiftCardPurchase({
             )}
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            Mode test : aucun paiement réel ne sera effectué. La carte cadeau sera créée
-            immédiatement.
-          </p>
+          {!clientSecret && (
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={handleStartPayment}
+                disabled={loading}
+                className="inline-flex w-full items-center justify-center rounded-lg px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+                style={{ backgroundColor: accentColor }}
+              >
+                {loading ? 'Chargement...' : `Payer ${formatEuro(displayAmount)}`}
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep('template')}
+                disabled={loading}
+                className="inline-flex w-full items-center justify-center rounded-lg border border-border bg-background px-5 py-3 text-base font-semibold transition-all duration-200 hover:bg-muted"
+                style={{ color: primaryColor }}
+              >
+                ← Retour
+              </button>
+            </div>
+          )}
 
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => setStep(bookNow ? 'slots' : 'info')}
-              disabled={loading}
-              className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-3 text-base font-semibold transition-all duration-200 hover:bg-muted disabled:opacity-50"
-              style={{ color: primaryColor }}
+          {clientSecret && stripePromise && (
+            <Elements
+              stripe={stripePromise}
+              options={{ clientSecret, appearance: { theme: 'stripe' } }}
             >
-              ← Retour
-            </button>
-            <button
-              type="button"
-              onClick={handlePurchase}
-              disabled={loading}
-              className="inline-flex flex-1 items-center justify-center rounded-lg px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
-              style={{ backgroundColor: accentColor }}
-            >
-              {loading ? 'Achat...' : `Acheter — ${formatEuro(displayAmount)}`}
-            </button>
-          </div>
+              <GiftCardPaymentForm
+                clientSecret={clientSecret}
+                amount={displayAmount}
+                onSuccess={handlePaymentSuccess}
+                onError={(err) => setError(err)}
+                primaryColor={primaryColor}
+                accentColor={accentColor}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setClientSecret(null);
+                  setPaymentIntentId(null);
+                  setStep('template');
+                }}
+                className="mt-3 inline-flex w-full items-center justify-center rounded-lg border border-border bg-background px-5 py-2 text-sm font-semibold transition-all duration-200 hover:bg-muted"
+                style={{ color: primaryColor }}
+              >
+                ← Retour
+              </button>
+            </Elements>
+          )}
+
+          {loading && (
+            <p className="text-center text-sm text-muted-foreground">Traitement en cours...</p>
+          )}
         </div>
       )}
     </div>
