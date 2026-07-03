@@ -1,7 +1,7 @@
 # Spec — Cartes cadeaux dans Sokar
 
-> Statut : spec technique MVP (P1). Pas de code à produire dans ce ticket.  
-> But : permettre aux restaurateurs Sokar de vendre des cartes cadeaux digitales, intégrées nativement au parcours de réservation, avec différenciation IA voice + personnalisation.
+> Statut : spec technique P1.  
+> But : permettre aux restaurateurs Sokar de vendre des cartes cadeaux digitales, intégrées nativement au parcours de réservation, avec packs expérience, option "réserver maintenant" et préparation cagnotte P2.
 
 ---
 
@@ -11,27 +11,29 @@
 
 - Sokar gère les réservations via `hold` / `confirm` (Connect, widget, voice, MCP).
 - Le CRM `Customer` existe avec historique, VIP, consentements.
-- Aucun modèle de carte cadeau n’existe.
-- Aucun flux de paiement anticipé n’existe aujourd’hui.
+- Le modèle `GiftCard`, `GiftCardRedemption` et `GiftCardContribution` a été créé en P1.
+- Aucun flux de paiement réel n’existe aujourd’hui (P1 = mode test / marquage manuel).
 
 ### Objectifs
 
-1. Permettre à un client d’acheter une carte cadeau pour un restaurant Sokar.
+1. Permettre à un client d’acheter une carte cadeau pour un restaurant Sokar (montant libre ou pack expérience).
 2. Permettre au bénéficiaire de l’utiliser automatiquement au moment de la réservation.
-3. Différencier Sokar via l’IA voice (achat par téléphone) et la personnalisation (message vocal/texte).
-4. Offrir au restaurateur un dashboard simple de création / suivi / statistiques.
-5. Garder le système compatible avec un futur paiement Stripe (P2) et une cagnotte groupe (P2).
+3. Proposer une option "réserver maintenant" : l’expéditeur offre directement un créneau au bénéficiaire.
+4. Différencier Sokar via le concierge IA (recommandation de montant, message, créneaux).
+5. Offrir au restaurateur un dashboard de création, suivi et statistiques par type de cadeau.
+6. Garder le système compatible avec un futur paiement Stripe (P2), cagnotte groupe (P2) et marketplace (P3).
 
 ### Différenciation Sokar vs Zenchef / OpenTable
 
-| Zenchef classique    | Sokar next level                                         |
-| -------------------- | -------------------------------------------------------- |
-| Achat web uniquement | Achat web + voice + widget                               |
-| Code générique       | Code personnalisé avec message vocal/texte généré par IA |
-| Montant fixe         | Montant libre + suggestions IA selon le profil           |
-| Cadeau anonyme       | Cadeau lié au CRM (expéditeur, destinataire, occasion)   |
-| Utilisation manuelle | Utilisation automatique au moment de la réservation      |
-| Pas de cagnotte      | Cagnotte groupe possible (plusieurs contributeurs, P2)   |
+| Zenchef classique      | Sokar next level                                                |
+| ---------------------- | --------------------------------------------------------------- |
+| Achat web uniquement   | Achat web + widget + voice (P1.5)                               |
+| Code générique         | Code personnalisé avec message texte généré par IA              |
+| Montant fixe           | Montant libre + packs expérience + suggestions IA               |
+| Cadeau anonyme         | Cadeau lié au CRM (expéditeur, destinataire, occasion)          |
+| Utilisation manuelle   | Utilisation automatique au moment de la réservation             |
+| Pas de cagnotte        | Cagnotte groupe (P2)                                            |
+| Pas de pack expérience | Packs "menu + vin", "dégustation", etc. gérés par le restaurant |
 
 ---
 
@@ -39,24 +41,26 @@
 
 ### In scope (P1)
 
-- Modèle de données Prisma : `GiftCard`, `GiftCardRedemption`, `GiftCardContribution`.
-- Flux d’achat : web, widget, voice (mode test / manuel en P1).
-- Flux d’utilisation : réservation + paiement partiel avec solde restant.
-- Concierge IA pour recommander le montant et le message.
-- Dashboard restaurateur : liste, création manuelle, stats simples.
+- Modèle de données Prisma : `GiftCard`, `GiftCardPack`, `GiftCardRedemption`, `GiftCardContribution`.
+- Flux d’achat : web + widget (mode test / manuel en P1).
+- Flux "réserver maintenant" : 3 créneaux proposés, choix du bénéficiaire, confirm sans CB.
+- Flux d’utilisation classique : code valable 12 mois, saisie au confirm.
+- Packs expérience : CRUD dashboard, affichage widget, achat pack.
+- Concierge IA pour recommander le montant, le message et les créneaux.
+- Dashboard restaurateur : cartes cadeaux, packs, stats par type.
 - API routes admin + public.
 - Intégration widget : bouton "Offrir".
-- Intégration voice : dialogue d’achat par téléphone.
 - Tests et roadmap.
 
 ### Out of scope (P1)
 
 - Paiement réel (Stripe) — mode test ou marquage manuel en P1.
 - Cagnotte multi-contributeurs (P2).
-- Cadeau physique / livraison.
-- Marketplace de cartes cadeaux entre restaurants.
+- Cadeau physique / livraison (P3).
+- Marketplace de cartes cadeaux entre restaurants (P3).
 - Remboursement automatique (P2 ; P1 = annulation manuelle côté restaurateur).
 - Multi-devise (P1 = EUR uniquement).
+- Message vocal (P3).
 
 ---
 
@@ -64,9 +68,9 @@
 
 ### Choix retenu
 
-On ajoute 3 modèles. `GiftCard` est la source de vérité. `GiftCardRedemption` trace chaque utilisation pour permettre un solde restant et un historique. `GiftCardContribution` prépare la cagnotte groupe sans impacter l’API P1.
+`GiftCard` est la source de vérité. `GiftCardRedemption` trace chaque utilisation pour permettre un solde restant et un historique. `GiftCardPack` liste les offres commerciales du restaurant. `GiftCardContribution` prépare la cagnotte groupe sans impacter l’API P1.
 
-`code` est unique et non-énumérable. P1 utilise un UUID ; P2 pourra ajouter un code court mnémonique (ex. `SOKAR-XXXX-XXXX`) avec rate-limiting et hash.
+`code` est unique et non-énumérable. P1 utilise un UUID ; P2 pourra ajouter un code court mnémonique avec rate-limiting et hash.
 
 ### Schema proposé
 
@@ -81,6 +85,16 @@ model GiftCard {
   status          String   @default("ACTIVE") // ACTIVE, REDEEMED, EXPIRED, CANCELLED
   purchasedAt     DateTime @default(now()) @map("purchased_at")
   expiresAt       DateTime? @map("expires_at")
+  validityMonths  Int      @default(12) @map("validity_months")
+
+  // Montant libre ou pack expérience
+  packId          String?   @map("pack_id")
+  pack            GiftCardPack? @relation(fields: [packId], references: [id], onDelete: SetNull)
+
+  // Option "réserver maintenant"
+  preferredDate      DateTime? @map("preferred_date")
+  preferredTime      String?   @map("preferred_time")
+  preferredPartySize Int?      @map("preferred_party_size")
 
   senderName      String? @map("sender_name")
   senderEmail     String? @map("sender_email")
@@ -90,10 +104,11 @@ model GiftCard {
   recipientPhone  String? @map("recipient_phone")
 
   message         String? // message texte personnalisé
-  voiceMessageUrl String? @map("voice_message_url") // URL message vocal généré par IA
   occasion        String? // anniversaire, remerciement, etc.
 
   customerId      String? @map("customer_id") // lien CRM (expéditeur ou destinataire)
+  createdBy       String  @default("CLIENT") @map("created_by") // CLIENT, DASHBOARD, VOICE
+  purchaseReference String? @map("purchase_reference") // référence de paiement (test P1)
 
   restaurant      Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   customer        Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -103,6 +118,23 @@ model GiftCard {
   @@index([restaurantId, status])
   @@index([code])
   @@map("gift_cards")
+}
+
+model GiftCardPack {
+  id            String   @id @default(uuid())
+  restaurantId  String   @map("restaurant_id")
+  name          String
+  description   String?
+  amount        Decimal  @db.Decimal(10, 2)
+  minPartySize  Int      @default(1) @map("min_party_size")
+  maxPartySize  Int      @default(2) @map("max_party_size")
+  isActive      Boolean  @default(true) @map("is_active")
+
+  restaurant    Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  giftCards     GiftCard[]
+
+  @@index([restaurantId, isActive])
+  @@map("gift_card_packs")
 }
 
 model GiftCardRedemption {
@@ -131,412 +163,395 @@ model GiftCardContribution {
   @@index([giftCardId])
   @@map("gift_card_contributions")
 }
+
+// Champ JSONB ajouté sur Reservation (P1) pour tracer l'application de carte cadeau.
+model Reservation {
+  // ... champs existants ...
+  giftCardRedemptionSnap Json? @map("gift_card_redemption_snap")
+  giftCardComplementAmount Decimal? @map("gift_card_complement_amount")
+}
 ```
 
 ### Justification des champs
 
 - `amount` / `remainingAmount` : montant initial et solde courant. `remainingAmount` est dénormalisé pour éviter un `SUM` à chaque usage.
-- `code` : identifiant unique utilisé par le bénéficiaire. UUID en P1 pour la sécurité.
-- `status` : machine à état simple. `REDEMED` = solde nul. `EXPIRED` = date passée. `CANCELLED` = annulation restaurateur.
+- `validityMonths` : validité par défaut 12 mois. Détermine `expiresAt` si non fourni.
+- `packId` / `GiftCardPack` : permet d’acheter une expérience prédéfinie (menu dégustation, accord mets/vins, etc.). `null` = montant libre.
+- `preferredDate` / `preferredTime` / `preferredPartySize` : option "réserver maintenant". Stockés sur la carte pour proposer les créneaux au bénéficiaire.
 - `sender*` / `recipient*` : personnalisation et envoi email/SMS. Obligatoire en production selon le canal.
-- `message` / `voiceMessageUrl` : différenciation IA. `voiceMessageUrl` est un fichier audio généré côté API (TTS ou enregistrement agent).
-- `occasion` : input du concierge IA pour recommander le montant et le message.
+- `message` : message texte personnalisé, généré ou édité par l’expéditeur.
+- `occasion` : input du concierge IA pour recommander le montant, le message et les créneaux.
 - `customerId` : lien CRM pour historique et segmentation.
+- `createdBy` / `purchaseReference` : traçabilité de l’origine (web, dashboard, voice, test).
 - `GiftCardContribution` : modèle préparatoire pour la cagnotte P2. P1, il ne sert que si le restaurateur crée une carte manuellement avec un premier verseur.
+- `Reservation.giftCardRedemptionSnap` : snapshot JSON de l’application (montant appliqué, complément, statut).
 
 ### Migrations requises
 
-- `20260716000000_add_gift_cards` : création des 3 tables + index.
-- Mise à jour optionnelle de `Restaurant` pour ajouter `giftCardEnabled` (P1.5) si le restaurateur veut activer/désactiver la feature.
+- `20260703013602_add_gift_cards` : création des tables `gift_cards`, `gift_card_redemptions`, `gift_card_contributions`.
+- `20260703014532_add_gift_card_redemption_snap` : ajout de `gift_card_redemption_snap` sur `reservations`.
+- Migrations P1 à venir :
+  - création de `gift_card_packs`.
+  - ajout de `pack_id`, `validity_months`, `preferred_date`, `preferred_time`, `preferred_party_size` sur `gift_cards`.
+  - ajout de `gift_card_complement_amount` sur `reservations`.
+- Option P1.5 : ajout de `Restaurant.giftCardEnabled` pour activer/désactiver la feature.
 
 ---
 
 ## 4. Flux d’achat
 
-### 4.1 Web / widget
+### 4.1 Choix du type de cadeau
 
 ```text
-┌─────────────┐     ┌──────────────┐     ┌─────────────────┐     ┌────────────┐
-| Client      |────▶| Widget/site  |────▶| Formule cadeau  |────▶| Paiement   |
-| (expéditeur)|     | "Offrir"     |     | (montant, msg)  |     | (test P1)  |
-└─────────────┘     └──────────────┘     └─────────────────┘     └────┬───────┘
-                                                                        │
-┌─────────────┐     ┌──────────────┐     ┌─────────────────┐            │
-| Destinataire|◀────| Email/SMS    |◀────| Code + URL      |◀───────────┘
-|             |     | (code)       |     | personnalisée   |
-└─────────────┘     └──────────────┘     └─────────────────┘
+┌─────────────┐     ┌──────────────┐     ┌────────────────────────────┐
+| Client      |────▶| Widget/site  |────▶| Montant libre ou pack ?      |
+| (expéditeur)|     | "Offrir"     |     |                              |
+└─────────────┘     └──────────────┘     └────────────────────────────┘
 ```
 
-Étapes :
+L’expéditeur choisit entre :
 
-1. Le client clique sur "Offrir une carte cadeau" depuis le widget ou la page restaurant.
-2. Formulaire : montant, occasion, expéditeur, destinataire, message personnalisé.
-3. Suggestion IA affichée : "Pour un anniversaire à 2 personnes, nous recommandons 120 €".
-4. Paiement (P1 = mock/test, P2 = Stripe).
-5. Création de la `GiftCard` en statut `ACTIVE`.
-6. Envoi email/SMS au destinataire avec le code + URL de réservation.
-7. Option : génération d’un message vocal par l’IA (TTS ou agent voice).
+- **Montant libre** : il saisit un montant (min 10 €, suggestion IA).
+- **Pack expérience** : il choisit un pack créé par le restaurant (ex. "Menu dégustation 2 personnes — 120 €").
 
-### 4.2 Voice
+### 4.2 Saisie des informations
 
-```text
-Appelant
-   │
-   ▼
-"Je voudrais offrir une carte cadeau"
-   │
-   ▼
-Agent IA collecte :
-  • montant
-  • occasion
-  • nom du destinataire
-  • numéro de téléphone du destinataire
-   │
-   ▼
-Agent IA propose un montant recommandé
-   │
-   ▼
-Paiement (P2 : Stripe par téléphone ; P1 : lien SMS / marquage manuel)
-   │
-   ▼
-Confirmation vocale + SMS au destinataire
-```
+Formulaire commun :
 
-Étapes :
+- Type de cadeau (montant libre / pack).
+- Occasion (anniversaire, remerciement, affaires, romantique, départ, etc.).
+- Expéditeur : nom, email, téléphone (optionnel).
+- Destinataire : nom, email, téléphone (optionnel).
+- Message texte personnalisé (généré par IA, éditable).
+- **Option "Proposer directement des créneaux au destinataire"** (case à cocher).
+  - Si cochée : fourchette de dates + nombre de personnes.
+  - L’IA propose 3 créneaux disponibles.
+- Paiement (P1 = mode test, P2 = Stripe).
 
-1. L’agent détecte l’intention "offrir une carte cadeau".
-2. Il collecte le montant, l’occasion et les coordonnées du destinataire.
-3. Il suggère un montant adapté au restaurant et à l’occasion.
-4. Paiement (P1 = lien SMS de paiement ou marquage manuel ; P2 = paiement vocal Stripe).
-5. Création de la `GiftCard` et envoi SMS au destinataire avec le code.
+### 4.3 Paiement et création
 
-### 4.3 API d’achat P1
-
-- `POST /public/gift-cards/purchase` (P1 en mode test, P2 avec Stripe).
-- `POST /restaurants/:id/gift-cards` (dashboard : création manuelle par le restaurateur).
+1. Validation du formulaire (Zod côté API).
+2. Vérification de la disponibilité des créneaux si option "réserver maintenant".
+3. Création de la `GiftCard` en statut `ACTIVE`.
+   - `validityMonths` = 12 par défaut.
+   - `expiresAt` = `purchasedAt + validityMonths` si non fourni.
+   - `purchaseReference` = `'test'` en P1.
+4. Envoi email/SMS au destinataire :
+   - **Option classique** : code cadeau + URL de réservation.
+   - **Option "réserver maintenant"** : lien `/gift-card/:code/slots` avec les 3 créneaux.
 
 ---
 
-## 5. Concierge IA pour recommander le cadeau
-
-### Inputs
-
-- Profil du restaurant : cuisine, prix moyen, ambiance, fourchette de prix.
-- Occasion : anniversaire, dîner romantique, déjeuner d’affaires, remerciement, etc.
-- Party size (si connue).
-- Budget indicatif (optionnel).
-
-### Logique de recommandation (P1)
+## 5. Flow "réserver maintenant" (optionnel)
 
 ```text
-montant_recommandé = base_par_personne * party_size * multiplicateur_occasion
-
-base_par_personne = restaurant.priceRange * 25  // EUR, ajustable
-multiplicateur_occasion = {
-  anniversaire: 1.2,
-  romantique: 1.3,
-  affaires: 1.0,
-  remerciement: 1.0,
-  départ: 1.1,
-  default: 1.0
-}
+Bénéficiaire reçoit le lien
+   │
+   ▼
+Page /gift-card/:code/slots
+   │
+   ▼
+3 créneaux proposés (IA + disponibilité restaurant)
+   │
+   ▼
+Choix du créneau
+   │
+   ▼
+POST /public/gift-cards/:code/book
+   │
+   ▼
+Confirm sans saisie de CB (carte cadeau appliquée)
+   │
+   ▼
+Réservation confirmée
 ```
 
-### Sortie
+### Endpoints publics
 
-- Montant recommandé (arrondi au multiple de 10 €).
-- Message suggéré (template personnalisable par le restaurant).
-- Option message vocal généré.
-
-### Où l’exécuter
-
-- Côté API : endpoint `POST /public/gift-cards/recommend` (stateless, appelle OpenAI ou règle métier P1).
-- Côté voice : la même fonction est appelée par l’agent pour formuler la suggestion à l’oral.
-
----
-
-## 6. Flux d’utilisation
-
-```text
-Destinataire reçoit le code
-   │
-   ▼
-Réserve via widget / voice / web
-   │
-   ▼
-Saisit le code au moment du confirm (ou au hold)
-   │
-   ▼
-Système vérifie le solde
-   │
-   ├── Solde >= montant de la réservation
-   │   ▼
-   │   Réservation confirmée, paiement complété par la carte
-   │   GiftCard passe en REDEEMED (ou solde nul)
-   │
-   └── Solde < montant de la réservation
-       ▼
-       Déduction du solde, reste à payer par le client
-       GiftCard reste ACTIVE avec remainingAmount mis à jour
-```
+- `POST /public/gift-cards/:code/slots`
+  - Body : `{ preferredDate, preferredTime, preferredPartySize }` (optionnel, peut être lu depuis la carte).
+  - Response : `{ slots: [{ date, time, tableId? }] }` — 3 créneaux disponibles.
+- `POST /public/gift-cards/:code/book`
+  - Body : `{ slotIndex, customer }`.
+  - Response : `{ reservationId, status, giftCardApplication }`.
+  - Le backend appelle `reservation.service.createReservation` avec `giftCardCode` et `giftCardReservationAmount`.
 
 ### Règles métier
 
-- Une carte cadeau peut être utilisée sur plusieurs réservations tant que le solde est positif.
-- Le solde est déduit au moment de la confirmation, pas au hold.
-- Si le montant de la réservation est inférieur au solde, le reste reste disponible.
-- Si le montant est supérieur, le client paie le complément (P2 via Stripe, P1 via réservation marquée "complément à payer").
-- Une carte expirée ou annulée ne peut pas être appliquée.
+- Si le montant du pack couvre exactement la réservation : aucun complément.
+- Si le montant est inférieur : statut `COMPLEMENT_REQUIRED`, la réservation est créée mais marquée comme en attente de paiement.
+- Si le montant est supérieur : le solde reste sur la carte (`PARTIAL`).
 
 ---
 
-## 7. API routes
+## 6. Flow classique (code valable 12 mois)
 
-### Admin
+Le bénéficiaire reçoit un code. Il peut :
 
-```text
-GET    /restaurants/:id/gift-cards
-POST   /restaurants/:id/gift-cards
-GET    /restaurants/:id/gift-cards/:giftCardId
-PATCH  /restaurants/:id/gift-cards/:giftCardId
-POST   /restaurants/:id/gift-cards/:giftCardId/cancel
-GET    /restaurants/:id/gift-cards/stats
-```
-
-### Public
-
-```text
-POST   /public/gift-cards/check        // vérifier solde et validité
-POST   /public/gift-cards/apply        // appliquer à une réservation
-POST   /public/gift-cards/purchase     // acheter (P2 Stripe, P1 test)
-POST   /public/gift-cards/recommend    // suggestion IA
-GET    /public/r/:slug/gift-card       // infos pour l’achat (restaurant, montants suggérés)
-```
-
-### Endpoints de réservation existants
-
-- `POST /public/r/:slug/hold` : optionnellement accepte `giftCardCode` pour réserver le solde (soft-hold).
-- `POST /public/r/:slug/confirm` : accepte `giftCardCode` et applique la déduction.
-
-### Non-régression
-
-- Les endpoints existants continuent de fonctionner sans `giftCardCode`.
-- L’ajout du champ `giftCardCode` est optionnel dans les payloads.
+1. Réserver via le widget / le site / le voice (P1.5).
+2. Saisir le code au moment du `confirm` (`POST /public/r/:slug/confirm`).
+3. Le backend appelle `GiftCardService.applyToReservation` après la création de la réservation.
 
 ---
 
-## 8. Dashboard restaurateur
+## 7. Packs expérience
 
-### Page `/dashboard/gift-cards`
+### Dashboard restaurateur
 
-#### Vue liste
+Page `/dashboard/gift-card-packs` :
 
-- Cartes cadeaux vendues (code masqué partiellement, montant, solde, statut, destinataire, date d’achat).
-- Filtres : statut, période.
-- Recherche par code, email ou nom.
+- Liste des packs avec nom, description, montant, party size, actif/inactif.
+- Bouton "Créer un pack".
+- Formulaire : nom, description, montant, `minPartySize`, `maxPartySize`, actif.
+- Actions : modifier, activer/désactiver, supprimer (soft-delete via `isActive=false` en P1).
 
-#### Vue stats
+### Widget
 
-- CA total généré par les cartes cadeaux.
-- Solde total encore disponible.
-- Taux d’utilisation (% de cartes redeemées).
-- Montant moyen d’achat.
+Étape 1 : choix "Montant libre" ou "Pack expérience".
+Si "Pack" : affichage de la liste des packs actifs avec leur description et montant.
 
-#### Actions
+### API admin
 
-- Bouton "Créer une carte cadeau manuelle" (ex. compensation client, partenariat).
-- Bouton "Annuler" (passe le statut à `CANCELLED`).
-- Bouton "Voir détail" (historique des redemptions, contributions).
-
-### Permissions
-
-- Seul le restaurateur (rôle owner/manager) peut annuler ou créer manuellement.
-- Le staff peut consulter la liste.
+- `GET /restaurants/:id/gift-card-packs`
+- `POST /restaurants/:id/gift-card-packs`
+- `PATCH /restaurants/:id/gift-card-packs/:packId`
+- `POST /restaurants/:id/gift-card-packs/:packId/toggle`
+- `DELETE /restaurants/:id/gift-card-packs/:packId` (P1.5 : soft-delete)
 
 ---
 
-## 9. Intégration widget
+## 8. Cagnotte groupe (P2)
 
-### Bouton "Offrir une carte cadeau"
+### Modèle
 
-- Ajout dans le widget embed (`apps/connect/src/components/booking-widget.tsx`).
-- Ouverture d’un flow en 2-3 étapes :
-  1. Montant + occasion.
-  2. Expéditeur + destinataire + message.
-  3. Confirmation + code.
+`GiftCardContribution` est déjà créé. En P2, on ajoute :
 
-### Page dédiée
+- `GiftCard.isCagnotte` : boolean.
+- `GiftCard.targetAmount` : montant cible.
+- `GiftCard.contributions` : liste des contributeurs.
 
-- `/public/r/:slug/gift-card` (ou route Connect dédiée) affiche :
-  - Nom du restaurant.
-  - Montants suggérés.
-  - Formulaire d’achat.
-  - Aperçu du message / vocal.
+### Flow
 
-### Style
+1. L’expéditeur crée une cagnotte avec un montant cible et une date de clôture.
+2. Partage du lien `/public/gift-cards/:code/contribute`.
+3. Les contributeurs saisissent leur nom et montant.
+4. Déblocage automatique quand `SUM(contributions) >= targetAmount`.
+5. La carte passe en `ACTIVE` et le bénéficiaire reçoit le code.
 
-- French-first copy : "Offrir", "Carte cadeau", "Solde", "Utiliser".
-- Design tokens Sokar : `bg-background`, `text-primary`, `border-border`.
-- Responsive iPad.
+### Endpoints publics P2
 
----
-
-## 10. Intégration voice
-
-### Nouvelle intention
-
-- `gift_card_purchase` détectée quand l’appelant dit "offrir une carte cadeau", "cadeau", "chèque cadeau", etc.
-
-### Dialogue type
-
-```text
-Agent : "Bien sûr. Pour quelle occasion souhaitez-vous offrir cette carte cadeau ?"
-Appelant : "C'est pour un anniversaire."
-Agent : "Parfait. Pour un anniversaire à [Restaurant], je vous recommande une carte de 120 euros pour deux personnes. Souhaitez-vous ce montant ?"
-Appelant : "Oui, c'est parfait."
-Agent : "Pourriez-vous me donner le nom et le numéro de téléphone du destinataire ?"
-...
-Agent : "Votre carte cadeau est créée. Le destinataire recevra un SMS avec le code."
-```
-
-### Paiement vocal
-
-- P1 : l’agent envoie un lien de paiement sécurisé par SMS à l’expéditeur, ou le restaurateur marque la carte comme payée manuellement.
-- P2 : intégration Stripe payment intents / card-not-present.
-
-### Message vocal
-
-- Généré côté API via TTS (Cartesia) ou enregistrement direct par l’agent.
-- Stocké dans `GiftCard.voiceMessageUrl`.
+- `POST /public/gift-cards/:code/contribute`
+- `GET /public/gift-cards/:code/progress`
 
 ---
 
-## 11. Tests
+## 9. Routes API
 
-### Tests unitaires
+### Routes admin (restaurateur)
 
-- Calcul du solde après redemption.
-- Validation d’un code (format, expiration, statut).
-- Logique de recommandation du concierge IA.
-- Machine à état `ACTIVE` → `REDEEMED` / `EXPIRED` / `CANCELLED`.
+Base : `/restaurants/:id/gift-cards`
 
-### Tests d’intégration
+| Méthode | Route                                            | Description                                                        |
+| ------- | ------------------------------------------------ | ------------------------------------------------------------------ |
+| GET     | `/restaurants/:id/gift-cards`                    | Liste paginée avec filtres status, search, limit, offset.          |
+| POST    | `/restaurants/:id/gift-cards`                    | Créer une carte manuelle (montant libre ou pack).                  |
+| GET     | `/restaurants/:id/gift-cards/:giftCardId`        | Détail avec redemptions.                                           |
+| PATCH   | `/restaurants/:id/gift-cards/:giftCardId`        | Modifier message/destinataire/expiration (montant non modifiable). |
+| POST    | `/restaurants/:id/gift-cards/:giftCardId/cancel` | Annuler la carte.                                                  |
+| GET     | `/restaurants/:id/gift-cards/stats`              | Stats globales.                                                    |
 
-- Achat via `POST /restaurants/:id/gift-cards` → vérification du solde.
-- Utilisation sur une réservation : `POST /public/r/:slug/confirm` avec `giftCardCode`.
-- Réservation normale sans carte cadeau (non-régression).
-- Réservation avec solde partiel (complément à payer).
+Base : `/restaurants/:id/gift-card-packs`
 
-### Tests voice
+| Méthode | Route                                             | Description         |
+| ------- | ------------------------------------------------- | ------------------- |
+| GET     | `/restaurants/:id/gift-card-packs`                | Liste des packs.    |
+| POST    | `/restaurants/:id/gift-card-packs`                | Créer un pack.      |
+| PATCH   | `/restaurants/:id/gift-card-packs/:packId`        | Modifier un pack.   |
+| POST    | `/restaurants/:id/gift-card-packs/:packId/toggle` | Activer/désactiver. |
+| DELETE  | `/restaurants/:id/gift-card-packs/:packId`        | Supprimer (P1.5).   |
 
-- Mock du dialogue d’achat de carte cadeau.
-- Vérification que l’agent collecte les champs obligatoires.
+### Routes publics
 
-### Tests dashboard
+Base : `/public/gift-cards`
 
-- Création manuelle par le restaurateur.
-- Annulation.
-- Stats.
+| Méthode | Route                            | Description                                         | Rate limit |
+| ------- | -------------------------------- | --------------------------------------------------- | ---------- |
+| POST    | `/public/gift-cards/check`       | Vérifier solde et validité.                         | 30/min     |
+| POST    | `/public/gift-cards/recommend`   | Recommander un montant et un message.               | 30/min     |
+| POST    | `/public/gift-cards/purchase`    | Acheter une carte (mode test P1).                   | 10/min     |
+| POST    | `/public/gift-cards/apply`       | Appliquer une carte à une réservation existante.    | 20/min     |
+| POST    | `/public/gift-cards/:code/slots` | Proposer 3 créneaux (option "réserver maintenant"). | 30/min     |
+| POST    | `/public/gift-cards/:code/book`  | Confirmer un créneau avec la carte.                 | 10/min     |
+
+### Intégration Connect
+
+- `POST /public/r/:slug/confirm` accepte `giftCardCode` dans le body.
+- Le backend calcule un montant estimé (`priceRange * 25 * partySize`) et applique la carte cadeau après la création de la réservation.
+- La réponse inclut `giftCardApplication`.
 
 ---
 
-## 12. Roadmap
+## 10. Dashboard UI
 
-### P1 (MVP)
+### Onglet "Cartes cadeaux"
 
-- Modèle de données Prisma.
-- API admin + public (check, apply, purchase mode test).
-- Dashboard liste + stats + création manuelle.
-- Widget : bouton "Offrir" et formulaire.
-- Voice : intention et dialogue basique.
-- Tests unitaires et intégration.
+- Liste avec colonnes :
+  - Code (masqué).
+  - Type : "Montant libre" ou "Pack : [nom du pack]".
+  - Montant / solde.
+  - Destinataire.
+  - Statut (ACTIVE, REDEEMED, EXPIRED, CANCELLED).
+  - "Réservation clé en main" (oui/non + créneau si confirmé).
+  - Date d’achat / expiration.
+- Filtres : statut, type, recherche.
+- Bouton "Créer une carte manuelle" avec choix montant libre / pack.
+- Bouton d’annulation.
+- Stats globales : CA vendu, solde restant, nombre par type, nombre par statut.
+
+### Onglet "Packs cadeaux"
+
+- Liste des packs.
+- Formulaire de création/édition.
+- Activation/désactivation.
+
+---
+
+## 11. Widget UI
+
+### Étape 1 : choix du type
+
+Deux boutons : "Montant libre" / "Pack expérience".
+
+### Étape 2 : contenu
+
+- **Montant libre** : champ montant + suggestion IA.
+- **Pack** : liste des packs actifs avec carte (nom, description, montant, party size).
+
+### Étape 3 : infos et message
+
+- Occasion.
+- Expéditeur / destinataire.
+- Message texte (généré par IA, éditable).
+
+### Étape 4 : option "réserver maintenant"
+
+- Case à cocher "Proposer directement des créneaux au destinataire".
+- Si cochée : calendrier pour la fourchette de dates + nombre de personnes.
+- Affichage des 3 créneaux proposés.
+
+### Étape 5 : paiement et confirmation
+
+- Paiement mode test (P1).
+- Récapitulatif + confirmation.
+
+---
+
+## 12. Concierge IA
+
+### Recommandations
+
+- Montant selon `priceRange`, `occasion`, `partySize`, `budget`.
+- Message texte selon l’occasion et le destinataire.
+- Créneaux selon la disponibilité du restaurant et les préférences.
+
+### Implémentation
+
+- Service `gift-card-recommender.ts` pour montant et message.
+- Service à créer pour la proposition de créneaux (réutilise `AvailabilityService` + `TableAllocationService`).
+
+---
+
+## 13. Roadmap
+
+### P1 (actuel)
+
+- Modèle de données : `GiftCard`, `GiftCardPack`, `GiftCardRedemption`, `GiftCardContribution`.
+- Service core : `GiftCardService`, `GiftCardRecommender`.
+- Routes admin + public.
+- Packs expérience.
+- Option "réserver maintenant" (3 créneaux).
+- Dashboard cartes cadeaux + packs.
+- Widget achat.
+- Tests.
+
+### P1.5
+
+- Voice : dialogue d’achat par téléphone.
+- Amélioration UI cagnotte (préparation).
+- Soft-delete des packs.
+- Activation par restaurant (`Restaurant.giftCardEnabled`).
 
 ### P2
 
-- Paiement Stripe réel (web + voice).
-- Cagnotte groupe via `GiftCardContribution`.
-- Codes courts mnémoniques + rate-limiting.
+- Cagnotte groupe multi-contributeurs.
+- Paiement Stripe réel.
+- Codes courts mnémoniques.
+- Rappels automatiques si carte non utilisée.
 - Remboursement automatique.
-- Messages vocaux personnalisés par IA.
 
 ### P3
 
-- Marketplace de cartes cadeaux entre restaurants.
-- Cadeaux physiques / livraison.
-- Campagnes marketing (emailing cadeaux fêtes de fin d’année).
+- Marketplace entre restaurants.
+- Cadeaux physiques.
+- Message vocal (TTS / agent).
+- Multi-devise.
 
 ---
 
-## 13. Liste des fichiers à modifier
+## 14. Fichiers à modifier
 
-### Schema / base
+### Modèle de données
 
-- `packages/database/prisma/schema.prisma` : ajout des 3 modèles.
-- `packages/database/prisma/migrations/20260716000000_add_gift_cards/migration.sql`.
+- `packages/database/prisma/schema.prisma`
+- `packages/database/prisma/migrations/2026XXXXXX_add_gift_card_packs/migration.sql`
+- `packages/database/prisma/migrations/2026XXXXXX_update_gift_card_fields/migration.sql`
 
 ### API
 
-- `apps/api/src/main.ts` : enregistrement des routes.
-- `apps/api/src/modules/gift-cards/gift-card.service.ts` (nouveau).
-- `apps/api/src/modules/gift-cards/gift-card.routes.ts` (nouveau).
-- `apps/api/src/modules/gift-cards/gift-card.types.ts` (nouveau).
-- `apps/api/src/modules/gift-cards/__tests__/gift-card.service.test.ts` (nouveau).
-- `apps/api/src/modules/gift-cards/__tests__/gift-card.routes.test.ts` (nouveau).
-- `apps/api/src/modules/connect/connect.routes.ts` : ajout de `giftCardCode` dans `/hold` et `/confirm`.
-- `apps/api/src/modules/agentic-reservations/core/reservation.service.ts` : gestion du solde.
-- `apps/api/src/modules/agentic-reservations/core/hold.service.ts` : soft-hold du solde.
+- `apps/api/src/modules/gift-cards/gift-card.types.ts`
+- `apps/api/src/modules/gift-cards/gift-card.service.ts`
+- `apps/api/src/modules/gift-cards/gift-card-recommender.ts`
+- `apps/api/src/modules/gift-cards/gift-card.routes.ts`
+- `apps/api/src/modules/gift-cards/gift-card-pack.service.ts` (nouveau)
+- `apps/api/src/modules/gift-cards/gift-card-pack.routes.ts` (nouveau)
+- `apps/api/src/modules/gift-cards/gift-card-slots.service.ts` (nouveau)
+- `apps/api/src/modules/gift-cards/__tests__/gift-card.service.test.ts`
+- `apps/api/src/modules/gift-cards/__tests__/gift-card.routes.test.ts`
+- `apps/api/src/modules/gift-cards/__tests__/gift-card-pack.test.ts` (nouveau)
+- `apps/api/src/main.ts`
 
 ### Dashboard
 
-- `apps/dashboard/src/app/dashboard/gift-cards/page.tsx` (nouveau).
-- `apps/dashboard/src/app/dashboard/_layout-client.tsx` : ajout dans la nav.
+- `apps/dashboard/src/app/dashboard/gift-cards/page.tsx` (nouveau)
+- `apps/dashboard/src/app/dashboard/gift-card-packs/page.tsx` (nouveau)
+- `apps/dashboard/src/components/gift-cards/gift-card-list.tsx` (nouveau)
+- `apps/dashboard/src/components/gift-cards/gift-card-form.tsx` (nouveau)
+- `apps/dashboard/src/components/gift-cards/gift-card-pack-form.tsx` (nouveau)
+- `apps/dashboard/src/lib/api/gift-cards.ts` (nouveau)
+- `apps/dashboard/src/components/layout/nav.tsx` (ajout des liens)
 
 ### Widget / Connect
 
-- `apps/connect/src/components/booking-widget.tsx` : bouton "Offrir".
-- `apps/connect/src/app/widget/[slug]/page.tsx` : page cadeau.
-- `apps/connect/src/components/gift-card-form.tsx` (nouveau).
+- `apps/connect/src/app/gift-card/page.tsx` ou composant widget (nouveau)
+- `apps/connect/src/lib/api/gift-cards.ts` (nouveau)
+- `apps/api/src/modules/connect/connect.routes.ts` (déjà mis à jour pour `giftCardCode`)
+- `apps/api/src/modules/connect/connect.types.ts` (déjà mis à jour)
 
-### Voice
+### Tests
 
-- `apps/api/src/modules/voice/prompts/` : nouvelle intention et phrases.
-- `apps/api/src/modules/voice/tools/` : tool `create_gift_card` pour l’agent.
-
----
-
-## 14. Questions à résoudre
-
-1. **Code cadeau** : UUID en P1 ; code court mnémonique en P2 avec rate-limiting ?
-2. **Paiement** : Stripe en P2 ; mode test / marquage manuel en P1 ?
-3. **Message vocal** : généré côté API (TTS) ou enregistré côté voice ?
-4. **Portée** : carte cadeau liée au restaurant uniquement, ou à un groupe/compte Sokar ?
-5. **Remboursement** : annulation manuelle côté restaurateur en P1 ; remboursement automatique en P2 ?
-6. **Expiration** : optionnelle en P1 ; obligatoire en P2 ?
-7. **Taxes** : la carte cadeau est-elle un titre prépayé soumis à une TVA différée ? À valider avec un expert comptable.
+- Tests unitaires et d’intégration pour les nouveaux services et routes.
+- Mise à jour des tests existants si le modèle de données évolue.
 
 ---
 
-## 15. Notes RGPD et sécurité
+## 15. Critères d’acceptation
 
-- Consentement explicite de l’expéditeur et du destinataire pour l’email/SMS.
-- Les codes ne doivent pas être énumérables (UUID en P1, hash + rate-limit P2).
-- Logs : ne jamais stocker le code en clair dans les logs (loguer `codePrefix` ou `id` uniquement).
-- Paiement : ne jamais persister les données de carte bancaire (déléguer à Stripe en P2).
-- Durée de conservation : définir une politique d’archivage des cartes cadeaux expirées.
-
----
-
-## 16. Copy user-facing (French-first)
-
-- Bouton : "Offrir une carte cadeau"
-- Titre : "Offrir un moment au [Nom du restaurant]"
-- Champs : "Montant", "Occasion", "Votre nom", "Nom du destinataire", "Email du destinataire", "Téléphone du destinataire", "Message personnel"
-- Confirmation : "Votre carte cadeau a bien été créée. Le destinataire recevra un email avec le code."
-- Utilisation : "Vous avez une carte cadeau ? Saisissez votre code."
-- Solde : "Solde restant : [montant]"
-- Erreur : "Ce code n’est pas valide ou a expiré."
-
----
-
-> Dernière mise à jour : 2026-07-03  
-> Auteur : Devin / Sokar team
+- [ ] Le message vocal est retiré de P1.
+- [ ] L’option "réserver maintenant" est clairement optionnelle.
+- [ ] La carte cadeau a une validité par défaut de 12 mois.
+- [ ] Les packs expérience sont intégrés dans le modèle, l’API et le dashboard.
+- [ ] La cagnotte est planifiée en P2 avec modèle déjà créé.
+- [ ] Le dashboard expose les cartes cadeaux et les packs.
+- [ ] Le widget permet de choisir entre montant libre et pack.
+- [ ] Le copy est en français avec `vous`.
+- [ ] Les tests passent : `pnpm --filter @sokar/api test` et `pnpm --filter @sokar/api typecheck`.
