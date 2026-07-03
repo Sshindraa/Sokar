@@ -22,9 +22,10 @@ import { listGiftCardPacks, createPaymentIntent, purchaseGiftCard } from '@/lib/
 import { GiftCardConfirmation } from './gift-card-confirmation';
 import { GiftCardTemplatePicker } from './gift-card-template-picker';
 import { GiftCardPaymentForm } from './gift-card-payment-form';
+import { GiftCardCrowdfundingCreate } from './gift-card-crowdfunding-create';
 import { trackEvent } from '@/lib/tracking';
 
-type Step = 'type' | 'info' | 'slots' | 'template' | 'payment' | 'done';
+type Step = 'type' | 'info' | 'slots' | 'template' | 'payment' | 'done' | 'crowdfunding';
 
 type Props = {
   slug: string;
@@ -48,7 +49,7 @@ export function GiftCardPurchase({
   const [packsLoading, setPacksLoading] = useState(true);
 
   // Form state
-  const [mode, setMode] = useState<'free' | 'pack'>('free');
+  const [mode, setMode] = useState<'free' | 'pack' | 'crowdfunding'>('free');
   const [amount, setAmount] = useState('');
   const [packId, setPackId] = useState('');
   const [occasion, setOccasion] = useState('');
@@ -94,6 +95,10 @@ export function GiftCardPurchase({
 
   function handleNextFromType() {
     setError(null);
+    if (mode === 'crowdfunding') {
+      // Le formulaire de cagnotte est rendu directement — pas de navigation vers 'info'
+      return;
+    }
     if (mode === 'free') {
       const parsed = parseFloat(amount);
       if (!parsed || parsed <= 0) {
@@ -341,6 +346,32 @@ export function GiftCardPurchase({
                 {mode === 'pack' && '✓'}
               </div>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setMode('crowdfunding')}
+              className={`flex w-full items-center justify-between rounded-lg border p-4 transition-all duration-200 ${
+                mode === 'crowdfunding' ? 'border-2' : 'border-border bg-background hover:bg-muted'
+              }`}
+              style={mode === 'crowdfunding' ? { borderColor: accentColor } : undefined}
+            >
+              <div className="text-left">
+                <p className="font-medium" style={{ color: primaryColor }}>
+                  Cagnotte collective
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Plusieurs personnes contribuent à une carte cadeau
+                </p>
+              </div>
+              <div
+                className={`flex h-6 w-6 items-center justify-center rounded-full border-2 ${
+                  mode === 'crowdfunding' ? 'border-transparent text-white' : 'border-border'
+                }`}
+                style={mode === 'crowdfunding' ? { backgroundColor: accentColor } : undefined}
+              >
+                {mode === 'crowdfunding' && '✓'}
+              </div>
+            </button>
           </div>
 
           {mode === 'free' && (
@@ -394,16 +425,30 @@ export function GiftCardPurchase({
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={handleNextFromType}
-            disabled={packsLoading}
-            className="inline-flex w-full items-center justify-center rounded-lg px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
-            style={{ backgroundColor: accentColor }}
-          >
-            Continuer
-          </button>
+          {mode !== 'crowdfunding' && (
+            <button
+              type="button"
+              onClick={handleNextFromType}
+              disabled={packsLoading}
+              className="inline-flex w-full items-center justify-center rounded-lg px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+              style={{ backgroundColor: accentColor }}
+            >
+              Continuer
+            </button>
+          )}
         </div>
+      )}
+
+      {/* Étape Cagnotte — formulaire de création */}
+      {step === 'type' && mode === 'crowdfunding' && (
+        <GiftCardCrowdfundingCreate
+          slug={slug}
+          restaurantId={restaurantId}
+          restaurantName={restaurantName}
+          primaryColor={primaryColor}
+          accentColor={accentColor}
+          source={source}
+        />
       )}
 
       {/* Étape 2 : Informations */}

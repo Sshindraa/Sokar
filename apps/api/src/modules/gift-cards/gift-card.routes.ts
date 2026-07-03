@@ -9,11 +9,13 @@ import { GiftCardBookService } from './gift-card-book.service';
 import { recommendGiftCardAmount } from './gift-card-recommender';
 import { createPaymentIntent, constructWebhookEvent } from './stripe.service';
 import { GiftCardPaymentService } from './gift-card-payment.service';
+import { GiftCardCrowdfundingService } from './gift-card-crowdfunding.service';
 import { generateGiftCardPdf } from './gift-card-pdf.service';
 import { logger } from '../../shared/logger/pino';
 
 const ListGiftCardsQuerySchema = z.object({
-  status: z.enum(['ACTIVE', 'REDEEMED', 'EXPIRED', 'CANCELLED']).optional(),
+  status: z.enum(['ACTIVE', 'REDEEMED', 'EXPIRED', 'CANCELLED', 'CLOSED']).optional(),
+  type: z.enum(['SINGLE', 'CROWDFUNDED']).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
   search: z.string().optional(),
@@ -129,6 +131,40 @@ const ApplyGiftCardSchema = z.object({
   reservationAmount: z.coerce.number().positive(),
 });
 
+// ─── P3 — Crowdfunding schemas ─────────────────────────────────────
+
+const CreateCrowdfundingSchema = z.object({
+  restaurantId: z.string(),
+  title: z.string().min(1).max(200),
+  occasion: z.string().max(100).optional(),
+  recipientName: z.string().min(1).max(100),
+  recipientEmail: z.string().email().max(255).optional(),
+  recipientPhone: z.string().max(50).optional(),
+  creatorName: z.string().min(1).max(100),
+  creatorEmail: z.string().email().max(255),
+  targetAmount: z.coerce.number().positive().optional(),
+  crowdfundedUntil: z.coerce.date(),
+  templateId: z.string().max(100).optional(),
+  message: z.string().max(1000).optional(),
+});
+
+const CrowdfundingPaymentIntentSchema = z.object({
+  amount: z.coerce.number().positive(),
+  contributorName: z.string().min(1).max(100),
+  contributorEmail: z.string().email().max(255).optional(),
+  isPublicName: z.boolean().default(true),
+  message: z.string().max(1000).optional(),
+});
+
+const ContributeSchema = z.object({
+  paymentIntentId: z.string().min(1),
+  contributorName: z.string().min(1).max(100),
+  contributorEmail: z.string().email().max(255).optional(),
+  amount: z.coerce.number().positive(),
+  isPublicName: z.boolean().default(true),
+  message: z.string().max(1000).optional(),
+});
+
 const SuggestSlotsSchema = z.object({
   partySize: z.coerce.number().int().min(1).optional(),
   preferredDate: z.coerce.date().optional(),
@@ -188,6 +224,10 @@ function serializeGiftCard(
     stripePaymentStatus: card.stripePaymentStatus,
     templateId: card.templateId,
     sokarCommissionAmount: card.sokarCommissionAmount?.toNumber() ?? 0,
+    type: card.type,
+    targetAmount: card.targetAmount?.toNumber() ?? null,
+    crowdfundedUntil: card.crowdfundedUntil,
+    closedAt: card.closedAt,
   };
 }
 
@@ -209,11 +249,15 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
     if (query.status) {
       where.status = query.status;
     }
+    if (query.type) {
+      where.type = query.type;
+    }
     if (query.search) {
       where.OR = [
         { recipientEmail: { contains: query.search, mode: 'insensitive' } },
         { recipientName: { contains: query.search, mode: 'insensitive' } },
         { senderName: { contains: query.search, mode: 'insensitive' } },
+        { occasion: { contains: query.search, mode: 'insensitive' } },
       ];
     }
 
@@ -590,6 +634,156 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
         '[gift-card-routes] PDF generation failed',
       );
       return reply.status(500).send({ error: 'Impossible de générer le PDF' });
+    }
+  });
+
+  // ─── P3 — Crowdfunding routes ────────────────────────────────────
+
+  // Créer une cagnotte
+  app.post('/public/gift-cards/crowdfunding', async (req, reply) => {
+    const body = CreateCrowdfundingSchema.parse(req.body);
+    const service = new GiftCardCrowdfundingService(db);
+
+    try {
+      const card = await service.createCrowdfunding({
+        restaurantId: body.restaurantId,
+        title: body.title,
+        occasion: body.occasion,
+        recipientName: body.recipientName,
+        recipientEmail: body.recipientEmail,
+        recipientPhone: body.recipientPhone,
+        creatorName: body.creatorName,
+        creatorEmail: body.creatorEmail,
+        targetAmount: body.targetAmount,
+        crowdfundedUntil: body.crowdfundedUntil,
+        templateId: body.templateId,
+        message: body.message,
+      });
+
+      return reply.status(201).send({
+        id: card.id,
+        code: card.code,
+        type: card.type,
+        title: card.occasion,
+        crowdfundedUntil: card.crowdfundedUntil,
+        targetAmount: card.targetAmount?.toNumber() ?? null,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message }, '[gift-card-routes] Crowdfunding creation failed');
+      return reply.status(400).send({ error: message });
+    }
+  });
+
+  // Créer un PaymentIntent pour une contribution
+  app.post('/public/gift-cards/crowdfunding/:code/payment-intent', async (req, reply) => {
+    const code = (req.params as { code: string }).code;
+    const body = CrowdfundingPaymentIntentSchema.parse(req.body);
+
+    // Vérifier que la cagnotte existe et est active
+    const card = await db.giftCard.findUnique({ where: { code } });
+    if (!card || card.type !== 'CROWDFUNDED') {
+      return reply.status(404).send({ error: 'Cagnotte introuvable' });
+    }
+    if (card.status === 'CLOSED' || card.status === 'CANCELLED') {
+      return reply.status(400).send({ error: "Cette cagnotte n'est plus active" });
+    }
+    if (card.crowdfundedUntil && new Date() > card.crowdfundedUntil) {
+      return reply.status(400).send({ error: 'La date butoir de cette cagnotte est dépassée' });
+    }
+
+    try {
+      const intent = await createPaymentIntent({
+        amount: Math.round(body.amount * 100),
+        currency: 'eur',
+        metadata: {
+          type: 'crowdfunding_contribution',
+          giftCardCode: code,
+          amount: String(body.amount),
+          contributorName: body.contributorName,
+          contributorEmail: body.contributorEmail ?? '',
+          isPublicName: String(body.isPublicName),
+          message: body.message ?? '',
+        },
+      });
+
+      return reply.send({
+        paymentIntentId: intent.id,
+        clientSecret: intent.clientSecret,
+      });
+    } catch (err: unknown) {
+      logger.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[gift-card-routes] Crowdfunding payment intent failed',
+      );
+      return reply.status(500).send({ error: 'Impossible de créer le paiement' });
+    }
+  });
+
+  // Confirmer une contribution
+  app.post('/public/gift-cards/crowdfunding/:code/contribute', async (req, reply) => {
+    const code = (req.params as { code: string }).code;
+    const body = ContributeSchema.parse(req.body);
+    const service = new GiftCardCrowdfundingService(db);
+
+    try {
+      const contribution = await service.contribute(
+        {
+          code,
+          contributorName: body.contributorName,
+          contributorEmail: body.contributorEmail,
+          amount: body.amount,
+          isPublicName: body.isPublicName,
+          message: body.message,
+        },
+        body.paymentIntentId,
+      );
+
+      return reply.status(201).send({
+        id: contribution.id,
+        amount: contribution.amount.toNumber(),
+        contributedAt: contribution.contributedAt,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message }, '[gift-card-routes] Contribution failed');
+      return reply.status(400).send({ error: message });
+    }
+  });
+
+  // Statut public d'une cagnotte
+  app.get('/public/gift-cards/crowdfunding/:code', async (req, reply) => {
+    const code = (req.params as { code: string }).code;
+    const service = new GiftCardCrowdfundingService(db);
+
+    try {
+      const status = await service.getPublicStatus(code);
+      return reply.send(status);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return reply.status(404).send({ error: message });
+    }
+  });
+
+  // Clôturer une cagnotte (dashboard — authentifié)
+  app.post('/api/gift-cards/:id/close', { preHandler: requireOrg() }, async (req, reply) => {
+    const giftCardId = (req.params as { id: string }).id;
+    const restaurantId = (req.query as { restaurantId?: string }).restaurantId;
+
+    // Vérifier que la cagnotte appartient au restaurant du user
+    if (restaurantId && restaurantId !== req.restaurantId) {
+      return reply.status(403).send({ error: 'Accès refusé' });
+    }
+
+    const service = new GiftCardCrowdfundingService(db);
+
+    try {
+      const card = await service.closeCrowdfunding(giftCardId);
+      return reply.send(serializeGiftCard(card));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message }, '[gift-card-routes] Close crowdfunding failed');
+      return reply.status(400).send({ error: message });
     }
   });
 

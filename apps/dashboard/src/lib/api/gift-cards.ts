@@ -21,6 +21,10 @@ export type GiftCardListItem = {
   expiresAt: string | null;
   stripePaymentStatus: string | null;
   sokarCommissionAmount: number;
+  type: string;
+  targetAmount: number | null;
+  crowdfundedUntil: string | null;
+  closedAt: string | null;
 };
 
 export type GiftCardListResponse = {
@@ -84,6 +88,7 @@ export function useGiftCardApi() {
 
   async function listGiftCards(params?: {
     status?: string;
+    type?: string;
     search?: string;
     limit?: number;
     offset?: number;
@@ -91,6 +96,7 @@ export function useGiftCardApi() {
     if (!orgId) throw new Error('Organisation non chargée');
     const qs = new URLSearchParams();
     if (params?.status) qs.set('status', params.status);
+    if (params?.type) qs.set('type', params.type);
     if (params?.search) qs.set('search', params.search);
     if (params?.limit) qs.set('limit', String(params.limit));
     if (params?.offset) qs.set('offset', String(params.offset));
@@ -136,11 +142,17 @@ export function useGiftCardApi() {
     return post<GiftCardPack>(`restaurants/${orgId}/gift-card-packs/${packId}/toggle`);
   }
 
+  async function closeCrowdfunding(giftCardId: string): Promise<GiftCardListItem> {
+    if (!orgId) throw new Error('Organisation non chargée');
+    return post<GiftCardListItem>(`api/gift-cards/${giftCardId}/close?restaurantId=${orgId}`, {});
+  }
+
   return {
     orgId,
     listGiftCards,
     createGiftCard,
     cancelGiftCard,
+    closeCrowdfunding,
     getGiftCardStats,
     listGiftCardPacks,
     createGiftCardPack,

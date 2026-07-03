@@ -1,6 +1,8 @@
 import type { GiftCard, GiftCardPack } from '@prisma/client';
 
-export type GiftCardStatus = 'ACTIVE' | 'REDEEMED' | 'EXPIRED' | 'CANCELLED';
+export type GiftCardStatus = 'ACTIVE' | 'REDEEMED' | 'EXPIRED' | 'CANCELLED' | 'CLOSED';
+
+export type GiftCardType = 'SINGLE' | 'CROWDFUNDED';
 
 export type GiftCardCreatedBy = 'CLIENT' | 'DASHBOARD' | 'VOICE';
 
@@ -31,6 +33,10 @@ export type CreateGiftCardInput = {
   templateId?: string;
   customImageUrl?: string;
   sokarCommissionAmount?: number;
+  // P3 — Crowdfunding
+  type?: GiftCardType;
+  targetAmount?: number;
+  crowdfundedUntil?: Date;
 };
 
 export type GiftCardValidationResult =
@@ -119,4 +125,54 @@ export type GiftCardBookResult = {
   reservationId: string;
   state: string;
   giftCardApplication?: GiftCardApplicationResult;
+};
+
+// ─── P3 — Crowdfunding ─────────────────────────────────────────────
+
+export type CreateCrowdfundingInput = {
+  restaurantId: string;
+  title: string;
+  occasion?: string;
+  recipientName: string;
+  recipientEmail?: string;
+  recipientPhone?: string;
+  creatorName: string;
+  creatorEmail: string;
+  targetAmount?: number;
+  crowdfundedUntil: Date;
+  templateId?: string;
+  message?: string;
+};
+
+export type ContributeInput = {
+  code: string;
+  contributorName: string;
+  contributorEmail?: string;
+  amount: number;
+  isPublicName: boolean;
+  message?: string;
+};
+
+export type PublicContribution = {
+  id: string;
+  contributorName: string | null;
+  amount: number;
+  message: string | null;
+  contributedAt: string;
+};
+
+export type PublicCrowdfundingStatus = {
+  code: string;
+  title: string;
+  occasion: string | null;
+  recipientName: string;
+  restaurantName: string;
+  collectedAmount: number;
+  targetAmount: number | null;
+  contributionsCount: number;
+  crowdfundedUntil: string | null;
+  status: GiftCardStatus;
+  contributions: PublicContribution[];
+  creatorName: string;
+  message: string | null;
 };

@@ -92,6 +92,31 @@ export type AnalyticsEvent =
       giftCardId: string;
       amount: number;
       source?: string;
+    }
+  | {
+      event: 'crowdfunding_create_started';
+      restaurantId: string;
+      restaurantSlug: string;
+      source?: string;
+    }
+  | {
+      event: 'crowdfunding_create_completed';
+      restaurantId: string;
+      restaurantSlug: string;
+      code: string;
+      source?: string;
+    }
+  | {
+      event: 'crowdfunding_contribute_started';
+      code: string;
+      amount: number;
+      source?: string;
+    }
+  | {
+      event: 'crowdfunding_contribute_completed';
+      code: string;
+      amount: number;
+      source?: string;
     };
 
 /**
