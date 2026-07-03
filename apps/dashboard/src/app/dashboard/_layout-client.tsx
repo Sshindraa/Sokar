@@ -15,6 +15,8 @@ import {
   Eye,
   EyeOff,
   HeartHandshake,
+  Code,
+  LayoutGrid,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SyncOrganization } from './SyncOrganization';
@@ -38,10 +40,12 @@ const navItems = [
   { href: '/dashboard', label: 'Aperçu', icon: BarChart3 },
   { href: '/dashboard/calls', label: 'Appels', icon: PhoneCall },
   { href: '/dashboard/reservations', label: 'Réservations', icon: CalendarCheck },
+  { href: '/dashboard/floor-plan', label: 'Salle', icon: LayoutGrid },
   { href: '/dashboard/customers', label: 'Clients', icon: Users },
   { href: '/dashboard/reactivation', label: 'Réactivation', icon: HeartHandshake },
   { href: '/dashboard/agentic', label: 'Agents IA', icon: Sparkles },
   { href: '/dashboard/connect', label: 'Connect', icon: Zap },
+  { href: '/dashboard/widget', label: 'Widget', icon: Code },
   { href: '/dashboard/settings', label: 'Réglages', icon: Settings },
 ];
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);

@@ -10,6 +10,7 @@
 
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { Footer } from '@/components/footer';
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.SITE_URL ?? 'https://sokar.tech'),
@@ -51,17 +52,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="fr">
       <body className="min-h-screen bg-background text-foreground antialiased">
         {children}
-        <footer className="border-t border-border bg-background px-6 py-8 text-center text-sm text-muted-foreground">
-          <p>
-            Sokar — Réservation en ligne pour restaurants ·{' '}
-            <a
-              href="/privacy"
-              className="text-foreground underline transition-all duration-200 hover:text-ember"
-            >
-              Politique de confidentialité
-            </a>
-          </p>
-        </footer>
+        <Footer />
       </body>
     </html>
   );

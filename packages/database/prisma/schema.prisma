@@ -14,26 +14,26 @@ datasource db {
 // Pour les dropper : DROP TABLE IF EXISTS users, sessions, accounts, verifications CASCADE;
 
 model Restaurant {
-  id                    String            @id @default(uuid())
+  id                    String                 @id @default(uuid())
   name                  String
-  plan                  Plan              @default(STARTER)
-  managerPhone          String            @map("manager_phone")
-  managerEmail          String            @map("manager_email")
-  phoneNumber           String            @unique @map("phone_number")
-  openingHours          Json              @map("opening_hours")
-  carrier               String            @default("vapi") // "vapi" | "telnyx" — rollback feature flag
-  smsConfirmEnabled     Boolean           @default(true) @map("sms_confirm_enabled")
-  theforkSavings        Decimal           @default(0) @map("thefork_savings") @db.Decimal(10, 2)
-  googleCalendarId      String?           @map("google_calendar_id")
-  googleRefreshToken    String?           @map("google_refresh_token")
-  onboardingTasks       Json              @default("{}") @map("onboarding_tasks")
-  onboardingDone        Boolean           @default(false) @map("onboarding_done")
-  onboardingCompletedAt DateTime?         @map("onboarding_completed_at")
-  onboardingActivatedAt DateTime?         @map("onboarding_activated_at")
-  onboardingLastSeenAt  DateTime?         @map("onboarding_last_seen_at")
-  firstCallAt           DateTime?         @map("first_call_at")
-  createdAt             DateTime          @default(now()) @map("created_at")
-  updatedAt             DateTime          @default(now()) @updatedAt @map("updated_at")
+  plan                  Plan                   @default(STARTER)
+  managerPhone          String                 @map("manager_phone")
+  managerEmail          String                 @map("manager_email")
+  phoneNumber           String                 @unique @map("phone_number")
+  openingHours          Json                   @map("opening_hours")
+  carrier               String                 @default("vapi") // "vapi" | "telnyx" — rollback feature flag
+  smsConfirmEnabled     Boolean                @default(true) @map("sms_confirm_enabled")
+  theforkSavings        Decimal                @default(0) @map("thefork_savings") @db.Decimal(10, 2)
+  googleCalendarId      String?                @map("google_calendar_id")
+  googleRefreshToken    String?                @map("google_refresh_token")
+  onboardingTasks       Json                   @default("{}") @map("onboarding_tasks")
+  onboardingDone        Boolean                @default(false) @map("onboarding_done")
+  onboardingCompletedAt DateTime?              @map("onboarding_completed_at")
+  onboardingActivatedAt DateTime?              @map("onboarding_activated_at")
+  onboardingLastSeenAt  DateTime?              @map("onboarding_last_seen_at")
+  firstCallAt           DateTime?              @map("first_call_at")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at")
   calls                 Call[]
   reservations          Reservation[]
   customers             Customer[]
@@ -42,46 +42,47 @@ model Restaurant {
   personality           AgentPersonality?
   callQuotas            CallQuota[]
   agenticHolds          AgenticHold[]
+  floorPlan             FloorPlan?
 
   // Agentic reservations (P0)
-  slug                  String?           @unique @map("slug")
-  canonicalUrl          String?           @map("canonical_url")
-  websiteUrl            String?           @map("website_url")
-  platformUrl           String?           @map("platform_url")
-  lat                   Decimal?          @db.Decimal(9, 6) @map("lat")
-  lng                   Decimal?          @db.Decimal(9, 6) @map("lng")
-  formattedAddress      String?           @map("formatted_address")
-  timezone              String            @default("Europe/Paris") @map("timezone")
-  phoneE164             String?           @map("phone_e164")
-  cuisineType           String[]          @default([]) @map("cuisine_type")
-  priceRange            Int?              @map("price_range")
-  ambiance              String[]          @default([])
-  noiseLevel            NoiseLevel?       @map("noise_level")
-  dietary               String[]          @default([])
-  attributeConfidence   Json              @default("{}") @map("attribute_confidence")
-  agenticOptIn          Boolean           @default(false) @map("agentic_opt_in")
-  openaiReserveEnabled  Boolean           @default(false) @map("openai_reserve_enabled")
-  policyVersion         String            @default("2026-06-20") @map("policy_version")
-  exposureSettings      RestaurantExposureSettings?
-  agentClients          AgentClient[]
-  images                RestaurantImage[]
-  onboardingEvents      OnboardingEvent[]
+  slug                 String?                     @unique @map("slug")
+  canonicalUrl         String?                     @map("canonical_url")
+  websiteUrl           String?                     @map("website_url")
+  platformUrl          String?                     @map("platform_url")
+  lat                  Decimal?                    @map("lat") @db.Decimal(9, 6)
+  lng                  Decimal?                    @map("lng") @db.Decimal(9, 6)
+  formattedAddress     String?                     @map("formatted_address")
+  timezone             String                      @default("Europe/Paris") @map("timezone")
+  phoneE164            String?                     @map("phone_e164")
+  cuisineType          String[]                    @default([]) @map("cuisine_type")
+  priceRange           Int?                        @map("price_range")
+  ambiance             String[]                    @default([])
+  noiseLevel           NoiseLevel?                 @map("noise_level")
+  dietary              String[]                    @default([])
+  attributeConfidence  Json                        @default("{}") @map("attribute_confidence")
+  agenticOptIn         Boolean                     @default(false) @map("agentic_opt_in")
+  openaiReserveEnabled Boolean                     @default(false) @map("openai_reserve_enabled")
+  policyVersion        String                      @default("2026-06-20") @map("policy_version")
+  exposureSettings     RestaurantExposureSettings?
+  agentClients         AgentClient[]
+  images               RestaurantImage[]
+  onboardingEvents     OnboardingEvent[]
 
   // Sokar Connect (P0) — données publiques structurées, pas de flags de gating ici
-  description           String?           @map("description")
-  city                  String?           @map("city")
-  country               String            @default("FR") @map("country")
-  postalCode            String?           @map("postal_code")
-  coverImageUrl         String?           @map("cover_image_url")
-  publishedAt           DateTime?         @map("published_at")
+  description   String?   @map("description")
+  city          String?   @map("city")
+  country       String    @default("FR") @map("country")
+  postalCode    String?   @map("postal_code")
+  coverImageUrl String?   @map("cover_image_url")
+  publishedAt   DateTime? @map("published_at")
 
   // Google Places — rating importé (aggregateRating JSON-LD, Phase 3)
   // Sync périodique via worker google-places-sync. Respect CGU Google :
   // attribution obligatoire, pas de republication du texte des avis.
-  googlePlaceId         String?           @map("google_place_id")
-  googleRating          Float?            @map("google_rating")
-  googleReviewCount     Int?              @map("google_review_count")
-  googleRatingSyncedAt  DateTime?         @map("google_rating_synced_at")
+  googlePlaceId        String?   @map("google_place_id")
+  googleRating         Float?    @map("google_rating")
+  googleReviewCount    Int?      @map("google_review_count")
+  googleRatingSyncedAt DateTime? @map("google_rating_synced_at")
 
   @@index([city, publishedAt], map: "restaurants_city_published_at_idx")
   @@map("restaurants")
@@ -99,6 +100,59 @@ model RestaurantImage {
 
   @@index([restaurantId, isCover, position], map: "restaurant_images_restaurant_id_is_cover_position_idx")
   @@map("restaurant_images")
+}
+
+// ─── Floor plan (P1) ───────────────────────────────────────────────
+
+model FloorPlan {
+  id           String     @id @default(uuid())
+  restaurantId String     @unique @map("restaurant_id")
+  name         String     @default("Salle principale")
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  sections     Section[]
+  tables       Table[]
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  @@map("floor_plans")
+}
+
+model Section {
+  id          String    @id @default(uuid())
+  floorPlanId String    @map("floor_plan_id")
+  name        String
+  position    Int       @default(0)
+  floorPlan   FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  tables      Table[]
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([floorPlanId, position])
+  @@map("floor_plan_sections")
+}
+
+model Table {
+  id           String        @id @default(uuid())
+  floorPlanId  String        @map("floor_plan_id")
+  sectionId    String?       @map("section_id")
+  name         String
+  capacity     Int
+  minCapacity  Int           @default(1) @map("min_capacity")
+  positionX    Int?          @map("position_x")
+  positionY    Int?          @map("position_y")
+  shape        String        @default("rect")
+  isActive     Boolean       @default(true) @map("is_active")
+  floorPlan    FloorPlan     @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  section      Section?      @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  reservations Reservation[]
+  holds        AgenticHold[]
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  @@index([floorPlanId, isActive])
+  @@index([floorPlanId, isActive, capacity])
+  @@index([sectionId])
+  @@map("floor_plan_tables")
 }
 
 model Call {
@@ -144,28 +198,32 @@ model Reservation {
   customer         Customer?         @relation(fields: [customerId], references: [id])
 
   // Agentic reservations (P0)
-  channel                 ReservationChannel  @default(PHONE) @map("channel")
-  state                   ReservationState    @default(CONFIRMED) @map("state")
-  startsAt                DateTime?           @map("starts_at")
-  endsAt                  DateTime?           @map("ends_at")
-  specialRequests         String?             @map("special_requests")
-  createdByClient         String?             @map("created_by_client")
-  cancellationPolicySnap  Json?               @map("cancellation_policy_snap")
-  noShowPolicySnap        Json?               @map("no_show_policy_snap")
-  consents                Json                @default("{}") @map("consents")
-  privacyPolicyVersion    String              @default("2026-06-20") @map("privacy_policy_version")
-  idempotencyScope        String?             @map("idempotency_scope")
-  idempotencyKey          String?             @map("idempotency_key")
-  idempotencyPayloadHash  String?             @map("idempotency_payload_hash")
-  consumedHoldId          String?            @unique @map("consumed_hold_id")
-  source                  String?            @map("source") // google|chatgpt|perplexity|bing|restaurant_website|instagram|qr_code|direct|unknown|web
+  channel                ReservationChannel @default(PHONE) @map("channel")
+  state                  ReservationState   @default(CONFIRMED) @map("state")
+  startsAt               DateTime?          @map("starts_at")
+  endsAt                 DateTime?          @map("ends_at")
+  specialRequests        String?            @map("special_requests")
+  createdByClient        String?            @map("created_by_client")
+  cancellationPolicySnap Json?              @map("cancellation_policy_snap")
+  noShowPolicySnap       Json?              @map("no_show_policy_snap")
+  consents               Json               @default("{}") @map("consents")
+  privacyPolicyVersion   String             @default("2026-06-20") @map("privacy_policy_version")
+  idempotencyScope       String?            @map("idempotency_scope")
+  idempotencyKey         String?            @map("idempotency_key")
+  idempotencyPayloadHash String?            @map("idempotency_payload_hash")
+  consumedHoldId         String?            @unique @map("consumed_hold_id")
+  source                 String?            @map("source") // google|chatgpt|perplexity|bing|restaurant_website|instagram|qr_code|direct|unknown|web
 
   // SMS confirmation J-1
-  confirmationStatus      ConfirmationStatus @default(NOT_REQUIRED) @map("confirmation_status")
-  confirmationSentAt      DateTime?          @map("confirmation_sent_at")
-  confirmedAt             DateTime?          @map("confirmed_at")
+  confirmationStatus ConfirmationStatus @default(NOT_REQUIRED) @map("confirmation_status")
+  confirmationSentAt DateTime?          @map("confirmation_sent_at")
+  confirmedAt        DateTime?          @map("confirmed_at")
 
-  auditLog                ReservationAuditLog[]
+  auditLog ReservationAuditLog[]
+
+  // Floor plan (P1)
+  tableId String? @map("table_id")
+  table   Table?  @relation(fields: [tableId], references: [id], onDelete: SetNull)
 
   @@index([restaurantId, createdAt(sort: Desc)])
   @@index([restaurantId, status, createdAt(sort: Desc)])
@@ -174,6 +232,8 @@ model Reservation {
   @@index([customerId], map: "reservations_customer_id_idx")
   @@index([restaurantId, customerId], map: "reservations_restaurant_customer_id_idx")
   @@index([confirmationStatus, reservedAt], map: "reservations_confirmation_status_reserved_at_idx")
+  @@index([restaurantId, tableId, startsAt])
+  @@index([tableId, startsAt])
   @@map("reservations")
 }
 
@@ -205,22 +265,22 @@ model CallQuota {
 }
 
 model Customer {
-  id              String        @id @default(uuid())
-  restaurantId    String        @map("restaurant_id")
-  phone           String
-  name            String?
-  visitCount      Int           @default(0) @map("visit_count")
-  loyaltyScore    Decimal       @default(0) @map("loyalty_score") @db.Decimal(5, 2)
-  isVip           Boolean       @default(false) @map("is_vip")
-  notes           String?
-  specialOccasion String?       @map("special_occasion")
-  lastSeenAt      DateTime?     @map("last_seen_at")
-  lastCallAt      DateTime?     @map("last_call_at")
-  partySizeTypical Decimal?     @map("party_size_typical") @db.Decimal(5, 2)
-  createdAt       DateTime      @default(now()) @map("created_at")
-  updatedAt       DateTime      @updatedAt @map("updated_at")
-  restaurant      Restaurant    @relation(fields: [restaurantId], references: [id])
-  reservations    Reservation[]
+  id               String        @id @default(uuid())
+  restaurantId     String        @map("restaurant_id")
+  phone            String
+  name             String?
+  visitCount       Int           @default(0) @map("visit_count")
+  loyaltyScore     Decimal       @default(0) @map("loyalty_score") @db.Decimal(5, 2)
+  isVip            Boolean       @default(false) @map("is_vip")
+  notes            String?
+  specialOccasion  String?       @map("special_occasion")
+  lastSeenAt       DateTime?     @map("last_seen_at")
+  lastCallAt       DateTime?     @map("last_call_at")
+  partySizeTypical Decimal?      @map("party_size_typical") @db.Decimal(5, 2)
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+  restaurant       Restaurant    @relation(fields: [restaurantId], references: [id])
+  reservations     Reservation[]
 
   @@unique([restaurantId, phone])
   @@index([restaurantId, isVip])
@@ -230,30 +290,30 @@ model Customer {
 }
 
 model Message {
-  id           String   @id @default(uuid())
-  restaurantId String   @map("restaurant_id")
-  callId       String?  @map("call_id")
-  customerName String   @map("customer_name")
-  customerPhone String? @map("customer_phone")
-  content      String
-  status       String   @default("PENDING")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
-  call         Call?      @relation(fields: [callId], references: [id])
+  id            String     @id @default(uuid())
+  restaurantId  String     @map("restaurant_id")
+  callId        String?    @map("call_id")
+  customerName  String     @map("customer_name")
+  customerPhone String?    @map("customer_phone")
+  content       String
+  status        String     @default("PENDING")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @default(now()) @updatedAt @map("updated_at")
+  restaurant    Restaurant @relation(fields: [restaurantId], references: [id])
+  call          Call?      @relation(fields: [callId], references: [id])
 
   @@index([restaurantId, status, createdAt(sort: Desc)], map: "messages_restaurant_status_created_at_idx")
   @@map("messages")
 }
 
 model ReactivationCampaign {
-  id           String    @id @default(uuid())
-  restaurantId String    @map("restaurant_id")
-  status       String    @default("PENDING") // PENDING | SENT | DISMISSED
-  customerIds  String[]  @map("customer_ids") // snapshot des VIPs dormants
-  sentAt       DateTime? @map("sent_at")
-  sentCount    Int       @default(0) @map("sent_count")
-  createdAt    DateTime  @default(now()) @map("created_at")
+  id           String     @id @default(uuid())
+  restaurantId String     @map("restaurant_id")
+  status       String     @default("PENDING") // PENDING | SENT | DISMISSED
+  customerIds  String[]   @map("customer_ids") // snapshot des VIPs dormants
+  sentAt       DateTime?  @map("sent_at")
+  sentCount    Int        @default(0) @map("sent_count")
+  createdAt    DateTime   @default(now()) @map("created_at")
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
 
   @@index([restaurantId, status, createdAt(sort: Desc)], map: "reactivation_campaigns_restaurant_status_created_at_idx")
@@ -366,39 +426,44 @@ enum NoiseLevel {
 
 // Agentic reservations models (P0)
 model AgenticHold {
-  id              String     @id @default(uuid())
-  restaurantId    String     @map("restaurant_id")
-  type            HoldType
-  partySize       Int        @map("party_size")
-  slotStart       DateTime   @map("slot_start")
-  slotEnd         DateTime   @map("slot_end")
-  channel         ReservationChannel
-  quoteToken      String?    @unique @map("quote_token")
-  holdToken       String?    @unique @map("hold_token")
-  expiresAt       DateTime   @map("expires_at")
-  consumedAt      DateTime?  @map("consumed_at")
-  status          HoldStatus @default(ACTIVE) @map("status")
-  policyVersion   String     @map("policy_version")
-  reservationId   String?    @map("reservation_id")
-  createdAt       DateTime   @default(now()) @map("created_at")
-  restaurant      Restaurant @relation(fields: [restaurantId], references: [id])
+  id            String             @id @default(uuid())
+  restaurantId  String             @map("restaurant_id")
+  type          HoldType
+  partySize     Int                @map("party_size")
+  slotStart     DateTime           @map("slot_start")
+  slotEnd       DateTime           @map("slot_end")
+  channel       ReservationChannel
+  quoteToken    String?            @unique @map("quote_token")
+  holdToken     String?            @unique @map("hold_token")
+  expiresAt     DateTime           @map("expires_at")
+  consumedAt    DateTime?          @map("consumed_at")
+  status        HoldStatus         @default(ACTIVE) @map("status")
+  policyVersion String             @map("policy_version")
+  reservationId String?            @map("reservation_id")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  restaurant    Restaurant         @relation(fields: [restaurantId], references: [id])
+
+  // Floor plan (P1)
+  tableId String? @map("table_id")
+  table   Table?  @relation(fields: [tableId], references: [id], onDelete: SetNull)
 
   @@index([restaurantId, slotStart])
   @@index([expiresAt])
+  @@index([tableId, slotStart])
   @@map("agentic_holds")
 }
 
 model ReservationAuditLog {
-  id            String   @id @default(uuid())
-  reservationId String?  @map("reservation_id")
-  holdId        String?  @map("hold_id")
+  id            String       @id @default(uuid())
+  reservationId String?      @map("reservation_id")
+  holdId        String?      @map("hold_id")
   actor         String
-  actorHash     String?  @map("actor_hash")
+  actorHash     String?      @map("actor_hash")
   event         String
-  fromState     String?  @map("from_state")
-  toState       String?  @map("to_state")
-  metadata      Json     @default("{}")
-  createdAt     DateTime @default(now()) @map("created_at")
+  fromState     String?      @map("from_state")
+  toState       String?      @map("to_state")
+  metadata      Json         @default("{}")
+  createdAt     DateTime     @default(now()) @map("created_at")
   reservation   Reservation? @relation(fields: [reservationId], references: [id])
 
   @@index([reservationId, createdAt])
@@ -407,14 +472,14 @@ model ReservationAuditLog {
 }
 
 model IdempotencyRecord {
-  scope           String   @map("scope")
-  key             String   @map("key")
-  payloadHash     String   @map("payload_hash")
-  reservationId   String?  @map("reservation_id")
-  status          String
-  responseHash    String?  @map("response_hash")
-  createdAt       DateTime @default(now()) @map("created_at")
-  expiresAt       DateTime @map("expires_at")
+  scope         String   @map("scope")
+  key           String   @map("key")
+  payloadHash   String   @map("payload_hash")
+  reservationId String?  @map("reservation_id")
+  status        String
+  responseHash  String?  @map("response_hash")
+  createdAt     DateTime @default(now()) @map("created_at")
+  expiresAt     DateTime @map("expires_at")
 
   @@id([scope, key])
   @@index([expiresAt])
@@ -422,21 +487,21 @@ model IdempotencyRecord {
 }
 
 model CustomerConsent {
-  id                    String   @id @default(uuid())
-  restaurantId          String   @map("restaurant_id")
-  customerId            String?  @map("customer_id")
-  reservationId         String?  @map("reservation_id")
-  subjectHash           String   @map("subject_hash")
+  id                    String             @id @default(uuid())
+  restaurantId          String             @map("restaurant_id")
+  customerId            String?            @map("customer_id")
+  reservationId         String?            @map("reservation_id")
+  subjectHash           String             @map("subject_hash")
   channel               ReservationChannel
   context               String
-  reservationProcessing Boolean  @map("reservation_processing")
-  transactionalSms      Boolean  @map("transactional_sms")
-  transactionalEmail    Boolean  @map("transactional_email")
-  marketingOptIn        Boolean  @map("marketing_opt_in")
-  privacyPolicyVersion  String   @map("privacy_policy_version")
-  consentedAt           DateTime @map("consented_at")
-  consentIpHash         String?  @map("consent_ip_hash")
-  createdAt             DateTime @default(now()) @map("created_at")
+  reservationProcessing Boolean            @map("reservation_processing")
+  transactionalSms      Boolean            @map("transactional_sms")
+  transactionalEmail    Boolean            @map("transactional_email")
+  marketingOptIn        Boolean            @map("marketing_opt_in")
+  privacyPolicyVersion  String             @map("privacy_policy_version")
+  consentedAt           DateTime           @map("consented_at")
+  consentIpHash         String?            @map("consent_ip_hash")
+  createdAt             DateTime           @default(now()) @map("created_at")
 
   @@index([restaurantId, subjectHash])
   @@index([reservationId])
@@ -464,34 +529,34 @@ model IdentityVerificationOtp {
 }
 
 model SignedTokenUsage {
-  jti      String   @id
-  usedAt   DateTime @default(now()) @map("used_at")
-  subject  String?
-  intent   String?
+  jti     String   @id
+  usedAt  DateTime @default(now()) @map("used_at")
+  subject String?
+  intent  String?
 
   @@index([usedAt])
   @@map("signed_token_usages")
 }
 
 model RestaurantExposureSettings {
-  restaurantId            String   @id @map("restaurant_id")
-  mcpEnabled              Boolean  @default(false) @map("mcp_enabled")
-  openaiReserveEnabled    Boolean  @default(false) @map("openai_reserve_enabled")
-  exposedCreneaux         Json     @default("[]") @map("exposed_creneaux")
-  maxPartySize            Int      @default(12) @map("max_party_size")
-  minLeadTimeMinutes      Int      @default(30) @map("min_lead_time_minutes")
-  requireManualValidation Boolean  @default(false) @map("require_manual_validation")
-  quoteTtlSeconds         Int      @default(300)  @map("quote_ttl_seconds")
-  holdTtlSeconds          Int      @default(420)  @map("hold_ttl_seconds")
-  noShowPolicy            String   @default("warning") @map("no_show_policy")
-  notificationChannels    String[] @default(["sms", "email"]) @map("notification_channels")
-  capacitySpecials        Json     @default("{}") @map("capacity_specials")
+  restaurantId            String     @id @map("restaurant_id")
+  mcpEnabled              Boolean    @default(false) @map("mcp_enabled")
+  openaiReserveEnabled    Boolean    @default(false) @map("openai_reserve_enabled")
+  exposedCreneaux         Json       @default("[]") @map("exposed_creneaux")
+  maxPartySize            Int        @default(12) @map("max_party_size")
+  minLeadTimeMinutes      Int        @default(30) @map("min_lead_time_minutes")
+  requireManualValidation Boolean    @default(false) @map("require_manual_validation")
+  quoteTtlSeconds         Int        @default(300) @map("quote_ttl_seconds")
+  holdTtlSeconds          Int        @default(420) @map("hold_ttl_seconds")
+  noShowPolicy            String     @default("warning") @map("no_show_policy")
+  notificationChannels    String[]   @default(["sms", "email"]) @map("notification_channels")
+  capacitySpecials        Json       @default("{}") @map("capacity_specials")
   // Sokar Connect (P0) — source de vérité unique pour le gating
-  connectPublished         Boolean   @default(false) @map("connect_published")
-  connectAgentic           Boolean   @default(false) @map("connect_agentic")
-  connectPublishedAt       DateTime? @map("connect_published_at")
-  connectDescription       String?   @map("connect_description")
-  updatedAt               DateTime @updatedAt @map("updated_at")
+  connectPublished        Boolean    @default(false) @map("connect_published")
+  connectAgentic          Boolean    @default(false) @map("connect_agentic")
+  connectPublishedAt      DateTime?  @map("connect_published_at")
+  connectDescription      String?    @map("connect_description")
+  updatedAt               DateTime   @updatedAt @map("updated_at")
   restaurant              Restaurant @relation(fields: [restaurantId], references: [id])
 
   @@map("restaurant_exposure_settings")
@@ -520,13 +585,13 @@ model AgentClient {
 /// Alimenté par le worker BullMQ `analytics` (queue partagée avec RGPD).
 /// Permet de mesurer les drop-offs par étape sans outil externe.
 model OnboardingEvent {
-  id           String   @id @default(uuid())
-  restaurantId String   @map("restaurant_id")
-  userId       String?  @map("user_id")
+  id           String     @id @default(uuid())
+  restaurantId String     @map("restaurant_id")
+  userId       String?    @map("user_id")
   event        String
   task         String?
-  metadata     Json     @default("{}")
-  createdAt    DateTime @default(now()) @map("created_at")
+  metadata     Json       @default("{}")
+  createdAt    DateTime   @default(now()) @map("created_at")
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   @@index([restaurantId, createdAt(sort: Desc)])

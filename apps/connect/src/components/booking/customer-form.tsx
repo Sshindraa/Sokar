@@ -31,7 +31,10 @@ export function CustomerForm({
   return (
     <>
       <div>
-        <label htmlFor="firstName" className="block text-sm font-medium text-ink">
+        <label
+          htmlFor="firstName"
+          className="block text-sm font-medium text-[var(--widget-primary)]"
+        >
           Prénom *
         </label>
         <input
@@ -40,14 +43,14 @@ export function CustomerForm({
           required
           value={firstName}
           onChange={(e) => setFirstName(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-ink focus:border-ember focus:outline-none focus:ring-1 focus:ring-ember"
+          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[var(--widget-primary)] focus:border-[var(--widget-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--widget-accent)]"
           autoComplete="given-name"
           maxLength={100}
         />
       </div>
 
       <div>
-        <label htmlFor="phone" className="block text-sm font-medium text-ink">
+        <label htmlFor="phone" className="block text-sm font-medium text-[var(--widget-primary)]">
           Téléphone *{' '}
           <span className="font-normal text-muted-foreground">(format international)</span>
         </label>
@@ -58,13 +61,13 @@ export function CustomerForm({
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           placeholder="+33612345678"
-          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-ink focus:border-ember focus:outline-none focus:ring-1 focus:ring-ember"
+          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[var(--widget-primary)] focus:border-[var(--widget-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--widget-accent)]"
           autoComplete="tel"
         />
       </div>
 
       <div>
-        <label htmlFor="email" className="block text-sm font-medium text-ink">
+        <label htmlFor="email" className="block text-sm font-medium text-[var(--widget-primary)]">
           Email{' '}
           <span className="font-normal text-muted-foreground">(optionnel, pour confirmation)</span>
         </label>
@@ -73,13 +76,16 @@ export function CustomerForm({
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-ink focus:border-ember focus:outline-none focus:ring-1 focus:ring-ember"
+          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[var(--widget-primary)] focus:border-[var(--widget-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--widget-accent)]"
           autoComplete="email"
         />
       </div>
 
       <div>
-        <label htmlFor="specialRequests" className="block text-sm font-medium text-ink">
+        <label
+          htmlFor="specialRequests"
+          className="block text-sm font-medium text-[var(--widget-primary)]"
+        >
           Demandes spéciales <span className="font-normal text-muted-foreground">(optionnel)</span>
         </label>
         <textarea
@@ -88,7 +94,7 @@ export function CustomerForm({
           onChange={(e) => setSpecialRequests(e.target.value)}
           rows={2}
           maxLength={500}
-          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-ink focus:border-ember focus:outline-none focus:ring-1 focus:ring-ember"
+          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[var(--widget-primary)] focus:border-[var(--widget-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--widget-accent)]"
         />
       </div>
 

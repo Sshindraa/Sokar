@@ -17,6 +17,10 @@
 
     --border: 214.3 31.8% 91.4%;
     --ring: 24 95% 53%;
+
+    /* Widget brand tokens — overridable via inline style for white-label embeds */
+    --widget-primary: #0f172a;
+    --widget-accent: #ea580c;
   }
 }
 
@@ -26,6 +30,11 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      sans-serif;
   }
 }

@@ -9,7 +9,8 @@
     "start": "next start -p 4002",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "echo 'no tests yet' && exit 0",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "copy-static": "bash scripts/copy-static.sh"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "autoprefixer": "^10.4.16",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.5"
   }
 }

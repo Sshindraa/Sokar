@@ -3,10 +3,12 @@ import type { Prisma, Restaurant } from '@prisma/client';
 import { queues } from '../../shared/queue/queues';
 import { logger } from '../../shared/logger/pino';
 import { GoogleCalendarClient } from '../../shared/google-calendar/client';
-import { ACTIVE_RESERVATION_STATUSES } from '@sokar/shared';
+import { CapacityAwareAvailabilityService } from '../floor-plan/availability-capacity-aware.service';
+import { TableAllocationService } from '../floor-plan/table-allocation.service';
+import { resolveServiceDurationMinutes } from '../floor-plan/floor-plan.types';
 
-const SLOT_STEP_MINUTES = 30;
-const RESERVATION_DURATION_MINUTES = 120;
+const availability = new CapacityAwareAvailabilityService(db);
+const tableAllocation = new TableAllocationService(db);
 
 export interface CreateReservationInput {
   restaurantId: string;
@@ -15,11 +17,6 @@ export interface CreateReservationInput {
   partySize: number;
   customerName: string;
   customerPhone?: string;
-}
-
-interface OpeningSlot {
-  open: string;
-  close: string;
 }
 
 interface AvailabilitySlot {
@@ -47,52 +44,43 @@ function timeKey(date: Date): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
-function parseLocalDateTime(date: string, time: string): Date {
-  return new Date(`${date}T${time}:00`);
-}
-
-function dayKey(date: Date): string {
-  return ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][date.getDay()];
-}
-
-function getOpeningSlot(openingHours: unknown, date: Date): OpeningSlot | null {
-  if (!openingHours || typeof openingHours !== 'object' || Array.isArray(openingHours)) return null;
-  const slot = (openingHours as Record<string, OpeningSlot | null>)[dayKey(date)];
-  if (!slot?.open || !slot?.close) return null;
-  return slot;
-}
-
-function buildOpeningSlots(openingHours: unknown, date: string): Date[] {
-  const day = parseLocalDateTime(date, '00:00');
-  const slot = getOpeningSlot(openingHours, day);
-  if (!slot) return [];
-
-  const start = parseLocalDateTime(date, slot.open);
-  const end = parseLocalDateTime(date, slot.close);
-  const slots: Date[] = [];
-  const current = new Date(start);
-  while (current < end) {
-    slots.push(new Date(current));
-    current.setMinutes(current.getMinutes() + SLOT_STEP_MINUTES);
-  }
-  return slots;
-}
-
-function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
-  return aStart < bEnd && bStart < aEnd;
-}
-
 export class ReservationService {
   static async create(input: CreateReservationInput) {
-    const restaurant = await db.restaurant.findUniqueOrThrow({ where: { id: input.restaurantId } });
+    const restaurant = await db.restaurant.findUniqueOrThrow({
+      where: { id: input.restaurantId },
+      include: { exposureSettings: true },
+    });
 
     const startTime = input.reservedAt;
-    const availability = await this.checkSlotAvailability(restaurant, startTime, input.partySize);
+    const serviceDurationMinutes = resolveServiceDurationMinutes(
+      restaurant.exposureSettings?.capacitySpecials,
+    );
+    const endTime = new Date(startTime.getTime() + serviceDurationMinutes * 60 * 1000);
 
-    if (!availability.available) {
+    const slotAvailability = await this.checkSlotAvailability(
+      restaurant,
+      startTime,
+      input.partySize,
+    );
+
+    if (!slotAvailability.available) {
       logger.warn(
-        { restaurantId: input.restaurantId, time: startTime, reason: availability.reason },
+        { restaurantId: input.restaurantId, time: startTime, reason: slotAvailability.reason },
         '[ReservationService] Slot unavailable',
+      );
+      throw new Error('SLOT_NOT_AVAILABLE');
+    }
+
+    const table = await tableAllocation.allocate({
+      restaurantId: input.restaurantId,
+      partySize: input.partySize,
+      startsAt: startTime,
+      endsAt: endTime,
+    });
+    if (!table) {
+      logger.warn(
+        { restaurantId: input.restaurantId, time: startTime, partySize: input.partySize },
+        '[ReservationService] No table available',
       );
       throw new Error('SLOT_NOT_AVAILABLE');
     }
@@ -103,10 +91,13 @@ export class ReservationService {
         restaurantId: input.restaurantId,
         callId: input.callId,
         reservedAt: input.reservedAt,
+        startsAt: input.reservedAt,
+        endsAt: endTime,
         partySize: input.partySize,
         customerName: input.customerName,
         customerPhone: input.customerPhone,
         status: 'CONFIRMED',
+        tableId: table.id,
         estimatedRevenue: input.partySize * 35,
       },
     });
@@ -114,7 +105,6 @@ export class ReservationService {
     // 3. Create Google Calendar event and store event ID
     if (restaurant.googleRefreshToken && restaurant.googleCalendarId) {
       try {
-        const endTime = new Date(startTime.getTime() + RESERVATION_DURATION_MINUTES * 60 * 1000);
         const eventId = await GoogleCalendarClient.createEvent(
           restaurant.googleRefreshToken,
           restaurant.googleCalendarId,
@@ -269,33 +259,20 @@ export class ReservationService {
     date: string,
     partySize: number,
   ): Promise<AvailabilityResult> {
-    const restaurant = await db.restaurant.findUniqueOrThrow({ where: { id: restaurantId } });
-    const candidates = buildOpeningSlots(restaurant.openingHours, date);
-
-    const allSlots = await Promise.all(
-      candidates.map(async (slotStart) => {
-        const result = await this.checkSlotAvailability(restaurant, slotStart, partySize);
-        return {
-          time: timeKey(slotStart),
-          available: result.available,
-          ...(result.reason && { reason: result.reason }),
-        };
-      }),
-    );
-
+    const dto = await availability.getAvailability({ restaurantId, date, partySize });
     return {
-      restaurantId,
-      date,
-      partySize,
-      slots: allSlots.filter((slot) => slot.available).map((slot) => slot.time),
-      allSlots,
+      restaurantId: dto.restaurantId,
+      date: dto.date,
+      partySize: dto.partySize,
+      slots: dto.slots.filter((slot) => slot.available).map((slot) => slot.time),
+      allSlots: dto.slots,
     };
   }
 
   private static async checkSlotAvailability(
-    restaurant: Restaurant,
+    restaurant: Restaurant & { exposureSettings?: { capacitySpecials: unknown } | null },
     startTime: Date,
-    _partySize: number,
+    partySize: number,
   ): Promise<{ available: boolean; reason?: AvailabilitySlot['reason'] }> {
     if (Number.isNaN(startTime.getTime())) {
       return { available: false, reason: 'closed' };
@@ -306,35 +283,25 @@ export class ReservationService {
     }
 
     const date = dateKey(startTime);
-    const openingSlots = buildOpeningSlots(restaurant.openingHours, date);
-    const isWithinService = openingSlots.some((slot) => slot.getTime() === startTime.getTime());
-    if (!isWithinService) {
+    const dto = await availability.getAvailability({
+      restaurantId: restaurant.id,
+      date,
+      partySize,
+    });
+
+    const time = timeKey(startTime);
+    const slot = dto.slots.find((s) => s.time === time);
+    if (!slot) {
       return { available: false, reason: 'closed' };
     }
-
-    const endTime = new Date(startTime.getTime() + RESERVATION_DURATION_MINUTES * 60 * 1000);
-    const dayStart = parseLocalDateTime(date, '00:00');
-    const dayEnd = parseLocalDateTime(date, '23:59');
-
-    const localReservations = await db.reservation.findMany({
-      where: {
-        restaurantId: restaurant.id,
-        status: { in: [...ACTIVE_RESERVATION_STATUSES] },
-        reservedAt: { gte: dayStart, lte: dayEnd },
-      },
-      select: { reservedAt: true },
-    });
-
-    const hasLocalConflict = localReservations.some((reservation: { reservedAt: Date }) => {
-      const reservedStart = new Date(reservation.reservedAt);
-      const reservedEnd = new Date(
-        reservedStart.getTime() + RESERVATION_DURATION_MINUTES * 60 * 1000,
-      );
-      return overlaps(startTime, endTime, reservedStart, reservedEnd);
-    });
-    if (hasLocalConflict) {
+    if (!slot.available) {
       return { available: false, reason: 'local_conflict' };
     }
+
+    const serviceDurationMinutes = resolveServiceDurationMinutes(
+      restaurant.exposureSettings?.capacitySpecials,
+    );
+    const endTime = new Date(startTime.getTime() + serviceDurationMinutes * 60 * 1000);
 
     if (restaurant.googleRefreshToken && restaurant.googleCalendarId) {
       const isAvailable = await GoogleCalendarClient.checkAvailability(

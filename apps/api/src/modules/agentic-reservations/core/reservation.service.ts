@@ -84,6 +84,8 @@ export type CreateReservationInput = {
   noShowPolicySnap?: unknown;
   /** Optionnel : requêtes spéciales */
   specialRequests?: string;
+  /** Optionnel : tableId pré-allouée (ex. Connect hold) */
+  tableId?: string | null;
 };
 
 export type CreateReservationResult = {
@@ -116,6 +118,7 @@ export class ReservationService {
 
     // 2. Si un holdToken est fourni, vérifier qu'il existe et est valide
     let holdId: string | null = null;
+    let tableId: string | null = input.tableId ?? null;
     if (input.holdToken) {
       const hold = await this.holds.findActiveByToken(input.holdToken);
       if (!hold) {
@@ -131,6 +134,7 @@ export class ReservationService {
         throw new Error('Provided token is a quote, not a hold');
       }
       holdId = hold.id;
+      tableId = tableId ?? hold.tableId ?? null;
     }
 
     // 3. Réserver l'idempotence (Postgres first, Redis cache)
@@ -266,6 +270,7 @@ export class ReservationService {
             idempotencyKey: idempotency.key,
             idempotencyPayloadHash: idempotency.payloadHash,
             consumedHoldId,
+            tableId,
             status: 'CONFIRMED', // legacy enum, aligner avec state
           },
         });

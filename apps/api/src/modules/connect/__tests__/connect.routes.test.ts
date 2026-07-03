@@ -13,11 +13,39 @@
  */
 
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
+import type { FastifyInstance } from 'fastify';
+import type { PublicRestaurantDto } from '../connect.types';
+
+vi.mock('../../floor-plan/availability-capacity-aware.service', () => ({
+  CapacityAwareAvailabilityService: vi.fn().mockImplementation(function (this: {
+    getAvailability: ReturnType<typeof vi.fn>;
+  }) {
+    this.getAvailability = vi
+      .fn()
+      .mockImplementation((args: { partySize: number; date: string }) => ({
+        restaurantId: 'rest-123',
+        date: args.date,
+        partySize: args.partySize,
+        slots: [{ time: '20:00', available: true }],
+      }));
+  }),
+  zonedTimeToUtc: vi.fn().mockImplementation((_date: string, time: string) => {
+    const [h, m] = time.split(':').map(Number);
+    return new Date(Date.UTC(2026, 5, 29, h, m));
+  }),
+}));
+
+vi.mock('../../floor-plan/table-allocation.service', () => ({
+  TableAllocationService: vi.fn().mockImplementation(function (this: {
+    allocate: ReturnType<typeof vi.fn>;
+  }) {
+    this.allocate = vi.fn().mockResolvedValue({ id: 'table-1' });
+  }),
+}));
+
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { redisCache } from '../../../shared/redis/client';
-import type { FastifyInstance } from 'fastify';
-import type { PublicRestaurantDto } from '../connect.types';
 
 const SLUG = 'chez-sokar-demo';
 const RESTAURANT_ID = 'ba5be41b-eb72-4e05-bb9c-b576e39e33ba';

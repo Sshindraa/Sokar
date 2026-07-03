@@ -41,6 +41,23 @@ vi.mock('../shared/db/client', () => {
       create: vi.fn(),
       update: vi.fn(),
     },
+    floorPlan: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+    section: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    table: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
   };
   return {
     db: {
@@ -129,6 +146,27 @@ vi.mock('../shared/db/client', () => {
       onboardingEvent: {
         findMany: vi.fn().mockResolvedValue([]),
         create: vi.fn().mockResolvedValue({ id: 'test-evt-1' }),
+      },
+      floorPlan: {
+        findUnique: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+      section: {
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        findFirst: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+      },
+      table: {
+        findMany: vi.fn(),
+        findUnique: vi.fn(),
+        findFirst: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
       },
       $transaction: vi.fn(async (fn: any) => {
         if (Array.isArray(fn)) {
