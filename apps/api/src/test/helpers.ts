@@ -34,7 +34,7 @@ vi.mock('../plugins/clerk', () => ({
 vi.mock('../shared/db/client', () => {
   const txMock = {
     restaurant: { update: vi.fn() },
-    restaurantExposureSettings: { upsert: vi.fn() },
+    restaurantExposureSettings: { upsert: vi.fn(), findUnique: vi.fn() },
     reservationAuditLog: { create: vi.fn() },
     reservation: { count: vi.fn() },
     agentClient: {
@@ -73,6 +73,14 @@ vi.mock('../shared/db/client', () => {
     giftCardContribution: {
       create: vi.fn(),
       findMany: vi.fn(),
+    },
+    giftCardPack: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
     },
   };
   return {
@@ -200,6 +208,14 @@ vi.mock('../shared/db/client', () => {
       giftCardContribution: {
         create: vi.fn(),
         findMany: vi.fn(),
+      },
+      giftCardPack: {
+        findUnique: vi.fn(),
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
       },
       $transaction: vi.fn(async (fn: any) => {
         if (Array.isArray(fn)) {

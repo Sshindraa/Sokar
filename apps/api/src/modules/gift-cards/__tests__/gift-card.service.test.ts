@@ -312,9 +312,9 @@ describe('GiftCardService', () => {
 
   it('calcule les stats', async () => {
     vi.mocked(db.giftCard.findMany).mockResolvedValue([
-      { amount: d(100), remainingAmount: d(0), status: 'REDEEMED' } as any,
-      { amount: d(50), remainingAmount: d(50), status: 'ACTIVE' } as any,
-      { amount: d(80), remainingAmount: d(30), status: 'ACTIVE' } as any,
+      { amount: d(100), remainingAmount: d(0), status: 'REDEEMED', packId: 'pack-1' } as any,
+      { amount: d(50), remainingAmount: d(50), status: 'ACTIVE', packId: null } as any,
+      { amount: d(80), remainingAmount: d(30), status: 'ACTIVE', packId: null } as any,
     ]);
 
     const stats = await service.getStats(RESTAURANT_ID);
@@ -325,5 +325,33 @@ describe('GiftCardService', () => {
     expect(stats.activeCount).toBe(2);
     expect(stats.totalCount).toBe(3);
     expect(stats.averageAmount).toBe(230 / 3);
+    expect(stats.packCount).toBe(1);
+    expect(stats.freeAmountCount).toBe(2);
+  });
+
+  it('crée une carte à partir d un pack', async () => {
+    vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
+      id: 'pack-1',
+      restaurantId: RESTAURANT_ID,
+      amount: d(120),
+    } as any);
+    vi.mocked(db.giftCard.create).mockResolvedValue({
+      id: 'gc-1',
+      restaurantId: RESTAURANT_ID,
+      amount: d(120),
+      remainingAmount: d(120),
+      status: 'ACTIVE',
+      code: 'code-1',
+      packId: 'pack-1',
+    } as any);
+
+    const card = await service.create({
+      restaurantId: RESTAURANT_ID,
+      packId: 'pack-1',
+      createdBy: 'DASHBOARD',
+    });
+
+    expect(card.amount.toNumber()).toBe(120);
+    expect(card.packId).toBe('pack-1');
   });
 });
