@@ -17,6 +17,8 @@ import {
   HeartHandshake,
   Code,
   LayoutGrid,
+  Gift,
+  Package,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SyncOrganization } from './SyncOrganization';
@@ -43,6 +45,8 @@ const navItems = [
   { href: '/dashboard/floor-plan', label: 'Salle', icon: LayoutGrid },
   { href: '/dashboard/customers', label: 'Clients', icon: Users },
   { href: '/dashboard/reactivation', label: 'Réactivation', icon: HeartHandshake },
+  { href: '/dashboard/gift-cards', label: 'Cartes cadeaux', icon: Gift },
+  { href: '/dashboard/gift-card-packs', label: 'Packs cadeaux', icon: Package },
   { href: '/dashboard/agentic', label: 'Agents IA', icon: Sparkles },
   { href: '/dashboard/connect', label: 'Connect', icon: Zap },
   { href: '/dashboard/widget', label: 'Widget', icon: Code },
