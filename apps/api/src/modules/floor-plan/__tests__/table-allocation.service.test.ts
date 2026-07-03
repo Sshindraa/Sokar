@@ -452,6 +452,64 @@ describe('TableAllocationService', () => {
     });
   });
 
+  describe('isTableAvailable', () => {
+    it('ignore le hold exclu avec excludeHoldId', async () => {
+      const startsAt = new Date('2026-07-02T19:00:00Z');
+      const endsAt = new Date('2026-07-02T21:00:00Z');
+      const { prisma } = makeMockPrisma({
+        tables: [makeTable({ id: 't-1', floorPlanId, capacity: 2 })],
+        holds: [
+          makeHold({
+            id: 'h-1',
+            tableId: 't-1',
+            slotStart: startsAt,
+            slotEnd: endsAt,
+            status: 'ACTIVE',
+            expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+          }),
+        ],
+      });
+
+      const service = new TableAllocationService(prisma);
+      const available = await service.isTableAvailable({
+        tableId: 't-1',
+        startsAt,
+        endsAt,
+        excludeHoldId: 'h-1',
+      });
+
+      expect(available).toBe(true);
+    });
+
+    it('retourne false si un autre hold occupe la table', async () => {
+      const startsAt = new Date('2026-07-02T19:00:00Z');
+      const endsAt = new Date('2026-07-02T21:00:00Z');
+      const { prisma } = makeMockPrisma({
+        tables: [makeTable({ id: 't-1', floorPlanId, capacity: 2 })],
+        holds: [
+          makeHold({
+            id: 'h-2',
+            tableId: 't-1',
+            slotStart: startsAt,
+            slotEnd: endsAt,
+            status: 'ACTIVE',
+            expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+          }),
+        ],
+      });
+
+      const service = new TableAllocationService(prisma);
+      const available = await service.isTableAvailable({
+        tableId: 't-1',
+        startsAt,
+        endsAt,
+        excludeHoldId: 'h-1',
+      });
+
+      expect(available).toBe(false);
+    });
+  });
+
   describe('reallocate', () => {
     it('change la table de la réservation', async () => {
       const startsAt = new Date('2026-07-02T19:00:00Z');
