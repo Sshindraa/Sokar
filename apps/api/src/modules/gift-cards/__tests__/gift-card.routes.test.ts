@@ -298,6 +298,9 @@ describe('gift-card routes', () => {
         preferredPartySize: 2,
         pack: null,
       } as any);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        timezone: 'Europe/Paris',
+      } as any);
       vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue({
         maxPartySize: 12,
         minLeadTimeMinutes: 30,

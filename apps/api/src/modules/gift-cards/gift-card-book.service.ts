@@ -11,6 +11,8 @@ import {
   buildPolicySnapshot,
   type PolicySnapshot,
 } from '../agentic-reservations/core/policies.service';
+import { resolveServiceDurationMinutes } from '../floor-plan/floor-plan.types.js';
+import { zonedTimeToUtc } from '../floor-plan/availability-capacity-aware.service.js';
 import { GiftCardService } from './gift-card.service';
 import { GiftCardSlotsService } from './gift-card-slots.service';
 import { GiftCardBookResult } from './gift-card.types.js';
@@ -79,11 +81,22 @@ export class GiftCardBookService {
     const partySize = cardWithPack.preferredPartySize ?? cardWithPack.pack?.maxPartySize ?? 2;
     const reservationAmount = cardWithPack.amount.toNumber();
 
-    const [hours, minutes] = chosen.time.split(':').map(Number);
-    const startsAt = new Date(
-      `${chosen.date}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`,
+    const [restaurant, settings] = await Promise.all([
+      this.prisma.restaurant.findUnique({
+        where: { id: cardWithPack.restaurantId },
+        select: { timezone: true },
+      }),
+      this.prisma.restaurantExposureSettings.findUnique({
+        where: { restaurantId: cardWithPack.restaurantId },
+      }),
+    ]);
+
+    const timeZone = restaurant?.timezone ?? 'Europe/Paris';
+    const serviceDurationMinutes = resolveServiceDurationMinutes(
+      settings?.capacitySpecials as Record<string, unknown> | undefined,
     );
-    const endsAt = new Date(startsAt.getTime() + 2 * 60 * 60 * 1000);
+    const startsAt = zonedTimeToUtc(chosen.date, chosen.time, timeZone);
+    const endsAt = new Date(startsAt.getTime() + serviceDurationMinutes * 60 * 1000);
 
     const idempotencyScope = computeIdempotencyScope({
       restaurantId: cardWithPack.restaurantId,
