@@ -208,8 +208,8 @@ describe('gift-card routes', () => {
       expect(res.statusCode).toBe(201);
       const body = res.json();
       expect(body.amount).toBe(120);
-      expect(body.purchaseReference).toBe('test');
-      expect(body.code).toContain('****');
+      expect(body.code).toBeDefined();
+      expect(body.code).not.toContain('****');
     });
 
     it('achète un pack expérience', async () => {
@@ -231,6 +231,10 @@ describe('gift-card routes', () => {
         packId: 'pack-1',
         redemptions: [],
       } as any);
+      vi.mocked(db.giftCardPack.findUnique).mockResolvedValue({
+        id: 'pack-1',
+        name: 'Menu dégustation',
+      } as any);
 
       const app = await getApp();
       const res = await app.inject({
@@ -247,7 +251,7 @@ describe('gift-card routes', () => {
       expect(res.statusCode).toBe(201);
       const body = res.json();
       expect(body.amount).toBe(150);
-      expect(body.packId).toBe('pack-1');
+      expect(body.packName).toBe('Menu dégustation');
     });
 
     it('propose des créneaux pour une carte cadeau', async () => {
