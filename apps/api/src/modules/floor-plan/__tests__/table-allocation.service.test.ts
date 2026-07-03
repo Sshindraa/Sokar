@@ -215,6 +215,7 @@ function makeReservation(
     confirmedAt: overrides.confirmedAt ?? null,
     tableId: overrides.tableId,
     giftCardRedemptionSnap: null,
+    giftCardComplementAmount: null,
   };
 }
 

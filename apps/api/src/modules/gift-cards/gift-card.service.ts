@@ -6,6 +6,7 @@ import {
   type ApplyGiftCardInput,
   type GiftCardApplicationResult,
   type GiftCardStats,
+  type GiftCardWithPack,
 } from './gift-card.types.js';
 
 export class GiftCardError extends Error {
@@ -19,10 +20,33 @@ export class GiftCardService {
   constructor(private readonly prisma: PrismaClient) {}
 
   async create(input: CreateGiftCardInput): Promise<GiftCard> {
-    const amount = new Prisma.Decimal(input.amount);
-    if (amount.lessThanOrEqualTo(0)) {
-      throw new GiftCardError('Le montant de la carte cadeau doit être supérieur à 0');
+    let amount: Prisma.Decimal;
+    const packId: string | null = input.packId ?? null;
+
+    if (packId) {
+      const pack = await this.prisma.giftCardPack.findFirst({
+        where: { id: packId, restaurantId: input.restaurantId },
+      });
+      if (!pack) {
+        throw new GiftCardError('Le pack cadeau est introuvable pour ce restaurant');
+      }
+      amount = pack.amount;
+      if (input.amount && !new Prisma.Decimal(input.amount).equals(amount)) {
+        throw new GiftCardError('Le montant doit correspondre au montant du pack');
+      }
+    } else {
+      if (input.amount == null) {
+        throw new GiftCardError('Le montant de la carte cadeau est requis');
+      }
+      amount = new Prisma.Decimal(input.amount);
+      if (amount.lessThanOrEqualTo(0)) {
+        throw new GiftCardError('Le montant de la carte cadeau doit être supérieur à 0');
+      }
     }
+
+    const validityMonths = input.validityMonths ?? 12;
+    const expiresAt =
+      input.expiresAt ?? new Date(Date.now() + validityMonths * 30 * 24 * 60 * 60 * 1000);
 
     return this.prisma.giftCard.create({
       data: {
@@ -30,7 +54,12 @@ export class GiftCardService {
         amount,
         remainingAmount: amount,
         currency: input.currency ?? 'EUR',
-        expiresAt: input.expiresAt ?? null,
+        expiresAt,
+        validityMonths,
+        packId,
+        preferredDate: input.preferredDate ?? null,
+        preferredTime: input.preferredTime ?? null,
+        preferredPartySize: input.preferredPartySize ?? null,
         senderName: input.senderName ?? null,
         senderEmail: input.senderEmail ?? null,
         senderPhone: input.senderPhone ?? null,
@@ -38,7 +67,6 @@ export class GiftCardService {
         recipientEmail: input.recipientEmail ?? null,
         recipientPhone: input.recipientPhone ?? null,
         message: input.message ?? null,
-        voiceMessageUrl: input.voiceMessageUrl ?? null,
         occasion: input.occasion ?? null,
         customerId: input.customerId ?? null,
         createdBy: input.createdBy ?? 'CLIENT',
@@ -163,6 +191,8 @@ export class GiftCardService {
     const activeCount = cards.filter((card) => card.status === 'ACTIVE').length;
     const totalCount = cards.length;
     const averageAmount = totalCount > 0 ? totalSoldAmount / totalCount : 0;
+    const packCount = cards.filter((card) => card.packId !== null).length;
+    const freeAmountCount = totalCount - packCount;
 
     return {
       totalSoldAmount,
@@ -171,6 +201,15 @@ export class GiftCardService {
       activeCount,
       totalCount,
       averageAmount,
+      packCount,
+      freeAmountCount,
     };
+  }
+
+  async findByCodeWithPack(code: string): Promise<GiftCardWithPack | null> {
+    return this.prisma.giftCard.findUnique({
+      where: { code },
+      include: { pack: true },
+    }) as Promise<GiftCardWithPack | null>;
   }
 }

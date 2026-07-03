@@ -2,6 +2,8 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Prisma } from '@prisma/client';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
+import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service';
+import { ReservationService } from '../../agentic-reservations/core/reservation.service';
 
 function d(value: number) {
   return new Prisma.Decimal(value);
@@ -208,6 +210,140 @@ describe('gift-card routes', () => {
       expect(body.amount).toBe(120);
       expect(body.purchaseReference).toBe('test');
       expect(body.code).toContain('****');
+    });
+
+    it('achète un pack expérience', async () => {
+      vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
+        id: 'pack-1',
+        restaurantId: RESTAURANT_ID,
+        amount: d(150),
+      } as any);
+      vi.mocked(db.giftCard.create).mockResolvedValue({
+        id: 'gc-1',
+        restaurantId: RESTAURANT_ID,
+        code: 'abc-1234-5678-9012',
+        amount: d(150),
+        remainingAmount: d(150),
+        currency: 'EUR',
+        status: 'ACTIVE',
+        createdBy: 'CLIENT',
+        purchaseReference: 'test',
+        packId: 'pack-1',
+        redemptions: [],
+      } as any);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/public/gift-cards/purchase',
+        payload: {
+          restaurantId: RESTAURANT_ID,
+          packId: 'pack-1',
+          recipientName: 'Alice',
+          recipientEmail: 'alice@example.com',
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.amount).toBe(150);
+      expect(body.packId).toBe('pack-1');
+    });
+
+    it('propose des créneaux pour une carte cadeau', async () => {
+      vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+        id: 'gc-1',
+        restaurantId: RESTAURANT_ID,
+        code: 'abc-1234',
+        amount: d(100),
+        remainingAmount: d(100),
+        status: 'ACTIVE',
+        expiresAt: null,
+        preferredPartySize: 2,
+        preferredDate: new Date('2026-08-15'),
+        pack: null,
+      } as any);
+      vi.spyOn(CapacityAwareAvailabilityService.prototype, 'getAvailability').mockResolvedValue({
+        restaurantId: RESTAURANT_ID,
+        date: '2026-08-15',
+        partySize: 2,
+        slots: [
+          { time: '19:00', available: true },
+          { time: '19:30', available: true },
+          { time: '20:00', available: true },
+        ],
+      });
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/public/gift-cards/abc-1234/slots',
+        payload: {},
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.slots).toHaveLength(3);
+    });
+
+    it('réserve un créneau avec la carte cadeau', async () => {
+      vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+        id: 'gc-1',
+        restaurantId: RESTAURANT_ID,
+        code: 'abc-1234',
+        amount: d(100),
+        remainingAmount: d(100),
+        status: 'ACTIVE',
+        expiresAt: null,
+        preferredPartySize: 2,
+        pack: null,
+      } as any);
+      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue({
+        maxPartySize: 12,
+        minLeadTimeMinutes: 30,
+        quoteTtlSeconds: 300,
+        holdTtlSeconds: 420,
+        noShowPolicy: 'warning',
+        requireManualValidation: false,
+        capacitySpecials: null,
+      } as any);
+      vi.spyOn(CapacityAwareAvailabilityService.prototype, 'getAvailability').mockResolvedValue({
+        restaurantId: RESTAURANT_ID,
+        date: '2026-08-15',
+        partySize: 2,
+        slots: [
+          { time: '19:00', available: true },
+          { time: '19:30', available: true },
+          { time: '20:00', available: true },
+        ],
+      });
+      vi.spyOn(ReservationService.prototype, 'createReservation').mockResolvedValue({
+        reservationId: 'res-1',
+        state: 'CONFIRMED',
+        reused: false,
+        giftCardApplication: {
+          reservationId: 'res-1',
+          giftCardId: 'gc-1',
+          appliedAmount: 100,
+          remainingAmount: 0,
+          paymentStatus: 'FULLY_COVERED',
+          complementAmount: 0,
+        },
+      });
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/public/gift-cards/abc-1234/book',
+        payload: {
+          slotIndex: 0,
+          customer: { firstName: 'Alice', lastName: 'Dupont', phone: '+33612345678' },
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.reservationId).toBeDefined();
     });
 
     it('applique une carte cadeau à une réservation', async () => {

@@ -4,6 +4,8 @@ import type { Prisma, GiftCard, GiftCardRedemption } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { requireOrg } from '../../plugins/clerk';
 import { GiftCardService } from './gift-card.service';
+import { GiftCardSlotsService } from './gift-card-slots.service';
+import { GiftCardBookService } from './gift-card-book.service';
 import { recommendGiftCardAmount } from './gift-card-recommender';
 
 const ListGiftCardsQuerySchema = z.object({
@@ -13,21 +15,32 @@ const ListGiftCardsQuerySchema = z.object({
   search: z.string().optional(),
 });
 
-const CreateGiftCardSchema = z.object({
-  amount: z.coerce.number().positive(),
-  recipientName: z.string().min(1).max(100).optional(),
-  recipientEmail: z.string().email().max(255).optional(),
-  recipientPhone: z.string().max(50).optional(),
-  senderName: z.string().min(1).max(100).optional(),
-  message: z.string().max(1000).optional(),
-  occasion: z.string().max(100).optional(),
-  expiresAt: z.coerce
-    .date()
-    .optional()
-    .refine((date) => !date || date > new Date(), {
-      message: "La date d'expiration doit être dans le futur",
-    }),
-});
+const CreateGiftCardSchema = z
+  .object({
+    amount: z.coerce.number().positive().optional(),
+    packId: z.string().optional(),
+    recipientName: z.string().min(1).max(100).optional(),
+    recipientEmail: z.string().email().max(255).optional(),
+    recipientPhone: z.string().max(50).optional(),
+    senderName: z.string().min(1).max(100).optional(),
+    message: z.string().max(1000).optional(),
+    occasion: z.string().max(100).optional(),
+    preferredDate: z.coerce.date().optional(),
+    preferredTime: z
+      .string()
+      .regex(/^\d{2}:\d{2}$/)
+      .optional(),
+    preferredPartySize: z.coerce.number().int().min(1).optional(),
+    expiresAt: z.coerce
+      .date()
+      .optional()
+      .refine((date) => !date || date > new Date(), {
+        message: "La date d'expiration doit être dans le futur",
+      }),
+  })
+  .refine((data) => data.amount || data.packId, {
+    message: 'Le montant ou le pack est requis',
+  });
 
 const UpdateGiftCardSchema = z.object({
   recipientName: z.string().min(1).max(100).optional(),
@@ -56,25 +69,55 @@ const RecommendGiftCardSchema = z.object({
   budget: z.coerce.number().positive().optional(),
 });
 
-const PurchaseGiftCardSchema = z.object({
-  restaurantId: z.string(),
-  amount: z.coerce.number().positive(),
-  occasion: z.string().max(100).optional(),
-  senderName: z.string().min(1).max(100).optional(),
-  senderEmail: z.string().email().max(255).optional(),
-  senderPhone: z.string().max(50).optional(),
-  recipientName: z.string().min(1).max(100).optional(),
-  recipientEmail: z.string().email().max(255).optional(),
-  recipientPhone: z.string().max(50).optional(),
-  message: z.string().max(1000).optional(),
-  purchaseReference: z.string().max(255).optional(),
-});
+const PurchaseGiftCardSchema = z
+  .object({
+    restaurantId: z.string(),
+    amount: z.coerce.number().positive().optional(),
+    packId: z.string().optional(),
+    occasion: z.string().max(100).optional(),
+    senderName: z.string().min(1).max(100).optional(),
+    senderEmail: z.string().email().max(255).optional(),
+    senderPhone: z.string().max(50).optional(),
+    recipientName: z.string().min(1).max(100).optional(),
+    recipientEmail: z.string().email().max(255).optional(),
+    recipientPhone: z.string().max(50).optional(),
+    message: z.string().max(1000).optional(),
+    purchaseReference: z.string().max(255).optional(),
+    preferredDate: z.coerce.date().optional(),
+    preferredTime: z
+      .string()
+      .regex(/^\d{2}:\d{2}$/)
+      .optional(),
+    preferredPartySize: z.coerce.number().int().min(1).optional(),
+  })
+  .refine((data) => data.amount || data.packId, {
+    message: 'Le montant ou le pack est requis',
+  });
 
 const ApplyGiftCardSchema = z.object({
   code: z.string().min(1),
   restaurantId: z.string(),
   reservationId: z.string(),
   reservationAmount: z.coerce.number().positive(),
+});
+
+const SuggestSlotsSchema = z.object({
+  partySize: z.coerce.number().int().min(1).optional(),
+  preferredDate: z.coerce.date().optional(),
+  preferredTime: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .optional(),
+});
+
+const BookSlotSchema = z.object({
+  slotIndex: z.coerce.number().int().min(0).max(2),
+  customer: z.object({
+    firstName: z.string().min(1).max(100),
+    lastName: z.string().min(1).max(100).optional(),
+    phone: z.string().regex(/^\+[1-9]\d{7,14}$/, 'phone must be E.164 (e.g. +33612345678)'),
+    email: z.string().email().optional().or(z.literal('')),
+  }),
 });
 
 function maskCode(code: string): string {
@@ -84,7 +127,9 @@ function maskCode(code: string): string {
   return code.slice(0, 4) + '-****-****-' + code.slice(-4);
 }
 
-function serializeGiftCard(card: GiftCard & { redemptions?: GiftCardRedemption[] }) {
+function serializeGiftCard(
+  card: GiftCard & { redemptions?: GiftCardRedemption[]; pack?: { name: string } | null },
+) {
   return {
     id: card.id,
     restaurantId: card.restaurantId,
@@ -95,6 +140,12 @@ function serializeGiftCard(card: GiftCard & { redemptions?: GiftCardRedemption[]
     status: card.status,
     purchasedAt: card.purchasedAt,
     expiresAt: card.expiresAt,
+    validityMonths: card.validityMonths,
+    packId: card.packId,
+    packName: card.pack?.name ?? null,
+    preferredDate: card.preferredDate,
+    preferredTime: card.preferredTime,
+    preferredPartySize: card.preferredPartySize,
     senderName: card.senderName,
     senderEmail: card.senderEmail,
     senderPhone: card.senderPhone,
@@ -102,7 +153,6 @@ function serializeGiftCard(card: GiftCard & { redemptions?: GiftCardRedemption[]
     recipientEmail: card.recipientEmail,
     recipientPhone: card.recipientPhone,
     message: card.message,
-    voiceMessageUrl: card.voiceMessageUrl,
     occasion: card.occasion,
     customerId: card.customerId,
     createdBy: card.createdBy,
@@ -112,6 +162,8 @@ function serializeGiftCard(card: GiftCard & { redemptions?: GiftCardRedemption[]
 
 export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
   const service = new GiftCardService(db);
+  const slotsService = new GiftCardSlotsService(db);
+  const bookService = new GiftCardBookService(db, slotsService);
 
   // ─── Admin routes ─────────────────────────────────────────────────
 
@@ -140,7 +192,7 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
         skip: query.offset,
         take: query.limit,
         orderBy: { purchasedAt: 'desc' },
-        include: { redemptions: { orderBy: { redeemedAt: 'desc' } } },
+        include: { redemptions: { orderBy: { redeemedAt: 'desc' } }, pack: true },
       }),
       db.giftCard.count({ where: { restaurantId } }),
     ]);
@@ -180,7 +232,7 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
 
       const card = await db.giftCard.findFirst({
         where: { id: giftCardId, restaurantId },
-        include: { redemptions: { orderBy: { redeemedAt: 'desc' } } },
+        include: { redemptions: { orderBy: { redeemedAt: 'desc' } }, pack: true },
       });
 
       if (!card) {
@@ -219,7 +271,7 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
           ...(body.occasion !== undefined && { occasion: body.occasion }),
           ...(body.expiresAt !== undefined && { expiresAt: body.expiresAt }),
         },
-        include: { redemptions: { orderBy: { redeemedAt: 'desc' } } },
+        include: { redemptions: { orderBy: { redeemedAt: 'desc' } }, pack: true },
       });
 
       return reply.send(serializeGiftCard(card));
@@ -295,6 +347,7 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
     const card = await service.create({
       restaurantId: body.restaurantId,
       amount: body.amount,
+      packId: body.packId,
       occasion: body.occasion,
       senderName: body.senderName,
       senderEmail: body.senderEmail,
@@ -305,6 +358,9 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
       message: body.message,
       createdBy: 'CLIENT',
       purchaseReference: body.purchaseReference ?? 'test',
+      preferredDate: body.preferredDate,
+      preferredTime: body.preferredTime,
+      preferredPartySize: body.preferredPartySize,
     });
 
     return reply.status(201).send(serializeGiftCard(card));
@@ -320,5 +376,37 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
     });
 
     return reply.send(result);
+  });
+
+  app.post('/public/gift-cards/:code/slots', async (req, reply) => {
+    const code = (req.params as { code: string }).code;
+    const body = SuggestSlotsSchema.parse(req.body);
+
+    const slots = await slotsService.suggestSlots({
+      giftCardCode: code,
+      partySize: body.partySize,
+      preferredDate: body.preferredDate,
+      preferredTime: body.preferredTime,
+    });
+
+    return reply.send({ slots });
+  });
+
+  app.post('/public/gift-cards/:code/book', async (req, reply) => {
+    const code = (req.params as { code: string }).code;
+    const body = BookSlotSchema.parse(req.body);
+
+    const result = await bookService.book({
+      code,
+      slotIndex: body.slotIndex,
+      customer: body.customer,
+    });
+
+    return reply.send({
+      reservationId: result.reservationId,
+      status: 'confirmed',
+      state: result.state,
+      giftCardApplication: result.giftCardApplication,
+    });
   });
 }

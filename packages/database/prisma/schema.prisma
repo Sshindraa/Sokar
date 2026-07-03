@@ -44,6 +44,7 @@ model Restaurant {
   agenticHolds          AgenticHold[]
   floorPlan             FloorPlan?
   giftCards             GiftCard[]
+  giftCardPacks         GiftCardPack[]
 
   // Agentic reservations (P0)
   slug                 String?                     @unique @map("slug")
@@ -229,6 +230,7 @@ model Reservation {
   // Gift cards (P1)
   giftCardRedemptions GiftCardRedemption[]
   giftCardRedemptionSnap Json? @map("gift_card_redemption_snap")
+  giftCardComplementAmount Decimal? @map("gift_card_complement_amount") @db.Decimal(10, 2)
 
   @@index([restaurantId, createdAt(sort: Desc)])
   @@index([restaurantId, status, createdAt(sort: Desc)])
@@ -617,6 +619,17 @@ model GiftCard {
   status            String   @default("ACTIVE") // ACTIVE, REDEEMED, EXPIRED, CANCELLED
   purchasedAt       DateTime @default(now()) @map("purchased_at")
   expiresAt         DateTime? @map("expires_at")
+  validityMonths    Int      @default(12) @map("validity_months")
+
+  // Montant libre ou pack expérience
+  packId            String?   @map("pack_id")
+  pack              GiftCardPack? @relation(fields: [packId], references: [id], onDelete: SetNull)
+
+  // Option "réserver maintenant"
+  preferredDate      DateTime? @map("preferred_date")
+  preferredTime      String?   @map("preferred_time")
+  preferredPartySize Int?      @map("preferred_party_size")
+
   senderName        String? @map("sender_name")
   senderEmail       String? @map("sender_email")
   senderPhone       String? @map("sender_phone")
@@ -624,7 +637,6 @@ model GiftCard {
   recipientEmail    String? @map("recipient_email")
   recipientPhone    String? @map("recipient_phone")
   message           String?
-  voiceMessageUrl   String? @map("voice_message_url")
   occasion          String?
   customerId        String? @map("customer_id")
   createdBy         String   @default("CLIENT") @map("created_by") // CLIENT, DASHBOARD, VOICE
@@ -665,4 +677,20 @@ model GiftCardContribution {
 
   @@index([giftCardId])
   @@map("gift_card_contributions")
+}
+
+model GiftCardPack {
+  id            String   @id @default(uuid())
+  restaurantId  String   @map("restaurant_id")
+  name          String
+  description   String?
+  amount        Decimal  @db.Decimal(10, 2)
+  minPartySize  Int      @default(1) @map("min_party_size")
+  maxPartySize  Int      @default(2) @map("max_party_size")
+  isActive      Boolean  @default(true) @map("is_active")
+  restaurant    Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  giftCards     GiftCard[]
+
+  @@index([restaurantId, isActive])
+  @@map("gift_card_packs")
 }
