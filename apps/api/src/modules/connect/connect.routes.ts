@@ -14,6 +14,7 @@
  */
 
 import type { FastifyInstance } from 'fastify';
+import type { Table } from '@prisma/client';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { db } from '../../shared/db/client';
@@ -578,12 +579,29 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         : bodyParse.data.customer.firstName;
 
       // Table allocation : réutilise la table du hold si possible, sinon réalloue.
-      const table = await tableAllocation.allocate({
-        restaurantId: restaurant.id,
-        partySize: hold.partySize,
-        startsAt: hold.slotStart,
-        endsAt: hold.slotEnd,
-      });
+      let table: Table | null = null;
+
+      if (hold.tableId) {
+        const stillAvailable = await tableAllocation.isTableAvailable({
+          tableId: hold.tableId,
+          startsAt: hold.slotStart,
+          endsAt: hold.slotEnd,
+          excludeHoldId: hold.id,
+        });
+        if (stillAvailable) {
+          table = await db.table.findUnique({ where: { id: hold.tableId } });
+        }
+      }
+
+      if (!table) {
+        table = await tableAllocation.allocate({
+          restaurantId: restaurant.id,
+          partySize: hold.partySize,
+          startsAt: hold.slotStart,
+          endsAt: hold.slotEnd,
+        });
+      }
+
       if (!table) {
         return reply.status(409).send({ error: 'Slot no longer available' });
       }
