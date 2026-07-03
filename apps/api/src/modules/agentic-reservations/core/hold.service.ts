@@ -28,6 +28,8 @@ import {
   computeQuoteExpiresAt,
 } from './policies.service.js';
 import type { ReservationChannel as Channel } from './state-machine.js';
+import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
+import { resolveServiceDurationMinutes } from '../../floor-plan/floor-plan.types.js';
 
 export class HoldConflictError extends Error {
   constructor(
@@ -61,10 +63,14 @@ export function generateHoldToken(): string {
 }
 
 export class HoldService {
+  private readonly tableAllocation: TableAllocationService;
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly audit: AuditLogService,
-  ) {}
+  ) {
+    this.tableAllocation = new TableAllocationService(prisma);
+  }
 
   /**
    * Crée un quote (estimation rapide, sans bloquer la capacité).
@@ -130,11 +136,28 @@ export class HoldService {
     channel: Channel;
     policy: PolicySnapshot;
     actor: string;
+    tableId?: string | null;
   }): Promise<AgenticHold> {
     const expiresAt = computeHoldExpiresAt(args.policy);
 
+    let tableId = args.tableId ?? null;
+    if (!tableId) {
+      const settings = await this.prisma.restaurantExposureSettings.findUnique({
+        where: { restaurantId: args.restaurantId },
+        select: { capacitySpecials: true },
+      });
+      const serviceDurationMinutes = resolveServiceDurationMinutes(settings?.capacitySpecials);
+      const table = await this.tableAllocation.allocate({
+        restaurantId: args.restaurantId,
+        partySize: args.partySize,
+        startsAt: args.slotStart,
+        endsAt: new Date(args.slotStart.getTime() + serviceDurationMinutes * 60_000),
+      });
+      tableId = table?.id ?? null;
+    }
+
     try {
-      const hold = await this.insertHold(args, expiresAt);
+      const hold = await this.insertHold({ ...args, tableId }, expiresAt);
 
       await this.audit.record({
         event: 'hold_created',
@@ -145,6 +168,7 @@ export class HoldService {
           partySize: args.partySize,
           slotStart: args.slotStart.toISOString(),
           expiresAt: expiresAt.toISOString(),
+          tableId: tableId ?? null,
         },
       });
 
@@ -359,6 +383,7 @@ export class HoldService {
       channel: Channel;
       policy: PolicySnapshot;
       actor: string;
+      tableId?: string | null;
     },
     expiresAt: Date,
   ): Promise<AgenticHold> {
@@ -374,6 +399,7 @@ export class HoldService {
         expiresAt,
         status: 'ACTIVE' as HoldStatus,
         policyVersion: args.policy.policyVersion,
+        tableId: args.tableId ?? null,
       },
     });
   }

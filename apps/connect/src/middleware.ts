@@ -93,14 +93,22 @@ export function middleware(request: NextRequest) {
   // ?preview=1 — mode preview dashboard (noindex, framing autorisé)
   const isPreview = request.nextUrl.searchParams.get('preview') === '1';
 
+  // Pages widget — autorisées à être embarquées dans un iframe sur n'importe quel domaine
+  const isWidget = request.nextUrl.pathname.startsWith('/widget/');
+
   // HSTS — force HTTPS pendant 2 ans (aligné avec nginx, spec §8.2)
   response.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
 
   // Anti-MIME sniffing
   response.headers.set('X-Content-Type-Options', 'nosniff');
 
-  // Anti-clickjacking — DENY par défaut, SAMEORIGIN en preview
-  response.headers.set('X-Frame-Options', isPreview ? 'SAMEORIGIN' : 'DENY');
+  // Anti-clickjacking — DENY par défaut, SAMEORIGIN en preview.
+  // Sur /widget/* on ne met PAS X-Frame-Options : la directive CSP
+  // frame-ancestors * suffit et est la seule valeur standard cross-browser
+  // pour autoriser l'embedding depuis n'importe quel domaine.
+  if (!isWidget) {
+    response.headers.set('X-Frame-Options', isPreview ? 'SAMEORIGIN' : 'DENY');
+  }
 
   // Pas de referrer vers des sites tiers non approuvés
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -111,13 +119,15 @@ export function middleware(request: NextRequest) {
     'camera=(), microphone=(), geolocation=(), interest-cohort=()',
   );
 
-  // frame-ancestors : 'none' par défaut, 'self' + DASHBOARD_URL en preview
+  // frame-ancestors : '*' sur /widget/*, 'self' + DASHBOARD_URL en preview, 'none' sinon
   const dashboardUrl = process.env.DASHBOARD_URL;
-  const frameAncestors = isPreview
-    ? dashboardUrl
-      ? `'self' ${dashboardUrl}`
-      : "'self'"
-    : "'none'";
+  const frameAncestors = isWidget
+    ? '*'
+    : isPreview
+      ? dashboardUrl
+        ? `'self' ${dashboardUrl}`
+        : "'self'"
+      : "'none'";
 
   // CSP : autorise le JSON-LD inline (spec §8), les images Cloudinary,
   // et le self pour les scripts/styles. Pas d'eval, pas d'object-src.

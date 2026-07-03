@@ -60,6 +60,19 @@ export type PublicRestaurantDto = {
   };
 };
 
+export type WidgetRestaurantDto = {
+  id: string;
+  slug: string;
+  name: string;
+  city: string;
+  phoneNumber: string;
+  cuisineType: string[];
+  openingHours: Array<{ day: string; open: string; close: string }>;
+  formattedAddress: string;
+  coverImageUrl?: string | null;
+  connectAgentic?: boolean;
+};
+
 export type AvailabilityDto = {
   restaurantId: string;
   date: string;
@@ -97,6 +110,35 @@ export async function fetchPublicRestaurant(
     return (await res.json()) as PublicRestaurantDto;
   } catch (err) {
     console.error(`[connect] fetch restaurant ${slug} error:`, err);
+    return null;
+  }
+}
+
+/**
+ * Récupère un restaurant par slug pour le widget embeddable.
+ * Endpoint : GET /public/widget/:slug
+ * Contrairement à /public/r/:slug, ce endpoint ne filtre pas sur
+ * connectPublished et fonctionne pour tous les restaurants.
+ */
+export async function fetchWidgetRestaurant(
+  slug: string,
+  options: { revalidate?: number; tags?: string[] } = {},
+): Promise<WidgetRestaurantDto | null> {
+  try {
+    const res = await fetch(`${await getApiUrl()}/public/widget/${slug}`, {
+      next: {
+        revalidate: options.revalidate ?? 60,
+        tags: options.tags ?? [`widget:restaurant:${slug}`],
+      },
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      console.error(`[connect] fetch widget restaurant ${slug} failed: ${res.status}`);
+      return null;
+    }
+    return (await res.json()) as WidgetRestaurantDto;
+  } catch (err) {
+    console.error(`[connect] fetch widget restaurant ${slug} error:`, err);
     return null;
   }
 }

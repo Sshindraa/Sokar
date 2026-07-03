@@ -10,6 +10,7 @@
     "generate": "prisma generate",
     "push": "prisma db push",
     "seed": "prisma db seed",
+    "seed:floor-plan": "tsx scripts/migrate-floor-plan.ts",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
     "migrate:status": "prisma migrate status",

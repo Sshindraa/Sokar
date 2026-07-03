@@ -12,9 +12,13 @@
  * résa confirmée pour exactement (restaurant, slotStart, partySize).
  */
 
-import type { PrismaClient, ReservationState } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import type { RestaurantPolicyInput } from './policies.service.js';
 import { buildPolicySnapshot } from './policies.service.js';
+import {
+  CapacityAwareAvailabilityService,
+  zonedTimeToUtc,
+} from '../../floor-plan/availability-capacity-aware.service.js';
 
 export type AvailabilityQuery = {
   restaurantId: string;
@@ -30,10 +34,12 @@ export type AvailabilityResult = {
   reason?: 'hold_active' | 'reservation_confirmed' | 'unknown';
 };
 
-const BLOCKING_RESERVATION_STATES: ReservationState[] = ['PENDING', 'CONFIRMED', 'SEATED'];
-
 export class AvailabilityService {
-  constructor(private readonly prisma: PrismaClient) {}
+  private readonly capacityAware: CapacityAwareAvailabilityService;
+
+  constructor(private readonly prisma: PrismaClient) {
+    this.capacityAware = new CapacityAwareAvailabilityService(prisma);
+  }
 
   /**
    * Coarse search : retourne les restos qui ont de la dispo pour une plage
@@ -114,50 +120,35 @@ export class AvailabilityService {
   /**
    * Precise check : est-ce que le slot est libre pour ce resto + party size ?
    * Renvoie un objet AvailabilityResult avec la raison du conflit.
+   *
+   * Wrapper autour de CapacityAwareAvailabilityService.
    */
   async checkAvailability(query: AvailabilityQuery): Promise<AvailabilityResult> {
-    // 1. Hold actif (non expiré) ?
-    const activeHold = await this.prisma.agenticHold.findFirst({
-      where: {
-        restaurantId: query.restaurantId,
-        type: 'HOLD',
-        status: 'ACTIVE',
-        expiresAt: { gt: new Date() },
-        slotStart: query.slotStart,
-        partySize: query.partySize,
-      },
-      select: { id: true },
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: query.restaurantId },
+      select: { timezone: true },
     });
-
-    if (activeHold) {
-      return {
-        available: false,
-        conflictingHoldId: activeHold.id,
-        reason: 'hold_active',
-      };
+    if (!restaurant) {
+      return { available: false, reason: 'unknown' };
     }
 
-    // 2. Réservation bloquante ? On inclut PHONE/WEB legacy : Postgres reste
-    // la source de vérité pour éviter qu'un agent réserve par-dessus un appel.
-    const blockingReservation = await this.prisma.reservation.findFirst({
-      where: {
-        restaurantId: query.restaurantId,
-        partySize: query.partySize,
-        OR: [{ reservedAt: query.slotStart }, { startsAt: query.slotStart }],
-        state: { in: BLOCKING_RESERVATION_STATES as ReservationState[] },
-      },
-      select: { id: true },
+    const timeZone = restaurant.timezone ?? 'Europe/Paris';
+    const dateStr = query.slotStart.toISOString().slice(0, 10);
+    const timeStr = query.slotStart.toISOString().slice(11, 16);
+    const slotStart = zonedTimeToUtc(dateStr, timeStr, timeZone);
+
+    const dto = await this.capacityAware.getAvailability({
+      restaurantId: query.restaurantId,
+      date: dateStr,
+      partySize: query.partySize,
     });
 
-    if (blockingReservation) {
-      return {
-        available: false,
-        conflictingReservationId: blockingReservation.id,
-        reason: 'reservation_confirmed',
-      };
+    const slot = dto.slots.find((s) => s.time === slotStart.toISOString().slice(11, 16));
+    if (slot?.available) {
+      return { available: true };
     }
 
-    return { available: true };
+    return { available: false, reason: 'unknown' };
   }
 
   /**

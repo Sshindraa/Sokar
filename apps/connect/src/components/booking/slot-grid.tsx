@@ -12,7 +12,9 @@ export function SlotGrid({ slots, onSelect }: { slots: Slot[]; onSelect: (time: 
 
   return (
     <div>
-      <h3 className="mb-2 text-sm font-medium text-ink">Choisissez un horaire</h3>
+      <h3 className="mb-2 text-sm font-medium text-[var(--widget-primary)]">
+        Choisissez un horaire
+      </h3>
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
         {slots.map((slot) => (
           <button
@@ -22,7 +24,7 @@ export function SlotGrid({ slots, onSelect }: { slots: Slot[]; onSelect: (time: 
             onClick={() => onSelect(slot.time)}
             className={`rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-200 ${
               slot.available
-                ? 'border-border bg-background text-ink hover:border-ember hover:bg-ember/5'
+                ? 'border-border bg-background text-[var(--widget-primary)] hover:border-[var(--widget-accent)] hover:bg-[var(--widget-accent-light)]'
                 : 'cursor-not-allowed border-border bg-muted text-muted-foreground line-through'
             }`}
           >

@@ -246,6 +246,7 @@ describe('hold.service', () => {
         channel: 'MCP',
         policy,
         actor: 'agent:test',
+        tableId: 't-1',
       });
       expect(h.type).toBe('HOLD');
       expect(h.holdToken).toBeTruthy();
@@ -271,6 +272,7 @@ describe('hold.service', () => {
         channel: 'MCP' as const,
         policy,
         actor: 'agent:test',
+        tableId: 't-1' as const,
       };
       await fakes.service.createHold(args);
       await expect(fakes.service.createHold(args)).rejects.toThrow(HoldConflictError);
@@ -295,9 +297,10 @@ describe('hold.service', () => {
         channel: 'MCP' as const,
         policy,
         actor: 'agent:test',
+        tableId: 't-1' as const,
       };
-      const h1 = await fakes.service.createHold({ ...base, partySize: 2 });
-      const h2 = await fakes.service.createHold({ ...base, partySize: 4 });
+      const h1 = await fakes.service.createHold({ ...base, partySize: 2, tableId: 't-2' });
+      const h2 = await fakes.service.createHold({ ...base, partySize: 4, tableId: 't-3' });
       expect(h1.id).not.toBe(h2.id);
     });
 
@@ -349,6 +352,7 @@ describe('hold.service', () => {
         channel: 'MCP',
         policy,
         actor: 'agent:test',
+        tableId: 't-1',
       });
       const consumed = await fakes.service.consumeHold({
         holdId: h.id,
@@ -379,6 +383,7 @@ describe('hold.service', () => {
         channel: 'MCP',
         policy,
         actor: 'agent:test',
+        tableId: 't-1',
       });
       await fakes.service.consumeHold({
         holdId: h.id,
@@ -410,6 +415,7 @@ describe('hold.service', () => {
         channel: 'MCP',
         policy,
         actor: 'agent:test',
+        tableId: 't-1',
       });
       // Force l'expiration en backdating le expiresAt
       const row = fakes.holds.get(h.id)!;
@@ -442,6 +448,7 @@ describe('hold.service', () => {
         channel: 'MCP',
         policy,
         actor: 'agent:test',
+        tableId: 't-1',
       });
       fakes.holds.get(h.id)!.expiresAt = new Date(Date.now() - 1000);
 

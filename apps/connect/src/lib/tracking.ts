@@ -30,6 +30,7 @@ export type AnalyticsEvent =
       source?: string;
     }
   | { event: 'booking_page_view'; restaurantId: string; restaurantSlug: string; source?: string }
+  | { event: 'widget_page_view'; restaurantId: string; restaurantSlug: string; source?: string }
   | {
       event: 'availability_requested';
       restaurantId: string;
@@ -98,6 +99,27 @@ export function trackEvent(event: AnalyticsEvent): void {
       console.error('[connect] analytics event failed', err);
     }
   });
+}
+
+/**
+ * Version async de trackEvent, utilisable dans les Server Components
+ * avec `void trackEventAsync(...)` pour éviter les fuites de promesse
+ * détectées par le linter Next.js.
+ * Reste best-effort : n'importe pas le rendu si l'API est down.
+ */
+export async function trackEventAsync(event: AnalyticsEvent): Promise<void> {
+  try {
+    await fetch(`${API_URL}/public/analytics/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...event, sentAt: new Date().toISOString() }),
+      cache: 'no-store',
+    });
+  } catch (err) {
+    if (typeof console !== 'undefined') {
+      console.error('[connect] analytics event async failed', err);
+    }
+  }
 }
 
 /** Helper spécifique : page view. */

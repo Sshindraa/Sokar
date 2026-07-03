@@ -64,6 +64,9 @@ type Props = {
   initialPartySize?: number;
   initialDate?: string;
   initialTime?: string;
+  embedded?: boolean;
+  primaryColor?: string;
+  accentColor?: string;
 };
 
 function todayIso(): string {
@@ -80,6 +83,9 @@ export function BookingWidget({
   initialPartySize,
   initialDate,
   initialTime,
+  embedded = false,
+  primaryColor = '#0F172A',
+  accentColor = '#EA580C',
 }: Props) {
   const [step, setStep] = useState<'pick' | 'confirm' | 'done'>('pick');
   const [restaurant, setRestaurant] = useState<PublicRestaurant | null>(null);
@@ -102,11 +108,33 @@ export function BookingWidget({
 
   // Load restaurant info once
   useEffect(() => {
-    fetch(`${API_URL}/public/r/${slug}`)
+    fetch(`${API_URL}/public/widget/${slug}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => setRestaurant(data))
+      .then((data) => {
+        if (!data) return setRestaurant(null);
+        setRestaurant({
+          id: data.id,
+          slug: data.slug ?? slug,
+          name: data.name,
+          connectAgentic: data.connectAgentic ?? false,
+          address: { city: data.city ?? data.address?.city ?? '' },
+        });
+      })
       .catch(() => setRestaurant(null));
   }, [slug]);
+
+  // Auto-resize iframe when embedded
+  useEffect(() => {
+    if (!embedded) return;
+    const sendHeight = () => {
+      const height = document.body.scrollHeight;
+      window.parent.postMessage({ type: 'sokar-widget-resize', height }, '*');
+    };
+    sendHeight();
+    const observer = new ResizeObserver(sendHeight);
+    observer.observe(document.body);
+    return () => observer.disconnect();
+  }, [embedded]);
 
   // Load availability
   const loadAvailability = useCallback(async () => {
@@ -250,125 +278,129 @@ export function BookingWidget({
     }
   }
 
-  // Confirmation screen
-  if (step === 'done' && confirmResult) {
-    return <ConfirmationView result={confirmResult} slug={slug} />;
-  }
+  const widgetStyle = {
+    '--widget-primary': primaryColor,
+    '--widget-accent': accentColor,
+    '--widget-accent-light': `color-mix(in srgb, ${accentColor} 10%, transparent)`,
+  } as React.CSSProperties;
 
-  // Confirm step (form)
-  if (step === 'confirm' && selectedTime) {
-    return (
-      <form onSubmit={handleConfirm} className="space-y-4">
-        <div className="rounded-xl border border-border bg-cream p-4">
-          <p className="text-sm text-ink">
-            <strong>{partySize}</strong> personne{partySize > 1 ? 's' : ''} ·{' '}
-            <strong>{date}</strong> à <strong>{selectedTime}</strong>
-          </p>
-        </div>
-
-        <CustomerForm
-          firstName={firstName}
-          setFirstName={setFirstName}
-          phone={phone}
-          setPhone={setPhone}
-          email={email}
-          setEmail={setEmail}
-          specialRequests={specialRequests}
-          setSpecialRequests={setSpecialRequests}
-          honeypot={honeypot}
-          setHoneypot={setHoneypot}
-        />
-
-        {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {error}
+  return (
+    <div style={widgetStyle}>
+      {step === 'done' && confirmResult ? (
+        <ConfirmationView result={confirmResult} slug={slug} embedded={embedded} />
+      ) : step === 'confirm' && selectedTime ? (
+        <form onSubmit={handleConfirm} className="space-y-4">
+          <div className="rounded-xl border border-border bg-cream p-4">
+            <p className="text-sm text-[var(--widget-primary)]">
+              <strong>{partySize}</strong> personne{partySize > 1 ? 's' : ''} ·{' '}
+              <strong>{date}</strong> à <strong>{selectedTime}</strong>
+            </p>
           </div>
-        )}
 
-        <div className="flex flex-col gap-3 sm:flex-row-reverse">
-          <button
-            type="submit"
-            disabled={loading}
-            className="inline-flex flex-1 items-center justify-center rounded-lg bg-ember px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:bg-ember/90 disabled:opacity-50"
-          >
-            {loading ? 'Réservation...' : 'Confirmer la réservation'}
-          </button>
+          <CustomerForm
+            firstName={firstName}
+            setFirstName={setFirstName}
+            phone={phone}
+            setPhone={setPhone}
+            email={email}
+            setEmail={setEmail}
+            specialRequests={specialRequests}
+            setSpecialRequests={setSpecialRequests}
+            honeypot={honeypot}
+            setHoneypot={setHoneypot}
+          />
+
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          <div className="flex flex-col gap-3 sm:flex-row-reverse">
+            <button
+              type="submit"
+              disabled={loading}
+              className="inline-flex flex-1 items-center justify-center rounded-lg bg-[var(--widget-accent)] px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+            >
+              {loading ? 'Réservation...' : 'Confirmer la réservation'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setStep('pick');
+                setError(null);
+              }}
+              disabled={loading}
+              className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-3 text-base font-semibold text-[var(--widget-primary)] transition-all duration-200 hover:bg-muted disabled:opacity-50"
+            >
+              ← Changer d'horaire
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="space-y-4">
+          <PartySizePicker value={partySize} onChange={setPartySize} />
+
+          <div>
+            <label
+              htmlFor="date"
+              className="block text-sm font-medium text-[var(--widget-primary)]"
+            >
+              Date
+            </label>
+            <input
+              id="date"
+              type="date"
+              value={date}
+              min={todayIso()}
+              onChange={(e) => setDate(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[var(--widget-primary)] focus:border-[var(--widget-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--widget-accent)]"
+            />
+          </div>
+
           <button
             type="button"
-            onClick={() => {
-              setStep('pick');
-              setError(null);
-            }}
+            onClick={loadAvailability}
             disabled={loading}
-            className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-3 text-base font-semibold text-ink transition-all duration-200 hover:bg-muted disabled:opacity-50"
+            className="inline-flex w-full items-center justify-center rounded-lg bg-[var(--widget-accent)] px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
           >
-            ← Changer d'horaire
+            {loading ? 'Chargement...' : 'Voir les disponibilités'}
           </button>
+
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          <SlotGrid
+            slots={slots}
+            onSelect={(time) => {
+              setSelectedTime(time);
+              setStep('confirm');
+              // Générer l'idempotency key une fois par sélection de slot.
+              // Réutilisée pour hold + confirm → protège contre le double submit.
+              setIdempotencyKey(crypto.randomUUID());
+              if (restaurant) {
+                trackEvent({
+                  event: 'availability_slot_selected',
+                  restaurantId: restaurant.id,
+                  restaurantSlug: restaurant.slug,
+                  date,
+                  time,
+                  partySize,
+                  source,
+                });
+              }
+            }}
+          />
+
+          {restaurant && !restaurant.connectAgentic && !embedded && (
+            <p className="text-xs text-muted-foreground">
+              Source : <code className="rounded bg-muted px-1">{source}</code>
+            </p>
+          )}
         </div>
-      </form>
-    );
-  }
-
-  // Pick step
-  return (
-    <div className="space-y-4">
-      <PartySizePicker value={partySize} onChange={setPartySize} />
-
-      <div>
-        <label htmlFor="date" className="block text-sm font-medium text-ink">
-          Date
-        </label>
-        <input
-          id="date"
-          type="date"
-          value={date}
-          min={todayIso()}
-          onChange={(e) => setDate(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-ink focus:border-ember focus:outline-none focus:ring-1 focus:ring-ember"
-        />
-      </div>
-
-      <button
-        type="button"
-        onClick={loadAvailability}
-        disabled={loading}
-        className="inline-flex w-full items-center justify-center rounded-lg bg-ember px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:bg-ember/90 disabled:opacity-50"
-      >
-        {loading ? 'Chargement...' : 'Voir les disponibilités'}
-      </button>
-
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      <SlotGrid
-        slots={slots}
-        onSelect={(time) => {
-          setSelectedTime(time);
-          setStep('confirm');
-          // Générer l'idempotency key une fois par sélection de slot.
-          // Réutilisée pour hold + confirm → protège contre le double submit.
-          setIdempotencyKey(crypto.randomUUID());
-          if (restaurant) {
-            trackEvent({
-              event: 'availability_slot_selected',
-              restaurantId: restaurant.id,
-              restaurantSlug: restaurant.slug,
-              date,
-              time,
-              partySize,
-              source,
-            });
-          }
-        }}
-      />
-
-      {restaurant && !restaurant.connectAgentic && (
-        <p className="text-xs text-muted-foreground">
-          Source : <code className="rounded bg-muted px-1">{source}</code>
-        </p>
       )}
     </div>
   );

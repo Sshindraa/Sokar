@@ -15,14 +15,14 @@ export function PartySizePicker({
 }) {
   return (
     <div>
-      <label htmlFor="partySize" className="block text-sm font-medium text-ink">
+      <label htmlFor="partySize" className="block text-sm font-medium text-[var(--widget-primary)]">
         Nombre de personnes
       </label>
       <select
         id="partySize"
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-ink focus:border-ember focus:outline-none focus:ring-1 focus:ring-ember"
+        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[var(--widget-primary)] focus:border-[var(--widget-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--widget-accent)]"
       >
         {PARTY_SIZES.map((n) => (
           <option key={n} value={n}>

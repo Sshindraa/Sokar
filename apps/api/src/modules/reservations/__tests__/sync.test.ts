@@ -6,15 +6,35 @@ import { GoogleCalendarClient } from '../../../shared/google-calendar/client';
 vi.mock('../../../shared/db/client', () => ({
   db: {
     restaurant: {
+      findUnique: vi.fn(),
       findUniqueOrThrow: vi.fn(),
       update: vi.fn(),
+    },
+    restaurantExposureSettings: {
+      findUnique: vi.fn(),
     },
     reservation: {
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
       findMany: vi.fn(),
+      findFirst: vi.fn().mockResolvedValue(null),
       findUniqueOrThrow: vi.fn(),
+    },
+    floorPlan: {
+      findUnique: vi.fn().mockResolvedValue({ id: 'fp-1' }),
+    },
+    table: {
+      findMany: vi
+        .fn()
+        .mockResolvedValue([
+          { id: 'table-1', floorPlanId: 'fp-1', capacity: 4, minCapacity: 1, isActive: true },
+        ]),
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
+    agenticHold: {
+      findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
     },
   },
 }));
@@ -43,6 +63,7 @@ describe('ReservationService - Google Calendar Sync', () => {
     smsConfirmEnabled: true,
     googleRefreshToken: 'refresh-token-xyz',
     googleCalendarId: 'primary',
+    timezone: 'Europe/Paris',
     openingHours: {
       mon: { open: '12:00', close: '23:00' },
       tue: { open: '12:00', close: '23:00' },
@@ -52,11 +73,20 @@ describe('ReservationService - Google Calendar Sync', () => {
       sat: { open: '12:00', close: '23:00' },
       sun: { open: '12:00', close: '23:00' },
     },
+    exposureSettings: {
+      capacitySpecials: null,
+    },
   };
 
   beforeEach(() => {
     vi.resetAllMocks();
     vi.mocked(db.reservation.findMany).mockResolvedValue([]);
+    vi.mocked(db.agenticHold.findMany).mockResolvedValue([]);
+    vi.mocked(db.floorPlan.findUnique).mockResolvedValue({ id: 'fp-1' } as any);
+    vi.mocked(db.table.findMany).mockResolvedValue([
+      { id: 'table-1', floorPlanId: 'fp-1', capacity: 4, minCapacity: 1, isActive: true },
+    ] as any);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue(mockRestaurant as any);
   });
 
   describe('create', () => {
@@ -263,19 +293,23 @@ describe('ReservationService - Google Calendar Sync', () => {
   });
 
   describe('availability', () => {
-    it('should return only calendar-available slots', async () => {
+    it('should return capacity-aware slots', async () => {
       vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(mockRestaurant as any);
-      vi.mocked(GoogleCalendarClient.checkAvailability).mockImplementation(
-        async (_refreshToken, _calendarId, start) => start.getMinutes() !== 30,
-      );
+      // Simule une réservation occupant la table de 12:00 à 14:00 (heure locale Paris)
+      vi.mocked(db.reservation.findMany).mockResolvedValue([
+        {
+          tableId: 'table-1',
+          startsAt: new Date('2099-06-05T10:00:00Z'), // 12:00 Paris
+          endsAt: new Date('2099-06-05T12:00:00Z'), // 14:00 Paris
+        },
+      ] as any);
 
       const result = await ReservationService.availability('rest-123', '2099-06-05', 2);
 
-      expect(result.slots).toContain('12:00');
+      expect(result.slots).toContain('14:00');
       expect(result.slots).not.toContain('12:30');
       expect(result.allSlots.find((slot) => slot.time === '12:30')).toMatchObject({
         available: false,
-        reason: 'calendar_conflict',
       });
     });
 
@@ -285,7 +319,7 @@ describe('ReservationService - Google Calendar Sync', () => {
       await expect(
         ReservationService.create({
           restaurantId: 'rest-123',
-          reservedAt: new Date('2099-06-05T10:00:00'),
+          reservedAt: new Date('2099-06-05T02:00:00'), // 04:00 Paris, fermé
           partySize: 2,
           customerName: 'Alice',
         }),

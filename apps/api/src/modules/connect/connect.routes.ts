@@ -20,7 +20,9 @@ import { db } from '../../shared/db/client';
 import { redisCache } from '../../shared/redis/client';
 import { logger } from '../../shared/logger/pino';
 import { ConnectService, hashPhone } from './connect.service';
-import { ConnectAvailabilityService } from './availability.service';
+import { CapacityAwareAvailabilityService } from '../floor-plan/availability-capacity-aware.service';
+import { TableAllocationService } from '../floor-plan/table-allocation.service';
+import { resolveServiceDurationMinutes } from '../floor-plan/floor-plan.types';
 import { HoldService } from '../agentic-reservations/core/hold.service';
 import { ReservationService } from '../agentic-reservations/core/reservation.service';
 import { AuditLogService } from '../agentic-reservations/core/audit-log.service';
@@ -72,7 +74,8 @@ function statusClass(code: number): string {
 
 export async function connectRoutes(app: FastifyInstance): Promise<void> {
   const canal = new ConnectService(db, redisCache);
-  const availability = new ConnectAvailabilityService(db);
+  const availability = new CapacityAwareAvailabilityService(db);
+  const tableAllocation = new TableAllocationService(db);
   const audit = new AuditLogService(db);
   const holds = new HoldService(db, audit);
   const idempotency = new IdempotencyService(new PrismaIdempotencyStore(db));
@@ -442,8 +445,25 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
+      const settings = await db.restaurantExposureSettings.findUnique({
+        where: { restaurantId: restaurant.id },
+      });
+      const serviceDurationMinutes = resolveServiceDurationMinutes(
+        settings?.capacitySpecials as Record<string, unknown> | undefined,
+      );
+
       const slotStart = new Date(`${bodyParse.data.date}T${bodyParse.data.time}:00.000Z`);
-      const slotEnd = new Date(slotStart.getTime() + 90 * 60 * 1000);
+      const slotEnd = new Date(slotStart.getTime() + serviceDurationMinutes * 60 * 1000);
+
+      const table = await tableAllocation.allocate({
+        restaurantId: restaurant.id,
+        partySize: bodyParse.data.partySize,
+        startsAt: slotStart,
+        endsAt: slotEnd,
+      });
+      if (!table) {
+        return reply.status(409).send({ error: 'Slot no longer available' });
+      }
 
       try {
         const hold = await holds.createHold({
@@ -454,6 +474,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           channel: 'WEB',
           policy,
           actor: 'connect:web',
+          tableId: table.id,
         });
 
         // Émettre l'événement analytics reservation_hold_created (T9)
@@ -556,6 +577,17 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         ? `${bodyParse.data.customer.firstName} ${bodyParse.data.customer.lastName}`.trim()
         : bodyParse.data.customer.firstName;
 
+      // Table allocation : réutilise la table du hold si possible, sinon réalloue.
+      const table = await tableAllocation.allocate({
+        restaurantId: restaurant.id,
+        partySize: hold.partySize,
+        startsAt: hold.slotStart,
+        endsAt: hold.slotEnd,
+      });
+      if (!table) {
+        return reply.status(409).send({ error: 'Slot no longer available' });
+      }
+
       // Source normalization (même logique que /hold, cf. spec v1.1 §5.9)
       const source: Source = normalizeConnectSource(
         bodyParse.data.source,
@@ -618,6 +650,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
             actor: 'connect:web',
             holdToken: bodyParse.data.holdToken,
             specialRequests: bodyParse.data.specialRequests,
+            tableId: table.id,
             consents: {
               reservationProcessing: true,
               transactionalSms: true,

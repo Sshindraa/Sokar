@@ -29,6 +29,7 @@ import { rgpdRoutes } from './modules/rgpd/rgpd.routes';
 import { observabilityRoutes } from './shared/observability/observability.routes';
 import { httpRequestsTotal } from './shared/observability/metrics';
 import { connectRoutes } from './modules/connect/connect.routes';
+import { floorPlanRoutes } from './modules/floor-plan/floor-plan.routes';
 import { pilotRoutes } from './modules/pilot/pilot.routes';
 import { flagsRoutes } from './modules/admin/flags.routes';
 import { onboardingFunnelRoutes } from './modules/admin/onboarding-funnel.routes';
@@ -227,6 +228,7 @@ export async function buildApp() {
   await app.register(openaiReserveRoutes);
   await app.register(rgpdRoutes);
   await app.register(connectRoutes);
+  await app.register(floorPlanRoutes);
   await app.register(observabilityRoutes);
   await app.register(pilotRoutes);
   await app.register(flagsRoutes);
