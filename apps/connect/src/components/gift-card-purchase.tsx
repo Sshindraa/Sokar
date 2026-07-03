@@ -57,6 +57,8 @@ export function GiftCardPurchase({
   const [preferredDate, setPreferredDate] = useState('');
   const [preferredPartySize, setPreferredPartySize] = useState('2');
   const [preferredTime, setPreferredTime] = useState('');
+  // Honeypot (anti-bot). Si rempli, on bloque la soumission.
+  const [honeypot, setHoneypot] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +103,11 @@ export function GiftCardPurchase({
   }
 
   async function handlePurchase() {
+    if (honeypot) {
+      // Bot detected. Silent fail.
+      setError('Une erreur est survenue. Réessayez.');
+      return;
+    }
     setError(null);
     setLoading(true);
 
@@ -352,6 +359,18 @@ export function GiftCardPurchase({
       {/* Étape 2 : Informations */}
       {step === 'info' && (
         <div className="space-y-4">
+          {/* Honeypot anti-bot — caché visuellement */}
+          <input
+            type="text"
+            name="website"
+            tabIndex={-1}
+            autoComplete="off"
+            aria-hidden="true"
+            className="absolute -left-[9999px] h-0 w-0 opacity-0"
+            value={honeypot}
+            onChange={(e) => setHoneypot(e.target.value)}
+          />
+
           <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
             Informations
           </h2>

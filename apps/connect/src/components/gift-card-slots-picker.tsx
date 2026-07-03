@@ -31,12 +31,19 @@ export function GiftCardSlotsPicker({
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  // Honeypot (anti-bot). Si rempli, on bloque la soumission.
+  const [honeypot, setHoneypot] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [booked, setBooked] = useState<GiftCardBookResult | null>(null);
 
   async function handleBook(e: React.FormEvent) {
     e.preventDefault();
+    if (honeypot) {
+      // Bot detected. Silent fail.
+      setError('Une erreur est survenue. Réessayez.');
+      return;
+    }
     if (selectedSlot === null) return;
     if (!firstName.trim()) {
       setError('Veuillez renseigner votre prénom');
@@ -150,6 +157,18 @@ export function GiftCardSlotsPicker({
 
       {selectedSlot !== null && (
         <form onSubmit={handleBook} className="space-y-3">
+          {/* Honeypot anti-bot — caché visuellement */}
+          <input
+            type="text"
+            name="website"
+            tabIndex={-1}
+            autoComplete="off"
+            aria-hidden="true"
+            className="absolute -left-[9999px] h-0 w-0 opacity-0"
+            value={honeypot}
+            onChange={(e) => setHoneypot(e.target.value)}
+          />
+
           <div className="rounded-lg border border-border bg-cream p-3">
             <p className="text-sm" style={{ color: primaryColor }}>
               <strong>{slots[selectedSlot].date}</strong> à{' '}

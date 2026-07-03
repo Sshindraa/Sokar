@@ -343,6 +343,7 @@ export function BookingWidget({
           <div className="flex justify-end">
             <a
               href={`/widget/${slug}/gift-card?embedded=${embedded ? '1' : '0'}&primary=${primaryColor.replace('#', '')}&accent=${accentColor.replace('#', '')}&source=${source}`}
+              target={embedded ? '_parent' : undefined}
               className="text-sm font-medium underline-offset-2 transition-all duration-200 hover:underline"
               style={{ color: accentColor }}
             >
