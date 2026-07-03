@@ -22,6 +22,7 @@
 import { Prisma } from '@prisma/client';
 import type { PrismaClient, ReservationState } from '@prisma/client';
 import { AuditLogService } from './audit-log.service.js';
+import { logger } from '../../../shared/logger/pino';
 import {
   generateHoldToken,
   HoldAlreadyConsumedError,
@@ -32,6 +33,8 @@ import {
 import { IdempotencyPendingError, IdempotencyService } from './idempotency.service.js';
 import { type PolicySnapshot, validateReservationAgainstPolicy } from './policies.service.js';
 import { type ReservationChannel, assertCanTransition } from './state-machine.js';
+import { GiftCardService } from '../../gift-cards/gift-card.service.js';
+import type { GiftCardApplicationResult } from '../../gift-cards/gift-card.types.js';
 
 export class ReservationNotFoundError extends Error {
   constructor(public readonly id: string) {
@@ -86,12 +89,17 @@ export type CreateReservationInput = {
   specialRequests?: string;
   /** Optionnel : tableId pré-allouée (ex. Connect hold) */
   tableId?: string | null;
+  /** Optionnel : code carte cadeau à appliquer */
+  giftCardCode?: string;
+  /** Optionnel : montant estimé de la réservation pour l'application de la carte cadeau */
+  giftCardReservationAmount?: number;
 };
 
 export type CreateReservationResult = {
   reservationId: string;
   state: ReservationState;
   reused: boolean;
+  giftCardApplication?: GiftCardApplicationResult;
 };
 
 export class ReservationService {
@@ -344,10 +352,49 @@ export class ReservationService {
     });
 
     const final = await this.prisma.reservation.findUnique({ where: { id: reservationId } });
+
+    let giftCardApplication: GiftCardApplicationResult | undefined;
+    if (
+      input.giftCardCode &&
+      input.giftCardReservationAmount &&
+      input.giftCardReservationAmount > 0
+    ) {
+      try {
+        const giftCardService = new GiftCardService(this.prisma);
+        giftCardApplication = await giftCardService.applyToReservation({
+          code: input.giftCardCode,
+          restaurantId: input.restaurantId,
+          reservationId,
+          reservationAmount: input.giftCardReservationAmount,
+        });
+
+        if (giftCardApplication.paymentStatus !== 'COMPLEMENT_REQUIRED') {
+          await this.prisma.reservation.update({
+            where: { id: reservationId },
+            data: {
+              giftCardRedemptionSnap: {
+                giftCardId: giftCardApplication.giftCardId,
+                appliedAmount: giftCardApplication.appliedAmount,
+                remainingAmount: giftCardApplication.remainingAmount,
+                paymentStatus: giftCardApplication.paymentStatus,
+                complementAmount: giftCardApplication.complementAmount,
+              } as Prisma.InputJsonValue,
+            },
+          });
+        }
+      } catch (err) {
+        logger.warn(
+          { err, reservationId, giftCardCode: input.giftCardCode },
+          'gift card application failed after reservation creation',
+        );
+      }
+    }
+
     return {
       reservationId,
       state: (final?.state ?? 'CONFIRMED') as ReservationState,
       reused: false,
+      giftCardApplication,
     };
   }
 

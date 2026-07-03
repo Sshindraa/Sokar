@@ -228,6 +228,7 @@ model Reservation {
 
   // Gift cards (P1)
   giftCardRedemptions GiftCardRedemption[]
+  giftCardRedemptionSnap Json? @map("gift_card_redemption_snap")
 
   @@index([restaurantId, createdAt(sort: Desc)])
   @@index([restaurantId, status, createdAt(sort: Desc)])
