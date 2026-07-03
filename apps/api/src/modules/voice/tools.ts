@@ -115,7 +115,8 @@ export function getRestaurantTools(_restaurantId: string) {
             amount: {
               type: 'number',
               minimum: 1,
-              description: 'Montant en euros — obligatoire',
+              multipleOf: 1,
+              description: 'Montant en euros — obligatoire (entier)',
             },
             occasion: {
               type: 'string',

@@ -42,6 +42,7 @@ function makeSession(overrides: Partial<CallSession> = {}): CallSession {
     from: '+33****0001',
     to: '+33****0000',
     restaurantId: 'rest-1',
+    restaurantName: 'Test Resto',
     systemPrompt: "Tu es l'assistant vocal de Test Resto.",
     isVip: false,
     telnyxWs: overrides.telnyxWs ?? makeTelnyxWs(),

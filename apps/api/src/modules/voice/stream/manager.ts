@@ -10,6 +10,7 @@ import * as Sentry from '@sentry/node';
 import { GiftCardService } from '../../gift-cards/gift-card.service';
 import { recommendGiftCardAmount } from '../../gift-cards/gift-card-recommender';
 import { sendSms } from '../../../shared/telnyx/client';
+import { trackGiftCardEvent } from '../../analytics/events.service';
 
 interface LlmResponse {
   choices?: Array<{ message: ChatMessage }>;
@@ -38,6 +39,9 @@ export class CallSessionManager {
     from: string;
     to: string;
     restaurantId: string;
+    restaurantName: string;
+    /** Montant minimum carte cadeau — défaut 10€ */
+    giftCardMinimumAmount?: number;
     systemPrompt: string;
     isVip: boolean;
     telnyxWs: WebSocket;
@@ -48,12 +52,8 @@ export class CallSessionManager {
       systemPromptExtra?: string | null;
     } | null;
   }): CallSession {
-    const restaurantName = opts.systemPrompt
-      .split('\n')[0]
-      .replace(/^Tu es l'hôte d'accueil et assistant vocal chaleureux de /, '')
-      .replace(/^Tu es l'assistant vocal de /, '')
-      .replace(/\.$/, '')
-      .trim();
+    const restaurantName = opts.restaurantName;
+    const giftCardMinimumAmount = opts.giftCardMinimumAmount ?? 10;
 
     const greeting = `Bonjour, ${restaurantName} !`;
 
@@ -65,6 +65,7 @@ export class CallSessionManager {
       to: opts.to,
       restaurantId: opts.restaurantId,
       restaurantName,
+      giftCardMinimumAmount,
       systemPrompt: opts.systemPrompt,
       state: 'IDLE',
       ended: false,
@@ -682,21 +683,24 @@ export class CallSessionManager {
         case 'purchaseGiftCard': {
           const { amount, occasion, senderName, senderPhone, recipientName, message } = args;
 
-          const minimumAmount =
-            (await db.restaurant
-              .findUnique({
-                where: { id: session.restaurantId },
-                select: { giftCardMinimumAmount: true },
-              })
-              .then((r) => r?.giftCardMinimumAmount ?? null)) ?? 10;
+          const minimumAmount = session.giftCardMinimumAmount ?? 10;
 
           if (!amount || amount < minimumAmount) {
             return `Le montant minimum pour une carte cadeau est de ${minimumAmount}€. Quel montant souhaitez-vous ?`;
           }
 
-          if (!senderPhone || !/^\+[1-9]\d{7,14}$/.test(senderPhone)) {
+          // Normalisation du téléphone : supprimer espaces, points, tirets, parenthèses
+          const normalizedPhone = (senderPhone || '').replace(/[\s.\-()]/g, '');
+          if (!normalizedPhone || !/^\+[1-9]\d{7,14}$/.test(normalizedPhone)) {
             return "Pour envoyer le code par SMS, j'ai besoin d'un numéro de téléphone valide de l'expéditeur au format international (ex: +33612345678).";
           }
+
+          void trackGiftCardEvent({
+            event: 'gift_card_purchase_started',
+            restaurantId: session.restaurantId,
+            source: 'voice',
+            amount,
+          });
 
           try {
             const service = new GiftCardService(db);
@@ -705,7 +709,7 @@ export class CallSessionManager {
               amount,
               occasion,
               senderName,
-              senderPhone,
+              senderPhone: normalizedPhone,
               recipientName,
               message,
               createdBy: 'VOICE',
@@ -716,7 +720,7 @@ export class CallSessionManager {
             const smsText = `Votre carte cadeau chez ${session.restaurantName} : ${code}. Montant : ${amount}€. À utiliser sur le site de réservation.`;
 
             try {
-              await sendSms(senderPhone, smsText);
+              await sendSms(normalizedPhone, smsText);
             } catch (smsErr: unknown) {
               logger.error(
                 {
@@ -729,17 +733,29 @@ export class CallSessionManager {
               if (process.env.SENTRY_DSN) {
                 Sentry.captureException(smsErr, {
                   tags: { service: 'manager-tool', tool: 'purchaseGiftCard' },
-                  extra: { callId: session.callControlId, giftCardId: card.id, senderPhone },
+                  extra: {
+                    callId: session.callControlId,
+                    giftCardId: card.id,
+                    senderPhone: normalizedPhone,
+                  },
                 });
               }
               return "La carte cadeau a été créée, mais je n'ai pas pu envoyer le SMS. Je vous transfère au gérant pour récupérer le code.";
             }
 
-            return `Carte cadeau de ${amount}€ créée pour ${recipientName}. Le code a été envoyé par SMS au ${senderPhone}.`;
+            void trackGiftCardEvent({
+              event: 'gift_card_purchase_completed',
+              restaurantId: session.restaurantId,
+              source: 'voice',
+              giftCardId: card.id,
+              amount,
+            });
+
+            return `Carte cadeau de ${amount}€ créée pour ${recipientName}. Le code a été envoyé par SMS au ${normalizedPhone}.`;
           } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : String(err);
+            const errMsg = err instanceof Error ? err.message : String(err);
             logger.error(
-              { err: message, callId: session.callControlId },
+              { err: errMsg, callId: session.callControlId },
               '[tool] purchaseGiftCard failed',
             );
             if (process.env.SENTRY_DSN) {
@@ -748,6 +764,13 @@ export class CallSessionManager {
                 extra: { callId: session.callControlId },
               });
             }
+            void trackGiftCardEvent({
+              event: 'gift_card_purchase_failed',
+              restaurantId: session.restaurantId,
+              source: 'voice',
+              amount,
+              metadata: { error: errMsg },
+            });
             return 'Désolé, une erreur est survenue lors de la création de la carte cadeau. Je vous transfère au gérant.';
           }
         }

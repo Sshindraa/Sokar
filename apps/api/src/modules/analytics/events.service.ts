@@ -100,3 +100,35 @@ export async function trackMessagingEvent(input: TrackMessagingEventInput): Prom
     logger.warn({ err, event: input.event }, '[analytics] messaging track failed');
   }
 }
+
+/**
+ * Events gift card — tracking des ventes de cartes cadeaux (voice + widget).
+ *
+ *   - gift_card_purchase_started : début du flow d'achat
+ *   - gift_card_purchase_completed : carte créée avec succès
+ *   - gift_card_purchase_failed : erreur lors de la création
+ */
+export type GiftCardAnalyticsEvent =
+  | 'gift_card_purchase_started'
+  | 'gift_card_purchase_completed'
+  | 'gift_card_purchase_failed';
+
+type TrackGiftCardEventInput = {
+  event: GiftCardAnalyticsEvent;
+  restaurantId: string;
+  source?: 'voice' | 'widget' | 'dashboard';
+  giftCardId?: string;
+  amount?: number;
+  metadata?: Record<string, unknown>;
+};
+
+export async function trackGiftCardEvent(input: TrackGiftCardEventInput): Promise<void> {
+  try {
+    await queues.analytics.add('track', {
+      ...input,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    logger.warn({ err, event: input.event }, '[analytics] gift card track failed');
+  }
+}

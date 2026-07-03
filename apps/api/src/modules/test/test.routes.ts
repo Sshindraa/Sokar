@@ -111,6 +111,8 @@ export async function testRoutes(app: FastifyInstance) {
       from: callerPhone,
       to: phone,
       restaurantId: ctx.id,
+      restaurantName: ctx.name,
+      giftCardMinimumAmount: ctx.giftCardMinimumAmount ?? undefined,
       systemPrompt,
       isVip: customer?.isVip ?? false,
       telnyxWs: createFakeTelnyxWs(),

@@ -272,10 +272,11 @@ describe('purchaseGiftCard tool', () => {
     );
   });
 
-  it('amount is a positive number', () => {
+  it('amount is a positive integer', () => {
     expect(params.properties.amount).toEqual({
       type: 'number',
       minimum: 1,
+      multipleOf: 1,
       description: expect.stringContaining('Montant'),
     });
   });
