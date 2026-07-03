@@ -64,6 +64,7 @@ function makeRestaurant(
     googleRating: overrides.googleRating ?? null,
     googleReviewCount: overrides.googleReviewCount ?? null,
     googleRatingSyncedAt: overrides.googleRatingSyncedAt ?? null,
+    giftCardMinimumAmount: overrides.giftCardMinimumAmount ?? null,
     exposureSettings: overrides.exposureSettings ?? null,
   };
 }

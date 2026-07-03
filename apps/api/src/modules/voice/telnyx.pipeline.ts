@@ -102,6 +102,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           openingHours: ctx.openingHours as OpeningHours,
           customerExtra,
           customerGreeting,
+          giftCardMinimumAmount: ctx.giftCardMinimumAmount,
         });
 
         // Créer un enregistrement Call minimal dès l'init

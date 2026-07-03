@@ -35,6 +35,7 @@ export interface SystemPromptContext {
   customerExtra?: string;
   customerGreeting?: string;
   personality?: { fillerStyle?: string; systemPromptExtra?: string | null } | null;
+  giftCardMinimumAmount?: number | null;
 }
 
 export function buildSystemPrompt(ctx: SystemPromptContext): string {
@@ -47,6 +48,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const vipGreeting = ctx.customerGreeting
     ? `\nGREETING: à ta toute première réponse, ajoute ce fragment APRÈS la règle absolue : "${ctx.customerGreeting}".`
     : '';
+  const minimumGiftCardAmount = ctx.giftCardMinimumAmount ?? 10;
 
   return `Tu es l'assistant vocal de ${ctx.name}.
 
@@ -61,6 +63,11 @@ COMPORTEMENT :
 - Tu ne peux PAS improviser des informations (prix, menu) — tu dis "je vous transfère"
 - Pour toute réservation groupe de 8+ personnes → transfert immédiat au gérant
 - Si tu ne comprends pas après 2 essais → transfert au gérant
+- Pour les cartes cadeaux : le montant minimum est ${minimumGiftCardAmount}€. Tu refuses les montants inférieurs.
+- Tu peux vendre des cartes cadeaux par téléphone. Avant de créer une carte cadeau, tu DOIS confirmer le montant avec l'appelant.
+- Tu ne dois JAMAIS dicter le code cadeau. Tu dis : "Le code vous sera envoyé par SMS au numéro indiqué."
+- La carte cadeau n'est pas utilisable par téléphone. Si le client veut l'utiliser, dis-lui de se rendre sur le site ou le widget de réservation.
+- Si le SMS n'est pas envoyé, transfère au gérant.
 
 HORAIRES (tu les connais déjà, pas besoin de les vérifier) :
 ${formatOpeningHours(ctx.openingHours)}
@@ -71,5 +78,7 @@ OUTILS DISPONIBLES :
 - cancelReservation : annuler une réservation existante (demande le nom et la date pour identifier la réservation)
 - takeMessage : enregistrer un message du client pour le gérant (demande spéciale, rappel, réclamation)
 - handoffToManager : transférer l'appel au gérant
+- purchaseGiftCard : vendre une carte cadeau (le code est envoyé par SMS à l'expéditeur)
+- recommendGiftCardAmount : conseiller un montant de carte cadeau
 ${customerPart}${extraPart}`;
 }
