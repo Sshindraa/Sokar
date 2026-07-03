@@ -45,8 +45,7 @@ export class GiftCardService {
     }
 
     const validityMonths = input.validityMonths ?? 12;
-    const expiresAt =
-      input.expiresAt ?? new Date(Date.now() + validityMonths * 30 * 24 * 60 * 60 * 1000);
+    const expiresAt = input.expiresAt ?? this.addMonths(new Date(), validityMonths);
 
     return this.prisma.giftCard.create({
       data: {
@@ -211,5 +210,11 @@ export class GiftCardService {
       where: { code },
       include: { pack: true },
     }) as Promise<GiftCardWithPack | null>;
+  }
+
+  private addMonths(date: Date, months: number): Date {
+    const result = new Date(date);
+    result.setMonth(result.getMonth() + months);
+    return result;
   }
 }
