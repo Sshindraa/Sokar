@@ -43,6 +43,7 @@ model Restaurant {
   callQuotas            CallQuota[]
   agenticHolds          AgenticHold[]
   floorPlan             FloorPlan?
+  giftCards             GiftCard[]
 
   // Agentic reservations (P0)
   slug                 String?                     @unique @map("slug")
@@ -225,6 +226,9 @@ model Reservation {
   tableId String? @map("table_id")
   table   Table?  @relation(fields: [tableId], references: [id], onDelete: SetNull)
 
+  // Gift cards (P1)
+  giftCardRedemptions GiftCardRedemption[]
+
   @@index([restaurantId, createdAt(sort: Desc)])
   @@index([restaurantId, status, createdAt(sort: Desc)])
   @@index([restaurantId, reservedAt])
@@ -281,6 +285,7 @@ model Customer {
   updatedAt        DateTime      @updatedAt @map("updated_at")
   restaurant       Restaurant    @relation(fields: [restaurantId], references: [id])
   reservations     Reservation[]
+  giftCards        GiftCard[]
 
   @@unique([restaurantId, phone])
   @@index([restaurantId, isVip])
@@ -597,4 +602,66 @@ model OnboardingEvent {
   @@index([restaurantId, createdAt(sort: Desc)])
   @@index([event, createdAt(sort: Desc)])
   @@map("onboarding_events")
+}
+
+// ─── Gift cards (P1) ───────────────────────────────────────────────
+
+model GiftCard {
+  id                String   @id @default(uuid())
+  restaurantId      String   @map("restaurant_id")
+  code              String   @unique @default(uuid())
+  amount            Decimal  @db.Decimal(10, 2)
+  remainingAmount   Decimal  @db.Decimal(10, 2) @map("remaining_amount")
+  currency          String   @default("EUR")
+  status            String   @default("ACTIVE") // ACTIVE, REDEEMED, EXPIRED, CANCELLED
+  purchasedAt       DateTime @default(now()) @map("purchased_at")
+  expiresAt         DateTime? @map("expires_at")
+  senderName        String? @map("sender_name")
+  senderEmail       String? @map("sender_email")
+  senderPhone       String? @map("sender_phone")
+  recipientName     String? @map("recipient_name")
+  recipientEmail    String? @map("recipient_email")
+  recipientPhone    String? @map("recipient_phone")
+  message           String?
+  voiceMessageUrl   String? @map("voice_message_url")
+  occasion          String?
+  customerId        String? @map("customer_id")
+  createdBy         String   @default("CLIENT") @map("created_by") // CLIENT, DASHBOARD, VOICE
+  purchaseReference String? @map("purchase_reference") // stripePaymentIntentId, manual, etc.
+
+  restaurant    Restaurant             @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  customer      Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  redemptions   GiftCardRedemption[]
+  contributions GiftCardContribution[]
+
+  @@index([restaurantId, status])
+  @@index([code])
+  @@map("gift_cards")
+}
+
+model GiftCardRedemption {
+  id            String    @id @default(uuid())
+  giftCardId    String    @map("gift_card_id")
+  reservationId String?   @map("reservation_id")
+  amount        Decimal   @db.Decimal(10, 2)
+  redeemedAt    DateTime  @default(now()) @map("redeemed_at")
+
+  giftCard    GiftCard     @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+  reservation Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+
+  @@index([giftCardId])
+  @@map("gift_card_redemptions")
+}
+
+model GiftCardContribution {
+  id              String   @id @default(uuid())
+  giftCardId      String   @map("gift_card_id")
+  contributorName String?  @map("contributor_name")
+  amount          Decimal  @db.Decimal(10, 2)
+  contributedAt   DateTime @default(now()) @map("contributed_at")
+
+  giftCard GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+
+  @@index([giftCardId])
+  @@map("gift_card_contributions")
 }
