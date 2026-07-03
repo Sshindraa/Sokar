@@ -119,6 +119,7 @@ export const ConfirmInputSchema = z.object({
   specialRequests: z.string().max(500).optional(),
   idempotencyKey: z.string().uuid().optional(),
   source: SourceEnum.optional().default('web'),
+  giftCardCode: z.string().optional(),
   // Honeypot anti-bot : doit être vide. Si rempli → bot.
   website: z.string().optional(),
 });

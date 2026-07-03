@@ -191,6 +191,7 @@ vi.mock('../shared/db/client', () => {
         create: vi.fn(),
         update: vi.fn(),
         delete: vi.fn(),
+        count: vi.fn(),
       },
       giftCardRedemption: {
         create: vi.fn(),

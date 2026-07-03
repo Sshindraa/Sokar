@@ -669,6 +669,8 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
             holdToken: bodyParse.data.holdToken,
             specialRequests: bodyParse.data.specialRequests,
             tableId: table.id,
+            giftCardCode: bodyParse.data.giftCardCode,
+            giftCardReservationAmount: Number(restaurant.priceRange ?? 2) * 25 * hold.partySize,
             consents: {
               reservationProcessing: true,
               transactionalSms: true,
@@ -717,6 +719,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           time: hold.slotStart.toISOString().slice(11, 16),
           partySize: hold.partySize,
           source,
+          giftCardApplication: result.giftCardApplication,
         });
       } catch (err: unknown) {
         logger.error({ err, slug: slugParse.data.slug, holdId: hold.id }, 'connect confirm failed');
