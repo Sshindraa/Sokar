@@ -7,6 +7,9 @@ import { ReservationService } from '../../reservations/reservation.service';
 import { db } from '../../../shared/db/client';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
+import { GiftCardService } from '../../gift-cards/gift-card.service';
+import { recommendGiftCardAmount } from '../../gift-cards/gift-card-recommender';
+import { sendSms } from '../../../shared/telnyx/client';
 
 interface LlmResponse {
   choices?: Array<{ message: ChatMessage }>;
@@ -61,6 +64,7 @@ export class CallSessionManager {
       from: opts.from,
       to: opts.to,
       restaurantId: opts.restaurantId,
+      restaurantName,
       systemPrompt: opts.systemPrompt,
       state: 'IDLE',
       ended: false,
@@ -653,6 +657,100 @@ export class CallSessionManager {
 
         case 'handoffToManager':
           return 'Je vous transfère au gérant. Merci de patienter.';
+
+        case 'recommendGiftCardAmount': {
+          const { occasion, partySize, budget } = args;
+          try {
+            const recommendation = recommendGiftCardAmount({
+              occasion,
+              partySize,
+              budget,
+            });
+            return `Je suggère une carte cadeau de ${recommendation.amount}€ pour ${occasion} pour ${partySize} personne${partySize > 1 ? 's' : ''}. ${recommendation.messageSuggestion}`;
+          } catch (err: unknown) {
+            logger.error(
+              {
+                err: err instanceof Error ? err.message : String(err),
+                callId: session.callControlId,
+              },
+              '[tool] recommendGiftCardAmount failed',
+            );
+            return "Désolé, je n'ai pas pu calculer une recommandation. Pourriez-vous me donner un montant ?";
+          }
+        }
+
+        case 'purchaseGiftCard': {
+          const { amount, occasion, senderName, senderPhone, recipientName, message } = args;
+
+          const minimumAmount =
+            (await db.restaurant
+              .findUnique({
+                where: { id: session.restaurantId },
+                select: { giftCardMinimumAmount: true },
+              })
+              .then((r) => r?.giftCardMinimumAmount ?? null)) ?? 10;
+
+          if (!amount || amount < minimumAmount) {
+            return `Le montant minimum pour une carte cadeau est de ${minimumAmount}€. Quel montant souhaitez-vous ?`;
+          }
+
+          if (!senderPhone || !/^\+[1-9]\d{7,14}$/.test(senderPhone)) {
+            return "Pour envoyer le code par SMS, j'ai besoin d'un numéro de téléphone valide de l'expéditeur au format international (ex: +33612345678).";
+          }
+
+          try {
+            const service = new GiftCardService(db);
+            const card = await service.create({
+              restaurantId: session.restaurantId,
+              amount,
+              occasion,
+              senderName,
+              senderPhone,
+              recipientName,
+              message,
+              createdBy: 'VOICE',
+              purchaseReference: 'test',
+            });
+
+            const code = card.code;
+            const smsText = `Votre carte cadeau chez ${session.restaurantName} : ${code}. Montant : ${amount}€. À utiliser sur le site de réservation.`;
+
+            try {
+              await sendSms(senderPhone, smsText);
+            } catch (smsErr: unknown) {
+              logger.error(
+                {
+                  err: smsErr instanceof Error ? smsErr.message : String(smsErr),
+                  callId: session.callControlId,
+                  giftCardId: card.id,
+                },
+                '[tool] purchaseGiftCard SMS failed',
+              );
+              if (process.env.SENTRY_DSN) {
+                Sentry.captureException(smsErr, {
+                  tags: { service: 'manager-tool', tool: 'purchaseGiftCard' },
+                  extra: { callId: session.callControlId, giftCardId: card.id, senderPhone },
+                });
+              }
+              return "La carte cadeau a été créée, mais je n'ai pas pu envoyer le SMS. Je vous transfère au gérant pour récupérer le code.";
+            }
+
+            return `Carte cadeau de ${amount}€ créée pour ${recipientName}. Le code a été envoyé par SMS au ${senderPhone}.`;
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            logger.error(
+              { err: message, callId: session.callControlId },
+              '[tool] purchaseGiftCard failed',
+            );
+            if (process.env.SENTRY_DSN) {
+              Sentry.captureException(err, {
+                tags: { service: 'manager-tool', tool: 'purchaseGiftCard' },
+                extra: { callId: session.callControlId },
+              });
+            }
+            return 'Désolé, une erreur est survenue lors de la création de la carte cadeau. Je vous transfère au gérant.';
+          }
+        }
 
         default:
           return `Outil inconnu : ${name}`;

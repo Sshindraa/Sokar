@@ -33,6 +33,7 @@ interface CachedRestaurantContext {
   readonly carrier: string;
   readonly smsConfirmEnabled: boolean;
   readonly googleCalendarId: string | null;
+  readonly giftCardMinimumAmount: number | null;
   readonly personality: {
     readonly id: string;
     readonly restaurantId: string;
@@ -90,6 +91,7 @@ function toCachedRestaurantContext(restaurant: {
   carrier: string;
   smsConfirmEnabled: boolean;
   googleCalendarId: string | null;
+  giftCardMinimumAmount: number | null;
   personality: CachedRestaurantContext['personality'];
 }): CachedRestaurantContext {
   return {
@@ -103,6 +105,7 @@ function toCachedRestaurantContext(restaurant: {
     carrier: restaurant.carrier,
     smsConfirmEnabled: restaurant.smsConfirmEnabled,
     googleCalendarId: restaurant.googleCalendarId,
+    giftCardMinimumAmount: restaurant.giftCardMinimumAmount,
     personality: restaurant.personality,
     providerConfig: buildProviderConfig(restaurant),
   };
@@ -132,6 +135,7 @@ export class RestaurantService {
         carrier: true,
         smsConfirmEnabled: true,
         googleCalendarId: true,
+        giftCardMinimumAmount: true,
         personality: {
           select: {
             id: true,

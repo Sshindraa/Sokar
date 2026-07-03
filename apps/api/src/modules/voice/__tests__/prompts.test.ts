@@ -26,7 +26,12 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('Lundi : 12:00–14:30');
     expect(prompt).toContain('Dimanche : fermé');
     // Ne doit pas contenir d'extra ni de CRM
-    expect(prompt.trim().endsWith("handoffToManager : transférer l'appel au gérant")).toBe(true);
+    expect(prompt).toContain("handoffToManager : transférer l'appel au gérant");
+    expect(prompt).toContain('purchaseGiftCard : vendre une carte cadeau');
+    expect(prompt).toContain('recommendGiftCardAmount : conseiller un montant de carte cadeau');
+    expect(
+      prompt.trim().endsWith('recommendGiftCardAmount : conseiller un montant de carte cadeau'),
+    ).toBe(true);
   });
 
   it('devrait inclure customerExtra quand fourni dans le contexte', () => {

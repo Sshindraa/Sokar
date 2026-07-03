@@ -5,9 +5,18 @@ vi.mock('@prisma/client', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   class PrismaClient {
     restaurant = {
+      findUnique: vi.fn(),
       findUniqueOrThrow: vi.fn(),
       findMany: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
+    };
+    giftCard = {
+      create: vi.fn(),
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
       update: vi.fn(),
     };
     call = {

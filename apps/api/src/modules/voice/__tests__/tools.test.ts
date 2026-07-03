@@ -24,14 +24,16 @@ describe('getRestaurantTools', () => {
   const tools = getRestaurantTools('rest-123');
   const byName = (name: string) => tools.find((t) => t.function.name === name);
 
-  it('returns exactly 5 tools: createReservation, checkAvailability, cancelReservation, takeMessage, handoffToManager', () => {
-    expect(tools).toHaveLength(5);
+  it('returns exactly 7 tools: createReservation, checkAvailability, cancelReservation, takeMessage, handoffToManager, purchaseGiftCard, recommendGiftCardAmount', () => {
+    expect(tools).toHaveLength(7);
     const names = tools.map((t) => t.function.name).sort();
     expect(names).toEqual([
       'cancelReservation',
       'checkAvailability',
       'createReservation',
       'handoffToManager',
+      'purchaseGiftCard',
+      'recommendGiftCardAmount',
       'takeMessage',
     ]);
   });
@@ -249,7 +251,58 @@ describe('tool name stability (regression guard)', () => {
     'cancelReservation',
     'takeMessage',
     'handoffToManager',
+    'purchaseGiftCard',
+    'recommendGiftCardAmount',
   ])('keeps the name "%s"', (name) => {
     expect(getRestaurantTools('r').some((t) => t.function.name === name)).toBe(true);
+  });
+});
+
+describe('purchaseGiftCard tool', () => {
+  const tool = getRestaurantTools('rest-1').find((t) => t.function.name === 'purchaseGiftCard')!;
+  const params = tool.function.parameters as {
+    type: string;
+    properties: Record<string, any>;
+    required: string[];
+  };
+
+  it('requires amount, senderName, senderPhone, recipientName', () => {
+    expect(new Set(params.required)).toEqual(
+      new Set(['amount', 'senderName', 'senderPhone', 'recipientName']),
+    );
+  });
+
+  it('amount is a positive number', () => {
+    expect(params.properties.amount).toEqual({
+      type: 'number',
+      minimum: 1,
+      description: expect.stringContaining('Montant'),
+    });
+  });
+
+  it('description mentions SMS and never dictating the code', () => {
+    const desc = tool.function.description.toLowerCase();
+    expect(desc).toMatch(/sms/);
+    expect(desc).toMatch(/ne jamais|jamais dicter/);
+  });
+});
+
+describe('recommendGiftCardAmount tool', () => {
+  const tool = getRestaurantTools('rest-1').find(
+    (t) => t.function.name === 'recommendGiftCardAmount',
+  )!;
+  const params = tool.function.parameters as {
+    type: string;
+    properties: Record<string, any>;
+    required: string[];
+  };
+
+  it('requires occasion and partySize', () => {
+    expect(new Set(params.required)).toEqual(new Set(['occasion', 'partySize']));
+  });
+
+  it('description mentions advising an amount', () => {
+    const desc = tool.function.description.toLowerCase();
+    expect(desc).toMatch(/sugg[ée]r|conseil|montant/);
   });
 });

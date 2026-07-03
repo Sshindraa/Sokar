@@ -34,6 +34,7 @@ export default function SettingsPage() {
   const [name, setName] = useState('');
   const [managerPhone, setManagerPhone] = useState('');
   const [managerEmail, setManagerEmail] = useState('');
+  const [giftCardMinimumAmount, setGiftCardMinimumAmount] = useState<number | ''>('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
@@ -81,6 +82,7 @@ export default function SettingsPage() {
         setName(data.name || '');
         setManagerPhone(data.managerPhone || '');
         setManagerEmail(data.managerEmail || '');
+        setGiftCardMinimumAmount(data.giftCardMinimumAmount ?? '');
         setGoogleCalendarId(data.googleCalendarId || 'primary');
         setGoogleRefreshToken(data.googleRefreshToken || null);
         if (pers && pers.id) {
@@ -124,7 +126,11 @@ export default function SettingsPage() {
     setError('');
 
     try {
-      await patch(`restaurants/${orgId}`, { name, managerPhone, managerEmail });
+      const payload: Record<string, unknown> = { name, managerPhone, managerEmail };
+      if (giftCardMinimumAmount !== '') {
+        payload.giftCardMinimumAmount = Number(giftCardMinimumAmount);
+      }
+      await patch(`restaurants/${orgId}`, payload);
       setSaved(true);
     } catch (err: any) {
       setError(err.message || 'Erreur lors de la sauvegarde');
@@ -262,6 +268,24 @@ export default function SettingsPage() {
                 value={managerEmail}
                 onChange={(e) => setManagerEmail(e.target.value)}
               />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Montant minimum d&apos;une carte cadeau (€)
+              </label>
+              <Input
+                type="number"
+                min={0}
+                step={1}
+                value={giftCardMinimumAmount}
+                onChange={(e) =>
+                  setGiftCardMinimumAmount(e.target.value === '' ? '' : Number(e.target.value))
+                }
+                placeholder="10"
+              />
+              <p className="text-xs text-muted-foreground">
+                Laisser vide pour utiliser le montant par défaut de 10€.
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" disabled={saving}>

@@ -103,5 +103,71 @@ export function getRestaurantTools(_restaurantId: string) {
         parameters: { type: 'object', properties: {}, required: [] },
       },
     },
+    {
+      type: 'function',
+      function: {
+        name: 'purchaseGiftCard',
+        description:
+          "Crée une carte cadeau. À appeler uniquement après avoir confirmé : montant (obligatoire), nom de l'expéditeur, téléphone de l'expéditeur (SMS), nom du destinataire. Le code cadeau est envoyé par SMS à l'expéditeur — ne jamais le dicter.",
+        parameters: {
+          type: 'object',
+          properties: {
+            amount: {
+              type: 'number',
+              minimum: 1,
+              description: 'Montant en euros — obligatoire',
+            },
+            occasion: {
+              type: 'string',
+              description: 'Occasion (anniversaire, remerciement, etc.)',
+            },
+            senderName: {
+              type: 'string',
+              description: "Nom de l'expéditeur",
+            },
+            senderPhone: {
+              type: 'string',
+              description: "Téléphone de l'expéditeur au format international (ex: +33612345678)",
+            },
+            recipientName: {
+              type: 'string',
+              description: 'Nom du destinataire',
+            },
+            message: {
+              type: 'string',
+              description: 'Message personnalisé (optionnel)',
+            },
+          },
+          required: ['amount', 'senderName', 'senderPhone', 'recipientName'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'recommendGiftCardAmount',
+        description:
+          "Suggère un montant de carte cadeau selon l'occasion et le nombre de personnes. Utiliser quand l'appelant demande un conseil.",
+        parameters: {
+          type: 'object',
+          properties: {
+            occasion: {
+              type: 'string',
+              description: 'Occasion',
+            },
+            partySize: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Nombre de personnes',
+            },
+            budget: {
+              type: 'number',
+              description: 'Budget maximum (optionnel)',
+            },
+          },
+          required: ['occasion', 'partySize'],
+        },
+      },
+    },
   ];
 }

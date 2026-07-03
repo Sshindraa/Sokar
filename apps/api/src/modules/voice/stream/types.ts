@@ -53,6 +53,7 @@ export interface CallSession {
   from: string;
   to: string;
   restaurantId: string;
+  restaurantName: string;
   systemPrompt: string;
   state: CallState;
   ended: boolean;

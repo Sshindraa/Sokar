@@ -47,6 +47,7 @@ const CreateRestaurantSchema = z.object({
   ),
   plan: z.enum(['STARTER', 'PRO', 'PREMIUM']).default('STARTER'),
   googleCalendarId: z.string().nullable().optional(),
+  giftCardMinimumAmount: z.number().int().min(0).optional(),
 });
 
 const UpdatePersonalitySchema = z.object({

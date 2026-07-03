@@ -45,6 +45,7 @@ model Restaurant {
   floorPlan             FloorPlan?
   giftCards             GiftCard[]
   giftCardPacks         GiftCardPack[]
+  giftCardMinimumAmount Int?                      @map("gift_card_minimum_amount")
 
   // Agentic reservations (P0)
   slug                 String?                     @unique @map("slug")
