@@ -25,10 +25,10 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_VARIANT: Record<string, string> = {
-  ACTIVE: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
-  REDEEMED: 'border-blue-500/30 bg-blue-500/10 text-blue-400',
-  EXPIRED: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
-  CANCELLED: 'border-red-500/30 bg-red-500/10 text-red-400',
+  ACTIVE: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500',
+  REDEEMED: 'border-blue-500/30 bg-blue-500/10 text-blue-500',
+  EXPIRED: 'border-amber-500/30 bg-amber-500/10 text-amber-500',
+  CANCELLED: 'border-red-500/30 bg-red-500/10 text-red-500',
 };
 
 function formatEuro(amount: number): string {
