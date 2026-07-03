@@ -133,6 +133,8 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           from: payload.from,
           to: payload.to,
           restaurantId: ctx.id,
+          restaurantName: ctx.name,
+          giftCardMinimumAmount: ctx.giftCardMinimumAmount ?? undefined,
           systemPrompt,
           isVip: customer?.isVip ?? false,
           telnyxWs: null as unknown as import('ws').WebSocket, // Sera attaché dans le WebSocket start event

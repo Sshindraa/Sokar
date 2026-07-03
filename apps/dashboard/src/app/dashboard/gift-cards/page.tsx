@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, ChevronLeft, ChevronRight, Gift, Plus, Search } from 'lucide-react';
+import { AlertCircle, ChevronLeft, ChevronRight, Gift, Plus, Save, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -15,6 +16,7 @@ import {
 } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useGiftCardApi } from '@/lib/api/gift-cards';
+import { useApi } from '@/lib/api';
 import type { GiftCardListItem, GiftCardPack, GiftCardStats } from '@/lib/api/gift-cards';
 import GiftCardList from '@/components/gift-cards/gift-card-list';
 import GiftCardForm from '@/components/gift-cards/gift-card-form';
@@ -48,6 +50,7 @@ function StatCard({ label, value, icon }: { label: string; value: string; icon: 
 export default function GiftCardsPage() {
   const { listGiftCards, getGiftCardStats, cancelGiftCard, listGiftCardPacks, orgId } =
     useGiftCardApi();
+  const { get, patch } = useApi();
 
   const [cards, setCards] = useState<GiftCardListItem[]>([]);
   const [stats, setStats] = useState<GiftCardStats | null>(null);
@@ -61,12 +64,17 @@ export default function GiftCardsPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [detailCard, setDetailCard] = useState<GiftCardListItem | null>(null);
 
+  // Montant minimum carte cadeau
+  const [minAmount, setMinAmount] = useState<number | ''>('');
+  const [savingMin, setSavingMin] = useState(false);
+  const [savedMin, setSavedMin] = useState(false);
+
   const fetchAll = useCallback(async () => {
     if (!orgId) return;
     setLoading(true);
     setError('');
     try {
-      const [list, statsData, packsData] = await Promise.all([
+      const [list, statsData, packsData, restaurant] = await Promise.all([
         listGiftCards({
           status: statusFilter !== 'ALL' ? statusFilter : undefined,
           search: search || undefined,
@@ -75,11 +83,13 @@ export default function GiftCardsPage() {
         }),
         getGiftCardStats(),
         listGiftCardPacks(),
+        get<any>(`restaurants/${orgId}`),
       ]);
       setCards(list.items);
       setTotal(list.total);
       setStats(statsData);
       setPacks(packsData);
+      setMinAmount(restaurant.giftCardMinimumAmount ?? '');
     } catch (err: any) {
       setError(err.message || 'Impossible de charger les cartes cadeaux');
     } finally {
@@ -101,6 +111,27 @@ export default function GiftCardsPage() {
       );
     } catch (err: any) {
       setError(err.message || "Impossible d'annuler la carte cadeau");
+    }
+  }
+
+  async function handleSaveMin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!orgId) return;
+    setSavingMin(true);
+    setSavedMin(false);
+    setError('');
+    try {
+      const payload: Record<string, unknown> = {};
+      if (minAmount !== '') {
+        payload.giftCardMinimumAmount = Number(minAmount);
+      }
+      await patch(`restaurants/${orgId}`, payload);
+      setSavedMin(true);
+      setTimeout(() => setSavedMin(false), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Impossible de sauvegarder le montant minimum');
+    } finally {
+      setSavingMin(false);
     }
   }
 
@@ -149,6 +180,39 @@ export default function GiftCardsPage() {
           {error}
         </div>
       )}
+
+      {/* Configuration du montant minimum */}
+      <Card>
+        <CardContent className="p-4 md:p-5">
+          <form onSubmit={handleSaveMin} className="flex flex-col sm:flex-row sm:items-end gap-3">
+            <div className="flex-1">
+              <Label htmlFor="minAmount" className="text-sm font-medium">
+                Montant minimum d&apos;une carte cadeau (€)
+              </Label>
+              <Input
+                id="minAmount"
+                type="number"
+                min={0}
+                step={1}
+                value={minAmount}
+                onChange={(e) => setMinAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                placeholder="10"
+                className="mt-1.5"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Laisser vide pour utiliser le montant par défaut de 10€.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button type="submit" size="sm" disabled={savingMin}>
+                <Save size={16} />
+                {savingMin ? 'Enregistrement...' : 'Enregistrer'}
+              </Button>
+              {savedMin && <span className="text-sm text-primary">Enregistré</span>}
+            </div>
+          </form>
+        </CardContent>
+      </Card>
 
       {/* Stats */}
       {stats && (

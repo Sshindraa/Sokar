@@ -12,8 +12,56 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { WebSocket } from 'ws';
 import { CallSessionManager } from '../stream/manager';
-import { db } from '../../../shared/db/client';
 import { sendSms } from '../../../shared/telnyx/client';
+
+// Mock db explicite — vi.hoisted pour être disponible dans la factory hoisted
+const { dbMock } = vi.hoisted(() => ({
+  dbMock: {
+    restaurant: {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
+    giftCard: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      update: vi.fn(),
+    },
+    giftCardPack: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
+    call: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      update: vi.fn(),
+    },
+    reservation: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+    },
+  },
+}));
+
+vi.mock('../../../shared/db/client', () => ({
+  db: dbMock,
+}));
+
+vi.mock('../../../shared/telnyx/client', () => ({
+  sendSms: vi.fn(),
+  default: {
+    messages: { create: vi.fn() },
+  },
+  placeOutboundCall: vi.fn(),
+}));
 
 function makeTelnyxWs(): WebSocket {
   const ws: any = {
@@ -34,6 +82,8 @@ function makeSession() {
     from: '+33600000001',
     to: '+33100000000',
     restaurantId: 'rest-gift-1',
+    restaurantName: 'Test Resto',
+    giftCardMinimumAmount: 10,
     systemPrompt: "Tu es l'assistant vocal de Test Resto.",
     isVip: false,
     telnyxWs: makeTelnyxWs(),
@@ -41,14 +91,6 @@ function makeSession() {
     codec: 'PCMA',
   });
 }
-
-vi.mock('../../../shared/telnyx/client', () => ({
-  sendSms: vi.fn(),
-  default: {
-    messages: { create: vi.fn() },
-  },
-  placeOutboundCall: vi.fn(),
-}));
 
 describe('CallSessionManager — gift card tools', () => {
   beforeEach(() => {
@@ -63,11 +105,21 @@ describe('CallSessionManager — gift card tools', () => {
   describe('purchaseGiftCard', () => {
     it('rejects amounts below the restaurant minimum', async () => {
       const mgr = CallSessionManager.getInstance();
-      const session = makeSession();
-
-      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      // Session avec minimum à 20€
+      const session = mgr.create({
+        callControlId: 'cc-gift-min',
+        callSessionId: 'cs-gift-min',
+        from: '+33600000001',
+        to: '+33100000000',
+        restaurantId: 'rest-gift-1',
+        restaurantName: 'Test Resto',
         giftCardMinimumAmount: 20,
-      } as any);
+        systemPrompt: "Tu es l'assistant vocal de Test Resto.",
+        isVip: false,
+        telnyxWs: makeTelnyxWs(),
+        callLegId: 'leg-gift-min',
+        codec: 'PCMA',
+      });
 
       const result = await (mgr as any).executeTool(
         session,
@@ -81,21 +133,11 @@ describe('CallSessionManager — gift card tools', () => {
       );
 
       expect(result).toContain('20€');
-      expect(db.restaurant.findUnique).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'rest-gift-1' },
-          select: { giftCardMinimumAmount: true },
-        }),
-      );
     });
 
     it('rejects an invalid sender phone number', async () => {
       const mgr = CallSessionManager.getInstance();
       const session = makeSession();
-
-      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
-        giftCardMinimumAmount: 10,
-      } as any);
 
       const result = await (mgr as any).executeTool(
         session,
@@ -115,10 +157,7 @@ describe('CallSessionManager — gift card tools', () => {
       const mgr = CallSessionManager.getInstance();
       const session = makeSession();
 
-      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
-        giftCardMinimumAmount: 10,
-      } as any);
-      vi.mocked(db.giftCard.create).mockResolvedValue({
+      dbMock.giftCard.create.mockResolvedValue({
         id: 'gift-card-1',
         code: 'SOKAR-1234-5678-9012',
         amount: { toNumber: () => 150 },
@@ -137,7 +176,7 @@ describe('CallSessionManager — gift card tools', () => {
         }),
       );
 
-      expect(db.giftCard.create).toHaveBeenCalledWith(
+      expect(dbMock.giftCard.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             restaurantId: 'rest-gift-1',
@@ -165,10 +204,7 @@ describe('CallSessionManager — gift card tools', () => {
       const mgr = CallSessionManager.getInstance();
       const session = makeSession();
 
-      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
-        giftCardMinimumAmount: 10,
-      } as any);
-      vi.mocked(db.giftCard.create).mockResolvedValue({
+      dbMock.giftCard.create.mockResolvedValue({
         id: 'gift-card-2',
         code: 'SOKAR-9876-5432-1098',
         amount: { toNumber: () => 100 },

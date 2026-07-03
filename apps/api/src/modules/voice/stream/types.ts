@@ -54,6 +54,8 @@ export interface CallSession {
   to: string;
   restaurantId: string;
   restaurantName: string;
+  /** Montant minimum d'une carte cadeau — stocké à la création de session */
+  giftCardMinimumAmount: number;
   systemPrompt: string;
   state: CallState;
   ended: boolean;
