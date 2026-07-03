@@ -106,6 +106,7 @@ vi.mock('../../shared/telnyx/client', () => ({
     messages: { create: vi.fn().mockResolvedValue({}) },
   },
   sendSms: vi.fn().mockResolvedValue(undefined),
+  sendWhatsApp: vi.fn().mockResolvedValue(undefined),
 }));
 
 // ── Mock Stripe (SDK non nécessaire en tests unitaires) ──
@@ -123,6 +124,20 @@ vi.mock('stripe', () => {
     };
   }
   return { default: Stripe };
+});
+
+// ── Mock stripe.service (fonctions mockables par les tests) ──
+vi.mock('../modules/gift-cards/stripe.service', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    createPaymentIntent: vi.fn().mockResolvedValue({ id: 'pi_test', clientSecret: 'pi_t_s' }),
+    retrievePaymentIntent: vi.fn().mockResolvedValue({ id: 'pi_test', status: 'succeeded' }),
+    constructWebhookEvent: vi.fn().mockResolvedValue({
+      type: 'payment_intent.succeeded',
+      data: { object: { id: 'pi_test', status: 'succeeded' } },
+    }),
+  };
 });
 
 // ── Mock pdfkit (génération PDF non nécessaire en tests unitaires) ──

@@ -31,6 +31,34 @@ export async function sendSms(to: string, text: string): Promise<void> {
   });
 }
 
+/**
+ * Envoie un message WhatsApp texte simple via Telnyx Messaging API.
+ *
+ * Utilise le même endpoint messages.create que sendSms, avec type: 'whatsapp'
+ * pour forcer le routage via WhatsApp Business (au lieu de SMS).
+ *
+ * Le numéro `from` doit être WhatsApp-enabled (embedded signup Telnyx).
+ * Si TELNYX_WHATSAPP_FROM n'est pas défini, on fallback sur TELNYX_FROM_NUMBER.
+ *
+ * @param to  Numéro du destinataire (E.164, ex: +33612345678)
+ * @param text Contenu du message texte
+ */
+export async function sendWhatsApp(to: string, text: string): Promise<void> {
+  const t = getTelnyx();
+  const from = process.env.TELNYX_WHATSAPP_FROM ?? process.env.TELNYX_FROM_NUMBER;
+  if (!from) {
+    throw new Error('TELNYX_WHATSAPP_FROM or TELNYX_FROM_NUMBER is required for WhatsApp');
+  }
+  await t.messages.create({
+    from,
+    to,
+    text,
+    // Le SDK Telnyx ne type pas `type` pour messages.create, mais l'API REST
+    // accepte type: 'whatsapp' pour router via WhatsApp Business.
+    ...({ type: 'whatsapp' } as Record<string, string>),
+  });
+}
+
 export interface OutboundCallOptions {
   webhookUrl: string;
   clientState?: Record<string, unknown>;

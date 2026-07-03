@@ -75,8 +75,24 @@ const RecommendGiftCardSchema = z.object({
 
 const PaymentIntentSchema = z.object({
   restaurantId: z.string(),
-  amount: z.coerce.number().positive(),
+  amount: z.coerce.number().positive().optional(),
   packId: z.string().optional(),
+  occasion: z.string().max(100).optional(),
+  senderName: z.string().min(1).max(100).optional(),
+  senderEmail: z.string().email().max(255).optional(),
+  senderPhone: z.string().max(50).optional(),
+  recipientName: z.string().min(1).max(100).optional(),
+  recipientEmail: z.string().email().max(255).optional(),
+  recipientPhone: z.string().max(50).optional(),
+  message: z.string().max(1000).optional(),
+  templateId: z.string().max(100).optional(),
+  customImageUrl: z.string().url().max(1000).optional(),
+  preferredDate: z.coerce.date().optional(),
+  preferredTime: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .optional(),
+  preferredPartySize: z.coerce.number().int().min(1).optional(),
 });
 
 const PurchaseWithPaymentSchema = z
@@ -442,8 +458,10 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: 'Pack cadeau introuvable' });
       }
       amount = pack.amount.toNumber();
-    } else {
+    } else if (body.amount) {
       amount = body.amount;
+    } else {
+      return reply.status(400).send({ error: 'Le montant ou le pack est requis' });
     }
 
     // Vérifier le montant minimum
@@ -464,6 +482,19 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
           restaurantId: body.restaurantId,
           packId: body.packId ?? '',
           amount: String(amount),
+          occasion: body.occasion ?? '',
+          senderName: body.senderName ?? '',
+          senderEmail: body.senderEmail ?? '',
+          senderPhone: body.senderPhone ?? '',
+          recipientName: body.recipientName ?? '',
+          recipientEmail: body.recipientEmail ?? '',
+          recipientPhone: body.recipientPhone ?? '',
+          message: body.message ?? '',
+          templateId: body.templateId ?? '',
+          customImageUrl: body.customImageUrl ?? '',
+          preferredDate: body.preferredDate ? body.preferredDate.toISOString() : '',
+          preferredTime: body.preferredTime ?? '',
+          preferredPartySize: body.preferredPartySize ? String(body.preferredPartySize) : '',
         },
       });
 
@@ -569,10 +600,10 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: 'Missing stripe-signature header' });
     }
 
-    const rawBody = (req as { rawBody?: string }).rawBody;
-    if (!rawBody) {
-      return reply.status(400).send({ error: 'Missing raw body' });
-    }
+    // En production, un content type parser raw body doit être configuré
+    // pour que req.rawBody soit disponible (signature verification Stripe).
+    // Fallback : si rawBody n'est pas set, on stringify req.body.
+    const rawBody = (req as { rawBody?: string }).rawBody ?? JSON.stringify(req.body ?? {});
 
     try {
       const event = await constructWebhookEvent(rawBody, signature);

@@ -177,9 +177,6 @@ export class GiftCardPaymentService {
         code: card.code,
         amount,
         restaurantName: restaurant.name,
-      }).catch(() => {
-        // WhatsApp peut échouer (pas de compte WhatsApp, numéro invalide, etc.)
-        // On continue — l'email est le canal principal
       }),
     ]);
 
@@ -203,7 +200,13 @@ export class GiftCardPaymentService {
 
   /**
    * Gère un webhook Stripe payment_intent.succeeded.
+   *
+   * Reconstruit un PurchaseWithPaymentInput complet à partir des metadata du
+   * PaymentIntent et appelle purchaseWithPayment pour créer la carte + notifications.
+   *
    * Idempotent : si une carte existe déjà pour ce PI, on la retourne sans recréer.
+   * Si les metadata sont incomplètes (pas de restaurantId), on log un warning et
+   * retourne null.
    */
   async handleStripeWebhook(
     paymentIntentId: string,
@@ -214,13 +217,14 @@ export class GiftCardPaymentService {
       where: { stripePaymentIntentId: paymentIntentId },
     });
     if (existing) {
+      logger.info(
+        { paymentIntentId, giftCardId: existing.id },
+        '[gift-card-payment] Webhook: card already exists, skipping (idempotent)',
+      );
       return existing;
     }
 
-    // Le webhook ne contient que les metadata — les détails de la commande
-    // doivent être passés dans les metadata du PaymentIntent.
-    // En P2, on suppose que l'achat est fait via la route /purchase synchrone.
-    // Le webhook sert de file de sécurité pour les paiements asynchrones.
+    // Vérifier que les metadata contiennent au moins restaurantId
     if (!metadata.restaurantId) {
       logger.warn(
         { paymentIntentId },
@@ -229,9 +233,72 @@ export class GiftCardPaymentService {
       return null;
     }
 
-    // Pour le webhook, on a besoin des infos de commande dans les metadata.
-    // Si elles ne sont pas présentes, on ne peut pas créer la carte —
-    // l'achat synchrone via /purchase s'en chargera.
-    return null;
+    // Reconstruire l'input à partir des metadata
+    const input: PurchaseWithPaymentInput = {
+      restaurantId: metadata.restaurantId,
+      paymentIntentId,
+    };
+
+    if (metadata.amount) {
+      input.amount = parseFloat(metadata.amount);
+    }
+    if (metadata.packId) {
+      input.packId = metadata.packId;
+    }
+    if (metadata.occasion) {
+      input.occasion = metadata.occasion;
+    }
+    if (metadata.senderName) {
+      input.senderName = metadata.senderName;
+    }
+    if (metadata.senderEmail) {
+      input.senderEmail = metadata.senderEmail;
+    }
+    if (metadata.senderPhone) {
+      input.senderPhone = metadata.senderPhone;
+    }
+    if (metadata.recipientName) {
+      input.recipientName = metadata.recipientName;
+    }
+    if (metadata.recipientEmail) {
+      input.recipientEmail = metadata.recipientEmail;
+    }
+    if (metadata.recipientPhone) {
+      input.recipientPhone = metadata.recipientPhone;
+    }
+    if (metadata.message) {
+      input.message = metadata.message;
+    }
+    if (metadata.templateId) {
+      input.templateId = metadata.templateId;
+    }
+    if (metadata.customImageUrl) {
+      input.customImageUrl = metadata.customImageUrl;
+    }
+    if (metadata.preferredDate) {
+      input.preferredDate = new Date(metadata.preferredDate);
+    }
+    if (metadata.preferredTime) {
+      input.preferredTime = metadata.preferredTime;
+    }
+    if (metadata.preferredPartySize) {
+      input.preferredPartySize = parseInt(metadata.preferredPartySize, 10);
+    }
+
+    // Vérifier que l'on a soit amount soit packId
+    if (!input.amount && !input.packId) {
+      logger.warn(
+        { paymentIntentId, metadata },
+        '[gift-card-payment] Webhook: incomplete metadata (no amount or packId), skipping',
+      );
+      return null;
+    }
+
+    logger.info(
+      { paymentIntentId, restaurantId: input.restaurantId },
+      '[gift-card-payment] Webhook: reconstructing purchase from metadata',
+    );
+
+    return this.purchaseWithPayment(input);
   }
 }
