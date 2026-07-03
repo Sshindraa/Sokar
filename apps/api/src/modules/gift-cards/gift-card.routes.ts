@@ -84,7 +84,7 @@ function maskCode(code: string): string {
   return code.slice(0, 4) + '-****-****-' + code.slice(-4);
 }
 
-function serializeGiftCard(card: GiftCard & { redemptions: GiftCardRedemption[] }) {
+function serializeGiftCard(card: GiftCard & { redemptions?: GiftCardRedemption[] }) {
   return {
     id: card.id,
     restaurantId: card.restaurantId,
