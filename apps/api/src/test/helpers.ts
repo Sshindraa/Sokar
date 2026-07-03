@@ -58,6 +58,22 @@ vi.mock('../shared/db/client', () => {
       update: vi.fn(),
       delete: vi.fn(),
     },
+    giftCard: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    giftCardRedemption: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+    },
+    giftCardContribution: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+    },
   };
   return {
     db: {
@@ -167,6 +183,22 @@ vi.mock('../shared/db/client', () => {
         create: vi.fn(),
         update: vi.fn(),
         delete: vi.fn(),
+      },
+      giftCard: {
+        findUnique: vi.fn(),
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+      },
+      giftCardRedemption: {
+        create: vi.fn(),
+        findMany: vi.fn(),
+      },
+      giftCardContribution: {
+        create: vi.fn(),
+        findMany: vi.fn(),
       },
       $transaction: vi.fn(async (fn: any) => {
         if (Array.isArray(fn)) {
