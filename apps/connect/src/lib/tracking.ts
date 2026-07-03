@@ -78,6 +78,20 @@ export type AnalyticsEvent =
       date: string;
       time: string;
       partySize: number;
+    }
+  | {
+      event: 'gift_card_purchase_started';
+      restaurantId: string;
+      restaurantSlug: string;
+      source?: string;
+    }
+  | {
+      event: 'gift_card_purchase_completed';
+      restaurantId: string;
+      restaurantSlug: string;
+      giftCardId: string;
+      amount: number;
+      source?: string;
     };
 
 /**

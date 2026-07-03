@@ -339,6 +339,17 @@ export function BookingWidget({
         </form>
       ) : (
         <div className="space-y-4">
+          {/* Lien vers l'achat de carte cadeau */}
+          <div className="flex justify-end">
+            <a
+              href={`/widget/${slug}/gift-card?embedded=${embedded ? '1' : '0'}&primary=${primaryColor.replace('#', '')}&accent=${accentColor.replace('#', '')}&source=${source}`}
+              className="text-sm font-medium underline-offset-2 transition-all duration-200 hover:underline"
+              style={{ color: accentColor }}
+            >
+              Offrir une carte cadeau
+            </a>
+          </div>
+
           <PartySizePicker value={partySize} onChange={setPartySize} />
 
           <div>

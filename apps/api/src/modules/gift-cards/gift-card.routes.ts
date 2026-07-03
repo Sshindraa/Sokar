@@ -304,6 +304,32 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
 
   // ─── Public routes ────────────────────────────────────────────────
 
+  app.get('/public/gift-cards/packs/:slug', async (req, reply) => {
+    const slug = (req.params as { slug: string }).slug;
+    const restaurant = await db.restaurant.findFirst({
+      where: { slug },
+      select: { id: true },
+    });
+    if (!restaurant) {
+      return reply.status(404).send({ error: 'Restaurant introuvable' });
+    }
+
+    const packs = await db.giftCardPack.findMany({
+      where: { restaurantId: restaurant.id, isActive: true },
+      orderBy: { amount: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        amount: true,
+        minPartySize: true,
+        maxPartySize: true,
+      },
+    });
+
+    return reply.send(packs.map((p) => ({ ...p, amount: p.amount.toNumber() })));
+  });
+
   app.post('/public/gift-cards/check', async (req, reply) => {
     const body = CheckGiftCardSchema.parse(req.body);
     const result = await service.validateCode(body.code);
@@ -363,7 +389,21 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
       preferredPartySize: body.preferredPartySize,
     });
 
-    return reply.status(201).send(serializeGiftCard(card));
+    const pack = card.packId
+      ? await db.giftCardPack.findUnique({ where: { id: card.packId }, select: { name: true } })
+      : null;
+
+    return reply.status(201).send({
+      id: card.id,
+      code: card.code,
+      amount: card.amount.toNumber(),
+      remainingAmount: card.remainingAmount.toNumber(),
+      status: card.status,
+      packName: pack?.name ?? null,
+      preferredDate: card.preferredDate,
+      preferredTime: card.preferredTime,
+      preferredPartySize: card.preferredPartySize,
+    });
   });
 
   app.post('/public/gift-cards/apply', async (req, reply) => {
