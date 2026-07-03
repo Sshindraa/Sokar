@@ -19,6 +19,8 @@ export type GiftCardListItem = {
   createdBy: string;
   purchasedAt: string;
   expiresAt: string | null;
+  stripePaymentStatus: string | null;
+  sokarCommissionAmount: number;
 };
 
 export type GiftCardListResponse = {

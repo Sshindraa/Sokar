@@ -7,6 +7,10 @@ import { GiftCardService } from './gift-card.service';
 import { GiftCardSlotsService } from './gift-card-slots.service';
 import { GiftCardBookService } from './gift-card-book.service';
 import { recommendGiftCardAmount } from './gift-card-recommender';
+import { createPaymentIntent, constructWebhookEvent } from './stripe.service';
+import { GiftCardPaymentService } from './gift-card-payment.service';
+import { generateGiftCardPdf } from './gift-card-pdf.service';
+import { logger } from '../../shared/logger/pino';
 
 const ListGiftCardsQuerySchema = z.object({
   status: z.enum(['ACTIVE', 'REDEEMED', 'EXPIRED', 'CANCELLED']).optional(),
@@ -69,9 +73,16 @@ const RecommendGiftCardSchema = z.object({
   budget: z.coerce.number().positive().optional(),
 });
 
-const PurchaseGiftCardSchema = z
+const PaymentIntentSchema = z.object({
+  restaurantId: z.string(),
+  amount: z.coerce.number().positive(),
+  packId: z.string().optional(),
+});
+
+const PurchaseWithPaymentSchema = z
   .object({
     restaurantId: z.string(),
+    paymentIntentId: z.string().min(1),
     amount: z.coerce.number().positive().optional(),
     packId: z.string().optional(),
     occasion: z.string().max(100).optional(),
@@ -82,7 +93,8 @@ const PurchaseGiftCardSchema = z
     recipientEmail: z.string().email().max(255).optional(),
     recipientPhone: z.string().max(50).optional(),
     message: z.string().max(1000).optional(),
-    purchaseReference: z.string().max(255).optional(),
+    templateId: z.string().max(100).optional(),
+    customImageUrl: z.string().url().max(1000).optional(),
     preferredDate: z.coerce.date().optional(),
     preferredTime: z
       .string()
@@ -157,6 +169,9 @@ function serializeGiftCard(
     customerId: card.customerId,
     createdBy: card.createdBy,
     purchaseReference: card.purchaseReference,
+    stripePaymentStatus: card.stripePaymentStatus,
+    templateId: card.templateId,
+    sokarCommissionAmount: card.sokarCommissionAmount?.toNumber() ?? 0,
   };
 }
 
@@ -368,44 +383,6 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
     return reply.send(recommendation);
   });
 
-  app.post('/public/gift-cards/purchase', async (req, reply) => {
-    const body = PurchaseGiftCardSchema.parse(req.body);
-    const card = await service.create({
-      restaurantId: body.restaurantId,
-      amount: body.amount,
-      packId: body.packId,
-      occasion: body.occasion,
-      senderName: body.senderName,
-      senderEmail: body.senderEmail,
-      senderPhone: body.senderPhone,
-      recipientName: body.recipientName,
-      recipientEmail: body.recipientEmail,
-      recipientPhone: body.recipientPhone,
-      message: body.message,
-      createdBy: 'CLIENT',
-      purchaseReference: body.purchaseReference ?? 'test',
-      preferredDate: body.preferredDate,
-      preferredTime: body.preferredTime,
-      preferredPartySize: body.preferredPartySize,
-    });
-
-    const pack = card.packId
-      ? await db.giftCardPack.findUnique({ where: { id: card.packId }, select: { name: true } })
-      : null;
-
-    return reply.status(201).send({
-      id: card.id,
-      code: card.code,
-      amount: card.amount.toNumber(),
-      remainingAmount: card.remainingAmount.toNumber(),
-      status: card.status,
-      packName: pack?.name ?? null,
-      preferredDate: card.preferredDate,
-      preferredTime: card.preferredTime,
-      preferredPartySize: card.preferredPartySize,
-    });
-  });
-
   app.post('/public/gift-cards/apply', async (req, reply) => {
     const body = ApplyGiftCardSchema.parse(req.body);
     const result = await service.applyToReservation({
@@ -448,5 +425,171 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
       state: result.state,
       giftCardApplication: result.giftCardApplication,
     });
+  });
+
+  // ─── P2 — Stripe Payment Intent ──────────────────────────────────
+  app.post('/public/gift-cards/payment-intent', async (req, reply) => {
+    const body = PaymentIntentSchema.parse(req.body);
+
+    // Déterminer le montant (pack ou libre)
+    let amount: number;
+    if (body.packId) {
+      const pack = await db.giftCardPack.findFirst({
+        where: { id: body.packId, restaurantId: body.restaurantId, isActive: true },
+        select: { amount: true },
+      });
+      if (!pack) {
+        return reply.status(404).send({ error: 'Pack cadeau introuvable' });
+      }
+      amount = pack.amount.toNumber();
+    } else {
+      amount = body.amount;
+    }
+
+    // Vérifier le montant minimum
+    const restaurant = await db.restaurant.findUnique({
+      where: { id: body.restaurantId },
+      select: { giftCardMinimumAmount: true },
+    });
+    const minAmount = restaurant?.giftCardMinimumAmount ?? 10;
+    if (amount < minAmount) {
+      return reply.status(400).send({ error: `Le montant minimum est de ${minAmount}€` });
+    }
+
+    try {
+      const intent = await createPaymentIntent({
+        amount: Math.round(amount * 100), // centimes
+        currency: 'eur',
+        metadata: {
+          restaurantId: body.restaurantId,
+          packId: body.packId ?? '',
+          amount: String(amount),
+        },
+      });
+
+      return reply.send({
+        paymentIntentId: intent.id,
+        clientSecret: intent.clientSecret,
+      });
+    } catch (err: unknown) {
+      logger.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[gift-card-routes] Failed to create payment intent',
+      );
+      return reply.status(500).send({ error: 'Impossible de créer le paiement' });
+    }
+  });
+
+  // ─── P2 — Purchase with payment ──────────────────────────────────
+  app.post('/public/gift-cards/purchase', async (req, reply) => {
+    const body = PurchaseWithPaymentSchema.parse(req.body);
+    const paymentService = new GiftCardPaymentService(db);
+
+    try {
+      const card = await paymentService.purchaseWithPayment({
+        restaurantId: body.restaurantId,
+        paymentIntentId: body.paymentIntentId,
+        amount: body.amount,
+        packId: body.packId,
+        occasion: body.occasion,
+        senderName: body.senderName,
+        senderEmail: body.senderEmail,
+        senderPhone: body.senderPhone,
+        recipientName: body.recipientName,
+        recipientEmail: body.recipientEmail,
+        recipientPhone: body.recipientPhone,
+        message: body.message,
+        templateId: body.templateId,
+        customImageUrl: body.customImageUrl,
+        preferredDate: body.preferredDate,
+        preferredTime: body.preferredTime,
+        preferredPartySize: body.preferredPartySize,
+      });
+
+      const pack = card.packId
+        ? await db.giftCardPack.findUnique({ where: { id: card.packId }, select: { name: true } })
+        : null;
+
+      return reply.status(201).send({
+        id: card.id,
+        code: card.code,
+        amount: card.amount.toNumber(),
+        remainingAmount: card.remainingAmount.toNumber(),
+        status: card.status,
+        packName: pack?.name ?? null,
+        preferredDate: card.preferredDate,
+        preferredTime: card.preferredTime,
+        preferredPartySize: card.preferredPartySize,
+        stripePaymentStatus: card.stripePaymentStatus,
+        pdfUrl: `${process.env.API_URL ?? ''}/public/gift-cards/${card.code}/pdf`,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message }, '[gift-card-routes] Purchase with payment failed');
+      return reply.status(400).send({ error: message });
+    }
+  });
+
+  // ─── P2 — PDF download ───────────────────────────────────────────
+  app.get('/public/gift-cards/:code/pdf', async (req, reply) => {
+    const code = (req.params as { code: string }).code;
+
+    const card = await db.giftCard.findUnique({
+      where: { code },
+      include: { restaurant: { select: { name: true } }, pack: { select: { name: true } } },
+    });
+
+    if (!card) {
+      return reply.status(404).send({ error: 'Carte cadeau introuvable' });
+    }
+
+    if (card.status === 'CANCELLED') {
+      return reply.status(400).send({ error: 'Cette carte cadeau est annulée' });
+    }
+
+    try {
+      const pdfBuffer = await generateGiftCardPdf(card);
+      reply.header('Content-Type', 'application/pdf');
+      reply.header('Content-Disposition', `attachment; filename="carte-cadeau-${card.code}.pdf"`);
+      return reply.send(pdfBuffer);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.error(
+        { err: errMsg, stack: err instanceof Error ? err.stack : undefined, code },
+        '[gift-card-routes] PDF generation failed',
+      );
+      return reply.status(500).send({ error: 'Impossible de générer le PDF' });
+    }
+  });
+
+  // ─── P2 — Stripe webhook ─────────────────────────────────────────
+  app.post('/webhooks/stripe', async (req, reply) => {
+    const signature = req.headers['stripe-signature'] as string | undefined;
+    if (!signature) {
+      return reply.status(400).send({ error: 'Missing stripe-signature header' });
+    }
+
+    const rawBody = (req as { rawBody?: string }).rawBody;
+    if (!rawBody) {
+      return reply.status(400).send({ error: 'Missing raw body' });
+    }
+
+    try {
+      const event = await constructWebhookEvent(rawBody, signature);
+
+      if (event.type === 'payment_intent.succeeded') {
+        const pi = event.data.object as { id: string; metadata?: Record<string, string> };
+        const paymentService = new GiftCardPaymentService(db);
+        await paymentService.handleStripeWebhook(pi.id, pi.metadata ?? {});
+      }
+
+      return reply.send({ received: true });
+    } catch (err: unknown) {
+      logger.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[gift-card-routes] Stripe webhook verification failed',
+      );
+      return reply.status(400).send({ error: 'Webhook signature verification failed' });
+    }
   });
 }

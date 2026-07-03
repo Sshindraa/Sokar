@@ -25,6 +25,12 @@ export type CreateGiftCardInput = {
   customerId?: string;
   createdBy?: GiftCardCreatedBy;
   purchaseReference?: string;
+  // P2 — Stripe + personnalisation + commission
+  stripePaymentIntentId?: string;
+  stripePaymentStatus?: string;
+  templateId?: string;
+  customImageUrl?: string;
+  sokarCommissionAmount?: number;
 };
 
 export type GiftCardValidationResult =

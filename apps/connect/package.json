@@ -16,6 +16,8 @@
   "dependencies": {
     "@sentry/nextjs": "^10.63.0",
     "@sokar/shared": "workspace:*",
+    "@stripe/react-stripe-js": "^6.7.0",
+    "@stripe/stripe-js": "^9.9.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "lucide-react": "^1.16.0",

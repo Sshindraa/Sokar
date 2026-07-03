@@ -46,6 +46,7 @@ model Restaurant {
   giftCards             GiftCard[]
   giftCardPacks         GiftCardPack[]
   giftCardMinimumAmount Int?                      @map("gift_card_minimum_amount")
+  giftCardCommissionRate Decimal  @default(0.05) @map("gift_card_commission_rate") @db.Decimal(5, 4)
 
   // Agentic reservations (P0)
   slug                 String?                     @unique @map("slug")
@@ -642,6 +643,13 @@ model GiftCard {
   customerId        String? @map("customer_id")
   createdBy         String   @default("CLIENT") @map("created_by") // CLIENT, DASHBOARD, VOICE
   purchaseReference String? @map("purchase_reference") // stripePaymentIntentId, manual, etc.
+
+  // P2 — Stripe + personnalisation + commission
+  stripePaymentIntentId String?  @map("stripe_payment_intent_id")
+  stripePaymentStatus   String?  @default("pending") @map("stripe_payment_status")
+  templateId            String?  @map("template_id")
+  customImageUrl        String?  @map("custom_image_url")
+  sokarCommissionAmount Decimal  @map("sokar_commission_amount") @db.Decimal(10, 2)
 
   restaurant    Restaurant             @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   customer      Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull)

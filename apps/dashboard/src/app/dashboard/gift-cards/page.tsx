@@ -66,6 +66,7 @@ export default function GiftCardsPage() {
 
   // Montant minimum carte cadeau
   const [minAmount, setMinAmount] = useState<number | ''>('');
+  const [commissionRate, setCommissionRate] = useState<number | ''>('');
   const [savingMin, setSavingMin] = useState(false);
   const [savedMin, setSavedMin] = useState(false);
 
@@ -90,6 +91,11 @@ export default function GiftCardsPage() {
       setStats(statsData);
       setPacks(packsData);
       setMinAmount(restaurant.giftCardMinimumAmount ?? '');
+      setCommissionRate(
+        restaurant.giftCardCommissionRate != null
+          ? Number(restaurant.giftCardCommissionRate) * 100
+          : '',
+      );
     } catch (err: any) {
       setError(err.message || 'Impossible de charger les cartes cadeaux');
     } finally {
@@ -124,6 +130,9 @@ export default function GiftCardsPage() {
       const payload: Record<string, unknown> = {};
       if (minAmount !== '') {
         payload.giftCardMinimumAmount = Number(minAmount);
+      }
+      if (commissionRate !== '') {
+        payload.giftCardCommissionRate = Number(commissionRate) / 100;
       }
       await patch(`restaurants/${orgId}`, payload);
       setSavedMin(true);
@@ -181,10 +190,10 @@ export default function GiftCardsPage() {
         </div>
       )}
 
-      {/* Configuration du montant minimum */}
+      {/* Configuration du montant minimum + commission */}
       <Card>
         <CardContent className="p-4 md:p-5">
-          <form onSubmit={handleSaveMin} className="flex flex-col sm:flex-row sm:items-end gap-3">
+          <form onSubmit={handleSaveMin} className="flex flex-col gap-4 sm:flex-row sm:items-end">
             <div className="flex-1">
               <Label htmlFor="minAmount" className="text-sm font-medium">
                 Montant minimum d&apos;une carte cadeau (€)
@@ -201,6 +210,27 @@ export default function GiftCardsPage() {
               />
               <p className="mt-1 text-xs text-muted-foreground">
                 Laisser vide pour utiliser le montant par défaut de 10€.
+              </p>
+            </div>
+            <div className="flex-1">
+              <Label htmlFor="commissionRate" className="text-sm font-medium">
+                Commission Sokar (%)
+              </Label>
+              <Input
+                id="commissionRate"
+                type="number"
+                min={0}
+                max={100}
+                step={0.1}
+                value={commissionRate}
+                onChange={(e) =>
+                  setCommissionRate(e.target.value === '' ? '' : Number(e.target.value))
+                }
+                placeholder="5"
+                className="mt-1.5"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Pourcentage prélevé par Sokar sur chaque vente. 5% par défaut.
               </p>
             </div>
             <div className="flex items-center gap-3">

@@ -179,7 +179,15 @@ describe('gift-card routes', () => {
       expect(body.messageSuggestion).toContain('Offrez');
     });
 
-    it('achète une carte cadeau en mode test', async () => {
+    it('achète une carte cadeau avec paiement Stripe', async () => {
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: RESTAURANT_ID,
+        name: 'Test Resto',
+        giftCardCommissionRate: d(0.05),
+        giftCardMinimumAmount: 10,
+        managerEmail: 'manager@test.com',
+        managerPhone: '+33100000000',
+      } as any);
       vi.mocked(db.giftCard.create).mockResolvedValue({
         id: 'gc-1',
         restaurantId: RESTAURANT_ID,
@@ -189,7 +197,10 @@ describe('gift-card routes', () => {
         currency: 'EUR',
         status: 'ACTIVE',
         createdBy: 'CLIENT',
-        purchaseReference: 'test',
+        purchaseReference: 'pi_test',
+        stripePaymentIntentId: 'pi_test',
+        stripePaymentStatus: 'succeeded',
+        sokarCommissionAmount: d(6),
         redemptions: [],
       } as any);
 
@@ -199,9 +210,12 @@ describe('gift-card routes', () => {
         url: '/public/gift-cards/purchase',
         payload: {
           restaurantId: RESTAURANT_ID,
+          paymentIntentId: 'pi_test',
           amount: 120,
           recipientName: 'Alice',
           recipientEmail: 'alice@example.com',
+          senderName: 'Bob',
+          senderEmail: 'bob@example.com',
         },
       });
 
@@ -210,9 +224,19 @@ describe('gift-card routes', () => {
       expect(body.amount).toBe(120);
       expect(body.code).toBeDefined();
       expect(body.code).not.toContain('****');
+      expect(body.stripePaymentStatus).toBe('succeeded');
+      expect(body.pdfUrl).toContain('/pdf');
     });
 
-    it('achète un pack expérience', async () => {
+    it('achète un pack expérience avec paiement Stripe', async () => {
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: RESTAURANT_ID,
+        name: 'Test Resto',
+        giftCardCommissionRate: d(0.05),
+        giftCardMinimumAmount: 10,
+        managerEmail: 'manager@test.com',
+        managerPhone: '+33100000000',
+      } as any);
       vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
@@ -227,7 +251,10 @@ describe('gift-card routes', () => {
         currency: 'EUR',
         status: 'ACTIVE',
         createdBy: 'CLIENT',
-        purchaseReference: 'test',
+        purchaseReference: 'pi_test',
+        stripePaymentIntentId: 'pi_test',
+        stripePaymentStatus: 'succeeded',
+        sokarCommissionAmount: d(7.5),
         packId: 'pack-1',
         redemptions: [],
       } as any);
@@ -242,6 +269,7 @@ describe('gift-card routes', () => {
         url: '/public/gift-cards/purchase',
         payload: {
           restaurantId: RESTAURANT_ID,
+          paymentIntentId: 'pi_test',
           packId: 'pack-1',
           recipientName: 'Alice',
           recipientEmail: 'alice@example.com',
@@ -252,6 +280,57 @@ describe('gift-card routes', () => {
       const body = res.json();
       expect(body.amount).toBe(150);
       expect(body.packName).toBe('Menu dégustation');
+    });
+
+    it('crée un payment intent Stripe', async () => {
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: RESTAURANT_ID,
+        giftCardMinimumAmount: 10,
+      } as any);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/public/gift-cards/payment-intent',
+        payload: {
+          restaurantId: RESTAURANT_ID,
+          amount: 100,
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.paymentIntentId).toBeDefined();
+      expect(body.clientSecret).toBeDefined();
+    });
+
+    it("télécharge le PDF d'une carte cadeau", async () => {
+      vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+        id: 'gc-1',
+        restaurantId: RESTAURANT_ID,
+        code: 'abc-1234-5678-9012',
+        amount: d(100),
+        remainingAmount: d(100),
+        currency: 'EUR',
+        status: 'ACTIVE',
+        validityMonths: 12,
+        message: 'Joyeux anniversaire',
+        occasion: 'Anniversaire',
+        senderName: 'Bob',
+        recipientName: 'Alice',
+        expiresAt: new Date('2027-01-01'),
+        restaurant: { name: 'Test Resto' },
+        pack: null,
+      } as any);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: '/public/gift-cards/abc-1234-5678-9012/pdf',
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toBe('application/pdf');
     });
 
     it('propose des créneaux pour une carte cadeau', async () => {

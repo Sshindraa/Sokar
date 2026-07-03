@@ -65,6 +65,7 @@ function makeRestaurant(
     googleReviewCount: overrides.googleReviewCount ?? null,
     googleRatingSyncedAt: overrides.googleRatingSyncedAt ?? null,
     giftCardMinimumAmount: overrides.giftCardMinimumAmount ?? null,
+    giftCardCommissionRate: (overrides.giftCardCommissionRate ?? 0.05) as unknown as Prisma.Decimal,
     exposureSettings: overrides.exposureSettings ?? null,
   };
 }

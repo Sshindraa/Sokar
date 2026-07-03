@@ -119,7 +119,20 @@ export default function GiftCardList({ items, onView, onCancel }: GiftCardListPr
             ]}
             details={[
               { label: 'Montant', value: formatEuro(card.amount) },
+              {
+                label: 'Commission',
+                value: card.sokarCommissionAmount ? formatEuro(card.sokarCommissionAmount) : '—',
+              },
               { label: 'Solde', value: formatEuro(card.remainingAmount) },
+              {
+                label: 'Paiement',
+                value:
+                  card.stripePaymentStatus === 'succeeded'
+                    ? 'Payé'
+                    : card.stripePaymentStatus === 'pending'
+                      ? 'En attente'
+                      : (card.stripePaymentStatus ?? '—'),
+              },
               {
                 label: 'Destinataire',
                 value: card.recipientName ?? '—',
@@ -144,9 +157,11 @@ export default function GiftCardList({ items, onView, onCancel }: GiftCardListPr
               <TableHead>Code</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Montant</TableHead>
+              <TableHead>Commission</TableHead>
               <TableHead>Solde</TableHead>
               <TableHead>Destinataire</TableHead>
               <TableHead>Statut</TableHead>
+              <TableHead>Paiement</TableHead>
               <TableHead>Achetée le</TableHead>
               <TableHead>Expire le</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -164,12 +179,36 @@ export default function GiftCardList({ items, onView, onCancel }: GiftCardListPr
                   )}
                 </TableCell>
                 <TableCell className="font-medium">{formatEuro(card.amount)}</TableCell>
+                <TableCell className="text-muted-foreground text-sm">
+                  {card.sokarCommissionAmount ? formatEuro(card.sokarCommissionAmount) : '—'}
+                </TableCell>
                 <TableCell className="text-muted-foreground">
                   {formatEuro(card.remainingAmount)}
                 </TableCell>
                 <TableCell>{card.recipientName ?? <span className="opacity-50">—</span>}</TableCell>
                 <TableCell>
                   <StatusBadge status={card.status} />
+                </TableCell>
+                <TableCell>
+                  {card.stripePaymentStatus ? (
+                    <span
+                      className={`text-xs font-medium ${
+                        card.stripePaymentStatus === 'succeeded'
+                          ? 'text-emerald-500'
+                          : card.stripePaymentStatus === 'pending'
+                            ? 'text-amber-500'
+                            : 'text-red-500'
+                      }`}
+                    >
+                      {card.stripePaymentStatus === 'succeeded'
+                        ? 'Payé'
+                        : card.stripePaymentStatus === 'pending'
+                          ? 'En attente'
+                          : card.stripePaymentStatus}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
                 </TableCell>
                 <TableCell className="text-muted-foreground text-sm">
                   {format(new Date(card.purchasedAt), 'dd MMM yyyy', { locale: fr })}

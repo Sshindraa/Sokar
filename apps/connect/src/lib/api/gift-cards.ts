@@ -37,6 +37,7 @@ export type GiftCardPack = {
 
 export type GiftCardPurchaseInput = {
   restaurantId: string;
+  paymentIntentId: string;
   amount?: number;
   packId?: string;
   occasion?: string;
@@ -47,6 +48,8 @@ export type GiftCardPurchaseInput = {
   recipientEmail?: string;
   recipientPhone?: string;
   message?: string;
+  templateId?: string;
+  customImageUrl?: string;
   preferredDate?: string;
   preferredTime?: string;
   preferredPartySize?: number;
@@ -62,6 +65,13 @@ export type GiftCardPurchaseResult = {
   preferredDate: string | null;
   preferredTime: string | null;
   preferredPartySize: number | null;
+  stripePaymentStatus: string | null;
+  pdfUrl: string | null;
+};
+
+export type PaymentIntentResult = {
+  paymentIntentId: string;
+  clientSecret: string;
 };
 
 export type GiftCardSlot = {
@@ -104,6 +114,23 @@ export async function recommendGiftCard(input: {
 export async function listGiftCardPacks(slug: string): Promise<GiftCardPack[]> {
   const res = await fetchWithTimeout(`${getApiUrl()}/public/gift-cards/packs/${slug}`);
   if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createPaymentIntent(input: {
+  restaurantId: string;
+  amount?: number;
+  packId?: string;
+}): Promise<PaymentIntentResult> {
+  const res = await fetchWithTimeout(`${getApiUrl()}/public/gift-cards/payment-intent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Impossible de créer le paiement');
+  }
   return res.json();
 }
 
