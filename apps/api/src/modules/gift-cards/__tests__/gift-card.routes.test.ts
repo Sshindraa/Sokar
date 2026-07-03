@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Prisma } from '@prisma/client';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
+import { constructWebhookEvent } from '../stripe.service';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service';
 import { ReservationService } from '../../agentic-reservations/core/reservation.service';
 
@@ -471,6 +472,136 @@ describe('gift-card routes', () => {
       expect(body.appliedAmount).toBe(60);
       expect(body.remainingAmount).toBe(40);
       expect(body.paymentStatus).toBe('PARTIAL');
+    });
+  });
+
+  describe('stripe webhook', () => {
+    const WEBHOOK_METADATA = {
+      restaurantId: RESTAURANT_ID,
+      amount: '120',
+      packId: '',
+      occasion: 'Anniversaire',
+      senderName: 'Bob',
+      senderEmail: 'bob@example.com',
+      senderPhone: '+33612345678',
+      recipientName: 'Alice',
+      recipientEmail: 'alice@example.com',
+      recipientPhone: '+33687654321',
+      message: 'Joyeux anniversaire',
+      templateId: 'classic',
+      customImageUrl: '',
+      preferredDate: '',
+      preferredTime: '',
+      preferredPartySize: '',
+    };
+
+    function mockWebhookEvent(piId: string, metadata: Record<string, string>) {
+      vi.mocked(constructWebhookEvent).mockResolvedValue({
+        type: 'payment_intent.succeeded',
+        data: { object: { id: piId, metadata } },
+      } as any);
+    }
+
+    it('recrée une carte cadeau depuis le webhook avec metadata complètes', async () => {
+      mockWebhookEvent('pi_webhook_1', WEBHOOK_METADATA);
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue(null);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: RESTAURANT_ID,
+        name: 'Test Resto',
+        giftCardCommissionRate: d(0.05),
+        giftCardMinimumAmount: 10,
+        managerEmail: 'manager@test.com',
+        managerPhone: '+33100000000',
+      } as any);
+      vi.mocked(db.giftCard.create).mockResolvedValue({
+        id: 'gc-wb-1',
+        restaurantId: RESTAURANT_ID,
+        code: 'wb-1234-5678-9012',
+        amount: d(120),
+        remainingAmount: d(120),
+        currency: 'EUR',
+        status: 'ACTIVE',
+        createdBy: 'CLIENT',
+        purchaseReference: 'pi_webhook_1',
+        stripePaymentIntentId: 'pi_webhook_1',
+        stripePaymentStatus: 'succeeded',
+        sokarCommissionAmount: d(6),
+        redemptions: [],
+      } as any);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/webhooks/stripe',
+        headers: {
+          'stripe-signature': 't=123,v1=fake',
+          'content-type': 'application/json',
+        },
+        payload: { type: 'payment_intent.succeeded' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ received: true });
+      expect(db.giftCard.create).toHaveBeenCalled();
+    });
+
+    it('ne recrée pas de doublon (idempotence par stripePaymentIntentId)', async () => {
+      mockWebhookEvent('pi_existing', WEBHOOK_METADATA);
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue({
+        id: 'gc-existing',
+        restaurantId: RESTAURANT_ID,
+        code: 'old-1234-5678-9012',
+        amount: d(120),
+        remainingAmount: d(120),
+        status: 'ACTIVE',
+        stripePaymentIntentId: 'pi_existing',
+      } as any);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/webhooks/stripe',
+        headers: {
+          'stripe-signature': 't=123,v1=fake',
+          'content-type': 'application/json',
+        },
+        payload: { type: 'payment_intent.succeeded' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      // La carte ne doit pas être recréée
+      expect(db.giftCard.create).not.toHaveBeenCalled();
+    });
+
+    it('retourne 200 sans recréer si les metadata sont incomplètes', async () => {
+      mockWebhookEvent('pi_incomplete', { restaurantId: RESTAURANT_ID });
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue(null);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/webhooks/stripe',
+        headers: {
+          'stripe-signature': 't=123,v1=fake',
+          'content-type': 'application/json',
+        },
+        payload: { type: 'payment_intent.succeeded' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(db.giftCard.create).not.toHaveBeenCalled();
+    });
+
+    it('retourne 400 sans stripe-signature header', async () => {
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/webhooks/stripe',
+        headers: { 'content-type': 'application/json' },
+        payload: { type: 'payment_intent.succeeded' },
+      });
+
+      expect(res.statusCode).toBe(400);
     });
   });
 });
