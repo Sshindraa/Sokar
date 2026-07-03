@@ -604,4 +604,358 @@ describe('gift-card routes', () => {
       expect(res.statusCode).toBe(400);
     });
   });
+
+  // ─── P3 — Crowdfunding ───────────────────────────────────────────
+  describe('crowdfunding routes', () => {
+    const CROWDFUNDING_CODE = 'crowd-test-code';
+    const FUTURE_DATE = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    beforeEach(() => {
+      vi.mocked(db.giftCard.create).mockResolvedValue({
+        id: 'gc-crowd-1',
+        restaurantId: RESTAURANT_ID,
+        code: CROWDFUNDING_CODE,
+        amount: d(0),
+        remainingAmount: d(0),
+        currency: 'EUR',
+        status: 'ACTIVE',
+        type: 'CROWDFUNDED',
+        targetAmount: null,
+        crowdfundedUntil: new Date(FUTURE_DATE),
+        closedAt: null,
+        purchasedAt: new Date(),
+        expiresAt: null,
+        validityMonths: 12,
+        packId: null,
+        preferredDate: null,
+        preferredTime: null,
+        preferredPartySize: null,
+        senderName: 'Jean',
+        senderEmail: 'jean@example.com',
+        senderPhone: null,
+        recipientName: 'Marie',
+        recipientEmail: 'marie@example.com',
+        recipientPhone: null,
+        message: null,
+        occasion: 'Cagnotte anniversaire Marie',
+        customerId: null,
+        createdBy: 'CLIENT',
+        purchaseReference: 'crowdfunding',
+        stripePaymentIntentId: null,
+        stripePaymentStatus: 'pending',
+        templateId: null,
+        customImageUrl: null,
+        sokarCommissionAmount: d(0),
+      } as any);
+    });
+
+    it('crée une cagnotte via POST /public/gift-cards/crowdfunding', async () => {
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/public/gift-cards/crowdfunding',
+        headers: { 'content-type': 'application/json' },
+        payload: {
+          restaurantId: RESTAURANT_ID,
+          title: 'Cagnotte anniversaire Marie',
+          recipientName: 'Marie',
+          recipientEmail: 'marie@example.com',
+          creatorName: 'Jean',
+          creatorEmail: 'jean@example.com',
+          crowdfundedUntil: FUTURE_DATE,
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.code).toBe(CROWDFUNDING_CODE);
+      expect(body.type).toBe('CROWDFUNDED');
+      expect(body.title).toBe('Cagnotte anniversaire Marie');
+      expect(db.giftCard.create).toHaveBeenCalled();
+    });
+
+    it('retourne 400 si la date butoir est dans le passé', async () => {
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/public/gift-cards/crowdfunding',
+        headers: { 'content-type': 'application/json' },
+        payload: {
+          restaurantId: RESTAURANT_ID,
+          title: 'Test',
+          recipientName: 'Marie',
+          creatorName: 'Jean',
+          creatorEmail: 'jean@example.com',
+          crowdfundedUntil: '2020-01-01T00:00:00.000Z',
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('retourne le statut public d une cagnotte', async () => {
+      vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+        id: 'gc-crowd-1',
+        restaurantId: RESTAURANT_ID,
+        code: CROWDFUNDING_CODE,
+        amount: d(0),
+        remainingAmount: d(0),
+        status: 'ACTIVE',
+        type: 'CROWDFUNDED',
+        targetAmount: null,
+        crowdfundedUntil: new Date(FUTURE_DATE),
+        closedAt: null,
+        occasion: 'Cagnotte anniversaire Marie',
+        senderName: 'Jean',
+        senderEmail: 'jean@example.com',
+        recipientName: 'Marie',
+        message: 'Un message',
+        contributions: [],
+        restaurant: { name: 'Test Resto' },
+      } as any);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: `/public/gift-cards/crowdfunding/${CROWDFUNDING_CODE}`,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.code).toBe(CROWDFUNDING_CODE);
+      expect(body.title).toBe('Cagnotte anniversaire Marie');
+      expect(body.recipientName).toBe('Marie');
+      expect(body.collectedAmount).toBe(0);
+      expect(body.contributionsCount).toBe(0);
+      expect(body.status).toBe('ACTIVE');
+    });
+
+    it('retourne 404 pour une cagnotte inexistante', async () => {
+      vi.mocked(db.giftCard.findUnique).mockResolvedValue(null);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: '/public/gift-cards/crowdfunding/nonexistent',
+      });
+
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('crée un payment intent pour une contribution', async () => {
+      vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+        id: 'gc-crowd-1',
+        restaurantId: RESTAURANT_ID,
+        code: CROWDFUNDING_CODE,
+        type: 'CROWDFUNDED',
+        status: 'ACTIVE',
+        crowdfundedUntil: new Date(FUTURE_DATE),
+      } as any);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: `/public/gift-cards/crowdfunding/${CROWDFUNDING_CODE}/payment-intent`,
+        headers: { 'content-type': 'application/json' },
+        payload: {
+          amount: 20,
+          contributorName: 'Paul',
+          contributorEmail: 'paul@example.com',
+          isPublicName: true,
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.paymentIntentId).toBe('pi_test');
+      expect(body.clientSecret).toBe('pi_t_s');
+    });
+
+    it('refuse un payment intent si la cagnotte est clôturée', async () => {
+      vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+        id: 'gc-crowd-1',
+        restaurantId: RESTAURANT_ID,
+        code: CROWDFUNDING_CODE,
+        type: 'CROWDFUNDED',
+        status: 'CLOSED',
+        crowdfundedUntil: new Date(FUTURE_DATE),
+      } as any);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: `/public/gift-cards/crowdfunding/${CROWDFUNDING_CODE}/payment-intent`,
+        headers: { 'content-type': 'application/json' },
+        payload: {
+          amount: 20,
+          contributorName: 'Paul',
+          isPublicName: true,
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('refuse un payment intent si la deadline est dépassée', async () => {
+      vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+        id: 'gc-crowd-1',
+        restaurantId: RESTAURANT_ID,
+        code: CROWDFUNDING_CODE,
+        type: 'CROWDFUNDED',
+        status: 'ACTIVE',
+        crowdfundedUntil: new Date('2020-01-01'),
+      } as any);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: `/public/gift-cards/crowdfunding/${CROWDFUNDING_CODE}/payment-intent`,
+        headers: { 'content-type': 'application/json' },
+        payload: {
+          amount: 20,
+          contributorName: 'Paul',
+          isPublicName: true,
+        },
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('confirme une contribution via POST /contribute', async () => {
+      vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+        id: 'gc-crowd-1',
+        restaurantId: RESTAURANT_ID,
+        code: CROWDFUNDING_CODE,
+        type: 'CROWDFUNDED',
+        status: 'ACTIVE',
+        crowdfundedUntil: new Date(FUTURE_DATE),
+        occasion: 'Cagnotte',
+        senderName: 'Jean',
+        senderEmail: 'jean@example.com',
+        recipientName: 'Marie',
+      } as any);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        name: 'Test Resto',
+      } as any);
+      vi.mocked(db.giftCardContribution.create).mockResolvedValue({
+        id: 'contrib-1',
+        giftCardId: 'gc-crowd-1',
+        contributorName: 'Paul',
+        contributorEmail: 'paul@example.com',
+        amount: d(20),
+        contributedAt: new Date(),
+        stripePaymentIntentId: 'pi_test',
+        isPublicName: true,
+        message: null,
+      } as any);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: `/public/gift-cards/crowdfunding/${CROWDFUNDING_CODE}/contribute`,
+        headers: { 'content-type': 'application/json' },
+        payload: {
+          paymentIntentId: 'pi_test',
+          contributorName: 'Paul',
+          contributorEmail: 'paul@example.com',
+          amount: 20,
+          isPublicName: true,
+        },
+      });
+
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.id).toBe('contrib-1');
+      expect(body.amount).toBe(20);
+      expect(db.giftCardContribution.create).toHaveBeenCalled();
+    });
+
+    it('clôture une cagnotte via POST /api/gift-cards/:id/close', async () => {
+      const contributions = [
+        { id: 'c1', amount: d(50), stripePaymentIntentId: 'pi_1' },
+        { id: 'c2', amount: d(30), stripePaymentIntentId: 'pi_2' },
+      ];
+
+      vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+        id: 'gc-crowd-1',
+        restaurantId: RESTAURANT_ID,
+        code: CROWDFUNDING_CODE,
+        type: 'CROWDFUNDED',
+        status: 'ACTIVE',
+        amount: d(0),
+        remainingAmount: d(0),
+        occasion: 'Cagnotte',
+        recipientName: 'Marie',
+        recipientEmail: 'marie@example.com',
+        recipientPhone: '+33612345678',
+        contributions,
+      } as any);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        name: 'Test Resto',
+        giftCardCommissionRate: d(0.05),
+        managerEmail: 'manager@test.com',
+        managerPhone: '+33100000000',
+      } as any);
+      vi.mocked(db.giftCard.update).mockResolvedValue({
+        id: 'gc-crowd-1',
+        restaurantId: RESTAURANT_ID,
+        code: CROWDFUNDING_CODE,
+        type: 'SINGLE',
+        status: 'ACTIVE',
+        amount: d(76), // 80 - 4 (5% commission)
+        remainingAmount: d(76),
+        currency: 'EUR',
+        sokarCommissionAmount: d(4),
+        closedAt: new Date(),
+        purchasedAt: new Date(),
+        expiresAt: null,
+        validityMonths: 12,
+        packId: null,
+        preferredDate: null,
+        preferredTime: null,
+        preferredPartySize: null,
+        senderName: 'Jean',
+        senderEmail: 'jean@example.com',
+        senderPhone: null,
+        recipientName: 'Marie',
+        recipientEmail: 'marie@example.com',
+        recipientPhone: '+33612345678',
+        message: null,
+        occasion: 'Cagnotte',
+        customerId: null,
+        createdBy: 'CLIENT',
+        purchaseReference: 'crowdfunding',
+        stripePaymentIntentId: null,
+        stripePaymentStatus: 'pending',
+        templateId: null,
+        customImageUrl: null,
+        targetAmount: null,
+        crowdfundedUntil: new Date(FUTURE_DATE),
+      } as any);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/gift-cards/gc-crowd-1/close?restaurantId=${RESTAURANT_ID}`,
+        headers: { ...AUTH },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.type).toBe('SINGLE');
+      expect(body.amount).toBe(76);
+      expect(body.sokarCommissionAmount).toBe(4);
+      expect(body.status).toBe('ACTIVE');
+      expect(db.giftCard.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'gc-crowd-1' },
+          data: expect.objectContaining({
+            type: 'SINGLE',
+            status: 'ACTIVE',
+            sokarCommissionAmount: d(4),
+          }),
+        }),
+      );
+    });
+  });
 });

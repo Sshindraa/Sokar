@@ -23,7 +23,11 @@ export class GiftCardService {
     let amount: Prisma.Decimal;
     const packId: string | null = input.packId ?? null;
 
-    if (packId) {
+    // Pour le crowdfunding (P3), le montant initial est 0 — il sera
+    // alimenté par les contributions puis fixé à la clôture.
+    if (input.type === 'CROWDFUNDED') {
+      amount = new Prisma.Decimal(input.amount ?? 0);
+    } else if (packId) {
       const pack = await this.prisma.giftCardPack.findFirst({
         where: { id: packId, restaurantId: input.restaurantId },
       });
@@ -75,6 +79,9 @@ export class GiftCardService {
         templateId: input.templateId ?? null,
         customImageUrl: input.customImageUrl ?? null,
         sokarCommissionAmount: input.sokarCommissionAmount ?? 0,
+        type: input.type ?? 'SINGLE',
+        targetAmount: input.targetAmount ?? null,
+        crowdfundedUntil: input.crowdfundedUntil ?? null,
       },
     });
   }

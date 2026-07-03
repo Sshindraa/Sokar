@@ -19,6 +19,10 @@ vi.mock('@prisma/client', async (importOriginal) => {
       count: vi.fn(),
       update: vi.fn(),
     };
+    giftCardContribution = {
+      create: vi.fn(),
+      findMany: vi.fn(),
+    };
     giftCardPack = {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
@@ -139,6 +143,25 @@ vi.mock('../modules/gift-cards/stripe.service', async (importOriginal) => {
     }),
   };
 });
+
+// ── Mock gift-card-email.service (emails non envoyés en tests) ──
+vi.mock('../modules/gift-cards/gift-card-email.service', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    sendSenderReceipt: vi.fn().mockResolvedValue(undefined),
+    sendRecipientGiftCard: vi.fn().mockResolvedValue(undefined),
+    sendRestaurantSaleNotification: vi.fn().mockResolvedValue(undefined),
+    sendContributionConfirmation: vi.fn().mockResolvedValue(undefined),
+    sendCrowdfundingContributionNotification: vi.fn().mockResolvedValue(undefined),
+    sendCrowdfundingClosed: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
+// ── Mock gift-card-whatsapp.service (WhatsApp non envoyé en tests) ──
+vi.mock('../modules/gift-cards/gift-card-whatsapp.service', () => ({
+  sendRecipientWhatsApp: vi.fn().mockResolvedValue(undefined),
+}));
 
 // ── Mock pdfkit (génération PDF non nécessaire en tests unitaires) ──
 vi.mock('pdfkit', () => {

@@ -180,3 +180,136 @@ export async function bookGiftCardSlot(
   }
   return res.json();
 }
+
+// ─── P3 — Crowdfunding ─────────────────────────────────────────────
+
+export type CreateCrowdfundingInput = {
+  restaurantId: string;
+  title: string;
+  occasion?: string;
+  recipientName: string;
+  recipientEmail?: string;
+  recipientPhone?: string;
+  creatorName: string;
+  creatorEmail: string;
+  targetAmount?: number;
+  crowdfundedUntil: string; // ISO date
+  templateId?: string;
+  message?: string;
+};
+
+export type CreateCrowdfundingResult = {
+  id: string;
+  code: string;
+  type: string;
+  title: string;
+  crowdfundedUntil: string | null;
+  targetAmount: number | null;
+};
+
+export type PublicContribution = {
+  id: string;
+  contributorName: string | null;
+  amount: number;
+  message: string | null;
+  contributedAt: string;
+};
+
+export type CrowdfundingStatus = {
+  code: string;
+  title: string;
+  occasion: string | null;
+  recipientName: string;
+  restaurantName: string;
+  collectedAmount: number;
+  targetAmount: number | null;
+  contributionsCount: number;
+  crowdfundedUntil: string | null;
+  status: string;
+  contributions: PublicContribution[];
+  creatorName: string;
+  message: string | null;
+};
+
+export type ContributeInput = {
+  paymentIntentId: string;
+  contributorName: string;
+  contributorEmail?: string;
+  amount: number;
+  isPublicName: boolean;
+  message?: string;
+};
+
+export type ContributeResult = {
+  id: string;
+  amount: number;
+  contributedAt: string;
+};
+
+export async function createCrowdfunding(
+  input: CreateCrowdfundingInput,
+): Promise<CreateCrowdfundingResult> {
+  const res = await fetchWithTimeout(`${getApiUrl()}/public/gift-cards/crowdfunding`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Impossible de créer la cagnotte');
+  }
+  return res.json();
+}
+
+export async function getCrowdfundingStatus(code: string): Promise<CrowdfundingStatus> {
+  const res = await fetchWithTimeout(`${getApiUrl()}/public/gift-cards/crowdfunding/${code}`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Cagnotte introuvable');
+  }
+  return res.json();
+}
+
+export async function createCrowdfundingPaymentIntent(
+  code: string,
+  input: {
+    amount: number;
+    contributorName: string;
+    contributorEmail?: string;
+    isPublicName: boolean;
+    message?: string;
+  },
+): Promise<PaymentIntentResult> {
+  const res = await fetchWithTimeout(
+    `${getApiUrl()}/public/gift-cards/crowdfunding/${code}/payment-intent`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Impossible de créer le paiement');
+  }
+  return res.json();
+}
+
+export async function contributeToCrowdfunding(
+  code: string,
+  input: ContributeInput,
+): Promise<ContributeResult> {
+  const res = await fetchWithTimeout(
+    `${getApiUrl()}/public/gift-cards/crowdfunding/${code}/contribute`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Contribution impossible. Réessayez.');
+  }
+  return res.json();
+}

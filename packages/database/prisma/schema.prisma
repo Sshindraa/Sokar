@@ -651,6 +651,12 @@ model GiftCard {
   customImageUrl        String?  @map("custom_image_url")
   sokarCommissionAmount Decimal  @map("sokar_commission_amount") @db.Decimal(10, 2)
 
+  // P3 — Crowdfunding
+  type              String    @default("SINGLE") @map("type") // SINGLE, CROWDFUNDED
+  targetAmount      Decimal?  @map("target_amount") @db.Decimal(10, 2)
+  crowdfundedUntil  DateTime? @map("crowdfunded_until") // deadline
+  closedAt          DateTime? @map("closed_at") // date de clôture manuelle
+
   restaurant    Restaurant             @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   customer      Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull)
   redemptions   GiftCardRedemption[]
@@ -676,11 +682,15 @@ model GiftCardRedemption {
 }
 
 model GiftCardContribution {
-  id              String   @id @default(uuid())
-  giftCardId      String   @map("gift_card_id")
-  contributorName String?  @map("contributor_name")
-  amount          Decimal  @db.Decimal(10, 2)
-  contributedAt   DateTime @default(now()) @map("contributed_at")
+  id                    String   @id @default(uuid())
+  giftCardId            String   @map("gift_card_id")
+  contributorName       String?  @map("contributor_name")
+  contributorEmail      String?  @map("contributor_email")
+  amount                Decimal  @db.Decimal(10, 2)
+  contributedAt         DateTime @default(now()) @map("contributed_at")
+  stripePaymentIntentId String?  @map("stripe_payment_intent_id")
+  isPublicName          Boolean  @default(true) @map("is_public_name")
+  message               String?
 
   giftCard GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
 

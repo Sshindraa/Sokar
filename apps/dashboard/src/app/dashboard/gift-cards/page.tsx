@@ -48,8 +48,14 @@ function StatCard({ label, value, icon }: { label: string; value: string; icon: 
 }
 
 export default function GiftCardsPage() {
-  const { listGiftCards, getGiftCardStats, cancelGiftCard, listGiftCardPacks, orgId } =
-    useGiftCardApi();
+  const {
+    listGiftCards,
+    getGiftCardStats,
+    cancelGiftCard,
+    closeCrowdfunding,
+    listGiftCardPacks,
+    orgId,
+  } = useGiftCardApi();
   const { get, patch } = useApi();
 
   const [cards, setCards] = useState<GiftCardListItem[]>([]);
@@ -57,12 +63,14 @@ export default function GiftCardsPage() {
   const [packs, setPacks] = useState<GiftCardPack[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [tab, setTab] = useState<'SINGLE' | 'CROWDFUNDED'>('SINGLE');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [formOpen, setFormOpen] = useState(false);
   const [detailCard, setDetailCard] = useState<GiftCardListItem | null>(null);
+  const [closingId, setClosingId] = useState<string | null>(null);
 
   // Montant minimum carte cadeau
   const [minAmount, setMinAmount] = useState<number | ''>('');
@@ -78,6 +86,7 @@ export default function GiftCardsPage() {
       const [list, statsData, packsData, restaurant] = await Promise.all([
         listGiftCards({
           status: statusFilter !== 'ALL' ? statusFilter : undefined,
+          type: tab,
           search: search || undefined,
           limit: PAGE_SIZE,
           offset: page * PAGE_SIZE,
@@ -101,7 +110,7 @@ export default function GiftCardsPage() {
     } finally {
       setLoading(false);
     }
-  }, [orgId, statusFilter, search, page, listGiftCards, getGiftCardStats, listGiftCardPacks]);
+  }, [orgId, statusFilter, search, page, tab, listGiftCards, getGiftCardStats, listGiftCardPacks]);
 
   useEffect(() => {
     fetchAll();
@@ -117,6 +126,25 @@ export default function GiftCardsPage() {
       );
     } catch (err: any) {
       setError(err.message || "Impossible d'annuler la carte cadeau");
+    }
+  }
+
+  async function handleCloseCrowdfunding(card: GiftCardListItem) {
+    if (
+      !confirm(
+        `Clôturer la cagnotte « ${card.occasion ?? card.code} » ?\n\nLe montant total collecté sera transformé en carte cadeau pour ${card.recipientName ?? 'le destinataire'}.`,
+      )
+    )
+      return;
+    setClosingId(card.id);
+    try {
+      setError('');
+      const updated = await closeCrowdfunding(card.id);
+      setCards((prev) => prev.map((c) => (c.id === card.id ? updated : c)));
+    } catch (err: any) {
+      setError(err.message || 'Impossible de clôturer la cagnotte');
+    } finally {
+      setClosingId(null);
     }
   }
 
@@ -270,6 +298,40 @@ export default function GiftCardsPage() {
         </div>
       )}
 
+      {/* Onglets SINGLE / CROWDFUNDED */}
+      <div className="flex gap-1 rounded-lg border border-border bg-muted/50 p-1">
+        <button
+          type="button"
+          onClick={() => {
+            setTab('SINGLE');
+            setStatusFilter('ALL');
+            setPage(0);
+          }}
+          className={`flex-1 rounded-md px-4 py-1.5 text-sm font-medium transition-all duration-200 ${
+            tab === 'SINGLE'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          Cartes cadeaux
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setTab('CROWDFUNDED');
+            setStatusFilter('ALL');
+            setPage(0);
+          }}
+          className={`flex-1 rounded-md px-4 py-1.5 text-sm font-medium transition-all duration-200 ${
+            tab === 'CROWDFUNDED'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          Cagnottes
+        </button>
+      </div>
+
       {/* Filtres */}
       <div className="flex flex-col sm:flex-row gap-2">
         <Select
@@ -285,6 +347,7 @@ export default function GiftCardsPage() {
           <SelectContent>
             <SelectItem value="ALL">Tous les statuts</SelectItem>
             <SelectItem value="ACTIVE">Actives</SelectItem>
+            {tab === 'CROWDFUNDED' && <SelectItem value="CLOSED">Clôturées</SelectItem>}
             <SelectItem value="REDEEMED">Utilisées</SelectItem>
             <SelectItem value="EXPIRED">Expirées</SelectItem>
             <SelectItem value="CANCELLED">Annulées</SelectItem>
@@ -313,7 +376,13 @@ export default function GiftCardsPage() {
           ))}
         </div>
       ) : (
-        <GiftCardList items={cards} onView={setDetailCard} onCancel={handleCancel} />
+        <GiftCardList
+          items={cards}
+          onView={setDetailCard}
+          onCancel={handleCancel}
+          onClose={handleCloseCrowdfunding}
+          closingId={closingId}
+        />
       )}
 
       {/* Pagination */}
@@ -380,7 +449,13 @@ export default function GiftCardsPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Type</p>
-                  <p>{detailCard.packName ? `Pack : ${detailCard.packName}` : 'Montant libre'}</p>
+                  <p>
+                    {detailCard.type === 'CROWDFUNDED'
+                      ? 'Cagnotte'
+                      : detailCard.packName
+                        ? `Pack : ${detailCard.packName}`
+                        : 'Montant libre'}
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Créée par</p>

@@ -3,7 +3,7 @@
 // @ts-ignore - date-fns types resolution issue under bundler
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Ban, Eye, Gift } from 'lucide-react';
+import { Ban, Eye, Gift, Lock } from 'lucide-react';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import MobileDataCard from '@/components/MobileDataCard';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +22,7 @@ const STATUS_LABELS: Record<string, string> = {
   REDEEMED: 'Utilisée',
   EXPIRED: 'Expirée',
   CANCELLED: 'Annulée',
+  CLOSED: 'Clôturée',
 };
 
 const STATUS_VARIANT: Record<string, string> = {
@@ -29,6 +30,7 @@ const STATUS_VARIANT: Record<string, string> = {
   REDEEMED: 'border-blue-500/30 bg-blue-500/10 text-blue-500',
   EXPIRED: 'border-amber-500/30 bg-amber-500/10 text-amber-500',
   CANCELLED: 'border-red-500/30 bg-red-500/10 text-red-500',
+  CLOSED: 'border-purple-500/30 bg-purple-500/10 text-purple-500',
 };
 
 function formatEuro(amount: number): string {
@@ -54,18 +56,31 @@ export type GiftCardListProps = {
   items: GiftCardListItem[];
   onView?: (card: GiftCardListItem) => void;
   onCancel?: (card: GiftCardListItem) => void;
+  onClose?: (card: GiftCardListItem) => void;
+  closingId?: string | null;
 };
 
-export default function GiftCardList({ items, onView, onCancel }: GiftCardListProps) {
+export default function GiftCardList({
+  items,
+  onView,
+  onCancel,
+  onClose,
+  closingId,
+}: GiftCardListProps) {
   const isMobile = useIsMobile();
 
   if (items.length === 0) {
+    const isCrowdfunding = items.length === 0 && onClose !== undefined;
     return (
       <div className="sokar-empty">
         <Gift size={40} className="opacity-30" />
-        <p className="text-sm">Aucune carte cadeau pour le moment</p>
+        <p className="text-sm">
+          {isCrowdfunding ? 'Aucune cagnotte pour le moment' : 'Aucune carte cadeau pour le moment'}
+        </p>
         <p className="text-xs opacity-60">
-          Les cartes cadeaux vendues ou créées manuellement apparaîtront ici.
+          {isCrowdfunding
+            ? 'Les cagnottes créées via le widget apparaîtront ici.'
+            : 'Les cartes cadeaux vendues ou créées manuellement apparaîtront ici.'}
         </p>
       </div>
     );
@@ -77,8 +92,12 @@ export default function GiftCardList({ items, onView, onCancel }: GiftCardListPr
         {items.map((card) => (
           <MobileDataCard
             key={card.id}
-            title={card.code}
-            subtitle={card.packName ?? 'Montant libre'}
+            title={card.type === 'CROWDFUNDED' ? (card.occasion ?? card.code) : card.code}
+            subtitle={
+              card.type === 'CROWDFUNDED'
+                ? `Cagnotte — ${card.recipientName ?? ''}`
+                : (card.packName ?? 'Montant libre')
+            }
             badge={<StatusBadge status={card.status} />}
             accentClass={
               card.status === 'ACTIVE'
@@ -87,7 +106,9 @@ export default function GiftCardList({ items, onView, onCancel }: GiftCardListPr
                   ? 'border-l-blue-400'
                   : card.status === 'CANCELLED'
                     ? 'border-l-red-500'
-                    : 'border-l-amber-500'
+                    : card.status === 'CLOSED'
+                      ? 'border-l-purple-500'
+                      : 'border-l-amber-500'
             }
             actions={[
               ...(onView
@@ -99,6 +120,19 @@ export default function GiftCardList({ items, onView, onCancel }: GiftCardListPr
                       onClick: (e: React.MouseEvent) => {
                         e.stopPropagation();
                         onView(card);
+                      },
+                    },
+                  ]
+                : []),
+              ...(onClose && card.type === 'CROWDFUNDED' && card.status === 'ACTIVE'
+                ? [
+                    {
+                      label: closingId === card.id ? 'Clôture...' : 'Clôturer',
+                      icon: <Lock size={14} />,
+                      colorClass: 'bg-purple-600',
+                      onClick: (e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        onClose(card);
                       },
                     },
                   ]
@@ -124,6 +158,22 @@ export default function GiftCardList({ items, onView, onCancel }: GiftCardListPr
                 value: card.sokarCommissionAmount ? formatEuro(card.sokarCommissionAmount) : '—',
               },
               { label: 'Solde', value: formatEuro(card.remainingAmount) },
+              ...(card.type === 'CROWDFUNDED'
+                ? [
+                    {
+                      label: 'Date butoir',
+                      value: card.crowdfundedUntil
+                        ? format(new Date(card.crowdfundedUntil), 'dd MMM yyyy', { locale: fr })
+                        : '—',
+                    },
+                    {
+                      label: 'Clôturée le',
+                      value: card.closedAt
+                        ? format(new Date(card.closedAt), 'dd MMM yyyy', { locale: fr })
+                        : '—',
+                    },
+                  ]
+                : []),
               {
                 label: 'Paiement',
                 value:
@@ -170,9 +220,17 @@ export default function GiftCardList({ items, onView, onCancel }: GiftCardListPr
           <TableBody>
             {items.map((card) => (
               <TableRow key={card.id} className="transition-all duration-200 hover:bg-accent">
-                <TableCell className="font-mono text-xs">{card.code}</TableCell>
+                <TableCell className="font-mono text-xs">
+                  {card.type === 'CROWDFUNDED' ? (
+                    <span className="text-sm font-sans">{card.occasion ?? card.code}</span>
+                  ) : (
+                    card.code
+                  )}
+                </TableCell>
                 <TableCell>
-                  {card.packName ? (
+                  {card.type === 'CROWDFUNDED' ? (
+                    <span className="text-sm text-purple-500">Cagnotte</span>
+                  ) : card.packName ? (
                     <span className="text-sm">Pack : {card.packName}</span>
                   ) : (
                     <span className="text-sm text-muted-foreground">Montant libre</span>
@@ -211,12 +269,16 @@ export default function GiftCardList({ items, onView, onCancel }: GiftCardListPr
                   )}
                 </TableCell>
                 <TableCell className="text-muted-foreground text-sm">
-                  {format(new Date(card.purchasedAt), 'dd MMM yyyy', { locale: fr })}
+                  {card.type === 'CROWDFUNDED' && card.crowdfundedUntil
+                    ? format(new Date(card.crowdfundedUntil), 'dd MMM yyyy', { locale: fr })
+                    : format(new Date(card.purchasedAt), 'dd MMM yyyy', { locale: fr })}
                 </TableCell>
                 <TableCell className="text-muted-foreground text-sm">
-                  {card.expiresAt
-                    ? format(new Date(card.expiresAt), 'dd MMM yyyy', { locale: fr })
-                    : '—'}
+                  {card.type === 'CROWDFUNDED' && card.closedAt
+                    ? format(new Date(card.closedAt), 'dd MMM yyyy', { locale: fr })
+                    : card.expiresAt
+                      ? format(new Date(card.expiresAt), 'dd MMM yyyy', { locale: fr })
+                      : '—'}
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
@@ -227,6 +289,16 @@ export default function GiftCardList({ items, onView, onCancel }: GiftCardListPr
                         title="Voir le détail"
                       >
                         <Eye size={16} />
+                      </button>
+                    )}
+                    {onClose && card.type === 'CROWDFUNDED' && card.status === 'ACTIVE' && (
+                      <button
+                        onClick={() => onClose(card)}
+                        disabled={closingId === card.id}
+                        className="p-2 text-white/50 hover:text-purple-400 rounded-lg hover:bg-white/5 transition-all duration-200 disabled:opacity-50"
+                        title="Clôturer la cagnotte"
+                      >
+                        <Lock size={16} />
                       </button>
                     )}
                     {onCancel && card.status === 'ACTIVE' && (
