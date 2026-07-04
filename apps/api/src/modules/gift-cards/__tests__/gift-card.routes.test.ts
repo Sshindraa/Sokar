@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { constructWebhookEvent } from '../stripe.service';
+import { checkRateLimit } from '../../../shared/redis/rate-limit';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service';
 import { ReservationService } from '../../agentic-reservations/core/reservation.service';
 
@@ -120,10 +121,21 @@ describe('gift-card routes', () => {
     });
 
     it('retourne les stats', async () => {
-      vi.mocked(db.giftCard.findMany).mockResolvedValue([
-        { amount: d(100), remainingAmount: d(0), status: 'REDEEMED' } as any,
-        { amount: d(50), remainingAmount: d(50), status: 'ACTIVE' } as any,
-      ]);
+      vi.mocked(db.giftCard.aggregate).mockImplementation((args: any) => {
+        if (args._sum?.amount) {
+          return Promise.resolve({ _sum: { amount: d(150) } }) as any;
+        }
+        if (args._sum?.remainingAmount) {
+          return Promise.resolve({ _sum: { remainingAmount: d(50) } }) as any;
+        }
+        return Promise.resolve({ _sum: null }) as any;
+      });
+      vi.mocked(db.giftCard.count).mockImplementation((args: any) => {
+        if (args?.where?.status === 'REDEEMED') return Promise.resolve(1) as any;
+        if (args?.where?.status === 'ACTIVE') return Promise.resolve(1) as any;
+        if (args?.where?.packId) return Promise.resolve(0) as any;
+        return Promise.resolve(2) as any;
+      });
 
       const app = await getApp();
       const res = await app.inject({
@@ -834,6 +846,10 @@ describe('gift-card routes', () => {
         senderEmail: 'jean@example.com',
         recipientName: 'Marie',
       } as any);
+      // Mock pour la vérification atomique dans la transaction
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue({
+        id: 'gc-crowd-1',
+      } as any);
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         name: 'Test Resto',
       } as any);
@@ -956,6 +972,51 @@ describe('gift-card routes', () => {
           }),
         }),
       );
+    });
+  });
+
+  // ─── Rate limiting ───────────────────────────────────────────────
+  describe('rate limiting', () => {
+    it('retourne 429 quand la limite est dépassée sur /payment-intent', async () => {
+      vi.mocked(checkRateLimit).mockResolvedValue(false);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/public/gift-cards/payment-intent',
+        headers: { 'content-type': 'application/json' },
+        payload: {
+          restaurantId: RESTAURANT_ID,
+          amount: 50,
+        },
+      });
+
+      expect(res.statusCode).toBe(429);
+      expect(res.json().error).toMatch(/Trop de requêtes/);
+
+      // Restaurer le mock pour les autres tests
+      vi.mocked(checkRateLimit).mockResolvedValue(true);
+    });
+
+    it('retourne 429 quand la limite est dépassée sur crowdfunding/:code/payment-intent', async () => {
+      vi.mocked(checkRateLimit).mockResolvedValue(false);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/public/gift-cards/crowdfunding/test-code/payment-intent',
+        headers: { 'content-type': 'application/json' },
+        payload: {
+          amount: 20,
+          contributorName: 'Paul',
+          isPublicName: true,
+        },
+      });
+
+      expect(res.statusCode).toBe(429);
+
+      // Restaurer le mock pour les autres tests
+      vi.mocked(checkRateLimit).mockResolvedValue(true);
     });
   });
 });

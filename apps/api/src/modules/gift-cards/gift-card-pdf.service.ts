@@ -5,12 +5,13 @@
  *   - Nom du restaurant
  *   - Montant
  *   - Code cadeau
- *   - Template/image de personnalisation (optionnel)
+ *   - Template/image de personnalisation (optionnel, téléchargé via fetch)
  *
  * Le QR code est optionnel en P2 (non implémenté ici).
  */
 import PDFDocument from 'pdfkit';
 import type { GiftCard } from '@prisma/client';
+import { logger } from '../../shared/logger/pino';
 
 type GiftCardWithRelations = GiftCard & {
   restaurant?: { name: string } | null;
@@ -18,9 +19,40 @@ type GiftCardWithRelations = GiftCard & {
 };
 
 /**
+ * Télécharge une image distante et retourne le buffer.
+ * Retourne null si le téléchargement échoue (fail-safe).
+ */
+async function fetchImageBuffer(url: string): Promise<Buffer | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) {
+      logger.warn({ url, status: res.status }, '[gift-card-pdf] Image custom inaccessible');
+      return null;
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  } catch (err: unknown) {
+    logger.warn(
+      { url, err: err instanceof Error ? err.message : String(err) },
+      '[gift-card-pdf] Erreur téléchargement image custom',
+    );
+    return null;
+  }
+}
+
+/**
  * Génère un PDF de la carte cadeau et retourne le buffer.
  */
 export async function generateGiftCardPdf(card: GiftCardWithRelations): Promise<Buffer> {
+  // Télécharger l'image personnalisée avant de générer le PDF (si présente)
+  let customImage: Buffer | null = null;
+  if (card.customImageUrl) {
+    customImage = await fetchImageBuffer(card.customImageUrl);
+  }
+
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A6', margin: 40 });
     const chunks: Buffer[] = [];
@@ -35,6 +67,23 @@ export async function generateGiftCardPdf(card: GiftCardWithRelations): Promise<
 
     // Fond
     doc.rect(0, 0, doc.page.width, doc.page.height).fill('#f8fafc');
+
+    // Image personnalisée en en-tête (si téléchargée avec succès)
+    if (customImage) {
+      try {
+        const imgWidth = 120;
+        const imgHeight = 60;
+        const x = (doc.page.width - imgWidth) / 2;
+        doc.image(customImage, x, 30, { width: imgWidth, height: imgHeight });
+        // Réserver l'espace pour l'image
+        doc.moveDown(3);
+      } catch (err: unknown) {
+        logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          "[gift-card-pdf] Impossible d'intégrer l'image custom dans le PDF",
+        );
+      }
+    }
 
     // Bordure
     doc
@@ -110,13 +159,6 @@ export async function generateGiftCardPdf(card: GiftCardWithRelations): Promise<
       ? `Valable jusqu'au ${new Date(card.expiresAt).toLocaleDateString('fr-FR')}`
       : `Valable ${card.validityMonths} mois`;
     doc.fontSize(8).fillColor('#94a3b8').font('Helvetica').text(expiryText, { align: 'center' });
-
-    // Image personnalisée (optionnel)
-    if (card.customImageUrl) {
-      // En P2, on ne télécharge pas l'image distante dans le PDF —
-      // l'URL est stockée et peut être affichée dans le widget.
-      // L'intégration d'image distante nécessiterait un fetch + buffer.
-    }
 
     doc.end();
   });
