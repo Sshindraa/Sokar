@@ -8,7 +8,6 @@
  *   4. Déclencher les notifications (email expéditeur, email destinataire, WhatsApp, notif restaurateur)
  */
 import type { PrismaClient, GiftCard } from '@prisma/client';
-import { Prisma } from '@prisma/client';
 import { GiftCardService } from './gift-card.service';
 import { retrievePaymentIntent } from './stripe.service';
 import {

@@ -695,7 +695,7 @@ export class CallSessionManager {
             return "Pour envoyer le code par SMS, j'ai besoin d'un numéro de téléphone valide de l'expéditeur au format international (ex: +33612345678).";
           }
 
-          void trackGiftCardEvent({
+          await trackGiftCardEvent({
             event: 'gift_card_purchase_started',
             restaurantId: session.restaurantId,
             source: 'voice',
@@ -743,7 +743,7 @@ export class CallSessionManager {
               return "La carte cadeau a été créée, mais je n'ai pas pu envoyer le SMS. Je vous transfère au gérant pour récupérer le code.";
             }
 
-            void trackGiftCardEvent({
+            await trackGiftCardEvent({
               event: 'gift_card_purchase_completed',
               restaurantId: session.restaurantId,
               source: 'voice',
@@ -764,7 +764,7 @@ export class CallSessionManager {
                 extra: { callId: session.callControlId },
               });
             }
-            void trackGiftCardEvent({
+            await trackGiftCardEvent({
               event: 'gift_card_purchase_failed',
               restaurantId: session.restaurantId,
               source: 'voice',

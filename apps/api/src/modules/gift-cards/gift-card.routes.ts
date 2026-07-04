@@ -12,6 +12,7 @@ import { GiftCardPaymentService } from './gift-card-payment.service';
 import { GiftCardCrowdfundingService } from './gift-card-crowdfunding.service';
 import { generateGiftCardPdf } from './gift-card-pdf.service';
 import { logger } from '../../shared/logger/pino';
+import { checkRateLimit, rateLimitKey, getClientIp } from '../../shared/redis/rate-limit';
 
 const ListGiftCardsQuerySchema = z.object({
   status: z.enum(['ACTIVE', 'REDEEMED', 'EXPIRED', 'CANCELLED', 'CLOSED']).optional(),
@@ -489,6 +490,13 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
 
   // ─── P2 — Stripe Payment Intent ──────────────────────────────────
   app.post('/public/gift-cards/payment-intent', async (req, reply) => {
+    // Rate limiting : 10 req/min/IP
+    const ip = getClientIp(req);
+    const allowed = await checkRateLimit(rateLimitKey('gift-card-pi', ip));
+    if (!allowed) {
+      return reply.status(429).send({ error: 'Trop de requêtes. Réessayez dans une minute.' });
+    }
+
     const body = PaymentIntentSchema.parse(req.body);
 
     // Déterminer le montant (pack ou libre)
@@ -677,6 +685,13 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
 
   // Créer un PaymentIntent pour une contribution
   app.post('/public/gift-cards/crowdfunding/:code/payment-intent', async (req, reply) => {
+    // Rate limiting : 10 req/min/IP
+    const ip = getClientIp(req);
+    const allowed = await checkRateLimit(rateLimitKey('crowdfunding-pi', ip));
+    if (!allowed) {
+      return reply.status(429).send({ error: 'Trop de requêtes. Réessayez dans une minute.' });
+    }
+
     const code = (req.params as { code: string }).code;
     const body = CrowdfundingPaymentIntentSchema.parse(req.body);
 

@@ -18,6 +18,8 @@ vi.mock('@prisma/client', async (importOriginal) => {
       findMany: vi.fn(),
       count: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
+      aggregate: vi.fn(),
     };
     giftCardContribution = {
       create: vi.fn(),
@@ -144,6 +146,14 @@ vi.mock('../modules/gift-cards/stripe.service', async (importOriginal) => {
   };
 });
 
+// ── Mock rate-limit (Redis non requis en tests unitaires) ──
+vi.mock('../shared/redis/rate-limit', () => ({
+  checkRateLimit: vi.fn().mockResolvedValue(true),
+  rateLimitKey: (route: string, ip: string) => `ratelimit:${route}:${ip}`,
+  getClientIp: (req: { ip?: string; headers?: Record<string, string | string[]> }) =>
+    req.ip ?? req.headers?.['x-forwarded-for'] ?? 'test-ip',
+}));
+
 // ── Mock gift-card-email.service (emails non envoyés en tests) ──
 vi.mock('../modules/gift-cards/gift-card-email.service', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
@@ -167,7 +177,7 @@ vi.mock('../modules/gift-cards/gift-card-whatsapp.service', () => ({
 vi.mock('pdfkit', () => {
   class PDFDocument {
     page = { width: 297, height: 420 }; // A6 approx
-    private handlers: Record<string, Function[]> = {};
+    private handlers: Record<string, ((chunk?: unknown) => void)[]> = {};
     constructor(_opts?: unknown) {}
     pipe = vi.fn();
     fontSize = vi.fn().mockReturnThis();
@@ -183,7 +193,7 @@ vi.mock('pdfkit', () => {
     stroke = vi.fn().mockReturnThis();
     moveDown = vi.fn().mockReturnThis();
     lineWidth = vi.fn().mockReturnThis();
-    on(event: string, cb: Function) {
+    on(event: string, cb: (chunk?: unknown) => void) {
       if (!this.handlers[event]) this.handlers[event] = [];
       this.handlers[event].push(cb);
       return this;

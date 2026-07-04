@@ -189,20 +189,22 @@ export class GiftCardService {
   }
 
   async getStats(restaurantId: string): Promise<GiftCardStats> {
-    const cards = await this.prisma.giftCard.findMany({
-      where: { restaurantId },
-    });
+    const [totalSoldAgg, totalRemainingAgg, redeemedCount, activeCount, totalCount, packCount] =
+      await Promise.all([
+        this.prisma.giftCard.aggregate({ where: { restaurantId }, _sum: { amount: true } }),
+        this.prisma.giftCard.aggregate({
+          where: { restaurantId },
+          _sum: { remainingAmount: true },
+        }),
+        this.prisma.giftCard.count({ where: { restaurantId, status: 'REDEEMED' } }),
+        this.prisma.giftCard.count({ where: { restaurantId, status: 'ACTIVE' } }),
+        this.prisma.giftCard.count({ where: { restaurantId } }),
+        this.prisma.giftCard.count({ where: { restaurantId, packId: { not: null } } }),
+      ]);
 
-    const totalSoldAmount = cards.reduce((sum, card) => sum + card.amount.toNumber(), 0);
-    const totalRemainingAmount = cards.reduce(
-      (sum, card) => sum + card.remainingAmount.toNumber(),
-      0,
-    );
-    const redeemedCount = cards.filter((card) => card.status === 'REDEEMED').length;
-    const activeCount = cards.filter((card) => card.status === 'ACTIVE').length;
-    const totalCount = cards.length;
+    const totalSoldAmount = totalSoldAgg._sum.amount?.toNumber() ?? 0;
+    const totalRemainingAmount = totalRemainingAgg._sum.remainingAmount?.toNumber() ?? 0;
     const averageAmount = totalCount > 0 ? totalSoldAmount / totalCount : 0;
-    const packCount = cards.filter((card) => card.packId !== null).length;
     const freeAmountCount = totalCount - packCount;
 
     return {

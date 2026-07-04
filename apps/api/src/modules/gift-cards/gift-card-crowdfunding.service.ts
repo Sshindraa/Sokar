@@ -71,7 +71,7 @@ export class GiftCardCrowdfundingService {
    * Vérifie le PaymentIntent Stripe, la deadline, et le statut de la cagnotte.
    */
   async contribute(input: ContributeInput, paymentIntentId: string): Promise<GiftCardContribution> {
-    // 1. Charger la cagnotte
+    // 1. Charger la cagnotte (lecture initiale pour validation rapide)
     const card = await this.prisma.giftCard.findUnique({
       where: { code: input.code },
     });
@@ -97,23 +97,39 @@ export class GiftCardCrowdfundingService {
       throw new CrowdfundingError('La date butoir de cette cagnotte est dépassée');
     }
 
-    // 3. Vérifier le PaymentIntent Stripe
+    // 3. Vérifier le PaymentIntent Stripe (avant la transaction)
     const pi = await retrievePaymentIntent(paymentIntentId);
     if (pi.status !== 'succeeded') {
       throw new CrowdfundingError(`Le paiement n'est pas confirmé (statut: ${pi.status})`);
     }
 
-    // 4. Créer la contribution
-    const contribution = await this.prisma.giftCardContribution.create({
-      data: {
-        giftCardId: card.id,
-        contributorName: input.contributorName,
-        contributorEmail: input.contributorEmail ?? null,
-        amount: new Prisma.Decimal(input.amount),
-        stripePaymentIntentId: paymentIntentId,
-        isPublicName: input.isPublicName,
-        message: input.message ?? null,
-      },
+    // 4. Transaction atomique : revérifier le statut + créer la contribution
+    //    Cela évite la race condition où la cagnotte est clôturée entre
+    //    la lecture initiale et la création de la contribution.
+    const contribution = await this.prisma.$transaction(async (tx) => {
+      // Revérifier atomiquement que la cagnotte est toujours active
+      const activeCard = await tx.giftCard.findFirst({
+        where: { id: card.id, type: 'CROWDFUNDED', status: 'ACTIVE' },
+        select: { id: true },
+      });
+
+      if (!activeCard) {
+        // La cagnotte n'est plus active (clôturée ou annulée entre-temps)
+        throw new CrowdfundingError("Cette cagnotte n'est plus active");
+      }
+
+      // Créer la contribution dans la même transaction
+      return tx.giftCardContribution.create({
+        data: {
+          giftCardId: card.id,
+          contributorName: input.contributorName,
+          contributorEmail: input.contributorEmail ?? null,
+          amount: new Prisma.Decimal(input.amount),
+          stripePaymentIntentId: paymentIntentId,
+          isPublicName: input.isPublicName,
+          message: input.message ?? null,
+        },
+      });
     });
 
     // 5. Notifications (non-bloquantes)
@@ -125,7 +141,7 @@ export class GiftCardCrowdfundingService {
 
     const title = card.occasion ?? 'Cagnotte';
 
-    Promise.allSettled([
+    await Promise.allSettled([
       // Email au contributeur
       sendContributionConfirmation({
         to: input.contributorEmail ?? '',
@@ -228,7 +244,7 @@ export class GiftCardCrowdfundingService {
     // Notifications (non-bloquantes)
     const pdfUrl = `${process.env.API_URL ?? ''}/public/gift-cards/${card.code}/pdf`;
 
-    Promise.allSettled([
+    await Promise.allSettled([
       sendCrowdfundingClosed({
         to: card.recipientEmail ?? '',
         recipientName: card.recipientName ?? '',

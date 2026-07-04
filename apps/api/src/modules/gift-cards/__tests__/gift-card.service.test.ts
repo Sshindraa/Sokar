@@ -311,11 +311,23 @@ describe('GiftCardService', () => {
   });
 
   it('calcule les stats', async () => {
-    vi.mocked(db.giftCard.findMany).mockResolvedValue([
-      { amount: d(100), remainingAmount: d(0), status: 'REDEEMED', packId: 'pack-1' } as any,
-      { amount: d(50), remainingAmount: d(50), status: 'ACTIVE', packId: null } as any,
-      { amount: d(80), remainingAmount: d(30), status: 'ACTIVE', packId: null } as any,
-    ]);
+    // Mock aggregate : retourne different selon le champ demandé
+    vi.mocked(db.giftCard.aggregate).mockImplementation((args: any) => {
+      if (args._sum?.amount) {
+        return Promise.resolve({ _sum: { amount: d(230) } }) as any;
+      }
+      if (args._sum?.remainingAmount) {
+        return Promise.resolve({ _sum: { remainingAmount: d(80) } }) as any;
+      }
+      return Promise.resolve({ _sum: null }) as any;
+    });
+    // Mock count : retourne different selon le where
+    vi.mocked(db.giftCard.count).mockImplementation((args: any) => {
+      if (args?.where?.status === 'REDEEMED') return Promise.resolve(1) as any;
+      if (args?.where?.status === 'ACTIVE') return Promise.resolve(2) as any;
+      if (args?.where?.packId) return Promise.resolve(1) as any;
+      return Promise.resolve(3) as any;
+    });
 
     const stats = await service.getStats(RESTAURANT_ID);
 

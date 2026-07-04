@@ -60,10 +60,11 @@ vi.mock('../shared/db/client', () => {
     },
     giftCard: {
       findUnique: vi.fn(),
-      findFirst: vi.fn(),
+      findFirst: vi.fn().mockResolvedValue({ id: 'tx-card' }),
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       delete: vi.fn(),
     },
     giftCardRedemption: {
@@ -83,148 +84,164 @@ vi.mock('../shared/db/client', () => {
       delete: vi.fn(),
     },
   };
-  return {
-    db: {
-      restaurant: {
-        create: vi.fn(),
-        update: vi.fn(),
-        findFirst: vi.fn(),
-        findUnique: vi.fn(),
-        findUniqueOrThrow: vi.fn(),
-        findMany: vi.fn(),
-        count: vi.fn(),
-      },
-      agentPersonality: {
-        findUnique: vi.fn(),
-        upsert: vi.fn(),
-      },
-      agentClient: {
-        findUnique: vi.fn(),
-        findMany: vi.fn(),
-        findFirst: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-      },
-      restaurantExposureSettings: {
-        findUnique: vi.fn(),
-        upsert: vi.fn(),
-        findFirst: vi.fn(),
-        update: vi.fn(),
-      },
-      reservationAuditLog: {
-        create: vi.fn(),
-      },
-      reservation: {
-        create: vi.fn(),
-        findMany: vi.fn(),
-        findFirst: vi.fn(),
-        findUnique: vi.fn(),
-        update: vi.fn(),
-        count: vi.fn(),
-      },
-      customer: {
-        findMany: vi.fn(),
-        findFirst: vi.fn(),
-        findUnique: vi.fn(),
-        count: vi.fn(),
-        upsert: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-        updateMany: vi.fn(),
-        delete: vi.fn(),
-      },
-      call: {
-        create: vi.fn(),
-        findMany: vi.fn(),
-        findUnique: vi.fn(),
-        upsert: vi.fn(),
-        count: vi.fn(),
-        update: vi.fn(),
-        delete: vi.fn(),
-      },
-      latencyTrace: {
-        findMany: vi.fn(),
-      },
-      customerConsent: {
-        create: vi.fn(),
-        findFirst: vi.fn(),
-        findMany: vi.fn(),
-        count: vi.fn(),
-        updateMany: vi.fn(),
-      },
-      agenticHold: {
-        findFirst: vi.fn(),
-        findUnique: vi.fn(),
-        findMany: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-        updateMany: vi.fn(),
-      },
-      restaurantImage: {
-        findMany: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-        updateMany: vi.fn(),
-        delete: vi.fn(),
-      },
-      onboardingEvent: {
-        findMany: vi.fn().mockResolvedValue([]),
-        create: vi.fn().mockResolvedValue({ id: 'test-evt-1' }),
-      },
-      floorPlan: {
-        findUnique: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-      },
-      section: {
-        findMany: vi.fn(),
-        findUnique: vi.fn(),
-        findFirst: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-        delete: vi.fn(),
-      },
-      table: {
-        findMany: vi.fn(),
-        findUnique: vi.fn(),
-        findFirst: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-        delete: vi.fn(),
-      },
-      giftCard: {
-        findUnique: vi.fn(),
-        findFirst: vi.fn(),
-        findMany: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-        delete: vi.fn(),
-        count: vi.fn(),
-      },
-      giftCardRedemption: {
-        create: vi.fn(),
-        findMany: vi.fn(),
-      },
-      giftCardContribution: {
-        create: vi.fn(),
-        findMany: vi.fn(),
-      },
-      giftCardPack: {
-        findUnique: vi.fn(),
-        findFirst: vi.fn(),
-        findMany: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-        delete: vi.fn(),
-      },
-      $transaction: vi.fn(async (fn: any) => {
-        if (Array.isArray(fn)) {
-          return Promise.all(fn);
-        }
-        return fn(txMock);
-      }),
+
+  const dbObj = {
+    restaurant: {
+      create: vi.fn(),
+      update: vi.fn(),
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
     },
+    agentPersonality: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+    },
+    agentClient: {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
+    restaurantExposureSettings: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
+    },
+    reservationAuditLog: {
+      create: vi.fn(),
+    },
+    reservation: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
+      count: vi.fn(),
+    },
+    customer: {
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      count: vi.fn(),
+      upsert: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      delete: vi.fn(),
+    },
+    call: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+      count: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    latencyTrace: {
+      findMany: vi.fn(),
+    },
+    customerConsent: {
+      create: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    agenticHold: {
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    restaurantImage: {
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      delete: vi.fn(),
+    },
+    onboardingEvent: {
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue({ id: 'test-evt-1' }),
+    },
+    floorPlan: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
+    section: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    table: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    giftCard: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      delete: vi.fn(),
+      count: vi.fn(),
+      aggregate: vi.fn(),
+    },
+    giftCardRedemption: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+    },
+    giftCardContribution: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+    },
+    giftCardPack: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    $transaction: vi.fn(async (fn: any) => {
+      if (Array.isArray(fn)) {
+        return Promise.all(fn);
+      }
+      // Fusionner txMock avec db : pour chaque modèle, on crée un proxy
+      // qui préfère les mocks définis sur db (où les tests font vi.mocked)
+      // mais retombe sur txMock pour les modèles uniquement dans txMock.
+      const mergedTx = new Proxy({} as Record<string, unknown>, {
+        get: (_target, prop) => {
+          const propStr = prop as string;
+          // Si le modèle existe dans db, l'utiliser (les tests mockent db)
+          if (propStr in dbObj) return dbObj[propStr];
+          // Sinon, retomber sur txMock
+          if (propStr in txMock) return txMock[propStr];
+          return undefined;
+        },
+      });
+      return fn(mergedTx);
+    }),
   };
+
+  return { db: dbObj };
 });
 
 vi.mock('../shared/redis/client', () => {
