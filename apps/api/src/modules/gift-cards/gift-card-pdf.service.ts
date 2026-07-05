@@ -112,14 +112,25 @@ export async function generateGiftCardPdf(card: GiftCardWithRelations): Promise<
       align: 'center',
     });
 
-    // Code cadeau
+    // Code cadeau — shortCode en grand, code UUID en petit
     doc.moveDown(2);
     doc
       .fontSize(10)
       .fillColor('#64748b')
       .font('Helvetica')
       .text('Code cadeau', { align: 'center' });
-    doc.fontSize(14).fillColor('#0F172A').font('Courier-Bold').text(code, { align: 'center' });
+    const displayCode = card.shortCode ?? code;
+    doc
+      .fontSize(18)
+      .fillColor('#0F172A')
+      .font('Courier-Bold')
+      .text(displayCode, { align: 'center' });
+    if (card.shortCode) {
+      doc.moveDown(0.3);
+      doc.fontSize(8).fillColor('#94a3b8').font('Helvetica').text(`Référence : ${code}`, {
+        align: 'center',
+      });
+    }
 
     // Message personnalisé
     if (card.message) {

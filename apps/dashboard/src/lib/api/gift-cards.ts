@@ -5,6 +5,7 @@ import { useApi } from '../api';
 export type GiftCardListItem = {
   id: string;
   code: string;
+  shortCode: string | null;
   amount: number;
   remainingAmount: number;
   status: string;

@@ -199,6 +199,7 @@ function serializeGiftCard(
     id: card.id,
     restaurantId: card.restaurantId,
     code: maskCode(card.code),
+    shortCode: card.shortCode ?? null,
     amount: card.amount.toNumber(),
     remainingAmount: card.remainingAmount.toNumber(),
     currency: card.currency,
@@ -617,10 +618,16 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
   app.get('/public/gift-cards/:code/pdf', async (req, reply) => {
     const code = (req.params as { code: string }).code;
 
-    const card = await db.giftCard.findUnique({
-      where: { code },
-      include: { restaurant: { select: { name: true } }, pack: { select: { name: true } } },
-    });
+    // Accepter shortCode (SKR-...) ou code UUID
+    const card = code.startsWith('SKR-')
+      ? await db.giftCard.findUnique({
+          where: { shortCode: code },
+          include: { restaurant: { select: { name: true } }, pack: { select: { name: true } } },
+        })
+      : await db.giftCard.findUnique({
+          where: { code },
+          include: { restaurant: { select: { name: true } }, pack: { select: { name: true } } },
+        });
 
     if (!card) {
       return reply.status(404).send({ error: 'Carte cadeau introuvable' });
@@ -671,6 +678,7 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(201).send({
         id: card.id,
         code: card.code,
+        shortCode: card.shortCode,
         type: card.type,
         title: card.occasion,
         crowdfundedUntil: card.crowdfundedUntil,

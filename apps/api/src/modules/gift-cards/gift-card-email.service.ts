@@ -13,6 +13,7 @@ import { logger } from '../../shared/logger/pino';
 type GiftCardEmailData = {
   giftCardId: string;
   code: string;
+  shortCode: string | null;
   amount: number;
   restaurantName: string;
   senderName: string | null;
@@ -85,7 +86,8 @@ export async function sendRecipientGiftCard(data: GiftCardEmailData): Promise<vo
       ${data.message ? `<p><em>« ${data.message} »</em></p>` : ''}
       <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
         <p style="margin: 0; color: #64748b; font-size: 14px;">Votre code cadeau</p>
-        <p style="margin: 8px 0; font-size: 24px; font-weight: bold; letter-spacing: 2px; color: #0F172A;">${data.code}</p>
+        <p style="margin: 8px 0; font-size: 28px; font-weight: bold; letter-spacing: 3px; color: #0F172A;">${data.shortCode ?? data.code}</p>
+        ${data.shortCode ? `<p style="margin: 4px 0; font-size: 11px; color: #94a3b8;">Référence : ${data.code}</p>` : ''}
       </div>
       ${data.pdfUrl ? `<p><a href="${data.pdfUrl}" style="color: #EA580C;">Télécharger la carte cadeau (PDF)</a></p>` : ''}
       <p>Utilisez ce code lors de votre réservation sur le site de ${data.restaurantName}.</p>
@@ -242,6 +244,7 @@ export async function sendCrowdfundingClosed(input: {
   commissionAmount: number;
   finalAmount: number;
   code: string;
+  shortCode: string | null;
   restaurantName: string;
   pdfUrl: string;
 }): Promise<void> {
@@ -271,7 +274,8 @@ export async function sendCrowdfundingClosed(input: {
       </table>
       <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
         <p style="margin: 0; color: #64748b; font-size: 14px;">Votre code cadeau</p>
-        <p style="margin: 8px 0; font-size: 24px; font-weight: bold; letter-spacing: 2px; color: #0F172A;">${input.code}</p>
+        <p style="margin: 8px 0; font-size: 28px; font-weight: bold; letter-spacing: 3px; color: #0F172A;">${input.shortCode ?? input.code}</p>
+        ${input.shortCode ? `<p style="margin: 4px 0; font-size: 11px; color: #94a3b8;">Référence : ${input.code}</p>` : ''}
       </div>
       <p><a href="${input.pdfUrl}" style="color: #EA580C;">Télécharger la carte cadeau (PDF)</a></p>
       <p>Utilisez ce code lors de votre réservation sur le site de ${input.restaurantName}.</p>

@@ -366,4 +366,88 @@ describe('GiftCardService', () => {
     expect(card.amount.toNumber()).toBe(120);
     expect(card.packId).toBe('pack-1');
   });
+
+  // ─── shortCode ───────────────────────────────────────────────────
+  it('génère un shortCode à la création', async () => {
+    vi.mocked(db.giftCard.create).mockResolvedValue({
+      id: 'gc-sc-1',
+      restaurantId: RESTAURANT_ID,
+      amount: d(100),
+      remainingAmount: d(100),
+      status: 'ACTIVE',
+      code: 'uuid-1234',
+      shortCode: 'SKR-TEST-01',
+    } as any);
+
+    const card = await service.create(makeCardInput());
+
+    expect(card.shortCode).toBe('SKR-TEST-01');
+    expect(db.giftCard.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          shortCode: expect.any(String),
+        }),
+      }),
+    );
+  });
+
+  it('findByShortCode retourne la carte correspondante', async () => {
+    vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+      id: 'gc-sc-1',
+      restaurantId: RESTAURANT_ID,
+      code: 'uuid-1234',
+      shortCode: 'SKR-TEST-01',
+      amount: d(100),
+      remainingAmount: d(100),
+      status: 'ACTIVE',
+    } as any);
+
+    const card = await service.findByShortCode('SKR-TEST-01');
+    expect(card).not.toBeNull();
+    expect(card?.shortCode).toBe('SKR-TEST-01');
+    expect(db.giftCard.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { shortCode: 'SKR-TEST-01' },
+      }),
+    );
+  });
+
+  it('validateCode accepte un shortCode (SKR-...)', async () => {
+    vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+      id: 'gc-sc-1',
+      restaurantId: RESTAURANT_ID,
+      code: 'uuid-1234',
+      shortCode: 'SKR-TEST-01',
+      amount: d(100),
+      remainingAmount: d(100),
+      status: 'ACTIVE',
+      expiresAt: null,
+    } as any);
+
+    const result = await service.validateCode('SKR-TEST-01');
+    expect(result.valid).toBe(true);
+    // Vérifier que findUnique a été appelé avec shortCode
+    expect(db.giftCard.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { shortCode: 'SKR-TEST-01' },
+      }),
+    );
+  });
+
+  it('findByCodeOrShortCodeWithPack accepte un shortCode', async () => {
+    vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+      id: 'gc-sc-1',
+      restaurantId: RESTAURANT_ID,
+      code: 'uuid-1234',
+      shortCode: 'SKR-TEST-01',
+      amount: d(100),
+      remainingAmount: d(100),
+      status: 'ACTIVE',
+      pack: null,
+    } as any);
+
+    const card = await service.findByCodeOrShortCodeWithPack('SKR-TEST-01');
+    expect(card).not.toBeNull();
+    expect(card?.shortCode).toBe('SKR-TEST-01');
+  });
 });

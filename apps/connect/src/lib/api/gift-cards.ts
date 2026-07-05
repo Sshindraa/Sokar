@@ -58,6 +58,7 @@ export type GiftCardPurchaseInput = {
 export type GiftCardPurchaseResult = {
   id: string;
   code: string;
+  shortCode: string | null;
   amount: number;
   remainingAmount: number;
   status: string;
@@ -201,6 +202,7 @@ export type CreateCrowdfundingInput = {
 export type CreateCrowdfundingResult = {
   id: string;
   code: string;
+  shortCode: string | null;
   type: string;
   title: string;
   crowdfundedUntil: string | null;
@@ -217,6 +219,7 @@ export type PublicContribution = {
 
 export type CrowdfundingStatus = {
   code: string;
+  shortCode: string | null;
   title: string;
   occasion: string | null;
   recipientName: string;

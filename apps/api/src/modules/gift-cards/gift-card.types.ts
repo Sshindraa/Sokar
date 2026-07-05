@@ -163,6 +163,7 @@ export type PublicContribution = {
 
 export type PublicCrowdfundingStatus = {
   code: string;
+  shortCode: string | null;
   title: string;
   occasion: string | null;
   recipientName: string;

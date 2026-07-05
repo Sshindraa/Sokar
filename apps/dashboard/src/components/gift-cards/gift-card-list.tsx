@@ -92,7 +92,11 @@ export default function GiftCardList({
         {items.map((card) => (
           <MobileDataCard
             key={card.id}
-            title={card.type === 'CROWDFUNDED' ? (card.occasion ?? card.code) : card.code}
+            title={
+              card.type === 'CROWDFUNDED'
+                ? (card.occasion ?? card.code)
+                : (card.shortCode ?? card.code)
+            }
             subtitle={
               card.type === 'CROWDFUNDED'
                 ? `Cagnotte — ${card.recipientName ?? ''}`
@@ -223,6 +227,11 @@ export default function GiftCardList({
                 <TableCell className="font-mono text-xs">
                   {card.type === 'CROWDFUNDED' ? (
                     <span className="text-sm font-sans">{card.occasion ?? card.code}</span>
+                  ) : card.shortCode ? (
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm font-bold tracking-wider">{card.shortCode}</span>
+                      <span className="text-[10px] text-muted-foreground">{card.code}</span>
+                    </div>
                   ) : (
                     card.code
                   )}

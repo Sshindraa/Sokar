@@ -8,6 +8,7 @@ import {
   type GiftCardStats,
   type GiftCardWithPack,
 } from './gift-card.types.js';
+import { generateUniqueShortCode } from './gift-card-code.util.js';
 
 export class GiftCardError extends Error {
   constructor(message: string) {
@@ -51,6 +52,9 @@ export class GiftCardService {
     const validityMonths = input.validityMonths ?? 12;
     const expiresAt = input.expiresAt ?? this.addMonths(new Date(), validityMonths);
 
+    // Générer un shortCode unique (alias public lisible)
+    const shortCode = await generateUniqueShortCode(this.prisma);
+
     return this.prisma.giftCard.create({
       data: {
         restaurantId: input.restaurantId,
@@ -82,14 +86,41 @@ export class GiftCardService {
         type: input.type ?? 'SINGLE',
         targetAmount: input.targetAmount ?? null,
         crowdfundedUntil: input.crowdfundedUntil ?? null,
+        shortCode,
       },
     });
   }
 
-  async validateCode(code: string, restaurantId?: string): Promise<GiftCardValidationResult> {
-    const giftCard = await this.prisma.giftCard.findUnique({
-      where: { code },
+  /**
+   * Recherche une carte par shortCode (alias public) ou par code UUID.
+   */
+  async findByShortCode(shortCode: string): Promise<GiftCard | null> {
+    return this.prisma.giftCard.findUnique({
+      where: { shortCode },
     });
+  }
+
+  /**
+   * Recherche une carte par code (UUID) OU par shortCode (alias public).
+   * Essaie d'abord le shortCode (format court), puis retombe sur le code UUID.
+   */
+  async findByCodeOrShortCode(identifier: string): Promise<GiftCard | null> {
+    // Si l'identifiant ressemble à un shortCode (commence par SKR-), on cherche par shortCode
+    if (identifier.startsWith('SKR-')) {
+      const card = await this.prisma.giftCard.findUnique({
+        where: { shortCode: identifier },
+      });
+      if (card) return card;
+    }
+    // Sinon, on cherche par code UUID
+    return this.prisma.giftCard.findUnique({
+      where: { code: identifier },
+    });
+  }
+
+  async validateCode(code: string, restaurantId?: string): Promise<GiftCardValidationResult> {
+    // Accepter indifféremment le code UUID ou le shortCode (SKR-XXXX-XX)
+    const giftCard = await this.findByCodeOrShortCode(code);
 
     if (!giftCard) {
       return { valid: false, reason: 'NOT_FOUND' };
@@ -222,6 +253,23 @@ export class GiftCardService {
   async findByCodeWithPack(code: string): Promise<GiftCardWithPack | null> {
     return this.prisma.giftCard.findUnique({
       where: { code },
+      include: { pack: true },
+    }) as Promise<GiftCardWithPack | null>;
+  }
+
+  /**
+   * Recherche une carte avec pack par code UUID OU par shortCode.
+   */
+  async findByCodeOrShortCodeWithPack(identifier: string): Promise<GiftCardWithPack | null> {
+    if (identifier.startsWith('SKR-')) {
+      const card = await this.prisma.giftCard.findUnique({
+        where: { shortCode: identifier },
+        include: { pack: true },
+      });
+      if (card) return card as GiftCardWithPack;
+    }
+    return this.prisma.giftCard.findUnique({
+      where: { code: identifier },
       include: { pack: true },
     }) as Promise<GiftCardWithPack | null>;
   }

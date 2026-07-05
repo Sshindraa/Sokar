@@ -36,7 +36,8 @@ export function GiftCardConfirmation({
     if (!bookNow) return;
     setLoadingSlots(true);
     setSlotsError(null);
-    suggestGiftCardSlots(result.code, {
+    const publicCode = result.shortCode ?? result.code;
+    suggestGiftCardSlots(publicCode, {
       preferredDate: result.preferredDate ?? undefined,
       preferredTime: result.preferredTime ?? undefined,
       partySize: result.preferredPartySize ?? undefined,
@@ -44,7 +45,14 @@ export function GiftCardConfirmation({
       .then((data) => setSlots(data.slots))
       .catch((err) => setSlotsError(err.message || 'Impossible de charger les créneaux'))
       .finally(() => setLoadingSlots(false));
-  }, [bookNow, result.code, result.preferredDate, result.preferredTime, result.preferredPartySize]);
+  }, [
+    bookNow,
+    result.code,
+    result.shortCode,
+    result.preferredDate,
+    result.preferredTime,
+    result.preferredPartySize,
+  ]);
 
   return (
     <div className="space-y-6">
@@ -73,8 +81,13 @@ export function GiftCardConfirmation({
             className="mt-1 font-mono text-2xl font-bold tracking-wider"
             style={{ color: accentColor }}
           >
-            {result.code}
+            {result.shortCode ?? result.code}
           </p>
+          {result.shortCode && (
+            <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+              Référence : {result.code}
+            </p>
+          )}
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -137,7 +150,7 @@ export function GiftCardConfirmation({
             </div>
           ) : (
             <GiftCardSlotsPicker
-              code={result.code}
+              code={result.shortCode ?? result.code}
               slots={slots}
               primaryColor={primaryColor}
               accentColor={accentColor}

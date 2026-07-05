@@ -133,12 +133,14 @@ export class GiftCardPaymentService {
     });
 
     // 6. Notifications (non-bloquantes — on log les erreurs mais on ne fait pas échouer l'achat)
-    const pdfUrl = `${process.env.API_URL ?? ''}/public/gift-cards/${card.code}/pdf`;
+    const publicCode = card.shortCode ?? card.code;
+    const pdfUrl = `${process.env.API_URL ?? ''}/public/gift-cards/${publicCode}/pdf`;
 
     await Promise.allSettled([
       sendSenderReceipt({
         giftCardId: card.id,
         code: card.code,
+        shortCode: card.shortCode,
         amount,
         restaurantName: restaurant.name,
         senderName: input.senderName ?? null,
@@ -152,6 +154,7 @@ export class GiftCardPaymentService {
       sendRecipientGiftCard({
         giftCardId: card.id,
         code: card.code,
+        shortCode: card.shortCode,
         amount,
         restaurantName: restaurant.name,
         senderName: input.senderName ?? null,

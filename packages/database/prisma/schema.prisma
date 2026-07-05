@@ -657,6 +657,9 @@ model GiftCard {
   crowdfundedUntil  DateTime? @map("crowdfunded_until") // deadline
   closedAt          DateTime? @map("closed_at") // date de clôture manuelle
 
+  // P2 — Code court mnémonique (alias public lisible, le code UUID reste l'identifiant technique)
+  shortCode         String?   @unique @map("short_code")
+
   restaurant    Restaurant             @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   customer      Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull)
   redemptions   GiftCardRedemption[]
@@ -664,6 +667,7 @@ model GiftCard {
 
   @@index([restaurantId, status])
   @@index([code])
+  @@index([shortCode])
   @@map("gift_cards")
 }
 
