@@ -555,3 +555,46 @@ Deux boutons : "Montant libre" / "Pack expérience".
 - [ ] Le widget permet de choisir entre montant libre et pack.
 - [ ] Le copy est en français avec `vous`.
 - [ ] Les tests passent : `pnpm --filter @sokar/api test` et `pnpm --filter @sokar/api typecheck`.
+
+---
+
+## 16. shortCode mnémonique (P2 complémentaire)
+
+### Format
+
+- `SKR-XXXX-XX` (ex: `SKR-X7F2-9K`)
+- Alphabet : `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (exclut 0, O, I, L pour éviter la confusion visuelle)
+- Le code UUID reste l'identifiant technique. Le shortCode est un alias public lisible.
+
+### Génération
+
+- `gift-card-code.util.ts` : `generateShortCode()` + `generateUniqueShortCode(prisma)` (vérif DB, max 10 tentatives)
+- Appelé automatiquement dans `GiftCardService.create()`
+
+### Routes acceptant shortCode ou UUID
+
+- `GET /public/gift-cards/:code/pdf` — détecte `SKR-` pour choisir shortCode vs UUID
+- `POST /public/gift-cards/check` — `validateCode()` accepte les deux
+- `POST /public/gift-cards/:code/slots` — via `findByCodeOrShortCodeWithPack`
+- `POST /public/gift-cards/:code/book` — via `findByCodeOrShortCodeWithPack`
+
+### Affichage
+
+- **PDF** : shortCode en grand (18pt), code UUID en petit (8pt, "Référence : ...")
+- **Emails** : shortCode en grand (28pt), code UUID en petit (11pt)
+- **Connect (confirmation)** : shortCode en grand (2xl), code UUID en petit (10px)
+- **Dashboard (liste)** : shortCode en gras + code UUID en petit
+
+### Backfill des cartes existantes
+
+Un script idempotent génère des shortCodes pour les cartes existantes sans shortCode :
+
+```bash
+npx tsx apps/api/scripts/backfill-gift-card-shortcodes.ts
+```
+
+- Récupère toutes les cartes avec `shortCode IS NULL`
+- Génère un shortCode unique pour chacune via `generateUniqueShortCode`
+- Log le nombre de cartes traitées
+- Idempotent : les cartes avec shortCode sont ignorées
+- À exécuter en local d'abord, puis en production après déploiement
