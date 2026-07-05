@@ -404,6 +404,26 @@ echo "📦 Verifying..."
 sleep 3
 pm2 status
 
+# Attendre que les services Fastify/Connect soient prêts (bind 127.0.0.1, démarrage >3s).
+# Timeout total 30s, retry toutes les 2s.
+echo ""
+echo "⏳ Waiting for API and Connect to be ready..."
+WAIT_START=$(date +%s)
+while true; do
+    API_READY=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4000/health 2>/dev/null || echo "000")
+    CONNECT_READY=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4002/restaurant/chez-sokar-demo 2>/dev/null || echo "000")
+    if [ "$API_READY" = "200" ] && [ "$CONNECT_READY" = "200" ]; then
+        echo "   API + Connect ready"
+        break
+    fi
+    WAIT_NOW=$(date +%s)
+    if [ $((WAIT_NOW - WAIT_START)) -ge 30 ]; then
+        echo "   ⚠️ Timeout waiting for API/Connect (API=$API_READY Connect=$CONNECT_READY)"
+        break
+    fi
+    sleep 2
+done
+
 echo ""
 echo "=== Checking HTTP endpoints ==="
 API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4000/health 2>/dev/null || echo "FAIL")
