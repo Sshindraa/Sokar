@@ -350,6 +350,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
           openingHours: true,
           phoneNumber: true,
           // Champs Sokar Connect utiles pour le rendu
+          slug: true,
           city: true,
           cuisineType: true,
           coverImageUrl: true,
