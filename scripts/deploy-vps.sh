@@ -434,6 +434,11 @@ if ! printf '%s' "$WIDGET_HEADERS" | grep -Eqi '^Content-Security-Policy:.*frame
 fi
 echo "   widget iframe headers → $WIDGET_IFRAME_STATUS"
 
+# Vérification de la page achat carte cadeau (P1.4) — route /widget/[slug]/gift-card.
+GIFT_CARD_WIDGET_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: sokar.tech" \
+    http://127.0.0.1/widget/chez-sokar-demo/gift-card 2>/dev/null || echo "FAIL")
+echo "   gift-card widget page → $GIFT_CARD_WIDGET_STATUS"
+
 # Vérification post-déploiement : un asset CSS/JS réel doit répondre 200.
 # Bug historique : `curl -I /` répond 200 même si .next/static n'a pas été
 # copié dans le standalone → page blanche côté client. On extrait le premier
@@ -462,6 +467,7 @@ if [ "$API_STATUS" = "200" ] \
     && [ "$WIDGET_API_STATUS" = "200" ] \
     && [ "$PUBLIC_PAGE_STATUS" = "200" ] \
     && [ "$WIDGET_IFRAME_STATUS" = "OK" ] \
+    && [ "$GIFT_CARD_WIDGET_STATUS" = "200" ] \
     && [ "$DASH_CSS_STATUS" = "200" ]; then
     echo ""
     echo "✅ Deploy complete — API + dashboard + Sokar Connect + routing OK"
