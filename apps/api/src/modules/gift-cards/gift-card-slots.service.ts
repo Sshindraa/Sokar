@@ -30,7 +30,7 @@ export class GiftCardSlotsService {
       throw new GiftCardSlotsError(`Carte cadeau invalide : ${validation.reason}`);
     }
 
-    const giftCard = await this.giftCardService.findByCodeWithPack(args.giftCardCode);
+    const giftCard = await this.giftCardService.findByCodeOrShortCodeWithPack(args.giftCardCode);
     if (!giftCard) {
       throw new GiftCardSlotsError('Carte cadeau introuvable');
     }

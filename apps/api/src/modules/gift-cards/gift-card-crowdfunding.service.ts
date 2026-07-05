@@ -242,7 +242,8 @@ export class GiftCardCrowdfundingService {
     });
 
     // Notifications (non-bloquantes)
-    const pdfUrl = `${process.env.API_URL ?? ''}/public/gift-cards/${card.code}/pdf`;
+    const publicCode = updated.shortCode ?? updated.code;
+    const pdfUrl = `${process.env.API_URL ?? ''}/public/gift-cards/${publicCode}/pdf`;
 
     await Promise.allSettled([
       sendCrowdfundingClosed({
@@ -252,13 +253,14 @@ export class GiftCardCrowdfundingService {
         totalCollected,
         commissionAmount,
         finalAmount,
-        code: card.code,
+        code: updated.code,
+        shortCode: updated.shortCode,
         restaurantName: restaurant.name,
         pdfUrl,
       }),
       sendRecipientWhatsApp({
         to: card.recipientPhone ?? '',
-        code: card.code,
+        code: updated.shortCode ?? updated.code,
         amount: finalAmount,
         restaurantName: restaurant.name,
       }),
@@ -315,6 +317,7 @@ export class GiftCardCrowdfundingService {
 
     return {
       code: card.code,
+      shortCode: card.shortCode,
       title: card.occasion ?? 'Cagnotte',
       occasion: card.occasion,
       recipientName: card.recipientName ?? '',

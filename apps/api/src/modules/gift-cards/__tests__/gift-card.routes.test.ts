@@ -1019,4 +1019,123 @@ describe('gift-card routes', () => {
       vi.mocked(checkRateLimit).mockResolvedValue(true);
     });
   });
+
+  // ─── shortCode ───────────────────────────────────────────────────
+  describe('shortCode', () => {
+    it('GET /public/gift-cards/:shortCode/pdf fonctionne avec un shortCode', async () => {
+      vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+        id: 'gc-sc-1',
+        restaurantId: RESTAURANT_ID,
+        code: 'uuid-1234',
+        shortCode: 'SKR-TEST-01',
+        amount: d(100),
+        remainingAmount: d(100),
+        status: 'ACTIVE',
+        currency: 'EUR',
+        validityMonths: 12,
+        purchasedAt: new Date(),
+        expiresAt: null,
+        packId: null,
+        preferredDate: null,
+        preferredTime: null,
+        preferredPartySize: null,
+        senderName: 'Bob',
+        senderEmail: 'bob@example.com',
+        senderPhone: null,
+        recipientName: 'Alice',
+        recipientEmail: 'alice@example.com',
+        recipientPhone: null,
+        message: null,
+        occasion: null,
+        customerId: null,
+        createdBy: 'CLIENT',
+        purchaseReference: null,
+        stripePaymentIntentId: null,
+        stripePaymentStatus: 'succeeded',
+        templateId: null,
+        customImageUrl: null,
+        sokarCommissionAmount: d(5),
+        type: 'SINGLE',
+        targetAmount: null,
+        crowdfundedUntil: null,
+        closedAt: null,
+        restaurant: { name: 'Test Resto' },
+        pack: null,
+      } as any);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: '/public/gift-cards/SKR-TEST-01/pdf',
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toBe('application/pdf');
+      // Vérifier que findUnique a été appelé avec shortCode
+      expect(db.giftCard.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { shortCode: 'SKR-TEST-01' },
+        }),
+      );
+    });
+
+    it('POST /public/gift-cards/check fonctionne avec un shortCode', async () => {
+      vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+        id: 'gc-sc-1',
+        restaurantId: RESTAURANT_ID,
+        code: 'uuid-1234',
+        shortCode: 'SKR-TEST-01',
+        amount: d(100),
+        remainingAmount: d(100),
+        status: 'ACTIVE',
+        expiresAt: null,
+      } as any);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        name: 'Test Resto',
+      } as any);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/public/gift-cards/check',
+        headers: { 'content-type': 'application/json' },
+        payload: { code: 'SKR-TEST-01' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.valid).toBe(true);
+      expect(body.giftCard.amount).toBe(100);
+    });
+
+    it('serializeGiftCard inclut shortCode', async () => {
+      vi.mocked(db.giftCard.findMany).mockResolvedValue([
+        {
+          id: 'gc-1',
+          restaurantId: RESTAURANT_ID,
+          code: 'abc-1234-5678-9012',
+          shortCode: 'SKR-X7F2-9K',
+          amount: d(100),
+          remainingAmount: d(100),
+          currency: 'EUR',
+          status: 'ACTIVE',
+          createdBy: 'DASHBOARD',
+          purchaseReference: 'manual',
+          redemptions: [],
+        } as any,
+      ]);
+      vi.mocked(db.giftCard.count).mockResolvedValue(1);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: `/restaurants/${RESTAURANT_ID}/gift-cards`,
+        headers: AUTH,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.items[0].shortCode).toBe('SKR-X7F2-9K');
+    });
+  });
 });

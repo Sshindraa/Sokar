@@ -154,6 +154,12 @@ vi.mock('../shared/redis/rate-limit', () => ({
     req.ip ?? req.headers?.['x-forwarded-for'] ?? 'test-ip',
 }));
 
+// ── Mock gift-card-code.util (shortCode fixe en tests) ──
+vi.mock('../modules/gift-cards/gift-card-code.util', () => ({
+  generateShortCode: vi.fn(() => 'SKR-TEST-01'),
+  generateUniqueShortCode: vi.fn().mockResolvedValue('SKR-TEST-01'),
+}));
+
 // ── Mock gift-card-email.service (emails non envoyés en tests) ──
 vi.mock('../modules/gift-cards/gift-card-email.service', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
