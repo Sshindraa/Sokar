@@ -28,7 +28,7 @@ function proxyResponse(data: unknown, status: number) {
 export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
   const search = req.nextUrl.search;
-  const url = `${API_ORIGIN}/${path}${search}`;
+  const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
   const res = await fetch(url, {
     headers: { Cookie: req.headers.get('cookie') || '' },
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 export async function POST(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
   const search = req.nextUrl.search;
-  const url = `${API_ORIGIN}/${path}${search}`;
+  const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
   const body = req.headers.get('content-type')?.includes('application/json')
     ? await req.json()
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
   const search = req.nextUrl.search;
-  const url = `${API_ORIGIN}/${path}${search}`;
+  const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
   const body = await req.json();
 
@@ -83,7 +83,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
   const search = req.nextUrl.search;
-  const url = `${API_ORIGIN}/${path}${search}`;
+  const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
   const body = await req.json();
 
@@ -106,7 +106,7 @@ export async function DELETE(
 ) {
   const { path } = await params;
   const search = req.nextUrl.search;
-  const url = `${API_ORIGIN}/${path}${search}`;
+  const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
   const res = await fetch(url, {
     method: 'DELETE',
