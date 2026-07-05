@@ -20,6 +20,8 @@ import {
   Loader2,
   CalendarCheck,
   Download,
+  Gift,
+  X,
 } from 'lucide-react';
 
 const reservationTheme: CSSProperties & Record<`--${string}`, string> = {
@@ -204,6 +206,17 @@ export default function ReservationWidget() {
   );
   const [showCalendarMenu, setShowCalendarMenu] = useState(false);
 
+  // Gift card modal — embed la page Connect /widget/[slug]/gift-card en iframe
+  // imbriquée. L'overlay reste dans l'iframe du widget résa, donc l'utilisateur
+  // ne perd pas son contexte de réservation.
+  const [showGiftCard, setShowGiftCard] = useState(false);
+  const [giftCardHeight, setGiftCardHeight] = useState<number | null>(null);
+  const giftCardUrl = useMemo(() => {
+    if (typeof window === 'undefined' || !restaurantId) return '';
+    const origin = window.location.origin;
+    return `${origin}/widget/${encodeURIComponent(restaurantId)}/gift-card?embedded=1`;
+  }, [restaurantId]);
+
   // Auto-resize iframe when embedded (même mécanisme que le widget Connect).
   useEffect(() => {
     if (!isEmbedded || typeof window === 'undefined') return;
@@ -215,6 +228,25 @@ export default function ReservationWidget() {
     const observer = new ResizeObserver(sendHeight);
     observer.observe(document.body);
     return () => observer.disconnect();
+  }, [isEmbedded]);
+
+  // Listen for resize messages from the nested gift-card iframe (Connect).
+  // On forwarde aussi au parent si on est soi-même embedded, pour que le
+  // site du resto ajuste la hauteur totale du widget.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type !== 'sokar-widget-resize' || typeof e.data?.height !== 'number') return;
+      setGiftCardHeight(e.data.height);
+      if (isEmbedded) {
+        window.parent.postMessage(
+          { type: 'sokar-widget-resize', height: document.body.scrollHeight },
+          '*',
+        );
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
   }, [isEmbedded]);
 
   // Load public restaurant info.
@@ -1275,8 +1307,65 @@ export default function ReservationWidget() {
                 Sokar
               </span>
             </div>
+
+            {/* Bouton « Offrir une carte cadeau » — footer du bottom sheet.
+                Ouvre un overlay qui embed la page Connect /widget/[slug]/gift-card. */}
+            <button
+              type="button"
+              onClick={() => setShowGiftCard(true)}
+              className="mt-1 flex w-full items-center justify-center gap-2 rounded-full border border-[hsl(var(--reservation-line))] bg-white/70 py-2.5 text-[13px] font-bold text-[hsl(var(--reservation-ink))] shadow-sm transition-all duration-200 hover:bg-white active:scale-[0.98] lg:mt-0 lg:py-2 lg:text-[12px]"
+            >
+              <Gift size={15} className="text-[hsl(var(--reservation-glow))]" />
+              Offrir une carte cadeau
+            </button>
           </div>
         </section>
+
+        {/* Overlay carte cadeau — modal desktop / sheet mobile.
+            L'iframe imbriquée charge la page Connect qui gère son propre
+            auto-resize via postMessage. */}
+        {showGiftCard && (
+          <div
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center"
+            onClick={() => setShowGiftCard(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Offrir une carte cadeau"
+          >
+            <div
+              className="relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-w-md sm:rounded-3xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-[hsl(var(--reservation-line))] px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <Gift size={18} className="text-[hsl(var(--reservation-glow))]" />
+                  <span className="text-[15px] font-extrabold text-[hsl(var(--reservation-ink))]">
+                    Carte cadeau
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowGiftCard(false)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-[hsl(var(--reservation-soft))] transition-colors hover:bg-black/5"
+                  aria-label="Fermer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {giftCardUrl && (
+                  <iframe
+                    src={giftCardUrl}
+                    title="Offrir une carte cadeau"
+                    className="block w-full border-0"
+                    style={{ height: giftCardHeight ? `${giftCardHeight}px` : '70dvh' }}
+                    loading="lazy"
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
