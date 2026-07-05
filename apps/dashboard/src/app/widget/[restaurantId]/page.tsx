@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import {
@@ -100,6 +100,7 @@ interface OpeningHours {
 }
 
 interface RestaurantPublic {
+  id: string;
   name: string;
   openingHours: Record<string, OpeningHours | null>;
   heroImageUrl?: string;
@@ -169,7 +170,9 @@ async function publicApiFetch<T = any>(
 
 export default function ReservationWidget() {
   const params = useParams<{ restaurantId: string }>();
+  const searchParams = useSearchParams();
   const restaurantId = params.restaurantId;
+  const isEmbedded = searchParams.get('embedded') === '1';
 
   // Restaurant public metadata
   const [restaurant, setRestaurant] = useState<RestaurantPublic | null>(null);
@@ -201,15 +204,38 @@ export default function ReservationWidget() {
   );
   const [showCalendarMenu, setShowCalendarMenu] = useState(false);
 
-  // Load public restaurant info
+  // Auto-resize iframe when embedded (même mécanisme que le widget Connect).
+  useEffect(() => {
+    if (!isEmbedded || typeof window === 'undefined') return;
+    const sendHeight = () => {
+      const height = document.body.scrollHeight;
+      window.parent.postMessage({ type: 'sokar-widget-resize', height }, '*');
+    };
+    sendHeight();
+    const observer = new ResizeObserver(sendHeight);
+    observer.observe(document.body);
+    return () => observer.disconnect();
+  }, [isEmbedded]);
+
+  // Load public restaurant info.
+  // Le path param peut être un slug (URL friendly) ou un id Prisma.
+  // On essaie d'abord /public/widget/{slug} qui résout via le slug
+  // (endpoint public, ne filtre pas sur connectPublished).
+  // Si 404, fallback sur /restaurants/{id}/public pour rétrocompat.
   useEffect(() => {
     if (!restaurantId) return;
     (async () => {
       try {
-        const data = await publicApiFetch<RestaurantPublic>(
-          'GET',
-          `restaurants/${restaurantId}/public`,
-        );
+        let data: RestaurantPublic;
+        try {
+          data = await publicApiFetch<RestaurantPublic>('GET', `public/widget/${restaurantId}`);
+        } catch (slugErr: any) {
+          // Fallback : on tente avec l'id direct (rétrocompat avec les URLs /widget/{uuid})
+          data = await publicApiFetch<RestaurantPublic>(
+            'GET',
+            `restaurants/${restaurantId}/public`,
+          );
+        }
         setRestaurant(data);
         const today = new Date();
         setSelectedDate(today);
@@ -272,7 +298,11 @@ export default function ReservationWidget() {
   }, [availableSlots, availabilityDate, selectedDate]);
 
   useEffect(() => {
-    if (!restaurantId || !selectedDate || success) return;
+    // Attend que le restaurant soit chargé (= on a l'id Prisma résolu depuis
+    // le slug) avant de fetch les dispos. Sinon on passerait le slug à une
+    // route qui attend un id → 404.
+    if (!restaurant || !selectedDate || success) return;
+    const resolvedId = restaurant.id;
     const date = formatDateParam(selectedDate);
     let cancelled = false;
 
@@ -285,7 +315,7 @@ export default function ReservationWidget() {
       try {
         const data = await publicApiFetch<AvailabilityResponse>(
           'GET',
-          `restaurants/${restaurantId}/availability?date=${date}&partySize=${partySize}`,
+          `restaurants/${resolvedId}/availability?date=${date}&partySize=${partySize}`,
         );
         if (cancelled) return;
         setAvailableSlots(data.slots);
@@ -303,7 +333,7 @@ export default function ReservationWidget() {
     return () => {
       cancelled = true;
     };
-  }, [restaurantId, selectedDate, partySize, success]);
+  }, [restaurant, selectedDate, partySize, success]);
 
   const nextAvailability = useMemo(() => {
     for (const date of days) {
@@ -414,6 +444,10 @@ export default function ReservationWidget() {
 
   // Submit Reservation
   async function handleSubmit() {
+    if (!restaurant) {
+      setError('Restaurant introuvable. Rafraîchissez la page.');
+      return;
+    }
     if (!selectedDate || !selectedTime || !customerName || !customerPhone) {
       setError('Veuillez remplir tous les champs requis');
       return;
@@ -435,7 +469,7 @@ export default function ReservationWidget() {
     try {
       const normalizedPhone = customerPhone.replace(/\s/g, '');
       const res = await publicApiFetch<ConfirmedReservation>('POST', 'reservations', {
-        restaurantId,
+        restaurantId: restaurant.id,
         reservedAt: reservedAt.toISOString(),
         partySize,
         customerName,
