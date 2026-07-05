@@ -230,10 +230,10 @@ vi.mock('../shared/db/client', () => {
       const mergedTx = new Proxy({} as Record<string, unknown>, {
         get: (_target, prop) => {
           const propStr = prop as string;
-          // Si le modèle existe dans db, l'utiliser (les tests mockent db)
-          if (propStr in dbObj) return dbObj[propStr];
-          // Sinon, retomber sur txMock
-          if (propStr in txMock) return txMock[propStr];
+          const dbModel = (dbObj as Record<string, unknown>)[propStr];
+          if (dbModel !== undefined) return dbModel;
+          const txModel = (txMock as Record<string, unknown>)[propStr];
+          if (txModel !== undefined) return txModel;
           return undefined;
         },
       });
