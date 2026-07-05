@@ -207,7 +207,7 @@ export default function GiftCardForm({ open, onOpenChange, packs, onCreated }: G
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="senderName">Nom de l'expéditeur</Label>
+              <Label htmlFor="senderName">Nom de l&rsquo;expéditeur</Label>
               <Input
                 id="senderName"
                 placeholder="Bob Martin"
@@ -239,7 +239,7 @@ export default function GiftCardForm({ open, onOpenChange, packs, onCreated }: G
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="expiresAt">Date d'expiration (optionnel)</Label>
+            <Label htmlFor="expiresAt">Date d&rsquo;expiration (optionnel)</Label>
             <Input
               id="expiresAt"
               type="date"
