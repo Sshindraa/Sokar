@@ -314,38 +314,62 @@ NEED_DASHBOARD=false
 NEED_CONNECT=false
 NEED_API=false
 NEED_PACKAGES=false
+NEED_INSTALL=false
+NEED_PRISMA=false
+SKIP_ALL_BUILDS=false
 
-if [ -z "$LAST_DEPLOYED_HASH" ] || [ "$LAST_DEPLOYED_HASH" = "$NEW_HASH" ]; then
-    # Premier déploiement ou aucun changement → build tout
-    NEED_DASHBOARD=true
-    NEED_CONNECT=true
-    NEED_API=true
-    NEED_PACKAGES=true
-    echo "   📎 Build complet (premier déploiement ou hash inchangé)"
+if [ -z "$LAST_DEPLOYED_HASH" ]; then
+    # Premier déploiement → build tout
+    NEED_DASHBOARD=true; NEED_CONNECT=true; NEED_API=true; NEED_PACKAGES=true
+    NEED_INSTALL=true; NEED_PRISMA=true
+    echo "   📎 Build complet (premier déploiement)"
+elif [ "$LAST_DEPLOYED_HASH" = "$NEW_HASH" ]; then
+    # Même hash → rien à builder, juste restart + nginx
+    SKIP_ALL_BUILDS=true
+    echo "   ⏭️  Hash inchangé ($NEW_HASH) — skip tous les builds"
 else
     CHANGED_FILES=$(git diff --name-only "$LAST_DEPLOYED_HASH" "$NEW_HASH" 2>/dev/null || echo "")
     if [ -z "$CHANGED_FILES" ]; then
         NEED_DASHBOARD=true; NEED_CONNECT=true; NEED_API=true; NEED_PACKAGES=true
+        NEED_INSTALL=true; NEED_PRISMA=true
     else
+        # Afficher les fichiers modifiés
+        local_count=$(echo "$CHANGED_FILES" | wc -l)
+        echo "   📎 $local_count fichier(s) modifié(s) depuis $LAST_DEPLOYED_HASH"
+        echo "$CHANGED_FILES" | head -10 | sed 's/^/      /'
+        [ "$local_count" -gt 10 ] && echo "      ... et $((local_count - 10)) autre(s)"
+
         echo "$CHANGED_FILES" | grep -qE '^apps/dashboard/' && NEED_DASHBOARD=true
         echo "$CHANGED_FILES" | grep -qE '^apps/connect/' && NEED_CONNECT=true
         echo "$CHANGED_FILES" | grep -qE '^apps/api/' && NEED_API=true
-        # packages/ ou turbo.json ou next.config → rebuild tout
-        echo "$CHANGED_FILES" | grep -qE '^packages/|^turbo\.json|^pnpm-lock\.yaml' && {
+        # packages/ ou turbo.json ou pnpm-lock → rebuild tout + reinstall
+        echo "$CHANGED_FILES" | grep -qE '^packages/|^turbo\.json' && {
             NEED_DASHBOARD=true; NEED_CONNECT=true; NEED_API=true; NEED_PACKAGES=true
+            NEED_PRISMA=true
         }
-        # Si aucun app modifié mais infra/ ou scripts/ → pas de build
+        echo "$CHANGED_FILES" | grep -qE '^pnpm-lock\.yaml|^package\.json' && NEED_INSTALL=true
+        echo "$CHANGED_FILES" | grep -qE '^packages/database/prisma/' && NEED_PRISMA=true
+
         echo "   📎 Apps à builder :$([ "$NEED_DASHBOARD" = true ] && echo ' dashboard')$([ "$NEED_CONNECT" = true ] && echo ' connect')$([ "$NEED_API" = true ] && echo ' api')"
-        if [ "$NEED_DASHBOARD" = false ] && [ "$NEED_CONNECT" = false ] && [ "$NEED_API" = false ]; then
+        if [ "$NEED_DASHBOARD" = false ] && [ "$NEED_CONNECT" = false ] && [ "$NEED_API" = false ] && [ "$NEED_PACKAGES" = false ]; then
+            SKIP_ALL_BUILDS=true
             echo "   ⏭️  Aucun app modifié — skip build"
         fi
     fi
 fi
 
-# ── 3. Install deps ─────────────────────────────────────
-echo ""
-echo "📦 Installing dependencies..."
-pnpm install --frozen-lockfile
+# ── 3. Install deps (conditionnel) ──────────────────────
+if [ "$SKIP_ALL_BUILDS" = true ]; then
+    echo ""
+    echo "⏭️  Skip pnpm install (aucun changement de code)"
+elif [ "$NEED_INSTALL" = true ]; then
+    echo ""
+    echo "📦 Installing dependencies..."
+    pnpm install --frozen-lockfile
+else
+    echo ""
+    echo "⏭️  Skip pnpm install (lockfile inchangé)"
+fi
 
 # Env files critiques — fail fast si absent (silence = app démarre sans config)
 REQUIRED_ENV_FILES=(
@@ -373,14 +397,23 @@ if [ "${FAIL_MISSING_ENV:-0}" = "1" ]; then
     exit 1
 fi
 
-# ── 4. Generate Prisma ──────────────────────────────────
-echo ""
-echo "📦 Generating Prisma client..."
-NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database generate
+# ── 4. Generate Prisma (conditionnel) ───────────────────
+if [ "$SKIP_ALL_BUILDS" = true ] || [ "$NEED_PRISMA" = false ]; then
+    echo ""
+    echo "⏭️  Skip Prisma generate (schema inchangé)"
+else
+    echo ""
+    echo "📦 Generating Prisma client..."
+    NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database generate
+fi
 
 # ── 5. Build (incrémental) ──────────────────────────────
-echo ""
-echo "📦 Building..."
+if [ "$SKIP_ALL_BUILDS" = true ]; then
+    echo ""
+    echo "⏭️  Skip tous les builds (hash inchangé)"
+else
+    echo ""
+    echo "📦 Building..."
 
 # Phase 1 : packages + API (séquentiel — dépendances)
 if [ "$NEED_PACKAGES" = true ] || [ "$NEED_API" = true ]; then
@@ -432,37 +465,49 @@ elif [ -n "$BUILD_CONNECT_CMD" ]; then
 else
     echo "   ⏭️  Aucun build Next.js nécessaire"
 fi
+fi # fin du else SKIP_ALL_BUILDS
 
 # ── 6. Copy static assets to standalone ─────────────────
-echo ""
-echo "📦 Copying static assets to standalone..."
-if [ "$NEED_DASHBOARD" = true ]; then
-    bash "$SOKAR_ROOT/apps/dashboard/scripts/copy-static.sh"
+if [ "$SKIP_ALL_BUILDS" = true ]; then
+    echo ""
+    echo "⏭️  Skip copy-static (aucun rebuild)"
 else
-    echo "   ⏭️  Dashboard non rebuild — static déjà en place"
-fi
-if [ "$NEED_CONNECT" = true ]; then
-    bash "$SOKAR_ROOT/apps/connect/scripts/copy-static.sh"
-else
-    echo "   ⏭️  Connect non rebuild — static déjà en place"
+    echo ""
+    echo "📦 Copying static assets to standalone..."
+    if [ "$NEED_DASHBOARD" = true ]; then
+        bash "$SOKAR_ROOT/apps/dashboard/scripts/copy-static.sh"
+    else
+        echo "   ⏭️  Dashboard non rebuild — static déjà en place"
+    fi
+    if [ "$NEED_CONNECT" = true ]; then
+        bash "$SOKAR_ROOT/apps/connect/scripts/copy-static.sh"
+    else
+        echo "   ⏭️  Connect non rebuild — static déjà en place"
+    fi
 fi
 
 # ── 7. DB backup + migrations ───────────────────────────
-echo ""
-echo "📦 Backing up database..."
-sudo install -d -m 0700 -o deploy -g deploy /var/backups/sokar
-bash "$SOKAR_ROOT/scripts/backup-postgres.sh"
+# Skip si rien n'a changé (pas de migration possible)
+if [ "$SKIP_ALL_BUILDS" = true ]; then
+    echo ""
+    echo "⏭️  Skip DB backup + migrations (aucun changement de code)"
+else
+    echo ""
+    echo "📦 Backing up database..."
+    sudo install -d -m 0700 -o deploy -g deploy /var/backups/sokar
+    bash "$SOKAR_ROOT/scripts/backup-postgres.sh"
 
-sudo install -m 0750 "$SOKAR_ROOT/scripts/backup-postgres.sh" \
-    /usr/local/sbin/sokar-backup-postgres
-sudo install -m 0644 "$SOKAR_ROOT/infra/cron/sokar-postgres-backup" \
-    /etc/cron.d/sokar-postgres-backup
+    sudo install -m 0750 "$SOKAR_ROOT/scripts/backup-postgres.sh" \
+        /usr/local/sbin/sokar-backup-postgres
+    sudo install -m 0644 "$SOKAR_ROOT/infra/cron/sokar-postgres-backup" \
+        /etc/cron.d/sokar-postgres-backup
 
-echo ""
-echo "📦 Applying database migrations..."
-export DATABASE_URL=$(grep "^DATABASE_URL" apps/api/.env | cut -d= -f2-)
-pnpm exec prisma migrate deploy --schema=packages/database/prisma/schema.prisma
-unset DATABASE_URL
+    echo ""
+    echo "📦 Applying database migrations..."
+    export DATABASE_URL=$(grep "^DATABASE_URL" apps/api/.env | cut -d= -f2-)
+    pnpm exec prisma migrate deploy --schema=packages/database/prisma/schema.prisma
+    unset DATABASE_URL
+fi # fin du else SKIP_ALL_BUILDS (DB backup + migrations)
 
 # ── 8. Install and validate Nginx routing ───────────────
 echo ""
@@ -619,15 +664,22 @@ if [ "$API_STATUS" = "200" ] \
     trap - ERR
 
     # ── 11. Snapshot post-build réussi + cleanup ─────────
-    NEW_TIMESTAMP="$(date -u '+%Y%m%dT%H%M%SZ')"
-    NEW_RELEASE="$RELEASES_DIR/$NEW_TIMESTAMP"
-    echo ""
-    echo "📦 Snapshot post-build (release $NEW_TIMESTAMP)..."
-    snapshot_artifacts "$NEW_RELEASE" "deploy-ok"
-    echo "$NEW_TIMESTAMP" > "$RELEASES_DIR/.latest"
+    # Skip le snapshot si rien n'a été rebuild (les artefacts sont identiques
+    # à la release précédente — pas besoin d'un nouveau snapshot).
+    if [ "$SKIP_ALL_BUILDS" = true ]; then
+        echo ""
+        echo "⏭️  Skip snapshot post-build (aucun changement)"
+    else
+        NEW_TIMESTAMP="$(date -u '+%Y%m%dT%H%M%SZ')"
+        NEW_RELEASE="$RELEASES_DIR/$NEW_TIMESTAMP"
+        echo ""
+        echo "📦 Snapshot post-build (release $NEW_TIMESTAMP)..."
+        snapshot_artifacts "$NEW_RELEASE" "deploy-ok"
+        echo "$NEW_TIMESTAMP" > "$RELEASES_DIR/.latest"
+        cleanup_releases 5
+    fi
     # Sauvegarder le hash pour le prochain déploiement incrémental
     git rev-parse HEAD > "$RELEASES_DIR/.latest-hash"
-    cleanup_releases 5
 
     # Le snapshot pré-build a servi de safety net et n'est plus needed
     rm -rf "$PREV_RELEASE" 2>/dev/null || true
