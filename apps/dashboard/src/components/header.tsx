@@ -17,6 +17,7 @@ export default function Header() {
     '/dashboard',
     '/onboarding',
     '/widget',
+    '/book',
   ];
   const isExcluded = excludedPaths.some((p) => pathname === p || pathname.startsWith(p + '/'));
 
