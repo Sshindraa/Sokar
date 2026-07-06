@@ -27,12 +27,22 @@ ARTIFACT_PATHS=(
 )
 
 # ── Helpers release dirs ─────────────────────────────────
+# snapshot_artifacts <target> <label> [paths...]
+# Si paths est omis, utilise ARTIFACT_PATHS (tous les apps).
+# Si paths est fourni (ex. "apps/dashboard/.next apps/dashboard/public"),
+# ne snapshot que ces apps — utile pour le snapshot pré-build quand
+# seul un app a été rebuild.
 snapshot_artifacts() {
     local target="$1"
     local label="${2:-snapshot}"
+    shift 2
+    local paths=("$@")
+    if [ ${#paths[@]} -eq 0 ]; then
+        paths=("${ARTIFACT_PATHS[@]}")
+    fi
     echo "   → Snapshot artefacts vers $target ($label)"
     install -d -m 0755 "$target"
-    for p in "${ARTIFACT_PATHS[@]}"; do
+    for p in "${paths[@]}"; do
         if [ -e "$SOKAR_ROOT/$p" ]; then
             install -d -m 0755 "$target/$(dirname "$p")"
             cp -a "$SOKAR_ROOT/$p" "$target/$(dirname "$p")/"
@@ -252,10 +262,25 @@ echo "   Stopping LocalStack..."
 docker stop infra-localstack-1 2>/dev/null || true
 
 # PM2 tourne désormais comme deploy → plus de caches root-owned.
-# Nettoyer .next pour éviter les artefacts obsolètes du build précédent.
-# sudo find -delete : certains caches sont encore root-owned (legacy PM2 root).
-sudo find /opt/sokar/apps/dashboard/.next -delete 2>/dev/null || true
-sudo find /opt/sokar/apps/connect/.next -delete 2>/dev/null || true
+# ── Cache webpack persistant ──────────────────────────────────
+# On NE détruit PAS .next/cache/ : c'est le cache webpack qui permet
+# les incremental builds (3 min → ~1 min sur le compile). On ne supprime
+# que les artefacts de build (standalone, server, static, BUILD_ID).
+# Les caches root-owned (legacy PM2 root) sont nettoyés avec sudo.
+clean_next_artifacts() {
+    local app_dir="$1"
+    for sub in standalone server static types; do
+        sudo rm -rf "$app_dir/.next/$sub" 2>/dev/null || true
+    done
+    sudo rm -f "$app_dir/.next/BUILD_ID" 2>/dev/null || true
+    sudo rm -rf "$app_dir/.next/eslint*" 2>/dev/null || true
+    # Les .nft.json à la racine de .next (traces standalone)
+    sudo find "$app_dir/.next" -maxdepth 1 -name '*.nft.json' -delete 2>/dev/null || true
+    # Les traces dans .next/server (si elles existent encore)
+    sudo find "$app_dir/.next/server" -name '*.nft.json' -delete 2>/dev/null || true
+}
+clean_next_artifacts "$SOKAR_ROOT/apps/dashboard"
+clean_next_artifacts "$SOKAR_ROOT/apps/connect"
 
 FREE_BEFORE=$(free -m | awk '/^Mem:/ {print $4}')
 echo "   Memory free: ${FREE_BEFORE}MB"
@@ -263,8 +288,47 @@ echo "   Memory free: ${FREE_BEFORE}MB"
 # ── 2. Pull code ────────────────────────────────────────
 echo ""
 echo "📦 Pulling latest code..."
+PREV_HASH=$(git rev-parse HEAD 2>/dev/null || echo "")
 git checkout "$BRANCH"
 git pull origin "$BRANCH"
+NEW_HASH=$(git rev-parse HEAD)
+
+# ── 2b. Detect which apps changed ───────────────────────
+# Compare le hash actuel avec le hash du dernier déploiement réussi.
+# Si un app n'a pas changé, on skip son build (gain ~5 min sur le dashboard).
+LAST_DEPLOYED_HASH=$(cat "$RELEASES_DIR/.latest-hash" 2>/dev/null || echo "")
+
+NEED_DASHBOARD=false
+NEED_CONNECT=false
+NEED_API=false
+NEED_PACKAGES=false
+
+if [ -z "$LAST_DEPLOYED_HASH" ] || [ "$LAST_DEPLOYED_HASH" = "$NEW_HASH" ]; then
+    # Premier déploiement ou aucun changement → build tout
+    NEED_DASHBOARD=true
+    NEED_CONNECT=true
+    NEED_API=true
+    NEED_PACKAGES=true
+    echo "   📎 Build complet (premier déploiement ou hash inchangé)"
+else
+    CHANGED_FILES=$(git diff --name-only "$LAST_DEPLOYED_HASH" "$NEW_HASH" 2>/dev/null || echo "")
+    if [ -z "$CHANGED_FILES" ]; then
+        NEED_DASHBOARD=true; NEED_CONNECT=true; NEED_API=true; NEED_PACKAGES=true
+    else
+        echo "$CHANGED_FILES" | grep -qE '^apps/dashboard/' && NEED_DASHBOARD=true
+        echo "$CHANGED_FILES" | grep -qE '^apps/connect/' && NEED_CONNECT=true
+        echo "$CHANGED_FILES" | grep -qE '^apps/api/' && NEED_API=true
+        # packages/ ou turbo.json ou next.config → rebuild tout
+        echo "$CHANGED_FILES" | grep -qE '^packages/|^turbo\.json|^pnpm-lock\.yaml' && {
+            NEED_DASHBOARD=true; NEED_CONNECT=true; NEED_API=true; NEED_PACKAGES=true
+        }
+        # Si aucun app modifié mais infra/ ou scripts/ → pas de build
+        echo "   📎 Apps à builder :$([ "$NEED_DASHBOARD" = true ] && echo ' dashboard')$([ "$NEED_CONNECT" = true ] && echo ' connect')$([ "$NEED_API" = true ] && echo ' api')"
+        if [ "$NEED_DASHBOARD" = false ] && [ "$NEED_CONNECT" = false ] && [ "$NEED_API" = false ]; then
+            echo "   ⏭️  Aucun app modifié — skip build"
+        fi
+    fi
+fi
 
 # ── 3. Install deps ─────────────────────────────────────
 echo ""
@@ -302,25 +366,74 @@ echo ""
 echo "📦 Generating Prisma client..."
 NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database generate
 
-# ── 5. Build all ────────────────────────────────────────
+# ── 5. Build (incrémental) ──────────────────────────────
 echo ""
 echo "📦 Building..."
-# Workspaces explicites, puis les deux applications Next séquentiellement.
-# Évite le sélecteur `@sokar/api...`, qui inclut aussi des dépendants.
-NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/config build
-NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database build
-NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/shared build
-NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/api build
-NODE_OPTIONS="--max-old-space-size=2048" NEXT_TELEMETRY_DISABLED=1 SENTRY_SUPPRESS_GLOBAL_ERROR_HANDLER_FILE_WARNING=1 \
-    pnpm --filter @sokar/dashboard build
-NODE_OPTIONS="--max-old-space-size=2048" NEXT_TELEMETRY_DISABLED=1 \
-    pnpm --filter @sokar/connect build
+
+# Phase 1 : packages + API (séquentiel — dépendances)
+if [ "$NEED_PACKAGES" = true ] || [ "$NEED_API" = true ]; then
+    NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/config build
+    NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database build
+    NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/shared build
+fi
+if [ "$NEED_API" = true ]; then
+    NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/api build
+fi
+
+# Phase 2 : dashboard + connect en parallèle (si les deux sont nécessaires).
+# Sur 2 CPUs le gain est modeste mais le connect (15 s compile) chevauche le dashboard.
+BUILD_DASHBOARD_CMD=""
+BUILD_CONNECT_CMD=""
+if [ "$NEED_DASHBOARD" = true ]; then
+    BUILD_DASHBOARD_CMD="NODE_OPTIONS='--max-old-space-size=2048' NEXT_TELEMETRY_DISABLED=1 SENTRY_SUPPRESS_GLOBAL_ERROR_HANDLER_FILE_WARNING=1 pnpm --filter @sokar/dashboard build"
+fi
+if [ "$NEED_CONNECT" = true ]; then
+    BUILD_CONNECT_CMD="NODE_OPTIONS='--max-old-space-size=1024' NEXT_TELEMETRY_DISABLED=1 pnpm --filter @sokar/connect build"
+fi
+
+if [ -n "$BUILD_DASHBOARD_CMD" ] && [ -n "$BUILD_CONNECT_CMD" ]; then
+    echo "   → Lancement dashboard + connect en parallèle..."
+    eval "$BUILD_DASHBOARD_CMD" &
+    DASH_PID=$!
+    eval "$BUILD_CONNECT_CMD" &
+    CONNECT_PID=$!
+    # Attendre les deux. Si l'un échoue, on kill l'autre et on fail.
+    DASH_EXIT=0
+    CONNECT_EXIT=0
+    wait "$DASH_PID" || DASH_EXIT=$?
+    wait "$CONNECT_PID" || CONNECT_EXIT=$?
+    if [ "$DASH_EXIT" -ne 0 ]; then
+        echo "❌ Dashboard build échoué (exit $DASH_EXIT)"
+        kill "$CONNECT_PID" 2>/dev/null || true
+        exit 1
+    fi
+    if [ "$CONNECT_EXIT" -ne 0 ]; then
+        echo "❌ Connect build échoué (exit $CONNECT_EXIT)"
+        exit 1
+    fi
+elif [ -n "$BUILD_DASHBOARD_CMD" ]; then
+    echo "   → Dashboard build seul..."
+    eval "$BUILD_DASHBOARD_CMD"
+elif [ -n "$BUILD_CONNECT_CMD" ]; then
+    echo "   → Connect build seul..."
+    eval "$BUILD_CONNECT_CMD"
+else
+    echo "   ⏭️  Aucun build Next.js nécessaire"
+fi
 
 # ── 6. Copy static assets to standalone ─────────────────
 echo ""
 echo "📦 Copying static assets to standalone..."
-bash "$SOKAR_ROOT/apps/dashboard/scripts/copy-static.sh"
-bash "$SOKAR_ROOT/apps/connect/scripts/copy-static.sh"
+if [ "$NEED_DASHBOARD" = true ]; then
+    bash "$SOKAR_ROOT/apps/dashboard/scripts/copy-static.sh"
+else
+    echo "   ⏭️  Dashboard non rebuild — static déjà en place"
+fi
+if [ "$NEED_CONNECT" = true ]; then
+    bash "$SOKAR_ROOT/apps/connect/scripts/copy-static.sh"
+else
+    echo "   ⏭️  Connect non rebuild — static déjà en place"
+fi
 
 # ── 7. DB backup + migrations ───────────────────────────
 echo ""
@@ -500,6 +613,8 @@ if [ "$API_STATUS" = "200" ] \
     echo "📦 Snapshot post-build (release $NEW_TIMESTAMP)..."
     snapshot_artifacts "$NEW_RELEASE" "deploy-ok"
     echo "$NEW_TIMESTAMP" > "$RELEASES_DIR/.latest"
+    # Sauvegarder le hash pour le prochain déploiement incrémental
+    git rev-parse HEAD > "$RELEASES_DIR/.latest-hash"
     cleanup_releases 5
 
     # Le snapshot pré-build a servi de safety net et n'est plus needed
