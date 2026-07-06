@@ -258,7 +258,7 @@ export default function AgenticSettingsPage() {
         </div>
       )}
       {success && (
-        <div className="rounded-lg border border-primary/20 bg-primary/10 p-4 text-sm text-primary flex items-center gap-2">
+        <div className="rounded-lg border border-primary/20 bg-secondary p-4 text-sm text-primary flex items-center gap-2">
           <CheckCircle2 size={18} />
           {success}
         </div>
@@ -280,9 +280,9 @@ export default function AgenticSettingsPage() {
           </p>
 
           <div className="space-y-4">
-            <div className="flex flex-col gap-3 rounded-2xl border border-border bg-secondary/30 p-5 sm:flex-row sm:items-center sm:justify-between transition-all duration-200">
+            <div className="flex flex-col gap-3 rounded-2xl border border-border bg-secondary p-5 sm:flex-row sm:items-center sm:justify-between transition-all duration-200 hover:bg-accent">
               <div className="flex items-start gap-4">
-                <div className="rounded-xl bg-primary/10 p-3 text-primary">
+                <div className="rounded-xl bg-secondary p-3 text-primary">
                   <Bot size={24} />
                 </div>
                 <div>
@@ -293,7 +293,7 @@ export default function AgenticSettingsPage() {
                   </p>
                   <div className="mt-3 flex items-center gap-2">
                     <span
-                      className={`inline-flex h-2 w-2 rounded-full ${mcpActive ? 'bg-success' : 'bg-muted-foreground/40'} animate-pulse`}
+                      className={`inline-flex h-2 w-2 rounded-full ${mcpActive ? 'bg-success' : 'bg-faint'} animate-pulse`}
                     />
                     <span
                       className={`text-xs font-medium ${mcpActive ? 'text-success' : 'text-muted-foreground'}`}
@@ -326,10 +326,10 @@ export default function AgenticSettingsPage() {
             </div>
 
             <div
-              className={`flex flex-col gap-3 rounded-2xl border border-border bg-secondary/30 p-5 sm:flex-row sm:items-center sm:justify-between transition-all duration-200 ${!mcpActive ? 'opacity-60' : ''}`}
+              className={`flex flex-col gap-3 rounded-2xl border border-border bg-secondary p-5 sm:flex-row sm:items-center sm:justify-between transition-all duration-200 hover:bg-accent ${!mcpActive ? 'opacity-60' : ''}`}
             >
               <div className="flex items-start gap-4">
-                <div className="rounded-xl bg-primary/10 p-3 text-primary">
+                <div className="rounded-xl bg-secondary p-3 text-primary">
                   <Sparkles size={24} />
                 </div>
                 <div>
@@ -341,7 +341,7 @@ export default function AgenticSettingsPage() {
                   </p>
                   <div className="mt-3 flex items-center gap-2">
                     <span
-                      className={`inline-flex h-2 w-2 rounded-full ${openaiActive ? 'bg-success' : 'bg-muted-foreground/40'} animate-pulse`}
+                      className={`inline-flex h-2 w-2 rounded-full ${openaiActive ? 'bg-success' : 'bg-faint'} animate-pulse`}
                     />
                     <span
                       className={`text-xs font-medium ${openaiActive ? 'text-success' : 'text-muted-foreground'}`}
@@ -389,7 +389,7 @@ export default function AgenticSettingsPage() {
         </CardHeader>
         <CardContent className="space-y-6">
           {createdApiKey && (
-            <div className="rounded-lg border border-primary/20 bg-primary/10 p-4">
+            <div className="rounded-lg border border-primary/20 bg-secondary p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 space-y-1">
                   <p className="text-sm font-medium text-primary">Clé créée</p>
@@ -414,14 +414,14 @@ export default function AgenticSettingsPage() {
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="space-y-3">
               {mcpClients.length === 0 ? (
-                <div className="rounded-lg border border-border bg-secondary/30 p-5 text-sm text-muted-foreground">
+                <div className="rounded-lg border border-border bg-secondary p-5 text-sm text-muted-foreground">
                   Aucune clé MCP active.
                 </div>
               ) : (
                 mcpClients.map((client) => (
                   <div
                     key={client.id}
-                    className="rounded-lg border border-border bg-secondary/30 p-4 transition-all duration-200"
+                    className="rounded-lg border border-border bg-secondary p-4 transition-all duration-200 hover:bg-accent"
                   >
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0 space-y-3">
@@ -677,7 +677,7 @@ export default function AgenticSettingsPage() {
       </Card>
 
       {/* Footer info */}
-      <Card className="sokar-card bg-secondary/30">
+      <Card className="sokar-card bg-secondary">
         <CardContent className="p-5 text-sm text-muted-foreground">
           <p className="font-medium text-foreground mb-2">Comment ça marche</p>
           <ul className="space-y-1 list-disc list-inside">

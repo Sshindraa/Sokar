@@ -229,7 +229,7 @@ export default function CustomersPage() {
                         onClick={() => toggleVip(c.id, c.isVip)}
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-all duration-200 ${
                           c.isVip
-                            ? 'border border-primary/20 bg-primary/10 text-foreground hover:bg-primary/15'
+                            ? 'border border-primary/20 bg-secondary text-foreground hover:bg-accent'
                             : 'bg-muted text-muted-foreground hover:bg-accent'
                         }`}
                       >

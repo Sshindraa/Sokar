@@ -231,7 +231,7 @@ export default function FloorPlanPage() {
                           'flex items-center justify-between rounded-lg border p-3 transition-all duration-200',
                           table.isActive
                             ? 'border-border bg-card'
-                            : 'border-border/50 bg-muted/30 opacity-60',
+                            : 'border-border bg-muted opacity-60',
                         )}
                       >
                         <div>
@@ -249,7 +249,7 @@ export default function FloorPlanPage() {
                           />
                           <button
                             onClick={() => deleteTable(table.id)}
-                            className="p-2 text-muted-foreground hover:text-red-500 rounded-lg hover:bg-white/5 transition-all duration-200"
+                            className="p-2 text-muted-foreground hover:text-destructive rounded-lg hover:bg-accent transition-all duration-200"
                             title="Supprimer la table"
                           >
                             <Trash2 size={16} />

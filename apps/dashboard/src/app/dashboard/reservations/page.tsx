@@ -121,9 +121,9 @@ export default function ReservationsPage() {
                 res.status === 'CONFIRMED'
                   ? 'border-l-success'
                   : res.status === 'CANCELLED'
-                    ? 'border-l-red-500'
+                    ? 'border-l-destructive'
                     : res.status === 'SEATED'
-                      ? 'border-l-blue-400'
+                      ? 'border-l-brand'
                       : 'border-l-border'
               }
               actions={[
@@ -142,7 +142,7 @@ export default function ReservationsPage() {
                 {
                   label: 'Supprimer',
                   icon: <Trash2 size={14} />,
-                  colorClass: 'bg-red-600',
+                  colorClass: 'bg-destructive',
                   onClick: () => deleteReservation(res.id),
                 },
               ]}
@@ -213,7 +213,7 @@ export default function ReservationsPage() {
                     <TableCell className="text-right">
                       <button
                         onClick={() => deleteReservation(res.id)}
-                        className="p-2 text-muted-foreground hover:text-red-500 rounded-lg hover:bg-accent transition-all duration-200"
+                        className="p-2 text-muted-foreground hover:text-destructive rounded-lg hover:bg-accent transition-all duration-200"
                         title="Supprimer la réservation"
                       >
                         <Trash2 size={16} />
@@ -234,7 +234,7 @@ function StatusBadge({ status }: { status: string }) {
   switch (status) {
     case 'CONFIRMED':
       return (
-        <Badge className="border-primary/20 bg-primary/10 text-foreground hover:bg-primary/15">
+        <Badge className="border-primary/20 bg-secondary text-foreground hover:bg-accent">
           Confirmée
         </Badge>
       );
