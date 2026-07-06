@@ -34,6 +34,11 @@ const nextConfig = {
     ],
   },
   // Server Actions : allowedOrigins est auto-détecté en Next 15.
+  // Les build traces (.nft.json) prennent ~1 min 08 s sur le VPS HDD.
+  // Inutiles sans Sentry / Vercel.
+  experimental: {
+    collectBuildTracing: false,
+  },
 };
 
 module.exports = nextConfig;
