@@ -34,12 +34,9 @@ const nextConfig = {
     ],
   },
   // Server Actions : allowedOrigins est auto-détecté en Next 15.
-  // Les build traces (.nft.json) prennent ~1 min 08 s sur le VPS HDD (2 CPUs).
-  // parallelServerBuildTraces: true parallélise le tracing.
-  // outputFileTracingRoot: pointe vers la racine du monorepo.
+  // parallelServerBuildTraces: true — parallélise le tracing sur 2 cores.
   experimental: {
     parallelServerBuildTraces: true,
-    outputFileTracingRoot: __dirname,
   },
 };
 

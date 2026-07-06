@@ -7,13 +7,10 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  // Les build traces (.nft.json) prennent ~1 min 37 s sur le VPS HDD (2 CPUs).
-  // parallelServerBuildTraces: true parallélise le tracing sur plusieurs cores.
-  // outputFileTracingRoot: pointe vers la racine du monorepo pour éviter
-  // que Next.js remonte trop haut dans l'arbre (gain sur le scan filesystem).
+  // parallelServerBuildTraces: true — parallélise le tracing sur 2 cores.
+  // (Les build traces prenaient 1 min 37 s en séquentiel sur le VPS HDD.)
   experimental: {
     parallelServerBuildTraces: true,
-    outputFileTracingRoot: __dirname,
   },
 };
 
