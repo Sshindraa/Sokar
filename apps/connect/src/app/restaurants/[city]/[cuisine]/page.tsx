@@ -69,7 +69,7 @@ export default async function CityCuisinePage({
       <nav className="mb-4 text-sm">
         <Link
           href={`/restaurants/${data.citySlug}`}
-          className="text-ember underline hover:no-underline"
+          className="text-blue underline hover:no-underline"
         >
           ← {data.city}
         </Link>

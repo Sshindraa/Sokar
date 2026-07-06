@@ -38,7 +38,7 @@ export default async function GiftCardWidgetPage({
 
   const isEmbedded = sp.embedded === '1';
   const primary = toHexColor(sp.primary, '#0F172A');
-  const accent = toHexColor(sp.accent, '#EA580C');
+  const accent = toHexColor(sp.accent, '#0284C7');
   const source = sp.source ?? 'widget';
 
   void trackEventAsync({

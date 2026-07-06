@@ -37,7 +37,7 @@ export function GiftCardSlotsPicker({
   code,
   slots,
   primaryColor = '#0F172A',
-  accentColor = '#EA580C',
+  accentColor = '#0284C7',
   onBooked,
 }: Props) {
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);

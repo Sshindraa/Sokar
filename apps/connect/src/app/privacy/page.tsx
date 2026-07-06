@@ -33,7 +33,7 @@ export default function PrivacyPage() {
             Pour toute question relative à vos données, vous pouvez nous contacter à{' '}
             <a
               href="mailto:privacy@sokar.tech"
-              className="text-foreground underline transition-all duration-200 hover:text-ember"
+              className="text-foreground underline transition-all duration-200 hover:text-blue"
             >
               privacy@sokar.tech
             </a>
@@ -94,7 +94,7 @@ export default function PrivacyPage() {
             contactez-nous à{' '}
             <a
               href="mailto:privacy@sokar.tech"
-              className="text-foreground underline transition-all duration-200 hover:text-ember"
+              className="text-foreground underline transition-all duration-200 hover:text-blue"
             >
               privacy@sokar.tech
             </a>{' '}
@@ -104,7 +104,7 @@ export default function PrivacyPage() {
             Vous pouvez également introduire une réclamation auprès de la CNIL (
             <a
               href="https://www.cnil.fr/fr/plaintes"
-              className="text-foreground underline transition-all duration-200 hover:text-ember"
+              className="text-foreground underline transition-all duration-200 hover:text-blue"
               target="_blank"
               rel="noopener noreferrer"
             >

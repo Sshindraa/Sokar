@@ -53,7 +53,7 @@ function formatDate(iso: string | null): string {
 export function GiftCardCrowdfundingPage({
   code,
   primaryColor = '#0F172A',
-  accentColor = '#EA580C',
+  accentColor = '#0284C7',
   source = 'widget',
 }: Props) {
   const [status, setStatus] = useState<CrowdfundingStatus | null>(null);

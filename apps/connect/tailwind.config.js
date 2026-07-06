@@ -19,6 +19,7 @@ module.exports = {
         // Sokar brand
         ink: '#0F172A',
         ember: '#EA580C',
+        blue: '#0284C7', // hsl(207 92% 52%) — accent Sokar
         cream: '#FAF7F2',
       },
     },

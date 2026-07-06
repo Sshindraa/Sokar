@@ -41,7 +41,7 @@ export function GiftCardConfirmation({
   restaurantName,
   bookNow,
   primaryColor = '#0F172A',
-  accentColor = '#EA580C',
+  accentColor = '#0284C7',
 }: Props) {
   const [slots, setSlots] = useState<GiftCardSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);

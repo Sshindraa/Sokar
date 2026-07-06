@@ -51,7 +51,7 @@ export function GiftCardTemplatePicker({
   selectedTemplate,
   onSelect,
   primaryColor = '#0F172A',
-  accentColor = '#EA580C',
+  accentColor = '#0284C7',
 }: Props) {
   const [customImageUrl, setCustomImageUrl] = useState<string | null>(null);
 

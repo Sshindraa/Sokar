@@ -38,7 +38,7 @@ export function GiftCardPaymentForm({
   onSuccess,
   onError,
   primaryColor = '#0F172A',
-  accentColor = '#EA580C',
+  accentColor = '#0284C7',
 }: Props) {
   const stripe = useStripe();
   const elements = useElements();
