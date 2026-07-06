@@ -76,9 +76,22 @@ log_info "Variables d'environnement OK."
 # ── Déploiement ───────────────────────────────────────────────────────
 
 log_info "Lancement du déploiement..."
+PREV_HASH=$(git rev-parse HEAD 2>/dev/null || echo "")
 if ! bash scripts/deploy-vps.sh main; then
   log_error "Déploiement échoué. Voir les logs ci-dessus."
   exit 1
+fi
+
+# Si deploy-gift-cards-prod.sh a été modifié par le git pull de deploy-vps.sh,
+# on re-exec ce wrapper pour charger la nouvelle version (sinon le backfill
+# utilise l'ancien code).
+NEW_HASH=$(git rev-parse HEAD 2>/dev/null || echo "")
+if [ "${SOKAR_WRAPPER_REEXECED:-0}" != "1" ] && [ "$PREV_HASH" != "$NEW_HASH" ]; then
+    if git diff --name-only "$PREV_HASH" "$NEW_HASH" 2>/dev/null | grep -qE '^scripts/deploy-gift-cards-prod\.sh$'; then
+        log_info "📎 deploy-gift-cards-prod.sh mis à jour — re-exec pour charger la nouvelle version..."
+        export SOKAR_WRAPPER_REEXECED=1
+        exec bash "$0"
+    fi
 fi
 
 log_info "Déploiement terminé avec succès."
