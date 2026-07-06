@@ -92,13 +92,13 @@ export default function EmptySlotsWidget() {
         hasAlerts ? 'border-warning/25 bg-warning/[0.04]' : 'border-success/15 bg-success/[0.03]'
       }`}
     >
-      <div className="mb-4 flex items-center gap-3">
+      <div className="mb-4 flex min-w-0 items-start gap-3">
         {hasAlerts ? (
-          <AlertTriangle size={20} className="text-warning" />
+          <AlertTriangle size={20} className="mt-0.5 flex-shrink-0 text-warning" />
         ) : (
-          <Clock size={20} className="text-success" />
+          <Clock size={20} className="mt-0.5 flex-shrink-0 text-success" />
         )}
-        <div>
+        <div className="min-w-0">
           <h2 className="text-lg font-bold text-foreground">
             {hasAlerts
               ? `${summary.underbookedDays} jour${summary.underbookedDays > 1 ? 's' : ''} sous-réservé${summary.underbookedDays > 1 ? 's' : ''} cette semaine`
@@ -121,7 +121,7 @@ export default function EmptySlotsWidget() {
       </div>
 
       {/* Grille 7 jours */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-2">
         {data.days.map((day) => {
           const isToday = day.date === new Date().toISOString().split('T')[0];
           return (
@@ -135,7 +135,7 @@ export default function EmptySlotsWidget() {
                     : 'border-success/15 bg-success/[0.04]'
               } ${isToday ? 'ring-1 ring-brand/30' : ''}`}
             >
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              <p className="truncate text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                 {DAY_LABELS[day.dayName] || day.dayName}
               </p>
 
@@ -152,8 +152,8 @@ export default function EmptySlotsWidget() {
                   </p>
                   <p className="mt-1 text-[10px] text-muted-foreground">{day.covers} couverts</p>
                   {day.isUnderbooked && (
-                    <p className="mt-2 flex items-center justify-center gap-1 text-[10px] font-semibold text-warning">
-                      <TrendingDown size={10} />
+                    <p className="mt-2 flex items-center justify-center gap-1 text-[10px] font-semibold leading-tight text-warning">
+                      <TrendingDown size={10} className="flex-shrink-0" />
                       {day.revenueAtRisk > 0
                         ? `~${day.revenueAtRisk.toLocaleString('fr-FR')} € manquant`
                         : 'Sous-réservé'}
