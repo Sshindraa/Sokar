@@ -7,10 +7,13 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  // Les build traces (.nft.json) prennent ~1 min 37 s sur le VPS HDD.
-  // Elles ne servent que pour Sentry / Vercel — ni l'un ni l'autre actif.
+  // Les build traces (.nft.json) prennent ~1 min 37 s sur le VPS HDD (2 CPUs).
+  // parallelServerBuildTraces: true parallélise le tracing sur plusieurs cores.
+  // outputFileTracingRoot: pointe vers la racine du monorepo pour éviter
+  // que Next.js remonte trop haut dans l'arbre (gain sur le scan filesystem).
   experimental: {
-    collectBuildTracing: false,
+    parallelServerBuildTraces: true,
+    outputFileTracingRoot: __dirname,
   },
 };
 

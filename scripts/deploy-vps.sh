@@ -293,6 +293,18 @@ git checkout "$BRANCH"
 git pull origin "$BRANCH"
 NEW_HASH=$(git rev-parse HEAD)
 
+# ── 2a. Re-exec si le script lui-même a été modifié ────
+# Bash charge le script en mémoire au démarrage. Si le git pull met à jour
+# deploy-vps.sh, la version en cours d'exécution est l'ANCIENNE. On re-exec
+# pour charger la nouvelle version (une seule fois, tracée par SOKAR_REEXECED).
+if [ "${SOKAR_REEXECED:-0}" != "1" ] && [ "$PREV_HASH" != "$NEW_HASH" ]; then
+    if git diff --name-only "$PREV_HASH" "$NEW_HASH" 2>/dev/null | grep -qE '^scripts/deploy-vps\.sh$'; then
+        echo "   📎 deploy-vps.sh mis à jour par le pull — re-exec pour charger la nouvelle version..."
+        export SOKAR_REEXECED=1
+        exec bash "$0" "$BRANCH"
+    fi
+fi
+
 # ── 2b. Detect which apps changed ───────────────────────
 # Compare le hash actuel avec le hash du dernier déploiement réussi.
 # Si un app n'a pas changé, on skip son build (gain ~5 min sur le dashboard).
