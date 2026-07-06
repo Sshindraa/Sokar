@@ -11,12 +11,33 @@
  *   5. Paiement (Stripe Elements)
  *   6. Confirmation + achat
  *
- * Après achat, affiche GiftCardConfirmation avec le code complet + lien PDF.
+ * Design aligné avec le widget de réservation Sokar :
+ *   - Background cream avec décorations gradient
+ *   - Panneaux glassmorphism (backdrop-blur, border-white/70)
+ *   - Boutons rounded-full avec hover lift et active scale
+ *   - Display font (Outfit) pour les titres, tracking tight
+ *   - Icônes Lucide au lieu d'emojis
+ *   - Labels uppercase tracking-wide
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe, type Stripe as StripeType } from '@stripe/stripe-js';
+import {
+  Gift,
+  ChevronLeft,
+  ChevronRight,
+  Check,
+  CreditCard,
+  Sparkles,
+  Users,
+  Calendar,
+  Clock,
+  AlertCircle,
+  Loader2,
+  PartyPopper,
+  Heart,
+} from 'lucide-react';
 import type { GiftCardPack, GiftCardPurchaseResult } from '@/lib/api/gift-cards';
 import { listGiftCardPacks, createPaymentIntent, purchaseGiftCard } from '@/lib/api/gift-cards';
 import { GiftCardConfirmation } from './gift-card-confirmation';
@@ -34,6 +55,18 @@ type Props = {
   primaryColor?: string;
   accentColor?: string;
   source?: string;
+};
+
+const reservationTheme: CSSProperties & Record<`--${string}`, string> = {
+  '--reservation-bg': '34 32% 92%',
+  '--reservation-wash': '34 38% 96%',
+  '--reservation-panel': '0 0% 100%',
+  '--reservation-ink': '24 10% 10%',
+  '--reservation-soft': '24 6% 42%',
+  '--reservation-muted': '24 5% 64%',
+  '--reservation-line': '28 20% 88%',
+  '--reservation-glow': '31 92% 62%',
+  '--reservation-success': '142 70% 38%',
 };
 
 export function GiftCardPurchase({
@@ -96,7 +129,6 @@ export function GiftCardPurchase({
   function handleNextFromType() {
     setError(null);
     if (mode === 'crowdfunding') {
-      // Le formulaire de cagnotte est rendu directement — pas de navigation vers 'info'
       return;
     }
     if (mode === 'free') {
@@ -218,9 +250,10 @@ export function GiftCardPurchase({
   }
 
   const widgetStyle = {
+    ...reservationTheme,
     '--widget-primary': primaryColor,
     '--widget-accent': accentColor,
-  } as React.CSSProperties;
+  } as CSSProperties;
 
   if (step === 'done' && result) {
     return (
@@ -239,185 +272,269 @@ export function GiftCardPurchase({
   const selectedPack = packs.find((p) => p.id === packId);
   const displayAmount = mode === 'free' ? parseFloat(amount) || 0 : (selectedPack?.amount ?? 0);
 
-  return (
-    <div style={widgetStyle} className="space-y-6">
-      {/* Stepper */}
-      <div className="flex items-center gap-2 text-xs">
-        {(['type', 'info', 'slots', 'template', 'payment'] as Step[])
-          .filter((s) => s !== 'done')
-          .map((s, idx) => {
-            const stepOrder = ['type', 'info', 'slots', 'template', 'payment'];
-            const currentIdx = stepOrder.indexOf(step);
-            const isActive = idx === currentIdx;
-            const isDone = idx < currentIdx;
-            if (s === 'slots' && !bookNow) return null;
+  const stepOrder: Step[] = ['type', 'info', 'slots', 'template', 'payment'];
+  const currentIdx = stepOrder.indexOf(step);
+  const visibleSteps = stepOrder.filter((s) => s !== 'slots' || bookNow);
 
-            return (
-              <div key={s} className="flex items-center gap-2">
-                {idx > 0 && (
-                  <div
-                    className={`h-px w-6 ${isDone ? 'bg-[var(--widget-accent)]' : 'bg-border'}`}
-                  />
-                )}
-                <span
-                  className={`rounded-full px-2 py-0.5 font-medium transition-all duration-200 ${
-                    isActive
-                      ? 'text-white'
-                      : isDone
-                        ? 'text-[var(--widget-accent)]'
-                        : 'text-muted-foreground'
-                  }`}
-                  style={isActive ? { backgroundColor: accentColor } : undefined}
-                >
-                  {idx + 1}
-                </span>
-              </div>
-            );
-          })}
+  // Shared button classes
+  const primaryBtnClass =
+    'flex h-14 w-full items-center justify-center gap-2 rounded-full text-[17px] font-extrabold shadow-lg transition-all duration-200 active:scale-[0.97] hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0';
+  const secondaryBtnClass =
+    'flex h-12 w-full items-center justify-center gap-1.5 rounded-full border border-[hsl(var(--reservation-line))] bg-white/70 text-[14px] font-bold text-[hsl(var(--reservation-ink))] shadow-sm transition-all duration-200 hover:bg-white active:scale-[0.98]';
+
+  // Shared input class
+  const inputClass =
+    'w-full rounded-xl border border-[hsl(var(--reservation-line))] bg-white/70 px-4 py-3 text-[15px] font-medium text-[hsl(var(--reservation-ink))] placeholder:text-[hsl(var(--reservation-muted))] transition-all duration-200 focus:border-[hsl(var(--reservation-glow))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--reservation-glow)/0.2)]';
+
+  // Shared panel class (glassmorphism)
+  const panelClass =
+    'rounded-[1.25rem] border border-white/70 bg-white/60 p-5 backdrop-blur-2xl shadow-sm';
+
+  // Shared section heading
+  const headingClass =
+    'font-display text-[1.5rem] font-black leading-tight tracking-[-0.03em] text-[hsl(var(--reservation-ink))]';
+  const labelClass =
+    'block text-[10px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--reservation-soft))]';
+
+  return (
+    <div style={widgetStyle} className="space-y-5">
+      {/* Stepper — progress bar style comme le widget résa */}
+      <div className="flex items-center gap-1.5">
+        {visibleSteps.map((s, idx) => {
+          const realIdx = stepOrder.indexOf(s);
+          const isActive = realIdx === currentIdx;
+          const isDone = realIdx < currentIdx;
+          return (
+            <div
+              key={s}
+              className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
+                isActive
+                  ? 'bg-[hsl(var(--reservation-glow))]'
+                  : isDone
+                    ? 'bg-[hsl(var(--reservation-ink))]'
+                    : 'bg-[hsl(var(--reservation-line))]'
+              }`}
+            />
+          );
+        })}
       </div>
 
+      {/* Error — style Sokar avec icône Lucide */}
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
+        <div className="flex items-start gap-2.5 rounded-2xl border border-red-200/80 bg-red-50/80 p-4 backdrop-blur-sm">
+          <AlertCircle size={18} className="mt-0.5 shrink-0 text-red-600" />
+          <p className="text-[13px] font-medium leading-snug text-red-700">{error}</p>
         </div>
       )}
 
-      {/* Étape 1 : Type */}
+      {/* ── Étape 1 : Type ── */}
       {step === 'type' && (
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
-            Choisissez le type de carte
-          </h2>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[hsl(var(--reservation-soft))]">
+              Étape 1
+            </p>
+            <h2 className={headingClass}>Choisissez le type de carte</h2>
+          </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2.5">
+            {/* Montant libre */}
             <button
               type="button"
               onClick={() => setMode('free')}
-              className={`flex w-full items-center justify-between rounded-lg border p-4 transition-all duration-200 ${
-                mode === 'free' ? 'border-2' : 'border-border bg-background hover:bg-muted'
+              className={`flex w-full items-center justify-between rounded-[1.1rem] border p-4 text-left transition-all duration-200 active:scale-[0.99] ${
+                mode === 'free'
+                  ? 'border-[hsl(var(--reservation-glow))] bg-white/80 shadow-md'
+                  : 'border-[hsl(var(--reservation-line))] bg-white/50 hover:bg-white/70'
               }`}
-              style={mode === 'free' ? { borderColor: accentColor } : undefined}
             >
-              <div className="text-left">
-                <p className="font-medium" style={{ color: primaryColor }}>
-                  Montant libre
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Choisissez le montant de votre choix
-                </p>
+              <div className="flex items-center gap-3">
+                <div
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors ${
+                    mode === 'free'
+                      ? 'bg-[hsl(var(--reservation-glow))] text-white'
+                      : 'bg-[hsl(var(--reservation-line))] text-[hsl(var(--reservation-soft))]'
+                  }`}
+                >
+                  <Gift size={20} />
+                </div>
+                <div>
+                  <p className="text-[15px] font-extrabold text-[hsl(var(--reservation-ink))]">
+                    Montant libre
+                  </p>
+                  <p className="text-[13px] font-medium text-[hsl(var(--reservation-soft))]">
+                    Choisissez le montant de votre choix
+                  </p>
+                </div>
               </div>
               <div
-                className={`flex h-6 w-6 items-center justify-center rounded-full border-2 ${
-                  mode === 'free' ? 'border-transparent text-white' : 'border-border'
+                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-all ${
+                  mode === 'free'
+                    ? 'border-transparent bg-[hsl(var(--reservation-glow))] text-white'
+                    : 'border-[hsl(var(--reservation-line))]'
                 }`}
-                style={mode === 'free' ? { backgroundColor: accentColor } : undefined}
               >
-                {mode === 'free' && '✓'}
+                {mode === 'free' && <Check size={14} strokeWidth={3} />}
               </div>
             </button>
 
+            {/* Pack expérience */}
             <button
               type="button"
               onClick={() => packs.length > 0 && setMode('pack')}
               disabled={packsLoading || packs.length === 0}
-              className={`flex w-full items-center justify-between rounded-lg border p-4 transition-all duration-200 disabled:opacity-50 ${
-                mode === 'pack' ? 'border-2' : 'border-border bg-background hover:bg-muted'
+              className={`flex w-full items-center justify-between rounded-[1.1rem] border p-4 text-left transition-all duration-200 active:scale-[0.99] disabled:opacity-50 ${
+                mode === 'pack'
+                  ? 'border-[hsl(var(--reservation-glow))] bg-white/80 shadow-md'
+                  : 'border-[hsl(var(--reservation-line))] bg-white/50 hover:bg-white/70'
               }`}
-              style={mode === 'pack' ? { borderColor: accentColor } : undefined}
             >
-              <div className="text-left">
-                <p className="font-medium" style={{ color: primaryColor }}>
-                  Pack expérience
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {packsLoading
-                    ? 'Chargement...'
-                    : packs.length === 0
-                      ? 'Aucun pack disponible'
-                      : `${packs.length} pack${packs.length > 1 ? 's' : ''} disponible${packs.length > 1 ? 's' : ''}`}
-                </p>
+              <div className="flex items-center gap-3">
+                <div
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors ${
+                    mode === 'pack'
+                      ? 'bg-[hsl(var(--reservation-glow))] text-white'
+                      : 'bg-[hsl(var(--reservation-line))] text-[hsl(var(--reservation-soft))]'
+                  }`}
+                >
+                  <Sparkles size={20} />
+                </div>
+                <div>
+                  <p className="text-[15px] font-extrabold text-[hsl(var(--reservation-ink))]">
+                    Pack expérience
+                  </p>
+                  <p className="text-[13px] font-medium text-[hsl(var(--reservation-soft))]">
+                    {packsLoading
+                      ? 'Chargement...'
+                      : packs.length === 0
+                        ? 'Aucun pack disponible'
+                        : `${packs.length} pack${packs.length > 1 ? 's' : ''} disponible${packs.length > 1 ? 's' : ''}`}
+                  </p>
+                </div>
               </div>
               <div
-                className={`flex h-6 w-6 items-center justify-center rounded-full border-2 ${
-                  mode === 'pack' ? 'border-transparent text-white' : 'border-border'
+                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-all ${
+                  mode === 'pack'
+                    ? 'border-transparent bg-[hsl(var(--reservation-glow))] text-white'
+                    : 'border-[hsl(var(--reservation-line))]'
                 }`}
-                style={mode === 'pack' ? { backgroundColor: accentColor } : undefined}
               >
-                {mode === 'pack' && '✓'}
+                {mode === 'pack' && <Check size={14} strokeWidth={3} />}
               </div>
             </button>
 
+            {/* Cagnotte collective */}
             <button
               type="button"
               onClick={() => setMode('crowdfunding')}
-              className={`flex w-full items-center justify-between rounded-lg border p-4 transition-all duration-200 ${
-                mode === 'crowdfunding' ? 'border-2' : 'border-border bg-background hover:bg-muted'
+              className={`flex w-full items-center justify-between rounded-[1.1rem] border p-4 text-left transition-all duration-200 active:scale-[0.99] ${
+                mode === 'crowdfunding'
+                  ? 'border-[hsl(var(--reservation-glow))] bg-white/80 shadow-md'
+                  : 'border-[hsl(var(--reservation-line))] bg-white/50 hover:bg-white/70'
               }`}
-              style={mode === 'crowdfunding' ? { borderColor: accentColor } : undefined}
             >
-              <div className="text-left">
-                <p className="font-medium" style={{ color: primaryColor }}>
-                  Cagnotte collective
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Plusieurs personnes contribuent à une carte cadeau
-                </p>
+              <div className="flex items-center gap-3">
+                <div
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors ${
+                    mode === 'crowdfunding'
+                      ? 'bg-[hsl(var(--reservation-glow))] text-white'
+                      : 'bg-[hsl(var(--reservation-line))] text-[hsl(var(--reservation-soft))]'
+                  }`}
+                >
+                  <Users size={20} />
+                </div>
+                <div>
+                  <p className="text-[15px] font-extrabold text-[hsl(var(--reservation-ink))]">
+                    Cagnotte collective
+                  </p>
+                  <p className="text-[13px] font-medium text-[hsl(var(--reservation-soft))]">
+                    Plusieurs personnes contribuent à une carte cadeau
+                  </p>
+                </div>
               </div>
               <div
-                className={`flex h-6 w-6 items-center justify-center rounded-full border-2 ${
-                  mode === 'crowdfunding' ? 'border-transparent text-white' : 'border-border'
+                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-all ${
+                  mode === 'crowdfunding'
+                    ? 'border-transparent bg-[hsl(var(--reservation-glow))] text-white'
+                    : 'border-[hsl(var(--reservation-line))]'
                 }`}
-                style={mode === 'crowdfunding' ? { backgroundColor: accentColor } : undefined}
               >
-                {mode === 'crowdfunding' && '✓'}
+                {mode === 'crowdfunding' && <Check size={14} strokeWidth={3} />}
               </div>
             </button>
           </div>
 
+          {/* Montant libre — input */}
           {mode === 'free' && (
-            <div>
-              <label className="block text-sm font-medium" style={{ color: primaryColor }}>
-                Montant (€)
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="1"
-                placeholder="100"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-1"
-                style={{ ['--tw-ring-color' as string]: accentColor }}
-              />
+            <div className={panelClass}>
+              <label className={labelClass}>Montant (€)</label>
+              <div className="relative mt-2">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="1"
+                  placeholder="100"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className={inputClass}
+                />
+                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[15px] font-bold text-[hsl(var(--reservation-muted))]">
+                  €
+                </span>
+              </div>
+              {/* Quick amounts */}
+              <div className="mt-3 flex gap-2">
+                {['25', '50', '100', '200'].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setAmount(preset)}
+                    className={`flex-1 rounded-full py-2 text-[13px] font-bold transition-all duration-200 active:scale-[0.97] ${
+                      amount === preset
+                        ? 'bg-[hsl(var(--reservation-ink))] text-white'
+                        : 'border border-[hsl(var(--reservation-line))] bg-white/60 text-[hsl(var(--reservation-soft))] hover:bg-white'
+                    }`}
+                  >
+                    {preset}€
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
+          {/* Pack sélection — liste */}
           {mode === 'pack' && packs.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {packs.map((pack) => (
                 <button
                   key={pack.id}
                   type="button"
                   onClick={() => setPackId(pack.id)}
-                  className={`flex w-full items-center justify-between rounded-lg border p-4 transition-all duration-200 ${
-                    packId === pack.id ? 'border-2' : 'border-border bg-background hover:bg-muted'
+                  className={`flex w-full items-center justify-between rounded-[1.1rem] border p-4 text-left transition-all duration-200 active:scale-[0.99] ${
+                    packId === pack.id
+                      ? 'border-[hsl(var(--reservation-glow))] bg-white/80 shadow-md'
+                      : 'border-[hsl(var(--reservation-line))] bg-white/50 hover:bg-white/70'
                   }`}
-                  style={packId === pack.id ? { borderColor: accentColor } : undefined}
                 >
-                  <div className="text-left">
-                    <p className="font-medium" style={{ color: primaryColor }}>
+                  <div className="min-w-0">
+                    <p className="text-[15px] font-extrabold text-[hsl(var(--reservation-ink))]">
                       {pack.name}
                     </p>
                     {pack.description && (
-                      <p className="text-sm text-muted-foreground">{pack.description}</p>
+                      <p className="mt-0.5 text-[13px] font-medium text-[hsl(var(--reservation-soft))]">
+                        {pack.description}
+                      </p>
                     )}
-                    <p className="mt-1 text-xs text-muted-foreground">
+                    <p className="mt-1 text-[11px] font-medium text-[hsl(var(--reservation-muted))]">
                       {pack.minPartySize === pack.maxPartySize
                         ? `${pack.minPartySize} pers.`
                         : `${pack.minPartySize}–${pack.maxPartySize} pers.`}
                     </p>
                   </div>
-                  <p className="font-semibold" style={{ color: accentColor }}>
+                  <p
+                    className="ml-3 shrink-0 font-display text-[1.25rem] font-black tracking-tight"
+                    style={{ color: accentColor }}
+                  >
                     {formatEuro(pack.amount)}
                   </p>
                 </button>
@@ -430,10 +547,13 @@ export function GiftCardPurchase({
               type="button"
               onClick={handleNextFromType}
               disabled={packsLoading}
-              className="inline-flex w-full items-center justify-center rounded-lg px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
-              style={{ backgroundColor: accentColor }}
+              className={primaryBtnClass}
+              style={{ backgroundColor: accentColor, color: '#fff' }}
             >
               Continuer
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
+                <ChevronRight size={17} />
+              </span>
             </button>
           )}
         </div>
@@ -451,7 +571,7 @@ export function GiftCardPurchase({
         />
       )}
 
-      {/* Étape 2 : Informations */}
+      {/* ── Étape 2 : Informations ── */}
       {step === 'info' && (
         <div className="space-y-4">
           {/* Honeypot anti-bot — caché visuellement */}
@@ -466,115 +586,118 @@ export function GiftCardPurchase({
             onChange={(e) => setHoneypot(e.target.value)}
           />
 
-          <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
-            Informations
-          </h2>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[hsl(var(--reservation-soft))]">
+              Étape 2
+            </p>
+            <h2 className={headingClass}>Informations</h2>
+          </div>
 
           <div>
-            <label className="block text-sm font-medium" style={{ color: primaryColor }}>
-              Occasion (optionnel)
-            </label>
+            <label className={labelClass}>Occasion (optionnel)</label>
             <input
               type="text"
               placeholder="Anniversaire, remerciement..."
               value={occasion}
               onChange={(e) => setOccasion(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-1"
-              style={{ ['--tw-ring-color' as string]: accentColor }}
+              className={`${inputClass} mt-2`}
             />
           </div>
 
-          <div className="rounded-lg border border-border bg-cream p-3">
-            <p className="mb-3 text-sm font-medium" style={{ color: primaryColor }}>
-              Expéditeur
-            </p>
+          {/* Expéditeur */}
+          <div className={panelClass}>
+            <div className="mb-3 flex items-center gap-2">
+              <Heart size={16} className="text-[hsl(var(--reservation-glow))]" />
+              <p className="text-[13px] font-bold text-[hsl(var(--reservation-ink))]">Expéditeur</p>
+            </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <input
                 type="text"
                 placeholder="Nom"
                 value={senderName}
                 onChange={(e) => setSenderName(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-1"
-                style={{ ['--tw-ring-color' as string]: accentColor }}
+                className={inputClass}
               />
               <input
                 type="email"
                 placeholder="Email"
                 value={senderEmail}
                 onChange={(e) => setSenderEmail(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-1"
-                style={{ ['--tw-ring-color' as string]: accentColor }}
+                className={inputClass}
               />
               <input
                 type="tel"
                 placeholder="Téléphone"
                 value={senderPhone}
                 onChange={(e) => setSenderPhone(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-1"
-                style={{ ['--tw-ring-color' as string]: accentColor }}
+                className={inputClass}
               />
             </div>
           </div>
 
-          <div className="rounded-lg border border-border bg-cream p-3">
-            <p className="mb-3 text-sm font-medium" style={{ color: primaryColor }}>
-              Destinataire
-            </p>
+          {/* Destinataire */}
+          <div className={panelClass}>
+            <div className="mb-3 flex items-center gap-2">
+              <Gift size={16} className="text-[hsl(var(--reservation-glow))]" />
+              <p className="text-[13px] font-bold text-[hsl(var(--reservation-ink))]">
+                Destinataire
+              </p>
+            </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <input
                 type="text"
                 placeholder="Nom"
                 value={recipientName}
                 onChange={(e) => setRecipientName(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-1"
-                style={{ ['--tw-ring-color' as string]: accentColor }}
+                className={inputClass}
               />
               <input
                 type="email"
                 placeholder="Email"
                 value={recipientEmail}
                 onChange={(e) => setRecipientEmail(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-1"
-                style={{ ['--tw-ring-color' as string]: accentColor }}
+                className={inputClass}
               />
               <input
                 type="tel"
                 placeholder="Téléphone"
                 value={recipientPhone}
                 onChange={(e) => setRecipientPhone(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-1"
-                style={{ ['--tw-ring-color' as string]: accentColor }}
+                className={inputClass}
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium" style={{ color: primaryColor }}>
-              Message personnalisé (optionnel)
-            </label>
+            <label className={labelClass}>Message personnalisé (optionnel)</label>
             <textarea
               placeholder="Joyeux anniversaire !"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               rows={3}
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-1"
-              style={{ ['--tw-ring-color' as string]: accentColor }}
+              className={`${inputClass} mt-2 resize-none`}
             />
           </div>
 
-          <label className="flex items-center gap-3 rounded-lg border border-border bg-cream p-3 cursor-pointer transition-all duration-200 hover:bg-muted">
+          {/* Book now toggle */}
+          <label
+            className={`flex cursor-pointer items-center gap-3 rounded-[1.1rem] border p-4 transition-all duration-200 ${
+              bookNow
+                ? 'border-[hsl(var(--reservation-glow))] bg-white/80 shadow-md'
+                : 'border-[hsl(var(--reservation-line))] bg-white/50 hover:bg-white/70'
+            }`}
+          >
             <input
               type="checkbox"
               checked={bookNow}
               onChange={(e) => setBookNow(e.target.checked)}
-              className="h-4 w-4 rounded"
-              style={{ accentColor }}
+              className="h-5 w-5 rounded accent-[hsl(var(--reservation-glow))]"
             />
             <div>
-              <p className="text-sm font-medium" style={{ color: primaryColor }}>
+              <p className="text-[14px] font-bold text-[hsl(var(--reservation-ink))]">
                 Proposer directement des créneaux au destinataire
               </p>
-              <p className="text-xs text-muted-foreground">
+              <p className="mt-0.5 text-[12px] font-medium text-[hsl(var(--reservation-soft))]">
                 Le destinataire verra 3 créneaux et pourra réserver en un clic.
               </p>
             </div>
@@ -584,35 +707,42 @@ export function GiftCardPurchase({
             <button
               type="button"
               onClick={() => setStep('type')}
-              className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-3 text-base font-semibold transition-all duration-200 hover:bg-muted"
-              style={{ color: primaryColor }}
+              className={`${secondaryBtnClass} w-auto px-5`}
             >
-              ← Retour
+              <ChevronLeft size={18} />
+              Retour
             </button>
             <button
               type="button"
               onClick={handleNextFromInfo}
-              className="inline-flex flex-1 items-center justify-center rounded-lg px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90"
-              style={{ backgroundColor: accentColor }}
+              className={primaryBtnClass}
+              style={{ backgroundColor: accentColor, color: '#fff' }}
             >
               Continuer
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
+                <ChevronRight size={17} />
+              </span>
             </button>
           </div>
         </div>
       )}
 
-      {/* Étape 3 : Créneaux (optionnel) */}
+      {/* ── Étape 3 : Créneaux (optionnel) ── */}
       {step === 'slots' && bookNow && (
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
-            Préférences de réservation
-          </h2>
-          <p className="text-sm text-muted-foreground">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[hsl(var(--reservation-soft))]">
+              Étape 3
+            </p>
+            <h2 className={headingClass}>Préférences de réservation</h2>
+          </div>
+          <p className="text-[13px] font-medium text-[hsl(var(--reservation-soft))]">
             Ces informations aideront à proposer les meilleurs créneaux au destinataire.
           </p>
 
-          <div>
-            <label className="block text-sm font-medium" style={{ color: primaryColor }}>
+          <div className={panelClass}>
+            <label className={labelClass}>
+              <Calendar size={12} className="mr-1 inline" />
               Date préférée
             </label>
             <input
@@ -620,13 +750,13 @@ export function GiftCardPurchase({
               min={todayIso()}
               value={preferredDate}
               onChange={(e) => setPreferredDate(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-1"
-              style={{ ['--tw-ring-color' as string]: accentColor }}
+              className={`${inputClass} mt-2`}
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium" style={{ color: primaryColor }}>
+          <div className={panelClass}>
+            <label className={labelClass}>
+              <Users size={12} className="mr-1 inline" />
               Nombre de personnes
             </label>
             <input
@@ -635,21 +765,20 @@ export function GiftCardPurchase({
               max="20"
               value={preferredPartySize}
               onChange={(e) => setPreferredPartySize(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-1"
-              style={{ ['--tw-ring-color' as string]: accentColor }}
+              className={`${inputClass} mt-2`}
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium" style={{ color: primaryColor }}>
+          <div className={panelClass}>
+            <label className={labelClass}>
+              <Clock size={12} className="mr-1 inline" />
               Heure préférée (optionnel)
             </label>
             <input
               type="time"
               value={preferredTime}
               onChange={(e) => setPreferredTime(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 focus:outline-none focus:ring-1"
-              style={{ ['--tw-ring-color' as string]: accentColor }}
+              className={`${inputClass} mt-2`}
             />
           </div>
 
@@ -657,29 +786,35 @@ export function GiftCardPurchase({
             <button
               type="button"
               onClick={() => setStep('info')}
-              className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-3 text-base font-semibold transition-all duration-200 hover:bg-muted"
-              style={{ color: primaryColor }}
+              className={`${secondaryBtnClass} w-auto px-5`}
             >
-              ← Retour
+              <ChevronLeft size={18} />
+              Retour
             </button>
             <button
               type="button"
               onClick={handleNextFromSlots}
-              className="inline-flex flex-1 items-center justify-center rounded-lg px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90"
-              style={{ backgroundColor: accentColor }}
+              className={primaryBtnClass}
+              style={{ backgroundColor: accentColor, color: '#fff' }}
             >
               Continuer
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
+                <ChevronRight size={17} />
+              </span>
             </button>
           </div>
         </div>
       )}
 
-      {/* Étape 4 : Design / Template */}
+      {/* ── Étape 4 : Design / Template ── */}
       {step === 'template' && (
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
-            Personnalisez votre carte
-          </h2>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[hsl(var(--reservation-soft))]">
+              Étape {bookNow ? '4' : '3'}
+            </p>
+            <h2 className={headingClass}>Personnalisez votre carte</h2>
+          </div>
 
           <GiftCardTemplatePicker
             selectedTemplate={templateId}
@@ -697,61 +832,99 @@ export function GiftCardPurchase({
             <button
               type="button"
               onClick={() => setStep(bookNow ? 'slots' : 'info')}
-              className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-3 text-base font-semibold transition-all duration-200 hover:bg-muted"
-              style={{ color: primaryColor }}
+              className={`${secondaryBtnClass} w-auto px-5`}
             >
-              ← Retour
+              <ChevronLeft size={18} />
+              Retour
             </button>
             <button
               type="button"
               onClick={handleNextFromTemplate}
-              className="inline-flex flex-1 items-center justify-center rounded-lg px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90"
-              style={{ backgroundColor: accentColor }}
+              className={primaryBtnClass}
+              style={{ backgroundColor: accentColor, color: '#fff' }}
             >
-              Continuer →
+              Continuer
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
+                <ChevronRight size={17} />
+              </span>
             </button>
           </div>
         </div>
       )}
 
-      {/* Étape 5 : Paiement */}
+      {/* ── Étape 5 : Paiement ── */}
       {step === 'payment' && (
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold" style={{ color: primaryColor }}>
-            Récapitulatif & Paiement
-          </h2>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[hsl(var(--reservation-soft))]">
+              Étape {bookNow ? '5' : '4'}
+            </p>
+            <h2 className={headingClass}>Récapitulatif & Paiement</h2>
+          </div>
 
-          <div className="rounded-xl border border-border bg-cream p-4 space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Type</span>
-              <span className="font-medium" style={{ color: primaryColor }}>
-                {mode === 'free' ? 'Montant libre' : `Pack : ${selectedPack?.name ?? '—'}`}
-              </span>
+          {/* Récap glassmorphism */}
+          <div className={panelClass}>
+            <div className="space-y-2.5 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-[12px] font-medium uppercase tracking-wider text-[hsl(var(--reservation-soft))]">
+                  Type
+                </span>
+                <span className="text-[14px] font-bold text-[hsl(var(--reservation-ink))]">
+                  {mode === 'free' ? 'Montant libre' : `Pack : ${selectedPack?.name ?? '—'}`}
+                </span>
+              </div>
+              <div className="h-px bg-[hsl(var(--reservation-line))]" />
+              <div className="flex items-center justify-between">
+                <span className="text-[12px] font-medium uppercase tracking-wider text-[hsl(var(--reservation-soft))]">
+                  Montant
+                </span>
+                <span
+                  className="font-display text-[1.5rem] font-black tracking-tight"
+                  style={{ color: accentColor }}
+                >
+                  {formatEuro(displayAmount)}
+                </span>
+              </div>
+              {recipientName && (
+                <>
+                  <div className="h-px bg-[hsl(var(--reservation-line))]" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] font-medium uppercase tracking-wider text-[hsl(var(--reservation-soft))]">
+                      Destinataire
+                    </span>
+                    <span className="text-[14px] font-bold text-[hsl(var(--reservation-ink))]">
+                      {recipientName}
+                    </span>
+                  </div>
+                </>
+              )}
+              {bookNow && preferredDate && (
+                <>
+                  <div className="h-px bg-[hsl(var(--reservation-line))]" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] font-medium uppercase tracking-wider text-[hsl(var(--reservation-soft))]">
+                      Date préférée
+                    </span>
+                    <span className="text-[14px] font-bold text-[hsl(var(--reservation-ink))]">
+                      {preferredDate}
+                    </span>
+                  </div>
+                </>
+              )}
+              {bookNow && (
+                <>
+                  <div className="h-px bg-[hsl(var(--reservation-line))]" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] font-medium uppercase tracking-wider text-[hsl(var(--reservation-soft))]">
+                      Personnes
+                    </span>
+                    <span className="text-[14px] font-bold text-[hsl(var(--reservation-ink))]">
+                      {preferredPartySize}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Montant</span>
-              <span className="font-semibold" style={{ color: accentColor }}>
-                {formatEuro(displayAmount)}
-              </span>
-            </div>
-            {recipientName && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Destinataire</span>
-                <span style={{ color: primaryColor }}>{recipientName}</span>
-              </div>
-            )}
-            {bookNow && preferredDate && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Date préférée</span>
-                <span style={{ color: primaryColor }}>{preferredDate}</span>
-              </div>
-            )}
-            {bookNow && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Personnes</span>
-                <span style={{ color: primaryColor }}>{preferredPartySize}</span>
-              </div>
-            )}
           </div>
 
           {!clientSecret && (
@@ -760,19 +933,29 @@ export function GiftCardPurchase({
                 type="button"
                 onClick={handleStartPayment}
                 disabled={loading}
-                className="inline-flex w-full items-center justify-center rounded-lg px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
-                style={{ backgroundColor: accentColor }}
+                className={primaryBtnClass}
+                style={{ backgroundColor: accentColor, color: '#fff' }}
               >
-                {loading ? 'Chargement...' : `Payer ${formatEuro(displayAmount)}`}
+                {loading ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin" />
+                    Chargement...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard size={18} />
+                    Payer {formatEuro(displayAmount)}
+                  </>
+                )}
               </button>
               <button
                 type="button"
                 onClick={() => setStep('template')}
                 disabled={loading}
-                className="inline-flex w-full items-center justify-center rounded-lg border border-border bg-background px-5 py-3 text-base font-semibold transition-all duration-200 hover:bg-muted"
-                style={{ color: primaryColor }}
+                className={secondaryBtnClass}
               >
-                ← Retour
+                <ChevronLeft size={18} />
+                Retour
               </button>
             </div>
           )}
@@ -797,16 +980,18 @@ export function GiftCardPurchase({
                   setPaymentIntentId(null);
                   setStep('template');
                 }}
-                className="mt-3 inline-flex w-full items-center justify-center rounded-lg border border-border bg-background px-5 py-2 text-sm font-semibold transition-all duration-200 hover:bg-muted"
-                style={{ color: primaryColor }}
+                className={`${secondaryBtnClass} mt-3`}
               >
-                ← Retour
+                <ChevronLeft size={18} />
+                Retour
               </button>
             </Elements>
           )}
 
           {loading && (
-            <p className="text-center text-sm text-muted-foreground">Traitement en cours...</p>
+            <p className="text-center text-[13px] font-medium text-[hsl(var(--reservation-soft))]">
+              Traitement en cours...
+            </p>
           )}
         </div>
       )}
