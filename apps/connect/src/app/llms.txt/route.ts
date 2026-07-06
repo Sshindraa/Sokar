@@ -32,10 +32,10 @@ Chaque page contient du JSON-LD Schema.org (type Restaurant) avec :
 - Un potentialAction ReserveAction (si le restaurant a activé l'exposition IA) avec un EntryPoint.urlTemplate
 
 Format du deep-link de réservation :
-${SITE_URL}/restaurant/{slug}/book?partySize={partySize}&date={date}&time={time}
+${SITE_URL}/book/{slug}?partySize={partySize}&date={date}&time={time}
 
 Exemple :
-${SITE_URL}/restaurant/chez-mario/book?partySize=4&date=2026-06-25&time=20:00
+${SITE_URL}/book/chez-mario?partySize=4&date=2026-06-25&time=20:00
 
 L'utilisateur clique sur ce lien et complète le formulaire sur la page Sokar.
 

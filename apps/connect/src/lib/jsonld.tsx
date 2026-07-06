@@ -102,7 +102,7 @@ export function buildPublicRestaurantJsonLd(input: {
             '@type': 'ReserveAction',
             target: {
               '@type': 'EntryPoint',
-              urlTemplate: `${SITE_URL}/restaurant/${r.slug}/book?partySize={partySize}&date={date}&time={time}`,
+              urlTemplate: `${SITE_URL}/book/${r.slug}?partySize={partySize}&date={date}&time={time}`,
               inLanguage: 'fr-FR',
               actionPlatform: [
                 'https://schema.org/DesktopWebPlatform',

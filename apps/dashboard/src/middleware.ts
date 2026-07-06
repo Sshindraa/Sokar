@@ -1,5 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 
 const isProtectedRoute = createRouteMatcher(['/dashboard(.*)', '/onboarding(.*)']);
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
@@ -14,8 +14,21 @@ if (process.env.NODE_ENV === 'production' && !hasClerkKey) {
   );
 }
 
+/** URL de booking publique courte : /book/[slug] -> /widget/[slug] (meme widget). */
+function rewriteBookToWidget(req: NextRequest): NextResponse | null {
+  const match = req.nextUrl.pathname.match(/^\/book\/([^/]+)$/);
+  if (!match) return null;
+  const slug = match[1];
+  const url = new URL(`/widget/${slug}`, req.url);
+  url.search = req.nextUrl.search;
+  return NextResponse.rewrite(url);
+}
+
 const middleware = hasClerkKey
   ? clerkMiddleware(async (auth, req) => {
+      const rewrite = rewriteBookToWidget(req);
+      if (rewrite) return rewrite;
+
       if (isProtectedRoute(req)) {
         const { userId } = await auth();
         if (!userId) {
@@ -24,7 +37,9 @@ const middleware = hasClerkKey
         }
       }
     })
-  : function localPreviewMiddleware() {
+  : function localPreviewMiddleware(req: NextRequest) {
+      const rewrite = rewriteBookToWidget(req);
+      if (rewrite) return rewrite;
       return NextResponse.next();
     };
 

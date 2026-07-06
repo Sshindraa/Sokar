@@ -34,7 +34,7 @@ export async function GET(_req: NextRequest) {
         json_ld_schema: 'https://schema.org/Restaurant',
         reservation_schema: 'https://schema.org/ReserveAction',
         // Format du deep-link de réservation (pré-rempli par l'IA)
-        booking_url_template: `${SITE_URL}/restaurant/{slug}/book?partySize={partySize}&date={date}&time={time}`,
+        booking_url_template: `${SITE_URL}/book/{slug}?partySize={partySize}&date={date}&time={time}`,
       },
       // MCP : les IA qui supportent le Model Context Protocol peuvent
       // appeler directement les tools de réservation.
