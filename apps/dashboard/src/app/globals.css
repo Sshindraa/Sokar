@@ -54,6 +54,31 @@
     --input: 0 0% 100% / 0.12;
     --ring: 0 0% 100%;
   }
+
+  /* Light theme — inspiré des cockpits data (cartes blanches, fond bleu-gris doux,
+     accents réservés aux données live). Scopé au dashboard via la classe .light
+     posée par le toggle dans _layout-client.tsx, n'affecte pas le marketing. */
+  .light {
+    --background: 218 33% 96%;
+    --foreground: 222 32% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 32% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 32% 12%;
+    --primary: 222 32% 12%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 218 24% 93%;
+    --secondary-foreground: 222 32% 12%;
+    --muted: 218 24% 93%;
+    --muted-foreground: 220 12% 42%;
+    --accent: 218 24% 91%;
+    --accent-foreground: 222 32% 12%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 222 20% 20% / 0.08;
+    --input: 222 20% 20% / 0.14;
+    --ring: 199 89% 48%;
+  }
 }
 
 @layer base {

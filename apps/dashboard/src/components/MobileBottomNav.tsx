@@ -18,7 +18,7 @@ export default function MobileBottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 md:hidden border-t border-white/[0.06] bg-black/80 backdrop-blur-xl"
+      className="fixed bottom-0 left-0 right-0 z-50 md:hidden border-t border-border bg-background/85 backdrop-blur-xl"
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
       <div className="flex items-stretch justify-around px-1">
@@ -33,7 +33,9 @@ export default function MobileBottomNav() {
               onClick={() => triggerHaptic(12)}
               className={cn(
                 'flex flex-1 flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[10px] font-medium transition-colors duration-200 touch-manipulation relative',
-                active ? 'text-orange-400' : 'text-white/40 active:text-white/60',
+                active
+                  ? 'text-orange-500 dark:text-orange-400'
+                  : 'text-muted-foreground active:text-foreground/70',
               )}
             >
               {/* Active indicator dot */}

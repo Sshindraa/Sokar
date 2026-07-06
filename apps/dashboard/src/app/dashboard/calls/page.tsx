@@ -47,11 +47,23 @@ function formatDate(iso: string): string {
 function OutcomeBadge({ outcome }: { outcome: string | null }) {
   switch (outcome) {
     case 'RESERVED':
-      return <Badge className="border-emerald-500/20 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15">Réservé</Badge>;
+      return (
+        <Badge className="border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15">
+          Réservé
+        </Badge>
+      );
     case 'INFO':
-      return <Badge className="border-blue-500/20 bg-blue-500/10 text-blue-400 hover:bg-blue-500/15">Info</Badge>;
+      return (
+        <Badge className="border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/15">
+          Info
+        </Badge>
+      );
     case 'HANDOFF':
-      return <Badge className="border-amber-500/20 bg-amber-500/10 text-amber-400 hover:bg-amber-500/15">Transféré</Badge>;
+      return (
+        <Badge className="border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/15">
+          Transféré
+        </Badge>
+      );
     case 'NO_ACTION':
       return <Badge variant="secondary">Aucune action</Badge>;
     case 'ERROR':
@@ -63,12 +75,18 @@ function OutcomeBadge({ outcome }: { outcome: string | null }) {
 
 function IntentLabel({ intent }: { intent: string | null }) {
   switch (intent) {
-    case 'RESERVATION': return 'Réservation';
-    case 'HOURS': return 'Horaires';
-    case 'MENU': return 'Menu';
-    case 'CANCEL': return 'Annulation';
-    case 'OTHER': return 'Autre';
-    default: return intent || '—';
+    case 'RESERVATION':
+      return 'Réservation';
+    case 'HOURS':
+      return 'Horaires';
+    case 'MENU':
+      return 'Menu';
+    case 'CANCEL':
+      return 'Annulation';
+    case 'OTHER':
+      return 'Autre';
+    default:
+      return intent || '—';
   }
 }
 
@@ -153,7 +171,7 @@ export default function CallsPage() {
                     ? 'border-l-red-500'
                     : call.outcome === 'HANDOFF'
                       ? 'border-l-amber-500'
-                      : 'border-l-white/10'
+                      : 'border-l-border'
               }
               details={[
                 {
@@ -196,10 +214,7 @@ export default function CallsPage() {
               </TableHeader>
               <TableBody>
                 {calls.map((call) => (
-                  <TableRow
-                    key={call.id}
-                    className="transition-all duration-200 hover:bg-accent"
-                  >
+                  <TableRow key={call.id} className="transition-all duration-200 hover:bg-accent">
                     <TableCell className="font-medium whitespace-nowrap">
                       {formatDate(call.createdAt)}
                     </TableCell>
@@ -215,9 +230,7 @@ export default function CallsPage() {
                     <TableCell>
                       <OutcomeBadge outcome={call.outcome} />
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {call.carrier || '—'}
-                    </TableCell>
+                    <TableCell className="text-muted-foreground">{call.carrier || '—'}</TableCell>
                     <TableCell className="max-w-xs">
                       {call.transcript ? (
                         <span className="inline-flex items-center gap-1 text-muted-foreground">

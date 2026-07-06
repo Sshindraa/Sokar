@@ -101,7 +101,7 @@ export default function EmptySlotsWidget() {
           <Clock size={20} className="text-emerald-500" />
         )}
         <div>
-          <h2 className="text-lg font-bold text-white">
+          <h2 className="text-lg font-bold text-foreground">
             {hasAlerts
               ? `${summary.underbookedDays} jour${summary.underbookedDays > 1 ? 's' : ''} sous-réservé${summary.underbookedDays > 1 ? 's' : ''} cette semaine`
               : 'Semaine bien remplie'}
@@ -131,7 +131,7 @@ export default function EmptySlotsWidget() {
               key={day.date}
               className={`rounded-xl border p-3 text-center transition-all duration-200 ${
                 !day.isOpen
-                  ? 'border-white/5 bg-white/[0.01] opacity-50'
+                  ? 'border-border bg-card/40 opacity-50'
                   : day.isUnderbooked
                     ? 'border-amber-500/30 bg-amber-500/[0.06]'
                     : 'border-emerald-500/15 bg-emerald-500/[0.04]'
@@ -148,7 +148,7 @@ export default function EmptySlotsWidget() {
                 </div>
               ) : (
                 <>
-                  <p className="mt-2 text-2xl font-black text-white">{day.reservationCount}</p>
+                  <p className="mt-2 text-2xl font-black text-foreground">{day.reservationCount}</p>
                   <p className="text-[10px] text-muted-foreground">
                     {day.reservationCount > 1 ? 'réservations' : 'réservation'}
                   </p>

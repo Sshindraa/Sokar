@@ -53,9 +53,7 @@ export default function ReservationsPage() {
     try {
       setError('');
       await patch(`reservations/${id}`, { status: newStatus });
-      setReservations((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r)),
-      );
+      setReservations((prev) => prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r)));
     } catch (err: any) {
       setError(err.message || 'Impossible de mettre à jour le statut');
     }
@@ -126,7 +124,7 @@ export default function ReservationsPage() {
                     ? 'border-l-red-500'
                     : res.status === 'SEATED'
                       ? 'border-l-blue-400'
-                      : 'border-l-white/10'
+                      : 'border-l-border'
               }
               actions={[
                 {
@@ -193,17 +191,18 @@ export default function ReservationsPage() {
                     </TableCell>
                     <TableCell>{res.partySize}</TableCell>
                     <TableCell className="text-muted-foreground">
-                      {res.estimatedRevenue ? `${res.estimatedRevenue}€` : <span className="opacity-50">—</span>}
+                      {res.estimatedRevenue ? (
+                        `${res.estimatedRevenue}€`
+                      ) : (
+                        <span className="opacity-50">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
-                      <Select
-                        value={res.status}
-                        onValueChange={(val) => updateStatus(res.id, val)}
-                      >
-                        <SelectTrigger className="w-[130px] h-8 bg-transparent border-white/10 text-white font-sans text-xs">
+                      <Select value={res.status} onValueChange={(val) => updateStatus(res.id, val)}>
+                        <SelectTrigger className="w-[130px] h-8 bg-transparent border-border text-foreground font-sans text-xs">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent className="bg-popover border-white/10 text-white">
+                        <SelectContent className="bg-popover border-border text-popover-foreground">
                           <SelectItem value="CONFIRMED">Confirmée</SelectItem>
                           <SelectItem value="CANCELLED">Annulée</SelectItem>
                           <SelectItem value="SEATED">Installée</SelectItem>
@@ -214,7 +213,7 @@ export default function ReservationsPage() {
                     <TableCell className="text-right">
                       <button
                         onClick={() => deleteReservation(res.id)}
-                        className="p-2 text-white/50 hover:text-red-500 rounded-lg hover:bg-white/5 transition-all duration-200"
+                        className="p-2 text-muted-foreground hover:text-red-500 rounded-lg hover:bg-accent transition-all duration-200"
                         title="Supprimer la réservation"
                       >
                         <Trash2 size={16} />
@@ -234,15 +233,22 @@ export default function ReservationsPage() {
 function StatusBadge({ status }: { status: string }) {
   switch (status) {
     case 'CONFIRMED':
-      return <Badge className="border-primary/20 bg-primary/10 text-foreground hover:bg-primary/15">Confirmée</Badge>;
+      return (
+        <Badge className="border-primary/20 bg-primary/10 text-foreground hover:bg-primary/15">
+          Confirmée
+        </Badge>
+      );
     case 'CANCELLED':
       return <Badge variant="destructive">Annulée</Badge>;
     case 'SEATED':
-      return <Badge className="border-border bg-secondary text-secondary-foreground hover:bg-accent">Installée</Badge>;
+      return (
+        <Badge className="border-border bg-secondary text-secondary-foreground hover:bg-accent">
+          Installée
+        </Badge>
+      );
     case 'NO_SHOW':
       return <Badge variant="secondary">No-show</Badge>;
     default:
       return <Badge variant="outline">{status}</Badge>;
   }
 }
-

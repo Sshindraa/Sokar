@@ -39,7 +39,7 @@ export default function MobileDataCard({
 }: MobileDataCardProps) {
   const [offsetX, setOffsetX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  
+
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const currentOffsetX = useRef(0);
@@ -78,7 +78,7 @@ export default function MobileDataCard({
       if (e.cancelable) {
         e.preventDefault();
       }
-      
+
       const newOffset = currentOffsetX.current + diffX;
       // Allow swiping left (negative) and block swiping right past 10px
       setOffsetX(Math.min(10, Math.max(-maxOffset - 25, newOffset)));
@@ -112,7 +112,7 @@ export default function MobileDataCard({
   };
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-white/[0.06] bg-black/50">
+    <div className="relative overflow-hidden rounded-xl border border-border bg-card/60">
       {/* Swipe actions rendered in background */}
       {actions && actions.length > 0 && (
         <div className="absolute right-0 top-0 bottom-0 flex items-stretch z-0">
@@ -148,7 +148,7 @@ export default function MobileDataCard({
           transition: isDragging ? 'none' : 'transform 240ms cubic-bezier(0.16, 1, 0.3, 1)',
         }}
         className={cn(
-          'rounded-xl border border-transparent bg-white/[0.02] p-3.5 transition-colors duration-200 active:bg-white/[0.04] touch-manipulation relative z-10 select-none',
+          'rounded-xl border border-transparent bg-transparent p-3.5 transition-colors duration-200 active:bg-accent touch-manipulation relative z-10 select-none',
           accentClass && `border-l-2 ${accentClass}`,
           onClick && 'cursor-pointer',
         )}
@@ -156,9 +156,9 @@ export default function MobileDataCard({
         {/* Header: title + badge */}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-white truncate">{title}</p>
+            <p className="text-sm font-semibold text-foreground truncate">{title}</p>
             {subtitle && (
-              <p className="mt-0.5 text-[11px] text-white/40 truncate">{subtitle}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground truncate">{subtitle}</p>
             )}
           </div>
           {badge && <div className="flex-shrink-0">{badge}</div>}
@@ -169,10 +169,10 @@ export default function MobileDataCard({
           <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5">
             {details.map((d) => (
               <div key={d.label} className="min-w-0">
-                <p className="text-[10px] font-medium uppercase tracking-wider text-white/25">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
                   {d.label}
                 </p>
-                <p className="text-xs text-white/60 truncate">{d.value}</p>
+                <p className="text-xs text-muted-foreground truncate">{d.value}</p>
               </div>
             ))}
           </div>

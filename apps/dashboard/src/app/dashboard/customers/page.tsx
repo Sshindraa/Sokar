@@ -27,18 +27,21 @@ export default function CustomersPage() {
   const [searchPhone, setSearchPhone] = useState('');
   const [error, setError] = useState('');
 
-  const fetchCustomers = useCallback(async (phone?: string) => {
-    setLoading(true);
-    setError('');
-    try {
-      const params = phone ? `?phone=${encodeURIComponent(phone)}` : '';
-      const data = await get(`customers${params}`);
-      setCustomers(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      setError(err.message || 'Impossible de charger les clients');
-    }
-    setLoading(false);
-  }, [get]);
+  const fetchCustomers = useCallback(
+    async (phone?: string) => {
+      setLoading(true);
+      setError('');
+      try {
+        const params = phone ? `?phone=${encodeURIComponent(phone)}` : '';
+        const data = await get(`customers${params}`);
+        setCustomers(Array.isArray(data) ? data : []);
+      } catch (err: any) {
+        setError(err.message || 'Impossible de charger les clients');
+      }
+      setLoading(false);
+    },
+    [get],
+  );
 
   useEffect(() => {
     if (!orgId) return;
@@ -48,9 +51,7 @@ export default function CustomersPage() {
   async function toggleVip(id: string, current: boolean) {
     try {
       await patch(`customers/${id}/vip`, { isVip: !current });
-      setCustomers((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, isVip: !current } : c)),
-      );
+      setCustomers((prev) => prev.map((c) => (c.id === id ? { ...c, isVip: !current } : c)));
     } catch (err: any) {
       setError(err.message || 'Impossible de modifier le statut VIP');
     }
@@ -88,7 +89,10 @@ export default function CustomersPage() {
       {/* Recherche */}
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1 min-w-0">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
           <Input
             type="text"
             placeholder="Rechercher par téléphone..."
@@ -99,11 +103,21 @@ export default function CustomersPage() {
           />
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => fetchCustomers(searchPhone || undefined)} className="flex-1 sm:flex-initial">
+          <Button
+            onClick={() => fetchCustomers(searchPhone || undefined)}
+            className="flex-1 sm:flex-initial"
+          >
             Rechercher
           </Button>
           {searchPhone && (
-            <Button variant="outline" onClick={() => { setSearchPhone(''); fetchCustomers(); }} className="flex-shrink-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSearchPhone('');
+                fetchCustomers();
+              }}
+              className="flex-shrink-0"
+            >
               <RotateCcw size={14} className="mr-1" />
               Reset
             </Button>
@@ -147,7 +161,7 @@ export default function CustomersPage() {
                     className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-all duration-200 min-h-[32px] touch-manipulation ${
                       c.isVip
                         ? 'border border-orange-500/30 bg-orange-500/10 text-orange-400'
-                        : 'bg-white/5 text-white/40 border border-white/10'
+                        : 'bg-secondary text-muted-foreground border border-border'
                     }`}
                   >
                     <Star size={12} className={c.isVip ? 'fill-current' : ''} />
@@ -177,9 +191,7 @@ export default function CustomersPage() {
                   { label: 'Fidélité', value: Number(c.loyaltyScore).toFixed(1) },
                   {
                     label: 'Dernière visite',
-                    value: c.lastSeenAt
-                      ? new Date(c.lastSeenAt).toLocaleDateString('fr-FR')
-                      : '—',
+                    value: c.lastSeenAt ? new Date(c.lastSeenAt).toLocaleDateString('fr-FR') : '—',
                   },
                   ...(c.notes ? [{ label: 'Notes', value: c.notes }] : []),
                 ]}
@@ -192,53 +204,56 @@ export default function CustomersPage() {
         <div className="sokar-card overflow-hidden">
           <div className="mobile-table-wrapper">
             <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nom</TableHead>
-                <TableHead>Téléphone</TableHead>
-                <TableHead>Visites</TableHead>
-                <TableHead>Score fidélité</TableHead>
-                <TableHead>VIP</TableHead>
-                <TableHead>Notes</TableHead>
-                <TableHead>Dernière visite</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {customers.map((c: any) => (
-                <TableRow key={c.id} className="transition-all duration-200 hover:bg-accent">
-                  <TableCell className="font-medium">{c.name || <span className="opacity-50">—</span>}</TableCell>
-                  <TableCell className="text-muted-foreground">{c.phone}</TableCell>
-                  <TableCell>{c.visitCount}</TableCell>
-                  <TableCell>{Number(c.loyaltyScore).toFixed(1)}</TableCell>
-                  <TableCell>
-                    <button
-                      onClick={() => toggleVip(c.id, c.isVip)}
-                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-all duration-200 ${
-                        c.isVip
-                          ? 'border border-primary/20 bg-primary/10 text-foreground hover:bg-primary/15'
-                          : 'bg-muted text-muted-foreground hover:bg-accent'
-                      }`}
-                    >
-                      <Star size={12} className={c.isVip ? 'fill-current' : ''} />
-                      {c.isVip ? 'VIP' : 'Ajouter'}
-                    </button>
-                  </TableCell>
-                  <TableCell className="max-w-[200px] truncate text-muted-foreground">
-                    {c.notes || <span className="opacity-50">—</span>}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {c.lastSeenAt
-                      ? new Date(c.lastSeenAt).toLocaleDateString('fr-FR')
-                      : <span className="opacity-50">—</span>}
-                  </TableCell>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nom</TableHead>
+                  <TableHead>Téléphone</TableHead>
+                  <TableHead>Visites</TableHead>
+                  <TableHead>Score fidélité</TableHead>
+                  <TableHead>VIP</TableHead>
+                  <TableHead>Notes</TableHead>
+                  <TableHead>Dernière visite</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {customers.map((c: any) => (
+                  <TableRow key={c.id} className="transition-all duration-200 hover:bg-accent">
+                    <TableCell className="font-medium">
+                      {c.name || <span className="opacity-50">—</span>}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{c.phone}</TableCell>
+                    <TableCell>{c.visitCount}</TableCell>
+                    <TableCell>{Number(c.loyaltyScore).toFixed(1)}</TableCell>
+                    <TableCell>
+                      <button
+                        onClick={() => toggleVip(c.id, c.isVip)}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-all duration-200 ${
+                          c.isVip
+                            ? 'border border-primary/20 bg-primary/10 text-foreground hover:bg-primary/15'
+                            : 'bg-muted text-muted-foreground hover:bg-accent'
+                        }`}
+                      >
+                        <Star size={12} className={c.isVip ? 'fill-current' : ''} />
+                        {c.isVip ? 'VIP' : 'Ajouter'}
+                      </button>
+                    </TableCell>
+                    <TableCell className="max-w-[200px] truncate text-muted-foreground">
+                      {c.notes || <span className="opacity-50">—</span>}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {c.lastSeenAt ? (
+                        new Date(c.lastSeenAt).toLocaleDateString('fr-FR')
+                      ) : (
+                        <span className="opacity-50">—</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         </div>
       )}
     </div>
   );
 }
-
