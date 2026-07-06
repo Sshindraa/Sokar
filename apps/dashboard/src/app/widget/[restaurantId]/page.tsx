@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -12,6 +13,7 @@ import {
   CheckCircle2,
   AlertCircle,
   ChevronLeft,
+  ArrowLeft,
   Phone,
   User,
   Mail,
@@ -719,6 +721,15 @@ export default function ReservationWidget() {
         />
 
         <div className="absolute inset-x-0 top-0 z-[2] flex h-[46dvh] flex-col items-center justify-center px-6 text-center">
+          {!isEmbedded && (
+            <Link
+              href={`/restaurant/${restaurantId}`}
+              className="absolute left-4 top-4 z-[3] inline-flex items-center gap-1.5 rounded-full border border-white/40 bg-white/25 px-3 py-2 text-sm font-semibold text-white shadow-sm backdrop-blur-2xl transition-all duration-200 hover:bg-white/35 hover:gap-2.5"
+            >
+              <ArrowLeft size={16} />
+              Retour
+            </Link>
+          )}
           <p className="text-[10px] sm:text-xs font-bold uppercase tracking-[0.22em] text-white/70">
             {success ? 'Confirmation' : 'Réserver'}
           </p>
