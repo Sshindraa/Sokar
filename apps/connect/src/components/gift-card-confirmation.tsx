@@ -77,10 +77,7 @@ export function GiftCardConfirmation({
       {/* Carte de confirmation — glassmorphism */}
       <div className={panelClass}>
         <div className="mb-5 flex items-center gap-3">
-          <div
-            className="flex h-12 w-12 items-center justify-center rounded-full text-white shadow-lg"
-            style={{ backgroundColor: accentColor }}
-          >
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[hsl(var(--reservation-ink))] text-white shadow-lg shadow-black/10">
             <Check size={24} strokeWidth={3} />
           </div>
           <div>
@@ -102,10 +99,7 @@ export function GiftCardConfirmation({
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--reservation-soft))]">
             Code de la carte cadeau
           </p>
-          <p
-            className="mt-1.5 font-display text-[1.75rem] font-black tracking-wider"
-            style={{ color: accentColor }}
-          >
+          <p className="mt-1.5 font-display text-[1.75rem] font-black tracking-wider text-[hsl(var(--reservation-blue))]">
             {result.shortCode ?? result.code}
           </p>
           {result.shortCode && (
@@ -156,8 +150,7 @@ export function GiftCardConfirmation({
             href={result.pdfUrl}
             target="_parent"
             rel="noopener noreferrer"
-            className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-full text-[16px] font-extrabold text-white shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.97]"
-            style={{ backgroundColor: accentColor }}
+            className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[hsl(var(--reservation-ink))] text-[16px] font-extrabold text-white shadow-lg shadow-black/10 transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.97]"
           >
             <Download size={18} />
             Télécharger la carte cadeau (PDF)
@@ -168,7 +161,7 @@ export function GiftCardConfirmation({
           <div className="mt-4 flex items-start gap-2.5 rounded-2xl border border-[hsl(var(--reservation-line))] bg-[hsl(var(--reservation-wash))] p-3">
             <PartyPopper
               size={16}
-              className="mt-0.5 shrink-0 text-[hsl(var(--reservation-glow))]"
+              className="mt-0.5 shrink-0 text-[hsl(var(--reservation-blue))]"
             />
             <p className="text-[13px] font-medium leading-snug text-[hsl(var(--reservation-soft))]">
               Le destinataire pourra réserver sa table quand il le souhaite en utilisant ce code sur
@@ -184,10 +177,7 @@ export function GiftCardConfirmation({
           {loadingSlots ? (
             <div className={`${panelClass} text-center`}>
               <div className="flex flex-col items-center gap-3 py-4">
-                <div
-                  className="flex h-10 w-10 items-center justify-center rounded-full"
-                  style={{ backgroundColor: accentColor }}
-                >
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[hsl(var(--reservation-ink))]">
                   <Calendar size={20} className="animate-pulse text-white" />
                 </div>
                 <p className="text-[13px] font-medium text-[hsl(var(--reservation-soft))]">
