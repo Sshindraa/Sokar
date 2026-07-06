@@ -38,6 +38,14 @@ const nextConfig = {
   experimental: {
     parallelServerBuildTraces: true,
   },
+  // ESLint est déjà exécuté en pre-push hook (prepush-quality-gate).
+  // Le relancer pendant next build sur le VPS ajoute ~68 s de linting redondant.
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: false,
+  },
 };
 
 module.exports = nextConfig;
