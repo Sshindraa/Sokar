@@ -91,11 +91,12 @@ function ThemeToggle() {
     <button
       type="button"
       onClick={toggleTheme}
-      className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-card/80 text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground"
+      className="inline-flex h-9 flex-shrink-0 items-center justify-center gap-2 rounded-full border border-border bg-card/80 px-3 text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground"
       title={isLight ? 'Passer en mode sombre' : 'Passer en mode clair'}
       aria-label={isLight ? 'Passer en mode sombre' : 'Passer en mode clair'}
     >
       {isLight ? <Moon size={16} /> : <Sun size={16} />}
+      <span className="hidden text-sm font-medium md:inline">Thème</span>
     </button>
   );
 }
@@ -112,7 +113,7 @@ function DashboardShell({ children }: { children: ReactNode }) {
       <OnboardingModal />
       <div className="sokar-container relative z-10 px-4 py-3 md:px-8 md:py-4 pb-24 md:pb-8">
         <div className="mb-3 md:mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <div>
               <p className="text-xs md:text-sm text-muted-foreground">Sokar OS</p>
               <h1 className="mt-0.5 md:mt-1 text-xl md:text-3xl font-semibold tracking-tight">
@@ -121,7 +122,7 @@ function DashboardShell({ children }: { children: ReactNode }) {
             </div>
             <DemoModeToggle />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 max-w-full items-center gap-2">
             {/* Desktop nav pills — hidden on mobile (bottom nav replaces it) */}
             <nav className="dashboard-nav-scroll hidden md:flex min-w-0 flex-1 gap-2 overflow-x-auto rounded-full border border-border bg-card/80 p-2 backdrop-blur-xl snap-x">
               {navItems.map((item) => {
