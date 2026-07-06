@@ -84,15 +84,32 @@ fi
 log_info "Déploiement terminé avec succès."
 
 # ── Backfill shortCode ────────────────────────────────────────────────
+# tsx n'est pas exposé globalement sur le VPS (pnpm ne met pas tsx dans PATH).
+# On utilise le chemin direct dans node_modules/.pnpm.
+# DATABASE_URL est sourcé depuis apps/api/.env (Prisma en a besoin).
 
 log_info "Backfill des shortCodes en production..."
 cd "$SOKAR_ROOT"
-if npx tsx apps/api/scripts/backfill-gift-card-shortcodes.ts; then
-  log_info "Backfill terminé."
-else
-  log_error "Backfill échoué."
-  exit 1
+export DATABASE_URL=$(grep "^DATABASE_URL" apps/api/.env | cut -d= -f2-)
+TSX_BIN="node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/cli.mjs"
+if [ ! -f "$TSX_BIN" ]; then
+  # Fallback : chercher tsx dans .pnpm (version peut varier)
+  TSX_BIN=$(find node_modules/.pnpm -path "*/tsx/dist/cli.mjs" 2>/dev/null | head -1)
 fi
+if [ -z "$TSX_BIN" ] || [ ! -f "$TSX_BIN" ]; then
+  log_warn "tsx introuvable dans node_modules. Backfill skippé."
+  log_warn "Lance manuellement : cd /opt/sokar && DATABASE_URL=... node <tsx-path> apps/api/scripts/backfill-gift-card-shortcodes.ts"
+  unset DATABASE_URL
+else
+  if node "$TSX_BIN" apps/api/scripts/backfill-gift-card-shortcodes.ts; then
+    log_info "Backfill terminé."
+  else
+    log_error "Backfill échoué."
+    unset DATABASE_URL
+    exit 1
+  fi
+fi
+unset DATABASE_URL
 
 # ── Vérifications post-déploiement ─────────────────────────────────────
 
@@ -116,10 +133,12 @@ log_info "Vérifications OK."
 # ── Vérification DB shortCode ─────────────────────────────────────────
 
 log_info "Vérification des shortCodes en base..."
-SHORT_CODE_CHECK=$(cd "$SOKAR_ROOT/packages/database" && npx prisma db execute --stdin <<EOF 2>/dev/null
+export DATABASE_URL=$(grep "^DATABASE_URL" apps/api/.env | cut -d= -f2-)
+SHORT_CODE_CHECK=$(cd "$SOKAR_ROOT/packages/database" && node "$(find ../../node_modules/.pnpm -path '*/prisma/build/index.js' 2>/dev/null | head -1)" db execute --stdin <<EOF 2>/dev/null
 SELECT COUNT(*) AS total, COUNT(short_code) AS with_short_code FROM gift_cards;
 EOF
 )
+unset DATABASE_URL
 
 if [ -z "$SHORT_CODE_CHECK" ]; then
   log_warn "Impossible de vérifier les shortCodes. Vérifie manuellement avec Prisma Studio."
