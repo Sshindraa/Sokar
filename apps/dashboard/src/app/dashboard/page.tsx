@@ -218,6 +218,12 @@ export default function DashboardPage() {
             Appels captés, réservations confirmées, couverts générés et revenu estimé sur la
             période.
           </p>
+          {!error && !hasData && (
+            <p className="mt-3 text-sm text-warning">
+              Pas encore de données pour cette période — les KPI apparaîtront dès que Sokar reçoit
+              des appels ou confirme des réservations.
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-3 gap-2 rounded-2xl border border-border bg-card p-1.5 shadow-sm">
@@ -244,8 +250,6 @@ export default function DashboardPage() {
       {error && (
         <ErrorState message={error} onRetry={() => setRefreshNonce((nonce) => nonce + 1)} />
       )}
-
-      {!error && !hasData && <EmptyState />}
 
       {!error && hasData && (
         <section className="grid gap-3 xl:grid-cols-[0.9fr_1.6fr]">
@@ -337,25 +341,6 @@ function KpiCard({
         {label}
       </p>
     </article>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="flex items-start gap-4 rounded-2xl border border-dashed border-border bg-card p-5 shadow-sm">
-      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-border bg-secondary">
-        <PhoneCall size={18} className="text-muted-foreground" />
-      </div>
-      <div className="min-w-0">
-        <h2 className="text-sm font-bold text-foreground">
-          Pas encore de données sur cette période
-        </h2>
-        <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-          Les KPI se rempliront automatiquement dès que Sokar reçoit des appels ou confirme des
-          réservations.
-        </p>
-      </div>
-    </div>
   );
 }
 
