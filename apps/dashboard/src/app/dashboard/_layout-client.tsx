@@ -72,7 +72,7 @@ function DemoModeToggle() {
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-200',
         demoMode
-          ? 'border-amber-500/50 bg-amber-500/10 text-amber-400'
+          ? 'border-warning/50 bg-warning/10 text-warning'
           : 'border-border bg-card/80 text-muted-foreground hover:bg-accent hover:text-foreground',
       )}
       title={demoMode ? 'Désactiver le mode démo' : 'Voir le produit avec des données de démo'}

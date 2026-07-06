@@ -76,17 +76,17 @@ export function OnboardingLockBanner({ task }: { task: OnboardingTaskKey }) {
   if (!step || step.status === 'completed' || step.status === 'skipped') return null;
 
   return (
-    <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm transition-all duration-200">
+    <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm transition-all duration-200">
       <div className="flex items-center gap-2">
-        <Lock className="text-amber-400 shrink-0" size={16} />
-        <span className="text-amber-200">
+        <Lock className="text-warning shrink-0" size={16} />
+        <span className="text-warning">
           Action bloquée — terminez l&apos;étape « {step.title} » pour déverrouiller cette section.
         </span>
       </div>
       <button
         type="button"
         onClick={() => openStepModal(task)}
-        className="shrink-0 rounded-md border border-amber-500/40 px-3 py-1 text-xs font-medium text-amber-200 transition-all duration-200 hover:bg-amber-500/20"
+        className="shrink-0 rounded-md border border-warning/40 px-3 py-1 text-xs font-medium text-warning transition-all duration-200 hover:bg-warning/20"
       >
         Configurer maintenant
       </button>

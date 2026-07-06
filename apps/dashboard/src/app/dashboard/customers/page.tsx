@@ -160,7 +160,7 @@ export default function CustomersPage() {
                     onClick={() => toggleVip(c.id, c.isVip)}
                     className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-all duration-200 min-h-[32px] touch-manipulation ${
                       c.isVip
-                        ? 'border border-orange-500/30 bg-orange-500/10 text-orange-400'
+                        ? 'border border-warning/30 bg-warning/10 text-warning'
                         : 'bg-secondary text-muted-foreground border border-border'
                     }`}
                   >
@@ -172,7 +172,7 @@ export default function CustomersPage() {
                   {
                     label: c.isVip ? 'Normal' : 'VIP',
                     icon: <Star size={14} className={c.isVip ? '' : 'fill-current'} />,
-                    colorClass: c.isVip ? 'bg-zinc-800' : 'bg-orange-500',
+                    colorClass: c.isVip ? 'bg-zinc-800' : 'bg-warning',
                     onClick: () => {
                       toggleVip(c.id, c.isVip);
                     },
@@ -180,7 +180,7 @@ export default function CustomersPage() {
                   {
                     label: 'Appeler',
                     icon: <Phone size={14} />,
-                    colorClass: 'bg-emerald-600',
+                    colorClass: 'bg-success',
                     onClick: () => {
                       alert(`Appel du client ${c.name || 'inconnu'} au ${c.phone}`);
                     },

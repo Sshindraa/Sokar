@@ -48,7 +48,7 @@ function OutcomeBadge({ outcome }: { outcome: string | null }) {
   switch (outcome) {
     case 'RESERVED':
       return (
-        <Badge className="border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15">
+        <Badge className="border-success/20 bg-success/10 text-success hover:bg-success/15">
           Réservé
         </Badge>
       );
@@ -60,7 +60,7 @@ function OutcomeBadge({ outcome }: { outcome: string | null }) {
       );
     case 'HANDOFF':
       return (
-        <Badge className="border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/15">
+        <Badge className="border-warning/20 bg-warning/10 text-warning hover:bg-warning/15">
           Transféré
         </Badge>
       );
@@ -166,11 +166,11 @@ export default function CallsPage() {
               badge={<OutcomeBadge outcome={call.outcome} />}
               accentClass={
                 call.outcome === 'RESERVED'
-                  ? 'border-l-emerald-500'
+                  ? 'border-l-success'
                   : call.outcome === 'ERROR'
                     ? 'border-l-red-500'
                     : call.outcome === 'HANDOFF'
-                      ? 'border-l-amber-500'
+                      ? 'border-l-warning'
                       : 'border-l-border'
               }
               details={[

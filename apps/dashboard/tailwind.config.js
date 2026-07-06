@@ -21,6 +21,12 @@ module.exports = {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
         },
+        // Couleur produit plus claire que --primary : nav active, focus,
+        // états interactifs secondaires. --primary reste réservé aux CTA.
+        brand: {
+          DEFAULT: 'hsl(var(--brand))',
+          foreground: 'hsl(var(--brand-foreground))',
+        },
         secondary: {
           DEFAULT: 'hsl(var(--secondary))',
           foreground: 'hsl(var(--secondary-foreground))',
@@ -29,6 +35,16 @@ module.exports = {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
         },
+        success: {
+          DEFAULT: 'hsl(var(--success))',
+          foreground: 'hsl(var(--success-foreground))',
+        },
+        warning: {
+          DEFAULT: 'hsl(var(--warning))',
+          foreground: 'hsl(var(--warning-foreground))',
+        },
+        'accent-cyan': 'hsl(var(--accent-cyan))',
+        'accent-violet': 'hsl(var(--accent-violet))',
         muted: {
           DEFAULT: 'hsl(var(--muted))',
           foreground: 'hsl(var(--muted-foreground))',
@@ -45,6 +61,10 @@ module.exports = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        // Surface de panneau imbriqué (ex: mini-carte dans une carte) + liseré
+        // spéculaire pour l'effet verre.
+        glass2: 'hsl(var(--glass-2))',
+        'glass-stroke': 'hsl(var(--glass-stroke))',
       },
       borderRadius: {
         lg: 'var(--radius)',
@@ -55,8 +75,14 @@ module.exports = {
         sans: ['var(--font-sans)', ...fontFamily.sans],
       },
       keyframes: {
-        'accordion-down': { from: { height: '0' }, to: { height: 'var(--radix-accordion-content-height)' } },
-        'accordion-up': { from: { height: 'var(--radix-accordion-content-height)' }, to: { height: '0' } },
+        'accordion-down': {
+          from: { height: '0' },
+          to: { height: 'var(--radix-accordion-content-height)' },
+        },
+        'accordion-up': {
+          from: { height: 'var(--radix-accordion-content-height)' },
+          to: { height: '0' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',

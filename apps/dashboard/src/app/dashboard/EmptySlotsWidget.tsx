@@ -69,7 +69,7 @@ export default function EmptySlotsWidget() {
   if (!orgId) return null;
   if (loading) {
     return (
-      <section className="rounded-2xl border border-amber-500/15 bg-amber-500/[0.03] p-5 md:p-6">
+      <section className="rounded-2xl border border-warning/15 bg-warning/[0.03] p-5 md:p-6">
         <Skeleton className="mb-4 h-6 w-48" />
         <div className="space-y-2">
           {[1, 2, 3].map((i) => (
@@ -89,16 +89,14 @@ export default function EmptySlotsWidget() {
   return (
     <section
       className={`rounded-2xl border p-5 md:p-6 ${
-        hasAlerts
-          ? 'border-amber-500/25 bg-amber-500/[0.04]'
-          : 'border-emerald-500/15 bg-emerald-500/[0.03]'
+        hasAlerts ? 'border-warning/25 bg-warning/[0.04]' : 'border-success/15 bg-success/[0.03]'
       }`}
     >
       <div className="mb-4 flex items-center gap-3">
         {hasAlerts ? (
-          <AlertTriangle size={20} className="text-amber-500" />
+          <AlertTriangle size={20} className="text-warning" />
         ) : (
-          <Clock size={20} className="text-emerald-500" />
+          <Clock size={20} className="text-success" />
         )}
         <div>
           <h2 className="text-lg font-bold text-foreground">
@@ -109,7 +107,7 @@ export default function EmptySlotsWidget() {
           <p className="text-sm text-muted-foreground">
             {hasAlerts ? (
               <>
-                <span className="font-semibold text-amber-400">
+                <span className="font-semibold text-warning">
                   ~{summary.revenueAtRisk.toLocaleString('fr-FR')} €
                 </span>{' '}
                 de CA potentiel non réalisé · ticket moyen :{' '}
@@ -133,9 +131,9 @@ export default function EmptySlotsWidget() {
                 !day.isOpen
                   ? 'border-border bg-card/40 opacity-50'
                   : day.isUnderbooked
-                    ? 'border-amber-500/30 bg-amber-500/[0.06]'
-                    : 'border-emerald-500/15 bg-emerald-500/[0.04]'
-              } ${isToday ? 'ring-1 ring-cyan-500/30' : ''}`}
+                    ? 'border-warning/30 bg-warning/[0.06]'
+                    : 'border-success/15 bg-success/[0.04]'
+              } ${isToday ? 'ring-1 ring-brand/30' : ''}`}
             >
               <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                 {DAY_LABELS[day.dayName] || day.dayName}
@@ -154,7 +152,7 @@ export default function EmptySlotsWidget() {
                   </p>
                   <p className="mt-1 text-[10px] text-muted-foreground">{day.covers} couverts</p>
                   {day.isUnderbooked && (
-                    <p className="mt-2 flex items-center justify-center gap-1 text-[10px] font-semibold text-amber-400">
+                    <p className="mt-2 flex items-center justify-center gap-1 text-[10px] font-semibold text-warning">
                       <TrendingDown size={10} />
                       {day.revenueAtRisk > 0
                         ? `~${day.revenueAtRisk.toLocaleString('fr-FR')} € manquant`

@@ -119,7 +119,7 @@ export default function ReservationsPage() {
               badge={<StatusBadge status={res.status} />}
               accentClass={
                 res.status === 'CONFIRMED'
-                  ? 'border-l-emerald-500'
+                  ? 'border-l-success'
                   : res.status === 'CANCELLED'
                     ? 'border-l-red-500'
                     : res.status === 'SEATED'
@@ -130,13 +130,13 @@ export default function ReservationsPage() {
                 {
                   label: 'Confirmer',
                   icon: <Check size={14} />,
-                  colorClass: 'bg-emerald-600',
+                  colorClass: 'bg-success',
                   onClick: () => updateStatus(res.id, 'CONFIRMED'),
                 },
                 {
                   label: 'Annuler',
                   icon: <X size={14} />,
-                  colorClass: 'bg-orange-600',
+                  colorClass: 'bg-warning',
                   onClick: () => updateStatus(res.id, 'CANCELLED'),
                 },
                 {

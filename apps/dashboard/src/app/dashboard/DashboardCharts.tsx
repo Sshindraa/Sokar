@@ -64,9 +64,11 @@ function ChartTooltip({
 export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoint[] }) {
   const { theme } = useDashboardTheme();
   const isLight = theme === 'light';
-  const axisColor = isLight ? 'rgba(30,41,59,0.4)' : 'rgba(255,255,255,0.35)';
-  const gridColor = isLight ? 'rgba(30,41,59,0.08)' : 'rgba(255,255,255,0.06)';
-  const callsColor = isLight ? '#0891b2' : '#22d3ee';
+  const axisColor = isLight ? 'rgba(14,23,38,0.4)' : 'rgba(169,184,204,0.5)';
+  const gridColor = isLight ? 'rgba(14,23,38,0.08)' : 'rgba(143,167,196,0.15)';
+  // Couleurs alignées sur les tokens brand/success de la palette liquid glass.
+  const callsColor = isLight ? '#3B82F6' : '#5EA2FF';
+  const reservationsColor = isLight ? '#12B981' : '#34D399';
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
@@ -82,8 +84,8 @@ export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoi
                 <stop offset="95%" stopColor={callsColor} stopOpacity={0} />
               </linearGradient>
               <linearGradient id="reservationsGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#34d399" stopOpacity={0.35} />
-                <stop offset="95%" stopColor="#34d399" stopOpacity={0} />
+                <stop offset="5%" stopColor={reservationsColor} stopOpacity={0.35} />
+                <stop offset="95%" stopColor={reservationsColor} stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid stroke={gridColor} vertical={false} />
@@ -102,7 +104,7 @@ export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoi
               type="monotone"
               dataKey="reservations"
               name="Réservations"
-              stroke="#34d399"
+              stroke={reservationsColor}
               fill="url(#reservationsGradient)"
               strokeWidth={2.5}
             />

@@ -36,8 +36,8 @@ interface ReactivationCampaign {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  if (status === 'PENDING') return <Badge className="bg-amber-600">En attente</Badge>;
-  if (status === 'SENT') return <Badge className="bg-emerald-600">Envoyée</Badge>;
+  if (status === 'PENDING') return <Badge className="bg-warning">En attente</Badge>;
+  if (status === 'SENT') return <Badge className="bg-success">Envoyée</Badge>;
   if (status === 'DISMISSED') return <Badge className="bg-zinc-600">Ignorée</Badge>;
   return <Badge>{status}</Badge>;
 }
@@ -130,7 +130,7 @@ export default function ReactivationPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <HeartHandshake size={24} className="text-amber-500" />
+        <HeartHandshake size={24} className="text-warning" />
         <div>
           <h1 className="text-xl font-semibold">Réactivation VIP</h1>
           <p className="text-sm text-muted-foreground">
@@ -161,10 +161,10 @@ export default function ReactivationPage() {
             <div className="space-y-3">
               <h2 className="text-sm font-medium text-muted-foreground">À valider</h2>
               {pendingCampaigns.map((campaign) => (
-                <div key={campaign.id} className="sokar-card border-l-amber-500 p-4">
+                <div key={campaign.id} className="sokar-card border-l-warning p-4">
                   <div className="mb-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Clock size={16} className="text-amber-500" />
+                      <Clock size={16} className="text-warning" />
                       <span className="text-sm font-medium">
                         {campaign.customerCount} VIP{campaign.customerCount > 1 ? 's' : ''} dormant
                         {campaign.customerCount > 1 ? 's' : ''}
@@ -185,7 +185,7 @@ export default function ReactivationPage() {
                           title={c.name}
                           subtitle={c.phone || undefined}
                           badge={
-                            <Badge className="bg-amber-600/20 text-amber-400">
+                            <Badge className="bg-warning/20 text-warning">
                               {c.visitCount} visites
                             </Badge>
                           }
@@ -232,7 +232,7 @@ export default function ReactivationPage() {
                   <div className="flex gap-2">
                     <Button
                       size="sm"
-                      className="bg-emerald-600 hover:bg-emerald-700"
+                      className="bg-success text-success-foreground hover:opacity-90"
                       onClick={() => sendCampaign(campaign.id)}
                       disabled={actionLoading === campaign.id}
                     >
@@ -292,7 +292,7 @@ export default function ReactivationPage() {
                           <TableCell>{c.customerCount}</TableCell>
                           <TableCell>
                             {c.status === 'SENT' ? (
-                              <span className="flex items-center gap-1 text-emerald-500">
+                              <span className="flex items-center gap-1 text-success">
                                 <Check size={12} /> {c.sentCount}/{c.customerCount}
                               </span>
                             ) : (
