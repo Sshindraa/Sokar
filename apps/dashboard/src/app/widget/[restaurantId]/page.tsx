@@ -636,9 +636,12 @@ export default function ReservationWidget() {
       ? 'Toutes les tables sont réservées'
       : hasService
         ? `${serviceLabel} au ${restaurant?.name || 'restaurant'}`
-        : 'Aucun service ce jour-là';
+        : 'Choisissez une autre date';
   const nextAvailabilityLabel = nextAvailability
     ? `${formatLongFrenchDate(nextAvailability.date)} · ${nextAvailability.time.replace(':', 'h')}`
+    : '';
+  const nextAvailabilityLabelWithAt = nextAvailability
+    ? `${formatLongFrenchDate(nextAvailability.date)} à ${nextAvailability.time.replace(':', 'h')}`
     : '';
 
   const canProceed =
@@ -919,7 +922,7 @@ export default function ReservationWidget() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-[1.4rem] border border-white/60 bg-white/40 p-3 shadow-sm backdrop-blur-2xl lg:rounded-[1.1rem] lg:p-1.5">
+                  <div className="hidden grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-[1.4rem] border border-white/60 bg-white/40 p-3 shadow-sm backdrop-blur-2xl sm:grid lg:rounded-[1.1rem] lg:p-1.5">
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--reservation-soft))]">
                         Ambiance
@@ -1069,7 +1072,9 @@ export default function ReservationWidget() {
                                 className={cn(
                                   'relative flex h-[4.4rem] min-w-[4.75rem] shrink-0 snap-center flex-col items-center justify-center overflow-hidden rounded-[1.35rem] text-center transition-all duration-200 active:scale-95 sm:h-[4.8rem] sm:min-w-[5rem] sm:rounded-[1.45rem] lg:h-[3.15rem] lg:min-w-0 lg:rounded-[0.95rem]',
                                   softPillClass,
-                                  !isAvailable && !isSelected ? 'opacity-45' : '',
+                                  !isAvailable && !isSelected
+                                    ? 'text-[hsl(var(--reservation-soft))] opacity-70'
+                                    : '',
                                   isSelected
                                     ? 'border-[hsl(var(--reservation-ink))] bg-[hsl(var(--reservation-ink))] text-[hsl(var(--reservation-panel))] shadow-lg shadow-black/10 hover:bg-[hsl(var(--reservation-ink))] hover:text-[hsl(var(--reservation-panel))]'
                                     : '',
@@ -1177,15 +1182,6 @@ export default function ReservationWidget() {
                                 </p>
                               </div>
                             </div>
-                            {nextAvailability && (
-                              <button
-                                type="button"
-                                onClick={goToNextAvailability}
-                                className="mt-3 inline-flex h-11 w-full items-center justify-center rounded-full bg-white/70 px-4 text-sm font-extrabold text-[hsl(var(--reservation-ink))] shadow-sm transition-all duration-200 hover:-translate-y-0.5 active:scale-95"
-                              >
-                                Voir les prochaines disponibilités
-                              </button>
-                            )}
                           </div>
                         )}
                       </div>
@@ -1291,7 +1287,13 @@ export default function ReservationWidget() {
                     </button>
                     <p className="mt-2 px-4 text-center text-[11px] font-medium leading-snug text-[hsl(var(--reservation-soft))] lg:mt-1">
                       {step === 1
-                        ? 'Choisissez un créneau pour continuer votre réservation.'
+                        ? selectedTime
+                          ? 'Choisissez un créneau pour continuer votre réservation.'
+                          : (!hasService || isFullyBooked) && nextAvailability
+                            ? `Nous avons trouvé la prochaine disponibilité : ${nextAvailabilityLabelWithAt}.`
+                            : !hasService || isFullyBooked
+                              ? 'Essayez une autre date ou une autre taille de table.'
+                              : 'Sélectionnez un horaire pour continuer.'
                         : 'Vous recevrez une confirmation par SMS après validation.'}
                     </p>
                   </div>
