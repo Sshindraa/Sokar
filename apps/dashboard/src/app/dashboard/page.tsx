@@ -342,17 +342,19 @@ function KpiCard({
 
 function EmptyState() {
   return (
-    <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center shadow-sm">
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-border bg-secondary">
-        <PhoneCall size={24} className="text-muted-foreground" />
+    <div className="flex items-start gap-4 rounded-2xl border border-dashed border-border bg-card p-5 shadow-sm">
+      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-border bg-secondary">
+        <PhoneCall size={18} className="text-muted-foreground" />
       </div>
-      <h2 className="mt-4 text-lg font-black text-foreground">
-        Pas encore de données sur cette période
-      </h2>
-      <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-        Les KPI se rempliront automatiquement dès que Sokar reçoit des appels ou confirme des
-        réservations.
-      </p>
+      <div className="min-w-0">
+        <h2 className="text-sm font-bold text-foreground">
+          Pas encore de données sur cette période
+        </h2>
+        <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+          Les KPI se rempliront automatiquement dès que Sokar reçoit des appels ou confirme des
+          réservations.
+        </p>
+      </div>
     </div>
   );
 }
