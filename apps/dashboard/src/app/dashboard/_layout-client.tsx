@@ -91,7 +91,7 @@ function ThemeToggle() {
     <button
       type="button"
       onClick={toggleTheme}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-card/80 text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground"
+      className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-card/80 text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground"
       title={isLight ? 'Passer en mode sombre' : 'Passer en mode clair'}
       aria-label={isLight ? 'Passer en mode sombre' : 'Passer en mode clair'}
     >
@@ -123,7 +123,7 @@ function DashboardShell({ children }: { children: ReactNode }) {
           </div>
           <div className="flex items-center gap-2">
             {/* Desktop nav pills — hidden on mobile (bottom nav replaces it) */}
-            <nav className="dashboard-nav-scroll hidden md:flex gap-2 overflow-x-auto rounded-full border border-border bg-card/80 p-2 backdrop-blur-xl snap-x">
+            <nav className="dashboard-nav-scroll hidden md:flex min-w-0 flex-1 gap-2 overflow-x-auto rounded-full border border-border bg-card/80 p-2 backdrop-blur-xl snap-x">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const active = pathname === item.href;
