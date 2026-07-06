@@ -12,6 +12,15 @@ const nextConfig = {
   experimental: {
     parallelServerBuildTraces: true,
   },
+  // ESLint + typecheck sont déjà exécutés en pre-push hook (prepush-quality-gate).
+  // Les relancer pendant next build sur le VPS ajoute ~40 s (dashboard) + ~68 s
+  // (connect) de linting redondant. On les désactive sur le build de prod.
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: false,
+  },
 };
 
 // Sentry n'est actif que si SENTRY_AUTH_TOKEN est présent.
