@@ -21,6 +21,19 @@
     /* Widget brand tokens — overridable via inline style for white-label embeds */
     --widget-primary: #0f172a;
     --widget-accent: #ea580c;
+
+    /* Reservation theme — aligné avec apps/dashboard widget.
+       Utilisé par la page gift-card pour matcher le design du widget résa. */
+    --reservation-bg: 34 32% 92%;
+    --reservation-wash: 34 38% 96%;
+    --reservation-panel: 0 0% 100%;
+    --reservation-ink: 24 10% 10%;
+    --reservation-soft: 24 6% 42%;
+    --reservation-muted: 24 5% 64%;
+    --reservation-line: 28 20% 88%;
+    --reservation-blue: 207 92% 52%;
+    --reservation-glow: 31 92% 62%;
+    --reservation-success: 142 70% 38%;
   }
 }
 

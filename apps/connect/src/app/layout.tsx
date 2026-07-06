@@ -9,8 +9,23 @@
  */
 
 import type { Metadata, Viewport } from 'next';
+import { Outfit, Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 import { Footer } from '@/components/footer';
+
+const outfit = Outfit({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700', '800', '900'],
+  variable: '--font-display',
+  display: 'swap',
+});
+
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700', '800'],
+  variable: '--font-body',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.SITE_URL ?? 'https://sokar.tech'),
@@ -49,8 +64,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr">
-      <body className="min-h-screen bg-background text-foreground antialiased">
+    <html lang="fr" className={`${outfit.variable} ${jakarta.variable}`}>
+      <body
+        className="min-h-screen bg-background text-foreground antialiased"
+        style={{ fontFamily: 'var(--font-body), ui-sans-serif, system-ui, sans-serif' }}
+      >
         {children}
         <Footer />
       </body>
