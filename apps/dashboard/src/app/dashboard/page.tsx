@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApi } from '../../lib/api';
+import GaugeDial from './GaugeDial';
 
 // recharts pèse ~387 KB — on le charge en dynamic import pour ne pas
 // bloquer le First Load JS du dashboard. Les KPIs et le header s'affichent
@@ -20,11 +21,11 @@ import { useApi } from '../../lib/api';
 const DashboardCharts = dynamic(() => import('./DashboardCharts'), {
   loading: () => (
     <section className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-      <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4 shadow-xl md:p-6">
+      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm md:p-6">
         <Skeleton className="mb-5 h-6 w-48" />
         <Skeleton className="h-[320px] w-full rounded-xl" />
       </div>
-      <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4 shadow-xl md:p-6">
+      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm md:p-6">
         <Skeleton className="mb-5 h-6 w-40" />
         <Skeleton className="h-[320px] w-full rounded-xl" />
       </div>
@@ -207,19 +208,19 @@ export default function DashboardPage() {
     <div className="space-y-6 md:space-y-8 select-none">
       <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.28em] text-cyan-400">
+          <p className="text-xs font-bold uppercase tracking-[0.28em] text-cyan-600 dark:text-cyan-400">
             Analytics restaurant
           </p>
-          <h1 className="mt-2 text-2xl font-black tracking-tight text-white md:text-4xl font-display">
+          <h1 className="mt-2 text-2xl font-black tracking-tight text-foreground md:text-4xl font-display">
             Ce que Sokar vous rapporte
           </h1>
-          <p className="mt-2 max-w-2xl text-sm text-white/45 font-sans">
+          <p className="mt-2 max-w-2xl text-sm text-muted-foreground font-sans">
             Appels captés, réservations confirmées, couverts générés et revenu estimé sur la
             période.
           </p>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 rounded-2xl border border-white/5 bg-white/[0.02] p-1.5">
+        <div className="grid grid-cols-3 gap-2 rounded-2xl border border-border bg-card p-1.5 shadow-sm">
           {PERIOD_OPTIONS.map((option) => (
             <button
               key={option.value}
@@ -228,7 +229,7 @@ export default function DashboardPage() {
               className={`rounded-xl px-3 py-2 text-left transition-all duration-200 ${
                 period === option.value
                   ? 'bg-cyan-500 text-white shadow-[0_0_24px_rgba(6,182,212,0.16)]'
-                  : 'text-white/45 hover:bg-white/[0.04] hover:text-white'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
               }`}
             >
               <span className="block text-xs font-black uppercase tracking-wider">
@@ -246,51 +247,47 @@ export default function DashboardPage() {
 
       {!error && !hasData && <EmptyState />}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <KpiCard label="Appels reçus" value={stats.totalCalls} icon={PhoneCall} />
-        <KpiCard
-          label="Réservations confirmées"
-          value={stats.totalReservations}
-          icon={CalendarCheck}
-        />
-        <KpiCard label="Couverts" value={stats.covers} icon={Users} />
-        <KpiCard
-          label="Taux appels → réservations"
-          value={`${stats.conversionRate}%`}
-          icon={TrendingUp}
-        />
-        <KpiCard
-          label="Revenu estimé"
-          value={`${stats.estimatedRevenue.toLocaleString('fr-FR')} €`}
-          icon={Euro}
-          featured
-        />
+      <section className="grid gap-3 xl:grid-cols-[0.9fr_1.6fr]">
+        {/* Jauge en héros — taux de réponse aux appels, façon cockpit */}
+        <article className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+          <span className="mb-1 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Agent vocal actif
+          </span>
+          <GaugeDial
+            value={stats.answeredRate}
+            label="Taux de réponse"
+            sublabel="des appels reçus"
+          />
+        </article>
+
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <KpiCard label="Appels reçus" value={stats.totalCalls} icon={PhoneCall} />
+          <KpiCard
+            label="Réservations confirmées"
+            value={stats.totalReservations}
+            icon={CalendarCheck}
+          />
+          <KpiCard label="Couverts" value={stats.covers} icon={Users} />
+          <KpiCard
+            label="Taux appels → résa"
+            value={`${stats.conversionRate}%`}
+            icon={TrendingUp}
+          />
+          <KpiCard
+            label="Revenu estimé"
+            value={`${stats.estimatedRevenue.toLocaleString('fr-FR')} €`}
+            icon={Euro}
+            featured
+            className="col-span-2 sm:col-span-4"
+          />
+        </section>
       </section>
 
       <EmptySlotsWidget />
       <NoShowWidget />
 
       <DashboardCharts analytics={analytics} />
-
-      <section className="rounded-2xl border border-cyan-500/15 bg-cyan-500/[0.04] p-5 md:p-6">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-lg font-black text-white font-display">Lecture rapide</h2>
-            <p className="mt-1 text-sm text-white/45">
-              Sokar transforme {stats.totalCalls.toLocaleString('fr-FR')} appels en{' '}
-              {stats.totalReservations.toLocaleString('fr-FR')} réservations confirmées, soit{' '}
-              {stats.covers.toLocaleString('fr-FR')} couverts et environ{' '}
-              {stats.estimatedRevenue.toLocaleString('fr-FR')} € de revenu attribuable.
-            </p>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-right">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-white/35">
-              Réponse appels
-            </p>
-            <p className="text-2xl font-black text-cyan-400">{stats.answeredRate}%</p>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }
@@ -300,49 +297,55 @@ function KpiCard({
   value,
   icon: Icon,
   featured = false,
+  className = '',
 }: {
   label: string;
   value: number | string;
   icon: typeof PhoneCall;
   featured?: boolean;
+  className?: string;
 }) {
   return (
     <article
-      className={`rounded-2xl border p-4 shadow-xl transition-all duration-200 hover:-translate-y-0.5 ${
+      className={`rounded-2xl border p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 ${
         featured
-          ? 'border-cyan-500/25 bg-cyan-500/[0.05] shadow-[0_0_28px_rgba(6,182,212,0.08)]'
-          : 'border-white/5 bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.04]'
-      }`}
+          ? 'border-cyan-500/25 bg-cyan-500/[0.06] shadow-[0_0_28px_rgba(6,182,212,0.08)]'
+          : 'border-border bg-card hover:border-foreground/15'
+      } ${className}`}
     >
       <div className="flex items-center justify-between gap-3">
         <span
           className={`flex h-10 w-10 items-center justify-center rounded-full border ${
             featured
-              ? 'border-cyan-500/25 bg-cyan-500/10 text-cyan-400'
-              : 'border-white/5 bg-white/5 text-white/50'
+              ? 'border-cyan-500/25 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+              : 'border-border bg-secondary text-muted-foreground'
           }`}
         >
           <Icon size={18} />
         </span>
       </div>
       <p
-        className={`mt-5 truncate text-2xl font-black tracking-tight ${featured ? 'text-cyan-400' : 'text-white'}`}
+        className={`mt-5 truncate text-2xl font-black tracking-tight ${
+          featured ? 'text-cyan-600 dark:text-cyan-400' : 'text-foreground'
+        }`}
       >
         {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
       </p>
-      <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-white/40">{label}</p>
+      <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
     </article>
   );
 }
 
 function EmptyState() {
   return (
-    <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.015] p-8 text-center">
-      <PhoneCall size={34} className="mx-auto text-white/25" />
-      <h2 className="mt-4 text-lg font-black text-white">
+    <div className="rounded-2xl border border-dashed border-border bg-card/60 p-8 text-center">
+      <PhoneCall size={34} className="mx-auto text-muted-foreground/50" />
+      <h2 className="mt-4 text-lg font-black text-foreground">
         Pas encore de données sur cette période
       </h2>
-      <p className="mx-auto mt-2 max-w-md text-sm text-white/40">
+      <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
         Les KPI se rempliront automatiquement dès que Sokar reçoit des appels ou confirme des
         réservations.
       </p>
@@ -376,20 +379,23 @@ function DashboardSkeleton() {
     <div className="space-y-6 md:space-y-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-3">
-          <Skeleton className="h-4 w-40 rounded-full bg-white/5" />
-          <Skeleton className="h-10 w-80 rounded-xl bg-white/5" />
-          <Skeleton className="h-4 w-96 max-w-full rounded-full bg-white/5" />
+          <Skeleton className="h-4 w-40 rounded-full" />
+          <Skeleton className="h-10 w-80 rounded-xl" />
+          <Skeleton className="h-4 w-96 max-w-full rounded-full" />
         </div>
-        <Skeleton className="h-14 w-full rounded-2xl bg-white/5 md:w-80" />
+        <Skeleton className="h-14 w-full rounded-2xl md:w-80" />
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        {[1, 2, 3, 4, 5].map((item) => (
-          <Skeleton key={item} className="h-36 rounded-2xl border border-white/5 bg-white/5" />
-        ))}
+      <div className="grid gap-3 xl:grid-cols-[0.9fr_1.6fr]">
+        <Skeleton className="h-64 rounded-2xl border border-border" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[1, 2, 3, 4].map((item) => (
+            <Skeleton key={item} className="h-36 rounded-2xl border border-border" />
+          ))}
+        </div>
       </div>
       <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-        <Skeleton className="h-[420px] rounded-2xl border border-white/5 bg-white/5" />
-        <Skeleton className="h-[420px] rounded-2xl border border-white/5 bg-white/5" />
+        <Skeleton className="h-[420px] rounded-2xl border border-border" />
+        <Skeleton className="h-[420px] rounded-2xl border border-border" />
       </div>
     </div>
   );
