@@ -247,7 +247,7 @@ export default async function RestaurantPage({
             {/* CTA principal — au-dessus de la ligne de flottaison (acceptance T5) */}
             <div className="mt-6">
               <BookCtaLink
-                href={`/widget/${restaurant.slug}?source=restaurant${sp.source ? `&utm=${sp.source}` : ''}`}
+                href={`/book/${restaurant.slug}?source=restaurant${sp.source ? `&utm=${sp.source}` : ''}`}
                 restaurantId={restaurant.id}
                 restaurantSlug={restaurant.slug}
                 source={sp.source}
@@ -301,7 +301,7 @@ export default async function RestaurantPage({
                   {availableSlots.map((slot) => (
                     <Link
                       key={slot.time}
-                      href={`/widget/${restaurant.slug}?source=restaurant&date=${today}&time=${slot.time}&partySize=${previewPartySize}&from=preview${sp.source ? `&utm=${sp.source}` : ''}`}
+                      href={`/book/${restaurant.slug}?source=restaurant&date=${today}&time=${slot.time}&partySize=${previewPartySize}&from=preview${sp.source ? `&utm=${sp.source}` : ''}`}
                       className="rounded-lg border border-border bg-background px-4 py-2 text-sm font-semibold text-ink transition-all duration-200 hover:border-blue hover:bg-blue/5"
                     >
                       {slot.time}
@@ -309,7 +309,7 @@ export default async function RestaurantPage({
                   ))}
                 </div>
                 <Link
-                  href={`/widget/${restaurant.slug}?source=restaurant${sp.source ? `&utm=${sp.source}` : ''}`}
+                  href={`/book/${restaurant.slug}?source=restaurant${sp.source ? `&utm=${sp.source}` : ''}`}
                   className="mt-3 inline-block text-sm text-blue underline hover:no-underline"
                 >
                   Voir tous les créneaux et tailles de table
@@ -319,7 +319,7 @@ export default async function RestaurantPage({
               <p className="text-sm text-muted-foreground">
                 Aucun créneau disponible pour aujourd&apos;hui (table de {previewPartySize}).{' '}
                 <Link
-                  href={`/widget/${restaurant.slug}?source=restaurant${sp.source ? `&utm=${sp.source}` : ''}`}
+                  href={`/book/${restaurant.slug}?source=restaurant${sp.source ? `&utm=${sp.source}` : ''}`}
                   className="text-blue underline hover:no-underline"
                 >
                   Vérifier un autre jour
@@ -418,7 +418,7 @@ export default async function RestaurantPage({
             <h2 className="mb-3 text-xl font-semibold text-ink">Réservation</h2>
             <p className="text-ink">Réservation en ligne avec confirmation rapide.</p>
             <BookCtaLink
-              href={`/widget/${restaurant.slug}?source=restaurant${sp.source ? `&utm=${sp.source}` : ''}`}
+              href={`/book/${restaurant.slug}?source=restaurant${sp.source ? `&utm=${sp.source}` : ''}`}
               restaurantId={restaurant.id}
               restaurantSlug={restaurant.slug}
               source={sp.source}
