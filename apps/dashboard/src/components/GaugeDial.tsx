@@ -3,6 +3,7 @@
 // Jauge circulaire façon cockpit (inspirée des dashboards industriels type
 // éolienne/production) : arc de 270° avec la valeur en héros au centre.
 // Rendu en SVG pur pour rester léger (pas de lib de charting pour un simple indicateur).
+// Composant partagé : utilisé par les pages analytics ET le panneau d'onboarding.
 
 const START_ANGLE = 135;
 const SWEEP = 270;
@@ -25,14 +26,18 @@ export default function GaugeDial({
   sublabel,
   suffix = '%',
   size = 168,
+  strokeWidth = 14,
   accentClassName = 'text-cyan-600 dark:text-cyan-400',
+  valueClassName = '',
 }: {
   value: number;
-  label: string;
+  label?: string;
   sublabel?: string;
   suffix?: string;
   size?: number;
+  strokeWidth?: number;
   accentClassName?: string;
+  valueClassName?: string;
 }) {
   const clamped = Math.max(0, Math.min(100, value));
   const cx = 100;
@@ -46,12 +51,12 @@ export default function GaugeDial({
       className="relative mx-auto flex items-center justify-center"
       style={{ width: size, height: size }}
     >
-      <svg viewBox="0 0 200 200" width={size} height={size} className="-rotate-0">
+      <svg viewBox="0 0 200 200" width={size} height={size}>
         <path
           d={trackPath}
           fill="none"
           className="stroke-border"
-          strokeWidth={14}
+          strokeWidth={strokeWidth}
           strokeLinecap="round"
         />
         <path
@@ -59,18 +64,22 @@ export default function GaugeDial({
           fill="none"
           className={accentClassName}
           stroke="currentColor"
-          strokeWidth={14}
+          strokeWidth={strokeWidth}
           strokeLinecap="round"
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className="text-3xl font-black tracking-tight text-foreground md:text-4xl">
+        <span
+          className={`font-black tracking-tight text-foreground ${valueClassName || 'text-3xl md:text-4xl'}`}
+        >
           {clamped}
-          <span className="text-lg font-bold text-muted-foreground">{suffix}</span>
+          <span className="text-[0.55em] font-bold text-muted-foreground">{suffix}</span>
         </span>
-        <span className="mt-1 max-w-[9rem] text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-          {label}
-        </span>
+        {label && (
+          <span className="mt-1 max-w-[9rem] text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            {label}
+          </span>
+        )}
         {sublabel && (
           <span className="mt-0.5 text-[10px] text-muted-foreground/70">{sublabel}</span>
         )}

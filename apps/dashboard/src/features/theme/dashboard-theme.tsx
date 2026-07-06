@@ -14,9 +14,9 @@ interface DashboardThemeContextValue {
 const DashboardThemeContext = createContext<DashboardThemeContextValue | null>(null);
 
 export function DashboardThemeProvider({ children }: { children: ReactNode }) {
-  // Dark reste le défaut historique du dashboard — le light mode est une
-  // préférence explicite, persistée par organisation/navigateur.
-  const [theme, setTheme] = useState<DashboardTheme>('dark');
+  // Light (esprit cockpit / WindFarm) est désormais le défaut du dashboard.
+  // Dark reste disponible via le toggle et persiste par navigateur.
+  const [theme, setTheme] = useState<DashboardTheme>('light');
 
   useEffect(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY);
