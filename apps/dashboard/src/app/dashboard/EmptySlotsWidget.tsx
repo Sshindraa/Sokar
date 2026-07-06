@@ -129,7 +129,7 @@ export default function EmptySlotsWidget() {
               key={day.date}
               className={`rounded-xl border p-3 text-center transition-all duration-200 ${
                 !day.isOpen
-                  ? 'border-border bg-card/40 opacity-50'
+                  ? 'border-border bg-card opacity-50'
                   : day.isUnderbooked
                     ? 'border-warning/30 bg-warning/[0.06]'
                     : 'border-success/15 bg-success/[0.04]'

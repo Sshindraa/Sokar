@@ -286,7 +286,7 @@ export default function SettingsPage() {
           <CardTitle className="text-lg">Plan actuel</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col gap-4 rounded-2xl border border-border bg-secondary/60 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4 rounded-2xl border border-border bg-secondary p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xl font-bold capitalize">{planInfo.label}</p>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -312,9 +312,9 @@ export default function SettingsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="flex flex-col gap-4 rounded-2xl border border-border bg-secondary/30 p-5 sm:flex-row sm:items-center sm:justify-between transition-all duration-200 hover:bg-secondary/40">
+          <div className="flex flex-col gap-4 rounded-2xl border border-border bg-secondary p-5 sm:flex-row sm:items-center sm:justify-between transition-all duration-200 hover:bg-accent">
             <div className="flex items-start gap-4">
-              <div className="rounded-xl bg-primary/10 p-3 text-primary">
+              <div className="rounded-xl bg-secondary p-3 text-primary">
                 <Calendar size={24} />
               </div>
               <div>
@@ -376,7 +376,7 @@ export default function SettingsPage() {
                 />
                 <p className="text-xs text-muted-foreground">
                   Utilisez{' '}
-                  <code className="font-mono text-primary bg-primary/5 px-1 py-0.5 rounded">
+                  <code className="font-mono text-primary bg-secondary px-1 py-0.5 rounded">
                     primary
                   </code>{' '}
                   pour votre agenda principal, ou spécifiez un ID d&apos;agenda spécifique (ex:

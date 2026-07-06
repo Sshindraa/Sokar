@@ -54,9 +54,7 @@ function OutcomeBadge({ outcome }: { outcome: string | null }) {
       );
     case 'INFO':
       return (
-        <Badge className="border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/15">
-          Info
-        </Badge>
+        <Badge className="border-brand/20 bg-brand/10 text-brand hover:bg-brand/15">Info</Badge>
       );
     case 'HANDOFF':
       return (
@@ -168,7 +166,7 @@ export default function CallsPage() {
                 call.outcome === 'RESERVED'
                   ? 'border-l-success'
                   : call.outcome === 'ERROR'
-                    ? 'border-l-red-500'
+                    ? 'border-l-destructive'
                     : call.outcome === 'HANDOFF'
                       ? 'border-l-warning'
                       : 'border-l-border'

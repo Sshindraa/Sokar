@@ -59,7 +59,7 @@ function ScoreCircle({ score, level }: { score: number; level: ConnectScore['lev
   const offset = circumference - (score / 100) * circumference;
   const colorClass =
     level === 'premium'
-      ? 'text-green-500'
+      ? 'text-success'
       : level === 'almost'
         ? 'text-warning'
         : level === 'progress'
@@ -102,10 +102,10 @@ function ScoreCircle({ score, level }: { score: number; level: ConnectScore['lev
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <div className="rounded-lg border border-border bg-card/50 p-3">
+    <div className="rounded-lg border border-border bg-card p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 text-2xl font-semibold tracking-tight">{value}</p>
-      <p className="mt-0.5 text-xs text-muted-foreground/60">{sub}</p>
+      <p className="mt-0.5 text-xs text-faint">{sub}</p>
     </div>
   );
 }
@@ -201,7 +201,7 @@ export default function ConnectDashboardPage() {
         </div>
         {/* Score circle */}
         {score && !loading && (
-          <div className="flex items-center gap-3 rounded-xl border border-border bg-card/60 p-3">
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
             <ScoreCircle score={score.score} level={score.level} />
             <div className="max-w-[200px]">
               <p className="text-sm font-medium">
@@ -215,13 +215,13 @@ export default function ConnectDashboardPage() {
 
       {/* ── Messages ──────────────────────────────────── */}
       {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600">
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
       {successMsg && (
-        <div className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-600">
+        <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           <span>{successMsg}</span>
         </div>
@@ -248,7 +248,7 @@ export default function ConnectDashboardPage() {
                         className={cn(
                           'flex h-2.5 w-2.5 rounded-full',
                           settings.connectPublished
-                            ? 'bg-green-500 shadow-[0_0_8px] shadow-green-500/50'
+                            ? 'bg-success shadow-[0_0_8px] shadow-success/50'
                             : 'bg-muted-foreground/40',
                         )}
                       />
@@ -348,7 +348,7 @@ export default function ConnectDashboardPage() {
                         Votre restaurant est visible par les assistants IA (ChatGPT, Perplexity,
                         Google AI). Les métadonnées structurées ReserveAction sont actives.
                       </p>
-                      <div className="flex items-center gap-2 text-xs text-green-600">
+                      <div className="flex items-center gap-2 text-xs text-success">
                         <CheckCircle2 className="h-3.5 w-3.5" />
                         <span>Réservation directe depuis les IA</span>
                       </div>
@@ -402,7 +402,7 @@ export default function ConnectDashboardPage() {
               </CardHeader>
               <CardContent className="pt-0">
                 {settings.connectPublished ? (
-                  <div className="overflow-hidden rounded-lg border border-border bg-muted/30">
+                  <div className="overflow-hidden rounded-lg border border-border bg-muted">
                     <iframe
                       src={`${settings.pageUrl}?preview=1`}
                       title={`Aperçu — ${settings.name}`}
@@ -412,9 +412,9 @@ export default function ConnectDashboardPage() {
                     />
                   </div>
                 ) : (
-                  <div className="flex h-[420px] items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 text-center">
+                  <div className="flex h-[420px] items-center justify-center rounded-lg border border-dashed border-border bg-muted text-center">
                     <div className="space-y-3">
-                      <Eye className="mx-auto h-10 w-10 text-muted-foreground/40" />
+                      <Eye className="mx-auto h-10 w-10 text-muted-foreground" />
                       <p className="text-sm text-muted-foreground">
                         Activez Connect pour voir votre page publique.
                       </p>
@@ -444,7 +444,7 @@ export default function ConnectDashboardPage() {
                     className={cn(
                       'h-full rounded-full transition-all duration-700 ease-out',
                       score.level === 'premium'
-                        ? 'bg-green-500'
+                        ? 'bg-success'
                         : score.level === 'almost'
                           ? 'bg-warning'
                           : 'bg-primary',
@@ -461,17 +461,17 @@ export default function ConnectDashboardPage() {
                       className={cn(
                         'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-all duration-200',
                         item.done
-                          ? 'border-green-500/20 bg-green-500/5 text-foreground'
-                          : 'border-border bg-muted/20 text-muted-foreground',
+                          ? 'border-success/20 bg-success/5 text-foreground'
+                          : 'border-border bg-muted text-muted-foreground',
                       )}
                     >
                       {item.done ? (
-                        <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
                       ) : (
-                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-muted-foreground/30" />
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-muted-foreground" />
                       )}
                       <span className="flex-1 truncate">{item.label}</span>
-                      <span className="text-xs text-muted-foreground/50">+{item.weight}%</span>
+                      <span className="text-xs text-faint">+{item.weight}%</span>
                     </div>
                   ))}
                 </div>
@@ -487,7 +487,7 @@ export default function ConnectDashboardPage() {
                         <Link
                           key={item.key}
                           href="/dashboard/settings"
-                          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs font-medium text-foreground transition-all duration-200 hover:border-primary/40 hover:bg-primary/5"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-all duration-200 hover:border-primary/40 hover:bg-accent"
                         >
                           <span className="h-1.5 w-1.5 rounded-full bg-warning" />
                           {item.label}

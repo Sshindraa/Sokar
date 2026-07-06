@@ -33,7 +33,7 @@ function formatEuro(amount: number): string {
 
 function StatCard({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
   return (
-    <Card className="bg-card/80">
+    <Card className="bg-card">
       <CardContent className="p-4 md:p-5">
         <div className="flex items-center justify-between">
           <div>
@@ -299,7 +299,7 @@ export default function GiftCardsPage() {
       )}
 
       {/* Onglets SINGLE / CROWDFUNDED */}
-      <div className="flex gap-1 rounded-lg border border-border bg-muted/50 p-1">
+      <div className="flex gap-1 rounded-lg border border-border bg-muted p-1">
         <button
           type="button"
           onClick={() => {
@@ -497,7 +497,7 @@ export default function GiftCardsPage() {
               {detailCard.message && (
                 <div>
                   <p className="text-xs text-muted-foreground">Message</p>
-                  <p className="rounded-lg border border-border p-3 bg-card/50">
+                  <p className="rounded-lg border border-border p-3 bg-card">
                     {detailCard.message}
                   </p>
                 </div>

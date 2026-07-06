@@ -64,11 +64,11 @@ function ChartTooltip({
 export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoint[] }) {
   const { theme } = useDashboardTheme();
   const isLight = theme === 'light';
-  const axisColor = isLight ? 'rgba(14,23,38,0.4)' : 'rgba(169,184,204,0.5)';
-  const gridColor = isLight ? 'rgba(14,23,38,0.08)' : 'rgba(143,167,196,0.15)';
-  // Couleurs alignées sur les tokens brand/success de la palette liquid glass.
-  const callsColor = isLight ? '#3B82F6' : '#5EA2FF';
-  const reservationsColor = isLight ? '#12B981' : '#34D399';
+  const axisColor = isLight ? 'hsl(0 0% 6.7% / 0.4)' : 'hsl(60 13% 95.5% / 0.4)';
+  const gridColor = isLight ? 'hsl(0 0% 6.7% / 0.08)' : 'hsl(60 13% 95.5% / 0.1)';
+  // Couleurs alignées sur les tokens sémantiques (pas de bleu hardcodé).
+  const callsColor = isLight ? 'hsl(38 7.8% 52%)' : 'hsl(38 7.8% 52%)';
+  const reservationsColor = isLight ? 'hsl(139 13% 48%)' : 'hsl(152 18% 48%)';
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">

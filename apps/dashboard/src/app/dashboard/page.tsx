@@ -214,7 +214,7 @@ export default function DashboardPage() {
           <h1 className="mt-2 text-2xl font-black tracking-tight text-foreground md:text-4xl font-display">
             Ce que Sokar vous rapporte
           </h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground font-sans">
+          <p className="mt-2 max-w-xl text-sm text-muted-foreground font-sans">
             Appels captés, réservations confirmées, couverts générés et revenu estimé sur la
             période.
           </p>
@@ -247,42 +247,44 @@ export default function DashboardPage() {
 
       {!error && !hasData && <EmptyState />}
 
-      <section className="grid gap-3 xl:grid-cols-[0.9fr_1.6fr]">
-        {/* Jauge en héros — taux de réponse aux appels, façon cockpit */}
-        <article className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-          <span className="mb-1 inline-flex items-center gap-1.5 rounded-full border border-success/25 bg-success/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-success">
-            <span className="h-1.5 w-1.5 rounded-full bg-success" />
-            Agent vocal actif
-          </span>
-          <GaugeDial
-            value={stats.answeredRate}
-            label="Taux de réponse"
-            sublabel="des appels reçus"
-          />
-        </article>
+      {!error && hasData && (
+        <section className="grid gap-3 xl:grid-cols-[0.9fr_1.6fr]">
+          {/* Jauge en héros — taux de réponse aux appels, façon cockpit */}
+          <article className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
+            <span className="mb-1 inline-flex items-center gap-1.5 rounded-full border border-success/25 bg-success/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-success">
+              <span className="h-1.5 w-1.5 rounded-full bg-success" />
+              Agent vocal actif
+            </span>
+            <GaugeDial
+              value={stats.answeredRate}
+              label="Taux de réponse"
+              sublabel="des appels reçus"
+            />
+          </article>
 
-        <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <KpiCard label="Appels reçus" value={stats.totalCalls} icon={PhoneCall} />
-          <KpiCard
-            label="Réservations confirmées"
-            value={stats.totalReservations}
-            icon={CalendarCheck}
-          />
-          <KpiCard label="Couverts" value={stats.covers} icon={Users} />
-          <KpiCard
-            label="Taux appels → résa"
-            value={`${stats.conversionRate}%`}
-            icon={TrendingUp}
-          />
-          <KpiCard
-            label="Revenu estimé"
-            value={`${stats.estimatedRevenue.toLocaleString('fr-FR')} €`}
-            icon={Euro}
-            featured
-            className="col-span-2 sm:col-span-4"
-          />
+          <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <KpiCard label="Appels reçus" value={stats.totalCalls} icon={PhoneCall} />
+            <KpiCard
+              label="Réservations confirmées"
+              value={stats.totalReservations}
+              icon={CalendarCheck}
+            />
+            <KpiCard label="Couverts" value={stats.covers} icon={Users} />
+            <KpiCard
+              label="Taux appels → résa"
+              value={`${stats.conversionRate}%`}
+              icon={TrendingUp}
+            />
+            <KpiCard
+              label="Revenu estimé"
+              value={`${stats.estimatedRevenue.toLocaleString('fr-FR')} €`}
+              icon={Euro}
+              featured
+              className="col-span-2 sm:col-span-4"
+            />
+          </section>
         </section>
-      </section>
+      )}
 
       <EmptySlotsWidget />
       <NoShowWidget />
@@ -340,8 +342,10 @@ function KpiCard({
 
 function EmptyState() {
   return (
-    <div className="rounded-2xl border border-dashed border-border bg-card/60 p-8 text-center">
-      <PhoneCall size={34} className="mx-auto text-muted-foreground/50" />
+    <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center shadow-sm">
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-border bg-secondary">
+        <PhoneCall size={24} className="text-muted-foreground" />
+      </div>
       <h2 className="mt-4 text-lg font-black text-foreground">
         Pas encore de données sur cette période
       </h2>
