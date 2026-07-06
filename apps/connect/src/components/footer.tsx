@@ -19,7 +19,7 @@ export function Footer() {
         Sokar — Réservation en ligne pour restaurants ·{' '}
         <a
           href="/privacy"
-          className="text-foreground underline transition-all duration-200 hover:text-ember"
+          className="text-foreground underline transition-all duration-200 hover:text-blue"
         >
           Politique de confidentialité
         </a>

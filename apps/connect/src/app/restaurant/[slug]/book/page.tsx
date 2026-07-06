@@ -72,7 +72,7 @@ export default async function BookPage({
       <div className="mb-6">
         <Link
           href={`/restaurant/${restaurant.slug}`}
-          className="text-sm text-ember underline hover:no-underline"
+          className="text-sm text-blue underline hover:no-underline"
         >
           ← {restaurant.name}
         </Link>

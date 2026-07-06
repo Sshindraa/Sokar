@@ -234,7 +234,7 @@ export default async function RestaurantPage({
             </h1>
             {restaurant.aggregateRating && (
               <p className="mt-2 text-sm text-muted-foreground">
-                <span className="font-semibold text-ember">
+                <span className="font-semibold text-blue">
                   {restaurant.aggregateRating.ratingValue.toFixed(1)} ★
                 </span>{' '}
                 · {restaurant.aggregateRating.reviewCount} avis Google
@@ -251,7 +251,7 @@ export default async function RestaurantPage({
                 restaurantId={restaurant.id}
                 restaurantSlug={restaurant.slug}
                 source={sp.source}
-                className="inline-flex items-center justify-center rounded-lg bg-ember px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:bg-ember/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                className="inline-flex items-center justify-center rounded-lg bg-ink px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:bg-ink/90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               >
                 Réserver une table
               </BookCtaLink>
@@ -302,7 +302,7 @@ export default async function RestaurantPage({
                     <Link
                       key={slot.time}
                       href={`/restaurant/${restaurant.slug}/book?date=${today}&time=${slot.time}&partySize=${previewPartySize}&from=preview${sp.source ? `&source=${sp.source}` : ''}`}
-                      className="rounded-lg border border-border bg-background px-4 py-2 text-sm font-semibold text-ink transition-all duration-200 hover:border-ember hover:bg-ember/5"
+                      className="rounded-lg border border-border bg-background px-4 py-2 text-sm font-semibold text-ink transition-all duration-200 hover:border-blue hover:bg-blue/5"
                     >
                       {slot.time}
                     </Link>
@@ -310,7 +310,7 @@ export default async function RestaurantPage({
                 </div>
                 <Link
                   href={`/restaurant/${restaurant.slug}/book${sp.source ? `?source=${sp.source}` : ''}`}
-                  className="mt-3 inline-block text-sm text-ember underline hover:no-underline"
+                  className="mt-3 inline-block text-sm text-blue underline hover:no-underline"
                 >
                   Voir tous les créneaux et tailles de table
                 </Link>
@@ -320,7 +320,7 @@ export default async function RestaurantPage({
                 Aucun créneau disponible pour aujourd&apos;hui (table de {previewPartySize}).{' '}
                 <Link
                   href={`/restaurant/${restaurant.slug}/book${sp.source ? `?source=${sp.source}` : ''}`}
-                  className="text-ember underline hover:no-underline"
+                  className="text-blue underline hover:no-underline"
                 >
                   Vérifier un autre jour
                 </Link>
@@ -338,7 +338,7 @@ export default async function RestaurantPage({
                     href={mapsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-ember underline hover:no-underline"
+                    className="text-blue underline hover:no-underline"
                   >
                     {restaurant.address.line1}
                   </a>
@@ -349,7 +349,7 @@ export default async function RestaurantPage({
                 <dd>
                   <a
                     href={`tel:${restaurant.phone}`}
-                    className="text-ember underline hover:no-underline"
+                    className="text-blue underline hover:no-underline"
                   >
                     {restaurant.phone}
                   </a>

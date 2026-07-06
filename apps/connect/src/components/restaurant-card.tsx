@@ -23,7 +23,7 @@ export function RestaurantCard({ restaurant, className }: Props) {
     <Link
       href={`/restaurant/${restaurant.slug}`}
       className={cn(
-        'group block overflow-hidden rounded-xl border border-border bg-background transition-all duration-200 hover:border-ember/30 hover:shadow-md',
+        'group block overflow-hidden rounded-xl border border-border bg-background transition-all duration-200 hover:border-blue/30 hover:shadow-md',
         className,
       )}
     >
@@ -39,7 +39,7 @@ export function RestaurantCard({ restaurant, className }: Props) {
         </div>
       )}
       <div className="p-4">
-        <h3 className="text-lg font-semibold text-ink group-hover:text-ember">{restaurant.name}</h3>
+        <h3 className="text-lg font-semibold text-ink group-hover:text-blue">{restaurant.name}</h3>
         <p className="mt-1 text-sm text-muted-foreground">
           {cuisine}
           {restaurant.priceRange ? ` · ${restaurant.priceRange}` : ''}
@@ -47,7 +47,7 @@ export function RestaurantCard({ restaurant, className }: Props) {
         </p>
         {restaurant.aggregateRating && (
           <p className="mt-1 text-xs text-muted-foreground">
-            <span className="font-semibold text-ember">
+            <span className="font-semibold text-blue">
               {restaurant.aggregateRating.ratingValue.toFixed(1)} ★
             </span>{' '}
             · {restaurant.aggregateRating.reviewCount} avis Google

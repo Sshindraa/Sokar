@@ -74,7 +74,7 @@ export function GiftCardPurchase({
   restaurantId,
   restaurantName,
   primaryColor = '#0F172A',
-  accentColor = '#EA580C',
+  accentColor = '#0284C7',
   source = 'widget',
 }: Props) {
   const [step, setStep] = useState<Step>('type');

@@ -97,7 +97,7 @@ export default async function CityPage({ params }: { params: Promise<{ city: str
               <li key={c.slug}>
                 <Link
                   href={`/restaurants/${data.citySlug}/${c.slug}`}
-                  className="inline-flex items-center rounded-full border border-border bg-background px-4 py-2 text-sm font-medium text-ink transition-all duration-200 hover:border-ember hover:bg-ember/5"
+                  className="inline-flex items-center rounded-full border border-border bg-background px-4 py-2 text-sm font-medium text-ink transition-all duration-200 hover:border-blue hover:bg-blue/5"
                 >
                   {c.name} ({c.count})
                 </Link>

@@ -112,7 +112,7 @@ export default function AssistantPage() {
           </pre>
           <p className="mt-4 text-sm text-muted-foreground">
             L&apos;authentification se fait par API key. Pour obtenir une clé, contactez-nous à{' '}
-            <a href="mailto:contact@sokar.tech" className="text-ember underline">
+            <a href="mailto:contact@sokar.tech" className="text-blue underline">
               contact@sokar.tech
             </a>
             .

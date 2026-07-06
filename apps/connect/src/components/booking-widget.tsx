@@ -85,7 +85,7 @@ export function BookingWidget({
   initialTime,
   embedded = false,
   primaryColor = '#0F172A',
-  accentColor = '#EA580C',
+  accentColor = '#0284C7',
 }: Props) {
   const [step, setStep] = useState<'pick' | 'confirm' | 'done'>('pick');
   const [restaurant, setRestaurant] = useState<PublicRestaurant | null>(null);
