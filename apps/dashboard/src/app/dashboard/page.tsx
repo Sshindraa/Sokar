@@ -206,12 +206,12 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 md:space-y-8 select-none">
-      <header className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:items-start">
+      <header className="grid gap-5 pb-2 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:items-start">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-[0.28em] text-brand">
             Analytics restaurant
           </p>
-          <h1 className="mt-2 text-2xl font-black tracking-tight text-foreground md:text-4xl font-display">
+          <h1 className="mt-2 text-2xl font-black leading-[1.08] tracking-tight text-foreground md:text-4xl font-display">
             Ce que Sokar vous rapporte
           </h1>
           <p className="mt-2 max-w-xl text-sm text-muted-foreground font-sans">
@@ -292,8 +292,10 @@ export default function DashboardPage() {
         </section>
       )}
 
-      <EmptySlotsWidget />
-      <NoShowWidget />
+      <section className="space-y-6">
+        <EmptySlotsWidget />
+        <NoShowWidget />
+      </section>
 
       <DashboardCharts analytics={analytics} />
     </div>
@@ -370,7 +372,7 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 function DashboardSkeleton() {
   return (
     <div className="space-y-6 md:space-y-8">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:items-start">
+      <div className="grid gap-5 pb-2 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:items-start">
         <div className="min-w-0 space-y-3">
           <Skeleton className="h-4 w-40 rounded-full" />
           <Skeleton className="h-10 w-80 rounded-xl" />

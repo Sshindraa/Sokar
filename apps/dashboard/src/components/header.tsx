@@ -26,7 +26,7 @@ export default function Header() {
   }
 
   return (
-    <header className="fixed left-1/2 top-5 z-50 w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 rounded-full border border-border bg-card/85 px-3 py-2 shadow-2xl shadow-background/40 backdrop-blur-xl">
+    <header className="ios-fixed-header fixed left-1/2 top-5 z-50 w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 rounded-full border border-border bg-card/85 px-3 py-2 shadow-2xl shadow-background/40 backdrop-blur-xl">
       <div className="flex items-center justify-between gap-3">
         <Link
           href="/"
