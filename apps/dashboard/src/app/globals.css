@@ -92,37 +92,39 @@
   }
 
   .light {
-    --background: 210 41.7% 95.3%;
-    --foreground: 217.5 46.2% 10.2%;
-    --card: 210 60% 98%;
-    --card-foreground: 217.5 46.2% 10.2%;
-    --popover: 210 60% 98%;
-    --popover-foreground: 217.5 46.2% 10.2%;
-    --primary: 224.3 76.3% 48%;
-    --primary-foreground: 0 0% 100%;
-    --brand: 217.2 91.2% 59.8%;
-    --brand-foreground: 0 0% 100%;
-    --secondary: 214.3 43.8% 93.7%;
-    --secondary-foreground: 217.5 46.2% 10.2%;
-    --muted: 214.3 43.8% 93.7%;
-    --muted-foreground: 215.1 20.2% 39.8%;
-    --accent: 214.3 43.8% 93.7%;
-    --accent-foreground: 217.5 46.2% 10.2%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 98%;
-    --success: 159.9 82.3% 39.8%;
-    --success-foreground: 0 0% 100%;
-    --warning: 37.7 92.1% 50.2%;
-    --warning-foreground: 217.5 46.2% 10.2%;
-    --accent-cyan: 199.4 95.5% 73.9%;
-    --accent-violet: 258.3 89.5% 66.3%;
-    --border: 213.1 34.9% 83.7%;
-    --input: 213.1 34.9% 83.7%;
-    --ring: 217.2 91.2% 59.8%;
-    --glass-2: 214.3 43.8% 93.7%;
-    --glass-stroke: 0 0% 100% / 0.6;
+    /* Variante claire du même système minéral : pas de bleu, fond ivoire, surfaces
+       blanc cassé, CTA noir, accents métal champagne. */
+    --background: 60 13% 95.5%;
+    --foreground: 0 0% 6.7%;
+    --card: 60 17% 97.6%;
+    --card-foreground: 0 0% 6.7%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 6.7%;
+    --primary: 0 0% 6.7%;
+    --primary-foreground: 60 13% 95.5%;
+    --brand: 38 7.8% 52%;
+    --brand-foreground: 60 13% 95.5%;
+    --secondary: 50 17% 93%;
+    --secondary-foreground: 0 0% 6.7%;
+    --muted: 50 17% 93%;
+    --muted-foreground: 38 7.8% 52%;
+    --accent: 50 17% 93%;
+    --accent-foreground: 0 0% 6.7%;
+    --destructive: 0 26% 48%;
+    --destructive-foreground: 60 13% 95.5%;
+    --success: 139 13% 48%;
+    --success-foreground: 60 13% 95.5%;
+    --warning: 36 24% 53%;
+    --warning-foreground: 0 0% 6.7%;
+    --accent-cyan: 38 7.8% 52%;
+    --accent-violet: 270 8% 55%;
+    --border: 43 13% 90%;
+    --input: 43 13% 90%;
+    --ring: 38 7.8% 52%;
+    --glass-2: 50 17% 93%;
+    --glass-stroke: 43 13% 90%;
     --metal: 38 8% 45%;
-    --faint-foreground: 36 4% 55%;
+    --faint-foreground: 40 7.4% 68.2%;
   }
 }
 
