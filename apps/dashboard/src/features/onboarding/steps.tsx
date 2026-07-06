@@ -311,7 +311,7 @@ export function KnowledgeStep({ onComplete }: StepProps) {
         ) : (
           <div className="space-y-4">
             <DemoCallPlayer onPlayed={() => setDemoPlayed(true)} />
-            <div className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200 transition-colors duration-200">
+            <div className="flex items-center gap-2 rounded-md border border-success/30 bg-success/10 p-3 text-sm text-success transition-colors duration-200">
               <Check size={16} />
               <span>Personnalité enregistrée. Écoutez l&apos;aperçu, puis continuez.</span>
             </div>
@@ -540,7 +540,7 @@ export function CalendarStep({ onComplete }: StepProps) {
             <span
               className={cn(
                 'h-2.5 w-2.5 rounded-full',
-                connected ? 'bg-emerald-500 animate-pulse' : 'bg-muted',
+                connected ? 'bg-success animate-pulse' : 'bg-muted',
               )}
             />
             <span className="text-sm font-medium">
@@ -674,9 +674,9 @@ export function PhoneStep({ onComplete }: StepProps) {
           </div>
 
           {/* Rassurance réversibilité */}
-          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 transition-colors duration-200">
+          <div className="rounded-lg border border-success/30 bg-success/5 p-4 transition-colors duration-200">
             <div className="flex items-start gap-3">
-              <ShieldCheck size={18} className="mt-0.5 shrink-0 text-emerald-400" />
+              <ShieldCheck size={18} className="mt-0.5 shrink-0 text-success" />
               <div className="space-y-1">
                 <p className="text-sm font-medium text-foreground">Vous gardez le contrôle</p>
                 <p className="text-sm leading-6 text-muted-foreground">
@@ -690,7 +690,7 @@ export function PhoneStep({ onComplete }: StepProps) {
           </div>
 
           {!hasAssignedPhone && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-200 transition-colors duration-200">
+            <div className="rounded-lg border border-warning/30 bg-warning/5 p-4 text-sm text-warning transition-colors duration-200">
               Votre numéro dédié sera attribué par l&apos;équipe Sokar. Une fois attribué, vous
               pourrez activer le renvoi et lancer l&apos;appel test.
             </div>
@@ -736,7 +736,7 @@ export function PhoneStep({ onComplete }: StepProps) {
         </div>
 
         {testResult && (
-          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300">
+          <div className="rounded-lg border border-success/30 bg-success/10 p-3 text-sm text-success">
             {testResult}
           </div>
         )}
@@ -881,7 +881,7 @@ export function ConnectIdentityStep({ onComplete }: StepProps) {
               <Loader2 className="absolute right-3 animate-spin text-muted-foreground" size={16} />
             )}
             {!checkingSlug && slugAvailable === true && (
-              <Check className="absolute right-3 text-emerald-400" size={16} />
+              <Check className="absolute right-3 text-success" size={16} />
             )}
             {!checkingSlug && slugAvailable === false && (
               <span className="absolute right-3 text-xs text-destructive">Indisponible</span>
@@ -1137,7 +1137,7 @@ export function ConnectLocationStep({ onComplete }: StepProps) {
         </div>
 
         {geocoding && (
-          <div className="flex items-center gap-2 text-xs text-amber-300">
+          <div className="flex items-center gap-2 text-xs text-warning">
             <Loader2 className="animate-spin" size={14} />
             Calcul des coordonnées GPS en cours...
           </div>
@@ -1613,7 +1613,7 @@ export function ConnectActivationStep({ onComplete }: StepProps) {
             <Button
               onClick={handleToggleActivation}
               disabled={saving || !restaurant.slug}
-              className="bg-amber-600 hover:bg-amber-700 text-white"
+              className="bg-warning text-warning-foreground hover:opacity-90"
             >
               {saving ? <Loader2 className="animate-spin" size={16} /> : <Check size={16} />}
               Activer Connect
@@ -1653,7 +1653,7 @@ export function ConnectActivationStep({ onComplete }: StepProps) {
                   onClick={handleCopy}
                   className="text-muted-foreground hover:text-foreground shrink-0 transition-colors"
                 >
-                  {copied ? <Check className="text-emerald-400" size={16} /> : <Copy size={16} />}
+                  {copied ? <Check className="text-success" size={16} /> : <Copy size={16} />}
                 </button>
               </div>
               <div className="flex gap-2 pt-2">

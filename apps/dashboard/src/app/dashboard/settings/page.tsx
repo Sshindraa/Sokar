@@ -325,17 +325,15 @@ export default function SettingsPage() {
                 </p>
                 {googleRefreshToken ? (
                   <div className="mt-3 flex items-center gap-2 transition-all duration-200">
-                    <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    <span className="inline-flex h-2 w-2 rounded-full bg-success animate-pulse" />
+                    <span className="text-xs font-medium text-success">
                       Connecté à Google Calendar
                     </span>
                   </div>
                 ) : (
                   <div className="mt-3 flex items-center gap-2 transition-all duration-200">
-                    <span className="inline-flex h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-                    <span className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                      Non connecté
-                    </span>
+                    <span className="inline-flex h-2 w-2 rounded-full bg-warning animate-pulse" />
+                    <span className="text-xs font-medium text-warning">Non connecté</span>
                   </div>
                 )}
               </div>

@@ -33,51 +33,81 @@
     --pricing-card-highlight: 0 0% 100% / 0.08;
   }
 
+  /*
+   * Design system "liquid glass SaaS" — scopé au dashboard via les classes
+   * .dark / .light posées par le toggle dans _layout-client.tsx (n'affecte
+   * pas le marketing, qui reste sur les tokens :root ci-dessus).
+   *
+   * --primary       = CTA critique (primary_deep) — texte blanc dessus.
+   * --brand         = couleur produit plus claire — nav active, focus, accents.
+   * --accent-cyan   = lumière du verre : halos, data-viz, états actifs doux.
+   * --accent-violet = accent rare — features IA/premium uniquement.
+   * --success / --warning = sémantique, jamais en aplat large.
+   * --glass-2       = surface de panneau secondaire (imbriquée dans une carte).
+   * --glass-stroke  = liseré spéculaire du bord de carte (effet verre).
+   */
   .dark {
-    --background: 0 0% 4%;
-    --foreground: 0 0% 94%;
-    --card: 0 0% 7%;
-    --card-foreground: 0 0% 94%;
-    --popover: 0 0% 8%;
-    --popover-foreground: 0 0% 94%;
-    --primary: 0 0% 100%;
-    --primary-foreground: 0 0% 4%;
-    --secondary: 0 0% 12%;
-    --secondary-foreground: 0 0% 94%;
-    --muted: 0 0% 12%;
-    --muted-foreground: 0 0% 53%;
-    --accent: 0 0% 15%;
-    --accent-foreground: 0 0% 94%;
+    --background: 217.5 60% 7.8%;
+    --foreground: 216 100% 98%;
+    --card: 217.5 46.2% 10.2% / 0.8;
+    --card-foreground: 216 100% 98%;
+    --popover: 217.5 46.2% 10.2% / 0.96;
+    --popover-foreground: 216 100% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 0 0% 100%;
+    --brand: 214.7 100% 68.4%;
+    --brand-foreground: 217.5 46.2% 10.2%;
+    --secondary: 216.8 43.7% 13.9% / 0.7;
+    --secondary-foreground: 216 100% 98%;
+    --muted: 216.8 43.7% 13.9% / 0.7;
+    --muted-foreground: 214.3 25.5% 73.1%;
+    --accent: 216.8 43.7% 13.9% / 0.7;
+    --accent-foreground: 216 100% 98%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 100% / 0.08;
-    --input: 0 0% 100% / 0.12;
-    --ring: 0 0% 100%;
+    --success: 158.1 64.4% 51.6%;
+    --success-foreground: 217.5 60% 7.8%;
+    --warning: 43.3 96.4% 56.3%;
+    --warning-foreground: 217.5 60% 7.8%;
+    --accent-cyan: 187 92.4% 69%;
+    --accent-violet: 255.1 91.7% 76.3%;
+    --border: 212.8 31% 66.5% / 0.2;
+    --input: 212.8 31% 66.5% / 0.25;
+    --ring: 214.7 100% 68.4%;
+    --glass-2: 216.8 43.7% 13.9% / 0.702;
+    --glass-stroke: 0 0% 100% / 0.102;
   }
 
-  /* Light theme — inspiré des cockpits data (cartes blanches, fond bleu-gris doux,
-     accents réservés aux données live). Scopé au dashboard via la classe .light
-     posée par le toggle dans _layout-client.tsx, n'affecte pas le marketing. */
   .light {
-    --background: 218 33% 96%;
-    --foreground: 222 32% 12%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 32% 12%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 32% 12%;
-    --primary: 222 32% 12%;
+    --background: 210 41.7% 95.3%;
+    --foreground: 217.5 46.2% 10.2%;
+    --card: 210 60% 98%;
+    --card-foreground: 217.5 46.2% 10.2%;
+    --popover: 210 60% 98%;
+    --popover-foreground: 217.5 46.2% 10.2%;
+    --primary: 224.3 76.3% 48%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 218 24% 93%;
-    --secondary-foreground: 222 32% 12%;
-    --muted: 218 24% 93%;
-    --muted-foreground: 220 12% 42%;
-    --accent: 218 24% 91%;
-    --accent-foreground: 222 32% 12%;
+    --brand: 217.2 91.2% 59.8%;
+    --brand-foreground: 0 0% 100%;
+    --secondary: 214.3 43.8% 93.7%;
+    --secondary-foreground: 217.5 46.2% 10.2%;
+    --muted: 214.3 43.8% 93.7%;
+    --muted-foreground: 215.1 20.2% 39.8%;
+    --accent: 214.3 43.8% 93.7%;
+    --accent-foreground: 217.5 46.2% 10.2%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
-    --border: 222 20% 20% / 0.08;
-    --input: 222 20% 20% / 0.14;
-    --ring: 199 89% 48%;
+    --success: 159.9 82.3% 39.8%;
+    --success-foreground: 0 0% 100%;
+    --warning: 37.7 92.1% 50.2%;
+    --warning-foreground: 217.5 46.2% 10.2%;
+    --accent-cyan: 199.4 95.5% 73.9%;
+    --accent-violet: 258.3 89.5% 66.3%;
+    --border: 213.1 34.9% 83.7%;
+    --input: 213.1 34.9% 83.7%;
+    --ring: 217.2 91.2% 59.8%;
+    --glass-2: 214.3 43.8% 93.7%;
+    --glass-stroke: 0 0% 100% / 0.6;
   }
 }
 

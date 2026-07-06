@@ -26,9 +26,9 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_VARIANT: Record<string, string> = {
-  ACTIVE: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500',
+  ACTIVE: 'border-success/30 bg-success/10 text-success',
   REDEEMED: 'border-blue-500/30 bg-blue-500/10 text-blue-500',
-  EXPIRED: 'border-amber-500/30 bg-amber-500/10 text-amber-500',
+  EXPIRED: 'border-warning/30 bg-warning/10 text-warning',
   CANCELLED: 'border-red-500/30 bg-red-500/10 text-red-500',
   CLOSED: 'border-purple-500/30 bg-purple-500/10 text-purple-500',
 };
@@ -105,14 +105,14 @@ export default function GiftCardList({
             badge={<StatusBadge status={card.status} />}
             accentClass={
               card.status === 'ACTIVE'
-                ? 'border-l-emerald-500'
+                ? 'border-l-success'
                 : card.status === 'REDEEMED'
                   ? 'border-l-blue-400'
                   : card.status === 'CANCELLED'
                     ? 'border-l-red-500'
                     : card.status === 'CLOSED'
                       ? 'border-l-purple-500'
-                      : 'border-l-amber-500'
+                      : 'border-l-warning'
             }
             actions={[
               ...(onView
@@ -120,7 +120,7 @@ export default function GiftCardList({
                     {
                       label: 'Voir',
                       icon: <Eye size={14} />,
-                      colorClass: 'bg-cyan-600',
+                      colorClass: 'bg-brand',
                       onClick: (e: React.MouseEvent) => {
                         e.stopPropagation();
                         onView(card);
@@ -261,9 +261,9 @@ export default function GiftCardList({
                     <span
                       className={`text-xs font-medium ${
                         card.stripePaymentStatus === 'succeeded'
-                          ? 'text-emerald-500'
+                          ? 'text-success'
                           : card.stripePaymentStatus === 'pending'
-                            ? 'text-amber-500'
+                            ? 'text-warning'
                             : 'text-red-500'
                       }`}
                     >
@@ -294,7 +294,7 @@ export default function GiftCardList({
                     {onView && (
                       <button
                         onClick={() => onView(card)}
-                        className="p-2 text-white/50 hover:text-cyan-400 rounded-lg hover:bg-white/5 transition-all duration-200"
+                        className="p-2 text-white/50 hover:text-brand rounded-lg hover:bg-white/5 transition-all duration-200"
                         title="Voir le détail"
                       >
                         <Eye size={16} />

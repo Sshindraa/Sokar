@@ -293,10 +293,10 @@ export default function AgenticSettingsPage() {
                   </p>
                   <div className="mt-3 flex items-center gap-2">
                     <span
-                      className={`inline-flex h-2 w-2 rounded-full ${mcpActive ? 'bg-emerald-500' : 'bg-muted-foreground/40'} animate-pulse`}
+                      className={`inline-flex h-2 w-2 rounded-full ${mcpActive ? 'bg-success' : 'bg-muted-foreground/40'} animate-pulse`}
                     />
                     <span
-                      className={`text-xs font-medium ${mcpActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}
+                      className={`text-xs font-medium ${mcpActive ? 'text-success' : 'text-muted-foreground'}`}
                     >
                       {mcpActive ? 'Activé' : 'Désactivé'}
                     </span>
@@ -341,10 +341,10 @@ export default function AgenticSettingsPage() {
                   </p>
                   <div className="mt-3 flex items-center gap-2">
                     <span
-                      className={`inline-flex h-2 w-2 rounded-full ${openaiActive ? 'bg-emerald-500' : 'bg-muted-foreground/40'} animate-pulse`}
+                      className={`inline-flex h-2 w-2 rounded-full ${openaiActive ? 'bg-success' : 'bg-muted-foreground/40'} animate-pulse`}
                     />
                     <span
-                      className={`text-xs font-medium ${openaiActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}
+                      className={`text-xs font-medium ${openaiActive ? 'text-success' : 'text-muted-foreground'}`}
                     >
                       {openaiActive
                         ? 'Activé'

@@ -129,7 +129,7 @@ export default function GiftCardPacksPage() {
                     variant={pack.isActive ? 'default' : 'secondary'}
                     className={
                       pack.isActive
-                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                        ? 'border-success/30 bg-success/10 text-success'
                         : 'border-border bg-secondary text-muted-foreground'
                     }
                   >
@@ -170,7 +170,7 @@ export default function GiftCardPacksPage() {
                       title={pack.isActive ? 'Désactiver le pack' : 'Activer le pack'}
                       className="transition-all duration-200"
                     >
-                      <Power size={16} className={pack.isActive ? 'text-emerald-400' : ''} />
+                      <Power size={16} className={pack.isActive ? 'text-success' : ''} />
                     </Button>
                   </div>
                 </div>

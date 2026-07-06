@@ -64,7 +64,7 @@ export default function NoShowWidget() {
   return (
     <section className="rounded-2xl border border-border bg-card p-5 md:p-6">
       <div className="mb-4 flex items-center gap-3">
-        <UserX size={20} className="text-rose-600 dark:text-rose-400" />
+        <UserX size={20} className="text-destructive" />
         <div>
           <h2 className="text-lg font-bold text-foreground">No-shows</h2>
           <p className="text-sm text-muted-foreground">
@@ -77,7 +77,7 @@ export default function NoShowWidget() {
         {/* Taux global */}
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex items-center gap-2">
-            <TrendingDown size={14} className="text-rose-600 dark:text-rose-400" />
+            <TrendingDown size={14} className="text-destructive" />
             <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
               Taux de no-show
             </span>
@@ -91,12 +91,12 @@ export default function NoShowWidget() {
         {/* CA perdu */}
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex items-center gap-2">
-            <Euro size={14} className="text-rose-600 dark:text-rose-400" />
+            <Euro size={14} className="text-destructive" />
             <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
               CA perdu
             </span>
           </div>
-          <p className="mt-2 text-3xl font-black text-rose-600 dark:text-rose-400">
+          <p className="mt-2 text-3xl font-black text-destructive">
             {data.revenueLost.toLocaleString('fr-FR')} €
           </p>
           <p className="mt-1 text-xs text-muted-foreground">Estimation basée sur le ticket moyen</p>
@@ -107,8 +107,8 @@ export default function NoShowWidget() {
           className={`rounded-xl border p-4 ${
             hasComparison
               ? smsWorks
-                ? 'border-emerald-500/20 bg-emerald-500/[0.04]'
-                : 'border-amber-500/20 bg-amber-500/[0.04]'
+                ? 'border-success/20 bg-success/[0.04]'
+                : 'border-warning/20 bg-warning/[0.04]'
               : 'border-border bg-card'
           }`}
         >
@@ -118,8 +118,8 @@ export default function NoShowWidget() {
               className={
                 hasComparison
                   ? smsWorks
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-amber-600 dark:text-amber-400'
+                    ? 'text-success'
+                    : 'text-warning'
                   : 'text-muted-foreground'
               }
             />
@@ -131,7 +131,7 @@ export default function NoShowWidget() {
           {hasComparison ? (
             <>
               <p
-                className={`mt-2 text-3xl font-black ${smsWorks ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}
+                className={`mt-2 text-3xl font-black ${smsWorks ? 'text-success' : 'text-warning'}`}
               >
                 {smsWorks ? '-' : '+'}
                 {Math.abs(data.impact!).toFixed(1)} pts
@@ -139,21 +139,14 @@ export default function NoShowWidget() {
               <p className="mt-1 text-xs text-muted-foreground">
                 {smsWorks ? (
                   <>
-                    <span className="text-emerald-600 dark:text-emerald-400">
-                      {data.withSms.rate.toFixed(1)}%
-                    </span>{' '}
-                    avec SMS vs{' '}
-                    <span className="text-rose-600 dark:text-rose-400">
-                      {data.withoutSms.rate.toFixed(1)}%
-                    </span>{' '}
+                    <span className="text-success">{data.withSms.rate.toFixed(1)}%</span> avec SMS
+                    vs <span className="text-destructive">{data.withoutSms.rate.toFixed(1)}%</span>{' '}
                     sans
                   </>
                 ) : (
                   <>
-                    <span className="text-amber-600 dark:text-amber-400">
-                      {data.withSms.rate.toFixed(1)}%
-                    </span>{' '}
-                    avec SMS vs <span>{data.withoutSms.rate.toFixed(1)}%</span> sans
+                    <span className="text-warning">{data.withSms.rate.toFixed(1)}%</span> avec SMS
+                    vs <span>{data.withoutSms.rate.toFixed(1)}%</span> sans
                   </>
                 )}
               </p>
@@ -176,7 +169,7 @@ export default function NoShowWidget() {
       {/* Message contextuel */}
       {hasComparison && smsWorks && data.revenueLost > 0 && (
         <p className="mt-4 text-xs text-muted-foreground">
-          <TrendingUp size={12} className="mr-1 inline text-emerald-600 dark:text-emerald-400" />
+          <TrendingUp size={12} className="mr-1 inline text-success" />
           Le rappel SMS réduit vos no-shows de {Math.abs(data.impact!).toFixed(1)} points. Continuez
           à marquer les no-shows pour affiner la mesure.
         </p>

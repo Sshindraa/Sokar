@@ -33,14 +33,12 @@ export default function MobileBottomNav() {
               onClick={() => triggerHaptic(12)}
               className={cn(
                 'flex flex-1 flex-col items-center justify-center gap-0.5 py-2 min-h-[56px] text-[10px] font-medium transition-colors duration-200 touch-manipulation relative',
-                active
-                  ? 'text-orange-500 dark:text-orange-400'
-                  : 'text-muted-foreground active:text-foreground/70',
+                active ? 'text-warning' : 'text-muted-foreground active:text-foreground/70',
               )}
             >
               {/* Active indicator dot */}
               {active && (
-                <span className="absolute top-1.5 h-[3px] w-5 rounded-full bg-orange-500 animate-in fade-in zoom-in-75 duration-300" />
+                <span className="absolute top-1.5 h-[3px] w-5 rounded-full bg-warning animate-in fade-in zoom-in-75 duration-300" />
               )}
               <Icon
                 size={20}

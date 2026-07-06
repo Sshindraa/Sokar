@@ -61,9 +61,9 @@ function ScoreCircle({ score, level }: { score: number; level: ConnectScore['lev
     level === 'premium'
       ? 'text-green-500'
       : level === 'almost'
-        ? 'text-orange-400'
+        ? 'text-warning'
         : level === 'progress'
-          ? 'text-orange-400'
+          ? 'text-warning'
           : 'text-muted-foreground';
 
   return (
@@ -299,7 +299,7 @@ export default function ConnectDashboardPage() {
                         soit trouvable et réservable sur Google, ChatGPT et les assistants IA.
                       </p>
                       {score && score.score < 60 && (
-                        <div className="flex items-start gap-2 rounded-lg bg-orange-500/10 px-3 py-2 text-xs text-orange-600">
+                        <div className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
                           <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                           <span>
                             Votre profil est à {score.score}%. Complétez-le pour maximiser votre
@@ -446,7 +446,7 @@ export default function ConnectDashboardPage() {
                       score.level === 'premium'
                         ? 'bg-green-500'
                         : score.level === 'almost'
-                          ? 'bg-orange-400'
+                          ? 'bg-warning'
                           : 'bg-primary',
                     )}
                     style={{ width: `${score.score}%` }}
@@ -489,7 +489,7 @@ export default function ConnectDashboardPage() {
                           href="/dashboard/settings"
                           className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/60 px-3 py-1.5 text-xs font-medium text-foreground transition-all duration-200 hover:border-primary/40 hover:bg-primary/5"
                         >
-                          <span className="h-1.5 w-1.5 rounded-full bg-orange-400" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-warning" />
                           {item.label}
                           <ArrowRight className="h-3 w-3 text-muted-foreground" />
                         </Link>

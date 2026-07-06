@@ -208,7 +208,7 @@ export default function DashboardPage() {
     <div className="space-y-6 md:space-y-8 select-none">
       <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.28em] text-cyan-600 dark:text-cyan-400">
+          <p className="text-xs font-bold uppercase tracking-[0.28em] text-brand">
             Analytics restaurant
           </p>
           <h1 className="mt-2 text-2xl font-black tracking-tight text-foreground md:text-4xl font-display">
@@ -228,7 +228,7 @@ export default function DashboardPage() {
               onClick={() => setPeriod(option.value)}
               className={`rounded-xl px-3 py-2 text-left transition-all duration-200 ${
                 period === option.value
-                  ? 'bg-cyan-500 text-white shadow-[0_0_24px_rgba(6,182,212,0.16)]'
+                  ? 'bg-brand text-brand-foreground shadow-[0_0_24px_hsl(var(--brand)/0.35)]'
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground'
               }`}
             >
@@ -250,8 +250,8 @@ export default function DashboardPage() {
       <section className="grid gap-3 xl:grid-cols-[0.9fr_1.6fr]">
         {/* Jauge en héros — taux de réponse aux appels, façon cockpit */}
         <article className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-          <span className="mb-1 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          <span className="mb-1 inline-flex items-center gap-1.5 rounded-full border border-success/25 bg-success/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-success">
+            <span className="h-1.5 w-1.5 rounded-full bg-success" />
             Agent vocal actif
           </span>
           <GaugeDial
@@ -309,7 +309,7 @@ function KpiCard({
     <article
       className={`rounded-2xl border p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 ${
         featured
-          ? 'border-cyan-500/25 bg-cyan-500/[0.06] shadow-[0_0_28px_rgba(6,182,212,0.08)]'
+          ? 'border-brand/25 bg-brand/[0.06] shadow-[0_0_28px_hsl(var(--brand)/0.18)]'
           : 'border-border bg-card hover:border-foreground/15'
       } ${className}`}
     >
@@ -317,7 +317,7 @@ function KpiCard({
         <span
           className={`flex h-10 w-10 items-center justify-center rounded-full border ${
             featured
-              ? 'border-cyan-500/25 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+              ? 'border-brand/25 bg-brand/10 text-brand'
               : 'border-border bg-secondary text-muted-foreground'
           }`}
         >
@@ -326,7 +326,7 @@ function KpiCard({
       </div>
       <p
         className={`mt-5 truncate text-2xl font-black tracking-tight ${
-          featured ? 'text-cyan-600 dark:text-cyan-400' : 'text-foreground'
+          featured ? 'text-brand' : 'text-foreground'
         }`}
       >
         {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
