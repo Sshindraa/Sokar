@@ -12,9 +12,10 @@ const nextConfig = {
   experimental: {
     parallelServerBuildTraces: true,
   },
-  // ESLint + typecheck sont déjà exécutés en pre-push hook (prepush-quality-gate).
-  // Les relancer pendant next build sur le VPS ajoute ~40 s (dashboard) + ~68 s
-  // (connect) de linting redondant. On les désactive sur le build de prod.
+  // ESLint est déjà exécuté en pre-push hook (prepush-quality-gate).
+  // Le relancer pendant next build sur le VPS ajoute ~40 s (dashboard) + ~68 s
+  // (connect) de linting redondant. On le désactive sur le build de prod.
+  // Le typecheck reste actif (ignoreBuildErrors: false) — safety net.
   eslint: {
     ignoreDuringBuilds: true,
   },

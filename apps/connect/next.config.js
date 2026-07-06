@@ -40,6 +40,7 @@ const nextConfig = {
   },
   // ESLint est déjà exécuté en pre-push hook (prepush-quality-gate).
   // Le relancer pendant next build sur le VPS ajoute ~68 s de linting redondant.
+  // Le typecheck reste actif (ignoreBuildErrors: false) — safety net.
   eslint: {
     ignoreDuringBuilds: true,
   },
