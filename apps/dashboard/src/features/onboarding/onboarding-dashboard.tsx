@@ -91,11 +91,28 @@ const ACTION_COPY: Record<string, { title: string; body: string; cta: string; im
 };
 
 function StatusIcon({ status }: { status: OnboardingStatus }) {
-  if (status === 'completed') return <Check className="text-emerald-400" size={16} />;
+  if (status === 'completed')
+    return <Check className="text-emerald-600 dark:text-emerald-400" size={16} />;
   if (status === 'current') return <CircleDot className="animate-pulse text-primary" size={17} />;
-  if (status === 'blocked') return <AlertTriangle className="text-amber-400" size={16} />;
+  if (status === 'blocked')
+    return <AlertTriangle className="text-amber-600 dark:text-amber-400" size={16} />;
   if (status === 'skipped') return <Clock3 className="text-muted-foreground" size={16} />;
   return <Circle className="text-muted-foreground" size={16} />;
+}
+
+/** Barre de progression fine — remplace le simple pourcentage textuel par un repère visuel. */
+function ProgressBar({ value, accentClassName }: { value: number; accentClassName?: string }) {
+  return (
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+      <div
+        className={cn(
+          'h-full rounded-full transition-all duration-500',
+          accentClassName || 'bg-cyan-500',
+        )}
+        style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
+      />
+    </div>
+  );
 }
 
 export function DashboardOnboardingGate() {
@@ -172,13 +189,13 @@ function OnboardingCompletedSummary() {
   );
 
   return (
-    <div className="mb-5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 transition-all duration-200">
+    <div className="mb-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] p-5 shadow-sm transition-all duration-200">
       <div className="flex items-center gap-3">
-        <div className="rounded-lg bg-emerald-500/10 p-2 text-emerald-400">
-          <CheckCircle2 size={18} />
+        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+          <CheckCircle2 size={20} />
         </div>
         <div className="flex-1">
-          <p className="text-sm font-semibold text-foreground">
+          <p className="text-sm font-bold text-foreground">
             Configuration terminée — votre assistant est prêt
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -187,22 +204,22 @@ function OnboardingCompletedSummary() {
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+      <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-emerald-500/15 pt-4">
         {voiceSteps.map((step) => (
           <span
             key={step.key}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
           >
-            <Check size={12} className="text-emerald-400" />
+            <Check size={12} className="text-emerald-600 dark:text-emerald-400" />
             {step.title.toLowerCase()}
           </span>
         ))}
         {connectSteps.map((step) => (
           <span
             key={step.key}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
           >
-            <Check size={12} className="text-emerald-400" />
+            <Check size={12} className="text-emerald-600 dark:text-emerald-400" />
             {step.title.toLowerCase()}
           </span>
         ))}
@@ -239,13 +256,13 @@ export function OnboardingBanners() {
   return (
     <div className="flex flex-col gap-3">
       {showVoiceBanner && (
-        <div className="flex flex-col gap-3 rounded-lg border border-border bg-card/90 p-4 shadow-lg backdrop-blur-xl transition-all duration-200 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 rounded-lg bg-primary/10 p-2 text-primary">
-              <PhoneCall size={18} />
+        <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm transition-all duration-200 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
+              <PhoneCall size={19} />
             </div>
-            <div>
-              <p className="text-sm font-semibold text-foreground">
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-foreground">
                 Assistant Vocal Sokar ·{' '}
                 {
                   state.steps.filter(
@@ -257,8 +274,16 @@ export function OnboardingBanners() {
                 /5 terminées
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Prochaine action : {voiceCurrent.title.toLowerCase()} · {state.voiceProgress}% prêt.
+                Prochaine action : {voiceCurrent.title.toLowerCase()}
               </p>
+              <div className="mt-2.5 flex items-center gap-2">
+                <div className="w-40 max-w-[50vw]">
+                  <ProgressBar value={state.voiceProgress} accentClassName="bg-primary" />
+                </div>
+                <span className="text-[11px] font-bold text-muted-foreground">
+                  {state.voiceProgress}%
+                </span>
+              </div>
             </div>
           </div>
           <Button
@@ -273,13 +298,13 @@ export function OnboardingBanners() {
       )}
 
       {showConnectBanner && (
-        <div className="flex flex-col gap-3 rounded-lg border border-border bg-card/90 p-4 shadow-lg backdrop-blur-xl transition-all duration-200 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 rounded-lg bg-amber-500/10 p-2 text-amber-500">
-              <ExternalLink size={18} />
+        <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm transition-all duration-200 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-amber-500/25 bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <ExternalLink size={19} />
             </div>
-            <div>
-              <p className="text-sm font-semibold text-foreground">
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-foreground">
                 Sokar Connect ·{' '}
                 {
                   state.steps.filter(
@@ -296,9 +321,16 @@ export function OnboardingBanners() {
                 /5 terminées
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Prochaine action : {connectCurrent.title.toLowerCase()} · {state.connectProgress}%
-                prêt.
+                Prochaine action : {connectCurrent.title.toLowerCase()}
               </p>
+              <div className="mt-2.5 flex items-center gap-2">
+                <div className="w-40 max-w-[50vw]">
+                  <ProgressBar value={state.connectProgress} accentClassName="bg-amber-500" />
+                </div>
+                <span className="text-[11px] font-bold text-muted-foreground">
+                  {state.connectProgress}%
+                </span>
+              </div>
             </div>
           </div>
           <Button
@@ -333,32 +365,42 @@ export function OnboardingStepper() {
   );
 
   return (
-    <section className="rounded-lg border border-border bg-card/80 p-4 backdrop-blur-xl transition-all duration-200 md:p-5">
-      <div className="mb-4">
-        <h2 className="text-lg font-semibold text-foreground">Étapes de mise en service</h2>
+    <section className="rounded-2xl border border-border bg-card p-5 shadow-sm transition-all duration-200 md:p-6">
+      <div className="mb-5">
+        <h2 className="text-lg font-black tracking-tight text-foreground">
+          Étapes de mise en service
+        </h2>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-6">
         <div>
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              1. Assistant Vocal ({state.voiceProgress}%)
+          <div className="mb-3 flex items-center gap-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              1. Assistant vocal
             </span>
+            <div className="h-1.5 flex-1 max-w-[10rem]">
+              <ProgressBar value={state.voiceProgress} accentClassName="bg-primary" />
+            </div>
+            <span className="text-xs font-bold text-foreground">{state.voiceProgress}%</span>
           </div>
-          <div className="grid gap-2 md:grid-cols-5">
+          <div className="grid gap-2 sm:grid-cols-3 md:grid-cols-5">
             {voiceSteps.map((step) => (
               <StepperButton key={step.key} step={step} onClick={() => openStepModal(step.key)} />
             ))}
           </div>
         </div>
 
-        <div className="border-t border-border pt-4">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              2. Sokar Connect ({state.connectProgress}%)
+        <div className="border-t border-border pt-5">
+          <div className="mb-3 flex items-center gap-3">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              2. Sokar Connect
             </span>
+            <div className="h-1.5 flex-1 max-w-[10rem]">
+              <ProgressBar value={state.connectProgress} accentClassName="bg-amber-500" />
+            </div>
+            <span className="text-xs font-bold text-foreground">{state.connectProgress}%</span>
           </div>
-          <div className="grid gap-2 md:grid-cols-5">
+          <div className="grid gap-2 sm:grid-cols-3 md:grid-cols-5">
             {connectSteps.map((step) => (
               <StepperButton key={step.key} step={step} onClick={() => openStepModal(step.key)} />
             ))}
@@ -377,21 +419,22 @@ function StepperButton({ step, onClick }: { step: OnboardingStep; onClick: () =>
       type="button"
       onClick={onClick}
       className={cn(
-        'min-h-[90px] rounded-lg border border-border bg-background/60 p-3 text-left transition-all duration-200 hover:border-primary/50 hover:bg-accent/40 flex flex-col justify-between',
-        isCurrent && 'border-primary/50 bg-primary/10 shadow-lg',
-        step.status === 'completed' && 'border-emerald-500/30 bg-emerald-500/10',
+        'min-h-[92px] rounded-xl border border-border bg-secondary/40 p-3 text-left transition-all duration-200 hover:border-primary/40 hover:bg-accent flex flex-col justify-between',
+        isCurrent &&
+          'border-primary/40 bg-primary/[0.06] shadow-[0_0_0_1px_hsl(var(--primary)/0.15)]',
+        step.status === 'completed' && 'border-emerald-500/25 bg-emerald-500/[0.06]',
       )}
     >
       <div className="flex items-center justify-between gap-2 w-full">
-        <span className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-card">
           <StatusIcon status={step.status} />
         </span>
-        <span className="text-[10px] font-medium text-muted-foreground">
+        <span className="text-[10px] font-bold uppercase text-muted-foreground">
           {STATUS_LABEL[step.status]}
         </span>
       </div>
       <div>
-        <p className="mt-2 text-xs font-semibold text-foreground line-clamp-2">
+        <p className="mt-2 text-xs font-bold text-foreground line-clamp-2">
           {step.index}. {step.title}
         </p>
       </div>
@@ -408,25 +451,26 @@ export function CurrentActionCard() {
   const canSkip = !step.required && step.status !== 'completed';
 
   return (
-    <section className="rounded-lg border border-border bg-card/80 p-4 backdrop-blur-xl transition-all duration-200 md:p-5 flex flex-col justify-between">
+    <section className="flex flex-col justify-between rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.04] p-5 shadow-sm transition-all duration-200 md:p-6">
       <div>
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Action recommandée
-            </p>
-            <h2 className="mt-1 text-lg font-semibold text-foreground">{copy.title}</h2>
-          </div>
-          <StatusIcon status={step.status} />
+          <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
+            Action recommandée
+          </p>
+          <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-card">
+            <StatusIcon status={step.status} />
+          </span>
         </div>
+        <h2 className="mt-2 text-xl font-black tracking-tight text-foreground">{copy.title}</h2>
 
         <p className="mt-3 text-sm text-muted-foreground">{copy.body}</p>
-        <div className="mt-4 rounded-lg border border-border bg-background/60 p-3 text-sm text-muted-foreground">
+        <div className="mt-4 rounded-xl border border-border bg-card p-3 text-sm text-muted-foreground">
           {copy.impact}
         </div>
 
         {step.status === 'blocked' && (
-          <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200 transition-all duration-200">
+          <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300 transition-all duration-200">
             {step.state.reason || 'Cette étape demande une action externe.'}
           </div>
         )}
@@ -466,7 +510,7 @@ export function CurrentActionCard() {
           </Button>
         )}
         {state.onboardingDone && step.key === 'phone' && (
-          <span className="inline-flex items-center gap-2 text-sm text-emerald-400 self-center">
+          <span className="inline-flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 self-center">
             <CheckCircle2 size={16} />
             Assistant configuré
           </span>

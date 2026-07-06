@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApi } from '../../lib/api';
-import GaugeDial from './GaugeDial';
+import GaugeDial from '@/components/GaugeDial';
 
 // recharts pèse ~387 KB — on le charge en dynamic import pour ne pas
 // bloquer le First Load JS du dashboard. Les KPIs et le header s'affichent
