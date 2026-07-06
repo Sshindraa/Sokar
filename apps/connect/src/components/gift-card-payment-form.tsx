@@ -82,7 +82,7 @@ export function GiftCardPaymentForm({
   return (
     <form onSubmit={handleSubmit} style={reservationTheme} className="space-y-4">
       <div className="flex items-center gap-2">
-        <CreditCard size={18} className="text-[hsl(var(--reservation-glow))]" />
+        <CreditCard size={18} className="text-[hsl(var(--reservation-blue))]" />
         <h3 className="font-display text-[1.25rem] font-black tracking-[-0.03em] text-[hsl(var(--reservation-ink))]">
           Paiement
         </h3>
@@ -106,8 +106,7 @@ export function GiftCardPaymentForm({
       <button
         type="submit"
         disabled={!stripe || loading}
-        className="flex h-14 w-full items-center justify-center gap-2 rounded-full text-[17px] font-extrabold text-white shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
-        style={{ backgroundColor: accentColor }}
+        className="flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[hsl(var(--reservation-ink))] text-[17px] font-extrabold text-white shadow-lg shadow-black/10 transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
       >
         {loading ? (
           <>

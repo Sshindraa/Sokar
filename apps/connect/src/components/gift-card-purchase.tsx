@@ -276,15 +276,15 @@ export function GiftCardPurchase({
   const currentIdx = stepOrder.indexOf(step);
   const visibleSteps = stepOrder.filter((s) => s !== 'slots' || bookNow);
 
-  // Shared button classes
+  // Shared button classes — palette Sokar : ink (near-black) pour primary, pas orange
   const primaryBtnClass =
-    'flex h-14 w-full items-center justify-center gap-2 rounded-full text-[17px] font-extrabold shadow-lg transition-all duration-200 active:scale-[0.97] hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0';
+    'flex h-14 w-full items-center justify-center gap-2 rounded-full bg-[hsl(var(--reservation-ink))] text-[17px] font-extrabold text-white shadow-lg shadow-black/10 transition-all duration-200 active:scale-[0.97] hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0';
   const secondaryBtnClass =
     'flex h-12 w-full items-center justify-center gap-1.5 rounded-full border border-[hsl(var(--reservation-line))] bg-white/70 text-[14px] font-bold text-[hsl(var(--reservation-ink))] shadow-sm transition-all duration-200 hover:bg-white active:scale-[0.98]';
 
-  // Shared input class
+  // Shared input class — focus ring blue comme le widget résa
   const inputClass =
-    'w-full rounded-xl border border-[hsl(var(--reservation-line))] bg-white/70 px-4 py-3 text-[15px] font-medium text-[hsl(var(--reservation-ink))] placeholder:text-[hsl(var(--reservation-muted))] transition-all duration-200 focus:border-[hsl(var(--reservation-glow))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--reservation-glow)/0.2)]';
+    'w-full rounded-xl border border-[hsl(var(--reservation-line))] bg-white/70 px-4 py-3 text-[15px] font-medium text-[hsl(var(--reservation-ink))] placeholder:text-[hsl(var(--reservation-muted))] transition-all duration-200 focus:border-white/80 focus:bg-white/62 focus:outline-none focus:ring-2 focus:ring-[hsl(var(--reservation-blue)/0.18)]';
 
   // Shared panel class (glassmorphism)
   const panelClass =
@@ -309,7 +309,7 @@ export function GiftCardPurchase({
               key={s}
               className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
                 isActive
-                  ? 'bg-[hsl(var(--reservation-glow))]'
+                  ? 'bg-[hsl(var(--reservation-ink))]'
                   : isDone
                     ? 'bg-[hsl(var(--reservation-ink))]'
                     : 'bg-[hsl(var(--reservation-line))]'
@@ -344,7 +344,7 @@ export function GiftCardPurchase({
               onClick={() => setMode('free')}
               className={`flex w-full items-center justify-between rounded-[1.1rem] border p-4 text-left transition-all duration-200 active:scale-[0.99] ${
                 mode === 'free'
-                  ? 'border-[hsl(var(--reservation-glow))] bg-white/80 shadow-md'
+                  ? 'border-[hsl(var(--reservation-ink))] bg-white/80 shadow-md'
                   : 'border-[hsl(var(--reservation-line))] bg-white/50 hover:bg-white/70'
               }`}
             >
@@ -352,7 +352,7 @@ export function GiftCardPurchase({
                 <div
                   className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors ${
                     mode === 'free'
-                      ? 'bg-[hsl(var(--reservation-glow))] text-white'
+                      ? 'bg-[hsl(var(--reservation-ink))] text-white'
                       : 'bg-[hsl(var(--reservation-line))] text-[hsl(var(--reservation-soft))]'
                   }`}
                 >
@@ -370,7 +370,7 @@ export function GiftCardPurchase({
               <div
                 className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-all ${
                   mode === 'free'
-                    ? 'border-transparent bg-[hsl(var(--reservation-glow))] text-white'
+                    ? 'border-transparent bg-[hsl(var(--reservation-ink))] text-white'
                     : 'border-[hsl(var(--reservation-line))]'
                 }`}
               >
@@ -385,7 +385,7 @@ export function GiftCardPurchase({
               disabled={packsLoading || packs.length === 0}
               className={`flex w-full items-center justify-between rounded-[1.1rem] border p-4 text-left transition-all duration-200 active:scale-[0.99] disabled:opacity-50 ${
                 mode === 'pack'
-                  ? 'border-[hsl(var(--reservation-glow))] bg-white/80 shadow-md'
+                  ? 'border-[hsl(var(--reservation-ink))] bg-white/80 shadow-md'
                   : 'border-[hsl(var(--reservation-line))] bg-white/50 hover:bg-white/70'
               }`}
             >
@@ -393,7 +393,7 @@ export function GiftCardPurchase({
                 <div
                   className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors ${
                     mode === 'pack'
-                      ? 'bg-[hsl(var(--reservation-glow))] text-white'
+                      ? 'bg-[hsl(var(--reservation-ink))] text-white'
                       : 'bg-[hsl(var(--reservation-line))] text-[hsl(var(--reservation-soft))]'
                   }`}
                 >
@@ -415,7 +415,7 @@ export function GiftCardPurchase({
               <div
                 className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-all ${
                   mode === 'pack'
-                    ? 'border-transparent bg-[hsl(var(--reservation-glow))] text-white'
+                    ? 'border-transparent bg-[hsl(var(--reservation-ink))] text-white'
                     : 'border-[hsl(var(--reservation-line))]'
                 }`}
               >
@@ -429,7 +429,7 @@ export function GiftCardPurchase({
               onClick={() => setMode('crowdfunding')}
               className={`flex w-full items-center justify-between rounded-[1.1rem] border p-4 text-left transition-all duration-200 active:scale-[0.99] ${
                 mode === 'crowdfunding'
-                  ? 'border-[hsl(var(--reservation-glow))] bg-white/80 shadow-md'
+                  ? 'border-[hsl(var(--reservation-ink))] bg-white/80 shadow-md'
                   : 'border-[hsl(var(--reservation-line))] bg-white/50 hover:bg-white/70'
               }`}
             >
@@ -437,7 +437,7 @@ export function GiftCardPurchase({
                 <div
                   className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors ${
                     mode === 'crowdfunding'
-                      ? 'bg-[hsl(var(--reservation-glow))] text-white'
+                      ? 'bg-[hsl(var(--reservation-ink))] text-white'
                       : 'bg-[hsl(var(--reservation-line))] text-[hsl(var(--reservation-soft))]'
                   }`}
                 >
@@ -455,7 +455,7 @@ export function GiftCardPurchase({
               <div
                 className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-all ${
                   mode === 'crowdfunding'
-                    ? 'border-transparent bg-[hsl(var(--reservation-glow))] text-white'
+                    ? 'border-transparent bg-[hsl(var(--reservation-ink))] text-white'
                     : 'border-[hsl(var(--reservation-line))]'
                 }`}
               >
@@ -512,7 +512,7 @@ export function GiftCardPurchase({
                   onClick={() => setPackId(pack.id)}
                   className={`flex w-full items-center justify-between rounded-[1.1rem] border p-4 text-left transition-all duration-200 active:scale-[0.99] ${
                     packId === pack.id
-                      ? 'border-[hsl(var(--reservation-glow))] bg-white/80 shadow-md'
+                      ? 'border-[hsl(var(--reservation-ink))] bg-white/80 shadow-md'
                       : 'border-[hsl(var(--reservation-line))] bg-white/50 hover:bg-white/70'
                   }`}
                 >
@@ -531,10 +531,7 @@ export function GiftCardPurchase({
                         : `${pack.minPartySize}–${pack.maxPartySize} pers.`}
                     </p>
                   </div>
-                  <p
-                    className="ml-3 shrink-0 font-display text-[1.25rem] font-black tracking-tight"
-                    style={{ color: accentColor }}
-                  >
+                  <p className="ml-3 shrink-0 font-display text-[1.25rem] font-black tracking-tight text-[hsl(var(--reservation-blue))]">
                     {formatEuro(pack.amount)}
                   </p>
                 </button>
@@ -548,7 +545,6 @@ export function GiftCardPurchase({
               onClick={handleNextFromType}
               disabled={packsLoading}
               className={primaryBtnClass}
-              style={{ backgroundColor: accentColor, color: '#fff' }}
             >
               Continuer
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
@@ -607,7 +603,7 @@ export function GiftCardPurchase({
           {/* Expéditeur */}
           <div className={panelClass}>
             <div className="mb-3 flex items-center gap-2">
-              <Heart size={16} className="text-[hsl(var(--reservation-glow))]" />
+              <Heart size={16} className="text-[hsl(var(--reservation-blue))]" />
               <p className="text-[13px] font-bold text-[hsl(var(--reservation-ink))]">Expéditeur</p>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -638,7 +634,7 @@ export function GiftCardPurchase({
           {/* Destinataire */}
           <div className={panelClass}>
             <div className="mb-3 flex items-center gap-2">
-              <Gift size={16} className="text-[hsl(var(--reservation-glow))]" />
+              <Gift size={16} className="text-[hsl(var(--reservation-blue))]" />
               <p className="text-[13px] font-bold text-[hsl(var(--reservation-ink))]">
                 Destinataire
               </p>
@@ -683,7 +679,7 @@ export function GiftCardPurchase({
           <label
             className={`flex cursor-pointer items-center gap-3 rounded-[1.1rem] border p-4 transition-all duration-200 ${
               bookNow
-                ? 'border-[hsl(var(--reservation-glow))] bg-white/80 shadow-md'
+                ? 'border-[hsl(var(--reservation-ink))] bg-white/80 shadow-md'
                 : 'border-[hsl(var(--reservation-line))] bg-white/50 hover:bg-white/70'
             }`}
           >
@@ -691,7 +687,7 @@ export function GiftCardPurchase({
               type="checkbox"
               checked={bookNow}
               onChange={(e) => setBookNow(e.target.checked)}
-              className="h-5 w-5 rounded accent-[hsl(var(--reservation-glow))]"
+              className="h-5 w-5 rounded accent-[hsl(var(--reservation-ink))]"
             />
             <div>
               <p className="text-[14px] font-bold text-[hsl(var(--reservation-ink))]">
@@ -712,12 +708,7 @@ export function GiftCardPurchase({
               <ChevronLeft size={18} />
               Retour
             </button>
-            <button
-              type="button"
-              onClick={handleNextFromInfo}
-              className={primaryBtnClass}
-              style={{ backgroundColor: accentColor, color: '#fff' }}
-            >
+            <button type="button" onClick={handleNextFromInfo} className={primaryBtnClass}>
               Continuer
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
                 <ChevronRight size={17} />
@@ -791,12 +782,7 @@ export function GiftCardPurchase({
               <ChevronLeft size={18} />
               Retour
             </button>
-            <button
-              type="button"
-              onClick={handleNextFromSlots}
-              className={primaryBtnClass}
-              style={{ backgroundColor: accentColor, color: '#fff' }}
-            >
+            <button type="button" onClick={handleNextFromSlots} className={primaryBtnClass}>
               Continuer
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
                 <ChevronRight size={17} />
@@ -837,12 +823,7 @@ export function GiftCardPurchase({
               <ChevronLeft size={18} />
               Retour
             </button>
-            <button
-              type="button"
-              onClick={handleNextFromTemplate}
-              className={primaryBtnClass}
-              style={{ backgroundColor: accentColor, color: '#fff' }}
-            >
+            <button type="button" onClick={handleNextFromTemplate} className={primaryBtnClass}>
               Continuer
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/20">
                 <ChevronRight size={17} />
@@ -878,10 +859,7 @@ export function GiftCardPurchase({
                 <span className="text-[12px] font-medium uppercase tracking-wider text-[hsl(var(--reservation-soft))]">
                   Montant
                 </span>
-                <span
-                  className="font-display text-[1.5rem] font-black tracking-tight"
-                  style={{ color: accentColor }}
-                >
+                <span className="font-display text-[1.5rem] font-black tracking-tight text-[hsl(var(--reservation-blue))]">
                   {formatEuro(displayAmount)}
                 </span>
               </div>
@@ -934,7 +912,6 @@ export function GiftCardPurchase({
                 onClick={handleStartPayment}
                 disabled={loading}
                 className={primaryBtnClass}
-                style={{ backgroundColor: accentColor, color: '#fff' }}
               >
                 {loading ? (
                   <>

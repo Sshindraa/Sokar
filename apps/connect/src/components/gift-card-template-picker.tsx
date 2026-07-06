@@ -74,7 +74,7 @@ export function GiftCardTemplatePicker({
               style={{
                 aspectRatio: '3 / 2',
                 background: tpl.gradient,
-                ...(isSelected ? { borderColor: accentColor } : {}),
+                ...(isSelected ? { borderColor: 'hsl(var(--reservation-ink))' } : {}),
               }}
             >
               <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -82,10 +82,7 @@ export function GiftCardTemplatePicker({
                 <span className="mt-1 text-[11px] font-bold text-white">{tpl.name}</span>
               </div>
               {isSelected && (
-                <div
-                  className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full text-white shadow-md"
-                  style={{ backgroundColor: accentColor }}
-                >
+                <div className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[hsl(var(--reservation-ink))] text-white shadow-md">
                   <Check size={12} strokeWidth={3} />
                 </div>
               )}
@@ -114,7 +111,7 @@ export function GiftCardTemplatePicker({
                 onSelect('custom');
               }
             }}
-            className="w-full rounded-xl border border-[hsl(var(--reservation-line))] bg-white/70 py-3 pl-11 pr-4 text-[14px] font-medium text-[hsl(var(--reservation-ink))] placeholder:text-[hsl(var(--reservation-muted))] transition-all duration-200 focus:border-[hsl(var(--reservation-glow))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--reservation-glow)/0.2)]"
+            className="w-full rounded-xl border border-[hsl(var(--reservation-line))] bg-white/70 py-3 pl-11 pr-4 text-[14px] font-medium text-[hsl(var(--reservation-ink))] placeholder:text-[hsl(var(--reservation-muted))] transition-all duration-200 focus:border-white/80 focus:bg-white/62 focus:outline-none focus:ring-2 focus:ring-[hsl(var(--reservation-blue)/0.18)]"
           />
         </div>
         {customImageUrl && (
@@ -122,7 +119,7 @@ export function GiftCardTemplatePicker({
             className="relative overflow-hidden rounded-[1rem] border-2"
             style={{
               aspectRatio: '3 / 2',
-              borderColor: accentColor,
+              borderColor: 'hsl(var(--reservation-ink))',
               backgroundImage: `url(${customImageUrl})`,
               backgroundSize: 'cover',
               backgroundPosition: 'center',
