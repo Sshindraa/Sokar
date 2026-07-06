@@ -206,8 +206,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 md:space-y-8 select-none">
-      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
+      <header className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:items-start">
+        <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-[0.28em] text-brand">
             Analytics restaurant
           </p>
@@ -226,22 +226,24 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <div className="grid grid-cols-3 gap-2 rounded-2xl border border-border bg-card p-1.5 shadow-sm">
+        <div className="grid w-full grid-cols-3 gap-2 rounded-2xl border border-border bg-card p-1.5 shadow-sm lg:justify-self-end">
           {PERIOD_OPTIONS.map((option) => (
             <button
               key={option.value}
               type="button"
               onClick={() => setPeriod(option.value)}
-              className={`rounded-xl px-3 py-2 text-left transition-all duration-200 ${
+              className={`min-w-0 rounded-xl px-2 py-2 text-left transition-all duration-200 sm:px-3 ${
                 period === option.value
                   ? 'bg-brand text-brand-foreground shadow-[0_0_24px_hsl(var(--brand)/0.35)]'
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground'
               }`}
             >
-              <span className="block text-xs font-black uppercase tracking-wider">
+              <span className="block truncate text-xs font-black uppercase tracking-wider">
                 {option.label}
               </span>
-              <span className="hidden text-[10px] font-medium md:block">{option.description}</span>
+              <span className="hidden text-[10px] font-medium leading-tight md:block">
+                {option.description}
+              </span>
             </button>
           ))}
         </div>
@@ -368,13 +370,13 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 function DashboardSkeleton() {
   return (
     <div className="space-y-6 md:space-y-8">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-3">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:items-start">
+        <div className="min-w-0 space-y-3">
           <Skeleton className="h-4 w-40 rounded-full" />
           <Skeleton className="h-10 w-80 rounded-xl" />
           <Skeleton className="h-4 w-96 max-w-full rounded-full" />
         </div>
-        <Skeleton className="h-14 w-full rounded-2xl md:w-80" />
+        <Skeleton className="h-14 w-full rounded-2xl lg:justify-self-end" />
       </div>
       <div className="grid gap-3 xl:grid-cols-[0.9fr_1.6fr]">
         <Skeleton className="h-64 rounded-2xl border border-border" />
