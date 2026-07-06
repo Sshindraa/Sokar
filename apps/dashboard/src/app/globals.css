@@ -715,8 +715,8 @@ input[type="range"]::-moz-range-thumb:hover {
   }
 }
 
-/* Fix sticky header on iOS */
-header {
+/* Fix sticky marketing header on iOS without affecting in-page dashboard headers. */
+.ios-fixed-header {
   position: fixed;
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
