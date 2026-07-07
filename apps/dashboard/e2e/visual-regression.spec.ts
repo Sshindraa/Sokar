@@ -17,13 +17,16 @@ import path from 'node:path';
  *  - /pricing                — page tarifs
  *
  * Stabilité :
- *  - `animations: 'disabled'` + `reducedMotion: 'reduce'` (config projet) →
- *    framer-motion skip les animations, CSS animations neutralisées.
- *  - `stylePath` injecte un CSS qui désactive les transitions et masque le
- *    caret texte.
- *  - `waitUntil: 'networkidle'` + attente d'un sélecteur stable avant capture.
+ *  - `animations: 'disabled'` (config expect.toHaveScreenshot) →
+ *    CSS animations neutralisées par Playwright.
+ *  - `stylePath` injecte un CSS qui désactive les transitions, force
+ *    -webkit-font-smoothing: antialiased, et masque le caret texte.
+ *  - `waitUntil: 'networkidle'` + attente de sélecteurs stables avant capture.
  *  - Les pages dashboard sans Clerk affichent les données de démo ou un
  *    skeleton — pas de contenu aléatoire ni d'appel API.
+ *  - Pour /dashboard, on attend .recharts-surface (graphiques SVG rendus) en
+ *    plus du h1, puis settleMs: 3000ms pour laisser recharts stabiliser son
+ *    rendu (le SVG est dessiné de façon asynchrone après l'hydratation).
  *
  * Mettre à jour les baselines après un changement visuel intentionnel :
  *   pnpm test:visual -- --update-snapshots
@@ -35,8 +38,9 @@ const STABILITY_CSS = path.resolve(__dirname, 'visual-stability.css');
 interface VisualPage {
   name: string;
   url: string;
-  /** Sélecteur Playwright à attendre avant de capturer le screenshot. */
-  waitFor: string;
+  /** Sélecteur(s) Playwright à attendre avant de capturer le screenshot.
+   * Tous les sélecteurs doivent être visibles avant la capture. */
+  waitFor: string | string[];
   /** Temps d'attente supplémentaire (ms) après le sélecteur pour laisser les
    * composants dynamiques (recharts, framer-motion) atteindre leur état final. */
   settleMs?: number;
@@ -47,9 +51,15 @@ const PAGES: VisualPage[] = [
     name: 'dashboard',
     url: '/dashboard',
     // Le heading "Ce que Sokar vous rapporte" apparaît une fois les données de
-    // démo chargées. On attend aussi .recharts-surface pour les graphiques.
-    waitFor: 'h1:has-text("Ce que Sokar vous rapporte")',
-    settleMs: 1000,
+    // démo chargées. On attend AUSSI .recharts-surface car les graphiques
+    // recharts sont rendus de façon asynchrone (dynamic import + SVG draw) —
+    // sans cette attente, le screenshot peut capturer un graphique vide ou
+    // partiellement dessiné, causant jusqu'à 2 % de diff pixel (flaky).
+    // settleMs: 3000ms pour laisser recharts stabiliser son rendu SVG après
+    // l'apparition de .recharts-surface (le SVG continue de se dessiner après
+    // l'insertion du nœud dans le DOM).
+    waitFor: ['h1:has-text("Ce que Sokar vous rapporte")', '.recharts-surface'],
+    settleMs: 3000,
   },
   {
     name: 'dashboard-reservations',
@@ -94,8 +104,14 @@ test.describe('Régression visuelle — pages critiques', () => {
       // 1. Naviguer vers la page et attendre que le réseau soit inactif.
       await pwPage.goto(page.url, { waitUntil: 'networkidle' });
 
-      // 2. Attendre que le contenu clé soit rendu (heading, skeleton, etc.).
-      await pwPage.waitForSelector(page.waitFor, { state: 'visible', timeout: 15_000 });
+      // 2. Attendre que tous les contenus clés soient rendus (heading,
+      //    skeleton, graphiques recharts, etc.). On attend chaque sélecteur
+      //    séquentiellement pour s'assurer que tous les composants dynamiques
+      //    sont présents dans le DOM avant la capture.
+      const selectors = Array.isArray(page.waitFor) ? page.waitFor : [page.waitFor];
+      for (const selector of selectors) {
+        await pwPage.waitForSelector(selector, { state: 'visible', timeout: 15_000 });
+      }
 
       // 3. Laisser les composants dynamiques (recharts, framer-motion) atteindre
       //    leur état final après la désactivation des animations.

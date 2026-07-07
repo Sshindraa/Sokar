@@ -106,7 +106,7 @@ git add apps/dashboard/e2e/__snapshots__/
 git commit -m "feat(dashboard): update visual baselines for <description>"
 ```
 
-**Stabilité des screenshots :** les animations sont désactivées (`animations: 'disabled'` + `reducedMotion: 'reduce'`), les transitions CSS neutralisées via `e2e/visual-stability.css`, et le caret texte masqué. Les pages dashboard sans Clerk affichent les données de démo ou un skeleton — pas de contenu aléatoire.
+**Stabilité des screenshots :** les animations sont désactivées (`animations: 'disabled'`), les transitions CSS neutralisées via `e2e/visual-stability.css` (qui force aussi `-webkit-font-smoothing: antialiased`), et le caret texte masqué. Pour `/dashboard`, on attend `.recharts-surface` (graphiques SVG rendus) en plus du `h1`, puis un `settleMs` de 3000 ms pour laisser recharts stabiliser son rendu asynchrone. Les pages dashboard sans Clerk affichent les données de démo ou un skeleton — pas de contenu aléatoire.
 
 **Cross-plateforme :** les baselines sont générés sur macOS (suffixe `-darwin`). En CI (Linux), un script copie les baselines `-darwin` vers `-linux` avant l'exécution. Le seuil de 0.2 % absorbe les micro-différences de rendu (anti-aliasing des fonts).
 
