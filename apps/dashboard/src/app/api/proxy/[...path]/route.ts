@@ -1,18 +1,7 @@
 import type { NextRequest } from 'next/server';
+import { forwardedHeaders } from '../forwarded-headers';
 
 const API_ORIGIN = process.env.API_URL || 'http://127.0.0.1:4000';
-
-function forwardedHeaders(req: NextRequest) {
-  const cookie = req.headers.get('cookie') || '';
-  const forwardedFor = req.headers.get('x-forwarded-for') || '';
-  const requestId = req.headers.get('x-request-id') || '';
-
-  const headers: Record<string, string> = {};
-  if (cookie) headers.Cookie = cookie;
-  if (forwardedFor) headers['X-Forwarded-For'] = forwardedFor;
-  if (requestId) headers['X-Request-ID'] = requestId;
-  return headers;
-}
 
 async function parseResponse(res: Response) {
   const text = await res.text();
