@@ -54,3 +54,9 @@ apps/api/scratch/
 *.log
 *.mp3
 *.cpuprofile
+
+# Playwright E2E artifacts
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache

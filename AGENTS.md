@@ -34,7 +34,9 @@ pnpm node:check
 pnpm dev        # API + dashboard dev
 pnpm build      # production build
 pnpm test       # Vitest
-pnpm lint       # lint
+pnpm lint       # turbo lint + stylelint (CSS)
+pnpm lint:css   # stylelint sur apps/*/src/**/*.css (garde-fou CSS dashboard)
+pnpm test:e2e   # Playwright dashboard (3 viewports : iPhone 14, iPad Mini, desktop)
 
 # Base de données
 pnpm db:push    # synchroniser le schema
@@ -81,6 +83,7 @@ Utilisé pour les tests voice / MCP en local avant d'avoir un vrai pilote.
 - Interactive elements should include `transition-all duration-200`.
 - Layouts should be spacious (`p-6`/`p-8`) and responsive at iPad width.
 - Marketing pages should stay static when possible (`○`, not `ƒ`).
+- **Garde-fou CSS (stylelint)** : `pnpm lint:css` verrouille les règles ci-dessous dans `apps/*/src/**/*.css` (config `.stylelintrc.json` racine). Pas de sélecteurs d'éléments structurels bruts (`header`, `main`, `section`, `nav`, `footer`, `aside`, `article`, `button`, `div`) — ils causent des bugs globaux quand ils sont stylés dans `globals.css` (incident `header { position: fixed }` de juillet 2026). Pas de couleurs hex (`#fff`), pas de `!important` (sauf exemption commentée `stylelint-disable-next-line` pour l'accessibilité), pas de z-index arbitraires (échelle 0-50 ou `var(--z-*)`), `font-size` en `rem`/`em` uniquement.
 - **Ton copy : `vous` partout, jamais `tu`.** Sokar est un SaaS B2B facturé mensuellement à des gérants de restaurant (40-60 ans, non-dev). Le `tu` sent le consumer/developer-tool. Inclut : onboarding (steps, modal, guard, dashboard), tooltips, messages d'erreur, bannières, copy marketing. Le pronom indéfini `on` → `nous` dans le copy user-facing (OK dans les commentaires de code). Un test Vitest (`onboarding-tone.test.ts`) verrouille la convention.
 
 ## Mac migration (one-off)
