@@ -3,42 +3,16 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Activity,
   AlertCircle,
   CalendarCheck,
-  CheckCircle2,
-  Clock3,
-  Euro,
-  MessageCircle,
+  ChevronRight,
   PhoneCall,
   RefreshCw,
-  TrendingUp,
-  Utensils,
   Users,
-  Waves,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApi } from '../../lib/api';
-import GaugeDial from '@/components/GaugeDial';
-
-// recharts pèse ~387 KB — on le charge en dynamic import pour ne pas
-// bloquer le First Load JS du dashboard. Les KPIs et le header s'affichent
-// immédiatement, les graphiques hydratent en arrière-plan.
-const DashboardCharts = dynamic(() => import('./DashboardCharts'), {
-  loading: () => (
-    <section className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm md:p-6">
-        <Skeleton className="mb-5 h-6 w-48" />
-        <Skeleton className="h-[320px] w-full rounded-xl" />
-      </div>
-      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm md:p-6">
-        <Skeleton className="mb-5 h-6 w-40" />
-        <Skeleton className="h-[320px] w-full rounded-xl" />
-      </div>
-    </section>
-  ),
-});
 
 const EmptySlotsWidget = dynamic(() => import('./EmptySlotsWidget'), {
   ssr: false,
@@ -212,161 +186,314 @@ export default function DashboardPage() {
   if (isLoading) return <DashboardSkeleton />;
 
   return (
-    <div className="select-none space-y-4 md:space-y-5">
-      <header className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-center">
-        <div className="min-w-0 rounded-[1.35rem] border border-border bg-card/75 p-4 shadow-sm md:p-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-brand/20 bg-brand/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-brand">
-              <Activity size={12} />
-              Analytics restaurant
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/20 bg-success/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-success">
-              <CheckCircle2 size={12} />
-              Agent actif
-            </span>
-          </div>
-          <h1 className="mt-2 text-2xl font-black leading-[1.08] tracking-tight text-foreground md:text-4xl font-display">
-            Ce que Sokar vous rapporte
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground font-sans">
-            Appels captés, réservations confirmées, couverts générés et revenu estimé sur la
-            période, présentés comme un cockpit opérationnel pour votre restaurant.
-          </p>
-          {!error && !hasData && (
-            <p className="mt-3 text-sm text-warning">
-              Pas encore de données pour cette période — les KPI apparaîtront dès que Sokar reçoit
-              des appels ou confirme des réservations.
-            </p>
-          )}
-        </div>
-
-        <div className="grid w-full grid-cols-3 gap-1.5 rounded-full border border-border bg-card/75 p-1.5 shadow-sm lg:justify-self-end">
-          {PERIOD_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => setPeriod(option.value)}
-              className={`min-w-0 rounded-full px-3 py-2 text-center transition-all duration-200 ${
-                period === option.value
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-              }`}
-            >
-              <span className="block truncate text-xs font-black uppercase tracking-wider">
-                {option.label}
-              </span>
-              <span className="hidden text-[10px] font-medium leading-tight md:block">
-                {option.description}
-              </span>
-            </button>
-          ))}
-        </div>
-      </header>
-
+    <div className="select-none space-y-3">
+      <h1 className="sr-only">Tableau de bord Sokar</h1>
       {error && (
         <ErrorState message={error} onRetry={() => setRefreshNonce((nonce) => nonce + 1)} />
       )}
 
+      {!error && !hasData && (
+        <p className="rounded-[1.15rem] border border-warning/25 bg-warning/10 px-4 py-3 text-sm text-warning">
+          Pas encore de données pour cette période — les KPI apparaîtront dès que Sokar reçoit des
+          appels ou confirme des réservations.
+        </p>
+      )}
+
       {!error && hasData && (
-        <section className="grid gap-3 xl:grid-cols-[1.05fr_1.55fr]">
-          <article className="relative min-h-[28rem] overflow-hidden rounded-[1.6rem] border border-border bg-card p-5 shadow-sm md:p-6">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_32%_22%,hsl(var(--accent-cyan)/0.20),transparent_28%),radial-gradient(circle_at_86%_8%,hsl(var(--brand)/0.14),transparent_26%)]" />
-            <div className="relative z-10 flex h-full flex-col justify-between gap-6">
-              <div className="flex items-start justify-between gap-4">
+        <section className="grid gap-3 lg:grid-cols-[1.2fr_0.88fr]">
+          <div className="space-y-3">
+            <article className="rounded-[1.35rem] border border-border bg-card p-4 shadow-sm md:p-5">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
-                    Agent vocal
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-brand">
+                      <PhoneCall size={15} />
+                    </span>
+                    <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+                      Suivi des réservations
+                    </h2>
+                  </div>
+                  <p className="mt-1 max-w-md text-[11px] leading-5 text-muted-foreground">
+                    Réservations générées par Sokar et progression des appels transformés.
                   </p>
-                  <h2 className="mt-2 text-3xl font-black tracking-tight text-foreground md:text-4xl">
-                    Réception augmentée
-                  </h2>
                 </div>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-success/20 bg-success/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-success">
-                  <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                  En ligne
-                </span>
+                <PeriodSelect period={period} onChange={setPeriod} />
               </div>
 
-              <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
-                <div className="relative min-h-52 rounded-[1.4rem] border border-border bg-secondary/50 p-4">
-                  <div className="absolute left-5 top-5 flex items-center gap-2 rounded-full border border-border bg-card/80 px-3 py-2 shadow-sm">
-                    <PhoneCall size={15} className="text-brand" />
-                    <span className="text-xs font-bold text-foreground">Appel entrant</span>
-                  </div>
-                  <div className="absolute bottom-5 left-5 right-5 rounded-[1.1rem] border border-border bg-card/85 p-4 shadow-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-                          Conversion
-                        </p>
-                        <p className="mt-1 text-2xl font-black text-foreground">
-                          {stats.conversionRate}%
-                        </p>
-                      </div>
-                      <div className="flex h-12 items-end gap-1">
-                        {[32, 48, 36, 62, 44, 70, 54, 82].map((height, index) => (
-                          <span
-                            key={index}
-                            className="w-1.5 rounded-full bg-brand/70"
-                            style={{ height }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="absolute right-7 top-20 flex h-24 w-24 items-center justify-center rounded-full border border-border bg-card/70 shadow-sm">
-                    <Waves size={34} className="text-accent-cyan" />
-                  </div>
+              <div className="mt-4 grid gap-4 md:grid-cols-[9rem_1fr] md:items-end">
+                <div>
+                  <p className="text-3xl font-semibold tracking-tight text-foreground">
+                    +{stats.conversionRate}%
+                  </p>
+                  <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+                    Taux appels vers réservations sur la période.
+                  </p>
                 </div>
+                <TrackerChart analytics={analytics} />
+              </div>
+            </article>
 
-                <GaugeDial
-                  value={stats.answeredRate}
-                  label="Taux de réponse"
-                  sublabel="des appels reçus"
-                  size={190}
-                  strokeWidth={12}
-                  accentClassName="text-brand"
+            <div className="grid gap-3 md:grid-cols-[0.8fr_1fr]">
+              <article className="rounded-[1.2rem] border border-border bg-card/90 p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-foreground">Clients récents</h3>
+                  <span className="text-[10px] font-medium text-muted-foreground">Voir tout</span>
+                </div>
+                <div className="space-y-2">
+                  <ContactRow name="Pierre Dubois" label="VIP" meta="Table pour 4 ce soir" />
+                  <ContactRow name="Claire Martin" label="Nouveau" meta="Demande terrasse" />
+                </div>
+              </article>
+
+              <article className="relative overflow-hidden rounded-[1.2rem] border border-border bg-card/90 p-4 shadow-sm">
+                <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[repeating-linear-gradient(110deg,hsl(var(--border))_0,hsl(var(--border))_1px,transparent_1px,transparent_7px)] opacity-40" />
+                <div className="relative z-10 max-w-[72%]">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Optimisation automatique
+                  </h3>
+                  <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+                    Sokar priorise les créneaux à fort potentiel et relance les demandes utiles.
+                  </p>
+                  <button
+                    type="button"
+                    className="mt-4 inline-flex h-8 w-full max-w-44 items-center justify-between rounded-full bg-primary px-4 text-[11px] font-semibold text-primary-foreground transition-all duration-200 hover:opacity-90"
+                  >
+                    Voir les actions
+                    <ChevronRight size={13} />
+                  </button>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <article className="rounded-[1.25rem] border border-border bg-card/85 p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-foreground">Activité récente</h3>
+                <span className="text-[10px] font-medium text-muted-foreground">Tout voir</span>
+              </div>
+              <div className="space-y-3">
+                <ActivityRow
+                  icon={PhoneCall}
+                  title="Appels reçus"
+                  value={`${stats.totalCalls.toLocaleString('fr-FR')}`}
+                  badge="Live"
+                  tone="brand"
+                />
+                <ActivityRow
+                  icon={CalendarCheck}
+                  title="Réservations confirmées"
+                  value={`${stats.totalReservations.toLocaleString('fr-FR')}`}
+                  badge="Auto"
+                  tone="success"
+                />
+                <ActivityRow
+                  icon={Users}
+                  title="Couverts générés"
+                  value={`${stats.covers.toLocaleString('fr-FR')}`}
+                  badge="Service"
+                  tone="blue"
                 />
               </div>
+            </article>
 
-              <div className="grid grid-cols-3 gap-2">
-                <MiniSignal icon={Clock3} label="Latence" value="< 3 s" />
-                <MiniSignal icon={MessageCircle} label="Rappels" value="SMS" />
-                <MiniSignal icon={Utensils} label="Service" value="Midi & soir" />
+            <article className="rounded-[1.25rem] border border-border bg-card/85 p-4 shadow-sm">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-foreground">Progression commerciale</h3>
+                <span className="text-[10px] font-medium text-muted-foreground">
+                  Période active
+                </span>
               </div>
-            </div>
-          </article>
-
-          <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <KpiCard label="Appels reçus" value={stats.totalCalls} icon={PhoneCall} />
-            <KpiCard
-              label="Réservations confirmées"
-              value={stats.totalReservations}
-              icon={CalendarCheck}
-            />
-            <KpiCard label="Couverts" value={stats.covers} icon={Users} />
-            <KpiCard
-              label="Taux appels → résa"
-              value={`${stats.conversionRate}%`}
-              icon={TrendingUp}
-            />
-            <KpiCard
-              label="Revenu estimé"
-              value={`${stats.estimatedRevenue.toLocaleString('fr-FR')} €`}
-              icon={Euro}
-              featured
-              className="col-span-2 sm:col-span-4"
-            />
-          </section>
+              <div className="grid grid-cols-3 divide-x divide-border rounded-2xl border border-border bg-secondary/45">
+                <MetricCell
+                  label="Revenu"
+                  value={`${Math.round(stats.estimatedRevenue / 1000)}k€`}
+                />
+                <MetricCell label="Réserv." value={stats.totalReservations} />
+                <MetricCell label="Réponse" value={`${stats.answeredRate}%`} />
+              </div>
+              <div className="mt-4 flex h-16 items-end gap-1">
+                {[
+                  38, 46, 44, 52, 48, 60, 55, 68, 62, 74, 66, 78, 72, 82, 76, 88, 80, 92, 84, 90,
+                ].map((height, index) => (
+                  <span
+                    key={index}
+                    className="flex-1 rounded-full bg-brand/45"
+                    style={{ height }}
+                  />
+                ))}
+              </div>
+            </article>
+          </div>
         </section>
       )}
 
-      <section className="space-y-4">
-        <EmptySlotsWidget />
-        <NoShowWidget />
-      </section>
+      {!error && hasData && (
+        <section className="grid gap-3 lg:grid-cols-2">
+          <EmptySlotsWidget />
+          <NoShowWidget />
+        </section>
+      )}
+    </div>
+  );
+}
 
-      <DashboardCharts analytics={analytics} />
+function PeriodSelect({
+  period,
+  onChange,
+}: {
+  period: Period;
+  onChange: (period: Period) => void;
+}) {
+  return (
+    <div className="grid w-28 grid-cols-1 rounded-full border border-border bg-secondary/70 p-1 md:w-24">
+      <select
+        value={period}
+        onChange={(event) => onChange(event.target.value as Period)}
+        className="h-8 rounded-full border-0 bg-card px-3 text-[11px] font-semibold text-foreground shadow-sm outline-none transition-all duration-200"
+        aria-label="Choisir la période"
+      >
+        {PERIOD_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function TrackerChart({ analytics }: { analytics: AnalyticsPoint[] }) {
+  const maxReservations = Math.max(...analytics.map((item) => item.reservations), 1);
+  const maxCalls = Math.max(...analytics.map((item) => item.calls), 1);
+
+  return (
+    <div className="relative min-h-48 rounded-[1.1rem] bg-gradient-to-b from-transparent to-secondary/40 px-2 pb-2 pt-6">
+      <div className="absolute left-1/2 top-2 -translate-x-1/2 rounded-full bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground shadow-sm">
+        {analytics.reduce((sum, item) => sum + item.revenue, 0).toLocaleString('fr-FR')} €
+      </div>
+      <div className="flex h-40 items-end justify-between gap-2">
+        {analytics.map((item, index) => {
+          const reservationHeight = Math.max(24, (item.reservations / maxReservations) * 112);
+          const callTop = Math.max(10, 128 - (item.calls / maxCalls) * 112);
+          const active = index === Math.floor(analytics.length / 2);
+
+          return (
+            <div key={item.label} className="flex min-w-0 flex-1 flex-col items-center gap-2">
+              <div className="relative h-32 w-full">
+                <span className="absolute bottom-0 left-1/2 h-full w-px -translate-x-1/2 bg-border" />
+                <span
+                  className="absolute left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-accent-cyan shadow-sm"
+                  style={{ top: callTop }}
+                />
+                <span
+                  className="absolute bottom-0 left-1/2 w-1 -translate-x-1/2 rounded-full bg-brand/55"
+                  style={{ height: reservationHeight }}
+                />
+              </div>
+              <span
+                className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold ${
+                  active
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'bg-secondary text-muted-foreground'
+                }`}
+              >
+                {item.label.charAt(0).toUpperCase()}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ActivityRow({
+  icon: Icon,
+  title,
+  value,
+  badge,
+  tone,
+}: {
+  icon: LucideIcon;
+  title: string;
+  value: string;
+  badge: string;
+  tone: 'brand' | 'success' | 'blue';
+}) {
+  const toneClass =
+    tone === 'brand'
+      ? 'bg-brand/12 text-brand'
+      : tone === 'success'
+        ? 'bg-success/12 text-success'
+        : 'bg-accent-cyan/12 text-accent-cyan';
+
+  return (
+    <div className="rounded-[1rem] border border-border bg-secondary/35 p-3">
+      <div className="flex items-start gap-3">
+        <span
+          className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${toneClass}`}
+        >
+          <Icon size={16} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-sm font-semibold text-foreground">{title}</p>
+            <span className="rounded-full bg-card px-2 py-0.5 text-[9px] font-bold text-foreground shadow-sm">
+              {badge}
+            </span>
+          </div>
+          <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+            Donnée consolidée depuis les appels et réservations Sokar.
+          </p>
+          <p className="mt-2 text-xs font-semibold text-foreground">{value}</p>
+        </div>
+        <button
+          type="button"
+          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-card text-muted-foreground shadow-sm transition-all duration-200 hover:text-foreground"
+          aria-label={`Ouvrir ${title}`}
+        >
+          <ChevronRight size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ContactRow({ name, label, meta }: { name: string; label: string; meta: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-[1rem] bg-secondary/35 p-2">
+      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-card text-xs font-semibold text-foreground shadow-sm">
+        {name
+          .split(' ')
+          .map((part) => part[0])
+          .join('')}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="truncate text-xs font-semibold text-foreground">{name}</p>
+          <span className="rounded-full bg-brand/10 px-1.5 py-0.5 text-[8px] font-bold uppercase text-brand">
+            {label}
+          </span>
+        </div>
+        <p className="truncate text-[10px] text-muted-foreground">{meta}</p>
+      </div>
+      <button
+        type="button"
+        className="flex h-6 w-6 items-center justify-center rounded-full bg-card text-muted-foreground shadow-sm transition-all duration-200 hover:text-foreground"
+        aria-label={`Ouvrir ${name}`}
+      >
+        <ChevronRight size={12} />
+      </button>
+    </div>
+  );
+}
+
+function MetricCell({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="p-3">
+      <p className="text-[10px] leading-4 text-muted-foreground">{label}</p>
+      <p className="mt-1 text-base font-semibold text-foreground">{value}</p>
     </div>
   );
 }
@@ -468,26 +595,19 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 
 function DashboardSkeleton() {
   return (
-    <div className="space-y-6 md:space-y-8">
-      <div className="grid gap-5 pb-2 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:items-start">
-        <div className="min-w-0 space-y-3">
-          <Skeleton className="h-4 w-40 rounded-full" />
-          <Skeleton className="h-10 w-80 rounded-xl" />
-          <Skeleton className="h-4 w-96 max-w-full rounded-full" />
+    <div className="space-y-3">
+      <div className="grid gap-3 lg:grid-cols-[1.2fr_0.88fr]">
+        <div className="space-y-3">
+          <Skeleton className="h-[18rem] rounded-[1.35rem] border border-border" />
+          <div className="grid gap-3 md:grid-cols-2">
+            <Skeleton className="h-32 rounded-[1.2rem] border border-border" />
+            <Skeleton className="h-32 rounded-[1.2rem] border border-border" />
+          </div>
         </div>
-        <Skeleton className="h-14 w-full rounded-2xl lg:justify-self-end" />
-      </div>
-      <div className="grid gap-3 xl:grid-cols-[0.9fr_1.6fr]">
-        <Skeleton className="h-64 rounded-2xl border border-border" />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[1, 2, 3, 4].map((item) => (
-            <Skeleton key={item} className="h-36 rounded-2xl border border-border" />
-          ))}
+        <div className="space-y-3">
+          <Skeleton className="h-[16rem] rounded-[1.25rem] border border-border" />
+          <Skeleton className="h-[12rem] rounded-[1.25rem] border border-border" />
         </div>
-      </div>
-      <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-        <Skeleton className="h-[420px] rounded-2xl border border-border" />
-        <Skeleton className="h-[420px] rounded-2xl border border-border" />
       </div>
     </div>
   );
