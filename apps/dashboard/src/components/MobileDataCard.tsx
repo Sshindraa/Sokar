@@ -127,7 +127,7 @@ export default function MobileDataCard({
               }}
               className={cn(
                 'w-[68px] flex flex-col items-center justify-center gap-1 text-[10px] font-bold text-white transition-opacity active:opacity-75',
-                act.colorClass || 'bg-brand',
+                act.colorClass || 'bg-cyan-600',
               )}
             >
               {act.icon && <div className="text-white">{act.icon}</div>}

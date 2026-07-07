@@ -25,15 +25,10 @@ function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <article className="rounded-[1.35rem] border border-border bg-card/85 p-4 shadow-sm md:p-5">
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-base font-black tracking-tight text-foreground font-display">
-            {title}
-          </h2>
-          <p className="mt-1 text-xs font-medium text-muted-foreground">{subtitle}</p>
-        </div>
-        <span className="mt-1 h-2 w-2 rounded-full bg-brand/70" />
+    <article className="rounded-2xl border border-border bg-card p-4 shadow-sm md:p-6">
+      <div className="mb-5">
+        <h2 className="text-lg font-black tracking-tight text-foreground font-display">{title}</h2>
+        <p className="mt-1 text-xs font-medium text-muted-foreground">{subtitle}</p>
       </div>
       {children}
     </article>
@@ -69,19 +64,19 @@ function ChartTooltip({
 export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoint[] }) {
   const { theme } = useDashboardTheme();
   const isLight = theme === 'light';
-  const axisColor = isLight ? 'hsl(218 24% 15% / 0.42)' : 'hsl(60 13% 95.5% / 0.4)';
-  const gridColor = isLight ? 'hsl(218 24% 15% / 0.08)' : 'hsl(60 13% 95.5% / 0.1)';
+  const axisColor = isLight ? 'hsl(0 0% 6.7% / 0.4)' : 'hsl(60 13% 95.5% / 0.4)';
+  const gridColor = isLight ? 'hsl(0 0% 6.7% / 0.08)' : 'hsl(60 13% 95.5% / 0.1)';
   // Couleurs alignées sur les tokens sémantiques (pas de bleu hardcodé).
-  const callsColor = isLight ? 'hsl(8 74% 56%)' : 'hsl(38 7.8% 52%)';
-  const reservationsColor = isLight ? 'hsl(149 26% 42%)' : 'hsl(152 18% 48%)';
+  const callsColor = isLight ? 'hsl(38 7.8% 52%)' : 'hsl(38 7.8% 52%)';
+  const reservationsColor = isLight ? 'hsl(139 13% 48%)' : 'hsl(152 18% 48%)';
 
   return (
-    <section className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
+    <section className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
       <ChartCard
         title="Appels et réservations"
         subtitle="Le volume entrant comparé aux réservations confirmées."
       >
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={320}>
           <AreaChart data={analytics} margin={{ left: -18, right: 10, top: 10, bottom: 0 }}>
             <defs>
               <linearGradient id="callsGradient" x1="0" y1="0" x2="0" y2="1">
@@ -118,7 +113,7 @@ export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoi
       </ChartCard>
 
       <ChartCard title="Couverts générés" subtitle="Nombre de personnes réservées via Sokar.">
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={320}>
           <BarChart data={analytics} margin={{ left: -18, right: 10, top: 10, bottom: 0 }}>
             <CartesianGrid stroke={gridColor} vertical={false} />
             <XAxis dataKey="label" stroke={axisColor} tickLine={false} axisLine={false} />
