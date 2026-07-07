@@ -111,7 +111,7 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: 'npx next dev',
+    command: 'pnpm next dev',
     url: 'http://localhost:3000/dashboard',
     timeout: 180_000,
     reuseExistingServer: !process.env.CI,
