@@ -70,9 +70,9 @@ function DemoModeToggle() {
       type="button"
       onClick={() => setDemoMode(!demoMode)}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-200',
+        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold shadow-sm transition-all duration-200',
         demoMode
-          ? 'border-warning/50 bg-warning/10 text-warning'
+          ? 'border-warning/40 bg-warning/10 text-warning'
           : 'border-border bg-card/80 text-muted-foreground hover:bg-accent hover:text-foreground',
       )}
       title={demoMode ? 'Désactiver le mode démo' : 'Voir le produit avec des données de démo'}
@@ -91,12 +91,11 @@ function ThemeToggle() {
     <button
       type="button"
       onClick={toggleTheme}
-      className="inline-flex h-9 flex-shrink-0 items-center justify-center gap-2 rounded-full border border-border bg-card/80 px-3 text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground"
+      className="inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-border bg-card/85 text-muted-foreground shadow-sm transition-all duration-200 hover:bg-accent hover:text-foreground"
       title={isLight ? 'Passer en mode sombre' : 'Passer en mode clair'}
       aria-label={isLight ? 'Passer en mode sombre' : 'Passer en mode clair'}
     >
       {isLight ? <Moon size={16} /> : <Sun size={16} />}
-      <span className="hidden text-sm font-medium md:inline">Thème</span>
     </button>
   );
 }
@@ -106,17 +105,27 @@ function DashboardShell({ children }: { children: ReactNode }) {
   const { theme } = useDashboardTheme();
 
   return (
-    <div className={cn(theme, 'sokar-page relative min-h-screen overflow-hidden pt-4 md:pt-6')}>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,hsl(var(--foreground)/0.10),transparent_36%),linear-gradient(hsl(var(--border)/0.18)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.14)_1px,transparent_1px)] bg-[auto,72px_72px,72px_72px] opacity-70" />
+    <div
+      className={cn(
+        theme,
+        'sokar-page relative min-h-screen overflow-hidden px-3 py-3 md:px-8 md:py-8',
+      )}
+    >
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,hsl(var(--card)/0.38),transparent_30%),linear-gradient(hsl(var(--card)/0.14)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--card)/0.12)_1px,transparent_1px)] bg-[auto,80px_80px,80px_80px] opacity-80" />
       {hasClerkKey && <SyncOrganization />}
       <DashboardOnboardingGate />
       <OnboardingModal />
-      <div className="sokar-container relative z-10 px-4 py-3 md:px-8 md:py-4 pb-24 md:pb-8">
-        <div className="mb-3 md:mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      <div className="relative z-10 mx-auto w-full max-w-7xl overflow-hidden rounded-[1.75rem] border border-card/70 bg-card/70 p-3 shadow-[0_24px_80px_hsl(var(--foreground)/0.18)] backdrop-blur-2xl md:rounded-[2rem] md:p-4">
+        <div className="mb-3 flex flex-col gap-3 rounded-[1.35rem] border border-border/70 bg-card/80 px-3 py-3 shadow-sm md:mb-4 md:flex-row md:items-center md:justify-between md:px-4">
           <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground shadow-sm">
+              <Sparkles size={16} />
+            </div>
             <div>
-              <p className="text-xs md:text-sm text-muted-foreground">Sokar OS</p>
-              <h1 className="mt-0.5 md:mt-1 text-xl md:text-3xl font-semibold tracking-tight">
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground md:text-xs">
+                Sokar OS
+              </p>
+              <h1 className="mt-0.5 text-lg font-semibold tracking-tight md:text-xl">
                 Tableau de bord
               </h1>
             </div>
@@ -124,7 +133,7 @@ function DashboardShell({ children }: { children: ReactNode }) {
           </div>
           <div className="flex min-w-0 max-w-full items-center gap-2">
             {/* Desktop nav pills — hidden on mobile (bottom nav replaces it) */}
-            <nav className="dashboard-nav-scroll hidden md:flex min-w-0 flex-1 gap-2 overflow-x-auto rounded-full border border-border bg-card/80 p-2 backdrop-blur-xl snap-x">
+            <nav className="dashboard-nav-scroll hidden min-w-0 flex-1 snap-x gap-1 overflow-x-auto rounded-full border border-border bg-secondary/70 p-1.5 backdrop-blur-xl md:flex">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const active = pathname === item.href;
@@ -134,9 +143,9 @@ function DashboardShell({ children }: { children: ReactNode }) {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      'snap-start inline-flex items-center gap-2 rounded-full px-4 py-2.5 min-h-[44px] text-sm font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground whitespace-nowrap touch-manipulation',
+                      'snap-start inline-flex min-h-[38px] items-center gap-2 whitespace-nowrap rounded-full px-3 py-2 text-xs font-semibold text-muted-foreground transition-all duration-200 touch-manipulation hover:bg-card hover:text-foreground',
                       active &&
-                        'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground',
+                        'bg-card text-foreground shadow-sm hover:bg-card hover:text-foreground',
                     )}
                   >
                     <Icon size={16} />
@@ -149,7 +158,9 @@ function DashboardShell({ children }: { children: ReactNode }) {
           </div>
         </div>
         <DashboardOnboardingPanel />
-        <main className="min-h-[calc(100vh-12rem)] md:min-h-[calc(100vh-14rem)]">{children}</main>
+        <main className="min-h-[calc(100vh-12rem)] rounded-[1.35rem] md:min-h-[calc(100vh-14rem)]">
+          {children}
+        </main>
       </div>
       {/* Mobile bottom tab bar */}
       <MobileBottomNav />

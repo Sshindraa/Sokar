@@ -3,14 +3,21 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Activity,
   AlertCircle,
   CalendarCheck,
+  CheckCircle2,
+  Clock3,
   Euro,
+  MessageCircle,
   PhoneCall,
   RefreshCw,
   TrendingUp,
+  Utensils,
   Users,
+  Waves,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApi } from '../../lib/api';
 import GaugeDial from '@/components/GaugeDial';
@@ -205,18 +212,25 @@ export default function DashboardPage() {
   if (isLoading) return <DashboardSkeleton />;
 
   return (
-    <div className="space-y-6 md:space-y-8 select-none">
-      <header className="grid gap-5 pb-2 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:items-start">
-        <div className="min-w-0">
-          <p className="text-xs font-bold uppercase tracking-[0.28em] text-brand">
-            Analytics restaurant
-          </p>
+    <div className="select-none space-y-4 md:space-y-5">
+      <header className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-center">
+        <div className="min-w-0 rounded-[1.35rem] border border-border bg-card/75 p-4 shadow-sm md:p-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-brand/20 bg-brand/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-brand">
+              <Activity size={12} />
+              Analytics restaurant
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/20 bg-success/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-success">
+              <CheckCircle2 size={12} />
+              Agent actif
+            </span>
+          </div>
           <h1 className="mt-2 text-2xl font-black leading-[1.08] tracking-tight text-foreground md:text-4xl font-display">
             Ce que Sokar vous rapporte
           </h1>
-          <p className="mt-2 max-w-xl text-sm text-muted-foreground font-sans">
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground font-sans">
             Appels captés, réservations confirmées, couverts générés et revenu estimé sur la
-            période.
+            période, présentés comme un cockpit opérationnel pour votre restaurant.
           </p>
           {!error && !hasData && (
             <p className="mt-3 text-sm text-warning">
@@ -226,15 +240,15 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <div className="grid w-full grid-cols-3 gap-2 rounded-2xl border border-border bg-card p-1.5 shadow-sm lg:justify-self-end">
+        <div className="grid w-full grid-cols-3 gap-1.5 rounded-full border border-border bg-card/75 p-1.5 shadow-sm lg:justify-self-end">
           {PERIOD_OPTIONS.map((option) => (
             <button
               key={option.value}
               type="button"
               onClick={() => setPeriod(option.value)}
-              className={`min-w-0 rounded-xl px-2 py-2 text-left transition-all duration-200 sm:px-3 ${
+              className={`min-w-0 rounded-full px-3 py-2 text-center transition-all duration-200 ${
                 period === option.value
-                  ? 'bg-brand text-brand-foreground shadow-[0_0_24px_hsl(var(--brand)/0.35)]'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground'
               }`}
             >
@@ -254,18 +268,73 @@ export default function DashboardPage() {
       )}
 
       {!error && hasData && (
-        <section className="grid gap-3 xl:grid-cols-[0.9fr_1.6fr]">
-          {/* Jauge en héros — taux de réponse aux appels, façon cockpit */}
-          <article className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-            <span className="mb-1 inline-flex items-center gap-1.5 rounded-full border border-success/25 bg-success/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-success">
-              <span className="h-1.5 w-1.5 rounded-full bg-success" />
-              Agent vocal actif
-            </span>
-            <GaugeDial
-              value={stats.answeredRate}
-              label="Taux de réponse"
-              sublabel="des appels reçus"
-            />
+        <section className="grid gap-3 xl:grid-cols-[1.05fr_1.55fr]">
+          <article className="relative min-h-[28rem] overflow-hidden rounded-[1.6rem] border border-border bg-card p-5 shadow-sm md:p-6">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_32%_22%,hsl(var(--accent-cyan)/0.20),transparent_28%),radial-gradient(circle_at_86%_8%,hsl(var(--brand)/0.14),transparent_26%)]" />
+            <div className="relative z-10 flex h-full flex-col justify-between gap-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
+                    Agent vocal
+                  </p>
+                  <h2 className="mt-2 text-3xl font-black tracking-tight text-foreground md:text-4xl">
+                    Réception augmentée
+                  </h2>
+                </div>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-success/20 bg-success/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-success">
+                  <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                  En ligne
+                </span>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+                <div className="relative min-h-52 rounded-[1.4rem] border border-border bg-secondary/50 p-4">
+                  <div className="absolute left-5 top-5 flex items-center gap-2 rounded-full border border-border bg-card/80 px-3 py-2 shadow-sm">
+                    <PhoneCall size={15} className="text-brand" />
+                    <span className="text-xs font-bold text-foreground">Appel entrant</span>
+                  </div>
+                  <div className="absolute bottom-5 left-5 right-5 rounded-[1.1rem] border border-border bg-card/85 p-4 shadow-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
+                          Conversion
+                        </p>
+                        <p className="mt-1 text-2xl font-black text-foreground">
+                          {stats.conversionRate}%
+                        </p>
+                      </div>
+                      <div className="flex h-12 items-end gap-1">
+                        {[32, 48, 36, 62, 44, 70, 54, 82].map((height, index) => (
+                          <span
+                            key={index}
+                            className="w-1.5 rounded-full bg-brand/70"
+                            style={{ height }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="absolute right-7 top-20 flex h-24 w-24 items-center justify-center rounded-full border border-border bg-card/70 shadow-sm">
+                    <Waves size={34} className="text-accent-cyan" />
+                  </div>
+                </div>
+
+                <GaugeDial
+                  value={stats.answeredRate}
+                  label="Taux de réponse"
+                  sublabel="des appels reçus"
+                  size={190}
+                  strokeWidth={12}
+                  accentClassName="text-brand"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <MiniSignal icon={Clock3} label="Latence" value="< 3 s" />
+                <MiniSignal icon={MessageCircle} label="Rappels" value="SMS" />
+                <MiniSignal icon={Utensils} label="Service" value="Midi & soir" />
+              </div>
+            </div>
           </article>
 
           <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -292,7 +361,7 @@ export default function DashboardPage() {
         </section>
       )}
 
-      <section className="space-y-6">
+      <section className="space-y-4">
         <EmptySlotsWidget />
         <NoShowWidget />
       </section>
@@ -311,16 +380,16 @@ function KpiCard({
 }: {
   label: string;
   value: number | string;
-  icon: typeof PhoneCall;
+  icon: LucideIcon;
   featured?: boolean;
   className?: string;
 }) {
   return (
     <article
-      className={`rounded-2xl border p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 ${
+      className={`group relative overflow-hidden rounded-[1.35rem] border p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 ${
         featured
-          ? 'border-brand/25 bg-brand/[0.06] shadow-[0_0_28px_hsl(var(--brand)/0.18)]'
-          : 'border-border bg-card hover:border-foreground/15'
+          ? 'border-brand/25 bg-brand/[0.08] shadow-[0_20px_40px_hsl(var(--brand)/0.10)]'
+          : 'border-border bg-card/85 hover:border-foreground/15'
       } ${className}`}
     >
       <div className="flex items-center justify-between gap-3">
@@ -333,9 +402,10 @@ function KpiCard({
         >
           <Icon size={18} />
         </span>
+        <span className="h-2 w-2 rounded-full bg-muted-foreground/30 transition-all duration-200 group-hover:bg-brand" />
       </div>
       <p
-        className={`mt-5 truncate text-2xl font-black tracking-tight ${
+        className={`mt-6 truncate text-2xl font-black tracking-tight md:text-3xl ${
           featured ? 'text-brand' : 'text-foreground'
         }`}
       >
@@ -344,7 +414,34 @@ function KpiCard({
       <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
+      {featured && (
+        <div className="absolute bottom-4 right-4 hidden h-20 items-end gap-1.5 sm:flex">
+          {[30, 44, 36, 58, 48, 72, 54, 82, 62, 76, 50, 68].map((height, index) => (
+            <span key={index} className="w-1 rounded-full bg-brand/40" style={{ height }} />
+          ))}
+        </div>
+      )}
     </article>
+  );
+}
+
+function MiniSignal({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="min-w-0 rounded-[1rem] border border-border bg-card/75 p-3 shadow-sm">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Icon size={13} />
+        <span className="truncate text-[10px] font-bold uppercase tracking-[0.16em]">{label}</span>
+      </div>
+      <p className="mt-2 truncate text-sm font-black text-foreground">{value}</p>
+    </div>
   );
 }
 
