@@ -206,8 +206,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 md:space-y-8 select-none">
-      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
+      <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0 max-w-2xl">
           <p className="text-xs font-bold uppercase tracking-[0.28em] text-brand">
             Analytics restaurant
           </p>
@@ -226,7 +226,7 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <div className="grid grid-cols-3 gap-2 rounded-2xl border border-border bg-card p-1.5 shadow-sm">
+        <div className="shrink-0 grid grid-cols-3 gap-2 rounded-2xl border border-border bg-card p-1.5 shadow-sm">
           {PERIOD_OPTIONS.map((option) => (
             <button
               key={option.value}
