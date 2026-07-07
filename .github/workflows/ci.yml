@@ -50,8 +50,10 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.8.0
+        # Pas de `version` : pnpm/action-setup@v4 lit automatiquement
+        # `packageManager` dans package.json (pnpm@10.33.3). Spécifier une
+        # version fixe ici causait un mismatch "Multiple versions of pnpm
+        # specified" et fail-fast en CI.
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -83,8 +85,10 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.8.0
+        # Pas de `version` : pnpm/action-setup@v4 lit automatiquement
+        # `packageManager` dans package.json (pnpm@10.33.3). Spécifier une
+        # version fixe ici causait un mismatch "Multiple versions of pnpm
+        # specified" et fail-fast en CI.
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -142,8 +146,10 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.8.0
+        # Pas de `version` : pnpm/action-setup@v4 lit automatiquement
+        # `packageManager` dans package.json (pnpm@10.33.3). Spécifier une
+        # version fixe ici causait un mismatch "Multiple versions of pnpm
+        # specified" et fail-fast en CI.
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -224,8 +230,10 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.8.0
+        # Pas de `version` : pnpm/action-setup@v4 lit automatiquement
+        # `packageManager` dans package.json (pnpm@10.33.3). Spécifier une
+        # version fixe ici causait un mismatch "Multiple versions of pnpm
+        # specified" et fail-fast en CI.
 
       - name: Setup Node
         uses: actions/setup-node@v4
