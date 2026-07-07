@@ -14,9 +14,9 @@ interface DashboardThemeContextValue {
 const DashboardThemeContext = createContext<DashboardThemeContextValue | null>(null);
 
 export function DashboardThemeProvider({ children }: { children: ReactNode }) {
-  // Obsidian dark est le défaut du dashboard. Le mode clair reste disponible
-  // via le toggle en haut à droite et persiste par navigateur.
-  const [theme, setTheme] = useState<DashboardTheme>('dark');
+  // Le dashboard privilégie désormais une surface claire et feutrée, proche
+  // d'un cockpit SaaS premium. Le mode sombre reste disponible et persiste.
+  const [theme, setTheme] = useState<DashboardTheme>('light');
 
   useEffect(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY);

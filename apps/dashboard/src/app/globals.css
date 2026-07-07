@@ -60,19 +60,19 @@
   .dark {
     --background: 0 0% 3.5%;
     --foreground: 60 13% 95.5%;
-    --card: 0 0% 8.6% / 0.8;
+    --card: 0 0% 8.6%;
     --card-foreground: 60 13% 95.5%;
-    --popover: 0 0% 11.4% / 0.96;
+    --popover: 0 0% 11.4%;
     --popover-foreground: 60 13% 95.5%;
     --primary: 43 22% 94%;
     --primary-foreground: 0 0% 6.7%;
     --brand: 38 7.8% 52%;
     --brand-foreground: 60 13% 95.5%;
-    --secondary: 0 0% 11.4% / 0.7;
+    --secondary: 0 0% 11.4%;
     --secondary-foreground: 60 13% 95.5%;
-    --muted: 0 0% 8.6% / 0.8;
+    --muted: 0 0% 8.6%;
     --muted-foreground: 40 7.4% 68.2%;
-    --accent: 0 0% 11.4% / 0.7;
+    --accent: 0 0% 11.4%;
     --accent-foreground: 60 13% 95.5%;
     --destructive: 0 25% 48%;
     --destructive-foreground: 60 13% 95.5%;
@@ -85,46 +85,46 @@
     --border: 0 0% 100% / 0.08;
     --input: 0 0% 100% / 0.12;
     --ring: 38 7.8% 52%;
-    --glass-2: 0 0% 11.4% / 0.7;
+    --glass-2: 0 0% 11.4%;
     --glass-stroke: 0 0% 100% / 0.08;
     --metal: 38 7.8% 52%;
     --faint-foreground: 36 4% 47.5%;
   }
 
   .light {
-    /* Variante claire du même système minéral : pas de bleu, fond ivoire, surfaces
-       blanc cassé, CTA noir, accents métal champagne. */
-    --background: 60 13% 95.5%;
-    --foreground: 0 0% 6.7%;
-    --card: 60 17% 97.6%;
-    --card-foreground: 0 0% 6.7%;
+    /* Cockpit clair inspiré des dashboards SaaS: brume froide, cartes blanches,
+       encre douce, accents corail/sauge pour guider l'oeil sans saturer l'UI. */
+    --background: 219 22% 74%;
+    --foreground: 218 24% 15%;
+    --card: 210 35% 97%;
+    --card-foreground: 218 24% 15%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 6.7%;
-    --primary: 0 0% 6.7%;
-    --primary-foreground: 60 13% 95.5%;
-    --brand: 38 7.8% 52%;
-    --brand-foreground: 60 13% 95.5%;
-    --secondary: 50 17% 93%;
-    --secondary-foreground: 0 0% 6.7%;
-    --muted: 50 17% 93%;
-    --muted-foreground: 38 7.8% 52%;
-    --accent: 50 17% 93%;
-    --accent-foreground: 0 0% 6.7%;
-    --destructive: 0 26% 48%;
-    --destructive-foreground: 60 13% 95.5%;
-    --success: 139 13% 48%;
-    --success-foreground: 60 13% 95.5%;
-    --warning: 36 24% 53%;
-    --warning-foreground: 0 0% 6.7%;
-    --accent-cyan: 38 7.8% 52%;
-    --accent-violet: 270 8% 55%;
-    --border: 43 13% 90%;
-    --input: 43 13% 90%;
-    --ring: 38 7.8% 52%;
-    --glass-2: 50 17% 93%;
-    --glass-stroke: 43 13% 90%;
-    --metal: 38 8% 45%;
-    --faint-foreground: 40 7.4% 68.2%;
+    --popover-foreground: 218 24% 15%;
+    --primary: 218 24% 15%;
+    --primary-foreground: 210 35% 97%;
+    --brand: 8 74% 56%;
+    --brand-foreground: 0 0% 100%;
+    --secondary: 212 31% 92%;
+    --secondary-foreground: 218 24% 15%;
+    --muted: 213 29% 90%;
+    --muted-foreground: 217 13% 44%;
+    --accent: 208 32% 88%;
+    --accent-foreground: 218 24% 15%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 149 26% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 35 78% 54%;
+    --warning-foreground: 218 24% 15%;
+    --accent-cyan: 198 45% 44%;
+    --accent-violet: 263 28% 52%;
+    --border: 214 24% 84%;
+    --input: 214 24% 84%;
+    --ring: 8 74% 56%;
+    --glass-2: 211 33% 94%;
+    --glass-stroke: 214 24% 84%;
+    --metal: 217 13% 44%;
+    --faint-foreground: 217 12% 58%;
   }
 }
 
@@ -149,7 +149,8 @@
   .sokar-page {
     @apply min-h-screen bg-background text-foreground;
     background-image:
-      radial-gradient(circle at top, hsl(var(--foreground) / 0.1), transparent 34rem),
+      radial-gradient(circle at 18% 10%, hsl(var(--card) / 0.58), transparent 24rem),
+      radial-gradient(circle at 80% 0%, hsl(var(--accent-cyan) / 0.18), transparent 28rem),
       linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)));
   }
 
