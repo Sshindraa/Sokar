@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation';
 import {
   BarChart3,
   CalendarCheck,
+  Circle,
   PhoneCall,
   Settings,
   Users,
@@ -108,32 +109,29 @@ function DashboardShell({ children }: { children: ReactNode }) {
     <div
       className={cn(
         theme,
-        'sokar-page relative min-h-screen overflow-hidden px-3 py-3 md:px-8 md:py-8',
+        'sokar-page relative min-h-screen overflow-hidden px-3 py-8 md:px-8 md:py-24',
       )}
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,hsl(var(--card)/0.38),transparent_30%),linear-gradient(hsl(var(--card)/0.14)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--card)/0.12)_1px,transparent_1px)] bg-[auto,80px_80px,80px_80px] opacity-80" />
       {hasClerkKey && <SyncOrganization />}
       <DashboardOnboardingGate />
       <OnboardingModal />
-      <div className="relative z-10 mx-auto w-full max-w-7xl overflow-hidden rounded-[1.75rem] border border-card/70 bg-card/70 p-3 shadow-[0_24px_80px_hsl(var(--foreground)/0.18)] backdrop-blur-2xl md:rounded-[2rem] md:p-4">
-        <div className="mb-3 flex flex-col gap-3 rounded-[1.35rem] border border-border/70 bg-card/80 px-3 py-3 shadow-sm md:mb-4 md:flex-row md:items-center md:justify-between md:px-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground shadow-sm">
+      <div className="relative z-10 mx-auto w-full max-w-4xl overflow-hidden rounded-[1.25rem] border border-card/70 bg-card/78 p-2.5 shadow-[0_24px_80px_hsl(var(--foreground)/0.16)] backdrop-blur-2xl">
+        <div className="mb-2.5 flex flex-col gap-2 rounded-[1rem] border border-border/70 bg-card/82 px-3 py-2 shadow-sm md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-shrink-0 items-center gap-3">
+            <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-brand text-brand-foreground shadow-sm">
               <Sparkles size={16} />
             </div>
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground md:text-xs">
-                Sokar OS
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-foreground">
+                Sokar
               </p>
-              <h1 className="mt-0.5 text-lg font-semibold tracking-tight md:text-xl">
-                Tableau de bord
-              </h1>
             </div>
             <DemoModeToggle />
           </div>
-          <div className="flex min-w-0 max-w-full items-center gap-2">
+          <div className="flex min-w-0 max-w-full items-center gap-3">
             {/* Desktop nav pills — hidden on mobile (bottom nav replaces it) */}
-            <nav className="dashboard-nav-scroll hidden min-w-0 flex-1 snap-x gap-1 overflow-x-auto rounded-full border border-border bg-secondary/70 p-1.5 backdrop-blur-xl md:flex">
+            <nav className="dashboard-nav-scroll hidden min-w-0 flex-1 snap-x gap-5 overflow-x-auto px-1 md:flex">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const active = pathname === item.href;
@@ -143,22 +141,24 @@ function DashboardShell({ children }: { children: ReactNode }) {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      'snap-start inline-flex min-h-[38px] items-center gap-2 whitespace-nowrap rounded-full px-3 py-2 text-xs font-semibold text-muted-foreground transition-all duration-200 touch-manipulation hover:bg-card hover:text-foreground',
-                      active &&
-                        'bg-card text-foreground shadow-sm hover:bg-card hover:text-foreground',
+                      'snap-start inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap text-[10px] font-medium text-muted-foreground transition-all duration-200 touch-manipulation hover:text-foreground',
+                      active && 'text-foreground',
                     )}
                   >
-                    <Icon size={16} />
+                    {active ? <Icon size={13} /> : <Circle size={5} fill="currentColor" />}
                     <span>{item.label}</span>
                   </Link>
                 );
               })}
             </nav>
+            <div className="hidden h-8 w-48 flex-shrink-0 items-center rounded-full border border-border bg-secondary/60 px-3 text-[10px] text-muted-foreground shadow-inner lg:flex">
+              Rechercher une réservation...
+            </div>
             <ThemeToggle />
           </div>
         </div>
         <DashboardOnboardingPanel />
-        <main className="min-h-[calc(100vh-12rem)] rounded-[1.35rem] md:min-h-[calc(100vh-14rem)]">
+        <main className="min-h-[calc(100vh-12rem)] rounded-[1rem] md:min-h-[34rem]">
           {children}
         </main>
       </div>
