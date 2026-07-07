@@ -18,8 +18,13 @@
     --border: 214.3 31.8% 91.4%;
     --ring: 207 92% 52%; /* blue — Sokar accent */
 
-    /* Widget brand tokens — overridable via inline style for white-label embeds */
+    /* Widget brand tokens — overridable via inline style for white-label embeds.
+       Hex conservé volontairement : ces tokens sont consommés tels quels dans
+       les classes Tailwind arbitraires (text-[var(--widget-primary)]) et
+       surchargés en inline par les embedders avec des valeurs hex. */
+    /* stylelint-disable-next-line color-no-hex -- token white-label overridable par hex */
     --widget-primary: #0f172a;
+    /* stylelint-disable-next-line color-no-hex -- token white-label overridable par hex */
     --widget-accent: #0284c7; /* blue Sokar */
 
     /* Reservation theme — aligné avec apps/dashboard widget.
