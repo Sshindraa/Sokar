@@ -2,6 +2,18 @@ import type { NextRequest } from 'next/server';
 
 const API_ORIGIN = process.env.API_URL || 'http://127.0.0.1:4000';
 
+function forwardedHeaders(req: NextRequest) {
+  const cookie = req.headers.get('cookie') || '';
+  const forwardedFor = req.headers.get('x-forwarded-for') || '';
+  const requestId = req.headers.get('x-request-id') || '';
+
+  const headers: Record<string, string> = {};
+  if (cookie) headers.Cookie = cookie;
+  if (forwardedFor) headers['X-Forwarded-For'] = forwardedFor;
+  if (requestId) headers['X-Request-ID'] = requestId;
+  return headers;
+}
+
 async function parseResponse(res: Response) {
   const text = await res.text();
   if (!text) return null;
@@ -31,7 +43,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
   const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
   const res = await fetch(url, {
-    headers: { Cookie: req.headers.get('cookie') || '' },
+    headers: forwardedHeaders(req),
   });
 
   const data = await parseResponse(res);
@@ -51,7 +63,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Cookie: req.headers.get('cookie') || '',
+      ...forwardedHeaders(req),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -71,7 +83,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
-      Cookie: req.headers.get('cookie') || '',
+      ...forwardedHeaders(req),
     },
     body: JSON.stringify(body),
   });
@@ -91,7 +103,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      Cookie: req.headers.get('cookie') || '',
+      ...forwardedHeaders(req),
     },
     body: JSON.stringify(body),
   });
@@ -110,7 +122,7 @@ export async function DELETE(
 
   const res = await fetch(url, {
     method: 'DELETE',
-    headers: { Cookie: req.headers.get('cookie') || '' },
+    headers: forwardedHeaders(req),
   });
 
   const data = await parseResponse(res);
