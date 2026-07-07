@@ -37,6 +37,7 @@ pnpm test       # Vitest
 pnpm lint       # turbo lint + stylelint (CSS)
 pnpm lint:css   # stylelint sur apps/*/src/**/*.css (garde-fou CSS dashboard)
 pnpm test:e2e   # Playwright dashboard (3 viewports : iPhone 14, iPad Mini, desktop)
+pnpm test:visual # régression visuelle Playwright (6 pages x 3 viewports, seuil 0.2%)
 
 # Base de données
 pnpm db:push    # synchroniser le schema
@@ -85,6 +86,29 @@ Utilisé pour les tests voice / MCP en local avant d'avoir un vrai pilote.
 - Marketing pages should stay static when possible (`○`, not `ƒ`).
 - **Garde-fou CSS (stylelint)** : `pnpm lint:css` verrouille les règles ci-dessous dans `apps/*/src/**/*.css` (config `.stylelintrc.json` racine). Pas de sélecteurs d'éléments structurels bruts (`header`, `main`, `section`, `nav`, `footer`, `aside`, `article`, `button`, `div`) — ils causent des bugs globaux quand ils sont stylés dans `globals.css` (incident `header { position: fixed }` de juillet 2026). Pas de couleurs hex (`#fff`), pas de `!important` (sauf exemption commentée `stylelint-disable-next-line` pour l'accessibilité), pas de z-index arbitraires (échelle 0-50 ou `var(--z-*)`), `font-size` en `rem`/`em` uniquement.
 - **Ton copy : `vous` partout, jamais `tu`.** Sokar est un SaaS B2B facturé mensuellement à des gérants de restaurant (40-60 ans, non-dev). Le `tu` sent le consumer/developer-tool. Inclut : onboarding (steps, modal, guard, dashboard), tooltips, messages d'erreur, bannières, copy marketing. Le pronom indéfini `on` → `nous` dans le copy user-facing (OK dans les commentaires de code). Un test Vitest (`onboarding-tone.test.ts`) verrouille la convention.
+
+## Régression visuelle (Playwright)
+
+`pnpm test:visual` capture un screenshot de 6 pages critiques (`/dashboard`, `/dashboard/reservations`, `/dashboard/calls`, `/dashboard/gift-cards`, `/`, `/pricing`) sur 3 viewports (iPhone 14, iPad Mini, desktop 1440px) et le compare au baseline stocké dans `apps/dashboard/e2e/__snapshots__/`. Seuil de tolérance : 0.2 % de diff pixel.
+
+**Mettre à jour les baselines après un changement visuel intentionnel :**
+
+```zsh
+# 1. Régénérer les baselines localement (macOS)
+cd apps/dashboard
+npx playwright test visual-regression --update-snapshots
+
+# 2. Reviewer le diff git (les PNG modifiés)
+git diff --stat apps/dashboard/e2e/__snapshots__/
+
+# 3. Committer les nouveaux baselines
+git add apps/dashboard/e2e/__snapshots__/
+git commit -m "feat(dashboard): update visual baselines for <description>"
+```
+
+**Stabilité des screenshots :** les animations sont désactivées (`animations: 'disabled'` + `reducedMotion: 'reduce'`), les transitions CSS neutralisées via `e2e/visual-stability.css`, et le caret texte masqué. Les pages dashboard sans Clerk affichent les données de démo ou un skeleton — pas de contenu aléatoire.
+
+**Cross-plateforme :** les baselines sont générés sur macOS (suffixe `-darwin`). En CI (Linux), un script copie les baselines `-darwin` vers `-linux` avant l'exécution. Le seuil de 0.2 % absorbe les micro-différences de rendu (anti-aliasing des fonts).
 
 ## Mac migration (one-off)
 

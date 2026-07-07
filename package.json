@@ -9,6 +9,7 @@
     "typecheck": "turbo typecheck",
     "test": "turbo test",
     "test:e2e": "pnpm --filter @sokar/dashboard test:e2e",
+    "test:visual": "pnpm --filter @sokar/dashboard test:visual",
     "clean": "turbo clean",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,md,json}\"",

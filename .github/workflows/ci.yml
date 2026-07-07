@@ -181,6 +181,37 @@ jobs:
         # et que les KPIs/graphiques s'affichent.
         run: pnpm test:e2e
 
+      - name: Préparer les baselines visuels pour Linux
+        # Les baselines sont générés sur macOS (suffixe -darwin). En CI (Linux),
+        # Playwright cherche des fichiers avec le suffixe -linux. On copie les
+        # baselines -darwin vers -linux. Le seuil de 0.2 % absorbe les micro-
+        # différences de rendu (anti-aliasing) entre plateformes.
+        run: |
+          cd apps/dashboard/e2e/__snapshots__/visual-regression.spec.ts-snapshots/
+          for f in *-darwin.png; do
+            linux="${f%-darwin.png}-linux.png"
+            cp "$f" "$linux"
+          done
+
+      - name: Visual regression tests (dashboard)
+        # Garde-fou régression visuelle : capture un screenshot de 6 pages
+        # critiques (/dashboard, /dashboard/reservations, /dashboard/calls,
+        # /dashboard/gift-cards, /, /pricing) sur 3 viewports et le compare au
+        # baseline. Seuil de tolérance : 0.2 % de diff pixel.
+        run: pnpm test:visual
+
+      - name: Upload visual diff artifacts
+        if: failure()
+        # Si un screenshot diffère du baseline, on upload les diffs (actual,
+        # expected, diff) pour review. Retention 14 jours.
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-regression-diffs
+          path: |
+            apps/dashboard/test-results/
+            apps/dashboard/playwright-report/
+          retention-days: 14
+
   connect:
     name: Sokar Connect
     runs-on: ubuntu-latest
