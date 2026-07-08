@@ -58,6 +58,11 @@ vi.mock('../shared/db/client', () => {
       update: vi.fn(),
       delete: vi.fn(),
     },
+    reactivationCampaign: {
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
+    },
     giftCard: {
       findUnique: vi.fn(),
       findFirst: vi.fn().mockResolvedValue({ id: 'tx-card' }),
@@ -192,6 +197,11 @@ vi.mock('../shared/db/client', () => {
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+    },
+    reactivationCampaign: {
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
     },
     giftCard: {
       findUnique: vi.fn(),
