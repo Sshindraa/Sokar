@@ -23,6 +23,9 @@ jobs:
     name: Secret Scanning
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,7 +45,7 @@ jobs:
   #  so turbo's graph is uniform and ready when specs land.)
   # ─────────────────────────────────────────────────────────────
   packages:
-    name: Packages (types / config / database)
+    name: Packages (shared / config / database)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -50,8 +53,10 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.8.0
+        # Pas de `version` : pnpm/action-setup@v4 lit automatiquement
+        # `packageManager` dans package.json (pnpm@10.33.3). Spécifier une
+        # version fixe ici causait un mismatch "Multiple versions of pnpm
+        # specified" et fail-fast en CI.
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -63,10 +68,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        run: pnpm turbo typecheck --filter=@sokar/types --filter=@sokar/config --filter=@sokar/database
+        run: pnpm turbo typecheck --filter=@sokar/shared --filter=@sokar/config --filter=@sokar/database
 
       - name: Test
-        run: pnpm turbo test --filter=@sokar/types --filter=@sokar/config --filter=@sokar/database
+        run: pnpm turbo test --filter=@sokar/shared --filter=@sokar/config --filter=@sokar/database
 
   # ─────────────────────────────────────────────────────────────
   # API: typecheck (turbo-orchestrated, includes workspace deps),
@@ -83,8 +88,10 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.8.0
+        # Pas de `version` : pnpm/action-setup@v4 lit automatiquement
+        # `packageManager` dans package.json (pnpm@10.33.3). Spécifier une
+        # version fixe ici causait un mismatch "Multiple versions of pnpm
+        # specified" et fail-fast en CI.
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -142,8 +149,10 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.8.0
+        # Pas de `version` : pnpm/action-setup@v4 lit automatiquement
+        # `packageManager` dans package.json (pnpm@10.33.3). Spécifier une
+        # version fixe ici causait un mismatch "Multiple versions of pnpm
+        # specified" et fail-fast en CI.
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -181,6 +190,43 @@ jobs:
         # et que les KPIs/graphiques s'affichent.
         run: pnpm test:e2e
 
+      # ─────────────────────────────────────────────────────────────
+      # RÉGRESSION VISUELLE — DÉSACTIVÉE EN CI (juillet 2026)
+      #
+      # Les baselines sont générés sur macOS (suffixe -darwin). En CI (Linux),
+      # le rendu diffère de 1-2 % (fonts / anti-aliasing), bien au-delà du seuil
+      # de 0.2 %. La copie -darwin → -linux ne suffit pas.
+      #
+      # Les tests visuels restent disponibles en local via `pnpm test:visual`
+      # et fonctionnent correctement sur macOS.
+      #
+      # TODO (follow-up) : générer des baselines Linux dédiés via un workflow
+      # CI qui capture et commit les baselines, ou utiliser un seuil adapté
+      # par plateforme. Voir PR #2 discussion.
+      # ─────────────────────────────────────────────────────────────
+      - name: Préparer les baselines visuels pour Linux
+        if: false
+        run: |
+          cd apps/dashboard/e2e/__snapshots__/visual-regression.spec.ts-snapshots/
+          for f in *-darwin.png; do
+            linux="${f%-darwin.png}-linux.png"
+            cp "$f" "$linux"
+          done
+
+      - name: Visual regression tests (dashboard)
+        if: false
+        run: pnpm test:visual
+
+      - name: Upload visual diff artifacts
+        if: false
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-regression-diffs
+          path: |
+            apps/dashboard/test-results/
+            apps/dashboard/playwright-report/
+          retention-days: 14
+
   connect:
     name: Sokar Connect
     runs-on: ubuntu-latest
@@ -193,8 +239,10 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.8.0
+        # Pas de `version` : pnpm/action-setup@v4 lit automatiquement
+        # `packageManager` dans package.json (pnpm@10.33.3). Spécifier une
+        # version fixe ici causait un mismatch "Multiple versions of pnpm
+        # specified" et fail-fast en CI.
 
       - name: Setup Node
         uses: actions/setup-node@v4
