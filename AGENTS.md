@@ -76,6 +76,12 @@ L'environnement de staging déploie automatiquement `main` sur le VPS pmbtc et e
 - Stripe en mode test (`pk_test_*` / `sk_test_*`).
 - `X-Robots-Tag: noindex, nofollow` sur tous les vhosts staging.
 
+**Setup initial (one-time, sur le VPS pmbtc) :**
+
+- Script : `scripts/ops/setup-staging.sh` — idempotent, prépare le répertoire, clone le repo, crée la DB `sokar_staging`, copie les `.env.staging.example` vers `.env`, installe le vhost Nginx et valide la config.
+- Prérequis : DNS `staging.sokar.tech` + `api-staging.sokar.tech` pointés vers le VPS, swap configuré (`scripts/ops/setup-swap.sh` si besoin).
+- Après le setup : remplir les `.env` avec les clés staging (Clerk test, Stripe test, pas de clés voice), puis lancer le premier deploy manuel.
+
 **Déploiement :**
 
 - CI/CD : `.github/workflows/deploy-staging.yml` — déclenché sur push de `main`.
