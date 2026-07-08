@@ -50,6 +50,68 @@ hermes -z "task" # one-shot task
 hermes doctor   # Hermes diagnostics
 ```
 
+## Environnement de staging
+
+L'environnement de staging déploie automatiquement `main` sur le VPS pmbtc et exécute des smoke tests.
+
+**URLs :**
+
+- Dashboard : `https://staging.sokar.tech`
+- API directe : `https://api-staging.sokar.tech`
+- Sokar Connect : `https://staging.sokar.tech/restaurant/chez-sokar-demo`
+
+**Infrastructure (VPS pmbtc, isolée de la prod) :**
+
+- Racine : `/opt/sokar-staging/`
+- Ports : API=4100, Dashboard=3100, Connect=4102 (prod: 4000/3000/4002)
+- DB Postgres : `sokar_staging` (séparée de la prod)
+- Redis : db=2 (prod: db=0)
+- PM2 : `sokar-staging-api`, `sokar-staging-dashboard`, `sokar-staging-connect`
+- Nginx : `infra/nginx/sokar-staging.conf` (vhost `staging.sokar.tech` + `api-staging.sokar.tech`)
+
+**Sécurité / isolement :**
+
+- Clés Clerk staging (`pk_test` / `sk_test`) — JAMAIS de clés prod.
+- Voice désactivée : `TELNYX_API_KEY`, `DEEPGRAM_API_KEY`, `CARTESIA_API_KEY` vides → pas d'appels sortants, webhooks Telnyx reçoivent 403 (signature vide).
+- Stripe en mode test (`pk_test_*` / `sk_test_*`).
+- `X-Robots-Tag: noindex, nofollow` sur tous les vhosts staging.
+
+**Déploiement :**
+
+- CI/CD : `.github/workflows/deploy-staging.yml` — déclenché sur push de `main`.
+- Secrets GitHub : `STAGING_SSH_KEY` (clé SSH), `STAGING_HOST` (hostname VPS).
+- Script : `scripts/deploy-staging.sh` (sur le VPS).
+- Dry-run : `bash scripts/deploy-staging.sh --dry-run` (build sans restart ni migrations).
+- Rollback : `bash scripts/deploy-staging.sh rollback`.
+
+**Smoke tests post-déploiement (CI) :**
+
+- `curl /health` et `/livez` sur `api-staging.sokar.tech` → 200.
+- `curl /api/health` via `staging.sokar.tech` → 200 (Nginx routing).
+- `curl /dashboard` → 200 ou 302 (redirect Clerk).
+- `curl /` et `/restaurant/chez-sokar-demo` → 200.
+- Playwright E2E fonctionnels (best-effort, non-bloquant).
+
+**Fichiers de config staging :**
+
+- `infra/ecosystem.staging.config.js` — PM2 config.
+- `infra/nginx/sokar-staging.conf` — Nginx vhost.
+- `apps/api/.env.staging.example` — template env API.
+- `apps/dashboard/.env.staging.example` — template env dashboard.
+- `apps/connect/.env.staging.example` — template env connect.
+
+**Commandes manuelles (sur le VPS) :**
+
+```zsh
+ssh deploy@pmbtc
+cd /opt/sokar-staging
+bash scripts/deploy-staging.sh              # déploiement complet
+bash scripts/deploy-staging.sh --dry-run    # simulation
+bash scripts/deploy-staging.sh rollback     # rollback
+pm2 status                                  # voir les services staging
+pm2 logs sokar-staging-api                  # logs API staging
+```
+
 ## Demo restaurant
 
 Le seed crée un restaurant fictif `Chez Sokar` (slug `chez-sokar-demo`) :

@@ -1,0 +1,120 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # déclenchement manuel
+
+# Évite les déploiements concurrents sur staging.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+env:
+  TURBO_TELEMETRY_DISABLED: 1
+
+jobs:
+  deploy:
+    name: Deploy to staging VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: deploy
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script_stop: true
+          command_timeout: 18m
+          script: |
+            cd /opt/sokar-staging
+            bash scripts/deploy-staging.sh
+
+  smoke-tests:
+    name: Smoke tests against staging
+    runs-on: ubuntu-latest
+    needs: deploy
+    timeout-minutes: 5
+    steps:
+      - name: Curl health endpoints
+        run: |
+          set -euo pipefail
+
+          STAGING_URL="https://staging.sokar.tech"
+          API_STAGING_URL="https://api-staging.sokar.tech"
+
+          echo "=== Health checks ==="
+
+          # /health via api-staging.sokar.tech
+          HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 "$API_STAGING_URL/health" || echo "FAIL")
+          echo "api-staging.sokar.tech/health → $HEALTH_STATUS"
+          [ "$HEALTH_STATUS" = "200" ] || exit 1
+
+          # /livez via api-staging.sokar.tech
+          LIVEZ_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 "$API_STAGING_URL/livez" || echo "FAIL")
+          echo "api-staging.sokar.tech/livez → $LIVEZ_STATUS"
+          [ "$LIVEZ_STATUS" = "200" ] || exit 1
+
+          # /health via staging.sokar.tech/api/ (Nginx routing)
+          STAGING_API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 "$STAGING_URL/api/health" || echo "FAIL")
+          echo "staging.sokar.tech/api/health → $STAGING_API_STATUS"
+          [ "$STAGING_API_STATUS" = "200" ] || exit 1
+
+          # /dashboard — peut rediriger vers Clerk (302) ou répondre 200.
+          # On accepte 200 et 302 comme valides.
+          DASH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 -L "$STAGING_URL/dashboard" || echo "FAIL")
+          echo "staging.sokar.tech/dashboard → $DASH_STATUS"
+          [ "$DASH_STATUS" = "200" ] || [ "$DASH_STATUS" = "302" ] || exit 1
+
+          # Page d'accueil
+          HOME_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 "$STAGING_URL/" || echo "FAIL")
+          echo "staging.sokar.tech/ → $HOME_STATUS"
+          [ "$HOME_STATUS" = "200" ] || exit 1
+
+          # Sokar Connect page
+          CONNECT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 "$STAGING_URL/restaurant/chez-sokar-demo" || echo "FAIL")
+          echo "staging.sokar.tech/restaurant/chez-sokar-demo → $CONNECT_STATUS"
+          [ "$CONNECT_STATUS" = "200" ] || exit 1
+
+          echo ""
+          echo "✅ All smoke tests passed"
+
+      - name: Playwright E2E smoke test
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @sokar/dashboard exec playwright install --with-deps chromium
+
+      - name: Run E2E against staging
+        env:
+          PLAYWRIGHT_BASE_URL: https://staging.sokar.tech
+        run: |
+          cd apps/dashboard
+          # Run only the functional E2E tests (not visual regression) against
+          # the staging URL. The PLAYWRIGHT_BASE_URL env var overrides the
+          # dev server baseURL in playwright.config.ts.
+          pnpm exec playwright test dashboard.spec.ts --project=desktop-1440 \
+            --reporter=list 2>&1 || true
+          # E2E against staging est best-effort : les tests peuvent échouer
+          # si Clerk redirige ou si les données de démo diffèrent. On log
+          # les résultats sans faire échouer le workflow.
+          echo "E2E smoke test completed (best-effort, non-blocking)"

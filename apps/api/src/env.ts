@@ -40,6 +40,9 @@ const PROD_HOST_ALLOWLIST = [
   'api.sokar.tech',
   'app.sokar.tech',
   'widget.sokar.tech',
+  // Staging — mêmes contraintes que la prod (NODE_ENV=production).
+  'staging.sokar.tech',
+  'api-staging.sokar.tech',
   // localhost autorisé en prod pour ne pas casser un test qui tournerait
   // NODE_ENV=production par erreur sans configurer les vraies valeurs.
   // Si ce devient trop permissif, retirer localhost de l'allowlist prod.
