@@ -230,7 +230,7 @@ if [ "$DRY_RUN" = true ]; then
 else
     echo ""
     echo "📦 Applying database migrations (staging DB)..."
-    export DATABASE_URL=$(grep "^DATABASE_URL" apps/api/.env | cut -d= -f2-)
+    export DATABASE_URL=$(grep "^DATABASE_URL" apps/api/.env | cut -d= -f2- | sed 's/^"//;s/"$//')
     pnpm exec prisma migrate deploy --schema=packages/database/prisma/schema.prisma
     unset DATABASE_URL
 fi
