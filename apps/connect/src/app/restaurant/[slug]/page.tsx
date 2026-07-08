@@ -30,6 +30,12 @@ const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
 
 export const revalidate = 60;
 export const dynamicParams = true;
+// Force le rendu dynamique pour éviter DYNAMIC_SERVER_USAGE en staging (Next.js 15 +
+// standalone). En prod l'ISR fonctionne car Cloudflare cache le HTML statique ; en
+// staging le serveur standalone tente de re-render la page et échoue sur les
+// fetchs dynamiques (date du jour + availability). Le rendu dynamique est
+// acceptable pour le trafic staging.
+export const dynamic = 'force-dynamic';
 
 // Pre-render les pages restaurant publiées au build time.
 // Les nouvelles publications sont rendues à la demande (dynamicParams=true)
