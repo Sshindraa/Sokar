@@ -321,9 +321,10 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           ? await RestaurantService.loadContext(to).catch(() => ({
               id: restaurantId!,
               name: '',
+              slug: null as string | null,
               phoneNumber: null,
             }))
-          : { id: restaurantId!, name: '', phoneNumber: null };
+          : { id: restaurantId!, name: '', slug: null as string | null, phoneNumber: null };
         const customer = await app.db.customer.findFirst({
           where: { restaurantId: ctx.id, phone: from },
           select: { name: true },
@@ -344,6 +345,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             customerPhone: from,
             customerName: customer?.name ?? null,
             restaurantName: ctx.name,
+            restaurantSlug: ctx.slug ?? null,
             restaurantPhone: ctx.phoneNumber ?? null,
             reason,
           },

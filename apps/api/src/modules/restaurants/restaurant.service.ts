@@ -25,6 +25,7 @@ interface SafeProviderConfig {
 interface CachedRestaurantContext {
   readonly id: string;
   readonly name: string;
+  readonly slug: string | null;
   readonly plan: string;
   readonly managerPhone: string;
   readonly managerEmail: string;
@@ -83,6 +84,7 @@ function buildProviderConfig(restaurant: {
 function toCachedRestaurantContext(restaurant: {
   id: string;
   name: string;
+  slug: string | null;
   plan: string;
   managerPhone: string;
   managerEmail: string;
@@ -97,6 +99,7 @@ function toCachedRestaurantContext(restaurant: {
   return {
     id: restaurant.id,
     name: restaurant.name,
+    slug: restaurant.slug,
     plan: restaurant.plan,
     managerPhone: restaurant.managerPhone,
     managerEmail: restaurant.managerEmail,
@@ -127,6 +130,7 @@ export class RestaurantService {
       select: {
         id: true,
         name: true,
+        slug: true,
         plan: true,
         managerPhone: true,
         managerEmail: true,
