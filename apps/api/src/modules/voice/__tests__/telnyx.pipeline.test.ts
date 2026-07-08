@@ -491,3 +491,151 @@ describe('POST /voice/telnyx — unhandled event types', () => {
     expect(queues.telnyxWebhooks.add).not.toHaveBeenCalled();
   });
 });
+
+// ─── /voice/telnyx/end — restaurantId resolution regression suite ──────────
+//
+// Background: the guard (telnyxWebhookGuard) only verifies the Ed25519
+// signature; it does NOT populate `req.restaurantId`. Pre-fix, the /end route
+// used `req.restaurantId ?? ''` as the fallback in db.call.upsert({create}),
+// which silently created orphan Call rows (Prisma FK violation, masked by the
+// upsert error path). The fix resolves restaurantId from (1) an authMiddleware
+// attribute, then (2) RestaurantService.loadContext(req.body.to), and refuses
+// with 400 if neither is available.
+
+describe('POST /voice/telnyx/end — restaurantId resolution', () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    (CallSessionManager as any).instance = new CallSessionManager();
+    app = await getApp();
+  });
+
+  afterAll(async () => {
+    await closeApp();
+  });
+
+  function makeEndPayload(overrides: Record<string, unknown> = {}) {
+    return {
+      call_leg_id: 'leg-end-1',
+      transcript: null,
+      ended_reason: null,
+      started_at: null,
+      ended_at: null,
+      stt_provider: null,
+      llm_provider: null,
+      tts_provider: null,
+      from: '+33****0001',
+      to: '+33****0000',
+      ...overrides,
+    };
+  }
+
+  it('resolves restaurantId via loadContext(to) when req.restaurantId is unset', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx() as any);
+    vi.mocked(db.call.upsert).mockResolvedValue({ id: 'call-1' } as any);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx/end',
+      payload: makeEndPayload(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ received: true });
+    expect(mockLoadContext).toHaveBeenCalledWith('+33****0000');
+    expect(db.call.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          callSid: 'leg-end-1',
+          restaurantId: 'rest-1',
+        }),
+      }),
+    );
+  });
+
+  it('returns 400 when neither req.restaurantId nor `to` can resolve a restaurant', async () => {
+    // No `to` in payload, no req.restaurantId
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx/end',
+      payload: { call_leg_id: 'leg-orphan' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'restaurantId is required' });
+    expect(db.call.upsert).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when `to` is present but loadContext cannot find a restaurant', async () => {
+    mockLoadContext.mockRejectedValue(new Error('Restaurant not found'));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx/end',
+      payload: makeEndPayload({ to: '+33****9999' }),
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'restaurantId is required' });
+    expect(db.call.upsert).not.toHaveBeenCalled();
+  });
+});
+
+// ─── /voice/telnyx — call.initiated — non-P2002 Prisma errors must throw ──
+//
+// Background: pre-fix, the .catch on db.call.create logged non-P2002 errors
+// and then silently continued, leaving the system in a DB-inconsistent state
+// (call record missing, session created, answer job enqueued, audio flowing).
+// The fix narrows the catch to P2002 only and re-throws everything else so
+// Fastify returns 500 and the webhook is retried by Telnyx.
+
+describe('POST /voice/telnyx — call.initiated — non-P2002 Prisma error handling', () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    (CallSessionManager as any).instance = new CallSessionManager();
+    app = await getApp();
+  });
+
+  afterAll(async () => {
+    await closeApp();
+  });
+
+  it('rethrows a non-P2002 Prisma error from db.call.create (returns 500)', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx() as any);
+    mockCheckMarginHealth.mockResolvedValue(true);
+    mockIsVoicePipelineEnabled.mockResolvedValue(true);
+    mockLookupOrCreate.mockResolvedValue({
+      id: 'cust-1',
+      name: null,
+      visitCount: 0,
+      isVip: false,
+      specialOccasion: null,
+      notes: null,
+      lastCallAt: null,
+      partySizeTypical: null,
+    });
+    mockBuildVipPromptExtra.mockReturnValue('');
+
+    const fkError: any = new Error('Foreign key constraint failed');
+    fkError.code = 'P2003';
+    vi.mocked(db.call.create).mockRejectedValueOnce(fkError);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeInitiatedPayload(),
+    });
+
+    // P2003 is not a benign race — the row genuinely failed to write.
+    // The handler must surface the failure (5xx) so the webhook is retried.
+    expect(res.statusCode).toBeGreaterThanOrEqual(500);
+
+    // Session must NOT have been pre-created: we abort before any side effects.
+    const session = CallSessionManager.getInstance().get('cc-1');
+    expect(session).toBeUndefined();
+    expect(queues.telnyxWebhooks.add).not.toHaveBeenCalled();
+  });
+});

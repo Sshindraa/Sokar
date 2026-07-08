@@ -106,6 +106,10 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         });
 
         // Créer un enregistrement Call minimal dès l'init
+        // P2002 (duplicate unique key) est attendu en cas de retransmission webhook
+        // Telnyx ou race avec call.hangup — on le swallow en warn.
+        // Toute autre erreur Prisma (FK violation, timeout, connexion) est
+        // re-thrown pour ne pas continuer avec un état DB incohérent.
         try {
           await app.db.call.create({
             data: {
@@ -115,11 +119,20 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             },
           });
         } catch (err: unknown) {
-          if ((err as { code?: string })?.code !== 'P2002') {
-            app.log.error(
-              { err: err instanceof Error ? err.message : String(err) },
-              'Failed to create call record at init',
+          const code = (err as { code?: string })?.code;
+          if (code === 'P2002') {
+            app.log.warn(
+              { callSid: payload.call_leg_id, restaurantId: ctx.id },
+              'Duplicate call record at init (webhook retry or race) — continuing',
             );
+            // Continue: la session sera tout de même créée et l'appel répondu
+            // (le webhook est un retry, le call existe déjà en DB).
+          } else {
+            app.log.error(
+              { err: err instanceof Error ? err.message : String(err), code },
+              'Failed to create call record at init — rethrowing',
+            );
+            throw err;
           }
         }
 
@@ -230,9 +243,34 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
       llm_provider,
       tts_provider,
       from,
+      to,
     } = req.body as TelnyxCallEndPayload;
 
     const outcome = detectOutcome({ transcript, endedReason: ended_reason });
+
+    // Résoudre le restaurantId : le guard ne peuple pas req.restaurantId.
+    // On tente (1) l'attribut posé par un authMiddleware éventuel, puis
+    // (2) un lookup via le numéro Telnyx `to`. Si aucun n'est disponible,
+    // on refuse avec 400 plutôt que d'écrire un Call orphelin (restaurantId='').
+    let restaurantId: string | undefined = (req as { restaurantId?: string }).restaurantId;
+    if (!restaurantId && to) {
+      try {
+        const ctx = await RestaurantService.loadContext(to);
+        restaurantId = ctx.id;
+      } catch (err: unknown) {
+        app.log.warn(
+          { err: err instanceof Error ? err.message : String(err), to },
+          '/voice/telnyx/end: failed to resolve restaurantId from `to`',
+        );
+      }
+    }
+    if (!restaurantId) {
+      app.log.error(
+        { call_leg_id, hasTo: Boolean(to) },
+        '/voice/telnyx/end: cannot resolve restaurantId — refusing',
+      );
+      return reply.status(400).send({ error: 'restaurantId is required' });
+    }
 
     const callRow = await app.db.call.upsert({
       where: { callSid: call_leg_id },
@@ -251,7 +289,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
       },
       create: {
         callSid: call_leg_id,
-        restaurantId: req.restaurantId ?? '',
+        restaurantId,
         durationSec: Math.round(
           ended_at && started_at
             ? (new Date(ended_at).getTime() - new Date(started_at).getTime()) / 1000
@@ -277,9 +315,15 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
 
     if (shouldRecover && callRow.id && from) {
       try {
-        const ctx = await RestaurantService.loadContext(
-          (req.body as TelnyxCallEndPayload)?.to ?? '',
-        );
+        // restaurantId est garanti non-vide ici (vérifié plus haut).
+        // On charge le ctx via to s'il est disponible, sinon via loadContext(to).
+        const ctx = to
+          ? await RestaurantService.loadContext(to).catch(() => ({
+              id: restaurantId!,
+              name: '',
+              phoneNumber: null,
+            }))
+          : { id: restaurantId!, name: '', phoneNumber: null };
         const customer = await app.db.customer.findFirst({
           where: { restaurantId: ctx.id, phone: from },
           select: { name: true },

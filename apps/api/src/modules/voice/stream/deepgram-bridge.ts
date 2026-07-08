@@ -20,15 +20,79 @@ function writeDebugLog(msg: string, err?: unknown) {
   }
 }
 
-const DEEPGRAM_API_URL = 'wss://api.deepgram.com/v1/listen';
+// Deepgram Flux (turn-detection + interim + EagerEndOfTurn) vit sur l'API v2.
+// Le model_id officiel est `flux-general-multi` (multilingue, dont fr).
+// On garde l'override par env var (DEEPGRAM_MODEL) pour permettre un fallback
+// vers `nova-3` (v1/listen) si Flux est trop instable en prod.
+const DEEPGRAM_API_URL_FLUX = 'wss://api.deepgram.com/v2/listen';
+const DEEPGRAM_API_URL_NOVA = 'wss://api.deepgram.com/v1/listen';
+const DEEPGRAM_DEFAULT_MODEL = 'flux-general-multi';
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY ?? '';
 
 /**
- * Pont audio entre Telnyx et Deepgram Flux.
+ * Construit l'URL WebSocket Deepgram selon le model demandé.
+ * Exporté pour les tests — n'est PAS censé être appelé directement par
+ * d'autres modules du runtime (utiliser connectDeepgramFlux à la place).
  *
- * - Reçoit l'audio PCMU/L16 de Telnyx
- * - Le forwarde à Deepgram avec model=flux-general-multi
- * - Retourne les événements de transcription (utterance, turn, etc.)
+ * @param model model_id Deepgram ('flux-general-multi' | 'nova-3' | ...)
+ * @param codec codec Telnyx (PCMA = alaw, PCMU = mulaw)
+ * @returns URL complète avec query string (model, encoding, sample_rate, keyterms...)
+ */
+export function buildDeepgramUrl(model: string, codec: 'PCMA' | 'PCMU'): string {
+  const isAlaw = codec === 'PCMA';
+  const apiUrl = model.startsWith('flux-') ? DEEPGRAM_API_URL_FLUX : DEEPGRAM_API_URL_NOVA;
+  const params = new URLSearchParams({
+    model,
+    language: 'fr',
+    encoding: isAlaw ? 'alaw' : 'mulaw',
+    sample_rate: '8000',
+    channels: '1',
+    interim_results: 'true',
+    punctuate: 'true',
+    smart_format: 'true',
+    endpointing: '150',
+    utterance_end_ms: '1000',
+  });
+
+  // Boost critical reservation vocabulary for FR
+  const keyterms = [
+    'réservation',
+    'personnes',
+    'soir',
+    'heures',
+    'midi',
+    'couverts',
+    'deux',
+    'trois',
+    'quatre',
+    'cinq',
+    'six',
+    'sept',
+    'huit',
+    'neuf',
+    'dix',
+  ];
+  for (const term of keyterms) {
+    params.append('keyterm', term);
+  }
+
+  return `${apiUrl}?${params}`;
+}
+
+/**
+ * Pont audio entre Telnyx et Deepgram (Flux v2 par défaut, Nova-3 v1 en fallback).
+ *
+ * - Reçoit l'audio PCMU/PCMA de Telnyx
+ * - Le forwarde à Deepgram avec model=flux-general-multi (Flux v2)
+ * - Retourne les événements de transcription (UtteranceEnd, EagerEndOfTurn, etc.)
+ *
+ * Override via DEEPGRAM_MODEL env var :
+ *   - flux-general-multi (défaut, recommandé — détection de turn + interim + EagerEndOfTurn)
+ *   - nova-3 (fallback, v1, plus stable mais sans FluxEvent sémantiques)
+ *
+ * L'URL est sélectionnée automatiquement selon le model :
+ *   - flux-* → v2/listen
+ *   - nova-3 → v1/listen
  */
 export function connectDeepgramFlux(
   session: CallSession,
@@ -47,43 +111,8 @@ export function connectDeepgramFlux(
 
   logger.info({ callId: session.callControlId }, '[deepgram] Initiating connection');
   const promise = new Promise<void>((resolve, reject) => {
-    const isAlaw = session.codec === 'PCMA';
-    const params = new URLSearchParams({
-      model: process.env.DEEPGRAM_MODEL ?? 'nova-3',
-      language: 'fr',
-      encoding: isAlaw ? 'alaw' : 'mulaw',
-      sample_rate: '8000',
-      channels: '1',
-      interim_results: 'true',
-      punctuate: 'true',
-      smart_format: 'true',
-      endpointing: '150',
-      utterance_end_ms: '1000',
-    });
-
-    // Boost critical reservation vocabulary for Nova-3
-    const keyterms = [
-      'réservation',
-      'personnes',
-      'soir',
-      'heures',
-      'midi',
-      'couverts',
-      'deux',
-      'trois',
-      'quatre',
-      'cinq',
-      'six',
-      'sept',
-      'huit',
-      'neuf',
-      'dix',
-    ];
-    for (const term of keyterms) {
-      params.append('keyterm', term);
-    }
-
-    const url = `${DEEPGRAM_API_URL}?${params}`;
+    const model = process.env.DEEPGRAM_MODEL ?? DEEPGRAM_DEFAULT_MODEL;
+    const url = buildDeepgramUrl(model, session.codec);
     const ws = new WebSocket(url, {
       headers: { Authorization: `Token ${DEEPGRAM_API_KEY}` },
     });
@@ -149,7 +178,7 @@ export function connectDeepgramFlux(
  * ~400 chunks = ~8s d'audio à 50chunks/s (20ms par chunk)
  * Augmenté de 200→400 pour éviter la perte d'audio si Deepgram met >4s à se connecter.
  */
-const DEEPGRAM_AUDIO_BUFFER_MAX = 400;
+export const DEEPGRAM_AUDIO_BUFFER_MAX = 400;
 
 /**
  * Envoie un chunk audio Telnyx à Deepgram.
@@ -191,7 +220,7 @@ export function closeDeepgram(session: CallSession): void {
 
 // ─── Parsing des messages Deepgram Flux ──────────────────────────
 
-interface DeepgramMessage {
+export interface DeepgramMessage {
   type: string;
   is_final?: boolean;
   channel?: {
@@ -204,7 +233,13 @@ interface DeepgramMessage {
   speech_final?: boolean;
 }
 
-function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage): void {
+/**
+ * Dispatch un message Deepgram brut vers les bons handlers.
+ * Exporté pour les tests (le message arrive normalement via le `ws.on('message')`
+ * de connectDeepgramFlux). Le test injecte directement le message parsé
+ * pour vérifier la logique de barge-in, smart-timer, spéculation, etc.
+ */
+export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage): void {
   const mgr = CallSessionManager.getInstance();
 
   switch (msg.type) {
