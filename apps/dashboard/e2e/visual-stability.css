@@ -1,0 +1,38 @@
+/*
+ * Garde-fou stabilité visuelle — injecté via Playwright `stylePath` avant
+ * chaque screenshot de régression visuelle.
+ *
+ * Désactive les transitions CSS (les animations sont déjà désactivées par
+ * l'option Playwright `animations: 'disabled'`) et masque le caret texte
+ * pour éviter les diffs non déterministes entre captures.
+ *
+ * Force aussi le rendu des fonts en mode antialiased (pas de subpixel) pour
+ * réduire les micro-différences de rendu entre captures successives.
+ *
+ * Les valeurs `!important` sont nécessaires pour surcharger les styles
+ * inline posés par framer-motion et les classes Tailwind `transition-*`.
+ */
+*,
+*::before,
+*::after {
+  transition: none !important;
+  transition-duration: 0s !important;
+  scroll-behavior: auto !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  text-rendering: optimizeSpeed !important;
+}
+
+/* Masquer le caret texte dans les inputs/champs focusables */
+input,
+textarea,
+[contenteditable] {
+  caret-color: transparent !important;
+}
+
+/* Neutraliser les shimmer/skeleton pulse (déjà désactivés par animations:
+   disabled, mais on ceinture pour les keyframes JS-injectées) */
+.animate-pulse {
+  animation: none !important;
+  opacity: 1 !important;
+}
