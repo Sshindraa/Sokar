@@ -16,11 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { TelnyxStreamMessage, FluxEvent, CallSession } from './types';
 import { CallSessionManager } from './manager';
-import { connectDeepgramFlux, sendAudioToDeepgram, closeDeepgram } from './deepgram-bridge';
-// `connectDeepgramFlux` is imported for the speculative pipeline (re-introduced
-// when we wire it up); not currently called from this file.
-
-const _connectDeepgramFlux = connectDeepgramFlux;
+import { sendAudioToDeepgram, closeDeepgram } from './deepgram-bridge';
 import { playFiller } from './fillers-cache';
 import { getTtsCached, setTtsCached } from '../tts-cache';
 import { logger } from '../../../shared/logger/pino';
