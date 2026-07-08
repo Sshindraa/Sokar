@@ -51,7 +51,9 @@ export default defineConfig({
   snapshotDir: 'e2e/__snapshots__',
 
   use: {
-    baseURL: 'http://localhost:3000',
+    // PLAYWRIGHT_BASE_URL permet de cibler un environnement distant (staging)
+    // sans démarrer le dev server local. Utilisé par le workflow deploy-staging.
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -110,10 +112,17 @@ export default defineConfig({
     },
   ],
 
-  webServer: {
-    command: 'pnpm next dev',
-    url: 'http://localhost:3000/dashboard',
-    timeout: 180_000,
-    reuseExistingServer: !process.env.CI,
-  },
+  // webServer : démarre un dev server local pour les tests E2E.
+  // Skip si PLAYWRIGHT_BASE_URL est défini (tests contre un environnement
+  // distant comme staging — le serveur est déjà en ligne).
+  ...(process.env.PLAYWRIGHT_BASE_URL
+    ? {}
+    : {
+        webServer: {
+          command: 'pnpm next dev',
+          url: 'http://localhost:3000/dashboard',
+          timeout: 180_000,
+          reuseExistingServer: !process.env.CI,
+        },
+      }),
 });

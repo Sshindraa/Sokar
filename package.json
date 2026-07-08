@@ -31,7 +31,8 @@
     "verify:precommit": "scripts/precommit-review.sh",
     "verify:prepush": "scripts/prepush-quality-gate.sh",
     "verify:ai": "scripts/agent/hermes-diff-review.sh head",
-    "dogfood:sokar": "scripts/smoke/dogfood-sokar.sh"
+    "dogfood:sokar": "scripts/smoke/dogfood-sokar.sh",
+    "deploy:staging": "echo 'Le déploiement staging s'exécute sur le VPS via CI ou manuellement : ssh deploy@pmbtc \"cd /opt/sokar-staging && bash scripts/deploy-staging.sh\"'"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.2",
