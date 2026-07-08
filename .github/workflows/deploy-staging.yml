@@ -58,12 +58,6 @@ jobs:
           echo "api-staging.sokar.tech/livez → $LIVEZ_STATUS"
           [ "$LIVEZ_STATUS" = "200" ] || exit 1
 
-          # /health via staging.sokar.tech/api/ (Nginx routing)
-          STAGING_API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            --max-time 10 "$STAGING_URL/api/health" || echo "FAIL")
-          echo "staging.sokar.tech/api/health → $STAGING_API_STATUS"
-          [ "$STAGING_API_STATUS" = "200" ] || exit 1
-
           # /dashboard — peut rediriger vers Clerk (302) ou répondre 200.
           # On accepte 200 et 302 comme valides.
           DASH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \

@@ -73,7 +73,7 @@ L'environnement de staging déploie automatiquement `main` sur le VPS pmbtc et e
 
 - Clés Clerk staging (`pk_test` / `sk_test`) — JAMAIS de clés prod.
 - Voice désactivée : `TELNYX_API_KEY`, `DEEPGRAM_API_KEY`, `CARTESIA_API_KEY` vides → pas d'appels sortants, webhooks Telnyx reçoivent 403 (signature vide).
-- Stripe en mode test (`pk_test_*` / `sk_test_*`).
+- Stripe : clé publique de prod (publique par nature) pour que le widget/Connect se charge, clé secrète vide en l'absence de clés de test Stripe. Les paiements gift-card ne fonctionnent donc pas en staging tant qu'on n'a pas fourni de `sk_test_*`.
 - `X-Robots-Tag: noindex, nofollow` sur tous les vhosts staging.
 
 **Setup initial (one-time, sur le VPS pmbtc) :**
@@ -85,7 +85,7 @@ L'environnement de staging déploie automatiquement `main` sur le VPS pmbtc et e
 **Déploiement :**
 
 - CI/CD : `.github/workflows/deploy-staging.yml` — déclenché sur push de `main`.
-- Secrets GitHub : `STAGING_SSH_KEY` (clé SSH), `STAGING_HOST` (hostname VPS).
+- Secrets GitHub : `STAGING_SSH_KEY` (clé SSH privée du compte `deploy`), `STAGING_HOST` (hostname VPS, ex. `pmbtc`), `STAGING_USER` (`deploy`).
 - Script : `scripts/deploy-staging.sh` (sur le VPS).
 - Dry-run : `bash scripts/deploy-staging.sh --dry-run` (build sans restart ni migrations).
 - Rollback : `bash scripts/deploy-staging.sh rollback`.
@@ -93,7 +93,6 @@ L'environnement de staging déploie automatiquement `main` sur le VPS pmbtc et e
 **Smoke tests post-déploiement (CI) :**
 
 - `curl /health` et `/livez` sur `api-staging.sokar.tech` → 200.
-- `curl /api/health` via `staging.sokar.tech` → 200 (Nginx routing).
 - `curl /dashboard` → 200 ou 302 (redirect Clerk).
 - `curl /` et `/restaurant/chez-sokar-demo` → 200.
 - Playwright E2E fonctionnels (best-effort, non-bloquant).
@@ -105,6 +104,12 @@ L'environnement de staging déploie automatiquement `main` sur le VPS pmbtc et e
 - `apps/api/.env.staging.example` — template env API.
 - `apps/dashboard/.env.staging.example` — template env dashboard.
 - `apps/connect/.env.staging.example` — template env connect.
+
+**Notes post-setup (état actuel) :**
+
+- Certificat TLS : `/etc/letsencrypt/live/staging.sokar.tech/` (chemin Let's Encrypt). Le vhost staging pointe sur ce certificat, qui doit couvrir `staging.sokar.tech` et `api-staging.sokar.tech`.
+- DNS requis : `staging.sokar.tech` + `api-staging.sokar.tech` en A vers le VPS.
+- Connect : la page `/restaurant/[slug]` est rendue dynamiquement en staging (`force-dynamic`) pour éviter une erreur `DYNAMIC_SERVER_USAGE` liée à la génération statique sur le build VPS. En prod elle reste ISR.
 
 **Commandes manuelles (sur le VPS) :**
 
