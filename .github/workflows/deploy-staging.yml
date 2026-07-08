@@ -112,7 +112,7 @@ jobs:
           # Run only the functional E2E tests (not visual regression) against
           # the staging URL. The PLAYWRIGHT_BASE_URL env var overrides the
           # dev server baseURL in playwright.config.ts.
-          npx playwright test dashboard.spec.ts --project=desktop-1440 \
+          pnpm exec playwright test dashboard.spec.ts --project=desktop-1440 \
             --reporter=list 2>&1 || true
           # E2E against staging est best-effort : les tests peuvent échouer
           # si Clerk redirige ou si les données de démo diffèrent. On log
