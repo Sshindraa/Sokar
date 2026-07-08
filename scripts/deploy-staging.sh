@@ -250,18 +250,28 @@ else
     fi
 
     # Les snippets sont partagés avec la prod (sokar-proxy.conf, cloudflare-real-ip).
+    # Le snippet cloudflare est déjà inclus par la config prod ; ne pas le ré-inclure
+    # dans sokar-staging.conf pour éviter la directive dupliquée "real_ip_header".
     sudo install -m 0644 infra/nginx/snippets/sokar-proxy.conf \
         /etc/nginx/snippets/sokar-proxy.conf 2>/dev/null || true
     sudo install -m 0644 infra/nginx/snippets/sokar-cloudflare-real-ip.conf \
         /etc/nginx/snippets/sokar-cloudflare-real-ip.conf 2>/dev/null || true
 
+    # Backup current staging config si elle existe
+    if [ -f /etc/nginx/sites-available/sokar-staging ]; then
+        sudo install -m 0644 /etc/nginx/sites-available/sokar-staging /etc/nginx/sites-available/sokar-staging.bak
+    fi
+
     sudo install -m 0644 infra/nginx/sokar-staging.conf /etc/nginx/sites-available/sokar-staging
-    sudo ln -sfn /etc/nginx/sites-available/sokar-staging /etc/nginx/sites-enabled/sokar-staging
+    # On copie directement dans sites-enabled (pas de symlink) pour rester compatible
+    # avec les droits sudo NOPASSWD du compte deploy sur le VPS.
+    sudo install -m 0644 infra/nginx/sokar-staging.conf /etc/nginx/sites-enabled/sokar-staging
 
     if ! sudo nginx -t 2>&1; then
         echo "❌ nginx -t échoué. Rollback de la configuration staging précédente."
         if [ -f /etc/nginx/sites-available/sokar-staging.bak ]; then
             sudo install -m 0644 /etc/nginx/sites-available/sokar-staging.bak /etc/nginx/sites-available/sokar-staging
+            sudo install -m 0644 /etc/nginx/sites-available/sokar-staging.bak /etc/nginx/sites-enabled/sokar-staging
             sudo nginx -t 2>/dev/null && sudo systemctl reload nginx || true
         fi
         exit 1
