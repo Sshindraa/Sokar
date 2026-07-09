@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useGiftCardApi } from '@/lib/api/gift-cards';
 import { useApi } from '@/lib/api';
 import type { GiftCardListItem, GiftCardPack, GiftCardStats } from '@/lib/api/gift-cards';
@@ -71,6 +72,8 @@ export default function GiftCardsPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [detailCard, setDetailCard] = useState<GiftCardListItem | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
+  const [cancelConfirm, setCancelConfirm] = useState<GiftCardListItem | null>(null);
+  const [closeConfirm, setCloseConfirm] = useState<GiftCardListItem | null>(null);
 
   // Montant minimum carte cadeau
   const [minAmount, setMinAmount] = useState<number | ''>('');
@@ -117,7 +120,13 @@ export default function GiftCardsPage() {
   }, [fetchAll]);
 
   async function handleCancel(card: GiftCardListItem) {
-    if (!confirm(`Annuler la carte cadeau ${card.code} ? Cette action est irréversible.`)) return;
+    setCancelConfirm(card);
+  }
+
+  async function confirmCancelGiftCard() {
+    const card = cancelConfirm;
+    if (!card) return;
+    setCancelConfirm(null);
     try {
       setError('');
       await cancelGiftCard(card.id);
@@ -130,12 +139,13 @@ export default function GiftCardsPage() {
   }
 
   async function handleCloseCrowdfunding(card: GiftCardListItem) {
-    if (
-      !confirm(
-        `Clôturer la cagnotte « ${card.occasion ?? card.code} » ?\n\nLe montant total collecté sera transformé en carte cadeau pour ${card.recipientName ?? 'le destinataire'}.`,
-      )
-    )
-      return;
+    setCloseConfirm(card);
+  }
+
+  async function confirmCloseCrowdfunding() {
+    const card = closeConfirm;
+    if (!card) return;
+    setCloseConfirm(null);
     setClosingId(card.id);
     try {
       setError('');
@@ -506,6 +516,35 @@ export default function GiftCardsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Confirmation : annulation carte cadeau */}
+      <ConfirmDialog
+        open={!!cancelConfirm}
+        onConfirm={confirmCancelGiftCard}
+        onCancel={() => setCancelConfirm(null)}
+        title="Annuler la carte cadeau"
+        description={
+          cancelConfirm
+            ? `Annuler la carte cadeau ${cancelConfirm.code} ? Cette action est irréversible.`
+            : ''
+        }
+        confirmLabel="Annuler la carte"
+        variant="destructive"
+      />
+
+      {/* Confirmation : clôture cagnotte */}
+      <ConfirmDialog
+        open={!!closeConfirm}
+        onConfirm={confirmCloseCrowdfunding}
+        onCancel={() => setCloseConfirm(null)}
+        title="Clôturer la cagnotte"
+        description={
+          closeConfirm
+            ? `Clôturer la cagnotte « ${closeConfirm.occasion ?? closeConfirm.code} » ?\n\nLe montant total collecté sera transformé en carte cadeau pour ${closeConfirm.recipientName ?? 'le destinataire'}.`
+            : ''
+        }
+        confirmLabel="Clôturer"
+      />
     </div>
   );
 }

@@ -63,7 +63,7 @@ export default function MobileNav({ buttonStyle = 'standalone' }: MobileNavProps
               onClick={() => setOpen(false)}
             />
             {/* Panel */}
-            <nav className="absolute right-0 top-0 h-full w-72 bg-[#0a0a0a] border-l border-white/10 p-6 pt-24 flex flex-col gap-2 shadow-2xl animate-in slide-in-from-right duration-300">
+            <nav className="absolute right-0 top-0 h-full w-72 bg-background border-l border-white/10 p-6 pt-24 flex flex-col gap-2 shadow-2xl animate-in slide-in-from-right duration-300">
               {links.map((item) => (
                 <Link
                   key={item.href}

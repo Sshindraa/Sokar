@@ -258,6 +258,7 @@ vi.mock('../shared/redis/client', () => {
   // In-memory Map pour que les tests OAuth puissent faire set→get.
   // Les tests existants qui font get sans set auront toujours null (comportement inchangé).
   const store = new Map<string, string>();
+  const counters = new Map<string, number>();
   return {
     redisCache: {
       get: vi.fn(async (key: string) => store.get(key) ?? null),
@@ -273,8 +274,18 @@ vi.mock('../shared/redis/client', () => {
       }),
       flushall: vi.fn(async () => {
         store.clear();
+        counters.clear();
         return 'OK';
       }),
+      // Rate limiter support (McpRateLimiter + connect-rate-limit)
+      script: vi.fn(async () => 'mock-sha1'),
+      evalsha: vi.fn(async () => [1, 59, 0] as [number, number, number]),
+      incr: vi.fn(async (key: string) => {
+        const count = (counters.get(key) ?? 0) + 1;
+        counters.set(key, count);
+        return count;
+      }),
+      expire: vi.fn(async () => 1),
       status: 'ready',
     },
     redisQueue: {

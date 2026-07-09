@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle, LayoutGrid, Plus, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 type Section = {
   id: string;
@@ -49,6 +50,8 @@ export default function FloorPlanPage() {
     name: string;
     capacity: string;
   }>({ sectionId: '', name: '', capacity: '' });
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingDeleteTableId, setPendingDeleteTableId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!orgId) return;
@@ -135,7 +138,16 @@ export default function FloorPlanPage() {
   }
 
   async function deleteTable(tableId: string) {
-    if (!orgId || !confirm('Êtes-vous sûr de vouloir supprimer cette table ?')) return;
+    if (!orgId) return;
+    setPendingDeleteTableId(tableId);
+    setConfirmOpen(true);
+  }
+
+  async function confirmDeleteTable() {
+    const tableId = pendingDeleteTableId;
+    if (!orgId || !tableId) return;
+    setConfirmOpen(false);
+    setPendingDeleteTableId(null);
     try {
       setError('');
       await del(`restaurants/${orgId}/floor-plan/tables/${tableId}`);
@@ -327,6 +339,19 @@ export default function FloorPlanPage() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onConfirm={confirmDeleteTable}
+        onCancel={() => {
+          setConfirmOpen(false);
+          setPendingDeleteTableId(null);
+        }}
+        title="Supprimer la table"
+        description="Êtes-vous sûr de vouloir supprimer cette table ? Cette action est irréversible."
+        confirmLabel="Supprimer"
+        variant="destructive"
+      />
     </div>
   );
 }

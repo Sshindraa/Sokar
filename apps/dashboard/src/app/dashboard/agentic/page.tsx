@@ -275,8 +275,8 @@ export default function AgenticSettingsPage() {
         <CardContent className="space-y-6">
           <p className="text-sm text-muted-foreground max-w-2xl">
             Active les canaux par lesquels les assistants IA (ChatGPT, Claude, Cursor) peuvent
-            consulter et réserver chez toi. Tu peux désactiver à tout moment — les réservations en
-            cours ne sont pas affectées.
+            consulter et réserver chez vous. Vous pouvez désactiver à tout moment — les réservations
+            en cours ne sont pas affectées.
           </p>
 
           <div className="space-y-4">
@@ -335,8 +335,8 @@ export default function AgenticSettingsPage() {
                 <div>
                   <p className="font-semibold text-base">OpenAI Reserve (beta)</p>
                   <p className="text-sm text-muted-foreground mt-1 max-w-md">
-                    Visible dans ChatGPT avec widget natif. Nécessite que tu aies renseigné
-                    l&apos;adresse, le téléphone, le site web, et les coordonnées GPS de ton
+                    Visible dans ChatGPT avec widget natif. Nécessite que vous ayez renseigné
+                    l&apos;adresse, le téléphone, le site web, et les coordonnées GPS de votre
                     restaurant.
                   </p>
                   <div className="mt-3 flex items-center gap-2">
@@ -661,8 +661,8 @@ export default function AgenticSettingsPage() {
                 Validation manuelle pour chaque résa
               </label>
               <p className="text-xs text-muted-foreground">
-                Si activé, les résas agentic passent en PENDING avant que tu valides (utile au début
-                du pilote)
+                Si activé, les résas agentic passent en PENDING avant que vous validiez (utile au
+                début du pilote)
               </p>
             </div>
           </div>
@@ -683,7 +683,7 @@ export default function AgenticSettingsPage() {
           <ul className="space-y-1 list-disc list-inside">
             <li>
               Les <strong>quotes</strong> sont des estimations (5 min par défaut). Elles ne bloquent
-              pas ta capacité.
+              pas votre capacité.
             </li>
             <li>
               Les <strong>holds</strong> bloquent une table (7 min par défaut). Au-delà, le créneau

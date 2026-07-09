@@ -9,6 +9,11 @@
  * - Hold : 20 req/phone/jour (24h)
  * - Confirm : 5 req/phone/heure
  * - Anti-spam : 3 confirmations échouées en 1h → blocage 24h
+ *
+ * Si Redis est down, on bascule sur un fallback in-memory strict (limites
+ * réduites) pour éviter de bloquer tous les bookings tout en limitant le
+ * risque DoS. Le rate limit IP (@fastify/rate-limit) reste actif comme
+ * safety net.
  */
 
 import { redisCache } from '../../shared/redis/client';
@@ -17,6 +22,40 @@ import { alertFailOpen } from '../../shared/observability/alerts';
 const HOLD_DAILY_LIMIT = 20;
 const CONFIRM_HOURLY_LIMIT = 5;
 const FAILED_CONFIRM_THRESHOLD = 3;
+
+// Fallback in-memory (Redis down) — limites strictes pour limiter le risque DoS
+const FALLBACK_HOLD_DAILY_LIMIT = 5;
+const FALLBACK_CONFIRM_HOURLY_LIMIT = 2;
+const FALLBACK_FAILED_THRESHOLD = 2;
+
+type FallbackEntry = { count: number; expiresAt: number };
+
+const fallbackStore = new Map<string, FallbackEntry>();
+
+function fallbackGet(key: string): number {
+  const entry = fallbackStore.get(key);
+  if (!entry) return 0;
+  if (Date.now() > entry.expiresAt) {
+    fallbackStore.delete(key);
+    return 0;
+  }
+  return entry.count;
+}
+
+function fallbackIncr(key: string, ttlMs: number): number {
+  const now = Date.now();
+  const entry = fallbackStore.get(key);
+  if (!entry || now > entry.expiresAt) {
+    fallbackStore.set(key, { count: 1, expiresAt: now + ttlMs });
+    return 1;
+  }
+  entry.count++;
+  return entry.count;
+}
+
+function fallbackSet(key: string, value: number, ttlMs: number): void {
+  fallbackStore.set(key, { count: value, expiresAt: Date.now() + ttlMs });
+}
 
 function holdKey(phoneHash: string): string {
   return `connect:rl:hold:${phoneHash}`;
@@ -42,7 +81,7 @@ const HOUR_SECONDS = 3600;
  * Retourne true si autorisé, false si limit atteinte.
  * Incrémente le compteur si autorisé.
  *
- * Fail-open : si Redis est down, on accepte la requête (avec warning log).
+ * Si Redis est down, fallback in-memory strict (5/jour au lieu de 20).
  * Le rate limit IP (@fastify/rate-limit) reste actif comme safety net.
  */
 export async function canCreateHold(phoneHash: string): Promise<boolean> {
@@ -55,7 +94,8 @@ export async function canCreateHold(phoneHash: string): Promise<boolean> {
     return count <= HOLD_DAILY_LIMIT;
   } catch (err) {
     alertFailOpen({ source: 'connect_rate_limit', reason: 'canCreateHold_redis_down', err });
-    return true;
+    const count = fallbackIncr(holdKey(phoneHash), DAY_SECONDS * 1000);
+    return count <= FALLBACK_HOLD_DAILY_LIMIT;
   }
 }
 
@@ -64,7 +104,7 @@ export async function canCreateHold(phoneHash: string): Promise<boolean> {
  * Retourne true si autorisé, false si limit atteinte ou bloqué.
  * Incrémente le compteur si autorisé.
  *
- * Fail-open : si Redis est down, on accepte la requête (avec warning log).
+ * Si Redis est down, fallback in-memory strict (2/heure au lieu de 5).
  */
 export async function canConfirm(phoneHash: string): Promise<boolean> {
   try {
@@ -80,13 +120,16 @@ export async function canConfirm(phoneHash: string): Promise<boolean> {
     return count <= CONFIRM_HOURLY_LIMIT;
   } catch (err) {
     alertFailOpen({ source: 'connect_rate_limit', reason: 'canConfirm_redis_down', err });
-    return true;
+    // Check blocage anti-spam en fallback
+    if (fallbackGet(blockedKey(phoneHash)) > 0) return false;
+    const count = fallbackIncr(confirmKey(phoneHash), HOUR_SECONDS * 1000);
+    return count <= FALLBACK_CONFIRM_HOURLY_LIMIT;
   }
 }
 
 /**
  * Enregistre une confirmation échouée. Si ≥3 échecs en 1h → blocage 24h.
- * Best-effort : si Redis est down, l'échec n'est pas enregistré (non-bloquant).
+ * Best-effort : si Redis est down, fallback in-memory (≥2 échecs → blocage).
  */
 export async function recordFailedConfirm(phoneHash: string): Promise<void> {
   try {
@@ -100,5 +143,9 @@ export async function recordFailedConfirm(phoneHash: string): Promise<void> {
     }
   } catch (err) {
     alertFailOpen({ source: 'connect_rate_limit', reason: 'recordFailedConfirm_redis_down', err });
+    const count = fallbackIncr(failedConfirmKey(phoneHash), HOUR_SECONDS * 1000);
+    if (count >= FALLBACK_FAILED_THRESHOLD) {
+      fallbackSet(blockedKey(phoneHash), 1, DAY_SECONDS * 1000);
+    }
   }
 }

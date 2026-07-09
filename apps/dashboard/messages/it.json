@@ -39,20 +39,20 @@
     "themeTooltipDark": "Passa alla modalità chiara"
   },
   "home": {
-    "heroTitle": "L'IA che risponde alle tue chiamate quando non puoi",
-    "heroSubtitle": "Sokar risponde ai tuoi clienti 24h/24, prende le prenotazioni e registra ogni chiamata. Tu gestisci la sala, Sokar gestisce il telefono."
+    "heroTitle": "L'IA che risponde alle Sue chiamate quando non può",
+    "heroSubtitle": "Sokar risponde ai Suoi clienti 24h/24, prende le prenotazioni e registra ogni chiamata. Lei gestisce la sala, Sokar gestisce il telefono."
   },
   "pricing": {
     "title": "Prezzi semplici, senza impegno",
-    "subtitle": "Scegli il piano che si adatta al tuo ritmo. Cambia o annulla quando vuoi."
+    "subtitle": "Scelga il piano che si adatta al Suo ritmo. Cambi o annulli quando vuole."
   },
   "widget": {
     "title": "Widget di prenotazione",
-    "description": "Un pulsante fluttuante che i tuoi clienti aggiungono con un clic. Nessuna installazione, nessuna password."
+    "description": "Un pulsante fluttuante che i Suoi clienti aggiungono con un clic. Nessuna installazione, nessuna password."
   },
   "onboarding": {
     "title": "Configuriamo Sokar insieme",
-    "subtitle": "In pochi passi, il tuo assistente sarà pronto a prendere le chiamate."
+    "subtitle": "In pochi passi, il Suo assistente sarà pronto a prendere le chiamate."
   },
   "errors": {
     "notFound": "Pagina non trovata",

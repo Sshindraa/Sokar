@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 export default function ReservationsPage() {
   const { get, patch, del, orgId } = useApi();
@@ -33,6 +34,8 @@ export default function ReservationsPage() {
   const [reservations, setReservations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!orgId) return;
@@ -60,7 +63,15 @@ export default function ReservationsPage() {
   }
 
   async function deleteReservation(id: string) {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer cette réservation ?')) return;
+    setPendingDeleteId(id);
+    setConfirmOpen(true);
+  }
+
+  async function confirmDeleteReservation() {
+    if (!pendingDeleteId) return;
+    const id = pendingDeleteId;
+    setConfirmOpen(false);
+    setPendingDeleteId(null);
     try {
       setError('');
       await del(`reservations/${id}`);
@@ -226,6 +237,19 @@ export default function ReservationsPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onConfirm={confirmDeleteReservation}
+        onCancel={() => {
+          setConfirmOpen(false);
+          setPendingDeleteId(null);
+        }}
+        title="Supprimer la réservation"
+        description="Êtes-vous sûr de vouloir supprimer cette réservation ? Cette action est irréversible."
+        confirmLabel="Supprimer"
+        variant="destructive"
+      />
     </div>
   );
 }
