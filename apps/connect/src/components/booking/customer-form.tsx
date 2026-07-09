@@ -41,6 +41,7 @@ export function CustomerForm({
           id="firstName"
           type="text"
           required
+          aria-required="true"
           value={firstName}
           onChange={(e) => setFirstName(e.target.value)}
           className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[var(--widget-primary)] focus:border-[var(--widget-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--widget-accent)]"
@@ -51,13 +52,17 @@ export function CustomerForm({
 
       <div>
         <label htmlFor="phone" className="block text-sm font-medium text-[var(--widget-primary)]">
-          Téléphone *{' '}
-          <span className="font-normal text-muted-foreground">(format international)</span>
+          Téléphone *
         </label>
+        <span id="phone-hint" className="mt-0.5 block font-normal text-muted-foreground">
+          format international
+        </span>
         <input
           id="phone"
           type="tel"
           required
+          aria-required="true"
+          aria-describedby="phone-hint"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           placeholder="+33612345678"

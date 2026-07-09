@@ -15,7 +15,7 @@ export default async function HomePage() {
   const { restaurants, total } = await fetchPublicRestaurants(1, 12);
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-12">
+    <main id="main-content" className="mx-auto max-w-6xl px-6 py-12">
       <header className="mb-12">
         <h1 className="text-4xl font-bold text-ink">Sokar — Agent-Ready Pages</h1>
         <p className="mt-3 text-lg text-muted-foreground">

@@ -15,7 +15,7 @@ import { ArrowLeft } from 'lucide-react';
 import { fetchWidgetRestaurant } from '@/lib/api-client';
 import { BookingWidget } from '@/components/booking-widget';
 import { trackEventAsync } from '@/lib/tracking';
-import { toHexColor } from '@/lib/widget-colors';
+import { toHexColor, isValidSlug } from '@/lib/widget-colors';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +39,12 @@ export default async function WidgetPage({
 }) {
   const { slug } = await params;
   const sp = await searchParams;
+
+  // Valider le slug (anti-injection — audit sécurité Phase 2)
+  if (!isValidSlug(slug)) {
+    notFound();
+  }
+
   const restaurant = await fetchWidgetRestaurant(slug);
   if (!restaurant) {
     notFound();
@@ -62,7 +68,7 @@ export default async function WidgetPage({
   });
 
   return (
-    <main className="mx-auto max-w-xl px-4 py-6 sm:px-6">
+    <main id="main-content" className="mx-auto max-w-xl px-4 py-6 sm:px-6">
       {!isEmbedded && (
         <div className="mb-4">
           <Link
