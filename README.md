@@ -14,9 +14,11 @@ French-first restaurant reservation and AI call-management platform.
 ```text
 apps/api            Fastify API
 apps/dashboard      Next.js dashboard/marketing app
+apps/connect        Next.js public pages / widget embed
+apps/widget         standalone reservation widget
 packages/database   Prisma schema/client
 packages/config     shared config
-packages/types      shared TypeScript types
+packages/shared     shared TypeScript helpers
 docs                product and implementation notes
 ```
 
@@ -29,9 +31,15 @@ pnpm test       # Vitest
 pnpm lint       # lint
 pnpm db:push    # Prisma db push
 pnpm db:studio  # Prisma Studio
+pnpm deploy:prod    # deploy main to production (VPS pmbtc)
+pnpm deploy:staging # deploy main to staging (VPS pmbtc)
 hermes          # interactive agent
 hermes -z "task" # one-shot agent task
 ```
+
+## Ops scripts
+
+- `scripts/deploy-gift-cards-prod.sh` — manual backfill of gift-card short codes on production.
 
 ## Agent context
 

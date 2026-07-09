@@ -32,7 +32,8 @@
     "verify:prepush": "scripts/prepush-quality-gate.sh",
     "verify:ai": "scripts/agent/hermes-diff-review.sh head",
     "dogfood:sokar": "scripts/smoke/dogfood-sokar.sh",
-    "deploy:staging": "echo 'Le déploiement staging s'exécute sur le VPS via CI ou manuellement : ssh deploy@pmbtc \"cd /opt/sokar-staging && bash scripts/deploy-staging.sh\"'"
+    "deploy:prod": "ssh deploy@pmbtc 'cd /opt/sokar && git pull origin main && bash scripts/deploy-vps.sh --confirm-production'",
+    "deploy:staging": "ssh deploy@pmbtc 'cd /opt/sokar-staging && git pull origin main && bash scripts/deploy-staging.sh'"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.2",

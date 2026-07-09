@@ -6,12 +6,6 @@ cd "$ROOT"
 
 export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/opt/node@22/bin:$PATH"
 
-if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
-  DIFF_RANGE=(--cached)
-else
-  DIFF_RANGE=(--cached)
-fi
-
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR || true)
 if [ -z "$STAGED_FILES" ]; then
   echo "precommit-review: no staged files"
