@@ -24,7 +24,14 @@ DATE=$(date '+%Y-%m-%d %H:%M:%S')
 PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
 
 ensure_privileged_wrapper() {
-    if [ ! -x "$PRIVILEGED_WRAPPER" ]; then
+    if [ -x "$PRIVILEGED_WRAPPER" ]; then
+        echo "🔄 Mise à jour du wrapper privilégié..."
+        if sudo -n "$PRIVILEGED_WRAPPER" self-update prod >/dev/null 2>&1; then
+            echo "✅ Wrapper mis à jour."
+        else
+            echo "⚠️ self-update indisponible ou échoué ; le wrapper existant sera utilisé."
+        fi
+    else
         echo "📦 Installation initiale du wrapper privilégié..."
         sudo install -o root -g root -m 0755 \
             "$SOKAR_ROOT/scripts/ops/sokar-deploy-root.sh" "$PRIVILEGED_WRAPPER"
@@ -161,7 +168,7 @@ if [ "${1:-}" = "rollback" ]; then
     restore_artifacts "$RELEASE_PATH"
 
     echo "→ Restart services..."
-    pm2 start infra/ecosystem.config.js --update-env
+    pm2 start infra/ecosystem.config.js
     sleep 8
     pm2 save
     sudo /usr/local/sbin/sokar-deploy-root reload-nginx prod 2>/dev/null || true
@@ -532,7 +539,7 @@ sudo /usr/local/sbin/sokar-deploy-root install-runtime prod
 # ── 9. Restart services ─────────────────────────────────
 echo ""
 echo "📦 Restarting services..."
-pm2 start infra/ecosystem.config.js --update-env
+pm2 start infra/ecosystem.config.js
 sleep 4
 pm2 save
 sudo /usr/local/sbin/sokar-deploy-root reload-nginx prod
