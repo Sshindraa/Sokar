@@ -20,21 +20,21 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
+import { headers } from 'next/headers';
 import { fetchPublicRestaurant, fetchPublishedSlugs, fetchAvailability } from '@/lib/api-client';
 import { ReservationJsonLd, buildPublicRestaurantJsonLd } from '@/lib/jsonld';
 import { trackPageView, trackEvent } from '@/lib/tracking';
 import { BookCtaLink } from '@/components/book-cta-link';
 import { PageViewTracker } from '@/components/page-view-tracker';
+import { isValidSlug } from '@/lib/widget-colors';
 
 const SITE_URL = process.env.SITE_URL ?? 'https://sokar.tech';
 
 export const revalidate = 60;
 export const dynamicParams = true;
-// Force le rendu dynamique pour éviter DYNAMIC_SERVER_USAGE en staging (Next.js 15 +
-// standalone). En prod l'ISR fonctionne car Cloudflare cache le HTML statique ; en
-// staging le serveur standalone tente de re-render la page et échoue sur les
-// fetchs dynamiques (date du jour + availability). Le rendu dynamique est
-// acceptable pour le trafic staging.
+// Force-dynamic reste nécessaire pour le serveur standalone Next.js 15 (staging).
+// En prod, l'ISR est gérée par le cache Nginx/Cloudflare en amont (revalidate=60
+// est respecté par le CDN). Cf. AGENTS.md "Notes post-setup" pour le contexte.
 export const dynamic = 'force-dynamic';
 
 // Pre-render les pages restaurant publiées au build time.
@@ -133,11 +133,20 @@ export default async function RestaurantPage({
   const { slug } = await params;
   const sp = await searchParams;
   const isPreview = sp.preview === '1';
+
+  // Valider le slug (anti-injection — audit sécurité Phase 2)
+  if (!isValidSlug(slug)) {
+    notFound();
+  }
+
   const restaurant = await fetchPublicRestaurant(slug, { preview: isPreview });
 
   if (!restaurant) {
     notFound();
   }
+
+  // Read CSP nonce from middleware (audit sécurité Phase 2)
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
 
   // Track page_view côté client (en ISR, le server-side ne s'exécute qu'au revalidate)
   // PageViewTracker est un composant client qui track au mount — chaque visite est comptée
@@ -216,14 +225,15 @@ export default async function RestaurantPage({
 
   return (
     <>
-      <ReservationJsonLd jsonLd={jsonLd} />
+      <ReservationJsonLd jsonLd={jsonLd} nonce={nonce} />
       <script
         type="application/ld+json"
+        nonce={nonce}
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
 
-      <main className="mx-auto max-w-4xl px-6 py-12">
+      <main id="main-content" className="mx-auto max-w-4xl px-6 py-12">
         <PageViewTracker
           restaurantId={restaurant.id}
           restaurantSlug={restaurant.slug}
@@ -268,7 +278,7 @@ export default async function RestaurantPage({
             <figure className="mb-8 overflow-hidden rounded-xl">
               <Image
                 src={restaurant.images.cover}
-                alt={restaurant.name}
+                alt={`Vue du restaurant ${restaurant.name} à ${restaurant.address.city}`}
                 width={1200}
                 height={320}
                 className="h-64 w-full object-cover sm:h-80"
@@ -283,9 +293,10 @@ export default async function RestaurantPage({
                 <figure key={idx} className="overflow-hidden rounded-lg">
                   <Image
                     src={url}
-                    alt={`${restaurant.name} — photo ${idx + 2}`}
+                    alt={`Photo ${idx + 1} du restaurant ${restaurant.name}`}
                     width={400}
                     height={160}
+                    loading="lazy"
                     className="h-32 w-full object-cover transition-transform duration-200 hover:scale-105 sm:h-40"
                   />
                 </figure>

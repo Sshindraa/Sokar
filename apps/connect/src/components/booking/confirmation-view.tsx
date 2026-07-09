@@ -5,6 +5,7 @@
  */
 
 import Link from 'next/link';
+import { Check } from 'lucide-react';
 
 export type ConfirmDto = {
   reservationId: string;
@@ -25,10 +26,10 @@ export function ConfirmationView({
   embedded?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-cream p-6">
+    <div role="status" aria-live="polite" className="rounded-xl border border-border bg-cream p-6">
       <div className="mb-4 flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--widget-accent)] text-white">
-          ✓
+          <Check aria-hidden="true" size={20} />
         </div>
         <h2 className="text-xl font-semibold text-[var(--widget-primary)]">
           Réservation confirmée

@@ -6,7 +6,11 @@
  * - X-Content-Type-Options: nosniff
  * - X-Frame-Options: DENY (anti-clickjacking) — relaxé en SAMEORIGIN si ?preview=1
  * - Referrer-Policy: strict-origin-when-cross-origin
- * - Content-Security-Policy (autorise JSON-LD inline scripts et Cloudinary images)
+ * - Content-Security-Policy (nonce-based pour JSON-LD inline scripts, Cloudinary images)
+ *
+ * CSP : utilise un nonce par requête pour autoriser uniquement les scripts
+ * JSON-LD inline légitimes. Plus de 'unsafe-inline' sur script-src (audit
+ * sécurité Phase 2). style-src garde 'unsafe-inline' (Tailwind inline styles).
  *
  * En mode preview (?preview=1), on autorise l'embedding iframe depuis le
  * dashboard (cf. spec connect-v1.1 §13.5). DASHBOARD_URL (env) contient
@@ -43,7 +47,18 @@ function detectBot(userAgent: string): string | null {
 }
 
 export function middleware(request: NextRequest) {
-  const response = NextResponse.next();
+  // Generate a per-request nonce for CSP script-src (audit sécurité Phase 2).
+  // crypto.randomUUID() is available in Edge Runtime.
+  const nonce = crypto.randomUUID();
+
+  // Forward the nonce to Server Components via a request header.
+  // Server Components read it via headers() from 'next/headers'.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-nonce', nonce);
+
+  const response = NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 
   // Instrumentation : log les hits par bot IA sur les pages publiques.
   // Permet de savoir quels bots crawlent réellement Sokar (vs hypothèse).
@@ -129,11 +144,12 @@ export function middleware(request: NextRequest) {
         : "'self'"
       : "'none'";
 
-  // CSP : autorise le JSON-LD inline (spec §8), les images Cloudinary,
-  // et le self pour les scripts/styles. Pas d'eval, pas d'object-src.
+  // CSP : nonce-based pour script-src (audit sécurité Phase 2 — supprime 'unsafe-inline').
+  // Les scripts JSON-LD inline reçoivent le nonce via l'attribut nonce= en Server Component.
+  // style-src garde 'unsafe-inline' (Tailwind injecte des styles inline au runtime).
   const csp = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'", // JSON-LD inline (cf. spec v1.1 §8)
+    `script-src 'self' 'nonce-${nonce}'`,
     "style-src 'self' 'unsafe-inline'", // Tailwind inline styles
     "img-src 'self' https://res.cloudinary.com https://images.unsplash.com data:",
     "font-src 'self' data:",

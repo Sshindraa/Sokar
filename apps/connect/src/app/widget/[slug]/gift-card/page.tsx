@@ -63,7 +63,7 @@ export default async function GiftCardWidgetPage({
       <div className="pointer-events-none absolute left-1/2 top-1/2 h-[34rem] w-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[hsl(var(--reservation-glow)/0.11)] blur-3xl" />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,hsl(var(--reservation-ink)/0.025)_1px,transparent_1px)] bg-[length:96px_96px] opacity-30" />
 
-      <main className="relative z-10 mx-auto max-w-xl px-4 py-6 sm:px-6 sm:py-8">
+      <main id="main-content" className="relative z-10 mx-auto max-w-xl px-4 py-6 sm:px-6 sm:py-8">
         {!isEmbedded && (
           <div className="mb-6 text-center">
             <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[hsl(var(--reservation-soft))]">

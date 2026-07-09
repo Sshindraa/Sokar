@@ -71,7 +71,7 @@ export default async function CityPage({ params }: { params: Promise<{ city: str
   });
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-12">
+    <main id="main-content" className="mx-auto max-w-6xl px-6 py-12">
       {!data.shouldIndex && (
         <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           Cette page n&apos;est pas indexée car la ville compte {data.totalInCity} restaurant

@@ -126,9 +126,20 @@ export function BookingWidget({
   // Auto-resize iframe when embedded
   useEffect(() => {
     if (!embedded) return;
+    // Restrict postMessage targetOrigin to the parent's origin (audit sécurité Phase 2).
+    // document.referrer contient l'URL de la page parente qui embarque l'iframe.
+    // Si le referrer est vide (policy restrictive), on fallback sur '*' (le message
+    // ne contient qu'une hauteur, pas de données sensibles, et embed.js valide e.origin).
+    const parentOrigin = (() => {
+      try {
+        return document.referrer ? new URL(document.referrer).origin : '*';
+      } catch {
+        return '*';
+      }
+    })();
     const sendHeight = () => {
       const height = document.body.scrollHeight;
-      window.parent.postMessage({ type: 'sokar-widget-resize', height }, '*');
+      window.parent.postMessage({ type: 'sokar-widget-resize', height }, parentOrigin);
     };
     sendHeight();
     const observer = new ResizeObserver(sendHeight);

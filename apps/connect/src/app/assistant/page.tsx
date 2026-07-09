@@ -28,7 +28,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'https://api.sokar.tech';
 
 export default function AssistantPage() {
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
+    <main id="main-content" className="mx-auto max-w-3xl px-6 py-12">
       {/* ─── Hero ─── */}
       <div className="space-y-4">
         <div className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary">
