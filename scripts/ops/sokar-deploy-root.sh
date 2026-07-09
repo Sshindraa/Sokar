@@ -1,0 +1,147 @@
+#!/bin/bash
+
+set -Eeuo pipefail
+
+if [ "${EUID}" -ne 0 ]; then
+    echo "Ce wrapper doit être exécuté en root." >&2
+    exit 1
+fi
+
+usage() {
+    echo "Usage: $0 {check-cert|clean-next|install-nginx|restore-nginx|reload-nginx|install-runtime|check-prod-vhost|start-localstack|stop-localstack} {prod|staging} [dashboard|connect]" >&2
+    exit 2
+}
+
+[ "$#" -ge 2 ] || usage
+ACTION="$1"
+ENVIRONMENT="$2"
+
+case "$ENVIRONMENT" in
+    prod)
+        ROOT="/opt/sokar"
+        VHOST="sokar"
+        CERT_ROOT="/etc/letsencrypt/live/sokar.tech"
+        ;;
+    staging)
+        ROOT="/opt/sokar-staging"
+        VHOST="sokar-staging"
+        CERT_ROOT="/etc/letsencrypt/live/staging.sokar.tech"
+        ;;
+    *)
+        usage
+        ;;
+esac
+
+install_nginx() {
+    install -d -m 0755 /etc/nginx/snippets /etc/nginx/sites-available /etc/nginx/sites-enabled
+    install -m 0644 "$ROOT/infra/nginx/snippets/sokar-proxy.conf" /etc/nginx/snippets/sokar-proxy.conf
+    install -m 0644 "$ROOT/infra/nginx/snippets/sokar-cloudflare-real-ip.conf" /etc/nginx/snippets/sokar-cloudflare-real-ip.conf
+
+    if [ -f "/etc/nginx/sites-available/$VHOST" ]; then
+        install -m 0644 "/etc/nginx/sites-available/$VHOST" "/etc/nginx/sites-available/$VHOST.bak"
+    fi
+
+    if [ "$ENVIRONMENT" = "prod" ]; then
+        install -m 0644 "$ROOT/infra/nginx/sokar.conf" "/etc/nginx/sites-available/$VHOST"
+        ln -sfn "/etc/nginx/sites-available/$VHOST" "/etc/nginx/sites-enabled/$VHOST"
+    else
+        install -m 0644 "$ROOT/infra/nginx/sokar-staging.conf" "/etc/nginx/sites-available/$VHOST"
+        install -m 0644 "$ROOT/infra/nginx/sokar-staging.conf" "/etc/nginx/sites-enabled/$VHOST"
+    fi
+
+    if ! nginx -t; then
+        restore_nginx
+        nginx -t && systemctl reload nginx || true
+        return 1
+    fi
+
+    find "/etc/nginx/sites-available" -maxdepth 1 -type f -name "$VHOST.bak" -delete
+}
+
+restore_nginx() {
+    if [ -f "/etc/nginx/sites-available/$VHOST.bak" ]; then
+        install -m 0644 "/etc/nginx/sites-available/$VHOST.bak" "/etc/nginx/sites-available/$VHOST"
+        if [ "$ENVIRONMENT" = "prod" ]; then
+            ln -sfn "/etc/nginx/sites-available/$VHOST" "/etc/nginx/sites-enabled/$VHOST"
+        else
+            install -m 0644 "/etc/nginx/sites-available/$VHOST.bak" "/etc/nginx/sites-enabled/$VHOST"
+        fi
+    fi
+}
+
+clean_next() {
+    [ "$#" -eq 3 ] || usage
+    case "$3" in
+        dashboard) APP_DIR="$ROOT/apps/dashboard" ;;
+        connect) APP_DIR="$ROOT/apps/connect" ;;
+        *) usage ;;
+    esac
+    for sub in standalone server static types; do
+        rm -rf "$APP_DIR/.next/$sub"
+    done
+    rm -f "$APP_DIR/.next/BUILD_ID"
+    rm -rf "$APP_DIR/.next/eslint"*
+    find "$APP_DIR/.next" -maxdepth 1 -name '*.nft.json' -delete
+    find "$APP_DIR/.next/server" -name '*.nft.json' -delete 2>/dev/null || true
+}
+
+check_prod_vhost() {
+    [ "$ENVIRONMENT" = "prod" ] || usage
+    [ "$(nginx -T 2>/dev/null | grep -Ec 'server_name[[:space:]]+api\\.sokar\\.tech')" -eq 1 ]
+}
+
+localstack() {
+    [ "$ENVIRONMENT" = "prod" ] || usage
+    case "$ACTION" in
+        start-localstack) /usr/bin/docker start infra-localstack-1 ;;
+        stop-localstack) /usr/bin/docker stop infra-localstack-1 ;;
+        *) usage ;;
+    esac
+}
+
+install_runtime() {
+    [ "$ENVIRONMENT" = "prod" ] || usage
+    install -d -m 0700 -o deploy -g deploy /var/backups/sokar
+    install -m 0750 "$ROOT/scripts/backup-postgres.sh" /usr/local/sbin/sokar-backup-postgres
+    install -m 0644 "$ROOT/infra/cron/sokar-postgres-backup" /etc/cron.d/sokar-postgres-backup
+    install -d -m 0755 -o www-data -g www-data /var/cache/nginx/connect
+    install -m 0644 "$ROOT/infra/logrotate/sokar" /etc/logrotate.d/sokar
+}
+
+case "$ACTION" in
+    check-cert)
+        [ "$#" -eq 2 ] || usage
+        test -f "$CERT_ROOT/fullchain.pem" && test -f "$CERT_ROOT/privkey.pem"
+        ;;
+    clean-next)
+        clean_next
+        ;;
+    install-nginx)
+        [ "$#" -eq 2 ] || usage
+        install_nginx
+        ;;
+    restore-nginx)
+        [ "$#" -eq 2 ] || usage
+        restore_nginx
+        ;;
+    reload-nginx)
+        [ "$#" -eq 2 ] || usage
+        nginx -t
+        systemctl reload nginx
+        ;;
+    install-runtime)
+        [ "$#" -eq 2 ] || usage
+        install_runtime
+        ;;
+    check-prod-vhost)
+        [ "$#" -eq 2 ] || usage
+        check_prod_vhost
+        ;;
+    start-localstack|stop-localstack)
+        [ "$#" -eq 2 ] || usage
+        localstack
+        ;;
+    *)
+        usage
+        ;;
+esac
