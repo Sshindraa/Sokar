@@ -21,7 +21,7 @@
 import { PrismaClient } from '@prisma/client';
 import { normalizeOpeningHours } from '@sokar/shared';
 import type { AvailabilityDto, AvailabilitySlot } from './connect.types';
-import { MINUTES_TO_MS, HOURS_TO_MINUTES, HOURS_PER_DAY } from '../../shared/constants/time.js';
+import { MINUTES_TO_MS, HOURS_TO_MINUTES } from '../../shared/constants/time.js';
 
 const SLOT_MINUTES = 30;
 

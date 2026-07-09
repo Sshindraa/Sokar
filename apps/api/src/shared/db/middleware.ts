@@ -31,9 +31,7 @@ export const slowQueryExtension = {
     }: {
       model?: string;
       operation: string;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      args: any;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      args: unknown;
       query: (args: unknown) => Promise<unknown>;
     }) => {
       const start = Date.now();
