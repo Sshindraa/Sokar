@@ -16,11 +16,17 @@ const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
  * Sans clé Clerk (dev preview), le gate est transparent.
  */
 export function CreateRestaurantGate({ children }: { children: React.ReactNode }) {
+  // Sans clé Clerk, on rend le dashboard directement (mode démo locale).
+  // On ne peut pas appeler useAuth()/useOrganization() sans ClerkProvider
+  // monté — donc on court-circuite avant tout hook Clerk.
+  if (!hasClerkKey) return <>{children}</>;
+
+  return <CreateRestaurantGateInner>{children}</CreateRestaurantGateInner>;
+}
+
+function CreateRestaurantGateInner({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const { organization } = useOrganization();
-
-  // Pas de Clerk → on rend le dashboard directement (mode démo locale)
-  if (!hasClerkKey) return <>{children}</>;
 
   // Clerk pas encore chargé → on attend
   if (!isLoaded) {

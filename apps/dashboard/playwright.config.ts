@@ -112,17 +112,37 @@ export default defineConfig({
     },
   ],
 
-  // webServer : démarre un dev server local pour les tests E2E.
+  // webServer : démarre un serveur local pour les tests E2E.
   // Skip si PLAYWRIGHT_BASE_URL est défini (tests contre un environnement
   // distant comme staging — le serveur est déjà en ligne).
+  //
+  // En CI, on utilise le serveur standalone (production build) au lieu de
+  // `next dev`. Le step Build du workflow CI a déjà produit .next/standalone/
+  // — le serveur démarre en ~1s contre 60-90s pour `next dev` (compilation
+  // JIT à la première requête). C'est la cause racine des timeouts E2E
+  // (180s) observés en CI.
+  //
+  // Le standalone server ne copie pas auto .next/static → on le fait avant
+  // de lancer le server (scripts/copy-static.sh est idempotent).
+  //
+  // En local, on garde `next dev` (hot reload, pas besoin de rebuild).
   ...(process.env.PLAYWRIGHT_BASE_URL
     ? {}
     : {
         webServer: {
-          command: 'pnpm next dev',
+          command: process.env.CI
+            ? 'bash scripts/copy-static.sh && node .next/standalone/apps/dashboard/server.js'
+            : 'pnpm next dev',
           url: 'http://localhost:3000/dashboard',
-          timeout: 180_000,
+          timeout: 60_000,
           reuseExistingServer: !process.env.CI,
+          cwd: __dirname,
+          env: {
+            ...process.env,
+            CI: '1', // bypass la garde-fou middleware sans clé Clerk
+            PORT: '3000',
+            HOSTNAME: '0.0.0.0', // IPv4+IPv6 — localhost résout en ::1 sur macOS
+          },
         },
       }),
 });
