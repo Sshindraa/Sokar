@@ -1,0 +1,68 @@
+{
+  "_meta": {
+    "locale": "it",
+    "label": "Italiano",
+    "note": "Italian locale. Convention: Lei, mai tu. See apps/dashboard/src/i18n/config.ts."
+  },
+  "common": {
+    "appName": "Sokar",
+    "tagline": "Assistente vocale intelligente per il suo ristorante",
+    "loading": "Caricamento…",
+    "retry": "Riprova",
+    "errorTitle": "Si è verificato un errore",
+    "errorDescription": "Il dashboard ha riscontrato un errore imprevisto. Può riprovare o tornare più tardi.",
+    "errorDigest": "Riferimento dell'incidente: {digest}"
+  },
+  "nav": {
+    "overview": "Panoramica",
+    "calls": "Chiamate",
+    "reservations": "Prenotazioni",
+    "floorPlan": "Sala",
+    "customers": "Clienti",
+    "reactivation": "Reattivazione",
+    "giftCards": "Buoni regalo",
+    "giftCardPacks": "Pacchi regalo",
+    "agentic": "Agenti IA",
+    "connect": "Connect",
+    "widget": "Widget",
+    "settings": "Impostazioni"
+  },
+  "dashboard": {
+    "pageTitle": "Dashboard",
+    "subdomain": "Sokar OS",
+    "demoModeOn": "Modalità demo attiva",
+    "demoModeOff": "Vedi demo",
+    "demoModeTooltipOn": "Disattiva modalità demo",
+    "demoModeTooltipOff": "Vedi il prodotto con dati demo",
+    "themeToggle": "Tema",
+    "themeTooltipLight": "Passa alla modalità scura",
+    "themeTooltipDark": "Passa alla modalità chiara"
+  },
+  "home": {
+    "heroTitle": "L'IA che risponde alle tue chiamate quando non puoi",
+    "heroSubtitle": "Sokar risponde ai tuoi clienti 24h/24, prende le prenotazioni e registra ogni chiamata. Tu gestisci la sala, Sokar gestisce il telefono."
+  },
+  "pricing": {
+    "title": "Prezzi semplici, senza impegno",
+    "subtitle": "Scegli il piano che si adatta al tuo ritmo. Cambia o annulla quando vuoi."
+  },
+  "widget": {
+    "title": "Widget di prenotazione",
+    "description": "Un pulsante fluttuante che i tuoi clienti aggiungono con un clic. Nessuna installazione, nessuna password."
+  },
+  "onboarding": {
+    "title": "Configuriamo Sokar insieme",
+    "subtitle": "In pochi passi, il tuo assistente sarà pronto a prendere le chiamate."
+  },
+  "errors": {
+    "notFound": "Pagina non trovata",
+    "notFoundDescription": "La pagina che cerchi non esiste o è stata spostata.",
+    "goHome": "Torna alla home"
+  },
+  "languageSwitcher": {
+    "label": "Lingua",
+    "current": "Lingua corrente: {label}",
+    "comingSoon": "Prossimamente",
+    "comingSoonHint": "Altre lingue saranno aggiunte gradualmente."
+  }
+}
