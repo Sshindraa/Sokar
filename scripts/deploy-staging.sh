@@ -32,7 +32,14 @@ DATE=$(date '+%Y-%m-%d %H:%M:%S')
 PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
 
 ensure_privileged_wrapper() {
-    if [ ! -x "$PRIVILEGED_WRAPPER" ]; then
+    if [ -x "$PRIVILEGED_WRAPPER" ]; then
+        echo "🔄 Mise à jour du wrapper privilégié..."
+        if sudo -n "$PRIVILEGED_WRAPPER" self-update staging >/dev/null 2>&1; then
+            echo "✅ Wrapper mis à jour."
+        else
+            echo "⚠️ self-update indisponible ou échoué ; le wrapper existant sera utilisé."
+        fi
+    else
         echo "📦 Installation initiale du wrapper privilégié..."
         sudo install -o root -g root -m 0755 \
             "$SOKAR_ROOT/scripts/ops/sokar-deploy-root.sh" "$PRIVILEGED_WRAPPER"
@@ -75,7 +82,7 @@ if [ "${1:-}" = "rollback" ]; then
             cp -a "$RELEASE_PATH/$p" "$SOKAR_ROOT/$(dirname "$p")/"
         fi
     done
-    pm2 start infra/ecosystem.staging.config.js --update-env
+    pm2 start infra/ecosystem.staging.config.js
     sleep 8
     pm2 save
     sudo /usr/local/sbin/sokar-deploy-root reload-nginx staging 2>/dev/null || true
@@ -266,7 +273,7 @@ fi
 
 echo ""
 echo "📦 Restarting staging services..."
-pm2 start infra/ecosystem.staging.config.js --update-env
+pm2 start infra/ecosystem.staging.config.js
 sleep 4
 pm2 save
 sudo /usr/local/sbin/sokar-deploy-root reload-nginx staging
