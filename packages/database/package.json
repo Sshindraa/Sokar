@@ -2,11 +2,13 @@
   "name": "@sokar/database",
   "version": "0.0.1",
   "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "scripts": {
-    "build": "prisma generate",
+    "build": "prisma generate && tsc",
     "generate": "prisma generate",
     "push": "prisma db push",
     "seed": "prisma db seed",
@@ -15,10 +17,10 @@
     "migrate:deploy": "prisma migrate deploy",
     "migrate:status": "prisma migrate status",
     "studio": "prisma studio",
-    "lint": "tsc --noEmit",
+    "lint": "prisma generate && tsc --noEmit",
     "typecheck": "prisma generate && tsc --noEmit",
     "test": "echo \"no tests yet\" && exit 0",
-    "clean": "rm -rf .turbo node_modules"
+    "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3"
