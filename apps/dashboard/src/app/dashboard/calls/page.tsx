@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useApi } from '../../../lib/api';
+import { getErrorMessage, type Call, type CallListResponse } from '@/types/api';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import MobileDataCard from '@/components/MobileDataCard';
 import {
@@ -15,33 +16,15 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle, PhoneCall, Clock, MessageSquare } from 'lucide-react';
+import { formatDate } from '@sokar/shared';
 
-interface CallItem {
-  id: string;
-  callSid: string;
-  durationSec: number | null;
-  transcript: string | null;
-  intent: string | null;
-  outcome: string | null;
-  carrier: string | null;
-  createdAt: string;
-}
+interface CallItem extends Call {}
 
 function formatDuration(seconds: number | null): string {
   if (!seconds || seconds <= 0) return '—';
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('fr-FR', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 function OutcomeBadge({ outcome }: { outcome: string | null }) {
@@ -102,11 +85,11 @@ export default function CallsPage() {
 
     async function fetchCalls() {
       try {
-        const data = await get(`calls?restaurantId=${orgId}&limit=100`);
+        const data = await get<CallListResponse>(`calls?restaurantId=${orgId}&limit=100`);
         setCalls(Array.isArray(data?.data) ? data.data : []);
         setTotal(typeof data?.total === 'number' ? data.total : 0);
-      } catch (err: any) {
-        setError(err.message || 'Impossible de charger les appels');
+      } catch (err: unknown) {
+        setError(getErrorMessage(err, 'Impossible de charger les appels'));
       } finally {
         setLoading(false);
       }
@@ -160,7 +143,13 @@ export default function CallsPage() {
             <MobileDataCard
               key={call.id}
               title={IntentLabel({ intent: call.intent })}
-              subtitle={formatDate(call.createdAt)}
+              subtitle={formatDate(call.createdAt, 'fr-FR', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
               badge={<OutcomeBadge outcome={call.outcome} />}
               accentClass={
                 call.outcome === 'RESERVED'
@@ -214,7 +203,13 @@ export default function CallsPage() {
                 {calls.map((call) => (
                   <TableRow key={call.id} className="transition-all duration-200 hover:bg-accent">
                     <TableCell className="font-medium whitespace-nowrap">
-                      {formatDate(call.createdAt)}
+                      {formatDate(call.createdAt, 'fr-FR', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
                     </TableCell>
                     <TableCell>
                       <span className="inline-flex items-center gap-1 text-muted-foreground">

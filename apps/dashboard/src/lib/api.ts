@@ -32,10 +32,10 @@ export function useApi() {
   const orgId = organization?.id;
 
   const apiFetch = useCallback(
-    async <T = any>(
+    async <T = unknown>(
       method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
       path: string,
-      body?: any,
+      body?: unknown,
     ): Promise<T> => {
       if (!hasClerkKey) {
         return {} as T;
@@ -49,18 +49,19 @@ export function useApi() {
         body: body ? JSON.stringify(body) : undefined,
       });
 
-      let data: any = {};
+      let data: Record<string, unknown> = {};
       const text = await res.text();
       if (text) {
         try {
-          data = JSON.parse(text);
+          data = JSON.parse(text) as Record<string, unknown>;
         } catch {
           data = { message: text };
         }
       }
 
       if (!res.ok) {
-        throw new Error(data.error || data.message || `Erreur ${res.status}`);
+        const errorMsg = data.error || data.message || `Erreur ${res.status}`;
+        throw new Error(typeof errorMsg === 'string' ? errorMsg : `Erreur ${res.status}`);
       }
 
       return data as T;
@@ -68,20 +69,20 @@ export function useApi() {
     [],
   );
 
-  const get = useCallback(<T = any>(path: string) => apiFetch<T>('GET', path), [apiFetch]);
+  const get = useCallback(<T = unknown>(path: string) => apiFetch<T>('GET', path), [apiFetch]);
   const post = useCallback(
-    <T = any>(path: string, body?: any) => apiFetch<T>('POST', path, body),
+    <T = unknown>(path: string, body?: unknown) => apiFetch<T>('POST', path, body),
     [apiFetch],
   );
   const put = useCallback(
-    <T = any>(path: string, body?: any) => apiFetch<T>('PUT', path, body),
+    <T = unknown>(path: string, body?: unknown) => apiFetch<T>('PUT', path, body),
     [apiFetch],
   );
   const patch = useCallback(
-    <T = any>(path: string, body?: any) => apiFetch<T>('PATCH', path, body),
+    <T = unknown>(path: string, body?: unknown) => apiFetch<T>('PATCH', path, body),
     [apiFetch],
   );
-  const del = useCallback(<T = any>(path: string) => apiFetch<T>('DELETE', path), [apiFetch]);
+  const del = useCallback(<T = unknown>(path: string) => apiFetch<T>('DELETE', path), [apiFetch]);
 
   return {
     orgId,

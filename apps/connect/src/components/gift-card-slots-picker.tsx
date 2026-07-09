@@ -11,6 +11,7 @@
 
 import { useState, type CSSProperties } from 'react';
 import { Check, Calendar, AlertCircle, Loader2 } from 'lucide-react';
+import { formatDate } from '@sokar/shared';
 import type { GiftCardSlot, GiftCardBookResult } from '@/lib/api/gift-cards';
 import { bookGiftCardSlot } from '@/lib/api/gift-cards';
 
@@ -156,7 +157,7 @@ export function GiftCardSlotsPicker({
           >
             <div>
               <p className="text-[15px] font-extrabold text-[hsl(var(--reservation-ink))]">
-                {formatDate(slot.date)}
+                {formatSlotDate(slot.date)}
               </p>
               <p className="text-[13px] font-medium text-[hsl(var(--reservation-soft))]">
                 {slot.time}
@@ -266,10 +267,10 @@ export function GiftCardSlotsPicker({
   );
 }
 
-function formatDate(dateStr: string): string {
+/** Parse 'YYYY-MM-DD' en Date locale (évite le décalage UTC) puis formate. */
+function formatSlotDate(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number);
-  const date = new Date(y, m - 1, d);
-  return date.toLocaleDateString('fr-FR', {
+  return formatDate(new Date(y, m - 1, d), 'fr-FR', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',

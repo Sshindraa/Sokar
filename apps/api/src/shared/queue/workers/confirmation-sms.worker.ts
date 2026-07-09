@@ -3,6 +3,7 @@ import { redisQueue } from '../../redis/client';
 import { db } from '../../db/client';
 import { sendReminder } from '../../messaging/sender';
 import { setupWorkerListeners, jobLogger } from './helper';
+import { formatDate } from '@sokar/shared';
 
 /**
  * Worker pour l'envoi des rappels de réservation J-1.
@@ -18,14 +19,6 @@ import { setupWorkerListeners, jobLogger } from './helper';
 interface ConfirmationSmsJobData {
   kind: 'scan' | 'send';
   reservationId?: string;
-}
-
-function formatDate(date: Date): string {
-  return date.toLocaleDateString('fr-FR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
 }
 
 function formatTime(date: Date): string {
@@ -72,7 +65,11 @@ export const confirmationSmsWorker = new Worker(
             restaurantId: r.restaurantId,
             reservationId: r.id,
             customerId: r.customerId ?? undefined,
-            date: formatDate(r.reservedAt),
+            date: formatDate(r.reservedAt, 'fr-FR', {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+            }),
             time: formatTime(r.reservedAt),
             partySize: r.partySize,
           });
@@ -122,7 +119,11 @@ export const confirmationSmsWorker = new Worker(
         restaurantId: r.restaurantId,
         reservationId: r.id,
         customerId: r.customerId ?? undefined,
-        date: formatDate(r.reservedAt),
+        date: formatDate(r.reservedAt, 'fr-FR', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+        }),
         time: formatTime(r.reservedAt),
         partySize: r.partySize,
       });

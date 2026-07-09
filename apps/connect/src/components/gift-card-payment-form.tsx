@@ -12,6 +12,7 @@
 import { useState, type CSSProperties } from 'react';
 import { PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { CreditCard, Loader2, Lock, AlertCircle } from 'lucide-react';
+import { formatEuro } from '@sokar/shared';
 
 type Props = {
   clientSecret: string;
@@ -127,12 +128,4 @@ export function GiftCardPaymentForm({
       </p>
     </form>
   );
-}
-
-function formatEuro(amount: number): string {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-  }).format(amount);
 }

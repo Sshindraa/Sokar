@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, CalendarOff, Clock, TrendingDown } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApi } from '../../lib/api';
+import { getErrorMessage } from '@/types/api';
 
 interface EmptySlotDay {
   date: string;
@@ -54,8 +55,8 @@ export default function EmptySlotsWidget() {
       try {
         const res = await get<EmptySlotsResponse>('dashboard/empty-slots');
         if (mounted) setData(res);
-      } catch (err: any) {
-        if (mounted) setError(err.message || "Impossible de charger l'analyse des créneaux");
+      } catch (err: unknown) {
+        if (mounted) setError(getErrorMessage(err, "Impossible de charger l'analyse des créneaux"));
       } finally {
         if (mounted) setLoading(false);
       }

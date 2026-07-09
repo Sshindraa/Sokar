@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useApi } from '../../../lib/api';
+import { getErrorMessage } from '@/types/api';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import MobileDataCard from '@/components/MobileDataCard';
 import {
@@ -16,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, HeartHandshake, Send, X, Clock, Check, Phone } from 'lucide-react';
+import { formatDate } from '@sokar/shared';
 
 interface ReactivationCustomer {
   id: string;
@@ -42,15 +44,6 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge>{status}</Badge>;
 }
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '—';
-  return new Date(dateStr).toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-}
-
 function daysSince(dateStr: string | null): string {
   if (!dateStr) return '—';
   const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
@@ -72,10 +65,10 @@ export default function ReactivationPage() {
     setLoading(true);
     setError('');
     try {
-      const data = await get('dashboard/reactivation');
+      const data = await get<ReactivationCampaign[]>('dashboard/reactivation');
       setCampaigns(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      setError(err.message || 'Impossible de charger les campagnes');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de charger les campagnes'));
     }
     setLoading(false);
   }, [get]);
@@ -94,8 +87,8 @@ export default function ReactivationPage() {
           c.id === id ? { ...c, status: 'SENT', sentAt: new Date().toISOString() } : c,
         ),
       );
-    } catch (err: any) {
-      setError(err.message || "Impossible d'envoyer la campagne");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Impossible d'envoyer la campagne"));
     }
     setActionLoading(null);
   }
@@ -105,8 +98,8 @@ export default function ReactivationPage() {
     try {
       await post(`dashboard/reactivation/${id}/dismiss`);
       setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, status: 'DISMISSED' } : c)));
-    } catch (err: any) {
-      setError(err.message || "Impossible d'ignorer la campagne");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Impossible d'ignorer la campagne"));
     }
     setActionLoading(null);
   }
@@ -170,7 +163,12 @@ export default function ReactivationPage() {
                         {campaign.customerCount > 1 ? 's' : ''}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        · {formatDate(campaign.createdAt)}
+                        ·{' '}
+                        {formatDate(campaign.createdAt, 'fr-FR', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
                       </span>
                     </div>
                     <StatusBadge status={campaign.status} />
@@ -264,7 +262,11 @@ export default function ReactivationPage() {
                     <MobileDataCard
                       key={c.id}
                       title={`${c.customerCount} VIPs`}
-                      subtitle={formatDate(c.createdAt)}
+                      subtitle={formatDate(c.createdAt, 'fr-FR', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
                       badge={<StatusBadge status={c.status} />}
                       details={
                         c.status === 'SENT'
@@ -288,7 +290,13 @@ export default function ReactivationPage() {
                     <TableBody>
                       {pastCampaigns.map((c) => (
                         <TableRow key={c.id}>
-                          <TableCell>{formatDate(c.createdAt)}</TableCell>
+                          <TableCell>
+                            {formatDate(c.createdAt, 'fr-FR', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                            })}
+                          </TableCell>
                           <TableCell>{c.customerCount}</TableCell>
                           <TableCell>
                             {c.status === 'SENT' ? (

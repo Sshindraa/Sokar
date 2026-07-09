@@ -4,6 +4,7 @@
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Ban, Eye, Gift, Lock } from 'lucide-react';
+import { formatEuro } from '@sokar/shared';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import MobileDataCard from '@/components/MobileDataCard';
 import { Badge } from '@/components/ui/badge';
@@ -32,14 +33,6 @@ const STATUS_VARIANT: Record<string, string> = {
   CANCELLED: 'border-red-500/30 bg-red-500/10 text-red-500',
   CLOSED: 'border-purple-500/30 bg-purple-500/10 text-purple-500',
 };
-
-function formatEuro(amount: number): string {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
 
 function StatusBadge({ status }: { status: string }) {
   const variant = STATUS_VARIANT[status] ?? 'border-border bg-secondary text-muted-foreground';

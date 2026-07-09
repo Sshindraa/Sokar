@@ -1,3 +1,7 @@
+export type StepProps = {
+  onComplete: (nextStep: OnboardingTaskKey | null) => void;
+};
+
 export type OnboardingStatus = 'completed' | 'current' | 'blocked' | 'skipped' | 'pending';
 
 export type OnboardingTaskKey =

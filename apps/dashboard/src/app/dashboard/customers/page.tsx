@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useApi } from '../../../lib/api';
+import { getErrorMessage, type Customer } from '@/types/api';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import MobileDataCard from '@/components/MobileDataCard';
 import {
@@ -30,7 +31,7 @@ export default function CustomersPage() {
   const { get, patch, orgId } = useApi();
   const isMobile = useIsMobile();
 
-  const [customers, setCustomers] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchPhone, setSearchPhone] = useState('');
   const [error, setError] = useState('');
@@ -42,10 +43,10 @@ export default function CustomersPage() {
       setError('');
       try {
         const params = phone ? `?phone=${encodeURIComponent(phone)}` : '';
-        const data = await get(`customers${params}`);
+        const data = await get<Customer[]>(`customers${params}`);
         setCustomers(Array.isArray(data) ? data : []);
-      } catch (err: any) {
-        setError(err.message || 'Impossible de charger les clients');
+      } catch (err: unknown) {
+        setError(getErrorMessage(err, 'Impossible de charger les clients'));
       }
       setLoading(false);
     },
@@ -61,8 +62,8 @@ export default function CustomersPage() {
     try {
       await patch(`customers/${id}/vip`, { isVip: !current });
       setCustomers((prev) => prev.map((c) => (c.id === id ? { ...c, isVip: !current } : c)));
-    } catch (err: any) {
-      setError(err.message || 'Impossible de modifier le statut VIP');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de modifier le statut VIP'));
     }
   }
 
@@ -151,7 +152,7 @@ export default function CustomersPage() {
       ) : isMobile ? (
         /* ========== MOBILE: Card List ========== */
         <div className="space-y-2.5">
-          {customers.map((c: any) => {
+          {customers.map((c) => {
             const initials = (c.name || '?')
               .split(' ')
               .map((w: string) => w[0])
@@ -225,7 +226,7 @@ export default function CustomersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {customers.map((c: any) => (
+                {customers.map((c) => (
                   <TableRow key={c.id} className="transition-all duration-200 hover:bg-accent">
                     <TableCell className="font-medium">
                       {c.name || <span className="opacity-50">—</span>}

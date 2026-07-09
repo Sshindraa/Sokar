@@ -18,19 +18,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useGiftCardApi } from '@/lib/api/gift-cards';
 import { useApi } from '@/lib/api';
+import { getErrorMessage, type Restaurant } from '@/types/api';
+import { formatEuro } from '@sokar/shared';
 import type { GiftCardListItem, GiftCardPack, GiftCardStats } from '@/lib/api/gift-cards';
 import GiftCardList from '@/components/gift-cards/gift-card-list';
 import GiftCardForm from '@/components/gift-cards/gift-card-form';
 
 const PAGE_SIZE = 20;
-
-function formatEuro(amount: number): string {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
 
 function StatCard({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
   return (
@@ -96,7 +90,7 @@ export default function GiftCardsPage() {
         }),
         getGiftCardStats(),
         listGiftCardPacks(),
-        get<any>(`restaurants/${orgId}`),
+        get<Restaurant>(`restaurants/${orgId}`),
       ]);
       setCards(list.items);
       setTotal(list.total);
@@ -108,8 +102,8 @@ export default function GiftCardsPage() {
           ? Number(restaurant.giftCardCommissionRate) * 100
           : '',
       );
-    } catch (err: any) {
-      setError(err.message || 'Impossible de charger les cartes cadeaux');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de charger les cartes cadeaux'));
     } finally {
       setLoading(false);
     }
@@ -133,8 +127,8 @@ export default function GiftCardsPage() {
       setCards((prev) =>
         prev.map((c) => (c.id === card.id ? { ...c, status: 'CANCELLED', remainingAmount: 0 } : c)),
       );
-    } catch (err: any) {
-      setError(err.message || "Impossible d'annuler la carte cadeau");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Impossible d'annuler la carte cadeau"));
     }
   }
 
@@ -151,8 +145,8 @@ export default function GiftCardsPage() {
       setError('');
       const updated = await closeCrowdfunding(card.id);
       setCards((prev) => prev.map((c) => (c.id === card.id ? updated : c)));
-    } catch (err: any) {
-      setError(err.message || 'Impossible de clôturer la cagnotte');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de clôturer la cagnotte'));
     } finally {
       setClosingId(null);
     }
@@ -175,8 +169,8 @@ export default function GiftCardsPage() {
       await patch(`restaurants/${orgId}`, payload);
       setSavedMin(true);
       setTimeout(() => setSavedMin(false), 3000);
-    } catch (err: any) {
-      setError(err.message || 'Impossible de sauvegarder le montant minimum');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de sauvegarder le montant minimum'));
     } finally {
       setSavingMin(false);
     }

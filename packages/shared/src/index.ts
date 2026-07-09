@@ -16,3 +16,6 @@ export * from './call';
 export * from './agent';
 export * from './api';
 export * from './jsonld';
+export * from './utils/fetch-with-timeout';
+export * from './utils/format';
+export * from './utils/opening-hours';

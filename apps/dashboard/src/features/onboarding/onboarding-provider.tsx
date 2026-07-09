@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { useApi } from '@/lib/api';
+import { getErrorMessage } from '@/types/api';
 import type { OnboardingAction, OnboardingState, OnboardingTaskKey } from './types';
 
 type OnboardingContextValue = {
@@ -360,20 +361,15 @@ function ApiOnboardingProvider({ children }: { children: ReactNode }) {
       let data: OnboardingState;
       try {
         data = await get<OnboardingState>('restaurant/onboarding');
-      } catch (err: any) {
-        if (
-          !String(err.message || '')
-            .toLowerCase()
-            .includes('not found')
-        )
-          throw err;
+      } catch (err: unknown) {
+        if (!getErrorMessage(err, '').toLowerCase().includes('not found')) throw err;
         // 404 : attendre le sync puis retry une seule fois
         await syncPromise;
         data = await get<OnboardingState>('restaurant/onboarding');
       }
       setState(data);
-    } catch (err: any) {
-      setError(err.message || 'Impossible de charger la mise en service');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de charger la mise en service'));
     } finally {
       setLoading(false);
     }
@@ -400,8 +396,8 @@ function ApiOnboardingProvider({ children }: { children: ReactNode }) {
         });
         setState(data);
         return data;
-      } catch (err: any) {
-        setError(err.message || 'Impossible de mettre à jour la mise en service');
+      } catch (err: unknown) {
+        setError(getErrorMessage(err, 'Impossible de mettre à jour la mise en service'));
         return null;
       }
     },

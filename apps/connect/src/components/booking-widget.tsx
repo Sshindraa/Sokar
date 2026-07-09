@@ -21,6 +21,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { fetchWithTimeout } from '@sokar/shared';
 import { PartySizePicker } from './booking/party-size-picker';
 import { SlotGrid } from './booking/slot-grid';
 import { CustomerForm } from './booking/customer-form';
@@ -28,17 +29,6 @@ import { ConfirmationView, type ConfirmDto } from './booking/confirmation-view';
 import { trackEvent } from '@/lib/tracking';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
-const FETCH_TIMEOUT_MS = 10_000;
-
-/**
- * Fetch avec timeout via AbortController.
- * Si la requête dépasse FETCH_TIMEOUT_MS, elle est abortée et throw une erreur.
- */
-function fetchWithTimeout(url: string, options?: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
-}
 
 type Slot = { time: string; available: boolean };
 type AvailabilityDto = { date: string; partySize: number; slots: Slot[] };

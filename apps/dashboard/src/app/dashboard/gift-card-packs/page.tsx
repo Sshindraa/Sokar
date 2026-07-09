@@ -7,16 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useGiftCardApi } from '@/lib/api/gift-cards';
+import { getErrorMessage } from '@/types/api';
+import { formatEuro } from '@sokar/shared';
 import type { GiftCardPack } from '@/lib/api/gift-cards';
 import GiftCardPackForm from '@/components/gift-cards/gift-card-pack-form';
-
-function formatEuro(amount: number): string {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
 
 export default function GiftCardPacksPage() {
   const { listGiftCardPacks, toggleGiftCardPack, orgId } = useGiftCardApi();
@@ -34,8 +28,8 @@ export default function GiftCardPacksPage() {
     try {
       const data = await listGiftCardPacks();
       setPacks(data);
-    } catch (err: any) {
-      setError(err.message || 'Impossible de charger les packs');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de charger les packs'));
     } finally {
       setLoading(false);
     }
@@ -50,8 +44,8 @@ export default function GiftCardPacksPage() {
       setError('');
       const updated = await toggleGiftCardPack(pack.id);
       setPacks((prev) => prev.map((p) => (p.id === pack.id ? updated : p)));
-    } catch (err: any) {
-      setError(err.message || 'Impossible de modifier le statut du pack');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de modifier le statut du pack'));
     }
   }
 
