@@ -125,7 +125,7 @@ pm2 logs sokar-staging-api                  # logs API staging
 
 ## Déploiement production
 
-**L'agent peut déployer en prod sans demander à l'utilisateur.** L'accès SSH est configuré (`ssh deploy@pmbtc`), le script de deploy est idempotent avec rollback automatique.
+**Tout déploiement production nécessite une confirmation explicite juste avant l'exécution.** Staging peut être déployé automatiquement après une CI verte et ses smoke tests. Toute migration DB production, modification des paiements, de l'authentification, de la voice ou de la configuration critique doit être signalée avant exécution. Un rollback applicatif ne restaure pas automatiquement la base de données.
 
 **Infrastructure (VPS pmbtc, même machine que le staging) :**
 
@@ -140,10 +140,10 @@ pm2 logs sokar-staging-api                  # logs API staging
 
 ```zsh
 # Déployer la prod (depuis le Mac — l'agent fait ça directement)
-ssh deploy@pmbtc "cd /opt/sokar && git pull origin main && bash scripts/deploy-vps.sh"
+ssh deploy@pmbtc "cd /opt/sokar && git pull origin main && bash scripts/deploy-vps.sh --confirm-production"
 
-# Rollback prod
-ssh deploy@pmbtc "cd /opt/sokar && bash scripts/deploy-vps.sh rollback"
+# Rollback prod (confirmation explicite requise)
+ssh deploy@pmbtc "cd /opt/sokar && bash scripts/deploy-vps.sh --confirm-production rollback"
 
 # Voir les services prod
 ssh deploy@pmbtc "pm2 list | grep sokar"

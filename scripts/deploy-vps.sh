@@ -1,7 +1,7 @@
 #!/bin/bash
 # Deploy script pour VPS Sokar
-# Usage: bash scripts/deploy-vps.sh [branch]
-#        bash scripts/deploy-vps.sh rollback [release-timestamp]
+# Usage: bash scripts/deploy-vps.sh --confirm-production [branch]
+#        bash scripts/deploy-vps.sh --confirm-production rollback [release-timestamp]
 # Gère la mémoire limitée, les trois apps PM2 et le routage Nginx.
 #
 # Zero-downtime: l'API reste en ligne pendant le build. Seuls dashboard et
@@ -12,6 +12,11 @@
 # /opt/sokar/releases/. Rollback instantané si build échoue ou sur commande.
 
 set -Eeuo pipefail
+CONFIRM_PRODUCTION=false
+if [ "${1:-}" = "--confirm-production" ]; then
+    CONFIRM_PRODUCTION=true
+    shift
+fi
 BRANCH="${1:-main}"
 SOKAR_ROOT="/opt/sokar"
 RELEASES_DIR="$SOKAR_ROOT/releases"
@@ -109,6 +114,10 @@ list_releases() {
 }
 
 # ── Commande rollback ────────────────────────────────────
+if [ "$CONFIRM_PRODUCTION" != true ]; then
+    echo "❌ Confirmation production requise : relancez avec --confirm-production." >&2
+    exit 2
+fi
 if [ "${1:-}" = "rollback" ]; then
     cd "$SOKAR_ROOT"
     TARGET_RELEASE="${2:-}"
@@ -146,7 +155,7 @@ if [ "${1:-}" = "rollback" ]; then
     pm2 start infra/ecosystem.config.js --update-env
     sleep 8
     pm2 save
-    sudo systemctl reload nginx 2>/dev/null || true
+    sudo /usr/local/sbin/sokar-deploy-root reload-nginx prod 2>/dev/null || true
 
     echo ""
     echo "→ Vérification..."
@@ -185,8 +194,7 @@ if ! swapon --show | grep -q swapfile 2>/dev/null; then
     exit 1
 fi
 
-if ! sudo test -f /etc/letsencrypt/live/sokar.tech/fullchain.pem \
-    || ! sudo test -f /etc/letsencrypt/live/sokar.tech/privkey.pem; then
+if ! sudo /usr/local/sbin/sokar-deploy-root check-cert prod; then
     echo "❌ Certificat origine absent. Lance d'abord :"
     echo "   sudo bash scripts/ops/setup-origin-tls.sh"
     exit 1
@@ -232,13 +240,10 @@ recover_services() {
     pm2 restart sokar-api sokar-dashboard sokar-connect 2>/dev/null \
         || pm2 resurrect 2>/dev/null \
         || true
-    # Rollback Nginx si un backup existe
-    if [ -f /etc/nginx/sites-available/sokar.bak ]; then
-        echo "   Rollback Nginx vers la configuration précédente..."
-        sudo install -m 0644 /etc/nginx/sites-available/sokar.bak /etc/nginx/sites-available/sokar
-        sudo nginx -t 2>/dev/null && sudo systemctl reload nginx || true
-    fi
-    docker start infra-localstack-1 2>/dev/null || true
+    echo "   Rollback Nginx vers la configuration précédente..."
+    sudo /usr/local/sbin/sokar-deploy-root restore-nginx prod
+    sudo /usr/local/sbin/sokar-deploy-root reload-nginx prod || true
+    sudo /usr/local/sbin/sokar-deploy-root start-localstack prod 2>/dev/null || true
 
     # Nettoyer le snapshot pré-build (il n'a pas servi)
     rm -rf "${RESTORE_ON_FAIL}" 2>/dev/null || true
@@ -259,7 +264,7 @@ pm2 stop sokar-dashboard sokar-connect 2>/dev/null || true
 
 # Stop LocalStack (libère ~420MB)
 echo "   Stopping LocalStack..."
-docker stop infra-localstack-1 2>/dev/null || true
+sudo /usr/local/sbin/sokar-deploy-root stop-localstack prod 2>/dev/null || true
 
 # PM2 tourne désormais comme deploy → plus de caches root-owned.
 # ── Cache webpack persistant ──────────────────────────────────
@@ -268,19 +273,11 @@ docker stop infra-localstack-1 2>/dev/null || true
 # que les artefacts de build (standalone, server, static, BUILD_ID).
 # Les caches root-owned (legacy PM2 root) sont nettoyés avec sudo.
 clean_next_artifacts() {
-    local app_dir="$1"
-    for sub in standalone server static types; do
-        sudo rm -rf "$app_dir/.next/$sub" 2>/dev/null || true
-    done
-    sudo rm -f "$app_dir/.next/BUILD_ID" 2>/dev/null || true
-    sudo rm -rf "$app_dir/.next/eslint*" 2>/dev/null || true
-    # Les .nft.json à la racine de .next (traces standalone)
-    sudo find "$app_dir/.next" -maxdepth 1 -name '*.nft.json' -delete 2>/dev/null || true
-    # Les traces dans .next/server (si elles existent encore)
-    sudo find "$app_dir/.next/server" -name '*.nft.json' -delete 2>/dev/null || true
+    local app="$1"
+    sudo /usr/local/sbin/sokar-deploy-root clean-next prod "$app"
 }
-clean_next_artifacts "$SOKAR_ROOT/apps/dashboard"
-clean_next_artifacts "$SOKAR_ROOT/apps/connect"
+clean_next_artifacts dashboard
+clean_next_artifacts connect
 
 FREE_BEFORE=$(free -m | awk '/^Mem:/ {print $4}')
 echo "   Memory free: ${FREE_BEFORE}MB"
@@ -301,7 +298,7 @@ if [ "${SOKAR_REEXECED:-0}" != "1" ] && [ "$PREV_HASH" != "$NEW_HASH" ]; then
     if git diff --name-only "$PREV_HASH" "$NEW_HASH" 2>/dev/null | grep -qE '^scripts/deploy-vps\.sh$'; then
         echo "   📎 deploy-vps.sh mis à jour par le pull — re-exec pour charger la nouvelle version..."
         export SOKAR_REEXECED=1
-        exec bash "$0" "$BRANCH"
+        exec bash "$0" --confirm-production "$BRANCH"
     fi
 fi
 
@@ -494,17 +491,12 @@ if [ "$SKIP_ALL_BUILDS" = true ]; then
 else
     echo ""
     echo "📦 Backing up database..."
-    sudo install -d -m 0700 -o deploy -g deploy /var/backups/sokar
+    sudo /usr/local/sbin/sokar-deploy-root install-runtime prod
     bash "$SOKAR_ROOT/scripts/backup-postgres.sh"
-
-    sudo install -m 0750 "$SOKAR_ROOT/scripts/backup-postgres.sh" \
-        /usr/local/sbin/sokar-backup-postgres
-    sudo install -m 0644 "$SOKAR_ROOT/infra/cron/sokar-postgres-backup" \
-        /etc/cron.d/sokar-postgres-backup
 
     echo ""
     echo "📦 Applying database migrations..."
-    export DATABASE_URL=$(grep "^DATABASE_URL" apps/api/.env | cut -d= -f2-)
+    export DATABASE_URL=$(grep '^DATABASE_URL=' apps/api/.env | cut -d= -f2- | sed "s/^[\"'[:space:]]*//;s/[\"'[:space:]]*$//")
     pnpm exec prisma migrate deploy --schema=packages/database/prisma/schema.prisma
     unset DATABASE_URL
 fi # fin du else SKIP_ALL_BUILDS (DB backup + migrations)
@@ -512,48 +504,20 @@ fi # fin du else SKIP_ALL_BUILDS (DB backup + migrations)
 # ── 8. Install and validate Nginx routing ───────────────
 echo ""
 echo "📦 Installing Nginx routing..."
-sudo install -d -m 0755 /etc/nginx/snippets /etc/nginx/sites-available /etc/nginx/sites-enabled
-# Cache dirs for origin caching (sokar.tech vhost — spec §D2)
-sudo install -d -m 0755 -o www-data -g www-data /var/cache/nginx/connect
-
-# Backup current config before overwriting (pour rollback automatique).
-if [ -f /etc/nginx/sites-available/sokar ]; then
-    sudo install -m 0644 /etc/nginx/sites-available/sokar /etc/nginx/sites-available/sokar.bak
-fi
-
-sudo install -m 0644 infra/nginx/snippets/sokar-proxy.conf \
-    /etc/nginx/snippets/sokar-proxy.conf
-sudo install -m 0644 infra/nginx/snippets/sokar-cloudflare-real-ip.conf \
-    /etc/nginx/snippets/sokar-cloudflare-real-ip.conf
-sudo install -m 0644 infra/nginx/sokar.conf /etc/nginx/sites-available/sokar
-sudo ln -sfn /etc/nginx/sites-available/sokar /etc/nginx/sites-enabled/sokar
-
-if ! sudo nginx -t 2>&1; then
-    echo "❌ nginx -t échoué. Rollback de la configuration précédente."
-    if [ -f /etc/nginx/sites-available/sokar.bak ]; then
-        sudo install -m 0644 /etc/nginx/sites-available/sokar.bak /etc/nginx/sites-available/sokar
-        sudo nginx -t 2>/dev/null && sudo systemctl reload nginx || true
-    fi
-    exit 1
-fi
+sudo /usr/local/sbin/sokar-deploy-root install-nginx prod
 
 # Un seul virtual host doit posséder api.sokar.tech. Un doublon peut envoyer
 # les requêtes vers une ancienne configuration dashboard.
-API_VHOST_COUNT=$(sudo nginx -T 2>/dev/null \
-    | grep -Ec 'server_name[[:space:]]+api\.sokar\.tech' || true)
-if [ "$API_VHOST_COUNT" -ne 1 ]; then
-    echo "❌ ${API_VHOST_COUNT} virtual hosts déclarent api.sokar.tech (attendu: 1)."
+if ! sudo /usr/local/sbin/sokar-deploy-root check-prod-vhost prod; then
+    echo "❌ Le nombre de virtual hosts déclarant api.sokar.tech est incorrect (attendu: 1)."
     echo "   Supprime l'ancien fichier dans /etc/nginx/sites-enabled avant de relancer."
     exit 1
 fi
 
-# Nettoyer le backup après validation.
-sudo find /etc/nginx/sites-available -name sokar.bak -delete 2>/dev/null || true
-
 # ── 8b. Install logrotate ───────────────────────────────
 echo ""
 echo "📦 Installing logrotate..."
-sudo install -m 0644 "$SOKAR_ROOT/infra/logrotate/sokar" /etc/logrotate.d/sokar
+sudo /usr/local/sbin/sokar-deploy-root install-runtime prod
 
 # ── 9. Restart services ─────────────────────────────────
 echo ""
@@ -561,12 +525,12 @@ echo "📦 Restarting services..."
 pm2 start infra/ecosystem.config.js --update-env
 sleep 4
 pm2 save
-sudo systemctl reload nginx
+sudo /usr/local/sbin/sokar-deploy-root reload-nginx prod
 
 # Restart LocalStack
 echo ""
 echo "📦 Restarting LocalStack..."
-docker start infra-localstack-1 2>/dev/null || true
+sudo /usr/local/sbin/sokar-deploy-root start-localstack prod 2>/dev/null || true
 
 # ── 10. Verify ──────────────────────────────────────────
 echo ""

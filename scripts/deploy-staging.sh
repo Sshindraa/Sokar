@@ -69,7 +69,7 @@ if [ "${1:-}" = "rollback" ]; then
     pm2 start infra/ecosystem.staging.config.js --update-env
     sleep 8
     pm2 save
-    sudo systemctl reload nginx 2>/dev/null || true
+    sudo /usr/local/sbin/sokar-deploy-root reload-nginx staging 2>/dev/null || true
     echo "✅ Rollback staging vers $TARGET_RELEASE terminé"
     exit 0
 fi
@@ -230,7 +230,7 @@ if [ "$DRY_RUN" = true ]; then
 else
     echo ""
     echo "📦 Applying database migrations (staging DB)..."
-    export DATABASE_URL=$(grep "^DATABASE_URL" apps/api/.env | cut -d= -f2- | sed 's/^"//;s/"$//')
+    export DATABASE_URL=$(grep '^DATABASE_URL=' apps/api/.env | cut -d= -f2- | sed "s/^[\"'[:space:]]*//;s/[\"'[:space:]]*$//")
     pnpm exec prisma migrate deploy --schema=packages/database/prisma/schema.prisma
     unset DATABASE_URL
 fi
@@ -242,41 +242,7 @@ if [ "$DRY_RUN" = true ]; then
 else
     echo ""
     echo "📦 Installing Nginx staging routing..."
-    sudo install -d -m 0755 /etc/nginx/sites-available /etc/nginx/sites-enabled
-
-    # Backup current staging config si elle existe
-    if [ -f /etc/nginx/sites-available/sokar-staging ]; then
-        sudo install -m 0644 /etc/nginx/sites-available/sokar-staging /etc/nginx/sites-available/sokar-staging.bak
-    fi
-
-    # Les snippets sont partagés avec la prod (sokar-proxy.conf, cloudflare-real-ip).
-    # Le snippet cloudflare est déjà inclus par la config prod ; ne pas le ré-inclure
-    # dans sokar-staging.conf pour éviter la directive dupliquée "real_ip_header".
-    sudo install -m 0644 infra/nginx/snippets/sokar-proxy.conf \
-        /etc/nginx/snippets/sokar-proxy.conf 2>/dev/null || true
-    sudo install -m 0644 infra/nginx/snippets/sokar-cloudflare-real-ip.conf \
-        /etc/nginx/snippets/sokar-cloudflare-real-ip.conf 2>/dev/null || true
-
-    # Backup current staging config si elle existe
-    if [ -f /etc/nginx/sites-available/sokar-staging ]; then
-        sudo install -m 0644 /etc/nginx/sites-available/sokar-staging /etc/nginx/sites-available/sokar-staging.bak
-    fi
-
-    sudo install -m 0644 infra/nginx/sokar-staging.conf /etc/nginx/sites-available/sokar-staging
-    # On copie directement dans sites-enabled (pas de symlink) pour rester compatible
-    # avec les droits sudo NOPASSWD du compte deploy sur le VPS.
-    sudo install -m 0644 infra/nginx/sokar-staging.conf /etc/nginx/sites-enabled/sokar-staging
-
-    if ! sudo nginx -t 2>&1; then
-        echo "❌ nginx -t échoué. Rollback de la configuration staging précédente."
-        if [ -f /etc/nginx/sites-available/sokar-staging.bak ]; then
-            sudo install -m 0644 /etc/nginx/sites-available/sokar-staging.bak /etc/nginx/sites-available/sokar-staging
-            sudo install -m 0644 /etc/nginx/sites-available/sokar-staging.bak /etc/nginx/sites-enabled/sokar-staging
-            sudo nginx -t 2>/dev/null && sudo systemctl reload nginx || true
-        fi
-        exit 1
-    fi
-    sudo find /etc/nginx/sites-available -name sokar-staging.bak -delete 2>/dev/null || true
+    sudo /usr/local/sbin/sokar-deploy-root install-nginx staging
 fi
 
 # ── 9. Restart services (skip en dry-run) ────────────────
@@ -293,7 +259,7 @@ echo "📦 Restarting staging services..."
 pm2 start infra/ecosystem.staging.config.js --update-env
 sleep 4
 pm2 save
-sudo systemctl reload nginx
+sudo /usr/local/sbin/sokar-deploy-root reload-nginx staging
 
 # ── 10. Verify ───────────────────────────────────────────
 echo ""

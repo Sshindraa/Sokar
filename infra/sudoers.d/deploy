@@ -1,18 +1,6 @@
-# Sokar deploy user — restricted sudo for deployment operations only.
-# Replaces the previous NOPASSWD:ALL blanket grant.
-#
-# Allowed commands:
-#   nginx          — config test (-t), dump (-T)
-#   systemctl      — reload nginx only
-#   install        — copy files with permissions (nginx config, backup scripts, cron, logrotate)
-#   test           — check certificate existence (-f)
-#   ln             — create nginx symlink
-#   find           — cleanup nginx backup file
+# Sokar deploy user — privileged deployment operations through a fixed wrapper.
+# The deploy user must not remain in the sudo or docker groups after migration.
 
-Cmnd_Alias SOKAR_NGINX = /usr/sbin/nginx, /bin/systemctl reload nginx
-Cmnd_Alias SOKAR_INSTALL = /usr/bin/install
-Cmnd_Alias SOKAR_CERT = /usr/bin/test -f /etc/letsencrypt/live/sokar.tech/fullchain.pem, /usr/bin/test -f /etc/letsencrypt/live/sokar.tech/privkey.pem
-Cmnd_Alias SOKAR_SYMLINK = /bin/ln -sfn /etc/nginx/sites-available/sokar /etc/nginx/sites-enabled/sokar
-Cmnd_Alias SOKAR_CLEANUP = /usr/bin/find /etc/nginx/sites-available -name sokar.bak -delete, /usr/bin/find /opt/sokar/apps/dashboard/.next -delete, /usr/bin/find /opt/sokar/apps/connect/.next -delete
+Cmnd_Alias SOKAR_DEPLOY_WRAPPER = /usr/local/sbin/sokar-deploy-root
 
-deploy ALL=(root) NOPASSWD: SOKAR_NGINX, SOKAR_INSTALL, SOKAR_CERT, SOKAR_SYMLINK, SOKAR_CLEANUP
+deploy ALL=(root) NOPASSWD: SOKAR_DEPLOY_WRAPPER

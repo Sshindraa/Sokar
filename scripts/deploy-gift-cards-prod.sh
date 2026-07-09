@@ -1,8 +1,13 @@
 #!/bin/bash
 # Déploiement production de la feature cartes cadeaux (P1-P3 + shortCode).
-# Usage sur le VPS pmbtc : bash /opt/sokar/scripts/deploy-gift-cards-prod.sh
+# Usage sur le VPS pmbtc : bash /opt/sokar/scripts/deploy-gift-cards-prod.sh --confirm-production
 
 set -Eeuo pipefail
+
+if [ "${1:-}" != "--confirm-production" ]; then
+  echo "Confirmation production requise : relancez avec --confirm-production." >&2
+  exit 2
+fi
 
 SOKAR_ROOT="/opt/sokar"
 
@@ -77,7 +82,7 @@ log_info "Variables d'environnement OK."
 
 log_info "Lancement du déploiement..."
 PREV_HASH=$(git rev-parse HEAD 2>/dev/null || echo "")
-if ! bash scripts/deploy-vps.sh main; then
+if ! bash scripts/deploy-vps.sh --confirm-production main; then
   log_error "Déploiement échoué. Voir les logs ci-dessus."
   exit 1
 fi
@@ -90,7 +95,7 @@ if [ "${SOKAR_WRAPPER_REEXECED:-0}" != "1" ] && [ "$PREV_HASH" != "$NEW_HASH" ];
     if git diff --name-only "$PREV_HASH" "$NEW_HASH" 2>/dev/null | grep -qE '^scripts/deploy-gift-cards-prod\.sh$'; then
         log_info "📎 deploy-gift-cards-prod.sh mis à jour — re-exec pour charger la nouvelle version..."
         export SOKAR_WRAPPER_REEXECED=1
-        exec bash "$0"
+        exec bash "$0" --confirm-production
     fi
 fi
 
@@ -103,7 +108,7 @@ log_info "Déploiement terminé avec succès."
 
 log_info "Backfill des shortCodes en production..."
 cd "$SOKAR_ROOT"
-export DATABASE_URL=$(grep "^DATABASE_URL" apps/api/.env | cut -d= -f2-)
+export DATABASE_URL=$(grep '^DATABASE_URL=' apps/api/.env | cut -d= -f2- | sed "s/^[\"'[:space:]]*//;s/[\"'[:space:]]*$//")
 TSX_BIN="node_modules/.pnpm/tsx@4.21.0/node_modules/tsx/dist/cli.mjs"
 if [ ! -f "$TSX_BIN" ]; then
   # Fallback : chercher tsx dans .pnpm (version peut varier)
@@ -146,7 +151,7 @@ log_info "Vérifications OK."
 # ── Vérification DB shortCode ─────────────────────────────────────────
 
 log_info "Vérification des shortCodes en base..."
-export DATABASE_URL=$(grep "^DATABASE_URL" apps/api/.env | cut -d= -f2-)
+export DATABASE_URL=$(grep '^DATABASE_URL=' apps/api/.env | cut -d= -f2- | sed "s/^[\"'[:space:]]*//;s/[\"'[:space:]]*$//")
 SHORT_CODE_CHECK=$(cd "$SOKAR_ROOT/packages/database" && node "$(find ../../node_modules/.pnpm -path '*/prisma/build/index.js' 2>/dev/null | head -1)" db execute --stdin <<EOF 2>/dev/null
 SELECT COUNT(*) AS total, COUNT(short_code) AS with_short_code FROM gift_cards;
 EOF
