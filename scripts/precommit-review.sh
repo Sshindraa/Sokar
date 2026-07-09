@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
-export PATH="/usr/local/opt/node@22/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/opt/node@22/bin:$PATH"
 
 if ! git rev-parse --verify HEAD >/dev/null 2>&1; then
   DIFF_RANGE=(--cached)

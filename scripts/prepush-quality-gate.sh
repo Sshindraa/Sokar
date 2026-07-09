@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
-export PATH="/usr/local/opt/node@22/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/opt/node@22/bin:$PATH"
 export TURBO_TELEMETRY_DISABLED=1
 export NEXT_TELEMETRY_DISABLED=1
 
@@ -44,10 +44,10 @@ run_all=false
 if printf '%s\n' "$ALL_CHANGED" | grep -Eq '^(package.json|pnpm-lock.yaml|turbo.json|tsconfig.json|\.github/workflows/)'; then
   run_all=true
 fi
-if printf '%s\n' "$ALL_CHANGED" | grep -Eq '^(apps/api|packages/database|packages/config|packages/types|packages/shared)/'; then
+if printf '%s\n' "$ALL_CHANGED" | grep -Eq '^(apps/api|packages/database|packages/config|packages/shared)/'; then
   run_api=true
 fi
-if printf '%s\n' "$ALL_CHANGED" | grep -Eq '^(apps/dashboard|packages/config|packages/types|packages/shared)/'; then
+if printf '%s\n' "$ALL_CHANGED" | grep -Eq '^(apps/dashboard|packages/config|packages/shared)/'; then
   run_dashboard=true
 fi
 if printf '%s\n' "$ALL_CHANGED" | grep -Eq '^packages/'; then

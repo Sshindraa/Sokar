@@ -334,7 +334,7 @@ export function BookingWidget({
               disabled={loading}
               className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-3 text-base font-semibold text-[var(--widget-primary)] transition-all duration-200 hover:bg-muted disabled:opacity-50"
             >
-              ← Changer d'horaire
+              ← Changer d’horaire
             </button>
           </div>
         </form>
