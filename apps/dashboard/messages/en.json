@@ -64,5 +64,11 @@
     "current": "Current language: {label}",
     "comingSoon": "Coming soon",
     "comingSoonHint": "More languages will be added gradually."
+  },
+  "account": {
+    "label": "Account",
+    "settings": "Settings",
+    "signOut": "Sign out",
+    "signingOut": "Signing out…"
   }
 }

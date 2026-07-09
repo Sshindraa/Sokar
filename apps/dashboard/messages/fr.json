@@ -1,0 +1,74 @@
+{
+  "_meta": {
+    "locale": "fr",
+    "label": "Français",
+    "note": "Source de vérité. Tout le copy user-facing de la dashboard doit finir ici. Convention : vous, jamais tu. Voir apps/dashboard/src/i18n/config.ts pour la migration vers d'autres locales."
+  },
+  "common": {
+    "appName": "Sokar",
+    "tagline": "Assistant vocal intelligent pour votre restaurant",
+    "loading": "Chargement…",
+    "retry": "Réessayer",
+    "errorTitle": "Une erreur est survenue",
+    "errorDescription": "Le tableau de bord a rencontré un problème inattendu. Vous pouvez réessayer ou revenir plus tard.",
+    "errorDigest": "Référence de l'incident : {digest}"
+  },
+  "nav": {
+    "overview": "Aperçu",
+    "calls": "Appels",
+    "reservations": "Réservations",
+    "floorPlan": "Salle",
+    "customers": "Clients",
+    "reactivation": "Réactivation",
+    "giftCards": "Cartes cadeaux",
+    "giftCardPacks": "Packs cadeaux",
+    "agentic": "Agents IA",
+    "connect": "Connect",
+    "widget": "Widget",
+    "settings": "Réglages"
+  },
+  "dashboard": {
+    "pageTitle": "Tableau de bord",
+    "subdomain": "Sokar OS",
+    "demoModeOn": "Mode démo actif",
+    "demoModeOff": "Voir la démo",
+    "demoModeTooltipOn": "Désactiver le mode démo",
+    "demoModeTooltipOff": "Voir le produit avec des données de démo",
+    "themeToggle": "Thème",
+    "themeTooltipLight": "Passer en mode sombre",
+    "themeTooltipDark": "Passer en mode clair"
+  },
+  "home": {
+    "heroTitle": "L'IA qui prend vos appels quand vous ne pouvez pas",
+    "heroSubtitle": "Sokar répond à vos clients 24h/24, prend les réservations et note chaque appel. Vous gérez votre salle, Sokar gère le téléphone."
+  },
+  "pricing": {
+    "title": "Tarifs simples, sans engagement",
+    "subtitle": "Choisissez la formule qui correspond à votre rythme. Changez ou arrêtez quand vous voulez."
+  },
+  "widget": {
+    "title": "Widget de réservation",
+    "description": "Un bouton flottant que vos clients ajoutent en un clic. Aucune installation, aucun mot de passe."
+  },
+  "onboarding": {
+    "title": "Configurons Sokar ensemble",
+    "subtitle": "En quelques étapes, votre assistant sera prêt à prendre vos appels."
+  },
+  "errors": {
+    "notFound": "Page introuvable",
+    "notFoundDescription": "La page que vous cherchez n'existe pas ou a été déplacée.",
+    "goHome": "Retour à l'accueil"
+  },
+  "languageSwitcher": {
+    "label": "Langue",
+    "current": "Langue actuelle : {label}",
+    "comingSoon": "Bientôt disponible",
+    "comingSoonHint": "D'autres langues seront ajoutées progressivement."
+  },
+  "account": {
+    "label": "Compte",
+    "settings": "Réglages",
+    "signOut": "Déconnexion",
+    "signingOut": "Déconnexion…"
+  }
+}
