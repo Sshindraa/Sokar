@@ -22,39 +22,47 @@ export async function reactivationRoutes(app: FastifyInstance) {
     });
 
     // Pour les campaigns PENDING, charger les détails des VIPs
-    const result = await Promise.all(
-      campaigns.map(async (campaign) => {
-        if (campaign.customerIds.length === 0) return { ...campaign, customers: [] };
+    // Une seule query pour tous les customers (évite un N+1 : un findMany par campaign).
+    const allCustomerIds = campaigns.flatMap((c) => c.customerIds);
+    const allCustomers =
+      allCustomerIds.length > 0
+        ? await db.customer.findMany({
+            where: { id: { in: allCustomerIds } },
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              visitCount: true,
+              lastSeenAt: true,
+              isVip: true,
+            },
+          })
+        : [];
+    const customerMap = new Map(allCustomers.map((c) => [c.id, c]));
 
-        const customers = await db.customer.findMany({
-          where: { id: { in: campaign.customerIds } },
-          select: {
-            id: true,
-            name: true,
-            phone: true,
-            visitCount: true,
-            lastSeenAt: true,
-            isVip: true,
-          },
-        });
+    const result = campaigns.map((campaign) => {
+      if (campaign.customerIds.length === 0) return { ...campaign, customers: [] };
 
-        return {
-          id: campaign.id,
-          status: campaign.status,
-          sentCount: campaign.sentCount,
-          sentAt: campaign.sentAt,
-          createdAt: campaign.createdAt,
-          customerCount: campaign.customerIds.length,
-          customers: customers.map((c) => ({
-            id: c.id,
-            name: c.name || 'Client inconnu',
-            phone: c.phone,
-            visitCount: c.visitCount,
-            lastSeenAt: c.lastSeenAt,
-          })),
-        };
-      }),
-    );
+      const customers = campaign.customerIds
+        .map((id) => customerMap.get(id))
+        .filter((c): c is NonNullable<typeof c> => !!c);
+
+      return {
+        id: campaign.id,
+        status: campaign.status,
+        sentCount: campaign.sentCount,
+        sentAt: campaign.sentAt,
+        createdAt: campaign.createdAt,
+        customerCount: campaign.customerIds.length,
+        customers: customers.map((c) => ({
+          id: c.id,
+          name: c.name || 'Client inconnu',
+          phone: c.phone,
+          visitCount: c.visitCount,
+          lastSeenAt: c.lastSeenAt,
+        })),
+      };
+    });
 
     return reply.send(result);
   });

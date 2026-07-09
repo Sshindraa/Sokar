@@ -7,6 +7,7 @@
 import { Queue } from 'bullmq';
 import { redisQueue } from '../../../shared/redis/client';
 import { defaultReliableJobOptions } from '../../../shared/queue/job-options';
+import { AGENTIC_QUEUE_REMOVE_ON_COMPLETE } from '../../../shared/queue/constants.js';
 
 export const agenticExpireHoldQueue = new Queue('agentic-expire-hold', {
   connection: redisQueue,
@@ -39,8 +40,8 @@ export async function scheduleHoldExpiration(args: {
     {
       delay,
       jobId: `hold:${args.holdId}`,
-      removeOnComplete: 1000,
-      removeOnFail: 1000,
+      removeOnComplete: AGENTIC_QUEUE_REMOVE_ON_COMPLETE,
+      removeOnFail: AGENTIC_QUEUE_REMOVE_ON_COMPLETE,
     },
   );
 }
@@ -56,8 +57,8 @@ export async function scheduleQuoteExpiration(args: {
     {
       delay,
       jobId: `quote:${args.quoteId}`,
-      removeOnComplete: 1000,
-      removeOnFail: 1000,
+      removeOnComplete: AGENTIC_QUEUE_REMOVE_ON_COMPLETE,
+      removeOnFail: AGENTIC_QUEUE_REMOVE_ON_COMPLETE,
     },
   );
 }

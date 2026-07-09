@@ -8,6 +8,7 @@ import { useApi } from '@/lib/api';
 import { useOnboarding } from '../onboarding-provider';
 import { StepHeader } from '../ui';
 import type { StepProps } from '../types';
+import { CLIPBOARD_RESET_DELAY_MS } from '@/constants/ui';
 
 export function ConnectActivationStep({ onComplete }: StepProps) {
   const { patch, orgId } = useApi();
@@ -62,7 +63,7 @@ export function ConnectActivationStep({ onComplete }: StepProps) {
   function handleCopy() {
     navigator.clipboard.writeText(publicUrl);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), CLIPBOARD_RESET_DELAY_MS);
   }
 
   async function handleSkip() {

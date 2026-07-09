@@ -127,6 +127,7 @@ vi.mock('../shared/db/client', () => {
       findUnique: vi.fn(),
       update: vi.fn(),
       count: vi.fn(),
+      groupBy: vi.fn(),
     },
     customer: {
       findMany: vi.fn(),

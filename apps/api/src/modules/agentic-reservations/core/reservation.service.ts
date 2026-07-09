@@ -35,6 +35,11 @@ import { type PolicySnapshot, validateReservationAgainstPolicy } from './policie
 import { type ReservationChannel, assertCanTransition } from './state-machine.js';
 import { GiftCardService } from '../../gift-cards/gift-card.service.js';
 import type { GiftCardApplicationResult } from '../../gift-cards/gift-card.types.js';
+import {
+  IDEMPOTENCY_POLL_INTERVAL_MS,
+  IDEMPOTENCY_MAX_WAIT_ATTEMPTS,
+} from '../../../shared/constants/timeouts.js';
+import { DEFAULT_TRANSACTION_OPTIONS } from '../../../shared/db/transaction-options';
 
 export class ReservationNotFoundError extends Error {
   constructor(public readonly id: string) {
@@ -337,7 +342,7 @@ export class ReservationService {
         });
 
         return reservation.id;
-      });
+      }, DEFAULT_TRANSACTION_OPTIONS);
     } catch (err) {
       await this.idempotency.fail({ scope: idempotency.scope, key: idempotency.key });
       throw err;
@@ -514,7 +519,7 @@ export class ReservationService {
     key: string,
     payloadHash: string,
   ): Promise<CreateReservationResult | null> {
-    for (let attempt = 0; attempt < 20; attempt++) {
+    for (let attempt = 0; attempt < IDEMPOTENCY_MAX_WAIT_ATTEMPTS; attempt++) {
       const existing = await this.idempotency.lookup(scope, key, payloadHash);
       if (existing.kind === 'conflict') {
         throw new ReservationAlreadyExistsError(key);
@@ -531,7 +536,7 @@ export class ReservationService {
           };
         }
       }
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, IDEMPOTENCY_POLL_INTERVAL_MS));
     }
     return null;
   }

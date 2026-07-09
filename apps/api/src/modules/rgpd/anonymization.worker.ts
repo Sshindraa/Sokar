@@ -50,7 +50,27 @@ export async function runAnonymization(prisma: PrismaClient): Promise<Anonymizat
   let anonymized = 0;
   let errors = 0;
 
-  // 2. Pour chaque candidat, vérifier s'il y a eu d'autres résas récentes
+  // 2. Pré-charger en une seule query le nombre de résas récentes par phone
+  //    (évite un N+1 : un count() par candidat dans la boucle).
+  const customerPhones = [
+    ...new Set(candidates.map((c) => c.customerPhone).filter((p): p is string => !!p)),
+  ];
+  const recentCounts =
+    customerPhones.length > 0
+      ? await prisma.reservation.groupBy({
+          by: ['customerPhone'],
+          where: {
+            customerPhone: { in: customerPhones },
+            createdAt: { gt: cutoffGrace },
+          },
+          _count: { customerPhone: true },
+        })
+      : [];
+  const recentCountByPhone = new Map(
+    recentCounts.map((r) => [r.customerPhone, r._count.customerPhone]),
+  );
+
+  // 3. Pour chaque candidat, vérifier s'il y a eu d'autres résas récentes
   for (const c of candidates) {
     if (!c.customerPhone) {
       // Pas de phone, on anonymise (PII déjà effacée mais customerName peut rester)
@@ -59,12 +79,7 @@ export async function runAnonymization(prisma: PrismaClient): Promise<Anonymizat
       continue;
     }
     try {
-      const recentCount = await prisma.reservation.count({
-        where: {
-          customerPhone: c.customerPhone,
-          createdAt: { gt: cutoffGrace },
-        },
-      });
+      const recentCount = recentCountByPhone.get(c.customerPhone) ?? 0;
       if (recentCount === 0) {
         await anonymizeOne(prisma, c.id);
         anonymized++;

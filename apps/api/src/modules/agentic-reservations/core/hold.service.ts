@@ -30,6 +30,7 @@ import {
 import type { ReservationChannel as Channel } from './state-machine.js';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
 import { resolveServiceDurationMinutes } from '../../floor-plan/floor-plan.types.js';
+import { DEFAULT_TRANSACTION_OPTIONS } from '../../../shared/db/transaction-options';
 
 export class HoldConflictError extends Error {
   constructor(
@@ -303,7 +304,7 @@ export class HoldService {
       });
 
       return updated;
-    });
+    }, DEFAULT_TRANSACTION_OPTIONS);
   }
 
   /**

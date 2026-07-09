@@ -1,5 +1,8 @@
 import type { PrismaClient, Section, Table } from '@prisma/client';
 
+/** Capacité minimale par défaut d'une table (1 personne) */
+const DEFAULT_TABLE_MIN_CAPACITY = 1;
+
 export class FloorPlanValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -199,7 +202,7 @@ export class FloorPlanService {
         sectionId: input.sectionId ?? null,
         name: input.name,
         capacity: input.capacity,
-        minCapacity: input.minCapacity ?? 1,
+        minCapacity: input.minCapacity ?? DEFAULT_TABLE_MIN_CAPACITY,
         positionX: input.positionX ?? null,
         positionY: input.positionY ?? null,
         shape: input.shape ?? 'rect',
@@ -321,13 +324,13 @@ export class FloorPlanService {
 
   private validateTable(input: Partial<CreateTableInput>): void {
     if (input.capacity !== undefined) {
-      const minCapacity = input.minCapacity ?? 1;
+      const minCapacity = input.minCapacity ?? DEFAULT_TABLE_MIN_CAPACITY;
       if (input.capacity < minCapacity) {
         throw new FloorPlanValidationError(
           'La capacité doit être supérieure ou égale à la capacité minimale',
         );
       }
-      if (input.capacity < 1) {
+      if (input.capacity < DEFAULT_TABLE_MIN_CAPACITY) {
         throw new FloorPlanValidationError("La capacité doit être d'au moins 1");
       }
     }

@@ -49,6 +49,19 @@ import {
 import { emitConnectEvent } from './connect-analytics';
 import { canConfirm, recordFailedConfirm } from './connect-rate-limit';
 import { connectRequestDuration } from '../../shared/observability/metrics';
+import {
+  RATE_LIMIT_PREVIEW_MAX,
+  RATE_LIMIT_SITEMAP_MAX,
+  RATE_LIMIT_RESTAURANTS_MAX,
+  RATE_LIMIT_CITIES_MAX,
+  RATE_LIMIT_CITY_DETAIL_MAX,
+  RATE_LIMIT_ANALYTICS_MAX,
+  RATE_LIMIT_AVAILABILITY_MAX,
+  RATE_LIMIT_HOLD_MAX,
+  RATE_LIMIT_CONFIRM_MAX,
+  PAGINATION_DEFAULT_LIMIT,
+  PAGINATION_MAX_LIMIT,
+} from './constants';
 
 /**
  * Map une URL vers un nom de route lisible pour les labels Prometheus.
@@ -107,7 +120,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/public/r/:slug',
     {
-      config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+      config: { rateLimit: { max: RATE_LIMIT_PREVIEW_MAX, timeWindow: '1 minute' } },
     },
     async (req, reply) => {
       const parse = SlugParamSchema.safeParse(req.params);
@@ -134,7 +147,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/public/sitemap-data',
-    { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    { config: { rateLimit: { max: RATE_LIMIT_SITEMAP_MAX, timeWindow: '1 minute' } } },
     async (_req, reply) => {
       const rows = await db.restaurant.findMany({
         where: {
@@ -166,12 +179,17 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   const RestaurantsQuerySchema = z.object({
     page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(50).default(12),
+    limit: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(PAGINATION_MAX_LIMIT)
+      .default(PAGINATION_DEFAULT_LIMIT),
   });
 
   app.get(
     '/public/restaurants',
-    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    { config: { rateLimit: { max: RATE_LIMIT_RESTAURANTS_MAX, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const query = RestaurantsQuerySchema.parse(req.query ?? {});
       const result = await canal.getPublishedRestaurants(query.page, query.limit);
@@ -184,7 +202,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/public/cities',
-    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    { config: { rateLimit: { max: RATE_LIMIT_CITIES_MAX, timeWindow: '1 minute' } } },
     async (_req, reply) => {
       const rows = await db.restaurant.findMany({
         where: {
@@ -230,7 +248,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   app.get(
     '/public/cities/:slug',
-    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    { config: { rateLimit: { max: RATE_LIMIT_CITY_DETAIL_MAX, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const params = req.params as { slug: string };
       if (!isValidCitySlug(params.slug)) {
@@ -303,9 +321,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         select: { slug: true },
       });
       const restaurantSlugs = restaurantsRaw.map((r) => r.slug).filter((s): s is string => !!s);
-      const dtos = (
-        await Promise.all(restaurantSlugs.map((s) => canal.getPublishedBySlug(s)))
-      ).filter((d): d is NonNullable<typeof d> => d !== null);
+      const dtos = await canal.getPublishedBySlugs(restaurantSlugs);
 
       return reply.send({
         citySlug: params.slug,
@@ -327,7 +343,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
   app.post(
     '/public/analytics/events',
-    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    { config: { rateLimit: { max: RATE_LIMIT_ANALYTICS_MAX, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const body = (req.body ?? {}) as { event?: string; [key: string]: unknown };
       if (!body.event || typeof body.event !== 'string') {
@@ -361,7 +377,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/public/r/:slug/availability',
     {
-      config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+      config: { rateLimit: { max: RATE_LIMIT_AVAILABILITY_MAX, timeWindow: '1 minute' } },
     },
     async (req, reply) => {
       const slugParse = SlugParamSchema.safeParse(req.params);
@@ -399,7 +415,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     {
       config: {
         rateLimit: {
-          max: 11,
+          max: RATE_LIMIT_HOLD_MAX,
           timeWindow: '1 minute',
         },
       },
@@ -524,7 +540,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     {
       config: {
         rateLimit: {
-          max: 10,
+          max: RATE_LIMIT_CONFIRM_MAX,
           timeWindow: '1 minute',
         },
       },

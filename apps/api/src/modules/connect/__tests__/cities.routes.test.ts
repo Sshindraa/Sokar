@@ -118,7 +118,8 @@ describe('Sokar Connect — Pages locales T7', () => {
       { slug: 'rest-1' },
       { slug: 'rest-2' },
     ] as never);
-    // Le service re-fetch chaque DTO via findUnique.
+    // Mock le 3e findMany (getPublishedBySlugs — batch DTOs)
+    vi.mocked(db.restaurant.findMany).mockResolvedValueOnce([] as never);
     // Note : ce test vérifie la mécanique ville, pas la sérialisation DTO
     // (testée dans connect.routes.test.ts).
     const res = await app.inject({ method: 'GET', url: '/public/cities/lyon' });
@@ -150,14 +151,8 @@ describe('Sokar Connect — Pages locales T7', () => {
     ];
     vi.mocked(db.restaurant.findMany).mockResolvedValueOnce(cityRows as never);
     vi.mocked(db.restaurant.findMany).mockResolvedValueOnce([{ slug: 'rest-1' }] as never);
-    vi.mocked(db.restaurant.findUnique).mockImplementation(((args: {
-      where: { slug?: string };
-    }) => {
-      if (args.where.slug === 'rest-1') {
-        return Promise.resolve(RESTAURANT_BASE as never);
-      }
-      return Promise.resolve(null as never);
-    }) as never);
+    // Mock le 3e findMany (getPublishedBySlugs — batch DTOs)
+    vi.mocked(db.restaurant.findMany).mockResolvedValueOnce([] as never);
 
     const res = await app.inject({
       method: 'GET',

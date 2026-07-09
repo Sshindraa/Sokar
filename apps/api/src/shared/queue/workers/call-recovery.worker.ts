@@ -3,6 +3,7 @@ import { redisQueue } from '../../redis/client';
 import { sendSms } from '../../telnyx/client';
 import { setupWorkerListeners, jobLogger } from './helper';
 import { queues } from '../queues';
+import { CALL_RECOVERY_WORKER_CONCURRENCY } from '../constants';
 
 export interface CallRecoveryJobData {
   callId: string;
@@ -61,7 +62,7 @@ export async function processCallRecoveryJob(job: Job): Promise<void> {
 
 export const callRecoveryWorker = new Worker('call-recovery', processCallRecoveryJob, {
   connection: redisQueue,
-  concurrency: 3,
+  concurrency: CALL_RECOVERY_WORKER_CONCURRENCY,
 });
 
 setupWorkerListeners(callRecoveryWorker);

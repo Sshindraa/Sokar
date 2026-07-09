@@ -9,11 +9,25 @@
  */
 
 import type { ReservationChannel } from './state-machine.js';
+import { HOURS_PER_DAY, HOURS_TO_MINUTES, HOUR_SECONDS } from '../../../shared/constants/time.js';
 
 export const DEFAULT_QUOTE_TTL_SECONDS = 300; // 5 min
 export const DEFAULT_HOLD_TTL_SECONDS = 420; // 7 min
 export const DEFAULT_MAX_PARTY_SIZE = 12;
 export const DEFAULT_MIN_LEAD_TIME_MINUTES = 30;
+
+/** Limite dure pour maxPartySize (validation des settings restaurant) */
+export const MAX_PARTY_SIZE_HARD_LIMIT = 50;
+/** Limite max pour minLeadTimeMinutes = 24h en minutes */
+export const MAX_LEAD_TIME_MINUTES = HOURS_PER_DAY * HOURS_TO_MINUTES;
+/** Limite max pour quoteTtlSeconds = 1h */
+export const MAX_QUOTE_TTL_SECONDS = HOUR_SECONDS;
+/** Limite max pour holdTtlSeconds = 1h */
+export const MAX_HOLD_TTL_SECONDS = HOUR_SECONDS;
+/** Annulation gratuite par défaut : 120 min avant le créneau */
+export const DEFAULT_FREE_CANCELLATION_MINUTES = 120;
+/** Seuil d'avertissement no-show par défaut */
+export const DEFAULT_NOSHOW_WARNING_THRESHOLD = 2;
 
 export type ExposedCreneau = {
   /** 0 = dimanche, 6 = samedi */
@@ -92,30 +106,39 @@ export function validateExposureSettings(input: {
   const holdTtlSeconds = input.holdTtlSeconds ?? undefined;
   const noShowPolicy = input.noShowPolicy ?? undefined;
 
-  if (maxPartySize !== undefined && (maxPartySize < 1 || maxPartySize > 50)) {
+  if (
+    maxPartySize !== undefined &&
+    (maxPartySize < 1 || maxPartySize > MAX_PARTY_SIZE_HARD_LIMIT)
+  ) {
     throw new PolicyValidationError(
-      `maxPartySize doit être entre 1 et 50 (reçu ${maxPartySize})`,
+      `maxPartySize doit être entre 1 et ${MAX_PARTY_SIZE_HARD_LIMIT} (reçu ${maxPartySize})`,
       'INVALID_MAX_PARTY_SIZE',
     );
   }
   if (
     minLeadTimeMinutes !== undefined &&
-    (minLeadTimeMinutes < 0 || minLeadTimeMinutes > 24 * 60)
+    (minLeadTimeMinutes < 0 || minLeadTimeMinutes > MAX_LEAD_TIME_MINUTES)
   ) {
     throw new PolicyValidationError(
-      `minLeadTimeMinutes doit être entre 0 et 1440 (reçu ${minLeadTimeMinutes})`,
+      `minLeadTimeMinutes doit être entre 0 et ${MAX_LEAD_TIME_MINUTES} (reçu ${minLeadTimeMinutes})`,
       'INVALID_MIN_LEAD_TIME',
     );
   }
-  if (quoteTtlSeconds !== undefined && (quoteTtlSeconds < 30 || quoteTtlSeconds > 3600)) {
+  if (
+    quoteTtlSeconds !== undefined &&
+    (quoteTtlSeconds < 30 || quoteTtlSeconds > MAX_QUOTE_TTL_SECONDS)
+  ) {
     throw new PolicyValidationError(
-      `quoteTtlSeconds doit être entre 30 et 3600 (reçu ${quoteTtlSeconds})`,
+      `quoteTtlSeconds doit être entre 30 et ${MAX_QUOTE_TTL_SECONDS} (reçu ${quoteTtlSeconds})`,
       'INVALID_QUOTE_TTL',
     );
   }
-  if (holdTtlSeconds !== undefined && (holdTtlSeconds < 60 || holdTtlSeconds > 3600)) {
+  if (
+    holdTtlSeconds !== undefined &&
+    (holdTtlSeconds < 60 || holdTtlSeconds > MAX_HOLD_TTL_SECONDS)
+  ) {
     throw new PolicyValidationError(
-      `holdTtlSeconds doit être entre 60 et 3600 (reçu ${holdTtlSeconds})`,
+      `holdTtlSeconds doit être entre 60 et ${MAX_HOLD_TTL_SECONDS} (reçu ${holdTtlSeconds})`,
       'INVALID_HOLD_TTL',
     );
   }
@@ -147,7 +170,7 @@ function isNoShowPolicyKind(v: string | undefined): v is NoShowPolicyKind {
 export function buildPolicySnapshot(input: RestaurantPolicyInput): PolicySnapshot {
   return {
     cancellation: {
-      freeUntilMinutesBefore: 120,
+      freeUntilMinutesBefore: DEFAULT_FREE_CANCELLATION_MINUTES,
       feeAmount: undefined,
       feeCurrency: 'EUR',
       version: input.policyVersion,
@@ -158,7 +181,7 @@ export function buildPolicySnapshot(input: RestaurantPolicyInput): PolicySnapsho
         : 'warning',
       feeAmount: undefined,
       feeCurrency: 'EUR',
-      warningThreshold: 2,
+      warningThreshold: DEFAULT_NOSHOW_WARNING_THRESHOLD,
       version: input.policyVersion,
     },
     maxPartySize: input.maxPartySize ?? DEFAULT_MAX_PARTY_SIZE,

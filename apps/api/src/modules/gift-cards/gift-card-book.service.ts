@@ -16,6 +16,7 @@ import { zonedTimeToUtc } from '../floor-plan/availability-capacity-aware.servic
 import { GiftCardService } from './gift-card.service';
 import { GiftCardSlotsService } from './gift-card-slots.service';
 import { GiftCardBookResult } from './gift-card.types.js';
+import { MINUTES_TO_MS, DAY_SECONDS } from '../../shared/constants/time.js';
 
 export class GiftCardBookError extends Error {
   constructor(message: string) {
@@ -96,7 +97,7 @@ export class GiftCardBookService {
       settings?.capacitySpecials as Record<string, unknown> | undefined,
     );
     const startsAt = zonedTimeToUtc(chosen.date, chosen.time, timeZone);
-    const endsAt = new Date(startsAt.getTime() + serviceDurationMinutes * 60 * 1000);
+    const endsAt = new Date(startsAt.getTime() + serviceDurationMinutes * MINUTES_TO_MS);
 
     const idempotencyScope = computeIdempotencyScope({
       restaurantId: cardWithPack.restaurantId,
@@ -122,7 +123,7 @@ export class GiftCardBookService {
         scope: idempotencyScope,
         key: `gift-card-${code}-${chosen.date}-${chosen.time}`,
         payloadHash: `${customer.phone}-${chosen.date}-${chosen.time}`,
-        ttlSeconds: 86400,
+        ttlSeconds: DAY_SECONDS,
       },
     );
 

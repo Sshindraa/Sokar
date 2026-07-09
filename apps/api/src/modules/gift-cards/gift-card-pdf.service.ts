@@ -12,6 +12,8 @@
 import PDFDocument from 'pdfkit';
 import type { GiftCard } from '@prisma/client';
 import { logger } from '../../shared/logger/pino';
+import { PDF_IMAGE_FETCH_TIMEOUT_MS } from '../../shared/constants/timeouts.js';
+import { PDF_IMAGE_WIDTH, PDF_IMAGE_HEIGHT } from './constants.js';
 
 type GiftCardWithRelations = GiftCard & {
   restaurant?: { name: string } | null;
@@ -25,7 +27,7 @@ type GiftCardWithRelations = GiftCard & {
 async function fetchImageBuffer(url: string): Promise<Buffer | null> {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
+    const timer = setTimeout(() => controller.abort(), PDF_IMAGE_FETCH_TIMEOUT_MS);
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timer);
     if (!res.ok) {
@@ -71,8 +73,8 @@ export async function generateGiftCardPdf(card: GiftCardWithRelations): Promise<
     // Image personnalisée en en-tête (si téléchargée avec succès)
     if (customImage) {
       try {
-        const imgWidth = 120;
-        const imgHeight = 60;
+        const imgWidth = PDF_IMAGE_WIDTH;
+        const imgHeight = PDF_IMAGE_HEIGHT;
         const x = (doc.page.width - imgWidth) / 2;
         doc.image(customImage, x, 30, { width: imgWidth, height: imgHeight });
         // Réserver l'espace pour l'image

@@ -106,6 +106,41 @@ export class ConnectService {
   }
 
   /**
+   * Récupère plusieurs restaurants publiés par slug en une seule query.
+   * Évite un N+1 vs N appels à `getPublishedBySlug`.
+   * Retourne les DTOs dans le même ordre que `slugs` (les slugs introuvables
+   * ou non publiés sont filtrés).
+   */
+  async getPublishedBySlugs(slugs: string[]): Promise<PublicRestaurantDto[]> {
+    if (slugs.length === 0) return [];
+
+    const rows = await this.prisma.restaurant.findMany({
+      where: {
+        slug: { in: slugs },
+        exposureSettings: { connectPublished: true },
+        publishedAt: { not: null },
+        agenticOptIn: true,
+      },
+      include: {
+        exposureSettings: true,
+        images: {
+          orderBy: [{ isCover: 'desc' }, { position: 'asc' }],
+        },
+      },
+    });
+
+    const dtoBySlug = new Map<string, PublicRestaurantDto>();
+    for (const r of rows) {
+      if (r.slug) dtoBySlug.set(r.slug, this.toPublicDto(r));
+    }
+
+    // Préserver l'ordre des slugs d'entrée (comportement identique à N getPublishedBySlug)
+    return slugs
+      .map((s) => dtoBySlug.get(s))
+      .filter((d): d is PublicRestaurantDto => d !== undefined);
+  }
+
+  /**
    * Liste paginée des restaurants publiés (Phase 6 — scalabilité homepage).
    * Pagination réelle en DB (skip/take), pas en mémoire.
    * Retourne le DTO complet pour chaque restaurant (pour la grille homepage).

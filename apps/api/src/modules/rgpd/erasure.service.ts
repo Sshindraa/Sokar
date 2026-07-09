@@ -22,6 +22,7 @@
 
 import type { PrismaClient } from '@prisma/client';
 import { logger } from '../../shared/logger/pino';
+import { LONG_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
 import { ConsentService } from './consent.service';
 import { AuditLogService } from '../agentic-reservations/core/audit-log.service';
 import { trackRgpdEvent } from '../analytics/events.service';
@@ -91,7 +92,7 @@ export class ErasureService {
         },
       });
       return result.count;
-    });
+    }, LONG_TRANSACTION_OPTIONS);
 
     // 3. Anonymiser les appels (best-effort : la table Call peut ne pas
     //    avoir de customerPhone selon le schéma).

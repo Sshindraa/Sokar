@@ -8,6 +8,7 @@ import { getErrorMessage } from '@/types/api';
 import { useOnboarding } from '../onboarding-provider';
 import { StepHeader } from '../ui';
 import type { StepProps } from '../types';
+import { ONBOARDING_STEP_DELAY_MS } from '@/constants/ui';
 
 export function PhoneStep({ onComplete }: StepProps) {
   const { state, updateTask } = useOnboarding();
@@ -39,7 +40,7 @@ export function PhoneStep({ onComplete }: StepProps) {
       setTestResult(
         'Assistant vocal configuré. Votre IA répond maintenant au téléphone. Passons à la mise en ligne de votre fiche réservable…',
       );
-      window.setTimeout(() => onComplete('connect-identity'), 2000);
+      window.setTimeout(() => onComplete('connect-identity'), ONBOARDING_STEP_DELAY_MS);
     } catch (err: unknown) {
       // L'API renvoie un code structuré pour différencier les causes d'échec.
       // NO_PHONE_ASSIGNED : action Sokar (pas un retry utilisateur)

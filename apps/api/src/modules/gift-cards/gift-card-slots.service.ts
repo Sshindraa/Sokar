@@ -2,6 +2,7 @@ import { CapacityAwareAvailabilityService } from '../floor-plan/availability-cap
 import { GiftCardService } from './gift-card.service';
 import { GiftCardSlot } from './gift-card.types.js';
 import type { PrismaClient } from '@prisma/client';
+import { HOURS_TO_MINUTES } from '../../shared/constants/time.js';
 
 export class GiftCardSlotsError extends Error {
   constructor(message: string) {
@@ -91,12 +92,12 @@ export class GiftCardSlotsService {
 
     const preferredHour = Number(preferredTime.split(':')[0]);
     const preferredMinute = Number(preferredTime.split(':')[1] ?? 0);
-    const preferredMinutes = preferredHour * 60 + preferredMinute;
+    const preferredMinutes = preferredHour * HOURS_TO_MINUTES + preferredMinute;
 
     const sorted = available
       .map((s) => {
         const [h, m] = s.time.split(':').map(Number);
-        const minutes = h * 60 + m;
+        const minutes = h * HOURS_TO_MINUTES + m;
         return { ...s, diff: Math.abs(minutes - preferredMinutes) };
       })
       .sort((a, b) => a.diff - b.diff);

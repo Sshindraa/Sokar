@@ -17,6 +17,7 @@ import {
 } from '../ui';
 import { DemoCallPlayer } from './DemoCallPlayer';
 import type { StepProps } from '../types';
+import { KNOWLEDGE_TEXT_MAX_LENGTH } from '@/constants/ui';
 
 export function KnowledgeStep({ onComplete }: StepProps) {
   const { patch, orgId } = useApi();
@@ -114,7 +115,7 @@ export function KnowledgeStep({ onComplete }: StepProps) {
                 onChange={(e) => setSystemPromptExtra(e.target.value)}
                 placeholder="Exemple : Toujours proposer notre formule midi en semaine. Parler de notre terrasse ombragée."
                 className="flex min-h-[96px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                maxLength={1000}
+                maxLength={KNOWLEDGE_TEXT_MAX_LENGTH}
               />
               <div className="mt-2 flex flex-wrap gap-2">
                 {SUGGESTIONS.map((s) => (

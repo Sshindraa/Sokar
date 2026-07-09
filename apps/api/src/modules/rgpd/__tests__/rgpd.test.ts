@@ -27,6 +27,7 @@ function makeMockPrisma() {
       update: vi.fn(),
       updateMany: vi.fn(),
       count: vi.fn(),
+      groupBy: vi.fn(),
     },
     call: {
       updateMany: vi.fn(),
@@ -258,7 +259,7 @@ describe('RGPD', () => {
         restaurantId: 'r-1',
       };
       prisma.reservation.findMany.mockResolvedValueOnce([oldReservation]);
-      prisma.reservation.count.mockResolvedValueOnce(0); // pas de résa récente
+      prisma.reservation.groupBy.mockResolvedValueOnce([]); // pas de résa récente
       prisma.reservation.update.mockResolvedValueOnce({ id: 'res-old' });
 
       const result = await runAnonymization(prisma);
@@ -282,7 +283,9 @@ describe('RGPD', () => {
       prisma.reservation.findMany.mockResolvedValueOnce([
         { id: 'res-old', customerPhone: '+33****0000', restaurantId: 'r-1' },
       ]);
-      prisma.reservation.count.mockResolvedValueOnce(2); // 2 résas récentes
+      prisma.reservation.groupBy.mockResolvedValueOnce([
+        { customerPhone: '+33****0000', _count: { customerPhone: 2 } },
+      ]); // 2 résas récentes
 
       const result = await runAnonymization(prisma);
       expect(result.scanned).toBe(1);

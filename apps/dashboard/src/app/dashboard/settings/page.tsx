@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { OnboardingLockBanner } from '@/features/onboarding/onboarding-guard';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Save, Bot, Store, AlertCircle, CheckCircle2, ArrowUpRight, Calendar } from 'lucide-react';
+import { SYSTEM_PROMPT_EXTRA_MAX_LENGTH } from '@/constants/ui';
 
 const PLAN_FEATURES: Record<string, { label: string; calls: string }> = {
   STARTER: { label: 'Essential', calls: '1 500 appels / mois' },
@@ -484,18 +485,20 @@ export default function SettingsPage() {
             <div className="space-y-2">
               <label className="text-sm font-medium">
                 Instructions personnalisées
-                <span className="ml-1 text-xs text-muted-foreground">(max 2000 caractères)</span>
+                <span className="ml-1 text-xs text-muted-foreground">
+                  (max {SYSTEM_PROMPT_EXTRA_MAX_LENGTH} caractères)
+                </span>
               </label>
               <textarea
                 value={systemPromptExtra}
                 onChange={(e) => setSystemPromptExtra(e.target.value)}
-                maxLength={2000}
+                maxLength={SYSTEM_PROMPT_EXTRA_MAX_LENGTH}
                 rows={4}
                 placeholder="Ex: Nous avons une offre spéciale le mercredi soir. Propose-la si le client demande."
                 className="flex w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background transition-all duration-200 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               />
               <p className="text-right text-xs text-muted-foreground">
-                {systemPromptExtra.length}/2000
+                {systemPromptExtra.length}/{SYSTEM_PROMPT_EXTRA_MAX_LENGTH}
               </p>
             </div>
 

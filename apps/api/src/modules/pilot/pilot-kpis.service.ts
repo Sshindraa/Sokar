@@ -57,20 +57,20 @@ export class PilotKpiService {
    * Calcule les KPIs depuis la DB + compteurs Prometheus in-process.
    */
   async getKpis(): Promise<PilotKpis> {
-    // 1. Source de vérité : DB
-    const reservationsTotal = await this.prisma.reservation.count();
-    const reservationsHonored = await this.prisma.reservation.count({
-      where: { state: 'HONORED' },
+    // 1. Source de vérité : DB — un seul groupBy au lieu de 5 count() séquentiels
+    const countsByState = await this.prisma.reservation.groupBy({
+      by: ['state'],
+      _count: { state: true },
     });
-    const reservationsPending = await this.prisma.reservation.count({
-      where: { state: { in: ['PENDING', 'CONFIRMED', 'SEATED'] } },
-    });
-    const reservationsCancelled = await this.prisma.reservation.count({
-      where: { state: 'CANCELLED' },
-    });
-    const reservationsNoShow = await this.prisma.reservation.count({
-      where: { state: 'NO_SHOW' },
-    });
+    const countByState = new Map(countsByState.map((c) => [c.state, c._count.state]));
+    const reservationsTotal = countsByState.reduce((sum, c) => sum + c._count.state, 0);
+    const reservationsHonored = countByState.get('HONORED') ?? 0;
+    const reservationsPending =
+      (countByState.get('PENDING') ?? 0) +
+      (countByState.get('CONFIRMED') ?? 0) +
+      (countByState.get('SEATED') ?? 0);
+    const reservationsCancelled = countByState.get('CANCELLED') ?? 0;
+    const reservationsNoShow = countByState.get('NO_SHOW') ?? 0;
 
     // 2. Compteurs Prometheus (incidents — pas en DB)
     const dbaCount = await readCounterValue(doubleBookingAttemptsTotal);

@@ -20,6 +20,9 @@ import {
   zonedTimeToUtc,
 } from '../../floor-plan/availability-capacity-aware.service.js';
 
+/** Garde-fou : nombre max de candidats restaurant à évaluer par recherche */
+const SEARCH_CANDIDATES_MAX = 200;
+
 export type AvailabilityQuery = {
   restaurantId: string;
   partySize: number;
@@ -83,7 +86,7 @@ export class AvailabilityService {
         lng: true,
         formattedAddress: true,
       },
-      take: 200, // garde-fou
+      take: SEARCH_CANDIDATES_MAX, // garde-fou
     });
 
     // Filtre grossier par adresse/ville (le partial match se fait côté DB via

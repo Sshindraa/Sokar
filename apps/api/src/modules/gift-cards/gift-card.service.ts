@@ -9,6 +9,7 @@ import {
   type GiftCardWithPack,
 } from './gift-card.types.js';
 import { generateUniqueShortCode } from './gift-card-code.util.js';
+import { DEFAULT_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
 
 export class GiftCardError extends Error {
   constructor(message: string) {
@@ -188,7 +189,7 @@ export class GiftCardService {
           status: newStatus,
         },
       });
-    });
+    }, DEFAULT_TRANSACTION_OPTIONS);
 
     return {
       reservationId: input.reservationId,

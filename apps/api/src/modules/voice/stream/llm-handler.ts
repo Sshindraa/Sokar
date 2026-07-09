@@ -17,6 +17,7 @@ import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
 import { isSessionActiveForTts, speakTtsStreamed } from './tts-handler';
+import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts.js';
 
 const recentTranscripts = new WeakMap<CallSession, { normalized: string; at: number }>();
 
@@ -34,7 +35,11 @@ export function shouldSkipDuplicateTranscript(session: CallSession, transcript: 
 
   const previous = recentTranscripts.get(session);
   const now = Date.now();
-  if (previous && previous.normalized === normalized && now - previous.at < 2000) {
+  if (
+    previous &&
+    previous.normalized === normalized &&
+    now - previous.at < TRANSCRIPT_DEDUPE_WINDOW_MS
+  ) {
     return true;
   }
 

@@ -23,6 +23,7 @@ import { formatEuro } from '@sokar/shared';
 import type { GiftCardListItem, GiftCardPack, GiftCardStats } from '@/lib/api/gift-cards';
 import GiftCardList from '@/components/gift-cards/gift-card-list';
 import GiftCardForm from '@/components/gift-cards/gift-card-form';
+import { SAVED_NOTIFICATION_RESET_MS } from '@/constants/ui';
 
 const PAGE_SIZE = 20;
 
@@ -168,7 +169,7 @@ export default function GiftCardsPage() {
       }
       await patch(`restaurants/${orgId}`, payload);
       setSavedMin(true);
-      setTimeout(() => setSavedMin(false), 3000);
+      setTimeout(() => setSavedMin(false), SAVED_NOTIFICATION_RESET_MS);
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de sauvegarder le montant minimum'));
     } finally {
