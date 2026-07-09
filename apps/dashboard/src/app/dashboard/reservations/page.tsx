@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useApi } from '../../../lib/api';
+import { getErrorMessage, type Reservation } from '@/types/api';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import MobileDataCard from '@/components/MobileDataCard';
 import {
@@ -31,7 +32,7 @@ export default function ReservationsPage() {
   const { get, patch, del, orgId } = useApi();
   const isMobile = useIsMobile();
 
-  const [reservations, setReservations] = useState<any[]>([]);
+  const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -42,10 +43,10 @@ export default function ReservationsPage() {
 
     async function fetchReservations() {
       try {
-        const data = await get(`reservations?restaurantId=${orgId}&limit=100`);
+        const data = await get<Reservation[]>(`reservations?restaurantId=${orgId}&limit=100`);
         setReservations(Array.isArray(data) ? data : []);
-      } catch (err: any) {
-        setError(err.message || 'Impossible de charger les réservations');
+      } catch (err: unknown) {
+        setError(getErrorMessage(err, 'Impossible de charger les réservations'));
       }
       setLoading(false);
     }
@@ -56,9 +57,11 @@ export default function ReservationsPage() {
     try {
       setError('');
       await patch(`reservations/${id}`, { status: newStatus });
-      setReservations((prev) => prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r)));
-    } catch (err: any) {
-      setError(err.message || 'Impossible de mettre à jour le statut');
+      setReservations((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, status: newStatus as Reservation['status'] } : r)),
+      );
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de mettre à jour le statut'));
     }
   }
 
@@ -76,8 +79,8 @@ export default function ReservationsPage() {
       setError('');
       await del(`reservations/${id}`);
       setReservations((prev) => prev.filter((r) => r.id !== id));
-    } catch (err: any) {
-      setError(err.message || 'Impossible de supprimer la réservation');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de supprimer la réservation'));
     }
   }
 
@@ -122,7 +125,7 @@ export default function ReservationsPage() {
       ) : isMobile ? (
         /* ========== MOBILE: Card List ========== */
         <div className="space-y-2.5">
-          {reservations.map((res: any) => (
+          {reservations.map((res) => (
             <MobileDataCard
               key={res.id}
               title={res.customerName}
@@ -191,7 +194,7 @@ export default function ReservationsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {reservations.map((res: any) => (
+                {reservations.map((res) => (
                   <TableRow key={res.id} className="transition-all duration-200 hover:bg-accent">
                     <TableCell className="font-medium">{res.customerName}</TableCell>
                     <TableCell className="text-muted-foreground">

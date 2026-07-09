@@ -1,0 +1,208 @@
+/**
+ * Types TypeScript pour les réponses API consommées par le dashboard.
+ *
+ * Ces interfaces ne couvrent que les champs réellement utilisés côté dashboard.
+ * Elles sont volontairement simples et pragmatiques — pour les types complets,
+ * voir les schémas Prisma (packages/database/prisma/schema.prisma) et les
+ * types API (apps/api/src/modules/.../types.ts).
+ */
+
+// ─── Restaurant ─────────────────────────────────────────────────────────
+
+export type Plan = 'STARTER' | 'PRO' | 'PREMIUM';
+
+export interface Restaurant {
+  id: string;
+  name: string;
+  plan: Plan;
+  managerPhone: string;
+  managerEmail: string;
+  phoneNumber: string;
+  googleCalendarId: string | null;
+  googleRefreshToken: string | null;
+  giftCardMinimumAmount: number | null;
+  giftCardCommissionRate: number;
+  slug: string | null;
+}
+
+// ─── AgentPersonality ───────────────────────────────────────────────────
+
+export type ProfileType = 'BISTROT_BRASSERIE' | 'GASTRONOMIQUE' | 'SEMI_GASTRO';
+export type FillerStyle = 'CASUAL' | 'WARM' | 'FORMAL';
+
+export interface AgentPersonality {
+  id: string;
+  restaurantId: string;
+  profileType: ProfileType;
+  speakingRate: number;
+  fillerStyle: FillerStyle;
+  systemPromptExtra: string | null;
+  voiceIdCa: string | null;
+}
+
+// ─── Reservation ────────────────────────────────────────────────────────
+
+export type ReservationStatus = 'CONFIRMED' | 'CANCELLED' | 'SEATED' | 'NO_SHOW';
+
+export interface Reservation {
+  id: string;
+  restaurantId: string;
+  reservedAt: string;
+  partySize: number;
+  customerName: string;
+  customerPhone: string | null;
+  status: ReservationStatus;
+  estimatedRevenue: number | null;
+}
+
+// ─── Call ───────────────────────────────────────────────────────────────
+
+export type CallIntent = 'RESERVATION' | 'HOURS' | 'MENU' | 'CANCEL' | 'OTHER';
+export type CallOutcome = 'RESERVED' | 'INFO' | 'HANDOFF' | 'NO_ACTION' | 'ERROR';
+
+export interface Call {
+  id: string;
+  callSid: string;
+  durationSec: number | null;
+  transcript: string | null;
+  intent: CallIntent | null;
+  outcome: CallOutcome | null;
+  carrier: string | null;
+  createdAt: string;
+}
+
+export interface CallListResponse {
+  data: Call[];
+  total: number;
+}
+
+// ─── Customer ───────────────────────────────────────────────────────────
+
+export interface Customer {
+  id: string;
+  name: string | null;
+  phone: string;
+  visitCount: number;
+  loyaltyScore: number;
+  isVip: boolean;
+  notes: string | null;
+  lastSeenAt: string | null;
+}
+
+// ─── GiftCard & GiftCardPack ────────────────────────────────────────────
+// (Les types complets sont dans `@/lib/api/gift-cards` — on ré-exporte ici
+// pour centraliser, mais on évite la duplication.)
+
+// ─── FloorPlan ──────────────────────────────────────────────────────────
+
+export interface FloorPlanTable {
+  id: string;
+  name: string;
+  capacity: number;
+  minCapacity: number;
+  isActive: boolean;
+  positionX: number | null;
+  positionY: number | null;
+  shape: string | null;
+}
+
+export interface FloorPlanSection {
+  id: string;
+  name: string;
+  position: number;
+  tables: FloorPlanTable[];
+}
+
+export interface FloorPlan {
+  id: string;
+  name: string | null;
+  sections: FloorPlanSection[];
+}
+
+// ─── ReactivationCampaign ───────────────────────────────────────────────
+
+export interface ReactivationCustomer {
+  id: string;
+  name: string;
+  phone: string | null;
+  visitCount: number;
+  lastSeenAt: string | null;
+}
+
+export interface ReactivationCampaign {
+  id: string;
+  status: 'PENDING' | 'SENT' | 'DISMISSED';
+  sentCount: number;
+  sentAt: string | null;
+  createdAt: string;
+  customerCount: number;
+  customers: ReactivationCustomer[];
+}
+
+// ─── RestaurantExposureSettings (agentic) ───────────────────────────────
+
+export type NoShowPolicy = 'warning' | 'fee' | 'block';
+
+export interface ExposedCreneau {
+  day: number;
+  from: string;
+  to: string;
+}
+
+export interface CapacitySpecials {
+  terrasse?: number;
+  pmr?: number;
+  chien?: boolean;
+  poussette?: boolean;
+}
+
+export interface RestaurantExposureSettings {
+  maxPartySize: number;
+  minLeadTimeMinutes: number;
+  requireManualValidation: boolean;
+  quoteTtlSeconds: number;
+  holdTtlSeconds: number;
+  noShowPolicy: NoShowPolicy;
+  notificationChannels: ('sms' | 'email')[];
+  exposedCreneaux: ExposedCreneau[];
+  capacitySpecials: CapacitySpecials;
+}
+
+// ─── Agentic MCP clients ────────────────────────────────────────────────
+
+export interface McpClient {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  scopes: string[];
+  allowedOrigins: string[];
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface McpClientListResponse {
+  clients: McpClient[];
+}
+
+export interface McpClientCreateResponse {
+  client: McpClient;
+  apiKey: string;
+}
+
+export interface OptInStatus {
+  mcp: boolean;
+  openaiReserve: boolean;
+  policyVersion: string;
+}
+
+// ─── Utilitaire : extraction de message d'erreur ────────────────────────
+
+/**
+ * Extrait un message lisible d'une erreur catchée (catch (err: unknown)).
+ * Préférez cette fonction à `err.message` direct pour respecter le narrowing.
+ */
+export function getErrorMessage(err: unknown, fallback = 'Une erreur est survenue'): string {
+  if (err instanceof Error) return err.message || fallback;
+  if (typeof err === 'string') return err;
+  return fallback;
+}

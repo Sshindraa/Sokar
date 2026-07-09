@@ -5,13 +5,7 @@
  * Utilise fetchWithTimeout pour tous les appels.
  */
 
-const FETCH_TIMEOUT_MS = 10_000;
-
-function fetchWithTimeout(url: string, options?: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
-}
+import { fetchWithTimeout } from '@sokar/shared';
 
 function getApiUrl(): string {
   if (typeof window === 'undefined') {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useApi } from '../../../lib/api';
+import { getErrorMessage, type Restaurant, type AgentPersonality } from '@/types/api';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,7 +32,7 @@ const FILLER_OPTIONS = [
 export default function SettingsPage() {
   const { get, post, patch, orgId } = useApi();
 
-  const [restaurant, setRestaurant] = useState<any>(null);
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [name, setName] = useState('');
   const [managerPhone, setManagerPhone] = useState('');
   const [managerEmail, setManagerEmail] = useState('');
@@ -41,7 +42,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
 
   // Personality
-  const [personality, setPersonality] = useState<any>(null);
+  const [personality, setPersonality] = useState<AgentPersonality | null>(null);
   const [profileType, setProfileType] = useState('BISTROT_BRASSERIE');
   const [fillerStyle, setFillerStyle] = useState('CASUAL');
   const [speakingRate, setSpeakingRate] = useState(1.0);
@@ -76,8 +77,8 @@ export default function SettingsPage() {
     (async () => {
       try {
         const [data, pers] = await Promise.all([
-          get(`restaurants/${orgId}`),
-          get(`restaurants/${orgId}/personality`),
+          get<Restaurant>(`restaurants/${orgId}`),
+          get<AgentPersonality>(`restaurants/${orgId}/personality`),
         ]);
         setRestaurant(data);
         setName(data.name || '');
@@ -129,8 +130,8 @@ export default function SettingsPage() {
       const payload: Record<string, unknown> = { name, managerPhone, managerEmail };
       await patch(`restaurants/${orgId}`, payload);
       setSaved(true);
-    } catch (err: any) {
-      setError(err.message || 'Erreur lors de la sauvegarde');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Erreur lors de la sauvegarde'));
     } finally {
       setSaving(false);
     }
@@ -150,8 +151,8 @@ export default function SettingsPage() {
         systemPromptExtra: systemPromptExtra || undefined,
       });
       setSavedPersonality(true);
-    } catch (err: any) {
-      setError(err.message || 'Erreur lors de la sauvegarde de la personnalité');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Erreur lors de la sauvegarde de la personnalité'));
     } finally {
       setSavingPersonality(false);
     }
@@ -160,14 +161,14 @@ export default function SettingsPage() {
   async function handleConnectCalendar() {
     setError('');
     try {
-      const data = await get('integrations/google-calendar/auth');
+      const data = await get<{ url?: string }>('integrations/google-calendar/auth');
       if (data?.url) {
         window.location.href = data.url;
       } else {
         throw new Error("URL d'authentification invalide");
       }
-    } catch (err: any) {
-      setError(err.message || "Impossible d'initier la connexion Google Calendar");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Impossible d'initier la connexion Google Calendar"));
     }
   }
 
@@ -190,8 +191,8 @@ export default function SettingsPage() {
           googleCalendarId: null,
         });
       }
-    } catch (err: any) {
-      setError(err.message || 'Erreur lors de la déconnexion');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Erreur lors de la déconnexion'));
     } finally {
       setDisconnecting(false);
     }
@@ -212,8 +213,8 @@ export default function SettingsPage() {
           googleCalendarId,
         });
       }
-    } catch (err: any) {
-      setError(err.message || "Erreur lors de la sauvegarde des paramètres de l'agenda");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Erreur lors de la sauvegarde des paramètres de l'agenda"));
     } finally {
       setSavingCalendar(false);
     }

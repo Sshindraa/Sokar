@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { getErrorMessage } from '@/types/api';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -142,10 +143,10 @@ function formatDateParam(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-async function publicApiFetch<T = any>(
+async function publicApiFetch<T = unknown>(
   method: 'GET' | 'POST',
   path: string,
-  body?: any,
+  body?: unknown,
 ): Promise<T> {
   const url = `/api/proxy/${path.replace(/^\//, '')}`;
 
@@ -155,18 +156,19 @@ async function publicApiFetch<T = any>(
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  let data: any = {};
+  let data: Record<string, unknown> = {};
   const text = await res.text();
   if (text) {
     try {
-      data = JSON.parse(text);
+      data = JSON.parse(text) as Record<string, unknown>;
     } catch {
       data = { message: text };
     }
   }
 
   if (!res.ok) {
-    throw new Error(data.error || data.message || `Erreur ${res.status}`);
+    const errorMsg = data.error || data.message || `Erreur ${res.status}`;
+    throw new Error(typeof errorMsg === 'string' ? errorMsg : `Erreur ${res.status}`);
   }
 
   return data as T;
@@ -263,7 +265,7 @@ export default function ReservationWidget() {
         let data: RestaurantPublic;
         try {
           data = await publicApiFetch<RestaurantPublic>('GET', `public/widget/${restaurantId}`);
-        } catch (slugErr: any) {
+        } catch (slugErr: unknown) {
           // Fallback : on tente avec l'id direct (rétrocompat avec les URLs /widget/{uuid})
           data = await publicApiFetch<RestaurantPublic>(
             'GET',
@@ -273,8 +275,8 @@ export default function ReservationWidget() {
         setRestaurant(data);
         const today = new Date();
         setSelectedDate(today);
-      } catch (err: any) {
-        setError(err.message || 'Impossible de trouver ce restaurant');
+      } catch (err: unknown) {
+        setError(getErrorMessage(err, 'Impossible de trouver ce restaurant'));
       } finally {
         setLoading(false);
       }
@@ -354,9 +356,9 @@ export default function ReservationWidget() {
         if (cancelled) return;
         setAvailableSlots(data.slots);
         setSelectedTime((current) => (current && !data.slots.includes(current) ? '' : current));
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (cancelled) return;
-        setAvailabilityError(err.message || 'Disponibilités indisponibles.');
+        setAvailabilityError(getErrorMessage(err, 'Disponibilités indisponibles.'));
         setAvailableSlots([]);
         setSelectedTime('');
       } finally {
@@ -515,13 +517,14 @@ export default function ReservationWidget() {
 
       setConfirmedReservation(res);
       setSuccess(true);
-    } catch (err: any) {
-      if (err.message === 'SLOT_NOT_AVAILABLE') {
+    } catch (err: unknown) {
+      const message = getErrorMessage(err, '');
+      if (message === 'SLOT_NOT_AVAILABLE') {
         setError(
           "Ce créneau horaire vient de se faire réserver ou n'est plus disponible. Veuillez choisir une autre heure.",
         );
       } else {
-        setError(err.message || 'Une erreur est survenue lors de la réservation.');
+        setError(message || 'Une erreur est survenue lors de la réservation.');
       }
     } finally {
       setSubmitting(false);

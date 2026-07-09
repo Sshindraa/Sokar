@@ -17,6 +17,7 @@
 import { useEffect, useState } from 'react';
 import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe, type Stripe as StripeType } from '@stripe/stripe-js';
+import { formatEuro, formatDate } from '@sokar/shared';
 import type { CrowdfundingStatus } from '@/lib/api/gift-cards';
 import {
   getCrowdfundingStatus,
@@ -32,23 +33,6 @@ type Props = {
   accentColor?: string;
   source?: string;
 };
-
-function formatEuro(amount: number): string {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '—';
-  return new Intl.DateTimeFormat('fr-FR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(new Date(iso));
-}
 
 export function GiftCardCrowdfundingPage({
   code,

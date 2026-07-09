@@ -12,6 +12,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Check, Download, PartyPopper, Calendar } from 'lucide-react';
+import { formatEuro } from '@sokar/shared';
 import type { GiftCardPurchaseResult, GiftCardSlot } from '@/lib/api/gift-cards';
 import { suggestGiftCardSlots } from '@/lib/api/gift-cards';
 import { GiftCardSlotsPicker } from './gift-card-slots-picker';
@@ -201,12 +202,4 @@ export function GiftCardConfirmation({
       )}
     </div>
   );
-}
-
-function formatEuro(amount: number): string {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 2,
-  }).format(amount);
 }

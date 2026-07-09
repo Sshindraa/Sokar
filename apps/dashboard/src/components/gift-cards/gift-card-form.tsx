@@ -24,6 +24,7 @@ import {
   type GiftCardListItem,
   useGiftCardApi,
 } from '@/lib/api/gift-cards';
+import { getErrorMessage } from '@/types/api';
 
 type FormMode = 'free' | 'pack';
 
@@ -103,8 +104,8 @@ export default function GiftCardForm({ open, onOpenChange, packs, onCreated }: G
       const card = await createGiftCard(input);
       onCreated?.(card);
       onOpenChange(false);
-    } catch (err: any) {
-      setError(err.message || 'Impossible de créer la carte cadeau');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de créer la carte cadeau'));
     } finally {
       setSubmitting(false);
     }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useApi } from '@/lib/api';
+import { getErrorMessage } from '@/types/api';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -60,8 +61,8 @@ export default function FloorPlanPage() {
       try {
         const data = await get<FloorPlan>(`restaurants/${orgId}/floor-plan`);
         setFloorPlan(data);
-      } catch (err: any) {
-        setError(err.message || 'Impossible de charger le plan de salle');
+      } catch (err: unknown) {
+        setError(getErrorMessage(err, 'Impossible de charger le plan de salle'));
       } finally {
         setLoading(false);
       }
@@ -87,8 +88,8 @@ export default function FloorPlanPage() {
           })),
         };
       });
-    } catch (err: any) {
-      setError(err.message || 'Impossible de modifier la table');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de modifier la table'));
     }
   }
 
@@ -105,8 +106,8 @@ export default function FloorPlanPage() {
         return { ...prev, sections: [...prev.sections, { ...section, tables: [] }] };
       });
       setNewSectionName('');
-    } catch (err: any) {
-      setError(err.message || 'Impossible de créer la section');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de créer la section'));
     }
   }
 
@@ -132,8 +133,8 @@ export default function FloorPlanPage() {
         };
       });
       setNewTable({ sectionId: '', name: '', capacity: '' });
-    } catch (err: any) {
-      setError(err.message || 'Impossible de créer la table');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de créer la table'));
     }
   }
 
@@ -161,8 +162,8 @@ export default function FloorPlanPage() {
           })),
         };
       });
-    } catch (err: any) {
-      setError(err.message || 'Impossible de supprimer la table');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de supprimer la table'));
     }
   }
 

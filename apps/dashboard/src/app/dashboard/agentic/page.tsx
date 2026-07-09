@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useApi } from '../../../lib/api';
+import { getErrorMessage } from '@/types/api';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -125,8 +126,8 @@ export default function AgenticSettingsPage() {
         setNoShowPolicy(settingsData.noShowPolicy);
         setNotificationChannels(settingsData.notificationChannels);
         setRequireManualValidation(settingsData.requireManualValidation);
-      } catch (err: any) {
-        setError(err.message || 'Impossible de charger les paramètres agentic');
+      } catch (err: unknown) {
+        setError(getErrorMessage(err, 'Impossible de charger les paramètres agentic'));
       } finally {
         setLoading(false);
       }
@@ -141,8 +142,8 @@ export default function AgenticSettingsPage() {
       const result = (await post('api/agentic/opt-in', next)) as OptInStatus;
       setOptIn(result);
       setSuccess('Préférences agentic enregistrées');
-    } catch (err: any) {
-      setError(err.message || 'Erreur lors de la sauvegarde');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Erreur lors de la sauvegarde'));
     } finally {
       setSavingOptIn(false);
     }
@@ -164,8 +165,8 @@ export default function AgenticSettingsPage() {
       })) as ExposureSettings;
       setSettings(result);
       setSuccess('Paramètres de réservation enregistrés');
-    } catch (err: any) {
-      setError(err.message || 'Erreur lors de la sauvegarde');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Erreur lors de la sauvegarde'));
     } finally {
       setSavingSettings(false);
     }
@@ -205,8 +206,8 @@ export default function AgenticSettingsPage() {
       setNewClientScopes(['mcp:read', 'mcp:reserve']);
       setNewClientOrigins('');
       setSuccess('Clé MCP créée');
-    } catch (err: any) {
-      setError(err.message || 'Impossible de créer la clé MCP');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de créer la clé MCP'));
     } finally {
       setCreatingClient(false);
     }
@@ -220,8 +221,8 @@ export default function AgenticSettingsPage() {
       await del(`api/agentic/mcp-clients/${clientId}`);
       setMcpClients(mcpClients.filter((client) => client.id !== clientId));
       setSuccess('Clé MCP révoquée');
-    } catch (err: any) {
-      setError(err.message || 'Impossible de révoquer la clé MCP');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de révoquer la clé MCP'));
     } finally {
       setRevokingClientId(null);
     }

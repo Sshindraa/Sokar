@@ -18,6 +18,7 @@ import {
   type UpdateGiftCardPackInput,
   useGiftCardApi,
 } from '@/lib/api/gift-cards';
+import { getErrorMessage } from '@/types/api';
 
 export type GiftCardPackFormProps = {
   open: boolean;
@@ -107,8 +108,8 @@ export default function GiftCardPackForm({
       }
       onSaved?.(saved);
       onOpenChange(false);
-    } catch (err: any) {
-      setError(err.message || 'Impossible de sauvegarder le pack');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de sauvegarder le pack'));
     } finally {
       setSubmitting(false);
     }

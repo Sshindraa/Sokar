@@ -10,6 +10,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { normalizeOpeningHours } from '@sokar/shared';
 import type { AvailabilityDto, AvailabilitySlot } from './floor-plan.types';
 import { resolveServiceDurationMinutes } from './floor-plan.types';
 import { TableAllocationService } from './table-allocation.service';
@@ -159,56 +160,6 @@ function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
 function computeDayOfWeek(dateStr: string): number {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-}
-
-type NormalizedHours = { dayIndex: number; open: string; close: string }[];
-
-function normalizeOpeningHours(raw: unknown): NormalizedHours {
-  if (!raw || typeof raw !== 'object') return [];
-
-  const dayToIndex: Record<string, number> = {
-    sunday: 0,
-    sun: 0,
-    monday: 1,
-    mon: 1,
-    tuesday: 2,
-    tue: 2,
-    wednesday: 3,
-    wed: 3,
-    thursday: 4,
-    thu: 4,
-    friday: 5,
-    fri: 5,
-    saturday: 6,
-    sat: 6,
-  };
-
-  if (Array.isArray(raw)) {
-    return raw
-      .map((entry: { dayOfWeek?: string; opens?: string; closes?: string }) => {
-        const dow = entry.dayOfWeek?.toLowerCase();
-        if (!dow) return null;
-        const dayIndex = dayToIndex[dow];
-        if (dayIndex == null || !entry.opens || !entry.closes) return null;
-        return { dayIndex, open: entry.opens, close: entry.closes };
-      })
-      .filter((x): x is NormalizedHours[0] => x !== null)
-      .sort((a, b) => a.dayIndex - b.dayIndex);
-  }
-
-  return Object.entries(raw as Record<string, unknown>)
-    .map(([key, val]) => {
-      const dayIndex = dayToIndex[key.toLowerCase()];
-      if (dayIndex == null) return null;
-      if (!val || typeof val !== 'object') return null;
-      const v = val as { open?: string; close?: string; opens?: string; closes?: string };
-      const open = v.open ?? v.opens;
-      const close = v.close ?? v.closes;
-      if (!open || !close) return null;
-      return { dayIndex, open, close };
-    })
-    .filter((x): x is NormalizedHours[0] => x !== null)
-    .sort((a, b) => a.dayIndex - b.dayIndex);
 }
 
 function generateSlots(open: string, close: string, stepMinutes: number): string[] {

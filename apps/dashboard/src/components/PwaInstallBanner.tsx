@@ -17,12 +17,14 @@ export default function PwaInstallBanner() {
     // Check if running on client-side
     if (typeof window === 'undefined') return;
 
-    // Detect iOS
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    // Detect iOS — MSStream is an old IE proprietary property, not in TS DOM types.
+    const isIOS =
+      /iPad|iPhone|iPod/.test(navigator.userAgent) &&
+      !(window as unknown as { MSStream?: unknown }).MSStream;
 
     // Detect if app is already running in standalone mode (PWA installed)
     const isStandalone =
-      (window.navigator as any).standalone === true ||
+      (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
       window.matchMedia('(display-mode: standalone)').matches;
 
     // Check localStorage to respect dismissal
