@@ -9,9 +9,11 @@
  *   - 60 req / 60s avec fenêtre glissante
  *
  * Le script Lua garantit l'atomicité du check-and-increment côté Redis.
- * Si Redis est down, on fail-open (on laisse passer, comme le cache
- * idempotence). C'est un trade-off : on préfère servir trop de requêtes
- * que de bloquer tout le monde.
+ *
+ * Si Redis est down, on fail-closed (on rejette avec reason='redis_down').
+ * Les endpoints MCP sont authentifiés (API key) et appelés par des agents IA
+ * qui peuvent retry. Fail-open exposerait l'API à du DoS non limité en cas
+ * d'incident Redis.
  */
 
 import type Redis from 'ioredis';
@@ -131,7 +133,7 @@ export class McpRateLimiter {
             reason: allowed === 1 ? undefined : 'over_capacity',
           };
         } catch (err2) {
-          // Reload ou retry échoué — fail-open
+          // Reload ou retry échoué — fail-closed (reject)
           this.scriptSha = null;
           alertFailOpen({
             source: 'mcp_rate_limit',
@@ -139,20 +141,20 @@ export class McpRateLimiter {
             err: err2,
           });
           return {
-            allowed: true,
-            remaining: this.config.capacity,
-            resetMs: 0,
+            allowed: false,
+            remaining: 0,
+            resetMs: 5000,
             reason: 'redis_down',
           };
         }
       }
-      // Autre erreur Redis (down, timeout, etc.) — fail-open
+      // Autre erreur Redis (down, timeout, etc.) — fail-closed (reject)
       this.scriptSha = null;
       alertFailOpen({ source: 'mcp_rate_limit', reason: 'redis_down', err });
       return {
-        allowed: true,
-        remaining: this.config.capacity,
-        resetMs: 0,
+        allowed: false,
+        remaining: 0,
+        resetMs: 5000,
         reason: 'redis_down',
       };
     }

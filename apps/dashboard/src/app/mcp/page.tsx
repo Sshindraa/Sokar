@@ -108,7 +108,7 @@ const SCOPES = [
 
 export default function McpPage() {
   return (
-    <div className="min-h-screen bg-[#030303] text-foreground font-sans antialiased">
+    <div className="min-h-screen bg-background text-foreground font-sans antialiased">
       {/* ── HERO ──────────────────────────────────────────── */}
       <section className="relative overflow-hidden border-b border-white/8">
         <div className="absolute inset-0 liquid-field pointer-events-none" aria-hidden="true" />

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { OnboardingLockBanner } from '@/features/onboarding/onboarding-guard';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Save, Bot, Store, AlertCircle, CheckCircle2, ArrowUpRight, Calendar } from 'lucide-react';
 
 const PLAN_FEATURES: Record<string, { label: string; calls: string }> = {
@@ -55,6 +56,7 @@ export default function SettingsPage() {
   const [savingCalendar, setSavingCalendar] = useState(false);
   const [savedCalendar, setSavedCalendar] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [disconnectConfirmOpen, setDisconnectConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -170,13 +172,11 @@ export default function SettingsPage() {
   }
 
   async function handleDisconnectCalendar() {
-    if (
-      !confirm(
-        'Êtes-vous sûr de vouloir déconnecter votre agenda Google ? Vos réservations ne seront plus synchronisées.',
-      )
-    ) {
-      return;
-    }
+    setDisconnectConfirmOpen(true);
+  }
+
+  async function confirmDisconnectCalendar() {
+    setDisconnectConfirmOpen(false);
     setDisconnecting(true);
     setError('');
     try {
@@ -513,6 +513,16 @@ export default function SettingsPage() {
           </form>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={disconnectConfirmOpen}
+        onConfirm={confirmDisconnectCalendar}
+        onCancel={() => setDisconnectConfirmOpen(false)}
+        title="Déconnecter l'agenda Google"
+        description="Êtes-vous sûr de vouloir déconnecter votre agenda Google ? Vos réservations ne seront plus synchronisées."
+        confirmLabel="Déconnecter"
+        variant="destructive"
+      />
     </div>
   );
 }

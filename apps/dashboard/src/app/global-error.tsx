@@ -17,7 +17,9 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
       <body>
         <div style={{ padding: '2rem', textAlign: 'center' }}>
           <h2 style={{ marginBottom: '0.5rem' }}>Une erreur est survenue</h2>
-          <p style={{ color: '#666' }}>Notre équipe a été notifiée. Veuillez rafraîchir la page.</p>
+          <p className="text-muted-foreground">
+            Notre équipe a été notifiée. Veuillez rafraîchir la page.
+          </p>
         </div>
       </body>
     </html>

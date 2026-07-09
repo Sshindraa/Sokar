@@ -58,6 +58,13 @@ const EnvSchema = z
     SITE_URL: z.string().url('SITE_URL must be a valid URL'),
     DASHBOARD_URL: z.string().url('DASHBOARD_URL must be a valid URL'),
     API_URL: z.string().url('API_URL must be a valid URL'),
+    // CORS — allowlist explicite des origins navigateur (comma-separated)
+    CORS_ORIGINS: z.string().optional(),
+    // Clés API critiques — validées au démarrage en production
+    TELNYX_API_KEY: z.string().optional(),
+    DEEPGRAM_API_KEY: z.string().optional(),
+    CARTESIA_API_KEY: z.string().optional(),
+    STRIPE_SECRET_KEY: z.string().optional(),
   })
   .refine(
     (data) => {
@@ -76,6 +83,60 @@ const EnvSchema = z
     {
       message: `En production, les hosts URL doivent être dans l'allowlist: ${PROD_HOST_ALLOWLIST.join(', ')}`,
       path: ['PUBLIC_URL'],
+    },
+  )
+  .refine(
+    (data) => {
+      if (data.NODE_ENV !== 'production') return true;
+      // En production, CORS_ORIGINS doit être défini explicitement
+      // (pas de fallback hardcoded — cf. audit sécurité Phase 1)
+      return !!data.CORS_ORIGINS;
+    },
+    {
+      message:
+        'En production, CORS_ORIGINS doit être défini explicitement (ex: "https://sokar.tech,https://www.sokar.tech"). Aucun fallback hardcoded.',
+      path: ['CORS_ORIGINS'],
+    },
+  )
+  .refine(
+    (data) => {
+      if (data.NODE_ENV !== 'production') return true;
+      // En production, les clés API voice doivent être présentes
+      // (sauf si la voice est explicitement désactivée — staging)
+      const voiceDisabled = process.env.VOICE_DISABLED === 'true';
+      if (voiceDisabled) return true;
+      return !!data.TELNYX_API_KEY && data.TELNYX_API_KEY.length >= 20;
+    },
+    {
+      message:
+        'En production, TELNYX_API_KEY doit être définie (≥20 chars). Pour désactiver la voice (staging), set VOICE_DISABLED=true.',
+      path: ['TELNYX_API_KEY'],
+    },
+  )
+  .refine(
+    (data) => {
+      if (data.NODE_ENV !== 'production') return true;
+      const voiceDisabled = process.env.VOICE_DISABLED === 'true';
+      if (voiceDisabled) return true;
+      return !!data.DEEPGRAM_API_KEY && data.DEEPGRAM_API_KEY.length >= 20;
+    },
+    {
+      message:
+        'En production, DEEPGRAM_API_KEY doit être définie (≥20 chars). Pour désactiver la voice (staging), set VOICE_DISABLED=true.',
+      path: ['DEEPGRAM_API_KEY'],
+    },
+  )
+  .refine(
+    (data) => {
+      if (data.NODE_ENV !== 'production') return true;
+      const voiceDisabled = process.env.VOICE_DISABLED === 'true';
+      if (voiceDisabled) return true;
+      return !!data.CARTESIA_API_KEY && data.CARTESIA_API_KEY.length >= 20;
+    },
+    {
+      message:
+        'En production, CARTESIA_API_KEY doit être définie (≥20 chars). Pour désactiver la voice (staging), set VOICE_DISABLED=true.',
+      path: ['CARTESIA_API_KEY'],
     },
   );
 

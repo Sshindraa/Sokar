@@ -25,8 +25,8 @@ function RadialDial({ value }: { value: number }) {
       <svg height={radius * 2} width={radius * 2} className="transform -rotate-90">
         <defs>
           <linearGradient id="cyanDialGradShowcase" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#06b6d4" />
-            <stop offset="100%" stopColor="#0891b2" />
+            <stop offset="0%" stopColor="hsl(var(--pricing-accent))" />
+            <stop offset="100%" stopColor="hsl(var(--pricing-accent-glow))" />
           </linearGradient>
         </defs>
         <circle

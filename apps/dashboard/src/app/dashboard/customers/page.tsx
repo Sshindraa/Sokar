@@ -17,6 +17,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AlertCircle, Users, Search, RotateCcw, Star, Phone } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 export default function CustomersPage() {
   const { get, patch, orgId } = useApi();
@@ -26,6 +34,7 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true);
   const [searchPhone, setSearchPhone] = useState('');
   const [error, setError] = useState('');
+  const [callInfo, setCallInfo] = useState<{ name: string; phone: string } | null>(null);
 
   const fetchCustomers = useCallback(
     async (phone?: string) => {
@@ -182,7 +191,7 @@ export default function CustomersPage() {
                     icon: <Phone size={14} />,
                     colorClass: 'bg-success',
                     onClick: () => {
-                      alert(`Appel du client ${c.name || 'inconnu'} au ${c.phone}`);
+                      setCallInfo({ name: c.name || 'inconnu', phone: c.phone });
                     },
                   },
                 ]}
@@ -254,6 +263,26 @@ export default function CustomersPage() {
           </div>
         </div>
       )}
+
+      {/* Dialog d'information : appel client */}
+      <Dialog open={!!callInfo} onOpenChange={(v) => !v && setCallInfo(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Phone size={18} className="text-primary" />
+              Appel du client
+            </DialogTitle>
+            <DialogDescription>
+              {callInfo && `Vous allez appeler ${callInfo.name} au ${callInfo.phone}.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setCallInfo(null)} className="transition-all duration-200">
+              Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -12,7 +12,7 @@
 
 import type { FastifyRequest } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
-import { createHash } from 'crypto';
+import { createHash, timingSafeEqual } from 'crypto';
 
 // Origins par défaut. Surchargeable via MCP_ALLOWED_ORIGINS
 // (comma-separated, ex: "https://claude.ai,https://chatgpt.com")
@@ -30,7 +30,10 @@ const DEFAULT_ORIGINS = [
 function buildAllowedOrigins(): ReadonlySet<string> {
   const envOrigins = process.env.MCP_ALLOWED_ORIGINS;
   if (envOrigins) {
-    const extra = envOrigins.split(',').map((o) => o.trim()).filter(Boolean);
+    const extra = envOrigins
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean);
     return new Set([...DEFAULT_ORIGINS, ...extra]);
   }
   return new Set(DEFAULT_ORIGINS);
@@ -88,11 +91,23 @@ export function validateApiKeyFormat(key: string): boolean {
 /**
  * Dev fallback conservé pour les tests locaux tant que le dashboard de gestion
  * des clés n'existe pas. En production, seule la table AgentClient est valide.
+ *
+ * Sécurité : utilisation de timingSafeEqual pour prévenir les timing attacks
+ * sur la comparaison de la clé dev. La clé dev doit faire ≥32 chars (entropie
+ * suffisante). En production, ce code n'est jamais exécuté (garde NODE_ENV).
  */
 export function validateDevApiKey(key: string): AuthContext | null {
   if (!validateApiKeyFormat(key)) return null;
   if (process.env.NODE_ENV !== 'production' && process.env.AGENT_DEV_KEY) {
-    if (key === process.env.AGENT_DEV_KEY) {
+    const devKey = process.env.AGENT_DEV_KEY;
+    // Validation entropie : la clé dev doit faire au moins 32 caractères
+    if (devKey.length < 32) {
+      return null;
+    }
+    // Timing-safe comparison pour prévenir les timing attacks
+    const keyBuf = Buffer.from(key);
+    const devKeyBuf = Buffer.from(devKey);
+    if (keyBuf.length === devKeyBuf.length && timingSafeEqual(keyBuf, devKeyBuf)) {
       return {
         clientId: 'dev-client',
         clientName: 'dev',
