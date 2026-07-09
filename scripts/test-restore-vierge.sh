@@ -29,6 +29,7 @@ BUCKET="${R2_BUCKET:-sokar-backups}"
 PREFIX="${R2_PATH:-postgres}"
 TARGET_DB="sokar_restore_test_$(date -u '+%Y%m%d%H%M%S')"
 KEEP_DB="${KEEP_DB:-0}"
+DUMP_LOCAL=""
 
 log()  { echo "[$(date -u '+%H:%M:%SZ')] $*"; }
 ok()   { echo "  ✅ $*"; }
