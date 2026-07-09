@@ -123,6 +123,41 @@ pm2 status                                  # voir les services staging
 pm2 logs sokar-staging-api                  # logs API staging
 ```
 
+## Déploiement production
+
+**L'agent peut déployer en prod sans demander à l'utilisateur.** L'accès SSH est configuré (`ssh deploy@pmbtc`), le script de deploy est idempotent avec rollback automatique.
+
+**Infrastructure (VPS pmbtc, même machine que le staging) :**
+
+- Racine : `/opt/sokar/`
+- Ports : API=4000, Dashboard=3000, Connect=4002
+- DB Postgres : `sokar` (séparée de `sokar_staging`)
+- Redis : db=0
+- PM2 : `sokar-api`, `sokar-dashboard`, `sokar-connect`
+- Nginx : `infra/nginx/sokar.conf` (vhost `sokar.tech` + `api.sokar.tech`)
+
+**Commandes (depuis le Mac, via SSH) :**
+
+```zsh
+# Déployer la prod (depuis le Mac — l'agent fait ça directement)
+ssh deploy@pmbtc "cd /opt/sokar && git pull origin main && bash scripts/deploy-vps.sh"
+
+# Rollback prod
+ssh deploy@pmbtc "cd /opt/sokar && bash scripts/deploy-vps.sh rollback"
+
+# Voir les services prod
+ssh deploy@pmbtc "pm2 list | grep sokar"
+
+# Logs prod
+ssh deploy@pmbtc "pm2 logs sokar-api --lines 50"
+```
+
+**Déploiement staging (depuis le Mac) :**
+
+```zsh
+ssh deploy@pmbtc "cd /opt/sokar-staging && git pull origin main && bash scripts/deploy-staging.sh"
+```
+
 ## Demo restaurant
 
 Le seed crée un restaurant fictif `Chez Sokar` (slug `chez-sokar-demo`) :
