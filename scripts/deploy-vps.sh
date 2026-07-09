@@ -21,6 +21,15 @@ BRANCH="${1:-main}"
 SOKAR_ROOT="/opt/sokar"
 RELEASES_DIR="$SOKAR_ROOT/releases"
 DATE=$(date '+%Y-%m-%d %H:%M:%S')
+PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
+
+ensure_privileged_wrapper() {
+    if [ ! -x "$PRIVILEGED_WRAPPER" ]; then
+        echo "📦 Installation initiale du wrapper privilégié..."
+        sudo install -o root -g root -m 0755 \
+            "$SOKAR_ROOT/scripts/ops/sokar-deploy-root.sh" "$PRIVILEGED_WRAPPER"
+    fi
+}
 
 # Artefacts à snapshoter (chemins relatifs à SOKAR_ROOT)
 ARTIFACT_PATHS=(
@@ -185,6 +194,7 @@ if [ "$(hostname)" != "pmbtc" ]; then
 fi
 
 cd "$SOKAR_ROOT"
+ensure_privileged_wrapper
 
 # ── 0. Swap check ───────────────────────────────────────
 # Le VPS a 4GB RAM ; sans swap les builds Next.js sont tués par OOM (exit 137).
