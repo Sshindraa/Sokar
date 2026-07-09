@@ -29,6 +29,7 @@ import { SyncOrganization } from './SyncOrganization';
 import { CreateRestaurantGate } from './CreateRestaurantGate';
 import MobileBottomNav from '@/components/MobileBottomNav';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { AccountMenu } from '@/components/AccountMenu';
 import { OnboardingProvider, useOnboarding } from '@/features/onboarding/onboarding-provider';
 import {
   DashboardOnboardingGate,
@@ -206,6 +207,7 @@ function DashboardShell({ children }: { children: ReactNode }) {
             </nav>
             <LanguageSwitcher />
             <ThemeToggle />
+            <AccountMenu />
           </div>
         </div>
         <DashboardOnboardingPanel />
