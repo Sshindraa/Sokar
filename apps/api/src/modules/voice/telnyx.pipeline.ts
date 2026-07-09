@@ -8,6 +8,7 @@ import { CallSessionManager } from './stream/manager';
 import { VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
 import { buildSmsJobId, buildTelnyxWebhookJobId } from '../../shared/queue/job-options';
 import { isVoicePipelineEnabled } from '../../shared/configcat';
+import { MS_TO_SECONDS } from '../../shared/constants/time.js';
 
 function buildRecoveryJobId(callLegId: string): string {
   return `recovery:${callLegId}`;
@@ -277,7 +278,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
       update: {
         durationSec: Math.round(
           ended_at && started_at
-            ? (new Date(ended_at).getTime() - new Date(started_at).getTime()) / 1000
+            ? (new Date(ended_at).getTime() - new Date(started_at).getTime()) / MS_TO_SECONDS
             : 0,
         ),
         transcript: transcript ?? null,
@@ -292,7 +293,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         restaurantId,
         durationSec: Math.round(
           ended_at && started_at
-            ? (new Date(ended_at).getTime() - new Date(started_at).getTime()) / 1000
+            ? (new Date(ended_at).getTime() - new Date(started_at).getTime()) / MS_TO_SECONDS
             : 0,
         ),
         transcript: transcript ?? null,

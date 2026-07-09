@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { OnboardingLockBanner } from '@/features/onboarding/onboarding-guard';
 import { AlertCircle, CheckCircle2, Code, Copy, ExternalLink, Palette } from 'lucide-react';
+import { CLIPBOARD_RESET_DELAY_MS } from '@/constants/ui';
 
 const DEFAULT_PRIMARY = '#0f172a';
 const DEFAULT_ACCENT = '#f97316';
@@ -70,7 +71,7 @@ export default function WidgetIntegrationPage() {
     try {
       await navigator.clipboard.writeText(buildSnippet(settings.slug, primary, accent));
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), CLIPBOARD_RESET_DELAY_MS);
     } catch {
       setError('Impossible de copier le snippet. Veuillez le sélectionner manuellement.');
     }

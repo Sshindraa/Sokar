@@ -13,6 +13,13 @@ import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
 import { persistLatencyTrace } from './session-persistence';
+import {
+  CARTESIA_RETRY_DELAY_MS,
+  CARTESIA_TTS_MAX_ATTEMPTS,
+  TTS_CHUNK_PAUSE_MS,
+  TTS_UNDERFEED_PAUSE_MS,
+  TTS_PACE_PAUSE_MS,
+} from './constants';
 
 export function isSessionActiveForTts(session: CallSession): boolean {
   return (
@@ -200,7 +207,7 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
           );
         }
 
-        await new Promise((r) => setTimeout(r, 20));
+        await new Promise((r) => setTimeout(r, TTS_CHUNK_PAUSE_MS));
       }
       writeDebugLog(
         `[speakTtsStreamed] Sent ${chunksSent} cached audio chunks to Telnyx for sentence ${i}`,
@@ -228,7 +235,7 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
       });
 
       let response: Response | null = null;
-      for (let attempt = 0; attempt < 2; attempt++) {
+      for (let attempt = 0; attempt < CARTESIA_TTS_MAX_ATTEMPTS; attempt++) {
         response = await fetch('https://api.cartesia.ai/tts/bytes', {
           method: 'POST',
           headers: {
@@ -240,8 +247,10 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
         });
         if (response.ok) break;
         if (attempt === 0 && (response.status >= 500 || response.status === 429)) {
-          writeDebugLog(`[speakTtsStreamed] Cartesia ${response.status}, retrying in 200ms...`);
-          await new Promise((r) => setTimeout(r, 200));
+          writeDebugLog(
+            `[speakTtsStreamed] Cartesia ${response.status}, retrying in ${CARTESIA_RETRY_DELAY_MS}ms...`,
+          );
+          await new Promise((r) => setTimeout(r, CARTESIA_RETRY_DELAY_MS));
           continue;
         }
         break; // 4xx non-retryable ou 2e échec
@@ -290,7 +299,7 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
             if (streamFinished) {
               break; // Tout est lu
             }
-            await new Promise((r) => setTimeout(r, 10)); // Sous-alimentation temporaire, attendre
+            await new Promise((r) => setTimeout(r, TTS_UNDERFEED_PAUSE_MS)); // Sous-alimentation temporaire, attendre
             continue;
           }
 
@@ -314,7 +323,7 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
             );
           }
 
-          await new Promise((r) => setTimeout(r, 20));
+          await new Promise((r) => setTimeout(r, TTS_PACE_PAUSE_MS));
         }
         writeDebugLog(
           `[speakTtsStreamed] Paced player sent ${chunksSent} chunks for sentence ${i}`,

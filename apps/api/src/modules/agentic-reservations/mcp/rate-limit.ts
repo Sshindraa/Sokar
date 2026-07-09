@@ -18,6 +18,7 @@
 
 import type Redis from 'ioredis';
 import { alertFailOpen } from '../../../shared/observability/alerts';
+import { RATE_LIMIT_FALLBACK_RESET_MS } from '../../../shared/constants/timeouts.js';
 
 export type RateLimitConfig = {
   capacity: number;
@@ -143,7 +144,7 @@ export class McpRateLimiter {
           return {
             allowed: false,
             remaining: 0,
-            resetMs: 5000,
+            resetMs: RATE_LIMIT_FALLBACK_RESET_MS,
             reason: 'redis_down',
           };
         }
@@ -154,7 +155,7 @@ export class McpRateLimiter {
       return {
         allowed: false,
         remaining: 0,
-        resetMs: 5000,
+        resetMs: RATE_LIMIT_FALLBACK_RESET_MS,
         reason: 'redis_down',
       };
     }

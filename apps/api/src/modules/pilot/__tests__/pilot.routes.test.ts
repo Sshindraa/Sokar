@@ -12,13 +12,12 @@ describe('Pilot routes', () => {
   });
 
   it('GET /api/internal/pilot-kpis retourne les KPIs', async () => {
-    (db.reservation.count as any) = vi
-      .fn()
-      .mockResolvedValueOnce(150) // total
-      .mockResolvedValueOnce(100) // honored
-      .mockResolvedValueOnce(20) // pending
-      .mockResolvedValueOnce(15) // cancelled
-      .mockResolvedValueOnce(15); // no_show
+    (db.reservation.groupBy as any) = vi.fn().mockResolvedValue([
+      { state: 'HONORED', _count: { state: 100 } },
+      { state: 'PENDING', _count: { state: 20 } },
+      { state: 'CANCELLED', _count: { state: 15 } },
+      { state: 'NO_SHOW', _count: { state: 15 } },
+    ]);
 
     const app = await getApp();
     const res = await app.inject({ method: 'GET', url: '/api/internal/pilot-kpis' });
@@ -32,7 +31,7 @@ describe('Pilot routes', () => {
   });
 
   it('retourne 500 si la DB plante', async () => {
-    (db.reservation.count as any) = vi.fn().mockRejectedValueOnce(new Error('DB down'));
+    (db.reservation.groupBy as any) = vi.fn().mockRejectedValueOnce(new Error('DB down'));
 
     const app = await getApp();
     const res = await app.inject({ method: 'GET', url: '/api/internal/pilot-kpis' });

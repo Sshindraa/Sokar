@@ -5,6 +5,7 @@ import type { CallSession, FluxEvent } from './types';
 import { CallSessionManager } from './manager';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
+import { DEEPGRAM_CLOSE_DELAY_MS } from '../../../shared/constants/timeouts.js';
 
 function writeDebugLog(msg: string, err?: unknown) {
   const e = err instanceof Error ? err : err ? new Error(String(err)) : undefined;
@@ -214,7 +215,7 @@ export function closeDeepgram(session: CallSession): void {
       if (session.deepgramWs?.readyState === WebSocket.OPEN) {
         session.deepgramWs.send(JSON.stringify({ type: 'Close' }));
       }
-    }, 200);
+    }, DEEPGRAM_CLOSE_DELAY_MS);
   }
 }
 

@@ -7,6 +7,7 @@ import { useApi } from '@/lib/api';
 import { useOnboarding } from '../onboarding-provider';
 import { StepHeader, Field, SubmitButton } from '../ui';
 import type { StepProps } from '../types';
+import { GEOCODING_DEBOUNCE_MS } from '@/constants/ui';
 
 export function ConnectLocationStep({ onComplete }: StepProps) {
   const { patch, orgId } = useApi();
@@ -41,8 +42,8 @@ export function ConnectLocationStep({ onComplete }: StepProps) {
           const data = await res.json();
           setCitySuggestions(data);
         }
-      } catch (err) {
-        console.error(err);
+      } catch {
+        // Geocoding best-effort : échec silencieux, l'autocomplétion reste utilisable.
       }
     }, 200);
     return () => clearTimeout(timeout);
@@ -65,12 +66,12 @@ export function ConnectLocationStep({ onComplete }: StepProps) {
             setLng(Number(data[0].lon));
           }
         }
-      } catch (err) {
-        console.error('Geocoding error', err);
+      } catch {
+        // Geocoding best-effort : échec silencieux, les coordonnées restent éditables manuellement.
       } finally {
         setGeocoding(false);
       }
-    }, 1000);
+    }, GEOCODING_DEBOUNCE_MS);
     return () => clearTimeout(timeout);
   }, [formattedAddress, postalCode, city]);
 

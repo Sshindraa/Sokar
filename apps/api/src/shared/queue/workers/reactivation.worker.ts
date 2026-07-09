@@ -42,17 +42,29 @@ export const reactivationWorker = new Worker(
         where: { onboardingDone: true },
       });
 
+      // Une seule query pour tous les VIPs dormants (évite un N+1 : un findMany par restaurant).
+      const allDormantVips = await db.customer.findMany({
+        where: {
+          isVip: true,
+          lastSeenAt: { gte: minDate, lte: maxDate },
+          restaurant: { onboardingDone: true },
+        },
+        select: { id: true, restaurantId: true },
+      });
+      const vipsByRestaurant = new Map<string, string[]>();
+      for (const v of allDormantVips) {
+        const list = vipsByRestaurant.get(v.restaurantId);
+        if (list) {
+          list.push(v.id);
+        } else {
+          vipsByRestaurant.set(v.restaurantId, [v.id]);
+        }
+      }
+
       let campaignsCreated = 0;
 
       for (const restaurant of restaurants) {
-        const dormantVips = await db.customer.findMany({
-          where: {
-            restaurantId: restaurant.id,
-            isVip: true,
-            lastSeenAt: { gte: minDate, lte: maxDate },
-          },
-          select: { id: true },
-        });
+        const dormantVips = vipsByRestaurant.get(restaurant.id) ?? [];
 
         if (dormantVips.length === 0) continue;
 
@@ -68,7 +80,7 @@ export const reactivationWorker = new Worker(
         await db.reactivationCampaign.create({
           data: {
             restaurantId: restaurant.id,
-            customerIds: dormantVips.map((c) => c.id),
+            customerIds: dormantVips,
           },
         });
         campaignsCreated++;

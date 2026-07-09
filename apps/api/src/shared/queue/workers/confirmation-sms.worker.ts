@@ -4,6 +4,7 @@ import { db } from '../../db/client';
 import { sendReminder } from '../../messaging/sender';
 import { setupWorkerListeners, jobLogger } from './helper';
 import { formatDate } from '@sokar/shared';
+import { CONFIRMATION_SMS_WORKER_CONCURRENCY } from '../constants';
 
 /**
  * Worker pour l'envoi des rappels de réservation J-1.
@@ -145,7 +146,7 @@ export const confirmationSmsWorker = new Worker(
       return;
     }
   },
-  { connection: redisQueue, concurrency: 3 },
+  { connection: redisQueue, concurrency: CONFIRMATION_SMS_WORKER_CONCURRENCY },
 );
 
 setupWorkerListeners(confirmationSmsWorker);

@@ -10,6 +10,7 @@ import { setupWorkerListeners, jobLogger } from '../../../shared/queue/workers/h
 import { db } from '../../../shared/db/client';
 import { HoldService } from '../core/hold.service';
 import { AuditLogService } from '../core/audit-log.service';
+import { EXPIRE_QUOTE_WORKER_CONCURRENCY } from '../../../shared/queue/constants.js';
 
 const audit = new AuditLogService(db);
 const holds = new HoldService(db, audit);
@@ -30,7 +31,7 @@ export const agenticExpireQuoteWorker = new Worker(
     });
     log.info({ quoteId, expired }, 'quote expiration job');
   },
-  { connection: redisQueue, concurrency: 4 },
+  { connection: redisQueue, concurrency: EXPIRE_QUOTE_WORKER_CONCURRENCY },
 );
 
 setupWorkerListeners(agenticExpireQuoteWorker);

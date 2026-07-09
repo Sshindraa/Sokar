@@ -16,6 +16,7 @@ import type { CreateCrowdfundingResult } from '@/lib/api/gift-cards';
 import { createCrowdfunding } from '@/lib/api/gift-cards';
 import { GiftCardTemplatePicker } from './gift-card-template-picker';
 import { trackEvent } from '@/lib/tracking';
+import { GIFT_CARD_MESSAGE_MAX_LENGTH } from '@/lib/constants/gift-cards';
 
 type Props = {
   slug: string;
@@ -295,7 +296,7 @@ export function GiftCardCrowdfundingCreate({
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Un mot pour accompagner la cagnotte..."
-            maxLength={1000}
+            maxLength={GIFT_CARD_MESSAGE_MAX_LENGTH}
             rows={3}
             className={`${inputClass} mt-2 resize-none`}
           />

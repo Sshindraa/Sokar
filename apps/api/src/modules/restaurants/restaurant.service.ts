@@ -10,6 +10,10 @@ import {
   REDIS_CTX_TTL_SECONDS,
 } from '@sokar/config';
 import { getRestaurantPlanOverride } from '../../shared/configcat';
+import { DAY_SECONDS, HOUR_SECONDS } from '../../shared/constants/time.js';
+
+/** TTL du compteur mensuel d'appels : ~33 jours en secondes */
+const MONTHLY_CALL_COUNTER_TTL_SECONDS = 33 * DAY_SECONDS;
 
 interface SafeProviderConfig {
   readonly carrier: string;
@@ -173,7 +177,7 @@ export class RestaurantService {
     const monthKey = getCurrentMonthKey();
     const countKey = `infra:calls:${restaurantId}:${monthKey}`;
     const count = await redisCache.incr(countKey);
-    if (count === 1) await redisCache.expire(countKey, 33 * 24 * 3600);
+    if (count === 1) await redisCache.expire(countKey, MONTHLY_CALL_COUNTER_TTL_SECONDS);
 
     if (count > INTERNAL_CALL_ALERT_THRESHOLD) {
       Sentry.captureMessage(`[MARGIN] Restaurant ${restaurantId} atteint ${count} appels ce mois`, {
@@ -184,7 +188,7 @@ export class RestaurantService {
 
     const hourKey = `infra:calls:${restaurantId}:${getHourKey()}`;
     const hourCount = await redisCache.incr(hourKey);
-    if (hourCount === 1) await redisCache.expire(hourKey, 3600);
+    if (hourCount === 1) await redisCache.expire(hourKey, HOUR_SECONDS);
 
     if (hourCount > CIRCUIT_BREAKER_HOURLY_LIMIT) {
       Sentry.captureMessage(

@@ -19,6 +19,7 @@ import {
 } from './gift-card-email.service';
 import { sendRecipientWhatsApp } from './gift-card-whatsapp.service';
 import { logger } from '../../shared/logger/pino';
+import { DEFAULT_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
 import type {
   CreateCrowdfundingInput,
   ContributeInput,
@@ -130,7 +131,7 @@ export class GiftCardCrowdfundingService {
           message: input.message ?? null,
         },
       });
-    });
+    }, DEFAULT_TRANSACTION_OPTIONS);
 
     // 5. Notifications (non-bloquantes)
     const restaurant = await this.prisma.restaurant.findUnique({

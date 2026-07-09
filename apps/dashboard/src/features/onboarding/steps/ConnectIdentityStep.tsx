@@ -8,6 +8,7 @@ import { useApi } from '@/lib/api';
 import { useOnboarding } from '../onboarding-provider';
 import { StepHeader, Field, SubmitButton, resizeImage } from '../ui';
 import type { StepProps } from '../types';
+import { IMAGE_RESIZE_MAX_DIMENSION } from '@/constants/ui';
 
 export function ConnectIdentityStep({ onComplete }: StepProps) {
   const { patch, post, get, orgId } = useApi();
@@ -53,10 +54,14 @@ export function ConnectIdentityStep({ onComplete }: StepProps) {
     const file = e.dataTransfer.files[0];
     if (file && file.type.startsWith('image/')) {
       try {
-        const resized = await resizeImage(file, 1000, 1000);
+        const resized = await resizeImage(
+          file,
+          IMAGE_RESIZE_MAX_DIMENSION,
+          IMAGE_RESIZE_MAX_DIMENSION,
+        );
         setCoverImageUrl(resized);
-      } catch (err) {
-        console.error(err);
+      } catch {
+        // Resize best-effort : échec non bloquant, l'utilisateur peut réessayer.
       }
     }
   }
@@ -65,10 +70,14 @@ export function ConnectIdentityStep({ onComplete }: StepProps) {
     const file = e.target.files?.[0];
     if (file) {
       try {
-        const resized = await resizeImage(file, 1000, 1000);
+        const resized = await resizeImage(
+          file,
+          IMAGE_RESIZE_MAX_DIMENSION,
+          IMAGE_RESIZE_MAX_DIMENSION,
+        );
         setCoverImageUrl(resized);
-      } catch (err) {
-        console.error(err);
+      } catch {
+        // Resize best-effort : échec non bloquant, l'utilisateur peut réessayer.
       }
     }
   }

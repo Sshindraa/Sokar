@@ -104,12 +104,10 @@ export async function fetchPublicRestaurant(
     });
     if (res.status === 404) return null;
     if (!res.ok) {
-      console.error(`[connect] fetch restaurant ${slug} failed: ${res.status}`);
       return null;
     }
     return (await res.json()) as PublicRestaurantDto;
-  } catch (err) {
-    console.error(`[connect] fetch restaurant ${slug} error:`, err);
+  } catch {
     return null;
   }
 }
@@ -133,12 +131,10 @@ export async function fetchWidgetRestaurant(
     });
     if (res.status === 404) return null;
     if (!res.ok) {
-      console.error(`[connect] fetch widget restaurant ${slug} failed: ${res.status}`);
       return null;
     }
     return (await res.json()) as WidgetRestaurantDto;
-  } catch (err) {
-    console.error(`[connect] fetch widget restaurant ${slug} error:`, err);
+  } catch {
     return null;
   }
 }
@@ -161,12 +157,10 @@ export async function fetchAvailability(
       next: { revalidate: options.revalidate ?? 30 },
     });
     if (!res.ok) {
-      console.error(`[connect] fetch availability ${slug} failed: ${res.status}`);
       return null;
     }
     return (await res.json()) as AvailabilityDto;
-  } catch (err) {
-    console.error(`[connect] fetch availability ${slug} error:`, err);
+  } catch {
     return null;
   }
 }
@@ -194,12 +188,10 @@ export async function fetchPublicRestaurants(
       next: { revalidate: options.revalidate ?? 300 },
     });
     if (!res.ok) {
-      console.error(`[connect] fetch restaurants failed: ${res.status}`);
       return { restaurants: [], total: 0, page, limit };
     }
     return (await res.json()) as PaginatedRestaurantsDto;
-  } catch (err) {
-    console.error('[connect] fetch restaurants error:', err);
+  } catch {
     return { restaurants: [], total: 0, page, limit };
   }
 }
@@ -215,13 +207,11 @@ export async function fetchPublishedSlugs(): Promise<SitemapRestaurantEntry[]> {
       next: { revalidate: 300 }, // 5 min
     });
     if (!res.ok) {
-      console.error(`[connect] fetch sitemap-data failed: ${res.status}`);
       return [];
     }
     const data = (await res.json()) as { restaurants: SitemapRestaurantEntry[] };
     return data.restaurants;
-  } catch (err) {
-    console.error(`[connect] fetch sitemap-data error:`, err);
+  } catch {
     return [];
   }
 }
@@ -252,8 +242,7 @@ export async function fetchCities(): Promise<
       }>;
     };
     return data.cities;
-  } catch (err) {
-    console.error(`[connect] fetch cities error:`, err);
+  } catch {
     return [];
   }
 }
@@ -274,8 +263,7 @@ export async function fetchCityPage(
     if (res.status === 404) return null;
     if (!res.ok) return null;
     return (await res.json()) as import('./cities').CityCuisinePageData;
-  } catch (err) {
-    console.error(`[connect] fetch city ${citySlug} error:`, err);
+  } catch {
     return null;
   }
 }

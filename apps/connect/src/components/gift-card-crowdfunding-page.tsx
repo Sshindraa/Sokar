@@ -26,6 +26,7 @@ import {
 } from '@/lib/api/gift-cards';
 import { GiftCardPaymentForm } from './gift-card-payment-form';
 import { trackEvent } from '@/lib/tracking';
+import { GIFT_CARD_MESSAGE_MAX_LENGTH } from '@/lib/constants/gift-cards';
 
 type Props = {
   code: string;
@@ -356,7 +357,7 @@ export function GiftCardCrowdfundingPage({
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder="Un petit mot..."
-                  maxLength={1000}
+                  maxLength={GIFT_CARD_MESSAGE_MAX_LENGTH}
                   rows={2}
                   className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm transition-all duration-200 focus:border-[var(--widget-accent)] focus:outline-none"
                 />

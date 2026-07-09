@@ -21,6 +21,7 @@
 import { PrismaClient } from '@prisma/client';
 import { normalizeOpeningHours } from '@sokar/shared';
 import type { AvailabilityDto, AvailabilitySlot } from './connect.types';
+import { MINUTES_TO_MS, HOURS_TO_MINUTES, HOURS_PER_DAY } from '../../shared/constants/time.js';
 
 const SLOT_MINUTES = 30;
 
@@ -122,7 +123,7 @@ export class ConnectAvailabilityService {
 
     // 3. Calculer le moment de la requête pour lead time
     const now = new Date();
-    const minLeadTimeMs = minLeadTimeMinutes * 60 * 1000;
+    const minLeadTimeMs = minLeadTimeMinutes * MINUTES_TO_MS;
     const minBookingTime = new Date(now.getTime() + minLeadTimeMs);
 
     // Construire les slots avec leur état (conversion local → UTC via timezone)
@@ -159,11 +160,11 @@ function generateSlots(open: string, close: string, stepMinutes: number): string
   const slots: string[] = [];
   const [openH, openM] = open.split(':').map(Number);
   const [closeH, closeM] = close.split(':').map(Number);
-  let cur = openH * 60 + openM;
-  const end = closeH * 60 + closeM;
+  let cur = openH * HOURS_TO_MINUTES + openM;
+  const end = closeH * HOURS_TO_MINUTES + closeM;
   while (cur + stepMinutes <= end) {
-    const h = Math.floor(cur / 60);
-    const m = cur % 60;
+    const h = Math.floor(cur / HOURS_TO_MINUTES);
+    const m = cur % HOURS_TO_MINUTES;
     slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
     cur += stepMinutes;
   }

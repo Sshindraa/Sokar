@@ -9,12 +9,15 @@ import type { CallSession } from './types';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
+import { MS_TO_SECONDS } from '../../../shared/constants/time.js';
 
 /** Crée ou met à jour un enregistrement Call en base pour un appel Flux */
 export async function persistFluxCall(session: CallSession): Promise<void> {
   try {
     const { db } = await import('../../../shared/db/client');
-    const durationSec = session.createdAt ? Math.round((Date.now() - session.createdAt) / 1000) : 0;
+    const durationSec = session.createdAt
+      ? Math.round((Date.now() - session.createdAt) / MS_TO_SECONDS)
+      : 0;
 
     await db.call.upsert({
       where: { callSid: session.callLegId },

@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, HeartHandshake, Send, X, Clock, Check, Phone } from 'lucide-react';
 import { formatDate } from '@sokar/shared';
+import { MS_PER_DAY } from '@/constants/ui';
 
 interface ReactivationCustomer {
   id: string;
@@ -46,7 +47,7 @@ function StatusBadge({ status }: { status: string }) {
 
 function daysSince(dateStr: string | null): string {
   if (!dateStr) return '—';
-  const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
+  const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / MS_PER_DAY);
   if (days < 30) return `${days}j`;
   const months = Math.floor(days / 30);
   return `${months} mois`;

@@ -13,6 +13,7 @@ import { GiftCardCrowdfundingService } from './gift-card-crowdfunding.service';
 import { generateGiftCardPdf } from './gift-card-pdf.service';
 import { logger } from '../../shared/logger/pino';
 import { checkRateLimit, rateLimitKey, getClientIp } from '../../shared/redis/rate-limit';
+import { GIFT_CARD_MESSAGE_MAX_LENGTH, GIFT_CARD_IMAGE_URL_MAX_LENGTH } from './constants';
 
 const ListGiftCardsQuerySchema = z.object({
   status: z.enum(['ACTIVE', 'REDEEMED', 'EXPIRED', 'CANCELLED', 'CLOSED']).optional(),
@@ -30,7 +31,7 @@ const CreateGiftCardSchema = z
     recipientEmail: z.string().email().max(255).optional(),
     recipientPhone: z.string().max(50).optional(),
     senderName: z.string().min(1).max(100).optional(),
-    message: z.string().max(1000).optional(),
+    message: z.string().max(GIFT_CARD_MESSAGE_MAX_LENGTH).optional(),
     occasion: z.string().max(100).optional(),
     preferredDate: z.coerce.date().optional(),
     preferredTime: z
@@ -89,7 +90,7 @@ const PaymentIntentSchema = z.object({
   recipientPhone: z.string().max(50).optional(),
   message: z.string().max(1000).optional(),
   templateId: z.string().max(100).optional(),
-  customImageUrl: z.string().url().max(1000).optional(),
+  customImageUrl: z.string().url().max(GIFT_CARD_IMAGE_URL_MAX_LENGTH).optional(),
   preferredDate: z.coerce.date().optional(),
   preferredTime: z
     .string()
@@ -111,9 +112,9 @@ const PurchaseWithPaymentSchema = z
     recipientName: z.string().min(1).max(100).optional(),
     recipientEmail: z.string().email().max(255).optional(),
     recipientPhone: z.string().max(50).optional(),
-    message: z.string().max(1000).optional(),
+    message: z.string().max(GIFT_CARD_MESSAGE_MAX_LENGTH).optional(),
     templateId: z.string().max(100).optional(),
-    customImageUrl: z.string().url().max(1000).optional(),
+    customImageUrl: z.string().url().max(GIFT_CARD_IMAGE_URL_MAX_LENGTH).optional(),
     preferredDate: z.coerce.date().optional(),
     preferredTime: z
       .string()
