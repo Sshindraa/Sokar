@@ -7,8 +7,11 @@ if [ "${EUID}" -ne 0 ]; then
     exit 1
 fi
 
+PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
+SUDOERS_DST="/etc/sudoers.d/deploy"
+
 usage() {
-    echo "Usage: $0 {check-cert|clean-next|install-nginx|restore-nginx|reload-nginx|install-runtime|check-prod-vhost|start-localstack|stop-localstack} {prod|staging} [dashboard|connect]" >&2
+    echo "Usage: $0 {check-cert|clean-next|install-nginx|restore-nginx|reload-nginx|install-runtime|self-update|check-prod-vhost|start-localstack|stop-localstack} {prod|staging} [dashboard|connect]" >&2
     exit 2
 }
 
@@ -108,6 +111,37 @@ install_runtime() {
     install -m 0644 "$ROOT/infra/logrotate/sokar" /etc/logrotate.d/sokar
 }
 
+self_update() {
+    [ "$ENVIRONMENT" = "prod" ] || [ "$ENVIRONMENT" = "staging" ] || usage
+    local wrapper_src="$ROOT/scripts/ops/sokar-deploy-root.sh"
+    local sudoers_src="$ROOT/infra/sudoers.d/deploy"
+    local wrapper_backup="$PRIVILEGED_WRAPPER.bak"
+    local sudoers_backup="$SUDOERS_DST.bak"
+
+    install -m 0755 "$PRIVILEGED_WRAPPER" "$wrapper_backup"
+
+    if [ -f "$SUDOERS_DST" ]; then
+        install -m 0440 "$SUDOERS_DST" "$sudoers_backup"
+    fi
+
+    install -o root -g root -m 0755 "$wrapper_src" "$PRIVILEGED_WRAPPER"
+
+    if [ -f "$sudoers_src" ]; then
+        install -o root -g root -m 0440 "$sudoers_src" "$SUDOERS_DST"
+        if ! visudo -c >/dev/null 2>&1; then
+            install -o root -g root -m 0755 "$wrapper_backup" "$PRIVILEGED_WRAPPER"
+            if [ -f "$sudoers_backup" ]; then
+                install -o root -g root -m 0440 "$sudoers_backup" "$SUDOERS_DST"
+            fi
+            echo "❌ visudo a détecté une erreur. Restauration effectuée." >&2
+            exit 1
+        fi
+    fi
+
+    rm -f "$wrapper_backup" "$sudoers_backup"
+    echo "✅ Wrapper sokar-deploy-root mis à jour depuis $wrapper_src"
+}
+
 case "$ACTION" in
     check-cert)
         [ "$#" -eq 2 ] || usage
@@ -132,6 +166,10 @@ case "$ACTION" in
     install-runtime)
         [ "$#" -eq 2 ] || usage
         install_runtime
+        ;;
+    self-update)
+        [ "$#" -eq 2 ] || usage
+        self_update
         ;;
     check-prod-vhost)
         [ "$#" -eq 2 ] || usage

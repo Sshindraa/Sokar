@@ -9,7 +9,7 @@
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "echo \"no tests yet\" && exit 0",
-    "clean": "rm -rf .turbo"
+    "clean": "rm -rf .turbo dist"
   },
   "devDependencies": {
     "typescript": "^5.8.0"

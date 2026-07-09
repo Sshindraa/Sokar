@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "copy-static": "bash scripts/copy-static.sh"
+    "copy-static": "bash scripts/copy-static.sh",
+    "clean": "rm -rf .turbo .next"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.63.0",
