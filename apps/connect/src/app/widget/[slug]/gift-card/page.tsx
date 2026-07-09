@@ -52,9 +52,7 @@ export default async function GiftCardWidgetPage({
     <div
       className="relative min-h-[100dvh] w-full overflow-x-hidden bg-[hsl(var(--reservation-bg))]"
       style={{
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ['--widget-primary' as any]: primary,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ['--widget-accent' as any]: accent,
       }}
     >

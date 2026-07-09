@@ -38,7 +38,6 @@
     "@commitlint/cli": "^21.0.2",
     "@commitlint/config-conventional": "^21.0.2",
     "husky": "^9.1.7",
-    "lint-staged": "^17.0.7",
     "prettier": "^3.5.0",
     "prisma": "^6.0.0",
     "stylelint": "^16.26.1",
@@ -75,13 +74,5 @@
     "trailingComma": "all",
     "printWidth": 100,
     "tabWidth": 2
-  },
-  "lint-staged": {
-    "*.{ts,tsx,js,jsx}": [
-      "prettier --write"
-    ],
-    "*.{md,json,yml,yaml}": [
-      "prettier --write"
-    ]
   }
 }

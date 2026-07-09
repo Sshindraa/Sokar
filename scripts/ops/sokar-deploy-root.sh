@@ -80,7 +80,7 @@ clean_next() {
         rm -rf "$APP_DIR/.next/$sub"
     done
     rm -f "$APP_DIR/.next/BUILD_ID"
-    rm -rf "$APP_DIR/.next/eslint"*
+    rm -rf "$APP_DIR"/.next/eslint*
     find "$APP_DIR/.next" -maxdepth 1 -name '*.nft.json' -delete
     find "$APP_DIR/.next/server" -name '*.nft.json' -delete 2>/dev/null || true
 }
