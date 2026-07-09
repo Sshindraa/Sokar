@@ -21,6 +21,14 @@ const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
  * border-border, bg-card/80, hover bg-accent).
  */
 export function AccountMenu() {
+  // Sans clé Clerk, on ne rend rien (dev preview / CI sans auth).
+  // On ne peut pas appeler useUser()/useClerk() sans ClerkProvider
+  // monté — donc on court-circuite avant tout hook Clerk.
+  if (!hasClerkKey) return null;
+  return <AccountMenuInner />;
+}
+
+function AccountMenuInner() {
   const t = useTranslations('account');
   const { isSignedIn, user } = useUser();
   const { signOut } = useClerk();
@@ -49,7 +57,7 @@ export function AccountMenu() {
     return () => document.removeEventListener('keydown', handleEscape);
   }, []);
 
-  if (!hasClerkKey || !isSignedIn || !user) return null;
+  if (!isSignedIn || !user) return null;
 
   const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
   const email = user.primaryEmailAddress?.emailAddress;
