@@ -1,0 +1,68 @@
+{
+  "_meta": {
+    "locale": "en",
+    "label": "English",
+    "note": "English locale. Convention: you, never thou. See apps/dashboard/src/i18n/config.ts."
+  },
+  "common": {
+    "appName": "Sokar",
+    "tagline": "AI voice assistant for your restaurant",
+    "loading": "Loading…",
+    "retry": "Retry",
+    "errorTitle": "An error occurred",
+    "errorDescription": "The dashboard encountered an unexpected error. You can retry or come back later.",
+    "errorDigest": "Incident reference: {digest}"
+  },
+  "nav": {
+    "overview": "Overview",
+    "calls": "Calls",
+    "reservations": "Reservations",
+    "floorPlan": "Floor plan",
+    "customers": "Customers",
+    "reactivation": "Reactivation",
+    "giftCards": "Gift cards",
+    "giftCardPacks": "Gift packs",
+    "agentic": "AI agents",
+    "connect": "Connect",
+    "widget": "Widget",
+    "settings": "Settings"
+  },
+  "dashboard": {
+    "pageTitle": "Dashboard",
+    "subdomain": "Sokar OS",
+    "demoModeOn": "Demo mode active",
+    "demoModeOff": "View demo",
+    "demoModeTooltipOn": "Disable demo mode",
+    "demoModeTooltipOff": "View the product with demo data",
+    "themeToggle": "Theme",
+    "themeTooltipLight": "Switch to dark mode",
+    "themeTooltipDark": "Switch to light mode"
+  },
+  "home": {
+    "heroTitle": "The AI that takes your calls when you can't",
+    "heroSubtitle": "Sokar answers your customers 24/7, takes reservations, and logs every call. You run the dining room, Sokar handles the phone."
+  },
+  "pricing": {
+    "title": "Simple pricing, no commitment",
+    "subtitle": "Choose the plan that fits your pace. Change or cancel anytime."
+  },
+  "widget": {
+    "title": "Reservation widget",
+    "description": "A floating button your customers add in one click. No installation, no password."
+  },
+  "onboarding": {
+    "title": "Let's set up Sokar together",
+    "subtitle": "In a few steps, your assistant will be ready to take your calls."
+  },
+  "errors": {
+    "notFound": "Page not found",
+    "notFoundDescription": "The page you're looking for doesn't exist or has been moved.",
+    "goHome": "Back to home"
+  },
+  "languageSwitcher": {
+    "label": "Language",
+    "current": "Current language: {label}",
+    "comingSoon": "Coming soon",
+    "comingSoonHint": "More languages will be added gradually."
+  }
+}

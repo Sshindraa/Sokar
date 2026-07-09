@@ -1,0 +1,68 @@
+{
+  "_meta": {
+    "locale": "es",
+    "label": "Español",
+    "note": "Spanish locale. Convention: usted, nunca tú. See apps/dashboard/src/i18n/config.ts."
+  },
+  "common": {
+    "appName": "Sokar",
+    "tagline": "Asistente de voz inteligente para su restaurante",
+    "loading": "Cargando…",
+    "retry": "Reintentar",
+    "errorTitle": "Se ha producido un error",
+    "errorDescription": "El panel ha encontrado un error inesperado. Puede reintentar o volver más tarde.",
+    "errorDigest": "Referencia del incidente: {digest}"
+  },
+  "nav": {
+    "overview": "Resumen",
+    "calls": "Llamadas",
+    "reservations": "Reservas",
+    "floorPlan": "Sala",
+    "customers": "Clientes",
+    "reactivation": "Reactivación",
+    "giftCards": "Tarjetas regalo",
+    "giftCardPacks": "Lotes regalo",
+    "agentic": "Agentes IA",
+    "connect": "Connect",
+    "widget": "Widget",
+    "settings": "Ajustes"
+  },
+  "dashboard": {
+    "pageTitle": "Panel",
+    "subdomain": "Sokar OS",
+    "demoModeOn": "Modo demo activo",
+    "demoModeOff": "Ver demo",
+    "demoModeTooltipOn": "Desactivar modo demo",
+    "demoModeTooltipOff": "Ver el producto con datos de demo",
+    "themeToggle": "Tema",
+    "themeTooltipLight": "Cambiar a modo oscuro",
+    "themeTooltipDark": "Cambiar a modo claro"
+  },
+  "home": {
+    "heroTitle": "La IA que atiende sus llamadas cuando usted no puede",
+    "heroSubtitle": "Sokar responde a sus clientes 24h/24, toma reservas y registra cada llamada. Usted gestiona el comedor, Sokar gestiona el teléfono."
+  },
+  "pricing": {
+    "title": "Precios simples, sin compromiso",
+    "subtitle": "Elija el plan que se adapte a su ritmo. Cambie o cancele cuando quiera."
+  },
+  "widget": {
+    "title": "Widget de reserva",
+    "description": "Un botón flotante que sus clientes añaden con un clic. Sin instalación, sin contraseña."
+  },
+  "onboarding": {
+    "title": "Configuremos Sokar juntos",
+    "subtitle": "En unos pocos pasos, su asistente estará listo para tomar sus llamadas."
+  },
+  "errors": {
+    "notFound": "Página no encontrada",
+    "notFoundDescription": "La página que busca no existe o ha sido movida.",
+    "goHome": "Volver al inicio"
+  },
+  "languageSwitcher": {
+    "label": "Idioma",
+    "current": "Idioma actual: {label}",
+    "comingSoon": "Próximamente",
+    "comingSoonHint": "Se añadirán más idiomas gradualmente."
+  }
+}

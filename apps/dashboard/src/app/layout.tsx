@@ -1,7 +1,11 @@
 import type { Metadata, Viewport } from 'next';
+import { NextIntlClientProvider } from 'next-intl';
+import { setRequestLocale, getMessages } from 'next-intl/server';
+import { cookies } from 'next/headers';
 import Providers from '@/components/providers';
 import Header from '@/components/header';
 import PwaInstallBanner from '@/components/PwaInstallBanner';
+import { DEFAULT_LOCALE, LOCALE_COOKIE, resolveLocale, type Locale } from '@/i18n/config';
 import './globals.css';
 
 export const viewport: Viewport = {
@@ -35,19 +39,26 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Resolve locale from cookie (user's choice) or fall back to default
+  const cookieStore = await cookies();
+  const locale: Locale = resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value);
+
+  // next-intl 4 : déclare la locale active au début du rendu pour que
+  // `getTranslations` / `useTranslations` sachent où chercher.
+  setRequestLocale(locale);
+  const messages = await getMessages();
+
   return (
-    <html lang="fr">
+    <html lang={locale}>
       <body className="min-h-screen bg-background antialiased">
-        <Providers>
-          <Header />
-          <PwaInstallBanner />
-          {children}
-        </Providers>
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          <Providers>
+            <Header />
+            <PwaInstallBanner />
+            {children}
+          </Providers>
+        </NextIntlClientProvider>
       </body>
     </html>
   );
