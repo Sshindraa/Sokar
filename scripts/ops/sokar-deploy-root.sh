@@ -90,7 +90,7 @@ clean_next() {
 
 check_prod_vhost() {
     [ "$ENVIRONMENT" = "prod" ] || usage
-    [ "$(nginx -T 2>/dev/null | grep -Ec 'server_name[[:space:]]+api\\.sokar\\.tech')" -eq 1 ]
+    [ "$(grep -lE '^[[:space:]]*server_name[[:space:]]+api\.sokar\.tech' /etc/nginx/sites-enabled/* 2>/dev/null | wc -l)" -eq 1 ]
 }
 
 localstack() {
