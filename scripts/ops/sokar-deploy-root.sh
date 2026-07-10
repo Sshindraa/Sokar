@@ -11,7 +11,7 @@ PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
 SUDOERS_DST="/etc/sudoers.d/deploy"
 
 usage() {
-    echo "Usage: $0 {check-cert|clean-next|install-nginx|restore-nginx|reload-nginx|install-runtime|self-update|check-prod-vhost|start-localstack|stop-localstack} {prod|staging} [dashboard|connect]" >&2
+    echo "Usage: $0 {check-cert|clean-next|install-nginx|restore-nginx|reload-nginx|install-runtime|self-update|check-prod-vhost|start-localstack|stop-localstack|backup-db} {prod|staging} [dashboard|connect]" >&2
     exit 2
 }
 
@@ -167,6 +167,10 @@ case "$ACTION" in
     install-runtime)
         [ "$#" -eq 2 ] || usage
         install_runtime
+        ;;
+    backup-db)
+        [ "$#" -eq 2 ] || usage
+        /usr/local/sbin/sokar-backup-postgres
         ;;
     self-update)
         [ "$#" -eq 2 ] || usage
