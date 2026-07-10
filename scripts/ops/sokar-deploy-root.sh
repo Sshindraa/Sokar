@@ -73,8 +73,8 @@ restore_nginx() {
 }
 
 clean_next() {
-    [ "$#" -eq 3 ] || usage
-    case "$3" in
+    [ "$#" -eq 1 ] || usage
+    case "$1" in
         dashboard) APP_DIR="$ROOT/apps/dashboard" ;;
         connect) APP_DIR="$ROOT/apps/connect" ;;
         *) usage ;;
@@ -148,7 +148,8 @@ case "$ACTION" in
         test -f "$CERT_ROOT/fullchain.pem" && test -f "$CERT_ROOT/privkey.pem"
         ;;
     clean-next)
-        clean_next
+        [ "$#" -eq 3 ] || usage
+        clean_next "$3"
         ;;
     install-nginx)
         [ "$#" -eq 2 ] || usage
