@@ -24,10 +24,15 @@ DATE=$(date '+%Y-%m-%d %H:%M:%S')
 PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
 
 ensure_privileged_wrapper() {
-    if [ -x "$PRIVILEGED_WRAPPER" ] && sudo -n "$PRIVILEGED_WRAPPER" self-update prod >/dev/null 2>&1; then
-        echo "✅ Wrapper privilégié mis à jour."
+    if [ -x "$PRIVILEGED_WRAPPER" ]; then
+        echo "🔄 Mise à jour du wrapper privilégié..."
+        if sudo -n "$PRIVILEGED_WRAPPER" self-update prod >/dev/null 2>&1; then
+            echo "✅ Wrapper mis à jour."
+        else
+            echo "⚠️ self-update indisponible ou échoué ; le wrapper existant sera utilisé."
+        fi
     else
-        echo "📦 Installation/maj du wrapper privilégié..."
+        echo "📦 Installation initiale du wrapper privilégié..."
         sudo install -o root -g root -m 0755 \
             "$SOKAR_ROOT/scripts/ops/sokar-deploy-root.sh" "$PRIVILEGED_WRAPPER"
     fi
@@ -286,7 +291,14 @@ sudo /usr/local/sbin/sokar-deploy-root stop-localstack prod 2>/dev/null || true
 # Les caches root-owned (legacy PM2 root) sont nettoyés avec sudo.
 clean_next_artifacts() {
     local app="$1"
-    sudo /usr/local/sbin/sokar-deploy-root clean-next prod "$app"
+    local app_dir="$SOKAR_ROOT/apps/$app"
+    if [ -d "$app_dir/.next" ]; then
+        rm -rf "$app_dir/.next/standalone" "$app_dir/.next/server" "$app_dir/.next/static" "$app_dir/.next/types"
+        rm -f "$app_dir/.next/BUILD_ID"
+        rm -rf "$app_dir"/.next/eslint*
+        find "$app_dir/.next" -maxdepth 1 -name '*.nft.json' -delete
+        find "$app_dir/.next/server" -name '*.nft.json' -delete 2>/dev/null || true
+    fi
 }
 clean_next_artifacts dashboard
 clean_next_artifacts connect
