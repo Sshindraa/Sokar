@@ -55,6 +55,8 @@ import './shared/queue/workers/confirmation-sms.worker';
 import './shared/queue/workers/reactivation.worker';
 import './shared/queue/workers/google-places-sync.worker';
 import './shared/queue/workers/alert-evaluation.worker';
+import './modules/agentic-reservations/workers/expire-hold.worker';
+import './modules/agentic-reservations/workers/expire-quote.worker';
 
 // Initialize Sentry as early as possible so that instrumentation hooks are
 // registered before the Fastify app (and its error handler) are built.

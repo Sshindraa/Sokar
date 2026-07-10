@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { telnyxWebhookGuard } from '../voice/telnyx.guard';
 import { handleReply } from '../sms/reply-handler';
 
 interface TelnyxFromObject {
@@ -33,7 +34,7 @@ interface TelnyxWebhookBody {
  */
 
 export async function whatsappWebhookRoutes(app: FastifyInstance) {
-  app.post('/whatsapp/webhook', async (req, reply) => {
+  app.post('/whatsapp/webhook', { preHandler: telnyxWebhookGuard }, async (req, reply) => {
     const body = req.body as TelnyxWebhookBody;
     const eventType = body?.data?.event_type;
     const payload = body?.data?.payload;
