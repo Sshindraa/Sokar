@@ -127,7 +127,14 @@ pm2 logs sokar-staging-api                  # logs API staging
 
 **Tout déploiement production nécessite une confirmation explicite juste avant l'exécution.** Staging peut être déployé automatiquement après une CI verte et ses smoke tests. Toute migration DB production, modification des paiements, de l'authentification, de la voice ou de la configuration critique doit être signalée avant exécution. Un rollback applicatif ne restaure pas automatiquement la base de données.
 
-**Infrastructure (VPS pmbtc, même machine que le staging) :**
+**Sécurité du compte deploy :**
+
+- Les opérations privilégiées (Nginx, Docker, logrotate, backups, certificats) passent par le wrapper `/usr/local/sbin/sokar-deploy-root`.
+- Le compte `deploy` n'est **plus** dans les groupes `sudo` ni `docker`.
+- `sudo -n` n'autorise plus que `sokar-deploy-root` ; tout autre `sudo` exige un mot de passe root.
+- `deploy` ne peut plus lancer de commandes `docker` directement ; seul le wrapper `sokar-deploy-root` gère les conteneurs.
+
+\*\*Infrastructure (VPS pmbtc, même machine que le staging) :
 
 - Racine : `/opt/sokar/`
 - Ports : API=4000, Dashboard=3000, Connect=4002
