@@ -516,7 +516,7 @@ else
     echo ""
     echo "📦 Backing up database..."
     sudo /usr/local/sbin/sokar-deploy-root install-runtime prod
-    bash "$SOKAR_ROOT/scripts/backup-postgres.sh"
+    sudo /usr/local/sbin/sokar-deploy-root backup-db prod
 
     echo ""
     echo "📦 Applying database migrations..."
