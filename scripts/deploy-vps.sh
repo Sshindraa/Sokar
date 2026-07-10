@@ -300,8 +300,6 @@ clean_next_artifacts() {
         find "$app_dir/.next/server" -name '*.nft.json' -delete 2>/dev/null || true
     fi
 }
-clean_next_artifacts dashboard
-clean_next_artifacts connect
 
 FREE_BEFORE=$(free -m | awk '/^Mem:/ {print $4}')
 echo "   Memory free: ${FREE_BEFORE}MB"
@@ -370,6 +368,17 @@ else
         }
         echo "$CHANGED_FILES" | grep -qE '^pnpm-lock\.yaml|^package\.json' && NEED_INSTALL=true
         echo "$CHANGED_FILES" | grep -qE '^packages/database/prisma/' && NEED_PRISMA=true
+
+        # Si un build précédent a nettoyé les artefacts sans rebatcher l'app,
+        # on force le rebuild pour restaurer le standalone.
+        if [ "$NEED_DASHBOARD" = false ] && [ ! -f "$SOKAR_ROOT/apps/dashboard/.next/standalone/apps/dashboard/server.js" ]; then
+            NEED_DASHBOARD=true
+            echo "   ⚠️ Dashboard standalone manquant — build forcé"
+        fi
+        if [ "$NEED_CONNECT" = false ] && [ ! -f "$SOKAR_ROOT/apps/connect/.next/standalone/apps/connect/server.js" ]; then
+            NEED_CONNECT=true
+            echo "   ⚠️ Connect standalone manquant — build forcé"
+        fi
 
         echo "   📎 Apps à builder :$([ "$NEED_DASHBOARD" = true ] && echo ' dashboard')$([ "$NEED_CONNECT" = true ] && echo ' connect')$([ "$NEED_API" = true ] && echo ' api')"
         if [ "$NEED_DASHBOARD" = false ] && [ "$NEED_CONNECT" = false ] && [ "$NEED_API" = false ] && [ "$NEED_PACKAGES" = false ]; then
@@ -456,6 +465,11 @@ fi
 if [ "$NEED_CONNECT" = true ]; then
     BUILD_CONNECT_CMD="NODE_OPTIONS='--max-old-space-size=1024' NEXT_TELEMETRY_DISABLED=1 pnpm --filter @sokar/connect build"
 fi
+
+# Nettoyage des artefacts anciens juste avant le build (pas au début du script,
+# sinon on peut supprimer le standalone d'une app qui n'est pas rebuildée).
+[ "$NEED_DASHBOARD" = true ] && clean_next_artifacts dashboard
+[ "$NEED_CONNECT" = true ] && clean_next_artifacts connect
 
 if [ -n "$BUILD_DASHBOARD_CMD" ] && [ -n "$BUILD_CONNECT_CMD" ]; then
     echo "   → Lancement dashboard + connect en parallèle..."
