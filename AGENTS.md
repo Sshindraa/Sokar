@@ -72,7 +72,8 @@ L'environnement de staging déploie automatiquement `main` sur le VPS pmbtc et e
 **Sécurité / isolement :**
 
 - Clés Clerk staging (`pk_test` / `sk_test`) — JAMAIS de clés prod.
-- Voice désactivée : `TELNYX_API_KEY`, `DEEPGRAM_API_KEY`, `CARTESIA_API_KEY` vides → pas d'appels sortants, webhooks Telnyx reçoivent 403 (signature vide).
+- Voice désactivée : `VOICE_DISABLED=true` requis en staging (`env.ts` valide en production que les clés voice sont présentes ou explicitement désactivées). `TELNYX_API_KEY`, `DEEPGRAM_API_KEY`, `CARTESIA_API_KEY` vides → pas d'appels sortants, webhooks Telnyx reçoivent 403 (signature vide).
+- `CORS_ORIGINS` doit être défini explicitement en production (ex: `https://staging.sokar.tech,https://www.staging.sokar.tech`) ; `env.ts` fait échouer le démarrage si absent.
 - Stripe : clé publique de prod (publique par nature) pour que le widget/Connect se charge, clé secrète vide en l'absence de clés de test Stripe. Les paiements gift-card ne fonctionnent donc pas en staging tant qu'on n'a pas fourni de `sk_test_*`.
 - `X-Robots-Tag: noindex, nofollow` sur tous les vhosts staging.
 

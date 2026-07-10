@@ -14,7 +14,7 @@
 #   - DB Postgres séparée (sokar_staging)
 #   - Redis DB index séparé (db=2)
 #   - Clés Clerk staging (pk_test / sk_test)
-#   - Telnyx / Deepgram / Cartesia désactivés (STAGING_DISABLE_VOICE=true)
+#   - Telnyx / Deepgram / Cartesia désactivés (VOICE_DISABLED=true)
 #   - Stripe en mode test (pk_test_*)
 #   - PM2 services séparés (préfixe sokar-staging-*)
 #   - Nginx vhost séparé (sokar-staging.conf)
