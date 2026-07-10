@@ -38,6 +38,7 @@ apps/dashboard/**/*.js
 apps/dashboard/**/*.d.ts
 apps/dashboard/**/*.js.map
 apps/dashboard/**/*.d.ts.map
+!apps/dashboard/src/vitest-env.d.ts
 !apps/dashboard/next.config.js
 !apps/dashboard/postcss.config.js
 !apps/dashboard/tailwind.config.js
