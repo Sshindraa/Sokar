@@ -31,6 +31,7 @@ import type { ReservationChannel as Channel } from './state-machine.js';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
 import { resolveServiceDurationMinutes } from '../../floor-plan/floor-plan.types.js';
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../../shared/db/transaction-options';
+import { scheduleHoldExpiration, scheduleQuoteExpiration } from '../workers/queues.js';
 
 export class HoldConflictError extends Error {
   constructor(
@@ -116,6 +117,8 @@ export class HoldService {
         },
       });
 
+      await scheduleQuoteExpiration({ quoteId: hold.id, expiresAt });
+
       return hold;
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError) {
@@ -173,6 +176,8 @@ export class HoldService {
         },
       });
 
+      await scheduleHoldExpiration({ holdId: hold.id, expiresAt });
+
       return hold;
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -211,6 +216,9 @@ export class HoldService {
               expiresAt: expiresAt.toISOString(),
             },
           });
+
+          await scheduleHoldExpiration({ holdId: hold.id, expiresAt });
+
           return hold;
         } catch (retryErr) {
           if (
