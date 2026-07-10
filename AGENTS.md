@@ -97,6 +97,7 @@ hermes -z "task" # one-shot task
 
 ## Where to look
 
+- **Project map:** `docs/PROJECT_MAP.md` — architecture, flux, points sensibles.
 - **Runbooks:** `docs/runbooks/` — staging, deployment, rollback, environment, tests, migration.
 - **Architecture:** `docs/architecture/` — dashboard, voice, plus product specs in `docs/*.md`.
 - **Specs:** `docs/gift-cards-spec.md`, `docs/floor-plan-spec.md`, `docs/connect-v1.1.md`, `docs/sokar-mcp-agentic-reservations-v3.2.md`.
