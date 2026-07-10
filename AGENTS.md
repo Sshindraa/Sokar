@@ -166,6 +166,12 @@ ssh deploy@pmbtc "pm2 logs sokar-api --lines 50"
 ssh deploy@pmbtc "cd /opt/sokar-staging && git pull origin main && bash scripts/deploy-staging.sh"
 ```
 
+**Notes post-déploiement production :**
+
+- Le build incrémental de `deploy-vps.sh` nettoie `apps/{dashboard,connect}/.next/standalone` **uniquement** pour les apps effectivement rebuildées.
+- Si `apps/<app>/.next/standalone/apps/<app>/server.js` est manquant, le script force le rebuild de l'app concernée (garde-fou contre une suppression d'artefacts sans rebuild).
+- `deploy-staging.sh` ne fait pas de build incrémental : il rebuild systématiquement dashboard et connect.
+
 ## Demo restaurant
 
 Le seed crée un restaurant fictif `Chez Sokar` (slug `chez-sokar-demo`) :
