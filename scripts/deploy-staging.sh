@@ -32,15 +32,10 @@ DATE=$(date '+%Y-%m-%d %H:%M:%S')
 PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
 
 ensure_privileged_wrapper() {
-    if [ -x "$PRIVILEGED_WRAPPER" ]; then
-        echo "🔄 Mise à jour du wrapper privilégié..."
-        if sudo -n "$PRIVILEGED_WRAPPER" self-update staging >/dev/null 2>&1; then
-            echo "✅ Wrapper mis à jour."
-        else
-            echo "⚠️ self-update indisponible ou échoué ; le wrapper existant sera utilisé."
-        fi
+    if [ -x "$PRIVILEGED_WRAPPER" ] && sudo -n "$PRIVILEGED_WRAPPER" self-update staging >/dev/null 2>&1; then
+        echo "✅ Wrapper privilégié mis à jour."
     else
-        echo "📦 Installation initiale du wrapper privilégié..."
+        echo "📦 Installation/maj du wrapper privilégié..."
         sudo install -o root -g root -m 0755 \
             "$SOKAR_ROOT/scripts/ops/sokar-deploy-root.sh" "$PRIVILEGED_WRAPPER"
     fi
