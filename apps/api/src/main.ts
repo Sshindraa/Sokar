@@ -1,4 +1,4 @@
-import './env';
+import { env } from './env';
 
 import { initSentry, captureException, closeSentry } from './shared/sentry/client';
 import Fastify from 'fastify';
@@ -79,11 +79,15 @@ export async function buildApp() {
   // options object narrows the logger type to `never` when a child logger
   // factory is provided. The runtime value is correct (Pino options), this
   // only restores the right type at compile time.
+  const trustedProxyIps = env.TRUSTED_PROXY_IPS.split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
   const app = Fastify({
     // Nginx et le dashboard Next.js proxy sont les seuls reverse proxies.
     // Nécessaire pour que req.ip reflète le vrai client (X-Forwarded-For)
     // et que le rate-limit global s'applique par utilisateur, pas par 127.0.0.1.
-    trustProxy: true,
+    trustProxy: trustedProxyIps,
     logger: {
       level: process.env.LOG_LEVEL ?? (isDev ? 'debug' : 'info'),
       base: { service: 'sokar-api', env: process.env.NODE_ENV ?? 'development' },

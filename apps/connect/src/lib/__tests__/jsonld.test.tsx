@@ -50,8 +50,8 @@ const fullRestaurant: {
 
 function buildInput(overrides: Partial<typeof fullRestaurant> = {}) {
   return {
+    siteUrl: process.env.SITE_URL ?? 'https://sokar.tech',
     restaurant: { ...fullRestaurant, ...overrides },
-    attributesConfidence: {},
   };
 }
 
@@ -98,12 +98,12 @@ describe('buildPublicRestaurantJsonLd', () => {
   it('includes servesCuisine and acceptsReservations', () => {
     const json = buildPublicRestaurantJsonLd(buildInput());
     expect(json.servesCuisine).toEqual(['Française', 'Moderne']);
-    expect(json.acceptsReservations).toBe(true);
+    expect(json.acceptsReservations).toBe(fullRestaurant.reservationUrl);
   });
 
   it('includes bookingUrl from reservationUrl', () => {
     const json = buildPublicRestaurantJsonLd(buildInput());
-    expect(json.bookingUrl).toBe('https://sokar.tech/book/chez-sokar');
+    expect(json.bookingUrl).toBe(fullRestaurant.reservationUrl);
   });
 
   it('includes image array with cover + gallery when cover present', () => {

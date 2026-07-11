@@ -152,8 +152,8 @@ export default async function RestaurantPage({
   // PageViewTracker est un composant client qui track au mount — chaque visite est comptée
 
   const jsonLd = buildPublicRestaurantJsonLd({
+    siteUrl: process.env.SITE_URL ?? 'https://sokar.tech',
     restaurant,
-    attributesConfidence: null, // OpeningHours omis (cf. spec v1.1 §5.5)
   });
 
   const cuisine = restaurant.cuisineTypes[0] ?? 'Restaurant';

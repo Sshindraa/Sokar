@@ -227,7 +227,7 @@ export class ConnectService {
       cuisineTypes: r.cuisineType,
       priceRange: priceRangeToSymbol(r.priceRange),
       openingHours,
-      reservationUrl: `${env.SITE_URL}/restaurant/${r.slug}/book`,
+      reservationUrl: `${env.SITE_URL}/book/${r.slug}`,
       images: {
         cover,
         gallery,
