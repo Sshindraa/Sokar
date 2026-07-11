@@ -34,6 +34,7 @@ import { IdempotencyPendingError, IdempotencyService } from './idempotency.servi
 import { type PolicySnapshot, validateReservationAgainstPolicy } from './policies.service.js';
 import { type ReservationChannel, assertCanTransition } from './state-machine.js';
 import { GiftCardService } from '../../gift-cards/gift-card.service.js';
+import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
 import type { GiftCardApplicationResult } from '../../gift-cards/gift-card.types.js';
 import {
   IDEMPOTENCY_POLL_INTERVAL_MS,
@@ -108,12 +109,16 @@ export type CreateReservationResult = {
 };
 
 export class ReservationService {
+  private readonly tableAllocation: TableAllocationService;
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly audit: AuditLogService,
     private readonly holds: HoldService,
     private readonly idempotency: IdempotencyService,
-  ) {}
+  ) {
+    this.tableAllocation = new TableAllocationService(this.prisma);
+  }
 
   /**
    * Crée une réservation. Le flow complet est dans le service.
@@ -238,6 +243,34 @@ export class ReservationService {
               throw new HoldConflictError(input.restaurantId, input.startsAt, input.partySize);
             }
             throw err;
+          }
+        }
+
+        // Vérifier que la table pré-allouée est toujours disponible.
+        if (tableId) {
+          const locked = await this.tableAllocation.lockTable(tx, tableId);
+          if (!locked) {
+            throw new ReservationSlotUnavailableError(
+              input.restaurantId,
+              input.startsAt,
+              input.partySize,
+            );
+          }
+
+          const stillAvailable = await this.tableAllocation.isTableAvailable(
+            {
+              tableId,
+              startsAt: input.startsAt,
+              endsAt: input.endsAt,
+            },
+            tx,
+          );
+          if (!stillAvailable) {
+            throw new ReservationSlotUnavailableError(
+              input.restaurantId,
+              input.startsAt,
+              input.partySize,
+            );
           }
         }
 

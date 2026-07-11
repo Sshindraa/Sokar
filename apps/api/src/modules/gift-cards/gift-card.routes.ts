@@ -365,7 +365,11 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(403).send({ error: 'Accès refusé' });
       }
 
-      const card = await service.cancel(giftCardId, restaurantId);
+      const card = await service.cancel(
+        giftCardId,
+        restaurantId,
+        `dashboard:${req.userId ?? 'unknown'}`,
+      );
       return reply.send(serializeGiftCard(card));
     },
   );

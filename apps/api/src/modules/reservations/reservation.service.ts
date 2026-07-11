@@ -71,35 +71,41 @@ export class ReservationService {
       throw new Error('SLOT_NOT_AVAILABLE');
     }
 
-    const table = await tableAllocation.allocate({
-      restaurantId: input.restaurantId,
-      partySize: input.partySize,
-      startsAt: startTime,
-      endsAt: endTime,
-    });
-    if (!table) {
-      logger.warn(
-        { restaurantId: input.restaurantId, time: startTime, partySize: input.partySize },
-        '[ReservationService] No table available',
+    // 2. Allouer et créer la réservation dans une transaction pour éviter
+    //    l'allocation concurrente de la même table.
+    const reservation = await db.$transaction(async (tx) => {
+      const table = await tableAllocation.allocate(
+        {
+          restaurantId: input.restaurantId,
+          partySize: input.partySize,
+          startsAt: startTime,
+          endsAt: endTime,
+        },
+        tx,
       );
-      throw new Error('SLOT_NOT_AVAILABLE');
-    }
+      if (!table) {
+        logger.warn(
+          { restaurantId: input.restaurantId, time: startTime, partySize: input.partySize },
+          '[ReservationService] No table available',
+        );
+        throw new Error('SLOT_NOT_AVAILABLE');
+      }
 
-    // 2. Create reservation locally
-    const reservation = await db.reservation.create({
-      data: {
-        restaurantId: input.restaurantId,
-        callId: input.callId,
-        reservedAt: input.reservedAt,
-        startsAt: input.reservedAt,
-        endsAt: endTime,
-        partySize: input.partySize,
-        customerName: input.customerName,
-        customerPhone: input.customerPhone,
-        status: 'CONFIRMED',
-        tableId: table.id,
-        estimatedRevenue: input.partySize * 35,
-      },
+      return tx.reservation.create({
+        data: {
+          restaurantId: input.restaurantId,
+          callId: input.callId,
+          reservedAt: input.reservedAt,
+          startsAt: input.reservedAt,
+          endsAt: endTime,
+          partySize: input.partySize,
+          customerName: input.customerName,
+          customerPhone: input.customerPhone,
+          status: 'CONFIRMED',
+          tableId: table.id,
+          estimatedRevenue: input.partySize * 35,
+        },
+      });
     });
 
     // 3. Create Google Calendar event and store event ID

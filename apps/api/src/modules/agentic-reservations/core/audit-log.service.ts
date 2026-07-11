@@ -11,7 +11,7 @@
  * des snapshots minimisés via `metadata`.
  */
 
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 
 export type AuditEvent =
   | 'hold_created'
@@ -35,17 +35,21 @@ export type AuditEvent =
 export class AuditLogService {
   constructor(private readonly prisma: PrismaClient) {}
 
-  async record(args: {
-    event: AuditEvent;
-    reservationId?: string | null;
-    holdId?: string | null;
-    actor: string;
-    actorHash?: string | null;
-    fromState?: string | null;
-    toState?: string | null;
-    metadata?: Record<string, unknown>;
-  }): Promise<void> {
-    await this.prisma.reservationAuditLog.create({
+  async record(
+    args: {
+      event: AuditEvent;
+      reservationId?: string | null;
+      holdId?: string | null;
+      actor: string;
+      actorHash?: string | null;
+      fromState?: string | null;
+      toState?: string | null;
+      metadata?: Record<string, unknown>;
+    },
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const prisma = (tx ?? this.prisma) as PrismaClient;
+    await prisma.reservationAuditLog.create({
       data: {
         event: args.event,
         reservationId: args.reservationId ?? null,

@@ -472,16 +472,6 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       const slotStart = new Date(`${bodyParse.data.date}T${bodyParse.data.time}:00.000Z`);
       const slotEnd = new Date(slotStart.getTime() + serviceDurationMinutes * 60 * 1000);
 
-      const table = await tableAllocation.allocate({
-        restaurantId: restaurant.id,
-        partySize: bodyParse.data.partySize,
-        startsAt: slotStart,
-        endsAt: slotEnd,
-      });
-      if (!table) {
-        return reply.status(409).send({ error: 'Slot no longer available' });
-      }
-
       try {
         const hold = await holds.createHold({
           restaurantId: restaurant.id,
@@ -491,7 +481,6 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           channel: 'WEB',
           policy,
           actor: 'connect:web',
-          tableId: table.id,
         });
 
         // Émettre l'événement analytics reservation_hold_created (T9)

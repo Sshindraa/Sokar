@@ -197,6 +197,13 @@ for env_file in "${REQUIRED_ENV_FILES[@]}"; do
     chmod 0600 "$env_file"
 done
 
+# Vérification qu'aucun .env ne contient de placeholder de mot de passe
+if grep -qE 'DATABASE_URL=.*:(CHANGE_ME_PASSWORD|password)@' apps/api/.env; then
+    echo "❌ Le mot de passe de DATABASE_URL dans apps/api/.env est un placeholder." >&2
+    echo "   Remplacez-le par une valeur forte avant de déployer." >&2
+    exit 1
+fi
+
 # ── 4. Generate Prisma ──────────────────────────────────
 echo ""
 echo "📦 Generating Prisma client..."

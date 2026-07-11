@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ReservationService } from '../reservation.service';
 import { db } from '../../../shared/db/client';
+import { ReservationService } from '../reservation.service';
 import { GoogleCalendarClient } from '../../../shared/google-calendar/client';
 
-vi.mock('../../../shared/db/client', () => ({
-  db: {
+vi.mock('../../../shared/db/client', () => {
+  const mockDb: any = {
     restaurant: {
       findUnique: vi.fn(),
       findUniqueOrThrow: vi.fn(),
@@ -36,8 +36,12 @@ vi.mock('../../../shared/db/client', () => ({
       findMany: vi.fn().mockResolvedValue([]),
       findFirst: vi.fn().mockResolvedValue(null),
     },
-  },
-}));
+    $queryRaw: vi.fn().mockResolvedValue([{ id: 'locked' }]),
+    $transaction: vi.fn(async (fn: any) => fn(mockDb)),
+  };
+
+  return { db: mockDb };
+});
 
 vi.mock('../../../shared/google-calendar/client', () => ({
   GoogleCalendarClient: {
@@ -87,6 +91,7 @@ describe('ReservationService - Google Calendar Sync', () => {
       { id: 'table-1', floorPlanId: 'fp-1', capacity: 4, minCapacity: 1, isActive: true },
     ] as any);
     vi.mocked(db.restaurant.findUnique).mockResolvedValue(mockRestaurant as any);
+    vi.mocked(db.$queryRaw).mockResolvedValue([{ id: 'locked' }] as any);
   });
 
   describe('create', () => {

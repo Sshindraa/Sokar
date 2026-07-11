@@ -13,6 +13,7 @@
  * de section.
  */
 
+import { Prisma } from '@prisma/client';
 import type { PrismaClient, Table, Reservation, AgenticHold } from '@prisma/client';
 import type { AllocateTableInput, TableAvailabilityCheck } from './floor-plan.types';
 
@@ -25,8 +26,10 @@ export class TableAllocationService {
    * Alloue la meilleure table disponible pour un créneau donné.
    * Renvoie null si aucune table n'est disponible.
    */
-  async allocate(input: AllocateTableInput): Promise<Table | null> {
-    const floorPlan = await this.prisma.floorPlan.findUnique({
+  async allocate(input: AllocateTableInput, tx?: Prisma.TransactionClient): Promise<Table | null> {
+    const prisma = tx ?? this.prisma;
+
+    const floorPlan = await prisma.floorPlan.findUnique({
       where: { restaurantId: input.restaurantId },
       select: { id: true },
     });
@@ -34,7 +37,7 @@ export class TableAllocationService {
       return null;
     }
 
-    const tables = await this.prisma.table.findMany({
+    const tables = await prisma.table.findMany({
       where: {
         floorPlanId: floorPlan.id,
         isActive: true,
@@ -58,11 +61,24 @@ export class TableAllocationService {
     }
 
     for (const table of candidates) {
-      const available = await this.isTableAvailable({
-        tableId: table.id,
-        startsAt: input.startsAt,
-        endsAt: input.endsAt,
-      });
+      // Verrouiller la ligne table pour éviter l'allocation concurrente.
+      // SKIP LOCKED permet de passer à la candidate suivante si déjà verrouillée.
+      const locked = await prisma.$queryRaw<{ id: string }[]>(
+        Prisma.sql`SELECT id FROM floor_plan_tables WHERE id = ${table.id} FOR UPDATE SKIP LOCKED`,
+      );
+
+      if (!locked || locked.length === 0) {
+        continue;
+      }
+
+      const available = await this.isTableAvailable(
+        {
+          tableId: table.id,
+          startsAt: input.startsAt,
+          endsAt: input.endsAt,
+        },
+        tx,
+      );
       if (available) {
         return table;
       }
@@ -76,10 +92,13 @@ export class TableAllocationService {
    * Permet d'exclure une réservation ou un hold spécifique (utile pour
    * reallocation ou tests).
    */
-  async isTableAvailable(check: TableAvailabilityCheck): Promise<boolean> {
+  async isTableAvailable(
+    check: TableAvailabilityCheck,
+    tx?: Prisma.TransactionClient,
+  ): Promise<boolean> {
     const [conflictingReservation, conflictingHold] = await Promise.all([
-      this.findConflictingReservation(check),
-      this.findConflictingHold(check),
+      this.findConflictingReservation(check, tx),
+      this.findConflictingHold(check, tx),
     ]);
 
     return !conflictingReservation && !conflictingHold;
@@ -119,27 +138,39 @@ export class TableAllocationService {
       throw new TableAllocationError('RESERVATION_TIMES_MISSING', 'Reservation times are missing');
     }
 
-    const available = await this.isTableAvailable({
-      tableId: newTableId,
-      startsAt: reservation.startsAt,
-      endsAt: reservation.endsAt,
-      excludeReservationId: reservationId,
-    });
+    await this.prisma.$transaction(async (tx) => {
+      const locked = await this.lockTable(tx, newTableId);
+      if (!locked) {
+        throw new TableAllocationError('TABLE_NOT_AVAILABLE', 'Target table is not available');
+      }
 
-    if (!available) {
-      throw new TableAllocationError('TABLE_NOT_AVAILABLE', 'Target table is not available');
-    }
+      const available = await this.isTableAvailable(
+        {
+          tableId: newTableId,
+          startsAt: reservation.startsAt as Date,
+          endsAt: reservation.endsAt as Date,
+          excludeReservationId: reservationId,
+        },
+        tx,
+      );
 
-    await this.prisma.reservation.update({
-      where: { id: reservationId },
-      data: { tableId: newTableId },
+      if (!available) {
+        throw new TableAllocationError('TABLE_NOT_AVAILABLE', 'Target table is not available');
+      }
+
+      await tx.reservation.update({
+        where: { id: reservationId },
+        data: { tableId: newTableId },
+      });
     });
   }
 
   private async findConflictingReservation(
     check: TableAvailabilityCheck,
+    tx?: Prisma.TransactionClient,
   ): Promise<Reservation | null> {
-    return this.prisma.reservation.findFirst({
+    const prisma = tx ?? this.prisma;
+    return prisma.reservation.findFirst({
       where: {
         tableId: check.tableId,
         state: { in: BLOCKING_RESERVATION_STATES },
@@ -149,8 +180,12 @@ export class TableAllocationService {
     });
   }
 
-  private async findConflictingHold(check: TableAvailabilityCheck): Promise<AgenticHold | null> {
-    return this.prisma.agenticHold.findFirst({
+  private async findConflictingHold(
+    check: TableAvailabilityCheck,
+    tx?: Prisma.TransactionClient,
+  ): Promise<AgenticHold | null> {
+    const prisma = tx ?? this.prisma;
+    return prisma.agenticHold.findFirst({
       where: {
         tableId: check.tableId,
         status: 'ACTIVE',
@@ -159,6 +194,17 @@ export class TableAllocationService {
         AND: [{ slotStart: { lt: check.endsAt } }, { slotEnd: { gt: check.startsAt } }],
       },
     });
+  }
+
+  /**
+   * Verrouille une table avec SELECT FOR UPDATE (sans SKIP LOCKED).
+   * Renvoie true si la table a été verrouillée, false si elle est déjà verrouillée.
+   */
+  async lockTable(tx: Prisma.TransactionClient, tableId: string): Promise<boolean> {
+    const locked = await tx.$queryRaw<{ id: string }[]>(
+      Prisma.sql`SELECT id FROM floor_plan_tables WHERE id = ${tableId} FOR UPDATE`,
+    );
+    return locked && locked.length > 0;
   }
 }
 

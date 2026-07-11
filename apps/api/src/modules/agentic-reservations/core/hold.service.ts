@@ -29,7 +29,7 @@ import {
 } from './policies.service.js';
 import type { ReservationChannel as Channel } from './state-machine.js';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
-import { resolveServiceDurationMinutes } from '../../floor-plan/floor-plan.types.js';
+
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../../shared/db/transaction-options';
 import { scheduleHoldExpiration, scheduleQuoteExpiration } from '../workers/queues.js';
 
@@ -89,8 +89,8 @@ export class HoldService {
   }): Promise<AgenticHold> {
     const expiresAt = computeQuoteExpiresAt(args.policy);
 
-    try {
-      const hold = await this.prisma.agenticHold.create({
+    const hold = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.agenticHold.create({
         data: {
           restaurantId: args.restaurantId,
           type: 'QUOTE' as HoldType,
@@ -105,32 +105,36 @@ export class HoldService {
         },
       });
 
-      await this.audit.record({
-        event: 'quote_created',
-        holdId: hold.id,
-        actor: args.actor,
-        metadata: {
-          restaurantId: args.restaurantId,
-          partySize: args.partySize,
-          slotStart: args.slotStart.toISOString(),
-          expiresAt: expiresAt.toISOString(),
+      await this.audit.record(
+        {
+          event: 'quote_created',
+          holdId: created.id,
+          actor: args.actor,
+          metadata: {
+            restaurantId: args.restaurantId,
+            partySize: args.partySize,
+            slotStart: args.slotStart.toISOString(),
+            expiresAt: expiresAt.toISOString(),
+          },
         },
-      });
+        tx,
+      );
 
-      await scheduleQuoteExpiration({ quoteId: hold.id, expiresAt });
+      return created;
+    }, DEFAULT_TRANSACTION_OPTIONS);
 
-      return hold;
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError) {
-        throw err;
-      }
-      throw err;
-    }
+    await scheduleQuoteExpiration({ quoteId: hold.id, expiresAt });
+
+    return hold;
   }
 
   /**
    * Crée un hold (réservation de capacité, bloque la contrainte partielle).
    * Si un hold actif existe déjà pour ce slot, jette HoldConflictError.
+   *
+   * L'allocation de table et l'INSERT sont exécutés dans une transaction Prisma
+   * avec SELECT FOR UPDATE, ce qui évite les allocations concurrentes sur la
+   * même table.
    */
   async createHold(args: {
     restaurantId: string;
@@ -143,95 +147,102 @@ export class HoldService {
     tableId?: string | null;
   }): Promise<AgenticHold> {
     const expiresAt = computeHoldExpiresAt(args.policy);
+    const maxAttempts = 2;
 
-    let tableId = args.tableId ?? null;
-    if (!tableId) {
-      const settings = await this.prisma.restaurantExposureSettings.findUnique({
-        where: { restaurantId: args.restaurantId },
-        select: { capacitySpecials: true },
-      });
-      const serviceDurationMinutes = resolveServiceDurationMinutes(settings?.capacitySpecials);
-      const table = await this.tableAllocation.allocate({
-        restaurantId: args.restaurantId,
-        partySize: args.partySize,
-        startsAt: args.slotStart,
-        endsAt: new Date(args.slotStart.getTime() + serviceDurationMinutes * 60_000),
-      });
-      tableId = table?.id ?? null;
-    }
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const hold = await this.prisma.$transaction(async (tx) => {
+          let tableId = args.tableId ?? null;
 
-    try {
-      const hold = await this.insertHold({ ...args, tableId }, expiresAt);
+          if (!tableId) {
+            const table = await this.tableAllocation.allocate(
+              {
+                restaurantId: args.restaurantId,
+                partySize: args.partySize,
+                startsAt: args.slotStart,
+                endsAt: args.slotEnd,
+              },
+              tx,
+            );
+            if (!table) {
+              throw new HoldConflictError(args.restaurantId, args.slotStart, args.partySize);
+            }
+            tableId = table.id;
+          }
 
-      await this.audit.record({
-        event: 'hold_created',
-        holdId: hold.id,
-        actor: args.actor,
-        metadata: {
-          restaurantId: args.restaurantId,
-          partySize: args.partySize,
-          slotStart: args.slotStart.toISOString(),
-          expiresAt: expiresAt.toISOString(),
-          tableId: tableId ?? null,
-        },
-      });
+          const existingHold = await tx.agenticHold.findFirst({
+            where: {
+              restaurantId: args.restaurantId,
+              partySize: args.partySize,
+              slotStart: args.slotStart,
+              type: 'HOLD' as HoldType,
+              status: 'ACTIVE' as HoldStatus,
+            },
+          });
+          if (existingHold) {
+            throw new HoldConflictError(args.restaurantId, args.slotStart, args.partySize);
+          }
 
-      await scheduleHoldExpiration({ holdId: hold.id, expiresAt });
+          const created = await this.insertHold({ ...args, tableId }, expiresAt, tx);
 
-      return hold;
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        const expiredConflict = await this.prisma.agenticHold.findFirst({
-          where: {
+          await this.audit.record(
+            {
+              event: 'hold_created',
+              holdId: created.id,
+              actor: args.actor,
+              metadata: {
+                restaurantId: args.restaurantId,
+                partySize: args.partySize,
+                slotStart: args.slotStart.toISOString(),
+                expiresAt: expiresAt.toISOString(),
+                tableId: tableId ?? null,
+              },
+            },
+            tx,
+          );
+
+          return created;
+        }, DEFAULT_TRANSACTION_OPTIONS);
+
+        await scheduleHoldExpiration({ holdId: hold.id, expiresAt });
+
+        return hold;
+      } catch (err) {
+        if (err instanceof HoldConflictError) {
+          throw err;
+        }
+
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          const expiredConflict = await this.prisma.agenticHold.findFirst({
+            where: {
+              restaurantId: args.restaurantId,
+              partySize: args.partySize,
+              slotStart: args.slotStart,
+              type: 'HOLD' as HoldType,
+              status: 'ACTIVE' as HoldStatus,
+              expiresAt: { lt: new Date() },
+            },
+            select: { id: true },
+          });
+          if (!expiredConflict) {
+            throw new HoldConflictError(args.restaurantId, args.slotStart, args.partySize);
+          }
+
+          await this.expireOverdueForSlot({
             restaurantId: args.restaurantId,
             partySize: args.partySize,
             slotStart: args.slotStart,
-            type: 'HOLD' as HoldType,
-            status: 'ACTIVE' as HoldStatus,
-            expiresAt: { lt: new Date() },
-          },
-          select: { id: true },
-        });
-        if (!expiredConflict) {
-          throw new HoldConflictError(args.restaurantId, args.slotStart, args.partySize);
-        }
-
-        await this.expireOverdueForSlot({
-          restaurantId: args.restaurantId,
-          partySize: args.partySize,
-          slotStart: args.slotStart,
-          now: new Date(),
-        });
-
-        try {
-          const hold = await this.insertHold(args, expiresAt);
-          await this.audit.record({
-            event: 'hold_created',
-            holdId: hold.id,
-            actor: args.actor,
-            metadata: {
-              restaurantId: args.restaurantId,
-              partySize: args.partySize,
-              slotStart: args.slotStart.toISOString(),
-              expiresAt: expiresAt.toISOString(),
-            },
+            now: new Date(),
           });
 
-          await scheduleHoldExpiration({ holdId: hold.id, expiresAt });
-
-          return hold;
-        } catch (retryErr) {
-          if (
-            retryErr instanceof Prisma.PrismaClientKnownRequestError &&
-            retryErr.code === 'P2002'
-          ) {
-            throw new HoldConflictError(args.restaurantId, args.slotStart, args.partySize);
-          }
-          throw retryErr;
+          continue;
         }
+
+        throw err;
       }
-      throw err;
     }
+
+    throw new HoldConflictError(args.restaurantId, args.slotStart, args.partySize);
   }
 
   /**
@@ -395,8 +406,10 @@ export class HoldService {
       tableId?: string | null;
     },
     expiresAt: Date,
+    tx?: Prisma.TransactionClient,
   ): Promise<AgenticHold> {
-    return this.prisma.agenticHold.create({
+    const prisma = tx ?? this.prisma;
+    return prisma.agenticHold.create({
       data: {
         restaurantId: args.restaurantId,
         type: 'HOLD' as HoldType,
