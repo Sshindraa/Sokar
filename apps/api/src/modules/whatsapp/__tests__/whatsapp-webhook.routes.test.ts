@@ -2,11 +2,15 @@
  * Tests for the Telnyx WhatsApp inbound webhook.
  *
  * Mêmes garanties que le webhook SMS (parsing OUI/NON partagé via
- * reply-handler.handleReply), mais sans signature guard (le endpoint
- * WhatsApp est public dans la config Telnyx Mission Control).
+ * reply-handler.handleReply). Le webhook est protégé par telnyxWebhookGuard
+ * (signature Telnyx), mocké dans ces tests.
  */
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+
+vi.mock('../../voice/telnyx.guard', () => ({
+  telnyxWebhookGuard: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock('../../sms/reply-handler', () => ({
   handleReply: vi.fn().mockResolvedValue({

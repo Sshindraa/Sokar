@@ -290,6 +290,11 @@ describe('GiftCardService', () => {
       id: 'gc-1',
       restaurantId: RESTAURANT_ID,
       status: 'ACTIVE',
+      amount: d(100),
+      remainingAmount: d(100),
+      currency: 'EUR',
+      stripePaymentIntentId: null,
+      redemptions: [],
     } as any);
     vi.mocked(db.giftCard.update).mockResolvedValue({
       id: 'gc-1',

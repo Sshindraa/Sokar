@@ -57,6 +57,25 @@ export async function retrievePaymentIntent(
   return { id: intent.id, status: intent.status };
 }
 
+export type CreateRefundInput = {
+  paymentIntentId: string;
+  amount?: number; // montant en centimes (optionnel = remboursement total)
+};
+
+/**
+ * Crée un remboursement Stripe sur un PaymentIntent.
+ */
+export async function createRefund(
+  input: CreateRefundInput,
+): Promise<{ id: string; amount: number; status: string }> {
+  const stripe = getStripe();
+  const refund = await stripe.refunds.create({
+    payment_intent: input.paymentIntentId,
+    amount: input.amount,
+  });
+  return { id: refund.id, amount: refund.amount, status: refund.status ?? 'pending' };
+}
+
 /**
  * Construit et vérifie un event Stripe depuis le webhook (signature verification).
  */

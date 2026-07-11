@@ -147,6 +147,13 @@ function makeMockPrisma(
         return null;
       },
     },
+    $queryRaw: async () => [{ id: 'locked' }],
+    $transaction: async (fn: any) => {
+      if (Array.isArray(fn)) {
+        return Promise.all(fn);
+      }
+      return fn(prisma);
+    },
   } as unknown as PrismaClient;
 
   return { prisma, tables, reservations, holds };

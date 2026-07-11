@@ -10,6 +10,7 @@ import {
 } from './gift-card.types.js';
 import { generateUniqueShortCode } from './gift-card-code.util.js';
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
+import { createRefund } from './stripe.service.js';
 
 export class GiftCardError extends Error {
   constructor(message: string) {
@@ -201,9 +202,14 @@ export class GiftCardService {
     };
   }
 
-  async cancel(giftCardId: string, restaurantId: string): Promise<GiftCard> {
+  async cancel(
+    giftCardId: string,
+    restaurantId: string,
+    actor = 'dashboard:system',
+  ): Promise<GiftCard> {
     const giftCard = await this.prisma.giftCard.findFirst({
       where: { id: giftCardId, restaurantId },
+      include: { redemptions: true },
     });
 
     if (!giftCard) {
@@ -214,10 +220,41 @@ export class GiftCardService {
       throw new GiftCardError('La carte cadeau est déjà annulée');
     }
 
-    return this.prisma.giftCard.update({
-      where: { id: giftCardId },
-      data: { status: 'CANCELLED', remainingAmount: 0 },
-    });
+    let refund: { id: string; amount: number } | undefined;
+    if (giftCard.stripePaymentIntentId && giftCard.remainingAmount.greaterThan(0)) {
+      const refundAmountCents = Math.round(giftCard.remainingAmount.toNumber() * 100);
+      refund = await createRefund({
+        paymentIntentId: giftCard.stripePaymentIntentId,
+        amount: refundAmountCents,
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.giftCard.update({
+        where: { id: giftCardId },
+        data: {
+          status: 'CANCELLED',
+          remainingAmount: 0,
+          ...(refund ? { stripePaymentStatus: 'refunded' } : {}),
+        },
+      });
+
+      await tx.reservationAuditLog.create({
+        data: {
+          event: 'gift_card_refunded',
+          actor,
+          metadata: {
+            giftCardId: giftCard.id,
+            stripePaymentIntentId: giftCard.stripePaymentIntentId,
+            refundId: refund?.id,
+            refundAmount: refund ? refund.amount / 100 : giftCard.remainingAmount.toNumber(),
+            currency: giftCard.currency,
+          } as object,
+        },
+      });
+
+      return updated;
+    }, DEFAULT_TRANSACTION_OPTIONS);
   }
 
   async getStats(restaurantId: string): Promise<GiftCardStats> {

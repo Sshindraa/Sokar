@@ -100,9 +100,29 @@ if [ "${ENV_READY}" = false ]; then
   exit 0
 fi
 
+# ─── 5a. Validation du mot de passe DATABASE_URL ───────────────────────────
+echo "→ Vérification que DATABASE_URL n'utilise pas de mot de passe par défaut..."
+if grep -qE 'DATABASE_URL=.*:(CHANGE_ME_PASSWORD|password)@' apps/api/.env; then
+  echo ""
+  echo "❌ Le mot de passe de DATABASE_URL dans apps/api/.env est un placeholder." >&2
+  echo "   Remplacez le mot de passe par une valeur forte avant de continuer." >&2
+  exit 1
+fi
+
 # ─── 6. Répertoire de logs PM2 ─────────────────────────────────────────────
 echo "→ Création du répertoire de logs PM2..."
 sudo install -d -m 0755 -o "$(whoami)" -g "$(whoami)" /var/log/sokar
+
+# ─── 6a. Backup automatique de sokar_staging ───────────────────────────────
+echo "→ Installation du backup automatique de sokar_staging..."
+sudo install -d -m 0755 -o root -g root /var/backups/sokar-staging
+sudo install -o root -g root -m 0755 \
+  "${SOKAR_ROOT}/scripts/backup-staging-postgres.sh" \
+  /usr/local/sbin/sokar-staging-backup-postgres
+sudo install -o root -g root -m 0644 \
+  "${SOKAR_ROOT}/infra/cron/sokar-staging-postgres-backup" \
+  /etc/cron.d/sokar-staging-postgres-backup
+
 
 # ─── 7. Nginx snippets partagés ────────────────────────────────────────────
 echo "→ Installation des snippets Nginx..."
