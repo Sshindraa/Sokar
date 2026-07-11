@@ -179,7 +179,11 @@ case "$ACTION" in
         ;;
     backup-db)
         [ "$#" -eq 2 ] || usage
-        /usr/local/sbin/sokar-backup-postgres
+        if [ "$ENVIRONMENT" = "prod" ]; then
+            /usr/local/sbin/sokar-backup-postgres
+        else
+            /usr/local/sbin/sokar-staging-backup-postgres
+        fi
         ;;
     self-update)
         [ "$#" -eq 2 ] || usage
