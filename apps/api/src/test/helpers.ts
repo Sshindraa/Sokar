@@ -287,6 +287,12 @@ vi.mock('../shared/redis/client', () => {
         return count;
       }),
       expire: vi.fn(async () => 1),
+      // Used by OAuth checkOauthRate for atomic INCR + PEXPIRE
+      eval: vi.fn(async (_script: string, _numKeys: number, key: string) => {
+        const count = (counters.get(key) ?? 0) + 1;
+        counters.set(key, count);
+        return count;
+      }),
       status: 'ready',
     },
     redisQueue: {

@@ -197,6 +197,8 @@ export class ReservationService {
             throw new HoldNotFoundError(input.holdToken ?? holdId);
           }
 
+          await this.lockActiveHold(tx, hold.id, now);
+
           const consumed = await tx.agenticHold.updateMany({
             where: {
               id: hold.id,
@@ -323,6 +325,7 @@ export class ReservationService {
 
         if (consumedHoldId) {
           if (shouldConsumeAfterReservation) {
+            await this.lockActiveHold(tx, consumedHoldId, now);
             const consumed = await tx.agenticHold.updateMany({
               where: {
                 id: consumedHoldId,
@@ -633,6 +636,19 @@ export class ReservationService {
           metadata: { restaurantId: hold.restaurantId },
         },
       });
+    }
+  }
+
+  private async lockActiveHold(
+    tx: Prisma.TransactionClient,
+    holdId: string,
+    now: Date,
+  ): Promise<void> {
+    const locked = await tx.$queryRaw<{ id: string }[]>(
+      Prisma.sql`SELECT id FROM agentic_holds WHERE id = ${holdId} AND status = 'ACTIVE' AND type = 'HOLD' AND expires_at > ${now} FOR UPDATE`,
+    );
+    if (!locked || locked.length === 0) {
+      throw new HoldAlreadyConsumedError(holdId);
     }
   }
 }

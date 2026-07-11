@@ -97,6 +97,7 @@ function makeFakes() {
 
   const prisma: any = {
     $transaction: async (fn: any) => fn(prisma),
+    $queryRaw: async () => [{ id: 'locked' }],
     agenticHold: {
       create: async ({ data }: any) => {
         if (data.type === 'HOLD' && data.status === 'ACTIVE') {
