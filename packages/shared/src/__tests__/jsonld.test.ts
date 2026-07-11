@@ -12,10 +12,11 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildPublicRestaurantJsonLd } from '../jsonld.service';
-import type { PublicRestaurantDto } from '../connect.types';
+import { buildPublicRestaurantJsonLd } from '../jsonld';
 
-const baseRestaurant: PublicRestaurantDto = {
+const SITE_URL = 'http://localhost:4002';
+
+const baseRestaurant = {
   id: 'rest_123',
   slug: 'chez-mario-lyon',
   name: 'Chez Mario',
@@ -33,7 +34,7 @@ const baseRestaurant: PublicRestaurantDto = {
     { day: 'monday', open: '19:00', close: '22:30' },
     { day: 'tuesday', open: '12:00', close: '14:30' },
   ],
-  reservationUrl: 'https://sokar.tech/restaurant/chez-mario-lyon/book',
+  reservationUrl: `${SITE_URL}/book/chez-mario-lyon`,
   images: { cover: 'https://sokar.tech/img/cover.jpg', gallery: [] },
   acceptsReservations: true,
   publishedAt: '2026-06-24T00:00:00.000Z',
@@ -45,6 +46,7 @@ const baseRestaurant: PublicRestaurantDto = {
 describe('buildPublicRestaurantJsonLd', () => {
   it('génère un JSON-LD Restaurant conforme', () => {
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: baseRestaurant,
       attributesConfidence: {
         cuisineType: [{ source: 'merchant_declared', verifiedAt: null }],
@@ -63,15 +65,17 @@ describe('buildPublicRestaurantJsonLd', () => {
 
   it('inclus acceptsReservations = URL /book (pas un bool)', () => {
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: baseRestaurant,
       attributesConfidence: null,
     });
-    expect(jsonLd.acceptsReservations).toBe('https://sokar.tech/restaurant/chez-mario-lyon/book');
+    expect(jsonLd.acceptsReservations).toBe('http://localhost:4002/book/chez-mario-lyon');
     expect(typeof jsonLd.acceptsReservations).toBe('string');
   });
 
   it("n'inclut PAS potentialAction si connectAgentic=false", () => {
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: { ...baseRestaurant, connectAgentic: false },
       attributesConfidence: null,
     });
@@ -80,57 +84,61 @@ describe('buildPublicRestaurantJsonLd', () => {
 
   it('inclut potentialAction ReserveAction si connectAgentic=true', () => {
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: { ...baseRestaurant, connectAgentic: true },
       attributesConfidence: null,
     });
     expect(jsonLd.potentialAction).toBeDefined();
-    expect(jsonLd.potentialAction!['@type']).toBe('ReserveAction');
-    expect(jsonLd.potentialAction!.target['@type']).toBe('EntryPoint');
-    expect(jsonLd.potentialAction!.target.urlTemplate).toContain('{partySize}');
-    expect(jsonLd.potentialAction!.target.urlTemplate).toContain('{date}');
-    expect(jsonLd.potentialAction!.target.urlTemplate).toContain('{time}');
-    expect(jsonLd.potentialAction!.target.inLanguage).toBe('fr-FR');
-    expect(jsonLd.potentialAction!.result['@type']).toBe('FoodEstablishmentReservation');
+    expect(jsonLd.potentialAction?.['@type']).toBe('ReserveAction');
+    expect(jsonLd.potentialAction?.target['@type']).toBe('EntryPoint');
+    expect(jsonLd.potentialAction?.target.urlTemplate).toContain('{partySize}');
+    expect(jsonLd.potentialAction?.target.urlTemplate).toContain('{date}');
+    expect(jsonLd.potentialAction?.target.urlTemplate).toContain('{time}');
+    expect(jsonLd.potentialAction?.target.inLanguage).toBe('fr-FR');
+    expect(jsonLd.potentialAction?.result['@type']).toBe('FoodEstablishmentReservation');
   });
 
   it("n'inclut PAS aggregateRating si absent du DTO", () => {
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: baseRestaurant,
       attributesConfidence: null,
     });
-    // Pas de aggregateRating si le restaurant n'a pas de note Google
-    expect((jsonLd as unknown as Record<string, unknown>).aggregateRating).toBeUndefined();
+    expect('aggregateRating' in jsonLd).toBe(false);
   });
 
   it('inclut aggregateRating si sourcé Google Places (Phase 3)', () => {
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: {
         ...baseRestaurant,
-        aggregateRating: { ratingValue: 4.5, reviewCount: 128, provider: 'google' },
+        aggregateRating: { ratingValue: 4.5, reviewCount: 128, provider: 'google' as const },
       },
       attributesConfidence: null,
     });
     expect(jsonLd.aggregateRating).toBeDefined();
-    expect(jsonLd.aggregateRating!['@type']).toBe('AggregateRating');
-    expect(jsonLd.aggregateRating!.ratingValue).toBe(4.5);
-    expect(jsonLd.aggregateRating!.reviewCount).toBe(128);
+    expect(jsonLd.aggregateRating?.['@type']).toBe('AggregateRating');
+    expect(jsonLd.aggregateRating?.ratingValue).toBe(4.5);
+    expect(jsonLd.aggregateRating?.reviewCount).toBe(128);
     // Attribution Google obligatoire (CGU Google Places API)
-    expect(jsonLd.aggregateRating!.author).toEqual({ '@type': 'Organization', name: 'Google' });
+    expect(jsonLd.aggregateRating?.author).toEqual({ '@type': 'Organization', name: 'Google' });
   });
 
   it('inclut geo (GeoCoordinates) si lat/lng présents', () => {
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: baseRestaurant,
       attributesConfidence: null,
     });
     expect(jsonLd.geo).toBeDefined();
-    expect(jsonLd.geo!['@type']).toBe('GeoCoordinates');
-    expect(jsonLd.geo!.latitude).toBe(45.764);
-    expect(jsonLd.geo!.longitude).toBe(4.8357);
+    expect(jsonLd.geo?.['@type']).toBe('GeoCoordinates');
+    expect(jsonLd.geo?.latitude).toBe(45.764);
+    expect(jsonLd.geo?.longitude).toBe(4.8357);
   });
 
   it('omet geo si lat/lng absents', () => {
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: { ...baseRestaurant, lat: undefined, lng: undefined },
       attributesConfidence: null,
     });
@@ -139,6 +147,7 @@ describe('buildPublicRestaurantJsonLd', () => {
 
   it('omet cuisineType si pas de source de confidence', () => {
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: baseRestaurant,
       attributesConfidence: null, // aucune source
     });
@@ -147,6 +156,7 @@ describe('buildPublicRestaurantJsonLd', () => {
 
   it('inclus cuisineType si source merchant_declared', () => {
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: baseRestaurant,
       attributesConfidence: {
         cuisineType: [{ source: 'merchant_declared', verifiedAt: null }],
@@ -158,6 +168,7 @@ describe('buildPublicRestaurantJsonLd', () => {
   it('omet priceRange si confidence < 0.7', () => {
     // merchant_declared a un cap à 0.9, mais sans source entry, pas de claim
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: baseRestaurant,
       attributesConfidence: {
         priceRange: [{ source: 'review_inferred', verifiedAt: null }], // 0.7 max
@@ -169,6 +180,7 @@ describe('buildPublicRestaurantJsonLd', () => {
 
   it('inclus openingHoursSpecification quand présent', () => {
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: baseRestaurant,
       attributesConfidence: {
         openingHours: [{ source: 'merchant_declared', verifiedAt: null }],
@@ -187,6 +199,7 @@ describe('buildPublicRestaurantJsonLd', () => {
     // Un restaurant avec coupure (midi + soir le même jour) doit produire
     // 2 objets OpeningHoursSpecification pour ce jour, pas un seul fusionné.
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: {
         ...baseRestaurant,
         openingHours: [
@@ -210,6 +223,7 @@ describe('buildPublicRestaurantJsonLd', () => {
   it('omet openingHoursSpecification si confidence < 0.9', () => {
     // review_inferred capped à 0.7 < 0.9 threshold
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: baseRestaurant,
       attributesConfidence: {
         openingHours: [{ source: 'review_inferred', verifiedAt: null }],
@@ -220,6 +234,7 @@ describe('buildPublicRestaurantJsonLd', () => {
 
   it('omet openingHoursSpecification si pas de source tracked (anti-fabrication)', () => {
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: baseRestaurant,
       attributesConfidence: null, // pas de source → on omet
     });
@@ -228,6 +243,7 @@ describe('buildPublicRestaurantJsonLd', () => {
 
   it('construit address conforme schema.org', () => {
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: baseRestaurant,
       attributesConfidence: null,
     });
@@ -240,6 +256,7 @@ describe('buildPublicRestaurantJsonLd', () => {
 
   it('inclus image cover + gallery', () => {
     const jsonLd = buildPublicRestaurantJsonLd({
+      siteUrl: SITE_URL,
       restaurant: {
         ...baseRestaurant,
         images: {

@@ -60,6 +60,9 @@ const EnvSchema = z
     API_URL: z.string().url('API_URL must be a valid URL'),
     // CORS — allowlist explicite des origins navigateur (comma-separated)
     CORS_ORIGINS: z.string().optional(),
+    // Reverse proxy IPs (Nginx) — comma-separated, accepte CIDR et IPv6.
+    // Defaut loopback ; ajouter l'IP publique du VPS si Nginx n'est pas local.
+    TRUSTED_PROXY_IPS: z.string().default('127.0.0.1, ::1'),
     // Clés API critiques — validées au démarrage en production
     TELNYX_API_KEY: z.string().optional(),
     DEEPGRAM_API_KEY: z.string().optional(),

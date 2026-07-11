@@ -15,6 +15,7 @@ export * from './reservation';
 export * from './call';
 export * from './agent';
 export * from './api';
+export * from './confidence';
 export * from './jsonld';
 export * from './utils/fetch-with-timeout';
 export * from './utils/format';
