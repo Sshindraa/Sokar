@@ -146,34 +146,32 @@ function matchKnownRedirect(uri: string): string | null {
   return null;
 }
 
-// ─── Rate limit simple pour endpoints OAuth ───────────
+// ─── Rate limit Redis pour endpoints OAuth ───────────
 // Anti-brute-force sur /token, anti-spam sur /register.
-// 10 req/min par IP pour /token, 5 req/min par IP pour /register.
-const oauthRateMap = new Map<string, { count: number; resetAt: number }>();
-const OAUTH_RATE_TOKEN = { max: 10, windowMs: 60_000 };
-const OAUTH_RATE_REGISTER = { max: 5, windowMs: 60_000 };
+// Partagé entre tous les processus/VM via redisCache (db 1).
+const OAUTH_RATE_TOKEN = { max: 10, windowMs: 60_000, key: 'token' };
+const OAUTH_RATE_REGISTER = { max: 5, windowMs: 60_000, key: 'register' };
 
-function checkOauthRate(ip: string, config: { max: number; windowMs: number }): boolean {
-  const now = Date.now();
-  const key = `${ip}:${config.max}`;
-  const entry = oauthRateMap.get(key);
-  if (!entry || now > entry.resetAt) {
-    oauthRateMap.set(key, { count: 1, resetAt: now + config.windowMs });
-    return true;
-  }
-  if (entry.count >= config.max) return false;
-  entry.count++;
-  return true;
+// INCR atomique + PEXPIRE uniquement à la première incrémentation (fenêtre fixe).
+const OAUTH_RATE_LIMIT_SCRIPT = `
+  local key = KEYS[1]
+  local count = redis.call('INCR', key)
+  if count == 1 then
+    redis.call('PEXPIRE', key, ARGV[1])
+  end
+  return count
+`;
+
+async function checkOauthRate(
+  ip: string,
+  config: { max: number; windowMs: number; key: string },
+): Promise<boolean> {
+  const redisKey = `sokar:oauth:rate:${config.key}:${ip}`;
+  const count = Number(
+    await redisCache['eval'](OAUTH_RATE_LIMIT_SCRIPT, 1, redisKey, config.windowMs),
+  );
+  return count <= config.max;
 }
-
-// Nettoyage périodique des entrées expirées (toutes les 60s)
-const RATE_CLEANUP_INTERVAL = 60_000;
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of oauthRateMap) {
-    if (now > entry.resetAt) oauthRateMap.delete(key);
-  }
-}, RATE_CLEANUP_INTERVAL).unref();
 
 // ─── Routes ────────────────────────────────────────────
 
@@ -220,7 +218,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
   // ── 2. Dynamic Client Registration (RFC 7591) ────────
   app.post('/oauth/register', async (req: FastifyRequest, reply: FastifyReply) => {
-    if (!checkOauthRate(req.ip, OAUTH_RATE_REGISTER)) {
+    if (!(await checkOauthRate(req.ip, OAUTH_RATE_REGISTER))) {
       return reply
         .status(429)
         .send({ error: 'too_many_requests', error_description: 'Too many registrations' });
@@ -507,7 +505,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
   // ── 4. Token endpoint ────────────────────────────────
   app.post('/oauth/token', async (req: FastifyRequest, reply: FastifyReply) => {
-    if (!checkOauthRate(req.ip, OAUTH_RATE_TOKEN)) {
+    if (!(await checkOauthRate(req.ip, OAUTH_RATE_TOKEN))) {
       return reply
         .status(429)
         .send({ error: 'too_many_requests', error_description: 'Too many token requests' });
