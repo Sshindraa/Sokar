@@ -54,11 +54,30 @@ export function verifyOpenaiReserveRequest(req: FastifyRequest, secret: string):
   if (!signature) return false;
 
   const path = req.url.split('?')[0];
-  const payload = buildSignaturePayload(req.method, path, req.query as Record<string, unknown>);
-  const expected = createHmac('sha256', secret).update(payload).digest('base64url');
+  const query = req.query as Record<string, unknown>;
+
+  // 1) Signature complète (method + path + query triée) — la plus sécurisée.
+  const payloadWithQuery = buildSignaturePayload(req.method, path, query);
+  const expectedWithQuery = createHmac('sha256', secret)
+    .update(payloadWithQuery)
+    .digest('base64url');
+
+  // 2) Signature statique (method + path) — compatible OpenAI qui paginate
+  // en ajoutant `page`/`page_size` sans recalculer de signature.
+  const payloadWithoutQuery = buildSignaturePayload(req.method, path, {});
+  const expectedWithoutQuery = createHmac('sha256', secret)
+    .update(payloadWithoutQuery)
+    .digest('base64url');
 
   const signatureBuffer = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expected);
-  if (signatureBuffer.length !== expectedBuffer.length) return false;
-  return timingSafeEqual(signatureBuffer, expectedBuffer);
+  for (const expected of [expectedWithQuery, expectedWithoutQuery]) {
+    const expectedBuffer = Buffer.from(expected);
+    if (
+      signatureBuffer.length === expectedBuffer.length &&
+      timingSafeEqual(signatureBuffer, expectedBuffer)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
