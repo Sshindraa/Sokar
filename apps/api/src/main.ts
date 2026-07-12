@@ -57,6 +57,7 @@ import './shared/queue/workers/google-places-sync.worker';
 import './shared/queue/workers/alert-evaluation.worker';
 import './modules/agentic-reservations/workers/expire-hold.worker';
 import './modules/agentic-reservations/workers/expire-quote.worker';
+import './modules/agentic-reservations/workers/idempotency-purge.worker';
 
 // Initialize Sentry as early as possible so that instrumentation hooks are
 // registered before the Fastify app (and its error handler) are built.
@@ -368,6 +369,13 @@ async function start() {
           'alert-evaluation-5min',
           { pattern: '*/5 * * * *', tz: 'Europe/Paris' },
           { name: 'evaluate-alerts' },
+        );
+
+        // Purge quotidienne des clés idempotency expirées (RES-005).
+        await queues.idempotencyPurge.upsertJobScheduler(
+          'daily-idempotency-purge',
+          { pattern: '0 4 * * *', tz: 'Europe/Paris' },
+          { name: 'purge-expired', data: {} },
         );
       } catch (err) {
         logger.error(err, 'Failed to register schedulers on startup');
