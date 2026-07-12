@@ -57,10 +57,10 @@ export class SokarAgentRunner {
     const tools = await this.client.getTools();
 
     const defaultSystemMessage =
-      "Tu es un assistant de réservation restaurant. Tu DOIS utiliser les outils disponibles pour aider l'utilisateur. " +
+      "Vous êtes un assistant de réservation restaurant. Vous DEVEZ utiliser les outils disponibles pour aider l'utilisateur. " +
       'Flow attendu : search_restaurants -> get_restaurant_details (optionnel) -> check_availability -> create_reservation. ' +
-      "Si une information est manquante (nom, téléphone), demande-la à l'utilisateur. " +
-      'Réponds en français, de manière concise et professionnelle.';
+      "Si une information est manquante (nom, téléphone), demandez-la à l'utilisateur. " +
+      'Répondez en français, de manière concise et professionnelle, en le vouvoyant ("vous").';
 
     const messages: Message[] = [
       { role: 'system', content: systemMessage ?? defaultSystemMessage },
