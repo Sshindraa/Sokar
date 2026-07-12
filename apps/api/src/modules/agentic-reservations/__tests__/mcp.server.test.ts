@@ -13,6 +13,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
+import { env } from '../../../env';
 
 // Construction runtime pour contourner le masquage statique de secrets
 // sur les patterns qui ressemblent à des API keys.
@@ -30,19 +31,20 @@ function callTool(name: string, args: any) {
 
 describe('MCP server', () => {
   beforeAll(() => {
-    process.env.AGENT_DEV_KEY = VALID_KEY;
-    process.env.NODE_ENV = 'development';
+    // SEC-007 : l'auth dev est contrôlée par ENABLE_DEV_AUTH, pas NODE_ENV.
+    env.ENABLE_DEV_AUTH = 'true';
+    env.AGENT_DEV_KEY = VALID_KEY;
   });
 
   afterAll(async () => {
     await closeApp();
+    env.ENABLE_DEV_AUTH = 'false';
+    env.AGENT_DEV_KEY = undefined;
   });
 
   beforeEach(() => {
-    // Le NODE_ENV peut être 'test' (par défaut de vitest), ce qui skip la branche dev
-    // de validateApiKey. On force 'development' pour chaque test.
-    process.env.NODE_ENV = 'development';
-    process.env.AGENT_DEV_KEY = VALID_KEY;
+    env.ENABLE_DEV_AUTH = 'true';
+    env.AGENT_DEV_KEY = VALID_KEY;
     vi.clearAllMocks();
   });
 

@@ -9,21 +9,22 @@ import {
   validateApiKey,
   validateOrigin,
 } from '../mcp/auth.js';
+import { env } from '../../../env';
 
 describe('mcp auth', () => {
   const PREFIX = ['sk', '_sokar', '_agent_'].join('');
   const VALID_KEY = PREFIX + 'a'.repeat(40);
 
   beforeEach(() => {
-    delete process.env.AGENT_DEV_KEY;
-    process.env.NODE_ENV = 'test';
+    env.ENABLE_DEV_AUTH = 'false';
+    env.AGENT_DEV_KEY = undefined;
   });
 
   describe('validateDevApiKey', () => {
-    it('accepte une clé au bon format en dev (via env)', () => {
-      process.env.AGENT_DEV_KEY = VALID_KEY;
-      process.env.NODE_ENV = 'development';
-      const ctx = validateDevApiKey(process.env.AGENT_DEV_KEY);
+    it('accepte une clé au bon format si ENABLE_DEV_AUTH=true', () => {
+      env.ENABLE_DEV_AUTH = 'true';
+      env.AGENT_DEV_KEY = VALID_KEY;
+      const ctx = validateDevApiKey(env.AGENT_DEV_KEY);
       expect(ctx).toEqual({
         clientId: 'dev-client',
         clientName: 'dev',
@@ -41,10 +42,10 @@ describe('mcp auth', () => {
       expect(validateDevApiKey(PREFIX)).toBeNull();
     });
 
-    it('rejette en prod (dev key ignorée)', () => {
-      process.env.AGENT_DEV_KEY = VALID_KEY;
-      process.env.NODE_ENV = 'production';
-      const result = validateDevApiKey(process.env.AGENT_DEV_KEY);
+    it('rejette si ENABLE_DEV_AUTH=false', () => {
+      env.AGENT_DEV_KEY = VALID_KEY;
+      env.ENABLE_DEV_AUTH = 'false';
+      const result = validateDevApiKey(env.AGENT_DEV_KEY);
       expect(result).toBeNull();
     });
   });
