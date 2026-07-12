@@ -170,6 +170,36 @@ describe('OpenAI Reserve routes', () => {
       expect(body.businesses[0].id).toBe('r-1');
     });
 
+    it('accepte une signature HMAC statique compatible pagination OpenAI', async () => {
+      const hmacKey = 'test-openai-reserve-hmac-key-32-chars';
+      env.OPENAI_RESERVE_HMAC_KEY = hmacKey;
+      (db.restaurant.count as any) = vi.fn().mockResolvedValue(42);
+      (db.restaurant.findMany as any) = vi.fn().mockResolvedValueOnce([
+        {
+          id: 'r-1',
+          name: 'Le Bistrot',
+          slug: 'le-bistrot',
+          formattedAddress: '1 rue de Paris, 75001 Paris, France',
+          phoneE164: '+33****0000',
+          websiteUrl: 'https://bistrot.example',
+          lat: { toNumber: () => 48.86 },
+          lng: { toNumber: () => 2.35 },
+          cuisineType: ['french'],
+          priceRange: 2,
+          openingHours: { lun: ['12:00-14:30'] },
+        },
+      ]);
+
+      const staticSignature = signOpenaiReserveRequest('GET', '/v1/businesses', {}, hmacKey);
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: `/v1/businesses?page=1&page_size=20&signature=${staticSignature}`,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().businesses).toHaveLength(1);
+    });
+
     it('accepte le feed sans signature si HMAC non configuré', async () => {
       // env.OPENAI_RESERVE_HMAC_KEY reste undefined (reset beforeEach).
       (db.restaurant.count as any) = vi.fn().mockResolvedValue(0);
