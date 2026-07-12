@@ -75,4 +75,13 @@ export const queues = {
       removeOnFail: 500,
     },
   }),
+  idempotencyPurge: new Queue('idempotency-purge', {
+    connection: redisQueue,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 60_000 },
+      removeOnComplete: 30,
+      removeOnFail: 100,
+    },
+  }),
 };
