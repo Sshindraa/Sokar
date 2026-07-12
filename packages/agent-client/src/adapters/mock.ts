@@ -1,4 +1,4 @@
-import type { LLMAdapter, LLMResponse, Message, ToolCall } from '../types.js';
+import type { LLMAdapter, LLMChatOptions, LLMResponse, Message, ToolCall } from '../types.js';
 
 export type MockStepContext = {
   messages: Message[];
@@ -22,7 +22,11 @@ export class MockAdapter implements LLMAdapter {
 
   constructor(private readonly steps: MockStep[]) {}
 
-  async chat(messages: Message[], tools: unknown[]): Promise<LLMResponse> {
+  async chat(
+    messages: Message[],
+    tools: unknown[],
+    _options?: LLMChatOptions,
+  ): Promise<LLMResponse> {
     const step = this.steps[this.turn];
     this.turn++;
 

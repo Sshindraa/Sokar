@@ -1,4 +1,4 @@
-import type { LLMAdapter, LLMResponse, Message, ToolCall } from '../types.js';
+import type { LLMAdapter, LLMChatOptions, LLMResponse, Message, ToolCall } from '../types.js';
 
 type OpenAIFunction = {
   name: string;
@@ -53,12 +53,17 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
     this.timeoutMs = config.timeoutMs ?? 30000;
   }
 
-  async chat(messages: Message[], tools: unknown[]): Promise<LLMResponse> {
+  async chat(
+    messages: Message[],
+    tools: unknown[],
+    options?: LLMChatOptions,
+  ): Promise<LLMResponse> {
+    const toolChoice = options?.toolChoice ?? 'auto';
     const body = {
       model: this.model,
       messages: this.toOpenAIMessages(messages),
       tools,
-      tool_choice: 'auto' as const,
+      tool_choice: toolChoice,
     };
 
     const res = await fetch(`${this.baseUrl}/chat/completions`, {
@@ -103,6 +108,9 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
 
   private toOpenAIMessages(messages: Message[]): OpenAIChatMessage[] {
     return messages.map((m) => {
+      if (m.role === 'system') {
+        return { role: 'system', content: m.content };
+      }
       if (m.role === 'tool') {
         return {
           role: 'tool',

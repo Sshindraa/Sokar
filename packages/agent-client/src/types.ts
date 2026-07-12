@@ -43,7 +43,7 @@ export type ToolResult = {
 };
 
 export type Message = {
-  role: 'user' | 'assistant' | 'tool' | 'model';
+  role: 'system' | 'user' | 'assistant' | 'tool' | 'model';
   content?: string;
   toolCalls?: ToolCall[];
   toolCallId?: string;
@@ -57,8 +57,13 @@ export type LLMResponse = {
   done: boolean;
 };
 
+export type LLMChatOptions = {
+  /** Forcer le LLM à appeler au moins un outil ('any'/'required') ou laisser décider ('auto') */
+  toolChoice?: 'auto' | 'any' | 'required' | 'none';
+};
+
 export interface LLMAdapter {
-  chat(messages: Message[], tools: unknown[]): Promise<LLMResponse>;
+  chat(messages: Message[], tools: unknown[], options?: LLMChatOptions): Promise<LLMResponse>;
   /** Nom affiché du provider (openai, mistral, gemini) */
   readonly provider: string;
 }
@@ -68,6 +73,8 @@ export type AgentRunnerOptions = {
   llm: LLMAdapter;
   /** Message utilisateur initial */
   userMessage: string;
+  /** System prompt optionnel (default : assistant réservation) */
+  systemMessage?: string;
   /** Historique optionnel */
   history?: Message[];
   /** Nombre max de tours d'outils (default 10) */
