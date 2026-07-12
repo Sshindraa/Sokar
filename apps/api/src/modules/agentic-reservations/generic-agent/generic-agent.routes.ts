@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { authenticateMcpRequest, McpAuthError } from '../mcp/auth';
 import { McpRateLimiter } from '../mcp/rate-limit';
 import { executeTool, McpToolRegistry } from '../mcp/tools/registry';
+import { TOOL_LIST } from '../mcp/tools/tool-definitions';
 import { db } from '../../../shared/db/client';
 import { redisCache } from '../../../shared/redis/client';
 import type { ReservationChannel } from '../core/state-machine';
@@ -53,9 +54,59 @@ function mapToolErrorToStatus(code: string): number {
   }
 }
 
+const ToolListFormatSchema = z.enum(['mcp', 'openai', 'mistral', 'gemini']).default('mcp');
+
+function formatToolList(format: string) {
+  switch (format) {
+    case 'openai':
+    case 'mistral':
+      return {
+        tools: TOOL_LIST.map((tool) => ({
+          type: 'function',
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.inputSchema,
+          },
+        })),
+      };
+    case 'gemini':
+      return {
+        tools: [
+          {
+            function_declarations: TOOL_LIST.map((tool) => ({
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.inputSchema,
+            })),
+          },
+        ],
+      };
+    default:
+      return { tools: TOOL_LIST };
+  }
+}
+
 export async function genericAgentRoutes(app: FastifyInstance): Promise<void> {
   const rateLimiter = new McpRateLimiter(redisCache);
   const registry = new McpToolRegistry(db, rateLimiter);
+
+  app.get(
+    '/v1/agents/tools',
+    {
+      config: {
+        rateLimit: {
+          max: 120,
+          timeWindow: '1 minute',
+        },
+      },
+    },
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const parsed = ToolListFormatSchema.safeParse((req.query as { format?: string }).format);
+      const format = parsed.success ? parsed.data : 'mcp';
+      return reply.send(formatToolList(format));
+    },
+  );
 
   app.post(
     '/v1/agents',

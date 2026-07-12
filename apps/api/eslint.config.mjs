@@ -132,6 +132,15 @@ export default [
     },
   },
 
+  // Scripts (CLI utilities, simulations) use console intentionally. Keep
+  // console.log explicit via eslint-disable-next-line and allow console.error.
+  {
+    files: ['scripts/*.ts'],
+    rules: {
+      'no-console': ['error', { allow: ['error'] }],
+    },
+  },
+
   // Prettier last — must come after all rule sets to disable conflicting ones
   prettier,
 ];
