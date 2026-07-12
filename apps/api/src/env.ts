@@ -71,6 +71,10 @@ const EnvSchema = z
     METRICS_BASIC_AUTH_USER: z.string().optional(),
     METRICS_BASIC_AUTH_PASSWORD: z.string().min(1).optional(),
     METRICS_ALLOWLIST_IPS: z.string().default('127.0.0.1, ::1'),
+    // Auth MCP dev (SEC-007). ENABLE_DEV_AUTH doit être explicitement true pour activer AGENT_DEV_KEY.
+    // En production, rester false. AGENT_DEV_KEY doit faire ≥32 caractères si défini.
+    ENABLE_DEV_AUTH: z.enum(['true', 'false']).default('false'),
+    AGENT_DEV_KEY: z.string().min(32).optional(),
     // Clés API critiques — validées au démarrage en production
     TELNYX_API_KEY: z.string().optional(),
     DEEPGRAM_API_KEY: z.string().optional(),

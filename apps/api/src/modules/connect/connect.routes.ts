@@ -114,7 +114,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
   // ─── 1. GET /public/r/:slug ─────────────────────────────────
 
   const PreviewQuerySchema = z.object({
-    preview: z.string().optional(),
+    preview: z.enum(['1', '0']).optional(),
   });
 
   app.get(
@@ -128,8 +128,11 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: 'Invalid slug', details: parse.error.format() });
       }
 
-      const query = PreviewQuerySchema.parse(req.query ?? {});
-      const isPreview = query.preview === '1';
+      const query = PreviewQuerySchema.safeParse(req.query ?? {});
+      if (!query.success) {
+        return reply.status(400).send({ error: 'Invalid query', details: query.error.format() });
+      }
+      const isPreview = query.data.preview === '1';
 
       const restaurant = await canal.getPublishedBySlug(parse.data.slug, { preview: isPreview });
       if (!restaurant) {
@@ -191,8 +194,11 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     '/public/restaurants',
     { config: { rateLimit: { max: RATE_LIMIT_RESTAURANTS_MAX, timeWindow: '1 minute' } } },
     async (req, reply) => {
-      const query = RestaurantsQuerySchema.parse(req.query ?? {});
-      const result = await canal.getPublishedRestaurants(query.page, query.limit);
+      const query = RestaurantsQuerySchema.safeParse(req.query ?? {});
+      if (!query.success) {
+        return reply.status(400).send({ error: 'Invalid query', details: query.error.format() });
+      }
+      const result = await canal.getPublishedRestaurants(query.data.page, query.data.limit);
       return reply.send(result);
     },
   );

@@ -13,6 +13,7 @@
 import type { FastifyRequest } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
 import { createHash, timingSafeEqual } from 'crypto';
+import { env } from '../../../env';
 
 // Origins par défaut. Surchargeable via MCP_ALLOWED_ORIGINS
 // (comma-separated, ex: "https://claude.ai,https://chatgpt.com")
@@ -98,24 +99,28 @@ export function validateApiKeyFormat(key: string): boolean {
  */
 export function validateDevApiKey(key: string): AuthContext | null {
   if (!validateApiKeyFormat(key)) return null;
-  if (process.env.NODE_ENV !== 'production' && process.env.AGENT_DEV_KEY) {
-    const devKey = process.env.AGENT_DEV_KEY;
-    // Validation entropie : la clé dev doit faire au moins 32 caractères
-    if (devKey.length < 32) {
-      return null;
-    }
-    // Timing-safe comparison pour prévenir les timing attacks
-    const keyBuf = Buffer.from(key);
-    const devKeyBuf = Buffer.from(devKey);
-    if (keyBuf.length === devKeyBuf.length && timingSafeEqual(keyBuf, devKeyBuf)) {
-      return {
-        clientId: 'dev-client',
-        clientName: 'dev',
-        restaurantId: null,
-        scopes: ['mcp:read', 'mcp:reserve', 'mcp:cancel'],
-        allowedOrigins: [],
-      };
-    }
+  // SEC-007 : l'auth dev doit être explicitement activée, indépendamment de NODE_ENV.
+  if (env.ENABLE_DEV_AUTH !== 'true' || !env.AGENT_DEV_KEY) {
+    return null;
+  }
+
+  const devKey = env.AGENT_DEV_KEY;
+  // Validation entropie : la clé dev doit faire au moins 32 caractères
+  if (devKey.length < 32) {
+    return null;
+  }
+
+  // Timing-safe comparison pour prévenir les timing attacks
+  const keyBuf = Buffer.from(key);
+  const devKeyBuf = Buffer.from(devKey);
+  if (keyBuf.length === devKeyBuf.length && timingSafeEqual(keyBuf, devKeyBuf)) {
+    return {
+      clientId: 'dev-client',
+      clientName: 'dev',
+      restaurantId: null,
+      scopes: ['mcp:read', 'mcp:reserve', 'mcp:cancel'],
+      allowedOrigins: [],
+    };
   }
 
   return null;

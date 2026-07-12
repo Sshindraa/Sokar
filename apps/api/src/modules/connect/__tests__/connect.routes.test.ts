@@ -192,6 +192,35 @@ describe('Sokar Connect — Routes publiques', () => {
 
       expect(res.statusCode).toBe(404);
     });
+
+    it('retourne 400 si le query param preview est invalide', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/public/r/${SLUG}?preview=invalid`,
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+  });
+
+  describe('GET /public/restaurants', () => {
+    it('retourne 400 si page est invalide', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/public/restaurants?page=abc',
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('retourne 400 si limit dépasse le maximum', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/public/restaurants?limit=999',
+      });
+
+      expect(res.statusCode).toBe(400);
+    });
   });
 
   describe('GET /public/v1/r/:slug (alias versioning Phase 6)', () => {
