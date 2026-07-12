@@ -645,7 +645,7 @@ export class ReservationService {
     now: Date,
   ): Promise<void> {
     const locked = await tx.$queryRaw<{ id: string }[]>(
-      Prisma.sql`SELECT id FROM agentic_holds WHERE id = ${holdId} AND status = 'ACTIVE' AND type = 'HOLD' AND expires_at > ${now} FOR UPDATE`,
+      Prisma.sql`SELECT id FROM agentic_holds WHERE id = ${holdId} AND status = 'ACTIVE' AND type = 'HOLD' AND expires_at > ${now} AT TIME ZONE 'UTC' FOR UPDATE`,
     );
     if (!locked || locked.length === 0) {
       throw new HoldAlreadyConsumedError(holdId);

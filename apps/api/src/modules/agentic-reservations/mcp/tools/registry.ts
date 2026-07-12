@@ -13,6 +13,7 @@
 
 import type { PrismaClient } from '@prisma/client';
 import { logger } from '../../../../shared/logger/pino';
+import { type ReservationChannel } from '../../core/state-machine';
 import { AuditLogService } from '../../core/audit-log.service';
 import { AvailabilityService } from '../../core/availability.service';
 import { HoldService } from '../../core/hold.service';
@@ -48,6 +49,7 @@ export type ToolContext = {
   restaurantId: string | null;
   scopes: string[];
   actor: string;
+  channel?: ReservationChannel;
 };
 
 export type ToolResult<T = unknown> =
@@ -385,7 +387,7 @@ export class McpToolRegistry {
           endsAt,
           customerName: input.customerName,
           customerPhone: input.customerPhone,
-          channel: 'MCP',
+          channel: ctx.channel ?? 'MCP',
           policy,
           actor: ctx.actor,
           holdToken: input.holdToken,
