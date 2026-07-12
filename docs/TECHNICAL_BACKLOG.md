@@ -31,7 +31,7 @@ _Classification proposée, chaque item doit être re-vérifié avant exécution.
 | DEP-001 | `scripts/backup-postgres.sh` + `infra/cron`                                          | Pas de backup automatisé de `sokar_staging`                           | Script + cron staging + rétention 7 jours                                      | Test end-to-end backup                                                                            | Corrigé     |
 | DEP-002 | `apps/api/.env.staging.example` + `scripts/ops/setup-staging.sh`                     | Password `password` par défaut                                        | `CHANGE_ME_PASSWORD` + validation setup                                        | `setup-staging.sh` dry-run                                                                        | Corrigé     |
 | QUA-001 | `apps/api/src/modules/connect/jsonld.service.ts` + `apps/connect/src/lib/jsonld.tsx` | `buildPublicRestaurantJsonLd` dupliqué                                | Extraire dans `@sokar/shared`                                                  | `packages/shared/src/__tests__/jsonld.test.ts` + `apps/connect/src/lib/__tests__/jsonld.test.tsx` | Corrigé     |
-| RES-006 | `apps/api/src/modules/gift-cards/gift-card.service.ts`                               | Application carte cadeau sans verrou (possibilité de sur-utilisation) | `SELECT FOR UPDATE` sur `GiftCard` + `CHECK remainingAmount >= 0`              | Test de double application concurrente                                                            | Non corrigé |
+| RES-006 | `apps/api/src/modules/gift-cards/gift-card.service.ts`                               | Application carte cadeau sans verrou (possibilité de sur-utilisation) | `SELECT FOR UPDATE` sur `GiftCard` + `CHECK remainingAmount >= 0`              | `gift-card.service.test.ts`                                                                       | Corrigé     |
 | DEP-005 | `infra/ecosystem*.config.js`                                                         | PM2 sans health checks                                                | `min_uptime`, health check `/health`, alertes                                  | Test de restart en échec                                                                          | Non corrigé |
 
 ---
@@ -100,7 +100,7 @@ _Classification proposée, chaque item doit être re-vérifié avant exécution.
 
 ## Prochaines étapes
 
-1. **Traiter les P0 non corrigés** : `RES-006` (verrou carte cadeau) et `DEP-005` (health checks PM2).
+1. **Traiter le P0 non corrigé** : `DEP-005` (health checks PM2).
 2. **Valider les P1** avec le product owner / pilote avant implémentation.
 3. **Ne pas traiter les P2** avant que P0 et P1 soient résolus.
 4. **Mettre à jour ce fichier** à chaque correction (changer `Statut` en `Corrigé` et ajouter le test/PR).
