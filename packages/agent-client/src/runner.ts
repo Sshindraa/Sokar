@@ -2,41 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { SokarAgentClient } from './sokar-client.js';
 import type { AgentRunnerOptions, AgentRunnerResult, Message, ToolName } from './types.js';
 
-function parseToolContent(message: Message): Record<string, unknown> | undefined {
-  if (!message.content) return undefined;
-  try {
-    return JSON.parse(message.content) as Record<string, unknown>;
-  } catch {
-    return undefined;
-  }
-}
-
-function chooseToolChoice(messages: Message[]): 'auto' | 'any' {
-  const last = messages[messages.length - 1];
-  if (!last) return 'any';
-
-  if (last.role === 'user') return 'any';
-
-  if (last.role === 'tool') {
-    const result = parseToolContent(last);
-    const reservationId = result?.reservationId ?? result?.id;
-    const available = result?.available === true;
-
-    switch (last.name) {
-      case 'search_restaurants':
-      case 'get_restaurant_details':
-        return 'any';
-      case 'check_availability':
-        return available ? 'any' : 'auto';
-      case 'create_reservation':
-        return reservationId ? 'auto' : 'any';
-      case 'cancel_reservation':
-        return 'auto';
-      default:
-        return 'auto';
-    }
-  }
-
+function chooseToolChoice(_messages: Message[]): 'auto' | 'any' {
+  // Mode conversationnel "humain" : on laisse le LLM décider quand appeler un outil.
   return 'auto';
 }
 
@@ -57,9 +24,12 @@ export class SokarAgentRunner {
     const tools = await this.client.getTools();
 
     const defaultSystemMessage =
-      "Vous êtes un assistant de réservation restaurant. Vous DEVEZ utiliser les outils disponibles pour aider l'utilisateur. " +
-      'Flow attendu : search_restaurants -> get_restaurant_details (optionnel) -> check_availability -> create_reservation. ' +
-      "Si une information est manquante (nom, téléphone), demandez-la à l'utilisateur. " +
+      'Vous êtes un assistant de réservation restaurant. Vous aidez un client humain à trouver un restaurant et à réserver une table. ' +
+      "N'utilisez les outils que lorsque toutes les informations nécessaires sont disponibles. " +
+      'Informations nécessaires : ville, date, heure, nombre de personnes, nom et téléphone. ' +
+      "Le type de cuisine est optionnel : ne le demandez pas. Si l'utilisateur ne le précise pas, lancez la recherche avec cuisineType absent. " +
+      "Si une information manque, posez une question simple et concise avant d'appeler un outil. " +
+      "Quand toutes les informations sont réunies, utilisez les outils dans l'ordre : search_restaurants → check_availability → create_reservation. " +
       'Répondez en français, de manière concise et professionnelle, en le vouvoyant ("vous").';
 
     const messages: Message[] = [
