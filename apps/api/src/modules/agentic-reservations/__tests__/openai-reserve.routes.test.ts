@@ -10,6 +10,8 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
+import { env } from '../../../env';
+import { signOpenaiReserveRequest } from '../openai-reserve/signature';
 
 describe('OpenAI Reserve routes', () => {
   afterAll(async () => {
@@ -18,7 +20,19 @@ describe('OpenAI Reserve routes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Par défaut le HMAC est désactivé pour les tests existants.
+    env.OPENAI_RESERVE_HMAC_KEY = undefined;
   });
+
+  function signedFeedUrl(query: Record<string, string | number>, secret: string): string {
+    const signature = signOpenaiReserveRequest('GET', '/v1/businesses', query, secret);
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      params.append(key, String(value));
+    }
+    params.append('signature', signature);
+    return `/v1/businesses?${params.toString()}`;
+  }
 
   describe('GET /v1/businesses', () => {
     it('retourne un feed paginé avec checksum et pagination', async () => {
@@ -98,8 +112,76 @@ describe('OpenAI Reserve routes', () => {
       expect(res.statusCode).toBe(400);
     });
 
-    // Note : le rate limit (30 req/min/IP) est configuré via
-    // config: { rateLimit: { max: 30, timeWindow: '1 minute' } } dans
+    it('refuse 401 si HMAC configuré et signature manquante', async () => {
+      env.OPENAI_RESERVE_HMAC_KEY = 'test-openai-reserve-hmac-key-32-chars';
+      (db.restaurant.count as any) = vi.fn().mockResolvedValue(0);
+      (db.restaurant.findMany as any) = vi.fn().mockResolvedValueOnce([]);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: '/v1/businesses?page=1&page_size=20',
+      });
+      expect(res.statusCode).toBe(401);
+      expect(res.json().error).toContain('signature');
+    });
+
+    it('refuse 401 si HMAC configuré et signature invalide', async () => {
+      env.OPENAI_RESERVE_HMAC_KEY = 'test-openai-reserve-hmac-key-32-chars';
+      (db.restaurant.count as any) = vi.fn().mockResolvedValue(0);
+      (db.restaurant.findMany as any) = vi.fn().mockResolvedValueOnce([]);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: '/v1/businesses?page=1&page_size=20&signature=invalid',
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('accepte le feed avec une signature HMAC valide', async () => {
+      const hmacKey = 'test-openai-reserve-hmac-key-32-chars';
+      env.OPENAI_RESERVE_HMAC_KEY = hmacKey;
+      (db.restaurant.count as any) = vi.fn().mockResolvedValue(42);
+      (db.restaurant.findMany as any) = vi.fn().mockResolvedValueOnce([
+        {
+          id: 'r-1',
+          name: 'Le Bistrot',
+          slug: 'le-bistrot',
+          formattedAddress: '1 rue de Paris, 75001 Paris, France',
+          phoneE164: '+33****0000',
+          websiteUrl: 'https://bistrot.example',
+          lat: { toNumber: () => 48.86 },
+          lng: { toNumber: () => 2.35 },
+          cuisineType: ['french'],
+          priceRange: 2,
+          openingHours: { lun: ['12:00-14:30'] },
+        },
+      ]);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: signedFeedUrl({ page: 1, page_size: 20 }, hmacKey),
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.businesses).toHaveLength(1);
+      expect(body.businesses[0].id).toBe('r-1');
+    });
+
+    it('accepte le feed sans signature si HMAC non configuré', async () => {
+      // env.OPENAI_RESERVE_HMAC_KEY reste undefined (reset beforeEach).
+      (db.restaurant.count as any) = vi.fn().mockResolvedValue(0);
+      (db.restaurant.findMany as any) = vi.fn().mockResolvedValueOnce([]);
+
+      const app = await getApp();
+      const res = await app.inject({ method: 'GET', url: '/v1/businesses' });
+      expect(res.statusCode).toBe(200);
+    });
+
+    // Note : le rate limit (10 req/min/IP) est configuré via
+    // config: { rateLimit: { max: 10, timeWindow: '1 minute' } } dans
     // openai-reserve.routes.ts. Un test fonctionnel 429 complet est difficile
     // à isoler car le store mémoire du rate limiter est partagé entre tous
     // les tests (singleton app via getApp). Le rate limit est vérifié en

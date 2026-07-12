@@ -10,21 +10,18 @@
  *
  * ─── Risque accepté ─────────────────────────────────────────────────
  *
- * Ce feed est intentionnellement public et sans auth (requis par OpenAI
- * Apps SDK). Risque accepté : un tiers non-partenaire peut scraper cette
- * liste de restaurants (nom, adresse, téléphone, coordonnées GPS, cuisine,
- * prix, horaires).
+ * Ce feed est public car OpenAI Apps SDK l'ingère sans auth. Pour limiter
+ * le scraping, on expose un mécanisme HMAC partagé (RES-007) : si
+ * OPENAI_RESERVE_HMAC_KEY est configuré, le paramètre ?signature est requis.
+ * Le rate limit sur /v1/businesses est passé à 10 req/min/IP.
  *
  * Mitigations en place :
- *   1. Rate limit 30 req/min/IP sur toutes les routes /v1/* (étape 1)
- *   2. Cache Redis TTL 120s sur getBusinessFeed() — le scraping répété
- *      tape le cache, pas la DB (étape 2)
- *   3. Métrique Prometheus sokar_openai_reserve_feed_requests_total{status}
- *      pour détecter un volume anormal (étape 3)
- *
- * Pas de bearer token car OpenAI ingère ce endpoint publiquement sans
- * authentification, cf. spec Apps SDK. Ne PAS ajouter d'auth obligatoire
- * sans une coordination explicite avec OpenAI — ça casserait l'ingestion.
+ *   1. HMAC partagé optionnel sur /v1/businesses (RES-007)
+ *   2. Rate limit strict 10 req/min/IP sur /v1/businesses
+ *   3. Cache Redis TTL 120s sur getBusinessFeed() — le scraping répété
+ *      tape le cache, pas la DB
+ *   4. Métrique Prometheus sokar_openai_reserve_feed_requests_total{status}
+ *      pour détecter un volume anormal
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
@@ -34,17 +31,35 @@ import { FeedQuerySchema, RestaurantReservationInputSchema } from './schemas';
 import { logger } from '../../../shared/logger/pino';
 import { db } from '../../../shared/db/client';
 import { openaiReserveFeedRequestsTotal } from '../../../shared/observability/metrics';
+import { env } from '../../../env';
+import { verifyOpenaiReserveRequest } from './signature';
+
+// Rate limit strict pour /v1/businesses (RES-007). Un HMAC valide permet de
+// s'authentifier, mais le rate limit IP reste actif comme safety net.
+const RATE_LIMIT_BUSINESSES_MAX = 10;
 
 export async function openaiReserveRoutes(app: FastifyInstance): Promise<void> {
   const service = new OpenaiReserveService(db);
 
   // GET /v1/businesses : business feed
-  // Rate limit 30 req/min/IP — généreux pour le crawl OpenAI (polling
-  // occasionnel, pas burst), bloque le scraping agressif. Pas d'auth car
-  // OpenAI ingère ce endpoint publiquement (cf. commentaire en tête de fichier).
+  // Rate limit strict (10 req/min/IP) + HMAC partagé optionnel (RES-007).
+  // Si OPENAI_RESERVE_HMAC_KEY est configuré, le paramètre ?signature est
+  // requis. Cela permet de partager un feed signé avec OpenAI sans exposer
+  // publiquement les données aux scrapers.
   app.get(
     '/v1/businesses',
-    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    {
+      config: { rateLimit: { max: RATE_LIMIT_BUSINESSES_MAX, timeWindow: '1 minute' } },
+      preHandler: async (req: FastifyRequest, reply: FastifyReply) => {
+        if (
+          env.OPENAI_RESERVE_HMAC_KEY &&
+          !verifyOpenaiReserveRequest(req, env.OPENAI_RESERVE_HMAC_KEY)
+        ) {
+          openaiReserveFeedRequestsTotal.inc({ status: '401' });
+          return reply.status(401).send({ error: 'Invalid or missing signature' });
+        }
+      },
+    },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const parsed = FeedQuerySchema.safeParse(req.query);
       if (!parsed.success) {
