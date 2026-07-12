@@ -20,7 +20,13 @@ export class SokarAgentRunner {
    * 4. Retourne le message final quand le LLM répond sans appeler d'outil.
    */
   async run(options: AgentRunnerOptions): Promise<AgentRunnerResult> {
-    const { llm, userMessage, systemMessage, history = [], maxToolTurns = 10 } = options;
+    const {
+      llm,
+      userMessage,
+      systemMessage,
+      history: rawHistory = [],
+      maxToolTurns = 10,
+    } = options;
     const tools = await this.client.getTools();
 
     const defaultSystemMessage =
@@ -31,6 +37,9 @@ export class SokarAgentRunner {
       "Si une information manque, posez une question simple et concise avant d'appeler un outil. " +
       "Quand toutes les informations sont réunies, utilisez les outils dans l'ordre : search_restaurants → check_availability → create_reservation. " +
       'Répondez en français, de manière concise et professionnelle, en le vouvoyant ("vous").';
+
+    // On évite de dupliquer le message system si l'historique en contient déjà un.
+    const history = rawHistory[0]?.role === 'system' ? rawHistory.slice(1) : rawHistory;
 
     const messages: Message[] = [
       { role: 'system', content: systemMessage ?? defaultSystemMessage },
@@ -47,7 +56,9 @@ export class SokarAgentRunner {
         messages.push({ role: 'assistant', content: response.message });
         return {
           finalMessage: response.message,
-          history: messages,
+          // L'historique ne contient pas le message system pour éviter les
+          // duplications lors d'un appel répété au runner (REPL).
+          history: messages.slice(1),
           toolCallsCount,
         };
       }
