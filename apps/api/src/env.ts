@@ -66,6 +66,11 @@ const EnvSchema = z
     // Routes /api/test (simulation d'appel). DOIT être explicitement true, même en dev/test.
     // En production, doit rester false (SEC-005).
     ENABLE_TEST_ROUTES: z.enum(['true', 'false']).default('false'),
+    // Authentification /metrics (SEC-006). Si user+password sont définis, auth basique requise.
+    // Sinon, allowlist d'IPs exactes (défaut loopback). Prometheus doit être dans la liste.
+    METRICS_BASIC_AUTH_USER: z.string().optional(),
+    METRICS_BASIC_AUTH_PASSWORD: z.string().min(1).optional(),
+    METRICS_ALLOWLIST_IPS: z.string().default('127.0.0.1, ::1'),
     // Clés API critiques — validées au démarrage en production
     TELNYX_API_KEY: z.string().optional(),
     DEEPGRAM_API_KEY: z.string().optional(),
