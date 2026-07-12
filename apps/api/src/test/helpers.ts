@@ -231,6 +231,7 @@ vi.mock('../shared/db/client', () => {
       update: vi.fn(),
       delete: vi.fn(),
     },
+    $queryRaw: vi.fn().mockResolvedValue([]),
     $transaction: vi.fn(async (fn: any) => {
       if (Array.isArray(fn)) {
         return Promise.all(fn);

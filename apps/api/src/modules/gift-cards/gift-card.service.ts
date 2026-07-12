@@ -159,38 +159,58 @@ export class GiftCardService {
 
     const giftCard = validation.giftCard;
     const reservationAmount = new Prisma.Decimal(input.reservationAmount);
-    const appliedAmount = Prisma.Decimal.min(giftCard.remainingAmount, reservationAmount);
-    const remainingAmount = giftCard.remainingAmount.minus(appliedAmount);
-    const complementAmount = reservationAmount.minus(appliedAmount);
 
-    let paymentStatus: GiftCardApplicationResult['paymentStatus'];
-    if (complementAmount.greaterThan(0)) {
-      paymentStatus = 'COMPLEMENT_REQUIRED';
-    } else if (remainingAmount.greaterThan(0)) {
-      paymentStatus = 'PARTIAL';
-    } else {
-      paymentStatus = 'FULLY_COVERED';
-    }
+    const { updated, appliedAmount, complementAmount, paymentStatus } =
+      await this.prisma.$transaction(async (tx) => {
+        // Verrouiller la carte cadeau pour empêcher la double utilisation
+        // concurrente (P0 RES-006).
+        const [locked] = await tx.$queryRaw<
+          {
+            id: string;
+            remainingAmount: Prisma.Decimal;
+            status: string;
+          }[]
+        >(
+          Prisma.sql`SELECT id, remaining_amount AS "remainingAmount", status FROM gift_cards WHERE id = ${giftCard.id} FOR UPDATE`,
+        );
 
-    const newStatus = remainingAmount.greaterThan(0) ? 'ACTIVE' : 'REDEEMED';
+        if (!locked || locked.status !== 'ACTIVE' || locked.remainingAmount.lessThanOrEqualTo(0)) {
+          throw new GiftCardError('Carte cadeau invalide : FULLY_REDEEMED');
+        }
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.giftCardRedemption.create({
-        data: {
-          giftCardId: giftCard.id,
-          reservationId: input.reservationId,
-          amount: appliedAmount,
-        },
-      });
+        const lockedRemaining = new Prisma.Decimal(locked.remainingAmount);
+        const appliedAmount = Prisma.Decimal.min(lockedRemaining, reservationAmount);
+        const remainingAmount = lockedRemaining.minus(appliedAmount);
+        const complementAmount = reservationAmount.minus(appliedAmount);
+        const newStatus = remainingAmount.greaterThan(0) ? 'ACTIVE' : 'REDEEMED';
 
-      return tx.giftCard.update({
-        where: { id: giftCard.id },
-        data: {
-          remainingAmount,
-          status: newStatus,
-        },
-      });
-    }, DEFAULT_TRANSACTION_OPTIONS);
+        let paymentStatus: GiftCardApplicationResult['paymentStatus'];
+        if (complementAmount.greaterThan(0)) {
+          paymentStatus = 'COMPLEMENT_REQUIRED';
+        } else if (remainingAmount.greaterThan(0)) {
+          paymentStatus = 'PARTIAL';
+        } else {
+          paymentStatus = 'FULLY_COVERED';
+        }
+
+        await tx.giftCardRedemption.create({
+          data: {
+            giftCardId: giftCard.id,
+            reservationId: input.reservationId,
+            amount: appliedAmount,
+          },
+        });
+
+        const updated = await tx.giftCard.update({
+          where: { id: giftCard.id },
+          data: {
+            remainingAmount,
+            status: newStatus,
+          },
+        });
+
+        return { updated, appliedAmount, complementAmount, paymentStatus };
+      }, DEFAULT_TRANSACTION_OPTIONS);
 
     return {
       reservationId: input.reservationId,

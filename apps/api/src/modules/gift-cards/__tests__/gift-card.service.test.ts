@@ -180,6 +180,9 @@ describe('GiftCardService', () => {
       remainingAmount: d(0),
       status: 'REDEEMED',
     } as any);
+    vi.mocked(db.$queryRaw).mockResolvedValue([
+      { id: 'gc-1', remainingAmount: d(100), status: 'ACTIVE' },
+    ] as any);
     vi.mocked(db.$transaction).mockImplementation(async (fn: any) => {
       if (Array.isArray(fn)) {
         return Promise.all(fn);
@@ -230,6 +233,9 @@ describe('GiftCardService', () => {
       remainingAmount: d(40),
       status: 'ACTIVE',
     } as any);
+    vi.mocked(db.$queryRaw).mockResolvedValue([
+      { id: 'gc-1', remainingAmount: d(100), status: 'ACTIVE' },
+    ] as any);
     vi.mocked(db.$transaction).mockImplementation(async (fn: any) => {
       if (Array.isArray(fn)) {
         return Promise.all(fn);
@@ -265,6 +271,9 @@ describe('GiftCardService', () => {
       remainingAmount: d(0),
       status: 'REDEEMED',
     } as any);
+    vi.mocked(db.$queryRaw).mockResolvedValue([
+      { id: 'gc-1', remainingAmount: d(50), status: 'ACTIVE' },
+    ] as any);
     vi.mocked(db.$transaction).mockImplementation(async (fn: any) => {
       if (Array.isArray(fn)) {
         return Promise.all(fn);
@@ -283,6 +292,46 @@ describe('GiftCardService', () => {
     expect(result.remainingAmount).toBe(0);
     expect(result.paymentStatus).toBe('COMPLEMENT_REQUIRED');
     expect(result.complementAmount).toBe(70);
+  });
+
+  it('utilise le montant verrouillé, pas la valeur potentiellement obsolète du findUnique', async () => {
+    // Simulate a concurrent mutation that reduced the remaining balance after
+    // validateCode read the card, but before the SELECT FOR UPDATE.
+    vi.mocked(db.giftCard.findUnique).mockResolvedValue({
+      id: 'gc-1',
+      restaurantId: RESTAURANT_ID,
+      amount: d(100),
+      remainingAmount: d(100),
+      status: 'ACTIVE',
+      code: 'code-1',
+      expiresAt: null,
+    } as any);
+    vi.mocked(db.giftCard.update).mockResolvedValue({
+      id: 'gc-1',
+      remainingAmount: d(0),
+      status: 'REDEEMED',
+    } as any);
+    vi.mocked(db.$queryRaw).mockResolvedValue([
+      { id: 'gc-1', remainingAmount: d(30), status: 'ACTIVE' },
+    ] as any);
+    vi.mocked(db.$transaction).mockImplementation(async (fn: any) => {
+      if (Array.isArray(fn)) {
+        return Promise.all(fn);
+      }
+      return fn(db);
+    });
+
+    const result = await service.applyToReservation({
+      code: 'code-1',
+      restaurantId: RESTAURANT_ID,
+      reservationId: 'res-1',
+      reservationAmount: 50,
+    });
+
+    expect(result.appliedAmount).toBe(30);
+    expect(result.remainingAmount).toBe(0);
+    expect(result.paymentStatus).toBe('COMPLEMENT_REQUIRED');
+    expect(result.complementAmount).toBe(20);
   });
 
   it('annule une carte cadeau', async () => {

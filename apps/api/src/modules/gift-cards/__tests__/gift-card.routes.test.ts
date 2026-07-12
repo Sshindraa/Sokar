@@ -465,6 +465,9 @@ describe('gift-card routes', () => {
         remainingAmount: d(40),
         status: 'ACTIVE',
       } as any);
+      vi.mocked(db.$queryRaw).mockResolvedValue([
+        { id: 'gc-1', remainingAmount: d(100), status: 'ACTIVE' },
+      ] as any);
       vi.mocked(db.$transaction).mockImplementation(async (fn: any) => {
         if (Array.isArray(fn)) {
           return Promise.all(fn);
