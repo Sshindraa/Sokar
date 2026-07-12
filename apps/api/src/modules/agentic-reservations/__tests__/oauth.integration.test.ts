@@ -211,16 +211,15 @@ describe('OAuth MCP integration flow', () => {
     expect(body.error).toBeUndefined();
   });
 
-  // ── 8. 401 avec WWW-Authenticate header ──────────────
-  it('GET /mcp without auth returns 401 with WWW-Authenticate', async () => {
+  // ── 8. 405 sur GET /mcp (pas de SSE pour StreamableHTTP) ───
+  it('GET /mcp without auth returns 405 (no SSE stream)', async () => {
     const app = await getApp();
     const res = await app.inject({
       method: 'GET',
       url: '/mcp',
     });
-    expect(res.statusCode).toBe(401);
-    expect(res.headers['www-authenticate']).toContain('resource_metadata');
-    expect(res.headers['www-authenticate']).toContain('.well-known/oauth-protected-resource');
+    expect(res.statusCode).toBe(405);
+    expect(res.headers['allow']).toContain('POST');
   });
 
   // ── 9. Known redirect URI works without DCR ──────────
