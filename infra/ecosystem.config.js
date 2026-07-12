@@ -16,8 +16,12 @@ module.exports = {
       out_file: '/var/log/sokar/api-out.log',
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
-      // Restart strategy : évite crash loop en cas de panne persistante
-      restart_delay: 4000,
+      // Health check readiness (P0 DEP-005) : PM2 attend le signal 'ready' de l'API.
+      wait_ready: true,
+      listen_timeout: 30000,
+      kill_timeout: 8000,
+      // Restart strategy : backoff exponentiel pour éviter les crash loops.
+      exp_backoff_restart_delay: 4000,
       max_restarts: 10,
       min_uptime: '10s',
     },
@@ -46,7 +50,9 @@ module.exports = {
       out_file: '/var/log/sokar/dashboard-out.log',
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
-      restart_delay: 4000,
+      listen_timeout: 30000,
+      kill_timeout: 8000,
+      exp_backoff_restart_delay: 4000,
       max_restarts: 10,
       min_uptime: '10s',
     },
@@ -65,8 +71,9 @@ module.exports = {
       out_file: '/var/log/sokar/connect-out.log',
       merge_logs: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss',
-      // Restart strategy : évite crash loop en cas de panne persistante
-      restart_delay: 4000,
+      listen_timeout: 30000,
+      kill_timeout: 8000,
+      exp_backoff_restart_delay: 4000,
       max_restarts: 10,
       min_uptime: '10s',
     },

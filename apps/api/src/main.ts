@@ -292,17 +292,22 @@ async function start() {
     shutdown('SIGINT').catch((err) => logger.error({ err }, 'SIGINT shutdown failed'));
   });
 
-  app.listen(
-    { port: Number(process.env.PORT ?? 4000), host: process.env.HOST ?? '0.0.0.0' },
-    (err) => {
-      if (err) {
-        logger.error(err);
-        logger.warn('Failed to listen on port 4000 — will exit gracefully for PM2 restart');
-        process.exitCode = 1;
-        return;
-      }
-    },
-  );
+  try {
+    const address = await app.listen({
+      port: Number(process.env.PORT ?? 4000),
+      host: process.env.HOST ?? '0.0.0.0',
+    });
+    logger.info({ address }, 'Sokar API listening');
+    // Notifier PM2 que l'API est prête à accepter du trafic (P0 DEP-005).
+    if (typeof process.send === 'function') {
+      process.send('ready');
+    }
+  } catch (err) {
+    logger.error(err);
+    logger.warn('Failed to listen on port 4000 — will exit gracefully for PM2 restart');
+    process.exitCode = 1;
+    return;
+  }
 
   // Warm-up Cartesia TTS au boot : pré-génère les fillers ET chauffe le modèle
   // vocal Sonic 3.5 (évite le cold start de ~600ms sur le premier appel vocal).
