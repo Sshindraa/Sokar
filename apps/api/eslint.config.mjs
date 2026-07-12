@@ -138,6 +138,10 @@ export default [
     files: ['scripts/*.ts'],
     rules: {
       'no-console': ['error', { allow: ['error'] }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
     },
   },
 
