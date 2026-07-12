@@ -69,28 +69,14 @@ export class McpServer {
   }
 
   registerRoutes(app: FastifyInstance): void {
-    // GET /mcp : utilisé par les clients MCP pour discovery (SSE init).
-    // Sans auth → 401 avec WWW-Authenticate pour pointer vers OAuth metadata.
-    // Avec auth → 405 car on ne supporte pas encore le streaming SSE.
-    app.get('/mcp', async (req: FastifyRequest, reply: FastifyReply) => {
-      try {
-        await authenticateMcpRequest(req, this.prisma);
-        return reply.status(405).send({ error: 'Method Not Allowed', code: 'METHOD_NOT_ALLOWED' });
-      } catch (err) {
-        if (err instanceof McpAuthError) {
-          // RFC 9728 : pointer vers /.well-known/oauth-protected-resource qui
-          // référence lui-même le serveur d'autorisation. C'est ce que Claude.ai,
-          // ChatGPT et Mistral attendent pour discovery automatique.
-          return reply
-            .status(401)
-            .header(
-              'WWW-Authenticate',
-              `Bearer realm="sokar", resource_metadata="${getIssuer()}/.well-known/oauth-protected-resource"`,
-            )
-            .send({ error: err.message, code: err.code });
-        }
-        throw err;
-      }
+    // GET /mcp : utilisé par les clients MCP StreamableHTTP pour tenter d'ouvrir
+    // un stream SSE. On ne supporte pas SSE, donc on retourne 405 sans auth.
+    // L'authentification n'est pas requise ici : elle est vérifiée sur POST /mcp.
+    app.get('/mcp', async (_req: FastifyRequest, reply: FastifyReply) => {
+      return reply
+        .status(405)
+        .header('Allow', 'POST')
+        .send({ error: 'Method Not Allowed', code: 'METHOD_NOT_ALLOWED' });
     });
 
     // POST /mcp : endpoint principal JSON-RPC
@@ -171,12 +157,21 @@ export class McpServer {
 
     try {
       switch (msg.method) {
-        case 'initialize':
+        case 'initialize': {
+          const requestedVersion =
+            typeof msg.params?.protocolVersion === 'string' ? msg.params.protocolVersion : null;
+          // On supporte les versions StreamableHTTP / HTTP+SSE les plus courantes.
+          const supportedVersions = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
+          const protocolVersion =
+            requestedVersion && supportedVersions.includes(requestedVersion as never)
+              ? requestedVersion
+              : '2025-03-26';
           return jsonRpcResult(id, {
-            protocolVersion: '2025-06-18',
+            protocolVersion,
             capabilities: { tools: {} },
             serverInfo: { name: 'sokar-mcp', version: '0.1.0' },
           });
+        }
 
         case 'notifications/initialized':
           // Notification client → serveur (pas de response en JSON-RPC).
