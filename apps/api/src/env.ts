@@ -75,6 +75,9 @@ const EnvSchema = z
     // En production, rester false. AGENT_DEV_KEY doit faire ≥32 caractères si défini.
     ENABLE_DEV_AUTH: z.enum(['true', 'false']).default('false'),
     AGENT_DEV_KEY: z.string().min(32).optional(),
+    // HMAC partagé pour le feed OpenAI Reserve (RES-007). Si défini, /v1/businesses
+    // exige un ?signature=... valide. Clé ≥ 32 chars, ne pas commiter.
+    OPENAI_RESERVE_HMAC_KEY: z.string().min(32).optional(),
     // Clés API critiques — validées au démarrage en production
     TELNYX_API_KEY: z.string().optional(),
     DEEPGRAM_API_KEY: z.string().optional(),
