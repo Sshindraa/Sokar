@@ -248,8 +248,8 @@ export async function buildApp() {
   await app.register(flagsRoutes);
   await app.register(onboardingFunnelRoutes);
 
-  // Routes de test — uniquement en dev/test (simulation d'appel sans Telnyx)
-  if (process.env.NODE_ENV !== 'production') {
+  // Routes de test — uniquement si ENABLE_TEST_ROUTES=true explicitement (SEC-005)
+  if (env.ENABLE_TEST_ROUTES === 'true') {
     await app.register(testRoutes);
   }
 

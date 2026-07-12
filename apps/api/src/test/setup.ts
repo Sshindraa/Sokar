@@ -255,3 +255,5 @@ process.env.SMTP_PORT ??= '465';
 process.env.SMTP_USER ??= 'test';
 process.env.SMTP_PASS ??= 'test';
 process.env.EMAIL_FROM ??= 'noreply@test.sokar.fr';
+// Active explicitement les routes /api/test dans les tests (SEC-005).
+process.env.ENABLE_TEST_ROUTES = 'true';

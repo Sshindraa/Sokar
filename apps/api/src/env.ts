@@ -63,6 +63,9 @@ const EnvSchema = z
     // Reverse proxy IPs (Nginx) — comma-separated, accepte CIDR et IPv6.
     // Defaut loopback ; ajouter l'IP publique du VPS si Nginx n'est pas local.
     TRUSTED_PROXY_IPS: z.string().default('127.0.0.1, ::1'),
+    // Routes /api/test (simulation d'appel). DOIT être explicitement true, même en dev/test.
+    // En production, doit rester false (SEC-005).
+    ENABLE_TEST_ROUTES: z.enum(['true', 'false']).default('false'),
     // Clés API critiques — validées au démarrage en production
     TELNYX_API_KEY: z.string().optional(),
     DEEPGRAM_API_KEY: z.string().optional(),
