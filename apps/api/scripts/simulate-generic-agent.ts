@@ -1,5 +1,3 @@
-/* eslint-disable no-console */
-
 /**
  * Simulation end-to-end du Generic Agent REST adapter.
  *
