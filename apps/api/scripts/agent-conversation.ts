@@ -12,6 +12,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { createInterface } from 'node:readline/promises';
 import { env } from '../src/env.js';
 import {
   SokarAgentClient,
@@ -22,11 +23,17 @@ import {
   findToolResult,
   parseToolResult,
   type LLMAdapter,
+  type Message,
   type MockStep,
 } from '@sokar/agent-client';
 
 const SOKAR_API_KEY = env.AGENT_DEV_KEY ?? process.env.AGENT_STAGING_KEY;
 const SOKAR_BASE_URL = process.env.SOKAR_BASE_URL ?? 'http://localhost:4000';
+
+function log(message: string) {
+  // eslint-disable-next-line no-console
+  console.log(message);
+}
 
 const SLOT_START = '2026-07-14T19:00:00+02:00';
 const SLOT_END = '2026-07-14T21:00:00+02:00';
@@ -170,10 +177,8 @@ function buildLLM(): LLMAdapter {
   const real = buildRealLLM();
   if (real) return real;
 
-  // eslint-disable-next-line no-console
-  console.log('Aucune clé LLM détectée (MISTRAL_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY).');
-  // eslint-disable-next-line no-console
-  console.log('Mode mock : scénario search → check → create.\n');
+  log('Aucune clé LLM détectée (MISTRAL_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY).');
+  log('Mode mock : scénario search → check → create.\n');
   return buildMockLLM();
 }
 
@@ -192,28 +197,66 @@ async function main() {
   const llm = buildLLM();
   const runner = new SokarAgentRunner(client);
 
-  const userMessage =
-    process.argv.slice(2).join(' ') ||
-    'Je veux réserver à Lyon mardi 14 juillet 2026 à 19h pour 2 personnes';
+  log('Provider LLM : ' + llm.provider);
+  log('Sokar base URL : ' + SOKAR_BASE_URL + '\n');
 
-  // eslint-disable-next-line no-console
-  console.log('Utilisateur :', userMessage);
-  // eslint-disable-next-line no-console
-  console.log('Provider LLM :', llm.provider);
-  // eslint-disable-next-line no-console
-  console.log('Sokar base URL :', SOKAR_BASE_URL, '\n');
+  const userMessage = process.argv.slice(2).join(' ');
+  if (userMessage) {
+    // Mode one-shot
+    log('Utilisateur : ' + userMessage);
+    await runSingleTurn(runner, llm, userMessage);
+    return;
+  }
 
+  // Mode conversationnel (REPL)
+  log('Mode conversationnel. Tapez votre message, ou "exit" pour quitter.\n');
+  await runRepl(runner, llm);
+}
+
+async function runSingleTurn(runner: SokarAgentRunner, llm: LLMAdapter, userMessage: string) {
   try {
     const result = await runner.run({ llm, userMessage });
-    // eslint-disable-next-line no-console
-    console.log('\n--- Réponse finale ---');
-    // eslint-disable-next-line no-console
-    console.log(result.finalMessage);
-    // eslint-disable-next-line no-console
-    console.log(`\nAppels d'outils exécutés : ${result.toolCallsCount}`);
+    log('--- Réponse finale ---');
+    log(result.finalMessage);
+    log(`Appels d'outils exécutés : ${result.toolCallsCount}`);
   } catch (err) {
     console.error('\nErreur pendant la conversation :', err);
     process.exit(1);
+  }
+}
+
+async function runRepl(runner: SokarAgentRunner, llm: LLMAdapter) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  let history: Message[] = [];
+
+  try {
+    while (true) {
+      let input: string;
+      try {
+        input = await rl.question('Vous : ');
+      } catch (err) {
+        if ((err as { code?: string }).code === 'ERR_USE_AFTER_CLOSE') {
+          break;
+        }
+        throw err;
+      }
+
+      const userMessage = input.trim();
+      if (!userMessage) continue;
+      if (userMessage.toLowerCase() === 'exit') break;
+
+      try {
+        const result = await runner.run({ llm, userMessage, history });
+        history = result.history;
+        log('Sokar : ' + result.finalMessage);
+        log(`(outils exécutés : ${result.toolCallsCount})\n`);
+      } catch (err) {
+        console.error('\nErreur pendant la conversation :', err);
+        log('Une erreur est survenue. Vous pouvez réessayer.\n');
+      }
+    }
+  } finally {
+    rl.close();
   }
 }
 
