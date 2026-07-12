@@ -1,4 +1,4 @@
-import type { LLMAdapter, LLMResponse, Message, ToolCall } from '../types.js';
+import type { LLMAdapter, LLMChatOptions, LLMResponse, Message, ToolCall } from '../types.js';
 
 export type GeminiAdapterConfig = {
   apiKey: string;
@@ -36,7 +36,11 @@ export class GeminiAdapter implements LLMAdapter {
     this.timeoutMs = config.timeoutMs ?? 30000;
   }
 
-  async chat(messages: Message[], tools: unknown[]): Promise<LLMResponse> {
+  async chat(
+    messages: Message[],
+    tools: unknown[],
+    _options?: LLMChatOptions,
+  ): Promise<LLMResponse> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
 
     const body = {
@@ -88,7 +92,10 @@ export class GeminiAdapter implements LLMAdapter {
 
   private toGeminiContents(messages: Message[]): GeminiContent[] {
     return messages.map((m) => {
-      const role: GeminiContent['role'] = m.role === 'user' ? 'user' : 'model';
+      let role: GeminiContent['role'] = m.role === 'user' ? 'user' : 'model';
+      if (m.role === 'system') {
+        role = 'user';
+      }
       const parts: GeminiPart[] = [];
 
       if (m.content) {
