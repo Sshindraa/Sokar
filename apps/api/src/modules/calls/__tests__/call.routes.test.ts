@@ -18,7 +18,9 @@ describe('call.routes', () => {
         { id: 'c1', restaurantId: 'test-rest-1', createdAt: new Date() },
         { id: 'c2', restaurantId: 'test-rest-1', createdAt: new Date() },
       ];
-      vi.mocked(db.call.findMany).mockResolvedValue(calls as any);
+      vi.mocked(db.call.findMany).mockResolvedValue(
+        calls as unknown as Awaited<ReturnType<typeof db.call.findMany>>,
+      );
       vi.mocked(db.call.count).mockResolvedValue(42);
 
       // restaurantId comes from the auth context (requireOrg), NOT the query
@@ -102,7 +104,9 @@ describe('call.routes', () => {
         restaurantId: 'test-rest-1',
         latencyTrace: { sttMs: 120, llmMs: 340 },
       };
-      vi.mocked(db.call.findUnique).mockResolvedValue(call as any);
+      vi.mocked(db.call.findUnique).mockResolvedValue(
+        call as unknown as Awaited<ReturnType<typeof db.call.findUnique>>,
+      );
 
       const res = await app.inject({
         method: 'GET',
@@ -137,7 +141,9 @@ describe('call.routes', () => {
   describe('DELETE /calls/:id', () => {
     it('supprime le call scoped au restaurant (204)', async () => {
       const app = await getApp();
-      vi.mocked(db.call.delete).mockResolvedValue({} as any);
+      vi.mocked(db.call.delete).mockResolvedValue(
+        {} as unknown as Awaited<ReturnType<typeof db.call.delete>>,
+      );
 
       const res = await app.inject({
         method: 'DELETE',

@@ -395,7 +395,9 @@ describe('POST /voice/telnyx — call.hangup', () => {
   });
 
   it('updates the call duration in seconds (rounded)', async () => {
-    vi.mocked(db.call.findUnique).mockResolvedValue({ reservation: null } as any);
+    vi.mocked(db.call.findUnique).mockResolvedValue({ reservation: null } as unknown as Awaited<
+      ReturnType<typeof db.call.findUnique>
+    >);
 
     const res = await app.inject({
       method: 'POST',
@@ -412,7 +414,9 @@ describe('POST /voice/telnyx — call.hangup', () => {
   });
 
   it('skips the duration update when duration_sec is missing', async () => {
-    vi.mocked(db.call.findUnique).mockResolvedValue({ reservation: null } as any);
+    vi.mocked(db.call.findUnique).mockResolvedValue({ reservation: null } as unknown as Awaited<
+      ReturnType<typeof db.call.findUnique>
+    >);
     const payload = makeHangupPayload();
     delete (payload.data.payload as any).duration_sec;
 
@@ -427,7 +431,9 @@ describe('POST /voice/telnyx — call.hangup', () => {
   });
 
   it('increments the customer visit count when the call produced a reservation', async () => {
-    vi.mocked(db.call.findUnique).mockResolvedValue({ reservation: { id: 'res-1' } } as any);
+    vi.mocked(db.call.findUnique).mockResolvedValue({
+      reservation: { id: 'res-1' },
+    } as unknown as Awaited<ReturnType<typeof db.call.findUnique>>);
     mockLoadContext.mockResolvedValue(makeRestaurantCtx() as any);
 
     const res = await app.inject({
@@ -442,7 +448,9 @@ describe('POST /voice/telnyx — call.hangup', () => {
   });
 
   it('does NOT increment visits when the call had no reservation', async () => {
-    vi.mocked(db.call.findUnique).mockResolvedValue({ reservation: null } as any);
+    vi.mocked(db.call.findUnique).mockResolvedValue({ reservation: null } as unknown as Awaited<
+      ReturnType<typeof db.call.findUnique>
+    >);
 
     const res = await app.inject({
       method: 'POST',
@@ -533,7 +541,9 @@ describe('POST /voice/telnyx/end — restaurantId resolution', () => {
 
   it('resolves restaurantId via loadContext(to) when req.restaurantId is unset', async () => {
     mockLoadContext.mockResolvedValue(makeRestaurantCtx() as any);
-    vi.mocked(db.call.upsert).mockResolvedValue({ id: 'call-1' } as any);
+    vi.mocked(db.call.upsert).mockResolvedValue({ id: 'call-1' } as unknown as Awaited<
+      ReturnType<typeof db.call.upsert>
+    >);
 
     const res = await app.inject({
       method: 'POST',

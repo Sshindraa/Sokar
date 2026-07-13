@@ -12,7 +12,7 @@
  * Mocks Telnyx/Brevo + Prisma.
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { sendSms } from '../../../shared/telnyx/client';
@@ -35,62 +35,114 @@ vi.mock('../../../shared/email', () => ({
 // Mocks Redis : on utilise le mock ioredis global (setup.ts) qui retourne
 // une instance avec incr/expire/get/del. Pas besoin de re-mocker.
 
-const otpStore = new Map<string, any>();
-const signedTokenStore = new Map<string, any>();
+const otpStore = new Map<string, Record<string, unknown>>();
+const signedTokenStore = new Map<string, Record<string, unknown>>();
 
 function setupPrismaMocks() {
-  (db.reservation.findFirst as any) = vi.fn().mockResolvedValue({ id: 'res-1' });
-  (db.reservation.findMany as any) = vi.fn().mockResolvedValue([]);
-  (db.reservation.updateMany as any) = vi.fn().mockResolvedValue({ count: 3 });
-  (db.customerConsent.findFirst as any) = vi.fn().mockResolvedValue(null);
-  (db.customerConsent.findMany as any) = vi.fn().mockResolvedValue([]);
-  (db.customerConsent.count as any) = vi.fn().mockResolvedValue(0);
-  (db.customerConsent.updateMany as any) = vi.fn().mockResolvedValue({ count: 2 });
-  (db.call.updateMany as any) = vi.fn().mockResolvedValue({ count: 1 });
-  (db.reservationAuditLog.create as any) = vi.fn().mockResolvedValue({ id: 'audit-1' });
-  (db.$transaction as any) = vi.fn(async (fn: any) =>
-    fn({ reservation: { updateMany: vi.fn().mockResolvedValue({ count: 3 }) } }),
+  vi.mocked(db.reservation.findFirst).mockResolvedValue({ id: 'res-1' } as unknown as Awaited<
+    ReturnType<typeof db.reservation.findFirst>
+  >);
+  vi.mocked(db.reservation.findMany).mockResolvedValue([]);
+  vi.mocked(db.reservation.updateMany).mockResolvedValue({ count: 3 } as unknown as Awaited<
+    ReturnType<typeof db.reservation.updateMany>
+  >);
+  vi.mocked(db.customerConsent.findFirst).mockResolvedValue(null);
+  vi.mocked(db.customerConsent.findMany).mockResolvedValue([]);
+  vi.mocked(db.customerConsent.count).mockResolvedValue(0);
+  vi.mocked(db.customerConsent.updateMany).mockResolvedValue({ count: 2 } as unknown as Awaited<
+    ReturnType<typeof db.customerConsent.updateMany>
+  >);
+  vi.mocked(db.call.updateMany).mockResolvedValue({ count: 1 } as unknown as Awaited<
+    ReturnType<typeof db.call.updateMany>
+  >);
+  vi.mocked(db.reservationAuditLog.create).mockResolvedValue({
+    id: 'audit-1',
+  } as unknown as Awaited<ReturnType<typeof db.reservationAuditLog.create>>);
+  vi.mocked(db.$transaction).mockImplementation(async (fn) =>
+    (fn as unknown as (tx: unknown) => unknown)({
+      reservation: { updateMany: vi.fn().mockResolvedValue({ count: 3 }) },
+    }),
   );
-  (db.identityVerificationOtp as any) = {
-    upsert: vi.fn(async ({ where, create, update }: any) => {
-      const key = `${where.subject_intent.subject}|${where.subject_intent.intent}`;
-      const existing = otpStore.get(key);
-      const merged = { ...(existing || create), ...update, attempts: 0, consumedAt: null };
-      otpStore.set(key, merged);
-      return merged;
-    }),
-    findUnique: vi.fn(async ({ where }: any) => {
-      const key = `${where.subject_intent.subject}|${where.subject_intent.intent}`;
-      return otpStore.get(key) || null;
-    }),
-    update: vi.fn(async ({ where, data }: any) => {
-      for (const [, v] of otpStore.entries()) {
-        if (v.id === where.id) {
-          Object.assign(v, data);
-          return v;
-        }
+  (
+    vi.mocked(db.identityVerificationOtp.upsert) as unknown as Mock<(...args: unknown[]) => unknown>
+  ).mockImplementation(async (...args: unknown[]) => {
+    const { where, create, update } = args[0] as unknown as {
+      where: { subject_intent: unknown };
+      create: unknown;
+      update: unknown;
+    };
+    const subject_intent = where.subject_intent as unknown as { subject: string; intent: string };
+    const key = `${subject_intent.subject}|${subject_intent.intent}`;
+    const existing = otpStore.get(key);
+    const merged = {
+      ...((existing ?? create) as unknown as Record<string, unknown>),
+      ...(update as unknown as Record<string, unknown>),
+      attempts: 0,
+      consumedAt: null,
+    };
+    otpStore.set(key, merged);
+    return merged;
+  });
+  (
+    vi.mocked(db.identityVerificationOtp.findUnique) as unknown as Mock<
+      (...args: unknown[]) => unknown
+    >
+  ).mockImplementation(async (...args: unknown[]) => {
+    const { where } = args[0] as unknown as { where: { subject_intent: unknown } };
+    const subject_intent = where.subject_intent as unknown as { subject: string; intent: string };
+    const key = `${subject_intent.subject}|${subject_intent.intent}`;
+    return otpStore.get(key) || null;
+  });
+  (
+    vi.mocked(db.identityVerificationOtp.update) as unknown as Mock<(...args: unknown[]) => unknown>
+  ).mockImplementation(async (...args: unknown[]) => {
+    const { where, data } = args[0] as unknown as { where: unknown; data: unknown };
+    const { id } = where as unknown as { id: string };
+    for (const [k, v] of otpStore.entries()) {
+      if (v.id === id) {
+        Object.assign(v, data as unknown as Record<string, unknown>);
+        return v;
       }
-      return null;
-    }),
-  };
-  (db.signedTokenUsage as any) = {
-    create: vi.fn(async ({ data }: any) => {
-      if (signedTokenStore.has(data.jti)) {
-        const err = new Error('Unique constraint failed') as Error & { code: string };
-        err.code = 'P2002';
-        throw err;
-      }
-      signedTokenStore.set(data.jti, data);
-      return data;
-    }),
-    upsert: vi.fn(async ({ where, create, update }: any) => {
-      const existing = signedTokenStore.get(where.jti);
-      const merged = { ...(existing || create), ...update };
-      signedTokenStore.set(where.jti, merged);
-      return merged;
-    }),
-    findUnique: vi.fn(async ({ where }: any) => signedTokenStore.get(where.jti) || null),
-  };
+    }
+    return null;
+  });
+  (
+    vi.mocked(db.signedTokenUsage.create) as unknown as Mock<(...args: unknown[]) => unknown>
+  ).mockImplementation(async (...args: unknown[]) => {
+    const { data } = args[0] as unknown as { data: unknown };
+    const d = data as unknown as { jti: string };
+    if (signedTokenStore.has(d.jti)) {
+      const err = new Error('Unique constraint failed') as Error & { code: string };
+      err.code = 'P2002';
+      throw err;
+    }
+    signedTokenStore.set(d.jti, d as unknown as Record<string, unknown>);
+    return d;
+  });
+  (
+    vi.mocked(db.signedTokenUsage.upsert) as unknown as Mock<(...args: unknown[]) => unknown>
+  ).mockImplementation(async (...args: unknown[]) => {
+    const { where, create, update } = args[0] as unknown as {
+      where: { jti: unknown };
+      create: unknown;
+      update: unknown;
+    };
+    const { jti } = where as unknown as { jti: string };
+    const existing = signedTokenStore.get(jti);
+    const merged = {
+      ...((existing ?? create) as unknown as Record<string, unknown>),
+      ...(update as unknown as Record<string, unknown>),
+    };
+    signedTokenStore.set(jti, merged);
+    return merged;
+  });
+  (
+    vi.mocked(db.signedTokenUsage.findUnique) as unknown as Mock<(...args: unknown[]) => unknown>
+  ).mockImplementation(async (...args: unknown[]) => {
+    const { where } = args[0] as unknown as { where: { jti: unknown } };
+    const { jti } = where as unknown as { jti: string };
+    return signedTokenStore.get(jti) || null;
+  });
 }
 
 /**
@@ -111,7 +163,7 @@ async function getVerifiedToken(
 
   // 2. Récupérer OTP depuis le mock sendSms
   const { sendSms } = await import('../../../shared/telnyx/client');
-  const calls = (sendSms as any).mock.calls;
+  const calls = vi.mocked(sendSms).mock.calls;
   const lastCall = calls[calls.length - 1];
   const otp = lastCall[1].match(/\d{6}/)?.[0];
   expect(otp).toBeDefined();
@@ -135,8 +187,8 @@ describe('RGPD routes (with identity verification)', () => {
 
   beforeEach(() => {
     // Force redisCache.incr/expire to be vi.fn (mock ioredis global ne le fait pas toujours)
-    (redisCache as any).incr = vi.fn().mockResolvedValue(1);
-    (redisCache as any).expire = vi.fn().mockResolvedValue(1);
+    vi.spyOn(redisCache, 'incr').mockResolvedValue(1);
+    vi.spyOn(redisCache, 'expire').mockResolvedValue(1);
   });
 
   afterEach(() => {
@@ -187,7 +239,7 @@ describe('RGPD routes (with identity verification)', () => {
       });
       expect(requestRes.statusCode).toBe(200);
 
-      const [opts] = (sendEmail as any).mock.calls[0];
+      const [opts] = vi.mocked(sendEmail).mock.calls[0];
       const tokenMatch = opts.html.match(/token=([^"<&]+)/);
       expect(tokenMatch).toBeDefined();
 
@@ -216,7 +268,7 @@ describe('RGPD routes (with identity verification)', () => {
       });
       expect(requestRes.statusCode).toBe(200);
 
-      const [opts] = (sendEmail as any).mock.calls[0];
+      const [opts] = vi.mocked(sendEmail).mock.calls[0];
       const tokenMatch = opts.html.match(/token=([^"<&]+)/);
       expect(tokenMatch).toBeDefined();
       const url = `/api/rgpd/confirm-link?token=${tokenMatch![1]}`;
@@ -272,8 +324,8 @@ describe('RGPD routes (with identity verification)', () => {
     });
 
     it('retourne 404 si aucune donnée', async () => {
-      (db.reservation.findFirst as any) = vi.fn().mockResolvedValue(null);
-      (db.customerConsent.findFirst as any) = vi.fn().mockResolvedValue(null);
+      vi.mocked(db.reservation.findFirst).mockResolvedValue(null);
+      vi.mocked(db.customerConsent.findFirst).mockResolvedValue(null);
       const app = await getApp();
       const token = await getVerifiedToken(app, '+33****0003', 'erase');
       const res = await app.inject({
@@ -299,7 +351,7 @@ describe('RGPD routes (with identity verification)', () => {
 
     it('exporte les données avec token valide', async () => {
       setupPrismaMocks();
-      (db.reservation.findMany as any) = vi.fn().mockResolvedValue([
+      vi.mocked(db.reservation.findMany).mockResolvedValue([
         {
           id: 'res-1',
           restaurantId: 'r-1',
@@ -314,7 +366,7 @@ describe('RGPD routes (with identity verification)', () => {
           createdAt: new Date('2026-05-01T10:00:00Z'),
           restaurant: { name: 'Le Bistrot' },
         },
-      ]);
+      ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
       const app = await getApp();
       const token = await getVerifiedToken(app, '+33****0001', 'export');
       const res = await app.inject({

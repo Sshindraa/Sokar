@@ -1,3 +1,5 @@
+import type { PrismaClient } from '@prisma/client';
+import type Redis from 'ioredis';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
   IdentityVerificationService,
@@ -33,12 +35,12 @@ function makeMockRedis() {
     get: vi.fn(async (key: string) => store.get(key)?.value.toString() ?? null),
     del: vi.fn(async (key: string) => store.delete(key)),
     store, // exposed for tests
-  };
+  } as unknown as Redis & { store: Map<string, { value: number; expireAt?: number }> };
 }
 
 function makeMockPrisma() {
-  const otpStore = new Map<string, any>();
-  const signedTokenStore = new Map<string, any>();
+  const otpStore = new Map<string, Record<string, unknown>>();
+  const signedTokenStore = new Map<string, Record<string, unknown>>();
   return {
     identityVerificationOtp: {
       upsert: vi.fn(async ({ where, create, update }) => {
@@ -84,11 +86,11 @@ function makeMockPrisma() {
       }),
       findUnique: vi.fn(async ({ where }) => signedTokenStore.get(where.jti) || null),
     },
-  } as any;
+  } as unknown as PrismaClient;
 }
 
 describe('IdentityVerificationService', () => {
-  let prisma: ReturnType<typeof makeMockPrisma>;
+  let prisma: PrismaClient;
   let redis: ReturnType<typeof makeMockRedis>;
   let service: IdentityVerificationService;
 
@@ -96,7 +98,7 @@ describe('IdentityVerificationService', () => {
     vi.clearAllMocks();
     prisma = makeMockPrisma();
     redis = makeMockRedis();
-    service = new IdentityVerificationService(prisma, redis as any);
+    service = new IdentityVerificationService(prisma, redis);
   });
 
   describe('requestVerification', () => {
@@ -125,7 +127,7 @@ describe('IdentityVerificationService', () => {
       const { sendSms } = await import('../../../shared/telnyx/client');
       await service.requestVerification({ subject: '+33****0001', intent: 'erase' });
       // Le service hash l'OTP, donc on doit le récupérer depuis l'appel à sendSms
-      const smsCall = (sendSms as any).mock.calls[0];
+      const smsCall = vi.mocked(sendSms).mock.calls[0];
       const otp = smsCall[1].match(/\d{6}/)?.[0];
       expect(otp).toBeDefined();
 
@@ -165,7 +167,7 @@ describe('IdentityVerificationService', () => {
       const record = await prisma.identityVerificationOtp.findUnique({
         where: { subject_intent: { subject: '+33****0003', intent: 'erase' } },
       });
-      expect(record.attempts).toBe(1);
+      expect(record?.attempts).toBe(1);
     });
 
     it('rejette après 5 tentatives (MAX_ATTEMPTS)', async () => {
@@ -205,7 +207,7 @@ describe('IdentityVerificationService', () => {
     it('valide un token valide', async () => {
       const { sendSms } = await import('../../../shared/telnyx/client');
       await service.requestVerification({ subject: '+33****0010', intent: 'export' });
-      const smsCall = (sendSms as any).mock.calls[0];
+      const smsCall = vi.mocked(sendSms).mock.calls[0];
       const otp = smsCall[1].match(/\d{6}/)?.[0];
       const { verificationToken } = await service.confirmVerification({
         subject: '+33****0010',
@@ -225,7 +227,7 @@ describe('IdentityVerificationService', () => {
     it('rejette un token avec mauvaise signature', async () => {
       const { sendSms } = await import('../../../shared/telnyx/client');
       await service.requestVerification({ subject: '+33****0011', intent: 'export' });
-      const smsCall = (sendSms as any).mock.calls[0];
+      const smsCall = vi.mocked(sendSms).mock.calls[0];
       const otp = smsCall[1].match(/\d{6}/)?.[0];
       const { verificationToken } = await service.confirmVerification({
         subject: '+33****0011',
@@ -240,7 +242,7 @@ describe('IdentityVerificationService', () => {
     it('rejette un token avec mauvais intent', async () => {
       const { sendSms } = await import('../../../shared/telnyx/client');
       await service.requestVerification({ subject: '+33****0012', intent: 'export' });
-      const smsCall = (sendSms as any).mock.calls[0];
+      const smsCall = vi.mocked(sendSms).mock.calls[0];
       const otp = smsCall[1].match(/\d{6}/)?.[0];
       const { verificationToken } = await service.confirmVerification({
         subject: '+33****0012',
@@ -284,7 +286,7 @@ describe('IdentityVerificationService', () => {
     it("rejette la 2ème utilisation d'un même verificationToken", async () => {
       const { sendSms } = await import('../../../shared/telnyx/client');
       await service.requestVerification({ subject: '+33****0060', intent: 'erase' });
-      const smsCall = (sendSms as any).mock.calls[0];
+      const smsCall = vi.mocked(sendSms).mock.calls[0];
       const otp = smsCall[1].match(/\d{6}/)?.[0];
       const { verificationToken } = await service.confirmVerification({
         subject: '+33****0060',
@@ -304,14 +306,14 @@ describe('IdentityVerificationService', () => {
     it('verificationTokens distincts pour 2 users différents', async () => {
       const { sendSms } = await import('../../../shared/telnyx/client');
       await service.requestVerification({ subject: '+33****0061', intent: 'erase' });
-      const otp1 = (sendSms as any).mock.calls[0][1].match(/\d{6}/)?.[0];
+      const otp1 = vi.mocked(sendSms).mock.calls[0][1].match(/\d{6}/)?.[0];
       const { verificationToken: token1 } = await service.confirmVerification({
         subject: '+33****0061',
         intent: 'erase',
         code: otp1,
       });
       await service.requestVerification({ subject: '+33****0062', intent: 'erase' });
-      const otp2 = (sendSms as any).mock.calls[1][1].match(/\d{6}/)?.[0];
+      const otp2 = vi.mocked(sendSms).mock.calls[1][1].match(/\d{6}/)?.[0];
       const { verificationToken: token2 } = await service.confirmVerification({
         subject: '+33****0062',
         intent: 'erase',
@@ -337,7 +339,7 @@ describe('IdentityVerificationService', () => {
         email: 'user@example.com',
       });
       expect(sendEmail).toHaveBeenCalledTimes(1);
-      const [opts] = (sendEmail as any).mock.calls[0];
+      const [opts] = vi.mocked(sendEmail).mock.calls[0];
       expect(opts.to).toBe('user@example.com');
       expect(opts.html).toContain('/api/rgpd/confirm-link?token=');
       // Le token est dans le body
@@ -352,12 +354,16 @@ describe('IdentityVerificationService', () => {
         intent: 'export',
         email: 'user@example.com',
       });
-      const [opts] = (sendEmail as any).mock.calls[0];
+      const [opts] = vi.mocked(sendEmail).mock.calls[0];
       const tokenMatch = opts.html.match(/token=([^"<&]+)/);
       const signedToken = decodeURIComponent(tokenMatch![1]);
 
       // Le subject est dans le token, pas dans l'URL
-      const payload = await (service as any).verifySignedToken(signedToken);
+      const payload = await (
+        service as unknown as {
+          verifySignedToken: (token: string) => Promise<{ sub: string; intent: string }>;
+        }
+      ).verifySignedToken(signedToken);
       expect(payload.sub).toBe('+33****0071');
       expect(payload.intent).toBe('export');
 
@@ -376,7 +382,7 @@ describe('IdentityVerificationService', () => {
         intent: 'export',
         email: 'user@example.com',
       });
-      const [opts] = (sendEmail as any).mock.calls[0];
+      const [opts] = vi.mocked(sendEmail).mock.calls[0];
       const tokenMatch = opts.html.match(/token=([^"<&]+)/);
       const signedToken = decodeURIComponent(tokenMatch![1]);
 

@@ -86,17 +86,25 @@ describe('ReservationService - Google Calendar Sync', () => {
     vi.resetAllMocks();
     vi.mocked(db.reservation.findMany).mockResolvedValue([]);
     vi.mocked(db.agenticHold.findMany).mockResolvedValue([]);
-    vi.mocked(db.floorPlan.findUnique).mockResolvedValue({ id: 'fp-1' } as any);
+    vi.mocked(db.floorPlan.findUnique).mockResolvedValue({ id: 'fp-1' } as unknown as Awaited<
+      ReturnType<typeof db.floorPlan.findUnique>
+    >);
     vi.mocked(db.table.findMany).mockResolvedValue([
       { id: 'table-1', floorPlanId: 'fp-1', capacity: 4, minCapacity: 1, isActive: true },
-    ] as any);
-    vi.mocked(db.restaurant.findUnique).mockResolvedValue(mockRestaurant as any);
-    vi.mocked(db.$queryRaw).mockResolvedValue([{ id: 'locked' }] as any);
+    ] as unknown as Awaited<ReturnType<typeof db.table.findMany>>);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue(
+      mockRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>,
+    );
+    vi.mocked(db.$queryRaw).mockResolvedValue([{ id: 'locked' }] as unknown as Awaited<
+      ReturnType<typeof db.$queryRaw>
+    >);
   });
 
   describe('create', () => {
     it('should throw SLOT_NOT_AVAILABLE and not create anything if calendar is busy', async () => {
-      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(mockRestaurant as any);
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+        mockRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+      );
       vi.mocked(GoogleCalendarClient.checkAvailability).mockResolvedValue(false);
 
       const input = {
@@ -125,14 +133,18 @@ describe('ReservationService - Google Calendar Sync', () => {
         googleEventId: null,
       };
 
-      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(mockRestaurant as any);
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+        mockRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+      );
       vi.mocked(GoogleCalendarClient.checkAvailability).mockResolvedValue(true);
-      vi.mocked(db.reservation.create).mockResolvedValue(mockReservation as any);
+      vi.mocked(db.reservation.create).mockResolvedValue(
+        mockReservation as unknown as Awaited<ReturnType<typeof db.reservation.create>>,
+      );
       vi.mocked(GoogleCalendarClient.createEvent).mockResolvedValue('event-789');
       vi.mocked(db.reservation.update).mockResolvedValue({
         ...mockReservation,
         googleEventId: 'event-789',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.reservation.update>>);
 
       const input = {
         restaurantId: 'rest-123',
@@ -176,8 +188,14 @@ describe('ReservationService - Google Calendar Sync', () => {
         googleEventId: null,
       };
 
-      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(restaurantNoGoogle as any);
-      vi.mocked(db.reservation.create).mockResolvedValue(mockReservation as any);
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+        restaurantNoGoogle as unknown as Awaited<
+          ReturnType<typeof db.restaurant.findUniqueOrThrow>
+        >,
+      );
+      vi.mocked(db.reservation.create).mockResolvedValue(
+        mockReservation as unknown as Awaited<ReturnType<typeof db.reservation.create>>,
+      );
 
       const input = {
         restaurantId: 'rest-123',
@@ -214,8 +232,14 @@ describe('ReservationService - Google Calendar Sync', () => {
         reservedAt: new Date('2099-06-05T19:00:00'),
       };
 
-      vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(mockReservationWithRest as any);
-      vi.mocked(db.reservation.update).mockResolvedValue(updatedReservation as any);
+      vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(
+        mockReservationWithRest as unknown as Awaited<
+          ReturnType<typeof db.reservation.findUniqueOrThrow>
+        >,
+      );
+      vi.mocked(db.reservation.update).mockResolvedValue(
+        updatedReservation as unknown as Awaited<ReturnType<typeof db.reservation.update>>,
+      );
 
       const result = await ReservationService.update('res-456', 'rest-123', {
         customerName: 'Alice Updated',
@@ -248,15 +272,21 @@ describe('ReservationService - Google Calendar Sync', () => {
         reservedAt: new Date('2099-06-05T19:00:00'),
       };
 
-      vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(mockReservationWithRest as any);
+      vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(
+        mockReservationWithRest as unknown as Awaited<
+          ReturnType<typeof db.reservation.findUniqueOrThrow>
+        >,
+      );
       // First update sets to CANCELLED
       vi.mocked(db.reservation.update)
-        .mockResolvedValueOnce(updatedReservation as any)
+        .mockResolvedValueOnce(
+          updatedReservation as unknown as Awaited<ReturnType<typeof db.reservation.update>>,
+        )
         // Second update clears googleEventId
         .mockResolvedValueOnce({
           ...updatedReservation,
           googleEventId: null,
-        } as any);
+        } as unknown as Awaited<ReturnType<typeof db.reservation.update>>);
 
       await ReservationService.update('res-456', 'rest-123', {
         status: 'CANCELLED',
@@ -282,7 +312,11 @@ describe('ReservationService - Google Calendar Sync', () => {
         restaurant: mockRestaurant,
       };
 
-      vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(mockReservationWithRest as any);
+      vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(
+        mockReservationWithRest as unknown as Awaited<
+          ReturnType<typeof db.reservation.findUniqueOrThrow>
+        >,
+      );
 
       await ReservationService.delete('res-456', 'rest-123');
 
@@ -299,7 +333,9 @@ describe('ReservationService - Google Calendar Sync', () => {
 
   describe('availability', () => {
     it('should return capacity-aware slots', async () => {
-      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(mockRestaurant as any);
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+        mockRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+      );
       // Simule une réservation occupant la table de 12:00 à 14:00 (heure locale Paris)
       vi.mocked(db.reservation.findMany).mockResolvedValue([
         {
@@ -307,7 +343,7 @@ describe('ReservationService - Google Calendar Sync', () => {
           startsAt: new Date('2099-06-05T10:00:00Z'), // 12:00 Paris
           endsAt: new Date('2099-06-05T12:00:00Z'), // 14:00 Paris
         },
-      ] as any);
+      ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
 
       const result = await ReservationService.availability('rest-123', '2099-06-05', 2);
 
@@ -319,7 +355,9 @@ describe('ReservationService - Google Calendar Sync', () => {
     });
 
     it('should reject create outside opening hours', async () => {
-      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(mockRestaurant as any);
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+        mockRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+      );
 
       await expect(
         ReservationService.create({

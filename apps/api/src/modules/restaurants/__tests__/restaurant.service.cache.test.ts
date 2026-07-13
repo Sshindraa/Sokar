@@ -80,7 +80,9 @@ describe('RestaurantService context cache', () => {
     const { RestaurantService } = await import('../restaurant.service');
 
     vi.mocked(getCachedContext).mockResolvedValue(null);
-    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(restaurantFromDb as any);
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+      restaurantFromDb as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
 
     const result = await RestaurantService.loadContext('pn-cache');
 

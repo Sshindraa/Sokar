@@ -158,7 +158,9 @@ describe('GiftCardPackService', () => {
     });
 
     it('retourne erreur si le pack est introuvable', async () => {
-      vi.mocked(db.giftCardPack.findFirst).mockResolvedValue(null as any);
+      vi.mocked(db.giftCardPack.findFirst).mockResolvedValue(
+        null as unknown as Awaited<ReturnType<typeof db.giftCardPack.findFirst>>,
+      );
 
       await expect(
         service.update('pack-inexistant', RESTAURANT_ID, { name: 'Nouveau' }),
@@ -251,7 +253,9 @@ describe('GiftCardPackService', () => {
     });
 
     it('retourne erreur si le pack est introuvable', async () => {
-      vi.mocked(db.giftCardPack.findFirst).mockResolvedValue(null as any);
+      vi.mocked(db.giftCardPack.findFirst).mockResolvedValue(
+        null as unknown as Awaited<ReturnType<typeof db.giftCardPack.findFirst>>,
+      );
 
       await expect(service.toggle('pack-inexistant', RESTAURANT_ID)).rejects.toThrow(
         'Pack cadeau introuvable',

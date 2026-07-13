@@ -167,7 +167,9 @@ describe('gift-card routes', () => {
         status: 'ACTIVE',
         expiresAt: null,
       } as any);
-      vi.mocked(db.restaurant.findUnique).mockResolvedValue({ name: 'Chez Sokar' } as any);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        name: 'Chez Sokar',
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
