@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import type { Job } from 'bullmq';
 
 // Mock les dépendances externes avant d'importer le worker.
 vi.mock('../../../redis/client', () => ({
@@ -41,7 +42,7 @@ function makeJob(data: Partial<CallRecoveryJobData>) {
     },
     id: 'job-1',
     name: 'send-recovery-sms',
-  } as any;
+  } as unknown as Job<CallRecoveryJobData>;
 }
 
 describe('call-recovery.worker', () => {
@@ -54,7 +55,7 @@ describe('call-recovery.worker', () => {
     await processCallRecoveryJob(makeJob({ customerName: 'Jean Dupont' }));
 
     expect(sendSms).toHaveBeenCalledTimes(1);
-    const [to, text] = (sendSms as any).mock.calls[0];
+    const [to, text] = vi.mocked(sendSms).mock.calls[0] as [string, string];
     expect(to).toBe('+33612345678');
     expect(text).toContain('Bonjour Jean');
     expect(text).toContain('Chez Sokar');
@@ -63,7 +64,7 @@ describe('call-recovery.worker', () => {
   it('envoie un SMS générique quand customerName est null', async () => {
     await processCallRecoveryJob(makeJob({ customerName: null }));
 
-    const [, text] = (sendSms as any).mock.calls[0];
+    const [, text] = vi.mocked(sendSms).mock.calls[0] as [string, string];
     expect(text).toContain('Bonjour,');
     expect(text).not.toContain('Bonjour Jean');
   });
@@ -71,7 +72,7 @@ describe('call-recovery.worker', () => {
   it('inclut le lien de réservation Connect quand restaurantSlug est fourni', async () => {
     await processCallRecoveryJob(makeJob({ restaurantSlug: 'chez-sokar-demo' }));
 
-    const [, text] = (sendSms as any).mock.calls[0];
+    const [, text] = vi.mocked(sendSms).mock.calls[0] as [string, string];
     expect(text).toContain('https://sokar.tech/restaurant/chez-sokar-demo/book');
     expect(text).toContain('Réservez en ligne');
   });
@@ -81,7 +82,7 @@ describe('call-recovery.worker', () => {
       makeJob({ restaurantSlug: null, restaurantPhone: '+33123456789' }),
     );
 
-    const [, text] = (sendSms as any).mock.calls[0];
+    const [, text] = vi.mocked(sendSms).mock.calls[0] as [string, string];
     expect(text).not.toContain('/restaurant/');
     expect(text).toContain('Appelez le +33123456789');
   });
@@ -89,7 +90,7 @@ describe('call-recovery.worker', () => {
   it('fallback générique quand ni slug ni téléphone ne sont disponibles', async () => {
     await processCallRecoveryJob(makeJob({ restaurantSlug: null, restaurantPhone: null }));
 
-    const [, text] = (sendSms as any).mock.calls[0];
+    const [, text] = vi.mocked(sendSms).mock.calls[0] as [string, string];
     expect(text).toContain('Rappelez-nous quand vous voulez');
     expect(text).not.toContain('Appelez le');
     expect(text).not.toContain('/restaurant/');
@@ -99,7 +100,7 @@ describe('call-recovery.worker', () => {
     process.env.SITE_URL = 'https://staging.sokar.tech';
     await processCallRecoveryJob(makeJob({ restaurantSlug: 'chez-sokar-demo' }));
 
-    const [, text] = (sendSms as any).mock.calls[0];
+    const [, text] = vi.mocked(sendSms).mock.calls[0] as [string, string];
     expect(text).toContain('https://staging.sokar.tech/restaurant/chez-sokar-demo/book');
   });
 
@@ -117,13 +118,13 @@ describe('call-recovery.worker', () => {
   });
 
   it('ne plante pas si analytics échoue (best-effort)', async () => {
-    (queues.analytics.add as any).mockRejectedValueOnce(new Error('Redis down'));
+    vi.mocked(queues.analytics.add).mockRejectedValueOnce(new Error('Redis down'));
     await expect(processCallRecoveryJob(makeJob({}))).resolves.not.toThrow();
     expect(sendSms).toHaveBeenCalledTimes(1);
   });
 
   it("propage l'erreur si sendSms échoue (pour retry BullMQ)", async () => {
-    (sendSms as any).mockRejectedValueOnce(new Error('Telnyx API error'));
+    vi.mocked(sendSms).mockRejectedValueOnce(new Error('Telnyx API error'));
     await expect(processCallRecoveryJob(makeJob({}))).rejects.toThrow('Telnyx API error');
   });
 });

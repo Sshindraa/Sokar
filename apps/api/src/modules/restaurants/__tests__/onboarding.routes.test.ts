@@ -40,7 +40,7 @@ describe('restaurant.routes - onboarding', () => {
     vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
       ...baseRestaurant,
       phoneNumber: '+000test-rest',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.update>>);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -62,7 +62,7 @@ describe('restaurant.routes - onboarding', () => {
     vi.mocked(db.restaurant.update).mockResolvedValue({
       ...baseRestaurant,
       firstCallAt: new Date('2099-06-19T12:00:00.000Z'),
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.update>>);
     vi.mocked(placeOutboundCall).mockResolvedValue({ callControlId: 'call-control-1' });
 
     const res = await app.inject({
@@ -123,7 +123,7 @@ describe('restaurant.routes - onboarding', () => {
     vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
       ...baseRestaurant,
       phoneNumber: '+000test-rest',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.update>>);
 
     const res = await app.inject({
       method: 'POST',
@@ -146,7 +146,7 @@ describe('restaurant.routes - onboarding', () => {
       googleRefreshToken: null,
       personality: null,
       phoneNumber: '+000test-rest',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.update>>);
     vi.mocked(db.restaurant.update).mockResolvedValue({
       ...baseRestaurant,
       openingHours: {},
@@ -154,7 +154,7 @@ describe('restaurant.routes - onboarding', () => {
       personality: null,
       phoneNumber: '+000test-rest',
       onboardingTasks: {},
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.update>>);
 
     const res = await app.inject({
       method: 'PATCH',
@@ -214,7 +214,7 @@ describe('restaurant.routes - onboarding', () => {
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         id: 'autre-rest-id',
         slug: 'bistrot-pris',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.update>>);
 
       const res = await app.inject({
         method: 'GET',
@@ -233,7 +233,7 @@ describe('restaurant.routes - onboarding', () => {
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         id: 'autre-rest-id',
         slug: 'slug-pris',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.update>>);
 
       const res = await app.inject({
         method: 'PATCH',
@@ -252,7 +252,7 @@ describe('restaurant.routes - onboarding', () => {
       vi.mocked(db.restaurantExposureSettings.upsert).mockResolvedValue({
         restaurantId: 'test-rest-1',
         capacitySpecials: {},
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurantExposureSettings.upsert>>);
 
       const updatedRest = {
         ...baseRestaurant,
@@ -307,7 +307,7 @@ describe('restaurant.routes - onboarding', () => {
         restaurantId: 'test-rest-1',
         url: 'http://image.url/cover.jpg',
         isCover: true,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurantImage.create>>);
 
       const res = await app.inject({
         method: 'POST',
