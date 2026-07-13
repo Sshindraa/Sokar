@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, vi, afterAll, beforeEach } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
+import { db } from '../../../shared/db/client';
 
 describe('GET /public/widget/:slug', () => {
   beforeEach(() => {
@@ -30,9 +31,10 @@ describe('GET /public/widget/:slug', () => {
       coverImageUrl: null,
       formattedAddress: '1 rue de la Paix, Lyon',
     };
-    const findUnique = vi.fn().mockResolvedValue(fakeRestaurant);
-    // Patch db.restaurant.findUniqueOrThrow pour cet appel
-    (app as any).db = { restaurant: { findUniqueOrThrow: findUnique } };
+    const findUnique = vi.mocked(db.restaurant.findUniqueOrThrow);
+    findUnique.mockResolvedValue(
+      fakeRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
 
     const res = await app.inject({
       method: 'GET',
@@ -51,8 +53,8 @@ describe('GET /public/widget/:slug', () => {
 
   it('renvoie 404 quand le slug est inconnu', async () => {
     const app = await getApp();
-    const findUnique = vi.fn().mockRejectedValue(new Error('Not found'));
-    (app as any).db = { restaurant: { findUniqueOrThrow: findUnique } };
+    const findUnique = vi.mocked(db.restaurant.findUniqueOrThrow);
+    findUnique.mockRejectedValue(new Error('Not found'));
 
     const res = await app.inject({
       method: 'GET',

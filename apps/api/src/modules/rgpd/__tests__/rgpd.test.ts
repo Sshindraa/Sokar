@@ -4,6 +4,10 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PrismaClient } from '@prisma/client';
+
+type TransactionClient = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0];
+
 import { ConsentService, ConsentRequiredError } from '../consent.service';
 import { ErasureService, ErasureSubjectNotFoundError } from '../erasure.service';
 import { ExportService, ExportSubjectNotFoundError } from '../export.service';
@@ -32,8 +36,11 @@ function makeMockPrisma() {
     message: {
       updateMany: vi.fn(),
     },
+    reservationAuditLog: {
+      create: vi.fn(),
+    },
     $transaction: vi.fn(),
-  } as any;
+  } as unknown as PrismaClient;
 }
 
 describe('RGPD', () => {
@@ -71,7 +78,9 @@ describe('RGPD', () => {
     });
 
     it('enregistre un consentement avec version et hash', async () => {
-      prisma.customerConsent.create.mockResolvedValueOnce({ id: 'c-1' });
+      vi.mocked(prisma.customerConsent.create).mockResolvedValueOnce({
+        id: 'c-1',
+      } as unknown as Awaited<ReturnType<typeof prisma.customerConsent.create>>);
       const service = new ConsentService(prisma);
       const result = await service.recordConsent({
         restaurantId: 'r-1',
@@ -99,7 +108,7 @@ describe('RGPD', () => {
     });
 
     it('withdrawMarketingOptIn update marketing à false', async () => {
-      prisma.customerConsent.updateMany.mockResolvedValueOnce({ count: 3 });
+      vi.mocked(prisma.customerConsent.updateMany).mockResolvedValueOnce({ count: 3 });
       const service = new ConsentService(prisma);
       const result = await service.withdrawMarketingOptIn('hash-abc');
       expect(result.count).toBe(3);
@@ -111,8 +120,8 @@ describe('RGPD', () => {
 
   describe('ErasureService', () => {
     it('jette si aucune donnée trouvée', async () => {
-      prisma.reservation.findFirst.mockResolvedValueOnce(null);
-      prisma.customerConsent.findFirst.mockResolvedValueOnce(null);
+      vi.mocked(prisma.reservation.findFirst).mockResolvedValueOnce(null);
+      vi.mocked(prisma.customerConsent.findFirst).mockResolvedValueOnce(null);
       const service = new ErasureService(prisma);
       await expect(
         service.eraseSubject({ subject: '+33****0000', reason: 'test', actor: 'rgpd:test' }),
@@ -120,14 +129,21 @@ describe('RGPD', () => {
     });
 
     it('anonymise les résas du sujet (PII effacée, structure conservée)', async () => {
-      prisma.reservation.findFirst.mockResolvedValueOnce({ id: 'res-1' });
-      prisma.customerConsent.findFirst.mockResolvedValueOnce(null);
-      prisma.$transaction.mockImplementationOnce(async (fn: any) =>
-        fn({ reservation: { updateMany: vi.fn().mockResolvedValueOnce({ count: 5 }) } }),
+      vi.mocked(prisma.reservation.findFirst).mockResolvedValueOnce({
+        id: 'res-1',
+      } as unknown as Awaited<ReturnType<typeof prisma.reservation.findFirst>>);
+      vi.mocked(prisma.customerConsent.findFirst).mockResolvedValueOnce(null);
+      vi.mocked(prisma.$transaction).mockImplementationOnce(
+        async (callback: Parameters<PrismaClient['$transaction']>[0]) =>
+          callback({
+            reservation: { updateMany: vi.fn().mockResolvedValueOnce({ count: 5 }) },
+          } as unknown as TransactionClient),
       );
-      prisma.message.updateMany.mockResolvedValueOnce({ count: 2 });
-      prisma.customerConsent.count.mockResolvedValueOnce(0);
-      prisma.reservationAuditLog = { create: vi.fn().mockResolvedValueOnce({ id: 'audit-1' }) };
+      vi.mocked(prisma.message.updateMany).mockResolvedValueOnce({ count: 2 });
+      vi.mocked(prisma.customerConsent.count).mockResolvedValueOnce(0);
+      vi.mocked(prisma.reservationAuditLog.create).mockResolvedValueOnce({
+        id: 'audit-1',
+      } as unknown as Awaited<ReturnType<typeof prisma.reservationAuditLog.create>>);
 
       const service = new ErasureService(prisma);
       const result = await service.eraseSubject({
@@ -143,14 +159,21 @@ describe('RGPD', () => {
 
     it('émet un event rgpd_erasure sur la queue analytics (OBLIGATOIRE)', async () => {
       // Setup : données présentes, audit + analytics event doivent être déclenchés.
-      prisma.reservation.findFirst.mockResolvedValueOnce({ id: 'res-1' });
-      prisma.customerConsent.findFirst.mockResolvedValueOnce(null);
-      prisma.$transaction.mockImplementationOnce(async (fn: any) =>
-        fn({ reservation: { updateMany: vi.fn().mockResolvedValueOnce({ count: 3 }) } }),
+      vi.mocked(prisma.reservation.findFirst).mockResolvedValueOnce({
+        id: 'res-1',
+      } as unknown as Awaited<ReturnType<typeof prisma.reservation.findFirst>>);
+      vi.mocked(prisma.customerConsent.findFirst).mockResolvedValueOnce(null);
+      vi.mocked(prisma.$transaction).mockImplementationOnce(
+        async (callback: Parameters<PrismaClient['$transaction']>[0]) =>
+          callback({
+            reservation: { updateMany: vi.fn().mockResolvedValueOnce({ count: 3 }) },
+          } as unknown as TransactionClient),
       );
-      prisma.message.updateMany.mockResolvedValueOnce({ count: 1 });
-      prisma.customerConsent.count.mockResolvedValueOnce(0);
-      prisma.reservationAuditLog = { create: vi.fn().mockResolvedValueOnce({ id: 'audit-1' }) };
+      vi.mocked(prisma.message.updateMany).mockResolvedValueOnce({ count: 1 });
+      vi.mocked(prisma.customerConsent.count).mockResolvedValueOnce(0);
+      vi.mocked(prisma.reservationAuditLog.create).mockResolvedValueOnce({
+        id: 'audit-1',
+      } as unknown as Awaited<ReturnType<typeof prisma.reservationAuditLog.create>>);
 
       const analyticsAdd = vi.mocked(queues.analytics.add);
       analyticsAdd.mockClear();
@@ -182,8 +205,8 @@ describe('RGPD', () => {
     });
 
     it("n'émet PAS d'event analytics quand aucune donnée trouvée (404 avant)", async () => {
-      prisma.reservation.findFirst.mockResolvedValueOnce(null);
-      prisma.customerConsent.findFirst.mockResolvedValueOnce(null);
+      vi.mocked(prisma.reservation.findFirst).mockResolvedValueOnce(null);
+      vi.mocked(prisma.customerConsent.findFirst).mockResolvedValueOnce(null);
       const analyticsAdd = vi.mocked(queues.analytics.add);
       analyticsAdd.mockClear();
 
@@ -201,8 +224,8 @@ describe('RGPD', () => {
 
   describe('ExportService', () => {
     it('jette si aucune donnée', async () => {
-      prisma.reservation.findMany.mockResolvedValueOnce([]);
-      prisma.customerConsent.findMany.mockResolvedValueOnce([]);
+      vi.mocked(prisma.reservation.findMany).mockResolvedValueOnce([]);
+      vi.mocked(prisma.customerConsent.findMany).mockResolvedValueOnce([]);
       const service = new ExportService(prisma);
       await expect(service.exportSubject({ subject: '+33****0000' })).rejects.toThrow(
         ExportSubjectNotFoundError,
@@ -210,7 +233,7 @@ describe('RGPD', () => {
     });
 
     it('exporte résas + consents avec hash prefix', async () => {
-      prisma.reservation.findMany.mockResolvedValueOnce([
+      vi.mocked(prisma.reservation.findMany).mockResolvedValueOnce([
         {
           id: 'res-1',
           restaurantId: 'r-1',
@@ -225,8 +248,8 @@ describe('RGPD', () => {
           createdAt: new Date('2026-05-01T10:00:00Z'),
           restaurant: { name: 'Le Bistrot' },
         },
-      ]);
-      prisma.customerConsent.findMany.mockResolvedValueOnce([
+      ] as unknown as Awaited<ReturnType<typeof prisma.reservation.findMany>>);
+      vi.mocked(prisma.customerConsent.findMany).mockResolvedValueOnce([
         {
           id: 'c-1',
           restaurantId: 'r-1',
@@ -239,7 +262,7 @@ describe('RGPD', () => {
           privacyPolicyVersion: 'v1.0-2026-06',
           consentedAt: new Date('2026-05-01T10:00:00Z'),
         },
-      ]);
+      ] as unknown as Awaited<ReturnType<typeof prisma.customerConsent.findMany>>);
       const service = new ExportService(prisma);
       const result = await service.exportSubject({ subject: '+33****0000' });
       expect(result.reservations).toHaveLength(1);
@@ -258,9 +281,13 @@ describe('RGPD', () => {
         customerPhone: '+33****0000',
         restaurantId: 'r-1',
       };
-      prisma.reservation.findMany.mockResolvedValueOnce([oldReservation]);
-      prisma.reservation.groupBy.mockResolvedValueOnce([]); // pas de résa récente
-      prisma.reservation.update.mockResolvedValueOnce({ id: 'res-old' });
+      vi.mocked(prisma.reservation.findMany).mockResolvedValueOnce([
+        oldReservation,
+      ] as unknown as Awaited<ReturnType<typeof prisma.reservation.findMany>>);
+      vi.mocked(prisma.reservation.groupBy).mockResolvedValueOnce([]);
+      vi.mocked(prisma.reservation.update).mockResolvedValueOnce({
+        id: 'res-old',
+      } as unknown as Awaited<ReturnType<typeof prisma.reservation.update>>);
 
       const result = await runAnonymization(prisma);
       expect(result.scanned).toBe(1);
@@ -280,12 +307,12 @@ describe('RGPD', () => {
     });
 
     it('NE anonymise PAS si résa récente (< 6 mois)', async () => {
-      prisma.reservation.findMany.mockResolvedValueOnce([
+      vi.mocked(prisma.reservation.findMany).mockResolvedValueOnce([
         { id: 'res-old', customerPhone: '+33****0000', restaurantId: 'r-1' },
-      ]);
-      prisma.reservation.groupBy.mockResolvedValueOnce([
+      ] as unknown as Awaited<ReturnType<typeof prisma.reservation.findMany>>);
+      vi.mocked(prisma.reservation.groupBy).mockResolvedValueOnce([
         { customerPhone: '+33****0000', _count: { customerPhone: 2 } },
-      ]); // 2 résas récentes
+      ] as unknown as Awaited<ReturnType<typeof prisma.reservation.groupBy>>);
 
       const result = await runAnonymization(prisma);
       expect(result.scanned).toBe(1);
@@ -294,10 +321,12 @@ describe('RGPD', () => {
     });
 
     it('anonymise sans phone si customerName pas encore ANON', async () => {
-      prisma.reservation.findMany.mockResolvedValueOnce([
+      vi.mocked(prisma.reservation.findMany).mockResolvedValueOnce([
         { id: 'res-1', customerPhone: null, restaurantId: 'r-1' },
-      ]);
-      prisma.reservation.update.mockResolvedValueOnce({ id: 'res-1' });
+      ] as unknown as Awaited<ReturnType<typeof prisma.reservation.findMany>>);
+      vi.mocked(prisma.reservation.update).mockResolvedValueOnce({
+        id: 'res-1',
+      } as unknown as Awaited<ReturnType<typeof prisma.reservation.update>>);
 
       const result = await runAnonymization(prisma);
       expect(result.anonymized).toBe(1);

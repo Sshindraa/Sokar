@@ -46,7 +46,7 @@ describe('onboarding-funnel.routes — GET /admin/onboarding-funnel', () => {
       },
       { event: 'onboarding_step_completed', task: 'knowledge', createdAt: new Date('2026-06-29') },
       { event: 'onboarding_activated', task: null, createdAt: new Date('2026-06-29') },
-    ] as any);
+    ] as unknown as Awaited<ReturnType<typeof db.onboardingEvent.findMany>>);
 
     const res = await app.inject({
       method: 'GET',
@@ -59,11 +59,11 @@ describe('onboarding-funnel.routes — GET /admin/onboarding-funnel', () => {
     expect(body.totalEvents).toBe(8);
     expect(body.totalStarted).toBe(1); // restaurant started = entrée dans le funnel
 
-    const restaurantStep = body.steps.find((s: any) => s.step === 'restaurant');
+    const restaurantStep = body.steps.find((s: { step: string }) => s.step === 'restaurant');
     expect(restaurantStep.started).toBe(1);
     expect(restaurantStep.completed).toBe(1);
 
-    const knowledgeStep = body.steps.find((s: any) => s.step === 'knowledge');
+    const knowledgeStep = body.steps.find((s: { step: string }) => s.step === 'knowledge');
     expect(knowledgeStep.started).toBe(1);
     expect(knowledgeStep.completed).toBe(1);
 
@@ -82,7 +82,7 @@ describe('onboarding-funnel.routes — GET /admin/onboarding-funnel', () => {
       { event: 'onboarding_step_completed', task: 'restaurant', createdAt: new Date() },
       { event: 'onboarding_step_started', task: 'hours', createdAt: new Date() },
       // hours started mais jamais completed
-    ] as any);
+    ] as unknown as Awaited<ReturnType<typeof db.onboardingEvent.findMany>>);
 
     const res = await app.inject({
       method: 'GET',
@@ -93,10 +93,14 @@ describe('onboarding-funnel.routes — GET /admin/onboarding-funnel', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
 
-    const restaurantRate = body.conversionRates.find((r: any) => r.step === 'restaurant');
+    const restaurantRate = body.conversionRates.find(
+      (r: { step: string; rate: number }) => r.step === 'restaurant',
+    );
     expect(restaurantRate.rate).toBe(50); // 1 completed / 2 started
 
-    const hoursRate = body.conversionRates.find((r: any) => r.step === 'hours');
+    const hoursRate = body.conversionRates.find(
+      (r: { step: string; rate: number }) => r.step === 'hours',
+    );
     expect(hoursRate.rate).toBe(0); // 0 completed / 1 started
   });
 

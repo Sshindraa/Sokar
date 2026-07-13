@@ -40,7 +40,7 @@ describe('dashboard.routes tenant isolation', () => {
         status: 'CANCELLED',
         createdAt: new Date(),
       },
-    ] as any);
+    ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
 
     const res = await app.inject({
       method: 'GET',
@@ -100,7 +100,7 @@ describe('dashboard.routes tenant isolation', () => {
     vi.mocked(db.call.findMany).mockResolvedValue([
       { createdAt: new Date() },
       { createdAt: new Date() },
-    ] as any);
+    ] as unknown as Awaited<ReturnType<typeof db.call.findMany>>);
     vi.mocked(db.reservation.findMany).mockResolvedValue([
       {
         createdAt: new Date(),
@@ -108,7 +108,7 @@ describe('dashboard.routes tenant isolation', () => {
         estimatedRevenue: 120,
         confirmedRevenue: null,
       },
-    ] as any);
+    ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
 
     const res = await app.inject({
       method: 'GET',

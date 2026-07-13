@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { PrismaClient } from '@prisma/client';
 import { McpToolRegistry } from '../registry';
+import { McpRateLimiter } from '../../rate-limit';
 import { renderMetrics } from '../../../../../shared/observability/metrics';
 
 const makePrisma = () =>
@@ -12,17 +14,19 @@ const makePrisma = () =>
           minLeadTimeMinutes: 0,
           exposedCreneaux: [],
         },
-      }),
+      } as unknown as Awaited<ReturnType<PrismaClient['restaurant']['findFirst']>>),
     },
     reservation: { count: vi.fn() },
     $queryRaw: vi.fn(),
-    $transaction: vi.fn(async (cb: any) => cb({})),
-  }) as any;
+    $transaction: vi.fn(async (cb: unknown) =>
+      (cb as (tx: Record<string, unknown>) => Promise<unknown>)({}),
+    ),
+  }) as unknown as PrismaClient;
 
 const makeRateLimiter = () =>
   ({
     check: vi.fn().mockResolvedValue({ allowed: true }),
-  }) as any;
+  }) as unknown as McpRateLimiter;
 
 describe('McpToolRegistry.checkAvailability metrics', () => {
   it("observe la durée même en cas d'erreur métier", async () => {
@@ -36,7 +40,7 @@ describe('McpToolRegistry.checkAvailability metrics', () => {
     const registry = new McpToolRegistry(prisma, makeRateLimiter());
 
     // Simule un service qui throw
-    (registry as any).availabilityService = {
+    (registry as unknown as Record<string, unknown>).availabilityService = {
       checkAvailability: vi.fn().mockRejectedValue(new Error('DB down')),
     };
 

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PrismaClient } from '@prisma/client';
 import {
   ALLOWED_ORIGINS,
   McpAuthError,
@@ -64,7 +65,7 @@ describe('mcp auth', () => {
           }),
           update: vi.fn().mockResolvedValue({}),
         },
-      } as any;
+      } as unknown as PrismaClient;
 
       const ctx = await validateApiKey(VALID_KEY, prisma);
 
@@ -101,7 +102,7 @@ describe('mcp auth', () => {
           }),
           update: vi.fn(),
         },
-      } as any;
+      } as unknown as PrismaClient;
 
       await expect(validateApiKey(VALID_KEY, prisma)).resolves.toBeNull();
       expect(prisma.agentClient.update).not.toHaveBeenCalled();

@@ -173,7 +173,10 @@ describe('CustomerService', () => {
 
       await CustomerService.recordCallActivity('rest-1', '+33611111111', 3);
 
-      const dataArg = vi.mocked(db.customer.updateMany).mock.calls[0][0].data as any;
+      const dataArg = vi.mocked(db.customer.updateMany).mock.calls[0][0].data as unknown as Record<
+        string,
+        unknown
+      >;
       expect(dataArg.partySizeTypical).toBe(3);
     });
 
@@ -181,14 +184,17 @@ describe('CustomerService', () => {
       // Mimic Prisma's Decimal-like return — our code does `Number(existing.partySizeTypical)`.
       vi.mocked(db.customer.findUnique).mockResolvedValue({
         partySizeTypical: 4,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.customer.findUnique>>);
       vi.mocked(db.customer.updateMany).mockResolvedValue({ count: 1 } as unknown as Awaited<
         ReturnType<typeof db.customer.updateMany>
       >);
 
       await CustomerService.recordCallActivity('rest-1', '+336****1111', 2);
 
-      const dataArg = vi.mocked(db.customer.updateMany).mock.calls[0][0].data as any;
+      const dataArg = vi.mocked(db.customer.updateMany).mock.calls[0][0].data as unknown as Record<
+        string,
+        unknown
+      >;
       // 0.7 * 2 + 0.3 * 4 = 1.4 + 1.2 = 2.6 → 3 (rounded)
       expect(dataArg.partySizeTypical).toBe(3);
     });
@@ -200,7 +206,10 @@ describe('CustomerService', () => {
 
       await CustomerService.recordCallActivity('rest-1', '+33611111111', 0);
 
-      const dataArg = vi.mocked(db.customer.updateMany).mock.calls[0][0].data as any;
+      const dataArg = vi.mocked(db.customer.updateMany).mock.calls[0][0].data as unknown as Record<
+        string,
+        unknown
+      >;
       expect(dataArg.partySizeTypical).toBeUndefined();
       expect(dataArg.lastCallAt).toBeInstanceOf(Date);
     });

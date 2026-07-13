@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { PrismaClient } from '@prisma/client';
 import { db } from '../../../shared/db/client';
 import { ReservationService } from '../reservation.service';
 import { GoogleCalendarClient } from '../../../shared/google-calendar/client';
 
 vi.mock('../../../shared/db/client', () => {
-  const mockDb: any = {
+  const mockDb = {
     restaurant: {
       findUnique: vi.fn(),
       findUniqueOrThrow: vi.fn(),
@@ -37,8 +38,8 @@ vi.mock('../../../shared/db/client', () => {
       findFirst: vi.fn().mockResolvedValue(null),
     },
     $queryRaw: vi.fn().mockResolvedValue([{ id: 'locked' }]),
-    $transaction: vi.fn(async (fn: any) => fn(mockDb)),
-  };
+    $transaction: vi.fn(async (fn: (tx: PrismaClient) => Promise<unknown>) => fn(mockDb)),
+  } as unknown as PrismaClient;
 
   return { db: mockDb };
 });

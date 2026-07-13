@@ -4,6 +4,8 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PrismaClient } from '@prisma/client';
+import type { Redis } from 'ioredis';
 import { OpenaiReserveService } from '../openai-reserve/openai-reserve.service';
 import { WIDGET_PUBLIC_URL } from '../openai-reserve/constants';
 
@@ -14,7 +16,7 @@ function makeMockPrisma() {
       findMany: vi.fn(),
       count: vi.fn(),
     },
-  } as any;
+  } as unknown as PrismaClient;
 }
 
 function makeMockCache() {
@@ -26,7 +28,7 @@ function makeMockCache() {
       return 'OK';
     }),
     _store: store,
-  } as any;
+  } as unknown as Redis;
 }
 
 describe('OpenaiReserveService', () => {
@@ -43,8 +45,8 @@ describe('OpenaiReserveService', () => {
 
   describe('getBusinessFeed', () => {
     it('calcule total_pages et expose la pagination', async () => {
-      prisma.restaurant.count.mockResolvedValue(42);
-      prisma.restaurant.findMany.mockResolvedValue([]);
+      vi.mocked(prisma.restaurant.count).mockResolvedValue(42);
+      vi.mocked(prisma.restaurant.findMany).mockResolvedValue([]);
 
       const result = await service.getBusinessFeed({ page: 1, page_size: 20 });
       expect(result.total).toBe(42);
@@ -55,8 +57,8 @@ describe('OpenaiReserveService', () => {
     });
 
     it('mappe les colonnes Prisma vers le format OpenAI', async () => {
-      prisma.restaurant.count.mockResolvedValue(1);
-      prisma.restaurant.findMany.mockResolvedValue([
+      vi.mocked(prisma.restaurant.count).mockResolvedValue(1);
+      vi.mocked(prisma.restaurant.findMany).mockResolvedValue([
         {
           id: 'r-1',
           name: 'Le Bistrot',
@@ -70,7 +72,7 @@ describe('OpenaiReserveService', () => {
           priceRange: 2,
           openingHours: { lun: ['12:00-14:30'] },
         },
-      ]);
+      ] as unknown as Awaited<ReturnType<typeof prisma.restaurant.findMany>>);
 
       const result = await service.getBusinessFeed({ page: 1, page_size: 20 });
       expect(result.businesses[0]).toMatchObject({
@@ -86,8 +88,8 @@ describe('OpenaiReserveService', () => {
     });
 
     it('parse formattedAddress en structuré', async () => {
-      prisma.restaurant.count.mockResolvedValue(1);
-      prisma.restaurant.findMany.mockResolvedValue([
+      vi.mocked(prisma.restaurant.count).mockResolvedValue(1);
+      vi.mocked(prisma.restaurant.findMany).mockResolvedValue([
         {
           id: 'r-1',
           name: 'A',
@@ -101,17 +103,17 @@ describe('OpenaiReserveService', () => {
           priceRange: null,
           openingHours: null,
         },
-      ]);
+      ] as unknown as Awaited<ReturnType<typeof prisma.restaurant.findMany>>);
       const result = await service.getBusinessFeed({ page: 1, page_size: 20 });
-      const addr = result.businesses[0].address as any;
+      const addr = result.businesses[0].address as unknown as Record<string, unknown>;
       expect(addr.line1).toBe('12 rue Lafayette');
       expect(addr.country).toBe('FR');
       expect(addr.formatted).toBe('12 rue Lafayette, 75009 Paris, France');
     });
 
     it('utilise le string brut si le format ne se split pas', async () => {
-      prisma.restaurant.count.mockResolvedValue(1);
-      prisma.restaurant.findMany.mockResolvedValue([
+      vi.mocked(prisma.restaurant.count).mockResolvedValue(1);
+      vi.mocked(prisma.restaurant.findMany).mockResolvedValue([
         {
           id: 'r-1',
           name: 'A',
@@ -125,22 +127,22 @@ describe('OpenaiReserveService', () => {
           priceRange: null,
           openingHours: null,
         },
-      ]);
+      ] as unknown as Awaited<ReturnType<typeof prisma.restaurant.findMany>>);
       const result = await service.getBusinessFeed({ page: 1, page_size: 20 });
       expect(result.businesses[0].address).toBe('un seul segment');
     });
 
     it('checksum = true si aucun changes_token fourni', async () => {
-      prisma.restaurant.count.mockResolvedValue(0);
-      prisma.restaurant.findMany.mockResolvedValue([]);
+      vi.mocked(prisma.restaurant.count).mockResolvedValue(0);
+      vi.mocked(prisma.restaurant.findMany).mockResolvedValue([]);
       const result = await service.getBusinessFeed({ page: 1, page_size: 20 });
       expect(result.checksum).toBe(true);
       expect(result.changes_token).toBeDefined();
     });
 
     it('checksum = false si feed vide et changes_token fourni', async () => {
-      prisma.restaurant.count.mockResolvedValue(0);
-      prisma.restaurant.findMany.mockResolvedValue([]);
+      vi.mocked(prisma.restaurant.count).mockResolvedValue(0);
+      vi.mocked(prisma.restaurant.findMany).mockResolvedValue([]);
       const result = await service.getBusinessFeed({
         page: 1,
         page_size: 20,
@@ -152,7 +154,7 @@ describe('OpenaiReserveService', () => {
 
   describe('restaurantReservation', () => {
     it('retourne widget_resource_url + restaurant_name', async () => {
-      prisma.restaurant.findUnique.mockResolvedValue({
+      vi.mocked(prisma.restaurant.findUnique).mockResolvedValue({
         id: 'r-1',
         name: 'Le Bistrot',
         formattedAddress: '1 rue de Paris, Paris',
@@ -163,7 +165,7 @@ describe('OpenaiReserveService', () => {
         region: 'IDF',
         postalCode: '75001',
         countryCode: 'FR',
-      });
+      } as unknown as Awaited<ReturnType<typeof prisma.restaurant.findUnique>>);
 
       const result = await service.restaurantReservation({ restaurant_id: 'r-1' });
       expect(result.restaurant_id).toBe('r-1');
@@ -174,7 +176,7 @@ describe('OpenaiReserveService', () => {
     });
 
     it('jette si restaurant pas openaiReserveEnabled', async () => {
-      prisma.restaurant.findUnique.mockResolvedValue({
+      vi.mocked(prisma.restaurant.findUnique).mockResolvedValue({
         id: 'r-1',
         name: 'A',
         formattedAddress: 'x',
@@ -185,22 +187,22 @@ describe('OpenaiReserveService', () => {
         region: 'x',
         postalCode: 'x',
         countryCode: 'FR',
-      });
+      } as unknown as Awaited<ReturnType<typeof prisma.restaurant.findUnique>>);
       await expect(service.restaurantReservation({ restaurant_id: 'r-1' })).rejects.toThrow(
         /not OpenAI Reserve enabled/,
       );
     });
 
     it('jette si restaurant introuvable', async () => {
-      prisma.restaurant.findUnique.mockResolvedValue(null);
+      vi.mocked(prisma.restaurant.findUnique).mockResolvedValue(null);
       await expect(service.restaurantReservation({ restaurant_id: 'r-x' })).rejects.toThrow();
     });
   });
 
   describe('cache Redis sur getBusinessFeed', () => {
     it('sert le cache au 2e appel sans re-frapper Prisma', async () => {
-      prisma.restaurant.count.mockResolvedValue(1);
-      prisma.restaurant.findMany.mockResolvedValue([
+      vi.mocked(prisma.restaurant.count).mockResolvedValue(1);
+      vi.mocked(prisma.restaurant.findMany).mockResolvedValue([
         {
           id: 'r-1',
           name: 'Le Bistrot',
@@ -214,7 +216,7 @@ describe('OpenaiReserveService', () => {
           priceRange: 2,
           openingHours: { lun: ['12:00-14:30'] },
         },
-      ]);
+      ] as unknown as Awaited<ReturnType<typeof prisma.restaurant.findMany>>);
 
       const query = { page: 1, page_size: 20 };
       const feed1 = await service.getBusinessFeed(query);
@@ -230,10 +232,10 @@ describe('OpenaiReserveService', () => {
     });
 
     it('fail-open si Redis down (continue sans cacher)', async () => {
-      prisma.restaurant.count.mockResolvedValue(0);
-      prisma.restaurant.findMany.mockResolvedValue([]);
-      cache.get.mockRejectedValue(new Error('Redis connection refused'));
-      cache.set.mockRejectedValue(new Error('Redis connection refused'));
+      vi.mocked(prisma.restaurant.count).mockResolvedValue(0);
+      vi.mocked(prisma.restaurant.findMany).mockResolvedValue([]);
+      vi.mocked(cache.get).mockRejectedValue(new Error('Redis connection refused'));
+      vi.mocked(cache.set).mockRejectedValue(new Error('Redis connection refused'));
 
       const feed = await service.getBusinessFeed({ page: 1, page_size: 20 });
       expect(feed.total).toBe(0);

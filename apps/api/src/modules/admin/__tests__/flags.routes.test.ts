@@ -29,7 +29,9 @@ describe('admin /admin/flags route', () => {
 
   it('retourne le payload par defaut quand SDK absent + DB hit', async () => {
     const { db } = await import('../../../shared/db/client');
-    (db.restaurant.findUnique as any).mockResolvedValueOnce({ plan: 'PRO' });
+    vi.mocked(db.restaurant.findUnique).mockResolvedValueOnce({ plan: 'PRO' } as unknown as Awaited<
+      ReturnType<typeof db.restaurant.findUnique>
+    >);
 
     const app = await getApp();
     const res = await app.inject({
@@ -61,7 +63,7 @@ describe('admin /admin/flags route', () => {
 
   it('survit a un findUnique qui throw — plan.dbPlan = null, plan.effective = null', async () => {
     const { db } = await import('../../../shared/db/client');
-    (db.restaurant.findUnique as any).mockRejectedValueOnce(new Error('db down'));
+    vi.mocked(db.restaurant.findUnique).mockRejectedValueOnce(new Error('db down'));
 
     const app = await getApp();
     const res = await app.inject({
@@ -80,7 +82,7 @@ describe('admin /admin/flags route', () => {
 
   it('survit a un findUnique qui retourne null (restaurant inconnu)', async () => {
     const { db } = await import('../../../shared/db/client');
-    (db.restaurant.findUnique as any).mockResolvedValueOnce(null);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValueOnce(null);
 
     const app = await getApp();
     const res = await app.inject({
@@ -97,7 +99,9 @@ describe('admin /admin/flags route', () => {
 
   it('le rolloutBucket est deterministe pour le meme restaurantId', async () => {
     const { db } = await import('../../../shared/db/client');
-    (db.restaurant.findUnique as any).mockResolvedValue({ plan: 'STARTER' });
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'STARTER' } as unknown as Awaited<
+      ReturnType<typeof db.restaurant.findUnique>
+    >);
 
     const app = await getApp();
     const res1 = await app.inject({ method: 'GET', url: '/admin/flags', headers: AUTH });

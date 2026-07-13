@@ -83,7 +83,7 @@ describe('OAuth MCP integration flow', () => {
     vi.mocked(db.restaurantExposureSettings.findFirst).mockResolvedValue({
       restaurantId: 'test-resto-1',
       mcpEnabled: true,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.restaurantExposureSettings.findFirst>>);
 
     const app = await getApp();
     const res = await app.inject({
@@ -227,7 +227,7 @@ describe('OAuth MCP integration flow', () => {
     vi.mocked(db.restaurantExposureSettings.findFirst).mockResolvedValue({
       restaurantId: 'test-resto-1',
       mcpEnabled: true,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.restaurantExposureSettings.findFirst>>);
 
     const app = await getApp();
     const res = await app.inject({
@@ -247,7 +247,7 @@ describe('OAuth MCP integration flow', () => {
     vi.mocked(db.restaurantExposureSettings.findFirst).mockResolvedValue({
       restaurantId: 'test-resto-1',
       mcpEnabled: true,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.restaurantExposureSettings.findFirst>>);
 
     const app = await getApp();
     const res = await app.inject({

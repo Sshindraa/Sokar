@@ -71,7 +71,7 @@ describe('Alerts service', () => {
   });
 
   it('alertFailOpen ne appelle pas captureException (bruit Sentry évité)', () => {
-    (captureException as any).mockClear();
+    vi.mocked(captureException).mockClear();
     alertFailOpen({ source: 'idempotency', reason: 'cache_down' });
     expect(captureException).not.toHaveBeenCalled();
   });

@@ -5,19 +5,22 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { Job } from 'bullmq';
 import { processIdempotencyPurgeJob } from '../workers/idempotency-purge.worker.js';
 import { db } from '../../../shared/db/client';
 
 describe('idempotency-purge worker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (db as any).idempotencyRecord = {
-      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
-    };
+    Object.assign(db as unknown as Record<string, unknown>, {
+      idempotencyRecord: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+    });
   });
 
   it('supprime les records expirés et retourne le count', async () => {
-    (db as any).idempotencyRecord.deleteMany.mockResolvedValue({ count: 3 });
+    vi.mocked(db.idempotencyRecord.deleteMany).mockResolvedValue({ count: 3 });
 
     const job = {
       id: 'job-1',
@@ -25,7 +28,7 @@ describe('idempotency-purge worker', () => {
       queueName: 'idempotency-purge',
       attemptsMade: 0,
       data: {},
-    } as any;
+    } as unknown as Job;
 
     const result = await processIdempotencyPurgeJob(job);
 
@@ -42,7 +45,7 @@ describe('idempotency-purge worker', () => {
       queueName: 'idempotency-purge',
       attemptsMade: 0,
       data: {},
-    } as any;
+    } as unknown as Job;
 
     const result = await processIdempotencyPurgeJob(job);
 

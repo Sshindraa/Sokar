@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
+import type { PrismaClient } from '@prisma/client';
 import { PilotKpiService, PILOT_TARGETS, __resetKpiCache } from '../pilot-kpis.service';
 import {
   doubleBookingAttemptsTotal,
@@ -14,7 +15,7 @@ function makeMockPrisma() {
     reservation: {
       groupBy: vi.fn(),
     },
-  } as any;
+  } as unknown as PrismaClient;
 }
 
 /**
@@ -27,7 +28,7 @@ function mockGroupByCounts(honored: number, pending: number, cancelled: number, 
   if (pending) groups.push({ state: 'PENDING', _count: { state: pending } });
   if (cancelled) groups.push({ state: 'CANCELLED', _count: { state: cancelled } });
   if (noShow) groups.push({ state: 'NO_SHOW', _count: { state: noShow } });
-  return groups;
+  return groups as unknown as Awaited<ReturnType<PrismaClient['reservation']['groupBy']>>;
 }
 
 describe('PilotKpiService', () => {
@@ -56,7 +57,7 @@ describe('PilotKpiService', () => {
   });
 
   it('GREEN quand tous les SLOs sont met', async () => {
-    prisma.reservation.groupBy.mockResolvedValue(mockGroupByCounts(100, 20, 15, 15));
+    vi.mocked(prisma.reservation.groupBy).mockResolvedValue(mockGroupByCounts(100, 20, 15, 15));
     // Simule des appels check_availability rapides (< 800ms)
     checkAvailabilityDuration.observe(50);
     checkAvailabilityDuration.observe(100);
@@ -71,7 +72,7 @@ describe('PilotKpiService', () => {
 
   it('RED si double_booking > 0 (critique)', async () => {
     doubleBookingAttemptsTotal.inc();
-    prisma.reservation.groupBy.mockResolvedValue([]);
+    vi.mocked(prisma.reservation.groupBy).mockResolvedValue([]);
     const kpis = await service.getKpis();
     expect(kpis.health).toBe('RED');
     expect(kpis.doubleBookingAttempts).toBe(1);
@@ -79,14 +80,14 @@ describe('PilotKpiService', () => {
 
   it('RED si pii_leak > 0 (critique)', async () => {
     piiLeaksTotal.inc({ kind: 'phone' });
-    prisma.reservation.groupBy.mockResolvedValue([]);
+    vi.mocked(prisma.reservation.groupBy).mockResolvedValue([]);
     const kpis = await service.getKpis();
     expect(kpis.health).toBe('RED');
     expect(kpis.piiLeakIncidents).toBe(1);
   });
 
   it('honor_rate = 0 quand 0 résas', async () => {
-    prisma.reservation.groupBy.mockResolvedValue([]);
+    vi.mocked(prisma.reservation.groupBy).mockResolvedValue([]);
     const kpis = await service.getKpis();
     expect(kpis.honorRate).toBe(0);
     // SLO honor_rate min n'est pas met, mais comme c'est YELLOW (pas RED), c'est OK
@@ -95,7 +96,7 @@ describe('PilotKpiService', () => {
   });
 
   it('expose reservationsTotal et reservationsHonored depuis DB', async () => {
-    prisma.reservation.groupBy.mockResolvedValue(mockGroupByCounts(25, 5, 2, 10));
+    vi.mocked(prisma.reservation.groupBy).mockResolvedValue(mockGroupByCounts(25, 5, 2, 10));
     const kpis = await service.getKpis();
     expect(kpis.reservationsTotal).toBe(42);
     expect(kpis.reservationsHonored).toBe(25);
@@ -107,7 +108,7 @@ describe('PilotKpiService', () => {
     // Prometheus dit 2 holds créés, DB dit 50
     holdCreatedTotal.inc();
     holdCreatedTotal.inc();
-    prisma.reservation.groupBy.mockResolvedValue(mockGroupByCounts(30, 10, 5, 5));
+    vi.mocked(prisma.reservation.groupBy).mockResolvedValue(mockGroupByCounts(30, 10, 5, 5));
     const kpis = await service.getKpis();
     expect(kpis.reservationsTotal).toBe(50); // DB
     expect(kpis.reservationsHonored).toBe(30); // DB
@@ -115,7 +116,7 @@ describe('PilotKpiService', () => {
 
   describe('check_availability p95 latency', () => {
     beforeEach(() => {
-      prisma.reservation.groupBy.mockResolvedValue(mockGroupByCounts(100, 20, 15, 15));
+      vi.mocked(prisma.reservation.groupBy).mockResolvedValue(mockGroupByCounts(100, 20, 15, 15));
     });
 
     it('retourne null quand aucune observation', async () => {

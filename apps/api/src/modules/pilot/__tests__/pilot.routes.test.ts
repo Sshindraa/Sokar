@@ -12,12 +12,12 @@ describe('Pilot routes', () => {
   });
 
   it('GET /api/internal/pilot-kpis retourne les KPIs', async () => {
-    (db.reservation.groupBy as any) = vi.fn().mockResolvedValue([
+    vi.mocked(db.reservation.groupBy).mockResolvedValue([
       { state: 'HONORED', _count: { state: 100 } },
       { state: 'PENDING', _count: { state: 20 } },
       { state: 'CANCELLED', _count: { state: 15 } },
       { state: 'NO_SHOW', _count: { state: 15 } },
-    ]);
+    ] as unknown as Awaited<ReturnType<typeof db.reservation.groupBy>>);
 
     const app = await getApp();
     const res = await app.inject({ method: 'GET', url: '/api/internal/pilot-kpis' });
@@ -31,7 +31,7 @@ describe('Pilot routes', () => {
   });
 
   it('retourne 500 si la DB plante', async () => {
-    (db.reservation.groupBy as any) = vi.fn().mockRejectedValueOnce(new Error('DB down'));
+    vi.mocked(db.reservation.groupBy).mockRejectedValueOnce(new Error('DB down'));
 
     const app = await getApp();
     const res = await app.inject({ method: 'GET', url: '/api/internal/pilot-kpis' });

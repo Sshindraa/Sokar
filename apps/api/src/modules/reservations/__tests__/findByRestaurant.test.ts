@@ -42,16 +42,17 @@ describe('ReservationService.findByRestaurant', () => {
 
     await ReservationService.findByRestaurant(restaurantId, date);
 
-    const call = vi.mocked(db.reservation.findMany).mock.calls[0][0] as any;
-    expect(call.where.restaurantId).toBe(restaurantId);
-    expect(call.where.reservedAt.gte).toBeInstanceOf(Date);
-    expect(call.where.reservedAt.lte).toBeInstanceOf(Date);
+    const call = vi.mocked(db.reservation.findMany).mock.calls[0][0]!;
+    const reservedAt = call.where!.reservedAt as { gte: Date; lte: Date };
+    expect(call.where!.restaurantId).toBe(restaurantId);
+    expect(reservedAt.gte).toBeInstanceOf(Date);
+    expect(reservedAt.lte).toBeInstanceOf(Date);
     // Sanity: borne inférieure = minuit, borne supérieure = fin de journée
-    expect(call.where.reservedAt.gte.getHours()).toBe(0);
-    expect(call.where.reservedAt.gte.getMinutes()).toBe(0);
-    expect(call.where.reservedAt.lte.getHours()).toBe(23);
-    expect(call.where.reservedAt.lte.getMinutes()).toBe(59);
-    expect(call.where.reservedAt.lte.getMilliseconds()).toBe(999);
+    expect(reservedAt.gte.getHours()).toBe(0);
+    expect(reservedAt.gte.getMinutes()).toBe(0);
+    expect(reservedAt.lte.getHours()).toBe(23);
+    expect(reservedAt.lte.getMinutes()).toBe(59);
+    expect(reservedAt.lte.getMilliseconds()).toBe(999);
   });
 
   it("ne filtre pas par date quand 'date' est omis", async () => {
@@ -59,8 +60,8 @@ describe('ReservationService.findByRestaurant', () => {
 
     await ReservationService.findByRestaurant('rest-123');
 
-    const call = vi.mocked(db.reservation.findMany).mock.calls[0][0] as any;
-    expect(call.where.reservedAt).toBeUndefined();
-    expect(call.where).toEqual({ restaurantId: 'rest-123' });
+    const call = vi.mocked(db.reservation.findMany).mock.calls[0][0]!;
+    expect(call.where!.reservedAt).toBeUndefined();
+    expect(call.where!).toEqual({ restaurantId: 'rest-123' });
   });
 });
