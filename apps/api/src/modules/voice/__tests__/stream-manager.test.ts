@@ -45,7 +45,10 @@ const { mockGiftCardCreate } = vi.hoisted(() => ({
 }));
 
 vi.mock('../../gift-cards/gift-card.service', () => ({
-  GiftCardService: vi.fn().mockImplementation(function (this: any, db: any) {
+  GiftCardService: vi.fn().mockImplementation(function (
+    this: Record<string, unknown>,
+    db: unknown,
+  ) {
     this.create = mockGiftCardCreate;
   }),
 }));
@@ -85,7 +88,7 @@ import { trackGiftCardEvent } from '../../analytics/events.service';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function makeTelnyxWs(): any {
+function makeTelnyxWs(): WebSocket {
   return {
     readyState: WebSocket.OPEN,
     send: vi.fn(),
@@ -93,7 +96,7 @@ function makeTelnyxWs(): any {
     on: vi.fn(),
     OPEN: WebSocket.OPEN,
     CLOSED: WebSocket.CLOSED,
-  };
+  } as unknown as WebSocket;
 }
 
 function makeSession(overrides: Partial<CallSession> = {}): CallSession {
@@ -144,7 +147,7 @@ function mockFetchToolCall(toolName: string, args: Record<string, unknown>, fina
       choices: [{ message: { role: 'assistant', content: finalText } }],
     }),
   });
-  globalThis.fetch = fetchMock as any;
+  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
   return fetchMock;
 }
 
@@ -156,7 +159,7 @@ function mockFetchText(text: string) {
       choices: [{ message: { role: 'assistant', content: text } }],
     }),
   });
-  globalThis.fetch = fetchMock as any;
+  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
   return fetchMock;
 }
 
@@ -164,7 +167,8 @@ function mockFetchText(text: string) {
 
 describe('CallSessionManager — singleton & CRUD', () => {
   beforeEach(() => {
-    (CallSessionManager as any).instance = new CallSessionManager();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
     delete process.env.SOKAR_SIMULATE_MOCK_LLM;
   });
 
@@ -230,7 +234,8 @@ describe('CallSessionManager — singleton & CRUD', () => {
 
 describe('CallSessionManager — state machine edge cases', () => {
   beforeEach(() => {
-    (CallSessionManager as any).instance = new CallSessionManager();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
   });
 
   it('rejette IDLE → PROCESSING (transition invalide)', () => {
@@ -289,7 +294,8 @@ describe('CallSessionManager — tool execution', () => {
   let originalFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
-    (CallSessionManager as any).instance = new CallSessionManager();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
     delete process.env.SOKAR_SIMULATE_MOCK_LLM;
     originalFetch = globalThis.fetch;
     vi.clearAllMocks();
@@ -302,7 +308,9 @@ describe('CallSessionManager — tool execution', () => {
   });
 
   it('createReservation : appelle ReservationService.create et retourne la confirmation', async () => {
-    vi.mocked(ReservationService.create).mockResolvedValue({ id: 'res-new' } as any);
+    vi.mocked(ReservationService.create).mockResolvedValue({ id: 'res-new' } as unknown as Awaited<
+      ReturnType<typeof ReservationService.create>
+    >);
     mockFetchToolCall(
       'createReservation',
       {
@@ -352,7 +360,7 @@ describe('CallSessionManager — tool execution', () => {
   it('checkAvailability : retourne les créneaux disponibles', async () => {
     vi.mocked(ReservationService.availability).mockResolvedValue({
       slots: ['12:00', '12:30', '13:00', '19:00', '19:30', '20:00', '20:30', '21:00', '21:30'],
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof ReservationService.availability>>);
     mockFetchToolCall(
       'checkAvailability',
       { date: '2026-07-16', partySize: 2 },
@@ -368,7 +376,9 @@ describe('CallSessionManager — tool execution', () => {
   });
 
   it('checkAvailability : retourne message si aucun créneau', async () => {
-    vi.mocked(ReservationService.availability).mockResolvedValue({ slots: [] } as any);
+    vi.mocked(ReservationService.availability).mockResolvedValue({
+      slots: [],
+    } as unknown as Awaited<ReturnType<typeof ReservationService.availability>>);
     mockFetchToolCall(
       'checkAvailability',
       { date: '2026-07-16', partySize: 6 },
@@ -384,7 +394,9 @@ describe('CallSessionManager — tool execution', () => {
 
   it('cancelReservation : annule la résa trouvée', async () => {
     vi.mocked(db.reservation.findMany).mockResolvedValue([
-      { id: 'res-cancel-1', customerName: 'Jean' } as any,
+      { id: 'res-cancel-1', customerName: 'Jean' } as unknown as Awaited<
+        ReturnType<typeof db.reservation.findMany>
+      >[number],
     ]);
     mockFetchToolCall(
       'cancelReservation',
@@ -568,7 +580,8 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
   let originalFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
-    (CallSessionManager as any).instance = new CallSessionManager();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
     delete process.env.SOKAR_SIMULATE_MOCK_LLM;
     originalFetch = globalThis.fetch;
   });
@@ -597,7 +610,7 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       body: stream,
-    }) as any;
+    }) as unknown as typeof globalThis.fetch;
 
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
@@ -678,7 +691,7 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
       ok: true,
       body: streamText,
     });
-    globalThis.fetch = fetchMock as any;
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
@@ -694,13 +707,14 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
 
 describe('CallSessionManager — cleanup avancé', () => {
   beforeEach(() => {
-    (CallSessionManager as any).instance = new CallSessionManager();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
   });
 
   it("ferme le WS Deepgram s'il est OPEN", () => {
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
-    const deepgramWs = { readyState: WebSocket.OPEN, close: vi.fn() } as any;
+    const deepgramWs = { readyState: WebSocket.OPEN, close: vi.fn() } as unknown as WebSocket;
     session.deepgramWs = deepgramWs;
 
     mgr.cleanup(session);
@@ -712,7 +726,7 @@ describe('CallSessionManager — cleanup avancé', () => {
   it("ne ferme pas le WS Deepgram s'il n'est pas OPEN", () => {
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
-    const deepgramWs = { readyState: WebSocket.CLOSED, close: vi.fn() } as any;
+    const deepgramWs = { readyState: WebSocket.CLOSED, close: vi.fn() } as unknown as WebSocket;
     session.deepgramWs = deepgramWs;
 
     mgr.cleanup(session);
