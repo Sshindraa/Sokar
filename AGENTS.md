@@ -91,7 +91,7 @@ hermes -z "task" # one-shot task
 
 - **Staging:** deploys automatically after a green CI and its smoke tests.
 - **Production:** requires explicit confirmation before execution. Any DB migration, payment, auth, voice, or critical config change must be flagged.
-- **Rollback:** application rollback does not restore the database. See `docs/runbooks/rollback.md`.
+- **Rollback:** application rollback restores artefacts only by default. Add `--with-db-rollback` to `scripts/deploy-vps.sh` or `scripts/deploy-staging.sh` to also restore the Postgres backup timestamped in the release directory. See `docs/runbooks/rollback.md`.
 - **Deploy account:** privileged operations use `/usr/local/sbin/sokar-deploy-root`. The `deploy` account is not in `sudo` or `docker` groups.
 - **Secrets:** never commit secrets. Use env vars and `key_env`.
 

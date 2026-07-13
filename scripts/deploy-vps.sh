@@ -1,7 +1,8 @@
 #!/bin/bash
 # Deploy script pour VPS Sokar
 # Usage: bash scripts/deploy-vps.sh --confirm-production [branch]
-#        bash scripts/deploy-vps.sh --confirm-production rollback [release-timestamp]
+#        bash scripts/deploy-vps.sh --confirm-production rollback [--with-db-rollback] [release-timestamp]
+#        --with-db-rollback : restaure aussi la base Postgres depuis le backup de la release
 # Gère la mémoire limitée, les trois apps PM2 et le routage Nginx.
 #
 # Zero-downtime: l'API reste en ligne pendant le build. Seuls dashboard et
@@ -23,6 +24,11 @@ RELEASES_DIR="$SOKAR_ROOT/releases"
 DATE=$(date '+%Y-%m-%d %H:%M:%S')
 PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
 WAIT_TIMEOUT=${WAIT_TIMEOUT:-60}
+WITH_DB_ROLLBACK=false
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=ops/db-backup.sh
+source "$SCRIPT_DIR/ops/db-backup.sh"
 
 ensure_privileged_wrapper() {
     if [ -x "$PRIVILEGED_WRAPPER" ]; then
@@ -162,7 +168,12 @@ if [ "$CONFIRM_PRODUCTION" != true ]; then
 fi
 if [ "${1:-}" = "rollback" ]; then
     cd "$SOKAR_ROOT"
-    TARGET_RELEASE="${2:-}"
+    shift
+    while [ "${1:-}" = "--with-db-rollback" ]; do
+        WITH_DB_ROLLBACK=true
+        shift
+    done
+    TARGET_RELEASE="${1:-}"
     if [ -z "$TARGET_RELEASE" ]; then
         # Pas de release spécifiée → prendre l'avant-dernière
         # (la dernière est potentiellement celle qui vient de casser)
@@ -192,6 +203,11 @@ if [ "${1:-}" = "rollback" ]; then
 
     echo "→ Restore artefacts..."
     restore_artifacts "$RELEASE_PATH"
+
+    if [ "$WITH_DB_ROLLBACK" = true ]; then
+        echo "→ Restore DB..."
+        restore_db "$RELEASE_PATH"
+    fi
 
     echo "→ Restart services..."
     pm2 start infra/ecosystem.config.js
@@ -262,6 +278,7 @@ install -d -m 0755 "$RELEASES_DIR"
 echo ""
 echo "📦 Snapshot pré-build (rollback safety net)..."
 snapshot_artifacts "$PREV_RELEASE" "pre-build"
+backup_db "$PREV_RELEASE" || true
 
 # Variable globale pour le trap ERR
 RESTORE_ON_FAIL="$PREV_RELEASE"
