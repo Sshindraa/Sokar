@@ -53,7 +53,7 @@ const mockReservationUpdate = vi.mocked(ReservationService.update);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function makeReservation(overrides: Record<string, unknown> = {}): any {
+function makeReservation(overrides: Record<string, unknown> = {}) {
   return {
     id: 'res-1',
     customerPhone: '+336****0001',
@@ -128,7 +128,9 @@ describe('handleReply', () => {
   });
 
   it('confirme la résa et met à jour confirmationStatus=CONFIRMED', async () => {
-    mockFindFirst.mockResolvedValue(makeReservation());
+    mockFindFirst.mockResolvedValue(
+      makeReservation() as unknown as Awaited<ReturnType<typeof db.reservation.findFirst>>,
+    );
 
     const result = await handleReply('+336****0001', 'OUI', 'sms');
 
@@ -147,7 +149,9 @@ describe('handleReply', () => {
   });
 
   it('annule la résa via ReservationService.update et envoie un SMS au gérant', async () => {
-    mockFindFirst.mockResolvedValue(makeReservation());
+    mockFindFirst.mockResolvedValue(
+      makeReservation() as unknown as Awaited<ReturnType<typeof db.reservation.findFirst>>,
+    );
 
     const result = await handleReply('+336****0001', 'NON', 'sms');
 
@@ -173,7 +177,9 @@ describe('handleReply', () => {
   });
 
   it('mentionne WhatsApp dans le SMS au gérant si channel=whatsapp', async () => {
-    mockFindFirst.mockResolvedValue(makeReservation());
+    mockFindFirst.mockResolvedValue(
+      makeReservation() as unknown as Awaited<ReturnType<typeof db.reservation.findFirst>>,
+    );
 
     await handleReply('+336****0001', 'NON', 'whatsapp');
 
@@ -184,7 +190,7 @@ describe('handleReply', () => {
     mockFindFirst.mockResolvedValue(
       makeReservation({
         restaurant: { id: 'rest-1', name: 'Chez Sokar', managerPhone: null },
-      }),
+      }) as unknown as Awaited<ReturnType<typeof db.reservation.findFirst>>,
     );
 
     const result = await handleReply('+336****0001', 'NON', 'sms');
@@ -194,7 +200,9 @@ describe('handleReply', () => {
   });
 
   it("retourne l'intent sans action si ReservationService.update lève une erreur", async () => {
-    mockFindFirst.mockResolvedValue(makeReservation());
+    mockFindFirst.mockResolvedValue(
+      makeReservation() as unknown as Awaited<ReturnType<typeof db.reservation.findFirst>>,
+    );
     mockReservationUpdate.mockRejectedValue(new Error('DB down'));
 
     const result = await handleReply('+336****0001', 'NON', 'sms');
@@ -209,14 +217,15 @@ describe('handleReply', () => {
 
     await handleReply('+336****0001', 'OUI', 'sms');
 
-    const callArg = mockFindFirst.mock.calls[0][0] as any;
-    expect(callArg.where.customerPhone).toBe('+336****0001');
-    expect(callArg.where.status).toBe('CONFIRMED');
-    expect(callArg.where.confirmationStatus).toBe('PENDING');
-    expect(callArg.where.reservedAt).toBeDefined();
-    expect(callArg.where.reservedAt.gte).toBeInstanceOf(Date);
-    expect(callArg.where.reservedAt.lte).toBeInstanceOf(Date);
-    expect(callArg.include.restaurant).toEqual({
+    const callArg = mockFindFirst.mock.calls[0][0]!;
+    const reservedAt = callArg.where!.reservedAt as { gte: Date; lte: Date };
+    expect(callArg.where!.customerPhone).toBe('+336****0001');
+    expect(callArg.where!.status).toBe('CONFIRMED');
+    expect(callArg.where!.confirmationStatus).toBe('PENDING');
+    expect(reservedAt).toBeDefined();
+    expect(reservedAt.gte).toBeInstanceOf(Date);
+    expect(reservedAt.lte).toBeInstanceOf(Date);
+    expect(callArg.include!.restaurant).toEqual({
       select: { id: true, name: true, managerPhone: true },
     });
   });
@@ -227,9 +236,10 @@ describe('handleReply', () => {
     const now = new Date();
     await handleReply('+336****0001', 'OUI', 'sms');
 
-    const callArg = mockFindFirst.mock.calls[0][0] as any;
-    const gte = callArg.where.reservedAt.gte as Date;
-    const lte = callArg.where.reservedAt.lte as Date;
+    const callArg = mockFindFirst.mock.calls[0][0]!;
+    const reservedAt = callArg.where!.reservedAt as { gte: Date; lte: Date };
+    const gte = reservedAt.gte;
+    const lte = reservedAt.lte;
 
     // gte = hier 00:00
     expect(gte.getHours()).toBe(0);

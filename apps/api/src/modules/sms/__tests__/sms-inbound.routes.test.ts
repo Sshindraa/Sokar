@@ -9,11 +9,11 @@
  * est testé séparément dans telnyx.guard.test.ts.
  */
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 
 // Bypass Ed25519 signature verification — covered in telnyx.guard.test.ts.
 vi.mock('../../voice/telnyx.guard', () => ({
-  telnyxWebhookGuard: vi.fn(async (_req: any, _reply: any) => undefined),
+  telnyxWebhookGuard: vi.fn(async (_req: FastifyRequest, _reply: FastifyReply) => undefined),
 }));
 
 // Mock the reply handler so we can assert what was parsed and dispatched.

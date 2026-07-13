@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import type { Job } from 'bullmq';
 import { db } from '../../../db/client';
 import { processAnalyticsJob } from '../analytics.worker';
 
@@ -14,7 +15,7 @@ vi.mock('../helper', () => ({
 }));
 
 function makeJob(data: Record<string, unknown>) {
-  return { data, id: 'test-job-1', name: 'track' } as any;
+  return { data, id: 'test-job-1', name: 'track' } as unknown as Job;
 }
 
 describe('analytics.worker — processAnalyticsJob', () => {
@@ -102,14 +103,14 @@ describe('analytics.worker — processAnalyticsJob', () => {
       await processAnalyticsJob(job);
       const after = new Date();
 
-      const callArg = (db.onboardingEvent.create as any).mock.calls[0][0];
+      const callArg = vi.mocked(db.onboardingEvent.create).mock.calls[0][0];
       const created = callArg.data.createdAt as Date;
       expect(created.getTime()).toBeGreaterThanOrEqual(before.getTime());
       expect(created.getTime()).toBeLessThanOrEqual(after.getTime());
     });
 
     it(`throw si l'insertion DB échoue (pour déclencher le retry BullMQ)`, async () => {
-      (db.onboardingEvent.create as any).mockRejectedValueOnce(new Error('DB connection lost'));
+      vi.mocked(db.onboardingEvent.create).mockRejectedValueOnce(new Error('DB connection lost'));
       const job = makeJob({
         event: 'onboarding_step_completed',
         restaurantId: 'rest-1',

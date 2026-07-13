@@ -16,7 +16,7 @@ describe('analytics.routes tenant isolation', () => {
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
       id: 'test-rest-1',
       plan: 'STARTER',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
     vi.mocked(db.reservation.findMany).mockResolvedValue([]);
 
     const res = await app.inject({
@@ -41,7 +41,7 @@ describe('analytics.routes tenant isolation', () => {
     vi.mocked(db.latencyTrace.findMany).mockResolvedValue([
       { totalE2eMs: 100 },
       { totalE2eMs: 200 },
-    ] as any);
+    ] as unknown as Awaited<ReturnType<typeof db.latencyTrace.findMany>>);
 
     const res = await app.inject({
       method: 'GET',

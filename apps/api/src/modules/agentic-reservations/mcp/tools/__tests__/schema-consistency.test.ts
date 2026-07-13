@@ -43,7 +43,7 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
 
   it('every tool has annotations with readOnly or destructive hint', () => {
     for (const tool of TOOL_LIST) {
-      const ann = (tool as any).annotations || {};
+      const ann = tool.annotations || {};
       const hasReadOnly = ann.readOnlyHint === true;
       const hasDestructive = ann.destructiveHint === true;
       expect(
@@ -80,7 +80,9 @@ describe('TOOL_LIST ↔ Zod schema consistency', () => {
   it('search_restaurants has cursor field in TOOL_LIST', () => {
     const searchTool = TOOL_LIST.find((t) => t.name === 'search_restaurants');
     expect(searchTool).toBeDefined();
-    const props = (searchTool!.inputSchema as any).properties;
-    expect(props.cursor).toBeDefined();
+    const props = (searchTool!.inputSchema as Record<string, unknown>).properties as
+      | Record<string, unknown>
+      | undefined;
+    expect(props?.cursor).toBeDefined();
   });
 });

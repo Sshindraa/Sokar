@@ -139,7 +139,7 @@ describe('restaurant.routes — POST /restaurant/onboarding/demo-call', () => {
     vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
       ...baseRestaurant,
       personality: { speakingRate: 1.3 },
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>);
     vi.mocked(isCartesiaConfigured).mockReturnValue(true);
     vi.mocked(synthesizeText).mockResolvedValue(Buffer.from('mp3'));
 

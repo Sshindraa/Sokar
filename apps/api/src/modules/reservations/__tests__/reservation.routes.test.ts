@@ -126,7 +126,7 @@ describe('reservation.routes', () => {
         partySize: 2,
         slots: [],
         allSlots: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof ReservationService.availability>>);
 
       const res = await app.inject({
         method: 'GET',

@@ -4,13 +4,15 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import type { Job } from 'bullmq';
+import { HoldService } from '../core/hold.service';
 import { processHoldCleanupJob } from '../workers/hold-cleanup.worker.js';
 
 describe('hold-cleanup worker', () => {
   it('appelle expireOverdue et retourne le count', async () => {
     const holds = {
       expireOverdue: vi.fn().mockResolvedValue(5),
-    } as any;
+    } as unknown as HoldService;
 
     const job = {
       id: 'job-1',
@@ -18,7 +20,7 @@ describe('hold-cleanup worker', () => {
       queueName: 'hold-cleanup',
       attemptsMade: 0,
       data: {},
-    } as any;
+    } as unknown as Job;
 
     const result = await processHoldCleanupJob(job, holds);
 
@@ -29,7 +31,7 @@ describe('hold-cleanup worker', () => {
   it('retourne 0 si aucun hold expiré', async () => {
     const holds = {
       expireOverdue: vi.fn().mockResolvedValue(0),
-    } as any;
+    } as unknown as HoldService;
 
     const job = {
       id: 'job-2',
@@ -37,7 +39,7 @@ describe('hold-cleanup worker', () => {
       queueName: 'hold-cleanup',
       attemptsMade: 0,
       data: {},
-    } as any;
+    } as unknown as Job;
 
     const result = await processHoldCleanupJob(job, holds);
 

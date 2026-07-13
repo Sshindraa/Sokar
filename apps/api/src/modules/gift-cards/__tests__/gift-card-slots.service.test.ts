@@ -30,7 +30,7 @@ describe('GiftCardSlotsService', () => {
       preferredPartySize: 2,
       preferredDate: new Date('2026-08-15'),
       pack: null,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
 
     vi.spyOn(CapacityAwareAvailabilityService.prototype, 'getAvailability').mockResolvedValue({
       restaurantId: RESTAURANT_ID,

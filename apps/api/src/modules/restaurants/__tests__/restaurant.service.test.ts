@@ -84,10 +84,15 @@ describe('RestaurantService.loadContext', () => {
 
   it('retourne le cache si présent, sans interroger la DB', async () => {
     // On étend l'objet avec un champ sentinelle pour pouvoir l'identifier
-    const cached = { ...FULL_RESTAURANT, _fromCache: true } as any;
-    vi.mocked(getCachedContext).mockResolvedValue(cached as never);
+    const cached = { ...FULL_RESTAURANT, _fromCache: true };
+    vi.mocked(getCachedContext).mockResolvedValue(
+      cached as unknown as Awaited<ReturnType<typeof getCachedContext>>,
+    );
 
-    const result = (await RestaurantService.loadContext('pn-1234')) as any;
+    const result = (await RestaurantService.loadContext('pn-1234')) as unknown as Record<
+      string,
+      unknown
+    >;
 
     expect(result._fromCache).toBe(true);
     expect(db.restaurant.findUniqueOrThrow).not.toHaveBeenCalled();

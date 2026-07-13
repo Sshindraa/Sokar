@@ -128,9 +128,9 @@ describe('customer.routes', () => {
 
       expect(res.statusCode).toBe(201);
       expect(res.json()).toEqual(created);
-      const upsertArgs = vi.mocked(db.customer.upsert).mock.calls[0][0] as any;
-      expect(upsertArgs.where.restaurantId_phone.restaurantId).toBe('test-rest-1');
-      expect(upsertArgs.where.restaurantId_phone.restaurantId).not.toBe(
+      const upsertArgs = vi.mocked(db.customer.upsert).mock.calls[0][0]!;
+      expect(upsertArgs.where.restaurantId_phone!.restaurantId).toBe('test-rest-1');
+      expect(upsertArgs.where.restaurantId_phone!.restaurantId).not.toBe(
         'other-rest-should-be-ignored',
       );
       expect(upsertArgs.create.restaurantId).toBe('test-rest-1');

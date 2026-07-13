@@ -11,6 +11,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
+import { db } from '../../../shared/db/client';
 import { env } from '../../../env';
 
 const VALID_KEY = ['sk', '_sokar', '_agent_'].join('') + 'a'.repeat(40);
@@ -117,16 +118,16 @@ describe('Generic Agent REST adapter', () => {
   describe('tools', () => {
     it('get_restaurant_details retourne les infos et redacte le téléphone', async () => {
       const validUuid = '550e8400-e29b-41d4-a716-446655440000';
-      const { db } = await import('../../../shared/db/client');
-      (db.restaurant.findFirst as any) = vi.fn().mockResolvedValueOnce({
+
+      vi.mocked(db.restaurant.findFirst).mockResolvedValueOnce({
         timezone: 'Europe/Paris',
         exposureSettings: {
           maxPartySize: 12,
           minLeadTimeMinutes: 0,
           exposedCreneaux: [],
         },
-      });
-      (db.restaurant.findUnique as any) = vi.fn().mockResolvedValueOnce({
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findFirst>>);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValueOnce({
         id: validUuid,
         name: 'Le Bistrot',
         slug: 'le-bistrot',
@@ -139,7 +140,7 @@ describe('Generic Agent REST adapter', () => {
         noiseLevel: null,
         dietary: [],
         openingHours: {},
-      });
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -158,8 +159,8 @@ describe('Generic Agent REST adapter', () => {
 
     it('masque un restaurant non exposé MCP', async () => {
       const validUuid = '550e8400-e29b-41d4-a716-446655440000';
-      const { db } = await import('../../../shared/db/client');
-      (db.restaurant.findFirst as any) = vi.fn().mockResolvedValueOnce(null);
+
+      vi.mocked(db.restaurant.findFirst).mockResolvedValueOnce(null);
 
       const app = await getApp();
       const res = await app.inject({
@@ -175,15 +176,15 @@ describe('Generic Agent REST adapter', () => {
 
     it('refuse create_reservation avec un client read-only', async () => {
       delete process.env.AGENT_DEV_KEY;
-      const { db } = await import('../../../shared/db/client');
-      (db.agentClient.findUnique as any).mockResolvedValueOnce({
+
+      vi.mocked(db.agentClient.findUnique).mockResolvedValueOnce({
         id: 'client-readonly',
         restaurantId: null,
         name: 'Read only',
         scopes: ['mcp:read'],
         allowedOrigins: ['https://claude.ai'],
         revokedAt: null,
-      });
+      } as unknown as Awaited<ReturnType<typeof db.agentClient.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
