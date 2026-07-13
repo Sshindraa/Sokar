@@ -58,7 +58,8 @@ describe('CallSessionManager — integration', () => {
     // Mock LLM path — no network
     process.env.SOKAR_SIMULATE_MOCK_LLM = 'true';
     // Each test gets a fresh singleton
-    (CallSessionManager as any).instance = new CallSessionManager();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
   });
 
   describe('session lifecycle', () => {
@@ -114,8 +115,8 @@ describe('CallSessionManager — integration', () => {
       expect(session.turnCount).toBe(1);
       expect(session.state).toBe('SPEAKING');
       // user message appended, assistant message appended
-      const userMsgs = session.history.filter((m: any) => m.role === 'user');
-      const assistantMsgs = session.history.filter((m: any) => m.role === 'assistant');
+      const userMsgs = session.history.filter((m) => m.role === 'user');
+      const assistantMsgs = session.history.filter((m) => m.role === 'assistant');
       expect(userMsgs.length).toBeGreaterThanOrEqual(1);
       expect(assistantMsgs.length).toBeGreaterThanOrEqual(2);
     });
@@ -168,8 +169,10 @@ describe('CallSessionManager — integration', () => {
 
       expect(session.state).toBe('LISTENING');
       expect(session.isSpeaking).toBe(false);
-      const sentPayloads = (telnyxWs as any).send.mock.calls.map((c: any) => c[0]);
-      expect(sentPayloads.some((p: string) => p.includes('"event":"clear"'))).toBe(true);
+      const sentPayloads = vi.mocked(telnyxWs.send).mock.calls.map((c) => c[0]);
+      expect(sentPayloads.some((p) => typeof p === 'string' && p.includes('"event":"clear"'))).toBe(
+        true,
+      );
     });
 
     it('is a no-op when not SPEAKING', () => {
@@ -180,20 +183,20 @@ describe('CallSessionManager — integration', () => {
       mgr.handleBargeIn(session); // state is IDLE
 
       expect(session.state).toBe('IDLE');
-      expect((telnyxWs as any).send).not.toHaveBeenCalled();
+      expect(vi.mocked(telnyxWs.send)).not.toHaveBeenCalled();
     });
 
     it('is a no-op when telnyxWs is not OPEN', () => {
       const mgr = CallSessionManager.getInstance();
       const telnyxWs = makeTelnyxWs();
-      (telnyxWs as any).readyState = WebSocket.CLOSED;
+      (telnyxWs as unknown as Record<string, unknown>).readyState = WebSocket.CLOSED;
       const session = makeSession({ telnyxWs });
       mgr.transition(session, 'SPEAKING');
 
       mgr.handleBargeIn(session);
 
       // send must NOT be called when readyState is not OPEN
-      expect((telnyxWs as any).send).not.toHaveBeenCalled();
+      expect(vi.mocked(telnyxWs.send)).not.toHaveBeenCalled();
     });
   });
 
@@ -201,7 +204,9 @@ describe('CallSessionManager — integration', () => {
     it('sets ended=true, clears timers, aborts in-flight requests', () => {
       const mgr = CallSessionManager.getInstance();
       const session = makeSession();
-      session.speechFinalTimer = setTimeout(() => {}, 60_000) as any;
+      session.speechFinalTimer = setTimeout(() => {}, 60_000) as unknown as ReturnType<
+        typeof setTimeout
+      >;
       const abortController = new AbortController();
       session.abortController = abortController;
 
@@ -220,7 +225,7 @@ describe('CallSessionManager — integration', () => {
       const mgr = CallSessionManager.getInstance();
       const session = makeSession();
       const dgClose = vi.fn();
-      session.deepgramWs = { readyState: WebSocket.OPEN, close: dgClose } as any;
+      session.deepgramWs = { readyState: WebSocket.OPEN, close: dgClose } as unknown as WebSocket;
 
       mgr.cleanup(session);
 
@@ -244,8 +249,8 @@ describe('CallSessionManager — integration', () => {
       const stored = mgr.get('cc-secret-123');
       expect(stored).toBe(session);
       // The internal Map key is a 16-char hex prefix; raw value should not be present
-      const internalKeys = (mgr as any).sessions;
-      const rawKeys = Array.from(internalKeys.keys() as IterableIterator<string>);
+      const internalKeys = (mgr as unknown as { sessions: Map<string, CallSession> }).sessions;
+      const rawKeys = Array.from(internalKeys.keys());
       expect(rawKeys.some((k) => k === 'cc-secret-123')).toBe(false);
       expect(rawKeys.some((k) => /^[0-9a-f]{16}$/.test(k))).toBe(true);
     });
