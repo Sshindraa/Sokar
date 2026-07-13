@@ -1,6 +1,5 @@
 'use client';
 
-// @ts-ignore - date-fns types resolution issue under bundler
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Ban, Eye, Gift, Lock } from 'lucide-react';
