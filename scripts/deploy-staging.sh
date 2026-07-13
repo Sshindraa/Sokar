@@ -48,6 +48,61 @@ ensure_privileged_wrapper() {
     fi
 }
 
+# Vérifier que les .env staging existent et ne contiennent pas de placeholders
+validate_env_files() {
+    local required_files=(
+        "apps/api/.env"
+        "apps/dashboard/.env"
+        "apps/connect/.env"
+    )
+    local errors=0
+    echo ""
+    echo "🔍 Validating env files..."
+
+    for env_file in "${required_files[@]}"; do
+        if [ ! -f "$env_file" ]; then
+            echo "❌ Env file manquant : $env_file" >&2
+            errors=$((errors + 1))
+            continue
+        fi
+        chmod 0600 "$env_file"
+    done
+
+    if [ "$errors" -gt 0 ]; then
+        echo "   Créez-les sur le VPS staging avec les valeurs de staging (voir .env.staging.example)." >&2
+        exit 1
+    fi
+
+    # DATABASE_URL : pas de placeholder de mot de passe et doit pointer sur sokar_staging
+    if grep -qE 'DATABASE_URL=.*:(CHANGE_ME_PASSWORD|password)@' apps/api/.env; then
+        echo "❌ Le mot de passe de DATABASE_URL dans apps/api/.env est un placeholder." >&2
+        echo "   Remplacez-le par une valeur forte avant de déployer." >&2
+        exit 1
+    fi
+
+    if ! grep -qE 'DATABASE_URL=.*sokar_staging' apps/api/.env; then
+        echo "❌ DATABASE_URL dans apps/api/.env doit pointer sur la base sokar_staging." >&2
+        exit 1
+    fi
+
+    # REDIS_URL : staging utilise db=2
+    if ! grep -qE 'REDIS_URL=.*:6379/2' apps/api/.env; then
+        echo "❌ REDIS_URL dans apps/api/.env doit utiliser db=2 (REDIS_URL=...:6379/2)." >&2
+        exit 1
+    fi
+
+    # Recherche de placeholders restants (CHANGE_ME ou ...)
+    local placeholders
+    placeholders=$(grep -nE '=(.*CHANGE_ME|.*\.\.\.)' apps/api/.env apps/dashboard/.env apps/connect/.env 2>/dev/null || true)
+    if [ -n "$placeholders" ]; then
+        echo "❌ Des valeurs placeholder sont présentes dans les fichiers .env :" >&2
+        echo "$placeholders" | sed 's/^/   /' >&2
+        exit 1
+    fi
+
+    echo "   ✅ Env files validés."
+}
+
 # Attendre que les services staging soient up (health + livez), timeout configurable
 wait_for_services() {
     local timeout=${1:-$WAIT_TIMEOUT}
@@ -220,27 +275,7 @@ echo ""
 echo "📦 Installing dependencies..."
 pnpm install --frozen-lockfile
 
-# Env files critiques — fail fast si absent
-REQUIRED_ENV_FILES=(
-    "apps/api/.env"
-    "apps/dashboard/.env"
-    "apps/connect/.env"
-)
-for env_file in "${REQUIRED_ENV_FILES[@]}"; do
-    if [ ! -f "$env_file" ]; then
-        echo "❌ Env file manquant : $env_file"
-        echo "   Créez-le sur le VPS staging avec les valeurs de staging (voir .env.staging.example)."
-        exit 1
-    fi
-    chmod 0600 "$env_file"
-done
-
-# Vérification qu'aucun .env ne contient de placeholder de mot de passe
-if grep -qE 'DATABASE_URL=.*:(CHANGE_ME_PASSWORD|password)@' apps/api/.env; then
-    echo "❌ Le mot de passe de DATABASE_URL dans apps/api/.env est un placeholder." >&2
-    echo "   Remplacez-le par une valeur forte avant de déployer." >&2
-    exit 1
-fi
+validate_env_files
 
 # ── 4. Generate Prisma ──────────────────────────────────
 echo ""

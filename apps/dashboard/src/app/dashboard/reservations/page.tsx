@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-// @ts-ignore - date-fns types resolution issue under bundler
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useApi } from '../../../lib/api';
