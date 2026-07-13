@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type {
   PrismaClient,
   Restaurant,
@@ -9,6 +9,40 @@ import type {
 } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import { CapacityAwareAvailabilityService } from '../availability-capacity-aware.service.js';
+
+vi.mock('../../../shared/redis/client', () => {
+  const store = new Map<string, string>();
+  const reset = () => store.clear();
+
+  const redisCache = {
+    get: vi.fn(async (key: string) => store.get(key) ?? null),
+    set: vi.fn(async (key: string, value: string) => {
+      store.set(key, value);
+      return 'OK';
+    }),
+    incr: vi.fn(async (key: string) => {
+      const val = Number(store.get(key) ?? 0) + 1;
+      store.set(key, String(val));
+      return val;
+    }),
+    expire: vi.fn(async () => 1),
+    del: vi.fn(async (key: string) => {
+      store.delete(key);
+      return 1;
+    }),
+    __resetStore: reset,
+  };
+
+  return {
+    redisCache,
+    redisSession: {},
+    redisQueue: { on: vi.fn() },
+    getCachedContext: vi.fn(),
+    setCachedContext: vi.fn(),
+  };
+});
+
+import { redisCache } from '../../../shared/redis/client';
 
 type MinimalRestaurant = Restaurant & { exposureSettings: RestaurantExposureSettings | null };
 
@@ -287,6 +321,11 @@ function makeBaseRestaurant(capacitySpecials: unknown = {}) {
 }
 
 describe('CapacityAwareAvailabilityService', () => {
+  beforeEach(() => {
+    (redisCache as any).__resetStore();
+    vi.clearAllMocks();
+  });
+
   it('retourne le contrat AvailabilityDto attendu', async () => {
     const { prisma } = makeMockPrisma({
       restaurant: makeBaseRestaurant(),
@@ -395,5 +434,70 @@ describe('CapacityAwareAvailabilityService', () => {
     const dto = await service.getAvailability({ restaurantId: 'inconnu', date, partySize: 2 });
 
     expect(dto.slots).toEqual([]);
+  });
+
+  it('met en cache Redis avec TTL', async () => {
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [makeTable({ id: 't-1', floorPlanId: FLOOR_PLAN_ID, capacity: 4 })],
+    });
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    await service.getAvailability({ restaurantId: RESTAURANT_ID, date, partySize: 2 });
+
+    expect(redisCache.set).toHaveBeenCalledWith(
+      expect.stringContaining('availability:v:r-1'),
+      expect.any(String),
+      'EX',
+      30,
+    );
+  });
+
+  it('retourne le résultat en cache au second appel', async () => {
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [makeTable({ id: 't-1', floorPlanId: FLOOR_PLAN_ID, capacity: 4 })],
+    });
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const first = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date,
+      partySize: 2,
+    });
+    const second = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date,
+      partySize: 2,
+    });
+
+    expect(second).toEqual(first);
+    expect(redisCache.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('invalide le cache sur mutation', async () => {
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [makeTable({ id: 't-1', floorPlanId: FLOOR_PLAN_ID, capacity: 4 })],
+    });
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const first = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date,
+      partySize: 2,
+    });
+
+    await CapacityAwareAvailabilityService.invalidateAvailability(RESTAURANT_ID);
+
+    const second = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date,
+      partySize: 2,
+    });
+
+    expect(second).toEqual(first);
+    expect(redisCache.incr).toHaveBeenCalledWith(expect.stringContaining('availability:v:r-1'));
+    expect(redisCache.set).toHaveBeenCalledTimes(2);
   });
 });

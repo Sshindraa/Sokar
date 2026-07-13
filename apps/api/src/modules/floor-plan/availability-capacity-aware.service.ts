@@ -15,14 +15,56 @@ import type { AvailabilityDto, AvailabilitySlot } from './floor-plan.types';
 import { resolveServiceDurationMinutes } from './floor-plan.types';
 import { TableAllocationService } from './table-allocation.service';
 import { HOURS_TO_MINUTES } from '../../shared/constants/time.js';
+import { redisCache } from '../../shared/redis/client';
+import { logger } from '../../shared/logger/pino';
 
 const SLOT_MINUTES = 30;
+const AVAILABILITY_CACHE_TTL_SECONDS = 30;
+const AVAILABILITY_VERSION_TTL_SECONDS = 120;
+const CACHE_KEY_PREFIX = 'availability:v:';
 
 export class CapacityAwareAvailabilityService {
   private readonly allocation: TableAllocationService;
 
   constructor(private readonly prisma: PrismaClient) {
     this.allocation = new TableAllocationService(prisma);
+  }
+
+  private cacheKey(
+    args: { restaurantId: string; date: string; partySize: number },
+    version: number,
+  ): string {
+    return `${CACHE_KEY_PREFIX}${args.restaurantId}:${args.date}:${args.partySize}:${version}`;
+  }
+
+  private versionKey(restaurantId: string): string {
+    return `${CACHE_KEY_PREFIX}${restaurantId}`;
+  }
+
+  private async getVersion(restaurantId: string): Promise<number> {
+    try {
+      const raw = await redisCache.get(this.versionKey(restaurantId));
+      return Number(raw ?? 0);
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : err, restaurantId },
+        'availability cache version read failed',
+      );
+      return 0;
+    }
+  }
+
+  static async invalidateAvailability(restaurantId: string): Promise<void> {
+    const key = `${CACHE_KEY_PREFIX}${restaurantId}`;
+    try {
+      await redisCache.incr(key);
+      await redisCache.expire(key, AVAILABILITY_VERSION_TTL_SECONDS);
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : err, restaurantId },
+        'availability cache invalidation failed',
+      );
+    }
   }
 
   /**
@@ -35,6 +77,20 @@ export class CapacityAwareAvailabilityService {
     date: string; // YYYY-MM-DD
     partySize: number;
   }): Promise<AvailabilityDto> {
+    let version = 0;
+    try {
+      version = await this.getVersion(args.restaurantId);
+      const cached = await redisCache.get(this.cacheKey(args, version));
+      if (cached) {
+        return JSON.parse(cached) as AvailabilityDto;
+      }
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : err, args },
+        'availability cache read failed',
+      );
+    }
+
     const restaurant = await this.prisma.restaurant.findUnique({
       where: { id: args.restaurantId },
       include: { exposureSettings: true },
@@ -132,12 +188,29 @@ export class CapacityAwareAvailabilityService {
       return { time, available: hasAvailableTable };
     });
 
-    return {
+    const dto: AvailabilityDto = {
       restaurantId: args.restaurantId,
       date: args.date,
       partySize: args.partySize,
       slots,
     };
+
+    try {
+      version = await this.getVersion(args.restaurantId);
+      await redisCache.set(
+        this.cacheKey(args, version),
+        JSON.stringify(dto),
+        'EX',
+        AVAILABILITY_CACHE_TTL_SECONDS,
+      );
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : err, args },
+        'availability cache write failed',
+      );
+    }
+
+    return dto;
   }
 }
 

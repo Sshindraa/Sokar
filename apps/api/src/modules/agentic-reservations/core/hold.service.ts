@@ -29,6 +29,7 @@ import {
 } from './policies.service.js';
 import type { ReservationChannel as Channel } from './state-machine.js';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
+import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service.js';
 
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../../shared/db/transaction-options';
 import { scheduleHoldExpiration, scheduleQuoteExpiration } from '../workers/queues.js';
@@ -205,6 +206,7 @@ export class HoldService {
         }, DEFAULT_TRANSACTION_OPTIONS);
 
         await scheduleHoldExpiration({ holdId: hold.id, expiresAt });
+        await CapacityAwareAvailabilityService.invalidateAvailability(args.restaurantId);
 
         return hold;
       } catch (err) {
@@ -269,7 +271,7 @@ export class HoldService {
     reservationId: string;
     actor: string;
   }): Promise<AgenticHold> {
-    return this.prisma.$transaction(async (tx) => {
+    const hold = await this.prisma.$transaction(async (tx) => {
       const hold = await tx.agenticHold.findUnique({ where: { id: args.holdId } });
       if (!hold) throw new HoldNotFoundError(args.holdId);
       if (hold.status === 'CONSUMED') throw new HoldAlreadyConsumedError(hold.id);
@@ -324,15 +326,14 @@ export class HoldService {
 
       return updated;
     }, DEFAULT_TRANSACTION_OPTIONS);
-  }
 
-  /**
-   * Libère un hold (annulation côté agent sans création de résa).
-   */
+    await CapacityAwareAvailabilityService.invalidateAvailability(hold.restaurantId);
+    return hold;
+  }
   async releaseHold(args: { holdId: string; actor: string; reason?: string }): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+    const restaurantId = await this.prisma.$transaction(async (tx) => {
       const hold = await tx.agenticHold.findUnique({ where: { id: args.holdId } });
-      if (!hold || hold.status !== 'ACTIVE') return;
+      if (!hold || hold.status !== 'ACTIVE') return null;
 
       await tx.agenticHold.update({
         where: { id: hold.id },
@@ -347,7 +348,13 @@ export class HoldService {
           metadata: { reason: args.reason ?? null },
         },
       });
+
+      return hold.restaurantId;
     });
+
+    if (restaurantId) {
+      await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
+    }
   }
 
   /**
@@ -355,6 +362,7 @@ export class HoldService {
    * Renvoie le nombre de holds expirés.
    */
   async expireOverdue(now: Date = new Date()): Promise<number> {
+    const restaurantIds = new Set<string>();
     const result = await this.prisma.$transaction(async (tx) => {
       const overdue = await tx.agenticHold.findMany({
         where: {
@@ -386,11 +394,17 @@ export class HoldService {
             metadata: { restaurantId: h.restaurantId },
           },
         });
+        restaurantIds.add(h.restaurantId);
         expiredCount++;
       }
 
       return expiredCount;
     });
+
+    for (const restaurantId of restaurantIds) {
+      await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
+    }
+
     return result;
   }
 
@@ -437,8 +451,9 @@ export class HoldService {
     actor?: string;
   }): Promise<boolean> {
     const now = args.now ?? new Date();
+    let restaurantId: string | null = null;
 
-    return this.prisma.$transaction(async (tx) => {
+    const expired = await this.prisma.$transaction(async (tx) => {
       const hold = await tx.agenticHold.findUnique({ where: { id: args.holdId } });
       if (!hold) return false;
       if (args.expectedType && hold.type !== args.expectedType) return false;
@@ -463,8 +478,14 @@ export class HoldService {
         },
       });
 
+      restaurantId = hold.restaurantId;
       return true;
     });
+
+    if (expired && restaurantId) {
+      await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
+    }
+    return expired;
   }
 
   private async expireOverdueForSlot(args: {

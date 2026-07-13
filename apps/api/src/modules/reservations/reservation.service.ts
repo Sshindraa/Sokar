@@ -158,6 +158,7 @@ export class ReservationService {
       }
     }
 
+    await CapacityAwareAvailabilityService.invalidateAvailability(input.restaurantId);
     return reservation;
   }
 
@@ -216,6 +217,7 @@ export class ReservationService {
       }
     }
 
+    await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
     return updated;
   }
 
@@ -246,6 +248,7 @@ export class ReservationService {
     }
 
     await db.reservation.delete({ where: { id, restaurantId } });
+    await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
   }
 
   static async findByRestaurant(restaurantId: string, date?: string) {

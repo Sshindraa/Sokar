@@ -4,7 +4,9 @@
 # Usage:
 #   bash scripts/deploy-staging.sh              # déploiement complet
 #   bash scripts/deploy-staging.sh --dry-run    # simulation (pas de restart, pas de migrations)
-#   bash scripts/deploy-staging.sh rollback     # rollback vers la release précédente
+#   bash scripts/deploy-staging.sh rollback [--with-db-rollback] [release-timestamp]
+#                                               # rollback vers la release précédente
+#       --with-db-rollback : restaure aussi la base Postgres depuis le backup de la release
 #
 # Cible : /opt/sokar-staging/ sur le VPS pmbtc.
 # Ports  : API=4100, Dashboard=3100, Connect=4102 (décalés vs prod 4000/3000/4002).
@@ -32,6 +34,11 @@ RELEASES_DIR="$SOKAR_ROOT/releases"
 DATE=$(date '+%Y-%m-%d %H:%M:%S')
 PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
 WAIT_TIMEOUT=${WAIT_TIMEOUT:-60}
+WITH_DB_ROLLBACK=false
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=ops/db-backup.sh
+source "$SCRIPT_DIR/ops/db-backup.sh"
 
 ensure_privileged_wrapper() {
     if [ -x "$PRIVILEGED_WRAPPER" ]; then
@@ -151,10 +158,18 @@ if [ "${1:-}" = "rollback" ]; then
     # Rollback vers la release précédente
     cd "$SOKAR_ROOT"
     echo "=== Staging Rollback ==="
+    shift
+    while [ "${1:-}" = "--with-db-rollback" ]; do
+        WITH_DB_ROLLBACK=true
+        shift
+    done
     TARGET_RELEASE=$(ls -1 "$RELEASES_DIR" 2>/dev/null \
         | grep -E '^[0-9]{8}T[0-9]{6}Z' \
         | sort -r \
         | sed -n '2p')
+    if [ -n "${1:-}" ]; then
+        TARGET_RELEASE="$1"
+    fi
     if [ -z "$TARGET_RELEASE" ]; then
         echo "❌ Aucune release précédente trouvée dans $RELEASES_DIR"
         exit 1
@@ -169,6 +184,10 @@ if [ "${1:-}" = "rollback" ]; then
             cp -a "$RELEASE_PATH/$p" "$SOKAR_ROOT/$(dirname "$p")/"
         fi
     done
+    if [ "$WITH_DB_ROLLBACK" = true ]; then
+        echo "→ Restore DB..."
+        restore_db "$RELEASE_PATH"
+    fi
     pm2 start infra/ecosystem.staging.config.js
     wait_for_services
     pm2 save
@@ -224,6 +243,7 @@ if [ "$DRY_RUN" = false ]; then
             cp -a "$SOKAR_ROOT/$p" "$PREV_RELEASE/$(dirname "$p")/"
         fi
     done
+    backup_db "$PREV_RELEASE" || true
     RESTORE_ON_FAIL="$PREV_RELEASE"
 fi
 

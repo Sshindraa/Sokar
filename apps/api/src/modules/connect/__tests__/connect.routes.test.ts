@@ -16,8 +16,8 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { PublicRestaurantDto } from '../connect.types';
 
-vi.mock('../../floor-plan/availability-capacity-aware.service', () => ({
-  CapacityAwareAvailabilityService: vi.fn().mockImplementation(function (this: {
+vi.mock('../../floor-plan/availability-capacity-aware.service', () => {
+  const CapacityAwareAvailabilityService = vi.fn().mockImplementation(function (this: {
     getAvailability: ReturnType<typeof vi.fn>;
   }) {
     this.getAvailability = vi
@@ -28,12 +28,19 @@ vi.mock('../../floor-plan/availability-capacity-aware.service', () => ({
         partySize: args.partySize,
         slots: [{ time: '20:00', available: true }],
       }));
-  }),
-  zonedTimeToUtc: vi.fn().mockImplementation((_date: string, time: string) => {
-    const [h, m] = time.split(':').map(Number);
-    return new Date(Date.UTC(2026, 5, 29, h, m));
-  }),
-}));
+  });
+  (CapacityAwareAvailabilityService as any).invalidateAvailability = vi
+    .fn()
+    .mockResolvedValue(undefined);
+
+  return {
+    CapacityAwareAvailabilityService,
+    zonedTimeToUtc: vi.fn().mockImplementation((_date: string, time: string) => {
+      const [h, m] = time.split(':').map(Number);
+      return new Date(Date.UTC(2026, 5, 29, h, m));
+    }),
+  };
+});
 
 vi.mock('../../floor-plan/table-allocation.service', () => ({
   TableAllocationService: vi.fn().mockImplementation(function (this: {
