@@ -108,7 +108,17 @@ export default function GiftCardsPage() {
     } finally {
       setLoading(false);
     }
-  }, [orgId, statusFilter, search, page, tab, listGiftCards, getGiftCardStats, listGiftCardPacks]);
+  }, [
+    orgId,
+    statusFilter,
+    search,
+    page,
+    tab,
+    listGiftCards,
+    getGiftCardStats,
+    listGiftCardPacks,
+    get,
+  ]);
 
   useEffect(() => {
     fetchAll();
