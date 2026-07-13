@@ -3,12 +3,9 @@ import path from 'node:path';
 
 export default defineConfig({
   oxc: {
-    // `jsx: 'automatic'` active le parsing JSX dans le transform oxc/rolldown
+    // `jsx: { runtime: 'automatic' }` active le parsing JSX dans le transform oxc/rolldown
     // (requis pour les fichiers .tsx de test — sans ça, ssrTransformScript échoue).
-    // Le type TS n'accepte que `"preserve" | JsxOptions`, mais la valeur runtime
-    // `'automatic'` est bien supportée par oxc.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    jsx: 'automatic' as any,
+    jsx: { runtime: 'automatic' },
   },
   test: {
     globals: true,

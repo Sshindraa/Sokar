@@ -4,6 +4,14 @@ import userEvent from '@testing-library/user-event';
 import { fetchWithTimeout } from '@sokar/shared';
 import { ReservationWidget } from '../reservation-widget';
 
+interface WindowWithOpenAI extends Window {
+  openai?: {
+    toolInput?: unknown;
+    toolOutput?: unknown;
+    setWidgetState?: (state: unknown) => void;
+  };
+}
+
 vi.mock('@sokar/shared', () => ({
   fetchWithTimeout: vi.fn(),
 }));
@@ -44,7 +52,7 @@ function availabilityResponse() {
         { time: '19:30', available: false },
       ],
     }),
-  } as any;
+  } as unknown as Response;
 }
 
 /** Réponse hold standard. */
@@ -58,7 +66,7 @@ function holdResponse() {
       expiresAt: '2030-01-15T19:05:00Z',
       status: 'pending' as const,
     }),
-  } as any;
+  } as unknown as Response;
 }
 
 /** Réponse confirm standard. */
@@ -74,7 +82,7 @@ function confirmResponse() {
       time: '19:00',
       partySize: 2,
     }),
-  } as any;
+  } as unknown as Response;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,12 +92,12 @@ function confirmResponse() {
 beforeEach(() => {
   mockFetch.mockReset();
   restoreLocation();
-  delete (window as any).openai;
+  delete (window as unknown as WindowWithOpenAI).openai;
 });
 
 afterEach(() => {
   restoreLocation();
-  delete (window as any).openai;
+  delete (window as unknown as WindowWithOpenAI).openai;
 });
 
 // ---------------------------------------------------------------------------
@@ -253,7 +261,7 @@ describe('ReservationWidget — étape slots', () => {
       ok: true,
       status: 200,
       json: async () => ({ restaurantId: 'r1', date: '2030-01-15', partySize: 2, slots: [] }),
-    } as any);
+    } as unknown as Response);
     render(<ReservationWidget />);
     await screen.findByRole('form', { name: 'Détails de la réservation' });
 

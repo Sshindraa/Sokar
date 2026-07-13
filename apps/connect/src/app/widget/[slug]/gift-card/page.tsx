@@ -7,6 +7,7 @@
  * Design aligné avec le widget de réservation (cream bg, glassmorphism, display font).
  */
 
+import { type CSSProperties } from 'react';
 import { notFound } from 'next/navigation';
 import { fetchWidgetRestaurant } from '@/lib/api-client';
 import { GiftCardPurchase } from '@/components/gift-card-purchase';
@@ -48,13 +49,15 @@ export default async function GiftCardWidgetPage({
     source,
   });
 
+  const style: CSSProperties & Record<`--${string}`, string> = {
+    '--widget-primary': primary,
+    '--widget-accent': accent,
+  };
+
   return (
     <div
       className="relative min-h-[100dvh] w-full overflow-x-hidden bg-[hsl(var(--reservation-bg))]"
-      style={{
-        ['--widget-primary' as any]: primary,
-        ['--widget-accent' as any]: accent,
-      }}
+      style={style}
     >
       {/* Décorations — mêmes que le widget résa */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/30 to-transparent" />

@@ -62,7 +62,9 @@ export function GiftCardCrowdfundingPage({
   useEffect(() => {
     getCrowdfundingStatus(code)
       .then(setStatus)
-      .catch((err: any) => setError(err.message || 'Cagnotte introuvable'))
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : 'Cagnotte introuvable'),
+      )
       .finally(() => setLoading(false));
   }, [code]);
 
@@ -112,8 +114,10 @@ export function GiftCardCrowdfundingPage({
       setClientSecret(pi.clientSecret);
       setPaymentIntentId(pi.paymentIntentId);
       setShowPayment(true);
-    } catch (err: any) {
-      setContributionError(err.message || 'Impossible de démarrer le paiement');
+    } catch (err: unknown) {
+      setContributionError(
+        err instanceof Error ? err.message : 'Impossible de démarrer le paiement',
+      );
     } finally {
       setContributing(false);
     }
@@ -144,8 +148,10 @@ export function GiftCardCrowdfundingPage({
       // Recharger le statut
       const updated = await getCrowdfundingStatus(code);
       setStatus(updated);
-    } catch (err: any) {
-      setContributionError(err.message || 'Contribution impossible. Réessayez.');
+    } catch (err: unknown) {
+      setContributionError(
+        err instanceof Error ? err.message : 'Contribution impossible. Réessayez.',
+      );
     } finally {
       setContributing(false);
     }

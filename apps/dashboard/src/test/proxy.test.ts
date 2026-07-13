@@ -16,7 +16,7 @@ function mockReq(headers: Record<string, string>) {
     headers: {
       get: (name: string) => headers[name.toLowerCase()] ?? null,
     },
-  } as any;
+  } as unknown as Parameters<typeof forwardedHeaders>[0];
 }
 
 describe('forwardedHeaders — proxy Next.js', () => {

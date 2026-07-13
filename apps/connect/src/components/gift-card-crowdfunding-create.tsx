@@ -111,8 +111,8 @@ export function GiftCardCrowdfundingCreate({
         code: res.code,
         source,
       });
-    } catch (err: any) {
-      setError(err.message || 'Impossible de créer la cagnotte. Réessayez.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Impossible de créer la cagnotte. Réessayez.');
     } finally {
       setLoading(false);
     }

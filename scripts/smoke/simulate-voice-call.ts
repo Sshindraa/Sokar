@@ -14,6 +14,8 @@ const API_BASE = process.env.SOKAR_API_BASE ?? 'http://localhost:4000';
 const CALLER_PHONE = process.env.SOKAR_CALLER_PHONE ?? '+336****5678';
 const MODE = process.env.SOKAR_SIMULATE_MODE ?? 'mock';
 
+type Reservation = Record<string, unknown>;
+
 async function main() {
   // 1. Créer l'appel simulé
   const initRes = await fetch(`${API_BASE}/api/test/simulate-call`, {
@@ -55,7 +57,7 @@ async function main() {
     `${API_BASE}/api/test/simulate-call/${init.callControlId}/reservations`,
   );
   if (reservationsRes.ok) {
-    const reservations = (await reservationsRes.json()) as any[];
+    const reservations = (await reservationsRes.json()) as unknown as Reservation[];
     console.log('');
     console.log('=== Réservations trouvées ===');
     console.log(JSON.stringify(reservations, null, 2));
