@@ -34,7 +34,8 @@ async function createMistralConnector(key: string) {
   const name = process.env.MISTRAL_CONNECTOR_NAME ?? 'sokar-mistral';
 
   const visibility =
-    (process.env.MISTRAL_CONNECTOR_VISIBILITY as 'private' | 'public' | 'workspace') ?? 'private';
+    (process.env.MISTRAL_CONNECTOR_VISIBILITY as 'private' | 'shared_workspace' | 'shared_org') ??
+    'shared_workspace';
 
   const body = {
     name,
@@ -64,7 +65,9 @@ async function createMistralConnector(key: string) {
 }
 
 async function main() {
-  const key = generateSokarAgentKey();
+  const providedKey = process.env.MISTRAL_CONNECTOR_KEY;
+  const key =
+    providedKey && validateApiKeyFormat(providedKey) ? providedKey : generateSokarAgentKey();
   if (!validateApiKeyFormat(key)) {
     throw new Error('Clé générée invalide');
   }
