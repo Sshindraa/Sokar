@@ -52,12 +52,12 @@ const ConfirmVerificationSchema = z.object({
 });
 
 const EraseSchema = z.object({
-  subject: z.string().min(8),
+  subject: z.string().min(8).max(254),
   reason: z.string().max(500).optional(),
 });
 
 const ExportSchema = z.object({
-  subject: z.string().min(8),
+  subject: z.string().min(8).max(254),
 });
 
 export async function rgpdRoutes(app: FastifyInstance): Promise<void> {

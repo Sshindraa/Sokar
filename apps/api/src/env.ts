@@ -3,6 +3,21 @@ import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
 
+function isValidCorsOrigins(val: string): boolean {
+  return val
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .every((origin) => {
+      try {
+        const { protocol } = new URL(origin);
+        return protocol === 'http:' || protocol === 'https:';
+      } catch {
+        return false;
+      }
+    });
+}
+
 // En production (PM2 --env-file=.env), le fichier app-local est la source de
 // vérité. En dev, on fallback sur le .env du repo root puis .env.local.
 // L'ancien code chargeait toujours ../../../.env (repo root), ce qui divergeait
@@ -43,10 +58,6 @@ const PROD_HOST_ALLOWLIST = [
   // Staging — mêmes contraintes que la prod (NODE_ENV=production).
   'staging.sokar.tech',
   'api-staging.sokar.tech',
-  // localhost autorisé en prod pour ne pas casser un test qui tournerait
-  // NODE_ENV=production par erreur sans configurer les vraies valeurs.
-  // Si ce devient trop permissif, retirer localhost de l'allowlist prod.
-  'localhost',
 ];
 
 const EnvSchema = z
@@ -59,7 +70,13 @@ const EnvSchema = z
     DASHBOARD_URL: z.string().url('DASHBOARD_URL must be a valid URL'),
     API_URL: z.string().url('API_URL must be a valid URL'),
     // CORS — allowlist explicite des origins navigateur (comma-separated)
-    CORS_ORIGINS: z.string().optional(),
+    CORS_ORIGINS: z
+      .string()
+      .refine(isValidCorsOrigins, {
+        message:
+          'CORS_ORIGINS must be a comma-separated list of http(s) URLs (e.g. https://sokar.tech,https://www.sokar.tech)',
+      })
+      .optional(),
     // Reverse proxy IPs (Nginx) — comma-separated, accepte CIDR et IPv6.
     // Defaut loopback ; ajouter l'IP publique du VPS si Nginx n'est pas local.
     TRUSTED_PROXY_IPS: z.string().default('127.0.0.1, ::1'),

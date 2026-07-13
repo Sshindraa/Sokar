@@ -18,11 +18,11 @@ import { Prisma } from '@prisma/client';
  * Transaction standard — créations de réservation, consommation de hold,
  * rachat de gift card, contribution crowdfunding.
  *
- * 5s pour obtenir une connexion, 10s d'exécution max.
+ * 5s pour obtenir une connexion, 20s d'exécution max.
  */
 export const DEFAULT_TRANSACTION_OPTIONS = {
   maxWait: 5000,
-  timeout: 10000,
+  timeout: 20000,
   isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
 } as const;
 

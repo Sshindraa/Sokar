@@ -12,7 +12,7 @@ import { test, expect } from '@playwright/test';
  *   5. Si créneaux disponibles : sélectionner un créneau, remplir le formulaire,
  *      soumettre et vérifier l'écran de confirmation.
  *
- * Nécessite l'API + DB seedée. Skip si l'API n'est pas disponible.
+ * Nécessite l'API + DB seedée. Échoue si l'API n'est pas disponible.
  *
  * Les tests sont en mode serial car le flow de réservation dépend d'états
  * partagés (créneaux disponibles dans la DB).
@@ -24,12 +24,8 @@ const RESTAURANT_SLUG = 'chez-sokar-demo';
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
-  try {
-    const res = await fetch(`${API_URL}/health`);
-    if (!res.ok) throw new Error(`API health check failed: ${res.status}`);
-  } catch {
-    test.skip(true, 'API not available — skipping E2E tests');
-  }
+  const res = await fetch(`${API_URL}/health`);
+  if (!res.ok) throw new Error(`API health check failed: ${res.status}`);
 });
 
 test.describe('Flow de réservation via le widget', () => {

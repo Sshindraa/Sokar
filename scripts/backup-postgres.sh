@@ -19,6 +19,23 @@ VERIFY_DB="${DB_NAME}_restore_check_${TIMESTAMP//[^0-9]/}"
 install -d -m 0700 "${BACKUP_DIR}"
 umask 077
 
+check_disk_space() {
+  local target_dir="$1"
+  local required_bytes="$2"
+  local available
+  available=$(df -B1 --output=avail "$target_dir" | tail -1)
+  if [ "$available" -lt "$required_bytes" ]; then
+    echo "❌ Disk space check failed: $target_dir has $available bytes, required $required_bytes" >&2
+    exit 1
+  fi
+}
+
+echo "→ Estimating database size..."
+DB_SIZE_BYTES="$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${DB_NAME}" -Atc \"SELECT pg_database_size('${DB_NAME}');\")"
+# Reserve ~2x database size + 1GB for dump + restore verification.
+REQUIRED_BYTES=$((DB_SIZE_BYTES * 2 + 1024 * 1024 * 1024))
+check_disk_space "${BACKUP_DIR}" "${REQUIRED_BYTES}"
+
 cleanup() {
   docker exec "${CONTAINER}" dropdb --if-exists --force -U "${DB_USER}" "${VERIFY_DB}" \
     >/dev/null 2>&1 || true
