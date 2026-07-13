@@ -4,20 +4,28 @@
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
+import { PrismaClient } from '@prisma/client';
 import { AgenticAdminService, OptInGuardError } from '../admin/admin.service';
 import { AuditLogService } from '../core/audit-log.service';
 import { PolicyValidationError } from '../core/policies.service';
 
 function makeFakes() {
-  const restaurants = new Map<string, any>();
-  const settings = new Map<string, any>();
-  const audits: any[] = [];
-  const reservations: any[] = [];
+  const restaurants = new Map<string, Record<string, unknown>>();
+  const settings = new Map<string, Record<string, unknown>>();
+  const audits: Record<string, unknown>[] = [];
+  const reservations: Record<string, unknown>[] = [];
 
-  const prisma: any = {
-    $transaction: async (fn: any) => fn(prisma),
+  const prisma = {
+    $transaction: async (fn: unknown) =>
+      (fn as unknown as (tx: PrismaClient) => Promise<unknown>)(prisma as unknown as PrismaClient),
     restaurant: {
-      findUniqueOrThrow: async ({ where, select }: any) => {
+      findUniqueOrThrow: async ({
+        where,
+        select,
+      }: {
+        where: { id: string };
+        select?: Record<string, unknown>;
+      }) => {
         const r = restaurants.get(where.id);
         if (!r) throw new Error('not found');
         if (select) {
@@ -25,7 +33,13 @@ function makeFakes() {
         }
         return r;
       },
-      findUnique: async ({ where, select }: any) => {
+      findUnique: async ({
+        where,
+        select,
+      }: {
+        where: { id: string };
+        select?: Record<string, unknown>;
+      }) => {
         const r = restaurants.get(where.id);
         if (!r) return null;
         if (select) {
@@ -33,15 +47,25 @@ function makeFakes() {
         }
         return r;
       },
-      update: async ({ where, data }: any) => {
+      update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
         const r = restaurants.get(where.id);
+        if (!r) throw new Error('not found');
         Object.assign(r, data);
         return r;
       },
     },
     restaurantExposureSettings: {
-      findUnique: async ({ where }: any) => settings.get(where.restaurantId) ?? null,
-      upsert: async ({ where, create, update }: any) => {
+      findUnique: async ({ where }: { where: { restaurantId: string } }) =>
+        settings.get(where.restaurantId) ?? null,
+      upsert: async ({
+        where,
+        create,
+        update,
+      }: {
+        where: { restaurantId: string };
+        create: Record<string, unknown>;
+        update: Record<string, unknown>;
+      }) => {
         const existing = settings.get(where.restaurantId);
         const merged = { ...(existing ?? create ?? {}), ...(update ?? {}) };
         settings.set(where.restaurantId, merged);
@@ -49,31 +73,40 @@ function makeFakes() {
       },
     },
     reservation: {
-      count: async ({ where }: any) => {
-        return reservations.filter((r) => {
-          if (r.restaurantId !== where.restaurantId) return false;
-          if (where.partySize?.gt !== undefined && r.partySize <= where.partySize.gt) return false;
+      count: async ({ where }: { where: Record<string, unknown> }) => {
+        return reservations.filter((r: Record<string, unknown>) => {
+          if (String(r.restaurantId) !== String(where.restaurantId)) return false;
+          const partySize = where.partySize as Record<string, unknown> | undefined;
+          if (partySize?.gt !== undefined && Number(r.partySize) <= Number(partySize.gt))
+            return false;
+          const reservedAt = where.reservedAt as Record<string, unknown> | undefined;
+          const gte = reservedAt?.gte;
+          const rReservedAt = r.reservedAt;
           if (
-            where.reservedAt?.gte !== undefined &&
-            (!r.reservedAt || r.reservedAt.getTime() < where.reservedAt.gte.getTime())
+            gte !== undefined &&
+            (!rReservedAt ||
+              !(rReservedAt instanceof Date) ||
+              rReservedAt.getTime() < (gte instanceof Date ? gte.getTime() : Number(gte)))
           ) {
             return false;
           }
-          if (where.state?.in && !where.state.in.includes(r.state)) return false;
+          const state = where.state as Record<string, unknown> | undefined;
+          const stateIn = state?.in;
+          if (Array.isArray(stateIn) && !stateIn.includes(r.state)) return false;
           return true;
         }).length;
       },
     },
     reservationAuditLog: {
-      create: async ({ data }: any) => {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
         audits.push(data);
         return data;
       },
     },
-  };
+  } as unknown as PrismaClient;
 
-  const audit = new AuditLogService(prisma as any);
-  const service = new AgenticAdminService(prisma as any, audit);
+  const audit = new AuditLogService(prisma);
+  const service = new AgenticAdminService(prisma, audit);
 
   return { restaurants, settings, audits, reservations, prisma, service };
 }
@@ -121,7 +154,7 @@ describe('agentic admin service', () => {
         input: { mcp: true, openaiReserve: false },
         actor: 'user:test',
       });
-      const r = fakes.restaurants.get('r-1');
+      const r = fakes.restaurants.get('r-1')!;
       expect(r.agenticOptIn).toBe(true);
       expect(r.openaiReserveEnabled).toBe(false);
       expect(fakes.audits).toHaveLength(1);
@@ -134,13 +167,13 @@ describe('agentic admin service', () => {
         input: { mcp: true, openaiReserve: true },
         actor: 'user:test',
       });
-      const r = fakes.restaurants.get('r-1');
+      const r = fakes.restaurants.get('r-1')!;
       expect(r.agenticOptIn).toBe(true);
       expect(r.openaiReserveEnabled).toBe(true);
     });
 
     it('refuse openaiReserve=true si lat manquant', async () => {
-      fakes.restaurants.get('r-1').lat = null;
+      fakes.restaurants.get('r-1')!.lat = null;
       await expect(
         fakes.service.setOptIn({
           restaurantId: 'r-1',
@@ -151,7 +184,7 @@ describe('agentic admin service', () => {
     });
 
     it('refuse openaiReserve=true si websiteUrl manquant', async () => {
-      fakes.restaurants.get('r-1').websiteUrl = null;
+      fakes.restaurants.get('r-1')!.websiteUrl = null;
       await expect(
         fakes.service.setOptIn({
           restaurantId: 'r-1',
@@ -162,7 +195,7 @@ describe('agentic admin service', () => {
     });
 
     it('refuse openaiReserve=true si formattedAddress manquant', async () => {
-      fakes.restaurants.get('r-1').formattedAddress = null;
+      fakes.restaurants.get('r-1')!.formattedAddress = null;
       await expect(
         fakes.service.setOptIn({
           restaurantId: 'r-1',
@@ -173,7 +206,7 @@ describe('agentic admin service', () => {
     });
 
     it('refuse openaiReserve=true si phoneE164 manquant', async () => {
-      fakes.restaurants.get('r-1').phoneE164 = null;
+      fakes.restaurants.get('r-1')!.phoneE164 = null;
       await expect(
         fakes.service.setOptIn({
           restaurantId: 'r-1',
@@ -184,14 +217,14 @@ describe('agentic admin service', () => {
     });
 
     it('désactiver MCP force OpenAI Reserve à false', async () => {
-      fakes.restaurants.get('r-1').agenticOptIn = true;
-      fakes.restaurants.get('r-1').openaiReserveEnabled = true;
+      fakes.restaurants.get('r-1')!.agenticOptIn = true;
+      fakes.restaurants.get('r-1')!.openaiReserveEnabled = true;
       await fakes.service.setOptIn({
         restaurantId: 'r-1',
         input: { mcp: false, openaiReserve: false },
         actor: 'user:test',
       });
-      const r = fakes.restaurants.get('r-1');
+      const r = fakes.restaurants.get('r-1')!;
       expect(r.agenticOptIn).toBe(false);
       expect(r.openaiReserveEnabled).toBe(false);
     });
@@ -212,8 +245,9 @@ describe('agentic admin service', () => {
         actor: 'user:test',
       });
       const audit = fakes.audits[0];
-      expect(audit.metadata.before.mcp).toBe(false);
-      expect(audit.metadata.after.mcp).toBe(true);
+      const metadata = audit.metadata as Record<string, unknown>;
+      expect((metadata.before as Record<string, unknown>).mcp).toBe(false);
+      expect((metadata.after as Record<string, unknown>).mcp).toBe(true);
     });
   });
 
@@ -256,7 +290,7 @@ describe('agentic admin service', () => {
         input: { maxPartySize: 8 },
         actor: 'user:test',
       });
-      const s = fakes.settings.get('r-1');
+      const s = fakes.settings.get('r-1')!;
       expect(s.maxPartySize).toBe(8);
     });
 
@@ -278,7 +312,7 @@ describe('agentic admin service', () => {
         input: { maxPartySize: 6 },
         actor: 'user:test',
       });
-      expect(fakes.settings.get('r-1').maxPartySize).toBe(6);
+      expect(fakes.settings.get('r-1')!.maxPartySize).toBe(6);
     });
 
     it('refuse maxPartySize trop bas (<1)', async () => {
@@ -362,8 +396,8 @@ describe('agentic admin service', () => {
           actor: 'user:test',
         });
         expect.fail('aurait dû jeter');
-      } catch (err: any) {
-        expect(err.code).toBe('FUTURE_RESERVATIONS_EXCEED_MAX');
+      } catch (err) {
+        expect((err as { code: string }).code).toBe('FUTURE_RESERVATIONS_EXCEED_MAX');
       }
     });
 
@@ -382,7 +416,7 @@ describe('agentic admin service', () => {
         actor: 'user:test',
       });
 
-      expect(fakes.settings.get('r-1').maxPartySize).toBe(6);
+      expect(fakes.settings.get('r-1')!.maxPartySize).toBe(6);
     });
 
     it('audit contient before/after', async () => {
@@ -403,10 +437,10 @@ describe('agentic admin service', () => {
         input: { maxPartySize: 8 },
         actor: 'user:test',
       });
-      const audit = fakes.audits.find((a) => a.event === 'exposure_settings_changed');
-      expect(audit).toBeDefined();
-      expect(audit.metadata.before.maxPartySize).toBe(12);
-      expect(audit.metadata.after.maxPartySize).toBe(8);
+      const audit = fakes.audits.find((a) => a.event === 'exposure_settings_changed')!;
+      const metadata = audit.metadata as Record<string, unknown>;
+      expect((metadata.before as Record<string, unknown>).maxPartySize).toBe(12);
+      expect((metadata.after as Record<string, unknown>).maxPartySize).toBe(8);
     });
   });
 });

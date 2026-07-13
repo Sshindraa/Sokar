@@ -50,7 +50,7 @@ describe('auth.routes - POST /api/auth/sync', () => {
     vi.mocked(clerkClient.organizations.getOrganization).mockResolvedValue({
       name: 'Le Bistrot',
       slug: 'le-bistrot',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof clerkClient.organizations.getOrganization>>);
     const created = {
       id: 'test-rest-1',
       name: 'Le Bistrot',
@@ -97,7 +97,7 @@ describe('auth.routes - POST /api/auth/sync', () => {
       id: 'test-rest-1',
       name: 'Mon Restaurant',
       phoneNumber: '+000test-res',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.create>>);
 
     const res = await app.inject({
       method: 'POST',
@@ -122,11 +122,11 @@ describe('auth.routes - POST /api/auth/sync', () => {
     vi.mocked(clerkClient.organizations.getOrganization).mockResolvedValue({
       name: 'X',
       slug: 'x',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof clerkClient.organizations.getOrganization>>);
     vi.mocked(db.restaurant.create).mockResolvedValue({
       id: 'test-rest-1',
       name: 'X',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.create>>);
     vi.mocked(queues.eveningReport.upsertJobScheduler).mockRejectedValue(new Error('Redis down'));
 
     const res = await app.inject({

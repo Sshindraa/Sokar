@@ -5,7 +5,8 @@
  * sans toucher la DB. Vérifie le contrat HTTP (status codes, payloads).
  */
 
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { PrismaClient } from '@prisma/client';
 import { getApp, closeApp } from '../../../test/helpers';
 
 const AUTH = { authorization: 'Bearer fake-token' };
@@ -28,11 +29,11 @@ describe('agentic admin routes', () => {
 
     it('retourne les flags par défaut', async () => {
       const { db } = await import('../../../shared/db/client');
-      (db.restaurant.findUniqueOrThrow as any).mockResolvedValueOnce({
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValueOnce({
         agenticOptIn: false,
         openaiReserveEnabled: false,
         policyVersion: '2026-06-20',
-      });
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>);
       const app = await getApp();
       const res = await app.inject({
         method: 'GET',
@@ -70,7 +71,7 @@ describe('agentic admin routes', () => {
 
     it('refuse 409 si OpenAI Reserve activé sans champs requis', async () => {
       const { db } = await import('../../../shared/db/client');
-      (db.restaurant.findUniqueOrThrow as any).mockResolvedValueOnce({
+      vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValueOnce({
         agenticOptIn: false,
         openaiReserveEnabled: false,
         lat: null,
@@ -78,7 +79,7 @@ describe('agentic admin routes', () => {
         websiteUrl: 'https://example.com',
         formattedAddress: '1 rue de la Paix',
         phoneE164: '+336****0000',
-      });
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>);
       const app = await getApp();
       const res = await app.inject({
         method: 'POST',
@@ -101,9 +102,7 @@ describe('agentic admin routes', () => {
 
     it('retourne les défauts si pas de settings', async () => {
       const { db } = await import('../../../shared/db/client');
-      (db.restaurantExposureSettings as any) = {
-        findUnique: vi.fn().mockResolvedValueOnce(null),
-      };
+      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValueOnce(null);
       const app = await getApp();
       const res = await app.inject({
         method: 'GET',
@@ -155,7 +154,7 @@ describe('agentic admin routes', () => {
   describe('GET /api/agentic/mcp-clients', () => {
     it('retourne les clients actifs', async () => {
       const { db } = await import('../../../shared/db/client');
-      (db.agentClient.findMany as any).mockResolvedValueOnce([
+      vi.mocked(db.agentClient.findMany).mockResolvedValueOnce([
         {
           id: 'client-1',
           name: 'Claude Desktop',
@@ -164,7 +163,7 @@ describe('agentic admin routes', () => {
           allowedOrigins: ['https://claude.ai'],
           lastUsedAt: null,
           createdAt: new Date('2026-06-23T10:00:00Z'),
-        },
+        } as unknown as Awaited<ReturnType<typeof db.agentClient.findMany>>[number],
       ]);
 
       const app = await getApp();
@@ -184,8 +183,11 @@ describe('agentic admin routes', () => {
   describe('POST /api/agentic/mcp-clients', () => {
     it('crée une clé et retourne le secret one-shot', async () => {
       const { db } = await import('../../../shared/db/client');
-      (db.$transaction as any).mockImplementationOnce(async (fn: any) =>
-        fn({
+      (
+        vi.mocked(db.$transaction) as unknown as Mock<(...args: unknown[]) => unknown>
+      ).mockImplementationOnce(async (...args: unknown[]) => {
+        const fn = args[0];
+        return (fn as unknown as (tx: PrismaClient) => Promise<unknown>)({
           agentClient: {
             create: vi.fn().mockResolvedValueOnce({
               id: 'client-1',
@@ -195,11 +197,11 @@ describe('agentic admin routes', () => {
               allowedOrigins: ['https://claude.ai'],
               lastUsedAt: null,
               createdAt: new Date('2026-06-23T10:00:00Z'),
-            }),
+            } as unknown as Awaited<ReturnType<typeof db.agentClient.create>>),
           },
           reservationAuditLog: { create: vi.fn() },
-        }),
-      );
+        } as unknown as PrismaClient);
+      });
 
       const app = await getApp();
       const res = await app.inject({
@@ -239,12 +241,12 @@ describe('agentic admin routes', () => {
   describe('DELETE /api/agentic/mcp-clients/:id', () => {
     it('révoque une clé', async () => {
       const { db } = await import('../../../shared/db/client');
-      (db.agentClient.findFirst as any).mockResolvedValueOnce({
+      vi.mocked(db.agentClient.findFirst).mockResolvedValueOnce({
         id: 'client-1',
         keyPrefix: 'sk_sokar_agent_abcd1234',
         scopes: ['mcp:read'],
         allowedOrigins: [],
-      });
+      } as unknown as Awaited<ReturnType<typeof db.agentClient.findFirst>>);
 
       const app = await getApp();
       const res = await app.inject({
