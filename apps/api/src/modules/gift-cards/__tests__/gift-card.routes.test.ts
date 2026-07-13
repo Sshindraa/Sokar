@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { Prisma } from '@prisma/client';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
@@ -46,7 +46,7 @@ describe('gift-card routes', () => {
           createdBy: 'DASHBOARD',
           purchaseReference: 'manual',
           redemptions: [],
-        } as any,
+        } as unknown as Awaited<ReturnType<typeof db.giftCard.findMany>>[number],
       ]);
       vi.mocked(db.giftCard.count).mockResolvedValue(1);
 
@@ -75,7 +75,7 @@ describe('gift-card routes', () => {
         createdBy: 'DASHBOARD',
         purchaseReference: 'manual',
         redemptions: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -101,7 +101,7 @@ describe('gift-card routes', () => {
         currency: 'EUR',
         stripePaymentIntentId: null,
         redemptions: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>);
       vi.mocked(db.giftCard.update).mockResolvedValue({
         id: 'gc-1',
         status: 'CANCELLED',
@@ -112,7 +112,7 @@ describe('gift-card routes', () => {
         createdBy: 'DASHBOARD',
         purchaseReference: 'manual',
         redemptions: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.update>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -126,20 +126,26 @@ describe('gift-card routes', () => {
     });
 
     it('retourne les stats', async () => {
-      vi.mocked(db.giftCard.aggregate).mockImplementation((args: any) => {
-        if (args._sum?.amount) {
-          return Promise.resolve({ _sum: { amount: d(150) } }) as any;
+      (
+        vi.mocked(db.giftCard.aggregate) as unknown as Mock<(...args: unknown[]) => unknown>
+      ).mockImplementation((args: unknown) => {
+        const a = args as { _sum?: { amount?: true; remainingAmount?: true } };
+        if (a._sum?.amount) {
+          return { _sum: { amount: d(150) } };
         }
-        if (args._sum?.remainingAmount) {
-          return Promise.resolve({ _sum: { remainingAmount: d(50) } }) as any;
+        if (a._sum?.remainingAmount) {
+          return { _sum: { remainingAmount: d(50) } };
         }
-        return Promise.resolve({ _sum: null }) as any;
+        return { _sum: null };
       });
-      vi.mocked(db.giftCard.count).mockImplementation((args: any) => {
-        if (args?.where?.status === 'REDEEMED') return Promise.resolve(1) as any;
-        if (args?.where?.status === 'ACTIVE') return Promise.resolve(1) as any;
-        if (args?.where?.packId) return Promise.resolve(0) as any;
-        return Promise.resolve(2) as any;
+      (
+        vi.mocked(db.giftCard.count) as unknown as Mock<(...args: unknown[]) => unknown>
+      ).mockImplementation((args: unknown) => {
+        const a = args as { where?: { status?: string; packId?: string } };
+        if (a?.where?.status === 'REDEEMED') return 1;
+        if (a?.where?.status === 'ACTIVE') return 1;
+        if (a?.where?.packId) return 0;
+        return 2;
       });
 
       const app = await getApp();
@@ -166,7 +172,7 @@ describe('gift-card routes', () => {
         remainingAmount: d(60),
         status: 'ACTIVE',
         expiresAt: null,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         name: 'Chez Sokar',
       } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
@@ -207,7 +213,7 @@ describe('gift-card routes', () => {
         giftCardMinimumAmount: 10,
         managerEmail: 'manager@test.com',
         managerPhone: '+33100000000',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
       vi.mocked(db.giftCard.create).mockResolvedValue({
         id: 'gc-1',
         restaurantId: RESTAURANT_ID,
@@ -222,7 +228,7 @@ describe('gift-card routes', () => {
         stripePaymentStatus: 'succeeded',
         sokarCommissionAmount: d(6),
         redemptions: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -256,12 +262,12 @@ describe('gift-card routes', () => {
         giftCardMinimumAmount: 10,
         managerEmail: 'manager@test.com',
         managerPhone: '+33100000000',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
       vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
         amount: d(150),
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.findFirst>>);
       vi.mocked(db.giftCard.create).mockResolvedValue({
         id: 'gc-1',
         restaurantId: RESTAURANT_ID,
@@ -277,11 +283,11 @@ describe('gift-card routes', () => {
         sokarCommissionAmount: d(7.5),
         packId: 'pack-1',
         redemptions: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
       vi.mocked(db.giftCardPack.findUnique).mockResolvedValue({
         id: 'pack-1',
         name: 'Menu dégustation',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -306,7 +312,7 @@ describe('gift-card routes', () => {
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         id: RESTAURANT_ID,
         giftCardMinimumAmount: 10,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -341,7 +347,7 @@ describe('gift-card routes', () => {
         expiresAt: new Date('2027-01-01'),
         restaurant: { name: 'Test Resto' },
         pack: null,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -365,7 +371,7 @@ describe('gift-card routes', () => {
         preferredPartySize: 2,
         preferredDate: new Date('2026-08-15'),
         pack: null,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
       vi.spyOn(CapacityAwareAvailabilityService.prototype, 'getAvailability').mockResolvedValue({
         restaurantId: RESTAURANT_ID,
         date: '2026-08-15',
@@ -400,10 +406,10 @@ describe('gift-card routes', () => {
         expiresAt: null,
         preferredPartySize: 2,
         pack: null,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         timezone: 'Europe/Paris',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
       vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue({
         maxPartySize: 12,
         minLeadTimeMinutes: 30,
@@ -412,7 +418,7 @@ describe('gift-card routes', () => {
         noShowPolicy: 'warning',
         requireManualValidation: false,
         capacitySpecials: null,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurantExposureSettings.findUnique>>);
       vi.spyOn(CapacityAwareAvailabilityService.prototype, 'getAvailability').mockResolvedValue({
         restaurantId: RESTAURANT_ID,
         date: '2026-08-15',
@@ -461,20 +467,22 @@ describe('gift-card routes', () => {
         remainingAmount: d(100),
         status: 'ACTIVE',
         expiresAt: null,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
       vi.mocked(db.giftCard.update).mockResolvedValue({
         id: 'gc-1',
         remainingAmount: d(40),
         status: 'ACTIVE',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.update>>);
       vi.mocked(db.$queryRaw).mockResolvedValue([
         { id: 'gc-1', remainingAmount: d(100), status: 'ACTIVE' },
-      ] as any);
-      vi.mocked(db.$transaction).mockImplementation(async (fn: any) => {
+      ] as unknown as Awaited<ReturnType<typeof db.$queryRaw>>);
+      (
+        vi.mocked(db.$transaction) as unknown as Mock<(...args: unknown[]) => unknown>
+      ).mockImplementation(async (fn: unknown) => {
         if (Array.isArray(fn)) {
           return Promise.all(fn);
         }
-        return fn(db);
+        return (fn as (tx: unknown) => unknown)(db);
       });
 
       const app = await getApp();
@@ -521,7 +529,7 @@ describe('gift-card routes', () => {
       vi.mocked(constructWebhookEvent).mockResolvedValue({
         type: 'payment_intent.succeeded',
         data: { object: { id: piId, metadata } },
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof constructWebhookEvent>>);
     }
 
     it('recrée une carte cadeau depuis le webhook avec metadata complètes', async () => {
@@ -534,7 +542,7 @@ describe('gift-card routes', () => {
         giftCardMinimumAmount: 10,
         managerEmail: 'manager@test.com',
         managerPhone: '+33100000000',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
       vi.mocked(db.giftCard.create).mockResolvedValue({
         id: 'gc-wb-1',
         restaurantId: RESTAURANT_ID,
@@ -549,7 +557,7 @@ describe('gift-card routes', () => {
         stripePaymentStatus: 'succeeded',
         sokarCommissionAmount: d(6),
         redemptions: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -577,7 +585,7 @@ describe('gift-card routes', () => {
         remainingAmount: d(120),
         status: 'ACTIVE',
         stripePaymentIntentId: 'pi_existing',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -668,7 +676,7 @@ describe('gift-card routes', () => {
         templateId: null,
         customImageUrl: null,
         sokarCommissionAmount: d(0),
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
     });
 
     it('crée une cagnotte via POST /public/gift-cards/crowdfunding', async () => {
@@ -734,7 +742,7 @@ describe('gift-card routes', () => {
         message: 'Un message',
         contributions: [],
         restaurant: { name: 'Test Resto' },
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -772,7 +780,7 @@ describe('gift-card routes', () => {
         type: 'CROWDFUNDED',
         status: 'ACTIVE',
         crowdfundedUntil: new Date(FUTURE_DATE),
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -801,7 +809,7 @@ describe('gift-card routes', () => {
         type: 'CROWDFUNDED',
         status: 'CLOSED',
         crowdfundedUntil: new Date(FUTURE_DATE),
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -826,7 +834,7 @@ describe('gift-card routes', () => {
         type: 'CROWDFUNDED',
         status: 'ACTIVE',
         crowdfundedUntil: new Date('2020-01-01'),
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -855,14 +863,14 @@ describe('gift-card routes', () => {
         senderName: 'Jean',
         senderEmail: 'jean@example.com',
         recipientName: 'Marie',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
       // Mock pour la vérification atomique dans la transaction
       vi.mocked(db.giftCard.findFirst).mockResolvedValue({
         id: 'gc-crowd-1',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>);
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         name: 'Test Resto',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
       vi.mocked(db.giftCardContribution.create).mockResolvedValue({
         id: 'contrib-1',
         giftCardId: 'gc-crowd-1',
@@ -873,7 +881,7 @@ describe('gift-card routes', () => {
         stripePaymentIntentId: 'pi_test',
         isPublicName: true,
         message: null,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardContribution.create>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -915,13 +923,13 @@ describe('gift-card routes', () => {
         recipientEmail: 'marie@example.com',
         recipientPhone: '+33612345678',
         contributions,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         name: 'Test Resto',
         giftCardCommissionRate: d(0.05),
         managerEmail: 'manager@test.com',
         managerPhone: '+33100000000',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
       vi.mocked(db.giftCard.update).mockResolvedValue({
         id: 'gc-crowd-1',
         restaurantId: RESTAURANT_ID,
@@ -957,7 +965,7 @@ describe('gift-card routes', () => {
         customImageUrl: null,
         targetAmount: null,
         crowdfundedUntil: new Date(FUTURE_DATE),
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.update>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -1071,7 +1079,7 @@ describe('gift-card routes', () => {
         closedAt: null,
         restaurant: { name: 'Test Resto' },
         pack: null,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -1099,10 +1107,10 @@ describe('gift-card routes', () => {
         remainingAmount: d(100),
         status: 'ACTIVE',
         expiresAt: null,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         name: 'Test Resto',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -1132,7 +1140,7 @@ describe('gift-card routes', () => {
           createdBy: 'DASHBOARD',
           purchaseReference: 'manual',
           redemptions: [],
-        } as any,
+        } as unknown as Awaited<ReturnType<typeof db.giftCard.findMany>>[number],
       ]);
       vi.mocked(db.giftCard.count).mockResolvedValue(1);
 
