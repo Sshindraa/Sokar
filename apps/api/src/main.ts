@@ -58,6 +58,7 @@ import './shared/queue/workers/google-places-sync.worker';
 import './shared/queue/workers/alert-evaluation.worker';
 import './modules/agentic-reservations/workers/expire-hold.worker';
 import './modules/agentic-reservations/workers/expire-quote.worker';
+import './modules/agentic-reservations/workers/hold-cleanup.worker';
 import './modules/agentic-reservations/workers/idempotency-purge.worker';
 
 // Initialize Sentry as early as possible so that instrumentation hooks are
@@ -371,6 +372,13 @@ async function start() {
           'alert-evaluation-5min',
           { pattern: '*/5 * * * *', tz: 'Europe/Paris' },
           { name: 'evaluate-alerts' },
+        );
+
+        // Nettoyage des holds expirés (filet de sécurité, RES-008).
+        await queues.holdCleanup.upsertJobScheduler(
+          'hold-cleanup-5min',
+          { pattern: '*/5 * * * *', tz: 'Europe/Paris' },
+          { name: 'cleanup-expired-holds', data: {} },
         );
 
         // Purge quotidienne des clés idempotency expirées (RES-005).

@@ -215,6 +215,9 @@ model Reservation {
   idempotencyScope       String?            @map("idempotency_scope")
   idempotencyKey         String?            @map("idempotency_key")
   idempotencyPayloadHash String?            @map("idempotency_payload_hash")
+  // Partial unique index sur (idempotency_scope, idempotency_key) WHERE non nulls,
+  // défini dans la migration 20260621000000_agentic_p0_columns. Prisma ne l'affiche
+  // pas sans preview feature partialIndexes, d'ou ce commentaire.
   consumedHoldId         String?            @unique @map("consumed_hold_id")
   source                 String?            @map("source") // google|chatgpt|perplexity|bing|restaurant_website|instagram|qr_code|direct|unknown|web
 
@@ -459,6 +462,7 @@ model AgenticHold {
 
   @@index([restaurantId, slotStart])
   @@index([expiresAt])
+  @@index([status, expiresAt])
   @@index([tableId, slotStart])
   @@map("agentic_holds")
 }
@@ -478,6 +482,8 @@ model ReservationAuditLog {
 
   @@index([reservationId, createdAt])
   @@index([createdAt])
+  @@index([actorHash])
+  @@index([event, createdAt])
   @@map("reservation_audit_log")
 }
 
