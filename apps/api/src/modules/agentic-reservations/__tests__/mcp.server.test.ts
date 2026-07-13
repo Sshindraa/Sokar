@@ -20,7 +20,7 @@ import { env } from '../../../env';
 const VALID_KEY = ['sk', '_sokar', '_agent_'].join('') + 'a'.repeat(40); // 53 chars total
 const AUTH = { authorization: `Bearer ${VALID_KEY}`, origin: 'https://claude.ai' };
 
-function callTool(name: string, args: any) {
+function callTool(name: string, args: Record<string, unknown>) {
   return {
     jsonrpc: '2.0',
     id: 1,
@@ -92,14 +92,14 @@ describe('MCP server', () => {
     it('retourne 403 si Origin refusé par le client DB', async () => {
       delete process.env.AGENT_DEV_KEY;
       const { db } = await import('../../../shared/db/client');
-      (db.agentClient.findUnique as any).mockResolvedValueOnce({
+      vi.mocked(db.agentClient.findUnique).mockResolvedValueOnce({
         id: 'client-1',
         restaurantId: null,
         name: 'Claude',
         scopes: ['mcp:read'],
         allowedOrigins: ['https://cursor.sh'],
         revokedAt: null,
-      });
+      } as unknown as Awaited<ReturnType<typeof db.agentClient.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -143,7 +143,7 @@ describe('MCP server', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = res.json();
-      const names = body.result.tools.map((t: any) => t.name);
+      const names = body.result.tools.map((t: { name: string }) => t.name);
       expect(names).toContain('search_restaurants');
       expect(names).toContain('get_restaurant_details');
       expect(names).toContain('check_availability');
@@ -184,15 +184,15 @@ describe('MCP server', () => {
     it('réponse est redactée (pas de leak PII)', async () => {
       const validUuid = '550e8400-e29b-41d4-a716-446655440000';
       const { db } = await import('../../../shared/db/client');
-      (db.restaurant.findFirst as any) = vi.fn().mockResolvedValueOnce({
+      vi.mocked(db.restaurant.findFirst).mockResolvedValueOnce({
         timezone: 'Europe/Paris',
         exposureSettings: {
           maxPartySize: 12,
           minLeadTimeMinutes: 0,
           exposedCreneaux: [],
         },
-      });
-      (db.restaurant.findUnique as any) = vi.fn().mockResolvedValueOnce({
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findFirst>>);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValueOnce({
         id: validUuid,
         name: 'Le Bistrot',
         slug: 'le-bistrot',
@@ -205,7 +205,7 @@ describe('MCP server', () => {
         noiseLevel: null,
         dietary: [],
         openingHours: {},
-      });
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
       const app = await getApp();
       const res = await app.inject({
         method: 'POST',
@@ -223,14 +223,14 @@ describe('MCP server', () => {
     it('refuse une mutation avec un client read-only', async () => {
       delete process.env.AGENT_DEV_KEY;
       const { db } = await import('../../../shared/db/client');
-      (db.agentClient.findUnique as any).mockResolvedValueOnce({
+      vi.mocked(db.agentClient.findUnique).mockResolvedValueOnce({
         id: 'client-readonly',
         restaurantId: null,
         name: 'Read only',
         scopes: ['mcp:read'],
         allowedOrigins: ['https://claude.ai'],
         revokedAt: null,
-      });
+      } as unknown as Awaited<ReturnType<typeof db.agentClient.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -256,7 +256,7 @@ describe('MCP server', () => {
     it('masque un restaurant non exposé MCP', async () => {
       const validUuid = '550e8400-e29b-41d4-a716-446655440000';
       const { db } = await import('../../../shared/db/client');
-      (db.restaurant.findFirst as any) = vi.fn().mockResolvedValueOnce(null);
+      vi.mocked(db.restaurant.findFirst).mockResolvedValueOnce(null);
 
       const app = await getApp();
       const res = await app.inject({

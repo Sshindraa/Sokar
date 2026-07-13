@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Queue } from 'bullmq';
 import { emitConnectEvent } from '../connect-analytics';
 import type { ConnectAnalyticsJobData } from '../../../shared/queue/workers/connect-analytics.worker';
 
@@ -39,7 +40,7 @@ describe('emitConnectEvent', () => {
 
   it("ajoute l'event à la queue avec les bons champs", async () => {
     const queue = createMockQueue();
-    const result = await emitConnectEvent(queue as any, {
+    const result = await emitConnectEvent(queue as unknown as Queue<ConnectAnalyticsJobData>, {
       event: 'restaurant_page_view',
       restaurantId: 'rest-1',
       restaurantSlug: 'chez-sokar-demo',
@@ -57,7 +58,7 @@ describe('emitConnectEvent', () => {
 
   it('source par défaut = "web" si non fournie', async () => {
     const queue = createMockQueue();
-    await emitConnectEvent(queue as any, {
+    await emitConnectEvent(queue as unknown as Queue<ConnectAnalyticsJobData>, {
       event: 'booking_page_view',
       restaurantId: 'rest-1',
     });
@@ -66,15 +67,19 @@ describe('emitConnectEvent', () => {
 
   it('reservation_confirmed a une priorité plus élevée (1 vs 5)', async () => {
     const queue = createMockQueue();
-    await emitConnectEvent(queue as any, { event: 'restaurant_page_view' });
-    await emitConnectEvent(queue as any, { event: 'reservation_confirmed' });
+    await emitConnectEvent(queue as unknown as Queue<ConnectAnalyticsJobData>, {
+      event: 'restaurant_page_view',
+    });
+    await emitConnectEvent(queue as unknown as Queue<ConnectAnalyticsJobData>, {
+      event: 'reservation_confirmed',
+    });
     expect(queue._calls[0].opts).toEqual({ priority: 5 });
     expect(queue._calls[1].opts).toEqual({ priority: 1 });
   });
 
   it('ne throw pas si la queue est down (best-effort)', async () => {
     const queue = createFailingQueue();
-    const result = await emitConnectEvent(queue as any, {
+    const result = await emitConnectEvent(queue as unknown as Queue<ConnectAnalyticsJobData>, {
       event: 'reservation_confirmed',
       restaurantId: 'rest-1',
     });
@@ -83,7 +88,7 @@ describe('emitConnectEvent', () => {
 
   it('passe les champs spécifiques (date, time, partySize, reservationId)', async () => {
     const queue = createMockQueue();
-    await emitConnectEvent(queue as any, {
+    await emitConnectEvent(queue as unknown as Queue<ConnectAnalyticsJobData>, {
       event: 'reservation_confirmed',
       restaurantId: 'rest-1',
       restaurantSlug: 'chez-sokar-demo',

@@ -49,10 +49,16 @@ describe('Cache invalidation — PATCH /restaurants/:id', () => {
       plan: 'STARTER' as const,
     };
 
-    (db.restaurant.update as any).mockResolvedValue(mockRestaurant);
-    (db.restaurant.findUniqueOrThrow as any).mockResolvedValue(mockRestaurant);
-    (db.agentPersonality.findUnique as any).mockResolvedValue(null);
-    (db.agentPersonality.upsert as any).mockResolvedValue({} as any);
+    vi.mocked(db.restaurant.update).mockResolvedValue(
+      mockRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.update>>,
+    );
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+      mockRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
+    vi.mocked(db.agentPersonality.findUnique).mockResolvedValue(null);
+    vi.mocked(db.agentPersonality.upsert).mockResolvedValue(
+      {} as unknown as Awaited<ReturnType<typeof db.agentPersonality.upsert>>,
+    );
 
     const app = await getApp();
     const res = await app.inject({

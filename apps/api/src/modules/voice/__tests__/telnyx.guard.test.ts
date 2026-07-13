@@ -17,6 +17,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 
 // Telnyx guard requires TELNYX_PUBLIC_KEY (used by fromBase64 before constructEvent).
 process.env.TELNYX_PUBLIC_KEY ??= 'MCowBQYDK2VwAyEAGb9ECWmEzf6FQbrBZ9w7lshQhqowtrbLDFw4rXAxZuE=';
@@ -56,14 +57,14 @@ function makeReq(
       warn: vi.fn(),
       error: vi.fn(),
     },
-  } as any;
+  } as unknown as FastifyRequest;
 }
 
 function makeReply() {
   return {
     status: vi.fn().mockReturnThis(),
     send: vi.fn().mockReturnThis(),
-  } as any;
+  } as unknown as FastifyReply;
 }
 
 // We need TELNYX_PUBLIC_KEY in env for the guard to read it.

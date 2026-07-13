@@ -81,7 +81,9 @@ describe('cartesia-synth', () => {
     const { synthesizeText } = await import('../cartesia-synth');
     await synthesizeText({ text: 'Bonjour' });
 
-    const callBody = JSON.parse((vi.mocked(global.fetch).mock.calls[0][1] as any).body);
+    const callBody: { voice: { id: string }; speed?: number } = JSON.parse(
+      (vi.mocked(global.fetch).mock.calls[0][1] as RequestInit).body as string,
+    );
     expect(callBody.voice.id).toBe('f786b574-daa5-4673-aa0c-cbe3e8534c02');
   });
 
@@ -92,7 +94,9 @@ describe('cartesia-synth', () => {
     const { synthesizeText } = await import('../cartesia-synth');
     await synthesizeText({ text: 'Bonjour', voiceId: 'custom-voice' });
 
-    const callBody = JSON.parse((vi.mocked(global.fetch).mock.calls[0][1] as any).body);
+    const callBody: { voice: { id: string }; speed?: number } = JSON.parse(
+      (vi.mocked(global.fetch).mock.calls[0][1] as RequestInit).body as string,
+    );
     expect(callBody.voice.id).toBe('custom-voice');
   });
 
@@ -103,7 +107,9 @@ describe('cartesia-synth', () => {
     const { synthesizeText } = await import('../cartesia-synth');
     await synthesizeText({ text: 'Bonjour', speed: 1.3 });
 
-    const callBody = JSON.parse((vi.mocked(global.fetch).mock.calls[0][1] as any).body);
+    const callBody: { voice: { id: string }; speed?: number } = JSON.parse(
+      (vi.mocked(global.fetch).mock.calls[0][1] as RequestInit).body as string,
+    );
     expect(callBody.speed).toBe(1.3);
   });
 
@@ -114,7 +120,9 @@ describe('cartesia-synth', () => {
     const { synthesizeText } = await import('../cartesia-synth');
     await synthesizeText({ text: 'Bonjour', speed: 1.0 });
 
-    const callBody = JSON.parse((vi.mocked(global.fetch).mock.calls[0][1] as any).body);
+    const callBody: { voice: { id: string }; speed?: number } = JSON.parse(
+      (vi.mocked(global.fetch).mock.calls[0][1] as RequestInit).body as string,
+    );
     expect(callBody.speed).toBeUndefined();
   });
 
