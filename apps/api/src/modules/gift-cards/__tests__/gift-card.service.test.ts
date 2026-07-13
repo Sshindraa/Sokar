@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import '../../../test/helpers.js';
 import { db } from '../../../shared/db/client.js';
 import { GiftCardService, GiftCardError } from '../gift-card.service.js';
+import { generateUniqueShortCode } from '../gift-card-code.util.js';
 
 const RESTAURANT_ID = 'rest-gift-1';
 
@@ -52,6 +53,36 @@ describe('GiftCardService', () => {
         }),
       }),
     );
+  });
+
+  it('retente en cas de collision P2002 sur shortCode', async () => {
+    vi.mocked(generateUniqueShortCode)
+      .mockResolvedValueOnce('SKR-COLLIDE-01')
+      .mockResolvedValueOnce('SKR-TEST-01');
+
+    vi.mocked(db.giftCard.create)
+      .mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target: 'gift_cards_short_code_key' },
+        }),
+      )
+      .mockResolvedValueOnce({
+        id: 'gc-2',
+        restaurantId: RESTAURANT_ID,
+        amount: d(100),
+        remainingAmount: d(100),
+        status: 'ACTIVE',
+        code: 'code-2',
+      } as any);
+
+    const card = await service.create(makeCardInput());
+
+    expect(card.id).toBe('gc-2');
+    expect(db.giftCard.create).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(db.giftCard.create).mock.calls[0][0].data.shortCode).toBe('SKR-COLLIDE-01');
+    expect(vi.mocked(db.giftCard.create).mock.calls[1][0].data.shortCode).toBe('SKR-TEST-01');
   });
 
   it('rejette un montant nul ou négatif', async () => {

@@ -29,7 +29,7 @@ function makeMockPrisma() {
       count: vi.fn(),
       groupBy: vi.fn(),
     },
-    call: {
+    message: {
       updateMany: vi.fn(),
     },
     $transaction: vi.fn(),
@@ -125,7 +125,7 @@ describe('RGPD', () => {
       prisma.$transaction.mockImplementationOnce(async (fn: any) =>
         fn({ reservation: { updateMany: vi.fn().mockResolvedValueOnce({ count: 5 }) } }),
       );
-      prisma.call.updateMany.mockResolvedValueOnce({ count: 2 });
+      prisma.message.updateMany.mockResolvedValueOnce({ count: 2 });
       prisma.customerConsent.count.mockResolvedValueOnce(0);
       prisma.reservationAuditLog = { create: vi.fn().mockResolvedValueOnce({ id: 'audit-1' }) };
 
@@ -148,7 +148,7 @@ describe('RGPD', () => {
       prisma.$transaction.mockImplementationOnce(async (fn: any) =>
         fn({ reservation: { updateMany: vi.fn().mockResolvedValueOnce({ count: 3 }) } }),
       );
-      prisma.call.updateMany.mockResolvedValueOnce({ count: 1 });
+      prisma.message.updateMany.mockResolvedValueOnce({ count: 1 });
       prisma.customerConsent.count.mockResolvedValueOnce(0);
       prisma.reservationAuditLog = { create: vi.fn().mockResolvedValueOnce({ id: 'audit-1' }) };
 
