@@ -22,6 +22,7 @@ SOKAR_ROOT="/opt/sokar"
 RELEASES_DIR="$SOKAR_ROOT/releases"
 DATE=$(date '+%Y-%m-%d %H:%M:%S')
 PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
+WAIT_TIMEOUT=${WAIT_TIMEOUT:-60}
 
 ensure_privileged_wrapper() {
     if [ -x "$PRIVILEGED_WRAPPER" ]; then
@@ -36,6 +37,31 @@ ensure_privileged_wrapper() {
         sudo install -o root -g root -m 0755 \
             "$SOKAR_ROOT/scripts/ops/sokar-deploy-root.sh" "$PRIVILEGED_WRAPPER"
     fi
+}
+
+# Attendre que les services prod soient up (health + livez), timeout configurable
+wait_for_services() {
+    local timeout=${1:-$WAIT_TIMEOUT}
+    local WAIT_START WAIT_NOW API_HEALTH API_LIVEZ DASH_READY CONNECT_READY
+    echo ""
+    echo "⏳ Waiting for services to be ready (timeout ${timeout}s)..."
+    WAIT_START=$(date +%s)
+    while true; do
+        API_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4000/health 2>/dev/null || echo "000")
+        API_LIVEZ=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4000/livez 2>/dev/null || echo "000")
+        DASH_READY=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000 2>/dev/null || echo "000")
+        CONNECT_READY=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4002/restaurant/chez-sokar-demo 2>/dev/null || echo "000")
+        if [ "$API_HEALTH" = "200" ] && [ "$API_LIVEZ" = "200" ] && [ "$DASH_READY" = "200" ] && [ "$CONNECT_READY" = "200" ]; then
+            echo "   API (health + livez) + Dashboard + Connect ready"
+            break
+        fi
+        WAIT_NOW=$(date +%s)
+        if [ $((WAIT_NOW - WAIT_START)) -ge "$timeout" ]; then
+            echo "   ⚠️ Timeout (health=$API_HEALTH livez=$API_LIVEZ dash=$DASH_READY connect=$CONNECT_READY)"
+            break
+        fi
+        sleep 2
+    done
 }
 
 # Artefacts à snapshoter (chemins relatifs à SOKAR_ROOT)
@@ -169,7 +195,7 @@ if [ "${1:-}" = "rollback" ]; then
 
     echo "→ Restart services..."
     pm2 start infra/ecosystem.config.js
-    sleep 8
+    wait_for_services
     pm2 save
     sudo /usr/local/sbin/sokar-deploy-root reload-nginx prod 2>/dev/null || true
 
@@ -561,7 +587,6 @@ sudo /usr/local/sbin/sokar-deploy-root install-runtime prod
 echo ""
 echo "📦 Restarting services..."
 pm2 start infra/ecosystem.config.js
-sleep 4
 pm2 save
 sudo /usr/local/sbin/sokar-deploy-root reload-nginx prod
 
@@ -573,28 +598,8 @@ sudo /usr/local/sbin/sokar-deploy-root start-localstack prod 2>/dev/null || true
 # ── 10. Verify ──────────────────────────────────────────
 echo ""
 echo "📦 Verifying..."
-sleep 3
 pm2 status
-
-# Attendre que les services Fastify/Connect soient prêts (bind 127.0.0.1, démarrage >3s).
-# Timeout total 30s, retry toutes les 2s.
-echo ""
-echo "⏳ Waiting for API and Connect to be ready..."
-WAIT_START=$(date +%s)
-while true; do
-    API_READY=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4000/health 2>/dev/null || echo "000")
-    CONNECT_READY=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4002/restaurant/chez-sokar-demo 2>/dev/null || echo "000")
-    if [ "$API_READY" = "200" ] && [ "$CONNECT_READY" = "200" ]; then
-        echo "   API + Connect ready"
-        break
-    fi
-    WAIT_NOW=$(date +%s)
-    if [ $((WAIT_NOW - WAIT_START)) -ge 30 ]; then
-        echo "   ⚠️ Timeout waiting for API/Connect (API=$API_READY Connect=$CONNECT_READY)"
-        break
-    fi
-    sleep 2
-done
+wait_for_services
 
 echo ""
 echo "=== Checking HTTP endpoints ==="

@@ -17,6 +17,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Table } from '@prisma/client';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
+import { slugifyCity, slugifyCuisine } from '@sokar/shared';
 import { db } from '../../shared/db/client';
 import { redisCache } from '../../shared/redis/client';
 import { logger } from '../../shared/logger/pino';
@@ -800,21 +801,3 @@ type CityRow = {
   total: number;
   cuisines: Array<{ name: string; slug: string; count: number }>;
 };
-
-function slugifyCity(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '');
-}
-
-function slugifyCuisine(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '');
-}
