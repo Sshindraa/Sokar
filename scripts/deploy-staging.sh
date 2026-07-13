@@ -26,10 +26,12 @@ set -Eeuo pipefail
 
 BRANCH="main"
 DRY_RUN=false
+FORCE=false
 SOKAR_ROOT="/opt/sokar-staging"
 RELEASES_DIR="$SOKAR_ROOT/releases"
 DATE=$(date '+%Y-%m-%d %H:%M:%S')
 PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
+WAIT_TIMEOUT=${WAIT_TIMEOUT:-60}
 
 ensure_privileged_wrapper() {
     if [ -x "$PRIVILEGED_WRAPPER" ]; then
@@ -46,6 +48,31 @@ ensure_privileged_wrapper() {
     fi
 }
 
+# Attendre que les services staging soient up (health + livez), timeout configurable
+wait_for_services() {
+    local timeout=${1:-$WAIT_TIMEOUT}
+    local WAIT_START WAIT_NOW API_HEALTH API_LIVEZ DASH_READY CONNECT_READY
+    echo ""
+    echo "⏳ Waiting for staging services to be ready (timeout ${timeout}s)..."
+    WAIT_START=$(date +%s)
+    while true; do
+        API_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4100/health 2>/dev/null || echo "000")
+        API_LIVEZ=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4100/livez 2>/dev/null || echo "000")
+        DASH_READY=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3100 2>/dev/null || echo "000")
+        CONNECT_READY=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4102/restaurant/chez-sokar-demo 2>/dev/null || echo "000")
+        if [ "$API_HEALTH" = "200" ] && [ "$API_LIVEZ" = "200" ] && [ "$DASH_READY" = "200" ] && [ "$CONNECT_READY" = "200" ]; then
+            echo "   API (health + livez) + Dashboard + Connect ready"
+            break
+        fi
+        WAIT_NOW=$(date +%s)
+        if [ $((WAIT_NOW - WAIT_START)) -ge "$timeout" ]; then
+            echo "   ⚠️ Timeout (health=$API_HEALTH livez=$API_LIVEZ dash=$DASH_READY connect=$CONNECT_READY)"
+            break
+        fi
+        sleep 2
+    done
+}
+
 # Artefacts à snapshoter (chemins relatifs à SOKAR_ROOT)
 ARTIFACT_PATHS=(
     "apps/api/dist"
@@ -56,10 +83,15 @@ ARTIFACT_PATHS=(
 )
 
 # ── Parse args ───────────────────────────────────────────
-if [ "${1:-}" = "--dry-run" ]; then
-    DRY_RUN=true
+while [ "${1:-}" = "--dry-run" ] || [ "${1:-}" = "--force" ]; do
+    if [ "$1" = "--dry-run" ]; then
+        DRY_RUN=true
+    fi
+    if [ "$1" = "--force" ]; then
+        FORCE=true
+    fi
     shift
-fi
+done
 if [ "${1:-}" = "rollback" ]; then
     # Rollback vers la release précédente
     cd "$SOKAR_ROOT"
@@ -83,7 +115,7 @@ if [ "${1:-}" = "rollback" ]; then
         fi
     done
     pm2 start infra/ecosystem.staging.config.js
-    sleep 8
+    wait_for_services
     pm2 save
     sudo /usr/local/sbin/sokar-deploy-root reload-nginx staging 2>/dev/null || true
     echo "✅ Rollback staging vers $TARGET_RELEASE terminé"
@@ -111,8 +143,14 @@ if ! swapon --show | grep -q swapfile 2>/dev/null; then
     exit 1
 fi
 
+if [ "$FORCE" = true ]; then
+    echo "⚠️ --force : reset des modifications locales trackées..."
+    git checkout -- .
+fi
+
 if ! git diff --quiet || ! git diff --cached --quiet; then
     echo "❌ Fichiers suivis modifiés sur le VPS staging. Refus de les stasher automatiquement."
+    echo "   Relancez avec --force pour ignorer."
     git status --short
     exit 1
 fi
@@ -281,35 +319,14 @@ fi
 echo ""
 echo "📦 Restarting staging services..."
 pm2 start infra/ecosystem.staging.config.js
-sleep 4
 pm2 save
 sudo /usr/local/sbin/sokar-deploy-root reload-nginx staging
 
 # ── 10. Verify ───────────────────────────────────────────
 echo ""
 echo "📦 Verifying staging..."
-sleep 3
 pm2 status
-
-# Attendre que les services soient prêts (timeout 30s)
-echo ""
-echo "⏳ Waiting for staging services to be ready..."
-WAIT_START=$(date +%s)
-while true; do
-    API_READY=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4100/health 2>/dev/null || echo "000")
-    DASH_READY=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3100 2>/dev/null || echo "000")
-    CONNECT_READY=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4102/restaurant/chez-sokar-demo 2>/dev/null || echo "000")
-    if [ "$API_READY" = "200" ] && [ "$DASH_READY" = "200" ] && [ "$CONNECT_READY" = "200" ]; then
-        echo "   API + Dashboard + Connect ready"
-        break
-    fi
-    WAIT_NOW=$(date +%s)
-    if [ $((WAIT_NOW - WAIT_START)) -ge 30 ]; then
-        echo "   ⚠️ Timeout (API=$API_READY Dash=$DASH_READY Connect=$CONNECT_READY)"
-        break
-    fi
-    sleep 2
-done
+wait_for_services
 
 echo ""
 echo "=== Checking staging HTTP endpoints ==="
