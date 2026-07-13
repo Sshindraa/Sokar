@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { describe, expect, it, beforeEach, vi, type Mock } from 'vitest';
 import { Prisma } from '@prisma/client';
 import '../../../test/helpers.js';
 import { db } from '../../../shared/db/client.js';
@@ -38,7 +38,7 @@ describe('GiftCardService', () => {
       remainingAmount: d(100),
       status: 'ACTIVE',
       code: 'code-1',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
     const card = await service.create(makeCardInput());
 
@@ -75,7 +75,7 @@ describe('GiftCardService', () => {
         remainingAmount: d(100),
         status: 'ACTIVE',
         code: 'code-2',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
     const card = await service.create(makeCardInput());
 
@@ -99,7 +99,7 @@ describe('GiftCardService', () => {
       status: 'ACTIVE',
       code: 'code-1',
       expiresAt: null,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
     const result = await service.validateCode('code-1', RESTAURANT_ID);
 
@@ -129,7 +129,7 @@ describe('GiftCardService', () => {
       status: 'ACTIVE',
       code: 'code-1',
       expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
     const result = await service.validateCode('code-1', RESTAURANT_ID);
 
@@ -148,7 +148,7 @@ describe('GiftCardService', () => {
       status: 'CANCELLED',
       code: 'code-1',
       expiresAt: null,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
     const result = await service.validateCode('code-1', RESTAURANT_ID);
 
@@ -167,7 +167,7 @@ describe('GiftCardService', () => {
       status: 'ACTIVE',
       code: 'code-1',
       expiresAt: null,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
     const result = await service.validateCode('code-1', RESTAURANT_ID);
 
@@ -186,7 +186,7 @@ describe('GiftCardService', () => {
       status: 'ACTIVE',
       code: 'code-1',
       expiresAt: null,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
     const result = await service.validateCode('code-1', RESTAURANT_ID);
 
@@ -205,20 +205,22 @@ describe('GiftCardService', () => {
       status: 'ACTIVE',
       code: 'code-1',
       expiresAt: null,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
     vi.mocked(db.giftCard.update).mockResolvedValue({
       id: 'gc-1',
       remainingAmount: d(0),
       status: 'REDEEMED',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
     vi.mocked(db.$queryRaw).mockResolvedValue([
       { id: 'gc-1', remainingAmount: d(100), status: 'ACTIVE' },
-    ] as any);
-    vi.mocked(db.$transaction).mockImplementation(async (fn: any) => {
+    ] as unknown as Awaited<ReturnType<typeof db.giftCard.findMany>>);
+    (
+      vi.mocked(db.$transaction) as unknown as Mock<(...args: unknown[]) => unknown>
+    ).mockImplementation(async (fn: unknown) => {
       if (Array.isArray(fn)) {
         return Promise.all(fn);
       }
-      return fn(db);
+      return (fn as (tx: unknown) => unknown)(db);
     });
 
     const result = await service.applyToReservation({
@@ -258,20 +260,22 @@ describe('GiftCardService', () => {
       status: 'ACTIVE',
       code: 'code-1',
       expiresAt: null,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
     vi.mocked(db.giftCard.update).mockResolvedValue({
       id: 'gc-1',
       remainingAmount: d(40),
       status: 'ACTIVE',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
     vi.mocked(db.$queryRaw).mockResolvedValue([
       { id: 'gc-1', remainingAmount: d(100), status: 'ACTIVE' },
-    ] as any);
-    vi.mocked(db.$transaction).mockImplementation(async (fn: any) => {
+    ] as unknown as Awaited<ReturnType<typeof db.giftCard.findMany>>);
+    (
+      vi.mocked(db.$transaction) as unknown as Mock<(...args: unknown[]) => unknown>
+    ).mockImplementation(async (fn: unknown) => {
       if (Array.isArray(fn)) {
         return Promise.all(fn);
       }
-      return fn(db);
+      return (fn as (tx: unknown) => unknown)(db);
     });
 
     const result = await service.applyToReservation({
@@ -296,20 +300,22 @@ describe('GiftCardService', () => {
       status: 'ACTIVE',
       code: 'code-1',
       expiresAt: null,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
     vi.mocked(db.giftCard.update).mockResolvedValue({
       id: 'gc-1',
       remainingAmount: d(0),
       status: 'REDEEMED',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
     vi.mocked(db.$queryRaw).mockResolvedValue([
       { id: 'gc-1', remainingAmount: d(50), status: 'ACTIVE' },
-    ] as any);
-    vi.mocked(db.$transaction).mockImplementation(async (fn: any) => {
+    ] as unknown as Awaited<ReturnType<typeof db.giftCard.findMany>>);
+    (
+      vi.mocked(db.$transaction) as unknown as Mock<(...args: unknown[]) => unknown>
+    ).mockImplementation(async (fn: unknown) => {
       if (Array.isArray(fn)) {
         return Promise.all(fn);
       }
-      return fn(db);
+      return (fn as (tx: unknown) => unknown)(db);
     });
 
     const result = await service.applyToReservation({
@@ -336,20 +342,22 @@ describe('GiftCardService', () => {
       status: 'ACTIVE',
       code: 'code-1',
       expiresAt: null,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
     vi.mocked(db.giftCard.update).mockResolvedValue({
       id: 'gc-1',
       remainingAmount: d(0),
       status: 'REDEEMED',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
     vi.mocked(db.$queryRaw).mockResolvedValue([
       { id: 'gc-1', remainingAmount: d(30), status: 'ACTIVE' },
-    ] as any);
-    vi.mocked(db.$transaction).mockImplementation(async (fn: any) => {
+    ] as unknown as Awaited<ReturnType<typeof db.giftCard.findMany>>);
+    (
+      vi.mocked(db.$transaction) as unknown as Mock<(...args: unknown[]) => unknown>
+    ).mockImplementation(async (fn: unknown) => {
       if (Array.isArray(fn)) {
         return Promise.all(fn);
       }
-      return fn(db);
+      return (fn as (tx: unknown) => unknown)(db);
     });
 
     const result = await service.applyToReservation({
@@ -375,12 +383,12 @@ describe('GiftCardService', () => {
       currency: 'EUR',
       stripePaymentIntentId: null,
       redemptions: [],
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
     vi.mocked(db.giftCard.update).mockResolvedValue({
       id: 'gc-1',
       status: 'CANCELLED',
       remainingAmount: d(0),
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
     const card = await service.cancel('gc-1', RESTAURANT_ID);
 
@@ -397,21 +405,27 @@ describe('GiftCardService', () => {
 
   it('calcule les stats', async () => {
     // Mock aggregate : retourne different selon le champ demandé
-    vi.mocked(db.giftCard.aggregate).mockImplementation((args: any) => {
-      if (args._sum?.amount) {
-        return Promise.resolve({ _sum: { amount: d(230) } }) as any;
+    (
+      vi.mocked(db.giftCard.aggregate) as unknown as Mock<(...args: unknown[]) => unknown>
+    ).mockImplementation((args: unknown) => {
+      const a = args as { _sum?: { amount?: true; remainingAmount?: true } };
+      if (a._sum?.amount) {
+        return { _sum: { amount: d(230) } };
       }
-      if (args._sum?.remainingAmount) {
-        return Promise.resolve({ _sum: { remainingAmount: d(80) } }) as any;
+      if (a._sum?.remainingAmount) {
+        return { _sum: { remainingAmount: d(80) } };
       }
-      return Promise.resolve({ _sum: null }) as any;
+      return { _sum: null };
     });
     // Mock count : retourne different selon le where
-    vi.mocked(db.giftCard.count).mockImplementation((args: any) => {
-      if (args?.where?.status === 'REDEEMED') return Promise.resolve(1) as any;
-      if (args?.where?.status === 'ACTIVE') return Promise.resolve(2) as any;
-      if (args?.where?.packId) return Promise.resolve(1) as any;
-      return Promise.resolve(3) as any;
+    (
+      vi.mocked(db.giftCard.count) as unknown as Mock<(...args: unknown[]) => unknown>
+    ).mockImplementation((args: unknown) => {
+      const a = args as { where?: { status?: string; packId?: string } };
+      if (a?.where?.status === 'REDEEMED') return 1;
+      if (a?.where?.status === 'ACTIVE') return 2;
+      if (a?.where?.packId) return 1;
+      return 3;
     });
 
     const stats = await service.getStats(RESTAURANT_ID);
@@ -431,7 +445,7 @@ describe('GiftCardService', () => {
       id: 'pack-1',
       restaurantId: RESTAURANT_ID,
       amount: d(120),
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCardPack.findFirst>>);
     vi.mocked(db.giftCard.create).mockResolvedValue({
       id: 'gc-1',
       restaurantId: RESTAURANT_ID,
@@ -440,7 +454,7 @@ describe('GiftCardService', () => {
       status: 'ACTIVE',
       code: 'code-1',
       packId: 'pack-1',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
     const card = await service.create({
       restaurantId: RESTAURANT_ID,
@@ -462,7 +476,7 @@ describe('GiftCardService', () => {
       status: 'ACTIVE',
       code: 'uuid-1234',
       shortCode: 'SKR-TEST-01',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
     const card = await service.create(makeCardInput());
 
@@ -485,7 +499,7 @@ describe('GiftCardService', () => {
       amount: d(100),
       remainingAmount: d(100),
       status: 'ACTIVE',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
     const card = await service.findByShortCode('SKR-TEST-01');
     expect(card).not.toBeNull();
@@ -507,7 +521,7 @@ describe('GiftCardService', () => {
       remainingAmount: d(100),
       status: 'ACTIVE',
       expiresAt: null,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
     const result = await service.validateCode('SKR-TEST-01');
     expect(result.valid).toBe(true);
@@ -529,7 +543,7 @@ describe('GiftCardService', () => {
       remainingAmount: d(100),
       status: 'ACTIVE',
       pack: null,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
     const card = await service.findByCodeOrShortCodeWithPack('SKR-TEST-01');
     expect(card).not.toBeNull();
