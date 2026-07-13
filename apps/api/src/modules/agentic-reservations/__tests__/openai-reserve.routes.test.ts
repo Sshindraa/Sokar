@@ -7,7 +7,7 @@
  * Vérifie le contrat Apps SDK : _meta.ui.resourceUri = "ui://widget/restaurant-reservation.html"
  */
 
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { env } from '../../../env';
@@ -36,8 +36,8 @@ describe('OpenAI Reserve routes', () => {
 
   describe('GET /v1/businesses', () => {
     it('retourne un feed paginé avec checksum et pagination', async () => {
-      (db.restaurant.count as any) = vi.fn().mockResolvedValue(42);
-      (db.restaurant.findMany as any) = vi.fn().mockResolvedValueOnce([
+      vi.mocked(db.restaurant.count).mockResolvedValue(42);
+      vi.mocked(db.restaurant.findMany).mockResolvedValueOnce([
         {
           id: 'r-1',
           name: 'Le Bistrot',
@@ -51,7 +51,7 @@ describe('OpenAI Reserve routes', () => {
           priceRange: 2,
           openingHours: { lun: ['12:00-14:30'] },
         },
-      ]);
+      ] as unknown as Awaited<ReturnType<typeof db.restaurant.findMany>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -74,17 +74,22 @@ describe('OpenAI Reserve routes', () => {
     });
 
     it('filtre openaiReserveEnabled + champs requis', async () => {
-      (db.restaurant.count as any) = vi.fn().mockImplementation(({ where }: any) => {
+      (
+        vi.mocked(db.restaurant.count) as unknown as Mock<(...args: unknown[]) => unknown>
+      ).mockImplementation((args: unknown) => {
+        const { where } = args as { where: Record<string, unknown> };
         // On s'assure que la query Prisma contient bien le filtre
         expect(where.openaiReserveEnabled).toBe(true);
-        expect(where.lat.not).toBeNull();
-        expect(where.lng.not).toBeNull();
-        expect(where.phoneE164.not).toBeNull();
-        expect(where.websiteUrl.not).toBeNull();
-        expect(where.formattedAddress.not).toBeNull();
+        expect((where.lat as Record<string, unknown>).not).toBeNull();
+        expect((where.lng as Record<string, unknown>).not).toBeNull();
+        expect((where.phoneE164 as Record<string, unknown>).not).toBeNull();
+        expect((where.websiteUrl as Record<string, unknown>).not).toBeNull();
+        expect((where.formattedAddress as Record<string, unknown>).not).toBeNull();
         return 0;
       });
-      (db.restaurant.findMany as any) = vi.fn().mockResolvedValueOnce([]);
+      vi.mocked(db.restaurant.findMany).mockResolvedValueOnce(
+        [] as unknown as Awaited<ReturnType<typeof db.restaurant.findMany>>,
+      );
 
       const app = await getApp();
       const res = await app.inject({ method: 'GET', url: '/v1/businesses' });
@@ -92,8 +97,10 @@ describe('OpenAI Reserve routes', () => {
     });
 
     it('accepte et valide changes_token', async () => {
-      (db.restaurant.count as any) = vi.fn().mockResolvedValue(0);
-      (db.restaurant.findMany as any) = vi.fn().mockResolvedValueOnce([]);
+      vi.mocked(db.restaurant.count).mockResolvedValue(0);
+      vi.mocked(db.restaurant.findMany).mockResolvedValueOnce(
+        [] as unknown as Awaited<ReturnType<typeof db.restaurant.findMany>>,
+      );
 
       const app = await getApp();
       const res = await app.inject({
@@ -114,8 +121,10 @@ describe('OpenAI Reserve routes', () => {
 
     it('refuse 401 si HMAC configuré et signature manquante', async () => {
       env.OPENAI_RESERVE_HMAC_KEY = 'test-openai-reserve-hmac-key-32-chars';
-      (db.restaurant.count as any) = vi.fn().mockResolvedValue(0);
-      (db.restaurant.findMany as any) = vi.fn().mockResolvedValueOnce([]);
+      vi.mocked(db.restaurant.count).mockResolvedValue(0);
+      vi.mocked(db.restaurant.findMany).mockResolvedValueOnce(
+        [] as unknown as Awaited<ReturnType<typeof db.restaurant.findMany>>,
+      );
 
       const app = await getApp();
       const res = await app.inject({
@@ -128,8 +137,10 @@ describe('OpenAI Reserve routes', () => {
 
     it('refuse 401 si HMAC configuré et signature invalide', async () => {
       env.OPENAI_RESERVE_HMAC_KEY = 'test-openai-reserve-hmac-key-32-chars';
-      (db.restaurant.count as any) = vi.fn().mockResolvedValue(0);
-      (db.restaurant.findMany as any) = vi.fn().mockResolvedValueOnce([]);
+      vi.mocked(db.restaurant.count).mockResolvedValue(0);
+      vi.mocked(db.restaurant.findMany).mockResolvedValueOnce(
+        [] as unknown as Awaited<ReturnType<typeof db.restaurant.findMany>>,
+      );
 
       const app = await getApp();
       const res = await app.inject({
@@ -142,8 +153,8 @@ describe('OpenAI Reserve routes', () => {
     it('accepte le feed avec une signature HMAC valide', async () => {
       const hmacKey = 'test-openai-reserve-hmac-key-32-chars';
       env.OPENAI_RESERVE_HMAC_KEY = hmacKey;
-      (db.restaurant.count as any) = vi.fn().mockResolvedValue(42);
-      (db.restaurant.findMany as any) = vi.fn().mockResolvedValueOnce([
+      vi.mocked(db.restaurant.count).mockResolvedValue(42);
+      vi.mocked(db.restaurant.findMany).mockResolvedValueOnce([
         {
           id: 'r-1',
           name: 'Le Bistrot',
@@ -157,7 +168,7 @@ describe('OpenAI Reserve routes', () => {
           priceRange: 2,
           openingHours: { lun: ['12:00-14:30'] },
         },
-      ]);
+      ] as unknown as Awaited<ReturnType<typeof db.restaurant.findMany>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -173,8 +184,8 @@ describe('OpenAI Reserve routes', () => {
     it('accepte une signature HMAC statique compatible pagination OpenAI', async () => {
       const hmacKey = 'test-openai-reserve-hmac-key-32-chars';
       env.OPENAI_RESERVE_HMAC_KEY = hmacKey;
-      (db.restaurant.count as any) = vi.fn().mockResolvedValue(42);
-      (db.restaurant.findMany as any) = vi.fn().mockResolvedValueOnce([
+      vi.mocked(db.restaurant.count).mockResolvedValue(42);
+      vi.mocked(db.restaurant.findMany).mockResolvedValueOnce([
         {
           id: 'r-1',
           name: 'Le Bistrot',
@@ -188,7 +199,7 @@ describe('OpenAI Reserve routes', () => {
           priceRange: 2,
           openingHours: { lun: ['12:00-14:30'] },
         },
-      ]);
+      ] as unknown as Awaited<ReturnType<typeof db.restaurant.findMany>>);
 
       const staticSignature = signOpenaiReserveRequest('GET', '/v1/businesses', {}, hmacKey);
       const app = await getApp();
@@ -202,8 +213,10 @@ describe('OpenAI Reserve routes', () => {
 
     it('accepte le feed sans signature si HMAC non configuré', async () => {
       // env.OPENAI_RESERVE_HMAC_KEY reste undefined (reset beforeEach).
-      (db.restaurant.count as any) = vi.fn().mockResolvedValue(0);
-      (db.restaurant.findMany as any) = vi.fn().mockResolvedValueOnce([]);
+      vi.mocked(db.restaurant.count).mockResolvedValue(0);
+      vi.mocked(db.restaurant.findMany).mockResolvedValueOnce(
+        [] as unknown as Awaited<ReturnType<typeof db.restaurant.findMany>>,
+      );
 
       const app = await getApp();
       const res = await app.inject({ method: 'GET', url: '/v1/businesses' });
@@ -220,7 +233,7 @@ describe('OpenAI Reserve routes', () => {
 
   describe('POST /v1/tools/restaurant_reservation', () => {
     it('retourne _meta.ui.resourceUri conforme spec', async () => {
-      (db.restaurant.findUnique as any) = vi.fn().mockResolvedValueOnce({
+      vi.mocked(db.restaurant.findUnique).mockResolvedValueOnce({
         id: 'r-1',
         name: 'Le Bistrot',
         formattedAddress: '1 rue de Paris, 75001 Paris, France',
@@ -231,7 +244,7 @@ describe('OpenAI Reserve routes', () => {
         region: 'IDF',
         postalCode: '75001',
         countryCode: 'FR',
-      });
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -248,7 +261,7 @@ describe('OpenAI Reserve routes', () => {
     });
 
     it("utilise l'adresse optimistique si fournie", async () => {
-      (db.restaurant.findUnique as any) = vi.fn().mockResolvedValueOnce({
+      vi.mocked(db.restaurant.findUnique).mockResolvedValueOnce({
         id: 'r-1',
         name: 'Le Bistrot',
         formattedAddress: null,
@@ -259,7 +272,7 @@ describe('OpenAI Reserve routes', () => {
         region: 'IDF',
         postalCode: '75001',
         countryCode: 'FR',
-      });
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -284,7 +297,7 @@ describe('OpenAI Reserve routes', () => {
     });
 
     it('refuse 404 si restaurant non trouvé ou opt-in désactivé', async () => {
-      (db.restaurant.findUnique as any) = vi.fn().mockResolvedValueOnce(null);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValueOnce(null);
 
       const app = await getApp();
       const res = await app.inject({
