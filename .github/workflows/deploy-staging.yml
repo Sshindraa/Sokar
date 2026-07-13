@@ -31,12 +31,14 @@ jobs:
           host: ${{ secrets.STAGING_HOST }}
           username: deploy
           key: ${{ secrets.STAGING_SSH_KEY }}
-          script_stop: true
           command_timeout: 18m
           script: |
+            set -euo pipefail
             cd /opt/sokar-staging
             git checkout main
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
             if [ ! -x /usr/local/sbin/sokar-deploy-root ]; then
               sudo install -o root -g root -m 0755 \
                 scripts/ops/sokar-deploy-root.sh /usr/local/sbin/sokar-deploy-root
