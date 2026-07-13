@@ -27,8 +27,18 @@ describe('GiftCardPackService', () => {
   describe('list', () => {
     it("liste les packs d'un restaurant triés par montant croissant", async () => {
       vi.mocked(db.giftCardPack.findMany).mockResolvedValue([
-        { id: 'pack-1', restaurantId: RESTAURANT_ID, amount: d(50), isActive: true } as any,
-        { id: 'pack-2', restaurantId: RESTAURANT_ID, amount: d(100), isActive: true } as any,
+        {
+          id: 'pack-1',
+          restaurantId: RESTAURANT_ID,
+          amount: d(50),
+          isActive: true,
+        } as unknown as Awaited<ReturnType<typeof db.giftCardPack.findMany>>[number],
+        {
+          id: 'pack-2',
+          restaurantId: RESTAURANT_ID,
+          amount: d(100),
+          isActive: true,
+        } as unknown as Awaited<ReturnType<typeof db.giftCardPack.findMany>>[number],
       ]);
 
       const packs = await service.list(RESTAURANT_ID);
@@ -51,7 +61,7 @@ describe('GiftCardPackService', () => {
         minPartySize: 1,
         maxPartySize: 2,
         isActive: true,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
 
       const pack = await service.create({
         restaurantId: RESTAURANT_ID,
@@ -83,7 +93,7 @@ describe('GiftCardPackService', () => {
         minPartySize: 4,
         maxPartySize: 6,
         isActive: true,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
 
       await service.create({
         restaurantId: RESTAURANT_ID,
@@ -133,12 +143,12 @@ describe('GiftCardPackService', () => {
       vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
       vi.mocked(db.giftCardPack.update).mockResolvedValue({
         id: 'pack-1',
         name: 'Menu premium',
         amount: d(150),
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
 
       const pack = await service.update('pack-1', RESTAURANT_ID, {
         name: 'Menu premium',
@@ -171,7 +181,7 @@ describe('GiftCardPackService', () => {
       vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
 
       await expect(service.update('pack-1', RESTAURANT_ID, { amount: -5 })).rejects.toThrow(
         GiftCardPackError,
@@ -182,7 +192,7 @@ describe('GiftCardPackService', () => {
       vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
 
       await expect(
         service.update('pack-1', RESTAURANT_ID, { minPartySize: 10, maxPartySize: 2 }),
@@ -193,11 +203,11 @@ describe('GiftCardPackService', () => {
       vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
       vi.mocked(db.giftCardPack.update).mockResolvedValue({
         id: 'pack-1',
         name: 'Nouveau nom',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
 
       await service.update('pack-1', RESTAURANT_ID, { name: 'Nouveau nom' });
 
@@ -217,11 +227,11 @@ describe('GiftCardPackService', () => {
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
         isActive: false,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
       vi.mocked(db.giftCardPack.update).mockResolvedValue({
         id: 'pack-1',
         isActive: true,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
 
       const pack = await service.toggle('pack-1', RESTAURANT_ID);
 
@@ -237,11 +247,11 @@ describe('GiftCardPackService', () => {
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
         isActive: true,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
       vi.mocked(db.giftCardPack.update).mockResolvedValue({
         id: 'pack-1',
         isActive: false,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
 
       const pack = await service.toggle('pack-1', RESTAURANT_ID);
 
