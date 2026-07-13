@@ -27,51 +27,68 @@ function makeMockPrisma(
 
   const prisma = {
     floorPlan: {
-      findUnique: async (args: any) => {
-        return floorPlanByRestaurant.get(args.where.restaurantId) ?? null;
+      findUnique: async (args: unknown) => {
+        const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
+        return floorPlanByRestaurant.get(where.restaurantId as string) ?? null;
       },
     },
     table: {
-      findMany: async (args: any) => {
+      findMany: async (args: unknown) => {
         let result = Array.from(tables.values());
-        const where = args?.where ?? {};
+        const typedArgs = args as { where?: Record<string, unknown>; orderBy?: unknown[] };
+        const where = (typedArgs.where ?? {}) as Record<string, unknown>;
+        const orderBy = (typedArgs.orderBy ?? []) as unknown[];
 
-        if (where.floorPlanId) {
-          result = result.filter((t) => t.floorPlanId === where.floorPlanId);
+        const whereFloorPlanId = where.floorPlanId as string | undefined;
+        const isActive = where.isActive as boolean | undefined;
+        const capacity = where.capacity as { gte?: number } | undefined;
+        const minCapacity = where.minCapacity as { lte?: number } | undefined;
+        const id = where.id as { notIn?: string[] } | undefined;
+        const sectionId = where.sectionId as string | undefined;
+
+        if (whereFloorPlanId) {
+          result = result.filter((t) => t.floorPlanId === whereFloorPlanId);
         }
-        if (where.isActive === true) {
+        if (isActive === true) {
           result = result.filter((t) => t.isActive);
         }
-        if (where.isActive === false) {
+        if (isActive === false) {
           result = result.filter((t) => !t.isActive);
         }
-        if (where.capacity?.gte) {
-          result = result.filter((t) => t.capacity >= where.capacity.gte);
+        const gte = capacity?.gte;
+        if (typeof gte === 'number') {
+          result = result.filter((t) => t.capacity >= gte);
         }
-        if (where.minCapacity?.lte) {
-          result = result.filter((t) => t.minCapacity <= where.minCapacity.lte);
+        const lte = minCapacity?.lte;
+        if (typeof lte === 'number') {
+          result = result.filter((t) => t.minCapacity <= lte);
         }
-        if (where.id?.notIn) {
-          result = result.filter((t) => !where.id.notIn.includes(t.id));
+        const notIn = id?.notIn;
+        if (Array.isArray(notIn)) {
+          result = result.filter((t) => !notIn.includes(t.id));
         }
-        if (where.sectionId) {
-          result = result.filter((t) => t.sectionId === where.sectionId);
+        if (sectionId) {
+          result = result.filter((t) => t.sectionId === sectionId);
         }
 
-        const orderBy = args?.orderBy ?? [];
         result.sort((a, b) => {
           for (const clause of orderBy) {
-            if (clause.capacity) {
+            const order = clause as Record<string, unknown>;
+            const capacityDir = order.capacity as string | undefined;
+            const minCapacityDir = order.minCapacity as string | undefined;
+            const nameDir = order.name as string | undefined;
+
+            if (capacityDir) {
               const diff = a.capacity - b.capacity;
-              if (diff !== 0) return clause.capacity === 'asc' ? diff : -diff;
+              if (diff !== 0) return capacityDir === 'asc' ? diff : -diff;
             }
-            if (clause.minCapacity) {
+            if (minCapacityDir) {
               const diff = a.minCapacity - b.minCapacity;
-              if (diff !== 0) return clause.minCapacity === 'asc' ? diff : -diff;
+              if (diff !== 0) return minCapacityDir === 'asc' ? diff : -diff;
             }
-            if (clause.name) {
+            if (nameDir) {
               const diff = a.name.localeCompare(b.name);
-              if (diff !== 0) return clause.name === 'asc' ? diff : -diff;
+              if (diff !== 0) return nameDir === 'asc' ? diff : -diff;
             }
           }
           return 0;
@@ -79,68 +96,84 @@ function makeMockPrisma(
 
         return result.map((t) => ({ ...t, section: t.section }));
       },
-      findUniqueOrThrow: async (args: any) => {
-        const t = tables.get(args.where.id);
-        if (!t) throw new Error(`Table not found: ${args.where.id}`);
+      findUniqueOrThrow: async (args: unknown) => {
+        const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
+        const id = where.id as string;
+        const t = tables.get(id);
+        if (!t) throw new Error(`Table not found: ${id}`);
         return t;
       },
     },
     reservation: {
-      findFirst: async (args: any) => {
-        const where = args?.where ?? {};
-        const tableId = where.tableId;
-        const states = where.state?.in ?? [];
-        const excludeId = where.id?.not;
-        const and = where.AND ?? [];
+      findFirst: async (args: unknown) => {
+        const typedArgs = args as { where?: Record<string, unknown> };
+        const where = (typedArgs.where ?? {}) as Record<string, unknown>;
+        const tableId = where.tableId as string | undefined;
+        const state = where.state as { in?: string[] } | undefined;
+        const excludeId = where.id as { not?: string } | undefined;
+        const and = (where.AND ?? []) as Record<string, unknown>[];
 
         for (const r of reservations.values()) {
           if (r.tableId !== tableId) continue;
-          if (!states.includes(r.state)) continue;
-          if (excludeId && r.id === excludeId) continue;
+          if (state?.in && !state.in.includes(r.state)) continue;
+          if (excludeId?.not && r.id === excludeId.not) continue;
           if (and.length > 0) {
             const [startCond, endCond] = and;
-            if (startCond.startsAt?.lt && !(r.startsAt! < startCond.startsAt.lt)) continue;
-            if (startCond.startsAt?.gte && !(r.startsAt! >= startCond.startsAt.gte)) continue;
-            if (endCond.endsAt?.gt && !(r.endsAt! > endCond.endsAt.gt)) continue;
-            if (endCond.endsAt?.lte && !(r.endsAt! <= endCond.endsAt.lte)) continue;
+            const startStartsAt = startCond.startsAt as Record<string, unknown> | undefined;
+            const endEndsAt = endCond.endsAt as Record<string, unknown> | undefined;
+            if (startStartsAt?.lt && !(r.startsAt! < (startStartsAt.lt as Date))) continue;
+            if (startStartsAt?.gte && !(r.startsAt! >= (startStartsAt.gte as Date))) continue;
+            if (endEndsAt?.gt && !(r.endsAt! > (endEndsAt.gt as Date))) continue;
+            if (endEndsAt?.lte && !(r.endsAt! <= (endEndsAt.lte as Date))) continue;
           }
           return r;
         }
         return null;
       },
-      findUniqueOrThrow: async (args: any) => {
-        const r = reservations.get(args.where.id);
-        if (!r) throw new Error(`Reservation not found: ${args.where.id}`);
+      findUniqueOrThrow: async (args: unknown) => {
+        const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
+        const id = where.id as string;
+        const r = reservations.get(id);
+        if (!r) throw new Error(`Reservation not found: ${id}`);
         return r;
       },
-      update: async (args: any) => {
-        const r = reservations.get(args.where.id);
-        if (!r) throw new Error(`Reservation not found: ${args.where.id}`);
-        const updated = { ...r, ...args.data } as MockReservation;
-        reservations.set(args.where.id, updated);
+      update: async (args: unknown) => {
+        const typedArgs = args as {
+          where: Record<string, unknown>;
+          data?: Record<string, unknown>;
+        };
+        const id = typedArgs.where.id as string;
+        const r = reservations.get(id);
+        if (!r) throw new Error(`Reservation not found: ${id}`);
+        const data = typedArgs.data ?? ({} as Record<string, unknown>);
+        const updated = { ...r, ...data } as unknown as MockReservation;
+        reservations.set(id, updated);
         return updated;
       },
     },
     agenticHold: {
-      findFirst: async (args: any) => {
-        const where = args?.where ?? {};
-        const tableId = where.tableId;
-        const status = where.status;
-        const expiresAt = where.expiresAt?.gt;
-        const excludeId = where.id?.not;
-        const and = where.AND ?? [];
+      findFirst: async (args: unknown) => {
+        const typedArgs = args as { where?: Record<string, unknown> };
+        const where = (typedArgs.where ?? {}) as Record<string, unknown>;
+        const tableId = where.tableId as string | undefined;
+        const status = where.status as string | undefined;
+        const expiresAt = where.expiresAt as { gt?: Date } | undefined;
+        const excludeId = where.id as { not?: string } | undefined;
+        const and = (where.AND ?? []) as Record<string, unknown>[];
 
         for (const h of holds.values()) {
           if (h.tableId !== tableId) continue;
           if (status && h.status !== status) continue;
-          if (expiresAt && !(h.expiresAt > expiresAt)) continue;
-          if (excludeId && h.id === excludeId) continue;
+          if (expiresAt?.gt && !(h.expiresAt > expiresAt.gt)) continue;
+          if (excludeId?.not && h.id === excludeId.not) continue;
           if (and.length > 0) {
             const [startCond, endCond] = and;
-            if (startCond.slotStart?.lt && !(h.slotStart < startCond.slotStart.lt)) continue;
-            if (startCond.slotStart?.gte && !(h.slotStart >= startCond.slotStart.gte)) continue;
-            if (endCond.slotEnd?.gt && !(h.slotEnd > endCond.slotEnd.gt)) continue;
-            if (endCond.slotEnd?.lte && !(h.slotEnd <= endCond.slotEnd.lte)) continue;
+            const startSlotStart = startCond.slotStart as Record<string, unknown> | undefined;
+            const endSlotEnd = endCond.slotEnd as Record<string, unknown> | undefined;
+            if (startSlotStart?.lt && !(h.slotStart < (startSlotStart.lt as Date))) continue;
+            if (startSlotStart?.gte && !(h.slotStart >= (startSlotStart.gte as Date))) continue;
+            if (endSlotEnd?.gt && !(h.slotEnd > (endSlotEnd.gt as Date))) continue;
+            if (endSlotEnd?.lte && !(h.slotEnd <= (endSlotEnd.lte as Date))) continue;
           }
           return h;
         }
@@ -148,11 +181,11 @@ function makeMockPrisma(
       },
     },
     $queryRaw: async () => [{ id: 'locked' }],
-    $transaction: async (fn: any) => {
+    $transaction: async (fn: unknown) => {
       if (Array.isArray(fn)) {
-        return Promise.all(fn);
+        return Promise.all(fn as unknown[]);
       }
-      return fn(prisma);
+      return (fn as (p: typeof prisma) => unknown)(prisma);
     },
   } as unknown as PrismaClient;
 

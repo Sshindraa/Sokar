@@ -225,67 +225,75 @@ function makeMockPrisma(initial: {
 
   const prisma = {
     restaurant: {
-      findUnique: async (args: any) => {
-        if (args?.where?.id === restaurant?.id) {
+      findUnique: async (args: unknown) => {
+        const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
+        const id = where.id as string | undefined;
+        if (id === restaurant?.id) {
           return restaurant ?? null;
         }
         return null;
       },
     },
     floorPlan: {
-      findUnique: async (args: any) => {
-        if (args?.where?.restaurantId === restaurant?.id) {
+      findUnique: async (args: unknown) => {
+        const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
+        const restaurantId = where.restaurantId as string | undefined;
+        if (restaurantId === restaurant?.id) {
           return { id: floorPlanId };
         }
         return null;
       },
     },
     table: {
-      findMany: async (args: any) => {
-        const where = args?.where ?? {};
+      findMany: async (args: unknown) => {
+        const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
+        const floorPlanId = where.floorPlanId as string | undefined;
+        const isActive = where.isActive as boolean | undefined;
+        const capacity = where.capacity as { gte?: number } | undefined;
         return tables.filter((t) => {
-          if (where.floorPlanId && t.floorPlanId !== where.floorPlanId) return false;
-          if (where.isActive === true && !t.isActive) return false;
-          if (where.capacity?.gte && t.capacity < where.capacity.gte) return false;
+          if (floorPlanId && t.floorPlanId !== floorPlanId) return false;
+          if (isActive === true && !t.isActive) return false;
+          if (capacity?.gte && t.capacity < capacity.gte) return false;
           return true;
         });
       },
     },
     reservation: {
-      findMany: async (args: any) => {
-        const where = args?.where ?? {};
+      findMany: async (args: unknown) => {
+        const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
+        const restaurantId = where.restaurantId as string | undefined;
+        const state = where.state as { in?: string[] } | undefined;
+        const tableId = where.tableId as { not?: string | null } | undefined;
+        const startsAt = where.startsAt as { gte?: Date; lt?: Date } | undefined;
         return reservations.filter((r) => {
-          if (where.restaurantId && r.restaurantId !== where.restaurantId) return false;
-          if (where.state?.in && !where.state.in.includes(r.state)) return false;
-          if (where.tableId?.not === null && r.tableId === null) return false;
-          if (
-            where.tableId?.not !== null &&
-            where.tableId?.not != null &&
-            r.tableId !== where.tableId.not
-          )
-            return false;
-          if (where.startsAt?.gte && r.startsAt! < where.startsAt.gte) return false;
-          if (where.startsAt?.lt && r.startsAt! >= where.startsAt.lt) return false;
+          if (restaurantId && r.restaurantId !== restaurantId) return false;
+          if (state?.in && !state.in.includes(r.state)) return false;
+          const tableIdNot = tableId?.not;
+          if (tableIdNot === null && r.tableId === null) return false;
+          if (tableIdNot != null && r.tableId !== tableIdNot) return false;
+          if (startsAt?.gte && r.startsAt! < startsAt.gte) return false;
+          if (startsAt?.lt && r.startsAt! >= startsAt.lt) return false;
           return true;
         });
       },
     },
     agenticHold: {
-      findMany: async (args: any) => {
-        const where = args?.where ?? {};
+      findMany: async (args: unknown) => {
+        const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
+        const restaurantId = where.restaurantId as string | undefined;
+        const status = where.status as string | undefined;
+        const expiresAt = where.expiresAt as { gt?: Date } | undefined;
+        const tableId = where.tableId as { not?: string | null } | undefined;
+        const slotStart = where.slotStart as { gte?: Date; lt?: Date } | undefined;
         return holds.filter((h) => {
-          if (where.restaurantId && h.restaurantId !== where.restaurantId) return false;
-          if (where.status && h.status !== where.status) return false;
-          if (where.expiresAt?.gt && !(h.expiresAt > where.expiresAt.gt)) return false;
-          if (where.tableId?.not === null && h.tableId === null) return false;
-          if (
-            where.tableId?.not !== null &&
-            where.tableId?.not != null &&
-            h.tableId !== where.tableId.not
-          )
-            return false;
-          if (where.slotStart?.gte && h.slotStart < where.slotStart.gte) return false;
-          if (where.slotStart?.lt && h.slotStart >= where.slotStart.lt) return false;
+          if (restaurantId && h.restaurantId !== restaurantId) return false;
+          if (status && h.status !== status) return false;
+          if (expiresAt?.gt && !(h.expiresAt > expiresAt.gt)) return false;
+          const tableIdNot = tableId?.not;
+          if (tableIdNot === null && h.tableId === null) return false;
+          if (tableIdNot != null && h.tableId !== tableIdNot) return false;
+          if (slotStart?.gte && h.slotStart < slotStart.gte) return false;
+          if (slotStart?.lt && h.slotStart >= slotStart.lt) return false;
           return true;
         });
       },
@@ -322,7 +330,7 @@ function makeBaseRestaurant(capacitySpecials: unknown = {}) {
 
 describe('CapacityAwareAvailabilityService', () => {
   beforeEach(() => {
-    (redisCache as any).__resetStore();
+    (redisCache as unknown as { __resetStore: () => void }).__resetStore();
     vi.clearAllMocks();
   });
 

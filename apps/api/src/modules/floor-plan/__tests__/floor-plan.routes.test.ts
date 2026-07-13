@@ -24,13 +24,13 @@ describe('admin /restaurants/:id/floor-plan routes', () => {
       restaurantId: RESTAURANT_ID,
       sections: [],
       tables: [],
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.floorPlan.findUnique>>);
     vi.mocked(db.section.findFirst).mockResolvedValue({
       id: 'sec-1',
       name: 'Terrasse',
       position: 0,
       floorPlanId: 'fp-1',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.section.findFirst>>);
     vi.mocked(db.table.findFirst).mockResolvedValue({
       id: 'table-1',
       name: 'T1',
@@ -38,7 +38,7 @@ describe('admin /restaurants/:id/floor-plan routes', () => {
       minCapacity: 1,
       isActive: true,
       floorPlanId: 'fp-1',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.table.findFirst>>);
   });
 
   it('retourne 401 sans auth', async () => {
@@ -77,7 +77,7 @@ describe('admin /restaurants/:id/floor-plan routes', () => {
         },
       ],
       tables: [],
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.floorPlan.findUnique>>);
     vi.mocked(db.section.findMany).mockResolvedValue([
       {
         id: 'sec-1',
@@ -97,7 +97,7 @@ describe('admin /restaurants/:id/floor-plan routes', () => {
           },
         ],
       },
-    ] as any);
+    ] as unknown as Awaited<ReturnType<typeof db.section.findMany>>);
 
     const app = await getApp();
     const res = await app.inject({
@@ -119,7 +119,7 @@ describe('admin /restaurants/:id/floor-plan routes', () => {
       name: 'Salle intérieure',
       position: 1,
       floorPlanId: 'fp-1',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.section.create>>);
 
     const app = await getApp();
     const res = await app.inject({
@@ -141,7 +141,7 @@ describe('admin /restaurants/:id/floor-plan routes', () => {
       capacity: 2,
       minCapacity: 1,
       isActive: true,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.table.create>>);
 
     const app = await getApp();
     const res = await app.inject({
@@ -162,7 +162,7 @@ describe('admin /restaurants/:id/floor-plan routes', () => {
       name: 'T1',
       capacity: 4,
       isActive: false,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.table.update>>);
 
     const app = await getApp();
     const res = await app.inject({
