@@ -20,6 +20,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import Fastify from 'fastify';
 import fastifyWebsocket from '@fastify/websocket';
 import { WebSocket } from 'ws';
+import type { CallSession } from '../stream/types';
 
 // ── Mocks (doivent précéder les imports under test) ────────────────────────
 
@@ -86,7 +87,7 @@ import { sendAudioToDeepgram, closeDeepgram } from '../stream/deepgram-bridge';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function makeMockSession(): any {
+function makeMockSession(): CallSession {
   return {
     callControlId: 'cc-ws-1',
     callSessionId: 'cs-ws-1',
@@ -120,7 +121,7 @@ function makeMockSession(): any {
     createdAt: Date.now(),
     personality: null,
     latencyTrace: undefined,
-  };
+  } as unknown as CallSession;
 }
 
 async function startApp() {
@@ -164,7 +165,9 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
     mockMgr.transition.mockReturnValue(true);
     originalFetch = globalThis.fetch;
     // speakTelnyxNative (fallback TTS) appelle fetch — on mock pour éviter un crash
-    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, text: vi.fn() }) as any;
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: true, text: vi.fn() }) as unknown as typeof globalThis.fetch;
 
     const started = await startApp();
     app = started.app;

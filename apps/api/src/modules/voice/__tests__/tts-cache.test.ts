@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../../shared/redis/client', () => ({
   redisCache: {
     getBuffer: vi.fn(),
-    set:       vi.fn(),
+    set: vi.fn(),
   },
 }));
 
@@ -15,7 +15,7 @@ describe('TTS Cache', () => {
   it('retourne null si cache vide', async () => {
     const { getTtsCached } = await import('../../../modules/voice/tts-cache');
     const { redisCache } = await import('../../../shared/redis/client');
-    (redisCache.getBuffer as any).mockResolvedValue(null);
+    vi.mocked(redisCache.getBuffer).mockResolvedValue(null);
     expect(await getTtsCached('Bonjour, en quoi puis-je vous aider ?', 'voice-id')).toBeNull();
   });
 
@@ -23,7 +23,7 @@ describe('TTS Cache', () => {
     const { getTtsCached } = await import('../../../modules/voice/tts-cache');
     const { redisCache } = await import('../../../shared/redis/client');
     const fakeBuffer = Buffer.from('audio');
-    (redisCache.getBuffer as any).mockResolvedValue(fakeBuffer);
+    vi.mocked(redisCache.getBuffer).mockResolvedValue(fakeBuffer);
     const result = await getTtsCached('Bonjour, en quoi puis-je vous aider ?', 'voice-id');
     expect(result).toEqual(fakeBuffer);
   });
@@ -31,7 +31,7 @@ describe('TTS Cache', () => {
   it('ne cache pas les phrases trop courtes', async () => {
     const { setTtsCached } = await import('../../../modules/voice/tts-cache');
     const { redisCache } = await import('../../../shared/redis/client');
-    (redisCache.set as any).mockClear();
+    vi.mocked(redisCache.set).mockClear();
     await setTtsCached('Ok.', 'voice-id', Buffer.from('audio'));
     expect(redisCache.set).not.toHaveBeenCalled();
   });

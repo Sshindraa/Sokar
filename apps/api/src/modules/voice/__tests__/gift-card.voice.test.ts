@@ -12,7 +12,9 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { WebSocket } from 'ws';
 import { CallSessionManager } from '../stream/manager';
+import type { CallSession } from '../stream/types';
 import { sendSms } from '../../../shared/telnyx/client';
+import { db } from '../../../shared/db/client';
 
 // Mock db explicite — vi.hoisted pour être disponible dans la factory hoisted
 const { dbMock } = vi.hoisted(() => ({
@@ -64,14 +66,14 @@ vi.mock('../../../shared/telnyx/client', () => ({
 }));
 
 function makeTelnyxWs(): WebSocket {
-  const ws: any = {
+  const ws: Record<string, unknown> = {
     readyState: WebSocket.OPEN,
     send: vi.fn(),
     close: vi.fn(),
     on: vi.fn(),
     OPEN: WebSocket.OPEN,
   };
-  return ws as WebSocket;
+  return ws as unknown as WebSocket;
 }
 
 function makeSession() {
@@ -94,7 +96,8 @@ function makeSession() {
 
 describe('CallSessionManager — gift card tools', () => {
   beforeEach(() => {
-    (CallSessionManager as any).instance = new CallSessionManager();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
     vi.clearAllMocks();
   });
 
@@ -121,7 +124,11 @@ describe('CallSessionManager — gift card tools', () => {
         codec: 'PCMA',
       });
 
-      const result = await (mgr as any).executeTool(
+      const result = await (
+        mgr as unknown as {
+          executeTool: (session: CallSession, tool: string, args: string) => Promise<string>;
+        }
+      ).executeTool(
         session,
         'purchaseGiftCard',
         JSON.stringify({
@@ -139,7 +146,11 @@ describe('CallSessionManager — gift card tools', () => {
       const mgr = CallSessionManager.getInstance();
       const session = makeSession();
 
-      const result = await (mgr as any).executeTool(
+      const result = await (
+        mgr as unknown as {
+          executeTool: (session: CallSession, tool: string, args: string) => Promise<string>;
+        }
+      ).executeTool(
         session,
         'purchaseGiftCard',
         JSON.stringify({
@@ -161,9 +172,13 @@ describe('CallSessionManager — gift card tools', () => {
         id: 'gift-card-1',
         code: 'SOKAR-1234-5678-9012',
         amount: { toNumber: () => 150 },
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
 
-      const result = await (mgr as any).executeTool(
+      const result = await (
+        mgr as unknown as {
+          executeTool: (session: CallSession, tool: string, args: string) => Promise<string>;
+        }
+      ).executeTool(
         session,
         'purchaseGiftCard',
         JSON.stringify({
@@ -208,10 +223,14 @@ describe('CallSessionManager — gift card tools', () => {
         id: 'gift-card-2',
         code: 'SOKAR-9876-5432-1098',
         amount: { toNumber: () => 100 },
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
       vi.mocked(sendSms).mockRejectedValue(new Error('SMS failed'));
 
-      const result = await (mgr as any).executeTool(
+      const result = await (
+        mgr as unknown as {
+          executeTool: (session: CallSession, tool: string, args: string) => Promise<string>;
+        }
+      ).executeTool(
         session,
         'purchaseGiftCard',
         JSON.stringify({
@@ -232,7 +251,11 @@ describe('CallSessionManager — gift card tools', () => {
       const mgr = CallSessionManager.getInstance();
       const session = makeSession();
 
-      const result = await (mgr as any).executeTool(
+      const result = await (
+        mgr as unknown as {
+          executeTool: (session: CallSession, tool: string, args: string) => Promise<string>;
+        }
+      ).executeTool(
         session,
         'recommendGiftCardAmount',
         JSON.stringify({

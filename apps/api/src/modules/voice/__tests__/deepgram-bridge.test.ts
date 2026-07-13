@@ -29,13 +29,13 @@ import {
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-function makeWsMock(): any {
+function makeWsMock(): WebSocket {
   return {
     readyState: WebSocket.OPEN,
     send: vi.fn(),
     close: vi.fn(),
     on: vi.fn(),
-  };
+  } as unknown as WebSocket;
 }
 
 function makeSession(overrides: Partial<CallSession> = {}): CallSession {
@@ -147,7 +147,8 @@ describe('handleDeepgramMessage — event dispatching', () => {
   beforeEach(() => {
     // Disable speculative LLM by default — opt-in per test
     delete process.env.SPECULATIVE_LLM_ENABLED;
-    (CallSessionManager as any).instance = new CallSessionManager();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
   });
 
   it('UtteranceStart: cancels speculative LLM state and fires onDeepgramEvent', () => {
@@ -289,7 +290,8 @@ describe('handleDeepgramMessage — event dispatching', () => {
   it('Results during SPEAKING with non-empty transcript: triggers barge-in', () => {
     const session = makeSession();
     const mgr = CallSessionManager.getInstance();
-    const telnyxWs = session.telnyxWs as any;
+    const telnyxWs = session.telnyxWs;
+    if (!telnyxWs) throw new Error('Missing telnyxWs');
     mgr.transition(session, 'SPEAKING');
     session.isSpeaking = true;
 
@@ -303,14 +305,15 @@ describe('handleDeepgramMessage — event dispatching', () => {
     // Barge-in clears the Telnyx buffer + transitions to LISTENING
     expect(session.state).toBe('LISTENING');
     expect(session.isSpeaking).toBe(false);
-    const sentPayloads = telnyxWs.send.mock.calls.map((c: any) => c[0]);
-    expect(sentPayloads.some((p: string) => p.includes('"event":"clear"'))).toBe(true);
+    const sentPayloads = vi.mocked(telnyxWs.send).mock.calls.map((c) => c[0] as string);
+    expect(sentPayloads.some((p) => p.includes('"event":"clear"'))).toBe(true);
   });
 
   it('Results during LISTENING: no barge-in (no Telnyx clear)', () => {
     const session = makeSession();
     const mgr = CallSessionManager.getInstance();
-    const telnyxWs = session.telnyxWs as any;
+    const telnyxWs = session.telnyxWs;
+    if (!telnyxWs) throw new Error('Missing telnyxWs');
     mgr.transition(session, 'LISTENING');
 
     handleDeepgramMessage(session, {
@@ -321,8 +324,8 @@ describe('handleDeepgramMessage — event dispatching', () => {
     });
 
     // No clear event
-    const sentPayloads = telnyxWs.send.mock.calls.map((c: any) => c[0]);
-    expect(sentPayloads.some((p: string) => p.includes('"event":"clear"'))).toBe(false);
+    const sentPayloads = vi.mocked(telnyxWs.send).mock.calls.map((c) => c[0] as string);
+    expect(sentPayloads.some((p) => p.includes('"event":"clear"'))).toBe(false);
   });
 
   it('Results (speculative eligible: high confidence, 3-20 words): fires InterimHighConfidence', () => {

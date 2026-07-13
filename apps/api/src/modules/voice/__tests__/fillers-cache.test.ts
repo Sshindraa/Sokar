@@ -39,13 +39,13 @@ const setEnv = (k: string, v: string | undefined): void => {
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function makeTelnyxWs(): WebSocket {
-  const ws: any = {
+  const ws: Record<string, unknown> = {
     readyState: WebSocket.OPEN,
     send: vi.fn(),
     close: vi.fn(),
     on: vi.fn(),
   };
-  return ws as WebSocket;
+  return ws as unknown as WebSocket;
 }
 
 function cartesiaSseResponse(chunks: string[]): Response {
@@ -92,7 +92,7 @@ describe('playFiller', () => {
 
   it('is a no-op when the Telnyx WebSocket is not OPEN', async () => {
     const ws = makeTelnyxWs();
-    (ws as any).readyState = WebSocket.CLOSED;
+    (ws as unknown as Record<string, unknown>).readyState = WebSocket.CLOSED;
 
     await playFiller(ws, 'CASUAL');
 
@@ -116,7 +116,7 @@ describe('playFiller', () => {
 
     // Sent N base64 media payloads (one per chunk)
     expect(ws.send).toHaveBeenCalled();
-    const calls = (ws.send as any).mock.calls.map((c: any) => c[0]);
+    const calls = vi.mocked(ws.send).mock.calls.map((c) => c[0] as string);
     for (const payload of calls) {
       expect(payload).toMatch(/"event":"media"/);
     }
@@ -171,7 +171,7 @@ describe('initFillerCache', () => {
   it('is a no-op (no fetch, no throw) when CARTESIA_API_KEY is missing', async () => {
     setEnv('CARTESIA_API_KEY', undefined);
     const fetchSpy = vi.fn();
-    globalThis.fetch = fetchSpy as any;
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
 
     await initFillerCache();
 
@@ -183,7 +183,7 @@ describe('initFillerCache', () => {
     // Pretend every filler is already cached in Redis
     vi.mocked(redisCache.get).mockResolvedValue(JSON.stringify(['Y2FjaGU=']));
     const fetchSpy = vi.fn();
-    globalThis.fetch = fetchSpy as any;
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
 
     await initFillerCache();
 
@@ -197,7 +197,7 @@ describe('initFillerCache', () => {
     const fetchSpy = vi
       .fn()
       .mockImplementation(() => Promise.resolve(cartesiaSseResponse(['Y2FjaGU='])));
-    globalThis.fetch = fetchSpy as any;
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
 
     await initFillerCache();
     const callsAfterFirst = fetchSpy.mock.calls.length;
