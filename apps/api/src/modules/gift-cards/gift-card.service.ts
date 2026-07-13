@@ -54,43 +54,56 @@ export class GiftCardService {
     const validityMonths = input.validityMonths ?? 12;
     const expiresAt = input.expiresAt ?? this.addMonths(new Date(), validityMonths);
 
-    // Générer un shortCode unique (alias public lisible)
-    const shortCode = await generateUniqueShortCode(this.prisma);
+    // Générer un shortCode unique (alias public lisible).
+    // En cas de collision P2002 (race entre findUnique et create), on retente
+    // avec un nouveau shortCode.
+    const maxAttempts = 3;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const shortCode = await generateUniqueShortCode(this.prisma);
+      try {
+        return await this.prisma.giftCard.create({
+          data: {
+            restaurantId: input.restaurantId,
+            amount,
+            remainingAmount: amount,
+            currency: input.currency ?? 'EUR',
+            expiresAt,
+            validityMonths,
+            packId,
+            preferredDate: input.preferredDate ?? null,
+            preferredTime: input.preferredTime ?? null,
+            preferredPartySize: input.preferredPartySize ?? null,
+            senderName: input.senderName ?? null,
+            senderEmail: input.senderEmail ?? null,
+            senderPhone: input.senderPhone ?? null,
+            recipientName: input.recipientName ?? null,
+            recipientEmail: input.recipientEmail ?? null,
+            recipientPhone: input.recipientPhone ?? null,
+            message: input.message ?? null,
+            occasion: input.occasion ?? null,
+            customerId: input.customerId ?? null,
+            createdBy: input.createdBy ?? 'CLIENT',
+            purchaseReference: input.purchaseReference ?? null,
+            stripePaymentIntentId: input.stripePaymentIntentId ?? null,
+            stripePaymentStatus: input.stripePaymentStatus ?? 'pending',
+            templateId: input.templateId ?? null,
+            customImageUrl: input.customImageUrl ?? null,
+            sokarCommissionAmount: input.sokarCommissionAmount ?? 0,
+            type: input.type ?? 'SINGLE',
+            targetAmount: input.targetAmount ?? null,
+            crowdfundedUntil: input.crowdfundedUntil ?? null,
+            shortCode,
+          },
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          continue;
+        }
+        throw err;
+      }
+    }
 
-    return this.prisma.giftCard.create({
-      data: {
-        restaurantId: input.restaurantId,
-        amount,
-        remainingAmount: amount,
-        currency: input.currency ?? 'EUR',
-        expiresAt,
-        validityMonths,
-        packId,
-        preferredDate: input.preferredDate ?? null,
-        preferredTime: input.preferredTime ?? null,
-        preferredPartySize: input.preferredPartySize ?? null,
-        senderName: input.senderName ?? null,
-        senderEmail: input.senderEmail ?? null,
-        senderPhone: input.senderPhone ?? null,
-        recipientName: input.recipientName ?? null,
-        recipientEmail: input.recipientEmail ?? null,
-        recipientPhone: input.recipientPhone ?? null,
-        message: input.message ?? null,
-        occasion: input.occasion ?? null,
-        customerId: input.customerId ?? null,
-        createdBy: input.createdBy ?? 'CLIENT',
-        purchaseReference: input.purchaseReference ?? null,
-        stripePaymentIntentId: input.stripePaymentIntentId ?? null,
-        stripePaymentStatus: input.stripePaymentStatus ?? 'pending',
-        templateId: input.templateId ?? null,
-        customImageUrl: input.customImageUrl ?? null,
-        sokarCommissionAmount: input.sokarCommissionAmount ?? 0,
-        type: input.type ?? 'SINGLE',
-        targetAmount: input.targetAmount ?? null,
-        crowdfundedUntil: input.crowdfundedUntil ?? null,
-        shortCode,
-      },
-    });
+    throw new GiftCardError('Impossible de générer un shortCode unique');
   }
 
   /**

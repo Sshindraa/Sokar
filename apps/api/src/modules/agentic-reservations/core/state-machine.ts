@@ -72,6 +72,19 @@ export class InvalidStateTransitionError extends Error {
   }
 }
 
+export class InvalidStateInvariantError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidStateInvariantError';
+  }
+}
+
+export type ReservationStateContext = {
+  tableId?: string | null;
+  startsAt?: Date | null;
+  endsAt?: Date | null;
+};
+
 export function isTerminalState(state: ReservationState): boolean {
   return VALID_TRANSITIONS[state].size === 0;
 }
@@ -80,9 +93,34 @@ export function canTransition(from: ReservationState, to: ReservationState): boo
   return VALID_TRANSITIONS[from].has(to);
 }
 
-export function assertCanTransition(from: ReservationState, to: ReservationState): void {
+export function assertCanTransition(
+  from: ReservationState,
+  to: ReservationState,
+  context?: ReservationStateContext,
+  now = new Date(),
+): void {
   if (!canTransition(from, to)) {
     throw new InvalidStateTransitionError(from, to);
+  }
+  validateStateInvariants(to, context, now);
+}
+
+function validateStateInvariants(
+  to: ReservationState,
+  context?: ReservationStateContext,
+  now = new Date(),
+): void {
+  if (!context) return;
+
+  if (to === 'SEATED' && !context.tableId) {
+    throw new InvalidStateInvariantError('SEATED requires a tableId');
+  }
+
+  if (
+    (to === 'HONORED' || to === 'NO_SHOW') &&
+    (!context.startsAt || context.startsAt.getTime() > now.getTime())
+  ) {
+    throw new InvalidStateInvariantError(`${to} requires a startsAt in the past`);
   }
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertCanTransition,
   canTransition,
+  InvalidStateInvariantError,
   InvalidStateTransitionError,
   isAgenticChannel,
   isTerminalState,
@@ -92,6 +93,49 @@ describe('state-machine', () => {
         expect(e.message).toContain('HONORED');
         expect(e.message).toContain('CANCELLED');
       }
+    });
+  });
+
+  describe('assertCanTransition with invariants', () => {
+    it('lève InvalidStateInvariantError si SEATED sans tableId', () => {
+      expect(() =>
+        assertCanTransition('CONFIRMED', 'SEATED', { startsAt: new Date('2020-01-01') }),
+      ).toThrow(InvalidStateInvariantError);
+    });
+
+    it('accepte SEATED avec un tableId', () => {
+      expect(() =>
+        assertCanTransition('CONFIRMED', 'SEATED', {
+          tableId: 'table-1',
+          startsAt: new Date('2020-01-01'),
+        }),
+      ).not.toThrow();
+    });
+
+    it('lève InvalidStateInvariantError si HONORED avec startsAt futur', () => {
+      const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      expect(() =>
+        assertCanTransition('SEATED', 'HONORED', { tableId: 'table-1', startsAt: future }),
+      ).toThrow(InvalidStateInvariantError);
+    });
+
+    it('accepte HONORED avec startsAt passé', () => {
+      const past = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      expect(() =>
+        assertCanTransition('SEATED', 'HONORED', { tableId: 'table-1', startsAt: past }),
+      ).not.toThrow();
+    });
+
+    it('lève InvalidStateInvariantError si NO_SHOW avec startsAt futur', () => {
+      const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      expect(() => assertCanTransition('CONFIRMED', 'NO_SHOW', { startsAt: future })).toThrow(
+        InvalidStateInvariantError,
+      );
+    });
+
+    it('accepte NO_SHOW avec startsAt passé', () => {
+      const past = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      expect(() => assertCanTransition('CONFIRMED', 'NO_SHOW', { startsAt: past })).not.toThrow();
     });
   });
 

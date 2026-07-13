@@ -33,7 +33,7 @@ function makePrisma() {
       findFirst: vi.fn(),
       count: vi.fn().mockResolvedValue(0),
     },
-    call: {
+    message: {
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     reservationAuditLog: {
@@ -96,14 +96,14 @@ describe('ErasureService.eraseSubject', () => {
     expect(result.reservationsAnonymized).toBe(3);
   });
 
-  it('anonymise les calls (best-effort : pas de customerPhone selon schéma)', async () => {
+  it('anonymise les messages d appels (Message a customerPhone/customerName)', async () => {
     (prisma.reservation.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'res-1' });
     (prisma.customerConsent.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null);
     (prisma.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (fn: (tx: { reservation: typeof prisma.reservation }) => unknown) =>
         fn({ reservation: prisma.reservation }),
     );
-    (prisma.call.updateMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 2 });
+    (prisma.message.updateMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 2 });
 
     const result = await service.eraseSubject({
       subject: '+336****2222',
@@ -114,14 +114,14 @@ describe('ErasureService.eraseSubject', () => {
     expect(result.callsAnonymized).toBe(2);
   });
 
-  it("ne fait pas échouer si la table Call n'a pas de customerPhone (catch silencieux)", async () => {
+  it("ne fait pas échouer si la table Message n'a pas de customerPhone (catch silencieux)", async () => {
     (prisma.reservation.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'res-1' });
     (prisma.customerConsent.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null);
     (prisma.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (fn: (tx: { reservation: typeof prisma.reservation }) => unknown) =>
         fn({ reservation: prisma.reservation }),
     );
-    (prisma.call.updateMany as ReturnType<typeof vi.fn>).mockImplementation(() => {
+    (prisma.message.updateMany as ReturnType<typeof vi.fn>).mockImplementation(() => {
       throw new Error('Unknown field `customerPhone`');
     });
 

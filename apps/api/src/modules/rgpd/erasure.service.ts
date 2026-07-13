@@ -94,19 +94,17 @@ export class ErasureService {
       return result.count;
     }, LONG_TRANSACTION_OPTIONS);
 
-    // 3. Anonymiser les appels (best-effort : la table Call peut ne pas
-    //    avoir de customerPhone selon le schéma).
+    // 3. Anonymiser les messages d'appels (Message contient customerPhone/customerName).
+    //    La table Call n'a pas de colonne customerPhone directe.
     let callsAnonymized = 0;
     try {
-      const callResult = await this.prisma.call.updateMany({
-        // @ts-expect-error -- Call can lack customerPhone depending on schema
+      const messageResult = await this.prisma.message.updateMany({
         where: { customerPhone: args.subject },
-        // @ts-expect-error -- see above
-        data: { customerPhone: null },
+        data: { customerPhone: null, customerName: 'ANON' },
       });
-      callsAnonymized = callResult.count;
+      callsAnonymized = messageResult.count;
     } catch (err) {
-      logger.debug({ err }, 'Call table does not have customerPhone field, skipping');
+      logger.debug({ err }, 'Message table does not have customerPhone field, skipping');
     }
 
     // 4. Conserver les consents (preuve légale) — pas d'anonymisation

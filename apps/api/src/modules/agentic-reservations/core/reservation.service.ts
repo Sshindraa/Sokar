@@ -456,7 +456,7 @@ export class ReservationService {
       if (!reservation) throw new ReservationNotFoundError(args.reservationId);
 
       const fromState = reservation.state as ReservationState;
-      assertCanTransition(fromState, args.toState);
+      assertCanTransition(fromState, args.toState, reservation);
 
       await tx.reservation.update({
         where: { id: reservation.id },
@@ -492,7 +492,7 @@ export class ReservationService {
       if (!reservation) throw new ReservationNotFoundError(args.reservationId);
 
       const fromState = reservation.state as ReservationState;
-      assertCanTransition(fromState, 'CANCELLED');
+      assertCanTransition(fromState, 'CANCELLED', reservation);
 
       await tx.reservation.update({
         where: { id: reservation.id },
