@@ -20,7 +20,9 @@ describe('customer.routes', () => {
         { id: 'c1', restaurantId: 'test-rest-1', name: 'Alice', visitCount: 10 },
         { id: 'c2', restaurantId: 'test-rest-1', name: 'Bob', visitCount: 5 },
       ];
-      vi.mocked(db.customer.findMany).mockResolvedValue(customers as any);
+      vi.mocked(db.customer.findMany).mockResolvedValue(
+        customers as unknown as Awaited<ReturnType<typeof db.customer.findMany>>,
+      );
       vi.mocked(db.customer.count).mockResolvedValue(2);
 
       const res = await app.inject({
@@ -109,7 +111,9 @@ describe('customer.routes', () => {
         phone: '+33612345678',
         name: 'Alice',
       };
-      vi.mocked(db.customer.upsert).mockResolvedValue(created as any);
+      vi.mocked(db.customer.upsert).mockResolvedValue(
+        created as unknown as Awaited<ReturnType<typeof db.customer.upsert>>,
+      );
 
       const res = await app.inject({
         method: 'POST',
@@ -199,7 +203,9 @@ describe('customer.routes', () => {
         phone: '+33612345678',
         name: 'Alice Updated',
       };
-      vi.mocked(db.customer.update).mockResolvedValue(updated as any);
+      vi.mocked(db.customer.update).mockResolvedValue(
+        updated as unknown as Awaited<ReturnType<typeof db.customer.update>>,
+      );
       vi.mocked(redisCache.del).mockResolvedValue(1);
 
       const res = await app.inject({
@@ -235,7 +241,9 @@ describe('customer.routes', () => {
   describe('DELETE /customers/:id', () => {
     it('supprime scoped au restaurant et retourne 204', async () => {
       const app = await getApp();
-      vi.mocked(db.customer.delete).mockResolvedValue({} as any);
+      vi.mocked(db.customer.delete).mockResolvedValue(
+        {} as unknown as Awaited<ReturnType<typeof db.customer.delete>>,
+      );
 
       const res = await app.inject({
         method: 'DELETE',
@@ -259,7 +267,9 @@ describe('customer.routes', () => {
         phone: '+33612345678',
         isVip: true,
       };
-      vi.mocked(db.customer.update).mockResolvedValue(updated as any);
+      vi.mocked(db.customer.update).mockResolvedValue(
+        updated as unknown as Awaited<ReturnType<typeof db.customer.update>>,
+      );
       vi.mocked(redisCache.del).mockResolvedValue(1);
 
       const res = await app.inject({

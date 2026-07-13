@@ -104,7 +104,9 @@ describe('GiftCardPaymentService', () => {
     });
 
     it('retourne erreur si le restaurant est introuvable', async () => {
-      vi.mocked(db.restaurant.findUnique).mockResolvedValue(null as any);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue(
+        null as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>,
+      );
 
       await expect(
         service.purchaseWithPayment({
@@ -160,7 +162,9 @@ describe('GiftCardPaymentService', () => {
     });
 
     it('retourne erreur si le pack est introuvable', async () => {
-      vi.mocked(db.giftCardPack.findFirst).mockResolvedValue(null as any);
+      vi.mocked(db.giftCardPack.findFirst).mockResolvedValue(
+        null as unknown as Awaited<ReturnType<typeof db.giftCardPack.findFirst>>,
+      );
 
       await expect(
         service.purchaseWithPayment({
@@ -244,7 +248,9 @@ describe('GiftCardPaymentService', () => {
     });
 
     it('retourne null si les metadata ne contiennent pas restaurantId', async () => {
-      vi.mocked(db.giftCard.findFirst).mockResolvedValue(null as any);
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue(
+        null as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>,
+      );
 
       const result = await service.handleStripeWebhook('pi_test', {});
 
@@ -252,7 +258,9 @@ describe('GiftCardPaymentService', () => {
     });
 
     it('retourne null si ni amount ni packId dans les metadata', async () => {
-      vi.mocked(db.giftCard.findFirst).mockResolvedValue(null as any);
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue(
+        null as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>,
+      );
 
       const result = await service.handleStripeWebhook('pi_test', { restaurantId: RESTAURANT_ID });
 
@@ -260,7 +268,9 @@ describe('GiftCardPaymentService', () => {
     });
 
     it("reconstruit l'achat depuis les metadata et crée la carte", async () => {
-      vi.mocked(db.giftCard.findFirst).mockResolvedValue(null as any);
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue(
+        null as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>,
+      );
 
       const result = await service.handleStripeWebhook('pi_test', {
         restaurantId: RESTAURANT_ID,

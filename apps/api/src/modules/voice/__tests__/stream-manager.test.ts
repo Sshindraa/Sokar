@@ -426,7 +426,9 @@ describe('CallSessionManager — tool execution', () => {
   });
 
   it('takeMessage : enregistre le message en DB', async () => {
-    vi.mocked(db.message.create).mockResolvedValue({ id: 'msg-1' } as any);
+    vi.mocked(db.message.create).mockResolvedValue({ id: 'msg-1' } as unknown as Awaited<
+      ReturnType<typeof db.message.create>
+    >);
     mockFetchToolCall(
       'takeMessage',
       { customerName: 'Paul', message: 'Rappelez-moi', callbackPhone: '+33****0001' },

@@ -31,7 +31,9 @@ describe('reservation.routes', () => {
         { id: 'r1', restaurantId: 'test-rest-1', reservedAt: new Date('2099-06-05T19:00:00') },
         { id: 'r2', restaurantId: 'test-rest-1', reservedAt: new Date('2099-06-05T20:00:00') },
       ];
-      vi.spyOn(ReservationService, 'findByRestaurant').mockResolvedValue(reservations as any);
+      vi.spyOn(ReservationService, 'findByRestaurant').mockResolvedValue(
+        reservations as unknown as Awaited<ReturnType<typeof ReservationService.findByRestaurant>>,
+      );
 
       const res = await app.inject({
         method: 'GET',
@@ -63,7 +65,9 @@ describe('reservation.routes', () => {
       // Une requête légitime du dashboard avec ?date=… (sans restaurantId)
       // doit maintenant retourner 200.
       const app = await getApp();
-      vi.spyOn(ReservationService, 'findByRestaurant').mockResolvedValue([] as any);
+      vi.spyOn(ReservationService, 'findByRestaurant').mockResolvedValue(
+        [] as unknown as Awaited<ReturnType<typeof ReservationService.findByRestaurant>>,
+      );
 
       const res = await app.inject({
         method: 'GET',
@@ -99,7 +103,9 @@ describe('reservation.routes', () => {
         slots: ['12:00', '12:30', '13:00'],
         allSlots: [],
       };
-      vi.spyOn(ReservationService, 'availability').mockResolvedValue(availability as any);
+      vi.spyOn(ReservationService, 'availability').mockResolvedValue(
+        availability as unknown as Awaited<ReturnType<typeof ReservationService.availability>>,
+      );
 
       const res = await app.inject({
         method: 'GET',
@@ -166,7 +172,9 @@ describe('reservation.routes', () => {
         customerPhone: '+336****0001',
         status: 'CONFIRMED',
       };
-      vi.spyOn(ReservationService, 'create').mockResolvedValue(created as any);
+      vi.spyOn(ReservationService, 'create').mockResolvedValue(
+        created as unknown as Awaited<ReturnType<typeof ReservationService.create>>,
+      );
 
       const res = await app.inject({
         method: 'POST',
@@ -281,7 +289,9 @@ describe('reservation.routes', () => {
         partySize: 2,
         customerName: 'Alice',
       };
-      vi.spyOn(ReservationService, 'update').mockResolvedValue(updated as any);
+      vi.spyOn(ReservationService, 'update').mockResolvedValue(
+        updated as unknown as Awaited<ReturnType<typeof ReservationService.update>>,
+      );
 
       const res = await app.inject({
         method: 'PATCH',
@@ -326,7 +336,9 @@ describe('reservation.routes', () => {
 
     it('accepte plusieurs champs simultanément (status + partySize + customerName)', async () => {
       const app = await getApp();
-      vi.spyOn(ReservationService, 'update').mockResolvedValue({ id: 'res-1' } as any);
+      vi.spyOn(ReservationService, 'update').mockResolvedValue({
+        id: 'res-1',
+      } as unknown as Awaited<ReturnType<typeof ReservationService.update>>);
 
       const res = await app.inject({
         method: 'PATCH',

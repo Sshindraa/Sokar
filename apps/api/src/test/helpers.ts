@@ -126,6 +126,7 @@ vi.mock('../shared/db/client', () => {
       findFirst: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       count: vi.fn(),
       groupBy: vi.fn(),
     },
@@ -147,6 +148,7 @@ vi.mock('../shared/db/client', () => {
       upsert: vi.fn(),
       count: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       delete: vi.fn(),
     },
     latencyTrace: {
@@ -230,6 +232,16 @@ vi.mock('../shared/db/client', () => {
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+    },
+    identityVerificationOtp: {
+      upsert: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
+    },
+    signedTokenUsage: {
+      create: vi.fn(),
+      upsert: vi.fn(),
+      findUnique: vi.fn(),
     },
     $queryRaw: vi.fn().mockResolvedValue([]),
     $transaction: vi.fn(async (fn: unknown) => {

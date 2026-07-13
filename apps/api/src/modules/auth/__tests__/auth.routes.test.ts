@@ -28,7 +28,9 @@ describe('auth.routes - POST /api/auth/sync', () => {
       name: 'Bistrot du Coin',
       phoneNumber: '+336****0000',
     };
-    vi.mocked(db.restaurant.findUnique).mockResolvedValue(existing as any);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue(
+      existing as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>,
+    );
 
     const res = await app.inject({
       method: 'POST',
@@ -58,7 +60,9 @@ describe('auth.routes - POST /api/auth/sync', () => {
       openingHours: {},
       plan: 'STARTER',
     };
-    vi.mocked(db.restaurant.create).mockResolvedValue(created as any);
+    vi.mocked(db.restaurant.create).mockResolvedValue(
+      created as unknown as Awaited<ReturnType<typeof db.restaurant.create>>,
+    );
 
     const res = await app.inject({
       method: 'POST',
@@ -88,9 +92,7 @@ describe('auth.routes - POST /api/auth/sync', () => {
   it('utilise des valeurs par défaut si Clerk renvoie une erreur', async () => {
     const app = await getApp();
     vi.mocked(db.restaurant.findUnique).mockResolvedValue(null);
-    vi.mocked(clerkClient.organizations.getOrganization).mockRejectedValue(
-      new Error('Clerk down'),
-    );
+    vi.mocked(clerkClient.organizations.getOrganization).mockRejectedValue(new Error('Clerk down'));
     vi.mocked(db.restaurant.create).mockResolvedValue({
       id: 'test-rest-1',
       name: 'Mon Restaurant',
@@ -125,9 +127,7 @@ describe('auth.routes - POST /api/auth/sync', () => {
       id: 'test-rest-1',
       name: 'X',
     } as any);
-    vi.mocked(queues.eveningReport.upsertJobScheduler).mockRejectedValue(
-      new Error('Redis down'),
-    );
+    vi.mocked(queues.eveningReport.upsertJobScheduler).mockRejectedValue(new Error('Redis down'));
 
     const res = await app.inject({
       method: 'POST',

@@ -34,7 +34,9 @@ describe('restaurant.routes — POST /restaurant/onboarding/demo-call', () => {
 
   it('retourne le transcript seul (fallback) quand Cartesia n’est pas configurée', async () => {
     const app = await getApp();
-    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(baseRestaurant as any);
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+      baseRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
     vi.mocked(isCartesiaConfigured).mockReturnValue(false);
 
     const res = await app.inject({
@@ -56,7 +58,9 @@ describe('restaurant.routes — POST /restaurant/onboarding/demo-call', () => {
 
   it('retourne un MP3 binaire quand Cartesia est configurée et synthétise avec succès', async () => {
     const app = await getApp();
-    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(baseRestaurant as any);
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+      baseRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
     vi.mocked(isCartesiaConfigured).mockReturnValue(true);
     const fakeMp3 = Buffer.from('fake-mp3-bytes');
     vi.mocked(synthesizeText).mockResolvedValue(fakeMp3);
@@ -81,7 +85,9 @@ describe('restaurant.routes — POST /restaurant/onboarding/demo-call', () => {
 
   it('retourne 502 + code CARTESIA_FAILED quand la synthèse throw', async () => {
     const app = await getApp();
-    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(baseRestaurant as any);
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+      baseRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
     vi.mocked(isCartesiaConfigured).mockReturnValue(true);
     vi.mocked(synthesizeText).mockRejectedValue(new Error('Cartesia TTS 503: Service Unavailable'));
 
@@ -100,7 +106,9 @@ describe('restaurant.routes — POST /restaurant/onboarding/demo-call', () => {
 
   it('utilise le script "reservation" par défaut si scriptId est absent', async () => {
     const app = await getApp();
-    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(baseRestaurant as any);
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+      baseRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
     vi.mocked(isCartesiaConfigured).mockReturnValue(false);
 
     const res = await app.inject({

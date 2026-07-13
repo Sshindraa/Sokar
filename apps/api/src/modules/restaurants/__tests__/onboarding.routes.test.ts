@@ -56,7 +56,9 @@ describe('restaurant.routes - onboarding', () => {
 
   it('déclenche un vrai appel test Telnyx vers le téléphone du restaurant', async () => {
     const app = await getApp();
-    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(baseRestaurant as any);
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+      baseRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
     vi.mocked(db.restaurant.update).mockResolvedValue({
       ...baseRestaurant,
       firstCallAt: new Date('2099-06-19T12:00:00.000Z'),
@@ -98,7 +100,9 @@ describe('restaurant.routes - onboarding', () => {
 
   it('ne marque pas first_call quand Telnyx échoue à déclencher l’appel test', async () => {
     const app = await getApp();
-    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(baseRestaurant as any);
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+      baseRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
     vi.mocked(placeOutboundCall).mockRejectedValue(new Error('Telnyx unavailable'));
 
     const res = await app.inject({
@@ -264,8 +268,14 @@ describe('restaurant.routes - onboarding', () => {
         capacitySpecials: { totalCapacity: 35 },
       };
 
-      vi.mocked(db.restaurant.update).mockResolvedValue(updatedRest as any);
-      vi.mocked(db.restaurantExposureSettings.update).mockResolvedValue(updatedSettings as any);
+      vi.mocked(db.restaurant.update).mockResolvedValue(
+        updatedRest as unknown as Awaited<ReturnType<typeof db.restaurant.update>>,
+      );
+      vi.mocked(db.restaurantExposureSettings.update).mockResolvedValue(
+        updatedSettings as unknown as Awaited<
+          ReturnType<typeof db.restaurantExposureSettings.update>
+        >,
+      );
 
       const res = await app.inject({
         method: 'PATCH',

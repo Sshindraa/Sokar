@@ -22,7 +22,9 @@ describe('ReservationService.findByRestaurant', () => {
       { id: 'r2', reservedAt: new Date('2099-06-05T20:00:00'), partySize: 4 },
     ];
 
-    vi.mocked(db.reservation.findMany).mockResolvedValue(mockReservations as any);
+    vi.mocked(db.reservation.findMany).mockResolvedValue(
+      mockReservations as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>,
+    );
 
     const result = await ReservationService.findByRestaurant(restaurantId);
 

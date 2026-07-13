@@ -145,8 +145,12 @@ describe('CustomerService', () => {
 
   describe('recordCallActivity', () => {
     it('met à jour lastCallAt sur tout appel et invalide le cache', async () => {
-      vi.mocked(db.customer.findUnique).mockResolvedValue(null as any);
-      vi.mocked(db.customer.updateMany).mockResolvedValue({ count: 1 } as any);
+      vi.mocked(db.customer.findUnique).mockResolvedValue(
+        null as unknown as Awaited<ReturnType<typeof db.customer.findUnique>>,
+      );
+      vi.mocked(db.customer.updateMany).mockResolvedValue({ count: 1 } as unknown as Awaited<
+        ReturnType<typeof db.customer.updateMany>
+      >);
 
       await CustomerService.recordCallActivity('rest-1', '+33611111111', null);
 
@@ -160,8 +164,12 @@ describe('CustomerService', () => {
     });
 
     it('premier appel avec partySize: stocke la valeur', async () => {
-      vi.mocked(db.customer.findUnique).mockResolvedValue(null as any);
-      vi.mocked(db.customer.updateMany).mockResolvedValue({ count: 1 } as any);
+      vi.mocked(db.customer.findUnique).mockResolvedValue(
+        null as unknown as Awaited<ReturnType<typeof db.customer.findUnique>>,
+      );
+      vi.mocked(db.customer.updateMany).mockResolvedValue({ count: 1 } as unknown as Awaited<
+        ReturnType<typeof db.customer.updateMany>
+      >);
 
       await CustomerService.recordCallActivity('rest-1', '+33611111111', 3);
 
@@ -174,7 +182,9 @@ describe('CustomerService', () => {
       vi.mocked(db.customer.findUnique).mockResolvedValue({
         partySizeTypical: 4,
       } as any);
-      vi.mocked(db.customer.updateMany).mockResolvedValue({ count: 1 } as any);
+      vi.mocked(db.customer.updateMany).mockResolvedValue({ count: 1 } as unknown as Awaited<
+        ReturnType<typeof db.customer.updateMany>
+      >);
 
       await CustomerService.recordCallActivity('rest-1', '+336****1111', 2);
 
@@ -184,7 +194,9 @@ describe('CustomerService', () => {
     });
 
     it('ne touche pas partySizeTypical si partySize null/0', async () => {
-      vi.mocked(db.customer.updateMany).mockResolvedValue({ count: 1 } as any);
+      vi.mocked(db.customer.updateMany).mockResolvedValue({ count: 1 } as unknown as Awaited<
+        ReturnType<typeof db.customer.updateMany>
+      >);
 
       await CustomerService.recordCallActivity('rest-1', '+33611111111', 0);
 
