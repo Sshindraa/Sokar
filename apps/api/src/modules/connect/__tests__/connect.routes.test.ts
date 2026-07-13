@@ -12,7 +12,7 @@
  * - Pas d'auth requise (pas de 401 sans Authorization)
  */
 
-import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll, vi, type Mock } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { PublicRestaurantDto } from '../connect.types';
 
@@ -29,9 +29,9 @@ vi.mock('../../floor-plan/availability-capacity-aware.service', () => {
         slots: [{ time: '20:00', available: true }],
       }));
   });
-  (CapacityAwareAvailabilityService as any).invalidateAvailability = vi
-    .fn()
-    .mockResolvedValue(undefined);
+  (
+    CapacityAwareAvailabilityService as unknown as { invalidateAvailability: Mock<() => unknown> }
+  ).invalidateAvailability = vi.fn().mockResolvedValue(undefined);
 
   return {
     CapacityAwareAvailabilityService,
@@ -133,7 +133,7 @@ describe('Sokar Connect — Routes publiques', () => {
           connectAgentic: false,
         },
         images: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
 
       const res = await app.inject({
         method: 'GET',
@@ -169,7 +169,7 @@ describe('Sokar Connect — Routes publiques', () => {
           connectAgentic: false,
         },
         images: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
 
       const res = await app.inject({
         method: 'GET',
@@ -190,7 +190,7 @@ describe('Sokar Connect — Routes publiques', () => {
           connectAgentic: false,
         },
         images: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
 
       const res = await app.inject({
         method: 'GET',
@@ -260,7 +260,7 @@ describe('Sokar Connect — Routes publiques', () => {
           connectAgentic: false,
         },
         images: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
 
       const res = await app.inject({
         method: 'GET',
@@ -298,7 +298,7 @@ describe('Sokar Connect — Routes publiques', () => {
           updatedAt: new Date('2026-06-23'),
           publishedAt: new Date('2026-06-22'),
         },
-      ] as any);
+      ] as unknown as Awaited<ReturnType<typeof db.restaurant.findMany>>);
 
       const res = await app.inject({
         method: 'GET',
@@ -316,7 +316,7 @@ describe('Sokar Connect — Routes publiques', () => {
       vi.mocked(db.restaurant.findMany).mockResolvedValue([
         { slug: 'ok', updatedAt: new Date('2026-06-24'), publishedAt: new Date() },
         { slug: null, updatedAt: new Date('2026-06-23'), publishedAt: new Date() },
-      ] as any);
+      ] as unknown as Awaited<ReturnType<typeof db.restaurant.findMany>>);
 
       const res = await app.inject({
         method: 'GET',
@@ -354,11 +354,13 @@ describe('Sokar Connect — Routes publiques', () => {
           connectAgentic: false,
         },
         images: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
       vi.mocked(db.agenticHold.findMany).mockResolvedValue([]);
       vi.mocked(db.reservation.findMany).mockResolvedValue([]);
       vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(
-        mockExposureSettings as any,
+        mockExposureSettings as unknown as Awaited<
+          ReturnType<typeof db.restaurantExposureSettings.findUnique>
+        >,
       );
 
       // Use a Monday date for the test
@@ -419,9 +421,11 @@ describe('Sokar Connect — Routes publiques', () => {
           connectAgentic: false,
         },
         images: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
       vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(
-        mockExposureSettings as any,
+        mockExposureSettings as unknown as Awaited<
+          ReturnType<typeof db.restaurantExposureSettings.findUnique>
+        >,
       );
       vi.mocked(db.agenticHold.create).mockResolvedValue({
         id: 'hold_123',
@@ -436,7 +440,7 @@ describe('Sokar Connect — Routes publiques', () => {
         type: 'HOLD',
         policyVersion: '2026-06-20',
         createdAt: new Date(),
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.agenticHold.create>>);
 
       const res = await app.inject({
         method: 'POST',
@@ -480,9 +484,11 @@ describe('Sokar Connect — Routes publiques', () => {
           connectAgentic: false, // PAS d'agentic
         },
         images: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
       vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(
-        mockExposureSettings as any,
+        mockExposureSettings as unknown as Awaited<
+          ReturnType<typeof db.restaurantExposureSettings.findUnique>
+        >,
       );
       vi.mocked(db.agenticHold.create).mockResolvedValue({
         id: 'hold_123',
@@ -497,7 +503,7 @@ describe('Sokar Connect — Routes publiques', () => {
         type: 'HOLD',
         policyVersion: '2026-06-20',
         createdAt: new Date(),
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.agenticHold.create>>);
 
       const res = await app.inject({
         method: 'POST',
@@ -540,9 +546,11 @@ describe('Sokar Connect — Routes publiques', () => {
           connectAgentic: false,
         },
         images: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
       vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(
-        mockExposureSettings as any,
+        mockExposureSettings as unknown as Awaited<
+          ReturnType<typeof db.restaurantExposureSettings.findUnique>
+        >,
       );
       vi.mocked(db.agenticHold.create).mockResolvedValue({
         id: 'hold_123',
@@ -557,7 +565,7 @@ describe('Sokar Connect — Routes publiques', () => {
         type: 'HOLD',
         policyVersion: '2026-06-20',
         createdAt: new Date(),
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.agenticHold.create>>);
 
       const res = await app.inject({
         method: 'POST',
@@ -601,7 +609,7 @@ describe('Sokar Connect — Routes publiques', () => {
           connectAgentic: false,
         },
         images: [],
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
       vi.mocked(db.agenticHold.findFirst).mockResolvedValue(null);
 
       const res = await app.inject({
