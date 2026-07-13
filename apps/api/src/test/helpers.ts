@@ -1,12 +1,12 @@
 import { buildApp } from '../main';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { vi } from 'vitest';
 
 vi.mock('../plugins/clerk', () => ({
   isClerkConfigured: vi.fn(() => true),
   registerClerk: vi.fn().mockResolvedValue(undefined),
   requireOrg: () => {
-    return async (req: any, reply: any) => {
+    return async (req: FastifyRequest, reply: FastifyReply) => {
       const authHeader = req.headers?.authorization;
       if (!authHeader) {
         return reply.status(401).send({ error: 'Authentication required' });
@@ -16,7 +16,7 @@ vi.mock('../plugins/clerk', () => ({
     };
   },
   requireAuth: () => {
-    return async (req: any, reply: any) => {
+    return async (req: FastifyRequest, reply: FastifyReply) => {
       const authHeader = req.headers?.authorization;
       if (!authHeader) {
         return reply.status(401).send({ error: 'Authentication required' });
@@ -232,9 +232,12 @@ vi.mock('../shared/db/client', () => {
       delete: vi.fn(),
     },
     $queryRaw: vi.fn().mockResolvedValue([]),
-    $transaction: vi.fn(async (fn: any) => {
+    $transaction: vi.fn(async (fn: unknown) => {
       if (Array.isArray(fn)) {
         return Promise.all(fn);
+      }
+      if (typeof fn !== 'function') {
+        throw new Error('Mock $transaction expects a function or array');
       }
       // Fusionner txMock avec db : pour chaque modèle, on crée un proxy
       // qui préfère les mocks définis sur db (où les tests font vi.mocked)

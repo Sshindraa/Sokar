@@ -128,7 +128,9 @@ describe('sentry client', () => {
     process.env.SENTRY_DSN = 'https://test@sentry.io/1';
     initSentry();
 
-    const options = mockInit.mock.calls[0][0] as { beforeSend?: (event: any) => any };
+    const options = mockInit.mock.calls[0][0] as {
+      beforeSend?: (event: Sentry.Event) => Sentry.Event | null;
+    };
     expect(options.beforeSend).toBeDefined();
 
     const event400 = { contexts: { response: { status_code: 400 } } };
