@@ -9,7 +9,7 @@
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { Prisma } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import {
   HoldAlreadyConsumedError,
   HoldConflictError,
@@ -39,21 +39,26 @@ type HoldRow = {
 
 function makeFakes() {
   const holds = new Map<string, HoldRow>();
-  const audits: any[] = [];
+  const audits: Record<string, unknown>[] = [];
 
   // Simule la contrainte unique partielle : si on tente un create avec
   // un (restaurantId, slotStart, partySize, status=ACTIVE, type=HOLD) déjà
   // présent, on jette P2002.
-  const prisma: any = {
-    $transaction: async (fn: any) => fn(prisma),
+  const prisma = {
+    $transaction: async (fn: unknown) =>
+      (fn as unknown as (tx: PrismaClient) => Promise<unknown>)(prisma as unknown as PrismaClient),
     agenticHold: {
-      create: async ({ data }: any) => {
-        if (data.type === 'HOLD' && data.status === 'ACTIVE') {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        const type = data.type as 'HOLD' | 'QUOTE';
+        const status = (data.status as HoldRow['status'] | undefined) ?? 'ACTIVE';
+        if (type === 'HOLD' && status === 'ACTIVE') {
           for (const h of holds.values()) {
+            const dSlotStart = data.slotStart;
             if (
               h.restaurantId === data.restaurantId &&
               h.partySize === data.partySize &&
-              h.slotStart.getTime() === data.slotStart.getTime() &&
+              dSlotStart instanceof Date &&
+              h.slotStart.getTime() === dSlotStart.getTime() &&
               h.status === 'ACTIVE'
             ) {
               const err = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
@@ -67,85 +72,120 @@ function makeFakes() {
         const id = `hold-${holds.size + 1}`;
         const row: HoldRow = {
           id,
-          restaurantId: data.restaurantId,
-          type: data.type,
-          partySize: data.partySize,
-          slotStart: data.slotStart,
-          slotEnd: data.slotEnd,
-          channel: data.channel,
-          quoteToken: data.quoteToken ?? null,
-          holdToken: data.holdToken ?? null,
-          expiresAt: data.expiresAt,
-          consumedAt: data.consumedAt ?? null,
-          status: data.status ?? 'ACTIVE',
-          policyVersion: data.policyVersion,
-          reservationId: data.reservationId ?? null,
+          restaurantId: data.restaurantId as string,
+          type,
+          partySize: data.partySize as number,
+          slotStart: data.slotStart as Date,
+          slotEnd: data.slotEnd as Date,
+          channel: data.channel as string,
+          quoteToken: (data.quoteToken as string | null | undefined) ?? null,
+          holdToken: (data.holdToken as string | null | undefined) ?? null,
+          expiresAt: data.expiresAt as Date,
+          consumedAt: (data.consumedAt as Date | null | undefined) ?? null,
+          status,
+          policyVersion: data.policyVersion as string,
+          reservationId: (data.reservationId as string | null | undefined) ?? null,
           createdAt: new Date(),
         };
         holds.set(id, row);
         return row;
       },
-      findFirst: async ({ where }: any) => {
+      findFirst: async ({ where }: { where: Record<string, unknown> }) => {
         for (const h of holds.values()) {
           let ok = true;
-          if (where.OR) {
-            ok = where.OR.some((c: any) => {
-              if (c.holdToken && h.holdToken === c.holdToken) return true;
-              if (c.quoteToken && h.quoteToken === c.quoteToken) return true;
+          const OR = where.OR as Record<string, unknown>[] | undefined;
+          if (OR) {
+            ok = OR.some((c) => {
+              const cHoldToken = c.holdToken;
+              const cQuoteToken = c.quoteToken;
+              if (cHoldToken && h.holdToken === cHoldToken) return true;
+              if (cQuoteToken && h.quoteToken === cQuoteToken) return true;
               return false;
             });
             if (!ok) continue;
           }
-          if (where.status && h.status !== where.status) continue;
-          if (where.expiresAt?.gt && !(h.expiresAt.getTime() > where.expiresAt.gt.getTime()))
-            continue;
-          if (where.slotStart && h.slotStart.getTime() !== where.slotStart.getTime()) continue;
-          if (where.partySize && h.partySize !== where.partySize) continue;
-          if (where.restaurantId && h.restaurantId !== where.restaurantId) continue;
-          if (where.type && h.type !== where.type) continue;
+          if (where.status !== undefined && h.status !== where.status) continue;
+          const expiresAt = where.expiresAt as Record<string, unknown> | undefined;
+          const gt = expiresAt?.gt;
+          if (gt instanceof Date && !(h.expiresAt.getTime() > gt.getTime())) continue;
+          if (where.slotStart !== undefined) {
+            const slotStart = where.slotStart;
+            if (slotStart instanceof Date && h.slotStart.getTime() !== slotStart.getTime())
+              continue;
+          }
+          if (where.partySize !== undefined && h.partySize !== where.partySize) continue;
+          if (where.restaurantId !== undefined && h.restaurantId !== where.restaurantId) continue;
+          if (where.type !== undefined && h.type !== where.type) continue;
           if (ok) return h;
         }
         return null;
       },
-      findUnique: async ({ where }: any) => holds.get(where.id) ?? null,
-      findUniqueOrThrow: async ({ where }: any) => {
+      findUnique: async ({ where }: { where: { id: string } }) => holds.get(where.id) ?? null,
+      findUniqueOrThrow: async ({ where }: { where: { id: string } }) => {
         const h = holds.get(where.id);
         if (!h) throw new Error('not found');
         return h;
       },
-      update: async ({ where, data }: any) => {
+      update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
         const h = holds.get(where.id);
         if (!h) throw new Error('not found');
         Object.assign(h, data);
         return h;
       },
-      findMany: async ({ where, select }: any) => {
-        const out: any[] = [];
+      findMany: async ({
+        where,
+        select,
+      }: {
+        where: Record<string, unknown>;
+        select?: Record<string, unknown>;
+      }) => {
+        const out: unknown[] = [];
         for (const h of holds.values()) {
-          if (where.restaurantId && h.restaurantId !== where.restaurantId) continue;
-          if (where.partySize && h.partySize !== where.partySize) continue;
-          if (where.slotStart && h.slotStart.getTime() !== where.slotStart.getTime()) continue;
-          if (where.type && h.type !== where.type) continue;
-          if (where.status && h.status !== where.status) continue;
-          if (where.expiresAt?.lt && !(h.expiresAt.getTime() < where.expiresAt.lt.getTime()))
-            continue;
+          if (where.restaurantId !== undefined && h.restaurantId !== where.restaurantId) continue;
+          if (where.partySize !== undefined && h.partySize !== where.partySize) continue;
+          if (where.slotStart !== undefined) {
+            const slotStart = where.slotStart;
+            if (slotStart instanceof Date && h.slotStart.getTime() !== slotStart.getTime())
+              continue;
+          }
+          if (where.type !== undefined && h.type !== where.type) continue;
+          if (where.status !== undefined && h.status !== where.status) continue;
+          const expiresAt = where.expiresAt as Record<string, unknown> | undefined;
+          const lt = expiresAt?.lt;
+          if (lt instanceof Date && !(h.expiresAt.getTime() < lt.getTime())) continue;
           out.push(
-            select ? Object.fromEntries(Object.keys(select).map((k) => [k, (h as any)[k]])) : h,
+            select
+              ? Object.fromEntries(
+                  Object.keys(select).map((k) => [k, (h as Record<string, unknown>)[k]]),
+                )
+              : h,
           );
         }
         return out;
       },
-      updateMany: async ({ where, data }: any) => {
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: Record<string, unknown>;
+        data: Record<string, unknown>;
+      }) => {
         let count = 0;
         for (const h of holds.values()) {
-          if (where.id?.in && !where.id.in.includes(h.id)) continue;
-          if (typeof where.id === 'string' && h.id !== where.id) continue;
-          if (where.status && h.status !== where.status) continue;
-          if (where.type && h.type !== where.type) continue;
-          if (where.expiresAt?.lt && !(h.expiresAt.getTime() < where.expiresAt.lt.getTime()))
-            continue;
-          if (where.expiresAt?.gt && !(h.expiresAt.getTime() > where.expiresAt.gt.getTime()))
-            continue;
+          const idFilter = where.id as string | Record<string, unknown> | undefined;
+          const inArr =
+            typeof idFilter === 'object' && idFilter !== null
+              ? ((idFilter as Record<string, unknown>).in as unknown[] | undefined)
+              : undefined;
+          if (inArr && !inArr.includes(h.id)) continue;
+          if (typeof idFilter === 'string' && h.id !== idFilter) continue;
+          if (where.status !== undefined && h.status !== where.status) continue;
+          if (where.type !== undefined && h.type !== where.type) continue;
+          const expiresAt = where.expiresAt as Record<string, unknown> | undefined;
+          const lt = expiresAt?.lt;
+          if (lt instanceof Date && !(h.expiresAt.getTime() < lt.getTime())) continue;
+          const gt = expiresAt?.gt;
+          if (gt instanceof Date && !(h.expiresAt.getTime() > gt.getTime())) continue;
           Object.assign(h, data);
           count++;
         }
@@ -153,15 +193,15 @@ function makeFakes() {
       },
     },
     reservationAuditLog: {
-      create: async ({ data }: any) => {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
         audits.push(data);
         return data;
       },
     },
-  };
+  } as unknown as PrismaClient;
 
-  const audit = new AuditLogService(prisma as any);
-  const service = new HoldService(prisma as any, audit);
+  const audit = new AuditLogService(prisma);
+  const service = new HoldService(prisma, audit);
 
   return { prisma, holds, audits, audit, service };
 }

@@ -23,15 +23,15 @@ import type { CallSession } from '../stream/types';
 
 function makeTelnyxWs(): WebSocket {
   // Minimal mock that satisfies the surface used by the manager.
-  const sent: any[] = [];
-  const ws: any = {
+  const sent: unknown[] = [];
+  const ws: Record<string, unknown> = {
     readyState: WebSocket.OPEN,
-    send: vi.fn((payload: any) => sent.push(payload)),
+    send: vi.fn((payload: unknown) => sent.push(payload)),
     close: vi.fn(),
     on: vi.fn(),
     OPEN: WebSocket.OPEN,
   };
-  return ws as WebSocket;
+  return ws as unknown as WebSocket;
 }
 
 function makeSession(overrides: Partial<CallSession> = {}): CallSession {
