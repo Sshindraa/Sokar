@@ -17,7 +17,7 @@
     "migrate:deploy": "prisma migrate deploy",
     "migrate:status": "prisma migrate status",
     "studio": "prisma studio",
-    "lint": "prisma generate && tsc --noEmit",
+    "lint": "tsc --noEmit",
     "typecheck": "prisma generate && tsc --noEmit",
     "test": "echo \"no tests yet\" && exit 0",
     "clean": "rm -rf .turbo dist"
