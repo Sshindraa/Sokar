@@ -36,6 +36,17 @@ ALERT="${ALERT_CMD:-true}"
 log() { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*" | tee -a "$LOG_PATH" >&2; }
 alert() { $ALERT "$@"; }
 
+check_disk_space() {
+    local target_dir="$1"
+    local required_bytes="$2"
+    local available
+    available=$(df -B1 --output=avail "$target_dir" | tail -1)
+    if [ "$available" -lt "$required_bytes" ]; then
+        log "❌ Disk space check failed: $target_dir has $available bytes, required $required_bytes"
+        exit 1
+    fi
+}
+
 # ── Garde-fou de quota ────────────────────────────────────
 log "→ Vérification quota (limite: ${QUOTA_GB}GB)"
 BUCKET_BYTES=$(rclone size "r2:${BUCKET}/" --json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('bytes',0))" 2>/dev/null || echo 0)
@@ -49,6 +60,14 @@ if [ "$BUCKET_BYTES" -gt "$LIMIT_BYTES" ]; then
     exit 1
 fi
 log "✓ Quota OK: ${BUCKET_GB}GB / ${QUOTA_GB}GB"
+
+# ── Vérification espace disque local ───────────────────────
+log "→ Vérification espace disque local"
+DB_SIZE_BYTES="$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${DB_NAME}" -Atc "SELECT pg_database_size('${DB_NAME}');")"
+# Dump temporaire + hash check temporaire : planifie 2x + 1GB de marge.
+REQUIRED_BYTES=$((DB_SIZE_BYTES * 2 + 1024 * 1024 * 1024))
+check_disk_space "/tmp" "${REQUIRED_BYTES}"
+log "✓ Espace disque OK"
 
 # ── Dump ───────────────────────────────────────────────────
 log "→ Dump PostgreSQL ${DB_NAME}@${CONTAINER}"

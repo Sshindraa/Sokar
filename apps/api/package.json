@@ -10,6 +10,7 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:int": "AGENTIC_INT_TESTS=1 vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "seed": "tsx seed.ts",

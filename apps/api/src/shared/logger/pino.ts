@@ -3,6 +3,55 @@ import { randomUUID } from 'node:crypto';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
+export const REDACT_CENSOR = '[REDACTED]';
+
+/**
+ * Centralised redaction paths for every Pino logger instance (worker logger
+ * and Fastify request logger). Keep this list in sync with the env vars that
+ * can contain secrets or PII.
+ *
+ * Patterns with `*` match any key named exactly like the suffix at any depth.
+ * Concrete `env.X` paths match when the `env` object is logged.
+ */
+export const REDACT_PATHS = [
+  // HTTP headers
+  'req.headers.authorization',
+  'req.headers.cookie',
+
+  // Generic secret-like keys
+  '*.password',
+  '*.secret',
+  '*.apiKey',
+  '*.api_key',
+  '*.token',
+  '*.holdToken',
+
+  // PII
+  '*.phone',
+  '*.customerPhone',
+
+  // Application env vars that contain secrets (used when `env` is logged)
+  'env.SENTRY_DSN',
+  'env.CLERK_SECRET_KEY',
+  'env.OPENROUTER_API_KEY',
+  'env.CARTESIA_API_KEY',
+  'env.TELNYX_API_KEY',
+  'env.TELNYX_PUBLIC_KEY',
+  'env.TELNYX_WEBHOOK_SECRET',
+  'env.GOOGLE_PLACES_API_KEY',
+  'env.GOOGLE_CLIENT_SECRET',
+  'env.STRIPE_SECRET_KEY',
+  'env.STRIPE_WEBHOOK_SECRET',
+  'env.SMTP_PASS',
+  'env.DATABASE_URL',
+  'env.REDIS_URL',
+  'env.METRICS_BASIC_AUTH_PASSWORD',
+  'env.AGENT_DEV_KEY',
+  'env.OPENAI_RESERVE_HMAC_KEY',
+  'env.DEEPGRAM_API_KEY',
+  'env.CONFIGCAT_SDK_KEY',
+];
+
 /**
  * Base Pino logger for the Sokar API.
  *
@@ -32,28 +81,9 @@ const baseOptions: LoggerOptions = {
     service: 'sokar-api',
     env: process.env.NODE_ENV ?? 'development',
   },
-  // Redact common secret patterns. Anything matching a key containing these
-  // substrings is replaced with '[REDACTED]'.
   redact: {
-    paths: [
-      'req.headers.authorization',
-      'req.headers.cookie',
-      '*.password',
-      '*.secret',
-      '*.apiKey',
-      '*.api_key',
-      '*.token',
-      '*.phone',
-      '*.customerPhone',
-      '*.holdToken',
-      'env.SENTRY_DSN',
-      'env.CLERK_SECRET_KEY',
-      'env.OPENROUTER_API_KEY',
-      'env.CARTESIA_API_KEY',
-      'env.TELNYX_API_KEY',
-      'env.TELNYX_PUBLIC_KEY',
-    ],
-    censor: '[REDACTED]',
+    paths: REDACT_PATHS,
+    censor: REDACT_CENSOR,
   },
   formatters: {
     level: (label) => ({ level: label }),

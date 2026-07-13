@@ -56,7 +56,7 @@ beforeAll(async () => {
   // reservation_audit_log est append-only : on swallow le DELETE refusé.
   await prisma.reservationAuditLog
     .deleteMany({
-      where: { metadata: { path: ['restaurantId'], equals: 'resto-test-concurrency' } as any },
+      where: { metadata: { path: ['restaurantId'], equals: 'resto-test-concurrency' } },
     })
     .catch(() => undefined);
   await prisma.agenticHold.deleteMany({ where: { restaurantId: 'resto-test-concurrency' } });
@@ -85,7 +85,7 @@ afterAll(async () => {
   // à laisser en DB locale).
   await prisma.reservationAuditLog
     .deleteMany({
-      where: { metadata: { path: ['restaurantId'], equals: testRestaurantId } as any },
+      where: { metadata: { path: ['restaurantId'], equals: testRestaurantId } },
     })
     .catch(() => undefined);
   await prisma.idempotencyRecord.deleteMany({

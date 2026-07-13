@@ -1,27 +1,16 @@
 import { defineConfig } from 'vitest/config';
 import path from 'node:path';
 
-// Hermes sandbox cannot read .env files (Resource deadlock on
-// com.apple.provenance xattr). We monkey-patch fs.readFileSync to noop
-// for .env files so Vite's loadEnv doesn't crash. Real test env vars are
-// set by src/test/setup.ts.
+// Désactive le chargement des fichiers .env par Vite (sinon certains
+// environnements sandboxés bloquent sur l'xattr com.apple.provenance).
+// Les variables d'env des tests sont injectées par src/test/setup.ts.
 //
 // Vitest 4 dropped poolOptions (now top-level), uses singleFork for serial
 // run, and we follow the same path aliases as tsconfig.json (which point
 // to the prebuilt dist outputs in packages/*).
 
-const realFs = require('node:fs');
-const originalReadFileSync = realFs.readFileSync;
-realFs.readFileSync = function (...args: any[]) {
-  const target = args[0];
-  if (typeof target === 'string' && target.includes('.env')) {
-    return '';
-  }
-  // @ts-expect-error -- passthrough
-  return originalReadFileSync.apply(this, args);
-} as any;
-
 export default defineConfig({
+  envDir: false,
   test: {
     globals: true,
     setupFiles: ['./src/test/setup.ts'],

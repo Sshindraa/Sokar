@@ -145,8 +145,10 @@ export function useGiftCardFlow({ slug, restaurantId, source = 'widget' }: UseGi
       const pi = await createPaymentIntent(piInput);
       setClientSecret(pi.clientSecret);
       setPaymentIntentId(pi.paymentIntentId);
-    } catch (err: any) {
-      setError(err.message || 'Impossible de démarrer le paiement. Réessayez.');
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Impossible de démarrer le paiement. Réessayez.',
+      );
     } finally {
       setLoading(false);
     }
@@ -196,8 +198,8 @@ export function useGiftCardFlow({ slug, restaurantId, source = 'widget' }: UseGi
         amount: res.amount,
         source,
       });
-    } catch (err: any) {
-      setError(err.message || 'Achat impossible. Réessayez.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Achat impossible. Réessayez.');
     } finally {
       setLoading(false);
     }

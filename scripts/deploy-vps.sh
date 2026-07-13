@@ -225,9 +225,11 @@ if [ "${1:-}" = "rollback" ]; then
         echo ""
         echo "✅ Rollback vers $TARGET_RELEASE terminé"
         echo "   Meta: $(cat "$RELEASE_PATH/META" 2>/dev/null | tr '\n' ' ')"
+        notify "✅ Sokar production rollback OK (${TARGET_RELEASE})"
     else
         echo ""
         echo "🔴 Rollback terminé mais vérifications échouées — investiguer manuellement"
+        notify "🔴 Sokar production rollback failed (${TARGET_RELEASE})"
         exit 1
     fi
     exit 0
@@ -310,6 +312,7 @@ recover_services() {
 
     echo ""
     echo "🔴 Services restaurés à l'état pré-build. Le déploiement a échoué."
+    notify "🔴 Sokar production deploy failed (branch ${BRANCH}, exit ${exit_code})"
     exit "$exit_code"
 }
 trap recover_services ERR
@@ -685,6 +688,7 @@ if [ "$API_STATUS" = "200" ] \
     && [ "$DASH_CSS_STATUS" = "200" ]; then
     echo ""
     echo "✅ Deploy complete — API + dashboard + Sokar Connect + routing OK"
+    notify "✅ Sokar production deploy OK (branch ${BRANCH}, hash $(git rev-parse --short HEAD))"
     trap - ERR
 
     # ── 11. Snapshot post-build réussi + cleanup ─────────
@@ -719,9 +723,11 @@ elif [ "$DASH_STATUS" = "200" ] && [ "$DASH_CSS_STATUS" != "200" ]; then
     echo "🔴 Deploy REGRESSED : dashboard HTML répond 200 mais assets statiques 404."
     echo "   Cause probable : scripts/copy-static.sh non exécuté ou .next/static manquant."
     echo "   Fix manuel : cd /opt/sokar/apps/dashboard && bash scripts/copy-static.sh && pm2 restart sokar-dashboard"
+    notify "🔴 Sokar production deploy REGRESSED (static assets 404, branch ${BRANCH})"
     exit 1
 else
     echo ""
     echo "🔴 Deploy finished but routing or application checks failed"
+    notify "🔴 Sokar production deploy finished with failed checks (branch ${BRANCH})"
     exit 1
 fi

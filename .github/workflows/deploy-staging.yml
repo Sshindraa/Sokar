@@ -27,11 +27,14 @@ jobs:
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
+        env:
+          ALERT_WEBHOOK: ${{ secrets.ALERT_WEBHOOK }}
         with:
           host: ${{ secrets.STAGING_HOST }}
           username: deploy
           key: ${{ secrets.STAGING_SSH_KEY }}
           command_timeout: 18m
+          envs: ALERT_WEBHOOK
           script: |
             set -euo pipefail
             cd /opt/sokar-staging

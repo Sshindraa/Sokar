@@ -7,7 +7,7 @@ import { setupFastifyErrorHandler } from '@sentry/node';
 import { db } from './shared/db/client';
 import { redisCache } from './shared/redis/client';
 import { queues } from './shared/queue/queues';
-import { logger, newRequestId } from './shared/logger/pino';
+import { logger, newRequestId, REDACT_PATHS, REDACT_CENSOR } from './shared/logger/pino';
 import { telnyxVoiceRoutes } from './modules/voice/telnyx.pipeline';
 import { smsInboundRoutes } from './modules/sms/sms-inbound.routes';
 import { whatsappWebhookRoutes } from './modules/whatsapp/whatsapp-webhook.routes';
@@ -95,23 +95,8 @@ export async function buildApp() {
       level: process.env.LOG_LEVEL ?? (isDev ? 'debug' : 'info'),
       base: { service: 'sokar-api', env: process.env.NODE_ENV ?? 'development' },
       redact: {
-        paths: [
-          'req.headers.authorization',
-          'req.headers.cookie',
-          '*.password',
-          '*.secret',
-          '*.apiKey',
-          '*.api_key',
-          '*.token',
-          'env.SENTRY_DSN',
-          'env.CLERK_SECRET_KEY',
-          'env.OPENROUTER_API_KEY',
-          'env.CARTESIA_API_KEY',
-          'env.TELNYX_API_KEY',
-          'env.TELNYX_PUBLIC_KEY',
-          'env.GOOGLE_PLACES_API_KEY',
-        ],
-        censor: '[REDACTED]',
+        paths: REDACT_PATHS,
+        censor: REDACT_CENSOR,
       },
     } as never,
     childLoggerFactory: (loggerInstance, bindings, _opts, rawReq) => {

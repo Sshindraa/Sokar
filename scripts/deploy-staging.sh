@@ -267,6 +267,7 @@ recover_services() {
     pm2 restart sokar-staging-api sokar-staging-dashboard sokar-staging-connect 2>/dev/null || true
     rm -rf "${RESTORE_ON_FAIL}" 2>/dev/null || true
     echo "🔴 Services staging restaurés à l'état pré-build."
+    notify "🔴 Sokar staging deploy failed (branch ${BRANCH}, exit ${exit_code})"
     exit "$exit_code"
 }
 if [ "$DRY_RUN" = false ]; then
@@ -441,10 +442,12 @@ if [ "$API_STATUS" = "200" ] \
     echo "   URLs : https://staging.sokar.tech (dashboard)"
     echo "          https://api-staging.sokar.tech (API)"
     echo "   Rollback : bash scripts/deploy-staging.sh rollback"
+    notify "✅ Sokar staging deploy OK (branch ${BRANCH}, hash $(git rev-parse --short HEAD))"
     trap - ERR
 else
     echo ""
     echo "🔴 Staging deploy finished but checks failed"
     echo "   API=$API_STATUS Livez=$LIVEZ_STATUS Dash=$DASH_STATUS Connect=$CONNECT_STATUS"
+    notify "🔴 Sokar staging deploy finished with failed checks (branch ${BRANCH})"
     exit 1
 fi
