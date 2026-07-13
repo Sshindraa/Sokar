@@ -30,10 +30,10 @@ describe('GiftCardBookService', () => {
       expiresAt: null,
       preferredPartySize: 2,
       pack: null,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
       timezone: 'Europe/Paris',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
     vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue({
       maxPartySize: 12,
       minLeadTimeMinutes: 30,
@@ -42,7 +42,7 @@ describe('GiftCardBookService', () => {
       noShowPolicy: 'warning',
       requireManualValidation: false,
       capacitySpecials: null,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.restaurantExposureSettings.findUnique>>);
 
     vi.spyOn(GiftCardSlotsService.prototype, 'suggestSlots').mockResolvedValue([
       { date: '2026-08-15', time: '19:30' },
@@ -83,7 +83,7 @@ describe('GiftCardBookService', () => {
       remainingAmount: d(100),
       status: 'ACTIVE',
       expiresAt: null,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.findUnique>>);
 
     vi.spyOn(GiftCardSlotsService.prototype, 'suggestSlots').mockResolvedValue([
       { date: '2026-08-15', time: '19:30' },

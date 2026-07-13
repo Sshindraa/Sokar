@@ -36,7 +36,7 @@ describe('gift-card-pack routes', () => {
         name: 'Menu dégustation',
         amount: d(120),
         isActive: true,
-      } as any,
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.findMany>>[number],
     ]);
 
     const app = await getApp();
@@ -60,7 +60,7 @@ describe('gift-card-pack routes', () => {
       minPartySize: 2,
       maxPartySize: 2,
       isActive: true,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
 
     const app = await getApp();
     const res = await app.inject({
@@ -86,14 +86,14 @@ describe('gift-card-pack routes', () => {
     vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
       id: 'pack-1',
       restaurantId: RESTAURANT_ID,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
     vi.mocked(db.giftCardPack.update).mockResolvedValue({
       id: 'pack-1',
       restaurantId: RESTAURANT_ID,
       name: 'Menu dégustation premium',
       amount: d(150),
       isActive: true,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
 
     const app = await getApp();
     const res = await app.inject({
@@ -112,13 +112,13 @@ describe('gift-card-pack routes', () => {
       id: 'pack-1',
       restaurantId: RESTAURANT_ID,
       isActive: true,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
     vi.mocked(db.giftCardPack.update).mockResolvedValue({
       id: 'pack-1',
       restaurantId: RESTAURANT_ID,
       name: 'Menu dégustation',
       isActive: false,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
 
     const app = await getApp();
     const res = await app.inject({

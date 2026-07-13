@@ -49,7 +49,7 @@ describe('GiftCardPaymentService', () => {
       giftCardMinimumAmount: 10,
       managerEmail: 'manager@chezsokar.fr',
       managerPhone: null,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
     vi.mocked(db.giftCard.create).mockResolvedValue({
       id: 'gc-1',
       restaurantId: RESTAURANT_ID,
@@ -58,7 +58,7 @@ describe('GiftCardPaymentService', () => {
       amount: d(100),
       remainingAmount: d(100),
       status: 'ACTIVE',
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof db.giftCard.create>>);
   });
 
   describe('purchaseWithPayment', () => {
@@ -141,7 +141,7 @@ describe('GiftCardPaymentService', () => {
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
         amount: d(150),
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.findFirst>>);
 
       const card = await service.purchaseWithPayment({
         restaurantId: RESTAURANT_ID,
@@ -183,7 +183,7 @@ describe('GiftCardPaymentService', () => {
         giftCardMinimumAmount: 10,
         managerEmail: null,
         managerPhone: null,
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
 
       await service.purchaseWithPayment({
         restaurantId: RESTAURANT_ID,
@@ -209,7 +209,7 @@ describe('GiftCardPaymentService', () => {
         giftCardMinimumAmount: 10,
         managerEmail: 'manager@chezsokar.fr',
         managerPhone: '+33100000000',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
 
       await service.purchaseWithPayment({
         restaurantId: RESTAURANT_ID,
@@ -239,7 +239,7 @@ describe('GiftCardPaymentService', () => {
       vi.mocked(db.giftCard.findFirst).mockResolvedValue({
         id: 'gc-existing',
         stripePaymentIntentId: 'pi_test',
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>);
 
       const result = await service.handleStripeWebhook('pi_test', { restaurantId: RESTAURANT_ID });
 
