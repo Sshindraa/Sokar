@@ -17,13 +17,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 
 // ── Module mocks (must come before importing the app) ──────────────────────
 
 // Skip the Ed25519 signature guard — it's covered in telnyx.guard.test.ts.
 vi.mock('../telnyx.guard', () => ({
-  telnyxWebhookGuard: vi.fn(async (_req: any, _reply: any) => undefined),
+  telnyxWebhookGuard: vi.fn(async (_req: FastifyRequest, _reply: FastifyReply) => undefined),
 }));
 
 vi.mock('../../restaurants/restaurant.service', () => ({
@@ -75,17 +75,17 @@ function makeRestaurantCtx(
   overrides: Partial<{
     id: string;
     name: string;
-    openingHours: any;
-    personality: any;
+    openingHours: unknown;
+    personality: unknown;
   }> = {},
-) {
+): Awaited<ReturnType<typeof RestaurantService.loadContext>> {
   return {
     id: 'rest-1',
     name: 'Le Bistrot',
     openingHours: { mon: { open: '12:00', close: '14:30' } },
     personality: null,
     ...overrides,
-  };
+  } as unknown as Awaited<ReturnType<typeof RestaurantService.loadContext>>;
 }
 
 function makeInitiatedPayload(
@@ -145,7 +145,8 @@ describe('POST /voice/telnyx — call.initiated', () => {
     vi.clearAllMocks();
     delete process.env.VIP_PUSH_ENABLED;
     // Each test gets a fresh CallSessionManager singleton
-    (CallSessionManager as any).instance = new CallSessionManager();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
     app = await getApp();
   });
 
@@ -154,7 +155,7 @@ describe('POST /voice/telnyx — call.initiated', () => {
   });
 
   it('happy path: pre-creates the session and enqueues the answer job', async () => {
-    mockLoadContext.mockResolvedValue(makeRestaurantCtx() as any);
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
     mockCheckMarginHealth.mockResolvedValue(true);
     mockIsVoicePipelineEnabled.mockResolvedValue(true);
     mockLookupOrCreate.mockResolvedValue({
@@ -232,7 +233,7 @@ describe('POST /voice/telnyx — call.initiated', () => {
   });
 
   it('drops the call when margin health (circuit breaker) is unsafe', async () => {
-    mockLoadContext.mockResolvedValue(makeRestaurantCtx() as any);
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
     mockCheckMarginHealth.mockResolvedValue(false);
 
     const res = await app.inject({
@@ -249,7 +250,7 @@ describe('POST /voice/telnyx — call.initiated', () => {
   });
 
   it('drops the call when the voice pipeline feature flag is off (kill switch)', async () => {
-    mockLoadContext.mockResolvedValue(makeRestaurantCtx() as any);
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
     mockCheckMarginHealth.mockResolvedValue(true);
     mockIsVoicePipelineEnabled.mockResolvedValue(false);
 
@@ -268,7 +269,7 @@ describe('POST /voice/telnyx — call.initiated', () => {
 
   it('sends a VIP push notification when the caller is VIP and VIP_PUSH_ENABLED=true', async () => {
     process.env.VIP_PUSH_ENABLED = 'true';
-    mockLoadContext.mockResolvedValue(makeRestaurantCtx() as any);
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
     mockCheckMarginHealth.mockResolvedValue(true);
     mockIsVoicePipelineEnabled.mockResolvedValue(true);
     mockLookupOrCreate.mockResolvedValue({
@@ -302,7 +303,7 @@ describe('POST /voice/telnyx — call.initiated', () => {
 
   it('does NOT send a VIP push when VIP_PUSH_ENABLED is unset (default off)', async () => {
     // process.env.VIP_PUSH_ENABLED is deleted in beforeEach
-    mockLoadContext.mockResolvedValue(makeRestaurantCtx() as any);
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
     mockCheckMarginHealth.mockResolvedValue(true);
     mockIsVoicePipelineEnabled.mockResolvedValue(true);
     mockLookupOrCreate.mockResolvedValue({
@@ -328,13 +329,13 @@ describe('POST /voice/telnyx — call.initiated', () => {
   });
 
   it('handles missing caller (payload.from absent) without throwing', async () => {
-    mockLoadContext.mockResolvedValue(makeRestaurantCtx() as any);
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
     mockCheckMarginHealth.mockResolvedValue(true);
     mockIsVoicePipelineEnabled.mockResolvedValue(true);
     mockBuildVipPromptExtra.mockReturnValue('');
 
     const payload = makeInitiatedPayload();
-    delete (payload.data.payload as any).from;
+    delete (payload.data.payload as Record<string, unknown>).from;
 
     const res = await app.inject({
       method: 'POST',
@@ -350,7 +351,7 @@ describe('POST /voice/telnyx — call.initiated', () => {
   });
 
   it('swallows Prisma P2002 (duplicate call record) silently on retry', async () => {
-    mockLoadContext.mockResolvedValue(makeRestaurantCtx() as any);
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
     mockCheckMarginHealth.mockResolvedValue(true);
     mockIsVoicePipelineEnabled.mockResolvedValue(true);
     mockLookupOrCreate.mockResolvedValue({
@@ -365,7 +366,7 @@ describe('POST /voice/telnyx — call.initiated', () => {
     });
     mockBuildVipPromptExtra.mockReturnValue('');
 
-    const dupError: any = new Error('Unique constraint failed');
+    const dupError = new Error('Unique constraint failed') as Error & { code: string };
     dupError.code = 'P2002';
     vi.mocked(db.call.create).mockRejectedValueOnce(dupError);
 
@@ -386,7 +387,8 @@ describe('POST /voice/telnyx — call.hangup', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    (CallSessionManager as any).instance = new CallSessionManager();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
     app = await getApp();
   });
 
@@ -418,7 +420,7 @@ describe('POST /voice/telnyx — call.hangup', () => {
       ReturnType<typeof db.call.findUnique>
     >);
     const payload = makeHangupPayload();
-    delete (payload.data.payload as any).duration_sec;
+    delete (payload.data.payload as Record<string, unknown>).duration_sec;
 
     const res = await app.inject({
       method: 'POST',
@@ -434,7 +436,7 @@ describe('POST /voice/telnyx — call.hangup', () => {
     vi.mocked(db.call.findUnique).mockResolvedValue({
       reservation: { id: 'res-1' },
     } as unknown as Awaited<ReturnType<typeof db.call.findUnique>>);
-    mockLoadContext.mockResolvedValue(makeRestaurantCtx() as any);
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
 
     const res = await app.inject({
       method: 'POST',
@@ -515,7 +517,8 @@ describe('POST /voice/telnyx/end — restaurantId resolution', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    (CallSessionManager as any).instance = new CallSessionManager();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
     app = await getApp();
   });
 
@@ -540,7 +543,7 @@ describe('POST /voice/telnyx/end — restaurantId resolution', () => {
   }
 
   it('resolves restaurantId via loadContext(to) when req.restaurantId is unset', async () => {
-    mockLoadContext.mockResolvedValue(makeRestaurantCtx() as any);
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
     vi.mocked(db.call.upsert).mockResolvedValue({ id: 'call-1' } as unknown as Awaited<
       ReturnType<typeof db.call.upsert>
     >);
@@ -605,7 +608,8 @@ describe('POST /voice/telnyx — call.initiated — non-P2002 Prisma error handl
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    (CallSessionManager as any).instance = new CallSessionManager();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
     app = await getApp();
   });
 
@@ -614,7 +618,7 @@ describe('POST /voice/telnyx — call.initiated — non-P2002 Prisma error handl
   });
 
   it('rethrows a non-P2002 Prisma error from db.call.create (returns 500)', async () => {
-    mockLoadContext.mockResolvedValue(makeRestaurantCtx() as any);
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
     mockCheckMarginHealth.mockResolvedValue(true);
     mockIsVoicePipelineEnabled.mockResolvedValue(true);
     mockLookupOrCreate.mockResolvedValue({
@@ -629,7 +633,7 @@ describe('POST /voice/telnyx — call.initiated — non-P2002 Prisma error handl
     });
     mockBuildVipPromptExtra.mockReturnValue('');
 
-    const fkError: any = new Error('Foreign key constraint failed');
+    const fkError = new Error('Foreign key constraint failed') as Error & { code: string };
     fkError.code = 'P2003';
     vi.mocked(db.call.create).mockRejectedValueOnce(fkError);
 
