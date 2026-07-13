@@ -13,7 +13,11 @@
 const API_BASE = process.env.SOKAR_API_BASE ?? 'http://localhost:4000';
 const MCP_KEY = process.env.SOKAR_MCP_KEY ?? 'sk_sokar_agent_' + 'a'.repeat(40);
 
-async function mcpCall(method: string, params?: any, id: string | number = 1) {
+async function mcpCall(
+  method: string,
+  params?: Record<string, unknown>,
+  id: string | number = 1,
+): Promise<unknown> {
   const res = await fetch(`${API_BASE}/mcp`, {
     method: 'POST',
     headers: {
@@ -37,6 +41,20 @@ const OPEN_DAYS = new Set([2, 3, 4, 5, 6]); // tue-sat, aligned with the demo se
 type TestSlot = {
   startsAt: string;
   endsAt: string;
+};
+
+type McpResponse = {
+  result?: {
+    content?: Array<{ text?: string }>;
+    tools?: Array<{ name: string }>;
+  };
+};
+
+type InitResponse = {
+  callControlId: string;
+  restaurant: { id: string; name: string };
+  caller: { phone: string; isVip: boolean };
+  mode: string;
 };
 
 function daysAheadAt(daysAhead: number, hour: number, minute: number) {
@@ -68,13 +86,13 @@ async function main() {
 
   // 1. Initialize
   console.log('1. initialize');
-  const init = await mcpCall('initialize', {}, 1);
+  const init = (await mcpCall('initialize', {}, 1)) as InitResponse;
   console.log(JSON.stringify(init, null, 2));
 
   // 2. tools/list
   console.log('\n2. tools/list');
-  const tools = await mcpCall('tools/list', {}, 2);
-  const names = tools.result.tools.map((t: any) => t.name);
+  const tools = (await mcpCall('tools/list', {}, 2)) as McpResponse;
+  const names = tools.result?.tools?.map((t) => t.name) ?? [];
   console.log('Tools:', names.join(', '));
 
   let restaurantId: string | null = null;
@@ -84,7 +102,7 @@ async function main() {
   // 3. search_restaurants
   console.log('\n3. search_restaurants (Lyon, 2 pers, prochain créneau libre)');
   for (const candidate of candidates) {
-    const search = await mcpCall(
+    const search = (await mcpCall(
       'tools/call',
       {
         name: 'search_restaurants',
@@ -96,12 +114,15 @@ async function main() {
         },
       },
       3,
-    );
+    )) as McpResponse;
 
-    if (search.result?.content?.[0]?.text) {
-      const data = JSON.parse(search.result.content[0].text);
+    const searchText = search.result?.content?.[0]?.text;
+    if (searchText) {
+      const data = JSON.parse(searchText) as
+        | { restaurants?: Array<{ slug: string; id: string }> }
+        | undefined;
       const found =
-        data.restaurants?.find((r: any) => r.slug === 'chez-sokar-demo') ?? data.restaurants?.[0];
+        data?.restaurants?.find((r) => r.slug === 'chez-sokar-demo') ?? data?.restaurants?.[0];
       restaurantId = found?.id ?? null;
       selectedSlot = restaurantId ? candidate : null;
     }
@@ -153,7 +174,7 @@ async function main() {
   // 6. create_reservation
   console.log('\n6. create_reservation');
   const idempotencyKey = `test-mcp-${Date.now()}`;
-  const reservation = await mcpCall(
+  const reservation = (await mcpCall(
     'tools/call',
     {
       name: 'create_reservation',
@@ -170,11 +191,13 @@ async function main() {
       },
     },
     6,
-  );
+  )) as McpResponse;
   console.log(JSON.stringify(reservation, null, 2));
 
-  const reservationId = reservation.result?.content?.[0]?.text
-    ? JSON.parse(reservation.result.content[0].text).reservationId
+  const reservationText = reservation.result?.content?.[0]?.text;
+  const reservationId = reservationText
+    ? ((JSON.parse(reservationText) as { reservationId?: string } | undefined)?.reservationId ??
+      null)
     : null;
 
   if (reservationId) {

@@ -11,14 +11,14 @@ import { middleware } from './middleware';
 function makeRequest(
   pathname: string,
   options: { userAgent?: string; preview?: string } = {},
-): any {
+): Parameters<typeof middleware>[0] {
   const url = new URL(pathname, 'https://sokar.tech');
   if (options.preview) url.searchParams.set('preview', options.preview);
   return {
     nextUrl: url,
     headers: new Headers({ 'user-agent': options.userAgent ?? 'Mozilla/5.0' }),
     method: 'GET',
-  };
+  } as unknown as Parameters<typeof middleware>[0];
 }
 
 function getCspFrameAncestors(response: ReturnType<typeof middleware>): string | null {

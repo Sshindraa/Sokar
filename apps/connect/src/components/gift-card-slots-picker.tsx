@@ -83,8 +83,8 @@ export function GiftCardSlotsPicker({
       });
       setBooked(result);
       onBooked?.(result);
-    } catch (err: any) {
-      setError(err.message || 'Réservation impossible. Réessayez.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Réservation impossible. Réessayez.');
     } finally {
       setLoading(false);
     }
