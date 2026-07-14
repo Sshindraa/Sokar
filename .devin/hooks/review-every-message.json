@@ -1,6 +1,0 @@
-{
-  "hookSpecificOutput": {
-    "hookEventName": "UserPromptSubmit",
-    "additionalContext": "[AUTO-REVIEW] After completing your work for this response, invoke the `review` skill using the `skill` tool, unless a review has already been performed during this turn. Wait for the reviewer verdict. If the reviewer returns `Request changes`, fix the blocking issues and re-run `review` until the verdict is `Approve` or `No diff to review`. Only then finalize your response. If no files were modified, the reviewer will return `No diff to review` immediately."
-  }
-}
