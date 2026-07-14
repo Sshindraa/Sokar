@@ -118,14 +118,26 @@ export class TableAllocationService {
    * Réassigne une réservation à une autre table.
    * Vérifie la disponibilité avant de mettre à jour.
    */
-  async reallocate(reservationId: string, newTableId: string): Promise<void> {
+  async reallocate(reservationId: string, newTableId: string): Promise<Reservation> {
     const reservation = await this.prisma.reservation.findUniqueOrThrow({
       where: { id: reservationId },
     });
 
     const table = await this.prisma.table.findUniqueOrThrow({
       where: { id: newTableId },
+      include: { floorPlan: true },
     });
+
+    if (table.floorPlan.restaurantId !== reservation.restaurantId) {
+      throw new TableAllocationError(
+        'TABLE_RESTAURANT_MISMATCH',
+        'Table and reservation belong to different restaurants',
+      );
+    }
+
+    if (!table.isActive) {
+      throw new TableAllocationError('TABLE_NOT_ACTIVE', 'Table is not active');
+    }
 
     if (table.capacity < reservation.partySize) {
       throw new TableAllocationError(
@@ -134,11 +146,18 @@ export class TableAllocationService {
       );
     }
 
+    if (table.minCapacity > reservation.partySize) {
+      throw new TableAllocationError(
+        'TABLE_MIN_CAPACITY_TOO_HIGH',
+        'Party size is below the table minimum capacity',
+      );
+    }
+
     if (!reservation.startsAt || !reservation.endsAt) {
       throw new TableAllocationError('RESERVATION_TIMES_MISSING', 'Reservation times are missing');
     }
 
-    await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       const locked = await this.lockTable(tx, newTableId);
       if (!locked) {
         throw new TableAllocationError('TABLE_NOT_AVAILABLE', 'Target table is not available');
@@ -158,7 +177,7 @@ export class TableAllocationService {
         throw new TableAllocationError('TABLE_NOT_AVAILABLE', 'Target table is not available');
       }
 
-      await tx.reservation.update({
+      return tx.reservation.update({
         where: { id: reservationId },
         data: { tableId: newTableId },
       });

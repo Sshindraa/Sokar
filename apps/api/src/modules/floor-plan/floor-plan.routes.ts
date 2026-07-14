@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '../../shared/db/client';
 import { requireOrg } from '../../plugins/clerk';
 import { FloorPlanService } from './floor-plan.service';
+import { TableAllocationService, TableAllocationError } from './table-allocation.service';
 
 const CreateSectionSchema = z.object({
   name: z.string().min(1).max(100),
@@ -41,6 +42,10 @@ const CreateFloorPlanSchema = z.object({
 
 const DateQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+const ReallocateReservationSchema = z.object({
+  tableId: z.string().min(1),
 });
 
 export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
@@ -167,6 +172,32 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
       const query = DateQuerySchema.parse(req.query);
       const reservations = await service.getPlanning(restaurantId, query.date);
       return reply.send(reservations);
+    },
+  );
+
+  app.patch(
+    '/restaurants/:id/floor-plan/reservations/:reservationId',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id, reservationId } = req.params as { id: string; reservationId: string };
+      if (id !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+
+      const body = ReallocateReservationSchema.parse(req.body);
+
+      try {
+        const reservation = await new TableAllocationService(db).reallocate(
+          reservationId,
+          body.tableId,
+        );
+        return reply.send(reservation);
+      } catch (err) {
+        if (err instanceof TableAllocationError) {
+          return reply.status(409).send({ error: err.message });
+        }
+        throw err;
+      }
     },
   );
 }
