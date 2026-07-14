@@ -31,7 +31,7 @@ check_disk_space() {
 }
 
 echo "→ Estimating database size..."
-DB_SIZE_BYTES="$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${DB_NAME}" -Atc \"SELECT pg_database_size('${DB_NAME}');\")"
+DB_SIZE_BYTES="$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${DB_NAME}" -Atc "SELECT pg_database_size('${DB_NAME}');")"
 # Reserve ~2x database size + 1GB for dump + restore verification.
 REQUIRED_BYTES=$((DB_SIZE_BYTES * 2 + 1024 * 1024 * 1024))
 check_disk_space "${BACKUP_DIR}" "${REQUIRED_BYTES}"
