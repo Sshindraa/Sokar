@@ -40,7 +40,7 @@ sokar/
 1. Check whether the feature/file already exists before adding new code.
 2. Prefer boring explicit TypeScript over clever abstractions.
 3. Never make breaking API/schema changes without explicit user confirmation.
-4. Never commit secrets. Use env vars and `key_env`, not plaintext keys.
+4. Never commit secrets. Use env vars (`key_env` = secrets loaded from environment only, never from code), not plaintext keys.
 5. Before saying done, run the smallest relevant verification: tests, build, lint, curl, or typecheck.
 6. Git can be unstable on this Mac when multiple IDEs are open. Before bulk git ops, inspect active git/IDE processes and prefer scoped staging.
 
@@ -93,7 +93,7 @@ hermes -z "task" # one-shot task
 - **Production:** requires explicit confirmation before execution. Any DB migration, payment, auth, voice, or critical config change must be flagged.
 - **Rollback:** application rollback restores artefacts only by default. Add `--with-db-rollback` to `scripts/deploy-vps.sh` or `scripts/deploy-staging.sh` to also restore the Postgres backup timestamped in the release directory. See `docs/runbooks/rollback.md`.
 - **Deploy account:** privileged operations use `/usr/local/sbin/sokar-deploy-root`. The `deploy` account is not in `sudo` or `docker` groups.
-- **Secrets:** never commit secrets. Use env vars and `key_env`.
+- **Secrets:** never commit secrets. Use env vars (`key_env` convention = secrets live in environment variables, never in code).
 
 ## Where to look
 

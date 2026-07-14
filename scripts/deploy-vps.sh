@@ -261,6 +261,13 @@ if ! sudo /usr/local/sbin/sokar-deploy-root check-cert prod; then
     exit 1
 fi
 
+# Check Node version (DEP-015).
+echo "🔍 Checking Node version..."
+if ! pnpm node:check; then
+    echo "❌ Node version check failed. Use Node >=20 <23 (see .nvmrc)." >&2
+    exit 1
+fi
+
 if ! git diff --quiet || ! git diff --cached --quiet; then
     echo "❌ Fichiers suivis modifiés sur le VPS. Refus de les stasher automatiquement."
     git status --short

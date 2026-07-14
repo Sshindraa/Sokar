@@ -1,22 +1,21 @@
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { telnyxWebhookGuard } from '../voice/telnyx.guard';
 import { handleReply } from './reply-handler';
 
-interface TelnyxFromObject {
-  phone_number?: string;
-}
+const TelnyxFromSchema = z.union([z.string(), z.object({ phone_number: z.string() })]);
 
-interface TelnyxMessagePayload {
-  from?: string | TelnyxFromObject;
-  text?: string;
-}
+const TelnyxWebhookPayloadSchema = z.object({
+  from: TelnyxFromSchema.optional(),
+  text: z.string().optional(),
+});
 
-interface TelnyxWebhookBody {
-  data?: {
-    event_type?: string;
-    payload?: TelnyxMessagePayload;
-  };
-}
+const TelnyxWebhookBodySchema = z.object({
+  data: z.object({
+    event_type: z.string(),
+    payload: TelnyxWebhookPayloadSchema,
+  }),
+});
 
 /**
  * Handler pour les SMS entrants de Telnyx (réponses clients).
@@ -27,18 +26,21 @@ interface TelnyxWebhookBody {
 
 export async function smsInboundRoutes(app: FastifyInstance) {
   app.post('/sms/telnyx/inbound', { preHandler: telnyxWebhookGuard }, async (req, reply) => {
-    const body = req.body as TelnyxWebhookBody;
-    const eventType = body?.data?.event_type;
-    const payload = body?.data?.payload;
+    const parseResult = TelnyxWebhookBodySchema.safeParse(req.body);
+    if (!parseResult.success) {
+      req.log.warn({ errors: parseResult.error.errors }, 'sms inbound: invalid payload');
+      return reply.status(400).send({ result: 'ignored' });
+    }
 
-    if (eventType !== 'message.received') {
+    const { data } = parseResult.data;
+    if (data.event_type !== 'message.received') {
       return reply.send({ result: 'ignored' });
     }
 
     // Telnyx SMS: from est un objet avec phone_number
-    const fromObj = payload?.from;
+    const fromObj = data.payload.from;
     const from = typeof fromObj === 'string' ? fromObj : fromObj?.phone_number;
-    const text = payload?.text;
+    const text = data.payload.text;
 
     if (!from || !text) {
       req.log.warn({ from, hasText: !!text }, 'sms inbound: missing from or text');
