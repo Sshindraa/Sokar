@@ -40,7 +40,26 @@ export const dynamic = 'force-dynamic';
 // Pre-render les pages restaurant publiées au build time.
 // Les nouvelles publications sont rendues à la demande (dynamicParams=true)
 // puis mises en cache ISR (revalidate=60).
+//
+// Au build, l'API peut ne pas être disponible (build local, CI sans API).
+// On retourne alors [] pour éviter les erreurs ECONNREFUSED bruyantes ;
+// les pages sont générées à la demande au runtime via ISR (revalidate=60).
 export async function generateStaticParams(): Promise<Array<{ slug: string }>> {
+  if (process.env.NEXT_PHASE === 'phase-production-build') {
+    // Vérifier si l'API est joignable avant de tenter le fetch.
+    // Si elle ne l'est pas, on skip et on laisse ISR gérer au runtime.
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 2000);
+      const res = await fetch(`${process.env.API_URL ?? 'http://localhost:3001'}/health`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!res.ok) return [];
+    } catch {
+      return [];
+    }
+  }
   const slugs = await fetchPublishedSlugs();
   return slugs.map((entry) => ({ slug: entry.slug }));
 }
