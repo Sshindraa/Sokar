@@ -210,6 +210,13 @@ fi
 cd "$SOKAR_ROOT"
 ensure_privileged_wrapper
 
+# Check Node version (DEP-015).
+echo "🔍 Checking Node version..."
+if ! pnpm node:check; then
+    echo "❌ Node version check failed. Use Node >=20 <23 (see .nvmrc)." >&2
+    exit 1
+fi
+
 # ── 0. Swap check ───────────────────────────────────────
 if ! swapon --show | grep -q swapfile 2>/dev/null; then
     echo "❌ Aucun swap détecté. Les builds Next.js seront tués par OOM."
