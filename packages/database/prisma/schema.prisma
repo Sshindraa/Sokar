@@ -476,6 +476,7 @@ model ReservationAuditLog {
   event         String
   fromState     String?      @map("from_state")
   toState       String?      @map("to_state")
+  correlationId String?      @map("correlation_id")
   metadata      Json         @default("{}")
   createdAt     DateTime     @default(now()) @map("created_at")
   reservation   Reservation? @relation(fields: [reservationId], references: [id])

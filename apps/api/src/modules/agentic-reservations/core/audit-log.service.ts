@@ -44,6 +44,7 @@ export class AuditLogService {
       actorHash?: string | null;
       fromState?: string | null;
       toState?: string | null;
+      correlationId?: string | null;
       metadata?: Record<string, unknown>;
     },
     tx?: Prisma.TransactionClient,
@@ -58,6 +59,7 @@ export class AuditLogService {
         actorHash: args.actorHash ?? null,
         fromState: args.fromState ?? null,
         toState: args.toState ?? null,
+        correlationId: args.correlationId ?? null,
         metadata: (args.metadata ?? {}) as object,
       },
     });

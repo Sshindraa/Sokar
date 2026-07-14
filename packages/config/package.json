@@ -11,6 +11,12 @@
     "test": "echo \"no tests yet\" && exit 0",
     "clean": "rm -rf .turbo dist"
   },
+  "dependencies": {
+    "eslint": "^9",
+    "eslint-config-prettier": "^9",
+    "globals": "^15",
+    "typescript-eslint": "^8"
+  },
   "devDependencies": {
     "typescript": "^5.8.0"
   }

@@ -38,6 +38,7 @@ describe('AuditLogService.record', () => {
         actorHash: null,
         fromState: null,
         toState: null,
+        correlationId: null,
         metadata: {},
       }),
     });
@@ -92,6 +93,21 @@ describe('AuditLogService.record', () => {
     expect(call.data.metadata).toEqual({});
   });
 
+  it('passe correlationId au log', async () => {
+    await service.record({
+      event: 'reservation_created',
+      actor: 'agent:openai:session-1',
+      correlationId: 'corr-abc-123',
+    });
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        event: 'reservation_created',
+        actor: 'agent:openai:session-1',
+        correlationId: 'corr-abc-123',
+      }),
+    });
+  });
+
   it('convertit explicitement les undefined en null (cohérence SQL)', async () => {
     await service.record({ event: 'quote_created', actor: 'agent' });
     const call = create.mock.calls[0]?.[0] as { data: Record<string, unknown> };
@@ -100,6 +116,7 @@ describe('AuditLogService.record', () => {
     expect(call.data.actorHash).toBeNull();
     expect(call.data.fromState).toBeNull();
     expect(call.data.toState).toBeNull();
+    expect(call.data.correlationId).toBeNull();
   });
 });
 
