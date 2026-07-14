@@ -11,6 +11,11 @@
 
 export type Plan = 'STARTER' | 'PRO' | 'PREMIUM';
 
+export type OpeningHours = {
+  open: string;
+  close: string;
+};
+
 export interface Restaurant {
   id: string;
   name: string;
@@ -23,6 +28,7 @@ export interface Restaurant {
   giftCardMinimumAmount: number | null;
   giftCardCommissionRate: number;
   slug: string | null;
+  openingHours?: Record<string, OpeningHours | null>;
 }
 
 // ─── AgentPersonality ───────────────────────────────────────────────────
@@ -117,6 +123,19 @@ export interface FloorPlan {
   id: string;
   name: string | null;
   sections: FloorPlanSection[];
+  tables?: FloorPlanTable[];
+}
+
+export interface PlanningReservation {
+  id: string;
+  tableId: string | null;
+  tableName: string | null;
+  sectionName: string | null;
+  startsAt: string;
+  endsAt: string;
+  partySize: number;
+  customerName: string | null;
+  state: string;
 }
 
 // ─── ReactivationCampaign ───────────────────────────────────────────────
