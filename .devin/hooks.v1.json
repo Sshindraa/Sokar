@@ -1,0 +1,12 @@
+{
+  "UserPromptSubmit": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"[AUTO-ORCHESTRATE] Use the `orchestrate` skill to handle this user prompt. The orchestrator will decide whether to answer directly, spawn `subagent_general` to code, or `subagent_explore` to review/research.\"}}'"
+        }
+      ]
+    }
+  ]
+}
