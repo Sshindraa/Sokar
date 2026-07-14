@@ -42,6 +42,7 @@ const RequestVerificationSchema = z.object({
   subject: z.string().min(8).max(254),
   intent: z.enum(['erase', 'export']),
   email: z.string().email().optional(),
+  captchaToken: z.string().optional(),
 });
 
 const ConfirmVerificationSchema = z.object({
@@ -77,7 +78,10 @@ export async function rgpdRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: 'Invalid payload', details: parse.error.format() });
       }
       try {
-        const result = await verificationService.requestVerification(parse.data);
+        const result = await verificationService.requestVerification({
+          ...parse.data,
+          ip: req.ip,
+        });
         return reply.send(result);
       } catch (err) {
         if (err instanceof IdentityVerificationError) {
