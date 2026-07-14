@@ -43,6 +43,7 @@ sokar/
 4. Never commit secrets. Use env vars (`key_env` = secrets loaded from environment only, never from code), not plaintext keys.
 5. Before saying done, run the smallest relevant verification: tests, build, lint, curl, or typecheck.
 6. Git can be unstable on this Mac when multiple IDEs are open. Before bulk git ops, inspect active git/IDE processes and prefer scoped staging.
+7. After every user prompt, run the `review` skill before finalizing. If the reviewer returns `Request changes`, fix the blocking issues and re-run `review`. If there are no uncommitted changes, the reviewer will return `No diff to review` immediately.
 
 ## Commands
 
