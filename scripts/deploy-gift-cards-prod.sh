@@ -152,18 +152,19 @@ log_info "Vérifications OK."
 
 log_info "Vérification des shortCodes en base..."
 export DATABASE_URL=$(grep '^DATABASE_URL=' apps/api/.env | cut -d= -f2- | sed "s/^[\"'[:space:]]*//;s/[\"'[:space:]]*$//")
-SHORT_CODE_CHECK=$(cd "$SOKAR_ROOT/packages/database" && node "$(find ../../node_modules/.pnpm -path '*/prisma/build/index.js' 2>/dev/null | head -1)" db execute --stdin <<EOF 2>/dev/null
-SELECT COUNT(*) AS total, COUNT(short_code) AS with_short_code FROM gift_cards;
-EOF
-)
-unset DATABASE_URL
-
-if [ -z "$SHORT_CODE_CHECK" ]; then
-  log_warn "Impossible de vérifier les shortCodes. Vérifie manuellement avec Prisma Studio."
+if [ -z "$TSX_BIN" ] || [ ! -f "$TSX_BIN" ]; then
+  log_warn "tsx introuvable — vérification shortCodes skippée."
 else
-  log_info "Résultat DB :"
-  echo "$SHORT_CODE_CHECK"
+  if SHORT_CODE_CHECK=$(cd "$SOKAR_ROOT" && node "$TSX_BIN" apps/api/scripts/check-gift-card-shortcodes.ts 2>&1); then
+    log_info "Résultat DB :"
+    echo "$SHORT_CODE_CHECK"
+  else
+    log_error "Vérification des shortCodes en base échouée."
+    echo "$SHORT_CODE_CHECK"
+    exit 1
+  fi
 fi
+unset DATABASE_URL
 
 # ── Résumé ───────────────────────────────────────────────────────────
 
