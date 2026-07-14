@@ -1,6 +1,6 @@
 ---
 name: api-change
-description: Modifier le backend Sokar (API, Prisma, workers, shared, config) de maniere sure et verifiee.
+description: Modifier le backend Sokar (API, Prisma, workers, shared, config) de maniere sure et verifiee, avec revue automatique.
 triggers:
   - user
   - model
@@ -16,7 +16,7 @@ allowed-tools:
   - skill
 ---
 
-Tu dois aider a modifier le backend de Sokar (apps/api, packages/database, packages/shared, packages/config) en suivant le process ci-dessous.
+Tu dois aider a modifier le backend de Sokar (apps/api, packages/database, packages/shared, packages/config) en suivant le workflow ci-dessous. Chaque changement important passe par une revue automatique.
 
 ## Quand utiliser ce skill
 
@@ -37,38 +37,44 @@ Tu dois aider a modifier le backend de Sokar (apps/api, packages/database, packa
 - `apps/api/src/env.ts` si nouvelle env var.
 - `packages/database/prisma/schema.prisma` si modele impacte.
 
-## Etapes
+## Workflow
 
-1. Explorer
+1. **Explorer**
    - Identifier les fichiers concernes et les flux existants.
    - Rechercher les usages du code a modifier avec `grep`.
    - Lire les tests existants pour comprendre le contrat attendu.
 
-2. Comprendre et expliquer
+2. **Comprendre et expliquer**
    - Resumer l'architecture ou la cause du probleme en 2-3 phrases.
    - Si le changement touche plusieurs fichiers, un domaine sensible (auth, paiement, voice, DB) ou implique une migration, proposer un plan avant d'implementer.
 
-3. Implementer
+3. **Implementer**
    - Diff minimal.
    - Respecter les conventions TypeScript, Fastify, Prisma, Zod.
    - Ne jamais commiter de secrets.
    - Pour une migration Prisma, generer `migration.sql` avec `pnpm db:migrate --name <nom>`.
    - Pour un champ env var, l'ajouter dans `apps/api/src/env.ts`, `.env.example` et `.env.staging.example` si applicable.
 
-4. Tests
-   - Ajouter ou mettre a jour un test unitaire/integrations cible.
+4. **Tests**
+   - Ajouter ou mettre a jour un test unitaire/integration cible.
    - Si Prisma est modifie, s'assurer que le client est regenere (`pnpm db:generate`).
 
-5. Verifications
+5. **Revue automatique**
+   - Invoquer le skill `review` (via l'outil `skill`) pour faire relire le diff.
+   - Lire le rapport du reviewer.
+   - Si le verdict est `Request changes`, corriger les points bloquants et relancer `review`.
+   - Si le verdict est `Approve`, continuer.
+
+6. **Verifications**
    - `pnpm test` filtre si possible (ex: `pnpm --filter @sokar/api test`).
    - `pnpm typecheck`.
    - `pnpm lint`.
    - Si schema change : `pnpm db:generate` puis verifier que les tests passent.
 
-6. Livraison
+7. **Livraison**
    - Lister les fichiers modifies.
    - Indiquer s'il y a une migration DB.
-   - Resumer les tests ajoutes et les verifications lancees.
+   - Resumer les tests ajoutes, les verifications et la revue.
    - Signaler les risques restants.
    - Ne pas deployer en production sans confirmation explicite.
 
@@ -90,6 +96,10 @@ Tu dois aider a modifier le backend de Sokar (apps/api, packages/database, packa
 
 ## Migration DB
 Oui / Non — [nom de la migration]
+
+## Revue automatique
+- Verdict : Approve / Request changes
+- Points bloquants corriges : ...
 
 ## Tests
 - [ ] test unitaire ajoute/mis a jour

@@ -59,10 +59,9 @@ Tu dois verifier l'etat du repo avant de deployer Sokar, puis executer et valide
    - Si un rollback est necessaire : `ssh deploy@pmbtc 'cd /opt/sokar && bash scripts/deploy-vps.sh --rollback <timestamp>'` ; utiliser `--with-db-rollback` seulement si le backup DB est acceptable.
 
 4. Post-deploy
-   - Verifier `pm2 status` sur le VPS.
-   - Verifier les endpoints `/health` et `/livez` de l'API.
-   - Verifier les logs recents (`pm2 logs --lines 50`).
-   - Valider le dashboard et connect via les URL de prod/staging.
+   - Invoquer le skill `smoke-test` pour executer les verifications post-deploy (PM2, health, public URLs, logs).
+   - Lire son rapport.
+   - Si `smoke-test` retourne FAIL, investiguer et eventuellement rollback.
 
 5. Resume
    - Lister les commits deployes.
@@ -94,6 +93,7 @@ Oui / Non — [nom]
 - [ ] `pnpm lint` passe
 - [ ] `pm2 status` OK
 - [ ] `/health` et `/livez` OK
+- [ ] `smoke-test` PASS
 - [ ] Logs sans erreur critique
 
 ## Services
