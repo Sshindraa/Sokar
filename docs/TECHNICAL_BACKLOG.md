@@ -67,34 +67,34 @@ _Classification proposée, chaque item doit être re-vérifié avant exécution.
 
 ## P2 — Amélioration
 
-| ID      | Fichiers                                                                  | Problème                                                | Statut      |
-| ------- | ------------------------------------------------------------------------- | ------------------------------------------------------- | ----------- |
-| SEC-009 | `apps/api/src/modules/rgpd/identity-verification.service.ts`              | OTP RGPD sans captcha                                   | Corrigé     |
-| SEC-010 | `apps/api/src/env.ts`                                                     | `localhost` dans `PROD_HOST_ALLOWLIST`                  | Corrigé     |
-| SEC-011 | `apps/api/src/modules/rgpd/rgpd.routes.ts`                                | Champs `string` sans `max()`                            | Corrigé     |
-| SEC-012 | `apps/api/src/main.ts`                                                    | Logger redaction : secrets Stripe/SMTP/Google manquants | Corrigé     |
-| SEC-013 | `apps/api/src/modules/sms/sms-inbound.routes.ts`                          | Validation minimale du payload Telnyx                   | Corrigé     |
-| SEC-014 | `apps/api/src/plugins/cors.ts`                                            | Origines CORS non validées comme URLs                   | Corrigé     |
-| SEC-015 | `AGENTS.md`                                                               | Mention de `key_env` sans contexte                      | Corrigé     |
-| RES-014 | `apps/api/src/shared/db/transaction-options.ts`                           | Timeout de transaction 10s peut être court              | Corrigé     |
-| RES-015 | `packages/database/prisma/schema.prisma`                                  | `ReservationAuditLog` sans `correlationId`              | Non corrigé |
-| DEP-006 | `infra/nginx/snippets/sokar-cloudflare-real-ip.conf`                      | IPs Cloudflare hardcodées                               | Corrigé     |
-| DEP-010 | `.env.staging.example` (API, dashboard)                                   | Patterns `pk_test_...` / `sk_test_...`                  | Corrigé     |
-| DEP-011 | `scripts/backup-postgres.sh` / `backup-postgres-r2.sh`                    | Pas de vérification d'espace disque                     | Corrigé     |
-| DEP-012 | `scripts/deploy-*.sh` + workflows                                         | Pas de notification d'échec                             | Corrigé     |
-| DEP-013 | `scripts/ops/sokar-deploy-root.sh`                                        | Restauration nginx non garantie                         | Corrigé     |
-| DEP-014 | `scripts/deploy-vps.sh` / `deploy-staging.sh`                             | Logs non structurés                                     | Corrigé     |
-| DEP-015 | `scripts/deploy-*.sh`                                                     | Pas de vérification de version Node                     | Corrigé     |
-| QUA-006 | `apps/connect/e2e/*.spec.ts`                                              | E2E Connect skippés si API down                         | Corrigé     |
-| QUA-007 | `apps/api/src/modules/agentic-reservations/__tests__/concurrency.test.ts` | `describe.skip` conditionnel `AGENTIC_INT_TESTS`        | Corrigé     |
-| QUA-008 | `apps/api/src`                                                            | 559 occurrences de `any`                                | Corrigé     |
-| QUA-009 | `apps/connect/src/components/gift-card/use-gift-card-flow.ts`             | `err: any` dans catch                                   | Corrigé     |
-| QUA-010 | `apps/api/vitest.config.ts`                                               | Monkey-patch `fs.readFileSync`                          | Corrigé     |
-| QUA-011 | `apps/api/eslint.config.mjs` vs `apps/*/.eslintrc.json`                   | ESLint incohérent (flat vs legacy)                      | Non corrigé |
-| QUA-012 | `packages/config/.stylelintrc.json`                                       | Config stylelint non centralisée                        | Corrigé     |
-| QUA-013 | `.prettierrc.json`                                                        | Prettier config dans `package.json`                     | Corrigé     |
-| QUA-014 | `apps/dashboard/src`                                                      | Un seul test unitaire (`proxy.test.ts`)                 | Non corrigé |
-| QUA-015 | `docs/obsidian/Context.md`                                                | tsserver lock 100% CPU                                  | Non corrigé |
+| ID      | Fichiers                                                                  | Problème                                                   | Statut  |
+| ------- | ------------------------------------------------------------------------- | ---------------------------------------------------------- | ------- |
+| SEC-009 | `apps/api/src/modules/rgpd/identity-verification.service.ts`              | OTP RGPD sans captcha                                      | Corrigé |
+| SEC-010 | `apps/api/src/env.ts`                                                     | `localhost` dans `PROD_HOST_ALLOWLIST`                     | Corrigé |
+| SEC-011 | `apps/api/src/modules/rgpd/rgpd.routes.ts`                                | Champs `string` sans `max()`                               | Corrigé |
+| SEC-012 | `apps/api/src/main.ts`                                                    | Logger redaction : secrets Stripe/SMTP/Google manquants    | Corrigé |
+| SEC-013 | `apps/api/src/modules/sms/sms-inbound.routes.ts`                          | Validation minimale du payload Telnyx                      | Corrigé |
+| SEC-014 | `apps/api/src/plugins/cors.ts`                                            | Origines CORS non validées comme URLs                      | Corrigé |
+| SEC-015 | `AGENTS.md`                                                               | Mention de `key_env` sans contexte                         | Corrigé |
+| RES-014 | `apps/api/src/shared/db/transaction-options.ts`                           | Timeout de transaction 10s peut être court                 | Corrigé |
+| RES-015 | `packages/database/prisma/schema.prisma`                                  | `ReservationAuditLog` sans `correlationId`                 | Corrigé |
+| DEP-006 | `infra/nginx/snippets/sokar-cloudflare-real-ip.conf`                      | IPs Cloudflare hardcodées                                  | Corrigé |
+| DEP-010 | `.env.staging.example` (API, dashboard)                                   | Patterns `pk_test_...` / `sk_test_...`                     | Corrigé |
+| DEP-011 | `scripts/backup-postgres.sh` / `backup-postgres-r2.sh`                    | Pas de vérification d'espace disque                        | Corrigé |
+| DEP-012 | `scripts/deploy-*.sh` + workflows                                         | Pas de notification d'échec                                | Corrigé |
+| DEP-013 | `scripts/ops/sokar-deploy-root.sh`                                        | Restauration nginx non garantie                            | Corrigé |
+| DEP-014 | `scripts/deploy-vps.sh` / `deploy-staging.sh`                             | Logs non structurés                                        | Corrigé |
+| DEP-015 | `scripts/deploy-*.sh`                                                     | Pas de vérification de version Node                        | Corrigé |
+| QUA-006 | `apps/connect/e2e/*.spec.ts`                                              | E2E Connect skippés si API down                            | Corrigé |
+| QUA-007 | `apps/api/src/modules/agentic-reservations/__tests__/concurrency.test.ts` | `describe.skip` conditionnel `AGENTIC_INT_TESTS`           | Corrigé |
+| QUA-008 | `apps/api/src`                                                            | 559 occurrences de `any`                                   | Corrigé |
+| QUA-009 | `apps/connect/src/components/gift-card/use-gift-card-flow.ts`             | `err: any` dans catch                                      | Corrigé |
+| QUA-010 | `apps/api/vitest.config.ts`                                               | Monkey-patch `fs.readFileSync`                             | Corrigé |
+| QUA-011 | `packages/config/eslint.config.mjs` + `.eslintrc.json`                    | ESLint incohérent (flat vs legacy)                         | Corrigé |
+| QUA-012 | `packages/config/.stylelintrc.json`                                       | Config stylelint non centralisée                           | Corrigé |
+| QUA-013 | `.prettierrc.json`                                                        | Prettier config dans `package.json`                        | Corrigé |
+| QUA-014 | `apps/dashboard/src`                                                      | Tests unitaires dashboard complétés (widgets + composants) | Corrigé |
+| QUA-015 | `docs/obsidian/Context.md`                                                | tsserver lock 100% CPU                                     | Corrigé |
 
 ---
 

@@ -4,5 +4,16 @@
   "scm.inputValueSource": "default",
   "extensions.supportUntrustedWorkspaces": {
     "google.geminicodeassist": false
+  },
+  "files.exclude": {
+    "docs/obsidian/.obsidian": true
+  },
+  "files.watcherExclude": {
+    "**/docs/obsidian/**": true,
+    "**/.obsidian/**": true
+  },
+  "search.exclude": {
+    "**/docs/obsidian": true,
+    "**/.obsidian": true
   }
 }
