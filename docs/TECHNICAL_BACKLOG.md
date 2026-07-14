@@ -70,26 +70,26 @@ _Classification proposée, chaque item doit être re-vérifié avant exécution.
 | ID      | Fichiers                                                                  | Problème                                                | Statut      |
 | ------- | ------------------------------------------------------------------------- | ------------------------------------------------------- | ----------- |
 | SEC-009 | `apps/api/src/modules/rgpd/identity-verification.service.ts`              | OTP RGPD sans captcha                                   | Non corrigé |
-| SEC-010 | `apps/api/src/env.ts`                                                     | `localhost` dans `PROD_HOST_ALLOWLIST`                  | Non corrigé |
-| SEC-011 | `apps/api/src/modules/rgpd/rgpd.routes.ts`                                | Champs `string` sans `max()`                            | Non corrigé |
-| SEC-012 | `apps/api/src/main.ts`                                                    | Logger redaction : secrets Stripe/SMTP/Google manquants | Non corrigé |
+| SEC-010 | `apps/api/src/env.ts`                                                     | `localhost` dans `PROD_HOST_ALLOWLIST`                  | Corrigé     |
+| SEC-011 | `apps/api/src/modules/rgpd/rgpd.routes.ts`                                | Champs `string` sans `max()`                            | Corrigé     |
+| SEC-012 | `apps/api/src/main.ts`                                                    | Logger redaction : secrets Stripe/SMTP/Google manquants | Corrigé     |
 | SEC-013 | `apps/api/src/modules/sms/sms-inbound.routes.ts`                          | Validation minimale du payload Telnyx                   | Non corrigé |
-| SEC-014 | `apps/api/src/plugins/cors.ts`                                            | Origines CORS non validées comme URLs                   | Non corrigé |
+| SEC-014 | `apps/api/src/plugins/cors.ts`                                            | Origines CORS non validées comme URLs                   | Corrigé     |
 | SEC-015 | `AGENTS.md`                                                               | Mention de `key_env` sans contexte                      | Non corrigé |
-| RES-014 | `apps/api/src/shared/db/transaction-options.ts`                           | Timeout de transaction 10s peut être court              | Non corrigé |
+| RES-014 | `apps/api/src/shared/db/transaction-options.ts`                           | Timeout de transaction 10s peut être court              | Corrigé     |
 | RES-015 | `packages/database/prisma/schema.prisma`                                  | `ReservationAuditLog` sans `correlationId`              | Non corrigé |
 | DEP-006 | `infra/nginx/snippets/sokar-cloudflare-real-ip.conf`                      | IPs Cloudflare hardcodées                               | Non corrigé |
 | DEP-010 | `.env.staging.example` (API, dashboard)                                   | Patterns `pk_test_...` / `sk_test_...`                  | Non corrigé |
-| DEP-011 | `scripts/backup-postgres.sh` / `backup-postgres-r2.sh`                    | Pas de vérification d'espace disque                     | Non corrigé |
-| DEP-012 | `scripts/deploy-*.sh` + workflows                                         | Pas de notification d'échec                             | Non corrigé |
+| DEP-011 | `scripts/backup-postgres.sh` / `backup-postgres-r2.sh`                    | Pas de vérification d'espace disque                     | Corrigé     |
+| DEP-012 | `scripts/deploy-*.sh` + workflows                                         | Pas de notification d'échec                             | Corrigé     |
 | DEP-013 | `scripts/ops/sokar-deploy-root.sh`                                        | Restauration nginx non garantie                         | Non corrigé |
 | DEP-014 | `scripts/deploy-vps.sh` / `deploy-staging.sh`                             | Logs non structurés                                     | Non corrigé |
 | DEP-015 | `scripts/deploy-*.sh`                                                     | Pas de vérification de version Node                     | Non corrigé |
-| QUA-006 | `apps/connect/e2e/*.spec.ts`                                              | E2E Connect skippés si API down                         | Non corrigé |
-| QUA-007 | `apps/api/src/modules/agentic-reservations/__tests__/concurrency.test.ts` | `describe.skip` conditionnel `AGENTIC_INT_TESTS`        | Non corrigé |
-| QUA-008 | `apps/api/src`                                                            | 559 occurrences de `any`                                | Non corrigé |
-| QUA-009 | `apps/connect/src/components/gift-card/use-gift-card-flow.ts`             | `err: any` dans catch                                   | Non corrigé |
-| QUA-010 | `apps/api/vitest.config.ts`                                               | Monkey-patch `fs.readFileSync`                          | Non corrigé |
+| QUA-006 | `apps/connect/e2e/*.spec.ts`                                              | E2E Connect skippés si API down                         | Corrigé     |
+| QUA-007 | `apps/api/src/modules/agentic-reservations/__tests__/concurrency.test.ts` | `describe.skip` conditionnel `AGENTIC_INT_TESTS`        | Corrigé     |
+| QUA-008 | `apps/api/src`                                                            | 559 occurrences de `any`                                | Corrigé     |
+| QUA-009 | `apps/connect/src/components/gift-card/use-gift-card-flow.ts`             | `err: any` dans catch                                   | Corrigé     |
+| QUA-010 | `apps/api/vitest.config.ts`                                               | Monkey-patch `fs.readFileSync`                          | Corrigé     |
 | QUA-011 | `apps/api/eslint.config.mjs` vs `apps/*/.eslintrc.json`                   | ESLint incohérent (flat vs legacy)                      | Non corrigé |
 | QUA-012 | `.stylelintrc.json`                                                       | Config stylelint non centralisée                        | Non corrigé |
 | QUA-013 | `package.json`                                                            | Prettier config dans `package.json`                     | Non corrigé |
