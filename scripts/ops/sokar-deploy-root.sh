@@ -36,6 +36,16 @@ case "$ENVIRONMENT" in
 esac
 
 install_nginx() {
+    local _nginx_restore_done=false
+    cleanup_install_nginx() {
+        if [ "$_nginx_restore_done" = false ]; then
+            restore_nginx
+        fi
+    }
+    # Ensure the previous Nginx vhost is restored if any command below fails
+    # before the new config is confirmed valid (DEP-013).
+    trap cleanup_install_nginx EXIT
+
     install -d -m 0755 /etc/nginx/snippets /etc/nginx/sites-available /etc/nginx/sites-enabled
     install -m 0644 "$ROOT/infra/nginx/snippets/sokar-proxy.conf" /etc/nginx/snippets/sokar-proxy.conf
     install -m 0644 "$ROOT/infra/nginx/snippets/sokar-cloudflare-real-ip.conf" /etc/nginx/snippets/sokar-cloudflare-real-ip.conf
@@ -54,11 +64,17 @@ install_nginx() {
 
     if ! nginx -t; then
         restore_nginx
-        nginx -t && systemctl reload nginx || true
+        _nginx_restore_done=true
+        if nginx -t; then
+            systemctl reload nginx || true
+        fi
+        trap - EXIT
         return 1
     fi
 
     find "/etc/nginx/sites-available" -maxdepth 1 -type f -name "$VHOST.bak" -delete
+    _nginx_restore_done=true
+    trap - EXIT
 }
 
 restore_nginx() {

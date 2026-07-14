@@ -37,6 +37,8 @@ import { sendSms } from '../../shared/telnyx/client';
 import { env } from '../../env';
 import { sendEmail } from '../../shared/email';
 
+const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+
 const OTP_LENGTH = 6;
 const OTP_TTL_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
@@ -51,6 +53,8 @@ export type RequestVerificationInput = {
   subject: string; // téléphone (pour SMS) ou email (pour email)
   intent: 'erase' | 'export';
   email?: string; // optionnel : si fourni, on privilégie le canal email
+  ip?: string; // IP client pour le rate-limit (SEC-009)
+  captchaToken?: string; // Captcha Cloudflare Turnstile (optionnel, validé si configuré)
 };
 
 export type RequestVerificationResult = {
@@ -58,6 +62,7 @@ export type RequestVerificationResult = {
   // On NE retourne PAS l'OTP ni le token ici — ils sont envoyés au user.
   expiresAt: string;
   rateLimitRemaining: number;
+  captchaRequired: boolean; // indique si le captcha est activé sur le serveur
 };
 
 export type ConfirmVerificationInput = {
@@ -80,7 +85,13 @@ type SignedLinkPayload = VerificationTokenPayload & {
 
 export class IdentityVerificationError extends Error {
   constructor(
-    public code: 'EXPIRED' | 'INVALID_CODE' | 'MAX_ATTEMPTS' | 'NOT_FOUND' | 'RATE_LIMITED',
+    public code:
+      | 'EXPIRED'
+      | 'INVALID_CAPTCHA'
+      | 'INVALID_CODE'
+      | 'MAX_ATTEMPTS'
+      | 'NOT_FOUND'
+      | 'RATE_LIMITED',
     message: string,
   ) {
     super(message);
@@ -99,8 +110,14 @@ export class IdentityVerificationService {
    * Choisit le canal (SMS ou email) et envoie le code/lien.
    */
   async requestVerification(input: RequestVerificationInput): Promise<RequestVerificationResult> {
-    // 1. Rate-limit check
-    await this.checkRateLimit(input.subject, input.intent);
+    // 0. Captcha (optionnel, validé seulement si TURNSTILE_SECRET_KEY est configuré)
+    const captchaRequired = this.isCaptchaRequired();
+    if (captchaRequired) {
+      await this.verifyTurnstileToken(input.captchaToken);
+    }
+
+    // 1. Rate-limit check (par IP + subject, SEC-009)
+    const rateLimitRemaining = await this.checkRateLimit(input.subject, input.ip, input.intent);
 
     // 2. Choisir le canal
     const channel: VerificationChannel = input.email ? 'email' : 'sms';
@@ -148,7 +165,8 @@ export class IdentityVerificationService {
     return {
       channel,
       expiresAt: expiresAt.toISOString(),
-      rateLimitRemaining: 0, // calculé dans checkRateLimit si Redis dispo
+      rateLimitRemaining,
+      captchaRequired,
     };
   }
 
@@ -379,20 +397,55 @@ export class IdentityVerificationService {
     }
   }
 
+  // ─── Captcha (Turnstile) ──────────────────────────────────
+
+  private isCaptchaRequired(): boolean {
+    return !!env.TURNSTILE_SECRET_KEY && env.TURNSTILE_SECRET_KEY.length >= 1;
+  }
+
+  private async verifyTurnstileToken(token?: string): Promise<void> {
+    if (!token) {
+      throw new IdentityVerificationError('INVALID_CAPTCHA', 'Captcha token is required');
+    }
+    const secret = env.TURNSTILE_SECRET_KEY;
+    if (!secret) {
+      return;
+    }
+    const res = await fetch(TURNSTILE_VERIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret, response: token }),
+    });
+    if (!res.ok) {
+      throw new IdentityVerificationError('INVALID_CAPTCHA', 'Captcha verification failed');
+    }
+    const data: unknown = await res.json();
+    if (!isTurnstileSuccess(data)) {
+      throw new IdentityVerificationError('INVALID_CAPTCHA', 'Captcha challenge failed');
+    }
+  }
+
   // ─── Rate limit ───────────────────────────────────────────
 
-  private async checkRateLimit(subject: string, _intent: string): Promise<void> {
-    const key = `rgpd:verify:${subject}`;
+  private async checkRateLimit(
+    subject: string,
+    ip: string | undefined,
+    _intent: string,
+  ): Promise<number> {
+    const rateLimitKey = ip ? `${ip}:${subject}` : `unknown:${subject}`;
+    const key = `rgpd:verify:${rateLimitKey}`;
     const count = await this.redis.incr(key);
     if (count === 1) {
       await this.redis.expire(key, RATE_LIMIT_WINDOW_MIN * 60);
     }
+    const remaining = Math.max(0, RATE_LIMIT_MAX_REQUESTS - count);
     if (count > RATE_LIMIT_MAX_REQUESTS) {
       throw new IdentityVerificationError(
         'RATE_LIMITED',
         `Too many verification requests. Try again in ${RATE_LIMIT_WINDOW_MIN} minutes.`,
       );
     }
+    return remaining;
   }
 
   // ─── Send helpers ─────────────────────────────────────────
@@ -472,5 +525,11 @@ function isPrismaUniqueError(value: unknown): value is { code: 'P2002' } {
     typeof value === 'object' &&
     'code' in value &&
     (value as { code?: unknown }).code === 'P2002'
+  );
+}
+
+function isTurnstileSuccess(value: unknown): value is { success: true } {
+  return (
+    typeof value === 'object' && value !== null && (value as { success?: unknown }).success === true
   );
 }

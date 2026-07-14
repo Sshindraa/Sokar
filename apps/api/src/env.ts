@@ -100,6 +100,8 @@ const EnvSchema = z
     DEEPGRAM_API_KEY: z.string().optional(),
     CARTESIA_API_KEY: z.string().optional(),
     STRIPE_SECRET_KEY: z.string().optional(),
+    // Captcha Cloudflare Turnstile pour les flux sensibles (SEC-009). Optionnel ; si défini, /api/rgpd/request-verification exige un token Turnstile.
+    TURNSTILE_SECRET_KEY: z.string().optional(),
   })
   .refine(
     (data) => {

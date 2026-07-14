@@ -5,7 +5,7 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint && pnpm lint:css",
-    "lint:css": "stylelint \"apps/*/src/**/*.css\"",
+    "lint:css": "stylelint --config packages/config/.stylelintrc.json \"apps/*/src/**/*.css\"",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
     "test:e2e": "pnpm --filter @sokar/dashboard test:e2e",
@@ -68,12 +68,5 @@
   "engines": {
     "node": ">=20.0.0 <23.0.0"
   },
-  "packageManager": "pnpm@10.33.3",
-  "prettier": {
-    "semi": true,
-    "singleQuote": true,
-    "trailingComma": "all",
-    "printWidth": 100,
-    "tabWidth": 2
-  }
+  "packageManager": "pnpm@10.33.3"
 }

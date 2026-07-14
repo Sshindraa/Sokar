@@ -258,7 +258,16 @@ describe('IdentityVerificationService', () => {
       await service.requestVerification({ subject: '+33****0050', intent: 'erase' });
       await service.requestVerification({ subject: '+33****0050', intent: 'erase' });
       expect(redis.incr).toHaveBeenCalledTimes(2);
-      expect(redis.incr).toHaveBeenCalledWith('rgpd:verify:+33****0050');
+      expect(redis.incr).toHaveBeenCalledWith('rgpd:verify:unknown:+33****0050');
+    });
+
+    it('rate-limite par IP + subject', async () => {
+      await service.requestVerification({
+        subject: '+33****0050',
+        intent: 'erase',
+        ip: '1.2.3.4',
+      });
+      expect(redis.incr).toHaveBeenCalledWith('rgpd:verify:1.2.3.4:+33****0050');
     });
 
     it('rejette la 6ème request avec RATE_LIMITED (max 5/15min)', async () => {

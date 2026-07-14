@@ -120,14 +120,5 @@
     "declaration-property-unit-allowed-list": {
       "font-size": ["rem", "em", "%", "vh", "vw", "ex", "ch"]
     }
-  },
-  "ignoreFiles": [
-    "node_modules/**",
-    "**/.next/**",
-    "**/dist/**",
-    "**/out/**",
-    "**/build/**",
-    "**/coverage/**",
-    "**/*.min.css"
-  ]
+  }
 }
