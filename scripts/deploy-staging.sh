@@ -300,60 +300,156 @@ git pull origin "$BRANCH"
 NEW_HASH=$(git rev-parse HEAD)
 log info "   HEAD → $NEW_HASH"
 
+# ── 2b. Detect which apps changed ───────────────────────
+# Compare le hash actuel avec le hash du dernier déploiement staging réussi.
+# Si un app n'a pas changé, on skip son build.
+LAST_DEPLOYED_HASH=$(cat "$RELEASES_DIR/.latest-hash" 2>/dev/null || echo "")
+
+NEED_DASHBOARD=false
+NEED_CONNECT=false
+NEED_API=false
+NEED_PACKAGES=false
+NEED_INSTALL=false
+NEED_PRISMA=false
+SKIP_ALL_BUILDS=false
+
+if [ -z "$LAST_DEPLOYED_HASH" ]; then
+    # Premier déploiement → build tout
+    NEED_DASHBOARD=true; NEED_CONNECT=true; NEED_API=true; NEED_PACKAGES=true
+    NEED_INSTALL=true; NEED_PRISMA=true
+    log info "   📎 Build complet (premier déploiement)"
+elif [ "$LAST_DEPLOYED_HASH" = "$NEW_HASH" ]; then
+    # Même hash → rien à builder
+    SKIP_ALL_BUILDS=true
+    log info "   ⏭️  Hash inchangé ($NEW_HASH) — skip tous les builds"
+else
+    CHANGED_FILES=$(git diff --name-only "$LAST_DEPLOYED_HASH" "$NEW_HASH" 2>/dev/null || echo "")
+    if [ -z "$CHANGED_FILES" ]; then
+        NEED_DASHBOARD=true; NEED_CONNECT=true; NEED_API=true; NEED_PACKAGES=true
+        NEED_INSTALL=true; NEED_PRISMA=true
+        log info "   📎 Build complet (diff indisponible)"
+    else
+        # Par défaut, ne pas rebuild API/packages si seuls dashboard/connect ont changé
+        echo "$CHANGED_FILES" | grep -qE '^apps/dashboard/' && NEED_DASHBOARD=true
+        echo "$CHANGED_FILES" | grep -qE '^apps/connect/' && NEED_CONNECT=true
+        echo "$CHANGED_FILES" | grep -qE '^apps/api/' && NEED_API=true
+        # packages/ ou turbo.json → rebuild packages + API + dashboard + connect
+        echo "$CHANGED_FILES" | grep -qE '^packages/|^turbo\.json' && {
+            NEED_DASHBOARD=true; NEED_CONNECT=true; NEED_API=true; NEED_PACKAGES=true
+            NEED_PRISMA=true
+        }
+        # pnpm-lock.yaml ou package.json racine → reinstall
+        echo "$CHANGED_FILES" | grep -qE '^pnpm-lock\.yaml|^package\.json' && NEED_INSTALL=true
+        # Prisma schema changé → regenerate + migrations
+        echo "$CHANGED_FILES" | grep -qE '^packages/database/prisma/' && NEED_PRISMA=true
+
+        # Fallback : si un artefact manque, on rebuild l'app
+        [ ! -f "apps/api/dist/main.js" ] && NEED_API=true
+        [ ! -f "apps/dashboard/.next/standalone/apps/dashboard/server.js" ] && NEED_DASHBOARD=true
+        [ ! -f "apps/connect/.next/standalone/apps/connect/server.js" ] && NEED_CONNECT=true
+
+        log info "   📎 Apps à builder :$([ "$NEED_DASHBOARD" = true ] && echo ' dashboard')$([ "$NEED_CONNECT" = true ] && echo ' connect')$([ "$NEED_API" = true ] && echo ' api')"
+        if [ "$NEED_DASHBOARD" = false ] && [ "$NEED_CONNECT" = false ] && [ "$NEED_API" = false ] && [ "$NEED_PACKAGES" = false ]; then
+            SKIP_ALL_BUILDS=true
+            log info "   ⏭️  Aucun app modifié — skip build"
+        fi
+    fi
+fi
+
 # ── 3. Install deps ─────────────────────────────────────
-log info ""
-log info "📦 Installing dependencies..."
-pnpm install --frozen-lockfile
+if [ "$SKIP_ALL_BUILDS" = true ]; then
+    log info ""
+    log info "⏭️  Skip pnpm install (aucun changement de code)"
+elif [ "$NEED_INSTALL" = true ]; then
+    log info ""
+    log info "📦 Installing dependencies..."
+    pnpm install --frozen-lockfile
+else
+    log info ""
+    log info "⏭️  Skip pnpm install (lockfile inchangé)"
+fi
 
 validate_env_files
 
 # ── 4. Generate Prisma ──────────────────────────────────
-log info ""
-log info "📦 Generating Prisma client..."
-NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database generate
+if [ "$SKIP_ALL_BUILDS" = true ] || [ "$NEED_PRISMA" = false ]; then
+    log info ""
+    log info "⏭️  Skip Prisma generate (schema inchangé)"
+else
+    log info ""
+    log info "📦 Generating Prisma client..."
+    NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database generate
+fi
 
 # ── 5. Build ─────────────────────────────────────────────
-log info ""
-log info "📦 Building all apps..."
+if [ "$SKIP_ALL_BUILDS" = true ]; then
+    log info ""
+    log info "⏭️  Skip tous les builds (hash inchangé)"
+else
+    log info ""
+    log info "📦 Building..."
 
-# Phase 1 : packages + API
-NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/config build
-NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database build
-NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/shared build
-NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/api build
+    # Phase 1 : packages + API
+    if [ "$NEED_PACKAGES" = true ] || [ "$NEED_API" = true ]; then
+        # Toujours builder les packages si API ou packages nécessaires
+        # (l'API dépend de @sokar/config, @sokar/database, @sokar/shared)
+        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/config build
+        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database build
+        NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/shared build
+        [ "$NEED_API" = true ] && NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/api build
+    fi
 
-# Phase 2 : dashboard + connect en parallèle
-log info "   → Lancement dashboard + connect en parallèle..."
-NODE_OPTIONS="--max-old-space-size=2048" NEXT_TELEMETRY_DISABLED=1 \
-    pnpm --filter @sokar/dashboard build &
-DASH_PID=$!
-NODE_OPTIONS="--max-old-space-size=1024" NEXT_TELEMETRY_DISABLED=1 \
-    pnpm --filter @sokar/connect build &
-CONNECT_PID=$!
-DASH_EXIT=0
-CONNECT_EXIT=0
-wait "$DASH_PID" || DASH_EXIT=$?
-wait "$CONNECT_PID" || CONNECT_EXIT=$?
-if [ "$DASH_EXIT" -ne 0 ]; then
-    log_error "Dashboard build échoué (exit $DASH_EXIT)"
-    kill "$CONNECT_PID" 2>/dev/null || true
-    exit 1
-fi
-if [ "$CONNECT_EXIT" -ne 0 ]; then
-    log_error "Connect build échoué (exit $CONNECT_EXIT)"
-    exit 1
+    # Phase 2 : dashboard + connect en parallèle
+    if [ "$NEED_DASHBOARD" = true ] || [ "$NEED_CONNECT" = true ]; then
+        log info "   → Lancement dashboard + connect en parallèle..."
+        if [ "$NEED_DASHBOARD" = true ]; then
+            NODE_OPTIONS="--max-old-space-size=2048" NEXT_TELEMETRY_DISABLED=1 \
+                pnpm --filter @sokar/dashboard build &
+            DASH_PID=$!
+        fi
+        if [ "$NEED_CONNECT" = true ]; then
+            NODE_OPTIONS="--max-old-space-size=1024" NEXT_TELEMETRY_DISABLED=1 \
+                pnpm --filter @sokar/connect build &
+            CONNECT_PID=$!
+        fi
+        DASH_EXIT=0
+        CONNECT_EXIT=0
+        if [ -n "${DASH_PID:-}" ]; then
+            wait "$DASH_PID" || DASH_EXIT=$?
+        fi
+        if [ -n "${CONNECT_PID:-}" ]; then
+            wait "$CONNECT_PID" || CONNECT_EXIT=$?
+        fi
+        if [ -n "${DASH_PID:-}" ] && [ "$DASH_EXIT" -ne 0 ]; then
+            log_error "Dashboard build échoué (exit $DASH_EXIT)"
+            [ -n "${CONNECT_PID:-}" ] && kill "$CONNECT_PID" 2>/dev/null || true
+            exit 1
+        fi
+        if [ -n "${CONNECT_PID:-}" ] && [ "$CONNECT_EXIT" -ne 0 ]; then
+            log_error "Connect build échoué (exit $CONNECT_EXIT)"
+            exit 1
+        fi
+    fi
 fi
 
 # ── 6. Copy static assets ────────────────────────────────
-log info ""
-log info "📦 Copying static assets to standalone..."
-bash "$SOKAR_ROOT/apps/dashboard/scripts/copy-static.sh"
-bash "$SOKAR_ROOT/apps/connect/scripts/copy-static.sh"
+if [ "$SKIP_ALL_BUILDS" = true ]; then
+    log info ""
+    log info "⏭️  Skip copy-static (aucun rebuild)"
+else
+    log info ""
+    log info "📦 Copying static assets to standalone..."
+    [ "$NEED_DASHBOARD" = true ] && bash "$SOKAR_ROOT/apps/dashboard/scripts/copy-static.sh"
+    [ "$NEED_CONNECT" = true ] && bash "$SOKAR_ROOT/apps/connect/scripts/copy-static.sh"
+fi
 
 # ── 7. DB migrations (skip en dry-run) ───────────────────
 if [ "$DRY_RUN" = true ]; then
     log info ""
     log info "⏭️  Skip DB migrations (dry-run)"
+elif [ "$SKIP_ALL_BUILDS" = true ] || [ "$NEED_PRISMA" = false ]; then
+    log info ""
+    log info "⏭️  Skip DB migrations (schema inchangé)"
 else
     log info ""
     log info "📦 Applying database migrations (staging DB)..."
@@ -452,6 +548,8 @@ if [ "$API_STATUS" = "200" ] \
     log info "          https://api-staging.sokar.tech (API)"
     log info "   Rollback : bash scripts/deploy-staging.sh rollback"
     notify "✅ Sokar staging deploy OK (branch ${BRANCH}, hash $(git rev-parse --short HEAD))"
+    # Sauvegarder le hash pour le prochain déploiement incrémental
+    git rev-parse HEAD > "$RELEASES_DIR/.latest-hash"
     trap - ERR
 else
     log info ""
