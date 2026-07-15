@@ -52,7 +52,7 @@ const CreateWallSchema = z.object({
   x2: z.coerce.number().int(),
   y2: z.coerce.number().int(),
   type: z.string().max(20).optional(),
-  name: z.string().max(100).optional(),
+  name: z.string().max(100).optional().nullable(),
 });
 
 const UpdateWallSchema = z.object({
@@ -61,7 +61,7 @@ const UpdateWallSchema = z.object({
   x2: z.coerce.number().int().optional(),
   y2: z.coerce.number().int().optional(),
   type: z.string().max(20).optional(),
-  name: z.string().max(100).optional(),
+  name: z.string().max(100).optional().nullable(),
 });
 
 const DateQuerySchema = z.object({

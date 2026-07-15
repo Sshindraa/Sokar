@@ -77,7 +77,7 @@ export type CreateWallInput = {
   x2: number;
   y2: number;
   type?: string;
-  name?: string;
+  name?: string | null;
 };
 
 export type UpdateWallInput = Partial<CreateWallInput>;

@@ -475,7 +475,7 @@ function DraggableTable({ table, status, onClick, style }: DraggableTableProps) 
       onClick={onClick}
       dragRef={setNodeRef as React.Ref<HTMLDivElement>}
       dragProps={{ ...attributes, ...listeners }}
-      className={cn(isDragging && 'opacity-0')}
+      className={cn(isDragging && 'opacity-0 transition-none')}
       style={style}
     />
   );
@@ -672,7 +672,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
+      activationConstraint: { distance: 3 },
     }),
   );
 
@@ -1576,7 +1576,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                 ) : null}
               </div>
             </div>
-            <DragOverlay>
+            <DragOverlay dropAnimation={null}>
               {activeDragTable ? (
                 <TableCard
                   table={activeDragTable}
