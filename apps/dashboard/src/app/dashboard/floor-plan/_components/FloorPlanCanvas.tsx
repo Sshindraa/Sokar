@@ -36,10 +36,6 @@ import {
   Grid3x3,
   Magnet,
   Activity,
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
   Plus,
   Trash2,
   Settings,
@@ -717,7 +713,6 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDeleteTableId, setPendingDeleteTableId] = useState<string | null>(null);
 
-  const [wallType, setWallType] = useState<WallType>('wall');
   const [selectedWallId, setSelectedWallId] = useState<string | null>(null);
   const [wallDragMode, setWallDragMode] = useState<'move' | 'resize-start' | 'resize-end' | null>(
     null,
@@ -728,6 +723,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     wall: FloorPlanWall;
   } | null>(null);
   const wallJustDraggedRef = useRef(false);
+  const wallDragCurrentRef = useRef<FloorPlanWall | null>(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [floorSettings, setFloorSettings] = useState({ name: '', width: 1400, height: 900 });
 
@@ -775,13 +771,6 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     if (!orgId || !live) return;
     loadReservations();
   }, [orgId, live, liveDate, loadReservations]);
-
-  useEffect(() => {
-    if (selectedWallId) {
-      const wall = floorPlan?.walls?.find((w) => w.id === selectedWallId);
-      if (wall) setWallType(wall.type);
-    }
-  }, [selectedWallId, floorPlan]);
 
   const allTables = useMemo<CanvasTable[]>(() => {
     if (!floorPlan) return [];
@@ -973,6 +962,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     setSelectedWallId(wall.id);
     setWallDragMode(mode);
     setWallDragStart({ pointerX: e.clientX, pointerY: e.clientY, wall });
+    wallDragCurrentRef.current = wall;
   }
 
   function handleWallPointerMove(e: PointerEvent) {
@@ -1023,11 +1013,12 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
           }
         : prev,
     );
+    wallDragCurrentRef.current = { ...wallDragStart.wall, ...clamped };
   }
 
   function handleWallPointerUp() {
     if (!wallDragStart) return;
-    const currentWall = floorPlan?.walls?.find((w) => w.id === wallDragStart.wall.id);
+    const currentWall = wallDragCurrentRef.current;
     if (currentWall) {
       void updateWall(currentWall, currentWall.type, currentWall.name ?? null).catch(() => {
         // updateWall already sets the error message
@@ -1035,6 +1026,8 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     }
     setWallDragMode(null);
     setWallDragStart(null);
+    wallDragCurrentRef.current = null;
+    setSelectedWallId(null);
     setTimeout(() => {
       wallJustDraggedRef.current = false;
     }, 0);
@@ -1389,202 +1382,6 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     />
   );
 
-  const selectedWall = selectedWallId
-    ? (floorPlan?.walls?.find((w) => w.id === selectedWallId) ?? null)
-    : null;
-
-  const wallToolbar = selectedWall ? (
-    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex flex-wrap items-center gap-2 rounded-md border border-border bg-card p-2 shadow-md">
-      <div className="flex items-center gap-1">
-        <span className="text-xs font-medium text-muted-foreground">Type</span>
-        <Select
-          value={wallType}
-          onValueChange={(value) => {
-            setWallType(value as WallType);
-            const updated = { ...selectedWall, type: value as WallType };
-            void updateWall(updated, value as WallType, updated.name ?? null).catch(() => {
-              // updateWall already sets the error message
-            });
-          }}
-        >
-          <SelectTrigger className="h-8 w-28 bg-card border-border">
-            <SelectValue placeholder="Type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="wall">Mur</SelectItem>
-            <SelectItem value="door">Porte</SelectItem>
-            <SelectItem value="bar">Bar</SelectItem>
-            {selectedWall.type === 'window' ? (
-              <SelectItem value="window">Fenêtre</SelectItem>
-            ) : null}
-            {selectedWall.type === 'plant' ? <SelectItem value="plant">Plante</SelectItem> : null}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="h-6 w-px bg-border" />
-
-      <div className="flex flex-col gap-1">
-        <span className="text-[10px] font-medium text-muted-foreground">Point de départ</span>
-        <div className="flex items-center gap-1">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 w-7 p-0"
-            title="Déplacer X1 vers la gauche"
-            onClick={() => {
-              const updated = {
-                ...selectedWall,
-                x1: Math.max(0, selectedWall.x1 - (snap ? GRID_SIZE : 1)),
-              };
-              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
-            }}
-          >
-            <ArrowLeft size={14} />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 w-7 p-0"
-            title="Déplacer X1 vers la droite"
-            onClick={() => {
-              const updated = {
-                ...selectedWall,
-                x1: Math.min(canvasWidth, selectedWall.x1 + (snap ? GRID_SIZE : 1)),
-              };
-              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
-            }}
-          >
-            <ArrowRight size={14} />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 w-7 p-0"
-            title="Déplacer Y1 vers le haut"
-            onClick={() => {
-              const updated = {
-                ...selectedWall,
-                y1: Math.max(0, selectedWall.y1 - (snap ? GRID_SIZE : 1)),
-              };
-              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
-            }}
-          >
-            <ArrowUp size={14} />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 w-7 p-0"
-            title="Déplacer Y1 vers le bas"
-            onClick={() => {
-              const updated = {
-                ...selectedWall,
-                y1: Math.min(canvasHeight, selectedWall.y1 + (snap ? GRID_SIZE : 1)),
-              };
-              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
-            }}
-          >
-            <ArrowDown size={14} />
-          </Button>
-        </div>
-      </div>
-
-      <div className="h-6 w-px bg-border" />
-
-      <div className="flex flex-col gap-1">
-        <span className="text-[10px] font-medium text-muted-foreground">Point d&apos;arrivée</span>
-        <div className="flex items-center gap-1">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 w-7 p-0"
-            title="Déplacer X2 vers la gauche"
-            onClick={() => {
-              const updated = {
-                ...selectedWall,
-                x2: Math.max(0, selectedWall.x2 - (snap ? GRID_SIZE : 1)),
-              };
-              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
-            }}
-          >
-            <ArrowLeft size={14} />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 w-7 p-0"
-            title="Déplacer X2 vers la droite"
-            onClick={() => {
-              const updated = {
-                ...selectedWall,
-                x2: Math.min(canvasWidth, selectedWall.x2 + (snap ? GRID_SIZE : 1)),
-              };
-              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
-            }}
-          >
-            <ArrowRight size={14} />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 w-7 p-0"
-            title="Déplacer Y2 vers le haut"
-            onClick={() => {
-              const updated = {
-                ...selectedWall,
-                y2: Math.max(0, selectedWall.y2 - (snap ? GRID_SIZE : 1)),
-              };
-              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
-            }}
-          >
-            <ArrowUp size={14} />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 w-7 p-0"
-            title="Déplacer Y2 vers le bas"
-            onClick={() => {
-              const updated = {
-                ...selectedWall,
-                y2: Math.min(canvasHeight, selectedWall.y2 + (snap ? GRID_SIZE : 1)),
-              };
-              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
-            }}
-          >
-            <ArrowDown size={14} />
-          </Button>
-        </div>
-      </div>
-
-      <div className="h-6 w-px bg-border" />
-
-      <Button
-        type="button"
-        variant="destructive"
-        size="sm"
-        className="h-8"
-        title="Supprimer"
-        onClick={() => {
-          void deleteWall(selectedWall.id);
-          setSelectedWallId(null);
-        }}
-      >
-        <Trash2 size={14} className="mr-1" />
-        Supprimer
-      </Button>
-    </div>
-  ) : null;
-
   const settingsDialog = (
     <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
       <DialogContent className="sm:max-w-md">
@@ -1795,7 +1592,6 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
             <div className="flex h-full">
               <FloorPlanPalette />
               <div className="relative flex-1 overflow-auto bg-muted">
-                {wallToolbar}
                 <div
                   ref={canvasRef}
                   className="absolute origin-top-left bg-muted"
@@ -1833,6 +1629,33 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                           onPointerDownEnd={(e) => handleWallPointerDown(e, w, 'resize-end')}
                         />
                       ))}
+                      {floorPlan?.walls?.map((w) =>
+                        selectedWallId === w.id ? (
+                          <foreignObject
+                            key={`delete-${w.id}`}
+                            x={(w.x1 + w.x2) / 2 - 14}
+                            y={(w.y1 + w.y2) / 2 - 14}
+                            width={28}
+                            height={28}
+                            style={{ pointerEvents: 'auto' }}
+                          >
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              title="Supprimer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void deleteWall(w.id);
+                                setSelectedWallId(null);
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </Button>
+                          </foreignObject>
+                        ) : null,
+                      )}
                     </g>
                   </svg>
                   {allTables.map((table) => {
