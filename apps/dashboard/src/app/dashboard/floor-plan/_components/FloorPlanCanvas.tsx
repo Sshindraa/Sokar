@@ -38,8 +38,12 @@ import {
   Activity,
   Plus,
   Trash2,
-  Pencil,
   Settings,
+  Circle,
+  Square,
+  Minus,
+  DoorOpen,
+  Wine,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
@@ -98,6 +102,14 @@ type DragStartInfo = {
   height: number;
   table: CanvasTable;
 };
+
+type PaletteWallType = 'wall' | 'door' | 'bar';
+
+type PaletteItemData =
+  | { kind: 'table'; shape: TableShape; capacity: number }
+  | { kind: 'wall'; type: PaletteWallType };
+
+type ActiveDragData = PaletteItemData | { kind: 'existingTable'; table: CanvasTable };
 
 function getTableSize(table: { capacity?: number | null; shape?: TableShape | null }): {
   width: number;
@@ -338,6 +350,17 @@ function replaceTablePosition(
   };
 }
 
+const wallStrokeConfig: Record<
+  WallType,
+  { stroke: string; strokeWidth: number; strokeDasharray?: string }
+> = {
+  wall: { stroke: 'hsl(var(--foreground))', strokeWidth: 4 },
+  door: { stroke: 'hsl(var(--primary))', strokeWidth: 3 },
+  window: { stroke: 'hsl(var(--accent))', strokeWidth: 3, strokeDasharray: '8 4' },
+  bar: { stroke: 'hsl(var(--destructive))', strokeWidth: 6 },
+  plant: { stroke: 'hsl(var(--muted-foreground))', strokeWidth: 2, strokeDasharray: '2 2' },
+};
+
 type WallSegmentProps = {
   wall: FloorPlanWall;
   onClick?: () => void;
@@ -345,17 +368,7 @@ type WallSegmentProps = {
 };
 
 function WallSegment({ wall, onClick, isSelected }: WallSegmentProps) {
-  const config: Record<
-    WallType,
-    { stroke: string; strokeWidth: number; strokeDasharray?: string }
-  > = {
-    wall: { stroke: 'hsl(var(--foreground))', strokeWidth: 4 },
-    door: { stroke: 'hsl(var(--primary))', strokeWidth: 3 },
-    window: { stroke: 'hsl(var(--accent))', strokeWidth: 3, strokeDasharray: '8 4' },
-    bar: { stroke: 'hsl(var(--destructive))', strokeWidth: 6 },
-    plant: { stroke: 'hsl(var(--muted-foreground))', strokeWidth: 2, strokeDasharray: '2 2' },
-  };
-  const { stroke, strokeWidth, strokeDasharray } = config[wall.type];
+  const { stroke, strokeWidth, strokeDasharray } = wallStrokeConfig[wall.type];
 
   return (
     <g
@@ -468,6 +481,152 @@ function DraggableTable({ table, status, onClick, style }: DraggableTableProps) 
   );
 }
 
+type PaletteItemCardProps = {
+  id: string;
+  icon: React.ReactNode;
+  label: string;
+  data: PaletteItemData;
+};
+
+function PaletteItemCard({ id, icon, label, data }: PaletteItemCardProps) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id,
+    data: data as Record<string, unknown>,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={cn(
+        'flex items-center gap-3 rounded-md border border-border bg-background p-2 cursor-grab active:cursor-grabbing select-none hover:bg-accent/50 transition-colors',
+        isDragging && 'opacity-0',
+      )}
+    >
+      {icon}
+      <span className="text-sm font-medium">{label}</span>
+    </div>
+  );
+}
+
+function FloorPlanPalette() {
+  return (
+    <div className="w-56 min-w-56 h-full border-r border-border bg-card flex flex-col gap-5 p-3 overflow-y-auto">
+      <div>
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+          Tables
+        </h4>
+        <div className="flex flex-col gap-2">
+          <PaletteItemCard
+            id="palette-table-round"
+            icon={<Circle size={18} className="text-primary" />}
+            label="Table ronde"
+            data={{ kind: 'table', shape: 'round', capacity: 4 }}
+          />
+          <PaletteItemCard
+            id="palette-table-rect"
+            icon={<Square size={18} className="text-primary" />}
+            label="Table rectangle"
+            data={{ kind: 'table', shape: 'rect', capacity: 4 }}
+          />
+        </div>
+      </div>
+      <div>
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+          Murs / Décor
+        </h4>
+        <div className="flex flex-col gap-2">
+          <PaletteItemCard
+            id="palette-wall"
+            icon={<Minus size={18} className="text-muted-foreground" />}
+            label="Mur"
+            data={{ kind: 'wall', type: 'wall' }}
+          />
+          <PaletteItemCard
+            id="palette-door"
+            icon={<DoorOpen size={18} className="text-muted-foreground" />}
+            label="Porte"
+            data={{ kind: 'wall', type: 'door' }}
+          />
+          <PaletteItemCard
+            id="palette-bar"
+            icon={<Wine size={18} className="text-muted-foreground" />}
+            label="Bar"
+            data={{ kind: 'wall', type: 'bar' }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NewTableOverlay({
+  shape,
+  capacity,
+  zoom,
+}: {
+  shape: TableShape;
+  capacity: number;
+  zoom: number;
+}) {
+  const table = useMemo<CanvasTable>(
+    () => ({
+      id: 'palette-new-table',
+      name: 'Table',
+      capacity,
+      minCapacity: 1,
+      isActive: true,
+      positionX: 0,
+      positionY: 0,
+      shape,
+      sectionName: null,
+    }),
+    [capacity, shape],
+  );
+  const { width, height } = getTableSize(table);
+
+  return (
+    <TableCard
+      table={table}
+      isOverlay
+      style={{
+        transform: `scale(${zoom}) translate(-${width / 2}px, -${height / 2}px)`,
+        transformOrigin: 'top left',
+      }}
+    />
+  );
+}
+
+function NewWallOverlay({ type, zoom }: { type: PaletteWallType; zoom: number }) {
+  const wallLengths: Record<PaletteWallType, number> = { wall: 120, door: 80, bar: 120 };
+  const length = wallLengths[type];
+  const previewHeight = 12;
+  const { stroke, strokeWidth, strokeDasharray } = wallStrokeConfig[type];
+
+  return (
+    <svg
+      width={length}
+      height={previewHeight}
+      style={{
+        transform: `scale(${zoom}) translate(-${length / 2}px, -${previewHeight / 2}px)`,
+        transformOrigin: 'top left',
+        overflow: 'visible',
+      }}
+    >
+      <line
+        x1={0}
+        y1={previewHeight / 2}
+        x2={length}
+        y2={previewHeight / 2}
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        strokeDasharray={strokeDasharray}
+      />
+    </svg>
+  );
+}
+
 export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   const { get, post, patch, del } = useApi();
 
@@ -482,9 +641,11 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   const [liveDate, setLiveDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [reservations, setReservations] = useState<PlanningReservation[]>([]);
 
-  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [activeDragData, setActiveDragData] = useState<ActiveDragData | null>(null);
   const [dragStart, setDragStart] = useState<DragStartInfo | null>(null);
   const justDraggedRef = useRef(false);
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<CanvasTable | null>(null);
@@ -500,10 +661,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDeleteTableId, setPendingDeleteTableId] = useState<string | null>(null);
 
-  const [wallMode, setWallMode] = useState<'none' | 'draw' | 'edit'>('none');
   const [wallType, setWallType] = useState<WallType>('wall');
-  const [drawingWall, setDrawingWall] = useState<{ x1: number; y1: number } | null>(null);
-  const [drawPreview, setDrawPreview] = useState<{ x: number; y: number } | null>(null);
   const [editingWall, setEditingWall] = useState<FloorPlanWall | null>(null);
   const [wallDialogOpen, setWallDialogOpen] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
@@ -514,7 +672,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: wallMode === 'none' ? 5 : 999999 },
+      activationConstraint: { distance: 5 },
     }),
   );
 
@@ -553,6 +711,12 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     if (!orgId || !live) return;
     loadReservations();
   }, [orgId, live, liveDate, loadReservations]);
+
+  useEffect(() => {
+    if (editingWall) {
+      setWallType(editingWall.type);
+    }
+  }, [editingWall]);
 
   const allTables = useMemo<CanvasTable[]>(() => {
     if (!floorPlan) return [];
@@ -611,7 +775,6 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
       justDraggedRef.current = false;
       return;
     }
-    if (wallMode !== 'none') return;
     openEditDialog(table);
   }
 
@@ -684,31 +847,6 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     }
   }
 
-  async function createWall(
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number,
-    type: WallType,
-    name: string | null = null,
-  ) {
-    if (!orgId) return;
-    setError('');
-    try {
-      const wall = await post<FloorPlanWall>(`restaurants/${orgId}/floor-plan/walls`, {
-        x1,
-        y1,
-        x2,
-        y2,
-        type,
-        name,
-      });
-      setFloorPlan((prev) => (prev ? { ...prev, walls: [...(prev.walls ?? []), wall] } : prev));
-    } catch (err) {
-      setError(getErrorMessage(err, 'Impossible de créer le mur'));
-    }
-  }
-
   async function updateWall(wall: FloorPlanWall, type: WallType, name: string | null) {
     if (!orgId) return;
     setError('');
@@ -743,20 +881,6 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     }
   }
 
-  function handleCanvasClick(e: React.MouseEvent<HTMLDivElement>) {
-    if (wallMode !== 'draw') return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = Math.round((e.clientX - rect.left) / zoom);
-    const y = Math.round((e.clientY - rect.top) / zoom);
-    if (drawingWall) {
-      createWall(drawingWall.x1, drawingWall.y1, x, y, wallType);
-      setDrawingWall(null);
-    } else {
-      setDrawingWall({ x1: x, y1: y });
-      setDrawPreview(null);
-    }
-  }
-
   async function handleSaveFloorSettings(e: React.FormEvent) {
     e.preventDefault();
     if (!orgId) return;
@@ -776,10 +900,14 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
 
   function handleDragStart(event: DragStartEvent) {
     justDraggedRef.current = true;
-    setActiveDragId(event.active.id as string);
+    const pointer = event.activatorEvent as PointerEvent | undefined;
+    if (pointer) {
+      pointerStartRef.current = { x: pointer.clientX, y: pointer.clientY };
+    }
     const table = allTables.find((t) => t.id === event.active.id);
     if (table) {
       const { width, height } = getTableSize(table);
+      setActiveDragData({ kind: 'existingTable', table });
       setDragStart({
         tableId: table.id,
         originalX: table.positionX ?? 0,
@@ -788,12 +916,15 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
         height,
         table,
       });
+    } else {
+      setActiveDragData((event.active.data.current as PaletteItemData | undefined) ?? null);
     }
   }
 
   function handleDragCancel() {
-    setActiveDragId(null);
+    setActiveDragData(null);
     setDragStart(null);
+    pointerStartRef.current = null;
     setTimeout(() => {
       justDraggedRef.current = false;
     }, 0);
@@ -801,44 +932,123 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
 
   async function handleDragEnd(event: DragEndEvent) {
     const start = dragStart;
-    setActiveDragId(null);
+    const data = activeDragData;
+    const pointerStart = pointerStartRef.current;
+    setActiveDragData(null);
     setDragStart(null);
+    pointerStartRef.current = null;
     setTimeout(() => {
       justDraggedRef.current = false;
     }, 0);
 
-    if (!start || !orgId) return;
+    if (!orgId) return;
 
-    const { delta } = event;
-    const newX = start.originalX + delta.x / zoom;
-    const newY = start.originalY + delta.y / zoom;
+    if (data?.kind === 'existingTable') {
+      if (!start) return;
 
-    const grid = snap ? GRID_SIZE : 1;
-    const snappedX = Math.round(newX / grid) * grid;
-    const snappedY = Math.round(newY / grid) * grid;
+      const { delta } = event;
+      const newX = start.originalX + delta.x / zoom;
+      const newY = start.originalY + delta.y / zoom;
 
-    const clampedX = Math.max(0, Math.min(canvasWidth - start.width, snappedX));
-    const clampedY = Math.max(0, Math.min(canvasHeight - start.height, snappedY));
+      const grid = snap ? GRID_SIZE : 1;
+      const snappedX = Math.round(newX / grid) * grid;
+      const snappedY = Math.round(newY / grid) * grid;
 
-    setFloorPlan((prev) =>
-      prev ? replaceTablePosition(prev, start.tableId, clampedX, clampedY) : prev,
-    );
+      const clampedX = Math.max(0, Math.min(canvasWidth - start.width, snappedX));
+      const clampedY = Math.max(0, Math.min(canvasHeight - start.height, snappedY));
 
-    try {
-      setError('');
-      const updated = await patch<FloorPlanTable>(
-        `restaurants/${orgId}/floor-plan/tables/${start.tableId}`,
-        {
-          positionX: clampedX,
-          positionY: clampedY,
-        },
-      );
-      setFloorPlan((prev) => (prev ? replaceTable(prev, updated) : prev));
-    } catch (err) {
-      setError(getErrorMessage(err, 'Impossible de déplacer la table'));
       setFloorPlan((prev) =>
-        prev ? replaceTablePosition(prev, start.tableId, start.originalX, start.originalY) : prev,
+        prev ? replaceTablePosition(prev, start.tableId, clampedX, clampedY) : prev,
       );
+
+      try {
+        setError('');
+        const updated = await patch<FloorPlanTable>(
+          `restaurants/${orgId}/floor-plan/tables/${start.tableId}`,
+          {
+            positionX: clampedX,
+            positionY: clampedY,
+          },
+        );
+        setFloorPlan((prev) => (prev ? replaceTable(prev, updated) : prev));
+      } catch (err) {
+        setError(getErrorMessage(err, 'Impossible de déplacer la table'));
+        setFloorPlan((prev) =>
+          prev ? replaceTablePosition(prev, start.tableId, start.originalX, start.originalY) : prev,
+        );
+      }
+      return;
+    }
+
+    if (
+      data &&
+      (data.kind === 'table' || data.kind === 'wall') &&
+      pointerStart &&
+      canvasRef.current
+    ) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const finalClientX = pointerStart.x + event.delta.x;
+      const finalClientY = pointerStart.y + event.delta.y;
+
+      const grid = snap ? GRID_SIZE : 1;
+      let dropX = Math.round((finalClientX - rect.left) / zoom / grid) * grid;
+      let dropY = Math.round((finalClientY - rect.top) / zoom / grid) * grid;
+
+      if (data.kind === 'table') {
+        const { width, height } = getTableSize({
+          capacity: data.capacity,
+          shape: data.shape,
+        } as FloorPlanTable);
+        const positionX = Math.max(0, Math.min(canvasWidth - width, dropX - width / 2));
+        const positionY = Math.max(0, Math.min(canvasHeight - height, dropY - height / 2));
+        const sameShapeCount = allTables.filter((t) => t.shape === data.shape).length;
+        const nameBase = data.shape === 'round' ? 'Table ronde' : 'Table rectangulaire';
+        const name = `${nameBase} ${sameShapeCount + 1}`;
+
+        try {
+          setError('');
+          const created = await post<FloorPlanTable>(`restaurants/${orgId}/floor-plan/tables`, {
+            sectionId: null,
+            minCapacity: 1,
+            positionX,
+            positionY,
+            capacity: data.capacity,
+            shape: data.shape,
+            name,
+          });
+          setFloorPlan((prev) => (prev ? replaceTable(prev, created) : prev));
+        } catch (err) {
+          setError(getErrorMessage(err, 'Impossible de créer la table'));
+        }
+      } else if (data.kind === 'wall') {
+        const wallLengths: Record<PaletteWallType, number> = { wall: 120, door: 80, bar: 120 };
+        const length = wallLengths[data.type];
+        const centerX = dropX;
+        const centerY = dropY;
+        let x1 = centerX - length / 2;
+        let x2 = centerX + length / 2;
+        let y1 = centerY;
+        let y2 = centerY;
+        x1 = Math.max(0, Math.min(canvasWidth, x1));
+        x2 = Math.max(0, Math.min(canvasWidth, x2));
+        y1 = Math.max(0, Math.min(canvasHeight, y1));
+        y2 = Math.max(0, Math.min(canvasHeight, y2));
+
+        try {
+          setError('');
+          const wall = await post<FloorPlanWall>(`restaurants/${orgId}/floor-plan/walls`, {
+            x1,
+            y1,
+            x2,
+            y2,
+            type: data.type as WallType,
+            name: null,
+          });
+          setFloorPlan((prev) => (prev ? { ...prev, walls: [...(prev.walls ?? []), wall] } : prev));
+        } catch (err) {
+          setError(getErrorMessage(err, 'Impossible de créer le mur'));
+        }
+      }
     }
   }
 
@@ -1036,9 +1246,13 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
               <SelectContent>
                 <SelectItem value="wall">Mur</SelectItem>
                 <SelectItem value="door">Porte</SelectItem>
-                <SelectItem value="window">Fenêtre</SelectItem>
                 <SelectItem value="bar">Bar</SelectItem>
-                <SelectItem value="plant">Plante</SelectItem>
+                {editingWall?.type === 'window' ? (
+                  <SelectItem value="window">Fenêtre</SelectItem>
+                ) : null}
+                {editingWall?.type === 'plant' ? (
+                  <SelectItem value="plant">Plante</SelectItem>
+                ) : null}
               </SelectContent>
             </Select>
           </div>
@@ -1186,37 +1400,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     );
   }
 
-  if (allTables.length === 0) {
-    return (
-      <>
-        <Card className="sokar-card">
-          <CardHeader className="p-4 border-b border-border flex flex-row items-center justify-between">
-            <CardTitle className="text-base font-medium">Plan 2D</CardTitle>
-            <Button size="sm" onClick={openCreateDialog}>
-              <Plus size={16} className="mr-1" />
-              Ajouter une table
-            </Button>
-          </CardHeader>
-          <CardContent className="p-0 h-[600px]">
-            <div className="sokar-empty h-full">
-              <p className="text-sm">Aucune table dans votre plan 2D</p>
-              <p className="text-xs opacity-60">Ajoutez une table pour commencer.</p>
-              <Button size="sm" className="mt-4" onClick={openCreateDialog}>
-                <Plus size={16} className="mr-1" />
-                Ajouter une table
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-        {dialog}
-        {confirm}
-        {wallDialog}
-        {settingsDialog}
-      </>
-    );
-  }
-
-  const activeDragTable = activeDragId ? allTables.find((t) => t.id === activeDragId) : null;
+  const activeDragTable = activeDragData?.kind === 'existingTable' ? activeDragData.table : null;
 
   return (
     <>
@@ -1290,38 +1474,6 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                 className="w-40 bg-card border-border"
               />
             ) : null}
-            {wallMode === 'draw' ? (
-              <Select value={wallType} onValueChange={(value) => setWallType(value as WallType)}>
-                <SelectTrigger className="w-[120px] bg-card border-border">
-                  <SelectValue placeholder="Type de mur" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="wall">Mur</SelectItem>
-                  <SelectItem value="door">Porte</SelectItem>
-                  <SelectItem value="window">Fenêtre</SelectItem>
-                  <SelectItem value="bar">Bar</SelectItem>
-                  <SelectItem value="plant">Plante</SelectItem>
-                </SelectContent>
-              </Select>
-            ) : null}
-            <Select
-              value={wallMode}
-              onValueChange={(value) => {
-                setWallMode(value as 'none' | 'draw' | 'edit');
-                setDrawingWall(null);
-                setDrawPreview(null);
-              }}
-            >
-              <SelectTrigger className="w-[130px] bg-card border-border" title="Mode murs">
-                <Pencil size={16} className="mr-2" />
-                <SelectValue placeholder="Mode" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Normal</SelectItem>
-                <SelectItem value="draw">Dessiner</SelectItem>
-                <SelectItem value="edit">Éditer</SelectItem>
-              </SelectContent>
-            </Select>
             <Button
               variant="outline"
               size="sm"
@@ -1358,83 +1510,70 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
           >
-            <div className="relative overflow-auto bg-muted h-full">
-              <div
-                className="absolute origin-top-left bg-muted"
-                style={{
-                  width: canvasWidth,
-                  height: canvasHeight,
-                  transform: `scale(${zoom})`,
-                  transformOrigin: 'top left',
-                  backgroundImage: gridVisible
-                    ? `linear-gradient(to right, hsl(var(--border) / 0.5) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--border) / 0.5) 1px, transparent 1px)`
-                    : undefined,
-                  backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px`,
-                }}
-                onClick={handleCanvasClick}
-                onMouseMove={(e) => {
-                  if (wallMode !== 'draw' || !drawingWall) return;
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  setDrawPreview({
-                    x: Math.round((e.clientX - rect.left) / zoom),
-                    y: Math.round((e.clientY - rect.top) / zoom),
-                  });
-                }}
-                onMouseLeave={() => setDrawPreview(null)}
-              >
-                <svg
-                  className="absolute inset-0 w-full h-full pointer-events-none"
-                  style={{ zIndex: 10 }}
+            <div className="flex h-full">
+              <FloorPlanPalette />
+              <div className="relative flex-1 overflow-auto bg-muted">
+                <div
+                  ref={canvasRef}
+                  className="absolute origin-top-left bg-muted"
+                  style={{
+                    width: canvasWidth,
+                    height: canvasHeight,
+                    transform: `scale(${zoom})`,
+                    transformOrigin: 'top left',
+                    backgroundImage: gridVisible
+                      ? `linear-gradient(to right, hsl(var(--border) / 0.5) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--border) / 0.5) 1px, transparent 1px)`
+                      : undefined,
+                    backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px`,
+                  }}
                 >
-                  {drawingWall && drawPreview ? (
-                    <line
-                      x1={drawingWall.x1}
-                      y1={drawingWall.y1}
-                      x2={drawPreview.x}
-                      y2={drawPreview.y}
-                      stroke="hsl(var(--primary))"
-                      strokeWidth={2}
-                      strokeDasharray="4 2"
-                    />
-                  ) : null}
-                  <g className="pointer-events-auto">
-                    {floorPlan?.walls?.map((w) => (
-                      <WallSegment
-                        key={w.id}
-                        wall={w}
-                        onClick={
-                          wallMode === 'edit'
-                            ? () => {
-                                setEditingWall(w);
-                                setWallType(w.type);
-                                setWallDialogOpen(true);
-                              }
-                            : undefined
-                        }
-                        isSelected={editingWall?.id === w.id}
+                  <svg
+                    className="absolute inset-0 w-full h-full pointer-events-none"
+                    style={{ zIndex: 10 }}
+                  >
+                    <g className="pointer-events-auto">
+                      {floorPlan?.walls?.map((w) => (
+                        <WallSegment
+                          key={w.id}
+                          wall={w}
+                          onClick={() => {
+                            setEditingWall(w);
+                            setWallType(w.type);
+                            setWallDialogOpen(true);
+                          }}
+                          isSelected={editingWall?.id === w.id}
+                        />
+                      ))}
+                    </g>
+                  </svg>
+                  {allTables.map((table) => {
+                    const { width, height } = getTableSize(table);
+                    const status = live ? tableStatuses.get(table.id) : undefined;
+                    return (
+                      <DraggableTable
+                        key={table.id}
+                        table={table}
+                        status={status}
+                        onClick={() => handleTableClick(table)}
+                        style={{
+                          left: table.positionX ?? 0,
+                          top: table.positionY ?? 0,
+                          width,
+                          height,
+                          position: 'absolute',
+                        }}
                       />
-                    ))}
-                  </g>
-                </svg>
-                {allTables.map((table) => {
-                  const { width, height } = getTableSize(table);
-                  const status = live ? tableStatuses.get(table.id) : undefined;
-                  return (
-                    <DraggableTable
-                      key={table.id}
-                      table={table}
-                      status={status}
-                      onClick={() => handleTableClick(table)}
-                      style={{
-                        left: table.positionX ?? 0,
-                        top: table.positionY ?? 0,
-                        width,
-                        height,
-                        position: 'absolute',
-                      }}
-                    />
-                  );
-                })}
+                    );
+                  })}
+                </div>
+                {allTables.length === 0 ? (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <p className="text-sm text-muted-foreground">Aucune table dans votre plan 2D</p>
+                    <p className="text-xs text-muted-foreground opacity-60">
+                      Glissez-déposez un élément depuis la palette pour commencer.
+                    </p>
+                  </div>
+                ) : null}
               </div>
             </div>
             <DragOverlay>
@@ -1445,6 +1584,16 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                   isOverlay
                   style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
                 />
+              ) : null}
+              {activeDragData?.kind === 'table' ? (
+                <NewTableOverlay
+                  shape={activeDragData.shape}
+                  capacity={activeDragData.capacity}
+                  zoom={zoom}
+                />
+              ) : null}
+              {activeDragData?.kind === 'wall' ? (
+                <NewWallOverlay type={activeDragData.type} zoom={zoom} />
               ) : null}
             </DragOverlay>
           </DndContext>
