@@ -101,6 +101,8 @@ export interface Customer {
 
 // ─── FloorPlan ──────────────────────────────────────────────────────────
 
+export type TableShape = 'rect' | 'round';
+
 export interface FloorPlanTable {
   id: string;
   name: string;
@@ -109,7 +111,9 @@ export interface FloorPlanTable {
   isActive: boolean;
   positionX: number | null;
   positionY: number | null;
-  shape: string | null;
+  shape: TableShape | null;
+  sectionId?: string | null;
+  sectionName?: string | null;
 }
 
 export interface FloorPlanSection {
