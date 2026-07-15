@@ -399,6 +399,7 @@ function WallSegment({
         stroke={stroke}
         strokeWidth={strokeWidth}
         strokeDasharray={strokeDasharray}
+        strokeLinecap="square"
         className={cn(
           'transition-all duration-200',
           isSelected && 'stroke-ring stroke-[6]',
