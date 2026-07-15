@@ -6,14 +6,16 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LayoutGrid, CalendarDays, BarChart3 } from 'lucide-react';
+import { LayoutGrid, CalendarDays, BarChart3, Map } from 'lucide-react';
 import { FloorPlanCrud } from './_components/FloorPlanCrud';
+import { FloorPlanCanvas } from './_components/FloorPlanCanvas';
 import { PlanningTab } from './_components/PlanningTab';
 import { StatsTab } from './_components/StatsTab';
 
-type TabKey = 'floor-plan' | 'planning' | 'stats';
+type TabKey = 'plan-2d' | 'floor-plan' | 'planning' | 'stats';
 
 const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
+  { key: 'plan-2d', label: 'Plan 2D', icon: <Map size={18} /> },
   { key: 'floor-plan', label: 'Plan de salle', icon: <LayoutGrid size={18} /> },
   { key: 'planning', label: 'Planning du jour', icon: <CalendarDays size={18} /> },
   { key: 'stats', label: 'Stats rapides', icon: <BarChart3 size={18} /> },
@@ -21,7 +23,7 @@ const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
 
 export default function FloorPlanPage() {
   const { orgId } = useApi();
-  const [activeTab, setActiveTab] = useState<TabKey>('planning');
+  const [activeTab, setActiveTab] = useState<TabKey>('plan-2d');
 
   if (!orgId) {
     return (
@@ -66,6 +68,7 @@ export default function FloorPlanPage() {
         </div>
       </div>
 
+      {activeTab === 'plan-2d' && <FloorPlanCanvas orgId={orgId} />}
       {activeTab === 'floor-plan' && <FloorPlanCrud />}
       {activeTab === 'planning' && <PlanningTab orgId={orgId} />}
       {activeTab === 'stats' && <StatsTab orgId={orgId} />}
