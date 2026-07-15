@@ -102,6 +102,17 @@ export interface Customer {
 // ─── FloorPlan ──────────────────────────────────────────────────────────
 
 export type TableShape = 'rect' | 'round';
+export type WallType = 'wall' | 'door' | 'window' | 'bar' | 'plant';
+
+export interface FloorPlanWall {
+  id: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  type: WallType;
+  name: string | null;
+}
 
 export interface FloorPlanTable {
   id: string;
@@ -126,8 +137,11 @@ export interface FloorPlanSection {
 export interface FloorPlan {
   id: string;
   name: string | null;
+  width: number;
+  height: number;
   sections: FloorPlanSection[];
   tables?: FloorPlanTable[];
+  walls?: FloorPlanWall[];
 }
 
 export interface PlanningReservation {

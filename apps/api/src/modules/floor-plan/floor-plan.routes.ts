@@ -40,6 +40,30 @@ const CreateFloorPlanSchema = z.object({
   name: z.string().min(1).max(100).optional(),
 });
 
+const UpdateFloorPlanSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  width: z.coerce.number().int().optional(),
+  height: z.coerce.number().int().optional(),
+});
+
+const CreateWallSchema = z.object({
+  x1: z.coerce.number().int(),
+  y1: z.coerce.number().int(),
+  x2: z.coerce.number().int(),
+  y2: z.coerce.number().int(),
+  type: z.string().max(20).optional(),
+  name: z.string().max(100).optional(),
+});
+
+const UpdateWallSchema = z.object({
+  x1: z.coerce.number().int().optional(),
+  y1: z.coerce.number().int().optional(),
+  x2: z.coerce.number().int().optional(),
+  y2: z.coerce.number().int().optional(),
+  type: z.string().max(20).optional(),
+  name: z.string().max(100).optional(),
+});
+
 const DateQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
@@ -70,6 +94,17 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
     const body = CreateFloorPlanSchema.parse(req.body);
     const floorPlan = await service.createFloorPlan(restaurantId, body.name);
     return reply.status(201).send(floorPlan);
+  });
+
+  app.patch('/restaurants/:id/floor-plan', { preHandler: requireOrg() }, async (req, reply) => {
+    const restaurantId = (req.params as { id: string }).id;
+    if (restaurantId !== req.restaurantId) {
+      return reply.status(403).send({ error: 'Accès refusé' });
+    }
+
+    const body = UpdateFloorPlanSchema.parse(req.body);
+    const floorPlan = await service.updateFloorPlan(restaurantId, body);
+    return reply.send(floorPlan);
   });
 
   app.post(
@@ -156,6 +191,50 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
       }
 
       await service.deleteTable(id, tableId);
+      return reply.status(204).send();
+    },
+  );
+
+  app.post(
+    '/restaurants/:id/floor-plan/walls',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const restaurantId = (req.params as { id: string }).id;
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+
+      const body = CreateWallSchema.parse(req.body);
+      const wall = await service.createWall(restaurantId, body);
+      return reply.status(201).send(wall);
+    },
+  );
+
+  app.patch(
+    '/restaurants/:id/floor-plan/walls/:wallId',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id, wallId } = req.params as { id: string; wallId: string };
+      if (id !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+
+      const body = UpdateWallSchema.parse(req.body);
+      const wall = await service.updateWall(id, wallId, body);
+      return reply.send(wall);
+    },
+  );
+
+  app.delete(
+    '/restaurants/:id/floor-plan/walls/:wallId',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id, wallId } = req.params as { id: string; wallId: string };
+      if (id !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+
+      await service.deleteWall(id, wallId);
       return reply.status(204).send();
     },
   );

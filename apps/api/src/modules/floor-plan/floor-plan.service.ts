@@ -1,4 +1,4 @@
-import type { PrismaClient, Section, Table } from '@prisma/client';
+import type { PrismaClient, Section, Table, Wall } from '@prisma/client';
 
 /** Capacité minimale par défaut d'une table (1 personne) */
 const DEFAULT_TABLE_MIN_CAPACITY = 1;
@@ -20,6 +20,8 @@ export class FloorPlanNotFoundError extends Error {
 export type FloorPlanWithSections = {
   id: string;
   name: string;
+  width: number;
+  height: number;
   restaurantId: string;
   sections: Array<
     Section & {
@@ -27,6 +29,7 @@ export type FloorPlanWithSections = {
     }
   >;
   tables: Table[];
+  walls: Wall[];
 };
 
 export type PlanningReservation = {
@@ -62,6 +65,23 @@ export type UpdateTableInput = Partial<CreateTableInput> & {
   isActive?: boolean;
 };
 
+export type UpdateFloorPlanInput = {
+  name?: string;
+  width?: number;
+  height?: number;
+};
+
+export type CreateWallInput = {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  type?: string;
+  name?: string;
+};
+
+export type UpdateWallInput = Partial<CreateWallInput>;
+
 export class FloorPlanService {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -78,6 +98,7 @@ export class FloorPlanService {
         tables: {
           orderBy: [{ positionX: 'asc' }, { positionY: 'asc' }, { name: 'asc' }],
         },
+        walls: { orderBy: { createdAt: 'asc' } },
       },
     });
 
@@ -89,6 +110,8 @@ export class FloorPlanService {
       data: {
         restaurantId,
         name: 'Salle principale',
+        width: 1400,
+        height: 900,
       },
       include: {
         sections: {
@@ -100,6 +123,7 @@ export class FloorPlanService {
         tables: {
           orderBy: [{ positionX: 'asc' }, { positionY: 'asc' }, { name: 'asc' }],
         },
+        walls: { orderBy: { createdAt: 'asc' } },
       },
     });
 
@@ -118,6 +142,8 @@ export class FloorPlanService {
       data: {
         restaurantId,
         name: name ?? 'Salle principale',
+        width: 1400,
+        height: 900,
       },
       include: {
         sections: {
@@ -129,10 +155,29 @@ export class FloorPlanService {
         tables: {
           orderBy: [{ positionX: 'asc' }, { positionY: 'asc' }, { name: 'asc' }],
         },
+        walls: { orderBy: { createdAt: 'asc' } },
       },
     });
 
     return created;
+  }
+
+  async updateFloorPlan(
+    restaurantId: string,
+    input: UpdateFloorPlanInput,
+  ): Promise<FloorPlanWithSections> {
+    const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
+
+    await this.prisma.floorPlan.update({
+      where: { id: floorPlan.id },
+      data: {
+        ...(input.name !== undefined && { name: input.name }),
+        ...(input.width !== undefined && { width: input.width }),
+        ...(input.height !== undefined && { height: input.height }),
+      },
+    });
+
+    return this.getOrCreateFloorPlan(restaurantId);
   }
 
   async createSection(restaurantId: string, input: CreateSectionInput): Promise<Section> {
@@ -320,6 +365,56 @@ export class FloorPlanService {
         state: r.state,
       };
     });
+  }
+
+  async createWall(restaurantId: string, input: CreateWallInput): Promise<Wall> {
+    const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
+
+    return this.prisma.wall.create({
+      data: {
+        floorPlanId: floorPlan.id,
+        x1: input.x1,
+        y1: input.y1,
+        x2: input.x2,
+        y2: input.y2,
+        type: input.type ?? 'wall',
+        name: input.name ?? null,
+      },
+    });
+  }
+
+  async updateWall(restaurantId: string, wallId: string, input: UpdateWallInput): Promise<Wall> {
+    const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
+    const wall = await this.prisma.wall.findFirst({
+      where: { id: wallId, floorPlanId: floorPlan.id },
+    });
+    if (!wall) {
+      throw new FloorPlanNotFoundError('Mur introuvable');
+    }
+
+    return this.prisma.wall.update({
+      where: { id: wallId },
+      data: {
+        ...(input.x1 !== undefined && { x1: input.x1 }),
+        ...(input.y1 !== undefined && { y1: input.y1 }),
+        ...(input.x2 !== undefined && { x2: input.x2 }),
+        ...(input.y2 !== undefined && { y2: input.y2 }),
+        ...(input.type !== undefined && { type: input.type }),
+        ...(input.name !== undefined && { name: input.name ?? null }),
+      },
+    });
+  }
+
+  async deleteWall(restaurantId: string, wallId: string): Promise<void> {
+    const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
+    const wall = await this.prisma.wall.findFirst({
+      where: { id: wallId, floorPlanId: floorPlan.id },
+    });
+    if (!wall) {
+      throw new FloorPlanNotFoundError('Mur introuvable');
+    }
+
+    await this.prisma.wall.delete({ where: { id: wallId } });
   }
 
   private validateTable(input: Partial<CreateTableInput>): void {
