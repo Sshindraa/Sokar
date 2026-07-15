@@ -17,9 +17,9 @@ const activeWall: FloorPlanWall = {
 
 const referenceWall: FloorPlanWall = {
   id: 'wall-reference',
-  x1: 100,
+  x1: 480,
   y1: 100,
-  x2: 100,
+  x2: 480,
   y2: 280,
   type: 'wall',
   name: null,
@@ -72,6 +72,7 @@ describe('FloorPlanCanvas — guides des murs', () => {
     fireEvent.pointerMove(window, { clientX: 456, clientY: 280 });
 
     expect(await screen.findByText('Même longueur · 180 px')).toBeInTheDocument();
+    expect(await screen.findByText('Aligné')).toBeInTheDocument();
 
     const snappedWall = container.querySelector('line[x1="300"][x2="480"]');
     expect(snappedWall).toBeInTheDocument();

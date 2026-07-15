@@ -96,6 +96,13 @@ type WallLengthGuide = {
   labelY: number;
 };
 
+type WallResizeAlignGuide = {
+  axis: 'x' | 'y';
+  value: number;
+  labelX: number;
+  labelY: number;
+};
+
 function getWallLength(wall: Pick<FloorPlanWall, 'x1' | 'y1' | 'x2' | 'y2'>): number {
   return Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1);
 }
@@ -777,6 +784,9 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     null,
   );
   const [wallLengthGuide, setWallLengthGuide] = useState<WallLengthGuide | null>(null);
+  const [wallResizeAlignGuide, setWallResizeAlignGuide] = useState<WallResizeAlignGuide | null>(
+    null,
+  );
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [floorSettings, setFloorSettings] = useState({ name: '', width: 1400, height: 900 });
 
@@ -1017,6 +1027,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     setWallDragStart({ pointerX: e.clientX, pointerY: e.clientY, wall });
     wallDragCurrentRef.current = wall;
     setWallLengthGuide(null);
+    setWallResizeAlignGuide(null);
   }
 
   function findWallLengthGuide(wall: FloorPlanWall): WallLengthGuide | null {
@@ -1070,6 +1081,59 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     return mode === 'resize-start'
       ? { x1: nextPoint.x, y1: nextPoint.y }
       : { x2: nextPoint.x, y2: nextPoint.y };
+  }
+
+  function findWallResizeAlignGuide(
+    wall: FloorPlanWall,
+    mode: 'resize-start' | 'resize-end',
+  ): { guide: WallResizeAlignGuide; coords: Partial<FloorPlanWall> } | null {
+    const horizontal = Math.abs(wall.y1 - wall.y2) <= 0.5;
+    const vertical = Math.abs(wall.x1 - wall.x2) <= 0.5;
+    if (!horizontal && !vertical) return null;
+
+    const dragged =
+      mode === 'resize-start' ? { x: wall.x1, y: wall.y1 } : { x: wall.x2, y: wall.y2 };
+    const candidates: { axis: 'x' | 'y'; value: number; dist: number }[] = [];
+
+    const addCandidate = (axis: 'x' | 'y', value: number) => {
+      const dist = Math.abs((axis === 'x' ? dragged.x : dragged.y) - value);
+      if (dist <= WALL_ALIGN_GUIDE_DISTANCE) {
+        candidates.push({ axis, value, dist });
+      }
+    };
+
+    for (const referenceWall of floorPlan?.walls ?? []) {
+      if (referenceWall.id === wall.id) continue;
+      if (horizontal) {
+        addCandidate('x', referenceWall.x1);
+        addCandidate('x', referenceWall.x2);
+      } else if (vertical) {
+        addCandidate('y', referenceWall.y1);
+        addCandidate('y', referenceWall.y2);
+      }
+    }
+
+    if (candidates.length === 0) return null;
+
+    const match = candidates.reduce((a, b) => (a.dist < b.dist ? a : b));
+    const coords =
+      mode === 'resize-start'
+        ? match.axis === 'x'
+          ? { x1: match.value }
+          : { y1: match.value }
+        : match.axis === 'x'
+          ? { x2: match.value }
+          : { y2: match.value };
+
+    return {
+      coords,
+      guide: {
+        axis: match.axis,
+        value: match.value,
+        labelX: match.axis === 'x' ? match.value : dragged.x,
+        labelY: match.axis === 'y' ? match.value : dragged.y,
+      },
+    };
   }
 
   function getSnappedWallCoords(
@@ -1238,17 +1302,27 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     let nextWall = { ...wallDragStart.wall, ...finalCoords };
 
     if (wallDragMode !== 'move') {
-      const guide = findWallLengthGuide(nextWall);
-      if (guide) {
-        const lengthMatched = matchWallLengthToGuide(nextWall, wallDragMode, guide);
+      const lengthGuide = findWallLengthGuide(nextWall);
+      if (lengthGuide) {
+        const lengthMatched = matchWallLengthToGuide(nextWall, wallDragMode, lengthGuide);
         finalCoords = { ...finalCoords, ...lengthMatched };
         nextWall = { ...wallDragStart.wall, ...finalCoords };
-        setWallLengthGuide({ ...guide, activeWall: nextWall });
+        setWallLengthGuide({ ...lengthGuide, activeWall: nextWall });
       } else {
         setWallLengthGuide(null);
       }
+
+      const alignGuide = findWallResizeAlignGuide(nextWall, wallDragMode);
+      if (alignGuide) {
+        finalCoords = { ...finalCoords, ...alignGuide.coords };
+        nextWall = { ...wallDragStart.wall, ...finalCoords };
+        setWallResizeAlignGuide(alignGuide.guide);
+      } else {
+        setWallResizeAlignGuide(null);
+      }
     } else {
       setWallLengthGuide(null);
+      setWallResizeAlignGuide(null);
     }
 
     // Clamp again after snapping to ensure we stay in bounds
@@ -1287,6 +1361,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     setWallDragStart(null);
     wallDragCurrentRef.current = null;
     setWallLengthGuide(null);
+    setWallResizeAlignGuide(null);
     setSelectedWallId(null);
     setTimeout(() => {
       wallJustDraggedRef.current = false;
@@ -2054,6 +2129,49 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                           >
                             <div className="flex h-full items-center justify-center rounded-md border border-primary/40 bg-background/95 px-2 text-[11px] font-medium text-primary shadow-sm">
                               Même longueur · {formatWallLength(wallLengthGuide.length)}
+                            </div>
+                          </foreignObject>
+                        </g>
+                      ) : null}
+                      {wallResizeAlignGuide ? (
+                        <g className="pointer-events-none">
+                          {wallResizeAlignGuide.axis === 'y' ? (
+                            <line
+                              x1={0}
+                              y1={wallResizeAlignGuide.value}
+                              x2={canvasWidth}
+                              y2={wallResizeAlignGuide.value}
+                              stroke="hsl(var(--primary))"
+                              strokeWidth={2}
+                              strokeDasharray="6 4"
+                              opacity={0.95}
+                            />
+                          ) : (
+                            <line
+                              x1={wallResizeAlignGuide.value}
+                              y1={0}
+                              x2={wallResizeAlignGuide.value}
+                              y2={canvasHeight}
+                              stroke="hsl(var(--primary))"
+                              strokeWidth={2}
+                              strokeDasharray="6 4"
+                              opacity={0.95}
+                            />
+                          )}
+                          <foreignObject
+                            x={Math.max(
+                              8,
+                              Math.min(canvasWidth - 116, wallResizeAlignGuide.labelX + 10),
+                            )}
+                            y={Math.max(
+                              8,
+                              Math.min(canvasHeight - 30, wallResizeAlignGuide.labelY - 15),
+                            )}
+                            width={116}
+                            height={30}
+                          >
+                            <div className="flex h-full items-center justify-center rounded-md border border-primary/40 bg-background/95 px-2 text-[11px] font-medium text-primary shadow-sm">
+                              Aligné
                             </div>
                           </foreignObject>
                         </g>
