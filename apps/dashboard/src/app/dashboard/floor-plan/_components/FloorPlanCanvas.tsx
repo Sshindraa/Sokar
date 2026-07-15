@@ -80,7 +80,8 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2.0;
 const ZOOM_STEP = 0.1;
 const WALL_SNAP_DISTANCE = 40; // pixels in canvas coordinates
-const WALL_LENGTH_MATCH_DISTANCE = 8; // pixels in canvas coordinates
+const WALL_LENGTH_MATCH_DISTANCE = 24; // pixels in canvas coordinates
+const WALL_ALIGN_GUIDE_DISTANCE = 24; // pixels in canvas coordinates
 const WALL_PERPENDICULAR_DOT_TOLERANCE = 0.08;
 
 type TableStatus = 'free' | 'occupied' | 'upcoming' | 'inactive';
@@ -1542,7 +1543,6 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     const cursorX = (pointerStart.x + event.delta.x - rect.left) / zoom;
     const cursorY = (pointerStart.y + event.delta.y - rect.top) / zoom;
 
-    const ALIGN_TOLERANCE = 12;
     let best: { axis: 'x' | 'y'; value: number; dist: number } | null = null;
 
     for (const w of floorPlan?.walls ?? []) {
@@ -1551,13 +1551,13 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
       if (horiz) {
         const wy = (w.y1 + w.y2) / 2;
         const d = Math.abs(cursorY - wy);
-        if (d < ALIGN_TOLERANCE && (!best || d < best.dist)) {
+        if (d <= WALL_ALIGN_GUIDE_DISTANCE && (!best || d < best.dist)) {
           best = { axis: 'y', value: wy, dist: d };
         }
       } else if (vert) {
         const wx = (w.x1 + w.x2) / 2;
         const d = Math.abs(cursorX - wx);
-        if (d < ALIGN_TOLERANCE && (!best || d < best.dist)) {
+        if (d <= WALL_ALIGN_GUIDE_DISTANCE && (!best || d < best.dist)) {
           best = { axis: 'x', value: wx, dist: d };
         }
       }
