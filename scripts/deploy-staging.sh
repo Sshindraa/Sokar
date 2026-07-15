@@ -333,15 +333,23 @@ else
         echo "$CHANGED_FILES" | grep -qE '^apps/dashboard/' && NEED_DASHBOARD=true
         echo "$CHANGED_FILES" | grep -qE '^apps/connect/' && NEED_CONNECT=true
         echo "$CHANGED_FILES" | grep -qE '^apps/api/' && NEED_API=true
-        # packages/ ou turbo.json → rebuild packages + API + dashboard + connect
-        echo "$CHANGED_FILES" | grep -qE '^packages/|^turbo\.json' && {
-            NEED_DASHBOARD=true; NEED_CONNECT=true; NEED_API=true; NEED_PACKAGES=true
+        # Prisma schema/migrations changent → generate + migrate
+        if echo "$CHANGED_FILES" | grep -qE '^packages/database/prisma/'; then
             NEED_PRISMA=true
-        }
+        fi
+
+        # Packages non-test changent → rebuild packages et dépendants
+        NON_TEST_PKG_FILES=$(echo "$CHANGED_FILES" | grep -E '^packages/' | grep -vE '/__tests__/' | grep -vE '\.test\.(ts|tsx|js|jsx)$' || true)
+        if [ -n "$NON_TEST_PKG_FILES" ]; then
+            NEED_DASHBOARD=true; NEED_CONNECT=true; NEED_API=true; NEED_PACKAGES=true
+        fi
+
+        # turbo.json change → rebuild tout (pipeline/build config changed)
+        if echo "$CHANGED_FILES" | grep -qE '^turbo\.json'; then
+            NEED_DASHBOARD=true; NEED_CONNECT=true; NEED_API=true; NEED_PACKAGES=true
+        fi
         # pnpm-lock.yaml ou package.json racine → reinstall
         echo "$CHANGED_FILES" | grep -qE '^pnpm-lock\.yaml|^package\.json' && NEED_INSTALL=true
-        # Prisma schema changé → regenerate + migrations
-        echo "$CHANGED_FILES" | grep -qE '^packages/database/prisma/' && NEED_PRISMA=true
 
         # Fallback : si un artefact manque, on rebuild l'app
         [ ! -f "apps/api/dist/main.js" ] && NEED_API=true
