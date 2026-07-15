@@ -1017,7 +1017,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
       const rawY = wall.y1;
       const fixedX = wall.x2;
       const fixedY = wall.y2;
-      let candidates: { x: number; y: number; dist: number }[] = [{ x: rawX, y: rawY, dist: 0 }];
+      let candidates: { x: number; y: number; dist: number }[] = [];
 
       // Axis snap
       if (Math.abs(rawY - fixedY) < WALL_SNAP_DISTANCE) {
@@ -1035,6 +1035,10 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
         }
       }
 
+      if (candidates.length === 0) {
+        return { x1: rawX, y1: rawY };
+      }
+
       const best = candidates.reduce((a, b) => (a.dist < b.dist ? a : b));
       return { x1: best.x, y1: best.y };
     }
@@ -1044,7 +1048,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     const rawY = wall.y2;
     const fixedX = wall.x1;
     const fixedY = wall.y1;
-    let candidates: { x: number; y: number; dist: number }[] = [{ x: rawX, y: rawY, dist: 0 }];
+    let candidates: { x: number; y: number; dist: number }[] = [];
 
     if (Math.abs(rawY - fixedY) < WALL_SNAP_DISTANCE) {
       candidates.push({ x: rawX, y: fixedY, dist: Math.abs(rawY - fixedY) });
@@ -1058,6 +1062,10 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
       if (dist < WALL_SNAP_DISTANCE) {
         candidates.push({ x: ep.x, y: ep.y, dist });
       }
+    }
+
+    if (candidates.length === 0) {
+      return { x2: rawX, y2: rawY };
     }
 
     const best = candidates.reduce((a, b) => (a.dist < b.dist ? a : b));
