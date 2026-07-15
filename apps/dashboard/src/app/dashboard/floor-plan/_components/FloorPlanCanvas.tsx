@@ -80,8 +80,50 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2.0;
 const ZOOM_STEP = 0.1;
 const WALL_SNAP_DISTANCE = 40; // pixels in canvas coordinates
+const WALL_LENGTH_MATCH_DISTANCE = 8; // pixels in canvas coordinates
+const WALL_PERPENDICULAR_DOT_TOLERANCE = 0.08;
 
 type TableStatus = 'free' | 'occupied' | 'upcoming' | 'inactive';
+
+type WallLengthGuide = {
+  activeWallId: string;
+  referenceWallId: string;
+  activeWall: FloorPlanWall;
+  referenceWall: FloorPlanWall;
+  length: number;
+  labelX: number;
+  labelY: number;
+};
+
+function getWallLength(wall: Pick<FloorPlanWall, 'x1' | 'y1' | 'x2' | 'y2'>): number {
+  return Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1);
+}
+
+function getWallMidpoint(wall: Pick<FloorPlanWall, 'x1' | 'y1' | 'x2' | 'y2'>): {
+  x: number;
+  y: number;
+} {
+  return { x: (wall.x1 + wall.x2) / 2, y: (wall.y1 + wall.y2) / 2 };
+}
+
+function areWallsPerpendicular(
+  a: Pick<FloorPlanWall, 'x1' | 'y1' | 'x2' | 'y2'>,
+  b: Pick<FloorPlanWall, 'x1' | 'y1' | 'x2' | 'y2'>,
+): boolean {
+  const ax = a.x2 - a.x1;
+  const ay = a.y2 - a.y1;
+  const bx = b.x2 - b.x1;
+  const by = b.y2 - b.y1;
+  const aLength = Math.hypot(ax, ay);
+  const bLength = Math.hypot(bx, by);
+  if (aLength < 1 || bLength < 1) return false;
+  const normalizedDot = Math.abs((ax * bx + ay * by) / (aLength * bLength));
+  return normalizedDot <= WALL_PERPENDICULAR_DOT_TOLERANCE;
+}
+
+function formatWallLength(length: number): string {
+  return `${Math.round(length)} px`;
+}
 
 type CanvasTable = FloorPlanTable & {
   sectionName?: string | null;
@@ -733,6 +775,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   const [wallAlignGuide, setWallAlignGuide] = useState<{ axis: 'x' | 'y'; value: number } | null>(
     null,
   );
+  const [wallLengthGuide, setWallLengthGuide] = useState<WallLengthGuide | null>(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [floorSettings, setFloorSettings] = useState({ name: '', width: 1400, height: 900 });
 
@@ -972,6 +1015,60 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     setWallDragMode(mode);
     setWallDragStart({ pointerX: e.clientX, pointerY: e.clientY, wall });
     wallDragCurrentRef.current = wall;
+    setWallLengthGuide(null);
+  }
+
+  function findWallLengthGuide(wall: FloorPlanWall): WallLengthGuide | null {
+    const wallLength = getWallLength(wall);
+    if (wallLength < 1) return null;
+
+    let best: { referenceWall: FloorPlanWall; length: number; diff: number } | null = null;
+    for (const referenceWall of floorPlan?.walls ?? []) {
+      if (referenceWall.id === wall.id || !areWallsPerpendicular(wall, referenceWall)) continue;
+      const length = getWallLength(referenceWall);
+      const diff = Math.abs(wallLength - length);
+      if (diff <= WALL_LENGTH_MATCH_DISTANCE && (!best || diff < best.diff)) {
+        best = { referenceWall, length, diff };
+      }
+    }
+
+    if (!best) return null;
+
+    const activeMidpoint = getWallMidpoint(wall);
+    const referenceMidpoint = getWallMidpoint(best.referenceWall);
+    return {
+      activeWallId: wall.id,
+      referenceWallId: best.referenceWall.id,
+      activeWall: wall,
+      referenceWall: best.referenceWall,
+      length: best.length,
+      labelX: (activeMidpoint.x + referenceMidpoint.x) / 2,
+      labelY: (activeMidpoint.y + referenceMidpoint.y) / 2,
+    };
+  }
+
+  function matchWallLengthToGuide(
+    wall: FloorPlanWall,
+    mode: 'resize-start' | 'resize-end',
+    guide: WallLengthGuide,
+  ): Partial<FloorPlanWall> {
+    const fixed = mode === 'resize-start' ? { x: wall.x2, y: wall.y2 } : { x: wall.x1, y: wall.y1 };
+    const dragged =
+      mode === 'resize-start' ? { x: wall.x1, y: wall.y1 } : { x: wall.x2, y: wall.y2 };
+    const dx = dragged.x - fixed.x;
+    const dy = dragged.y - fixed.y;
+    const currentLength = Math.hypot(dx, dy);
+    if (currentLength < 1) return {};
+
+    const ratio = guide.length / currentLength;
+    const nextPoint = {
+      x: Math.max(0, Math.min(canvasWidth, fixed.x + dx * ratio)),
+      y: Math.max(0, Math.min(canvasHeight, fixed.y + dy * ratio)),
+    };
+
+    return mode === 'resize-start'
+      ? { x1: nextPoint.x, y1: nextPoint.y }
+      : { x2: nextPoint.x, y2: nextPoint.y };
   }
 
   function getSnappedWallCoords(
@@ -1136,7 +1233,22 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     const snapped = getSnappedWallCoords(tempWall, wallDragMode);
 
     // Merge clamped + snapped
-    const finalCoords = { ...clamped, ...snapped };
+    let finalCoords = { ...clamped, ...snapped };
+    let nextWall = { ...wallDragStart.wall, ...finalCoords };
+
+    if (wallDragMode !== 'move') {
+      const guide = findWallLengthGuide(nextWall);
+      if (guide) {
+        const lengthMatched = matchWallLengthToGuide(nextWall, wallDragMode, guide);
+        finalCoords = { ...finalCoords, ...lengthMatched };
+        nextWall = { ...wallDragStart.wall, ...finalCoords };
+        setWallLengthGuide({ ...guide, activeWall: nextWall });
+      } else {
+        setWallLengthGuide(null);
+      }
+    } else {
+      setWallLengthGuide(null);
+    }
 
     // Clamp again after snapping to ensure we stay in bounds
     const finalClamped: Partial<FloorPlanWall> = {};
@@ -1149,17 +1261,17 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     if (finalCoords.y2 !== undefined)
       finalClamped.y2 = Math.max(0, Math.min(canvasHeight, finalCoords.y2));
 
+    const finalWall = { ...wallDragStart.wall, ...finalClamped };
+
     setFloorPlan((prev) =>
       prev
         ? {
             ...prev,
-            walls: (prev.walls ?? []).map((w) =>
-              w.id === wallDragStart.wall.id ? { ...w, ...finalClamped } : w,
-            ),
+            walls: (prev.walls ?? []).map((w) => (w.id === wallDragStart.wall.id ? finalWall : w)),
           }
         : prev,
     );
-    wallDragCurrentRef.current = { ...wallDragStart.wall, ...finalClamped };
+    wallDragCurrentRef.current = finalWall;
   }
 
   function handleWallPointerUp() {
@@ -1173,6 +1285,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     setWallDragMode(null);
     setWallDragStart(null);
     wallDragCurrentRef.current = null;
+    setWallLengthGuide(null);
     setSelectedWallId(null);
     setTimeout(() => {
       wallJustDraggedRef.current = false;
@@ -1867,6 +1980,84 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                           onPointerDownEnd={(e) => handleWallPointerDown(e, w, 'resize-end')}
                         />
                       ))}
+                      {wallLengthGuide ? (
+                        <g className="pointer-events-none">
+                          <line
+                            x1={wallLengthGuide.activeWall.x1}
+                            y1={wallLengthGuide.activeWall.y1}
+                            x2={wallLengthGuide.activeWall.x2}
+                            y2={wallLengthGuide.activeWall.y2}
+                            stroke="hsl(var(--primary))"
+                            strokeWidth={8}
+                            strokeLinecap="square"
+                            opacity={0.35}
+                          />
+                          <line
+                            x1={wallLengthGuide.referenceWall.x1}
+                            y1={wallLengthGuide.referenceWall.y1}
+                            x2={wallLengthGuide.referenceWall.x2}
+                            y2={wallLengthGuide.referenceWall.y2}
+                            stroke="hsl(var(--primary))"
+                            strokeWidth={8}
+                            strokeLinecap="square"
+                            opacity={0.35}
+                          />
+                          <line
+                            x1={(wallLengthGuide.activeWall.x1 + wallLengthGuide.activeWall.x2) / 2}
+                            y1={(wallLengthGuide.activeWall.y1 + wallLengthGuide.activeWall.y2) / 2}
+                            x2={
+                              (wallLengthGuide.referenceWall.x1 +
+                                wallLengthGuide.referenceWall.x2) /
+                              2
+                            }
+                            y2={
+                              (wallLengthGuide.referenceWall.y1 +
+                                wallLengthGuide.referenceWall.y2) /
+                              2
+                            }
+                            stroke="hsl(var(--primary))"
+                            strokeWidth={1.5}
+                            strokeDasharray="5 5"
+                            opacity={0.9}
+                          />
+                          <circle
+                            cx={(wallLengthGuide.activeWall.x1 + wallLengthGuide.activeWall.x2) / 2}
+                            cy={(wallLengthGuide.activeWall.y1 + wallLengthGuide.activeWall.y2) / 2}
+                            r={4}
+                            fill="hsl(var(--primary))"
+                          />
+                          <circle
+                            cx={
+                              (wallLengthGuide.referenceWall.x1 +
+                                wallLengthGuide.referenceWall.x2) /
+                              2
+                            }
+                            cy={
+                              (wallLengthGuide.referenceWall.y1 +
+                                wallLengthGuide.referenceWall.y2) /
+                              2
+                            }
+                            r={4}
+                            fill="hsl(var(--primary))"
+                          />
+                          <foreignObject
+                            x={Math.max(
+                              8,
+                              Math.min(canvasWidth - 132, wallLengthGuide.labelX - 66),
+                            )}
+                            y={Math.max(
+                              8,
+                              Math.min(canvasHeight - 38, wallLengthGuide.labelY - 19),
+                            )}
+                            width={132}
+                            height={38}
+                          >
+                            <div className="flex h-full items-center justify-center rounded-md border border-primary/40 bg-background/95 px-2 text-[11px] font-medium text-primary shadow-sm">
+                              Même longueur · {formatWallLength(wallLengthGuide.length)}
+                            </div>
+                          </foreignObject>
+                        </g>
+                      ) : null}
                       {floorPlan?.walls?.map((w) =>
                         selectedWallId === w.id ? (
                           <foreignObject
