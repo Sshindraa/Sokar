@@ -112,13 +112,33 @@ model FloorPlan {
   id           String     @id @default(uuid())
   restaurantId String     @unique @map("restaurant_id")
   name         String     @default("Salle principale")
+  width        Int        @default(1400) @map("width")
+  height       Int        @default(900) @map("height")
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   sections     Section[]
   tables       Table[]
+  walls        Wall[]
   createdAt    DateTime   @default(now()) @map("created_at")
   updatedAt    DateTime   @updatedAt @map("updated_at")
 
   @@map("floor_plans")
+}
+
+model Wall {
+  id          String    @id @default(uuid())
+  floorPlanId String    @map("floor_plan_id")
+  x1          Int
+  y1          Int
+  x2          Int
+  y2          Int
+  type        String    @default("wall") @map("type")
+  name        String?   @map("name")
+  floorPlan   FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([floorPlanId])
+  @@map("floor_plan_walls")
 }
 
 model Section {
