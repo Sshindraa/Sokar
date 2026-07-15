@@ -68,6 +68,7 @@ import {
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
+  type DragMoveEvent,
   DragOverlay,
   useDraggable,
 } from '@dnd-kit/core';
@@ -528,7 +529,7 @@ function DraggableTable({ table, status, onClick, style }: DraggableTableProps) 
       onClick={onClick}
       dragRef={setNodeRef as React.Ref<HTMLDivElement>}
       dragProps={{ ...attributes, ...listeners }}
-      className={cn(isDragging && 'opacity-0 transition-none')}
+      className={cn(isDragging && 'opacity-40 transition-none')}
       style={style}
     />
   );
@@ -726,6 +727,12 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   } | null>(null);
   const wallJustDraggedRef = useRef(false);
   const wallDragCurrentRef = useRef<FloorPlanWall | null>(null);
+  // Guide d'alignement mur : pendant un drag de mur depuis la palette, si un mur
+  // existant de meme orientation a son axe aligne (<seuil), on stocke l'axe guide
+  // pour afficher un trait pointille pleine hauteur/largeur (style Canva).
+  const [wallAlignGuide, setWallAlignGuide] = useState<{ axis: 'x' | 'y'; value: number } | null>(
+    null,
+  );
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [floorSettings, setFloorSettings] = useState({ name: '', width: 1400, height: 900 });
 
@@ -1225,6 +1232,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   function handleDragCancel() {
     setActiveDragData(null);
     setDragStart(null);
+    setWallAlignGuide(null);
     pointerStartRef.current = null;
     setTimeout(() => {
       justDraggedRef.current = false;
@@ -1237,6 +1245,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     const pointerStart = pointerStartRef.current;
     setActiveDragData(null);
     setDragStart(null);
+    setWallAlignGuide(null);
     pointerStartRef.current = null;
     setTimeout(() => {
       justDraggedRef.current = false;
@@ -1335,16 +1344,32 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
       } else if (data.kind === 'wall') {
         const wallLengths: Record<PaletteWallType, number> = { wall: 120, door: 80, bar: 120 };
         const length = wallLengths[data.type];
-        const centerX = dropX;
-        const centerY = dropY;
-        let x1 = centerX - length / 2;
-        let x2 = centerX + length / 2;
-        let y1 = centerY;
-        let y2 = centerY;
-        x1 = Math.max(0, Math.min(canvasWidth, x1));
-        x2 = Math.max(0, Math.min(canvasWidth, x2));
-        y1 = Math.max(0, Math.min(canvasHeight, y1));
-        y2 = Math.max(0, Math.min(canvasHeight, y2));
+        let x1: number;
+        let x2: number;
+        let y1: number;
+        let y2: number;
+        if (wallAlignGuide?.axis === 'x') {
+          // Mur vertical aligne sur l'axe X d'un mur existant
+          const vx = wallAlignGuide.value;
+          x1 = vx;
+          x2 = vx;
+          y1 = Math.max(0, Math.min(canvasHeight, dropY - length / 2));
+          y2 = Math.max(0, Math.min(canvasHeight, dropY + length / 2));
+        } else if (wallAlignGuide?.axis === 'y') {
+          // Mur horizontal aligne sur l'axe Y d'un mur existant
+          const hy = wallAlignGuide.value;
+          y1 = hy;
+          y2 = hy;
+          x1 = Math.max(0, Math.min(canvasWidth, dropX - length / 2));
+          x2 = Math.max(0, Math.min(canvasWidth, dropX + length / 2));
+        } else {
+          const centerX = dropX;
+          const centerY = dropY;
+          x1 = Math.max(0, Math.min(canvasWidth, centerX - length / 2));
+          x2 = Math.max(0, Math.min(canvasWidth, centerX + length / 2));
+          y1 = Math.max(0, Math.min(canvasHeight, centerY));
+          y2 = Math.max(0, Math.min(canvasHeight, centerY));
+        }
 
         // Accroche les pointes du nouveau mur aux points existants (coins parfaits)
         const snapDropPoint = (px: number, py: number): { x: number; y: number } | null => {
@@ -1388,6 +1413,52 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
           setError(getErrorMessage(err, 'Impossible de créer le mur'));
         }
       }
+    }
+  }
+
+  // Pendant un drag de mur depuis la palette : detecte un mur existant de meme
+  // orientation dont l'axe est aligne avec le mur preview, et stocke le guide.
+  function handleDragMove(event: DragMoveEvent) {
+    const data = activeDragData;
+    const pointerStart = pointerStartRef.current;
+    if (data?.kind !== 'wall' || !pointerStart || !canvasRef.current) {
+      if (wallAlignGuide) setWallAlignGuide(null);
+      return;
+    }
+    const rect = canvasRef.current.getBoundingClientRect();
+    const cursorX = (pointerStart.x + event.delta.x - rect.left) / zoom;
+    const cursorY = (pointerStart.y + event.delta.y - rect.top) / zoom;
+
+    const ALIGN_TOLERANCE = 12;
+    let best: { axis: 'x' | 'y'; value: number; dist: number } | null = null;
+
+    for (const w of floorPlan?.walls ?? []) {
+      const horiz = Math.abs(w.y1 - w.y2) <= 0.5;
+      const vert = Math.abs(w.x1 - w.x2) <= 0.5;
+      if (horiz) {
+        const wy = (w.y1 + w.y2) / 2;
+        const d = Math.abs(cursorY - wy);
+        if (d < ALIGN_TOLERANCE && (!best || d < best.dist)) {
+          best = { axis: 'y', value: wy, dist: d };
+        }
+      } else if (vert) {
+        const wx = (w.x1 + w.x2) / 2;
+        const d = Math.abs(cursorX - wx);
+        if (d < ALIGN_TOLERANCE && (!best || d < best.dist)) {
+          best = { axis: 'x', value: wx, dist: d };
+        }
+      }
+    }
+    if (best) {
+      if (
+        !wallAlignGuide ||
+        wallAlignGuide.axis !== best.axis ||
+        wallAlignGuide.value !== best.value
+      ) {
+        setWallAlignGuide({ axis: best.axis, value: best.value });
+      }
+    } else if (wallAlignGuide) {
+      setWallAlignGuide(null);
     }
   }
 
@@ -1752,6 +1823,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
           <DndContext
             sensors={sensors}
             onDragStart={handleDragStart}
+            onDragMove={handleDragMove}
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
           >
@@ -1824,6 +1896,34 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                       )}
                     </g>
                   </svg>
+                  {wallAlignGuide ? (
+                    <svg
+                      className="absolute inset-0 w-full h-full pointer-events-none"
+                      style={{ zIndex: 11 }}
+                    >
+                      {wallAlignGuide.axis === 'y' ? (
+                        <line
+                          x1={0}
+                          y1={wallAlignGuide.value}
+                          x2={canvasWidth}
+                          y2={wallAlignGuide.value}
+                          stroke="hsl(var(--primary))"
+                          strokeWidth={1}
+                          strokeDasharray="4 4"
+                        />
+                      ) : (
+                        <line
+                          x1={wallAlignGuide.value}
+                          y1={0}
+                          x2={wallAlignGuide.value}
+                          y2={canvasHeight}
+                          stroke="hsl(var(--primary))"
+                          strokeWidth={1}
+                          strokeDasharray="4 4"
+                        />
+                      )}
+                    </svg>
+                  ) : null}
                   {allTables.map((table) => {
                     const { width, height } = getTableSize(table);
                     const status = live ? tableStatuses.get(table.id) : undefined;
