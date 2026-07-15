@@ -4,7 +4,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"[AUTO-ORCHESTRATE] Use the `orchestrate` skill to handle this user prompt. The orchestrator will decide whether to answer directly, spawn `subagent_general` to code, or `subagent_explore` to review/research.\"}}'"
+          "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"[AUTO-ORCHESTRATE] Use the `orchestrate` skill for this prompt. Except for its narrow direct-answer fast path, first analyze, understand, and decompose the request; delegate work to the appropriate workers; run fresh independent read-only reviewers; reconcile findings; perform proportional verification; and report actual results. Only `subagent_general` may write files, while `subagent_explore` performs research and review.\"}}'"
         }
       ]
     }

@@ -1,13 +1,15 @@
-# Files that should NEVER enter a Docker build context.
-# Without this, `COPY . .` would pull node_modules, .git, build
-# outputs, secrets, etc. — slowing builds and risking leaks.
+# .dockerignore — build context exclusions for Sokar app images.
+# NOTE: currently INERT. Repo deploys via PM2 (scripts/deploy-vps.sh);
+# Docker only runs infra (postgres/redis/localstack) via prebuilt images
+# in infra/docker-compose.yml, which never reads this file.
+# Live only when an apps/*/Dockerfile builds from repo root.
 
-# ── Dependencies ──
+# ── Dependencies (regenerated inside the image) ──
 node_modules
 **/node_modules
 .pnpm-store
 
-# ── Build outputs (regenerated inside the container) ──
+# ── Build outputs ──
 dist
 **/dist
 .next
@@ -15,26 +17,25 @@ dist
 .turbo
 **/.turbo
 *.tsbuildinfo
+**/*.tsbuildinfo
 
 # ── VCS ──
 .git
-.gitignore
-.gitattributes
 
-# ── Tests / coverage ──
+# ── Tests / coverage (not needed to build & run) ──
 coverage
 **/coverage
 *.lcov
-**/__tests__
 **/*.test.ts
 **/*.test.tsx
 **/*.spec.ts
 **/*.spec.tsx
 
-# ── Docs / scripts not needed in the image ──
-**/*.md
+# ── Docs & project meta ──
 docs
-**/README.md
+**/*.md
+
+# ── Deploy/ops scripts not needed in the image ──
 scripts
 
 # ── Editor / OS noise ──
@@ -45,7 +46,17 @@ scripts
 *.swo
 *.cpuprofile
 
-# ── Local env / secrets — never copy into image ──
+# ── Logs / caches / local data ──
+*.log
+**/*.log
+.cache
+**/.cache
+tmp
+**/tmp
+*.sqlite
+*.db
+
+# ── Local env / secrets ──
 .env
 .env.*
 **/.env
@@ -53,8 +64,13 @@ scripts
 !.env.example
 !**/.env.example
 
+# ── Private keys (defense in depth) ──
+*.pem
+*.key
+**/*.pem
+**/*.key
+
 # ── CI / Docker artefacts ──
 .github
 **/Dockerfile*
 **/docker-compose*.yml
-.dockerignore
