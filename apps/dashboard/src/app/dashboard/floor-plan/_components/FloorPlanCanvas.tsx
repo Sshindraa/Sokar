@@ -78,6 +78,7 @@ const GRID_SIZE = 16;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2.0;
 const ZOOM_STEP = 0.1;
+const WALL_SNAP_DISTANCE = 20; // pixels in canvas coordinates
 
 type TableStatus = 'free' | 'occupied' | 'upcoming' | 'inactive';
 
@@ -965,6 +966,104 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     wallDragCurrentRef.current = wall;
   }
 
+  function getSnappedWallCoords(
+    wall: FloorPlanWall,
+    mode: 'move' | 'resize-start' | 'resize-end',
+  ): Partial<FloorPlanWall> {
+    const otherWalls = (floorPlan?.walls ?? []).filter((w) => w.id !== wall.id);
+    const otherEndpoints: { x: number; y: number }[] = [];
+    for (const w of otherWalls) {
+      otherEndpoints.push({ x: w.x1, y: w.y1 });
+      otherEndpoints.push({ x: w.x2, y: w.y2 });
+    }
+
+    if (mode === 'move') {
+      const startRaw = { x: wall.x1, y: wall.y1 };
+      const endRaw = { x: wall.x2, y: wall.y2 };
+      let bestStart = startRaw;
+      let bestEnd = endRaw;
+      let bestStartDist = Infinity;
+      let bestEndDist = Infinity;
+
+      for (const ep of otherEndpoints) {
+        const distStart = Math.hypot(startRaw.x - ep.x, startRaw.y - ep.y);
+        if (distStart < WALL_SNAP_DISTANCE && distStart < bestStartDist) {
+          bestStartDist = distStart;
+          bestStart = ep;
+        }
+        const distEnd = Math.hypot(endRaw.x - ep.x, endRaw.y - ep.y);
+        if (distEnd < WALL_SNAP_DISTANCE && distEnd < bestEndDist) {
+          bestEndDist = distEnd;
+          bestEnd = ep;
+        }
+      }
+
+      if (bestStartDist < WALL_SNAP_DISTANCE || bestEndDist < WALL_SNAP_DISTANCE) {
+        if (bestStartDist < bestEndDist) {
+          const dx = bestStart.x - wall.x1;
+          const dy = bestStart.y - wall.y1;
+          return { x1: bestStart.x, y1: bestStart.y, x2: wall.x2 + dx, y2: wall.y2 + dy };
+        } else {
+          const dx = bestEnd.x - wall.x2;
+          const dy = bestEnd.y - wall.y2;
+          return { x1: wall.x1 + dx, y1: wall.y1 + dy, x2: bestEnd.x, y2: bestEnd.y };
+        }
+      }
+      return {};
+    }
+
+    if (mode === 'resize-start') {
+      const rawX = wall.x1;
+      const rawY = wall.y1;
+      const fixedX = wall.x2;
+      const fixedY = wall.y2;
+      let candidates: { x: number; y: number; dist: number }[] = [{ x: rawX, y: rawY, dist: 0 }];
+
+      // Axis snap
+      if (Math.abs(rawY - fixedY) < WALL_SNAP_DISTANCE) {
+        candidates.push({ x: rawX, y: fixedY, dist: Math.abs(rawY - fixedY) });
+      }
+      if (Math.abs(rawX - fixedX) < WALL_SNAP_DISTANCE) {
+        candidates.push({ x: fixedX, y: rawY, dist: Math.abs(rawX - fixedX) });
+      }
+
+      // Endpoint snap
+      for (const ep of otherEndpoints) {
+        const dist = Math.hypot(rawX - ep.x, rawY - ep.y);
+        if (dist < WALL_SNAP_DISTANCE) {
+          candidates.push({ x: ep.x, y: ep.y, dist });
+        }
+      }
+
+      const best = candidates.reduce((a, b) => (a.dist < b.dist ? a : b));
+      return { x1: best.x, y1: best.y };
+    }
+
+    // resize-end
+    const rawX = wall.x2;
+    const rawY = wall.y2;
+    const fixedX = wall.x1;
+    const fixedY = wall.y1;
+    let candidates: { x: number; y: number; dist: number }[] = [{ x: rawX, y: rawY, dist: 0 }];
+
+    if (Math.abs(rawY - fixedY) < WALL_SNAP_DISTANCE) {
+      candidates.push({ x: rawX, y: fixedY, dist: Math.abs(rawY - fixedY) });
+    }
+    if (Math.abs(rawX - fixedX) < WALL_SNAP_DISTANCE) {
+      candidates.push({ x: fixedX, y: rawY, dist: Math.abs(rawX - fixedX) });
+    }
+
+    for (const ep of otherEndpoints) {
+      const dist = Math.hypot(rawX - ep.x, rawY - ep.y);
+      if (dist < WALL_SNAP_DISTANCE) {
+        candidates.push({ x: ep.x, y: ep.y, dist });
+      }
+    }
+
+    const best = candidates.reduce((a, b) => (a.dist < b.dist ? a : b));
+    return { x2: best.x, y2: best.y };
+  }
+
   function handleWallPointerMove(e: PointerEvent) {
     if (!wallDragStart || !wallDragMode) return;
     wallJustDraggedRef.current = true;
@@ -976,44 +1075,64 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
       deltaY = Math.round(deltaY / GRID_SIZE) * GRID_SIZE;
     }
 
-    let newCoords: Partial<FloorPlanWall>;
+    let rawCoords: Partial<FloorPlanWall>;
     if (wallDragMode === 'move') {
-      newCoords = {
+      rawCoords = {
         x1: wallDragStart.wall.x1 + deltaX,
         y1: wallDragStart.wall.y1 + deltaY,
         x2: wallDragStart.wall.x2 + deltaX,
         y2: wallDragStart.wall.y2 + deltaY,
       };
     } else if (wallDragMode === 'resize-start') {
-      newCoords = {
+      rawCoords = {
         x1: wallDragStart.wall.x1 + deltaX,
         y1: wallDragStart.wall.y1 + deltaY,
       };
     } else {
-      newCoords = {
+      rawCoords = {
         x2: wallDragStart.wall.x2 + deltaX,
         y2: wallDragStart.wall.y2 + deltaY,
       };
     }
 
-    // Clamp all coordinates to canvas bounds
+    // Clamp raw coordinates to canvas bounds
     const clamped: Partial<FloorPlanWall> = {};
-    if (newCoords.x1 !== undefined) clamped.x1 = Math.max(0, Math.min(canvasWidth, newCoords.x1));
-    if (newCoords.y1 !== undefined) clamped.y1 = Math.max(0, Math.min(canvasHeight, newCoords.y1));
-    if (newCoords.x2 !== undefined) clamped.x2 = Math.max(0, Math.min(canvasWidth, newCoords.x2));
-    if (newCoords.y2 !== undefined) clamped.y2 = Math.max(0, Math.min(canvasHeight, newCoords.y2));
+    if (rawCoords.x1 !== undefined) clamped.x1 = Math.max(0, Math.min(canvasWidth, rawCoords.x1));
+    if (rawCoords.y1 !== undefined) clamped.y1 = Math.max(0, Math.min(canvasHeight, rawCoords.y1));
+    if (rawCoords.x2 !== undefined) clamped.x2 = Math.max(0, Math.min(canvasWidth, rawCoords.x2));
+    if (rawCoords.y2 !== undefined) clamped.y2 = Math.max(0, Math.min(canvasHeight, rawCoords.y2));
+
+    // Build a temporary wall object from start + clamped
+    const tempWall = { ...wallDragStart.wall, ...clamped };
+
+    // Apply axis/endpoint snapping
+    const snapped = getSnappedWallCoords(tempWall, wallDragMode);
+
+    // Merge clamped + snapped
+    const finalCoords = { ...clamped, ...snapped };
+
+    // Clamp again after snapping to ensure we stay in bounds
+    const finalClamped: Partial<FloorPlanWall> = {};
+    if (finalCoords.x1 !== undefined)
+      finalClamped.x1 = Math.max(0, Math.min(canvasWidth, finalCoords.x1));
+    if (finalCoords.y1 !== undefined)
+      finalClamped.y1 = Math.max(0, Math.min(canvasHeight, finalCoords.y1));
+    if (finalCoords.x2 !== undefined)
+      finalClamped.x2 = Math.max(0, Math.min(canvasWidth, finalCoords.x2));
+    if (finalCoords.y2 !== undefined)
+      finalClamped.y2 = Math.max(0, Math.min(canvasHeight, finalCoords.y2));
 
     setFloorPlan((prev) =>
       prev
         ? {
             ...prev,
             walls: (prev.walls ?? []).map((w) =>
-              w.id === wallDragStart.wall.id ? { ...w, ...clamped } : w,
+              w.id === wallDragStart.wall.id ? { ...w, ...finalClamped } : w,
             ),
           }
         : prev,
     );
-    wallDragCurrentRef.current = { ...wallDragStart.wall, ...clamped };
+    wallDragCurrentRef.current = { ...wallDragStart.wall, ...finalClamped };
   }
 
   function handleWallPointerUp() {
