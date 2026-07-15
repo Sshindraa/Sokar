@@ -36,6 +36,10 @@ import {
   Grid3x3,
   Magnet,
   Activity,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
   Plus,
   Trash2,
   Settings,
@@ -101,6 +105,7 @@ type DragStartInfo = {
   width: number;
   height: number;
   table: CanvasTable;
+  moveId?: number;
 };
 
 type PaletteWallType = 'wall' | 'door' | 'bar';
@@ -645,6 +650,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   const [dragStart, setDragStart] = useState<DragStartInfo | null>(null);
   const justDraggedRef = useRef(false);
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const tableMoveIdRef = useRef(0);
   const canvasRef = useRef<HTMLDivElement>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -864,6 +870,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
       });
     } catch (err) {
       setError(getErrorMessage(err, 'Impossible de modifier le mur'));
+      throw err;
     }
   }
 
@@ -907,6 +914,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     const table = allTables.find((t) => t.id === event.active.id);
     if (table) {
       const { width, height } = getTableSize(table);
+      const moveId = ++tableMoveIdRef.current;
       setActiveDragData({ kind: 'existingTable', table });
       setDragStart({
         tableId: table.id,
@@ -915,6 +923,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
         width,
         height,
         table,
+        moveId,
       });
     } else {
       setActiveDragData((event.active.data.current as PaletteItemData | undefined) ?? null);
@@ -970,8 +979,19 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
             positionY: clampedY,
           },
         );
-        setFloorPlan((prev) => (prev ? replaceTable(prev, updated) : prev));
+        if (start.moveId !== tableMoveIdRef.current) return;
+        setFloorPlan((prev) =>
+          prev
+            ? replaceTablePosition(
+                prev,
+                start.tableId,
+                updated.positionX ?? clampedX,
+                updated.positionY ?? clampedY,
+              )
+            : prev,
+        );
       } catch (err) {
+        if (start.moveId !== tableMoveIdRef.current) return;
         setError(getErrorMessage(err, 'Impossible de déplacer la table'));
         setFloorPlan((prev) =>
           prev ? replaceTablePosition(prev, start.tableId, start.originalX, start.originalY) : prev,
@@ -1217,17 +1237,24 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
         if (!open) setEditingWall(null);
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Modifier le mur</DialogTitle>
-          <DialogDescription>Modifiez le type et le nom du mur.</DialogDescription>
+          <DialogDescription>Modifiez le type, le nom et les positions du mur.</DialogDescription>
         </DialogHeader>
 
         <form
           id="wall-form"
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            if (editingWall) updateWall(editingWall, wallType, editingWall.name || null);
+            if (!editingWall) return;
+            try {
+              await updateWall(editingWall, wallType, editingWall.name || null);
+              setWallDialogOpen(false);
+              setEditingWall(null);
+            } catch {
+              // updateWall already sets the error message
+            }
           }}
           className="space-y-4"
         >
@@ -1267,6 +1294,180 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
               }
               className="bg-card border-border"
             />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Point de départ (X1, Y1)</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  value={editingWall?.x1 ?? 0}
+                  onChange={(e) =>
+                    setEditingWall((prev) =>
+                      prev ? { ...prev, x1: Number(e.target.value) || 0 } : prev,
+                    )
+                  }
+                  className="bg-card border-border"
+                />
+                <Input
+                  type="number"
+                  min={0}
+                  value={editingWall?.y1 ?? 0}
+                  onChange={(e) =>
+                    setEditingWall((prev) =>
+                      prev ? { ...prev, y1: Number(e.target.value) || 0 } : prev,
+                    )
+                  }
+                  className="bg-card border-border"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  title="Déplacer X1 vers la gauche"
+                  onClick={() =>
+                    setEditingWall((prev) =>
+                      prev ? { ...prev, x1: Math.max(0, prev.x1 - (snap ? GRID_SIZE : 1)) } : prev,
+                    )
+                  }
+                >
+                  <ArrowLeft size={16} />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  title="Déplacer X1 vers la droite"
+                  onClick={() =>
+                    setEditingWall((prev) =>
+                      prev
+                        ? { ...prev, x1: Math.min(canvasWidth, prev.x1 + (snap ? GRID_SIZE : 1)) }
+                        : prev,
+                    )
+                  }
+                >
+                  <ArrowRight size={16} />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  title="Déplacer Y1 vers le haut"
+                  onClick={() =>
+                    setEditingWall((prev) =>
+                      prev ? { ...prev, y1: Math.max(0, prev.y1 - (snap ? GRID_SIZE : 1)) } : prev,
+                    )
+                  }
+                >
+                  <ArrowUp size={16} />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  title="Déplacer Y1 vers le bas"
+                  onClick={() =>
+                    setEditingWall((prev) =>
+                      prev
+                        ? { ...prev, y1: Math.min(canvasHeight, prev.y1 + (snap ? GRID_SIZE : 1)) }
+                        : prev,
+                    )
+                  }
+                >
+                  <ArrowDown size={16} />
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Point d&apos;arrivée (X2, Y2)</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  value={editingWall?.x2 ?? 0}
+                  onChange={(e) =>
+                    setEditingWall((prev) =>
+                      prev ? { ...prev, x2: Number(e.target.value) || 0 } : prev,
+                    )
+                  }
+                  className="bg-card border-border"
+                />
+                <Input
+                  type="number"
+                  min={0}
+                  value={editingWall?.y2 ?? 0}
+                  onChange={(e) =>
+                    setEditingWall((prev) =>
+                      prev ? { ...prev, y2: Number(e.target.value) || 0 } : prev,
+                    )
+                  }
+                  className="bg-card border-border"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  title="Déplacer X2 vers la gauche"
+                  onClick={() =>
+                    setEditingWall((prev) =>
+                      prev ? { ...prev, x2: Math.max(0, prev.x2 - (snap ? GRID_SIZE : 1)) } : prev,
+                    )
+                  }
+                >
+                  <ArrowLeft size={16} />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  title="Déplacer X2 vers la droite"
+                  onClick={() =>
+                    setEditingWall((prev) =>
+                      prev
+                        ? { ...prev, x2: Math.min(canvasWidth, prev.x2 + (snap ? GRID_SIZE : 1)) }
+                        : prev,
+                    )
+                  }
+                >
+                  <ArrowRight size={16} />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  title="Déplacer Y2 vers le haut"
+                  onClick={() =>
+                    setEditingWall((prev) =>
+                      prev ? { ...prev, y2: Math.max(0, prev.y2 - (snap ? GRID_SIZE : 1)) } : prev,
+                    )
+                  }
+                >
+                  <ArrowUp size={16} />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  title="Déplacer Y2 vers le bas"
+                  onClick={() =>
+                    setEditingWall((prev) =>
+                      prev
+                        ? { ...prev, y2: Math.min(canvasHeight, prev.y2 + (snap ? GRID_SIZE : 1)) }
+                        : prev,
+                    )
+                  }
+                >
+                  <ArrowDown size={16} />
+                </Button>
+              </div>
+            </div>
           </div>
         </form>
 
