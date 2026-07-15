@@ -370,9 +370,19 @@ type WallSegmentProps = {
   wall: FloorPlanWall;
   onClick?: () => void;
   isSelected?: boolean;
+  onPointerDownMove?: (e: React.PointerEvent) => void;
+  onPointerDownStart?: (e: React.PointerEvent) => void;
+  onPointerDownEnd?: (e: React.PointerEvent) => void;
 };
 
-function WallSegment({ wall, onClick, isSelected }: WallSegmentProps) {
+function WallSegment({
+  wall,
+  onClick,
+  isSelected,
+  onPointerDownMove,
+  onPointerDownStart,
+  onPointerDownEnd,
+}: WallSegmentProps) {
   const { stroke, strokeWidth, strokeDasharray } = wallStrokeConfig[wall.type];
 
   return (
@@ -392,8 +402,48 @@ function WallSegment({ wall, onClick, isSelected }: WallSegmentProps) {
         stroke={stroke}
         strokeWidth={strokeWidth}
         strokeDasharray={strokeDasharray}
-        className={cn('transition-all duration-200', isSelected && 'stroke-ring stroke-[6]')}
+        className={cn(
+          'transition-all duration-200',
+          isSelected && 'stroke-ring stroke-[6]',
+          isSelected && 'pointer-events-none',
+        )}
       />
+      {isSelected ? (
+        <>
+          {/* Thicker invisible line for easier drag of the whole wall */}
+          <line
+            x1={wall.x1}
+            y1={wall.y1}
+            x2={wall.x2}
+            y2={wall.y2}
+            stroke="transparent"
+            strokeWidth={20}
+            style={{ cursor: 'move' }}
+            onPointerDown={onPointerDownMove}
+          />
+          {/* Endpoint handles */}
+          <circle
+            cx={wall.x1}
+            cy={wall.y1}
+            r={8}
+            fill="hsl(var(--ring))"
+            stroke="white"
+            strokeWidth={2}
+            style={{ cursor: 'grab' }}
+            onPointerDown={onPointerDownStart}
+          />
+          <circle
+            cx={wall.x2}
+            cy={wall.y2}
+            r={8}
+            fill="hsl(var(--ring))"
+            stroke="white"
+            strokeWidth={2}
+            style={{ cursor: 'grab' }}
+            onPointerDown={onPointerDownEnd}
+          />
+        </>
+      ) : null}
     </g>
   );
 }
@@ -668,8 +718,16 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   const [pendingDeleteTableId, setPendingDeleteTableId] = useState<string | null>(null);
 
   const [wallType, setWallType] = useState<WallType>('wall');
-  const [editingWall, setEditingWall] = useState<FloorPlanWall | null>(null);
-  const [wallDialogOpen, setWallDialogOpen] = useState(false);
+  const [selectedWallId, setSelectedWallId] = useState<string | null>(null);
+  const [wallDragMode, setWallDragMode] = useState<'move' | 'resize-start' | 'resize-end' | null>(
+    null,
+  );
+  const [wallDragStart, setWallDragStart] = useState<{
+    pointerX: number;
+    pointerY: number;
+    wall: FloorPlanWall;
+  } | null>(null);
+  const wallJustDraggedRef = useRef(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [floorSettings, setFloorSettings] = useState({ name: '', width: 1400, height: 900 });
 
@@ -719,10 +777,11 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   }, [orgId, live, liveDate, loadReservations]);
 
   useEffect(() => {
-    if (editingWall) {
-      setWallType(editingWall.type);
+    if (selectedWallId) {
+      const wall = floorPlan?.walls?.find((w) => w.id === selectedWallId);
+      if (wall) setWallType(wall.type);
     }
-  }, [editingWall]);
+  }, [selectedWallId, floorPlan]);
 
   const allTables = useMemo<CanvasTable[]>(() => {
     if (!floorPlan) return [];
@@ -904,6 +963,107 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
       setError(getErrorMessage(err, 'Impossible de modifier les paramètres du plan'));
     }
   }
+
+  function handleWallPointerDown(
+    e: React.PointerEvent,
+    wall: FloorPlanWall,
+    mode: 'move' | 'resize-start' | 'resize-end',
+  ) {
+    e.stopPropagation();
+    setSelectedWallId(wall.id);
+    setWallDragMode(mode);
+    setWallDragStart({ pointerX: e.clientX, pointerY: e.clientY, wall });
+  }
+
+  function handleWallPointerMove(e: PointerEvent) {
+    if (!wallDragStart || !wallDragMode) return;
+    wallJustDraggedRef.current = true;
+
+    let deltaX = (e.clientX - wallDragStart.pointerX) / zoom;
+    let deltaY = (e.clientY - wallDragStart.pointerY) / zoom;
+    if (snap) {
+      deltaX = Math.round(deltaX / GRID_SIZE) * GRID_SIZE;
+      deltaY = Math.round(deltaY / GRID_SIZE) * GRID_SIZE;
+    }
+
+    let newCoords: Partial<FloorPlanWall>;
+    if (wallDragMode === 'move') {
+      newCoords = {
+        x1: wallDragStart.wall.x1 + deltaX,
+        y1: wallDragStart.wall.y1 + deltaY,
+        x2: wallDragStart.wall.x2 + deltaX,
+        y2: wallDragStart.wall.y2 + deltaY,
+      };
+    } else if (wallDragMode === 'resize-start') {
+      newCoords = {
+        x1: wallDragStart.wall.x1 + deltaX,
+        y1: wallDragStart.wall.y1 + deltaY,
+      };
+    } else {
+      newCoords = {
+        x2: wallDragStart.wall.x2 + deltaX,
+        y2: wallDragStart.wall.y2 + deltaY,
+      };
+    }
+
+    // Clamp all coordinates to canvas bounds
+    const clamped: Partial<FloorPlanWall> = {};
+    if (newCoords.x1 !== undefined) clamped.x1 = Math.max(0, Math.min(canvasWidth, newCoords.x1));
+    if (newCoords.y1 !== undefined) clamped.y1 = Math.max(0, Math.min(canvasHeight, newCoords.y1));
+    if (newCoords.x2 !== undefined) clamped.x2 = Math.max(0, Math.min(canvasWidth, newCoords.x2));
+    if (newCoords.y2 !== undefined) clamped.y2 = Math.max(0, Math.min(canvasHeight, newCoords.y2));
+
+    setFloorPlan((prev) =>
+      prev
+        ? {
+            ...prev,
+            walls: (prev.walls ?? []).map((w) =>
+              w.id === wallDragStart.wall.id ? { ...w, ...clamped } : w,
+            ),
+          }
+        : prev,
+    );
+  }
+
+  function handleWallPointerUp() {
+    if (!wallDragStart) return;
+    const currentWall = floorPlan?.walls?.find((w) => w.id === wallDragStart.wall.id);
+    if (currentWall) {
+      void updateWall(currentWall, currentWall.type, currentWall.name ?? null).catch(() => {
+        // updateWall already sets the error message
+      });
+    }
+    setWallDragMode(null);
+    setWallDragStart(null);
+    setTimeout(() => {
+      wallJustDraggedRef.current = false;
+    }, 0);
+  }
+
+  useEffect(() => {
+    if (!wallDragMode) return;
+    const handleMove = (e: PointerEvent) => handleWallPointerMove(e);
+    const handleUp = () => handleWallPointerUp();
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallDragMode, wallDragStart, zoom, snap, canvasWidth, canvasHeight]);
+
+  // Deselect wall on Escape
+  useEffect(() => {
+    if (!selectedWallId) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedWallId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedWallId]);
 
   function handleDragStart(event: DragStartEvent) {
     justDraggedRef.current = true;
@@ -1229,278 +1389,201 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     />
   );
 
-  const wallDialog = (
-    <Dialog
-      open={wallDialogOpen}
-      onOpenChange={(open) => {
-        setWallDialogOpen(open);
-        if (!open) setEditingWall(null);
-      }}
-    >
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Modifier le mur</DialogTitle>
-          <DialogDescription>Modifiez le type, le nom et les positions du mur.</DialogDescription>
-        </DialogHeader>
+  const selectedWall = selectedWallId
+    ? (floorPlan?.walls?.find((w) => w.id === selectedWallId) ?? null)
+    : null;
 
-        <form
-          id="wall-form"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (!editingWall) return;
-            try {
-              await updateWall(editingWall, wallType, editingWall.name || null);
-              setWallDialogOpen(false);
-              setEditingWall(null);
-            } catch {
+  const wallToolbar = selectedWall ? (
+    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex flex-wrap items-center gap-2 rounded-md border border-border bg-card p-2 shadow-md">
+      <div className="flex items-center gap-1">
+        <span className="text-xs font-medium text-muted-foreground">Type</span>
+        <Select
+          value={wallType}
+          onValueChange={(value) => {
+            setWallType(value as WallType);
+            const updated = { ...selectedWall, type: value as WallType };
+            void updateWall(updated, value as WallType, updated.name ?? null).catch(() => {
               // updateWall already sets the error message
-            }
+            });
           }}
-          className="space-y-4"
         >
-          <div className="space-y-2">
-            <Label htmlFor="wall-type">Type</Label>
-            <Select
-              value={wallType}
-              onValueChange={(value) => {
-                setWallType(value as WallType);
-                setEditingWall((prev) => (prev ? { ...prev, type: value as WallType } : prev));
-              }}
-            >
-              <SelectTrigger id="wall-type" className="bg-card border-border">
-                <SelectValue placeholder="Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="wall">Mur</SelectItem>
-                <SelectItem value="door">Porte</SelectItem>
-                <SelectItem value="bar">Bar</SelectItem>
-                {editingWall?.type === 'window' ? (
-                  <SelectItem value="window">Fenêtre</SelectItem>
-                ) : null}
-                {editingWall?.type === 'plant' ? (
-                  <SelectItem value="plant">Plante</SelectItem>
-                ) : null}
-              </SelectContent>
-            </Select>
-          </div>
+          <SelectTrigger className="h-8 w-28 bg-card border-border">
+            <SelectValue placeholder="Type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="wall">Mur</SelectItem>
+            <SelectItem value="door">Porte</SelectItem>
+            <SelectItem value="bar">Bar</SelectItem>
+            {selectedWall.type === 'window' ? (
+              <SelectItem value="window">Fenêtre</SelectItem>
+            ) : null}
+            {selectedWall.type === 'plant' ? <SelectItem value="plant">Plante</SelectItem> : null}
+          </SelectContent>
+        </Select>
+      </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="wall-name">Nom (optionnel)</Label>
-            <Input
-              id="wall-name"
-              value={editingWall?.name ?? ''}
-              onChange={(e) =>
-                setEditingWall((prev) => (prev ? { ...prev, name: e.target.value } : prev))
-              }
-              className="bg-card border-border"
-            />
-          </div>
+      <div className="h-6 w-px bg-border" />
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Point de départ (X1, Y1)</Label>
-              <div className="grid grid-cols-2 gap-2">
-                <Input
-                  type="number"
-                  min={0}
-                  value={editingWall?.x1 ?? 0}
-                  onChange={(e) =>
-                    setEditingWall((prev) =>
-                      prev ? { ...prev, x1: Number(e.target.value) || 0 } : prev,
-                    )
-                  }
-                  className="bg-card border-border"
-                />
-                <Input
-                  type="number"
-                  min={0}
-                  value={editingWall?.y1 ?? 0}
-                  onChange={(e) =>
-                    setEditingWall((prev) =>
-                      prev ? { ...prev, y1: Number(e.target.value) || 0 } : prev,
-                    )
-                  }
-                  className="bg-card border-border"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  title="Déplacer X1 vers la gauche"
-                  onClick={() =>
-                    setEditingWall((prev) =>
-                      prev ? { ...prev, x1: Math.max(0, prev.x1 - (snap ? GRID_SIZE : 1)) } : prev,
-                    )
-                  }
-                >
-                  <ArrowLeft size={16} />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  title="Déplacer X1 vers la droite"
-                  onClick={() =>
-                    setEditingWall((prev) =>
-                      prev
-                        ? { ...prev, x1: Math.min(canvasWidth, prev.x1 + (snap ? GRID_SIZE : 1)) }
-                        : prev,
-                    )
-                  }
-                >
-                  <ArrowRight size={16} />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  title="Déplacer Y1 vers le haut"
-                  onClick={() =>
-                    setEditingWall((prev) =>
-                      prev ? { ...prev, y1: Math.max(0, prev.y1 - (snap ? GRID_SIZE : 1)) } : prev,
-                    )
-                  }
-                >
-                  <ArrowUp size={16} />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  title="Déplacer Y1 vers le bas"
-                  onClick={() =>
-                    setEditingWall((prev) =>
-                      prev
-                        ? { ...prev, y1: Math.min(canvasHeight, prev.y1 + (snap ? GRID_SIZE : 1)) }
-                        : prev,
-                    )
-                  }
-                >
-                  <ArrowDown size={16} />
-                </Button>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Point d&apos;arrivée (X2, Y2)</Label>
-              <div className="grid grid-cols-2 gap-2">
-                <Input
-                  type="number"
-                  min={0}
-                  value={editingWall?.x2 ?? 0}
-                  onChange={(e) =>
-                    setEditingWall((prev) =>
-                      prev ? { ...prev, x2: Number(e.target.value) || 0 } : prev,
-                    )
-                  }
-                  className="bg-card border-border"
-                />
-                <Input
-                  type="number"
-                  min={0}
-                  value={editingWall?.y2 ?? 0}
-                  onChange={(e) =>
-                    setEditingWall((prev) =>
-                      prev ? { ...prev, y2: Number(e.target.value) || 0 } : prev,
-                    )
-                  }
-                  className="bg-card border-border"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  title="Déplacer X2 vers la gauche"
-                  onClick={() =>
-                    setEditingWall((prev) =>
-                      prev ? { ...prev, x2: Math.max(0, prev.x2 - (snap ? GRID_SIZE : 1)) } : prev,
-                    )
-                  }
-                >
-                  <ArrowLeft size={16} />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  title="Déplacer X2 vers la droite"
-                  onClick={() =>
-                    setEditingWall((prev) =>
-                      prev
-                        ? { ...prev, x2: Math.min(canvasWidth, prev.x2 + (snap ? GRID_SIZE : 1)) }
-                        : prev,
-                    )
-                  }
-                >
-                  <ArrowRight size={16} />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  title="Déplacer Y2 vers le haut"
-                  onClick={() =>
-                    setEditingWall((prev) =>
-                      prev ? { ...prev, y2: Math.max(0, prev.y2 - (snap ? GRID_SIZE : 1)) } : prev,
-                    )
-                  }
-                >
-                  <ArrowUp size={16} />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  title="Déplacer Y2 vers le bas"
-                  onClick={() =>
-                    setEditingWall((prev) =>
-                      prev
-                        ? { ...prev, y2: Math.min(canvasHeight, prev.y2 + (snap ? GRID_SIZE : 1)) }
-                        : prev,
-                    )
-                  }
-                >
-                  <ArrowDown size={16} />
-                </Button>
-              </div>
-            </div>
-          </div>
-        </form>
-
-        <DialogFooter className="gap-2 sm:gap-2">
+      <div className="flex flex-col gap-1">
+        <span className="text-[10px] font-medium text-muted-foreground">Point de départ</span>
+        <div className="flex items-center gap-1">
           <Button
-            variant="destructive"
             type="button"
-            onClick={() => {
-              if (editingWall) deleteWall(editingWall.id);
-              setWallDialogOpen(false);
-              setEditingWall(null);
-            }}
-          >
-            <Trash2 size={16} className="mr-1" />
-            Supprimer
-          </Button>
-          <Button
             variant="outline"
-            type="button"
+            size="sm"
+            className="h-7 w-7 p-0"
+            title="Déplacer X1 vers la gauche"
             onClick={() => {
-              setWallDialogOpen(false);
-              setEditingWall(null);
+              const updated = {
+                ...selectedWall,
+                x1: Math.max(0, selectedWall.x1 - (snap ? GRID_SIZE : 1)),
+              };
+              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
             }}
           >
-            Annuler
+            <ArrowLeft size={14} />
           </Button>
-          <Button type="submit" form="wall-form">
-            Enregistrer
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 w-7 p-0"
+            title="Déplacer X1 vers la droite"
+            onClick={() => {
+              const updated = {
+                ...selectedWall,
+                x1: Math.min(canvasWidth, selectedWall.x1 + (snap ? GRID_SIZE : 1)),
+              };
+              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
+            }}
+          >
+            <ArrowRight size={14} />
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 w-7 p-0"
+            title="Déplacer Y1 vers le haut"
+            onClick={() => {
+              const updated = {
+                ...selectedWall,
+                y1: Math.max(0, selectedWall.y1 - (snap ? GRID_SIZE : 1)),
+              };
+              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
+            }}
+          >
+            <ArrowUp size={14} />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 w-7 p-0"
+            title="Déplacer Y1 vers le bas"
+            onClick={() => {
+              const updated = {
+                ...selectedWall,
+                y1: Math.min(canvasHeight, selectedWall.y1 + (snap ? GRID_SIZE : 1)),
+              };
+              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
+            }}
+          >
+            <ArrowDown size={14} />
+          </Button>
+        </div>
+      </div>
+
+      <div className="h-6 w-px bg-border" />
+
+      <div className="flex flex-col gap-1">
+        <span className="text-[10px] font-medium text-muted-foreground">Point d&apos;arrivée</span>
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 w-7 p-0"
+            title="Déplacer X2 vers la gauche"
+            onClick={() => {
+              const updated = {
+                ...selectedWall,
+                x2: Math.max(0, selectedWall.x2 - (snap ? GRID_SIZE : 1)),
+              };
+              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
+            }}
+          >
+            <ArrowLeft size={14} />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 w-7 p-0"
+            title="Déplacer X2 vers la droite"
+            onClick={() => {
+              const updated = {
+                ...selectedWall,
+                x2: Math.min(canvasWidth, selectedWall.x2 + (snap ? GRID_SIZE : 1)),
+              };
+              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
+            }}
+          >
+            <ArrowRight size={14} />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 w-7 p-0"
+            title="Déplacer Y2 vers le haut"
+            onClick={() => {
+              const updated = {
+                ...selectedWall,
+                y2: Math.max(0, selectedWall.y2 - (snap ? GRID_SIZE : 1)),
+              };
+              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
+            }}
+          >
+            <ArrowUp size={14} />
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 w-7 p-0"
+            title="Déplacer Y2 vers le bas"
+            onClick={() => {
+              const updated = {
+                ...selectedWall,
+                y2: Math.min(canvasHeight, selectedWall.y2 + (snap ? GRID_SIZE : 1)),
+              };
+              void updateWall(updated, updated.type, updated.name ?? null).catch(() => {});
+            }}
+          >
+            <ArrowDown size={14} />
+          </Button>
+        </div>
+      </div>
+
+      <div className="h-6 w-px bg-border" />
+
+      <Button
+        type="button"
+        variant="destructive"
+        size="sm"
+        className="h-8"
+        title="Supprimer"
+        onClick={() => {
+          void deleteWall(selectedWall.id);
+          setSelectedWallId(null);
+        }}
+      >
+        <Trash2 size={14} className="mr-1" />
+        Supprimer
+      </Button>
+    </div>
+  ) : null;
 
   const settingsDialog = (
     <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
@@ -1576,7 +1659,6 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
         </Card>
         {dialog}
         {confirm}
-        {wallDialog}
         {settingsDialog}
       </>
     );
@@ -1595,7 +1677,6 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
         </Card>
         {dialog}
         {confirm}
-        {wallDialog}
         {settingsDialog}
       </>
     );
@@ -1714,6 +1795,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
             <div className="flex h-full">
               <FloorPlanPalette />
               <div className="relative flex-1 overflow-auto bg-muted">
+                {wallToolbar}
                 <div
                   ref={canvasRef}
                   className="absolute origin-top-left bg-muted"
@@ -1731,18 +1813,24 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                   <svg
                     className="absolute inset-0 w-full h-full pointer-events-none"
                     style={{ zIndex: 10 }}
+                    onClick={() => setSelectedWallId(null)}
                   >
                     <g className="pointer-events-auto">
                       {floorPlan?.walls?.map((w) => (
                         <WallSegment
                           key={w.id}
                           wall={w}
+                          isSelected={selectedWallId === w.id}
                           onClick={() => {
-                            setEditingWall(w);
-                            setWallType(w.type);
-                            setWallDialogOpen(true);
+                            if (wallJustDraggedRef.current) {
+                              wallJustDraggedRef.current = false;
+                              return;
+                            }
+                            setSelectedWallId(w.id);
                           }}
-                          isSelected={editingWall?.id === w.id}
+                          onPointerDownMove={(e) => handleWallPointerDown(e, w, 'move')}
+                          onPointerDownStart={(e) => handleWallPointerDown(e, w, 'resize-start')}
+                          onPointerDownEnd={(e) => handleWallPointerDown(e, w, 'resize-end')}
                         />
                       ))}
                     </g>
@@ -1778,14 +1866,22 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
               </div>
             </div>
             <DragOverlay dropAnimation={null}>
-              {activeDragTable ? (
-                <TableCard
-                  table={activeDragTable}
-                  status={live ? tableStatuses.get(activeDragTable.id) : undefined}
-                  isOverlay
-                  style={{ transform: `scale(${zoom})`, transformOrigin: 'top left' }}
-                />
-              ) : null}
+              {activeDragTable
+                ? (() => {
+                    const { width: tw, height: th } = getTableSize(activeDragTable);
+                    return (
+                      <TableCard
+                        table={activeDragTable}
+                        status={live ? tableStatuses.get(activeDragTable.id) : undefined}
+                        isOverlay
+                        style={{
+                          transform: `scale(${zoom}) translate(-${tw / 2}px, -${th / 2}px)`,
+                          transformOrigin: 'top left',
+                        }}
+                      />
+                    );
+                  })()
+                : null}
               {activeDragData?.kind === 'table' ? (
                 <NewTableOverlay
                   shape={activeDragData.shape}
@@ -1802,7 +1898,6 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
       </Card>
       {dialog}
       {confirm}
-      {wallDialog}
       {settingsDialog}
     </>
   );
