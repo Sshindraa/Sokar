@@ -1017,22 +1017,27 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
       const rawY = wall.y1;
       const fixedX = wall.x2;
       const fixedY = wall.y2;
-      let candidates: { x: number; y: number; dist: number }[] = [];
 
-      // Axis snap
+      // 1) Connexion prioritaire : accroche l'extremite a un point d'un autre mur
+      //    (coin parfait). On ignore l'alignement d'axe tant qu'un point est proche.
+      let bestEndpoint: { x: number; y: number; dist: number } | null = null;
+      for (const ep of otherEndpoints) {
+        const dist = Math.hypot(rawX - ep.x, rawY - ep.y);
+        if (dist < WALL_SNAP_DISTANCE && (!bestEndpoint || dist < bestEndpoint.dist)) {
+          bestEndpoint = { x: ep.x, y: ep.y, dist };
+        }
+      }
+      if (bestEndpoint) {
+        return { x1: bestEndpoint.x, y1: bestEndpoint.y };
+      }
+
+      // 2) Repli : alignement d'axe sur le propre mur (horizontal/vertical)
+      const candidates: { x: number; y: number; dist: number }[] = [];
       if (Math.abs(rawY - fixedY) < WALL_SNAP_DISTANCE) {
         candidates.push({ x: rawX, y: fixedY, dist: Math.abs(rawY - fixedY) });
       }
       if (Math.abs(rawX - fixedX) < WALL_SNAP_DISTANCE) {
         candidates.push({ x: fixedX, y: rawY, dist: Math.abs(rawX - fixedX) });
-      }
-
-      // Endpoint snap
-      for (const ep of otherEndpoints) {
-        const dist = Math.hypot(rawX - ep.x, rawY - ep.y);
-        if (dist < WALL_SNAP_DISTANCE) {
-          candidates.push({ x: ep.x, y: ep.y, dist });
-        }
       }
 
       if (candidates.length === 0) {
@@ -1048,20 +1053,26 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     const rawY = wall.y2;
     const fixedX = wall.x1;
     const fixedY = wall.y1;
-    let candidates: { x: number; y: number; dist: number }[] = [];
 
+    // 1) Connexion prioritaire : accroche l'extremite a un point d'un autre mur
+    let bestEndpoint: { x: number; y: number; dist: number } | null = null;
+    for (const ep of otherEndpoints) {
+      const dist = Math.hypot(rawX - ep.x, rawY - ep.y);
+      if (dist < WALL_SNAP_DISTANCE && (!bestEndpoint || dist < bestEndpoint.dist)) {
+        bestEndpoint = { x: ep.x, y: ep.y, dist };
+      }
+    }
+    if (bestEndpoint) {
+      return { x2: bestEndpoint.x, y2: bestEndpoint.y };
+    }
+
+    // 2) Repli : alignement d'axe sur le propre mur (horizontal/vertical)
+    const candidates: { x: number; y: number; dist: number }[] = [];
     if (Math.abs(rawY - fixedY) < WALL_SNAP_DISTANCE) {
       candidates.push({ x: rawX, y: fixedY, dist: Math.abs(rawY - fixedY) });
     }
     if (Math.abs(rawX - fixedX) < WALL_SNAP_DISTANCE) {
       candidates.push({ x: fixedX, y: rawY, dist: Math.abs(rawX - fixedX) });
-    }
-
-    for (const ep of otherEndpoints) {
-      const dist = Math.hypot(rawX - ep.x, rawY - ep.y);
-      if (dist < WALL_SNAP_DISTANCE) {
-        candidates.push({ x: ep.x, y: ep.y, dist });
-      }
     }
 
     if (candidates.length === 0) {
@@ -1333,6 +1344,33 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
         x2 = Math.max(0, Math.min(canvasWidth, x2));
         y1 = Math.max(0, Math.min(canvasHeight, y1));
         y2 = Math.max(0, Math.min(canvasHeight, y2));
+
+        // Accroche les pointes du nouveau mur aux points existants (coins parfaits)
+        const snapDropPoint = (px: number, py: number): { x: number; y: number } | null => {
+          let best: { x: number; y: number; dist: number } | null = null;
+          for (const w of floorPlan?.walls ?? []) {
+            for (const ep of [
+              { x: w.x1, y: w.y1 },
+              { x: w.x2, y: w.y2 },
+            ]) {
+              const d = Math.hypot(px - ep.x, py - ep.y);
+              if (d < WALL_SNAP_DISTANCE && (!best || d < best.dist)) {
+                best = { x: ep.x, y: ep.y, dist: d };
+              }
+            }
+          }
+          return best ? { x: best.x, y: best.y } : null;
+        };
+        const snappedStart = snapDropPoint(x1, y1);
+        if (snappedStart) {
+          x1 = snappedStart.x;
+          y1 = snappedStart.y;
+        }
+        const snappedEnd = snapDropPoint(x2, y2);
+        if (snappedEnd) {
+          x2 = snappedEnd.x;
+          y2 = snappedEnd.y;
+        }
 
         try {
           setError('');
