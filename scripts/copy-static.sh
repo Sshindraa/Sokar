@@ -38,15 +38,29 @@ fi
 
 echo "📦 [$APP_NAME] Copying static assets to standalone..."
 
-# ── Copie .next/static ──
-rm -rf "$STANDALONE_DIR/.next/static"
-mkdir -p "$STANDALONE_DIR/.next"
-cp -R "$NEXT_DIR/static/." "$STANDALONE_DIR/.next/static/"
+if command -v rsync >/dev/null 2>&1; then
+    # ── Copie .next/static avec rsync (checksum, ne recopie pas les fichiers inchangés)
+    rm -rf "$STANDALONE_DIR/.next/static"
+    mkdir -p "$STANDALONE_DIR/.next"
+    rsync -a --checksum "$NEXT_DIR/static/" "$STANDALONE_DIR/.next/static/"
 
-# ── Copie public/ (si présent) ──
-if [ -d "$APP_DIR/public" ]; then
-  rm -rf "$STANDALONE_DIR/public"
-  cp -R "$APP_DIR/public/." "$STANDALONE_DIR/public/"
+    # ── Copie public/ (si présent) avec rsync
+    if [ -d "$APP_DIR/public" ]; then
+        rm -rf "$STANDALONE_DIR/public"
+        mkdir -p "$STANDALONE_DIR/public"
+        rsync -a --checksum "$APP_DIR/public/" "$STANDALONE_DIR/public/"
+    fi
+else
+    # ── Fallback cp -R si rsync n'est pas dispo
+    rm -rf "$STANDALONE_DIR/.next/static"
+    mkdir -p "$STANDALONE_DIR/.next"
+    cp -R "$NEXT_DIR/static/." "$STANDALONE_DIR/.next/static/"
+
+    if [ -d "$APP_DIR/public" ]; then
+        rm -rf "$STANDALONE_DIR/public"
+        mkdir -p "$STANDALONE_DIR/public"
+        cp -R "$APP_DIR/public/." "$STANDALONE_DIR/public/"
+    fi
 fi
 
 # ── Garde-fou 3 : le dossier static du standalone ne doit pas être vide ──

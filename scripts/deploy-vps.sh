@@ -577,10 +577,13 @@ else
 fi
 
 # ── 7. DB backup + migrations ───────────────────────────
-# Skip si rien n'a changé (pas de migration possible)
 if [ "$SKIP_ALL_BUILDS" = true ]; then
     log info ""
     log info "⏭️  Skip DB backup + migrations (aucun changement de code)"
+elif [ "$NEED_PRISMA" = false ]; then
+    # Des fichiers de code ont changé mais pas le schema/migrations → pas besoin de backup
+    log info ""
+    log info "⏭️  Skip DB backup (aucune migration Prisma modifiée)"
 else
     log info ""
     log info "📦 Backing up database..."
