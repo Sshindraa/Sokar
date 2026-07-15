@@ -78,7 +78,7 @@ const GRID_SIZE = 16;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2.0;
 const ZOOM_STEP = 0.1;
-const WALL_SNAP_DISTANCE = 20; // pixels in canvas coordinates
+const WALL_SNAP_DISTANCE = 40; // pixels in canvas coordinates
 
 type TableStatus = 'free' | 'occupied' | 'upcoming' | 'inactive';
 
