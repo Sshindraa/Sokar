@@ -14,7 +14,7 @@
     "errorDigest": "Référence de l'incident : {digest}"
   },
   "nav": {
-    "overview": "Aperçu",
+    "overview": "Pilotage",
     "calls": "Appels",
     "reservations": "Réservations",
     "floorPlan": "Salle",
@@ -28,7 +28,6 @@
     "settings": "Réglages"
   },
   "dashboard": {
-    "pageTitle": "Tableau de bord",
     "subdomain": "Sokar OS",
     "demoModeOn": "Mode démo actif",
     "demoModeOff": "Voir la démo",
@@ -61,6 +60,8 @@
   },
   "languageSwitcher": {
     "label": "Langue",
+    "settingsTitle": "Langue d’affichage",
+    "settingsDescription": "Choisissez la langue utilisée dans votre espace Sokar.",
     "current": "Langue actuelle : {label}",
     "comingSoon": "Bientôt disponible",
     "comingSoonHint": "D'autres langues seront ajoutées progressivement."

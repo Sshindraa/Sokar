@@ -20,9 +20,12 @@ const nextConfig = {
   // webpackBuildWorker: true — requis pour que parallelServerBuildTraces
   // s'active (Next 15 désactive le build worker dès qu'un plugin modifie
   // la config webpack, ce qui est le cas de next-intl/plugin).
+  // ATTENTION : ces options sont désactivées car elles empêchent la génération
+  // des chunks core (main-app.js, polyfills.js) en dev Next 15.5.20.
+  // À ré-activer en prod uniquement après validation d'un build complet.
   experimental: {
-    parallelServerBuildTraces: true,
-    webpackBuildWorker: true,
+    parallelServerBuildTraces: false,
+    webpackBuildWorker: false,
   },
   // ESLint est déjà exécuté en pre-push hook (prepush-quality-gate).
   // Le relancer pendant next build sur le VPS ajoute ~40 s (dashboard) + ~68 s

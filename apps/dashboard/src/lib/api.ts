@@ -5,6 +5,7 @@ import { useCallback } from 'react';
 
 const PROXY = '/api/proxy';
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+const demoOrgId = process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID;
 
 interface ApiResult<T> {
   data: T | null;
@@ -25,11 +26,11 @@ export function useApi() {
     ? // eslint-disable-next-line react-hooks/rules-of-hooks
       useClerkContext()
     : {
-        isSignedIn: false,
+        isSignedIn: Boolean(demoOrgId),
         organization: null as ReturnType<typeof useOrganization>['organization'],
       };
   const { isSignedIn, organization } = clerk;
-  const orgId = organization?.id;
+  const orgId = organization?.id ?? demoOrgId ?? undefined;
 
   const apiFetch = useCallback(
     async <T = unknown>(
@@ -37,10 +38,6 @@ export function useApi() {
       path: string,
       body?: unknown,
     ): Promise<T> => {
-      if (!hasClerkKey) {
-        return {} as T;
-      }
-
       const url = `${PROXY}/${path.replace(/^\//, '')}`;
 
       const res = await fetch(url, {

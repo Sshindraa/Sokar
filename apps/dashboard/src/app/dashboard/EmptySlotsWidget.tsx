@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CalendarOff, Clock, TrendingDown } from 'lucide-react';
+import Link from 'next/link';
+import { AlertTriangle, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApi } from '../../lib/api';
 import { getErrorMessage } from '@/types/api';
@@ -70,11 +71,11 @@ export default function EmptySlotsWidget() {
   if (!orgId) return null;
   if (loading) {
     return (
-      <section className="rounded-2xl border border-warning/15 bg-warning/[0.03] p-5 md:p-6">
-        <Skeleton className="mb-4 h-6 w-48" />
-        <div className="space-y-2">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-16 w-full rounded-xl" />
+      <section className="rounded-2xl border border-border bg-card p-4 md:p-5">
+        <Skeleton className="mb-4 h-6 w-52" />
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-20 w-full rounded-xl" />
           ))}
         </div>
       </section>
@@ -87,85 +88,85 @@ export default function EmptySlotsWidget() {
   const { summary } = data;
   const hasAlerts = summary.underbookedDays > 0;
 
-  return (
-    <section
-      className={`rounded-2xl border p-5 md:p-6 ${
-        hasAlerts ? 'border-warning/25 bg-warning/[0.04]' : 'border-success/15 bg-success/[0.03]'
-      }`}
-    >
-      <div className="mb-4 flex items-center gap-3">
-        {hasAlerts ? (
-          <AlertTriangle size={20} className="text-warning" />
-        ) : (
-          <Clock size={20} className="text-success" />
-        )}
+  if (!hasAlerts) {
+    return (
+      <section className="flex items-center gap-3 rounded-2xl border border-success/20 bg-success/[0.04] p-5">
+        <CheckCircle2 size={20} className="shrink-0 text-success" />
         <div>
-          <h2 className="text-lg font-bold text-foreground">
-            {hasAlerts
-              ? `${summary.underbookedDays} jour${summary.underbookedDays > 1 ? 's' : ''} sous-réservé${summary.underbookedDays > 1 ? 's' : ''} cette semaine`
-              : 'Semaine bien remplie'}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {hasAlerts ? (
-              <>
-                <span className="font-semibold text-warning">
-                  ~{summary.revenueAtRisk.toLocaleString('fr-FR')} €
-                </span>{' '}
-                de CA potentiel non réalisé · ticket moyen :{' '}
-                {summary.avgRevenuePerReservation.toLocaleString('fr-FR')} €
-              </>
-            ) : (
-              `Tous vos jours d'ouverture ont au moins ${summary.threshold} réservations.`
-            )}
-          </p>
+          <h2 className="font-bold text-foreground">Semaine bien remplie</h2>
+          <p className="text-sm text-muted-foreground">Aucun jour à renforcer.</p>
         </div>
+      </section>
+    );
+  }
+
+  const actionableDays = data.days.filter((day) => day.isOpen && day.isUnderbooked).slice(0, 4);
+
+  return (
+    <section className="rounded-2xl border border-warning/25 bg-warning/[0.04] p-4 md:p-5">
+      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <AlertTriangle size={20} className="shrink-0 text-warning" />
+          <div>
+            <h2 className="text-lg font-bold text-foreground">
+              {summary.underbookedDays} jour{summary.underbookedDays > 1 ? 's' : ''} à remplir
+            </h2>
+            {summary.revenueAtRisk > 0 && (
+              <p className="text-sm font-semibold text-warning">
+                ~{summary.revenueAtRisk.toLocaleString('fr-FR')} € de CA potentiel
+              </p>
+            )}
+          </div>
+        </div>
+        <Link
+          href="/dashboard/reservations"
+          className="inline-flex items-center gap-1.5 self-start rounded-xl border border-warning/30 bg-card px-3 py-2 text-xs font-bold text-foreground transition-all duration-200 hover:bg-accent sm:self-auto"
+        >
+          Voir les réservations
+          <ArrowRight size={14} />
+        </Link>
       </div>
 
-      {/* Grille 7 jours */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-        {data.days.map((day) => {
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {actionableDays.map((day) => {
           const isToday = day.date === new Date().toISOString().split('T')[0];
           return (
             <div
               key={day.date}
-              className={`rounded-xl border p-3 text-center transition-all duration-200 ${
-                !day.isOpen
-                  ? 'border-border bg-card opacity-50'
-                  : day.isUnderbooked
-                    ? 'border-warning/30 bg-warning/[0.06]'
-                    : 'border-success/15 bg-success/[0.04]'
-              } ${isToday ? 'ring-1 ring-brand/30' : ''}`}
+              className={`rounded-xl border border-warning/20 bg-card p-3 ${
+                isToday ? 'ring-1 ring-brand/30' : ''
+              }`}
             >
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                {DAY_LABELS[day.dayName] || day.dayName}
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-bold text-foreground">
+                  {DAY_LABELS[day.dayName] || day.dayName}
+                </p>
+                {isToday && (
+                  <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-bold text-brand">
+                    Aujourd’hui
+                  </span>
+                )}
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                <span className="font-bold text-foreground">{day.reservationCount}</span> résa
+                {day.reservationCount > 1 ? 's' : ''} · {day.covers} couverts
               </p>
-
-              {!day.isOpen ? (
-                <div className="mt-2 flex flex-col items-center gap-1">
-                  <CalendarOff size={16} className="text-muted-foreground" />
-                  <span className="text-[10px] text-muted-foreground">Fermé</span>
-                </div>
-              ) : (
-                <>
-                  <p className="mt-2 text-2xl font-black text-foreground">{day.reservationCount}</p>
-                  <p className="text-[10px] text-muted-foreground">
-                    {day.reservationCount > 1 ? 'réservations' : 'réservation'}
-                  </p>
-                  <p className="mt-1 text-[10px] text-muted-foreground">{day.covers} couverts</p>
-                  {day.isUnderbooked && (
-                    <p className="mt-2 flex items-center justify-center gap-1 text-[10px] font-semibold text-warning">
-                      <TrendingDown size={10} />
-                      {day.revenueAtRisk > 0
-                        ? `~${day.revenueAtRisk.toLocaleString('fr-FR')} € manquant`
-                        : 'Sous-réservé'}
-                    </p>
-                  )}
-                </>
+              {day.revenueAtRisk > 0 && (
+                <p className="mt-1 text-xs font-semibold text-warning">
+                  ~{day.revenueAtRisk.toLocaleString('fr-FR')} € à récupérer
+                </p>
               )}
             </div>
           );
         })}
       </div>
+      {summary.underbookedDays > actionableDays.length && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          +{summary.underbookedDays - actionableDays.length} autre
+          {summary.underbookedDays - actionableDays.length > 1 ? 's' : ''} jour
+          {summary.underbookedDays - actionableDays.length > 1 ? 's' : ''} à remplir
+        </p>
+      )}
     </section>
   );
 }

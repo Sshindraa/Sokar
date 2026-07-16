@@ -14,7 +14,7 @@
     "errorDigest": "Incident reference: {digest}"
   },
   "nav": {
-    "overview": "Overview",
+    "overview": "Performance",
     "calls": "Calls",
     "reservations": "Reservations",
     "floorPlan": "Floor plan",
@@ -28,7 +28,6 @@
     "settings": "Settings"
   },
   "dashboard": {
-    "pageTitle": "Dashboard",
     "subdomain": "Sokar OS",
     "demoModeOn": "Demo mode active",
     "demoModeOff": "View demo",
@@ -61,6 +60,8 @@
   },
   "languageSwitcher": {
     "label": "Language",
+    "settingsTitle": "Display language",
+    "settingsDescription": "Choose the language used in your Sokar workspace.",
     "current": "Current language: {label}",
     "comingSoon": "Coming soon",
     "comingSoonHint": "More languages will be added gradually."

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { UserX, TrendingDown, TrendingUp, MessageSquare, Euro } from 'lucide-react';
+import { UserX, TrendingDown, MessageSquare, Euro } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApi } from '../../lib/api';
 
@@ -68,7 +68,7 @@ export default function NoShowWidget() {
         <div>
           <h2 className="text-lg font-bold text-foreground">No-shows</h2>
           <p className="text-sm text-muted-foreground">
-            Sur les 90 derniers jours · {data.total} réservations
+            90 derniers jours · {data.total} réservations
           </p>
         </div>
       </div>
@@ -79,7 +79,7 @@ export default function NoShowWidget() {
           <div className="flex items-center gap-2">
             <TrendingDown size={14} className="text-destructive" />
             <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              Taux de no-show
+              Taux
             </span>
           </div>
           <p className="mt-2 text-3xl font-black text-foreground">{data.noShowRate.toFixed(1)}%</p>
@@ -93,13 +93,15 @@ export default function NoShowWidget() {
           <div className="flex items-center gap-2">
             <Euro size={14} className="text-destructive" />
             <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              CA perdu
+              CA estimé perdu
             </span>
           </div>
           <p className="mt-2 text-3xl font-black text-destructive">
             {data.revenueLost.toLocaleString('fr-FR')} €
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">Estimation basée sur le ticket moyen</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {data.noShows} absence{data.noShows > 1 ? 's' : ''}
+          </p>
         </div>
 
         {/* Impact du rappel SMS */}
@@ -124,7 +126,7 @@ export default function NoShowWidget() {
               }
             />
             <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              Impact rappel SMS
+              Réservations sauvées par SMS
             </span>
           </div>
 
@@ -153,9 +155,7 @@ export default function NoShowWidget() {
             </>
           ) : (
             <>
-              <p className="mt-2 text-sm font-medium text-muted-foreground">
-                Données insuffisantes
-              </p>
+              <p className="mt-2 text-sm font-medium text-muted-foreground">Pas encore mesurable</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {data.withSms.total < 5
                   ? `${data.withSms.total}/5 réservations avec SMS`
@@ -165,21 +165,6 @@ export default function NoShowWidget() {
           )}
         </div>
       </div>
-
-      {/* Message contextuel */}
-      {hasComparison && smsWorks && data.revenueLost > 0 && (
-        <p className="mt-4 text-xs text-muted-foreground">
-          <TrendingUp size={12} className="mr-1 inline text-success" />
-          Le rappel SMS réduit vos no-shows de {Math.abs(data.impact!).toFixed(1)} points. Continuez
-          à marquer les no-shows pour affiner la mesure.
-        </p>
-      )}
-      {data.total > 0 && data.noShows === 0 && (
-        <p className="mt-4 text-xs text-muted-foreground">
-          Aucun no-show enregistré. Marquez les absences dans{' '}
-          <span className="font-medium">Réservations</span> pour suivre l&apos;impact du rappel SMS.
-        </p>
-      )}
     </section>
   );
 }

@@ -3,8 +3,6 @@
 import {
   Area,
   AreaChart,
-  Bar,
-  BarChart,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
@@ -15,20 +13,11 @@ import {
 import { useDashboardTheme } from '@/features/theme/dashboard-theme';
 import type { AnalyticsPoint } from './page';
 
-function ChartCard({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle: string;
-  children: React.ReactNode;
-}) {
+function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <article className="rounded-2xl border border-border bg-card p-4 shadow-sm md:p-6">
-      <div className="mb-5">
+    <article className="rounded-2xl border border-border bg-card p-4 shadow-sm md:p-5">
+      <div className="mb-3">
         <h2 className="text-lg font-black tracking-tight text-foreground font-display">{title}</h2>
-        <p className="mt-1 text-xs font-medium text-muted-foreground">{subtitle}</p>
       </div>
       {children}
     </article>
@@ -67,21 +56,18 @@ export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoi
   const axisColor = isLight ? 'hsl(0 0% 6.7% / 0.4)' : 'hsl(60 13% 95.5% / 0.4)';
   const gridColor = isLight ? 'hsl(0 0% 6.7% / 0.08)' : 'hsl(60 13% 95.5% / 0.1)';
   // Couleurs alignées sur les tokens sémantiques (pas de bleu hardcodé).
-  const callsColor = isLight ? 'hsl(38 7.8% 52%)' : 'hsl(38 7.8% 52%)';
+  const coversColor = isLight ? 'hsl(38 7.8% 52%)' : 'hsl(38 7.8% 52%)';
   const reservationsColor = isLight ? 'hsl(139 13% 48%)' : 'hsl(152 18% 48%)';
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-      <ChartCard
-        title="Appels et réservations"
-        subtitle="Le volume entrant comparé aux réservations confirmées."
-      >
-        <ResponsiveContainer width="100%" height={320}>
+    <section>
+      <ChartCard title="Réservations et couverts">
+        <ResponsiveContainer width="100%" height={280}>
           <AreaChart data={analytics} margin={{ left: -18, right: 10, top: 10, bottom: 0 }}>
             <defs>
-              <linearGradient id="callsGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={callsColor} stopOpacity={0.35} />
-                <stop offset="95%" stopColor={callsColor} stopOpacity={0} />
+              <linearGradient id="coversGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={coversColor} stopOpacity={0.35} />
+                <stop offset="95%" stopColor={coversColor} stopOpacity={0} />
               </linearGradient>
               <linearGradient id="reservationsGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor={reservationsColor} stopOpacity={0.35} />
@@ -94,10 +80,10 @@ export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoi
             <Tooltip content={<ChartTooltip />} />
             <Area
               type="monotone"
-              dataKey="calls"
-              name="Appels"
-              stroke={callsColor}
-              fill="url(#callsGradient)"
+              dataKey="covers"
+              name="Couverts"
+              stroke={coversColor}
+              fill="url(#coversGradient)"
               strokeWidth={2.5}
             />
             <Area
@@ -109,18 +95,6 @@ export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoi
               strokeWidth={2.5}
             />
           </AreaChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      <ChartCard title="Couverts générés" subtitle="Nombre de personnes réservées via Sokar.">
-        <ResponsiveContainer width="100%" height={320}>
-          <BarChart data={analytics} margin={{ left: -18, right: 10, top: 10, bottom: 0 }}>
-            <CartesianGrid stroke={gridColor} vertical={false} />
-            <XAxis dataKey="label" stroke={axisColor} tickLine={false} axisLine={false} />
-            <YAxis stroke={axisColor} tickLine={false} axisLine={false} />
-            <Tooltip content={<ChartTooltip />} />
-            <Bar dataKey="covers" name="Couverts" fill={callsColor} radius={[8, 8, 0, 0]} />
-          </BarChart>
         </ResponsiveContainer>
       </ChartCard>
     </section>

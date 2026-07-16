@@ -36,15 +36,29 @@ import {
   RotateCcw,
   Grid3x3,
   Magnet,
-  Activity,
+  Save,
+  Check,
+  Maximize2,
+  Move,
+  Copy,
+  Lock,
+  Unlock,
+  Clock3,
+  CalendarDays,
+  AlertTriangle,
+  CircleCheck,
+  UserRound,
+  Users,
+  ListFilter,
+  BarChart3,
   Plus,
   Trash2,
-  Settings,
   Circle,
   Square,
   Minus,
   DoorOpen,
   Wine,
+  type LucideIcon,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
@@ -85,7 +99,7 @@ const WALL_LENGTH_MATCH_DISTANCE = 24; // pixels in canvas coordinates
 const WALL_ALIGN_GUIDE_DISTANCE = 24; // pixels in canvas coordinates
 const WALL_PERPENDICULAR_DOT_TOLERANCE = 0.08;
 
-type TableStatus = 'free' | 'occupied' | 'upcoming' | 'inactive';
+type TableStatus = 'free' | 'reserved' | 'upcoming' | 'late' | 'occupied' | 'inactive';
 
 type WallLengthGuide = {
   activeWallId: string;
@@ -134,6 +148,7 @@ function formatWallLength(length: number): string {
 
 type CanvasTable = FloorPlanTable & {
   sectionName?: string | null;
+  displayName?: string;
 };
 
 type TableForm = {
@@ -167,21 +182,32 @@ function getTableSize(table: { capacity?: number | null; shape?: TableShape | nu
   width: number;
   height: number;
 } {
-  const base = 80;
+  const base = 88;
   const capacity = table.capacity ?? 1;
   const extra = Math.min(capacity, 12) * 12;
   const size = Math.min(base + extra, 220);
   const width = size;
   const shape = table.shape ?? 'rect';
-  const height = shape === 'round' ? size : 80;
+  const height = shape === 'round' ? size : 112;
   return { width, height };
 }
 
 const statusClasses: Record<TableStatus, string> = {
-  free: 'bg-primary/20 border-primary text-foreground',
-  occupied: 'bg-destructive/20 border-destructive text-foreground',
-  upcoming: 'bg-accent/20 border-accent text-foreground',
+  free: 'bg-card border-border text-foreground',
+  reserved: 'bg-ring/10 border-ring/60 text-foreground shadow-sm',
+  upcoming: 'bg-warning/10 border-warning/70 text-foreground shadow-sm',
+  late: 'bg-destructive/10 border-destructive text-foreground shadow-sm',
+  occupied: 'bg-primary/15 border-primary text-foreground shadow-sm',
   inactive: 'bg-muted border-border text-muted-foreground opacity-60',
+};
+
+const statusMeta: Record<TableStatus, { label: string; icon: LucideIcon }> = {
+  free: { label: 'Disponible', icon: CircleCheck },
+  reserved: { label: 'Réservée', icon: CalendarDays },
+  upcoming: { label: 'Arrivée imminente', icon: Clock3 },
+  late: { label: 'En retard', icon: AlertTriangle },
+  occupied: { label: 'Occupée', icon: Users },
+  inactive: { label: 'Inactive', icon: Lock },
 };
 
 function getTableStatus(
@@ -200,11 +226,21 @@ function getTableStatus(
   const current = tableRes.find((r) => {
     const start = parseISO(r.startsAt);
     const end = parseISO(r.endsAt);
-    return isWithinInterval(now, { start, end }) && ['SEATED', 'CONFIRMED'].includes(r.state);
+    return isWithinInterval(now, { start, end }) && r.state === 'SEATED';
   });
 
   if (current) {
     return { status: 'occupied', reservation: current };
+  }
+
+  const late = tableRes.find((r) => {
+    const start = parseISO(r.startsAt);
+    const end = parseISO(r.endsAt);
+    return !isAfter(start, now) && isAfter(end, now) && ['PENDING', 'CONFIRMED'].includes(r.state);
+  });
+
+  if (late) {
+    return { status: 'late', reservation: late };
   }
 
   const upcoming = tableRes.find((r) => {
@@ -212,13 +248,25 @@ function getTableStatus(
     const diff = differenceInMinutes(start, now);
     return (
       isAfter(start, now) &&
-      (isSameDay(start, now) || diff <= 60) &&
-      (diff <= 60 || ['PENDING', 'CONFIRMED'].includes(r.state))
+      diff <= 30 &&
+      (isSameDay(start, now) || diff <= 30) &&
+      ['PENDING', 'CONFIRMED'].includes(r.state)
     );
   });
 
   if (upcoming) {
     return { status: 'upcoming', reservation: upcoming };
+  }
+
+  const reserved = tableRes.find((r) => {
+    const start = parseISO(r.startsAt);
+    return (
+      isAfter(start, now) && isSameDay(start, now) && ['PENDING', 'CONFIRMED'].includes(r.state)
+    );
+  });
+
+  if (reserved) {
+    return { status: 'reserved', reservation: reserved };
   }
 
   return { status: 'free', reservation: null };
@@ -228,6 +276,26 @@ function formatReservationBadge(reservation: PlanningReservation): string {
   if (!reservation.startsAt) return 'Réservation';
   const start = parseISO(reservation.startsAt);
   return `${reservation.customerName || 'Sans nom'} · ${reservation.partySize} · ${format(start, 'HH:mm', { locale: fr })}`;
+}
+
+function formatCustomerName(name: string | null): string {
+  return name?.trim().split(/\s+/)[0] || 'Client';
+}
+
+function formatServiceTiming(
+  reservation: PlanningReservation,
+  status: TableStatus,
+  now: Date,
+): string {
+  const startsAt = parseISO(reservation.startsAt);
+  const minutes = Math.abs(differenceInMinutes(startsAt, now));
+  if (status === 'occupied') {
+    return `Occupée depuis ${minutes} min`;
+  }
+  const diff = differenceInMinutes(startsAt, now);
+  if (diff < 0) return `En retard de ${Math.abs(diff)} min`;
+  if (diff === 0) return 'Arrivée maintenant';
+  return `Arrivée dans ${diff} min`;
 }
 
 function findNextPosition(
@@ -417,6 +485,8 @@ type WallSegmentProps = {
   wall: FloorPlanWall;
   onClick?: () => void;
   isSelected?: boolean;
+  editable?: boolean;
+  locked?: boolean;
   onPointerDownMove?: (e: React.PointerEvent) => void;
   onPointerDownStart?: (e: React.PointerEvent) => void;
   onPointerDownEnd?: (e: React.PointerEvent) => void;
@@ -426,6 +496,8 @@ function WallSegment({
   wall,
   onClick,
   isSelected,
+  editable = true,
+  locked = false,
   onPointerDownMove,
   onPointerDownStart,
   onPointerDownEnd,
@@ -434,7 +506,10 @@ function WallSegment({
 
   return (
     <g
-      className={cn('transition-all duration-200', onClick && 'cursor-pointer')}
+      className={cn(
+        'transition-all duration-200',
+        onClick && editable && !locked && 'cursor-pointer',
+      )}
       onClick={(e) => {
         if (!onClick) return;
         e.stopPropagation();
@@ -456,7 +531,7 @@ function WallSegment({
           isSelected && 'pointer-events-none',
         )}
       />
-      {isSelected ? (
+      {isSelected && editable && !locked ? (
         <>
           {/* Thicker invisible line for easier drag of the whole wall */}
           <line
@@ -505,6 +580,7 @@ type TableCardProps = {
   isOverlay?: boolean;
   style?: React.CSSProperties;
   className?: string;
+  zoom?: number;
 };
 
 function TableCard({
@@ -516,42 +592,96 @@ function TableCard({
   isOverlay,
   style,
   className,
+  zoom = 1,
 }: TableCardProps) {
   const { width, height } = getTableSize(table);
+  const displayName = table.displayName ?? table.name;
   const title = status?.reservation
     ? formatReservationBadge(status.reservation)
-    : `${table.name} · ${table.capacity} couverts`;
+    : `${displayName} · ${table.capacity} places`;
+
+  const showCapacity = zoom >= 0.6;
+  const showServiceDetails = zoom >= 0.82;
+  const showAssignment = zoom >= 0.95;
+  const reservationStart = status?.reservation ? parseISO(status.reservation.startsAt) : null;
+  const StatusIcon = status ? statusMeta[status.status].icon : null;
+  const assignment = table.sectionName || status?.reservation?.sectionName;
 
   return (
     <div
       ref={dragRef}
       className={cn(
-        'box-border flex flex-col items-center justify-center border p-2 text-center transition-all duration-200 select-none relative',
+        'box-border flex flex-col items-center justify-center border-2 p-2 text-center transition-[opacity,background-color,border-color,box-shadow] duration-200 select-none relative shadow-sm',
         table.shape === 'round' ? 'rounded-full aspect-square' : 'rounded-md',
-        'hover:ring-2 hover:ring-ring hover:ring-offset-1',
+        'overflow-visible hover:ring-2 hover:ring-ring/60 hover:ring-offset-1',
         status ? statusClasses[status.status] : 'bg-card border-border text-foreground',
         !isOverlay && 'absolute',
         className,
       )}
       style={{ width, height, ...style }}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-label={title}
       onClick={(e) => {
         e.stopPropagation();
         onClick?.();
+      }}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && onClick) {
+          e.preventDefault();
+          onClick();
+        }
       }}
       title={title}
       {...dragProps}
     >
       {renderChairs(table)}
-      <div className="relative z-10 flex flex-col items-center w-full">
-        <p className="w-full truncate text-xs font-medium">{table.name}</p>
-        <p className="text-[10px] text-muted-foreground">{table.capacity} couverts</p>
-        {table.sectionName ? (
-          <p className="w-full truncate text-[10px] text-muted-foreground">{table.sectionName}</p>
+      {StatusIcon && status ? (
+        <span
+          className={cn(
+            'absolute right-1.5 top-1.5 z-20 inline-flex h-5 w-5 items-center justify-center rounded-full border bg-background/90 shadow-sm',
+            status.status === 'late' && 'border-destructive text-destructive',
+            status.status === 'upcoming' && 'border-warning/70 text-warning',
+            status.status === 'occupied' && 'border-primary text-primary',
+            status.status === 'reserved' && 'border-ring/60 text-ring',
+            status.status === 'free' && 'border-border text-muted-foreground',
+            status.status === 'inactive' && 'border-border text-muted-foreground',
+          )}
+          title={statusMeta[status.status].label}
+          aria-label={statusMeta[status.status].label}
+        >
+          <StatusIcon size={12} strokeWidth={2.4} />
+        </span>
+      ) : null}
+      <div className="relative z-10 flex w-full max-w-full flex-col items-center px-1">
+        <div className="flex w-full items-baseline justify-center gap-1 leading-none">
+          <p className="text-xs font-bold tracking-tight">{displayName}</p>
+          {showCapacity ? (
+            <p className="text-[9px] font-medium text-muted-foreground">
+              · {table.capacity} places
+            </p>
+          ) : null}
+        </div>
+        {showServiceDetails && status?.reservation && reservationStart && !isOverlay ? (
+          <div className="mt-1.5 w-full space-y-1 text-[9px] leading-tight">
+            <p className="w-full font-semibold">
+              {formatCustomerName(status.reservation.customerName)} ·{' '}
+              {format(reservationStart, 'HH:mm')}
+            </p>
+            <p
+              className={cn(
+                'flex w-full items-center justify-center gap-1 font-medium text-muted-foreground',
+                status.status === 'late' && 'text-destructive',
+                status.status === 'upcoming' && 'text-warning',
+              )}
+            >
+              <Clock3 size={10} />
+              {formatServiceTiming(status.reservation, status.status, new Date())}
+            </p>
+          </div>
         ) : null}
-        {status?.reservation && !isOverlay ? (
-          <Badge variant="outline" className="mt-1 px-1 py-0 text-[10px]">
-            {formatReservationBadge(status.reservation)}
-          </Badge>
+        {showAssignment && assignment ? (
+          <p className="mt-1 w-full text-[9px] font-medium text-muted-foreground">{assignment}</p>
         ) : null}
       </div>
     </div>
@@ -563,12 +693,22 @@ type DraggableTableProps = {
   status?: { status: TableStatus; reservation: PlanningReservation | null };
   onClick: () => void;
   style?: React.CSSProperties;
+  draggable?: boolean;
+  zoom?: number;
 };
 
-function DraggableTable({ table, status, onClick, style }: DraggableTableProps) {
+function DraggableTable({
+  table,
+  status,
+  onClick,
+  style,
+  draggable = true,
+  zoom = 1,
+}: DraggableTableProps) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: table.id,
     data: { table },
+    disabled: !draggable,
   });
 
   return (
@@ -577,9 +717,13 @@ function DraggableTable({ table, status, onClick, style }: DraggableTableProps) 
       status={status}
       onClick={onClick}
       dragRef={setNodeRef as React.Ref<HTMLDivElement>}
-      dragProps={{ ...attributes, ...listeners }}
-      className={cn(isDragging && 'opacity-40 transition-none')}
+      dragProps={draggable ? { ...attributes, ...listeners } : undefined}
+      className={cn(
+        draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
+        isDragging && 'opacity-40 transition-none',
+      )}
       style={style}
+      zoom={zoom}
     />
   );
 }
@@ -730,8 +874,16 @@ function NewWallOverlay({ type, zoom }: { type: PaletteWallType; zoom: number })
   );
 }
 
-export function FloorPlanCanvas({ orgId }: { orgId: string }) {
+export function FloorPlanCanvas({
+  orgId,
+  mode = 'design',
+}: {
+  orgId: string;
+  mode?: 'service' | 'design';
+}) {
   const { get, post, patch, del } = useApi();
+  const getRef = useRef(get);
+  getRef.current = get;
 
   const [floorPlan, setFloorPlan] = useState<FloorPlan | null>(null);
   const [loading, setLoading] = useState(true);
@@ -740,9 +892,11 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   const [zoom, setZoom] = useState(1);
   const [gridVisible, setGridVisible] = useState(true);
   const [snap, setSnap] = useState(true);
-  const [live, setLive] = useState(false);
+  const live = mode === 'service';
   const [liveDate, setLiveDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [reservations, setReservations] = useState<PlanningReservation[]>([]);
+  const [selectedServiceTableId, setSelectedServiceTableId] = useState<string | null>(null);
+  const [lockedWallIds, setLockedWallIds] = useState<Set<string>>(() => new Set());
 
   const [activeDragData, setActiveDragData] = useState<ActiveDragData | null>(null);
   const [dragStart, setDragStart] = useState<DragStartInfo | null>(null);
@@ -750,6 +904,8 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const tableMoveIdRef = useRef(0);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const canvasViewportRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<CanvasTable | null>(null);
@@ -788,6 +944,8 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   );
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [floorSettings, setFloorSettings] = useState({ name: '', width: 1400, height: 900 });
+  const [savingPlan, setSavingPlan] = useState(false);
+  const [planSaved, setPlanSaved] = useState(false);
 
   const canvasWidth = floorPlan?.width ?? DEFAULT_CANVAS_WIDTH;
   const canvasHeight = floorPlan?.height ?? DEFAULT_CANVAS_HEIGHT;
@@ -802,27 +960,41 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     setLoading(true);
     setError('');
     try {
-      const data = await get<FloorPlan>(`restaurants/${orgId}/floor-plan`);
+      const data = await getRef.current<FloorPlan>(`restaurants/${orgId}/floor-plan`);
       setFloorPlan(data);
     } catch (err) {
       setError(getErrorMessage(err, 'Impossible de charger le plan de salle'));
     } finally {
       setLoading(false);
     }
-  }, [orgId, get]);
+  }, [orgId]);
 
   const loadReservations = useCallback(async () => {
     if (!live) return;
     setError('');
     try {
-      const data = await get<PlanningReservation[]>(
+      const data = await getRef.current<PlanningReservation[]>(
         `restaurants/${orgId}/floor-plan/reservations?date=${liveDate}`,
       );
       setReservations(data);
     } catch (err) {
       setError(getErrorMessage(err, 'Impossible de charger les réservations'));
     }
-  }, [orgId, live, liveDate, get]);
+  }, [orgId, live, liveDate]);
+
+  async function savePlan() {
+    setSavingPlan(true);
+    setError('');
+    try {
+      const savedPlan = await getRef.current<FloorPlan>(`restaurants/${orgId}/floor-plan`);
+      setFloorPlan(savedPlan);
+      setPlanSaved(true);
+    } catch (err) {
+      setError(getErrorMessage(err, "Impossible d'enregistrer le plan"));
+    } finally {
+      setSavingPlan(false);
+    }
+  }
 
   useEffect(() => {
     if (!orgId) return;
@@ -847,7 +1019,23 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
       ...table,
       sectionName: table.sectionName ?? null,
     }));
-    return [...sectionTables, ...topTables];
+    const combined = [...sectionTables, ...topTables];
+    const usedNumbers = new Set(
+      combined
+        .map((table) => Number(table.name.match(/^T0*(\d+)$/i)?.[1] ?? 0))
+        .filter((number) => number > 0),
+    );
+    let nextNumber = 1;
+
+    return combined.map((table) => {
+      const existingNumber = Number(table.name.match(/^T0*(\d+)$/i)?.[1] ?? 0);
+      if (existingNumber > 0) return { ...table, displayName: `T${existingNumber}` };
+      while (usedNumbers.has(nextNumber)) nextNumber += 1;
+      const displayName = `T${nextNumber}`;
+      usedNumbers.add(nextNumber);
+      nextNumber += 1;
+      return { ...table, displayName };
+    });
   }, [floorPlan]);
 
   const tableStatuses = useMemo(() => {
@@ -860,7 +1048,28 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     return map;
   }, [live, allTables, reservations]);
 
+  const selectedWall = useMemo(
+    () => (floorPlan?.walls ?? []).find((wall) => wall.id === selectedWallId) ?? null,
+    [floorPlan?.walls, selectedWallId],
+  );
+
+  const selectedServiceTable = useMemo(
+    () => allTables.find((table) => table.id === selectedServiceTableId) ?? null,
+    [allTables, selectedServiceTableId],
+  );
+
+  function centerCanvas() {
+    const viewport = canvasViewportRef.current;
+    if (!viewport) return;
+    viewport.scrollTo({
+      left: Math.max(0, (canvasWidth * zoom - viewport.clientWidth) / 2),
+      top: Math.max(0, (canvasHeight * zoom - viewport.clientHeight) / 2),
+      behavior: 'smooth',
+    });
+  }
+
   function openCreateDialog() {
+    setPlanSaved(false);
     setEditingTable(null);
     setForm({
       name: 'Nouvelle table',
@@ -891,6 +1100,10 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
       justDraggedRef.current = false;
       return;
     }
+    if (live) {
+      setSelectedServiceTableId(table.id);
+      return;
+    }
     openEditDialog(table);
   }
 
@@ -910,6 +1123,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     }
 
     setError('');
+    setPlanSaved(false);
 
     try {
       if (editingTable) {
@@ -966,6 +1180,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   async function updateWall(wall: FloorPlanWall, type: WallType, name: string | null) {
     if (!orgId) return;
     setError('');
+    setPlanSaved(false);
     try {
       const updated = await patch<FloorPlanWall>(
         `restaurants/${orgId}/floor-plan/walls/${wall.id}`,
@@ -987,6 +1202,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   async function deleteWall(wallId: string) {
     if (!orgId) return;
     setError('');
+    setPlanSaved(false);
     try {
       await del(`restaurants/${orgId}/floor-plan/walls/${wallId}`);
       setFloorPlan((prev) => {
@@ -998,10 +1214,66 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     }
   }
 
+  async function duplicateWall(wall: FloorPlanWall) {
+    if (!orgId || live) return;
+    setPlanSaved(false);
+    try {
+      setError('');
+      const offset = GRID_SIZE;
+      const duplicated = await post<FloorPlanWall>(`restaurants/${orgId}/floor-plan/walls`, {
+        x1: Math.min(canvasWidth, wall.x1 + offset),
+        y1: Math.min(canvasHeight, wall.y1 + offset),
+        x2: Math.min(canvasWidth, wall.x2 + offset),
+        y2: Math.min(canvasHeight, wall.y2 + offset),
+        type: wall.type,
+        name: wall.name ? `${wall.name} copie` : null,
+      });
+      setFloorPlan((prev) =>
+        prev ? { ...prev, walls: [...(prev.walls ?? []), duplicated] } : prev,
+      );
+      setSelectedWallId(duplicated.id);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de dupliquer le mur'));
+    }
+  }
+
+  function toggleWallLock(wallId: string) {
+    setLockedWallIds((current) => {
+      const next = new Set(current);
+      if (next.has(wallId)) next.delete(wallId);
+      else next.add(wallId);
+      return next;
+    });
+  }
+
+  function updateWallLength(wall: FloorPlanWall, length: number) {
+    if (!Number.isFinite(length) || length < 1) return;
+    const angle = Math.atan2(wall.y2 - wall.y1, wall.x2 - wall.x1);
+    const nextWall = {
+      ...wall,
+      x2: Math.round(wall.x1 + Math.cos(angle) * length),
+      y2: Math.round(wall.y1 + Math.sin(angle) * length),
+    };
+    void updateWall(nextWall, nextWall.type, nextWall.name ?? null);
+  }
+
+  function updateWallAngle(wall: FloorPlanWall, degrees: number) {
+    if (!Number.isFinite(degrees)) return;
+    const length = getWallLength(wall);
+    const radians = (degrees * Math.PI) / 180;
+    const nextWall = {
+      ...wall,
+      x2: Math.round(wall.x1 + Math.cos(radians) * length),
+      y2: Math.round(wall.y1 + Math.sin(radians) * length),
+    };
+    void updateWall(nextWall, nextWall.type, nextWall.name ?? null);
+  }
+
   async function handleSaveFloorSettings(e: React.FormEvent) {
     e.preventDefault();
     if (!orgId) return;
     setError('');
+    setPlanSaved(false);
     try {
       const updated = await patch<FloorPlan>(`restaurants/${orgId}/floor-plan`, {
         name: floorSettings.name,
@@ -1020,6 +1292,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     wall: FloorPlanWall,
     mode: 'move' | 'resize-start' | 'resize-end',
   ) {
+    if (live || lockedWallIds.has(wall.id)) return;
     e.stopPropagation();
     setSelectedWallId(wall.id);
     setWallDragMode(mode);
@@ -1390,7 +1663,34 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedWallId]);
 
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
+
+      if (event.key.toLowerCase() === 'g') {
+        event.preventDefault();
+        setGridVisible((visible) => !visible);
+      } else if (event.key.toLowerCase() === 's' && !live) {
+        event.preventDefault();
+        setSnap((enabled) => !enabled);
+      } else if (event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        centerCanvas();
+      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') {
+        if (selectedWall && !live) {
+          event.preventDefault();
+          void duplicateWall(selectedWall);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  });
+
   function handleDragStart(event: DragStartEvent) {
+    if (live) return;
+    setPlanSaved(false);
     justDraggedRef.current = true;
     const pointer = event.activatorEvent as PointerEvent | undefined;
     if (pointer) {
@@ -1426,6 +1726,10 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
   }
 
   async function handleDragEnd(event: DragEndEvent) {
+    if (live) {
+      handleDragCancel();
+      return;
+    }
     const start = dragStart;
     const data = activeDragData;
     const pointerStart = pointerStartRef.current;
@@ -1508,9 +1812,10 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
         } as FloorPlanTable);
         const positionX = Math.max(0, Math.min(canvasWidth - width, dropX - width / 2));
         const positionY = Math.max(0, Math.min(canvasHeight - height, dropY - height / 2));
-        const sameShapeCount = allTables.filter((t) => t.shape === data.shape).length;
-        const nameBase = data.shape === 'round' ? 'Table ronde' : 'Table rectangulaire';
-        const name = `${nameBase} ${sameShapeCount + 1}`;
+        const numericTableNames = allTables
+          .map((table) => Number(table.name.match(/^T(\d+)$/i)?.[1] ?? 0))
+          .filter((value) => value > 0);
+        const name = `T${Math.max(0, ...numericTableNames) + 1}`;
 
         try {
           setError('');
@@ -1808,8 +2113,10 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
     <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Paramètres du plan</DialogTitle>
-          <DialogDescription>Modifiez les dimensions et le nom du plan.</DialogDescription>
+          <DialogTitle>Ajouter une salle</DialogTitle>
+          <DialogDescription>
+            Définissez le nom et les dimensions de la salle affichée sur le plan.
+          </DialogDescription>
         </DialogHeader>
 
         <form id="floor-settings-form" onSubmit={handleSaveFloorSettings} className="space-y-4">
@@ -1858,11 +2165,291 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
             Annuler
           </Button>
           <Button type="submit" form="floor-settings-form">
-            Enregistrer
+            Enregistrer la salle
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+
+  const selectedServiceStatus = selectedServiceTable
+    ? tableStatuses.get(selectedServiceTable.id)
+    : undefined;
+  const selectedServiceReservation = selectedServiceStatus?.reservation ?? null;
+
+  const inspector = live ? (
+    <aside className="flex h-full w-72 min-w-72 flex-col border-l border-border bg-card">
+      <div className="border-b border-border p-4">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-50" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+          </span>
+          <p className="text-sm font-semibold">Service en direct</p>
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">Le plan est entièrement verrouillé.</p>
+      </div>
+      {selectedServiceTable ? (
+        <div className="flex-1 space-y-5 overflow-y-auto p-4">
+          <div>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-lg font-semibold">
+                  {selectedServiceTable.displayName ?? selectedServiceTable.name}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {selectedServiceTable.capacity} places
+                  {selectedServiceTable.sectionName ? ` · ${selectedServiceTable.sectionName}` : ''}
+                </p>
+              </div>
+              <Badge variant="outline">
+                {selectedServiceStatus
+                  ? statusMeta[selectedServiceStatus.status].label
+                  : 'Disponible'}
+              </Badge>
+            </div>
+          </div>
+          {selectedServiceReservation ? (
+            <div className="space-y-3 rounded-lg border border-border bg-background p-3">
+              <div className="flex items-center gap-2 text-sm">
+                <UserRound size={16} className="text-muted-foreground" />
+                <span className="font-medium">
+                  {selectedServiceReservation.customerName || 'Sans nom'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <Users size={16} className="text-muted-foreground" />
+                <span>{selectedServiceReservation.partySize} personnes</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <Clock3 size={16} className="text-muted-foreground" />
+                <span>
+                  {format(parseISO(selectedServiceReservation.startsAt), 'HH:mm')} ·{' '}
+                  {formatServiceTiming(
+                    selectedServiceReservation,
+                    selectedServiceStatus?.status ?? 'upcoming',
+                    new Date(),
+                  )}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-border p-4 text-center">
+              <p className="text-sm font-medium">Table disponible</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Aucune réservation en cours ou imminente.
+              </p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex-1 space-y-4 p-4">
+          <p className="text-sm font-medium">Vue d’ensemble</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg border border-border bg-background p-3">
+              <p className="text-xl font-semibold">
+                {[...tableStatuses.values()].filter((item) => item.status === 'occupied').length}
+              </p>
+              <p className="text-xs text-muted-foreground">Occupées</p>
+            </div>
+            <div className="rounded-lg border border-border bg-background p-3">
+              <p className="text-xl font-semibold">
+                {
+                  [...tableStatuses.values()].filter((item) =>
+                    ['reserved', 'upcoming', 'late'].includes(item.status),
+                  ).length
+                }
+              </p>
+              <p className="text-xs text-muted-foreground">Attendues</p>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Sélectionnez une table pour afficher la réservation et le temps d’occupation.
+          </p>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border pt-4">
+            {(['free', 'reserved', 'upcoming', 'late', 'occupied'] as TableStatus[]).map(
+              (status) => {
+                const StatusIcon = statusMeta[status].icon;
+                return (
+                  <div
+                    key={status}
+                    className="flex items-center gap-2 text-xs text-muted-foreground"
+                  >
+                    <span
+                      className={cn(
+                        'flex size-6 shrink-0 items-center justify-center rounded-md border',
+                        statusClasses[status],
+                      )}
+                    >
+                      <StatusIcon className="size-3.5" aria-hidden="true" />
+                    </span>
+                    <span>{statusMeta[status].label}</span>
+                  </div>
+                );
+              },
+            )}
+          </div>
+        </div>
+      )}
+    </aside>
+  ) : (
+    <aside className="flex h-full w-72 min-w-72 flex-col border-l border-border bg-card">
+      <div className="border-b border-border p-4">
+        <p className="text-sm font-semibold">Inspecteur</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {selectedWall ? 'Propriétés du mur sélectionné' : 'Sélectionnez un objet du plan'}
+        </p>
+      </div>
+      {selectedWall ? (
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          <div className="space-y-2">
+            <Label htmlFor="wall-inspector-type">Type</Label>
+            <Select
+              value={selectedWall.type}
+              onValueChange={(value) =>
+                void updateWall(selectedWall, value as WallType, selectedWall.name ?? null)
+              }
+            >
+              <SelectTrigger id="wall-inspector-type" className="bg-background">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="wall">Mur</SelectItem>
+                <SelectItem value="door">Porte</SelectItem>
+                <SelectItem value="window">Fenêtre</SelectItem>
+                <SelectItem value="bar">Bar</SelectItem>
+                <SelectItem value="plant">Décor</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="wall-inspector-name">Nom</Label>
+            <Input
+              key={`name-${selectedWall.id}-${selectedWall.name ?? ''}`}
+              id="wall-inspector-name"
+              defaultValue={selectedWall.name ?? ''}
+              placeholder="Ex. Mur terrasse"
+              className="bg-background"
+              onBlur={(event) =>
+                void updateWall(
+                  selectedWall,
+                  selectedWall.type,
+                  event.currentTarget.value.trim() || null,
+                )
+              }
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="wall-inspector-length">Longueur</Label>
+              <Input
+                key={`length-${selectedWall.id}-${getWallLength(selectedWall)}`}
+                id="wall-inspector-length"
+                type="number"
+                min={1}
+                defaultValue={Math.round(getWallLength(selectedWall))}
+                className="bg-background"
+                onBlur={(event) =>
+                  updateWallLength(selectedWall, Number(event.currentTarget.value))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="wall-inspector-angle">Angle</Label>
+              <Input
+                key={`angle-${selectedWall.id}-${selectedWall.x2}-${selectedWall.y2}`}
+                id="wall-inspector-angle"
+                type="number"
+                defaultValue={Math.round(
+                  (Math.atan2(
+                    selectedWall.y2 - selectedWall.y1,
+                    selectedWall.x2 - selectedWall.x1,
+                  ) *
+                    180) /
+                    Math.PI,
+                )}
+                className="bg-background"
+                onBlur={(event) => updateWallAngle(selectedWall, Number(event.currentTarget.value))}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {(['x1', 'y1'] as const).map((coordinate) => (
+              <div key={coordinate} className="space-y-2">
+                <Label htmlFor={`wall-inspector-${coordinate}`}>
+                  Position {coordinate === 'x1' ? 'X' : 'Y'}
+                </Label>
+                <Input
+                  key={`${coordinate}-${selectedWall.id}-${selectedWall[coordinate]}`}
+                  id={`wall-inspector-${coordinate}`}
+                  type="number"
+                  defaultValue={Math.round(selectedWall[coordinate])}
+                  className="bg-background"
+                  onBlur={(event) => {
+                    const value = Number(event.currentTarget.value);
+                    if (!Number.isFinite(value)) return;
+                    const delta = value - selectedWall[coordinate];
+                    const nextWall =
+                      coordinate === 'x1'
+                        ? { ...selectedWall, x1: value, x2: selectedWall.x2 + delta }
+                        : { ...selectedWall, y1: value, y2: selectedWall.y2 + delta };
+                    void updateWall(nextWall, nextWall.type, nextWall.name ?? null);
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="rounded-lg border border-border bg-background p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Verrouillage</p>
+                <p className="text-xs text-muted-foreground">Empêche tout déplacement.</p>
+              </div>
+              <Button
+                type="button"
+                variant={lockedWallIds.has(selectedWall.id) ? 'default' : 'outline'}
+                size="sm"
+                title={
+                  lockedWallIds.has(selectedWall.id) ? 'Déverrouiller le mur' : 'Verrouiller le mur'
+                }
+                onClick={() => toggleWallLock(selectedWall.id)}
+              >
+                {lockedWallIds.has(selectedWall.id) ? <Lock size={16} /> : <Unlock size={16} />}
+              </Button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 border-t border-border pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void duplicateWall(selectedWall)}
+            >
+              <Copy size={16} className="mr-2" />
+              Dupliquer
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                void deleteWall(selectedWall.id);
+                setSelectedWallId(null);
+              }}
+            >
+              <Trash2 size={16} className="mr-2" />
+              Supprimer
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
+          <Move size={24} className="mb-3 text-muted-foreground" />
+          <p className="text-sm font-medium">Aucun objet sélectionné</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Cliquez sur un mur pour modifier ses dimensions et sa position.
+          </p>
+        </div>
+      )}
+    </aside>
   );
 
   if (loading) {
@@ -1905,95 +2492,142 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
 
   return (
     <>
-      <Card className="sokar-card">
-        <CardHeader className="p-4 border-b border-border flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2">
-            <CardTitle className="text-base font-medium">Plan 2D</CardTitle>
-            {live ? <Badge variant="outline">Live</Badge> : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              title="Zoom avant"
-              onClick={() =>
-                setZoom((z) => Math.min(MAX_ZOOM, Math.round((z + ZOOM_STEP) * 10) / 10))
-              }
-            >
-              <ZoomIn size={16} />
-            </Button>
-            <span className="text-xs text-muted-foreground min-w-[3ch] text-center">
-              {zoom.toFixed(1)}x
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              title="Zoom arrière"
-              onClick={() =>
-                setZoom((z) => Math.max(MIN_ZOOM, Math.round((z - ZOOM_STEP) * 10) / 10))
-              }
-            >
-              <ZoomOut size={16} />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              title="Réinitialiser le zoom"
-              onClick={() => setZoom(1)}
-            >
-              <RotateCcw size={16} />
-            </Button>
-            <Button
-              variant={gridVisible ? 'default' : 'outline'}
-              size="sm"
-              title="Afficher/masquer la grille"
-              onClick={() => setGridVisible((v) => !v)}
-            >
-              <Grid3x3 size={16} />
-            </Button>
-            <Button
-              variant={snap ? 'default' : 'outline'}
-              size="sm"
-              title="Activer/désactiver l'aimantation"
-              onClick={() => setSnap((s) => !s)}
-            >
-              <Magnet size={16} />
-            </Button>
-            <Button
-              variant={live ? 'default' : 'outline'}
-              size="sm"
-              title="Mode live"
-              onClick={() => setLive((l) => !l)}
-            >
-              <Activity size={16} />
-            </Button>
-            {live ? (
-              <Input
-                type="date"
-                value={liveDate}
-                onChange={(e) => setLiveDate(e.target.value)}
-                className="w-40 bg-card border-border"
-              />
+      <Card ref={cardRef} className="sokar-card overflow-hidden">
+        <CardHeader className="flex flex-col gap-3 border-b border-border p-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <CardTitle className="text-base font-medium">
+              {floorPlan?.name || 'Plan de salle'}
+            </CardTitle>
+            {!live ? (
+              <Button
+                type="button"
+                variant={planSaved ? 'outline' : 'default'}
+                size="sm"
+                className="gap-2 transition-all duration-200"
+                disabled={savingPlan}
+                onClick={() => void savePlan()}
+              >
+                {planSaved ? <Check size={16} /> : <Save size={16} />}
+                {savingPlan
+                  ? 'Enregistrement…'
+                  : planSaved
+                    ? 'Plan enregistré'
+                    : 'Enregistrer le plan'}
+              </Button>
             ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              title="Paramètres du plan"
-              onClick={() => {
-                setFloorSettings({
-                  name: floorPlan?.name ?? '',
-                  width: floorPlan?.width ?? 1400,
-                  height: floorPlan?.height ?? 900,
-                });
-                setSettingsDialogOpen(true);
-              }}
-            >
-              <Settings size={16} />
-            </Button>
-            <Button size="sm" onClick={openCreateDialog}>
-              <Plus size={16} className="mr-1" />
-              Ajouter une table
-            </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 border-t border-border pt-3">
+            <div className="flex items-center gap-1 rounded-md border border-border bg-background p-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                title="Zoom arrière — −"
+                aria-label="Zoom arrière"
+                onClick={() =>
+                  setZoom((z) => Math.max(MIN_ZOOM, Math.round((z - ZOOM_STEP) * 10) / 10))
+                }
+              >
+                <ZoomOut size={16} />
+              </Button>
+              <span className="min-w-11 text-center text-xs text-muted-foreground">
+                {Math.round(zoom * 100)}%
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                title="Zoom avant — +"
+                aria-label="Zoom avant"
+                onClick={() =>
+                  setZoom((z) => Math.min(MAX_ZOOM, Math.round((z + ZOOM_STEP) * 10) / 10))
+                }
+              >
+                <ZoomIn size={16} />
+              </Button>
+              <Button variant="ghost" size="sm" title="Centrer le plan — F" onClick={centerCanvas}>
+                <RotateCcw size={16} className="mr-1.5" />
+                Centrer
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                title="Plein écran"
+                onClick={() => {
+                  if (document.fullscreenElement) void document.exitFullscreen();
+                  else void cardRef.current?.requestFullscreen();
+                }}
+              >
+                <Maximize2 size={16} />
+              </Button>
+              <Button
+                variant={gridVisible ? 'secondary' : 'ghost'}
+                size="sm"
+                title="Afficher ou masquer la grille — G"
+                aria-pressed={gridVisible}
+                onClick={() => setGridVisible((v) => !v)}
+              >
+                <Grid3x3 size={16} className="mr-1.5" />
+                Grille
+              </Button>
+            </div>
+            {!live ? (
+              <>
+                <div className="flex items-center gap-1 rounded-md border border-border bg-background p-1">
+                  <span className="px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Alignement
+                  </span>
+                  <Button
+                    variant={snap ? 'secondary' : 'ghost'}
+                    size="sm"
+                    title="Activer ou désactiver le magnétisme — S"
+                    aria-pressed={snap}
+                    onClick={() => setSnap((s) => !s)}
+                  >
+                    <Magnet size={16} className="mr-1.5" />
+                    Magnétisme
+                  </Button>
+                </div>
+                <div className="ml-auto flex items-center gap-1">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    title="Ajouter ou configurer une salle"
+                    onClick={() => {
+                      setFloorSettings({
+                        name: floorPlan?.name ?? '',
+                        width: floorPlan?.width ?? 1400,
+                        height: floorPlan?.height ?? 900,
+                      });
+                      setSettingsDialogOpen(true);
+                    }}
+                  >
+                    <Plus size={16} className="mr-1.5" />
+                    Ajouter une salle
+                  </Button>
+                  <Button size="sm" onClick={openCreateDialog}>
+                    <Plus size={16} className="mr-1.5" />
+                    Ajouter une table
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                <Input
+                  type="date"
+                  value={liveDate}
+                  aria-label="Date du service"
+                  onChange={(e) => setLiveDate(e.target.value)}
+                  className="w-40 bg-background border-border"
+                />
+                <Badge variant="outline" className="gap-1.5 py-1.5">
+                  <ListFilter size={14} /> {reservations.length} réservations
+                </Badge>
+                <Badge variant="outline" className="gap-1.5 py-1.5">
+                  <BarChart3 size={14} />
+                  {[...tableStatuses.values()].filter((item) => item.status === 'occupied').length}/
+                  {allTables.filter((table) => table.isActive).length} occupées
+                </Badge>
+              </div>
+            )}
           </div>
         </CardHeader>
 
@@ -2013,8 +2647,11 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
             onDragCancel={handleDragCancel}
           >
             <div className="flex h-full">
-              <FloorPlanPalette />
-              <div className="relative flex-1 overflow-auto bg-muted">
+              {!live ? <FloorPlanPalette /> : null}
+              <div
+                ref={canvasViewportRef}
+                className="relative min-w-0 flex-1 overflow-auto bg-muted"
+              >
                 <div
                   ref={canvasRef}
                   className="absolute origin-top-left bg-muted"
@@ -2039,8 +2676,11 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                         <WallSegment
                           key={w.id}
                           wall={w}
-                          isSelected={selectedWallId === w.id}
+                          isSelected={!live && selectedWallId === w.id}
+                          editable={!live}
+                          locked={lockedWallIds.has(w.id)}
                           onClick={() => {
+                            if (live) return;
                             if (wallJustDraggedRef.current) {
                               wallJustDraggedRef.current = false;
                               return;
@@ -2157,33 +2797,6 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                           )}
                         </g>
                       ) : null}
-                      {floorPlan?.walls?.map((w) =>
-                        selectedWallId === w.id ? (
-                          <foreignObject
-                            key={`delete-${w.id}`}
-                            x={(w.x1 + w.x2) / 2 - 14}
-                            y={(w.y1 + w.y2) / 2 - 14}
-                            width={28}
-                            height={28}
-                            style={{ pointerEvents: 'auto' }}
-                          >
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              size="sm"
-                              className="h-7 w-7 p-0"
-                              title="Supprimer"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void deleteWall(w.id);
-                                setSelectedWallId(null);
-                              }}
-                            >
-                              <Trash2 size={14} />
-                            </Button>
-                          </foreignObject>
-                        ) : null,
-                      )}
                     </g>
                   </svg>
                   {wallAlignGuide ? (
@@ -2222,6 +2835,8 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                         key={table.id}
                         table={table}
                         status={status}
+                        draggable={!live}
+                        zoom={zoom}
                         onClick={() => handleTableClick(table)}
                         style={{
                           left: table.positionX ?? 0,
@@ -2243,6 +2858,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                   </div>
                 ) : null}
               </div>
+              {inspector}
             </div>
             {typeof document !== 'undefined'
               ? createPortal(
@@ -2255,6 +2871,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                               table={activeDragTable}
                               status={live ? tableStatuses.get(activeDragTable.id) : undefined}
                               isOverlay
+                              zoom={zoom}
                               style={{
                                 transform: `scale(${zoom})`,
                                 transformOrigin: 'top left',
