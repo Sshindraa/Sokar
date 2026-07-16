@@ -693,7 +693,7 @@ function NewTableOverlay({
       table={table}
       isOverlay
       style={{
-        transform: `scale(${zoom}) translate(-${width / 2}px, -${height / 2}px)`,
+        transform: `scale(${zoom})`,
         transformOrigin: 'top left',
       }}
     />
@@ -711,7 +711,7 @@ function NewWallOverlay({ type, zoom }: { type: PaletteWallType; zoom: number })
       width={length}
       height={previewHeight}
       style={{
-        transform: `scale(${zoom}) translate(-${length / 2}px, -${previewHeight / 2}px)`,
+        transform: `scale(${zoom})`,
         transformOrigin: 'top left',
         overflow: 'visible',
       }}
@@ -2253,7 +2253,7 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                         status={live ? tableStatuses.get(activeDragTable.id) : undefined}
                         isOverlay
                         style={{
-                          transform: `scale(${zoom}) translate(-${tw / 2}px, -${th / 2}px)`,
+                          transform: `scale(${zoom})`,
                           transformOrigin: 'top left',
                         }}
                       />
