@@ -22,13 +22,16 @@ interface ApiResult<T> {
 export function useApi() {
   // The environment flag is stable for the whole client bundle. Without Clerk
   // keys we expose a no-op API client so local UI previews can render.
-  const clerk = hasClerkKey
-    ? // eslint-disable-next-line react-hooks/rules-of-hooks
-      useClerkContext()
-    : {
-        isSignedIn: Boolean(demoOrgId),
-        organization: null as ReturnType<typeof useOrganization>['organization'],
-      };
+  // En staging demo mode (NEXT_PUBLIC_DEMO_RESTAURANT_ID défini), on force le
+  // mode demo même si Clerk est présent — pas de session requise.
+  const clerk =
+    hasClerkKey && !demoOrgId
+      ? // eslint-disable-next-line react-hooks/rules-of-hooks
+        useClerkContext()
+      : {
+          isSignedIn: Boolean(demoOrgId),
+          organization: null as ReturnType<typeof useOrganization>['organization'],
+        };
   const { isSignedIn, organization } = clerk;
   const orgId = organization?.id ?? demoOrgId ?? undefined;
 
