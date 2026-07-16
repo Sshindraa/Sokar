@@ -4,6 +4,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 const isProtectedRoute = createRouteMatcher(['/dashboard(.*)', '/onboarding(.*)']);
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
+// Staging demo mode : si NEXT_PUBLIC_DEMO_RESTAURANT_ID + NEXT_PUBLIC_DEMO_STAGING
+// sont définis, on ne force pas la connexion sur /dashboard. La prod n'a jamais
+// ces variables → comportement inchangé.
+const isStagingDemo =
+  Boolean(process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID) &&
+  Boolean(process.env.NEXT_PUBLIC_DEMO_STAGING);
+
 // En production, l'absence de clé Clerk est une erreur fatale : sans elle le
 // middleware devient un no-op et /dashboard + /onboarding sont accessibles
 // sans auth. En dev (preview locale sans Clerk) et en CI (E2E sans Clerk),
@@ -30,7 +37,7 @@ const middleware = hasClerkKey
       const rewrite = rewriteBookToWidget(req);
       if (rewrite) return rewrite;
 
-      if (isProtectedRoute(req)) {
+      if (isProtectedRoute(req) && !isStagingDemo) {
         const { userId } = await auth();
         if (!userId) {
           const signInUrl = new URL('/login', req.url);
