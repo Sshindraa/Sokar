@@ -99,8 +99,6 @@ type WallLengthGuide = {
 type WallResizeAlignGuide = {
   axis: 'x' | 'y';
   value: number;
-  labelX: number;
-  labelY: number;
 };
 
 function getWallLength(wall: Pick<FloorPlanWall, 'x1' | 'y1' | 'x2' | 'y2'>): number {
@@ -1130,8 +1128,6 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
       guide: {
         axis: match.axis,
         value: match.value,
-        labelX: match.axis === 'x' ? match.value : dragged.x,
-        labelY: match.axis === 'y' ? match.value : dragged.y,
       },
     };
   }
@@ -2158,22 +2154,6 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                               opacity={0.95}
                             />
                           )}
-                          <foreignObject
-                            x={Math.max(
-                              8,
-                              Math.min(canvasWidth - 116, wallResizeAlignGuide.labelX + 10),
-                            )}
-                            y={Math.max(
-                              8,
-                              Math.min(canvasHeight - 30, wallResizeAlignGuide.labelY - 15),
-                            )}
-                            width={116}
-                            height={30}
-                          >
-                            <div className="flex h-full items-center justify-center rounded-md border border-primary/40 bg-background/95 px-2 text-[11px] font-medium text-primary shadow-sm">
-                              Aligné
-                            </div>
-                          </foreignObject>
                         </g>
                       ) : null}
                       {floorPlan?.walls?.map((w) =>

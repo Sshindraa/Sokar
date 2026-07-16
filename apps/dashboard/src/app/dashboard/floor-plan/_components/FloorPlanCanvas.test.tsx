@@ -72,7 +72,7 @@ describe('FloorPlanCanvas — guides des murs', () => {
     fireEvent.pointerMove(window, { clientX: 456, clientY: 280 });
 
     expect(await screen.findByText('Même longueur · 180 px')).toBeInTheDocument();
-    expect(await screen.findByText('Aligné')).toBeInTheDocument();
+    expect(screen.queryByText('Aligné')).not.toBeInTheDocument();
 
     const snappedWall = container.querySelector('line[x1="300"][x2="480"]');
     expect(snappedWall).toBeInTheDocument();
