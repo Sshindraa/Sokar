@@ -5,7 +5,7 @@
   "description": "Sokar Connect — Agent-Ready Pages (Sokar public pages for AI/SEO indexability)",
   "scripts": {
     "dev": "next dev -p 4002",
-    "build": "next build",
+    "build": "bash ../../scripts/guard-next-build.sh 4002 connect && next build",
     "start": "next start -p 4002",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
