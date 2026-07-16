@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useApi } from '@/lib/api';
 import {
   getErrorMessage,
@@ -2243,34 +2244,39 @@ export function FloorPlanCanvas({ orgId }: { orgId: string }) {
                 ) : null}
               </div>
             </div>
-            <DragOverlay dropAnimation={null}>
-              {activeDragTable
-                ? (() => {
-                    const { width: tw, height: th } = getTableSize(activeDragTable);
-                    return (
-                      <TableCard
-                        table={activeDragTable}
-                        status={live ? tableStatuses.get(activeDragTable.id) : undefined}
-                        isOverlay
-                        style={{
-                          transform: `scale(${zoom})`,
-                          transformOrigin: 'top left',
-                        }}
+            {typeof document !== 'undefined'
+              ? createPortal(
+                  <DragOverlay dropAnimation={null}>
+                    {activeDragTable
+                      ? (() => {
+                          const { width: tw, height: th } = getTableSize(activeDragTable);
+                          return (
+                            <TableCard
+                              table={activeDragTable}
+                              status={live ? tableStatuses.get(activeDragTable.id) : undefined}
+                              isOverlay
+                              style={{
+                                transform: `scale(${zoom})`,
+                                transformOrigin: 'top left',
+                              }}
+                            />
+                          );
+                        })()
+                      : null}
+                    {activeDragData?.kind === 'table' ? (
+                      <NewTableOverlay
+                        shape={activeDragData.shape}
+                        capacity={activeDragData.capacity}
+                        zoom={zoom}
                       />
-                    );
-                  })()
-                : null}
-              {activeDragData?.kind === 'table' ? (
-                <NewTableOverlay
-                  shape={activeDragData.shape}
-                  capacity={activeDragData.capacity}
-                  zoom={zoom}
-                />
-              ) : null}
-              {activeDragData?.kind === 'wall' ? (
-                <NewWallOverlay type={activeDragData.type} zoom={zoom} />
-              ) : null}
-            </DragOverlay>
+                    ) : null}
+                    {activeDragData?.kind === 'wall' ? (
+                      <NewWallOverlay type={activeDragData.type} zoom={zoom} />
+                    ) : null}
+                  </DragOverlay>,
+                  document.body,
+                )
+              : null}
           </DndContext>
         </CardContent>
       </Card>
