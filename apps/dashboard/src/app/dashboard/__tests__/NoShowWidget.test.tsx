@@ -106,24 +106,22 @@ describe('NoShowWidget', () => {
     });
 
     expect(screen.getByText(/120 réservations/)).toBeInTheDocument();
-    expect(screen.getByText('Taux de no-show')).toBeInTheDocument();
+    expect(screen.getByText('Taux')).toBeInTheDocument();
     expect(screen.getByText(/6.7%/)).toBeInTheDocument();
     expect(screen.getByText(/8 no-shows sur 120/)).toBeInTheDocument();
 
-    expect(screen.getByText('CA perdu')).toBeInTheDocument();
+    expect(screen.getByText('CA estimé perdu')).toBeInTheDocument();
     expect(screen.getByText(/1\s234\s€/)).toBeInTheDocument();
 
-    expect(screen.getByText('Impact rappel SMS')).toBeInTheDocument();
+    expect(screen.getByText('Réservations sauvées par SMS')).toBeInTheDocument();
     expect(screen.getByText(/-2.3 pts/)).toBeInTheDocument();
     expect(screen.getByText('4.0%')).toBeInTheDocument();
     expect(screen.getByText('12.5%')).toBeInTheDocument();
     expect(screen.getByText(/avec SMS/)).toBeInTheDocument();
     expect(screen.getByText(/sans/)).toBeInTheDocument();
-
-    expect(screen.getByText(/Le rappel SMS réduit vos no-shows de 2.3 points/)).toBeInTheDocument();
   });
 
-  it('affiche "Données insuffisantes" quand le calcul impact est impossible', async () => {
+  it('affiche "Pas encore mesurable" quand le calcul impact est impossible', async () => {
     mockGet.mockResolvedValue(
       makeStats({
         impact: null,
@@ -133,13 +131,13 @@ describe('NoShowWidget', () => {
     render(<NoShowWidget />);
 
     await waitFor(() => {
-      expect(screen.getByText('Données insuffisantes')).toBeInTheDocument();
+      expect(screen.getByText('Pas encore mesurable')).toBeInTheDocument();
     });
 
     expect(screen.getByText(/2\/5 réservations avec SMS/)).toBeInTheDocument();
   });
 
-  it('affiche un message rassurant quand il y a des réservations mais aucun no-show', async () => {
+  it('affiche les KPIs quand il y a des réservations mais aucun no-show', async () => {
     mockGet.mockResolvedValue(
       makeStats({
         noShows: 0,
@@ -151,8 +149,14 @@ describe('NoShowWidget', () => {
     render(<NoShowWidget />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Aucun no-show enregistré/)).toBeInTheDocument();
+      expect(screen.getByText('No-shows')).toBeInTheDocument();
     });
+
+    // Taux global à 0.0% et CA perdu à 0 €
+    expect(screen.getByText('0.0%')).toBeInTheDocument();
+    expect(screen.getByText(/0\s€/)).toBeInTheDocument();
+    // Impact SMS non calculable → "Pas encore mesurable"
+    expect(screen.getByText('Pas encore mesurable')).toBeInTheDocument();
   });
 
   it('appelle le endpoint dashboard/no-show-stats', async () => {

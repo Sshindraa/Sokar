@@ -81,7 +81,7 @@ describe('EmptySlotsWidget', () => {
     });
   });
 
-  it('état data : affiche la grille 7 jours', async () => {
+  it('état data : affiche les jours sous-réservés (actionableDays)', async () => {
     const days = [
       makeDay({ date: '2026-07-01', dayName: 'mar', reservationCount: 8 }),
       makeDay({
@@ -101,18 +101,19 @@ describe('EmptySlotsWidget', () => {
 
     render(<EmptySlotsWidget />);
 
-    // Attend que le titre apparaisse (indique que les données sont chargées)
+    // Le titre indique le nombre de jours à remplir
     await waitFor(() => {
-      expect(screen.getByText(/sous-réservé/i)).toBeInTheDocument();
+      expect(screen.getByText(/jour.*à remplir/i)).toBeInTheDocument();
     });
 
-    // Vérifie que les libellés de jours sont rendus (grille 7 jours)
-    expect(screen.getByText('Mardi')).toBeInTheDocument();
+    // Seul le jour sous-réservé (actionable) est listé
     expect(screen.getByText('Mercredi')).toBeInTheDocument();
-    expect(screen.getByText('Dimanche')).toBeInTheDocument();
+    expect(screen.getByText(/120 € à récupérer/)).toBeInTheDocument();
 
-    // Vérifie qu'un jour fermé affiche "Fermé"
-    expect(screen.getByText('Fermé')).toBeInTheDocument();
+    // Les jours pleins et fermés ne sont pas affichés
+    expect(screen.queryByText('Mardi')).not.toBeInTheDocument();
+    expect(screen.queryByText('Dimanche')).not.toBeInTheDocument();
+    expect(screen.queryByText('Fermé')).not.toBeInTheDocument();
   });
 
   it("état data : semaine bien remplie (pas d'alerte)", async () => {
