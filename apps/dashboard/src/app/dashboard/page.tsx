@@ -1,34 +1,28 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
+  BarChart3,
   CalendarCheck,
   Euro,
-  PhoneCall,
   RefreshCw,
   TrendingUp,
   Users,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApi } from '../../lib/api';
-import GaugeDial from '@/components/GaugeDial';
 
 // recharts pèse ~387 KB — on le charge en dynamic import pour ne pas
 // bloquer le First Load JS du dashboard. Les KPIs et le header s'affichent
 // immédiatement, les graphiques hydratent en arrière-plan.
 const DashboardCharts = dynamic(() => import('./DashboardCharts'), {
   loading: () => (
-    <section className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm md:p-6">
-        <Skeleton className="mb-5 h-6 w-48" />
-        <Skeleton className="h-[320px] w-full rounded-xl" />
-      </div>
-      <div className="rounded-2xl border border-border bg-card p-4 shadow-sm md:p-6">
-        <Skeleton className="mb-5 h-6 w-40" />
-        <Skeleton className="h-[320px] w-full rounded-xl" />
-      </div>
+    <section className="rounded-2xl border border-border bg-card p-4 shadow-sm md:p-6">
+      <Skeleton className="mb-4 h-6 w-52" />
+      <Skeleton className="h-[280px] w-full rounded-xl" />
     </section>
   ),
 });
@@ -74,10 +68,10 @@ interface DashboardStats {
   estimatedRevenue: number;
 }
 
-const PERIOD_OPTIONS: Array<{ value: Period; label: string; description: string }> = [
-  { value: 'today', label: 'Aujourd’hui', description: 'Vue horaire' },
-  { value: '7d', label: '7j', description: '7 derniers jours' },
-  { value: '30d', label: '30j', description: '30 derniers jours' },
+const PERIOD_OPTIONS: Array<{ value: Period; label: string }> = [
+  { value: 'today', label: 'Aujourd’hui' },
+  { value: '7d', label: '7 jours' },
+  { value: '30d', label: '30 jours' },
 ];
 
 const EMPTY_STATS: DashboardStats = {
@@ -205,43 +199,29 @@ export default function DashboardPage() {
   if (isLoading) return <DashboardSkeleton />;
 
   return (
-    <div className="space-y-6 md:space-y-8 select-none">
-      <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0 max-w-2xl">
-          <p className="text-xs font-bold uppercase tracking-[0.28em] text-brand">
-            Analytics restaurant
-          </p>
-          <h1 className="mt-2 text-2xl font-black tracking-tight text-foreground md:text-4xl font-display">
-            Ce que Sokar vous rapporte
-          </h1>
-          <p className="mt-2 max-w-xl text-sm text-muted-foreground font-sans">
-            Appels captés, réservations confirmées, couverts générés et revenu estimé sur la
-            période.
-          </p>
-          {!error && !hasData && (
-            <p className="mt-3 text-sm text-warning">
-              Pas encore de données pour cette période — les KPI apparaîtront dès que Sokar reçoit
-              des appels ou confirme des réservations.
-            </p>
-          )}
-        </div>
+    <div className="space-y-4 select-none md:space-y-5">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-black tracking-tight text-foreground font-display md:text-3xl">
+          Pilotage
+        </h1>
 
-        <div className="shrink-0 grid grid-cols-3 gap-2 rounded-2xl border border-border bg-card p-1.5 shadow-sm">
+        <div
+          className="grid shrink-0 grid-cols-3 gap-1 rounded-xl border border-border bg-card p-1 shadow-sm"
+          aria-label="Période d’analyse"
+        >
           {PERIOD_OPTIONS.map((option) => (
             <button
               key={option.value}
               type="button"
               onClick={() => setPeriod(option.value)}
-              className={`rounded-xl px-3 py-2 text-left transition-all duration-200 ${
+              aria-pressed={period === option.value}
+              className={`rounded-lg px-3 py-2 text-center text-xs font-bold transition-all duration-200 ${
                 period === option.value
-                  ? 'bg-brand text-brand-foreground shadow-[0_0_24px_hsl(var(--brand)/0.35)]'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground'
               }`}
             >
-              <span className="block text-xs font-black uppercase tracking-wider">
-                {option.label}
-              </span>
-              <span className="hidden text-[10px] font-medium md:block">{option.description}</span>
+              {option.label}
             </button>
           ))}
         </div>
@@ -252,48 +232,25 @@ export default function DashboardPage() {
       )}
 
       {!error && hasData && (
-        <section className="grid gap-3 xl:grid-cols-[0.9fr_1.6fr]">
-          {/* Jauge en héros — taux de réponse aux appels, façon cockpit */}
-          <article className="flex flex-col items-center justify-center rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-            <span className="mb-1 inline-flex items-center gap-1.5 rounded-full border border-success/25 bg-success/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-success">
-              <span className="h-1.5 w-1.5 rounded-full bg-success" />
-              Agent vocal actif
-            </span>
-            <GaugeDial
-              value={stats.answeredRate}
-              label="Taux de réponse"
-              sublabel="des appels reçus"
-            />
-          </article>
-
-          <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <KpiCard label="Appels reçus" value={stats.totalCalls} icon={PhoneCall} />
-            <KpiCard
-              label="Réservations confirmées"
-              value={stats.totalReservations}
-              icon={CalendarCheck}
-            />
-            <KpiCard label="Couverts" value={stats.covers} icon={Users} />
-            <KpiCard
-              label="Taux appels → résa"
-              value={`${stats.conversionRate}%`}
-              icon={TrendingUp}
-            />
-            <KpiCard
-              label="Revenu estimé"
-              value={`${stats.estimatedRevenue.toLocaleString('fr-FR')} €`}
-              icon={Euro}
-              featured
-              className="col-span-2 sm:col-span-4"
-            />
-          </section>
+        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <KpiCard label="Réservations" value={stats.totalReservations} icon={CalendarCheck} />
+          <KpiCard label="Couverts" value={stats.covers} icon={Users} />
+          <KpiCard
+            label="CA estimé"
+            value={`${stats.estimatedRevenue.toLocaleString('fr-FR')} €`}
+            icon={Euro}
+          />
+          <KpiCard label="Conversion appels" value={`${stats.conversionRate}%`} icon={TrendingUp} />
         </section>
       )}
 
-      <EmptySlotsWidget />
-      <NoShowWidget />
+      {!error && !hasData && <EmptyDashboardState />}
 
-      <DashboardCharts analytics={analytics} />
+      <EmptySlotsWidget />
+
+      {!error && hasData && <DashboardCharts analytics={analytics} />}
+
+      <NoShowWidget />
     </div>
   );
 }
@@ -302,45 +259,56 @@ function KpiCard({
   label,
   value,
   icon: Icon,
-  featured = false,
-  className = '',
 }: {
   label: string;
   value: number | string;
-  icon: typeof PhoneCall;
-  featured?: boolean;
-  className?: string;
+  icon: typeof CalendarCheck;
 }) {
   return (
     <article
-      className={`rounded-2xl border p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 ${
-        featured
-          ? 'border-brand/25 bg-brand/[0.06] shadow-[0_0_28px_hsl(var(--brand)/0.18)]'
-          : 'border-border bg-card hover:border-foreground/15'
-      } ${className}`}
+      aria-label={`Indicateur ${label}`}
+      className="rounded-2xl border border-border bg-card p-4 shadow-sm"
     >
-      <div className="flex items-center justify-between gap-3">
-        <span
-          className={`flex h-10 w-10 items-center justify-center rounded-full border ${
-            featured
-              ? 'border-brand/25 bg-brand/10 text-brand'
-              : 'border-border bg-secondary text-muted-foreground'
-          }`}
-        >
-          <Icon size={18} />
-        </span>
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Icon size={16} />
+        <p className="text-xs font-bold uppercase tracking-wider">{label}</p>
       </div>
-      <p
-        className={`mt-5 truncate text-2xl font-black tracking-tight ${
-          featured ? 'text-brand' : 'text-foreground'
-        }`}
-      >
+      <p className="mt-3 truncate text-2xl font-black tracking-tight text-foreground md:text-3xl">
         {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
       </p>
-      <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
     </article>
+  );
+}
+
+function EmptyDashboardState() {
+  return (
+    <section className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
+          <BarChart3 size={18} />
+        </span>
+        <div>
+          <h2 className="font-bold text-foreground">Aucune activité sur cette période</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Les résultats apparaîtront après un appel ou une réservation confirmée.
+          </p>
+        </div>
+      </div>
+      <div className="flex shrink-0 gap-2 pl-[52px] sm:pl-0">
+        <Link
+          href="/dashboard/calls"
+          className="rounded-xl border border-border px-3 py-2 text-xs font-bold text-foreground transition-all duration-200 hover:bg-accent"
+        >
+          Voir les appels
+        </Link>
+        <Link
+          href="/dashboard/reservations"
+          className="rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground transition-all duration-200 hover:opacity-90"
+        >
+          Réservations
+        </Link>
+      </div>
+    </section>
   );
 }
 
@@ -368,26 +336,16 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 function DashboardSkeleton() {
   return (
     <div className="space-y-6 md:space-y-8">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-3">
-          <Skeleton className="h-4 w-40 rounded-full" />
-          <Skeleton className="h-10 w-80 rounded-xl" />
-          <Skeleton className="h-4 w-96 max-w-full rounded-full" />
-        </div>
-        <Skeleton className="h-14 w-full rounded-2xl md:w-80" />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Skeleton className="h-9 w-32 rounded-xl" />
+        <Skeleton className="h-11 w-full rounded-xl sm:w-72" />
       </div>
-      <div className="grid gap-3 xl:grid-cols-[0.9fr_1.6fr]">
-        <Skeleton className="h-64 rounded-2xl border border-border" />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[1, 2, 3, 4].map((item) => (
-            <Skeleton key={item} className="h-36 rounded-2xl border border-border" />
-          ))}
-        </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[1, 2, 3, 4].map((item) => (
+          <Skeleton key={item} className="h-32 rounded-2xl border border-border" />
+        ))}
       </div>
-      <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-        <Skeleton className="h-[420px] rounded-2xl border border-border" />
-        <Skeleton className="h-[420px] rounded-2xl border border-border" />
-      </div>
+      <Skeleton className="h-[360px] rounded-2xl border border-border" />
     </div>
   );
 }

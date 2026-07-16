@@ -11,6 +11,7 @@ import { getErrorMessage } from '@/types/api';
 import { formatEuro } from '@sokar/shared';
 import type { GiftCardPack } from '@/lib/api/gift-cards';
 import GiftCardPackForm from '@/components/gift-cards/gift-card-pack-form';
+import { GiftCardSectionNav } from '@/components/gift-cards/GiftCardSectionNav';
 
 export default function GiftCardPacksPage() {
   const { listGiftCardPacks, toggleGiftCardPack, orgId } = useGiftCardApi();
@@ -84,6 +85,8 @@ export default function GiftCardPacksPage() {
           Créer
         </Button>
       </div>
+
+      <GiftCardSectionNav />
 
       {error && (
         <div className="sokar-error">

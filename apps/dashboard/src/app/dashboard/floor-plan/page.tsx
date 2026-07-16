@@ -1,29 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useApi } from '@/lib/api';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { LayoutGrid, CalendarDays, BarChart3, Map } from 'lucide-react';
-import { FloorPlanCrud } from './_components/FloorPlanCrud';
+import { PencilRuler, Radio } from 'lucide-react';
 import { FloorPlanCanvas } from './_components/FloorPlanCanvas';
-import { PlanningTab } from './_components/PlanningTab';
-import { StatsTab } from './_components/StatsTab';
-
-type TabKey = 'plan-2d' | 'floor-plan' | 'planning' | 'stats';
-
-const tabs: { key: TabKey; label: string; icon: React.ReactNode }[] = [
-  { key: 'plan-2d', label: 'Plan 2D', icon: <Map size={18} /> },
-  { key: 'floor-plan', label: 'Plan de salle', icon: <LayoutGrid size={18} /> },
-  { key: 'planning', label: 'Planning du jour', icon: <CalendarDays size={18} /> },
-  { key: 'stats', label: 'Stats rapides', icon: <BarChart3 size={18} /> },
-];
 
 export default function FloorPlanPage() {
   const { orgId } = useApi();
-  const [activeTab, setActiveTab] = useState<TabKey>('plan-2d');
+  const searchParams = useSearchParams();
+  const activeView = searchParams.get('view') === 'edit-plan' ? 'edit-plan' : 'service-live';
 
   if (!orgId) {
     return (
@@ -42,36 +31,37 @@ export default function FloorPlanPage() {
     <div className="space-y-6 p-6 md:p-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Plan de salle</h1>
+          <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
+            {activeView === 'edit-plan' ? 'Salle édition' : 'Live service'}
+          </h1>
           <p className="text-sm text-muted-foreground">
-            Gérez votre plan de salle, le planning du jour et les statistiques.
+            {activeView === 'edit-plan'
+              ? 'Concevez et organisez le plan de votre salle.'
+              : 'Pilotez le service en temps réel sans modifier le plan.'}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {tabs.map((tab) => (
-            <Button
-              key={tab.key}
-              variant={activeTab === tab.key ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setActiveTab(tab.key)}
-              className={cn(
-                'gap-2 transition-all duration-200',
-                activeTab === tab.key
-                  ? 'bg-primary text-primary-foreground'
-                  : 'border-border bg-card',
-              )}
-            >
-              {tab.icon}
-              {tab.label}
-            </Button>
-          ))}
+        <div className="flex gap-2 md:hidden">
+          <Button asChild variant={activeView === 'service-live' ? 'default' : 'outline'} size="sm">
+            <Link href="/dashboard/floor-plan?view=service-live" className="gap-2">
+              <Radio size={16} />
+              Live service
+            </Link>
+          </Button>
+          <Button asChild variant={activeView === 'edit-plan' ? 'default' : 'outline'} size="sm">
+            <Link href="/dashboard/floor-plan?view=edit-plan" className="gap-2">
+              <PencilRuler size={16} />
+              Salle édition
+            </Link>
+          </Button>
         </div>
       </div>
 
-      {activeTab === 'plan-2d' && <FloorPlanCanvas orgId={orgId} />}
-      {activeTab === 'floor-plan' && <FloorPlanCrud />}
-      {activeTab === 'planning' && <PlanningTab orgId={orgId} />}
-      {activeTab === 'stats' && <StatsTab orgId={orgId} />}
+      {activeView === 'service-live' && (
+        <FloorPlanCanvas key="service-live" orgId={orgId} mode="service" />
+      )}
+      {activeView === 'edit-plan' && (
+        <FloorPlanCanvas key="edit-plan" orgId={orgId} mode="design" />
+      )}
     </div>
   );
 }

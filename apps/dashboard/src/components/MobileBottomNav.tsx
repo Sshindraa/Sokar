@@ -6,7 +6,7 @@ import { BarChart3, CalendarCheck, PhoneCall, Users, Zap } from 'lucide-react';
 import { cn, triggerHaptic } from '@/lib/utils';
 
 const navItems = [
-  { href: '/dashboard', label: 'Aperçu', icon: BarChart3 },
+  { href: '/dashboard', label: 'Pilotage', icon: BarChart3 },
   { href: '/dashboard/calls', label: 'Appels', icon: PhoneCall },
   { href: '/dashboard/reservations', label: 'Résa', icon: CalendarCheck },
   { href: '/dashboard/customers', label: 'Clients', icon: Users },

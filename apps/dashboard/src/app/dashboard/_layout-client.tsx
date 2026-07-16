@@ -202,9 +202,9 @@ function DashboardModeSwitcher({ salleMode }: { salleMode: boolean }) {
         type="button"
         disabled
         title="Bientôt disponible"
-        className="flex h-10 flex-[1.55] cursor-not-allowed items-center justify-center whitespace-nowrap rounded-full px-3 text-sm font-medium text-muted-foreground opacity-55"
+        className="flex h-10 flex-1 cursor-not-allowed items-center justify-center whitespace-nowrap rounded-full px-3 text-sm font-medium text-muted-foreground opacity-55"
       >
-        Sokar Companion
+        Companion
       </button>
     </nav>
   );
@@ -306,11 +306,9 @@ function DashboardShell({ children }: { children: ReactNode }) {
       <DashboardModeSwitcher salleMode={pathname.startsWith('/dashboard/floor-plan')} />
       <DashboardSidebar pathname={pathname} salleView={searchParams.get('view') ?? ''} />
       <div className="fixed left-24 top-4 z-50 hidden h-12 max-w-[calc(50vw-18rem)] items-center xl:flex">
-        <div className="flex min-w-0 items-center rounded-2xl border border-border bg-card/90 py-1.5 px-4 shadow-lg shadow-background/20 backdrop-blur-xl">
-          <span className="truncate text-sm font-black tracking-tight text-foreground font-display">
-            {restaurantName} HQ
-          </span>
-        </div>
+        <span className="truncate text-lg font-black tracking-tight text-foreground font-display">
+          {restaurantName} HQ
+        </span>
       </div>
       <div className="fixed right-8 top-4 z-50 hidden h-12 items-center gap-2 xl:flex">
         <DemoModeToggle />
@@ -325,7 +323,7 @@ function DashboardShell({ children }: { children: ReactNode }) {
             libérer l'espace vertical du contenu.
         */}
         <div className="mb-3 flex items-center justify-between gap-2 xl:hidden">
-          <span className="truncate text-sm font-black tracking-tight text-foreground font-display sm:text-base">
+          <span className="truncate text-base font-black tracking-tight text-foreground font-display sm:text-lg">
             {restaurantName} HQ
           </span>
           <div className="flex shrink-0 items-center gap-2">

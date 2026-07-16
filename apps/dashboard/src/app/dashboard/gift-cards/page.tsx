@@ -23,6 +23,7 @@ import { formatEuro } from '@sokar/shared';
 import type { GiftCardListItem, GiftCardPack, GiftCardStats } from '@/lib/api/gift-cards';
 import GiftCardList from '@/components/gift-cards/gift-card-list';
 import GiftCardForm from '@/components/gift-cards/gift-card-form';
+import { GiftCardSectionNav } from '@/components/gift-cards/GiftCardSectionNav';
 import { SAVED_NOTIFICATION_RESET_MS } from '@/constants/ui';
 
 const PAGE_SIZE = 20;
@@ -225,6 +226,8 @@ export default function GiftCardsPage() {
           Créer
         </Button>
       </div>
+
+      <GiftCardSectionNav />
 
       {error && (
         <div className="sokar-error">

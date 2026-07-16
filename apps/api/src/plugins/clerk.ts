@@ -31,6 +31,15 @@ export async function registerClerk(app: FastifyInstance) {
 export function requireOrg() {
   return async (req: FastifyRequest, reply: FastifyReply) => {
     if (!isClerkConfigured()) {
+      if (process.env.NODE_ENV !== 'production' && process.env.DEMO_RESTAURANT_ID) {
+        req.restaurantId = process.env.DEMO_RESTAURANT_ID;
+        req.userId = process.env.DEMO_USER_ID ?? 'dev-user';
+        req.log = req.log.child({
+          restaurant_id: req.restaurantId,
+          user_id: req.userId,
+        });
+        return;
+      }
       return reply.status(503).send({ error: 'Authentication provider not configured' });
     }
 
@@ -52,6 +61,11 @@ export function requireOrg() {
 export function requireAuth() {
   return async (req: FastifyRequest, reply: FastifyReply) => {
     if (!isClerkConfigured()) {
+      if (process.env.NODE_ENV !== 'production' && process.env.DEMO_RESTAURANT_ID) {
+        req.userId = process.env.DEMO_USER_ID ?? 'dev-user';
+        req.log = req.log.child({ user_id: req.userId });
+        return;
+      }
       return reply.status(503).send({ error: 'Authentication provider not configured' });
     }
 

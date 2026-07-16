@@ -50,7 +50,7 @@ const PAGES: VisualPage[] = [
   {
     name: 'dashboard',
     url: '/dashboard',
-    // Le heading "Ce que Sokar vous rapporte" apparaît une fois les données de
+    // Le heading "Pilotage" apparaît une fois les données de
     // démo chargées. On attend AUSSI .recharts-surface car les graphiques
     // recharts sont rendus de façon asynchrone (dynamic import + SVG draw) —
     // sans cette attente, le screenshot peut capturer un graphique vide ou
@@ -58,7 +58,7 @@ const PAGES: VisualPage[] = [
     // settleMs: 3000ms pour laisser recharts stabiliser son rendu SVG après
     // l'apparition de .recharts-surface (le SVG continue de se dessiner après
     // l'insertion du nœud dans le DOM).
-    waitFor: ['h1:has-text("Ce que Sokar vous rapporte")', '.recharts-surface'],
+    waitFor: ['h1:has-text("Pilotage")', '.recharts-surface'],
     settleMs: 3000,
   },
   {

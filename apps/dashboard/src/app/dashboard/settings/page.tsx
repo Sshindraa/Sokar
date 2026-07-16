@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useApi } from '../../../lib/api';
 import { getErrorMessage, type Restaurant, type AgentPersonality } from '@/types/api';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -9,7 +10,17 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { OnboardingLockBanner } from '@/features/onboarding/onboarding-guard';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { Save, Bot, Store, AlertCircle, CheckCircle2, ArrowUpRight, Calendar } from 'lucide-react';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import {
+  Save,
+  Bot,
+  Store,
+  AlertCircle,
+  CheckCircle2,
+  ArrowUpRight,
+  Calendar,
+  Languages,
+} from 'lucide-react';
 import { SYSTEM_PROMPT_EXTRA_MAX_LENGTH } from '@/constants/ui';
 
 const PLAN_FEATURES: Record<string, { label: string; calls: string }> = {
@@ -32,6 +43,7 @@ const FILLER_OPTIONS = [
 
 export default function SettingsPage() {
   const { get, post, patch, orgId } = useApi();
+  const tLanguage = useTranslations('languageSwitcher');
 
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [name, setName] = useState('');
@@ -279,6 +291,27 @@ export default function SettingsPage() {
               )}
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      {/* Préférences d'affichage */}
+      <Card className="sokar-card transition-all duration-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Languages size={18} />
+            {tLanguage('settingsTitle')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4 rounded-2xl border border-border bg-secondary p-5 transition-all duration-200 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium text-foreground">{tLanguage('label')}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {tLanguage('settingsDescription')}
+              </p>
+            </div>
+            <LanguageSwitcher />
+          </div>
         </CardContent>
       </Card>
 

@@ -21,7 +21,7 @@ import { test, expect, type Page } from '@playwright/test';
 async function loadDashboard(page: Page) {
   await page.goto('/dashboard', { waitUntil: 'networkidle' });
   // Le skeleton de chargement disparaît quand les données de démo sont prêtes.
-  await expect(page.getByRole('heading', { name: 'Ce que Sokar vous rapporte' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Pilotage' })).toBeVisible();
 }
 
 test.describe('Dashboard /dashboard — stabilité visuelle', () => {
@@ -30,10 +30,10 @@ test.describe('Dashboard /dashboard — stabilité visuelle', () => {
   });
 
   test('le header analytics ne chevauche pas les widgets', async ({ page }) => {
-    // Le <header> de la page dashboard contient le titre "Ce que Sokar vous
-    // rapporte". L'incident venait d'une règle `header { position: fixed }` qui
+    // Le <header> de la page dashboard contient le titre "Pilotage".
+    // L'incident venait d'une règle `header { position: fixed }` qui
     // le sortait du flux et le superposait aux KPIs.
-    const header = page.locator('header', { hasText: 'Ce que Sokar vous rapporte' });
+    const header = page.locator('header', { hasText: 'Pilotage' });
     await expect(header).toBeVisible();
 
     // Le header ne doit PAS être en position fixed/absolute (sinon chevauchement).
@@ -41,18 +41,13 @@ test.describe('Dashboard /dashboard — stabilité visuelle', () => {
     expect(position).not.toBe('fixed');
     expect(position).not.toBe('absolute');
 
-    // Le premier widget sous le header (la jauge "Taux de réponse" ou la
-    // première carte KPI) doit commencer sous le bas du header — pas de
-    // chevauchement vertical.
+    // La première carte KPI doit commencer sous le bas du header.
     const headerBox = await header.boundingBox();
     expect(headerBox).not.toBeNull();
 
-    // La jauge "Agent vocal actif" est le premier article sous le header.
-    const firstWidget = page
-      .locator('article', { hasText: 'Taux de réponse' })
-      .or(page.locator('article', { hasText: 'Appels reçus' }));
-    await expect(firstWidget.first()).toBeVisible();
-    const widgetBox = await firstWidget.first().boundingBox();
+    const firstWidget = page.getByRole('article', { name: 'Indicateur Réservations' });
+    await expect(firstWidget).toBeVisible();
+    const widgetBox = await firstWidget.boundingBox();
     expect(widgetBox).not.toBeNull();
 
     // Le haut du widget doit être >= au bas du header (pas de chevauchement).
@@ -69,14 +64,13 @@ test.describe('Dashboard /dashboard — stabilité visuelle', () => {
   test("les KPIs et graphiques s'affichent", async ({ page }) => {
     // KPIs — labels des cartes KpiCard (exact pour éviter les matches multiples
     // avec d'autres textes comme "des appels reçus").
-    await expect(page.getByText('Appels reçus', { exact: true })).toBeVisible();
-    await expect(page.getByText('Réservations confirmées', { exact: true })).toBeVisible();
-    await expect(page.getByText('Couverts', { exact: true })).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Indicateur Réservations' })).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Indicateur Couverts' })).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Indicateur CA estimé' })).toBeVisible();
 
     // Graphiques — DashboardCharts (dynamic import recharts).
     // Les titres des cartes graphique sont rendus une fois recharts hydraté.
-    await expect(page.getByRole('heading', { name: 'Appels et réservations' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Couverts générés' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Réservations et couverts' })).toBeVisible();
 
     // recharts rend un <svg class="recharts-surface"> — preuve que le graphique
     // est effectivement dessiné (pas juste le conteneur vide).
