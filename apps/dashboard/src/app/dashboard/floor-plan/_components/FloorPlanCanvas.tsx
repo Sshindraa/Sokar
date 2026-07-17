@@ -353,6 +353,9 @@ function renderChairs(table: CanvasTable): React.ReactNode[] {
   const chairSize = 12;
   const chairOffset = 4;
   const half = chairSize / 2;
+  // TableCard uses `border-2` with `box-border`, so absolute children are
+  // positioned relative to the padding box. We must offset by the 2px border.
+  const border = 2;
   const shape = table.shape ?? 'rect';
   const chairs: React.ReactNode[] = [];
 
@@ -364,8 +367,8 @@ function renderChairs(table: CanvasTable): React.ReactNode[] {
   };
 
   if (shape === 'round') {
-    const centerX = width / 2;
-    const centerY = height / 2;
+    const centerX = width / 2 - border;
+    const centerY = height / 2 - border;
     const radiusX = Math.max(0, width / 2 + chairOffset + half);
     const radiusY = Math.max(0, height / 2 + chairOffset + half);
     for (let i = 0; i < chairCount; i++) {
@@ -444,17 +447,17 @@ function renderChairs(table: CanvasTable): React.ReactNode[] {
       let left = 0;
       let top = 0;
       if (side === 'top') {
-        left = position - half;
-        top = -(chairOffset + chairSize);
+        left = position - half - border;
+        top = -(chairSize + chairOffset + border);
       } else if (side === 'bottom') {
-        left = position - half;
-        top = height + chairOffset;
+        left = position - half - border;
+        top = height - border + chairOffset;
       } else if (side === 'left') {
-        top = position - half;
-        left = -(chairOffset + chairSize);
+        top = position - half - border;
+        left = -(chairSize + chairOffset + border);
       } else {
-        top = position - half;
-        left = width + chairOffset;
+        top = position - half - border;
+        left = width - border + chairOffset;
       }
       chairs.push(
         <div
