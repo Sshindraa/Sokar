@@ -129,9 +129,13 @@ synthétique type `<in Doppler — do NOT commit to disk>` ou
 >   (fix correct), pas de logs bruyants visibles.
 > - TODO 5 (CGV/RGPD) : partiellement clos — `apps/connect/src/app/privacy/page.tsx`
 >   - footer + `apps/dashboard/src/app/privacy/page.tsx` existent. CGV à confirmer.
-> - TODO 1 (placeholders TELNYX_APP_ID/WEBHOOK_SECRET) : **NON vérifiable depuis le
->   repo** (secrets sur VPS `/opt/sokar/apps/api/.env`). À checker en SSH.
-> - TODO 4 (patch deploy-vps.sh) : à vérifier dans `scripts/deploy-vps.sh`.
+> - TODO 1 (placeholders TELNYX_APP_ID/WEBHOOK_SECRET) : **CLOS** — vérifié sur VPS
+>   `pmbtc` le 2026-07-17 : les deux vars contiennent des vraies valeurs
+>   (5 chars chacune, pas de placeholder). Quelqu'un les a remplies depuis le 10/06.
+> - TODO 4 (patch deploy-vps.sh) : **PARTIEL** — `pnpm install --frozen-lockfile`
+>   présent (ligne 462), mais `chmod 644`/chown sur `.next/standalone` non explicite.
+>   Le script rebuild le standalone conditionnellement (lignes 437-444) ce qui
+>   couvre le cas d'usage. À laisser tel quel sauf nouveau souci de perm.
 
 D'après les observations du subagent précédent et mes propres checks :
 
