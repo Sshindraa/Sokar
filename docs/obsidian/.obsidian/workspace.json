@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Telnyx Pipeline.md",
+                "file": "API Endpoints.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Telnyx Pipeline"
+              "title": "API Endpoints"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Telnyx Pipeline.md",
+                "file": "API Endpoints.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Rétrolien pour Telnyx Pipeline"
+              "title": "Rétrolien pour API Endpoints"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "Telnyx Pipeline.md",
+                "file": "API Endpoints.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Liens sortants de Telnyx Pipeline"
+              "title": "Liens sortants de API Endpoints"
             }
           },
           {
@@ -156,13 +156,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "Telnyx Pipeline.md",
+                "file": "API Endpoints.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Plan de Telnyx Pipeline"
+              "title": "Plan de API Endpoints"
             }
           }
         ]
@@ -185,6 +185,7 @@
   },
   "active": "26d821840e32d30c",
   "lastOpenFiles": [
+    "Telnyx Pipeline.md",
     "_archive/Onboarding Canal A.md",
     "_archive/Canal A P0.md",
     "_archive",
