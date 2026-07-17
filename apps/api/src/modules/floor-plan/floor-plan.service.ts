@@ -58,6 +58,9 @@ export type CreateTableInput = {
   minCapacity?: number;
   positionX?: number | null;
   positionY?: number | null;
+  width?: number | null;
+  height?: number | null;
+  rotation?: number;
   shape?: string;
 };
 
@@ -250,6 +253,9 @@ export class FloorPlanService {
         minCapacity: input.minCapacity ?? DEFAULT_TABLE_MIN_CAPACITY,
         positionX: input.positionX ?? null,
         positionY: input.positionY ?? null,
+        width: input.width ?? null,
+        height: input.height ?? null,
+        rotation: input.rotation ?? 0,
         shape: input.shape ?? 'rect',
       },
     });
@@ -288,6 +294,9 @@ export class FloorPlanService {
         ...(input.minCapacity !== undefined && { minCapacity: input.minCapacity }),
         ...(input.positionX !== undefined && { positionX: input.positionX ?? null }),
         ...(input.positionY !== undefined && { positionY: input.positionY ?? null }),
+        ...(input.width !== undefined && { width: input.width ?? null }),
+        ...(input.height !== undefined && { height: input.height ?? null }),
+        ...(input.rotation !== undefined && { rotation: input.rotation }),
         ...(input.shape !== undefined && { shape: input.shape }),
         ...(input.isActive !== undefined && { isActive: input.isActive }),
       },

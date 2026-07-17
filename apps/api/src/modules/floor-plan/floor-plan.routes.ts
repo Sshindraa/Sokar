@@ -15,6 +15,16 @@ const UpdateSectionSchema = z.object({
   position: z.coerce.number().int().optional(),
 });
 
+const OptionalDimension = z.preprocess(
+  (val) => (val === null || val === undefined ? val : Number(val)),
+  z.union([z.number().int().min(1), z.null()]).optional(),
+);
+
+const OptionalInt = z.preprocess(
+  (val) => (val === undefined ? val : Number(val)),
+  z.number().int().optional(),
+);
+
 const CreateTableSchema = z.object({
   sectionId: z.string().optional().nullable(),
   name: z.string().min(1).max(100),
@@ -22,6 +32,9 @@ const CreateTableSchema = z.object({
   minCapacity: z.coerce.number().int().min(1).optional(),
   positionX: z.coerce.number().int().optional().nullable(),
   positionY: z.coerce.number().int().optional().nullable(),
+  width: OptionalDimension,
+  height: OptionalDimension,
+  rotation: OptionalInt,
   shape: z.string().max(20).optional(),
 });
 
@@ -32,6 +45,9 @@ const UpdateTableSchema = z.object({
   minCapacity: z.coerce.number().int().min(1).optional(),
   positionX: z.coerce.number().int().optional().nullable(),
   positionY: z.coerce.number().int().optional().nullable(),
+  width: OptionalDimension,
+  height: OptionalDimension,
+  rotation: OptionalInt,
   shape: z.string().max(20).optional(),
   isActive: z.boolean().optional(),
 });

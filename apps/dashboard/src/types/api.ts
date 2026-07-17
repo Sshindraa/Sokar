@@ -122,6 +122,9 @@ export interface FloorPlanTable {
   isActive: boolean;
   positionX: number | null;
   positionY: number | null;
+  width: number | null;
+  height: number | null;
+  rotation: number;
   shape: TableShape | null;
   sectionId?: string | null;
   sectionName?: string | null;

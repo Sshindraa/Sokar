@@ -58,6 +58,15 @@ import {
   Minus,
   DoorOpen,
   Wine,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignVerticalJustifyCenter,
+  AlignHorizontalJustifyCenter,
+  AlignVerticalJustifyStart,
+  AlignVerticalJustifyEnd,
+  RotateCw,
+  Grip,
   type LucideIcon,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -178,18 +187,29 @@ type PaletteItemData =
 
 type ActiveDragData = PaletteItemData | { kind: 'existingTable'; table: CanvasTable };
 
-function getTableSize(table: { capacity?: number | null; shape?: TableShape | null }): {
+function getTableSize(table: {
+  capacity?: number | null;
+  shape?: TableShape | null;
+  width?: number | null;
+  height?: number | null;
+  rotation?: number | null;
+}): {
   width: number;
   height: number;
+  rotation: number;
 } {
   const base = 88;
   const capacity = table.capacity ?? 1;
   const extra = Math.min(capacity, 12) * 12;
   const size = Math.min(base + extra, 220);
-  const width = size;
   const shape = table.shape ?? 'rect';
-  const height = shape === 'round' ? size : 112;
-  return { width, height };
+  const legacyWidth = size;
+  const legacyHeight = shape === 'round' ? size : 112;
+  return {
+    width: table.width ?? legacyWidth,
+    height: table.height ?? legacyHeight,
+    rotation: table.rotation ?? 0,
+  };
 }
 
 const statusClasses: Record<TableStatus, string> = {
@@ -574,10 +594,14 @@ function WallSegment({
 type TableCardProps = {
   table: CanvasTable;
   status?: { status: TableStatus; reservation: PlanningReservation | null };
-  onClick?: () => void;
+  onClick?: (e?: React.MouseEvent) => void;
+  onDoubleClick?: () => void;
   dragRef?: React.Ref<HTMLDivElement>;
   dragProps?: React.HTMLAttributes<HTMLDivElement>;
   isOverlay?: boolean;
+  isSelected?: boolean;
+  onResizeStart?: (e: React.PointerEvent) => void;
+  onRotateStart?: (e: React.PointerEvent) => void;
   style?: React.CSSProperties;
   className?: string;
   zoom?: number;
@@ -587,14 +611,18 @@ function TableCard({
   table,
   status,
   onClick,
+  onDoubleClick,
   dragRef,
   dragProps,
   isOverlay,
+  isSelected,
+  onResizeStart,
+  onRotateStart,
   style,
   className,
   zoom = 1,
 }: TableCardProps) {
-  const { width, height } = getTableSize(table);
+  const { width, height, rotation } = getTableSize(table);
   const displayName = table.displayName ?? table.name;
   const title = status?.reservation
     ? formatReservationBadge(status.reservation)
@@ -615,21 +643,34 @@ function TableCard({
         table.shape === 'round' ? 'rounded-full aspect-square' : 'rounded-md',
         'overflow-visible hover:ring-2 hover:ring-ring/60 hover:ring-offset-1',
         status ? statusClasses[status.status] : 'bg-card border-border text-foreground',
+        isSelected && 'ring-2 ring-primary ring-offset-1',
         !isOverlay && 'absolute',
         className,
       )}
-      style={{ width, height, ...style }}
+      style={{
+        width,
+        height,
+        ...style,
+        transform: style?.transform
+          ? `${style.transform} rotate(${rotation}deg)`
+          : `rotate(${rotation}deg)`,
+        transformOrigin: style?.transformOrigin ?? 'center',
+      }}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       aria-label={title}
       onClick={(e) => {
         e.stopPropagation();
-        onClick?.();
+        onClick?.(e);
+      }}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onDoubleClick?.();
       }}
       onKeyDown={(e) => {
         if ((e.key === 'Enter' || e.key === ' ') && onClick) {
           e.preventDefault();
-          onClick();
+          onClick?.();
         }
       }}
       title={title}
@@ -684,6 +725,28 @@ function TableCard({
           <p className="mt-1 w-full text-[9px] font-medium text-muted-foreground">{assignment}</p>
         ) : null}
       </div>
+      {isSelected && !isOverlay && onResizeStart ? (
+        <div
+          className="absolute -bottom-1.5 -right-1.5 z-30 h-3.5 w-3.5 cursor-nwse-resize rounded-sm border border-background bg-primary shadow-sm"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            onResizeStart(e as unknown as React.PointerEvent);
+          }}
+          title="Redimensionner"
+        />
+      ) : null}
+      {isSelected && !isOverlay && onRotateStart ? (
+        <div
+          className="absolute -top-3 left-1/2 z-30 flex h-5 w-5 -translate-x-1/2 cursor-grab items-center justify-center rounded-full border border-background bg-primary text-background shadow-sm"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            onRotateStart(e as unknown as React.PointerEvent);
+          }}
+          title="Tourner"
+        >
+          <RotateCw size={10} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -691,7 +754,11 @@ function TableCard({
 type DraggableTableProps = {
   table: CanvasTable;
   status?: { status: TableStatus; reservation: PlanningReservation | null };
-  onClick: () => void;
+  isSelected?: boolean;
+  onClick: (e?: React.MouseEvent) => void;
+  onDoubleClick?: () => void;
+  onResizeStart?: (e: React.PointerEvent) => void;
+  onRotateStart?: (e: React.PointerEvent) => void;
   style?: React.CSSProperties;
   draggable?: boolean;
   zoom?: number;
@@ -700,7 +767,11 @@ type DraggableTableProps = {
 function DraggableTable({
   table,
   status,
+  isSelected,
   onClick,
+  onDoubleClick,
+  onResizeStart,
+  onRotateStart,
   style,
   draggable = true,
   zoom = 1,
@@ -715,7 +786,11 @@ function DraggableTable({
     <TableCard
       table={table}
       status={status}
+      isSelected={isSelected}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      onResizeStart={onResizeStart}
+      onRotateStart={onRotateStart}
       dragRef={setNodeRef as React.Ref<HTMLDivElement>}
       dragProps={draggable ? { ...attributes, ...listeners } : undefined}
       className={cn(
@@ -826,6 +901,9 @@ function NewTableOverlay({
       isActive: true,
       positionX: 0,
       positionY: 0,
+      width: null,
+      height: null,
+      rotation: 0,
       shape,
       sectionName: null,
     }),
@@ -898,6 +976,36 @@ export function FloorPlanCanvas({
   const [selectedServiceTableId, setSelectedServiceTableId] = useState<string | null>(null);
   const [lockedWallIds, setLockedWallIds] = useState<Set<string>>(() => new Set());
 
+  const [selectedTableIds, setSelectedTableIds] = useState<Set<string>>(() => new Set());
+  const [lastSelectedTableId, setLastSelectedTableId] = useState<string | null>(null);
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
+  const [duplicateForm, setDuplicateForm] = useState({
+    count: 6,
+    mode: 'row' as 'row' | 'grid',
+    spacing: 32,
+    cols: 3,
+    rows: 2,
+    spacingY: 32,
+  });
+  const [resizeTableId, setResizeTableId] = useState<string | null>(null);
+  const resizeStartRef = useRef<{
+    pointerX: number;
+    pointerY: number;
+    width: number;
+    height: number;
+    currentWidth?: number;
+    currentHeight?: number;
+  } | null>(null);
+  const [rotateTableId, setRotateTableId] = useState<string | null>(null);
+  const rotateStartRef = useRef<{
+    pointerX: number;
+    pointerY: number;
+    startRotation: number;
+    centerX: number;
+    centerY: number;
+    currentRotation?: number;
+  } | null>(null);
+
   const [activeDragData, setActiveDragData] = useState<ActiveDragData | null>(null);
   const [dragStart, setDragStart] = useState<DragStartInfo | null>(null);
   const justDraggedRef = useRef(false);
@@ -920,6 +1028,7 @@ export function FloorPlanCanvas({
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDeleteTableId, setPendingDeleteTableId] = useState<string | null>(null);
+  const [multiDeleteConfirmOpen, setMultiDeleteConfirmOpen] = useState(false);
 
   const [selectedWallId, setSelectedWallId] = useState<string | null>(null);
   const [wallDragMode, setWallDragMode] = useState<'move' | 'resize-start' | 'resize-end' | null>(
@@ -1053,6 +1162,16 @@ export function FloorPlanCanvas({
     [floorPlan?.walls, selectedWallId],
   );
 
+  const selectedTables = useMemo(
+    () => allTables.filter((table) => selectedTableIds.has(table.id)),
+    [allTables, selectedTableIds],
+  );
+
+  const selectedTable = useMemo(
+    () => (selectedTableIds.size === 1 ? (selectedTables[0] ?? null) : null),
+    [selectedTables, selectedTableIds.size],
+  );
+
   const selectedServiceTable = useMemo(
     () => allTables.find((table) => table.id === selectedServiceTableId) ?? null,
     [allTables, selectedServiceTableId],
@@ -1095,7 +1214,49 @@ export function FloorPlanCanvas({
     setDialogOpen(true);
   }
 
-  function handleTableClick(table: CanvasTable) {
+  function selectTable(table: CanvasTable, event?: React.MouseEvent) {
+    if (!event) {
+      setSelectedTableIds(new Set([table.id]));
+      setLastSelectedTableId(table.id);
+      setSelectedWallId(null);
+      return;
+    }
+    const isMeta = event.ctrlKey || event.metaKey;
+    const isShift = event.shiftKey;
+    if (isMeta) {
+      setSelectedTableIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(table.id)) next.delete(table.id);
+        else next.add(table.id);
+        return next;
+      });
+      setLastSelectedTableId(table.id);
+      setSelectedWallId(null);
+      return;
+    }
+    if (isShift && lastSelectedTableId) {
+      const ids = allTables.map((t) => t.id);
+      const start = ids.indexOf(lastSelectedTableId);
+      const end = ids.indexOf(table.id);
+      if (start !== -1 && end !== -1) {
+        const [rangeStart, rangeEnd] = start < end ? [start, end] : [end, start];
+        const range = ids.slice(rangeStart, rangeEnd + 1);
+        setSelectedTableIds((prev) => {
+          const next = new Set(prev);
+          for (const id of range) next.add(id);
+          return next;
+        });
+      }
+      setLastSelectedTableId(table.id);
+      setSelectedWallId(null);
+      return;
+    }
+    setSelectedTableIds(new Set([table.id]));
+    setLastSelectedTableId(table.id);
+    setSelectedWallId(null);
+  }
+
+  function handleTableClick(table: CanvasTable, event?: React.MouseEvent) {
     if (justDraggedRef.current) {
       justDraggedRef.current = false;
       return;
@@ -1104,8 +1265,360 @@ export function FloorPlanCanvas({
       setSelectedServiceTableId(table.id);
       return;
     }
+    selectTable(table, event);
+  }
+
+  function handleTableDoubleClick(table: CanvasTable) {
+    if (live) return;
     openEditDialog(table);
   }
+
+  async function patchTable(tableId: string, updates: Partial<FloorPlanTable>) {
+    if (!orgId) return;
+    setPlanSaved(false);
+    try {
+      setError('');
+      const updated = await patch<FloorPlanTable>(
+        `restaurants/${orgId}/floor-plan/tables/${tableId}`,
+        updates,
+      );
+      setFloorPlan((prev) => (prev ? replaceTable(prev, updated) : prev));
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de modifier la table'));
+    }
+  }
+
+  async function adjustCapacity(delta: number) {
+    if (selectedTables.length === 0) return;
+    setPlanSaved(false);
+    try {
+      setError('');
+      const results = await Promise.all(
+        selectedTables.map((table) =>
+          patch<FloorPlanTable>(`restaurants/${orgId}/floor-plan/tables/${table.id}`, {
+            capacity: Math.max(1, table.capacity + delta),
+          }),
+        ),
+      );
+      setFloorPlan((prev) => {
+        if (!prev) return prev;
+        let next = prev;
+        for (const updated of results) next = replaceTable(next, updated);
+        return next;
+      });
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de modifier la capacité'));
+    }
+  }
+
+  async function duplicateTable(table: FloorPlanTable, x: number, y: number, name?: string) {
+    if (!orgId || !floorPlan) return;
+    const generatedName =
+      name ??
+      (() => {
+        const numericTableNames = allTables
+          .map((t) => Number(t.name.match(/^T(\d+)$/i)?.[1] ?? 0))
+          .filter((value) => value > 0);
+        return `T${Math.max(0, ...numericTableNames) + 1}`;
+      })();
+    const created = await post<FloorPlanTable>(`restaurants/${orgId}/floor-plan/tables`, {
+      sectionId: table.sectionId ?? null,
+      name: generatedName,
+      minCapacity: table.minCapacity,
+      capacity: table.capacity,
+      shape: table.shape,
+      positionX: x,
+      positionY: y,
+      width: table.width ?? null,
+      height: table.height ?? null,
+      rotation: table.rotation ?? 0,
+    });
+    return created;
+  }
+
+  function nextTableName(offset = 1): string {
+    const numericTableNames = allTables
+      .map((t) => Number(t.name.match(/^T(\d+)$/i)?.[1] ?? 0))
+      .filter((value) => value > 0);
+    const max = Math.max(0, ...numericTableNames);
+    return `T${max + offset}`;
+  }
+
+  async function duplicateSelectedAsRow() {
+    if (selectedTables.length === 0) return;
+    setPlanSaved(false);
+    setDuplicateDialogOpen(false);
+    const source = selectedTables[0];
+    const { width } = getTableSize(source);
+    const spacing = Math.max(0, duplicateForm.spacing);
+    const count = Math.max(2, duplicateForm.count);
+    try {
+      setError('');
+      const startX = source.positionX ?? 0;
+      const startY = source.positionY ?? 0;
+      const created: FloorPlanTable[] = [];
+      for (let i = 1; i < count; i++) {
+        const x = startX + i * (width + spacing);
+        const y = startY;
+        const name = nextTableName(i);
+        const table = await duplicateTable(source, x, y, name);
+        if (table) created.push(table);
+      }
+      setFloorPlan((prev) => {
+        if (!prev) return prev;
+        let next = prev;
+        for (const table of created) next = replaceTable(next, table);
+        return next;
+      });
+      setSelectedTableIds(new Set(created.map((t) => t.id)));
+      setLastSelectedTableId(created[created.length - 1]?.id ?? source.id);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de dupliquer la table'));
+    }
+  }
+
+  async function duplicateSelectedAsGrid() {
+    if (selectedTables.length === 0) return;
+    setPlanSaved(false);
+    setDuplicateDialogOpen(false);
+    const source = selectedTables[0];
+    const { width, height } = getTableSize(source);
+    const spacingX = Math.max(0, duplicateForm.spacing);
+    const spacingY = Math.max(0, duplicateForm.spacingY);
+    const cols = Math.max(1, duplicateForm.cols);
+    const rows = Math.max(1, duplicateForm.rows);
+    try {
+      setError('');
+      const startX = source.positionX ?? 0;
+      const startY = source.positionY ?? 0;
+      const created: FloorPlanTable[] = [];
+      let index = 1;
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          if (row === 0 && col === 0) continue;
+          const x = startX + col * (width + spacingX);
+          const y = startY + row * (height + spacingY);
+          const name = nextTableName(index);
+          const table = await duplicateTable(source, x, y, name);
+          if (table) created.push(table);
+          index += 1;
+        }
+      }
+      setFloorPlan((prev) => {
+        if (!prev) return prev;
+        let next = prev;
+        for (const table of created) next = replaceTable(next, table);
+        return next;
+      });
+      setSelectedTableIds(new Set(created.map((t) => t.id)));
+      setLastSelectedTableId(created[created.length - 1]?.id ?? source.id);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de créer la grille'));
+    }
+  }
+
+  async function deleteSelectedTables() {
+    if (selectedTables.length === 0) return;
+    setPlanSaved(false);
+    try {
+      setError('');
+      await Promise.all(
+        selectedTables.map((table) => del(`restaurants/${orgId}/floor-plan/tables/${table.id}`)),
+      );
+      setFloorPlan((prev) => {
+        if (!prev) return prev;
+        let next = prev;
+        for (const table of selectedTables) next = removeTable(next, table.id);
+        return next;
+      });
+      setSelectedTableIds(new Set());
+      setLastSelectedTableId(null);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de supprimer les tables'));
+    }
+  }
+
+  function alignSelectedTables(axis: 'x' | 'y', anchor: 'min' | 'center' | 'max') {
+    if (selectedTables.length < 2) return;
+    const dimensions = selectedTables.map((table) => {
+      const { width, height } = getTableSize(table);
+      const x = table.positionX ?? 0;
+      const y = table.positionY ?? 0;
+      return { table, width, height, x, y };
+    });
+    const values =
+      axis === 'x'
+        ? dimensions.map((d) => ({ min: d.x, center: d.x + d.width / 2, max: d.x + d.width }))
+        : dimensions.map((d) => ({ min: d.y, center: d.y + d.height / 2, max: d.y + d.height }));
+    const target =
+      anchor === 'min'
+        ? Math.min(...values.map((v) => v.min))
+        : anchor === 'max'
+          ? Math.max(...values.map((v) => v.max))
+          : values[0].center;
+    for (const { table, width, height, x, y } of dimensions) {
+      let nextX = x;
+      let nextY = y;
+      if (axis === 'x') {
+        nextX = anchor === 'min' ? target : anchor === 'max' ? target - width : target - width / 2;
+      } else {
+        nextY =
+          anchor === 'min' ? target : anchor === 'max' ? target - height : target - height / 2;
+      }
+      void patchTable(table.id, {
+        positionX: Math.round(nextX),
+        positionY: Math.round(nextY),
+      });
+    }
+  }
+
+  function distributeSelectedTables(axis: 'x' | 'y') {
+    if (selectedTables.length < 3) return;
+    const sorted = [...selectedTables]
+      .map((table) => ({
+        table,
+        x: table.positionX ?? 0,
+        y: table.positionY ?? 0,
+        size: getTableSize(table),
+      }))
+      .sort((a, b) => (axis === 'x' ? a.x - b.x : a.y - b.y));
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+    const start = axis === 'x' ? first.x : first.y;
+    const end = axis === 'x' ? last.x + last.size.width : last.y + last.size.height;
+    const totalSpace = end - start;
+    const totalSize = sorted.reduce(
+      (sum, item) => sum + (axis === 'x' ? item.size.width : item.size.height),
+      0,
+    );
+    const gap = Math.max(0, (totalSpace - totalSize) / (sorted.length - 1));
+    let cursor = start;
+    for (const { table, size } of sorted) {
+      const dimension = axis === 'x' ? size.width : size.height;
+      void patchTable(table.id, {
+        positionX: axis === 'x' ? Math.round(cursor) : table.positionX,
+        positionY: axis === 'y' ? Math.round(cursor) : table.positionY,
+      });
+      cursor += dimension + gap;
+    }
+  }
+
+  function startTableResize(e: React.PointerEvent, table: CanvasTable) {
+    e.stopPropagation();
+    e.preventDefault();
+    const { width, height } = getTableSize(table);
+    resizeStartRef.current = {
+      pointerX: e.clientX,
+      pointerY: e.clientY,
+      width,
+      height,
+    };
+    setResizeTableId(table.id);
+    setSelectedTableIds(new Set([table.id]));
+    setSelectedWallId(null);
+  }
+
+  function startTableRotate(e: React.PointerEvent, table: CanvasTable) {
+    e.stopPropagation();
+    e.preventDefault();
+    const { width, height } = getTableSize(table);
+    const centerX = (table.positionX ?? 0) + width / 2;
+    const centerY = (table.positionY ?? 0) + height / 2;
+    rotateStartRef.current = {
+      pointerX: e.clientX,
+      pointerY: e.clientY,
+      startRotation: table.rotation ?? 0,
+      centerX,
+      centerY,
+    };
+    setRotateTableId(table.id);
+    setSelectedTableIds(new Set([table.id]));
+    setSelectedWallId(null);
+  }
+
+  function handleTablePointerMove(e: PointerEvent) {
+    if (resizeTableId && resizeStartRef.current) {
+      const dx = (e.clientX - resizeStartRef.current.pointerX) / zoom;
+      const dy = (e.clientY - resizeStartRef.current.pointerY) / zoom;
+      const width = Math.max(40, resizeStartRef.current.width + dx);
+      const height = Math.max(40, resizeStartRef.current.height + dy);
+      resizeStartRef.current.currentWidth = width;
+      resizeStartRef.current.currentHeight = height;
+      setFloorPlan((prev) => {
+        if (!prev) return prev;
+        const table = prev.sections
+          .flatMap((s) => s.tables)
+          .concat(prev.tables ?? [])
+          .find((t) => t.id === resizeTableId);
+        if (!table) return prev;
+        const clampedX =
+          Math.min((table.positionX ?? 0) + width, canvasWidth) - (table.positionX ?? 0);
+        const clampedY =
+          Math.min((table.positionY ?? 0) + height, canvasHeight) - (table.positionY ?? 0);
+        return replaceTable(prev, {
+          ...table,
+          width: Math.round(clampedX),
+          height: Math.round(clampedY),
+        });
+      });
+    }
+    if (rotateTableId && rotateStartRef.current && canvasRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const cx = rect.left + rotateStartRef.current.centerX * zoom;
+      const cy = rect.top + rotateStartRef.current.centerY * zoom;
+      const dx = e.clientX - cx;
+      const dy = e.clientY - cy;
+      const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+      const startAngle =
+        (Math.atan2(rotateStartRef.current.pointerY - cy, rotateStartRef.current.pointerX - cx) *
+          180) /
+        Math.PI;
+      const rotation = Math.round(
+        (rotateStartRef.current.startRotation + angle - startAngle) % 360,
+      );
+      rotateStartRef.current.currentRotation = rotation;
+      setFloorPlan((prev) => {
+        if (!prev) return prev;
+        const table = prev.sections
+          .flatMap((s) => s.tables)
+          .concat(prev.tables ?? [])
+          .find((t) => t.id === rotateTableId);
+        if (!table) return prev;
+        return replaceTable(prev, { ...table, rotation });
+      });
+    }
+  }
+
+  function handleTablePointerUp() {
+    if (resizeTableId && resizeStartRef.current) {
+      void patchTable(resizeTableId, {
+        width: Math.round(resizeStartRef.current.currentWidth ?? resizeStartRef.current.width),
+        height: Math.round(resizeStartRef.current.currentHeight ?? resizeStartRef.current.height),
+      });
+      setResizeTableId(null);
+      resizeStartRef.current = null;
+    }
+    if (rotateTableId && rotateStartRef.current) {
+      void patchTable(rotateTableId, {
+        rotation: rotateStartRef.current.currentRotation ?? rotateStartRef.current.startRotation,
+      });
+      setRotateTableId(null);
+      rotateStartRef.current = null;
+    }
+  }
+
+  useEffect(() => {
+    if (!resizeTableId && !rotateTableId) return;
+    const handleMove = (e: PointerEvent) => handleTablePointerMove(e);
+    const handleUp = () => handleTablePointerUp();
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resizeTableId, rotateTableId, allTables, zoom, canvasWidth, canvasHeight]);
 
   async function handleSubmitTable(e: React.FormEvent) {
     e.preventDefault();
@@ -1175,6 +1688,11 @@ export function FloorPlanCanvas({
     } catch (err) {
       setError(getErrorMessage(err, 'Impossible de supprimer la table'));
     }
+  }
+
+  async function confirmMultiDelete() {
+    setMultiDeleteConfirmOpen(false);
+    await deleteSelectedTables();
   }
 
   async function updateWall(wall: FloorPlanWall, type: WallType, name: string | null) {
@@ -2109,6 +2627,19 @@ export function FloorPlanCanvas({
     />
   );
 
+  const multiDeleteConfirm = (
+    <ConfirmDialog
+      open={multiDeleteConfirmOpen}
+      onConfirm={confirmMultiDelete}
+      onCancel={() => setMultiDeleteConfirmOpen(false)}
+      title={`Supprimer ${selectedTables.length} tables`}
+      description="Cette action est irréversible. Voulez-vous vraiment supprimer les tables sélectionnées ?"
+      confirmLabel="Supprimer"
+      cancelLabel="Annuler"
+      variant="destructive"
+    />
+  );
+
   const settingsDialog = (
     <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
       <DialogContent className="sm:max-w-md">
@@ -2166,6 +2697,134 @@ export function FloorPlanCanvas({
           </Button>
           <Button type="submit" form="floor-settings-form">
             Enregistrer la salle
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  const duplicateDialog = (
+    <Dialog open={duplicateDialogOpen} onOpenChange={setDuplicateDialogOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {duplicateForm.mode === 'row' ? 'Dupliquer en rangée' : 'Dupliquer en grille'}
+          </DialogTitle>
+          <DialogDescription>
+            {duplicateForm.mode === 'row'
+              ? 'Créez plusieurs copies alignées avec le même espacement.'
+              : 'Créez une grille à partir de la table sélectionnée.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        <form className="space-y-4">
+          {duplicateForm.mode === 'row' ? (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="duplicate-count">Nombre total de tables</Label>
+                <Input
+                  id="duplicate-count"
+                  type="number"
+                  min={2}
+                  max={50}
+                  value={duplicateForm.count}
+                  onChange={(e) =>
+                    setDuplicateForm((f) => ({ ...f, count: Number(e.target.value) || 1 }))
+                  }
+                  className="bg-card border-border"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="duplicate-spacing">Espacement (px)</Label>
+                <Input
+                  id="duplicate-spacing"
+                  type="number"
+                  min={0}
+                  value={duplicateForm.spacing}
+                  onChange={(e) =>
+                    setDuplicateForm((f) => ({ ...f, spacing: Number(e.target.value) || 0 }))
+                  }
+                  className="bg-card border-border"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="duplicate-cols">Colonnes</Label>
+                  <Input
+                    id="duplicate-cols"
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={duplicateForm.cols}
+                    onChange={(e) =>
+                      setDuplicateForm((f) => ({ ...f, cols: Number(e.target.value) || 1 }))
+                    }
+                    className="bg-card border-border"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="duplicate-rows">Rangées</Label>
+                  <Input
+                    id="duplicate-rows"
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={duplicateForm.rows}
+                    onChange={(e) =>
+                      setDuplicateForm((f) => ({ ...f, rows: Number(e.target.value) || 1 }))
+                    }
+                    className="bg-card border-border"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="duplicate-spacing-x">Espacement X (px)</Label>
+                  <Input
+                    id="duplicate-spacing-x"
+                    type="number"
+                    min={0}
+                    value={duplicateForm.spacing}
+                    onChange={(e) =>
+                      setDuplicateForm((f) => ({ ...f, spacing: Number(e.target.value) || 0 }))
+                    }
+                    className="bg-card border-border"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="duplicate-spacing-y">Espacement Y (px)</Label>
+                  <Input
+                    id="duplicate-spacing-y"
+                    type="number"
+                    min={0}
+                    value={duplicateForm.spacingY}
+                    onChange={(e) =>
+                      setDuplicateForm((f) => ({ ...f, spacingY: Number(e.target.value) || 0 }))
+                    }
+                    className="bg-card border-border"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+        </form>
+
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button variant="outline" type="button" onClick={() => setDuplicateDialogOpen(false)}>
+            Annuler
+          </Button>
+          <Button
+            type="button"
+            onClick={() =>
+              void (duplicateForm.mode === 'row'
+                ? duplicateSelectedAsRow()
+                : duplicateSelectedAsGrid())
+            }
+          >
+            Dupliquer
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -2297,7 +2956,13 @@ export function FloorPlanCanvas({
       <div className="border-b border-border p-4">
         <p className="text-sm font-semibold">Inspecteur</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          {selectedWall ? 'Propriétés du mur sélectionné' : 'Sélectionnez un objet du plan'}
+          {selectedWall
+            ? 'Propriétés du mur sélectionné'
+            : selectedTables.length > 0
+              ? selectedTables.length === 1
+                ? 'Propriétés de la table sélectionnée'
+                : `${selectedTables.length} tables sélectionnées`
+              : 'Sélectionnez un objet du plan'}
         </p>
       </div>
       {selectedWall ? (
@@ -2440,12 +3105,177 @@ export function FloorPlanCanvas({
             </Button>
           </div>
         </div>
+      ) : selectedTables.length > 0 ? (
+        <div className="flex-1 space-y-5 overflow-y-auto p-4">
+          {selectedTable ? (
+            <div className="space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-lg font-semibold">
+                    {selectedTable.displayName ?? selectedTable.name}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedTable.capacity} places
+                    {selectedTable.sectionName ? ` · ${selectedTable.sectionName}` : ''}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    title="Diminuer la capacité"
+                    onClick={() => void adjustCapacity(-1)}
+                  >
+                    <Minus size={14} />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    title="Augmenter la capacité"
+                    onClick={() => void adjustCapacity(1)}
+                  >
+                    <Plus size={14} />
+                  </Button>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 border-t border-border pt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="px-1"
+                  onClick={() => void patchTable(selectedTable.id, { shape: 'rect' })}
+                >
+                  <Square size={14} className="mr-1" />
+                  Rect.
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="px-1"
+                  onClick={() => void patchTable(selectedTable.id, { shape: 'round' })}
+                >
+                  <Circle size={14} className="mr-1" />
+                  Ronde
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="px-1"
+                  onClick={() => openEditDialog(selectedTable)}
+                >
+                  <Maximize2 size={14} className="mr-1" />
+                  Éditer
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Aligner
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              <Button variant="outline" size="sm" onClick={() => alignSelectedTables('x', 'min')}>
+                <AlignLeft size={14} className="mr-1" />
+                Gauche
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => alignSelectedTables('x', 'center')}
+              >
+                <AlignCenter size={14} className="mr-1" />
+                Centre
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => alignSelectedTables('x', 'max')}>
+                <AlignRight size={14} className="mr-1" />
+                Droite
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => alignSelectedTables('y', 'min')}>
+                <AlignVerticalJustifyStart size={14} className="mr-1" />
+                Haut
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => alignSelectedTables('y', 'center')}
+              >
+                <AlignVerticalJustifyCenter size={14} className="mr-1" />
+                Milieu
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => alignSelectedTables('y', 'max')}>
+                <AlignVerticalJustifyEnd size={14} className="mr-1" />
+                Bas
+              </Button>
+            </div>
+          </div>
+
+          {selectedTables.length >= 3 ? (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Répartir
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" size="sm" onClick={() => distributeSelectedTables('x')}>
+                  <AlignHorizontalJustifyCenter size={14} className="mr-1" />
+                  Horizontal
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => distributeSelectedTables('y')}>
+                  <AlignVerticalJustifyCenter size={14} className="mr-1" />
+                  Vertical
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Multiplier
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setDuplicateForm((f) => ({ ...f, mode: 'row' }));
+                  setDuplicateDialogOpen(true);
+                }}
+              >
+                <Copy size={14} className="mr-1" />
+                Rangée
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setDuplicateForm((f) => ({ ...f, mode: 'grid' }));
+                  setDuplicateDialogOpen(true);
+                }}
+              >
+                <Grid3x3 size={14} className="mr-1" />
+                Grille
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 border-t border-border pt-4">
+            <Button variant="outline" size="sm" onClick={() => setSelectedTableIds(new Set())}>
+              Désélectionner
+            </Button>
+            <Button variant="destructive" size="sm" onClick={() => setMultiDeleteConfirmOpen(true)}>
+              <Trash2 size={14} className="mr-1" />
+              Supprimer
+            </Button>
+          </div>
+        </div>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
           <Move size={24} className="mb-3 text-muted-foreground" />
           <p className="text-sm font-medium">Aucun objet sélectionné</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Cliquez sur un mur pour modifier ses dimensions et sa position.
+            Cliquez sur une table ou un mur pour modifier l’objet.
           </p>
         </div>
       )}
@@ -2655,6 +3485,10 @@ export function FloorPlanCanvas({
                 <div
                   ref={canvasRef}
                   className="absolute origin-top-left bg-muted"
+                  onClick={() => {
+                    setSelectedTableIds(new Set());
+                    setSelectedWallId(null);
+                  }}
                   style={{
                     width: canvasWidth,
                     height: canvasHeight,
@@ -2685,6 +3519,7 @@ export function FloorPlanCanvas({
                               wallJustDraggedRef.current = false;
                               return;
                             }
+                            setSelectedTableIds(new Set());
                             setSelectedWallId(w.id);
                           }}
                           onPointerDownMove={(e) => handleWallPointerDown(e, w, 'move')}
@@ -2835,9 +3670,13 @@ export function FloorPlanCanvas({
                         key={table.id}
                         table={table}
                         status={status}
+                        isSelected={!live && selectedTableIds.has(table.id)}
                         draggable={!live}
                         zoom={zoom}
-                        onClick={() => handleTableClick(table)}
+                        onClick={(e) => handleTableClick(table, e)}
+                        onDoubleClick={() => handleTableDoubleClick(table)}
+                        onResizeStart={(e) => startTableResize(e, table)}
+                        onRotateStart={(e) => startTableRotate(e, table)}
                         style={{
                           left: table.positionX ?? 0,
                           top: table.positionY ?? 0,
@@ -2899,7 +3738,9 @@ export function FloorPlanCanvas({
       </Card>
       {dialog}
       {confirm}
+      {multiDeleteConfirm}
       {settingsDialog}
+      {duplicateDialog}
     </>
   );
 }
