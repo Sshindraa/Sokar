@@ -325,11 +325,11 @@ Smoke test Sentry + metrics.
 
 ---
 
-## Sokar Connect (à venir T2)
+## Sokar Connect (actif — T2-T10 faits le 2026-06-24)
 
-Module : `apps/api/src/modules/connect/` (à créer)
+Module : `apps/api/src/modules/connect/` (créé en T2, vérifié vert)
 
-Endpoints prévus, **tous publics** (no Clerk) :
+Endpoints, **tous publics** (no Clerk) :
 
 | Méthode | Route                          | Description                            |
 | ------- | ------------------------------ | -------------------------------------- |

@@ -8,7 +8,7 @@
 ## Décisions récentes
 
 - **2026-06-24** — Sokar Connect v1.1 validée par Hamza (8 corrections v1→v1.1 intégrées : static export→standalone, suppression basePath, VPS+Caddy+Cloudflare proxy, gating corrigé, source de vérité unique, seed local/staging, audit log métier only, CORS durci). Spec : [[Sokar Connect P0]]
-- **2026-06-24** — Phase 0 Sokar Connect lancée : ordre T1→T2+T3→T4 avec STOP revue entre chaque. Premier batch (T1) prêt, attente GO `migrate deploy`.
+- **2026-06-24** — Phase 0 Sokar Connect lancée : ordre T1→T2+T3→T4 avec STOP revue entre chaque. T1 (`migrate deploy`) **fait le 2026-06-24** (backfill Chez Sokar → Lyon/69001/FR), T2-T10 (API publique, JSON-LD, app connect, pages, analytics, sécurité) écrits et testés (38/38 tests verts). Reste : T4 app en prod + P1 pilote fermé (cf. [[Sokar Connect P0]]).
 - **2026-06-24** — Cleanup docs/ : `pilot/_archive/` créé, `runbook.md` extrait de `pilot/`, 3 versions agentic obsolètes archivées. Vault Obsidian re-activé après 5 semaines d'arrêt (cf. Journal).
 - **2026-06-23** — Cleanup Vault Obsidian : 17 notes. Pas alimenté depuis 2026-05-21. Rétro-documentation des 5 semaines sautées : agentic-reservations P0, MCP OAuth, OpenAI Reserve, model switch Hermes, VSCode crashes. Reprise automatic à partir de T1 Sokar Connect.
 - **2026-06-23** — Model switch Hermes : `glm-5.2` → `minimax-m3` via `opencode-go`. Supervisor `glm-5.2=review`. Crof.ai supprimé (404 sur `deepseek-v4-pro`). Contrainte : `/v1/messages` exige `x-api-key` (Hermes n'envoie pas) → `api_mode: anthropic_messages` désactivé.
