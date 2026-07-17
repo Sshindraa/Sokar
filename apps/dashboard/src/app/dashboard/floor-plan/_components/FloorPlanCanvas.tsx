@@ -349,86 +349,127 @@ function findNextPosition(
 function renderChairs(table: CanvasTable): React.ReactNode[] {
   const { width, height } = getTableSize(table);
   const capacity = table.capacity ?? 1;
-  const chairCount = Math.min(capacity, 10);
-  const chairSize = 10;
-  const chairOffset = 6;
-  const chairs: React.ReactNode[] = [];
+  const chairCount = Math.min(capacity, 16);
+  const chairSize = 12;
+  const chairOffset = 4;
+  const half = chairSize / 2;
   const shape = table.shape ?? 'rect';
+  const chairs: React.ReactNode[] = [];
+
+  const chairClassName = 'absolute rounded-full border-2 border-background bg-muted-foreground/80';
+  const baseStyle: React.CSSProperties = {
+    width: chairSize,
+    height: chairSize,
+    boxSizing: 'border-box',
+  };
 
   if (shape === 'round') {
     const centerX = width / 2;
     const centerY = height / 2;
-    const radius = Math.min(width, height) / 2 + chairOffset + chairSize / 2;
+    const radiusX = Math.max(0, width / 2 + chairOffset + half);
+    const radiusY = Math.max(0, height / 2 + chairOffset + half);
     for (let i = 0; i < chairCount; i++) {
-      const angle = (i / chairCount) * 2 * Math.PI;
-      const left = centerX + radius * Math.cos(angle) - chairSize / 2;
-      const top = centerY + radius * Math.sin(angle) - chairSize / 2;
+      const angle = (i / chairCount) * 2 * Math.PI - Math.PI / 2;
+      const left = centerX + radiusX * Math.cos(angle) - half;
+      const top = centerY + radiusY * Math.sin(angle) - half;
+      chairs.push(
+        <div key={`chair-${i}`} className={chairClassName} style={{ ...baseStyle, left, top }} />,
+      );
+    }
+    return chairs;
+  }
+
+  if (width <= 0 || height <= 0) return chairs;
+
+  const perimeter = 2 * (width + height);
+  let topCount = Math.max(0, Math.round((chairCount * width) / perimeter));
+  let bottomCount = topCount;
+  let leftCount = Math.max(0, Math.round((chairCount * height) / perimeter));
+  let rightCount = leftCount;
+  let total = topCount + bottomCount + leftCount + rightCount;
+
+  const adjust = (remaining: number) => {
+    while (remaining !== 0) {
+      if (remaining > 0) {
+        if (width >= height) {
+          topCount++;
+          if (--remaining === 0) break;
+          bottomCount++;
+          remaining--;
+        } else {
+          leftCount++;
+          if (--remaining === 0) break;
+          rightCount++;
+          remaining--;
+        }
+      } else {
+        if (width >= height) {
+          if (leftCount > 0) {
+            leftCount--;
+          } else if (rightCount > 0) {
+            rightCount--;
+          } else if (topCount > 1) {
+            topCount--;
+          } else if (bottomCount > 1) {
+            bottomCount--;
+          } else {
+            break;
+          }
+          remaining++;
+        } else {
+          if (topCount > 0) {
+            topCount--;
+          } else if (bottomCount > 0) {
+            bottomCount--;
+          } else if (leftCount > 1) {
+            leftCount--;
+          } else if (rightCount > 1) {
+            rightCount--;
+          } else {
+            break;
+          }
+          remaining++;
+        }
+      }
+    }
+  };
+
+  adjust(chairCount - total);
+
+  const place = (count: number, length: number, side: 'top' | 'bottom' | 'left' | 'right') => {
+    if (count <= 0 || length <= 0) return;
+    const spacing = length / (count + 1);
+    for (let i = 1; i <= count; i++) {
+      const position = i * spacing;
+      let left = 0;
+      let top = 0;
+      if (side === 'top') {
+        left = position - half;
+        top = -(chairOffset + chairSize);
+      } else if (side === 'bottom') {
+        left = position - half;
+        top = height + chairOffset;
+      } else if (side === 'left') {
+        top = position - half;
+        left = -(chairOffset + chairSize);
+      } else {
+        top = position - half;
+        left = width + chairOffset;
+      }
       chairs.push(
         <div
-          key={`chair-${i}`}
-          className="absolute rounded-full border-2 border-background bg-muted-foreground/80"
-          style={{ width: chairSize, height: chairSize, left, top }}
+          key={`chair-${side}-${i}`}
+          className={chairClassName}
+          style={{ ...baseStyle, left, top }}
         />,
       );
     }
-  } else {
-    const longSideIsWidth = width >= height;
-    if (longSideIsWidth) {
-      const topCount = Math.ceil(chairCount / 2);
-      const bottomCount = chairCount - topCount;
-      const topSpacing = width / (topCount + 1);
-      for (let i = 1; i <= topCount; i++) {
-        const left = i * topSpacing - chairSize / 2;
-        const top = -chairOffset - chairSize / 2;
-        chairs.push(
-          <div
-            key={`chair-top-${i}`}
-            className="absolute rounded-full border-2 border-background bg-muted-foreground/80"
-            style={{ width: chairSize, height: chairSize, left, top }}
-          />,
-        );
-      }
-      const bottomSpacing = width / (bottomCount + 1);
-      for (let i = 1; i <= bottomCount; i++) {
-        const left = i * bottomSpacing - chairSize / 2;
-        const top = height + chairOffset - chairSize / 2;
-        chairs.push(
-          <div
-            key={`chair-bottom-${i}`}
-            className="absolute rounded-full border-2 border-background bg-muted-foreground/80"
-            style={{ width: chairSize, height: chairSize, left, top }}
-          />,
-        );
-      }
-    } else {
-      const leftCount = Math.ceil(chairCount / 2);
-      const rightCount = chairCount - leftCount;
-      const leftSpacing = height / (leftCount + 1);
-      for (let i = 1; i <= leftCount; i++) {
-        const top = i * leftSpacing - chairSize / 2;
-        const left = -chairOffset - chairSize / 2;
-        chairs.push(
-          <div
-            key={`chair-left-${i}`}
-            className="absolute rounded-full border-2 border-background bg-muted-foreground/80"
-            style={{ width: chairSize, height: chairSize, left, top }}
-          />,
-        );
-      }
-      const rightSpacing = height / (rightCount + 1);
-      for (let i = 1; i <= rightCount; i++) {
-        const top = i * rightSpacing - chairSize / 2;
-        const left = width + chairOffset - chairSize / 2;
-        chairs.push(
-          <div
-            key={`chair-right-${i}`}
-            className="absolute rounded-full border-2 border-background bg-muted-foreground/80"
-            style={{ width: chairSize, height: chairSize, left, top }}
-          />,
-        );
-      }
-    }
-  }
+  };
+
+  place(topCount, width, 'top');
+  place(bottomCount, width, 'bottom');
+  place(leftCount, height, 'left');
+  place(rightCount, height, 'right');
 
   return chairs;
 }
