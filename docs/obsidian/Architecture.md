@@ -1,10 +1,10 @@
 # Architecture Sokar
 
 **Dernière mise à jour** : 2026-06-24
-**Stack** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx / Next.js 14 + React 18 + Tailwind 3 / Cartesia Sonic 3.5 + Deepgram Nova-3 / OpenRouter (deepseek-v4-flash / PRO)
+**Stack** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx / Next.js 15 + React 19 + Tailwind 3 / Cartesia Sonic 3.5 + Deepgram Flux v2 (pipeline vocal : STT Deepgram, LLM OpenRouter deepseek, TTS Cartesia). Agent CLI Hermes : `minimax-m3` via `opencode-go`.
 **Carrier** : Telnyx (production) — Vapi legacy purgé
 **TTS** : Cartesia Sonic 3.5 (depuis 2026-05-20)
-**Model switch** : Hermes sur `glm-5.2` via `opencode-go` (depuis 2026-06-25)
+**Model switch** : Hermes sur `minimax-m3` via `opencode-go` (depuis 2026-06-23)
 
 > Note 2026-06-24 : rétro-référence aux changements majeurs depuis
 > 2026-05-21 (agentic P0, MCP, OpenAI Reserve, Sokar Connect). Pour le
@@ -24,9 +24,9 @@ sokar/
 │   │       ├── shared/       # Shared services (redis, queue, telnyx, observability, auth)
 │   │       ├── lib/          # Auth helpers
 │   │       └── types/        # TypeScript declarations
-│   ├── dashboard/        # Next.js 14 dashboard (Clerk auth, privé restaurateur)
-│   ├── widget/           # Next.js 14 widget B2B (port 4001, output:export, Cloudflare CDN)
-│   └── connect/          # Next.js 14 app publique (port 4002, output:standalone, à venir T4)
+│   ├── dashboard/        # Next.js 15 dashboard (Clerk auth, privé restaurateur)
+│   ├── widget/           # Next.js 15 widget B2B (port 4001, output:export, Cloudflare CDN)
+│   └── connect/          # Next.js 15 app publique (port 4002, output:standalone, à venir T4)
 │       └── src/
 │           └── app/         # App Router pages
 ├── packages/
@@ -82,14 +82,14 @@ Appel entrant → Telnyx → Webhook → Agent State Machine
                                     Actions (outbound call, create reservation, etc.)
 ```
 
-Voir [[Voice Pipeline]] pour le détail.
+Voir [[Telnyx Pipeline]] et [[Flux Pipeline Media Stream]] pour le détail.
 
 ---
 
 ## Dashboard
 
-**Framework** : Next.js 14 App Router.
-**UI** : React 18 + Tailwind 3.
+**Framework** : Next.js 15 App Router.
+**UI** : React 19 + Tailwind 3.
 **Auth** : Clerk (login, register, middleware).
 
 Pages :
@@ -101,17 +101,17 @@ Pages :
 - `/réservations` — Gestion des réservations
 - `/clients` — Profils clients
 
-Voir [[Dashboard]] pour le plan UI/UX.
+Voir la section Dashboard ci-dessus pour le plan UI/UX.
 
 ---
 
 ## Agent IA (Hermes CLI)
 
-- **Modèle unique** : glm-5.2 via opencode-go (chat_completions)
-- **Workflow** : brain (glm-5.2) planifie/review → MiniMax M3 workers exécutent
+- **Modèle unique** : minimax-m3 via opencode-go (chat_completions)
+- **Workflow** : brain (minimax-m3) planifie/review → MiniMax M3 workers exécutent
 - **Logs** : `~/.hermes/logs/cascade_hermes_bridge.md`
 
-Voir [[Hermes Agent]] pour la configuration.
+Voir [[Hermes Obsidian Integration]] pour la configuration.
 
 ---
 
@@ -144,12 +144,13 @@ Voir [[Hermes Agent]] pour la configuration.
 ## Liens
 
 - [[README]] — Guide de démarrage
-- [[Phase 1]] — Objectifs en cours
-- [[API Endpoints]] — Documentation des routes
-- [[Database Schema]] — Schéma Prisma complet
-- [[Voice Pipeline]] — Architecture vocale
-- [[Dashboard]] — Plan UI/UX
-- [[BullMQ Jobs]] — Workers et queues
-- [[Testing Strategy]] — Tests et coverage
-- [[Hermes Agent]] — Configuration IA
-  [[Context]]
+- [[Context]] — État courant, décisions récentes
+- [[Journal]] — Log chronologique des tâches
+- [[API Endpoints]] — Documentation des routes Fastify
+- [[Telnyx Pipeline]] — ai_config, machine à états, webhooks
+- [[Flux Pipeline Media Stream]] — Pipeline Flux + barge-in
+- [[Fillers Audio]] — Cache fillers LLM
+- [[Sokar Connect P0]] — Spec phase 0 + tickets T1-T10
+- [[Phone Number Strategy]] — Stratégie numéros Telnyx
+- [[Session Telnyx Debug 2026-06-10]] — Post-mortem Telnyx
+- [[Hermes Obsidian Integration]] — Intégration Hermes × Obsidian

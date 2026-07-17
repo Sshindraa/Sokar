@@ -1,6 +1,6 @@
 # Sokar — Guide de Démarrage
 
-> **Vault Obsidian** : `/Users/hamza/Desktop/Sokar/docs/obsidian/`
+> **Vault Obsidian** : `/Users/hamza/Projects/Sokar/docs/obsidian/`
 > **Dernière mise à jour** : 2026-06-24
 > **Statut** : vault ré-activé après rétro-documentation des 5 semaines
 > 2026-05-22 → 2026-06-23 (cf. [[Journal]]).
@@ -17,11 +17,10 @@ Sokar est un monorepo (pnpm workspace + Turborepo) de gestion de
 réservations de restaurants avec assistant vocal IA.
 
 - **Backend API** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx
-- **Dashboard** : Next.js 14 (App Router) + React 18 + Tailwind 3 — privé, Clerk auth
-- **Widget B2B** : Next.js 14, port 4001, `output: 'export'`, Cloudflare CDN
-- **Sokar Connect** : Next.js 14, port 4002, `output: 'standalone'`, VPS + Nginx + Cloudflare
-- **Voice Pipeline** : Telnyx (carrier), Deepgram Nova-3 (STT),
-  OpenRouter (LLM `deepseek-v4-flash` / `PRO`), Cartesia Sonic 3.5 (TTS)
+- **Dashboard** : Next.js 15 (App Router) + React 19 + Tailwind 3 — privé, Clerk auth
+- **Widget B2B** : Next.js 15, port 4001, `output: 'export'`, Cloudflare CDN
+- **Sokar Connect** : Next.js 15, port 4002, `output: 'standalone'`, VPS + Nginx + Cloudflare
+- **Voice Pipeline** : Telnyx (carrier), minimax-m3 via opencode-go (LLM), Cartesia Sonic 3.5 (TTS)
 - **Jobs Queue** : BullMQ (evening report, SMS confirmation, outbound confirm)
 - **Agent IA** : Hermes CLI sur `minimax-m3` via `opencode-go` (depuis 2026-06-23)
 
@@ -82,7 +81,7 @@ Prisma 6 + PostgreSQL. Modèles actifs (cf. `packages/database/prisma/schema.pri
 | [[API Endpoints]]                   | Routes Fastify exhaustives                          |
 | [[Session Telnyx Debug 2026-06-10]] | Post-mortem bugs Telnyx + clés API                  |
 
-Notes archivées : `docs/obsidian/_archive/` (Vapi legacy, Sprint 1, stubs).
+Notes legacy (Vapi, Sprint 1, stubs, Git Auto-Commit) : retirées du vault lors de la migration Desktop → Projects.
 
 ## Liens externes
 

@@ -31,12 +31,12 @@ POST /voice/telnyx  ← call.initiated webhook
 
 ### ai_config retourné à Telnyx
 
-| Étape | Provider | Modèle | Détail |
-|-------|----------|--------|--------|
-| **STT** | Deepgram | `nova-3` | Langue `fr`, endpointing 300ms, utterance_end_ms 1000ms |
-| **LLM** | OpenRouter | `deepseek/deepseek-v4-flash` (default) ou PRO si VIP | System prompt + conversation turns |
-| **TTS** | Cartesia | `sonic-3.5` + Katie (`f786b574-daa5-4673-aa0c-cbe3e8534c02`) | Chunk on `.`, `!`, `?`, min_chunk_length 4. Voice ID depuis `ctx.personality.voiceIdCa` |
-| **First utterance** | — | — | `"Bonjour, ${ctx.name}..."` |
+| Étape               | Provider   | Modèle                                                       | Détail                                                                                  |
+| ------------------- | ---------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| **STT**             | Deepgram   | `nova-3`                                                     | Langue `fr`, endpointing 300ms, utterance_end_ms 1000ms                                 |
+| **LLM**             | OpenRouter | `deepseek/deepseek-v4-flash` (default) ou PRO si VIP         | System prompt + conversation turns                                                      |
+| **TTS**             | Cartesia   | `sonic-3.5` + Katie (`f786b574-daa5-4673-aa0c-cbe3e8534c02`) | Chunk on `.`, `!`, `?`, min_chunk_length 4. Voice ID depuis `ctx.personality.voiceIdCa` |
+| **First utterance** | —          | —                                                            | `"Bonjour, ${ctx.name}..."`                                                             |
 
 > ⚠️ **Limitation sonic-3.5** : les contrôles de `speed` et `volume` sont désactivés temporairement sur sonic-3.5 (depuis avril 2026, cf doc Cartesia). Le champ `speakingRate` dans `AgentPersonality` n'a pas d'effet tant que cette limitation est en place. Pour utiliser speed/volume, il faudrait revenir à `sonic-3` (snapshotté) ou attendre la réactivation par Cartesia.
 
@@ -87,28 +87,30 @@ IDLE ──► LISTENING ──► PROCESSING ──► SPEAKING ──► LISTE
 
 Transitions :
 
-| De | Vers | Condition |
-|----|------|-----------|
-| IDLE | LISTENING | VAD: speech start |
-| LISTENING | IDLE | VAD: end, pas besoin LLM |
-| LISTENING | PROCESSING | VAD: end, requête LLM |
-| PROCESSING | SPEAKING | TTS first byte reçu |
-| SPEAKING | LISTENING | TTS playback terminé |
-| * | IDLE | Call hangup |
+| De         | Vers       | Condition                |
+| ---------- | ---------- | ------------------------ |
+| IDLE       | LISTENING  | VAD: speech start        |
+| LISTENING  | IDLE       | VAD: end, pas besoin LLM |
+| LISTENING  | PROCESSING | VAD: end, requête LLM    |
+| PROCESSING | SPEAKING   | TTS first byte reçu      |
+| SPEAKING   | LISTENING  | TTS playback terminé     |
+| \*         | IDLE       | Call hangup              |
 
 ---
 
 ## Routes Webhook Telnyx
 
 ### `POST /voice/telnyx` — `call.initiated`
+
 Point d'entrée. Charge contexte, vérifie circuit breaker, associe client, retourne `ai_config`.
 
 ### `POST /voice/telnyx/end` — Fin d'appel
+
 Reçoit : `call_leg_id`, `transcript`, `ended_reason`, `started_at`, `ended_at`, `stt_provider`, `llm_provider`, `tts_provider`.
 
 Met à jour le Call record avec durée, transcript, outcome, provider info, flag carrier.
 
-> **Attention** : `call.hangup` Telnyx event arrive *avant* le webhook `/end`. Utiliser `/end` pour les stats finales, `hangup` pour les actions temps réel.
+> **Attention** : `call.hangup` Telnyx event arrive _avant_ le webhook `/end`. Utiliser `/end` pour les stats finales, `hangup` pour les actions temps réel.
 
 ---
 
@@ -146,10 +148,10 @@ TTL: configurable (TTS_CACHE_TTL_SECONDS)
 
 Deux niveaux de rate limiting via Redis counters :
 
-| Niveau | Clé Redis | Action |
-|--------|-----------|--------|
-| Mensuel | `infra:calls:<id>:<YYYY-MM>` | Sentry warning au threshold |
-| Horaire | `infra:calls:<id>:<YYYY-MM-DD-HH>` | Bloque l'appel si dépassé |
+| Niveau  | Clé Redis                          | Action                      |
+| ------- | ---------------------------------- | --------------------------- |
+| Mensuel | `infra:calls:<id>:<YYYY-MM>`       | Sentry warning au threshold |
+| Horaire | `infra:calls:<id>:<YYYY-MM-DD-HH>` | Bloque l'appel si dépassé   |
 
 Les counters expirent automatiquement via TTL Redis.
 
@@ -159,13 +161,13 @@ Les counters expirent automatiquement via TTL Redis.
 
 `detectOutcome(call)` → `CallOutcome` :
 
-| Outcome | Condition |
-|---------|-----------|
-| `RESERVED` | Transcript match confirmation réservation |
-| `HANDOFF` | `endedReason === 'transfer'` |
-| `ERROR` | `endedReason === 'error'` |
-| `INFO` | Transcript mentionne horaires |
-| `NO_ACTION` | Fallback |
+| Outcome     | Condition                                 |
+| ----------- | ----------------------------------------- |
+| `RESERVED`  | Transcript match confirmation réservation |
+| `HANDOFF`   | `endedReason === 'transfer'`              |
+| `ERROR`     | `endedReason === 'error'`                 |
+| `INFO`      | Transcript mentionne horaires             |
+| `NO_ACTION` | Fallback                                  |
 
 ---
 
@@ -173,11 +175,11 @@ Les counters expirent automatiquement via TTL Redis.
 
 Trois styles de phrases d'attente selon `FillerStyle` :
 
-| Style | Ton | Exemple |
-|-------|-----|---------|
-| CASUAL | Détendu | "Je regarde ça..." |
-| FORMAL | Poli | "Veuillez patienter un instant..." |
-| WARM | Amical | "Pas de souci, je regarde ça !" |
+| Style  | Ton     | Exemple                            |
+| ------ | ------- | ---------------------------------- |
+| CASUAL | Détendu | "Je regarde ça..."                 |
+| FORMAL | Poli    | "Veuillez patienter un instant..." |
+| WARM   | Amical  | "Pas de souci, je regarde ça !"    |
 
 ---
 
@@ -196,4 +198,4 @@ apps/api/src/modules/voice/
 └── pipeline.ts           # Vapi pipeline legacy
 ```
 
-Voir aussi : [[Architecture]], [[Phase 1#Pipeline Vocal]]
+Voir aussi : [[Architecture]] (section Voice Pipeline)

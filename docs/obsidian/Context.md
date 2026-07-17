@@ -2,6 +2,7 @@
 
 ## Dernière activité
 
+2026-07-17 14:00 — [docs, agent] **Rewiring Obsidian vault as Hermes cross-session memory** — `OBSIDIAN_VAULT_PATH` set in `~/.hermes/.env` → `docs/obsidian`. AGENTS.md now mandates reading `Context.md` + tail of `Journal.md` at session start, and updating the vault after any significant change (obsidian-doc skill). Stalé notes corrected: Next.js 14→15, React 18→19, glm-5.2→minimax-m3, OpenRouter deepseek→minimax-m3. (cf. [[Hermes Obsidian Integration]])
 2026-06-24 18:44 — [connect, test] **Stabilisation Sokar Connect + fix voice mocks** — Ajouté 12 tests (7 villes T7 + 5 analytics T8) → **38/38 tests Sokar Connect verts**, 1 skip intentionnel (smoke e2e). Typecheck API + Sokar Connect exit 0. Cause du timeout 18:00 identifiée : `tsserver.js` (VSCode LSP) qui consomme 100% CPU → fix via `find ... -name "*.tsbuildinfo" -delete`. Bonus : 2 tests voice régressés par autre dev (`CustomerService.buildReturningGreeting`/`recordCallActivity` mocks manquants dans `telnyx.pipeline.test.ts`) → fixés, mais 17 autres tests voice restent cassés (pré-existants, hors scope Sokar Connect, loggés dans TODOs comme dette technique). Build Sokar Connect incrémental non re-testé (tsserver bloque le build process — à rebooter VSCode). **Tests verts, prêt pour le pilote**. Prochain : reboot IDE + cleanup tsserver.
 
 ## Décisions récentes

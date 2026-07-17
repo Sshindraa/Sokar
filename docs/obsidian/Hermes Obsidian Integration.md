@@ -30,7 +30,7 @@ significative, en suivant la skill `obsidian-doc` (règle absolue :
 ## Vault
 
 ```
-Chemin : /Users/hamza/Desktop/Sokar/docs/obsidian/
+Chemin : /Users/hamza/Projects/Sokar/docs/obsidian/
 Format : markdown standard (.md), pas de formatting exotique
 Versionné : oui (dans le monorepo git)
 ```
@@ -38,7 +38,7 @@ Versionné : oui (dans le monorepo git)
 ### Variable d'env
 
 ```bash
-OBSIDIAN_VAULT_PATH=/Users/hamza/Desktop/Sokar/docs/obsidian
+OBSIDIAN_VAULT_PATH=/Users/hamza/Projects/Sokar/docs/obsidian
 ```
 
 Convention documentée dans la skill `obsidian` (skill Hermes). Si
@@ -95,7 +95,7 @@ Configuration type (optionnelle) :
 "obsidian-vault": {
   "command": "npx",
   "args": ["-y", "@modelcontextprotocol/server-filesystem",
-           "/Users/hamza/Desktop/Sokar/docs/obsidian"]
+           "/Users/hamza/Projects/Sokar/docs/obsidian"]
 }
 ```
 
@@ -113,8 +113,8 @@ Configuration type (optionnelle) :
 | [[Sokar Connect P0]]                | Spec phase 0 + tickets T1-T10                |
 | [[Session Telnyx Debug 2026-06-10]] | Post-mortem Telnyx                           |
 
-Notes archivées : `docs/obsidian/_archive/` (Vapi, Sprint 1, stubs,
-Git Auto-Commit — outils/scripts qui n'existent plus).
+Notes legacy (Vapi, Sprint 1, stubs, Git Auto-Commit) : retirées du
+vault lors de la migration Desktop → Projects.
 
 ## Historique du système d'auto-logging
 

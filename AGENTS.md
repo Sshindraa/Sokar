@@ -43,6 +43,8 @@ sokar/
 4. Never commit secrets. Use env vars (`key_env` = secrets loaded from environment only, never from code), not plaintext keys.
 5. Before saying done, run the smallest relevant verification: tests, build, lint, curl, or typecheck.
 6. Git can be unstable on this Mac when multiple IDEs are open. Before bulk git ops, inspect active git/IDE processes and prefer scoped staging.
+7. Session start: read the Obsidian vault for current state — `docs/obsidian/Context.md` (full, ~1.4k tokens) and the **last ~3 entries of `docs/obsidian/Journal.md`** (tail -3, NOT the full 47KB file). The vault is cross-session memory; AGENTS.md is repo-specific, the vault is the running log.
+8. After any significant change (architecture, schema, provider, feature flag, API route, decision, legacy removal), update the vault per the `obsidian-doc` skill — `Context.md` + append to `Journal.md`. Do not wait to be asked.
 
 ## Commands
 
@@ -98,6 +100,7 @@ hermes -z "task" # one-shot task
 ## Where to look
 
 - **Project map:** `docs/PROJECT_MAP.md` — architecture, flux, points sensibles.
+- **Vault (Obsidian):** `docs/obsidian/` — `Context.md` (current state), `Journal.md` (chronological log), `Architecture.md`, `API Endpoints.md`, `Sokar Connect P0.md`, `Telnyx Pipeline.md`. Mounted via `OBSIDIAN_VAULT_PATH` in Hermes.
 - **Runbooks:** `docs/runbooks/` — staging, deployment, rollback, environment, tests, migration.
 - **Architecture:** `docs/architecture/` — dashboard, voice, plus product specs in `docs/*.md`.
 - **Specs:** `docs/gift-cards-spec.md`, `docs/floor-plan-spec.md`, `docs/connect-v1.1.md`, `docs/sokar-mcp-agentic-reservations-v3.2.md`.
