@@ -7,7 +7,7 @@ model:
   model: minimax-m3
   base_url: https://opencode.ai/zen/go/v1
   key_env: OPENCODE_GO_API_KEY
-  api_mode: anthropic_messages
+  api_mode: chat_completions
   fallback:
     provider: opencode-go
     model: deepseek-v4-flash
@@ -21,7 +21,7 @@ delegation:
   provider: opencode-go
   base_url: https://opencode.ai/zen/go/v1
   key_env: OPENCODE_GO_API_KEY
-  api_mode: anthropic_messages
+  api_mode: chat_completions
   orchestrator_enabled: true
   max_iterations: 50
   child_timeout_seconds: 900
@@ -29,6 +29,10 @@ delegation:
   max_spawn_depth: 2
   subagent_auto_approve: true
 
-# skills_dir: chemin absolu vers tools/hermes/skills dans le repo Sokar.
-# Adapter selon la machine (iCloud vs ~/Desktop) après copie vers ~/.hermes/config.yaml.
-skills_dir: /Users/hamza/Library/Mobile Documents/com~apple~CloudDocs/Desktop/Sokar/tools/hermes/skills
+# skills_dir: doit pointer sur le repo Sokar (racine), PAS sur tools/hermes/skills.
+# Le repo-root charge .devin/skills/orchestrate (orchestration Devin).
+# Les scripts tools/hermes/skills/obsidian/ (auto_doc/auto_sync/notion_sync) sont
+# invoqués par code via sys.path dans mcp_serve.py — ils ne sont PAS des skills Hermes
+# (aucun SKILL.md), donc un skills_dir dessus ne chargerait rien de plus.
+# Ne JAMAIS remettre un chemin iCloud (Library/Mobile Documents/...) : il est mort.
+skills_dir: /Users/hamza/Projects/Sokar
