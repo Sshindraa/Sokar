@@ -1,4 +1,7 @@
+import { Prisma } from '@prisma/client';
 import type { PrismaClient, Section, Table, Wall } from '@prisma/client';
+import { zonedTimeToUtc } from './availability-capacity-aware.service.js';
+import { TableAllocationService } from './table-allocation.service.js';
 
 /** Capacité minimale par défaut d'une table (1 personne) */
 const DEFAULT_TABLE_MIN_CAPACITY = 1;
@@ -42,6 +45,7 @@ export type PlanningReservation = {
   partySize: number;
   customerName: string | null;
   state: string;
+  seatedAt: Date | null;
 };
 
 export type CreateSectionInput = {
@@ -86,7 +90,11 @@ export type CreateWallInput = {
 export type UpdateWallInput = Partial<CreateWallInput>;
 
 export class FloorPlanService {
-  constructor(private readonly prisma: PrismaClient) {}
+  private readonly tableAllocation: TableAllocationService;
+
+  constructor(private readonly prisma: PrismaClient) {
+    this.tableAllocation = new TableAllocationService(prisma);
+  }
 
   async getOrCreateFloorPlan(restaurantId: string): Promise<FloorPlanWithSections> {
     const existing = await this.prisma.floorPlan.findUnique({
@@ -335,8 +343,13 @@ export class FloorPlanService {
 
   async getPlanning(restaurantId: string, date: string): Promise<PlanningReservation[]> {
     const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
-    const start = new Date(`${date}T00:00:00.000Z`);
-    const end = new Date(`${date}T23:59:59.999Z`);
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { timezone: true },
+    });
+    const timeZone = restaurant?.timezone ?? 'Europe/Paris';
+    const start = zonedTimeToUtc(date, '00:00', timeZone);
+    const end = zonedTimeToUtc(date, '23:59:59.999', timeZone);
 
     const reservations = await this.prisma.reservation.findMany({
       where: {
@@ -359,6 +372,21 @@ export class FloorPlanService {
     const tableMap = new Map(floorPlan.tables.map((t) => [t.id, t]));
     const sectionMap = new Map(floorPlan.sections.map((s) => [s.id, s]));
 
+    const seatedLogs = await this.prisma.reservationAuditLog.findMany({
+      where: {
+        reservationId: { in: reservations.map((r) => r.id) },
+        event: 'reservation_seated',
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { reservationId: true, createdAt: true },
+    });
+    const seatedAtByReservation = new Map<string, Date>();
+    for (const log of seatedLogs) {
+      if (log.reservationId && !seatedAtByReservation.has(log.reservationId)) {
+        seatedAtByReservation.set(log.reservationId, log.createdAt);
+      }
+    }
+
     return reservations.map((r) => {
       const table = r.tableId ? (tableMap.get(r.tableId) ?? null) : null;
       const section = table?.sectionId ? (sectionMap.get(table.sectionId) ?? null) : null;
@@ -372,7 +400,78 @@ export class FloorPlanService {
         partySize: r.partySize,
         customerName: r.customerName,
         state: r.state,
+        seatedAt: seatedAtByReservation.get(r.id) ?? null,
       };
+    });
+  }
+
+  async createWalkIn(args: {
+    restaurantId: string;
+    tableId: string;
+    partySize: number;
+    customerName?: string;
+    idempotencyKey: string;
+  }): Promise<{ id: string }> {
+    const now = new Date();
+    const endsAt = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+    const idempotencyScope = 'walk-in';
+    const payloadHash = `${args.restaurantId}:${args.tableId}:${args.idempotencyKey}`;
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.tableAllocation.assertTableAvailableForSeating(
+        {
+          restaurantId: args.restaurantId,
+          tableId: args.tableId,
+          partySize: args.partySize,
+          startsAt: now,
+          endsAt,
+        },
+        tx,
+      );
+
+      try {
+        const reservation = await tx.reservation.create({
+          data: {
+            restaurantId: args.restaurantId,
+            tableId: args.tableId,
+            partySize: args.partySize,
+            customerName: args.customerName ?? 'Walk-in',
+            reservedAt: now,
+            channel: 'API',
+            state: 'SEATED',
+            status: 'SEATED',
+            startsAt: now,
+            endsAt,
+            createdByClient: args.restaurantId,
+            idempotencyScope,
+            idempotencyKey: args.idempotencyKey,
+            idempotencyPayloadHash: payloadHash,
+            source: 'WALK_IN',
+          },
+        });
+
+        await tx.reservationAuditLog.create({
+          data: {
+            event: 'reservation_seated',
+            reservationId: reservation.id,
+            actor: args.restaurantId,
+            fromState: 'PENDING',
+            toState: 'SEATED',
+            metadata: { source: 'WALK_IN' },
+          },
+        });
+
+        return { id: reservation.id };
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          const existing = await tx.reservation.findFirst({
+            where: { idempotencyScope, idempotencyKey: args.idempotencyKey },
+            select: { id: true },
+          });
+          if (existing) return { id: existing.id };
+        }
+        throw err;
+      }
     });
   }
 

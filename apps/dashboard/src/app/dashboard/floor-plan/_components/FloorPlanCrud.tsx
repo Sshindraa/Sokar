@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle, LayoutGrid, Plus, Trash2 } from 'lucide-react';
+import { AlertCircle, Check, LayoutGrid, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 
@@ -39,7 +39,7 @@ type FloorPlan = {
 };
 
 export function FloorPlanCrud() {
-  const { get, patch, post, del, orgId } = useApi();
+  const { get, patch, put, post, del, orgId } = useApi();
   const isMobile = useIsMobile();
 
   const [floorPlan, setFloorPlan] = useState<FloorPlan | null>(null);
@@ -53,6 +53,10 @@ export function FloorPlanCrud() {
   }>({ sectionId: '', name: '', capacity: '' });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDeleteTableId, setPendingDeleteTableId] = useState<string | null>(null);
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const [confirmSectionOpen, setConfirmSectionOpen] = useState(false);
+  const [pendingDeleteSectionId, setPendingDeleteSectionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!orgId) return;
@@ -73,9 +77,11 @@ export function FloorPlanCrud() {
 
   async function toggleTable(tableId: string, isActive: boolean) {
     if (!orgId) return;
+    const previousIsActive =
+      floorPlan?.sections.flatMap((section) => section.tables).find((table) => table.id === tableId)
+        ?.isActive ?? !isActive;
     try {
       setError('');
-      await patch(`restaurants/${orgId}/floor-plan/tables/${tableId}`, { isActive });
       setFloorPlan((prev) => {
         if (!prev) return prev;
         return {
@@ -88,8 +94,21 @@ export function FloorPlanCrud() {
           })),
         };
       });
+      await patch(`restaurants/${orgId}/floor-plan/tables/${tableId}`, { isActive });
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de modifier la table'));
+      setFloorPlan((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          sections: prev.sections.map((section) => ({
+            ...section,
+            tables: section.tables.map((table) =>
+              table.id === tableId ? { ...table, isActive: previousIsActive } : table,
+            ),
+          })),
+        };
+      });
     }
   }
 
@@ -167,6 +186,67 @@ export function FloorPlanCrud() {
     }
   }
 
+  function startSectionEdit(section: Section) {
+    setEditingSectionId(section.id);
+    setEditingName(section.name);
+  }
+
+  function cancelSectionEdit() {
+    setEditingSectionId(null);
+    setEditingName('');
+  }
+
+  async function saveSectionName(sectionId: string) {
+    if (!orgId || !editingName.trim()) return;
+    try {
+      setError('');
+      const updated = await put<Section>(`restaurants/${orgId}/floor-plan/sections/${sectionId}`, {
+        name: editingName.trim(),
+      });
+      setFloorPlan((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          sections: prev.sections.map((section) =>
+            section.id === sectionId
+              ? { ...section, ...updated, tables: updated.tables ?? section.tables }
+              : section,
+          ),
+        };
+      });
+      cancelSectionEdit();
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de renommer la section'));
+      const originalName = floorPlan?.sections.find((section) => section.id === sectionId)?.name;
+      if (originalName) setEditingName(originalName);
+    }
+  }
+
+  async function deleteSection(sectionId: string) {
+    setPendingDeleteSectionId(sectionId);
+    setConfirmSectionOpen(true);
+  }
+
+  async function confirmDeleteSection() {
+    const sectionId = pendingDeleteSectionId;
+    if (!orgId || !sectionId) return;
+    setConfirmSectionOpen(false);
+    setPendingDeleteSectionId(null);
+    try {
+      setError('');
+      await del(`restaurants/${orgId}/floor-plan/sections/${sectionId}`);
+      setFloorPlan((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          sections: prev.sections.filter((section) => section.id !== sectionId),
+        };
+      });
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de supprimer la section'));
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -228,9 +308,73 @@ export function FloorPlanCrud() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {floorPlan?.sections.map((section) => (
-            <Card key={section.id} className="sokar-card">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base font-medium">{section.name}</CardTitle>
+            <Card key={section.id} className="sokar-card" data-testid="section-card">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
+                {editingSectionId === section.id ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void saveSectionName(section.id);
+                    }}
+                    className="flex flex-1 items-center gap-2"
+                  >
+                    <Label htmlFor={`section-name-${section.id}`} className="sr-only">
+                      Nom de la section
+                    </Label>
+                    <Input
+                      id={`section-name-${section.id}`}
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      className="h-9 flex-1 bg-card border-border"
+                      autoFocus
+                    />
+                    <Button
+                      type="submit"
+                      size="icon"
+                      disabled={!editingName.trim()}
+                      className="transition-all duration-200"
+                    >
+                      <Check size={16} />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={cancelSectionEdit}
+                      className="transition-all duration-200"
+                    >
+                      <X size={16} />
+                    </Button>
+                  </form>
+                ) : (
+                  <>
+                    <CardTitle className="text-base font-medium">{section.name}</CardTitle>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => startSectionEdit(section)}
+                        className="h-8 w-8 text-muted-foreground hover:text-primary transition-all duration-200"
+                        title="Renommer la section"
+                        aria-label="Renommer la section"
+                      >
+                        <Pencil size={16} />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteSection(section.id)}
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive transition-all duration-200"
+                        title="Supprimer la section"
+                        aria-label="Supprimer la section"
+                      >
+                        <Trash2 size={16} />
+                      </Button>
+                    </div>
+                  </>
+                )}
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -250,7 +394,7 @@ export function FloorPlanCrud() {
                         <div>
                           <p className="font-medium">{table.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            {table.capacity} couverts{table.capacity > 1 ? 's' : ''}
+                            {table.capacity} couvert{table.capacity > 1 ? 's' : ''}
                             {table.minCapacity > 1 && ` (min. ${table.minCapacity})`}
                           </p>
                         </div>
@@ -264,6 +408,7 @@ export function FloorPlanCrud() {
                             onClick={() => deleteTable(table.id)}
                             className="p-2 text-muted-foreground hover:text-destructive rounded-lg hover:bg-accent transition-all duration-200"
                             title="Supprimer la table"
+                            aria-label="Supprimer la table"
                           >
                             <Trash2 size={16} />
                           </button>
@@ -350,6 +495,19 @@ export function FloorPlanCrud() {
         }}
         title="Supprimer la table"
         description="Êtes-vous sûr de vouloir supprimer cette table ? Cette action est irréversible."
+        confirmLabel="Supprimer"
+        variant="destructive"
+      />
+
+      <ConfirmDialog
+        open={confirmSectionOpen}
+        onConfirm={confirmDeleteSection}
+        onCancel={() => {
+          setConfirmSectionOpen(false);
+          setPendingDeleteSectionId(null);
+        }}
+        title="Supprimer la section"
+        description="Êtes-vous sûr de vouloir supprimer cette section ? Les tables associées ne seront pas supprimées, mais ne seront plus rattachées à une section."
         confirmLabel="Supprimer"
         variant="destructive"
       />

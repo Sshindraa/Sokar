@@ -3,8 +3,8 @@
  * tables physiques.
  *
  * Remplace les moteurs capacité-naïfs existants (reservation.service.ts,
- * connect/availability.service.ts, agentic-reservations/core/availability.service.ts)
- * en phase 2.
+ * agentic-reservations/core/availability.service.ts). Connect utilise
+ * désormais directement ce service.
  *
  * Contrat de surface inchangé : { restaurantId, date, partySize, slots }.
  */

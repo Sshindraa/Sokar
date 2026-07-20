@@ -26,7 +26,11 @@ export class TableAllocationService {
    * Alloue la meilleure table disponible pour un créneau donné.
    * Renvoie null si aucune table n'est disponible.
    */
-  async allocate(input: AllocateTableInput, tx?: Prisma.TransactionClient): Promise<Table | null> {
+  async allocate(
+    input: AllocateTableInput,
+    tx?: Prisma.TransactionClient,
+    options?: { readOnly?: boolean },
+  ): Promise<Table | null> {
     const prisma = tx ?? this.prisma;
 
     const floorPlan = await prisma.floorPlan.findUnique({
@@ -63,12 +67,16 @@ export class TableAllocationService {
     for (const table of candidates) {
       // Verrouiller la ligne table pour éviter l'allocation concurrente.
       // SKIP LOCKED permet de passer à la candidate suivante si déjà verrouillée.
-      const locked = await prisma.$queryRaw<{ id: string }[]>(
-        Prisma.sql`SELECT id FROM floor_plan_tables WHERE id = ${table.id} FOR UPDATE SKIP LOCKED`,
-      );
+      // En mode lecture seule (dry-run), on saute le verrouillage pessimiste
+      // pour ne pas bloquer les allocations concurrentes.
+      if (!options?.readOnly) {
+        const locked = await prisma.$queryRaw<{ id: string }[]>(
+          Prisma.sql`SELECT id FROM floor_plan_tables WHERE id = ${table.id} FOR UPDATE SKIP LOCKED`,
+        );
 
-      if (!locked || locked.length === 0) {
-        continue;
+        if (!locked || locked.length === 0) {
+          continue;
+        }
       }
 
       const available = await this.isTableAvailable(
@@ -182,6 +190,66 @@ export class TableAllocationService {
         data: { tableId: newTableId },
       });
     });
+  }
+
+  /**
+   * Vérifie qu'une table est utilisable pour un placement (SEATED / walk-in).
+   * Lance TableAllocationError si la table est introuvable, inactive, trop
+   * petite, verrouillée par une autre opération, ou déjà occupée sur le créneau.
+   */
+  async assertTableAvailableForSeating(
+    args: {
+      restaurantId: string;
+      tableId: string;
+      partySize: number;
+      startsAt: Date;
+      endsAt: Date;
+      excludeReservationId?: string;
+    },
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    const table = await tx.table.findFirst({
+      where: { id: args.tableId, floorPlan: { restaurantId: args.restaurantId } },
+      select: { id: true, isActive: true, capacity: true, minCapacity: true },
+    });
+
+    if (!table) {
+      throw new TableAllocationError('TABLE_NOT_FOUND', 'Table introuvable');
+    }
+    if (!table.isActive) {
+      throw new TableAllocationError('TABLE_NOT_ACTIVE', 'Table inactive');
+    }
+    if (table.capacity < args.partySize) {
+      throw new TableAllocationError('TABLE_CAPACITY_TOO_SMALL', 'Capacité insuffisante');
+    }
+    if (table.minCapacity > args.partySize) {
+      throw new TableAllocationError(
+        'TABLE_MIN_CAPACITY_TOO_HIGH',
+        'Party size below table minimum',
+      );
+    }
+
+    const locked = await this.lockTable(tx, args.tableId);
+    if (!locked) {
+      throw new TableAllocationError(
+        'TABLE_NOT_AVAILABLE',
+        'Table verrouillée par une autre opération',
+      );
+    }
+
+    const available = await this.isTableAvailable(
+      {
+        tableId: args.tableId,
+        startsAt: args.startsAt,
+        endsAt: args.endsAt,
+        excludeReservationId: args.excludeReservationId,
+      },
+      tx,
+    );
+
+    if (!available) {
+      throw new TableAllocationError('TABLE_NOT_AVAILABLE', 'Table non disponible sur ce créneau');
+    }
   }
 
   private async findConflictingReservation(

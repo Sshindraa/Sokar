@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, FormEventHandler } from 'react';
+import { useState, useEffect, FormEventHandler } from 'react';
 import { useAuth, useOrganization, useOrganizationList } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
@@ -16,6 +16,20 @@ const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
  * Sans clé Clerk (dev preview), le gate est transparent.
  */
 export function CreateRestaurantGate({ children }: { children: React.ReactNode }) {
+  // Montage différé : le premier render (SSR + client) affiche un spinner
+  // neutre pour éviter toute mismatch d'hydration, notamment quand la valeur
+  // de `hasClerkKey` diffère entre le bundle serveur et le bundle client.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  if (!mounted) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
   // Sans clé Clerk, on rend le dashboard directement (mode démo locale).
   // On ne peut pas appeler useAuth()/useOrganization() sans ClerkProvider
   // monté — donc on court-circuite avant tout hook Clerk.

@@ -271,9 +271,8 @@ apps/
     └── src/
         └── modules/
             ├── connect/              # NOUVEAU MODULE
-            │   ├── connect.routes.ts # routes publiques SSR-friendly
+            │   ├── connect.routes.ts # routes publiques SSR-friendly (disponibilités via CapacityAwareAvailabilityService)
             │   ├── connect.service.ts
-            │   ├── availability.service.ts
             │   ├── jsonld.service.ts
             │   ├── sitemap.service.ts
             │   ├── robots.service.ts
@@ -571,9 +570,8 @@ attributions.
 
 ```
 apps/api/src/modules/connect/
-├── connect.routes.ts         # Fastify plugin, public, no Clerk
+├── connect.routes.ts         # Fastify plugin, public, no Clerk ; `/availability` utilise CapacityAwareAvailabilityService (floor-plan)
 ├── connect.service.ts        # agrégateur (slug → restaurant + exposure + images)
-├── availability.service.ts   # ré-utilise openingHours + holds
 ├── jsonld.service.ts         # buildPublicRestaurantJsonLd()
 ├── sitemap.service.ts        # buildSitemap() (utilisé aussi par apps/connect pour rendre /sitemap.xml)
 ├── robots.service.ts         # buildRobots()

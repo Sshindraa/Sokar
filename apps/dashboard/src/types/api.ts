@@ -59,6 +59,8 @@ export interface Reservation {
   customerPhone: string | null;
   status: ReservationStatus;
   estimatedRevenue: number | null;
+  tableId: string | null;
+  table?: { name: string } | null;
 }
 
 // ─── Call ───────────────────────────────────────────────────────────────
@@ -157,6 +159,7 @@ export interface PlanningReservation {
   partySize: number;
   customerName: string | null;
   state: string;
+  seatedAt: string | null;
 }
 
 // ─── ReactivationCampaign ───────────────────────────────────────────────

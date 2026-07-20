@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useApi } from '../../../lib/api';
-import { getErrorMessage, type Reservation } from '@/types/api';
+import { getErrorMessage, type Reservation, type ReservationStatus } from '@/types/api';
 import { useIsMobile } from '@/lib/useMediaQuery';
 import MobileDataCard from '@/components/MobileDataCard';
 import {
@@ -17,7 +17,8 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle, CalendarCheck, Check, Trash2, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { AlertCircle, CalendarCheck, Check, LayoutGrid, Trash2, X } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -27,8 +28,11 @@ import {
 } from '@/components/ui/select';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 
+const isActiveForTable = (status: ReservationStatus) =>
+  status === 'CONFIRMED' || status === 'SEATED';
+
 export default function ReservationsPage() {
-  const { get, patch, del, orgId } = useApi();
+  const { get, post, patch, del, orgId } = useApi();
   const isMobile = useIsMobile();
 
   const [reservations, setReservations] = useState<Reservation[]>([]);
@@ -36,6 +40,7 @@ export default function ReservationsPage() {
   const [error, setError] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [allocatingId, setAllocatingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!orgId) return;
@@ -80,6 +85,19 @@ export default function ReservationsPage() {
       setReservations((prev) => prev.filter((r) => r.id !== id));
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de supprimer la réservation'));
+    }
+  }
+
+  async function allocateTable(id: string) {
+    setAllocatingId(id);
+    setError('');
+    try {
+      const updated = await post<Reservation>(`reservations/${id}/allocate-table`);
+      setReservations((prev) => prev.map((r) => (r.id === id ? updated : r)));
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible d’allouer une table'));
+    } finally {
+      setAllocatingId(null);
     }
   }
 
@@ -158,6 +176,16 @@ export default function ReservationsPage() {
                   colorClass: 'bg-destructive',
                   onClick: () => deleteReservation(res.id),
                 },
+                ...(!res.tableId && isActiveForTable(res.status)
+                  ? [
+                      {
+                        label: 'Allouer',
+                        icon: <LayoutGrid size={14} />,
+                        colorClass: 'bg-primary',
+                        onClick: () => allocateTable(res.id),
+                      },
+                    ]
+                  : []),
               ]}
               details={[
                 {
@@ -167,6 +195,18 @@ export default function ReservationsPage() {
                 {
                   label: 'Couverts',
                   value: `${res.partySize} pers.`,
+                },
+                {
+                  label: 'Table',
+                  value: res.tableId ? (
+                    (res.table?.name ?? '—')
+                  ) : isActiveForTable(res.status) ? (
+                    <Badge className="bg-warning text-warning-foreground border-warning">
+                      Sans table
+                    </Badge>
+                  ) : (
+                    '—'
+                  ),
                 },
                 {
                   label: 'Revenu',
@@ -189,6 +229,7 @@ export default function ReservationsPage() {
                   <TableHead>Couverts</TableHead>
                   <TableHead>Revenu estimé</TableHead>
                   <TableHead>Statut</TableHead>
+                  <TableHead>Table</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -222,6 +263,27 @@ export default function ReservationsPage() {
                           <SelectItem value="NO_SHOW">No-show</SelectItem>
                         </SelectContent>
                       </Select>
+                    </TableCell>
+                    <TableCell>
+                      {res.tableId ? (
+                        (res.table?.name ?? '—')
+                      ) : isActiveForTable(res.status) ? (
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-warning text-warning-foreground border-warning">
+                            Sans table
+                          </Badge>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={allocatingId === res.id}
+                            onClick={() => allocateTable(res.id)}
+                          >
+                            Allouer
+                          </Button>
+                        </div>
+                      ) : (
+                        '—'
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       <button

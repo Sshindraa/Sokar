@@ -1,18 +1,32 @@
 'use client';
 
-import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useState } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PencilRuler, Radio } from 'lucide-react';
 import { FloorPlanCanvas } from './_components/FloorPlanCanvas';
+import { FloorPlanCrud } from './_components/FloorPlanCrud';
 
 export default function FloorPlanPage() {
   const { orgId } = useApi();
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeView = searchParams.get('view') === 'edit-plan' ? 'edit-plan' : 'service-live';
+  const [designTab, setDesignTab] = useState<'visual' | 'crud'>('visual');
+
+  const setView = (view: 'service-live' | 'edit-plan') => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (view === 'service-live') {
+      params.delete('view');
+    } else {
+      params.set('view', view);
+    }
+    const query = params.toString();
+    router.replace(`${pathname}${query ? `?${query}` : ''}`, { scroll: false });
+  };
 
   if (!orgId) {
     return (
@@ -40,28 +54,59 @@ export default function FloorPlanPage() {
               : 'Pilotez le service en temps réel sans modifier le plan.'}
           </p>
         </div>
-        <div className="flex gap-2 md:hidden">
-          <Button asChild variant={activeView === 'service-live' ? 'default' : 'outline'} size="sm">
-            <Link href="/dashboard/floor-plan?view=service-live" className="gap-2">
-              <Radio size={16} />
-              Live service
-            </Link>
+
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant={activeView === 'service-live' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setView('service-live')}
+            aria-pressed={activeView === 'service-live'}
+          >
+            Live service
           </Button>
-          <Button asChild variant={activeView === 'edit-plan' ? 'default' : 'outline'} size="sm">
-            <Link href="/dashboard/floor-plan?view=edit-plan" className="gap-2">
-              <PencilRuler size={16} />
-              Salle édition
-            </Link>
+          <Button
+            type="button"
+            variant={activeView === 'edit-plan' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setView('edit-plan')}
+            aria-pressed={activeView === 'edit-plan'}
+          >
+            Salle édition
           </Button>
         </div>
       </div>
 
+      {activeView === 'edit-plan' && (
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant={designTab === 'visual' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setDesignTab('visual')}
+            aria-pressed={designTab === 'visual'}
+          >
+            Plan visuel
+          </Button>
+          <Button
+            type="button"
+            variant={designTab === 'crud' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setDesignTab('crud')}
+            aria-pressed={designTab === 'crud'}
+          >
+            Sections & tables
+          </Button>
+        </div>
+      )}
+
       {activeView === 'service-live' && (
         <FloorPlanCanvas key="service-live" orgId={orgId} mode="service" />
       )}
-      {activeView === 'edit-plan' && (
-        <FloorPlanCanvas key="edit-plan" orgId={orgId} mode="design" />
+      {activeView === 'edit-plan' && designTab === 'visual' && (
+        <FloorPlanCanvas key="design-visual" orgId={orgId} mode="design" />
       )}
+      {activeView === 'edit-plan' && designTab === 'crud' && <FloorPlanCrud key="design-crud" />}
     </div>
   );
 }

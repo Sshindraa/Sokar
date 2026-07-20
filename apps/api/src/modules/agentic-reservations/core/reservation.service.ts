@@ -20,7 +20,7 @@
  */
 
 import { Prisma } from '@prisma/client';
-import type { PrismaClient, ReservationState } from '@prisma/client';
+import type { PrismaClient, ReservationState, ReservationStatus } from '@prisma/client';
 import { AuditLogService } from './audit-log.service.js';
 import { logger } from '../../../shared/logger/pino';
 import {
@@ -32,7 +32,11 @@ import {
 } from './hold.service.js';
 import { IdempotencyPendingError, IdempotencyService } from './idempotency.service.js';
 import { type PolicySnapshot, validateReservationAgainstPolicy } from './policies.service.js';
-import { type ReservationChannel, assertCanTransition } from './state-machine.js';
+import {
+  type ReservationChannel,
+  assertCanTransition,
+  InvalidStateInvariantError,
+} from './state-machine.js';
 import { GiftCardService } from '../../gift-cards/gift-card.service.js';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
 import type { GiftCardApplicationResult } from '../../gift-cards/gift-card.types.js';
@@ -440,27 +444,75 @@ export class ReservationService {
   }
 
   /**
+   * Synchronise `status` avec `state` quand le statut correspond à un enum Prisma.
+   * Les états sans équivalent (`PENDING`, `HONORED`, `FAILED`, `EXPIRED`) ne
+   * modifient pas `status` : ils n'ont pas de valeur dans l'enum `ReservationStatus`.
+   */
+  private statusForState(state: ReservationState): ReservationStatus | undefined {
+    const mapping: Record<ReservationState, ReservationStatus | undefined> = {
+      CONFIRMED: 'CONFIRMED',
+      SEATED: 'SEATED',
+      CANCELLED: 'CANCELLED',
+      NO_SHOW: 'NO_SHOW',
+      PENDING: undefined,
+      HONORED: undefined,
+      FAILED: undefined,
+      EXPIRED: undefined,
+    };
+    return mapping[state];
+  }
+
+  /**
    * Transitionne une réservation vers un nouvel état.
-   * Jette InvalidStateTransitionError si la transition n'est pas autorisée.
+   * Jette InvalidStateTransitionError ou InvalidStateInvariantError si la transition n'est pas autorisée.
    */
   async transitionState(args: {
     reservationId: string;
+    restaurantId: string;
     toState: ReservationState;
     actor: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       const reservation = await tx.reservation.findUnique({
-        where: { id: args.reservationId },
+        where: { id: args.reservationId, restaurantId: args.restaurantId },
       });
       if (!reservation) throw new ReservationNotFoundError(args.reservationId);
 
       const fromState = reservation.state as ReservationState;
       assertCanTransition(fromState, args.toState, reservation);
 
+      const newStatus = this.statusForState(args.toState);
+
+      if (args.toState === 'SEATED') {
+        if (!reservation.tableId) {
+          throw new InvalidStateInvariantError('SEATED requires a tableId');
+        }
+        const now = new Date();
+        if (reservation.endsAt && reservation.endsAt <= now) {
+          throw new InvalidStateInvariantError('Cannot seat a reservation that has already ended');
+        }
+        const startsAt = now;
+        const endsAt = reservation.endsAt ?? new Date(now.getTime() + 2 * 60 * 60 * 1000);
+        await this.tableAllocation.assertTableAvailableForSeating(
+          {
+            restaurantId: args.restaurantId,
+            tableId: reservation.tableId,
+            partySize: reservation.partySize,
+            startsAt,
+            endsAt,
+            excludeReservationId: reservation.id,
+          },
+          tx,
+        );
+      }
+
       await tx.reservation.update({
         where: { id: reservation.id },
-        data: { state: args.toState },
+        data: {
+          state: args.toState,
+          ...(newStatus ? { status: newStatus } : {}),
+        },
       });
 
       const event = this.eventForTransition(args.toState);

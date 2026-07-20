@@ -1,179 +1,285 @@
 /**
- * Tests d'intégration des routes admin du plan de salle.
+ * Route-level tests for floorPlanRoutes.
  *
- * Vérifie le CRUD sections/tables et la récupération du floor plan.
+ * Pattern: Fastify `inject()` against `getApp()` (shared helper with
+ * requireOrg mocked to inject `req.restaurantId = 'test-rest-1'`).
+ * We spy on `FloorPlanService` methods to drive the route contract
+ * (status, tenant scoping, Zod validation) without touching the DB.
+ *
+ * Covers Phases 2 & 4:
+ * - PATCH .../state  → 204 + transitionState called with scoped id
+ * - POST  .../walk-ins → 201 + createWalkIn called with scoped id
+ * - tenant isolation: `:id` differing from auth context → 403
+ * - Zod rejection: missing tableId → 400
  */
-
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
+import { FloorPlanService } from '../floor-plan.service';
+import { ReservationService } from '../../agentic-reservations/core/reservation.service';
+import { TableAllocationService, TableAllocationError } from '../table-allocation.service';
 
-const AUTH = { authorization: 'Bearer fake-token' };
-const RESTAURANT_ID = 'test-rest-1';
+describe('floorPlanRoutes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-describe('admin /restaurants/:id/floor-plan routes', () => {
   afterAll(async () => {
     await closeApp();
   });
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(db.floorPlan.findUnique).mockResolvedValue({
-      id: 'fp-1',
-      name: 'Salle principale',
-      restaurantId: RESTAURANT_ID,
-      sections: [],
-      tables: [],
-    } as unknown as Awaited<ReturnType<typeof db.floorPlan.findUnique>>);
-    vi.mocked(db.section.findFirst).mockResolvedValue({
-      id: 'sec-1',
-      name: 'Terrasse',
-      position: 0,
-      floorPlanId: 'fp-1',
-    } as unknown as Awaited<ReturnType<typeof db.section.findFirst>>);
-    vi.mocked(db.table.findFirst).mockResolvedValue({
-      id: 'table-1',
-      name: 'T1',
-      capacity: 4,
-      minCapacity: 1,
-      isActive: true,
-      floorPlanId: 'fp-1',
-    } as unknown as Awaited<ReturnType<typeof db.table.findFirst>>);
-  });
+  describe('PATCH /restaurants/:id/floor-plan/state', () => {
+    it('retourne 204 et appelle transitionState avec le bon scope', async () => {
+      const app = await getApp();
+      vi.spyOn(ReservationService.prototype, 'transitionState').mockResolvedValue(undefined);
 
-  it('retourne 401 sans auth', async () => {
-    const app = await getApp();
-    const res = await app.inject({
-      method: 'GET',
-      url: `/restaurants/${RESTAURANT_ID}/floor-plan`,
-    });
-    expect(res.statusCode).toBe(401);
-  });
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/restaurants/test-rest-1/floor-plan/reservations/res-1/state',
+        headers: { authorization: 'Bearer test' },
+        payload: { reservationId: 'res-1', state: 'SEATED' },
+      });
 
-  it('récupère le floor plan avec sections et tables', async () => {
-    const floorPlanId = 'fp-1';
-    vi.mocked(db.floorPlan.findUnique).mockResolvedValue({
-      id: floorPlanId,
-      name: 'Salle principale',
-      restaurantId: RESTAURANT_ID,
-      sections: [
-        {
-          id: 'sec-1',
-          name: 'Terrasse',
-          position: 0,
-          floorPlanId,
-          tables: [
-            {
-              id: 'table-1',
-              name: 'T1',
-              capacity: 4,
-              minCapacity: 1,
-              isActive: true,
-              positionX: 0,
-              positionY: 0,
-              shape: 'round',
-            },
-          ],
-        },
-      ],
-      tables: [],
-    } as unknown as Awaited<ReturnType<typeof db.floorPlan.findUnique>>);
-    vi.mocked(db.section.findMany).mockResolvedValue([
-      {
-        id: 'sec-1',
-        name: 'Terrasse',
-        position: 0,
-        floorPlanId,
-        tables: [
-          {
-            id: 'table-1',
-            name: 'T1',
-            capacity: 4,
-            minCapacity: 1,
-            isActive: true,
-            positionX: 0,
-            positionY: 0,
-            shape: 'round',
-          },
-        ],
-      },
-    ] as unknown as Awaited<ReturnType<typeof db.section.findMany>>);
-
-    const app = await getApp();
-    const res = await app.inject({
-      method: 'GET',
-      url: `/restaurants/${RESTAURANT_ID}/floor-plan`,
-      headers: AUTH,
+      expect(res.statusCode).toBe(204);
+      expect(ReservationService.prototype.transitionState).toHaveBeenCalledWith({
+        reservationId: 'res-1',
+        restaurantId: 'test-rest-1',
+        toState: 'SEATED',
+        actor: 'test-rest-1',
+      });
     });
 
-    expect(res.statusCode).toBe(200);
-    const body = res.json();
-    expect(body.id).toBe(floorPlanId);
-    expect(body.sections).toHaveLength(1);
-    expect(body.sections[0].tables[0].name).toBe('T1');
-  });
+    it('retourne 403 si :id diffère du contexte auth (tenant isolation)', async () => {
+      const app = await getApp();
+      const spy = vi
+        .spyOn(ReservationService.prototype, 'transitionState')
+        .mockResolvedValue(undefined);
 
-  it('crée une section', async () => {
-    vi.mocked(db.section.create).mockResolvedValue({
-      id: 'sec-2',
-      name: 'Salle intérieure',
-      position: 1,
-      floorPlanId: 'fp-1',
-    } as unknown as Awaited<ReturnType<typeof db.section.create>>);
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/restaurants/other-rest/floor-plan/reservations/res-1/state',
+        headers: { authorization: 'Bearer test' },
+        payload: { reservationId: 'res-1', state: 'SEATED' },
+      });
 
-    const app = await getApp();
-    const res = await app.inject({
-      method: 'POST',
-      url: `/restaurants/${RESTAURANT_ID}/floor-plan/sections`,
-      headers: AUTH,
-      payload: { name: 'Salle intérieure' },
+      expect(res.statusCode).toBe(403);
+      expect(spy).not.toHaveBeenCalled();
     });
 
-    expect(res.statusCode).toBe(201);
-    const body = res.json();
-    expect(body.name).toBe('Salle intérieure');
-  });
+    it('retourne 400 si state invalide (Zod)', async () => {
+      const app = await getApp();
+      const spy = vi
+        .spyOn(ReservationService.prototype, 'transitionState')
+        .mockResolvedValue(undefined);
 
-  it('crée une table', async () => {
-    vi.mocked(db.table.create).mockResolvedValue({
-      id: 'table-2',
-      name: 'T2',
-      capacity: 2,
-      minCapacity: 1,
-      isActive: true,
-    } as unknown as Awaited<ReturnType<typeof db.table.create>>);
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/restaurants/test-rest-1/floor-plan/reservations/res-1/state',
+        headers: { authorization: 'Bearer test' },
+        payload: { reservationId: 'res-1', state: 'CANCELLED' },
+      });
 
-    const app = await getApp();
-    const res = await app.inject({
-      method: 'POST',
-      url: `/restaurants/${RESTAURANT_ID}/floor-plan/tables`,
-      headers: AUTH,
-      payload: { sectionId: 'sec-1', name: 'T2', capacity: 2 },
+      expect(res.statusCode).toBe(400);
+      expect(spy).not.toHaveBeenCalled();
     });
 
-    expect(res.statusCode).toBe(201);
-    const body = res.json();
-    expect(body.name).toBe('T2');
+    it('retourne 409 si la table est indisponible (TableAllocationError)', async () => {
+      const app = await getApp();
+      vi.spyOn(ReservationService.prototype, 'transitionState').mockRejectedValue(
+        new TableAllocationError('TABLE_NOT_AVAILABLE', 'Table non disponible'),
+      );
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/restaurants/test-rest-1/floor-plan/reservations/res-1/state',
+        headers: { authorization: 'Bearer test' },
+        payload: { reservationId: 'res-1', state: 'SEATED' },
+      });
+
+      expect(res.statusCode).toBe(409);
+    });
   });
 
-  it('met à jour le statut actif d une table', async () => {
-    vi.mocked(db.table.update).mockResolvedValue({
-      id: 'table-1',
-      name: 'T1',
-      capacity: 4,
-      isActive: false,
-    } as unknown as Awaited<ReturnType<typeof db.table.update>>);
+  describe('POST /restaurants/:id/floor-plan/walk-ins', () => {
+    it('retourne 201 et appelle createWalkIn avec le bon scope', async () => {
+      const app = await getApp();
+      vi.spyOn(FloorPlanService.prototype, 'createWalkIn').mockResolvedValue({ id: 'walk-1' });
 
-    const app = await getApp();
-    const res = await app.inject({
-      method: 'PATCH',
-      url: `/restaurants/${RESTAURANT_ID}/floor-plan/tables/table-1`,
-      headers: AUTH,
-      payload: { isActive: false },
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/floor-plan/walk-ins',
+        headers: { authorization: 'Bearer test' },
+        payload: { tableId: 'table-1', partySize: 3, idempotencyKey: 'k1' },
+      });
+
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.id).toBe('walk-1');
+      expect(FloorPlanService.prototype.createWalkIn).toHaveBeenCalledWith({
+        restaurantId: 'test-rest-1',
+        tableId: 'table-1',
+        partySize: 3,
+        idempotencyKey: 'k1',
+      });
     });
 
-    expect(res.statusCode).toBe(200);
-    const body = res.json();
-    expect(body.isActive).toBe(false);
+    it('retourne 403 si :id diffère du contexte auth (tenant isolation)', async () => {
+      const app = await getApp();
+      const spy = vi
+        .spyOn(FloorPlanService.prototype, 'createWalkIn')
+        .mockResolvedValue({ id: 'walk-1' });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/other-rest/floor-plan/walk-ins',
+        headers: { authorization: 'Bearer test' },
+        payload: { tableId: 'table-1', partySize: 3, idempotencyKey: 'k1' },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('retourne 400 si tableId manquant (Zod)', async () => {
+      const app = await getApp();
+      const spy = vi
+        .spyOn(FloorPlanService.prototype, 'createWalkIn')
+        .mockResolvedValue({ id: 'walk-1' });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/floor-plan/walk-ins',
+        headers: { authorization: 'Bearer test' },
+        payload: { partySize: 3, idempotencyKey: 'k1' },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('retourne 400 si partySize hors borne (Zod)', async () => {
+      const app = await getApp();
+      const spy = vi
+        .spyOn(FloorPlanService.prototype, 'createWalkIn')
+        .mockResolvedValue({ id: 'walk-1' });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/floor-plan/walk-ins',
+        headers: { authorization: 'Bearer test' },
+        payload: { tableId: 'table-1', partySize: 0, idempotencyKey: 'k1' },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('retourne 409 si la table est indisponible (TableAllocationError)', async () => {
+      const app = await getApp();
+      vi.spyOn(FloorPlanService.prototype, 'createWalkIn').mockRejectedValue(
+        new TableAllocationError('TABLE_NOT_AVAILABLE', 'Table non disponible'),
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/floor-plan/walk-ins',
+        headers: { authorization: 'Bearer test' },
+        payload: { tableId: 'table-1', partySize: 3, idempotencyKey: 'k1' },
+      });
+
+      expect(res.statusCode).toBe(409);
+    });
+  });
+
+  describe('Phase 5 — suggest-table / assign-table', () => {
+    it('suggest-table retourne la reco read-only (204+json, pas de mutation)', async () => {
+      const app = await getApp();
+      vi.mocked(db.reservation.findUnique).mockResolvedValue({
+        restaurantId: 'test-rest-1',
+        partySize: 2,
+        startsAt: new Date(),
+        endsAt: new Date(),
+        tableId: 't-current',
+      } as never);
+      const allocateSpy = vi
+        .spyOn(TableAllocationService.prototype, 'allocate')
+        .mockResolvedValue({ id: 't-suggested', capacity: 2, sectionId: 'sec-1' } as never);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/restaurants/test-rest-1/floor-plan/reservations/res-1/suggest-table',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.tableId).toBe('t-suggested');
+      expect(allocateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ restaurantId: 'test-rest-1', partySize: 2 }),
+      );
+    });
+
+    it('suggest-table retourne 404 si la réservation nexiste pas (tenant scope)', async () => {
+      const app = await getApp();
+      vi.mocked(db.reservation.findUnique).mockResolvedValue(null);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/restaurants/test-rest-1/floor-plan/reservations/res-404/suggest-table',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('assign-table retourne 204 et appelle reallocate (commit transactionnel)', async () => {
+      const app = await getApp();
+      const reallocateSpy = vi
+        .spyOn(TableAllocationService.prototype, 'reallocate')
+        .mockResolvedValue({ id: 'res-1', tableId: 't-new' } as never);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/restaurants/test-rest-1/floor-plan/reservations/res-1/assign-table',
+        headers: { authorization: 'Bearer test' },
+        payload: { tableId: 't-new' },
+      });
+
+      expect(res.statusCode).toBe(204);
+      expect(reallocateSpy).toHaveBeenCalledWith('res-1', 't-new');
+    });
+
+    it('assign-table retourne 409 si la table est indisponible (TableAllocationError)', async () => {
+      const app = await getApp();
+      vi.spyOn(TableAllocationService.prototype, 'reallocate').mockRejectedValue(
+        new TableAllocationError('TABLE_NOT_AVAILABLE', 'Target table is not available'),
+      );
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/restaurants/test-rest-1/floor-plan/reservations/res-1/assign-table',
+        headers: { authorization: 'Bearer test' },
+        payload: { tableId: 't-taken' },
+      });
+
+      expect(res.statusCode).toBe(409);
+    });
+
+    it('assign-table retourne 403 si :id diffère du contexte auth (tenant isolation)', async () => {
+      const app = await getApp();
+      const spy = vi
+        .spyOn(TableAllocationService.prototype, 'reallocate')
+        .mockResolvedValue({ id: 'res-1', tableId: 't-new' } as never);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/restaurants/other-rest/floor-plan/reservations/res-1/assign-table',
+        headers: { authorization: 'Bearer test' },
+        payload: { tableId: 't-new' },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(spy).not.toHaveBeenCalled();
+    });
   });
 });

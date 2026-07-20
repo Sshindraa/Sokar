@@ -1,9 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { requireOrg } from '../../plugins/clerk';
-import { FloorPlanService } from './floor-plan.service';
+import { FloorPlanService, FloorPlanValidationError } from './floor-plan.service';
 import { TableAllocationService, TableAllocationError } from './table-allocation.service';
+import { HoldService } from '../agentic-reservations/core/hold.service';
+import { ReservationService } from '../agentic-reservations/core/reservation.service';
+import { AuditLogService } from '../agentic-reservations/core/audit-log.service';
+import { IdempotencyService } from '../agentic-reservations/core/idempotency.service';
+import { PrismaIdempotencyStore } from '../agentic-reservations/core/prisma-store';
 
 const CreateSectionSchema = z.object({
   name: z.string().min(1).max(100),
@@ -88,8 +94,28 @@ const ReallocateReservationSchema = z.object({
   tableId: z.string().min(1),
 });
 
+const UpdateReservationStateSchema = z.object({
+  state: z.enum(['SEATED', 'HONORED']),
+});
+
+const CreateWalkInSchema = z.object({
+  tableId: z.string().min(1),
+  partySize: z.number().int().min(1).max(20),
+  customerName: z.string().max(120).optional(),
+  idempotencyKey: z.string().min(1).max(128),
+});
+
+const AssignTableSchema = z.object({
+  tableId: z.string().min(1),
+});
+
 export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
   const service = new FloorPlanService(db);
+  const audit = new AuditLogService(db);
+  const holds = new HoldService(db, audit);
+  const idempotency = new IdempotencyService(new PrismaIdempotencyStore(db));
+  const reservations = new ReservationService(db, audit, holds, idempotency);
+  const allocation = new TableAllocationService(db);
 
   app.get('/restaurants/:id/floor-plan', { preHandler: requireOrg() }, async (req, reply) => {
     const restaurantId = (req.params as { id: string }).id;
@@ -293,6 +319,168 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
         }
         throw err;
       }
+    },
+  );
+
+  app.patch(
+    '/restaurants/:id/floor-plan/reservations/:reservationId/state',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id, reservationId } = req.params as { id: string; reservationId: string };
+      if (id !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+
+      const { state } = UpdateReservationStateSchema.parse(req.body);
+
+      try {
+        await reservations.transitionState({
+          reservationId,
+          restaurantId: id,
+          toState: state,
+          actor: req.restaurantId ?? 'dashboard',
+        });
+      } catch (err) {
+        if (err instanceof TableAllocationError) {
+          if (err.code === 'TABLE_NOT_FOUND') {
+            return reply.status(404).send({ error: err.message });
+          }
+          if (err.code === 'TABLE_NOT_AVAILABLE') {
+            return reply.status(409).send({ error: err.message });
+          }
+          return reply.status(400).send({ error: err.message });
+        }
+        if (
+          err instanceof Error &&
+          (err.name === 'InvalidStateTransitionError' || err.name === 'InvalidStateInvariantError')
+        ) {
+          return reply.status(409).send({ error: err.message });
+        }
+        if (err instanceof Error && err.message.includes('transition')) {
+          return reply.status(409).send({ error: err.message });
+        }
+        if (err instanceof Error && err.name === 'ReservationNotFoundError') {
+          return reply.status(404).send({ error: 'Réservation introuvable' });
+        }
+        throw err;
+      }
+
+      return reply.status(204).send();
+    },
+  );
+
+  app.post(
+    '/restaurants/:id/floor-plan/walk-ins',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      if (id !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+
+      const body = CreateWalkInSchema.parse(req.body);
+
+      try {
+        const result = await service.createWalkIn({
+          restaurantId: id,
+          tableId: body.tableId,
+          partySize: body.partySize,
+          customerName: body.customerName,
+          idempotencyKey: body.idempotencyKey,
+        });
+        return reply.status(201).send({ id: result.id });
+      } catch (err) {
+        if (err instanceof TableAllocationError) {
+          if (err.code === 'TABLE_NOT_FOUND') {
+            return reply.status(404).send({ error: err.message });
+          }
+          if (err.code === 'TABLE_NOT_AVAILABLE') {
+            return reply.status(409).send({ error: err.message });
+          }
+          return reply.status(400).send({ error: err.message });
+        }
+        if (err instanceof FloorPlanValidationError) {
+          return reply.status(400).send({ error: err.message });
+        }
+        throw err;
+      }
+    },
+  );
+
+  // Phase 5 — Recommandation read-only d'une table (best-fit), sans mutation.
+  app.get(
+    '/restaurants/:id/floor-plan/reservations/:reservationId/suggest-table',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id, reservationId } = req.params as { id: string; reservationId: string };
+      if (id !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+
+      const reservation = await db.reservation.findUnique({
+        where: { id: reservationId },
+        select: {
+          restaurantId: true,
+          partySize: true,
+          startsAt: true,
+          endsAt: true,
+          tableId: true,
+        },
+      });
+      if (!reservation || reservation.restaurantId !== id) {
+        return reply.status(404).send({ error: 'Réservation introuvable' });
+      }
+      if (!reservation.startsAt || !reservation.endsAt) {
+        return reply.status(409).send({ error: 'Créneau de réservation manquant' });
+      }
+
+      const suggested = await allocation.allocate({
+        restaurantId: id,
+        partySize: reservation.partySize,
+        startsAt: reservation.startsAt,
+        endsAt: reservation.endsAt,
+        excludeTableIds: reservation.tableId ? [reservation.tableId] : undefined,
+      });
+
+      if (!suggested) {
+        return reply.send({ tableId: null, reason: 'Aucune table disponible' });
+      }
+
+      return reply.send({
+        tableId: suggested.id,
+        reason: `Meilleure table (capacité ${suggested.capacity}, section ${
+          suggested.sectionId ?? '—'
+        })`,
+      });
+    },
+  );
+
+  // Phase 5 — Commit transactionnel de l'assignation (verrou + revalidation dispo).
+  app.patch(
+    '/restaurants/:id/floor-plan/reservations/:reservationId/assign-table',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id, reservationId } = req.params as { id: string; reservationId: string };
+      if (id !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+
+      const { tableId } = AssignTableSchema.parse(req.body);
+
+      try {
+        await allocation.reallocate(reservationId, tableId);
+      } catch (err) {
+        if (err instanceof TableAllocationError) {
+          const status = err.code === 'TABLE_NOT_AVAILABLE' ? 409 : 400;
+          return reply.status(status).send({ error: err.message });
+        }
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+          return reply.status(404).send({ error: 'Table ou réservation introuvable' });
+        }
+        throw err;
+      }
+
+      return reply.status(204).send();
     },
   );
 }

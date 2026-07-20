@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useApi } from '@/lib/api';
 import {
@@ -27,6 +27,7 @@ import {
   isAfter,
   isSameDay,
   differenceInMinutes,
+  formatDistanceToNow,
 } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import {
@@ -108,6 +109,24 @@ const WALL_LENGTH_MATCH_DISTANCE = 24; // pixels in canvas coordinates
 const WALL_ALIGN_GUIDE_DISTANCE = 24; // pixels in canvas coordinates
 const WALL_PERPENDICULAR_DOT_TOLERANCE = 0.08;
 
+const TABLE_BORDER_WIDTH = 2;
+const TABLE_CONTENT_PADDING = 8;
+const CHAIR_SIZE = 12;
+const CHAIR_GAP = 4;
+const ROUND_TABLE_VISUAL_GAP = 12;
+const MAXIMUM_CHAIR_COUNT = 16;
+const MINIMUM_TABLE_DIMENSION = TABLE_CONTENT_PADDING * 2 + CHAIR_SIZE * 4;
+
+export const TABLE_LAYOUT = {
+  borderWidth: TABLE_BORDER_WIDTH,
+  contentPadding: TABLE_CONTENT_PADDING,
+  chairSize: CHAIR_SIZE,
+  chairGap: CHAIR_GAP,
+  roundTableVisualGap: ROUND_TABLE_VISUAL_GAP,
+  maximumChairCount: MAXIMUM_CHAIR_COUNT,
+  minimumDimension: MINIMUM_TABLE_DIMENSION,
+} as const;
+
 type TableStatus = 'free' | 'reserved' | 'upcoming' | 'late' | 'occupied' | 'inactive';
 
 type WallLengthGuide = {
@@ -187,6 +206,19 @@ type PaletteItemData =
 
 type ActiveDragData = PaletteItemData | { kind: 'existingTable'; table: CanvasTable };
 
+export function getSafeTableDimensions(
+  width: number,
+  height: number,
+): {
+  width: number;
+  height: number;
+} {
+  return {
+    width: Math.max(TABLE_LAYOUT.minimumDimension, width),
+    height: Math.max(TABLE_LAYOUT.minimumDimension, height),
+  };
+}
+
 function getTableSize(table: {
   capacity?: number | null;
   shape?: TableShape | null;
@@ -205,9 +237,12 @@ function getTableSize(table: {
   const shape = table.shape ?? 'rect';
   const legacyWidth = size;
   const legacyHeight = shape === 'round' ? size : 112;
+  const dimensions = getSafeTableDimensions(
+    table.width ?? legacyWidth,
+    table.height ?? legacyHeight,
+  );
   return {
-    width: table.width ?? legacyWidth,
-    height: table.height ?? legacyHeight,
+    ...dimensions,
     rotation: table.rotation ?? 0,
   };
 }
@@ -346,50 +381,54 @@ function findNextPosition(
   return { x: startX, y: startY };
 }
 
-function renderChairs(table: CanvasTable): React.ReactNode[] {
-  const { width, height } = getTableSize(table);
-  const capacity = table.capacity ?? 1;
-  const chairCount = Math.min(capacity, 16);
-  const chairSize = 12;
-  const chairOffset = 4;
-  const half = chairSize / 2;
+type ChairPosition = {
+  left: number;
+  top: number;
+};
+
+type ChairLayoutInput = {
+  width: number;
+  height: number;
+  capacity?: number | null;
+  shape?: TableShape | null;
+};
+
+export function getChairPositions({
+  width: unsafeWidth,
+  height: unsafeHeight,
+  capacity,
+  shape = 'rect',
+}: ChairLayoutInput): ChairPosition[] {
+  const { width, height } = getSafeTableDimensions(unsafeWidth, unsafeHeight);
+  const chairCount = Math.min(capacity ?? 1, TABLE_LAYOUT.maximumChairCount);
+  const halfChairSize = TABLE_LAYOUT.chairSize / 2;
   // TableCard uses `border-2` with `box-border`, so absolute children are
   // positioned relative to the padding box. We must offset by the 2px border.
-  const border = 2;
-  const shape = table.shape ?? 'rect';
-  const chairs: React.ReactNode[] = [];
-
-  const chairClassName = 'absolute rounded-full border-2 border-background bg-muted-foreground/80';
-  const baseStyle: React.CSSProperties = {
-    width: chairSize,
-    height: chairSize,
-    boxSizing: 'border-box',
-  };
+  const { borderWidth, chairGap, chairSize, roundTableVisualGap } = TABLE_LAYOUT;
+  const chairs: ChairPosition[] = [];
 
   if (shape === 'round') {
-    const centerX = width / 2 - border;
-    const centerY = height / 2 - border;
-    const radiusX = Math.max(0, width / 2 + chairOffset + half);
-    const radiusY = Math.max(0, height / 2 + chairOffset + half);
+    const centerX = width / 2 - borderWidth;
+    const centerY = height / 2 - borderWidth;
+    const chairClearance = roundTableVisualGap + (chairSize / 2) * Math.SQRT2;
+    const radiusX = width / 2 + chairClearance;
+    const radiusY = height / 2 + chairClearance;
     for (let i = 0; i < chairCount; i++) {
       const angle = (i / chairCount) * 2 * Math.PI - Math.PI / 2;
-      const left = centerX + radiusX * Math.cos(angle) - half;
-      const top = centerY + radiusY * Math.sin(angle) - half;
-      chairs.push(
-        <div key={`chair-${i}`} className={chairClassName} style={{ ...baseStyle, left, top }} />,
-      );
+      chairs.push({
+        left: centerX + radiusX * Math.cos(angle) - halfChairSize,
+        top: centerY + radiusY * Math.sin(angle) - halfChairSize,
+      });
     }
     return chairs;
   }
-
-  if (width <= 0 || height <= 0) return chairs;
 
   const perimeter = 2 * (width + height);
   let topCount = Math.max(0, Math.round((chairCount * width) / perimeter));
   let bottomCount = topCount;
   let leftCount = Math.max(0, Math.round((chairCount * height) / perimeter));
   let rightCount = leftCount;
-  let total = topCount + bottomCount + leftCount + rightCount;
+  const total = topCount + bottomCount + leftCount + rightCount;
 
   const adjust = (remaining: number) => {
     while (remaining !== 0) {
@@ -405,34 +444,32 @@ function renderChairs(table: CanvasTable): React.ReactNode[] {
           rightCount++;
           remaining--;
         }
-      } else {
-        if (width >= height) {
-          if (leftCount > 0) {
-            leftCount--;
-          } else if (rightCount > 0) {
-            rightCount--;
-          } else if (topCount > 1) {
-            topCount--;
-          } else if (bottomCount > 1) {
-            bottomCount--;
-          } else {
-            break;
-          }
-          remaining++;
+      } else if (width >= height) {
+        if (leftCount > 0) {
+          leftCount--;
+        } else if (rightCount > 0) {
+          rightCount--;
+        } else if (topCount > 1) {
+          topCount--;
+        } else if (bottomCount > 1) {
+          bottomCount--;
         } else {
-          if (topCount > 0) {
-            topCount--;
-          } else if (bottomCount > 0) {
-            bottomCount--;
-          } else if (leftCount > 1) {
-            leftCount--;
-          } else if (rightCount > 1) {
-            rightCount--;
-          } else {
-            break;
-          }
-          remaining++;
+          break;
         }
+        remaining++;
+      } else {
+        if (topCount > 0) {
+          topCount--;
+        } else if (bottomCount > 0) {
+          bottomCount--;
+        } else if (leftCount > 1) {
+          leftCount--;
+        } else if (rightCount > 1) {
+          rightCount--;
+        } else {
+          break;
+        }
+        remaining++;
       }
     }
   };
@@ -440,32 +477,31 @@ function renderChairs(table: CanvasTable): React.ReactNode[] {
   adjust(chairCount - total);
 
   const place = (count: number, length: number, side: 'top' | 'bottom' | 'left' | 'right') => {
-    if (count <= 0 || length <= 0) return;
+    if (count <= 0) return;
     const spacing = length / (count + 1);
     for (let i = 1; i <= count; i++) {
       const position = i * spacing;
-      let left = 0;
-      let top = 0;
       if (side === 'top') {
-        left = position - half - border;
-        top = -(chairSize + chairOffset + border);
+        chairs.push({
+          left: position - halfChairSize - borderWidth,
+          top: -(chairSize + chairGap + borderWidth),
+        });
       } else if (side === 'bottom') {
-        left = position - half - border;
-        top = height - border + chairOffset;
+        chairs.push({
+          left: position - halfChairSize - borderWidth,
+          top: height - borderWidth + chairGap,
+        });
       } else if (side === 'left') {
-        top = position - half - border;
-        left = -(chairSize + chairOffset + border);
+        chairs.push({
+          left: -(chairSize + chairGap + borderWidth),
+          top: position - halfChairSize - borderWidth,
+        });
       } else {
-        top = position - half - border;
-        left = width - border + chairOffset;
+        chairs.push({
+          left: width - borderWidth + chairGap,
+          top: position - halfChairSize - borderWidth,
+        });
       }
-      chairs.push(
-        <div
-          key={`chair-${side}-${i}`}
-          className={chairClassName}
-          style={{ ...baseStyle, left, top }}
-        />,
-      );
     }
   };
 
@@ -475,6 +511,26 @@ function renderChairs(table: CanvasTable): React.ReactNode[] {
   place(rightCount, height, 'right');
 
   return chairs;
+}
+
+function renderChairs(table: CanvasTable): React.ReactNode[] {
+  const { width, height } = getTableSize(table);
+  const chairs = getChairPositions({
+    width,
+    height,
+    capacity: table.capacity,
+    shape: table.shape,
+  });
+  const chairClassName = 'absolute rounded-full border-2 border-background bg-muted-foreground/80';
+  const baseStyle: React.CSSProperties = {
+    width: TABLE_LAYOUT.chairSize,
+    height: TABLE_LAYOUT.chairSize,
+    boxSizing: 'border-box',
+  };
+
+  return chairs.map(({ left, top }, index) => (
+    <div key={`chair-${index}`} className={chairClassName} style={{ ...baseStyle, left, top }} />
+  ));
 }
 
 function replaceTable(floorPlan: FloorPlan, updated: FloorPlanTable): FloorPlan {
@@ -683,7 +739,7 @@ function TableCard({
     <div
       ref={dragRef}
       className={cn(
-        'box-border flex flex-col items-center justify-center border-2 p-2 text-center transition-[opacity,background-color,border-color,box-shadow] duration-200 select-none relative shadow-sm',
+        'box-border flex min-w-0 min-h-0 flex-col items-center justify-center border-2 p-2 text-center transition-[opacity,background-color,border-color,box-shadow] duration-200 select-none relative shadow-sm',
         table.shape === 'round' ? 'rounded-full aspect-square' : 'rounded-md',
         'overflow-visible hover:ring-2 hover:ring-ring/60 hover:ring-offset-1',
         status ? statusClasses[status.status] : 'bg-card border-border text-foreground',
@@ -739,10 +795,10 @@ function TableCard({
         </span>
       ) : null}
       <div className="relative z-10 flex w-full max-w-full flex-col items-center px-1">
-        <div className="flex w-full items-baseline justify-center gap-1 leading-none">
-          <p className="text-xs font-bold tracking-tight">{displayName}</p>
+        <div className="flex min-w-0 w-full flex-wrap items-baseline justify-center gap-1 leading-none">
+          <p className="min-w-0 text-xs font-bold tracking-tight">{displayName}</p>
           {showCapacity ? (
-            <p className="text-[9px] font-medium text-muted-foreground">
+            <p className="min-w-0 text-[9px] font-medium text-muted-foreground">
               · {table.capacity} places
             </p>
           ) : null}
@@ -996,6 +1052,22 @@ function NewWallOverlay({ type, zoom }: { type: PaletteWallType; zoom: number })
   );
 }
 
+function ElapsedSince({ date, prefix }: { date: number; prefix: string }) {
+  const [, forceRender] = useReducer((n: number) => n + 1, 0);
+
+  useEffect(() => {
+    const id = setInterval(() => forceRender(), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <>
+      {prefix}
+      {formatDistanceToNow(date, { locale: fr, addSuffix: true })}
+    </>
+  );
+}
+
 export function FloorPlanCanvas({
   orgId,
   mode = 'design',
@@ -1006,6 +1078,10 @@ export function FloorPlanCanvas({
   const { get, post, patch, del } = useApi();
   const getRef = useRef(get);
   getRef.current = get;
+  const patchRef = useRef(patch);
+  patchRef.current = patch;
+  const postRef = useRef(post);
+  postRef.current = post;
 
   const [floorPlan, setFloorPlan] = useState<FloorPlan | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1016,8 +1092,14 @@ export function FloorPlanCanvas({
   const [snap, setSnap] = useState(true);
   const live = mode === 'service';
   const [liveDate, setLiveDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  const liveDateRef = useRef(liveDate);
+  liveDateRef.current = liveDate;
   const [reservations, setReservations] = useState<PlanningReservation[]>([]);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [selectedServiceTableId, setSelectedServiceTableId] = useState<string | null>(null);
+  const [suggestedTable, setSuggestedTable] = useState<{ tableId: string; reason: string } | null>(
+    null,
+  );
   const [lockedWallIds, setLockedWallIds] = useState<Set<string>>(() => new Set());
 
   const [selectedTableIds, setSelectedTableIds] = useState<Set<string>>(() => new Set());
@@ -1122,18 +1204,133 @@ export function FloorPlanCanvas({
     }
   }, [orgId]);
 
-  const loadReservations = useCallback(async () => {
-    if (!live) return;
-    setError('');
-    try {
-      const data = await getRef.current<PlanningReservation[]>(
-        `restaurants/${orgId}/floor-plan/reservations?date=${liveDate}`,
-      );
-      setReservations(data);
-    } catch (err) {
-      setError(getErrorMessage(err, 'Impossible de charger les réservations'));
-    }
-  }, [orgId, live, liveDate]);
+  const pollAbortRef = useRef<AbortController | null>(null);
+  const pollInFlightRef = useRef(false);
+
+  const loadReservations = useCallback(
+    async ({ force }: { force?: boolean } = {}) => {
+      if (!live) return;
+      if (pollInFlightRef.current && !force) return;
+      if (force) {
+        pollAbortRef.current?.abort();
+      }
+      const controller = new AbortController();
+      pollAbortRef.current = controller;
+      pollInFlightRef.current = true;
+      setError('');
+      try {
+        const data = await getRef.current<PlanningReservation[]>(
+          `restaurants/${orgId}/floor-plan/reservations?date=${liveDate}`,
+          { signal: controller.signal },
+        );
+        if (pollAbortRef.current !== controller) return;
+        if (liveDateRef.current !== liveDate) return;
+        setReservations(data);
+        setLastUpdatedAt(Date.now());
+      } catch (err) {
+        if (pollAbortRef.current !== controller) return;
+        if (controller.signal.aborted) return;
+        setError(getErrorMessage(err, 'Impossible de charger les réservations'));
+      } finally {
+        if (pollAbortRef.current === controller) {
+          pollInFlightRef.current = false;
+        }
+      }
+    },
+    [orgId, live, liveDate],
+  );
+
+  const updateReservationState = useCallback(
+    async (reservationId: string, state: 'SEATED' | 'HONORED') => {
+      if (!orgId) return;
+      try {
+        await patchRef.current<void>(
+          `restaurants/${orgId}/floor-plan/reservations/${reservationId}/state`,
+          { state },
+        );
+        setReservations((prev) => prev.map((r) => (r.id === reservationId ? { ...r, state } : r)));
+        await loadReservations({ force: true });
+      } catch (err) {
+        setError(getErrorMessage(err, 'Impossible de mettre à jour le statut'));
+      }
+    },
+    [orgId, loadReservations],
+  );
+
+  const createWalkIn = useCallback(
+    async (tableId: string) => {
+      if (!orgId) return;
+      try {
+        const idempotencyKey = crypto.randomUUID();
+        const res = await postRef.current<{ id: string }>(
+          `restaurants/${orgId}/floor-plan/walk-ins`,
+          {
+            tableId,
+            partySize: 2,
+            customerName: 'Walk-in',
+            idempotencyKey,
+          },
+        );
+        const now = new Date().toISOString();
+        setReservations((prev) => [
+          ...prev,
+          {
+            id: res.id,
+            tableId,
+            tableName: null,
+            sectionName: null,
+            startsAt: now,
+            endsAt: now,
+            partySize: 2,
+            customerName: 'Walk-in',
+            state: 'SEATED',
+            seatedAt: now,
+          },
+        ]);
+        await loadReservations({ force: true });
+      } catch (err) {
+        setError(getErrorMessage(err, 'Impossible de créer le walk-in'));
+      }
+    },
+    [orgId, loadReservations],
+  );
+
+  const suggestTable = useCallback(
+    async (reservationId: string) => {
+      if (!orgId) return;
+      setSuggestedTable(null);
+      try {
+        const res = await getRef.current<{ tableId: string | null; reason: string }>(
+          `restaurants/${orgId}/floor-plan/reservations/${reservationId}/suggest-table`,
+        );
+        if (res.tableId) setSuggestedTable({ tableId: res.tableId, reason: res.reason });
+        else setError(res.reason || 'Aucune table disponible');
+      } catch (err) {
+        setError(getErrorMessage(err, 'Impossible de suggérer une table'));
+      }
+    },
+    [orgId],
+  );
+
+  const assignTable = useCallback(
+    async (reservationId: string, tableId: string) => {
+      if (!orgId) return;
+      try {
+        await patchRef.current<void>(
+          `restaurants/${orgId}/floor-plan/reservations/${reservationId}/assign-table`,
+          { tableId },
+        );
+        setReservations((prev) =>
+          prev.map((r) => (r.id === reservationId ? { ...r, tableId } : r)),
+        );
+        setSuggestedTable(null);
+        await loadReservations({ force: true });
+      } catch (err) {
+        setError(getErrorMessage(err, 'Impossible d’assigner la table'));
+      }
+    },
+    [orgId, loadReservations],
+  );
 
   async function savePlan() {
     setSavingPlan(true);
@@ -1156,7 +1353,37 @@ export function FloorPlanCanvas({
 
   useEffect(() => {
     if (!orgId || !live) return;
-    loadReservations();
+    loadReservations({ force: true });
+
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const startPolling = () => {
+      if (timer) return;
+      timer = setInterval(() => {
+        loadReservations();
+      }, 10000);
+    };
+    const stopPolling = () => {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        loadReservations({ force: true });
+        startPolling();
+      }
+    };
+
+    startPolling();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      pollAbortRef.current?.abort();
+      stopPolling();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [orgId, live, liveDate, loadReservations]);
 
   const allTables = useMemo<CanvasTable[]>(() => {
@@ -1581,13 +1808,12 @@ export function FloorPlanCanvas({
   }
 
   function handleTablePointerMove(e: PointerEvent) {
-    if (resizeTableId && resizeStartRef.current) {
-      const dx = (e.clientX - resizeStartRef.current.pointerX) / zoom;
-      const dy = (e.clientY - resizeStartRef.current.pointerY) / zoom;
-      const width = Math.max(40, resizeStartRef.current.width + dx);
-      const height = Math.max(40, resizeStartRef.current.height + dy);
-      resizeStartRef.current.currentWidth = width;
-      resizeStartRef.current.currentHeight = height;
+    const resizeStart = resizeStartRef.current;
+    if (resizeTableId && resizeStart) {
+      const dx = (e.clientX - resizeStart.pointerX) / zoom;
+      const dy = (e.clientY - resizeStart.pointerY) / zoom;
+      const width = Math.max(TABLE_LAYOUT.minimumDimension, resizeStart.width + dx);
+      const height = Math.max(TABLE_LAYOUT.minimumDimension, resizeStart.height + dy);
       setFloorPlan((prev) => {
         if (!prev) return prev;
         const table = prev.sections
@@ -1595,14 +1821,20 @@ export function FloorPlanCanvas({
           .concat(prev.tables ?? [])
           .find((t) => t.id === resizeTableId);
         if (!table) return prev;
-        const clampedX =
-          Math.min((table.positionX ?? 0) + width, canvasWidth) - (table.positionX ?? 0);
-        const clampedY =
-          Math.min((table.positionY ?? 0) + height, canvasHeight) - (table.positionY ?? 0);
+        const clampedWidth = Math.max(
+          TABLE_LAYOUT.minimumDimension,
+          Math.min(width, canvasWidth - (table.positionX ?? 0)),
+        );
+        const clampedHeight = Math.max(
+          TABLE_LAYOUT.minimumDimension,
+          Math.min(height, canvasHeight - (table.positionY ?? 0)),
+        );
+        resizeStart.currentWidth = clampedWidth;
+        resizeStart.currentHeight = clampedHeight;
         return replaceTable(prev, {
           ...table,
-          width: Math.round(clampedX),
-          height: Math.round(clampedY),
+          width: Math.round(clampedWidth),
+          height: Math.round(clampedHeight),
         });
       });
     }
@@ -2888,9 +3120,19 @@ export function FloorPlanCanvas({
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-50" />
             <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
           </span>
-          <p className="text-sm font-semibold">Service en direct</p>
+          <p className="text-sm font-semibold">
+            {lastUpdatedAt ? (
+              <ElapsedSince date={lastUpdatedAt} prefix="Service en direct · mis à jour " />
+            ) : (
+              'Service en direct · connexion…'
+            )}
+          </p>
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">Le plan est entièrement verrouillé.</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {lastUpdatedAt
+            ? 'Le plan se met à jour automatiquement.'
+            : 'Synchronisation du service en cours…'}
+        </p>
       </div>
       {selectedServiceTable ? (
         <div className="flex-1 space-y-5 overflow-y-auto p-4">
@@ -2935,6 +3177,66 @@ export function FloorPlanCanvas({
                   )}
                 </span>
               </div>
+              <div className="mt-3 flex gap-2">
+                {['PENDING', 'CONFIRMED'].includes(selectedServiceReservation.state) && (
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    onClick={() =>
+                      void updateReservationState(selectedServiceReservation.id, 'SEATED')
+                    }
+                  >
+                    Installer
+                  </Button>
+                )}
+                {selectedServiceReservation.state === 'SEATED' && (
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    onClick={() =>
+                      void updateReservationState(selectedServiceReservation.id, 'HONORED')
+                    }
+                  >
+                    Terminer
+                  </Button>
+                )}
+              </div>
+              <div className="mt-2 flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => void suggestTable(selectedServiceReservation.id)}
+                >
+                  Suggérer une table
+                </Button>
+                {suggestedTable && (
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    onClick={() =>
+                      void assignTable(selectedServiceReservation.id, suggestedTable.tableId)
+                    }
+                  >
+                    Assigner
+                  </Button>
+                )}
+              </div>
+              {suggestedTable && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Proposition : table {suggestedTable.tableId} — {suggestedTable.reason}
+                </p>
+              )}
+              {selectedServiceReservation.state === 'SEATED' &&
+                selectedServiceReservation.seatedAt && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    À table depuis{' '}
+                    {formatDistanceToNow(parseISO(selectedServiceReservation.seatedAt), {
+                      locale: fr,
+                      addSuffix: true,
+                    })}
+                  </p>
+                )}
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-border p-4 text-center">
@@ -2942,6 +3244,14 @@ export function FloorPlanCanvas({
               <p className="mt-1 text-xs text-muted-foreground">
                 Aucune réservation en cours ou imminente.
               </p>
+              <Button
+                size="sm"
+                className="mt-3 w-full"
+                onClick={() => void createWalkIn(selectedServiceTable?.id ?? '')}
+                disabled={!selectedServiceTable?.id}
+              >
+                Walk-in
+              </Button>
             </div>
           )}
         </div>
