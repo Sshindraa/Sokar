@@ -38,7 +38,7 @@ type FloorPlan = {
   sections: Section[];
 };
 
-export function FloorPlanCrud() {
+export function FloorPlanCrud({ floorPlanId }: { floorPlanId?: string }) {
   const { get, patch, put, post, del, orgId } = useApi();
   const isMobile = useIsMobile();
 
@@ -63,7 +63,10 @@ export function FloorPlanCrud() {
 
     async function fetchFloorPlan() {
       try {
-        const data = await get<FloorPlan>(`restaurants/${orgId}/floor-plan`);
+        const path = floorPlanId
+          ? `restaurants/${orgId}/floor-plans/${floorPlanId}`
+          : `restaurants/${orgId}/floor-plan`;
+        const data = await get<FloorPlan>(path);
         setFloorPlan(data);
       } catch (err: unknown) {
         setError(getErrorMessage(err, 'Impossible de charger le plan de salle'));
@@ -73,7 +76,7 @@ export function FloorPlanCrud() {
     }
 
     fetchFloorPlan();
-  }, [orgId, get]);
+  }, [orgId, get, floorPlanId]);
 
   async function toggleTable(tableId: string, isActive: boolean) {
     if (!orgId) return;
@@ -94,7 +97,10 @@ export function FloorPlanCrud() {
           })),
         };
       });
-      await patch(`restaurants/${orgId}/floor-plan/tables/${tableId}`, { isActive });
+      await patch(`restaurants/${orgId}/floor-plan/tables/${tableId}`, {
+        isActive,
+        ...(floorPlanId ? { floorPlanId } : {}),
+      });
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de modifier la table'));
       setFloorPlan((prev) => {
@@ -119,6 +125,7 @@ export function FloorPlanCrud() {
       setError('');
       const section = await post<Section>(`restaurants/${orgId}/floor-plan/sections`, {
         name: newSectionName.trim(),
+        ...(floorPlanId ? { floorPlanId } : {}),
       });
       setFloorPlan((prev) => {
         if (!prev) return prev;
@@ -139,6 +146,7 @@ export function FloorPlanCrud() {
         sectionId: newTable.sectionId,
         name: newTable.name.trim(),
         capacity: Number(newTable.capacity),
+        ...(floorPlanId ? { floorPlanId } : {}),
       });
       setFloorPlan((prev) => {
         if (!prev) return prev;
@@ -170,7 +178,11 @@ export function FloorPlanCrud() {
     setPendingDeleteTableId(null);
     try {
       setError('');
-      await del(`restaurants/${orgId}/floor-plan/tables/${tableId}`);
+      await del(
+        `restaurants/${orgId}/floor-plan/tables/${tableId}${
+          floorPlanId ? `?floorPlanId=${floorPlanId}` : ''
+        }`,
+      );
       setFloorPlan((prev) => {
         if (!prev) return prev;
         return {
@@ -202,6 +214,7 @@ export function FloorPlanCrud() {
       setError('');
       const updated = await put<Section>(`restaurants/${orgId}/floor-plan/sections/${sectionId}`, {
         name: editingName.trim(),
+        ...(floorPlanId ? { floorPlanId } : {}),
       });
       setFloorPlan((prev) => {
         if (!prev) return prev;
@@ -234,7 +247,11 @@ export function FloorPlanCrud() {
     setPendingDeleteSectionId(null);
     try {
       setError('');
-      await del(`restaurants/${orgId}/floor-plan/sections/${sectionId}`);
+      await del(
+        `restaurants/${orgId}/floor-plan/sections/${sectionId}${
+          floorPlanId ? `?floorPlanId=${floorPlanId}` : ''
+        }`,
+      );
       setFloorPlan((prev) => {
         if (!prev) return prev;
         return {

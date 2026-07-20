@@ -70,8 +70,8 @@ function generateTables(
 }
 
 async function migrateRestaurant(restaurantId: string) {
-  const existing = await prisma.floorPlan.findUnique({
-    where: { restaurantId },
+  const existing = await prisma.floorPlan.findFirst({
+    where: { restaurantId, isActive: true, isDefault: true },
     include: { tables: { take: 1 } },
   });
 
@@ -88,11 +88,17 @@ async function migrateRestaurant(restaurantId: string) {
   const totalSeats = extractTotalSeats(settings?.capacitySpecials, maxPartySize);
   const tables = generateTables(totalSeats);
 
-  const floorPlan = await prisma.floorPlan.upsert({
-    where: { restaurantId },
-    update: { name: 'Salle principale' },
-    create: { restaurantId, name: 'Salle principale' },
-  });
+  let floorPlan = existing;
+  if (!floorPlan) {
+    floorPlan = await prisma.floorPlan.create({
+      data: { restaurantId, name: 'Salle principale', isDefault: true, isActive: true },
+    });
+  } else {
+    floorPlan = await prisma.floorPlan.update({
+      where: { id: floorPlan.id },
+      data: { name: 'Salle principale' },
+    });
+  }
 
   let section = await prisma.section.findFirst({
     where: { floorPlanId: floorPlan.id, name: 'Salle principale' },

@@ -20,12 +20,27 @@ export class FloorPlanNotFoundError extends Error {
   }
 }
 
+const FLOOR_PLAN_INCLUDE = {
+  sections: {
+    orderBy: { position: 'asc' },
+    include: {
+      tables: { orderBy: [{ positionX: 'asc' }, { positionY: 'asc' }, { name: 'asc' }] },
+    },
+  },
+  tables: {
+    orderBy: [{ positionX: 'asc' }, { positionY: 'asc' }, { name: 'asc' }],
+  },
+  walls: { orderBy: { createdAt: 'asc' } },
+} satisfies Prisma.FloorPlanInclude;
+
 export type FloorPlanWithSections = {
   id: string;
   name: string;
   width: number;
   height: number;
   restaurantId: string;
+  isDefault: boolean;
+  isActive: boolean;
   sections: Array<
     Section & {
       tables: Table[];
@@ -33,6 +48,14 @@ export type FloorPlanWithSections = {
   >;
   tables: Table[];
   walls: Wall[];
+};
+
+export type FloorPlanSummary = {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  isActive: boolean;
+  tableCount: number;
 };
 
 export type PlanningReservation = {
@@ -72,8 +95,13 @@ export type UpdateTableInput = Partial<CreateTableInput> & {
   isActive?: boolean;
 };
 
-export type UpdateFloorPlanInput = {
-  name?: string;
+export type CreateFloorPlanInput = {
+  name: string;
+  isDefault?: boolean;
+};
+
+export type UpdateFloorPlanInput = Partial<CreateFloorPlanInput> & {
+  isActive?: boolean;
   width?: number;
   height?: number;
 };
@@ -96,108 +124,203 @@ export class FloorPlanService {
     this.tableAllocation = new TableAllocationService(prisma);
   }
 
-  async getOrCreateFloorPlan(restaurantId: string): Promise<FloorPlanWithSections> {
-    const existing = await this.prisma.floorPlan.findUnique({
-      where: { restaurantId },
-      include: {
-        sections: {
-          orderBy: { position: 'asc' },
-          include: {
-            tables: { orderBy: [{ positionX: 'asc' }, { positionY: 'asc' }, { name: 'asc' }] },
-          },
-        },
-        tables: {
-          orderBy: [{ positionX: 'asc' }, { positionY: 'asc' }, { name: 'asc' }],
-        },
-        walls: { orderBy: { createdAt: 'asc' } },
-      },
+  async getDefaultFloorPlan(
+    restaurantId: string,
+    options?: { name?: string },
+  ): Promise<FloorPlanWithSections> {
+    const existing = await this.prisma.floorPlan.findFirst({
+      where: { restaurantId, isActive: true, isDefault: true },
+      include: FLOOR_PLAN_INCLUDE,
     });
 
     if (existing) {
-      return existing;
+      return existing as unknown as FloorPlanWithSections;
     }
 
     const created = await this.prisma.floorPlan.create({
       data: {
         restaurantId,
-        name: 'Salle principale',
+        name: options?.name ?? 'Salle principale',
         width: 1400,
         height: 900,
+        isDefault: true,
+        isActive: true,
       },
-      include: {
-        sections: {
-          orderBy: { position: 'asc' },
-          include: {
-            tables: { orderBy: [{ positionX: 'asc' }, { positionY: 'asc' }, { name: 'asc' }] },
-          },
-        },
-        tables: {
-          orderBy: [{ positionX: 'asc' }, { positionY: 'asc' }, { name: 'asc' }],
-        },
-        walls: { orderBy: { createdAt: 'asc' } },
-      },
+      include: FLOOR_PLAN_INCLUDE,
     });
 
-    return created;
+    return created as unknown as FloorPlanWithSections;
   }
 
-  async createFloorPlan(restaurantId: string, name?: string): Promise<FloorPlanWithSections> {
-    const existing = await this.prisma.floorPlan.findUnique({
+  async getOrCreateFloorPlan(restaurantId: string): Promise<FloorPlanWithSections> {
+    return this.getDefaultFloorPlan(restaurantId);
+  }
+
+  async listFloorPlans(restaurantId: string): Promise<FloorPlanSummary[]> {
+    const rows = await this.prisma.floorPlan.findMany({
       where: { restaurantId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        isDefault: true,
+        isActive: true,
+        _count: { select: { tables: true } },
+      },
     });
-    if (existing) {
-      return this.getOrCreateFloorPlan(restaurantId);
+
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      isDefault: row.isDefault,
+      isActive: row.isActive,
+      tableCount: row._count.tables,
+    }));
+  }
+
+  async getFloorPlanById(floorPlanId: string): Promise<FloorPlanWithSections> {
+    const floorPlan = await this.prisma.floorPlan.findUnique({
+      where: { id: floorPlanId },
+      include: FLOOR_PLAN_INCLUDE,
+    });
+
+    if (!floorPlan) {
+      throw new FloorPlanNotFoundError('Floor plan introuvable');
     }
 
-    const created = await this.prisma.floorPlan.create({
-      data: {
-        restaurantId,
-        name: name ?? 'Salle principale',
-        width: 1400,
-        height: 900,
-      },
-      include: {
-        sections: {
-          orderBy: { position: 'asc' },
-          include: {
-            tables: { orderBy: [{ positionX: 'asc' }, { positionY: 'asc' }, { name: 'asc' }] },
-          },
+    return floorPlan as unknown as FloorPlanWithSections;
+  }
+
+  async createFloorPlan(
+    restaurantId: string,
+    input: CreateFloorPlanInput,
+  ): Promise<FloorPlanWithSections> {
+    const isDefault = input.isDefault ?? false;
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      if (isDefault) {
+        await tx.floorPlan.updateMany({
+          where: { restaurantId, isDefault: true },
+          data: { isDefault: false },
+        });
+      }
+
+      return tx.floorPlan.create({
+        data: {
+          restaurantId,
+          name: input.name,
+          width: 1400,
+          height: 900,
+          isDefault,
+          isActive: true,
         },
-        tables: {
-          orderBy: [{ positionX: 'asc' }, { positionY: 'asc' }, { name: 'asc' }],
-        },
-        walls: { orderBy: { createdAt: 'asc' } },
-      },
+        include: FLOOR_PLAN_INCLUDE,
+      });
     });
 
-    return created;
+    return created as unknown as FloorPlanWithSections;
+  }
+
+  async updateFloorPlanById(
+    floorPlanId: string,
+    input: UpdateFloorPlanInput,
+  ): Promise<FloorPlanWithSections> {
+    const existing = await this.prisma.floorPlan.findUnique({ where: { id: floorPlanId } });
+    if (!existing) {
+      throw new FloorPlanNotFoundError('Floor plan introuvable');
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (input.isDefault) {
+        await tx.floorPlan.updateMany({
+          where: { restaurantId: existing.restaurantId, isDefault: true, id: { not: floorPlanId } },
+          data: { isDefault: false },
+        });
+      }
+
+      return tx.floorPlan.update({
+        where: { id: floorPlanId },
+        data: {
+          ...(input.name !== undefined && { name: input.name }),
+          ...(input.width !== undefined && { width: input.width }),
+          ...(input.height !== undefined && { height: input.height }),
+          ...(input.isDefault !== undefined && { isDefault: input.isDefault }),
+          ...(input.isActive !== undefined && { isActive: input.isActive }),
+        },
+        include: FLOOR_PLAN_INCLUDE,
+      });
+    });
+
+    return updated as unknown as FloorPlanWithSections;
   }
 
   async updateFloorPlan(
     restaurantId: string,
     input: UpdateFloorPlanInput,
   ): Promise<FloorPlanWithSections> {
-    const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
-
-    await this.prisma.floorPlan.update({
-      where: { id: floorPlan.id },
-      data: {
-        ...(input.name !== undefined && { name: input.name }),
-        ...(input.width !== undefined && { width: input.width }),
-        ...(input.height !== undefined && { height: input.height }),
-      },
-    });
-
-    return this.getOrCreateFloorPlan(restaurantId);
+    const floorPlan = await this.getDefaultFloorPlan(restaurantId);
+    return this.updateFloorPlanById(floorPlan.id, input);
   }
 
-  async createSection(restaurantId: string, input: CreateSectionInput): Promise<Section> {
-    const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
+  async deleteFloorPlan(floorPlanId: string): Promise<void> {
+    const floorPlan = await this.prisma.floorPlan.findUnique({ where: { id: floorPlanId } });
+    if (!floorPlan) {
+      throw new FloorPlanNotFoundError('Floor plan introuvable');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (floorPlan.isDefault) {
+        const replacement = await tx.floorPlan.findFirst({
+          where: { restaurantId: floorPlan.restaurantId, id: { not: floorPlanId }, isActive: true },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true },
+        });
+        if (replacement) {
+          await tx.floorPlan.update({
+            where: { id: replacement.id },
+            data: { isDefault: true, isActive: true },
+          });
+        }
+      }
+
+      await tx.floorPlan.delete({ where: { id: floorPlanId } });
+    });
+  }
+
+  private async resolveFloorPlanId(restaurantId: string, floorPlanId?: string): Promise<string> {
+    if (floorPlanId) {
+      const floorPlan = await this.prisma.floorPlan.findFirst({
+        where: { id: floorPlanId, restaurantId, isActive: true },
+        select: { id: true },
+      });
+      if (!floorPlan) {
+        throw new FloorPlanNotFoundError('Floor plan introuvable');
+      }
+      return floorPlan.id;
+    }
+
+    const floorPlan = await this.getDefaultFloorPlan(restaurantId);
+    return floorPlan.id;
+  }
+
+  async createSection(
+    restaurantId: string,
+    input: CreateSectionInput,
+    floorPlanId?: string,
+  ): Promise<Section> {
+    const resolvedFloorPlanId = await this.resolveFloorPlanId(restaurantId, floorPlanId);
+    const floorPlan = await this.prisma.floorPlan.findUnique({
+      where: { id: resolvedFloorPlanId },
+      include: { sections: { orderBy: { position: 'asc' } } },
+    });
+    if (!floorPlan) {
+      throw new FloorPlanNotFoundError('Floor plan introuvable');
+    }
     const position = input.position ?? floorPlan.sections.length;
 
     return this.prisma.section.create({
       data: {
-        floorPlanId: floorPlan.id,
+        floorPlanId: resolvedFloorPlanId,
         name: input.name,
         position,
       },
@@ -208,10 +331,11 @@ export class FloorPlanService {
     restaurantId: string,
     sectionId: string,
     input: UpdateSectionInput,
+    floorPlanId?: string,
   ): Promise<Section> {
-    const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
+    const resolvedFloorPlanId = await this.resolveFloorPlanId(restaurantId, floorPlanId);
     const section = await this.prisma.section.findFirst({
-      where: { id: sectionId, floorPlanId: floorPlan.id },
+      where: { id: sectionId, floorPlanId: resolvedFloorPlanId },
     });
     if (!section) {
       throw new FloorPlanNotFoundError('Section introuvable');
@@ -226,10 +350,14 @@ export class FloorPlanService {
     });
   }
 
-  async deleteSection(restaurantId: string, sectionId: string): Promise<void> {
-    const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
+  async deleteSection(
+    restaurantId: string,
+    sectionId: string,
+    floorPlanId?: string,
+  ): Promise<void> {
+    const resolvedFloorPlanId = await this.resolveFloorPlanId(restaurantId, floorPlanId);
     const section = await this.prisma.section.findFirst({
-      where: { id: sectionId, floorPlanId: floorPlan.id },
+      where: { id: sectionId, floorPlanId: resolvedFloorPlanId },
     });
     if (!section) {
       throw new FloorPlanNotFoundError('Section introuvable');
@@ -238,14 +366,18 @@ export class FloorPlanService {
     await this.prisma.section.delete({ where: { id: sectionId } });
   }
 
-  async createTable(restaurantId: string, input: CreateTableInput): Promise<Table> {
+  async createTable(
+    restaurantId: string,
+    input: CreateTableInput,
+    floorPlanId?: string,
+  ): Promise<Table> {
     this.validateTable(input);
 
-    const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
+    const resolvedFloorPlanId = await this.resolveFloorPlanId(restaurantId, floorPlanId);
 
     if (input.sectionId) {
       const section = await this.prisma.section.findFirst({
-        where: { id: input.sectionId, floorPlanId: floorPlan.id },
+        where: { id: input.sectionId, floorPlanId: resolvedFloorPlanId },
       });
       if (!section) {
         throw new FloorPlanNotFoundError('Section introuvable');
@@ -254,7 +386,7 @@ export class FloorPlanService {
 
     return this.prisma.table.create({
       data: {
-        floorPlanId: floorPlan.id,
+        floorPlanId: resolvedFloorPlanId,
         sectionId: input.sectionId ?? null,
         name: input.name,
         capacity: input.capacity,
@@ -273,12 +405,13 @@ export class FloorPlanService {
     restaurantId: string,
     tableId: string,
     input: UpdateTableInput,
+    floorPlanId?: string,
   ): Promise<Table> {
     this.validateTable(input);
 
-    const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
+    const resolvedFloorPlanId = await this.resolveFloorPlanId(restaurantId, floorPlanId);
     const table = await this.prisma.table.findFirst({
-      where: { id: tableId, floorPlanId: floorPlan.id },
+      where: { id: tableId, floorPlanId: resolvedFloorPlanId },
     });
     if (!table) {
       throw new FloorPlanNotFoundError('Table introuvable');
@@ -286,7 +419,7 @@ export class FloorPlanService {
 
     if (input.sectionId !== undefined && input.sectionId !== null) {
       const section = await this.prisma.section.findFirst({
-        where: { id: input.sectionId, floorPlanId: floorPlan.id },
+        where: { id: input.sectionId, floorPlanId: resolvedFloorPlanId },
       });
       if (!section) {
         throw new FloorPlanNotFoundError('Section introuvable');
@@ -311,10 +444,10 @@ export class FloorPlanService {
     });
   }
 
-  async deleteTable(restaurantId: string, tableId: string): Promise<void> {
-    const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
+  async deleteTable(restaurantId: string, tableId: string, floorPlanId?: string): Promise<void> {
+    const resolvedFloorPlanId = await this.resolveFloorPlanId(restaurantId, floorPlanId);
     const table = await this.prisma.table.findFirst({
-      where: { id: tableId, floorPlanId: floorPlan.id },
+      where: { id: tableId, floorPlanId: resolvedFloorPlanId },
       include: {
         reservations: {
           where: {
@@ -341,8 +474,25 @@ export class FloorPlanService {
     await this.prisma.table.delete({ where: { id: tableId } });
   }
 
-  async getPlanning(restaurantId: string, date: string): Promise<PlanningReservation[]> {
-    const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
+  async getPlanning(
+    restaurantId: string,
+    date: string,
+    floorPlanId?: string,
+  ): Promise<PlanningReservation[]> {
+    let floorPlan: FloorPlanWithSections;
+    if (floorPlanId) {
+      const found = await this.prisma.floorPlan.findFirst({
+        where: { id: floorPlanId, restaurantId },
+        include: FLOOR_PLAN_INCLUDE,
+      });
+      if (!found) {
+        throw new FloorPlanNotFoundError('Floor plan introuvable');
+      }
+      floorPlan = found as unknown as FloorPlanWithSections;
+    } else {
+      floorPlan = await this.getDefaultFloorPlan(restaurantId);
+    }
+
     const restaurant = await this.prisma.restaurant.findUnique({
       where: { id: restaurantId },
       select: { timezone: true },
@@ -475,12 +625,16 @@ export class FloorPlanService {
     });
   }
 
-  async createWall(restaurantId: string, input: CreateWallInput): Promise<Wall> {
-    const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
+  async createWall(
+    restaurantId: string,
+    input: CreateWallInput,
+    floorPlanId?: string,
+  ): Promise<Wall> {
+    const resolvedFloorPlanId = await this.resolveFloorPlanId(restaurantId, floorPlanId);
 
     return this.prisma.wall.create({
       data: {
-        floorPlanId: floorPlan.id,
+        floorPlanId: resolvedFloorPlanId,
         x1: input.x1,
         y1: input.y1,
         x2: input.x2,
@@ -491,10 +645,15 @@ export class FloorPlanService {
     });
   }
 
-  async updateWall(restaurantId: string, wallId: string, input: UpdateWallInput): Promise<Wall> {
-    const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
+  async updateWall(
+    restaurantId: string,
+    wallId: string,
+    input: UpdateWallInput,
+    floorPlanId?: string,
+  ): Promise<Wall> {
+    const resolvedFloorPlanId = await this.resolveFloorPlanId(restaurantId, floorPlanId);
     const wall = await this.prisma.wall.findFirst({
-      where: { id: wallId, floorPlanId: floorPlan.id },
+      where: { id: wallId, floorPlanId: resolvedFloorPlanId },
     });
     if (!wall) {
       throw new FloorPlanNotFoundError('Mur introuvable');
@@ -513,10 +672,10 @@ export class FloorPlanService {
     });
   }
 
-  async deleteWall(restaurantId: string, wallId: string): Promise<void> {
-    const floorPlan = await this.getOrCreateFloorPlan(restaurantId);
+  async deleteWall(restaurantId: string, wallId: string, floorPlanId?: string): Promise<void> {
+    const resolvedFloorPlanId = await this.resolveFloorPlanId(restaurantId, floorPlanId);
     const wall = await this.prisma.wall.findFirst({
-      where: { id: wallId, floorPlanId: floorPlan.id },
+      where: { id: wallId, floorPlanId: resolvedFloorPlanId },
     });
     if (!wall) {
       throw new FloorPlanNotFoundError('Mur introuvable');

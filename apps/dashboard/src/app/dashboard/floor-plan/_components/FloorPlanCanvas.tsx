@@ -1016,7 +1016,7 @@ type StatsPanelProps = {
   liveDate: string;
 };
 
-function StatsPanel({ reservations, allTables, tableStatuses, liveDate }: StatsPanelProps) {
+export function StatsPanel({ reservations, allTables, tableStatuses, liveDate }: StatsPanelProps) {
   const now = new Date();
   const stats = useMemo(() => {
     const activeTables = allTables.filter((t) => t.isActive);
@@ -1079,6 +1079,25 @@ function StatsPanel({ reservations, allTables, tableStatuses, liveDate }: StatsP
   }, [reservations, liveDate]);
 
   const maxSlotCovers = Math.max(1, ...forecast.map((s) => s.covers));
+
+  const { legacyUnseatedCount, legacyUnseatedExamples } = useMemo(() => {
+    const excluded = new Set(['CANCELLED', 'NO_SHOW']);
+    const matches = reservations.filter((r) => !excluded.has(r.state) && !r.tableId);
+    return {
+      legacyUnseatedCount: matches.length,
+      legacyUnseatedExamples: matches.slice(0, 3).map((r) => ({
+        id: r.id,
+        time: r.startsAt ? format(parseISO(r.startsAt), 'HH:mm', { locale: fr }) : '--:--',
+        customerName: r.customerName,
+        partySize: r.partySize,
+      })),
+    };
+  }, [reservations]);
+
+  const overCapacitySlots = useMemo(
+    () => forecast.filter((slot) => slot.covers > stats.totalCapacity),
+    [forecast, stats.totalCapacity],
+  );
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -1143,6 +1162,64 @@ function StatsPanel({ reservations, allTables, tableStatuses, liveDate }: StatsP
           </div>
         )}
       </div>
+
+      <Card className="mt-6">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            <AlertTriangle className="text-warning" size={16} />
+            Alertes
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {legacyUnseatedCount === 0 && overCapacitySlots.length === 0 ? (
+            <div className="flex items-center gap-2 text-sm text-success">
+              <CircleCheck size={16} />
+              Aucune alerte.
+            </div>
+          ) : (
+            <>
+              {legacyUnseatedCount > 0 && (
+                <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+                  <div className="flex items-center gap-2 font-medium">
+                    <AlertTriangle size={16} />
+                    {legacyUnseatedCount} réservation{legacyUnseatedCount > 1 ? 's' : ''} sans table
+                  </div>
+                  {legacyUnseatedExamples.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {legacyUnseatedExamples.map((item) => (
+                        <li key={item.id} className="text-xs">
+                          {item.time} ·{' '}
+                          {item.customerName
+                            ? `${item.customerName} · ${item.partySize} couverts`
+                            : `${item.partySize} couverts`}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+              {overCapacitySlots.length > 0 && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                  <div className="flex items-center gap-2 font-medium">
+                    <AlertTriangle size={16} />
+                    Surcapacité détectée
+                  </div>
+                  <ul className="mt-2 space-y-1">
+                    {overCapacitySlots.map((slot) => (
+                      <li key={slot.time} className="flex items-center justify-between text-xs">
+                        <span>{slot.time}</span>
+                        <Badge variant="destructive" className="text-[10px]">
+                          {slot.covers} / {stats.totalCapacity}
+                        </Badge>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -1286,9 +1363,11 @@ function ElapsedSince({ date, prefix }: { date: number; prefix: string }) {
 export function FloorPlanCanvas({
   orgId,
   mode = 'design',
+  floorPlanId,
 }: {
   orgId: string;
   mode?: 'service' | 'design';
+  floorPlanId?: string;
 }) {
   const { get, post, patch, del } = useApi();
   const getRef = useRef(get);
@@ -1411,14 +1490,17 @@ export function FloorPlanCanvas({
     setLoading(true);
     setError('');
     try {
-      const data = await getRef.current<FloorPlan>(`restaurants/${orgId}/floor-plan`);
+      const path = floorPlanId
+        ? `restaurants/${orgId}/floor-plans/${floorPlanId}`
+        : `restaurants/${orgId}/floor-plan`;
+      const data = await getRef.current<FloorPlan>(path);
       setFloorPlan(data);
     } catch (err) {
       setError(getErrorMessage(err, 'Impossible de charger le plan de salle'));
     } finally {
       setLoading(false);
     }
-  }, [orgId]);
+  }, [orgId, floorPlanId]);
 
   const pollAbortRef = useRef<AbortController | null>(null);
   const pollInFlightRef = useRef(false);
@@ -1435,8 +1517,11 @@ export function FloorPlanCanvas({
       pollInFlightRef.current = true;
       setError('');
       try {
+        const query = floorPlanId
+          ? `date=${liveDate}&floorPlanId=${floorPlanId}`
+          : `date=${liveDate}`;
         const data = await getRef.current<PlanningReservation[]>(
-          `restaurants/${orgId}/floor-plan/reservations?date=${liveDate}`,
+          `restaurants/${orgId}/floor-plan/reservations?${query}`,
           { signal: controller.signal },
         );
         if (pollAbortRef.current !== controller) return;
@@ -1453,7 +1538,7 @@ export function FloorPlanCanvas({
         }
       }
     },
-    [orgId, live, liveDate],
+    [orgId, live, liveDate, floorPlanId],
   );
 
   const updateReservationState = useCallback(
@@ -1516,8 +1601,9 @@ export function FloorPlanCanvas({
       if (!orgId) return;
       setSuggestedTable(null);
       try {
+        const query = floorPlanId ? `?floorPlanId=${floorPlanId}` : '';
         const res = await getRef.current<{ tableId: string | null; reason: string }>(
-          `restaurants/${orgId}/floor-plan/reservations/${reservationId}/suggest-table`,
+          `restaurants/${orgId}/floor-plan/reservations/${reservationId}/suggest-table${query}`,
         );
         if (res.tableId) setSuggestedTable({ tableId: res.tableId, reason: res.reason });
         else setError(res.reason || 'Aucune table disponible');
@@ -1525,7 +1611,7 @@ export function FloorPlanCanvas({
         setError(getErrorMessage(err, 'Impossible de suggérer une table'));
       }
     },
-    [orgId],
+    [orgId, floorPlanId],
   );
 
   const assignTable = useCallback(
@@ -1552,7 +1638,10 @@ export function FloorPlanCanvas({
     setSavingPlan(true);
     setError('');
     try {
-      const savedPlan = await getRef.current<FloorPlan>(`restaurants/${orgId}/floor-plan`);
+      const path = floorPlanId
+        ? `restaurants/${orgId}/floor-plans/${floorPlanId}`
+        : `restaurants/${orgId}/floor-plan`;
+      const savedPlan = await getRef.current<FloorPlan>(path);
       setFloorPlan(savedPlan);
       setPlanSaved(true);
     } catch (err) {
@@ -1767,7 +1856,7 @@ export function FloorPlanCanvas({
       setError('');
       const updated = await patch<FloorPlanTable>(
         `restaurants/${orgId}/floor-plan/tables/${tableId}`,
-        updates,
+        { ...updates, ...(floorPlanId ? { floorPlanId } : {}) },
       );
       setFloorPlan((prev) => (prev ? replaceTable(prev, updated) : prev));
     } catch (err) {
@@ -1784,6 +1873,7 @@ export function FloorPlanCanvas({
         selectedTables.map((table) =>
           patch<FloorPlanTable>(`restaurants/${orgId}/floor-plan/tables/${table.id}`, {
             capacity: Math.max(1, table.capacity + delta),
+            ...(floorPlanId ? { floorPlanId } : {}),
           }),
         ),
       );
@@ -1819,6 +1909,7 @@ export function FloorPlanCanvas({
       width: table.width ?? null,
       height: table.height ?? null,
       rotation: table.rotation ?? 0,
+      ...(floorPlanId ? { floorPlanId } : {}),
     });
     return created;
   }
@@ -1910,7 +2001,13 @@ export function FloorPlanCanvas({
     try {
       setError('');
       await Promise.all(
-        selectedTables.map((table) => del(`restaurants/${orgId}/floor-plan/tables/${table.id}`)),
+        selectedTables.map((table) =>
+          del(
+            `restaurants/${orgId}/floor-plan/tables/${table.id}${
+              floorPlanId ? `?floorPlanId=${floorPlanId}` : ''
+            }`,
+          ),
+        ),
       );
       setFloorPlan((prev) => {
         if (!prev) return prev;
@@ -2141,6 +2238,7 @@ export function FloorPlanCanvas({
             minCapacity,
             shape: form.shape,
             isActive: form.isActive,
+            ...(floorPlanId ? { floorPlanId } : {}),
           },
         );
         setFloorPlan((prev) => (prev ? replaceTable(prev, updated) : prev));
@@ -2158,6 +2256,7 @@ export function FloorPlanCanvas({
           shape: form.shape,
           positionX: x,
           positionY: y,
+          ...(floorPlanId ? { floorPlanId } : {}),
         });
         setFloorPlan((prev) => (prev ? replaceTable(prev, created) : prev));
       }
@@ -2175,7 +2274,11 @@ export function FloorPlanCanvas({
     setPendingDeleteTableId(null);
     try {
       setError('');
-      await del(`restaurants/${orgId}/floor-plan/tables/${tableId}`);
+      await del(
+        `restaurants/${orgId}/floor-plan/tables/${tableId}${
+          floorPlanId ? `?floorPlanId=${floorPlanId}` : ''
+        }`,
+      );
       setFloorPlan((prev) => (prev ? removeTable(prev, tableId) : prev));
     } catch (err) {
       setError(getErrorMessage(err, 'Impossible de supprimer la table'));
@@ -2194,7 +2297,7 @@ export function FloorPlanCanvas({
     try {
       const updated = await patch<FloorPlanWall>(
         `restaurants/${orgId}/floor-plan/walls/${wall.id}`,
-        { ...wall, type, name },
+        { ...wall, type, name, ...(floorPlanId ? { floorPlanId } : {}) },
       );
       setFloorPlan((prev) => {
         if (!prev) return prev;
@@ -2214,7 +2317,11 @@ export function FloorPlanCanvas({
     setError('');
     setPlanSaved(false);
     try {
-      await del(`restaurants/${orgId}/floor-plan/walls/${wallId}`);
+      await del(
+        `restaurants/${orgId}/floor-plan/walls/${wallId}${
+          floorPlanId ? `?floorPlanId=${floorPlanId}` : ''
+        }`,
+      );
       setFloorPlan((prev) => {
         if (!prev) return prev;
         return { ...prev, walls: (prev.walls ?? []).filter((w) => w.id !== wallId) };
@@ -2237,6 +2344,7 @@ export function FloorPlanCanvas({
         y2: Math.min(canvasHeight, wall.y2 + offset),
         type: wall.type,
         name: wall.name ? `${wall.name} copie` : null,
+        ...(floorPlanId ? { floorPlanId } : {}),
       });
       setFloorPlan((prev) =>
         prev ? { ...prev, walls: [...(prev.walls ?? []), duplicated] } : prev,
@@ -2285,7 +2393,10 @@ export function FloorPlanCanvas({
     setError('');
     setPlanSaved(false);
     try {
-      const updated = await patch<FloorPlan>(`restaurants/${orgId}/floor-plan`, {
+      const path = floorPlanId
+        ? `restaurants/${orgId}/floor-plans/${floorPlanId}`
+        : `restaurants/${orgId}/floor-plan`;
+      const updated = await patch<FloorPlan>(path, {
         name: floorSettings.name,
         width: floorSettings.width,
         height: floorSettings.height,
@@ -2795,6 +2906,7 @@ export function FloorPlanCanvas({
           {
             positionX: clampedX,
             positionY: clampedY,
+            ...(floorPlanId ? { floorPlanId } : {}),
           },
         );
         if (start.moveId !== tableMoveIdRef.current) return;
@@ -2854,6 +2966,7 @@ export function FloorPlanCanvas({
             capacity: data.capacity,
             shape: data.shape,
             name,
+            ...(floorPlanId ? { floorPlanId } : {}),
           });
           setFloorPlan((prev) => (prev ? replaceTable(prev, created) : prev));
         } catch (err) {
@@ -2925,6 +3038,7 @@ export function FloorPlanCanvas({
             y2,
             type: data.type as WallType,
             name: null,
+            ...(floorPlanId ? { floorPlanId } : {}),
           });
           setFloorPlan((prev) => (prev ? { ...prev, walls: [...(prev.walls ?? []), wall] } : prev));
         } catch (err) {

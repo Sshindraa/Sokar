@@ -30,7 +30,11 @@ export type AuditEvent =
   | 'consent_recorded'
   | 'opt_in_changed'
   | 'exposure_settings_changed'
-  | 'rgpd_erasure';
+  | 'rgpd_erasure'
+  | 'waiting_list_created'
+  | 'waiting_list_cancelled'
+  | 'waiting_list_cancelled_by_staff'
+  | 'waiting_list_promoted';
 
 export class AuditLogService {
   constructor(private readonly prisma: PrismaClient) {}

@@ -11,11 +11,12 @@
  * - Phase 4: createWalkIn is atomic under concurrency — a P2002 on
  *   the partial unique index (idempotency_scope+key) returns the
  *   existing reservation id instead of throwing / double-inserting.
+ * - P3: multi-floor-plan list and create.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Prisma } from '@prisma/client';
 import { FloorPlanService } from '../floor-plan.service';
-import { TableAllocationService, TableAllocationError } from '../table-allocation.service';
+import { TableAllocationService, TableAllocationError } from '../table-allocation.service.js';
 
 function makePrismaMock() {
   const table = { findFirst: vi.fn() };
@@ -28,9 +29,13 @@ function makePrismaMock() {
   const reservationAuditLog = { findMany: vi.fn(), create: vi.fn() };
   const restaurant = { findUnique: vi.fn() };
   const floorPlan = {
-    findUnique: vi.fn().mockResolvedValue({ id: 'fp-1', tables: [], sections: [] }),
+    findFirst: vi.fn().mockResolvedValue({ id: 'fp-1', tables: [], sections: [], walls: [] }),
+    findUnique: vi.fn(),
+    findMany: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
+    delete: vi.fn(),
   };
 
   const prisma: any = {
@@ -40,7 +45,7 @@ function makePrismaMock() {
     restaurant,
     floorPlan,
     $transaction: vi.fn(async (fn: any) =>
-      fn({ table, reservation, reservationAuditLog, restaurant }),
+      fn({ table, reservation, reservationAuditLog, restaurant, floorPlan }),
     ),
   };
   return { prisma, table, reservation, reservationAuditLog, restaurant, floorPlan };
@@ -190,6 +195,87 @@ describe('FloorPlanService', () => {
           idempotencyKey: 'k-err',
         }),
       ).rejects.toThrow('DB down');
+    });
+  });
+
+  describe('Multi floor plan', () => {
+    it('listFloorPlans retourne la liste des plans avec le compte de tables', async () => {
+      mocks.floorPlan.findMany.mockResolvedValue([
+        {
+          id: 'fp-1',
+          name: 'Salle principale',
+          isDefault: true,
+          isActive: true,
+          _count: { tables: 4 },
+        },
+        {
+          id: 'fp-2',
+          name: 'Terrasse',
+          isDefault: false,
+          isActive: true,
+          _count: { tables: 2 },
+        },
+      ]);
+
+      const out = await svc.listFloorPlans('rest-1');
+
+      expect(out).toHaveLength(2);
+      expect(out[0]).toEqual({
+        id: 'fp-1',
+        name: 'Salle principale',
+        isDefault: true,
+        isActive: true,
+        tableCount: 4,
+      });
+      expect(out[1]).toEqual({
+        id: 'fp-2',
+        name: 'Terrasse',
+        isDefault: false,
+        isActive: true,
+        tableCount: 2,
+      });
+    });
+
+    it('createFloorPlan crée un deuxième plan et désactive les autres defaults si demandé', async () => {
+      mocks.floorPlan.updateMany.mockResolvedValue({ count: 1 });
+      mocks.floorPlan.create.mockResolvedValue({
+        id: 'fp-2',
+        name: 'Terrasse',
+        isDefault: true,
+        isActive: true,
+        restaurantId: 'rest-1',
+      });
+
+      const out = await svc.createFloorPlan('rest-1', { name: 'Terrasse', isDefault: true });
+
+      expect(mocks.floorPlan.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { restaurantId: 'rest-1', isDefault: true },
+          data: { isDefault: false },
+        }),
+      );
+      const createArg = mocks.floorPlan.create.mock.calls[0][0];
+      expect(createArg.data.name).toBe('Terrasse');
+      expect(createArg.data.isDefault).toBe(true);
+      expect(out.id).toBe('fp-2');
+    });
+
+    it('createFloorPlan sans isDefault crée un plan non-default', async () => {
+      mocks.floorPlan.updateMany.mockResolvedValue({ count: 0 });
+      mocks.floorPlan.create.mockResolvedValue({
+        id: 'fp-3',
+        name: 'Jardin',
+        isDefault: false,
+        isActive: true,
+        restaurantId: 'rest-1',
+      });
+
+      const out = await svc.createFloorPlan('rest-1', { name: 'Jardin' });
+
+      expect(mocks.floorPlan.updateMany).not.toHaveBeenCalled();
+      const createArg = mocks.floorPlan.create.mock.calls[0][0];
+      expect(createArg.data.isDefault).toBe(false);
+      expect(out.id).toBe('fp-3');
     });
   });
 });

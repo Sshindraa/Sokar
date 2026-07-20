@@ -14,10 +14,8 @@
  */
 
 import { Prisma } from '@prisma/client';
-import type { PrismaClient, Table, Reservation, AgenticHold } from '@prisma/client';
+import type { PrismaClient, Table, Reservation } from '@prisma/client';
 import type { AllocateTableInput, TableAvailabilityCheck } from './floor-plan.types';
-
-const BLOCKING_RESERVATION_STATES: Reservation['state'][] = ['PENDING', 'CONFIRMED', 'SEATED'];
 
 export class TableAllocationService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -33,38 +31,46 @@ export class TableAllocationService {
   ): Promise<Table | null> {
     const prisma = tx ?? this.prisma;
 
-    const floorPlan = await prisma.floorPlan.findUnique({
-      where: { restaurantId: input.restaurantId },
-      select: { id: true },
-    });
-    if (!floorPlan) {
-      return null;
-    }
+    let tables: Table[] = [];
 
-    const tables = await prisma.table.findMany({
-      where: {
-        floorPlanId: floorPlan.id,
-        isActive: true,
-        capacity: { gte: input.partySize },
-        minCapacity: { lte: input.partySize },
-        ...(input.excludeTableIds && input.excludeTableIds.length > 0
-          ? { id: { notIn: input.excludeTableIds } }
-          : {}),
-      },
-      include: { section: true },
-      orderBy: [{ capacity: 'asc' }, { minCapacity: 'asc' }, { name: 'asc' }],
-    });
-
-    // 1. Essayer la section préférée
-    let candidates = tables;
     if (input.preferredSectionId) {
-      const preferred = tables.filter((t) => t.sectionId === input.preferredSectionId);
-      if (preferred.length > 0) {
-        candidates = preferred;
+      tables = await prisma.table.findMany({
+        where: {
+          sectionId: input.preferredSectionId,
+          isActive: true,
+          floorPlan: { isActive: true },
+          capacity: { gte: input.partySize },
+          minCapacity: { lte: input.partySize },
+          ...(input.excludeTableIds && input.excludeTableIds.length > 0
+            ? { id: { notIn: input.excludeTableIds } }
+            : {}),
+        },
+        orderBy: [{ capacity: 'asc' }, { minCapacity: 'asc' }, { name: 'asc' }],
+      });
+    } else {
+      const floorPlan = await prisma.floorPlan.findFirst({
+        where: { restaurantId: input.restaurantId, isActive: true, isDefault: true },
+        select: { id: true },
+      });
+      if (!floorPlan) {
+        return null;
       }
+
+      tables = await prisma.table.findMany({
+        where: {
+          floorPlanId: floorPlan.id,
+          isActive: true,
+          capacity: { gte: input.partySize },
+          minCapacity: { lte: input.partySize },
+          ...(input.excludeTableIds && input.excludeTableIds.length > 0
+            ? { id: { notIn: input.excludeTableIds } }
+            : {}),
+        },
+        orderBy: [{ capacity: 'asc' }, { minCapacity: 'asc' }, { name: 'asc' }],
+      });
     }
 
-    for (const table of candidates) {
+    for (const table of tables) {
       // Verrouiller la ligne table pour éviter l'allocation concurrente.
       // SKIP LOCKED permet de passer à la candidate suivante si déjà verrouillée.
       // En mode lecture seule (dry-run), on saute le verrouillage pessimiste
@@ -104,12 +110,12 @@ export class TableAllocationService {
     check: TableAvailabilityCheck,
     tx?: Prisma.TransactionClient,
   ): Promise<boolean> {
-    const [conflictingReservation, conflictingHold] = await Promise.all([
-      this.findConflictingReservation(check, tx),
-      this.findConflictingHold(check, tx),
+    const [hasReservationConflict, hasHoldConflict] = await Promise.all([
+      this.hasConflictingReservation(check, tx),
+      this.hasConflictingHold(check, tx),
     ]);
 
-    return !conflictingReservation && !conflictingHold;
+    return !hasReservationConflict && !hasHoldConflict;
   }
 
   /**
@@ -252,35 +258,53 @@ export class TableAllocationService {
     }
   }
 
-  private async findConflictingReservation(
+  private async hasConflictingReservation(
     check: TableAvailabilityCheck,
     tx?: Prisma.TransactionClient,
-  ): Promise<Reservation | null> {
+  ): Promise<boolean> {
     const prisma = tx ?? this.prisma;
-    return prisma.reservation.findFirst({
-      where: {
-        tableId: check.tableId,
-        state: { in: BLOCKING_RESERVATION_STATES },
-        ...(check.excludeReservationId ? { id: { not: check.excludeReservationId } } : {}),
-        AND: [{ startsAt: { lt: check.endsAt } }, { endsAt: { gt: check.startsAt } }],
-      },
-    });
+    const excludeClause = check.excludeReservationId
+      ? Prisma.sql`AND id != ${check.excludeReservationId}`
+      : Prisma.empty;
+    const rows = await prisma.$queryRaw<Array<{ exists: number }>>(
+      Prisma.sql`
+        SELECT 1 as exists
+        FROM reservations
+        WHERE table_id = ${check.tableId}
+          AND state IN ('PENDING', 'CONFIRMED', 'SEATED')
+          AND starts_at IS NOT NULL
+          AND ends_at IS NOT NULL
+          AND tsrange(starts_at, ends_at) && tsrange(${check.startsAt}, ${check.endsAt})
+          ${excludeClause}
+        LIMIT 1
+      `,
+    );
+    return rows.length > 0 && Number(rows[0].exists) === 1;
   }
 
-  private async findConflictingHold(
+  private async hasConflictingHold(
     check: TableAvailabilityCheck,
     tx?: Prisma.TransactionClient,
-  ): Promise<AgenticHold | null> {
+  ): Promise<boolean> {
     const prisma = tx ?? this.prisma;
-    return prisma.agenticHold.findFirst({
-      where: {
-        tableId: check.tableId,
-        status: 'ACTIVE',
-        expiresAt: { gt: new Date() },
-        ...(check.excludeHoldId ? { id: { not: check.excludeHoldId } } : {}),
-        AND: [{ slotStart: { lt: check.endsAt } }, { slotEnd: { gt: check.startsAt } }],
-      },
-    });
+    const excludeClause = check.excludeHoldId
+      ? Prisma.sql`AND id != ${check.excludeHoldId}`
+      : Prisma.empty;
+    const rows = await prisma.$queryRaw<Array<{ exists: number }>>(
+      Prisma.sql`
+        SELECT 1 as exists
+        FROM agentic_holds
+        WHERE table_id = ${check.tableId}
+          AND status = 'ACTIVE'
+          AND expires_at > NOW()
+          AND slot_start IS NOT NULL
+          AND slot_end IS NOT NULL
+          AND tsrange(slot_start, slot_end) && tsrange(${check.startsAt}, ${check.endsAt})
+          ${excludeClause}
+        LIMIT 1
+      `,
+    );
+    return rows.length > 0 && Number(rows[0].exists) === 1;
   }
 
   /**

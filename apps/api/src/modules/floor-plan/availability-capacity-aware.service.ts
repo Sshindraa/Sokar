@@ -125,14 +125,6 @@ export class CapacityAwareAvailabilityService {
     const dayStart = zonedTimeToUtc(args.date, '00:00', timeZone);
     const dayEnd = zonedTimeToUtc(args.date, '23:59:59.999', timeZone);
 
-    const floorPlan = await this.prisma.floorPlan.findUnique({
-      where: { restaurantId: args.restaurantId },
-      select: { id: true },
-    });
-    if (!floorPlan) {
-      return emptyAvailability(args);
-    }
-
     const [reservations, holds, tables] = await Promise.all([
       this.prisma.reservation.findMany({
         where: {
@@ -153,14 +145,24 @@ export class CapacityAwareAvailabilityService {
         },
         select: { tableId: true, slotStart: true, slotEnd: true },
       }),
-      this.prisma.table.findMany({
-        where: {
-          floorPlanId: floorPlan.id,
-          isActive: true,
-          capacity: { gte: args.partySize },
-        },
-        select: { id: true, capacity: true, minCapacity: true, sectionId: true },
-      }),
+      args.preferredSectionId
+        ? this.prisma.table.findMany({
+            where: {
+              sectionId: args.preferredSectionId,
+              isActive: true,
+              floorPlan: { restaurantId: args.restaurantId, isActive: true },
+              capacity: { gte: args.partySize },
+            },
+            select: { id: true, capacity: true, minCapacity: true, sectionId: true },
+          })
+        : this.prisma.table.findMany({
+            where: {
+              isActive: true,
+              floorPlan: { restaurantId: args.restaurantId, isActive: true },
+              capacity: { gte: args.partySize },
+            },
+            select: { id: true, capacity: true, minCapacity: true, sectionId: true },
+          }),
     ]);
 
     const busyByTable = new Map<string, Array<{ start: Date; end: Date }>>();
@@ -188,13 +190,7 @@ export class CapacityAwareAvailabilityService {
           return !busy.some((b) => overlaps(b.start, b.end, slotStart, slotEnd));
         });
 
-      let available = false;
-      if (args.preferredSectionId) {
-        const preferredTables = tables.filter((t) => t.sectionId === args.preferredSectionId);
-        available = hasAvailableTable(preferredTables) || hasAvailableTable(tables);
-      } else {
-        available = hasAvailableTable(tables);
-      }
+      const available = hasAvailableTable(tables);
 
       return { time, available };
     });

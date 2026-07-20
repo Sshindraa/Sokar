@@ -42,9 +42,10 @@ model Restaurant {
   personality           AgentPersonality?
   callQuotas            CallQuota[]
   agenticHolds          AgenticHold[]
-  floorPlan             FloorPlan?
+  floorPlans            FloorPlan[]
   giftCards             GiftCard[]
   giftCardPacks         GiftCardPack[]
+  waitingListEntries    WaitingListEntry[]
   giftCardMinimumAmount Int?                      @map("gift_card_minimum_amount")
   giftCardCommissionRate Decimal  @default(0.05) @map("gift_card_commission_rate") @db.Decimal(5, 4)
 
@@ -110,10 +111,12 @@ model RestaurantImage {
 
 model FloorPlan {
   id           String     @id @default(uuid())
-  restaurantId String     @unique @map("restaurant_id")
+  restaurantId String     @map("restaurant_id")
   name         String     @default("Salle principale")
   width        Int        @default(1400) @map("width")
   height       Int        @default(900) @map("height")
+  isDefault    Boolean    @default(true) @map("is_default")
+  isActive     Boolean    @default(true) @map("is_active")
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   sections     Section[]
   tables       Table[]
@@ -121,6 +124,8 @@ model FloorPlan {
   createdAt    DateTime   @default(now()) @map("created_at")
   updatedAt    DateTime   @updatedAt @map("updated_at")
 
+  @@index([restaurantId, isDefault])
+  @@index([restaurantId, isActive])
   @@map("floor_plans")
 }
 
@@ -148,6 +153,7 @@ model Section {
   position    Int       @default(0)
   floorPlan   FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
   tables      Table[]
+  waitingListEntries WaitingListEntry[]
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
 
@@ -215,6 +221,7 @@ model Reservation {
   partySize        Int               @map("party_size")
   customerName     String            @map("customer_name")
   customerPhone    String?           @map("customer_phone")
+  customerEmail    String?           @map("customer_email")
   status           ReservationStatus @default(CONFIRMED)
   estimatedRevenue Decimal?          @map("estimated_revenue") @db.Decimal(10, 2)
   confirmedRevenue Decimal?          @map("confirmed_revenue") @db.Decimal(10, 2)
@@ -254,6 +261,9 @@ model Reservation {
   // Floor plan (P1)
   tableId String? @map("table_id")
   table   Table?  @relation(fields: [tableId], references: [id], onDelete: SetNull)
+
+  // Waiting list (P3.2)
+  promotedFromWaitingList WaitingListEntry?
 
   // Gift cards (P1)
   giftCardRedemptions GiftCardRedemption[]
@@ -460,6 +470,14 @@ enum NoiseLevel {
   ANIME
 }
 
+// Waiting list (P3.2)
+enum WaitingListStatus {
+  PENDING
+  PROMOTED
+  CANCELLED
+  EXPIRED
+}
+
 // Agentic reservations models (P0)
 model AgenticHold {
   id            String             @id @default(uuid())
@@ -488,6 +506,40 @@ model AgenticHold {
   @@index([status, expiresAt])
   @@index([tableId, slotStart])
   @@map("agentic_holds")
+}
+
+// Waiting list (P3.2)
+model WaitingListEntry {
+  id                      String            @id @default(uuid())
+  restaurantId            String            @map("restaurant_id")
+  partySize               Int               @map("party_size")
+  customerFirstName       String            @map("customer_first_name")
+  customerLastName        String?           @map("customer_last_name")
+  customerPhone           String            @map("customer_phone")
+  customerPhoneNormalized String            @map("customer_phone_normalized")
+  customerEmail           String?           @map("customer_email")
+  source                  String?           @map("source")
+  slotStart               DateTime          @map("slot_start")
+  slotEnd                 DateTime          @map("slot_end")
+  preferredSectionId      String?           @map("preferred_section_id")
+  status                  WaitingListStatus @default(PENDING) @map("status")
+  position                Int               @default(0) @map("position")
+  actionTokenHash         String            @unique @map("action_token_hash")
+  promotedReservationId   String?           @unique @map("promoted_reservation_id")
+  expiresAt               DateTime          @map("expires_at")
+  promotedAt              DateTime?         @map("promoted_at")
+  cancelledAt             DateTime?         @map("cancelled_at")
+  createdAt               DateTime          @default(now()) @map("created_at")
+  updatedAt               DateTime          @updatedAt @map("updated_at")
+
+  restaurant              Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  preferredSection        Section?          @relation(fields: [preferredSectionId], references: [id], onDelete: SetNull)
+  promotedReservation     Reservation?      @relation(fields: [promotedReservationId], references: [id], onDelete: SetNull)
+
+  @@index([restaurantId, status, slotStart, createdAt])
+  @@index([restaurantId, customerPhoneNormalized])
+  @@index([expiresAt])
+  @@map("waiting_list_entries")
 }
 
 model ReservationAuditLog {

@@ -20,7 +20,12 @@
  */
 
 import { Prisma } from '@prisma/client';
-import type { PrismaClient, ReservationState, ReservationStatus } from '@prisma/client';
+import type {
+  PrismaClient,
+  Reservation,
+  ReservationState,
+  ReservationStatus,
+} from '@prisma/client';
 import { AuditLogService } from './audit-log.service.js';
 import { logger } from '../../../shared/logger/pino';
 import {
@@ -39,6 +44,7 @@ import {
 } from './state-machine.js';
 import { GiftCardService } from '../../gift-cards/gift-card.service.js';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
+import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service.js';
 import type { GiftCardApplicationResult } from '../../gift-cards/gift-card.types.js';
 import {
   IDEMPOTENCY_POLL_INTERVAL_MS,
@@ -537,24 +543,24 @@ export class ReservationService {
     actor: string;
     reason?: string;
   }): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      const reservation = await tx.reservation.findUnique({
+    const reservation = await this.prisma.$transaction<Reservation>(async (tx) => {
+      const row = await tx.reservation.findUnique({
         where: { id: args.reservationId },
       });
-      if (!reservation) throw new ReservationNotFoundError(args.reservationId);
+      if (!row) throw new ReservationNotFoundError(args.reservationId);
 
-      const fromState = reservation.state as ReservationState;
-      assertCanTransition(fromState, 'CANCELLED', reservation);
+      const fromState = row.state as ReservationState;
+      assertCanTransition(fromState, 'CANCELLED', row);
 
       await tx.reservation.update({
-        where: { id: reservation.id },
+        where: { id: row.id },
         data: { state: 'CANCELLED', status: 'CANCELLED' },
       });
 
       // Libérer le hold si encore actif
-      if (reservation.consumedHoldId) {
+      if (row.consumedHoldId) {
         const hold = await tx.agenticHold.findUnique({
-          where: { id: reservation.consumedHoldId },
+          where: { id: row.consumedHoldId },
         });
         if (hold && hold.status === 'CONSUMED') {
           // Le hold est déjà consommé, on log juste l'événement
@@ -562,7 +568,7 @@ export class ReservationService {
             data: {
               event: 'hold_released',
               holdId: hold.id,
-              reservationId: reservation.id,
+              reservationId: row.id,
               actor: args.actor,
               metadata: { reason: 'reservation_cancelled' },
             },
@@ -573,14 +579,18 @@ export class ReservationService {
       await tx.reservationAuditLog.create({
         data: {
           event: 'reservation_cancelled',
-          reservationId: reservation.id,
+          reservationId: row.id,
           actor: args.actor,
           fromState,
           toState: 'CANCELLED',
           metadata: (args.reason ? { reason: args.reason } : {}) as Prisma.InputJsonValue,
         },
       });
+
+      return row;
     });
+
+    await CapacityAwareAvailabilityService.invalidateAvailability(reservation.restaurantId);
   }
 
   private eventForTransition(to: ReservationState): string {

@@ -20,13 +20,19 @@
  * (cf. apps/connect/src/components/booking/).
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { fetchWithTimeout } from '@sokar/shared';
 import { PartySizePicker } from './booking/party-size-picker';
 import { SlotGrid } from './booking/slot-grid';
 import { CustomerForm } from './booking/customer-form';
 import { ConfirmationView, type ConfirmDto } from './booking/confirmation-view';
 import { trackEvent } from '@/lib/tracking';
+import {
+  joinWaitingList,
+  cancelWaitingListEntry,
+  type JoinWaitingListResponse,
+  PublicApiError,
+} from '@/lib/api-client';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -95,6 +101,16 @@ export function BookingWidget({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmResult, setConfirmResult] = useState<ConfirmDto | null>(null);
+  const [waitingListOffer, setWaitingListOffer] = useState<{
+    date: string;
+    time: string;
+    partySize: number;
+    preferredSectionId: string;
+  } | null>(null);
+  const [showWaitingListForm, setShowWaitingListForm] = useState(false);
+  const [waitingListResult, setWaitingListResult] = useState<JoinWaitingListResponse | null>(null);
+  const [waitingListLastName, setWaitingListLastName] = useState<string>('');
+  const [waitingListCancelled, setWaitingListCancelled] = useState(false);
   // Idempotency key générée une fois par tentative de réservation (pas à chaque submit)
   const [idempotencyKey, setIdempotencyKey] = useState<string>('');
 
@@ -150,6 +166,9 @@ export function BookingWidget({
     setError(null);
     setSlots([]);
     setSelectedTime(null);
+    setWaitingListOffer(null);
+    setShowWaitingListForm(false);
+    setWaitingListResult(null);
     try {
       const sectionParam = preferredSectionId ? `&preferredSectionId=${preferredSectionId}` : '';
       const res = await fetchWithTimeout(
@@ -224,6 +243,11 @@ export function BookingWidget({
       });
       if (!holdRes.ok) {
         const data = await holdRes.json().catch(() => ({}));
+        if (holdRes.status === 409 && data.waitingListEnabled === true) {
+          setWaitingListOffer({ date, time: selectedTime, partySize, preferredSectionId });
+          setError(null);
+          return;
+        }
         setError(data.error || 'Créneau déjà réservé. Choisissez un autre horaire.');
         return;
       }
@@ -293,6 +317,105 @@ export function BookingWidget({
     }
   }
 
+  const backToSlots = useCallback(() => {
+    setStep('pick');
+    setSelectedTime(null);
+    setWaitingListOffer(null);
+    setShowWaitingListForm(false);
+    setWaitingListResult(null);
+    setWaitingListCancelled(false);
+    setError(null);
+  }, []);
+
+  async function handleJoinWaitingList(e: React.FormEvent) {
+    e.preventDefault();
+    if (!waitingListOffer) return;
+    if (!firstName.trim()) {
+      setError('Veuillez renseigner votre prénom');
+      return;
+    }
+    if (!/^\+[1-9]\d{7,14}$/.test(phone)) {
+      setError('Numéro de téléphone invalide (format international +33...)');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setWaitingListCancelled(false);
+    try {
+      const result = await joinWaitingList({
+        slug,
+        date: waitingListOffer.date,
+        time: waitingListOffer.time,
+        partySize: waitingListOffer.partySize,
+        customer: {
+          firstName: firstName.trim(),
+          lastName: waitingListLastName.trim() || undefined,
+          phone: phone.trim(),
+          ...(email.trim() ? { email: email.trim() } : {}),
+        },
+        preferredSectionId: waitingListOffer.preferredSectionId || undefined,
+        source,
+      });
+      setWaitingListResult(result);
+      setStep('done');
+      setShowWaitingListForm(false);
+      setWaitingListOffer(null);
+    } catch (err) {
+      if (err instanceof PublicApiError && err.code === 'slot_now_available') {
+        setWaitingListOffer(null);
+        setShowWaitingListForm(false);
+        setError('Une table vient de se libérer, veuillez réessayer la réservation.');
+        return;
+      }
+      if (err instanceof PublicApiError && err.code === 'waiting_list_full') {
+        setError("La file d'attente est complète pour ce créneau.");
+        return;
+      }
+      if (err instanceof PublicApiError) {
+        setError(err.message || "Impossible de rejoindre la file d'attente.");
+        return;
+      }
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError('La requête a expiré. Vérifiez votre connexion et réessayez.');
+      } else {
+        setError('Erreur réseau. Vérifiez votre connexion et réessayez.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCancelWaitingList() {
+    if (!waitingListResult) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await cancelWaitingListEntry({
+        slug,
+        entryId: waitingListResult.entryId,
+        token: waitingListResult.actionToken,
+      });
+      setWaitingListCancelled(true);
+    } catch (err) {
+      if (err instanceof PublicApiError && err.code === 'already_promoted') {
+        setError('Votre inscription a déjà été promue en réservation.');
+      } else if (err instanceof PublicApiError) {
+        setError(err.message || "Impossible d'annuler l'inscription.");
+      } else if (err instanceof DOMException && err.name === 'AbortError') {
+        setError('La requête a expiré. Vérifiez votre connexion et réessayez.');
+      } else {
+        setError('Erreur réseau. Vérifiez votre connexion et réessayez.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const waitingListSectionName = useMemo(() => {
+    if (!waitingListOffer?.preferredSectionId || !restaurant) return undefined;
+    return restaurant.sections.find((s) => s.id === waitingListOffer.preferredSectionId)?.name;
+  }, [restaurant, waitingListOffer]);
+
   const widgetStyle = {
     '--widget-primary': primaryColor,
     '--widget-accent': accentColor,
@@ -301,57 +424,271 @@ export function BookingWidget({
 
   return (
     <div style={widgetStyle}>
-      {step === 'done' && confirmResult ? (
-        <ConfirmationView result={confirmResult} slug={slug} embedded={embedded} />
+      {step === 'done' ? (
+        confirmResult ? (
+          <ConfirmationView result={confirmResult} slug={slug} embedded={embedded} />
+        ) : waitingListResult ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-xl border border-border bg-cream p-6"
+          >
+            <h2 className="text-xl font-semibold text-[var(--widget-primary)]">
+              Liste d&apos;attente
+            </h2>
+            {!waitingListCancelled ? (
+              <>
+                <p className="mt-3 text-[var(--widget-primary)]">
+                  Vous êtes en liste d&apos;attente (position indicative :{' '}
+                  <strong>{waitingListResult.position}</strong>). Un e-mail/SMS vous préviendra si
+                  une place se libère.
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Pour annuler, conservez ce token :{' '}
+                  <code className="rounded bg-muted px-1 py-0.5 text-xs">
+                    {waitingListResult.actionToken}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (navigator.clipboard?.writeText) {
+                        navigator.clipboard
+                          .writeText(waitingListResult.actionToken)
+                          .catch(() => {});
+                      }
+                    }}
+                    className="ml-2 text-sm font-medium underline-offset-2 transition-all duration-200 hover:underline"
+                    style={{ color: accentColor }}
+                  >
+                    Copier
+                  </button>
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCancelWaitingList}
+                  disabled={loading}
+                  className="mt-4 inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-2 text-sm font-semibold text-[var(--widget-primary)] transition-all duration-200 hover:bg-muted disabled:opacity-50"
+                >
+                  {loading ? 'Annulation...' : 'Annuler mon inscription'}
+                </button>
+                {error && <p className="mt-2 text-sm text-red-700">{error}</p>}
+              </>
+            ) : (
+              <p className="mt-3 text-[var(--widget-primary)]">Votre inscription a été annulée.</p>
+            )}
+          </div>
+        ) : waitingListCancelled ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-xl border border-border bg-cream p-6"
+          >
+            <h2 className="text-xl font-semibold text-[var(--widget-primary)]">
+              Inscription annulée
+            </h2>
+            <p className="mt-3 text-[var(--widget-primary)]">Votre inscription a été annulée.</p>
+          </div>
+        ) : null
       ) : step === 'confirm' && selectedTime ? (
-        <form onSubmit={handleConfirm} className="space-y-4">
-          <div className="rounded-xl border border-border bg-cream p-4">
-            <p className="text-sm text-[var(--widget-primary)]">
-              <strong>{partySize}</strong> personne{partySize > 1 ? 's' : ''} ·{' '}
-              <strong>{date}</strong> à <strong>{selectedTime}</strong>
-            </p>
-          </div>
+        waitingListOffer ? (
+          showWaitingListForm ? (
+            <form onSubmit={handleJoinWaitingList} className="space-y-4">
+              <div className="rounded-xl border border-border bg-cream p-4">
+                <p className="text-sm text-[var(--widget-primary)]">
+                  <strong>{waitingListOffer.partySize}</strong> personne
+                  {waitingListOffer.partySize > 1 ? 's' : ''} ·{' '}
+                  <strong>{waitingListOffer.date}</strong> à{' '}
+                  <strong>{waitingListOffer.time}</strong>
+                </p>
+                {waitingListSectionName && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Préférence de section : {waitingListSectionName}
+                  </p>
+                )}
+              </div>
 
-          <CustomerForm
-            firstName={firstName}
-            setFirstName={setFirstName}
-            phone={phone}
-            setPhone={setPhone}
-            email={email}
-            setEmail={setEmail}
-            specialRequests={specialRequests}
-            setSpecialRequests={setSpecialRequests}
-            honeypot={honeypot}
-            setHoneypot={setHoneypot}
-          />
+              <div>
+                <label
+                  htmlFor="wl-firstName"
+                  className="block text-sm font-medium text-[var(--widget-primary)]"
+                >
+                  Prénom *
+                </label>
+                <input
+                  id="wl-firstName"
+                  type="text"
+                  required
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[var(--widget-primary)] focus:border-[var(--widget-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--widget-accent)]"
+                  autoComplete="given-name"
+                  maxLength={100}
+                />
+              </div>
 
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {error}
+              <div>
+                <label
+                  htmlFor="wl-lastName"
+                  className="block text-sm font-medium text-[var(--widget-primary)]"
+                >
+                  Nom <span className="font-normal text-muted-foreground">(optionnel)</span>
+                </label>
+                <input
+                  id="wl-lastName"
+                  type="text"
+                  value={waitingListLastName}
+                  onChange={(e) => setWaitingListLastName(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[var(--widget-primary)] focus:border-[var(--widget-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--widget-accent)]"
+                  autoComplete="family-name"
+                  maxLength={100}
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="wl-phone"
+                  className="block text-sm font-medium text-[var(--widget-primary)]"
+                >
+                  Téléphone *
+                </label>
+                <span id="wl-phone-hint" className="mt-0.5 block font-normal text-muted-foreground">
+                  format international
+                </span>
+                <input
+                  id="wl-phone"
+                  type="tel"
+                  required
+                  aria-describedby="wl-phone-hint"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+33612345678"
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[var(--widget-primary)] focus:border-[var(--widget-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--widget-accent)]"
+                  autoComplete="tel"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="wl-email"
+                  className="block text-sm font-medium text-[var(--widget-primary)]"
+                >
+                  Email <span className="font-normal text-muted-foreground">(optionnel)</span>
+                </label>
+                <input
+                  id="wl-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[var(--widget-primary)] focus:border-[var(--widget-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--widget-accent)]"
+                  autoComplete="email"
+                />
+              </div>
+
+              {error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3 sm:flex-row-reverse">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="inline-flex flex-1 items-center justify-center rounded-lg bg-[var(--widget-accent)] px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+                >
+                  {loading ? 'Inscription...' : "Confirmer l'inscription"}
+                </button>
+                <button
+                  type="button"
+                  onClick={backToSlots}
+                  disabled={loading}
+                  className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-3 text-base font-semibold text-[var(--widget-primary)] transition-all duration-200 hover:bg-muted disabled:opacity-50"
+                >
+                  ← Changer d’horaire
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="rounded-xl border border-border bg-cream p-6">
+              <p className="text-[var(--widget-primary)]">
+                Ce créneau est complet. Souhaitez-vous rejoindre la file d&apos;attente ? Vous serez
+                contacté si une place se libère.
+              </p>
+              {waitingListSectionName && (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Préférence de section : {waitingListSectionName}
+                </p>
+              )}
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row-reverse">
+                <button
+                  type="button"
+                  onClick={() => setShowWaitingListForm(true)}
+                  disabled={loading}
+                  className="inline-flex flex-1 items-center justify-center rounded-lg bg-[var(--widget-accent)] px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+                >
+                  Rejoindre la file d&apos;attente
+                </button>
+                <button
+                  type="button"
+                  onClick={backToSlots}
+                  disabled={loading}
+                  className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-3 text-base font-semibold text-[var(--widget-primary)] transition-all duration-200 hover:bg-muted disabled:opacity-50"
+                >
+                  ← Changer d’horaire
+                </button>
+              </div>
             </div>
-          )}
+          )
+        ) : (
+          <form onSubmit={handleConfirm} className="space-y-4">
+            <div className="rounded-xl border border-border bg-cream p-4">
+              <p className="text-sm text-[var(--widget-primary)]">
+                <strong>{partySize}</strong> personne{partySize > 1 ? 's' : ''} ·{' '}
+                <strong>{date}</strong> à <strong>{selectedTime}</strong>
+              </p>
+            </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row-reverse">
-            <button
-              type="submit"
-              disabled={loading}
-              className="inline-flex flex-1 items-center justify-center rounded-lg bg-[var(--widget-accent)] px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
-            >
-              {loading ? 'Réservation...' : 'Confirmer la réservation'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setStep('pick');
-                setError(null);
-              }}
-              disabled={loading}
-              className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-3 text-base font-semibold text-[var(--widget-primary)] transition-all duration-200 hover:bg-muted disabled:opacity-50"
-            >
-              ← Changer d’horaire
-            </button>
-          </div>
-        </form>
+            <CustomerForm
+              firstName={firstName}
+              setFirstName={setFirstName}
+              phone={phone}
+              setPhone={setPhone}
+              email={email}
+              setEmail={setEmail}
+              specialRequests={specialRequests}
+              setSpecialRequests={setSpecialRequests}
+              honeypot={honeypot}
+              setHoneypot={setHoneypot}
+            />
+
+            {error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-3 sm:flex-row-reverse">
+              <button
+                type="submit"
+                disabled={loading}
+                className="inline-flex flex-1 items-center justify-center rounded-lg bg-[var(--widget-accent)] px-6 py-3 text-base font-semibold text-white transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+              >
+                {loading ? 'Réservation...' : 'Confirmer la réservation'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStep('pick');
+                  setError(null);
+                }}
+                disabled={loading}
+                className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-5 py-3 text-base font-semibold text-[var(--widget-primary)] transition-all duration-200 hover:bg-muted disabled:opacity-50"
+              >
+                ← Changer d’horaire
+              </button>
+            </div>
+          </form>
+        )
       ) : (
         <div className="space-y-4">
           {/* Lien vers l'achat de carte cadeau */}
@@ -429,6 +766,10 @@ export function BookingWidget({
             onSelect={(time) => {
               setSelectedTime(time);
               setStep('confirm');
+              setWaitingListOffer(null);
+              setShowWaitingListForm(false);
+              setWaitingListResult(null);
+              setWaitingListCancelled(false);
               // Générer l'idempotency key une fois par sélection de slot.
               // Réutilisée pour hold + confirm → protège contre le double submit.
               setIdempotencyKey(crypto.randomUUID());

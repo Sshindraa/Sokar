@@ -17,7 +17,7 @@ export default function PricingSection() {
       <div
         className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/3 h-[600px] w-[900px] rounded-full"
         style={{
-          background: 'radial-gradient(circle, hsl(195 100% 55% / 0.18), transparent 70%)',
+          background: 'radial-gradient(circle, hsl(var(--pricing-accent) / 0.18), transparent 70%)',
           filter: 'blur(80px)',
         }}
       />
@@ -47,7 +47,7 @@ export default function PricingSection() {
                 className={cn(
                   'group relative flex flex-col rounded-[2rem] border p-7 transition-all duration-300',
                   plan.featured
-                    ? 'border-white/25 bg-white/[0.08] shadow-[0_0_40px_rgba(6,182,212,0.15)] hover:shadow-[0_0_60px_rgba(6,182,212,0.25)]'
+                    ? 'border-pricing-accent/25 bg-white/[0.08] shadow-[0_0_40px_hsl(var(--pricing-accent)_/_0.15)] hover:shadow-[0_0_60px_hsl(var(--pricing-accent)_/_0.25)]'
                     : 'border-white/15 bg-white/[0.06] hover:border-white/25 hover:bg-white/[0.10]',
                 )}
               >
@@ -58,7 +58,7 @@ export default function PricingSection() {
                       className="absolute inset-0 rounded-[2rem]"
                       style={{
                         background:
-                          'linear-gradient(135deg, hsl(195 100% 55% / 0.15), transparent 40%, transparent 60%, hsl(195 100% 70% / 0.1))',
+                          'linear-gradient(135deg, hsl(var(--pricing-accent) / 0.15), transparent 40%, transparent 60%, hsl(var(--pricing-accent-glow) / 0.1))',
                       }}
                     />
                   </div>
@@ -71,7 +71,7 @@ export default function PricingSection() {
                       {plan.label}
                     </p>
                     {plan.featured && (
-                      <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-cyan-300 border border-cyan-400/30 rounded-full bg-cyan-400/10">
+                      <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-pricing-accent border border-pricing-accent/30 rounded-full bg-pricing-accent/10">
                         Recommandé
                       </span>
                     )}
@@ -81,7 +81,7 @@ export default function PricingSection() {
                   <div className="mb-3">
                     {yearly && (
                       <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <span className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-cyan-300">
+                        <span className="rounded-full border border-pricing-accent/30 bg-pricing-accent/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-pricing-accent">
                           -20% annuel
                         </span>
                         <span className="text-xs font-semibold text-white/45 line-through">
@@ -101,7 +101,7 @@ export default function PricingSection() {
                       )}
                     </div>
                     {yearly && (
-                      <p className="mt-2 text-xs font-medium text-cyan-200/80">
+                      <p className="mt-2 text-xs font-medium text-pricing-accent/80">
                         Économisez {monthlySavings}€/mois
                         {siteSavings ? ` + ${siteSavings}€/site` : ''} avec la facturation annuelle.
                       </p>
@@ -123,8 +123,8 @@ export default function PricingSection() {
                 <ul className="relative z-10 flex-1 space-y-4 mb-8">
                   {plan.features.map((feat) => (
                     <li key={feat} className="flex items-start gap-3 text-sm text-white/70">
-                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-cyan-400/40 bg-cyan-400/10">
-                        <Check size={12} className="text-cyan-300" strokeWidth={3} />
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-pricing-accent/40 bg-pricing-accent/10">
+                        <Check size={12} className="text-pricing-accent" strokeWidth={3} />
                       </span>
                       {feat}
                     </li>
@@ -143,8 +143,10 @@ export default function PricingSection() {
             aria-checked={yearly}
             onClick={() => setYearly((v) => !v)}
             className={cn(
-              'relative h-6 w-11 rounded-full border transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50',
-              yearly ? 'border-cyan-300/50 bg-cyan-400/30' : 'border-white/20 bg-white/10',
+              'relative h-6 w-11 rounded-full border transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pricing-accent/50',
+              yearly
+                ? 'border-pricing-accent/50 bg-pricing-accent/30'
+                : 'border-white/20 bg-white/10',
             )}
           >
             <span
@@ -153,12 +155,12 @@ export default function PricingSection() {
                 yearly ? 'translate-x-5 bg-white' : 'translate-x-0 bg-black',
               )}
             >
-              {yearly && <Check size={11} className="text-cyan-500" strokeWidth={3.5} />}
+              {yearly && <Check size={11} className="text-pricing-accent" strokeWidth={3.5} />}
             </span>
           </button>
           <span className="text-sm font-medium text-white/60">
             Annuel
-            <span className="ml-1.5 px-2 py-0.5 text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-full font-bold">
+            <span className="ml-1.5 px-2 py-0.5 text-[10px] bg-pricing-accent/20 text-pricing-accent border border-pricing-accent/30 rounded-full font-bold">
               -20%
             </span>
           </span>

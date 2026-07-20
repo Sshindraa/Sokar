@@ -23,7 +23,7 @@ vi.mock('../../../shared/db/client', () => {
       findUniqueOrThrow: vi.fn(),
     },
     floorPlan: {
-      findUnique: vi.fn().mockResolvedValue({ id: 'fp-1' }),
+      findFirst: vi.fn().mockResolvedValue({ id: 'fp-1' }),
     },
     table: {
       findMany: vi
@@ -87,8 +87,8 @@ describe('ReservationService - Google Calendar Sync', () => {
     vi.resetAllMocks();
     vi.mocked(db.reservation.findMany).mockResolvedValue([]);
     vi.mocked(db.agenticHold.findMany).mockResolvedValue([]);
-    vi.mocked(db.floorPlan.findUnique).mockResolvedValue({ id: 'fp-1' } as unknown as Awaited<
-      ReturnType<typeof db.floorPlan.findUnique>
+    vi.mocked(db.floorPlan.findFirst).mockResolvedValue({ id: 'fp-1' } as unknown as Awaited<
+      ReturnType<typeof db.floorPlan.findFirst>
     >);
     vi.mocked(db.table.findMany).mockResolvedValue([
       { id: 'table-1', floorPlanId: 'fp-1', capacity: 4, minCapacity: 1, isActive: true },

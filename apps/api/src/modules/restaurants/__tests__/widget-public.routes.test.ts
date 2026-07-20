@@ -30,7 +30,7 @@ describe('GET /public/widget/:slug', () => {
       cuisineType: ['bistro'],
       coverImageUrl: null,
       formattedAddress: '1 rue de la Paix, Lyon',
-      floorPlan: { sections: [{ id: 'section-terrasse', name: 'Terrasse' }] },
+      floorPlans: [{ sections: [{ id: 'section-terrasse', name: 'Terrasse' }] }],
     };
     const findUnique = vi.mocked(db.restaurant.findUniqueOrThrow);
     findUnique.mockResolvedValue(

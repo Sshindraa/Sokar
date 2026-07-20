@@ -38,7 +38,7 @@ function RadialDial({ value }: { value: number }) {
           cy={radius}
         />
         <circle
-          stroke="rgba(6, 182, 212, 0.3)"
+          stroke="hsl(var(--pricing-accent) / 0.3)"
           fill="transparent"
           strokeWidth="1"
           strokeDasharray={circumference}
@@ -82,7 +82,7 @@ function AudioWaveform() {
       {Array.from({ length: 14 }).map((_, i) => (
         <div
           key={i}
-          className="w-[1.5px] min-h-[3px] bg-gradient-to-t from-cyan-600 via-cyan-400 to-white rounded-full transition-all duration-300 opacity-80"
+          className="w-[1.5px] min-h-[3px] bg-gradient-to-t from-pricing-accent-glow via-pricing-accent to-white rounded-full transition-all duration-300 opacity-80"
           style={{
             height: `${WAVE_HEIGHTS[i]}px`,
             animation: `wave-bounce ${1.2 + i * 0.15}s ease-in-out infinite`,
@@ -110,7 +110,7 @@ function SegmentedSlider({
     <div className="space-y-2">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-white/55">
         <span className="min-w-0 truncate font-sans">{label}</span>
-        <span className="shrink-0 text-right font-mono text-cyan-400">{labels[value]}</span>
+        <span className="shrink-0 text-right font-mono text-pricing-accent">{labels[value]}</span>
       </div>
       <div className="relative flex h-8 items-center">
         <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-0.5 bg-white/10 rounded-full" />
@@ -119,7 +119,7 @@ function SegmentedSlider({
             <div
               key={i}
               className={`w-2 h-2 rounded-full transition-all duration-200 ${
-                i === value ? 'bg-cyan-400 scale-125' : 'bg-white/25'
+                i === value ? 'bg-pricing-accent scale-125' : 'bg-white/25'
               }`}
             />
           ))}
@@ -179,7 +179,7 @@ function TelemetryTuner() {
         className="absolute inset-0 pointer-events-none transition-opacity duration-300"
         style={{
           opacity: isHovered ? 1 : 0,
-          background: `radial-gradient(220px circle at ${coords.x}px ${coords.y}px, rgba(6, 182, 212, 0.06), transparent 80%)`,
+          background: `radial-gradient(220px circle at ${coords.x}px ${coords.y}px, hsl(var(--pricing-accent) / 0.06), transparent 80%)`,
         }}
       />
       <div className="absolute top-3 left-4 text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none hidden sm:block">
@@ -191,8 +191,8 @@ function TelemetryTuner() {
       <div className="absolute bottom-3 left-4 text-[7px] font-bold text-white/10 font-mono tracking-widest pointer-events-none select-none hidden sm:block">
         SOKAR_OS
       </div>
-      <div className="relative z-10 mt-2 inline-flex max-w-full items-center gap-1.5 self-start rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-[10px] sm:text-[11px] font-bold tracking-widest uppercase text-cyan-400">
-        <span className="h-1 w-1 rounded-full bg-cyan-500 animate-ping" /> Personnalité de
+      <div className="relative z-10 mt-2 inline-flex max-w-full items-center gap-1.5 self-start rounded-full border border-pricing-accent/20 bg-pricing-accent/10 px-3 py-1 text-[10px] sm:text-[11px] font-bold tracking-widest uppercase text-pricing-accent">
+        <span className="h-1 w-1 rounded-full bg-pricing-accent animate-ping" /> Personnalité de
         l&apos;Agent
       </div>
       <div className="relative flex flex-1 items-center justify-center py-5">
@@ -263,7 +263,7 @@ function ShowcaseMetricCard({
 
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border transition-all duration-300 p-4 select-none ${featured ? 'border-cyan-500/25 bg-cyan-500/[0.01] shadow-[0_0_30px_rgba(6,182,212,0.03)]' : 'border-white/5 bg-white/[0.01] hover:border-white/10'}`}
+      className={`relative overflow-hidden rounded-2xl border transition-all duration-300 p-4 select-none ${featured ? 'border-pricing-accent/25 bg-pricing-accent/[0.01] shadow-[0_0_30px_hsl(var(--pricing-accent)_/_0.03)]' : 'border-white/5 bg-white/[0.01] hover:border-white/10'}`}
       onMouseMove={handleMouseMove}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -275,17 +275,17 @@ function ShowcaseMetricCard({
         className="absolute inset-0 pointer-events-none transition-opacity duration-300"
         style={{
           opacity: isHovered ? 1 : 0,
-          background: `radial-gradient(150px circle at ${coords.x}px ${coords.y}px, rgba(6, 182, 212, 0.08), transparent 80%)`,
+          background: `radial-gradient(150px circle at ${coords.x}px ${coords.y}px, hsl(var(--pricing-accent) / 0.08), transparent 80%)`,
         }}
       />
       <div
-        className={`absolute top-1 left-1.5 text-[8px] sm:text-[6px] text-white/10 tracking-widest font-mono pointer-events-none select-none ${featured ? 'text-cyan-400/30' : ''}`}
+        className={`absolute top-1 left-1.5 text-[8px] sm:text-[6px] text-white/10 tracking-widest font-mono pointer-events-none select-none ${featured ? 'text-pricing-accent/30' : ''}`}
       >
         METRIC_CARD
       </div>
       <div className="relative z-10 flex items-center justify-between gap-3">
         <span
-          className={`h-8 w-8 rounded-full flex items-center justify-center border transition-all duration-200 ${featured ? 'bg-cyan-500/10 border-cyan-500/25 text-cyan-400' : 'bg-white/5 border-white/5 text-white/50'}`}
+          className={`h-8 w-8 rounded-full flex items-center justify-center border transition-all duration-200 ${featured ? 'bg-pricing-accent/10 border-pricing-accent/25 text-pricing-accent' : 'bg-white/5 border-white/5 text-white/50'}`}
         >
           <Icon size={14} />
         </span>
@@ -293,7 +293,7 @@ function ShowcaseMetricCard({
           <RadialDial value={dialValue} />
         ) : (
           trend && (
-            <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2.5 py-0.5">
+            <span className="text-xs font-mono text-success bg-success/10 border border-success/20 rounded-full px-2.5 py-0.5">
               {trend}
             </span>
           )
@@ -302,7 +302,7 @@ function ShowcaseMetricCard({
       <div className="relative z-10 mt-3 flex items-end justify-between gap-2">
         <div className="min-w-0">
           <p
-            className={`text-xl font-black font-display tracking-tight truncate ${featured ? 'text-cyan-400' : 'text-white'}`}
+            className={`text-xl font-black font-display tracking-tight truncate ${featured ? 'text-pricing-accent' : 'text-white'}`}
           >
             {value}
           </p>
@@ -311,7 +311,7 @@ function ShowcaseMetricCard({
           </p>
         </div>
         {featured && (
-          <div className="absolute -top-12 -right-12 w-24 h-24 rounded-full bg-cyan-500/10 filter blur-xl pointer-events-none" />
+          <div className="absolute -top-12 -right-12 w-24 h-24 rounded-full bg-pricing-accent/10 filter blur-xl pointer-events-none" />
         )}
       </div>
     </div>
@@ -372,7 +372,7 @@ export default function DemoSection() {
       id="demo"
       className="relative flex min-h-screen w-full scroll-mt-24 flex-col items-center justify-center overflow-hidden px-4 py-20 sm:px-6 lg:px-10"
     >
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_26%,rgba(6,182,212,0.14),transparent_28rem),radial-gradient(circle_at_78%_58%,rgba(255,255,255,0.08),transparent_30rem)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_26%,hsl(var(--pricing-accent)_/_0.14),transparent_28rem),radial-gradient(circle_at_78%_58%,rgba(255,255,255,0.08),transparent_30rem)]" />
       <div className="relative z-10 mb-12 max-w-lg text-center">
         <h2 className="text-2xl md:text-4xl font-bold tracking-tight text-white font-display">
           Le Tableau de Bord en Action
@@ -384,7 +384,7 @@ export default function DemoSection() {
       </div>
 
       <div className="relative z-10 grid w-full gap-4 lg:grid-cols-[1.08fr_1fr] lg:gap-6">
-        <div className="pointer-events-none absolute left-1/2 top-1/2 h-[34rem] w-[42rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-500/5 blur-3xl" />
+        <div className="pointer-events-none absolute left-1/2 top-1/2 h-[34rem] w-[42rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-pricing-accent/5 blur-3xl" />
         <div className="flex flex-col gap-4 justify-between">
           <TelemetryTuner />
           <div className="grid grid-cols-2 gap-3.5">
@@ -413,7 +413,7 @@ export default function DemoSection() {
         <div className="rounded-2xl border border-white/10 bg-black/60 shadow-xl overflow-hidden flex flex-col h-full min-h-[320px] sm:min-h-[380px] transition-all duration-300 relative">
           <div className="border-b border-white/10 bg-white/[0.03] px-5 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="h-8 w-8 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shadow-inner">
+              <div className="h-8 w-8 rounded-full bg-pricing-accent/10 border border-pricing-accent/20 flex items-center justify-center shadow-inner">
                 <Image
                   src="/logo-nav.png"
                   alt="Sokar AI"
@@ -426,13 +426,13 @@ export default function DemoSection() {
                 <h4 className="text-xs font-semibold tracking-tight text-white">
                   Console de Dialogue Live
                 </h4>
-                <p className="text-xs sm:text-[11px] text-emerald-400 font-medium flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Appel client en cours
+                <p className="text-xs sm:text-[11px] text-success font-medium flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-success" /> Appel client en cours
                 </p>
               </div>
             </div>
             <div className="h-1.5 w-20 bg-white/10 rounded-full overflow-hidden relative">
-              <div className="h-full bg-gradient-to-r from-cyan-400 to-cyan-600 rounded-full w-2/3" />
+              <div className="h-full bg-gradient-to-r from-pricing-accent to-pricing-accent-glow rounded-full w-2/3" />
             </div>
           </div>
           <div

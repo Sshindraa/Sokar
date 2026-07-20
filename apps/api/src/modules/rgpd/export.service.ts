@@ -83,6 +83,7 @@ export class ExportService {
         channel: true,
         customerName: true,
         customerPhone: true,
+        customerEmail: true,
         specialRequests: true,
         createdAt: true,
         restaurant: { select: { name: true } },
@@ -108,7 +109,7 @@ export class ExportService {
       ? {
           customerName: first.customerName,
           customerPhone: first.customerPhone,
-          customerEmail: null, // Pas de colonne customerEmail dans Reservation
+          customerEmail: first.customerEmail ?? null,
         }
       : null;
 

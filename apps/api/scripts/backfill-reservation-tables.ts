@@ -181,8 +181,8 @@ async function main(): Promise<void> {
   }
 
   for (const restaurant of restaurants) {
-    const floorPlan = await prisma.floorPlan.findUnique({
-      where: { restaurantId: restaurant.id },
+    const floorPlan = await prisma.floorPlan.findFirst({
+      where: { restaurantId: restaurant.id, isActive: true, isDefault: true },
       include: { tables: { where: { isActive: true }, take: 1 } },
     });
 

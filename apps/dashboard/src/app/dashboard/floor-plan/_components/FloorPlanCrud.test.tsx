@@ -406,4 +406,14 @@ describe('FloorPlanCrud', () => {
       isActive: false,
     });
   });
+
+  it('récupère le plan ciblé quand floorPlanId est fourni', async () => {
+    render(<FloorPlanCrud floorPlanId="fp" />);
+
+    await waitFor(() => {
+      expect(apiMocks.get).toHaveBeenCalledWith('restaurants/org_test/floor-plans/fp');
+    });
+
+    expect(screen.getByRole('heading', { name: 'Plan de salle' })).toBeInTheDocument();
+  });
 });

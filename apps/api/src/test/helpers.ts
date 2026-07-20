@@ -130,6 +130,16 @@ vi.mock('../shared/db/client', () => {
       count: vi.fn(),
       groupBy: vi.fn(),
     },
+    waitingListEntry: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      count: vi.fn(),
+    },
     customer: {
       findMany: vi.fn(),
       findFirst: vi.fn(),

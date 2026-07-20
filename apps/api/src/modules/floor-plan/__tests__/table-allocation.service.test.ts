@@ -4,12 +4,14 @@ import { TableAllocationService, TableAllocationError } from '../table-allocatio
 
 type MockTable = Table & {
   section: { id: string; name: string; position: number } | null;
-  floorPlan?: { id: string; restaurantId: string } | null;
+  floorPlan?: { id: string; restaurantId: string; isActive: boolean; isDefault: boolean } | null;
 };
 
 type MockReservation = Reservation;
 
 type MockHold = AgenticHold;
+
+const BLOCKING_RESERVATION_STATES = ['PENDING', 'CONFIRMED', 'SEATED'];
 
 function makeMockPrisma(
   initial: {
@@ -21,19 +23,36 @@ function makeMockPrisma(
   const tables = new Map(initial.tables?.map((t) => [t.id, t]) ?? []);
   const reservations = new Map(initial.reservations?.map((r) => [r.id, r]) ?? []);
   const holds = new Map(initial.holds?.map((h) => [h.id, h]) ?? []);
-  const floorPlanByRestaurant = new Map<string, { id: string; restaurantId: string }>();
+  const floorPlanByRestaurant = new Map<
+    string,
+    { id: string; restaurantId: string; isActive: boolean; isDefault: boolean }
+  >();
   for (const t of tables.values()) {
     const rId = t.floorPlan?.restaurantId;
     if (rId && !floorPlanByRestaurant.has(rId)) {
-      floorPlanByRestaurant.set(rId, { id: t.floorPlan?.id ?? t.floorPlanId, restaurantId: rId });
+      floorPlanByRestaurant.set(rId, {
+        id: t.floorPlan?.id ?? t.floorPlanId,
+        restaurantId: rId,
+        isActive: t.floorPlan?.isActive ?? true,
+        isDefault: t.floorPlan?.isDefault ?? true,
+      });
     }
   }
 
   const prisma = {
     floorPlan: {
-      findUnique: async (args: unknown) => {
+      findFirst: async (args: unknown) => {
         const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
-        return floorPlanByRestaurant.get(where.restaurantId as string) ?? null;
+        const restaurantId = where.restaurantId as string | undefined;
+        const isActive = where.isActive as boolean | undefined;
+        const isDefault = where.isDefault as boolean | undefined;
+        const fp = floorPlanByRestaurant.get(restaurantId as string);
+        if (!fp) return null;
+        if (isActive === true && !fp.isActive) return null;
+        if (isActive === false && fp.isActive) return null;
+        if (isDefault === true && !fp.isDefault) return null;
+        if (isDefault === false && fp.isDefault) return null;
+        return fp;
       },
     },
     table: {
@@ -49,9 +68,18 @@ function makeMockPrisma(
         const minCapacity = where.minCapacity as { lte?: number } | undefined;
         const id = where.id as { notIn?: string[] } | undefined;
         const sectionId = where.sectionId as string | undefined;
+        const floorPlanRel = where.floorPlan as
+          | { isActive?: boolean; restaurantId?: string }
+          | undefined;
 
         if (whereFloorPlanId) {
           result = result.filter((t) => t.floorPlanId === whereFloorPlanId);
+        }
+        if (floorPlanRel?.restaurantId) {
+          result = result.filter((t) => t.floorPlan?.restaurantId === floorPlanRel.restaurantId);
+        }
+        if (floorPlanRel?.isActive === true) {
+          result = result.filter((t) => t.floorPlan?.isActive !== false);
         }
         if (isActive === true) {
           result = result.filter((t) => t.isActive);
@@ -131,31 +159,6 @@ function makeMockPrisma(
       },
     },
     reservation: {
-      findFirst: async (args: unknown) => {
-        const typedArgs = args as { where?: Record<string, unknown> };
-        const where = (typedArgs.where ?? {}) as Record<string, unknown>;
-        const tableId = where.tableId as string | undefined;
-        const state = where.state as { in?: string[] } | undefined;
-        const excludeId = where.id as { not?: string } | undefined;
-        const and = (where.AND ?? []) as Record<string, unknown>[];
-
-        for (const r of reservations.values()) {
-          if (r.tableId !== tableId) continue;
-          if (state?.in && !state.in.includes(r.state)) continue;
-          if (excludeId?.not && r.id === excludeId.not) continue;
-          if (and.length > 0) {
-            const [startCond, endCond] = and;
-            const startStartsAt = startCond.startsAt as Record<string, unknown> | undefined;
-            const endEndsAt = endCond.endsAt as Record<string, unknown> | undefined;
-            if (startStartsAt?.lt && !(r.startsAt! < (startStartsAt.lt as Date))) continue;
-            if (startStartsAt?.gte && !(r.startsAt! >= (startStartsAt.gte as Date))) continue;
-            if (endEndsAt?.gt && !(r.endsAt! > (endEndsAt.gt as Date))) continue;
-            if (endEndsAt?.lte && !(r.endsAt! <= (endEndsAt.lte as Date))) continue;
-          }
-          return r;
-        }
-        return null;
-      },
       findUniqueOrThrow: async (args: unknown) => {
         const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
         const id = where.id as string;
@@ -177,36 +180,48 @@ function makeMockPrisma(
         return updated;
       },
     },
-    agenticHold: {
-      findFirst: async (args: unknown) => {
-        const typedArgs = args as { where?: Record<string, unknown> };
-        const where = (typedArgs.where ?? {}) as Record<string, unknown>;
-        const tableId = where.tableId as string | undefined;
-        const status = where.status as string | undefined;
-        const expiresAt = where.expiresAt as { gt?: Date } | undefined;
-        const excludeId = where.id as { not?: string } | undefined;
-        const and = (where.AND ?? []) as Record<string, unknown>[];
+    agenticHold: {},
+    $queryRaw: async (arg: unknown) => {
+      const s = arg as { sql?: string; values?: unknown[] };
+      const sql = s.sql ?? '';
+      const values = s.values ?? [];
 
+      if (sql.includes('floor_plan_tables')) {
+        return [{ id: values[0] as string }];
+      }
+
+      if (sql.includes('reservations')) {
+        const [tableId, startsAt, endsAt, excludeId] = values;
+        for (const r of reservations.values()) {
+          if (r.tableId !== tableId) continue;
+          if (!BLOCKING_RESERVATION_STATES.includes(r.state)) continue;
+          if (!r.startsAt || !r.endsAt) continue;
+          if (excludeId && r.id === excludeId) continue;
+          if (r.startsAt < (endsAt as Date) && r.endsAt > (startsAt as Date)) {
+            return [{ exists: 1 }];
+          }
+        }
+        return [];
+      }
+
+      if (sql.includes('agentic_holds')) {
+        const [tableId, startsAt, endsAt, excludeId] = values;
+        const now = new Date();
         for (const h of holds.values()) {
           if (h.tableId !== tableId) continue;
-          if (status && h.status !== status) continue;
-          if (expiresAt?.gt && !(h.expiresAt > expiresAt.gt)) continue;
-          if (excludeId?.not && h.id === excludeId.not) continue;
-          if (and.length > 0) {
-            const [startCond, endCond] = and;
-            const startSlotStart = startCond.slotStart as Record<string, unknown> | undefined;
-            const endSlotEnd = endCond.slotEnd as Record<string, unknown> | undefined;
-            if (startSlotStart?.lt && !(h.slotStart < (startSlotStart.lt as Date))) continue;
-            if (startSlotStart?.gte && !(h.slotStart >= (startSlotStart.gte as Date))) continue;
-            if (endSlotEnd?.gt && !(h.slotEnd > (endSlotEnd.gt as Date))) continue;
-            if (endSlotEnd?.lte && !(h.slotEnd <= (endSlotEnd.lte as Date))) continue;
+          if (h.status !== 'ACTIVE') continue;
+          if (!(h.expiresAt > now)) continue;
+          if (!h.slotStart || !h.slotEnd) continue;
+          if (excludeId && h.id === excludeId) continue;
+          if (h.slotStart < (endsAt as Date) && h.slotEnd > (startsAt as Date)) {
+            return [{ exists: 1 }];
           }
-          return h;
         }
-        return null;
-      },
+        return [];
+      }
+
+      return [{ id: 'locked' }];
     },
-    $queryRaw: async () => [{ id: 'locked' }],
     $transaction: async (fn: unknown) => {
       if (Array.isArray(fn)) {
         return Promise.all(fn as unknown[]);
@@ -248,6 +263,8 @@ function makeTable(
       ({
         id: overrides.floorPlanId,
         restaurantId: overrides.restaurantId ?? 'r-1',
+        isActive: true,
+        isDefault: true,
       } as MockTable['floorPlan']),
   };
 }
@@ -270,6 +287,7 @@ function makeReservation(
     partySize: overrides.partySize,
     customerName: overrides.customerName ?? 'Client',
     customerPhone: overrides.customerPhone ?? null,
+    customerEmail: overrides.customerEmail ?? null,
     status: overrides.status ?? 'CONFIRMED',
     estimatedRevenue: overrides.estimatedRevenue ?? null,
     confirmedRevenue: overrides.confirmedRevenue ?? null,
@@ -389,7 +407,7 @@ describe('TableAllocationService', () => {
       expect(table!.id).toBe('t-terrasse');
     });
 
-    it('fallback sur toutes les sections si la préférence est impossible', async () => {
+    it('retourne null si la section préférée ne peut pas accueillir le groupe', async () => {
       const { prisma } = makeMockPrisma({
         tables: [
           makeTable({
@@ -420,7 +438,45 @@ describe('TableAllocationService', () => {
         preferredSectionId: sectionId,
       });
 
-      expect(table!.id).toBe('t-inside');
+      expect(table).toBeNull();
+    });
+
+    it('allocate avec preferredSectionId choisit une table dans le floor plan de cette section', async () => {
+      const fp2 = 'fp-2';
+      const sectionTerrasse = { id: sectionId, name: 'Terrasse', position: 0 };
+      const { prisma } = makeMockPrisma({
+        tables: [
+          makeTable({
+            id: 't-inside',
+            floorPlanId,
+            capacity: 4,
+            name: 'Intérieur',
+            sectionId: null,
+            section: null,
+          }),
+          makeTable({
+            id: 't-terrasse',
+            floorPlanId: fp2,
+            capacity: 4,
+            name: 'Terrasse',
+            sectionId,
+            section: sectionTerrasse,
+            floorPlan: { id: fp2, restaurantId, isActive: true, isDefault: false },
+          }),
+        ],
+      });
+
+      const service = new TableAllocationService(prisma);
+      const table = await service.allocate({
+        restaurantId,
+        partySize: 4,
+        startsAt: new Date('2026-07-02T19:00:00Z'),
+        endsAt: new Date('2026-07-02T21:00:00Z'),
+        preferredSectionId: sectionId,
+      });
+
+      expect(table).not.toBeNull();
+      expect(table!.id).toBe('t-terrasse');
     });
 
     it('ignore les tables inactives', async () => {
@@ -525,8 +581,12 @@ describe('TableAllocationService', () => {
       // explicitement si le service tentait quand même un verrou en lecture seule.
       const readOnlyPrisma = {
         ...prisma,
-        $queryRaw: async () => {
-          throw new Error('SELECT FOR UPDATE should not be called in readOnly mode');
+        $queryRaw: async (arg: unknown) => {
+          const sql = (arg as { sql?: string }).sql ?? '';
+          if (sql.includes('FOR UPDATE')) {
+            throw new Error('SELECT FOR UPDATE should not be called in readOnly mode');
+          }
+          return [];
         },
       } as unknown as PrismaClient;
 
