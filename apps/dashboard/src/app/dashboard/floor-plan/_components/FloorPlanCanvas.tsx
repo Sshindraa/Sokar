@@ -28,6 +28,8 @@ import {
   isSameDay,
   differenceInMinutes,
   formatDistanceToNow,
+  startOfDay,
+  addMinutes,
 } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import {
@@ -1007,6 +1009,144 @@ function PaletteItemCard({ id, icon, label, data }: PaletteItemCardProps) {
   );
 }
 
+type StatsPanelProps = {
+  reservations: PlanningReservation[];
+  allTables: CanvasTable[];
+  tableStatuses: Map<string, { status: TableStatus; reservation: PlanningReservation | null }>;
+  liveDate: string;
+};
+
+function StatsPanel({ reservations, allTables, tableStatuses, liveDate }: StatsPanelProps) {
+  const now = new Date();
+  const stats = useMemo(() => {
+    const activeTables = allTables.filter((t) => t.isActive);
+    const inactiveTables = allTables.filter((t) => !t.isActive);
+    const totalCapacity = activeTables.reduce((sum, t) => sum + t.capacity, 0);
+
+    const seated = reservations.filter((r) => r.state === 'SEATED' && r.tableId);
+    const seatedCovers = seated.reduce((sum, r) => sum + r.partySize, 0);
+    const occupancyRate = totalCapacity > 0 ? Math.round((seatedCovers / totalCapacity) * 100) : 0;
+
+    const activeReservations = reservations.filter((r) =>
+      ['CONFIRMED', 'SEATED'].includes(r.state),
+    );
+    const plannedCovers = activeReservations.reduce((sum, r) => sum + r.partySize, 0);
+
+    const lateCount = [...tableStatuses.values()].filter((s) => s.status === 'late').length;
+    const upcomingCount = [...tableStatuses.values()].filter((s) => s.status === 'upcoming').length;
+    const occupiedCount = [...tableStatuses.values()].filter((s) => s.status === 'occupied').length;
+    const freeCount = [...tableStatuses.values()].filter((s) => s.status === 'free').length;
+
+    return {
+      activeTables: activeTables.length,
+      inactiveTables: inactiveTables.length,
+      totalCapacity,
+      seatedCovers,
+      occupancyRate,
+      plannedCovers,
+      lateCount,
+      upcomingCount,
+      occupiedCount,
+      freeCount,
+      totalReservations: reservations.length,
+    };
+  }, [allTables, reservations, tableStatuses]);
+
+  const forecast = useMemo(() => {
+    const dayStart = startOfDay(parseISO(liveDate));
+    const slots = Array.from({ length: 48 }, (_, i) => addMinutes(dayStart, i * 30));
+    return slots
+      .map((slot) => {
+        const covers = reservations.reduce((sum, r) => {
+          if (!r.startsAt || !r.endsAt || r.state === 'CANCELLED' || r.state === 'NO_SHOW') {
+            return sum;
+          }
+          const start = parseISO(r.startsAt);
+          const end = parseISO(r.endsAt);
+          if (isWithinInterval(slot, { start, end })) {
+            return sum + r.partySize;
+          }
+          return sum;
+        }, 0);
+        const newArrivals = reservations.filter((r) => {
+          if (!r.startsAt || r.state === 'CANCELLED' || r.state === 'NO_SHOW') return false;
+          const start = parseISO(r.startsAt);
+          return format(start, 'HH:mm') === format(slot, 'HH:mm');
+        }).length;
+        return { time: format(slot, 'HH:mm'), covers, newArrivals };
+      })
+      .filter((s) => s.covers > 0 || s.newArrivals > 0);
+  }, [reservations, liveDate]);
+
+  const maxSlotCovers = Math.max(1, ...forecast.map((s) => s.covers));
+
+  return (
+    <div className="h-full overflow-y-auto p-6">
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-2xl font-semibold">{stats.occupancyRate}%</p>
+          <p className="text-xs text-muted-foreground">Taux d&apos;occupation</p>
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            {stats.seatedCovers} / {stats.totalCapacity} places
+          </p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-2xl font-semibold">{stats.plannedCovers}</p>
+          <p className="text-xs text-muted-foreground">Couverts prévus</p>
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            {stats.totalReservations} réservation{stats.totalReservations > 1 ? 's' : ''}
+          </p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-2xl font-semibold">{stats.activeTables}</p>
+          <p className="text-xs text-muted-foreground">Tables actives</p>
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            {stats.inactiveTables} inactive{stats.inactiveTables > 1 ? 's' : ''}
+          </p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-2xl font-semibold">{stats.occupiedCount}</p>
+          <p className="text-xs text-muted-foreground">En service</p>
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            {stats.upcomingCount} prochaines · {stats.lateCount} retard
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border bg-card p-4">
+        <h3 className="mb-4 text-sm font-semibold">Prévisions de couverts par créneau (30 min)</h3>
+        {forecast.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Aucune réservation sur cette journée.</p>
+        ) : (
+          <div className="space-y-3">
+            {forecast.slice(0, 20).map((slot) => (
+              <div key={slot.time} className="flex items-center gap-3">
+                <div className="w-12 text-xs font-medium tabular-nums">{slot.time}</div>
+                <div className="flex-1">
+                  <div className="flex h-5 items-center gap-2">
+                    <div
+                      className="h-2 rounded-full bg-primary transition-all"
+                      style={{ width: `${(slot.covers / maxSlotCovers) * 100}%` }}
+                    />
+                    <span className="text-xs font-medium tabular-nums">{slot.covers} couverts</span>
+                  </div>
+                </div>
+                {slot.newArrivals > 0 ? (
+                  <Badge variant="outline" className="text-[10px]">
+                    +{slot.newArrivals}
+                  </Badge>
+                ) : (
+                  <span className="w-8" />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function FloorPlanPalette() {
   return (
     <div className="w-56 min-w-56 h-full border-r border-border bg-card flex flex-col gap-5 p-3 overflow-y-auto">
@@ -1167,6 +1307,7 @@ export function FloorPlanCanvas({
   const [snap, setSnap] = useState(true);
   const live = mode === 'service';
   const [liveDate, setLiveDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
+  const [serviceTab, setServiceTab] = useState<'plan' | 'stats'>('plan');
   const liveDateRef = useRef(liveDate);
   liveDateRef.current = liveDate;
   const [reservations, setReservations] = useState<PlanningReservation[]>([]);
@@ -3887,6 +4028,24 @@ export function FloorPlanCanvas({
               </>
             ) : (
               <div className="ml-auto flex flex-wrap items-center gap-2">
+                <div className="flex items-center rounded-md border border-border p-0.5">
+                  <Button
+                    type="button"
+                    variant={serviceTab === 'plan' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setServiceTab('plan')}
+                  >
+                    Plan
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={serviceTab === 'stats' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setServiceTab('stats')}
+                  >
+                    Statistiques
+                  </Button>
+                </div>
                 <Input
                   type="date"
                   value={liveDate}
@@ -3915,293 +4074,312 @@ export function FloorPlanCanvas({
         ) : null}
 
         <CardContent className="p-0 overflow-hidden h-[600px]">
-          <DndContext
-            sensors={sensors}
-            onDragStart={handleDragStart}
-            onDragMove={handleDragMove}
-            onDragEnd={handleDragEnd}
-            onDragCancel={handleDragCancel}
-          >
-            <div className="flex h-full">
-              {!live ? <FloorPlanPalette /> : null}
-              <div
-                ref={canvasViewportRef}
-                className="relative min-w-0 flex-1 overflow-auto bg-muted"
-              >
+          {live && serviceTab === 'stats' ? (
+            <StatsPanel
+              reservations={reservations}
+              allTables={allTables}
+              tableStatuses={tableStatuses}
+              liveDate={liveDate}
+            />
+          ) : (
+            <DndContext
+              sensors={sensors}
+              onDragStart={handleDragStart}
+              onDragMove={handleDragMove}
+              onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
+            >
+              <div className="flex h-full">
+                {!live ? <FloorPlanPalette /> : null}
                 <div
-                  ref={canvasRef}
-                  className="absolute origin-top-left bg-muted"
-                  onClick={() => {
-                    setSelectedTableIds(new Set());
-                    setSelectedWallId(null);
-                  }}
-                  style={{
-                    width: canvasWidth,
-                    height: canvasHeight,
-                    transform: `scale(${zoom})`,
-                    transformOrigin: 'top left',
-                    backgroundImage: gridVisible
-                      ? `linear-gradient(to right, hsl(var(--border) / 0.5) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--border) / 0.5) 1px, transparent 1px)`
-                      : undefined,
-                    backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px`,
-                  }}
+                  ref={canvasViewportRef}
+                  className="relative min-w-0 flex-1 overflow-auto bg-muted"
                 >
-                  <svg
-                    className="absolute inset-0 w-full h-full pointer-events-none"
-                    style={{ zIndex: 10 }}
-                    onClick={() => setSelectedWallId(null)}
+                  <div
+                    ref={canvasRef}
+                    className="absolute origin-top-left bg-muted"
+                    onClick={() => {
+                      setSelectedTableIds(new Set());
+                      setSelectedWallId(null);
+                    }}
+                    style={{
+                      width: canvasWidth,
+                      height: canvasHeight,
+                      transform: `scale(${zoom})`,
+                      transformOrigin: 'top left',
+                      backgroundImage: gridVisible
+                        ? `linear-gradient(to right, hsl(var(--border) / 0.5) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--border) / 0.5) 1px, transparent 1px)`
+                        : undefined,
+                      backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px`,
+                    }}
                   >
-                    <g className="pointer-events-auto">
-                      {floorPlan?.walls?.map((w) => (
-                        <WallSegment
-                          key={w.id}
-                          wall={w}
-                          isSelected={!live && selectedWallId === w.id}
-                          editable={!live}
-                          locked={lockedWallIds.has(w.id)}
-                          onClick={() => {
-                            if (live) return;
-                            if (wallJustDraggedRef.current) {
-                              wallJustDraggedRef.current = false;
-                              return;
-                            }
-                            setSelectedTableIds(new Set());
-                            setSelectedWallId(w.id);
-                          }}
-                          onPointerDownMove={(e) => handleWallPointerDown(e, w, 'move')}
-                          onPointerDownStart={(e) => handleWallPointerDown(e, w, 'resize-start')}
-                          onPointerDownEnd={(e) => handleWallPointerDown(e, w, 'resize-end')}
-                        />
-                      ))}
-                      {wallLengthGuide ? (
-                        <g className="pointer-events-none">
-                          <line
-                            x1={wallLengthGuide.activeWall.x1}
-                            y1={wallLengthGuide.activeWall.y1}
-                            x2={wallLengthGuide.activeWall.x2}
-                            y2={wallLengthGuide.activeWall.y2}
-                            stroke="hsl(var(--primary))"
-                            strokeWidth={8}
-                            strokeLinecap="square"
-                            opacity={0.35}
-                          />
-                          <line
-                            x1={wallLengthGuide.referenceWall.x1}
-                            y1={wallLengthGuide.referenceWall.y1}
-                            x2={wallLengthGuide.referenceWall.x2}
-                            y2={wallLengthGuide.referenceWall.y2}
-                            stroke="hsl(var(--primary))"
-                            strokeWidth={8}
-                            strokeLinecap="square"
-                            opacity={0.35}
-                          />
-                          <line
-                            x1={(wallLengthGuide.activeWall.x1 + wallLengthGuide.activeWall.x2) / 2}
-                            y1={(wallLengthGuide.activeWall.y1 + wallLengthGuide.activeWall.y2) / 2}
-                            x2={
-                              (wallLengthGuide.referenceWall.x1 +
-                                wallLengthGuide.referenceWall.x2) /
-                              2
-                            }
-                            y2={
-                              (wallLengthGuide.referenceWall.y1 +
-                                wallLengthGuide.referenceWall.y2) /
-                              2
-                            }
-                            stroke="hsl(var(--primary))"
-                            strokeWidth={1.5}
-                            strokeDasharray="5 5"
-                            opacity={0.9}
-                          />
-                          <circle
-                            cx={(wallLengthGuide.activeWall.x1 + wallLengthGuide.activeWall.x2) / 2}
-                            cy={(wallLengthGuide.activeWall.y1 + wallLengthGuide.activeWall.y2) / 2}
-                            r={4}
-                            fill="hsl(var(--primary))"
-                          />
-                          <circle
-                            cx={
-                              (wallLengthGuide.referenceWall.x1 +
-                                wallLengthGuide.referenceWall.x2) /
-                              2
-                            }
-                            cy={
-                              (wallLengthGuide.referenceWall.y1 +
-                                wallLengthGuide.referenceWall.y2) /
-                              2
-                            }
-                            r={4}
-                            fill="hsl(var(--primary))"
-                          />
-                          <foreignObject
-                            x={Math.max(
-                              8,
-                              Math.min(canvasWidth - 132, wallLengthGuide.labelX - 66),
-                            )}
-                            y={Math.max(
-                              8,
-                              Math.min(canvasHeight - 38, wallLengthGuide.labelY - 19),
-                            )}
-                            width={132}
-                            height={38}
-                          >
-                            <div className="flex h-full items-center justify-center rounded-md border border-primary/40 bg-background/95 px-2 text-[11px] font-medium text-primary shadow-sm">
-                              Même longueur · {formatWallLength(wallLengthGuide.length)}
-                            </div>
-                          </foreignObject>
-                        </g>
-                      ) : null}
-                      {wallResizeAlignGuide ? (
-                        <g className="pointer-events-none">
-                          {wallResizeAlignGuide.axis === 'y' ? (
-                            <line
-                              x1={0}
-                              y1={wallResizeAlignGuide.value}
-                              x2={canvasWidth}
-                              y2={wallResizeAlignGuide.value}
-                              stroke="hsl(var(--primary))"
-                              strokeWidth={2}
-                              strokeDasharray="6 4"
-                              opacity={0.95}
-                            />
-                          ) : (
-                            <line
-                              x1={wallResizeAlignGuide.value}
-                              y1={0}
-                              x2={wallResizeAlignGuide.value}
-                              y2={canvasHeight}
-                              stroke="hsl(var(--primary))"
-                              strokeWidth={2}
-                              strokeDasharray="6 4"
-                              opacity={0.95}
-                            />
-                          )}
-                        </g>
-                      ) : null}
-                    </g>
-                  </svg>
-                  {wallAlignGuide ? (
                     <svg
                       className="absolute inset-0 w-full h-full pointer-events-none"
-                      style={{ zIndex: 11 }}
+                      style={{ zIndex: 10 }}
+                      onClick={() => setSelectedWallId(null)}
                     >
-                      {wallAlignGuide.axis === 'y' ? (
-                        <line
-                          x1={0}
-                          y1={wallAlignGuide.value}
-                          x2={canvasWidth}
-                          y2={wallAlignGuide.value}
-                          stroke="hsl(var(--primary))"
-                          strokeWidth={1}
-                          strokeDasharray="4 4"
-                        />
-                      ) : (
-                        <line
-                          x1={wallAlignGuide.value}
-                          y1={0}
-                          x2={wallAlignGuide.value}
-                          y2={canvasHeight}
-                          stroke="hsl(var(--primary))"
-                          strokeWidth={1}
-                          strokeDasharray="4 4"
-                        />
-                      )}
-                    </svg>
-                  ) : null}
-                  {allTables.map((table) => {
-                    const { width, height } = getTableSize(table);
-                    const status = live ? tableStatuses.get(table.id) : undefined;
-                    return (
-                      <DraggableTable
-                        key={table.id}
-                        table={table}
-                        status={status}
-                        isSelected={!live && selectedTableIds.has(table.id)}
-                        draggable={!live}
-                        droppable={live}
-                        draggableReservation={live}
-                        zoom={zoom}
-                        onClick={(e) => handleTableClick(table, e)}
-                        onDoubleClick={() => handleTableDoubleClick(table)}
-                        onResizeStart={(e) => startTableResize(e, table)}
-                        onRotateStart={(e) => startTableRotate(e, table)}
-                        style={{
-                          left: table.positionX ?? 0,
-                          top: table.positionY ?? 0,
-                          width,
-                          height,
-                          position: 'absolute',
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-                {allTables.length === 0 ? (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <p className="text-sm text-muted-foreground">Aucune table dans votre plan 2D</p>
-                    <p className="text-xs text-muted-foreground opacity-60">
-                      Glissez-déposez un élément depuis la palette pour commencer.
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-              {inspector}
-            </div>
-            {typeof document !== 'undefined'
-              ? createPortal(
-                  <DragOverlay dropAnimation={null}>
-                    {activeDragTable
-                      ? (() => {
-                          const { width: tw, height: th } = getTableSize(activeDragTable);
-                          return (
-                            <TableCard
-                              table={activeDragTable}
-                              status={live ? tableStatuses.get(activeDragTable.id) : undefined}
-                              isOverlay
-                              zoom={zoom}
-                              style={{
-                                transform: `scale(${zoom})`,
-                                transformOrigin: 'top left',
-                              }}
+                      <g className="pointer-events-auto">
+                        {floorPlan?.walls?.map((w) => (
+                          <WallSegment
+                            key={w.id}
+                            wall={w}
+                            isSelected={!live && selectedWallId === w.id}
+                            editable={!live}
+                            locked={lockedWallIds.has(w.id)}
+                            onClick={() => {
+                              if (live) return;
+                              if (wallJustDraggedRef.current) {
+                                wallJustDraggedRef.current = false;
+                                return;
+                              }
+                              setSelectedTableIds(new Set());
+                              setSelectedWallId(w.id);
+                            }}
+                            onPointerDownMove={(e) => handleWallPointerDown(e, w, 'move')}
+                            onPointerDownStart={(e) => handleWallPointerDown(e, w, 'resize-start')}
+                            onPointerDownEnd={(e) => handleWallPointerDown(e, w, 'resize-end')}
+                          />
+                        ))}
+                        {wallLengthGuide ? (
+                          <g className="pointer-events-none">
+                            <line
+                              x1={wallLengthGuide.activeWall.x1}
+                              y1={wallLengthGuide.activeWall.y1}
+                              x2={wallLengthGuide.activeWall.x2}
+                              y2={wallLengthGuide.activeWall.y2}
+                              stroke="hsl(var(--primary))"
+                              strokeWidth={8}
+                              strokeLinecap="square"
+                              opacity={0.35}
                             />
-                          );
-                        })()
-                      : null}
-                    {activeDragData?.kind === 'table' ? (
-                      <NewTableOverlay
-                        shape={activeDragData.shape}
-                        capacity={activeDragData.capacity}
-                        zoom={zoom}
-                      />
-                    ) : null}
-                    {activeDragData?.kind === 'wall' ? (
-                      <NewWallOverlay type={activeDragData.type} zoom={zoom} />
-                    ) : null}
-                    {activeDragData?.kind === 'reservation' ? (
-                      <div
-                        className={cn(
-                          'flex flex-col items-center justify-center rounded-md border-2 border-dashed bg-background/95 px-3 py-2 text-center shadow-lg',
-                          statusClasses[
-                            tableStatuses.get(activeDragData.fromTableId)?.status ?? 'free'
-                          ],
-                        )}
+                            <line
+                              x1={wallLengthGuide.referenceWall.x1}
+                              y1={wallLengthGuide.referenceWall.y1}
+                              x2={wallLengthGuide.referenceWall.x2}
+                              y2={wallLengthGuide.referenceWall.y2}
+                              stroke="hsl(var(--primary))"
+                              strokeWidth={8}
+                              strokeLinecap="square"
+                              opacity={0.35}
+                            />
+                            <line
+                              x1={
+                                (wallLengthGuide.activeWall.x1 + wallLengthGuide.activeWall.x2) / 2
+                              }
+                              y1={
+                                (wallLengthGuide.activeWall.y1 + wallLengthGuide.activeWall.y2) / 2
+                              }
+                              x2={
+                                (wallLengthGuide.referenceWall.x1 +
+                                  wallLengthGuide.referenceWall.x2) /
+                                2
+                              }
+                              y2={
+                                (wallLengthGuide.referenceWall.y1 +
+                                  wallLengthGuide.referenceWall.y2) /
+                                2
+                              }
+                              stroke="hsl(var(--primary))"
+                              strokeWidth={1.5}
+                              strokeDasharray="5 5"
+                              opacity={0.9}
+                            />
+                            <circle
+                              cx={
+                                (wallLengthGuide.activeWall.x1 + wallLengthGuide.activeWall.x2) / 2
+                              }
+                              cy={
+                                (wallLengthGuide.activeWall.y1 + wallLengthGuide.activeWall.y2) / 2
+                              }
+                              r={4}
+                              fill="hsl(var(--primary))"
+                            />
+                            <circle
+                              cx={
+                                (wallLengthGuide.referenceWall.x1 +
+                                  wallLengthGuide.referenceWall.x2) /
+                                2
+                              }
+                              cy={
+                                (wallLengthGuide.referenceWall.y1 +
+                                  wallLengthGuide.referenceWall.y2) /
+                                2
+                              }
+                              r={4}
+                              fill="hsl(var(--primary))"
+                            />
+                            <foreignObject
+                              x={Math.max(
+                                8,
+                                Math.min(canvasWidth - 132, wallLengthGuide.labelX - 66),
+                              )}
+                              y={Math.max(
+                                8,
+                                Math.min(canvasHeight - 38, wallLengthGuide.labelY - 19),
+                              )}
+                              width={132}
+                              height={38}
+                            >
+                              <div className="flex h-full items-center justify-center rounded-md border border-primary/40 bg-background/95 px-2 text-[11px] font-medium text-primary shadow-sm">
+                                Même longueur · {formatWallLength(wallLengthGuide.length)}
+                              </div>
+                            </foreignObject>
+                          </g>
+                        ) : null}
+                        {wallResizeAlignGuide ? (
+                          <g className="pointer-events-none">
+                            {wallResizeAlignGuide.axis === 'y' ? (
+                              <line
+                                x1={0}
+                                y1={wallResizeAlignGuide.value}
+                                x2={canvasWidth}
+                                y2={wallResizeAlignGuide.value}
+                                stroke="hsl(var(--primary))"
+                                strokeWidth={2}
+                                strokeDasharray="6 4"
+                                opacity={0.95}
+                              />
+                            ) : (
+                              <line
+                                x1={wallResizeAlignGuide.value}
+                                y1={0}
+                                x2={wallResizeAlignGuide.value}
+                                y2={canvasHeight}
+                                stroke="hsl(var(--primary))"
+                                strokeWidth={2}
+                                strokeDasharray="6 4"
+                                opacity={0.95}
+                              />
+                            )}
+                          </g>
+                        ) : null}
+                      </g>
+                    </svg>
+                    {wallAlignGuide ? (
+                      <svg
+                        className="absolute inset-0 w-full h-full pointer-events-none"
+                        style={{ zIndex: 11 }}
                       >
-                        <p className="text-xs font-semibold">
-                          {formatCustomerName(activeDragData.reservation.customerName)}
-                        </p>
-                        <p className="text-[9px] text-muted-foreground">
-                          {activeDragData.reservation.partySize} pers. ·{' '}
-                          {activeDragData.reservation.startsAt
-                            ? format(parseISO(activeDragData.reservation.startsAt), 'HH:mm')
-                            : '—'}
-                        </p>
-                      </div>
+                        {wallAlignGuide.axis === 'y' ? (
+                          <line
+                            x1={0}
+                            y1={wallAlignGuide.value}
+                            x2={canvasWidth}
+                            y2={wallAlignGuide.value}
+                            stroke="hsl(var(--primary))"
+                            strokeWidth={1}
+                            strokeDasharray="4 4"
+                          />
+                        ) : (
+                          <line
+                            x1={wallAlignGuide.value}
+                            y1={0}
+                            x2={wallAlignGuide.value}
+                            y2={canvasHeight}
+                            stroke="hsl(var(--primary))"
+                            strokeWidth={1}
+                            strokeDasharray="4 4"
+                          />
+                        )}
+                      </svg>
                     ) : null}
-                  </DragOverlay>,
-                  document.body,
-                )
-              : null}
-          </DndContext>
+                    {allTables.map((table) => {
+                      const { width, height } = getTableSize(table);
+                      const status = live ? tableStatuses.get(table.id) : undefined;
+                      return (
+                        <DraggableTable
+                          key={table.id}
+                          table={table}
+                          status={status}
+                          isSelected={!live && selectedTableIds.has(table.id)}
+                          draggable={!live}
+                          droppable={live}
+                          draggableReservation={live}
+                          zoom={zoom}
+                          onClick={(e) => handleTableClick(table, e)}
+                          onDoubleClick={() => handleTableDoubleClick(table)}
+                          onResizeStart={(e) => startTableResize(e, table)}
+                          onRotateStart={(e) => startTableRotate(e, table)}
+                          style={{
+                            left: table.positionX ?? 0,
+                            top: table.positionY ?? 0,
+                            width,
+                            height,
+                            position: 'absolute',
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                  {allTables.length === 0 ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <p className="text-sm text-muted-foreground">
+                        Aucune table dans votre plan 2D
+                      </p>
+                      <p className="text-xs text-muted-foreground opacity-60">
+                        Glissez-déposez un élément depuis la palette pour commencer.
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+                {inspector}
+              </div>
+              {typeof document !== 'undefined'
+                ? createPortal(
+                    <DragOverlay dropAnimation={null}>
+                      {activeDragTable
+                        ? (() => {
+                            const { width: tw, height: th } = getTableSize(activeDragTable);
+                            return (
+                              <TableCard
+                                table={activeDragTable}
+                                status={live ? tableStatuses.get(activeDragTable.id) : undefined}
+                                isOverlay
+                                zoom={zoom}
+                                style={{
+                                  transform: `scale(${zoom})`,
+                                  transformOrigin: 'top left',
+                                }}
+                              />
+                            );
+                          })()
+                        : null}
+                      {activeDragData?.kind === 'table' ? (
+                        <NewTableOverlay
+                          shape={activeDragData.shape}
+                          capacity={activeDragData.capacity}
+                          zoom={zoom}
+                        />
+                      ) : null}
+                      {activeDragData?.kind === 'wall' ? (
+                        <NewWallOverlay type={activeDragData.type} zoom={zoom} />
+                      ) : null}
+                      {activeDragData?.kind === 'reservation' ? (
+                        <div
+                          className={cn(
+                            'flex flex-col items-center justify-center rounded-md border-2 border-dashed bg-background/95 px-3 py-2 text-center shadow-lg',
+                            statusClasses[
+                              tableStatuses.get(activeDragData.fromTableId)?.status ?? 'free'
+                            ],
+                          )}
+                        >
+                          <p className="text-xs font-semibold">
+                            {formatCustomerName(activeDragData.reservation.customerName)}
+                          </p>
+                          <p className="text-[9px] text-muted-foreground">
+                            {activeDragData.reservation.partySize} pers. ·{' '}
+                            {activeDragData.reservation.startsAt
+                              ? format(parseISO(activeDragData.reservation.startsAt), 'HH:mm')
+                              : '—'}
+                          </p>
+                        </div>
+                      ) : null}
+                    </DragOverlay>,
+                    document.body,
+                  )
+                : null}
+            </DndContext>
+          )}
         </CardContent>
       </Card>
       {dialog}
