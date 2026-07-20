@@ -511,4 +511,51 @@ describe('CapacityAwareAvailabilityService', () => {
     expect(redisCache.incr).toHaveBeenCalledWith(expect.stringContaining('availability:v:r-1'));
     expect(redisCache.set).toHaveBeenCalledTimes(2);
   });
+
+  it('honore la section préférée quand une table de cette section est libre', async () => {
+    const sectionId = 'section-terrasse';
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [
+        makeTable({ id: 't-inside', floorPlanId: FLOOR_PLAN_ID, capacity: 4 }),
+        makeTable({ id: 't-terrasse', floorPlanId: FLOOR_PLAN_ID, capacity: 4, sectionId }),
+      ],
+    });
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const dto = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date,
+      partySize: 2,
+      preferredSectionId: sectionId,
+    });
+
+    const slot20 = dto.slots.find((s) => s.time === '20:00');
+    expect(slot20!.available).toBe(true);
+  });
+
+  it('retombe sur les autres tables si la section préférée est pleine', async () => {
+    const sectionId = 'section-terrasse';
+    const startsAt = new Date('2026-07-02T17:00:00Z');
+    const endsAt = new Date('2026-07-02T19:00:00Z');
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [
+        makeTable({ id: 't-inside', floorPlanId: FLOOR_PLAN_ID, capacity: 4 }),
+        makeTable({ id: 't-terrasse', floorPlanId: FLOOR_PLAN_ID, capacity: 4, sectionId }),
+      ],
+      reservations: [makeReservation({ id: 'r-1', tableId: 't-terrasse', startsAt, endsAt })],
+    });
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const dto = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date,
+      partySize: 2,
+      preferredSectionId: sectionId,
+    });
+
+    const slot20 = dto.slots.find((s) => s.time === '20:00');
+    expect(slot20!.available).toBe(true);
+  });
 });

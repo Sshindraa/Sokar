@@ -407,6 +407,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         restaurantId: restaurant.id,
         date: queryParse.data.date,
         partySize: queryParse.data.partySize,
+        preferredSectionId: queryParse.data.preferredSectionId,
       });
 
       return reply.send(dto);
@@ -488,6 +489,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           channel: 'WEB',
           policy,
           actor: 'connect:web',
+          preferredSectionId: bodyParse.data.preferredSectionId,
         });
 
         // Émettre l'événement analytics reservation_hold_created (T9)

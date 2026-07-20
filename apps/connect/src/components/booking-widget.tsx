@@ -38,6 +38,7 @@ type PublicRestaurant = {
   name: string;
   connectAgentic: boolean;
   address: { city: string };
+  sections: Array<{ id: string; name: string }>;
 };
 
 type HoldDto = {
@@ -81,6 +82,7 @@ export function BookingWidget({
   const [restaurant, setRestaurant] = useState<PublicRestaurant | null>(null);
   const [partySize, setPartySize] = useState<number>(initialPartySize ?? 2);
   const [date, setDate] = useState<string>(initialDate ?? todayIso());
+  const [preferredSectionId, setPreferredSectionId] = useState<string>('');
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedTime, setSelectedTime] = useState<string | null>(initialTime ?? null);
   const [firstName, setFirstName] = useState<string>('');
@@ -108,6 +110,7 @@ export function BookingWidget({
           name: data.name,
           connectAgentic: data.connectAgentic ?? false,
           address: { city: data.city ?? data.address?.city ?? '' },
+          sections: data.sections ?? [],
         });
       })
       .catch(() => setRestaurant(null));
@@ -148,8 +151,9 @@ export function BookingWidget({
     setSlots([]);
     setSelectedTime(null);
     try {
+      const sectionParam = preferredSectionId ? `&preferredSectionId=${preferredSectionId}` : '';
       const res = await fetchWithTimeout(
-        `${API_URL}/public/r/${slug}/availability?date=${date}&partySize=${partySize}`,
+        `${API_URL}/public/r/${slug}/availability?date=${date}&partySize=${partySize}${sectionParam}`,
       );
       if (!res.ok) {
         setError('Impossible de charger les disponibilités');
@@ -170,7 +174,7 @@ export function BookingWidget({
     } finally {
       setLoading(false);
     }
-  }, [slug, date, partySize, initialTime]);
+  }, [slug, date, partySize, preferredSectionId, initialTime]);
 
   // Load availability on mount if date+time pre-filled
   useEffect(() => {
@@ -203,10 +207,20 @@ export function BookingWidget({
     setError(null);
     try {
       // 1. Hold
+      const holdBody: Record<string, unknown> = {
+        date,
+        time: selectedTime,
+        partySize,
+        source,
+        website: honeypot,
+      };
+      if (preferredSectionId) {
+        holdBody.preferredSectionId = preferredSectionId;
+      }
       const holdRes = await fetchWithTimeout(`${API_URL}/public/r/${slug}/hold`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, time: selectedTime, partySize, source, website: honeypot }),
+        body: JSON.stringify(holdBody),
       });
       if (!holdRes.ok) {
         const data = await holdRes.json().catch(() => ({}));
@@ -370,6 +384,30 @@ export function BookingWidget({
               className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[var(--widget-primary)] focus:border-[var(--widget-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--widget-accent)]"
             />
           </div>
+
+          {restaurant && restaurant.sections.length > 0 && (
+            <div>
+              <label
+                htmlFor="section"
+                className="block text-sm font-medium text-[var(--widget-primary)]"
+              >
+                Préférence d&apos;emplacement
+              </label>
+              <select
+                id="section"
+                value={preferredSectionId}
+                onChange={(e) => setPreferredSectionId(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[var(--widget-primary)] focus:border-[var(--widget-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--widget-accent)]"
+              >
+                <option value="">Aucune préférence</option>
+                {restaurant.sections.map((section) => (
+                  <option key={section.id} value={section.id}>
+                    {section.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <button
             type="button"

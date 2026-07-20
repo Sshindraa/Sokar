@@ -31,10 +31,11 @@ export class CapacityAwareAvailabilityService {
   }
 
   private cacheKey(
-    args: { restaurantId: string; date: string; partySize: number },
+    args: { restaurantId: string; date: string; partySize: number; preferredSectionId?: string },
     version: number,
   ): string {
-    return `${CACHE_KEY_PREFIX}${args.restaurantId}:${args.date}:${args.partySize}:${version}`;
+    const sectionSuffix = args.preferredSectionId ? `:s:${args.preferredSectionId}` : '';
+    return `${CACHE_KEY_PREFIX}${args.restaurantId}:${args.date}:${args.partySize}${sectionSuffix}:${version}`;
   }
 
   private versionKey(restaurantId: string): string {
@@ -76,6 +77,7 @@ export class CapacityAwareAvailabilityService {
     restaurantId: string;
     date: string; // YYYY-MM-DD
     partySize: number;
+    preferredSectionId?: string;
   }): Promise<AvailabilityDto> {
     let version = 0;
     try {
@@ -157,7 +159,7 @@ export class CapacityAwareAvailabilityService {
           isActive: true,
           capacity: { gte: args.partySize },
         },
-        select: { id: true, capacity: true, minCapacity: true },
+        select: { id: true, capacity: true, minCapacity: true, sectionId: true },
       }),
     ]);
 
@@ -179,13 +181,22 @@ export class CapacityAwareAvailabilityService {
       const slotStart = zonedTimeToUtc(args.date, time, timeZone);
       const slotEnd = new Date(slotStart.getTime() + serviceDurationMinutes * 60_000);
 
-      const hasAvailableTable = tables.some((table) => {
-        if (table.minCapacity > args.partySize) return false;
-        const busy = busyByTable.get(table.id) ?? [];
-        return !busy.some((b) => overlaps(b.start, b.end, slotStart, slotEnd));
-      });
+      const hasAvailableTable = (candidateTables: typeof tables) =>
+        candidateTables.some((table) => {
+          if (table.minCapacity > args.partySize) return false;
+          const busy = busyByTable.get(table.id) ?? [];
+          return !busy.some((b) => overlaps(b.start, b.end, slotStart, slotEnd));
+        });
 
-      return { time, available: hasAvailableTable };
+      let available = false;
+      if (args.preferredSectionId) {
+        const preferredTables = tables.filter((t) => t.sectionId === args.preferredSectionId);
+        available = hasAvailableTable(preferredTables) || hasAvailableTable(tables);
+      } else {
+        available = hasAvailableTable(tables);
+      }
+
+      return { time, available };
     });
 
     const dto: AvailabilityDto = {

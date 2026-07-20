@@ -355,9 +355,20 @@ export async function restaurantRoutes(app: FastifyInstance) {
           cuisineType: true,
           coverImageUrl: true,
           formattedAddress: true,
+          floorPlan: {
+            select: {
+              sections: {
+                select: { id: true, name: true },
+                orderBy: { name: 'asc' },
+              },
+            },
+          },
         },
       });
-      return reply.send(restaurant);
+      return reply.send({
+        ...restaurant,
+        sections: restaurant.floorPlan?.sections ?? [],
+      });
     } catch (err) {
       app.log.error({ err, slug }, 'Restaurant fetch by slug (widget) failed');
       return reply.status(404).send({ error: 'Restaurant not found' });

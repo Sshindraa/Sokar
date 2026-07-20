@@ -71,6 +71,7 @@ export type WidgetRestaurantDto = {
   formattedAddress: string;
   coverImageUrl?: string | null;
   connectAgentic?: boolean;
+  sections: Array<{ id: string; name: string }>;
 };
 
 export type AvailabilityDto = {

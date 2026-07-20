@@ -2,6 +2,8 @@
 
 ## Dernière activité
 
+2026-07-20 19:00 — [connect] **P2 floor-plan : préférences de section pour le client** — `BookingWidget` affiche un sélecteur d’emplacement (section du plan de salle) quand le restaurant a des sections. `GET /public/r/:slug/availability` et `POST /public/r/:slug/hold` acceptent `preferredSectionId`. `CapacityAwareAvailabilityService` filtre d’abord les tables de la section préférée puis retombe sur les autres. `HoldService` passe la préférence à `TableAllocationService.allocate`. `/public/widget/:slug` renvoie les sections du floor plan. Typecheck API + connect, tests API 1185/1191, connect 108/108 verts.
+
 2026-07-20 18:30 — [dashboard] **P2 floor-plan : onglet Statistiques en Live service** — `FloorPlanCanvas.tsx` : ajout d’un toggle Plan / Statistiques en mode service. `StatsPanel` affiche le taux d’occupation, les couverts prévus, les tables actives/inactives, les compteurs de statuts (en service, prochaines, retard) et une prévision des couverts par créneau de 30 min. Typecheck, lint, tests 79/79, e2e floor-plan desktop-1440 verts.
 
 2026-07-20 18:00 — [dashboard] **P2 floor-plan : drag-and-drop réassignation réservation** — `FloorPlanCanvas.tsx` : la réservation d’une table devient draggable en mode service, les tables deviennent des zones de drop, drop sur une autre table appelle l’API `assign-table`. Overlay visuel pendant le drag. Typecheck, lint, tests 79/79 et e2e `floor-plan.spec.ts` desktop-1440 verts.
