@@ -4,6 +4,7 @@ import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { constructWebhookEvent } from '../stripe.service';
 import { checkRateLimit } from '../../../shared/redis/rate-limit';
+import { logger } from '../../../shared/logger/pino.js';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service';
 import { ReservationService } from '../../agentic-reservations/core/reservation.service';
 
@@ -622,6 +623,27 @@ describe('gift-card routes', () => {
       expect(db.giftCard.create).not.toHaveBeenCalled();
     });
 
+    it('retourne 429 quand la limite webhook est dépassée', async () => {
+      vi.mocked(checkRateLimit).mockResolvedValue(false);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/webhooks/stripe',
+        headers: {
+          'stripe-signature': 't=123,v1=fake',
+          'content-type': 'application/json',
+        },
+        payload: { type: 'payment_intent.succeeded' },
+      });
+
+      expect(res.statusCode).toBe(429);
+      expect(res.json()).toEqual({ error: 'Trop de requêtes. Réessayez dans une minute.' });
+
+      // Restore default mock behavior for following tests
+      vi.mocked(checkRateLimit).mockResolvedValue(true);
+    });
+
     it('retourne 400 sans stripe-signature header', async () => {
       const app = await getApp();
       const res = await app.inject({
@@ -632,6 +654,94 @@ describe('gift-card routes', () => {
       });
 
       expect(res.statusCode).toBe(400);
+    });
+
+    it('retourne 200 pour un webhook payment_intent.payment_failed et met à jour la carte', async () => {
+      vi.mocked(constructWebhookEvent).mockResolvedValue({
+        type: 'payment_intent.payment_failed',
+        data: { object: { id: 'pi_failed', metadata: { restaurantId: RESTAURANT_ID } } },
+      } as unknown as Awaited<ReturnType<typeof constructWebhookEvent>>);
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue({
+        id: 'gc-failed',
+        stripePaymentIntentId: 'pi_failed',
+        stripePaymentStatus: 'pending',
+        status: 'ACTIVE',
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>);
+      vi.mocked(db.giftCard.update).mockResolvedValue({
+        id: 'gc-failed',
+        stripePaymentStatus: 'failed',
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.update>>);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/webhooks/stripe',
+        headers: {
+          'stripe-signature': 't=123,v1=fake',
+          'content-type': 'application/json',
+        },
+        payload: { type: 'payment_intent.payment_failed' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ received: true });
+      expect(db.giftCard.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'gc-failed' },
+          data: { stripePaymentStatus: 'failed' },
+        }),
+      );
+    });
+
+    it('retourne 200 pour payment_intent.payment_failed sans carte existante', async () => {
+      vi.mocked(constructWebhookEvent).mockResolvedValue({
+        type: 'payment_intent.payment_failed',
+        data: { object: { id: 'pi_failed_unknown', metadata: {} } },
+      } as unknown as Awaited<ReturnType<typeof constructWebhookEvent>>);
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue(null);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/webhooks/stripe',
+        headers: {
+          'stripe-signature': 't=123,v1=fake',
+          'content-type': 'application/json',
+        },
+        payload: { type: 'payment_intent.payment_failed' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ received: true });
+      expect(db.giftCard.update).not.toHaveBeenCalled();
+    });
+
+    it('retourne 200 pour un event Stripe non géré et log', async () => {
+      vi.mocked(constructWebhookEvent).mockResolvedValue({
+        type: 'invoice.payment_succeeded',
+        data: { object: { id: 'inv_test' } },
+      } as unknown as Awaited<ReturnType<typeof constructWebhookEvent>>);
+      const infoSpy = vi.spyOn(logger, 'info');
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/webhooks/stripe',
+        headers: {
+          'stripe-signature': 't=123,v1=fake',
+          'content-type': 'application/json',
+        },
+        payload: { type: 'invoice.payment_succeeded' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ received: true });
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'invoice.payment_succeeded' }),
+        '[gift-card-routes] Unhandled Stripe webhook event type',
+      );
+
+      infoSpy.mockRestore();
     });
   });
 

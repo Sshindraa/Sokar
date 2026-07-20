@@ -303,4 +303,87 @@ export class GiftCardPaymentService {
 
     return this.purchaseWithPayment(input);
   }
+
+  /**
+   * Gère un webhook Stripe payment_intent.payment_failed.
+   *
+   * Met à jour le statut Stripe de la carte cadeau associée, sans jamais
+   * créer de carte (le paiement a échoué). Idempotent : ne met à jour que si
+   * le statut Stripe n'est pas déjà terminal ; si aucune carte n'existe,
+   * on log et on sort silencieusement.
+   */
+  async handlePaymentFailed(
+    paymentIntentId: string,
+    metadata?: Record<string, string>,
+  ): Promise<void> {
+    const safeMetadata = metadata ? this.redactMetadata(metadata) : undefined;
+    logger.info(
+      {
+        paymentIntentId,
+        metadata: safeMetadata,
+        metadataKeys: metadata ? Object.keys(metadata) : [],
+      },
+      '[gift-card-payment] Payment failed webhook received',
+    );
+
+    try {
+      const existing = await this.prisma.giftCard.findFirst({
+        where: { stripePaymentIntentId: paymentIntentId },
+      });
+
+      if (!existing) {
+        logger.info(
+          { paymentIntentId },
+          '[gift-card-payment] No gift card found for failed payment, nothing to update',
+        );
+        return;
+      }
+
+      const terminalStatuses = ['succeeded', 'failed', 'canceled'];
+      if (existing.stripePaymentStatus && terminalStatuses.includes(existing.stripePaymentStatus)) {
+        logger.info(
+          {
+            paymentIntentId,
+            giftCardId: existing.id,
+            stripePaymentStatus: existing.stripePaymentStatus,
+          },
+          '[gift-card-payment] Gift card already in a terminal Stripe state, skipping',
+        );
+        return;
+      }
+
+      await this.prisma.giftCard.update({
+        where: { id: existing.id },
+        data: { stripePaymentStatus: 'failed' },
+      });
+
+      logger.info(
+        { paymentIntentId, giftCardId: existing.id },
+        '[gift-card-payment] Gift card Stripe status updated to failed',
+      );
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(
+        { paymentIntentId, err: errorMessage },
+        '[gift-card-payment] Failed to update gift card status for failed payment',
+      );
+    }
+  }
+
+  private redactMetadata(metadata: Record<string, string>): Record<string, string> {
+    const redacted: Record<string, string> = {};
+    const piiKeys = new Set([
+      'senderemail',
+      'recipientemail',
+      'senderphone',
+      'recipientphone',
+      'sendername',
+      'recipientname',
+      'message',
+    ]);
+    for (const [key, value] of Object.entries(metadata)) {
+      redacted[key] = piiKeys.has(key.toLowerCase()) ? '[REDACTED]' : value;
+    }
+    return redacted;
+  }
 }
