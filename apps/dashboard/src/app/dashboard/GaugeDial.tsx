@@ -25,7 +25,7 @@ export default function GaugeDial({
   sublabel,
   suffix = '%',
   size = 168,
-  accentClassName = 'text-cyan-600 dark:text-cyan-400',
+  accentClassName = 'text-brand',
 }: {
   value: number;
   label: string;
