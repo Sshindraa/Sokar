@@ -2,6 +2,8 @@
 
 ## Dernière activité
 
+2026-07-20 17:10 — [dashboard] **Test E2E /dashboard/floor-plan** — Création de `apps/dashboard/e2e/floor-plan.spec.ts`, configuration du mode demo local (`apps/dashboard/.env.local` + `DEMO_RESTAURANT_ID`), redémarrage de `pnpm dev`. Test Playwright 3/3 verts (iphone-14, ipad-mini, desktop-1440). Typecheck et lint dashboard verts.
+
 2026-07-20 17:00 — [dashboard] **Badge Sans table uniquement sur réservations actives** — Correction de `ReservationsPage` : le badge `Sans table` et le bouton/action `Allouer` ne s’affichent plus que pour les statuts `CONFIRMED`/`SEATED`; les autres statuts (`CANCELLED`, `NO_SHOW`) affichent `—` quand aucune table n’est allouée. Ajout d’un test couvrant le cas `CANCELLED` sans `tableId`. Typecheck, tests ciblés et lint dashboard verts.
 
 2026-07-20 16:00 — [api] **Suppression ConnectAvailabilityService mort + lint API vert** — Suppression de `apps/api/src/modules/connect/availability.service.ts` (code non utilisé) ; Connect/route `/public/r/:slug/availability` utilisent désormais `CapacityAwareAvailabilityService` (floor-plan). Nettoyage lint API : suppression de l’import inutilisé `TableAllocationError` dans `floor-plan.service.ts` et `/* eslint-disable no-console */` dans `scripts/backfill-reservation-tables.ts`. Mise à jour des docs (`docs/positioning-vs-zenchef.md`, `docs/PROJECT_MAP.md`, `docs/floor-plan-spec.md`, `docs/connect-v1.1.md`) et du commentaire `floor-plan/availability-capacity-aware.service.ts`. Typecheck API, tests connect/floor-plan et lint global API verts.
