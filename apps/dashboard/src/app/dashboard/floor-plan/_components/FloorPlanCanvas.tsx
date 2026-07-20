@@ -96,6 +96,7 @@ import {
   type DragMoveEvent,
   DragOverlay,
   useDraggable,
+  useDroppable,
 } from '@dnd-kit/core';
 
 const DEFAULT_CANVAS_WIDTH = 1400;
@@ -204,7 +205,10 @@ type PaletteItemData =
   | { kind: 'table'; shape: TableShape; capacity: number }
   | { kind: 'wall'; type: PaletteWallType };
 
-type ActiveDragData = PaletteItemData | { kind: 'existingTable'; table: CanvasTable };
+type ActiveDragData =
+  | PaletteItemData
+  | { kind: 'existingTable'; table: CanvasTable }
+  | { kind: 'reservation'; reservation: PlanningReservation; fromTableId: string };
 
 export function getSafeTableDimensions(
   width: number,
@@ -705,6 +709,7 @@ type TableCardProps = {
   style?: React.CSSProperties;
   className?: string;
   zoom?: number;
+  draggableReservation?: boolean;
 };
 
 function TableCard({
@@ -721,6 +726,7 @@ function TableCard({
   style,
   className,
   zoom = 1,
+  draggableReservation,
 }: TableCardProps) {
   const { width, height, rotation } = getTableSize(table);
   const displayName = table.displayName ?? table.name;
@@ -804,22 +810,12 @@ function TableCard({
           ) : null}
         </div>
         {showServiceDetails && status?.reservation && reservationStart && !isOverlay ? (
-          <div className="mt-1.5 w-full space-y-1 text-[9px] leading-tight">
-            <p className="w-full font-semibold">
-              {formatCustomerName(status.reservation.customerName)} ·{' '}
-              {format(reservationStart, 'HH:mm')}
-            </p>
-            <p
-              className={cn(
-                'flex w-full items-center justify-center gap-1 font-medium text-muted-foreground',
-                status.status === 'late' && 'text-destructive',
-                status.status === 'upcoming' && 'text-warning',
-              )}
-            >
-              <Clock3 size={10} />
-              {formatServiceTiming(status.reservation, status.status, new Date())}
-            </p>
-          </div>
+          <DraggableReservation
+            reservation={status.reservation}
+            fromTableId={table.id}
+            status={status.status}
+            disabled={!draggableReservation}
+          />
         ) : null}
         {showAssignment && assignment ? (
           <p className="mt-1 w-full text-[9px] font-medium text-muted-foreground">{assignment}</p>
@@ -851,6 +847,60 @@ function TableCard({
   );
 }
 
+function DraggableReservation({
+  reservation,
+  fromTableId,
+  status,
+  disabled = false,
+}: {
+  reservation: PlanningReservation;
+  fromTableId: string;
+  status: TableStatus;
+  disabled?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `reservation-${reservation.id}`,
+    data: { kind: 'reservation', reservation, fromTableId } as ActiveDragData,
+    disabled,
+  });
+
+  const reservationStart = reservation.startsAt ? parseISO(reservation.startsAt) : null;
+  const { onPointerDown, ...otherListeners } = listeners ?? {};
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...otherListeners}
+      {...attributes}
+      onPointerDown={(e) => {
+        onPointerDown?.(e);
+        e.stopPropagation();
+      }}
+      onClick={(e) => e.stopPropagation()}
+      className={cn(
+        'mt-1.5 w-full space-y-1 text-[9px] leading-tight rounded-sm',
+        !disabled && 'cursor-grab active:cursor-grabbing hover:bg-background/40',
+        isDragging && 'opacity-0',
+      )}
+    >
+      <p className="w-full font-semibold">
+        {formatCustomerName(reservation.customerName)} ·{' '}
+        {reservationStart ? format(reservationStart, 'HH:mm') : '—'}
+      </p>
+      <p
+        className={cn(
+          'flex w-full items-center justify-center gap-1 font-medium text-muted-foreground',
+          status === 'late' && 'text-destructive',
+          status === 'upcoming' && 'text-warning',
+        )}
+      >
+        <Clock3 size={10} />
+        {formatServiceTiming(reservation, status, new Date())}
+      </p>
+    </div>
+  );
+}
+
 type DraggableTableProps = {
   table: CanvasTable;
   status?: { status: TableStatus; reservation: PlanningReservation | null };
@@ -861,6 +911,8 @@ type DraggableTableProps = {
   onRotateStart?: (e: React.PointerEvent) => void;
   style?: React.CSSProperties;
   draggable?: boolean;
+  droppable?: boolean;
+  draggableReservation?: boolean;
   zoom?: number;
 };
 
@@ -874,13 +926,34 @@ function DraggableTable({
   onRotateStart,
   style,
   draggable = true,
+  droppable = false,
+  draggableReservation,
   zoom = 1,
 }: DraggableTableProps) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setDragNodeRef,
+    isDragging,
+  } = useDraggable({
     id: table.id,
     data: { table },
     disabled: !draggable,
   });
+
+  const { setNodeRef: setDropNodeRef, isOver } = useDroppable({
+    id: table.id,
+    data: { table },
+    disabled: !droppable,
+  });
+
+  const setNodeRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      setDragNodeRef(node);
+      setDropNodeRef(node);
+    },
+    [setDragNodeRef, setDropNodeRef],
+  );
 
   return (
     <TableCard
@@ -891,11 +964,13 @@ function DraggableTable({
       onDoubleClick={onDoubleClick}
       onResizeStart={onResizeStart}
       onRotateStart={onRotateStart}
-      dragRef={setNodeRef as React.Ref<HTMLDivElement>}
+      dragRef={setNodeRef}
       dragProps={draggable ? { ...attributes, ...listeners } : undefined}
+      draggableReservation={draggableReservation}
       className={cn(
         draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
         isDragging && 'opacity-40 transition-none',
+        droppable && isOver && 'ring-2 ring-primary ring-offset-1',
       )}
       style={style}
       zoom={zoom}
@@ -2483,13 +2558,21 @@ export function FloorPlanCanvas({
   });
 
   function handleDragStart(event: DragStartEvent) {
-    if (live) return;
     setPlanSaved(false);
     justDraggedRef.current = true;
     const pointer = event.activatorEvent as PointerEvent | undefined;
     if (pointer) {
       pointerStartRef.current = { x: pointer.clientX, y: pointer.clientY };
     }
+
+    const dragData = event.active.data.current as ActiveDragData | undefined;
+    if (dragData?.kind === 'reservation') {
+      setActiveDragData(dragData);
+      return;
+    }
+
+    if (live) return;
+
     const table = allTables.find((t) => t.id === event.active.id);
     if (table) {
       const { width, height } = getTableSize(table);
@@ -2520,10 +2603,6 @@ export function FloorPlanCanvas({
   }
 
   async function handleDragEnd(event: DragEndEvent) {
-    if (live) {
-      handleDragCancel();
-      return;
-    }
     const start = dragStart;
     const data = activeDragData;
     const pointerStart = pointerStartRef.current;
@@ -2534,6 +2613,19 @@ export function FloorPlanCanvas({
     setTimeout(() => {
       justDraggedRef.current = false;
     }, 0);
+
+    if (data?.kind === 'reservation') {
+      const targetTableId = event.over?.id as string | undefined;
+      if (targetTableId && targetTableId !== data.fromTableId) {
+        void assignTable(data.reservation.id, targetTableId);
+      }
+      return;
+    }
+
+    if (live) {
+      handleDragCancel();
+      return;
+    }
 
     if (!orgId) return;
 
@@ -4026,6 +4118,8 @@ export function FloorPlanCanvas({
                         status={status}
                         isSelected={!live && selectedTableIds.has(table.id)}
                         draggable={!live}
+                        droppable={live}
+                        draggableReservation={live}
                         zoom={zoom}
                         onClick={(e) => handleTableClick(table, e)}
                         onDoubleClick={() => handleTableDoubleClick(table)}
@@ -4082,6 +4176,26 @@ export function FloorPlanCanvas({
                     ) : null}
                     {activeDragData?.kind === 'wall' ? (
                       <NewWallOverlay type={activeDragData.type} zoom={zoom} />
+                    ) : null}
+                    {activeDragData?.kind === 'reservation' ? (
+                      <div
+                        className={cn(
+                          'flex flex-col items-center justify-center rounded-md border-2 border-dashed bg-background/95 px-3 py-2 text-center shadow-lg',
+                          statusClasses[
+                            tableStatuses.get(activeDragData.fromTableId)?.status ?? 'free'
+                          ],
+                        )}
+                      >
+                        <p className="text-xs font-semibold">
+                          {formatCustomerName(activeDragData.reservation.customerName)}
+                        </p>
+                        <p className="text-[9px] text-muted-foreground">
+                          {activeDragData.reservation.partySize} pers. ·{' '}
+                          {activeDragData.reservation.startsAt
+                            ? format(parseISO(activeDragData.reservation.startsAt), 'HH:mm')
+                            : '—'}
+                        </p>
+                      </div>
                     ) : null}
                   </DragOverlay>,
                   document.body,

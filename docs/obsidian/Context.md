@@ -2,6 +2,8 @@
 
 ## Dernière activité
 
+2026-07-20 18:00 — [dashboard] **P2 floor-plan : drag-and-drop réassignation réservation** — `FloorPlanCanvas.tsx` : la réservation d’une table devient draggable en mode service, les tables deviennent des zones de drop, drop sur une autre table appelle l’API `assign-table`. Overlay visuel pendant le drag. Typecheck, lint, tests 79/79 et e2e `floor-plan.spec.ts` desktop-1440 verts.
+
 2026-07-20 17:10 — [dashboard] **Test E2E /dashboard/floor-plan** — Création de `apps/dashboard/e2e/floor-plan.spec.ts`, configuration du mode demo local (`apps/dashboard/.env.local` + `DEMO_RESTAURANT_ID`), redémarrage de `pnpm dev`. Test Playwright 3/3 verts (iphone-14, ipad-mini, desktop-1440). Typecheck et lint dashboard verts.
 
 2026-07-20 17:00 — [dashboard] **Badge Sans table uniquement sur réservations actives** — Correction de `ReservationsPage` : le badge `Sans table` et le bouton/action `Allouer` ne s’affichent plus que pour les statuts `CONFIRMED`/`SEATED`; les autres statuts (`CANCELLED`, `NO_SHOW`) affichent `—` quand aucune table n’est allouée. Ajout d’un test couvrant le cas `CANCELLED` sans `tableId`. Typecheck, tests ciblés et lint dashboard verts.
