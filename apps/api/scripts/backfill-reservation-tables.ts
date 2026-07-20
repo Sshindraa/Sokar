@@ -37,7 +37,6 @@ interface Args {
 const DEFAULT_BATCH_SIZE = 500;
 
 function printUsage(): void {
-  // eslint-disable-next-line no-console
   console.log(`Usage: tsx backfill-reservation-tables.ts [options]
 
 Options:
@@ -164,7 +163,6 @@ function restaurantLabel(restaurant: { id: string; name: string | null }): strin
 }
 
 function logProgress(): void {
-  // eslint-disable-next-line no-console
   console.log(
     `[PROGRESS] Processed: ${totalProcessed}, Allocated: ${totalAllocated}, Skipped: ${totalSkipped}, Errors: ${totalErrors}`,
   );
@@ -178,7 +176,6 @@ async function main(): Promise<void> {
   });
 
   if (restaurants.length === 0) {
-    // eslint-disable-next-line no-console
     console.log('No restaurants found.');
     return;
   }
@@ -190,7 +187,6 @@ async function main(): Promise<void> {
     });
 
     if (!floorPlan || floorPlan.tables.length === 0) {
-      // eslint-disable-next-line no-console
       console.log(`[SKIP] Restaurant ${restaurantLabel(restaurant)} : no active floor plan/table.`);
       continue;
     }
@@ -214,14 +210,12 @@ async function main(): Promise<void> {
     const pendingCount = await prisma.reservation.count({ where });
 
     if (pendingCount === 0) {
-      // eslint-disable-next-line no-console
       console.log(
         `[INFO] Restaurant ${restaurantLabel(restaurant)} : no legacy reservations to backfill.`,
       );
       continue;
     }
 
-    // eslint-disable-next-line no-console
     console.log(
       `[INFO] Restaurant ${restaurantLabel(restaurant)} : ${pendingCount} reservation(s) to backfill (service duration: ${serviceDurationMinutes} min, batch size: ${args.batchSize}).`,
     );
@@ -270,12 +264,10 @@ async function main(): Promise<void> {
             );
 
             if (table) {
-              // eslint-disable-next-line no-console
               console.log(
                 `[DRY-RUN] Reservation ${res.id} → table ${table.id} (endsAt: ${endsAt.toISOString()})`,
               );
             } else {
-              // eslint-disable-next-line no-console
               console.log(`[DRY-RUN] No table available for reservation ${res.id}.`);
             }
           } else {
@@ -300,7 +292,6 @@ async function main(): Promise<void> {
                     },
                   });
                 } else {
-                  // eslint-disable-next-line no-console
                   console.log(`[SKIP] Reservation ${res.id} : no table available`);
                 }
               },
@@ -334,14 +325,12 @@ async function main(): Promise<void> {
     }
 
     if (restaurantProcessed > 0) {
-      // eslint-disable-next-line no-console
       console.log(
         `[INFO] Restaurant ${restaurantLabel(restaurant)} done — processed: ${restaurantProcessed}, allocated: ${restaurantAllocated}, skipped: ${restaurantSkipped}.`,
       );
     }
   }
 
-  // eslint-disable-next-line no-console
   console.log(
     `\n[SUMMARY] Processed: ${totalProcessed}, Allocated: ${totalAllocated}, Skipped: ${totalSkipped}, Errors: ${totalErrors}`,
   );
