@@ -14,6 +14,7 @@ import '../../../test/helpers.js';
 import { db } from '../../../shared/db/client.js';
 import { retrievePaymentIntent } from '../stripe.service.js';
 import { GiftCardPaymentService, GiftCardPaymentError } from '../gift-card-payment.service.js';
+import { logger } from '../../../shared/logger/pino.js';
 
 // setup.ts mocke le client Telnyx avec un chemin relatif incorrect (../../ au
 // lieu de ../) ; on re-mocke ici avec le bon chemin pour que sendSms soit un spy.
@@ -290,6 +291,93 @@ describe('GiftCardPaymentService', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('handlePaymentFailed', () => {
+    it("met à jour le statut Stripe d'une carte existante en 'failed'", async () => {
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue({
+        id: 'gc-failed',
+        stripePaymentIntentId: 'pi_failed',
+        stripePaymentStatus: 'pending',
+        status: 'ACTIVE',
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>);
+      vi.mocked(db.giftCard.update).mockResolvedValue({
+        id: 'gc-failed',
+        stripePaymentStatus: 'failed',
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.update>>);
+
+      await service.handlePaymentFailed('pi_failed', { restaurantId: RESTAURANT_ID });
+
+      expect(db.giftCard.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'gc-failed' },
+          data: { stripePaymentStatus: 'failed' },
+        }),
+      );
+    });
+
+    it("ne fait rien si aucune carte n'existe pour ce PaymentIntent", async () => {
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue(
+        null as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>,
+      );
+
+      await service.handlePaymentFailed('pi_unknown', { restaurantId: RESTAURANT_ID });
+
+      expect(db.giftCard.update).not.toHaveBeenCalled();
+    });
+
+    it('ne met pas à jour une carte déjà dans un statut Stripe terminal', async () => {
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue({
+        id: 'gc-terminal',
+        stripePaymentIntentId: 'pi_failed',
+        stripePaymentStatus: 'succeeded',
+        status: 'ACTIVE',
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>);
+
+      await service.handlePaymentFailed('pi_failed');
+
+      expect(db.giftCard.update).not.toHaveBeenCalled();
+    });
+
+    it('masque les métadonnées PII mais conserve les autres clés dans les logs', async () => {
+      const infoSpy = vi.spyOn(logger, 'info');
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue(
+        null as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>,
+      );
+
+      await service.handlePaymentFailed('pi_pii', {
+        restaurantId: RESTAURANT_ID,
+        senderEmail: 'bob@example.com',
+        recipientEmail: 'alice@example.com',
+        senderPhone: '+33600000000',
+        senderName: 'Bob',
+        extraKey: 'should be preserved',
+      });
+
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            senderEmail: '[REDACTED]',
+            recipientEmail: '[REDACTED]',
+            senderPhone: '[REDACTED]',
+            senderName: '[REDACTED]',
+            extraKey: 'should be preserved',
+            restaurantId: RESTAURANT_ID,
+          }),
+          metadataKeys: expect.arrayContaining([
+            'senderEmail',
+            'recipientEmail',
+            'senderPhone',
+            'senderName',
+            'extraKey',
+            'restaurantId',
+          ]),
+        }),
+        '[gift-card-payment] Payment failed webhook received',
+      );
+
+      infoSpy.mockRestore();
     });
   });
 });

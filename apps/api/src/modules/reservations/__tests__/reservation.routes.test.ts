@@ -394,4 +394,76 @@ describe('reservation.routes', () => {
       expect(res.statusCode).toBe(401);
     });
   });
+
+  describe('POST /reservations/:id/allocate-table', () => {
+    it('alloue une table avec succès et retourne 200', async () => {
+      const app = await getApp();
+      const updated = {
+        id: 'res-1',
+        restaurantId: 'test-rest-1',
+        tableId: 'table-1',
+        table: { name: 'T1' },
+        reservedAt: new Date('2099-06-05T19:00:00'),
+        partySize: 2,
+        customerName: 'Alice',
+        status: 'CONFIRMED',
+      };
+      vi.spyOn(ReservationService, 'allocateTable').mockResolvedValue(
+        updated as unknown as Awaited<ReturnType<typeof ReservationService.allocateTable>>,
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/reservations/res-1/allocate-table',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(ReservationService.allocateTable).toHaveBeenCalledWith('res-1', 'test-rest-1');
+      expect(res.json().tableId).toBe('table-1');
+    });
+
+    it('retourne 409 si allocateTable lève SLOT_NOT_AVAILABLE', async () => {
+      const app = await getApp();
+      vi.spyOn(ReservationService, 'allocateTable').mockRejectedValue(
+        new Error('SLOT_NOT_AVAILABLE'),
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/reservations/res-1/allocate-table',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toMatchObject({
+        error: 'SLOT_NOT_AVAILABLE',
+        statusCode: 409,
+      });
+    });
+
+    it('retourne 401 sans en-tête Authorization', async () => {
+      const app = await getApp();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/reservations/res-1/allocate-table',
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('propage une erreur inattendue en 500', async () => {
+      const app = await getApp();
+      vi.spyOn(ReservationService, 'allocateTable').mockRejectedValue(new Error('boom'));
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/reservations/res-1/allocate-table',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(500);
+    });
+  });
 });

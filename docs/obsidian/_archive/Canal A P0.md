@@ -22,7 +22,7 @@ et au fonctionnement réel d'OAI-SearchBot.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ apps/canal-a (Next.js 14, output:standalone)                    │
+│ apps/canal-a (Next.js 15, output:standalone)                    │
 │ /r/[slug]              page restaurant (SSR + ISR 60s)          │
 │ /r/[slug]/book         page booking (SSR, deep-link)            │
 │ /restaurants/[city]    page locale (noindex si <5 restos)       │

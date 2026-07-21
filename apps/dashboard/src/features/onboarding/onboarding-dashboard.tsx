@@ -91,11 +91,9 @@ const ACTION_COPY: Record<string, { title: string; body: string; cta: string; im
 };
 
 function StatusIcon({ status }: { status: OnboardingStatus }) {
-  if (status === 'completed')
-    return <Check className="text-emerald-600 dark:text-emerald-400" size={16} />;
+  if (status === 'completed') return <Check className="text-success" size={16} />;
   if (status === 'current') return <CircleDot className="animate-pulse text-primary" size={17} />;
-  if (status === 'blocked')
-    return <AlertTriangle className="text-amber-600 dark:text-amber-400" size={16} />;
+  if (status === 'blocked') return <AlertTriangle className="text-warning" size={16} />;
   if (status === 'skipped') return <Clock3 className="text-muted-foreground" size={16} />;
   return <Circle className="text-muted-foreground" size={16} />;
 }
@@ -107,7 +105,7 @@ function ProgressBar({ value, accentClassName }: { value: number; accentClassNam
       <div
         className={cn(
           'h-full rounded-full transition-all duration-500',
-          accentClassName || 'bg-cyan-500',
+          accentClassName || 'bg-brand/70',
         )}
         style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
       />
@@ -189,9 +187,9 @@ function OnboardingCompletedSummary() {
   );
 
   return (
-    <div className="mb-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] p-5 shadow-sm transition-all duration-200">
+    <div className="mb-5 rounded-2xl border border-success/20 bg-success/[0.06] p-5 shadow-sm transition-all duration-200">
       <div className="flex items-center gap-3">
-        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+        <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-success/25 bg-success/10 text-success">
           <CheckCircle2 size={20} />
         </div>
         <div className="flex-1">
@@ -204,13 +202,13 @@ function OnboardingCompletedSummary() {
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-emerald-500/15 pt-4">
+      <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 border-t border-success/15 pt-4">
         {voiceSteps.map((step) => (
           <span
             key={step.key}
             className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
           >
-            <Check size={12} className="text-emerald-600 dark:text-emerald-400" />
+            <Check size={12} className="text-success" />
             {step.title.toLowerCase()}
           </span>
         ))}
@@ -219,7 +217,7 @@ function OnboardingCompletedSummary() {
             key={step.key}
             className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
           >
-            <Check size={12} className="text-emerald-600 dark:text-emerald-400" />
+            <Check size={12} className="text-success" />
             {step.title.toLowerCase()}
           </span>
         ))}
@@ -300,7 +298,7 @@ export function OnboardingBanners() {
       {showConnectBanner && (
         <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm transition-all duration-200 md:flex-row md:items-center md:justify-between">
           <div className="flex items-start gap-4">
-            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-amber-500/25 bg-amber-500/10 text-amber-600 dark:text-amber-400">
+            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full border border-warning/25 bg-warning/10 text-warning">
               <ExternalLink size={19} />
             </div>
             <div className="min-w-0">
@@ -325,7 +323,7 @@ export function OnboardingBanners() {
               </p>
               <div className="mt-2.5 flex items-center gap-2">
                 <div className="w-40 max-w-[50vw]">
-                  <ProgressBar value={state.connectProgress} accentClassName="bg-amber-500" />
+                  <ProgressBar value={state.connectProgress} accentClassName="bg-warning" />
                 </div>
                 <span className="text-[11px] font-bold text-muted-foreground">
                   {state.connectProgress}%
@@ -336,7 +334,7 @@ export function OnboardingBanners() {
           <Button
             type="button"
             onClick={() => openStepModal(connectCurrent.key)}
-            className="w-full transition-all duration-200 md:w-auto bg-amber-600 hover:bg-amber-700 text-white"
+            className="w-full transition-all duration-200 md:w-auto bg-warning hover:bg-warning text-background"
           >
             Configurer Connect
             <ArrowRight size={16} />
@@ -396,7 +394,7 @@ export function OnboardingStepper() {
               2. Sokar Connect
             </span>
             <div className="h-1.5 flex-1 max-w-[10rem]">
-              <ProgressBar value={state.connectProgress} accentClassName="bg-amber-500" />
+              <ProgressBar value={state.connectProgress} accentClassName="bg-warning" />
             </div>
             <span className="text-xs font-bold text-foreground">{state.connectProgress}%</span>
           </div>
@@ -422,7 +420,7 @@ function StepperButton({ step, onClick }: { step: OnboardingStep; onClick: () =>
         'min-h-[92px] rounded-xl border border-border bg-secondary/40 p-3 text-left transition-all duration-200 hover:border-primary/40 hover:bg-accent flex flex-col justify-between',
         isCurrent &&
           'border-primary/40 bg-primary/[0.06] shadow-[0_0_0_1px_hsl(var(--primary)/0.15)]',
-        step.status === 'completed' && 'border-emerald-500/25 bg-emerald-500/[0.06]',
+        step.status === 'completed' && 'border-success/25 bg-success/[0.06]',
       )}
     >
       <div className="flex items-center justify-between gap-2 w-full">
@@ -451,11 +449,11 @@ export function CurrentActionCard() {
   const canSkip = !step.required && step.status !== 'completed';
 
   return (
-    <section className="flex flex-col justify-between rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.04] p-5 shadow-sm transition-all duration-200 md:p-6">
+    <section className="flex flex-col justify-between rounded-2xl border border-brand/20 bg-brand/[0.04] p-5 shadow-sm transition-all duration-200 md:p-6">
       <div>
         <div className="flex items-start justify-between gap-4">
-          <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
+          <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-brand">
+            <span className="h-1.5 w-1.5 rounded-full bg-brand" />
             Action recommandée
           </p>
           <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-card">
@@ -470,7 +468,7 @@ export function CurrentActionCard() {
         </div>
 
         {step.status === 'blocked' && (
-          <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300 transition-all duration-200">
+          <div className="mt-3 rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning transition-all duration-200">
             {step.state.reason || 'Cette étape demande une action externe.'}
           </div>
         )}
@@ -482,7 +480,7 @@ export function CurrentActionCard() {
           onClick={() => openStepModal(step.key)}
           className={cn(
             'transition-all duration-200',
-            step.key.startsWith('connect') && 'bg-amber-600 hover:bg-amber-700 text-white',
+            step.key.startsWith('connect') && 'bg-warning hover:bg-warning text-background',
           )}
         >
           {copy.cta}
@@ -510,7 +508,7 @@ export function CurrentActionCard() {
           </Button>
         )}
         {state.onboardingDone && step.key === 'phone' && (
-          <span className="inline-flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 self-center">
+          <span className="inline-flex items-center gap-2 text-sm text-success self-center">
             <CheckCircle2 size={16} />
             Assistant configuré
           </span>

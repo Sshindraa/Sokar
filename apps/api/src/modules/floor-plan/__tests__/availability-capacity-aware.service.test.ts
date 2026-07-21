@@ -140,6 +140,9 @@ function makeTable(
     minCapacity: overrides.minCapacity ?? 1,
     positionX: overrides.positionX ?? null,
     positionY: overrides.positionY ?? null,
+    width: overrides.width ?? null,
+    height: overrides.height ?? null,
+    rotation: overrides.rotation ?? 0,
     shape: overrides.shape ?? 'rect',
     isActive: overrides.isActive ?? true,
     createdAt: overrides.createdAt ?? new Date(),
@@ -159,6 +162,7 @@ function makeReservation(
     partySize: overrides.partySize ?? 2,
     customerName: overrides.customerName ?? 'Client',
     customerPhone: overrides.customerPhone ?? null,
+    customerEmail: overrides.customerEmail ?? null,
     status: overrides.status ?? 'CONFIRMED',
     estimatedRevenue: overrides.estimatedRevenue ?? null,
     confirmedRevenue: overrides.confirmedRevenue ?? null,
@@ -222,6 +226,11 @@ function makeMockPrisma(initial: {
   const reservations = initial.reservations ?? [];
   const holds = initial.holds ?? [];
   const floorPlanId = tables[0]?.floorPlanId ?? 'fp-1';
+  const floorPlanRestaurantId = restaurant?.id ?? RESTAURANT_ID;
+  const floorPlanToRestaurant: Record<string, string> = {};
+  for (const t of tables) {
+    floorPlanToRestaurant[t.floorPlanId] = floorPlanRestaurantId;
+  }
 
   const prisma = {
     restaurant: {
@@ -235,7 +244,7 @@ function makeMockPrisma(initial: {
       },
     },
     floorPlan: {
-      findUnique: async (args: unknown) => {
+      findFirst: async (args: unknown) => {
         const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
         const restaurantId = where.restaurantId as string | undefined;
         if (restaurantId === restaurant?.id) {
@@ -248,12 +257,23 @@ function makeMockPrisma(initial: {
       findMany: async (args: unknown) => {
         const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
         const floorPlanId = where.floorPlanId as string | undefined;
+        const floorPlanRel = where.floorPlan as
+          | { restaurantId?: string; isActive?: boolean }
+          | undefined;
         const isActive = where.isActive as boolean | undefined;
         const capacity = where.capacity as { gte?: number } | undefined;
+        const sectionId = where.sectionId as string | undefined;
         return tables.filter((t) => {
           if (floorPlanId && t.floorPlanId !== floorPlanId) return false;
+          if (
+            floorPlanRel?.restaurantId &&
+            floorPlanToRestaurant[t.floorPlanId] !== floorPlanRel.restaurantId
+          ) {
+            return false;
+          }
           if (isActive === true && !t.isActive) return false;
           if (capacity?.gte && t.capacity < capacity.gte) return false;
+          if (sectionId && t.sectionId !== sectionId) return false;
           return true;
         });
       },
@@ -507,5 +527,68 @@ describe('CapacityAwareAvailabilityService', () => {
     expect(second).toEqual(first);
     expect(redisCache.incr).toHaveBeenCalledWith(expect.stringContaining('availability:v:r-1'));
     expect(redisCache.set).toHaveBeenCalledTimes(2);
+  });
+
+  it('honore la section préférée quand une table de cette section est libre', async () => {
+    const sectionId = 'section-terrasse';
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [
+        makeTable({ id: 't-inside', floorPlanId: FLOOR_PLAN_ID, capacity: 4 }),
+        makeTable({ id: 't-terrasse', floorPlanId: FLOOR_PLAN_ID, capacity: 4, sectionId }),
+      ],
+    });
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const dto = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date,
+      partySize: 2,
+      preferredSectionId: sectionId,
+    });
+
+    const slot20 = dto.slots.find((s) => s.time === '20:00');
+    expect(slot20!.available).toBe(true);
+  });
+
+  it('ne retombe pas sur les autres sections si la section préférée est pleine', async () => {
+    const sectionId = 'section-terrasse';
+    const startsAt = new Date('2026-07-02T17:00:00Z');
+    const endsAt = new Date('2026-07-02T19:00:00Z');
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [
+        makeTable({ id: 't-inside', floorPlanId: FLOOR_PLAN_ID, capacity: 4 }),
+        makeTable({ id: 't-terrasse', floorPlanId: FLOOR_PLAN_ID, capacity: 4, sectionId }),
+      ],
+      reservations: [makeReservation({ id: 'r-1', tableId: 't-terrasse', startsAt, endsAt })],
+    });
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const dto = await service.getAvailability({
+      restaurantId: RESTAURANT_ID,
+      date,
+      partySize: 2,
+      preferredSectionId: sectionId,
+    });
+
+    const slot20 = dto.slots.find((s) => s.time === '20:00');
+    expect(slot20!.available).toBe(false);
+  });
+
+  it('agrège les tables actives de tous les floor plans actifs du restaurant', async () => {
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [
+        makeTable({ id: 't-main', floorPlanId: FLOOR_PLAN_ID, capacity: 4 }),
+        makeTable({ id: 't-second', floorPlanId: 'fp-2', capacity: 4 }),
+      ],
+    });
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const dto = await service.getAvailability({ restaurantId: RESTAURANT_ID, date, partySize: 2 });
+
+    const slot20 = dto.slots.find((s) => s.time === '20:00');
+    expect(slot20!.available).toBe(true);
   });
 });

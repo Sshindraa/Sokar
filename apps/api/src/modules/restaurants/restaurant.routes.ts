@@ -61,6 +61,25 @@ const UpdatePersonalitySchema = z.object({
   systemPromptExtra: z.string().max(2000).optional(),
 });
 
+const CapacitySpecialsSchema = z
+  .object({
+    totalCapacity: z.number().int().optional(),
+    serviceDuration: z.number().int().optional(),
+    serviceDurationMinutes: z.number().int().optional(),
+    defaultServiceDurationMinutes: z.number().int().optional(),
+    cancellationPolicy: z.string().max(280).optional(),
+    depositRequired: z.boolean().optional(),
+    depositAmount: z.number().optional(),
+    depositThreshold: z.number().int().optional(),
+    waitingListEnabled: z.boolean().optional(),
+    waitingListMaxEntriesPerSlot: z.number().int().min(1).optional(),
+  })
+  .passthrough();
+
+const UpdateRestaurantSchema = CreateRestaurantSchema.extend({
+  capacitySpecials: CapacitySpecialsSchema.optional(),
+}).partial();
+
 const UpdateConnectSchema = z.object({
   slug: z
     .string()
@@ -81,16 +100,7 @@ const UpdateConnectSchema = z.object({
   maxPartySize: z.number().int().min(1).max(100).optional(),
   connectPublished: z.boolean().optional(),
   connectAgentic: z.boolean().optional(),
-  capacitySpecials: z
-    .object({
-      totalCapacity: z.number().int().optional(),
-      serviceDuration: z.number().int().optional(),
-      cancellationPolicy: z.string().max(280).optional(),
-      depositRequired: z.boolean().optional(),
-      depositAmount: z.number().optional(),
-      depositThreshold: z.number().int().optional(),
-    })
-    .optional(),
+  capacitySpecials: CapacitySpecialsSchema.optional(),
 });
 
 const PostImageSchema = z.object({
@@ -308,7 +318,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
     return reply.send(
-      await app.db.restaurant.findUniqueOrThrow({ where: { id }, include: { personality: true } }),
+      await app.db.restaurant.findUniqueOrThrow({
+        where: { id },
+        include: { personality: true, exposureSettings: true },
+      }),
     );
   });
 
@@ -355,9 +368,22 @@ export async function restaurantRoutes(app: FastifyInstance) {
           cuisineType: true,
           coverImageUrl: true,
           formattedAddress: true,
+          floorPlans: {
+            where: { isDefault: true, isActive: true },
+            select: {
+              sections: {
+                select: { id: true, name: true },
+                orderBy: { name: 'asc' },
+              },
+            },
+          },
         },
       });
-      return reply.send(restaurant);
+      const defaultFloorPlan = restaurant.floorPlans?.[0];
+      return reply.send({
+        ...restaurant,
+        sections: defaultFloorPlan?.sections ?? [],
+      });
     } catch (err) {
       app.log.error({ err, slug }, 'Restaurant fetch by slug (widget) failed');
       return reply.status(404).send({ error: 'Restaurant not found' });
@@ -485,12 +511,31 @@ export async function restaurantRoutes(app: FastifyInstance) {
     if (id !== restaurantId) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
-    const body = CreateRestaurantSchema.partial().parse(req.body);
+    const body = UpdateRestaurantSchema.parse(req.body ?? {});
+    const { capacitySpecials, ...restaurantData } = body;
+
     const current = await app.db.restaurant.findUniqueOrThrow({
       where: { id },
       select: { phoneNumber: true },
     });
-    const updated = await app.db.restaurant.update({ where: { id }, data: body });
+
+    if (capacitySpecials) {
+      const currentSettings = await app.db.restaurantExposureSettings.upsert({
+        where: { restaurantId: id },
+        create: { restaurantId: id },
+        update: {},
+      });
+      const mergedCapacitySpecials = {
+        ...((currentSettings.capacitySpecials as Record<string, unknown>) || {}),
+        ...capacitySpecials,
+      };
+      await app.db.restaurantExposureSettings.update({
+        where: { restaurantId: id },
+        data: { capacitySpecials: mergedCapacitySpecials as unknown as Prisma.InputJsonValue },
+      });
+    }
+
+    const updated = await app.db.restaurant.update({ where: { id }, data: restaurantData });
     await Promise.all(
       Array.from(new Set([current.phoneNumber, updated.phoneNumber])).map((phoneNumber) =>
         invalidateRestaurantContextCache(phoneNumber),
@@ -900,6 +945,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
       connectAgentic: exposure?.connectAgentic ?? false,
       connectPublishedAt: exposure?.connectPublishedAt?.toISOString() ?? null,
       pageUrl: slug ? `${env.SITE_URL}/restaurant/${slug}` : null,
+      capacitySpecials: (exposure?.capacitySpecials as Record<string, unknown> | null) ?? null,
     });
   };
 

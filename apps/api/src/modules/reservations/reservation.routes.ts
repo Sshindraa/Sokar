@@ -59,6 +59,19 @@ export async function reservationRoutes(app: FastifyInstance) {
     }
   });
 
+  app.post('/reservations/:id/allocate-table', { preHandler: requireOrg() }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      const updated = await ReservationService.allocateTable(id, req.restaurantId!);
+      return reply.send(updated);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'SLOT_NOT_AVAILABLE') {
+        throw createSlotNotAvailableError();
+      }
+      throw err;
+    }
+  });
+
   app.patch('/reservations/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const body = UpdateReservationSchema.parse(req.body);

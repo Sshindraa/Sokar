@@ -18,6 +18,8 @@
  *   est 60s, (3) Cloudflare cache en edge.
  */
 
+import { fetchWithTimeout } from '@sokar/shared';
+
 const API_URL = process.env.API_URL ?? 'http://localhost:3001';
 
 async function getApiUrl(): Promise<string> {
@@ -71,6 +73,7 @@ export type WidgetRestaurantDto = {
   formattedAddress: string;
   coverImageUrl?: string | null;
   connectAgentic?: boolean;
+  sections: Array<{ id: string; name: string }>;
 };
 
 export type AvailabilityDto = {
@@ -265,5 +268,101 @@ export async function fetchCityPage(
     return (await res.json()) as import('./cities').CityCuisinePageData;
   } catch {
     return null;
+  }
+}
+
+export interface JoinWaitingListArgs {
+  slug: string;
+  date: string;
+  time: string;
+  partySize: number;
+  customer: {
+    firstName: string;
+    lastName?: string;
+    phone: string;
+    email?: string;
+  };
+  preferredSectionId?: string;
+  source?: string;
+}
+
+export interface JoinWaitingListResponse {
+  entryId: string;
+  position: number;
+  actionToken: string;
+  expiresAt: string;
+}
+
+export class PublicApiError extends Error {
+  status?: number;
+  code?: string;
+  constructor(message: string, status?: number, code?: string) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
+/**
+ * Rejoint la file d'attente d'un créneau complet.
+ * Endpoint : POST /public/r/:slug/waiting-list
+ */
+export async function joinWaitingList(args: JoinWaitingListArgs): Promise<JoinWaitingListResponse> {
+  const customer: Record<string, string> = {
+    firstName: args.customer.firstName,
+    phone: args.customer.phone,
+  };
+  if (args.customer.lastName?.trim()) {
+    customer.lastName = args.customer.lastName.trim();
+  }
+  if (args.customer.email?.trim()) {
+    customer.email = args.customer.email.trim();
+  }
+
+  const body: Record<string, unknown> = {
+    date: args.date,
+    time: args.time,
+    partySize: args.partySize,
+    customer,
+    source: args.source ?? 'web',
+  };
+  if (args.preferredSectionId) {
+    body.preferredSectionId = args.preferredSectionId;
+  }
+
+  const res = await fetchWithTimeout(`${await getApiUrl()}/public/r/${args.slug}/waiting-list`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new PublicApiError(data.error ?? 'Unknown error', res.status, data.error);
+  }
+
+  return (await res.json()) as JoinWaitingListResponse;
+}
+
+/**
+ * Annule une inscription en liste d'attente via son token d'action.
+ * Endpoint : DELETE /public/r/:slug/waiting-list/:entryId?token=...
+ */
+export async function cancelWaitingListEntry(args: {
+  slug: string;
+  entryId: string;
+  token: string;
+}): Promise<void> {
+  const params = new URLSearchParams({ token: args.token });
+  const res = await fetchWithTimeout(
+    `${await getApiUrl()}/public/r/${args.slug}/waiting-list/${args.entryId}?${params}`,
+    {
+      method: 'DELETE',
+    },
+  );
+
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new PublicApiError(data.error ?? 'Unknown error', res.status, data.error);
   }
 }

@@ -1,5 +1,5 @@
 import { db } from '../../shared/db/client';
-import type { Prisma, Restaurant } from '@prisma/client';
+import type { Prisma, Reservation, Restaurant } from '@prisma/client';
 import { queues } from '../../shared/queue/queues';
 import { logger } from '../../shared/logger/pino';
 import { GoogleCalendarClient } from '../../shared/google-calendar/client';
@@ -251,6 +251,49 @@ export class ReservationService {
     await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
   }
 
+  static async allocateTable(id: string, restaurantId: string): Promise<Reservation> {
+    const reservation = await db.reservation.findUniqueOrThrow({
+      where: { id, restaurantId },
+      include: {
+        restaurant: { include: { exposureSettings: true } },
+        table: { select: { name: true } },
+      },
+    });
+
+    if (reservation.tableId) {
+      return reservation;
+    }
+
+    const startsAt = reservation.startsAt ?? reservation.reservedAt;
+    const serviceDurationMinutes = resolveServiceDurationMinutes(
+      reservation.restaurant.exposureSettings?.capacitySpecials,
+    );
+    const endsAt =
+      reservation.endsAt ?? new Date(startsAt.getTime() + serviceDurationMinutes * 60_000);
+
+    const updated = await db.$transaction(async (tx) => {
+      const table = await tableAllocation.allocate(
+        { restaurantId, partySize: reservation.partySize, startsAt, endsAt },
+        tx,
+      );
+
+      if (!table) {
+        const err = new Error('SLOT_NOT_AVAILABLE');
+        err.name = 'SLOT_NOT_AVAILABLE';
+        throw err;
+      }
+
+      return tx.reservation.update({
+        where: { id },
+        data: { tableId: table.id, startsAt, endsAt },
+        include: { table: { select: { name: true } } },
+      });
+    });
+
+    await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
+    return updated;
+  }
+
   static async findByRestaurant(restaurantId: string, date?: string) {
     const where: Prisma.ReservationWhereInput = { restaurantId };
     if (date) {
@@ -260,7 +303,11 @@ export class ReservationService {
       end.setHours(23, 59, 59, 999);
       where.reservedAt = { gte: start, lte: end };
     }
-    return db.reservation.findMany({ where, orderBy: { reservedAt: 'asc' } });
+    return db.reservation.findMany({
+      where,
+      orderBy: { reservedAt: 'asc' },
+      include: { table: { select: { name: true } } },
+    });
   }
 
   static async availability(

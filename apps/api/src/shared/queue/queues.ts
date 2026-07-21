@@ -93,4 +93,22 @@ export const queues = {
       removeOnFail: 100,
     },
   }),
+  waitingListCleanup: new Queue('waiting-list-cleanup', {
+    connection: redisQueue,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 10_000 },
+      removeOnComplete: 30,
+      removeOnFail: 100,
+    },
+  }),
+  waitingListPromote: new Queue('waiting-list-promote', {
+    connection: redisQueue,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 5_000 },
+      removeOnComplete: 1000,
+      removeOnFail: 1000,
+    },
+  }),
 };

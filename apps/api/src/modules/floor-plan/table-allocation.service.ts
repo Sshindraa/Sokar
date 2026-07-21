@@ -14,10 +14,12 @@
  */
 
 import { Prisma } from '@prisma/client';
-import type { PrismaClient, Table, Reservation, AgenticHold } from '@prisma/client';
-import type { AllocateTableInput, TableAvailabilityCheck } from './floor-plan.types';
-
-const BLOCKING_RESERVATION_STATES: Reservation['state'][] = ['PENDING', 'CONFIRMED', 'SEATED'];
+import type { PrismaClient, Table, Reservation } from '@prisma/client';
+import type {
+  AllocateTableInput,
+  AllocationSuggestion,
+  TableAvailabilityCheck,
+} from './floor-plan.types';
 
 export class TableAllocationService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -25,50 +27,32 @@ export class TableAllocationService {
   /**
    * Alloue la meilleure table disponible pour un créneau donné.
    * Renvoie null si aucune table n'est disponible.
+   *
+   * Verrouille chaque table candidate (FOR UPDATE SKIP LOCKED) avant de
+   * vérifier sa disponibilité. Pour une prévisualisation sans verrou,
+   * utiliser `suggest`.
    */
-  async allocate(input: AllocateTableInput, tx?: Prisma.TransactionClient): Promise<Table | null> {
+  async allocate(
+    input: AllocateTableInput,
+    tx?: Prisma.TransactionClient,
+    options?: { readOnly?: boolean },
+  ): Promise<Table | null> {
     const prisma = tx ?? this.prisma;
+    const tables = await this.findCandidateTables(input, tx);
 
-    const floorPlan = await prisma.floorPlan.findUnique({
-      where: { restaurantId: input.restaurantId },
-      select: { id: true },
-    });
-    if (!floorPlan) {
-      return null;
-    }
-
-    const tables = await prisma.table.findMany({
-      where: {
-        floorPlanId: floorPlan.id,
-        isActive: true,
-        capacity: { gte: input.partySize },
-        minCapacity: { lte: input.partySize },
-        ...(input.excludeTableIds && input.excludeTableIds.length > 0
-          ? { id: { notIn: input.excludeTableIds } }
-          : {}),
-      },
-      include: { section: true },
-      orderBy: [{ capacity: 'asc' }, { minCapacity: 'asc' }, { name: 'asc' }],
-    });
-
-    // 1. Essayer la section préférée
-    let candidates = tables;
-    if (input.preferredSectionId) {
-      const preferred = tables.filter((t) => t.sectionId === input.preferredSectionId);
-      if (preferred.length > 0) {
-        candidates = preferred;
-      }
-    }
-
-    for (const table of candidates) {
+    for (const table of tables) {
       // Verrouiller la ligne table pour éviter l'allocation concurrente.
       // SKIP LOCKED permet de passer à la candidate suivante si déjà verrouillée.
-      const locked = await prisma.$queryRaw<{ id: string }[]>(
-        Prisma.sql`SELECT id FROM floor_plan_tables WHERE id = ${table.id} FOR UPDATE SKIP LOCKED`,
-      );
+      // En mode lecture seule (dry-run), on saute le verrouillage pessimiste
+      // pour ne pas bloquer les allocations concurrentes.
+      if (!options?.readOnly) {
+        const locked = await prisma.$queryRaw<{ id: string }[]>(
+          Prisma.sql`SELECT id FROM floor_plan_tables WHERE id = ${table.id} FOR UPDATE SKIP LOCKED`,
+        );
 
-      if (!locked || locked.length === 0) {
-        continue;
+        if (!locked || locked.length === 0) {
+          continue;
+        }
       }
 
       const available = await this.isTableAvailable(
@@ -88,6 +72,45 @@ export class TableAllocationService {
   }
 
   /**
+   * Prévisualise les meilleures tables disponibles (top `limit`) avec score et
+   * raisons, SANS verrouiller les tables. Lecture seule — pour l'affichage
+   * explicable dans le dashboard. L'attribution autoritaire reste
+   * `assign-table`/`reallocate` (verrou + revalidation).
+   */
+  async suggest(input: AllocateTableInput, limit = 3): Promise<AllocationSuggestion[]> {
+    const tables = await this.findCandidateTables(input);
+    const suggestions: AllocationSuggestion[] = [];
+
+    for (const table of tables) {
+      const available = await this.isTableAvailable(
+        { tableId: table.id, startsAt: input.startsAt, endsAt: input.endsAt },
+        undefined,
+      );
+      if (!available) continue;
+
+      suggestions.push({
+        table: {
+          id: table.id,
+          name: table.name,
+          capacity: table.capacity,
+          minCapacity: table.minCapacity,
+          sectionId: table.sectionId ?? null,
+        },
+        score: this.scoreCandidate(table, input),
+        reasons: this.buildCandidateReasons(table, input),
+      });
+
+      if (suggestions.length >= limit) break;
+    }
+
+    // Tri décroissant par score (meilleur fit en premier). L'ordre de la query
+    // (capacity asc) est déjà quasi-optimal, mais le score explicite rend le
+    // classement stable et lisible côté UI.
+    suggestions.sort((a, b) => b.score - a.score);
+    return suggestions;
+  }
+
+  /**
    * Vérifie qu'une table est disponible sur un créneau donné.
    * Permet d'exclure une réservation ou un hold spécifique (utile pour
    * reallocation ou tests).
@@ -96,12 +119,12 @@ export class TableAllocationService {
     check: TableAvailabilityCheck,
     tx?: Prisma.TransactionClient,
   ): Promise<boolean> {
-    const [conflictingReservation, conflictingHold] = await Promise.all([
-      this.findConflictingReservation(check, tx),
-      this.findConflictingHold(check, tx),
+    const [hasReservationConflict, hasHoldConflict] = await Promise.all([
+      this.hasConflictingReservation(check, tx),
+      this.hasConflictingHold(check, tx),
     ]);
 
-    return !conflictingReservation && !conflictingHold;
+    return !hasReservationConflict && !hasHoldConflict;
   }
 
   /**
@@ -184,35 +207,212 @@ export class TableAllocationService {
     });
   }
 
-  private async findConflictingReservation(
-    check: TableAvailabilityCheck,
-    tx?: Prisma.TransactionClient,
-  ): Promise<Reservation | null> {
-    const prisma = tx ?? this.prisma;
-    return prisma.reservation.findFirst({
-      where: {
-        tableId: check.tableId,
-        state: { in: BLOCKING_RESERVATION_STATES },
-        ...(check.excludeReservationId ? { id: { not: check.excludeReservationId } } : {}),
-        AND: [{ startsAt: { lt: check.endsAt } }, { endsAt: { gt: check.startsAt } }],
+  /**
+   * Vérifie qu'une table est utilisable pour un placement (SEATED / walk-in).
+   * Lance TableAllocationError si la table est introuvable, inactive, trop
+   * petite, verrouillée par une autre opération, ou déjà occupée sur le créneau.
+   */
+  async assertTableAvailableForSeating(
+    args: {
+      restaurantId: string;
+      tableId: string;
+      partySize: number;
+      startsAt: Date;
+      endsAt: Date;
+      excludeReservationId?: string;
+    },
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    const table = await tx.table.findFirst({
+      where: { id: args.tableId, floorPlan: { restaurantId: args.restaurantId } },
+      select: { id: true, isActive: true, capacity: true, minCapacity: true },
+    });
+
+    if (!table) {
+      throw new TableAllocationError('TABLE_NOT_FOUND', 'Table introuvable');
+    }
+    if (!table.isActive) {
+      throw new TableAllocationError('TABLE_NOT_ACTIVE', 'Table inactive');
+    }
+    if (table.capacity < args.partySize) {
+      throw new TableAllocationError('TABLE_CAPACITY_TOO_SMALL', 'Capacité insuffisante');
+    }
+    if (table.minCapacity > args.partySize) {
+      throw new TableAllocationError(
+        'TABLE_MIN_CAPACITY_TOO_HIGH',
+        'Party size below table minimum',
+      );
+    }
+
+    const locked = await this.lockTable(tx, args.tableId);
+    if (!locked) {
+      throw new TableAllocationError(
+        'TABLE_NOT_AVAILABLE',
+        'Table verrouillée par une autre opération',
+      );
+    }
+
+    const available = await this.isTableAvailable(
+      {
+        tableId: args.tableId,
+        startsAt: args.startsAt,
+        endsAt: args.endsAt,
+        excludeReservationId: args.excludeReservationId,
       },
+      tx,
+    );
+
+    if (!available) {
+      throw new TableAllocationError('TABLE_NOT_AVAILABLE', 'Table non disponible sur ce créneau');
+    }
+  }
+
+  /**
+   * Sélectionne les tables candidates (actives, capacité/minCapacity compatibles,
+   * exclusions), triées best-fit. Partagé par `allocate` et `suggest`.
+   */
+  private async findCandidateTables(
+    input: AllocateTableInput,
+    tx?: Prisma.TransactionClient,
+  ): Promise<Table[]> {
+    const prisma = tx ?? this.prisma;
+
+    const capacityFilter = {
+      isActive: true,
+      capacity: { gte: input.partySize },
+      minCapacity: { lte: input.partySize },
+      ...(input.excludeTableIds && input.excludeTableIds.length > 0
+        ? { id: { notIn: input.excludeTableIds } }
+        : {}),
+    } as const;
+
+    if (input.preferredSectionId) {
+      const preferred = await prisma.table.findMany({
+        where: {
+          sectionId: input.preferredSectionId,
+          floorPlan: { isActive: true },
+          ...capacityFilter,
+        },
+        orderBy: [{ capacity: 'asc' }, { minCapacity: 'asc' }, { name: 'asc' }],
+      });
+
+      // Fallback : si la section préférée n'a aucune table compatible (capacité
+      // ou toutes occupées), retomber sur le plan par défaut plutôt que de
+      // renvoyer null. On marque `fromPreferredSectionFallback` pour que
+      // `suggest` puisse l'expliquer dans les raisons.
+      const floorPlan = await prisma.floorPlan.findFirst({
+        where: { restaurantId: input.restaurantId, isActive: true, isDefault: true },
+        select: { id: true },
+      });
+      if (!floorPlan) {
+        return preferred;
+      }
+      const fallback = await prisma.table.findMany({
+        where: {
+          floorPlanId: floorPlan.id,
+          ...capacityFilter,
+          ...(preferred.length > 0 ? { id: { notIn: preferred.map((t) => t.id) } } : {}),
+        },
+        orderBy: [{ capacity: 'asc' }, { minCapacity: 'asc' }, { name: 'asc' }],
+      });
+      return [...preferred, ...fallback];
+    }
+
+    const floorPlan = await prisma.floorPlan.findFirst({
+      where: { restaurantId: input.restaurantId, isActive: true, isDefault: true },
+      select: { id: true },
+    });
+    if (!floorPlan) {
+      return [];
+    }
+
+    return prisma.table.findMany({
+      where: { floorPlanId: floorPlan.id, ...capacityFilter },
+      orderBy: [{ capacity: 'asc' }, { minCapacity: 'asc' }, { name: 'asc' }],
     });
   }
 
-  private async findConflictingHold(
+  /**
+   * Score d'une candidate : plus la table est proche du nombre de couverts,
+   * plus le score est élevé. Une table de la section préférée (si fournie) est
+   * favorisée. Le score n'est qu'un ordre de tri — les `reasons` portent le
+   * sens métier affiché.
+   */
+  private scoreCandidate(table: Table, input: AllocateTableInput): number {
+    let score = 100 - (table.capacity - input.partySize) * 10;
+    if (input.preferredSectionId && table.sectionId === input.preferredSectionId) {
+      score += 15;
+    }
+    return score;
+  }
+
+  /**
+   * Raisons FR (vouvoiement) expliquant la proposition, affichées telles quelles.
+   */
+  private buildCandidateReasons(table: Table, input: AllocateTableInput): string[] {
+    const reasons: string[] = [];
+    const spare = table.capacity - input.partySize;
+    if (spare === 0) {
+      reasons.push(`Capacité exacte pour ${input.partySize} couverts`);
+    } else {
+      reasons.push(`Table de ${table.capacity} couverts pour ${input.partySize} personnes`);
+    }
+    if (input.preferredSectionId && table.sectionId === input.preferredSectionId) {
+      reasons.push('Dans votre section préférée');
+    }
+    if (spare === 0) {
+      reasons.push('Optimise votre remplissage');
+    }
+    return reasons;
+  }
+
+  private async hasConflictingReservation(
     check: TableAvailabilityCheck,
     tx?: Prisma.TransactionClient,
-  ): Promise<AgenticHold | null> {
+  ): Promise<boolean> {
     const prisma = tx ?? this.prisma;
-    return prisma.agenticHold.findFirst({
-      where: {
-        tableId: check.tableId,
-        status: 'ACTIVE',
-        expiresAt: { gt: new Date() },
-        ...(check.excludeHoldId ? { id: { not: check.excludeHoldId } } : {}),
-        AND: [{ slotStart: { lt: check.endsAt } }, { slotEnd: { gt: check.startsAt } }],
-      },
-    });
+    const excludeClause = check.excludeReservationId
+      ? Prisma.sql`AND id != ${check.excludeReservationId}`
+      : Prisma.empty;
+    const rows = await prisma.$queryRaw<Array<{ exists: number }>>(
+      Prisma.sql`
+        SELECT 1 as exists
+        FROM reservations
+        WHERE table_id = ${check.tableId}
+          AND state IN ('PENDING', 'CONFIRMED', 'SEATED')
+          AND starts_at IS NOT NULL
+          AND ends_at IS NOT NULL
+          AND tsrange(starts_at, ends_at) && tsrange(${check.startsAt}, ${check.endsAt})
+          ${excludeClause}
+        LIMIT 1
+      `,
+    );
+    return rows.length > 0 && Number(rows[0].exists) === 1;
+  }
+
+  private async hasConflictingHold(
+    check: TableAvailabilityCheck,
+    tx?: Prisma.TransactionClient,
+  ): Promise<boolean> {
+    const prisma = tx ?? this.prisma;
+    const excludeClause = check.excludeHoldId
+      ? Prisma.sql`AND id != ${check.excludeHoldId}`
+      : Prisma.empty;
+    const rows = await prisma.$queryRaw<Array<{ exists: number }>>(
+      Prisma.sql`
+        SELECT 1 as exists
+        FROM agentic_holds
+        WHERE table_id = ${check.tableId}
+          AND status = 'ACTIVE'
+          AND expires_at > NOW()
+          AND slot_start IS NOT NULL
+          AND slot_end IS NOT NULL
+          AND tsrange(slot_start, slot_end) && tsrange(${check.startsAt}, ${check.endsAt})
+          ${excludeClause}
+        LIMIT 1
+      `,
+    );
+    return rows.length > 0 && Number(rows[0].exists) === 1;
   }
 
   /**

@@ -18,8 +18,13 @@ describe('ReservationService.findByRestaurant', () => {
   it('retourne les réservations triées par heure pour un restaurant', async () => {
     const restaurantId = 'rest-123';
     const mockReservations = [
-      { id: 'r1', reservedAt: new Date('2099-06-05T19:00:00'), partySize: 2 },
-      { id: 'r2', reservedAt: new Date('2099-06-05T20:00:00'), partySize: 4 },
+      {
+        id: 'r1',
+        reservedAt: new Date('2099-06-05T19:00:00'),
+        partySize: 2,
+        table: { name: 'T1' },
+      },
+      { id: 'r2', reservedAt: new Date('2099-06-05T20:00:00'), partySize: 4, table: null },
     ];
 
     vi.mocked(db.reservation.findMany).mockResolvedValue(
@@ -31,6 +36,7 @@ describe('ReservationService.findByRestaurant', () => {
     expect(db.reservation.findMany).toHaveBeenCalledWith({
       where: { restaurantId },
       orderBy: { reservedAt: 'asc' },
+      include: { table: { select: { name: true } } },
     });
     expect(result).toEqual(mockReservations);
   });

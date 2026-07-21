@@ -78,17 +78,37 @@ export async function createRefund(
 
 /**
  * Construit et vérifie un event Stripe depuis le webhook (signature verification).
+ * Supporte une liste de secrets séparés par des virgules pour la rotation.
  */
 export async function constructWebhookEvent(
   payload: string,
   signature: string,
 ): Promise<Stripe.Event> {
-  const stripe = getStripe();
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) {
+  const rawSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+  if (!rawSecret) {
     throw new Error('STRIPE_WEBHOOK_SECRET is required');
   }
-  return stripe.webhooks.constructEvent(payload, signature, secret);
+
+  const secrets = rawSecret
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (secrets.length === 0) {
+    throw new Error('STRIPE_WEBHOOK_SECRET is required');
+  }
+
+  const stripe = getStripe();
+  let lastError: unknown;
+
+  for (const secret of secrets) {
+    try {
+      return stripe.webhooks.constructEvent(payload, signature, secret);
+    } catch (err: unknown) {
+      lastError = err;
+    }
+  }
+
+  throw lastError ?? new Error('STRIPE_WEBHOOK_SECRET is required');
 }
 
 export { logger };

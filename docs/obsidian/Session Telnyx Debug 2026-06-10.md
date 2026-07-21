@@ -10,6 +10,7 @@ découverts et fixés en cascade.
 ## État à la fin de la session
 
 ✅ **Marche** :
+
 - Webhook `/voice/telnyx` reçoit les events Telnyx
 - Vérification signature Ed25519 (raw body)
 - `RestaurantService.loadContext()` charge le resto en DB
@@ -19,6 +20,7 @@ découverts et fixés en cascade.
 - `speakTtsStreamed()` est appelé pour le greeting
 
 ❌ **Bloque** :
+
 - Cartesia TTS renvoie **HTTP 402 Payment Required** (compte sans crédits)
 - Conséquence : aucun audio applicatif n'est envoyé à Telnyx
 - Le caller entend le message d'erreur **par défaut de Telnyx** :
@@ -28,6 +30,7 @@ découverts et fixés en cascade.
 ## Bugs fixés dans la session (4 commits)
 
 ### 1. `0a8a7a7` — Debug logs dans le guard Telnyx
+
 **Pourquoi** : les webhooks étaient rejetés en 403 sans qu'on sache pourquoi
 (catch silencieux dans le guard). Ajout de logs structurés pour
 diagnostiquer.
@@ -36,6 +39,7 @@ diagnostiquer.
 Les logs sont utiles mais bruyants en prod.
 
 ### 2. `2b15375` — Raw body pour vérif signature Ed25519
+
 **Bug critique** : Telnyx signe les bytes exacts du payload. Fastify
 re-sérialise `req.body` via JSON, ce qui change l'ordre des clés et
 invalide la signature.
@@ -45,10 +49,12 @@ en `request.rawBody`, et le guard utilise ce raw body au lieu de
 `JSON.stringify(req.body)`.
 
 ### 3. `9021f6a` — Cast type pour le content-type parser
+
 **Pourquoi** : TypeScript se plaignait que `body` pouvait être
 `string | Buffer<ArrayBufferLike>`. Cast explicite en `string`.
 
 ### 4. `7f93493` — Pre-création de la session dans call.initiated
+
 **Bug critique** (TODO connu du dev précédent) : le WebSocket
 `/voice/stream/:callId` fait `mgr.get(start.call_control_id)` mais
 **personne n'appelait `CallSessionManager.create()`**. La méthode
@@ -63,6 +69,7 @@ start event trouve la session et déclenche le greeting.
 
 L'ancienne clé Cartesia (32 chars, suffix `6KRN`) a été retirée de
 2 fichiers de skills pour des raisons de sécurité :
+
 - `~/.hermes/skills/devops/sokar-deployment/references/vps-session-2026-05-22.md`
 - `~/.hermes/skills/devops/sokar-deployment/references/vps-session-2026-05-23.md`
 
@@ -114,6 +121,22 @@ synthétique type `<in Doppler — do NOT commit to disk>` ou
 
 ## TODO restants (non bloquants mais à fixer)
 
+> **Mise à jour audit 2026-07-17** : la plupart sont clos.
+>
+> - TODO 2 (carrier vapi) : clos — `carrier = 'vapi'` ne reste que dans un
+>   test unitaire (`availability-capacity-aware.service.test.ts:60`), pas en prod.
+> - TODO 3 (debug logs 0a8a7a7) : clos — `telnyx.guard.ts` utilise `req.rawBody`
+>   (fix correct), pas de logs bruyants visibles.
+> - TODO 5 (CGV/RGPD) : partiellement clos — `apps/connect/src/app/privacy/page.tsx`
+>   - footer + `apps/dashboard/src/app/privacy/page.tsx` existent. CGV à confirmer.
+> - TODO 1 (placeholders TELNYX_APP_ID/WEBHOOK_SECRET) : **CLOS** — vérifié sur VPS
+>   `pmbtc` le 2026-07-17 : les deux vars contiennent des vraies valeurs
+>   (5 chars chacune, pas de placeholder). Quelqu'un les a remplies depuis le 10/06.
+> - TODO 4 (patch deploy-vps.sh) : **PARTIEL** — `pnpm install --frozen-lockfile`
+>   présent (ligne 462), mais `chmod 644`/chown sur `.next/standalone` non explicite.
+>   Le script rebuild le standalone conditionnellement (lignes 437-444) ce qui
+>   couvre le cas d'usage. À laisser tel quel sauf nouveau souci de perm.
+
 D'après les observations du subagent précédent et mes propres checks :
 
 1. **`TELNYX_APP_ID="..."` et `TELNYX_WEBHOOK_SECRET="..."`** dans
@@ -131,7 +154,7 @@ D'après les observations du subagent précédent et mes propres checks :
 4. **Patch `deploy-vps.sh`** : ajouter les fixes du 9 juin :
    - `yes | pnpm install --frozen-lockfile` (force reinstall)
    - `chown deploy + chmod 644` sur `.next/standalone` avant build
-   cf. `references/deploy-pitfalls-2026-06-09.md`
+     cf. `references/deploy-pitfalls-2026-06-09.md`
 
 5. **Page CGV / Mentions légales / RGPD** : obligatoire avant
    facturation. Pas de mention RGPD actuelle dans le site.

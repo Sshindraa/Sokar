@@ -30,6 +30,7 @@ describe('GET /public/widget/:slug', () => {
       cuisineType: ['bistro'],
       coverImageUrl: null,
       formattedAddress: '1 rue de la Paix, Lyon',
+      floorPlans: [{ sections: [{ id: 'section-terrasse', name: 'Terrasse' }] }],
     };
     const findUnique = vi.mocked(db.restaurant.findUniqueOrThrow);
     findUnique.mockResolvedValue(
@@ -49,6 +50,7 @@ describe('GET /public/widget/:slug', () => {
     const body = res.json();
     expect(body.id).toBe('rest-uuid-123');
     expect(body.slug).toBe('chez-sokar-demo');
+    expect(body.sections).toEqual([{ id: 'section-terrasse', name: 'Terrasse' }]);
   });
 
   it('renvoie 404 quand le slug est inconnu', async () => {

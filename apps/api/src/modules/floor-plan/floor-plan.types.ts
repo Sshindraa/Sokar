@@ -57,6 +57,25 @@ export type AllocateTableInput = {
   excludeTableIds?: string[];
 };
 
+/**
+ * Proposition d'allocation explicable (Phase 5).
+ *
+ * - `score` : ordre de tri décroissant (fit capacité puis section préférée).
+ * - `reasons` : libellés FR (vouvoiement) expliquant pourquoi cette table est
+ *   proposée, affichés tels quels dans le dashboard.
+ */
+export type AllocationSuggestion = {
+  table: {
+    id: string;
+    name: string;
+    capacity: number;
+    minCapacity: number;
+    sectionId: string | null;
+  };
+  score: number;
+  reasons: string[];
+};
+
 export type TableAvailabilityCheck = {
   tableId: string;
   startsAt: Date;

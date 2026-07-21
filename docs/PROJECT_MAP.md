@@ -105,7 +105,7 @@ packages/
 
 ### Connect / widget
 
-- Page publique → `connect.service.ts` / `availability.service.ts`.
+- Page publique → `connect.service.ts` (agrégateur) ; disponibilités via `CapacityAwareAvailabilityService` (floor-plan).
 - Widget : `apps/connect/src/components/booking-widget.tsx` et `apps/widget/src/app/restaurant-reservation/`.
 - Cartes cadeaux : `widget/[slug]/gift-card/` et `gift-card-*` components.
 

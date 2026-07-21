@@ -256,12 +256,12 @@ apps/
 │   │   ├── lib/
 │   │   │   ├── api-client.ts         # fetch /public/r/[slug]
 │   │   │   ├── seo.ts                # helpers title/description/canonical
-│   │   │   ├── jsonld.ts             # buildRestaurantJsonLd()
+│   │   │   ├── jsonld.tsx            # buildPublicRestaurantJsonLd()
 │   │   │   ├── index-rules.ts        # shouldIndexCollectionPage()
 │   │   │   ├── analytics.ts          # emit ConnectEvent via fetch
 │   │   │   └── env.ts                # API_PUBLIC_URL, SITE_URL
 │   │   └── __tests__/                # Vitest, tests SEO + JSON-LD
-│   │       ├── jsonld.test.ts
+│   │       ├── jsonld.test.tsx
 │   │       ├── seo.test.ts
 │   │       └── index-rules.test.ts
 │   └── public/
@@ -271,15 +271,12 @@ apps/
     └── src/
         └── modules/
             ├── connect/              # NOUVEAU MODULE
-            │   ├── connect.routes.ts # routes publiques SSR-friendly
+            │   ├── connect.routes.ts # routes publiques SSR-friendly (disponibilités via CapacityAwareAvailabilityService)
             │   ├── connect.service.ts
-            │   ├── availability.service.ts
-            │   ├── jsonld.service.ts
             │   ├── sitemap.service.ts
             │   ├── robots.service.ts
             │   └── __tests__/
             │       ├── connect.routes.test.ts
-            │       ├── jsonld.service.test.ts
             │       └── sitemap.service.test.ts
             └── agentic-reservations/ # INCHANGÉ mais réutilisé
                 └── core/             # hold, reservation, policies
@@ -571,15 +568,12 @@ attributions.
 
 ```
 apps/api/src/modules/connect/
-├── connect.routes.ts         # Fastify plugin, public, no Clerk
+├── connect.routes.ts         # Fastify plugin, public, no Clerk ; `/availability` utilise CapacityAwareAvailabilityService (floor-plan)
 ├── connect.service.ts        # agrégateur (slug → restaurant + exposure + images)
-├── availability.service.ts   # ré-utilise openingHours + holds
-├── jsonld.service.ts         # buildPublicRestaurantJsonLd()
 ├── sitemap.service.ts        # buildSitemap() (utilisé aussi par apps/connect pour rendre /sitemap.xml)
 ├── robots.service.ts         # buildRobots()
 └── __tests__/
     ├── connect.routes.test.ts
-    ├── jsonld.service.test.ts
     └── sitemap.service.test.ts
 ```
 
@@ -991,7 +985,7 @@ ses données contacte `dpo@sokar.tech`.
 
 **Scope** :
 
-- `jsonld.service.ts` avec `buildPublicRestaurantJsonLd(restaurant, opts)`
+- `packages/shared/src/jsonld.ts` exporte `buildPublicRestaurantJsonLd(restaurant, opts)`, re-exporté par `apps/connect/src/lib/jsonld.tsx`
 - Respecte `attributeConfidence` (§5.5) : pas de claims non sourcés
 - Inclut `Restaurant`, `PostalAddress`, `GeoCoordinates` si lat/lng,
   `openingHoursSpecification`, `acceptsReservations` (URL `/book`),

@@ -29,6 +29,7 @@ export interface Restaurant {
   giftCardCommissionRate: number;
   slug: string | null;
   openingHours?: Record<string, OpeningHours | null>;
+  exposureSettings?: RestaurantExposureSettings | null;
 }
 
 // ─── AgentPersonality ───────────────────────────────────────────────────
@@ -59,6 +60,8 @@ export interface Reservation {
   customerPhone: string | null;
   status: ReservationStatus;
   estimatedRevenue: number | null;
+  tableId: string | null;
+  table?: { name: string } | null;
 }
 
 // ─── Call ───────────────────────────────────────────────────────────────
@@ -122,6 +125,9 @@ export interface FloorPlanTable {
   isActive: boolean;
   positionX: number | null;
   positionY: number | null;
+  width: number | null;
+  height: number | null;
+  rotation: number;
   shape: TableShape | null;
   sectionId?: string | null;
   sectionName?: string | null;
@@ -137,11 +143,21 @@ export interface FloorPlanSection {
 export interface FloorPlan {
   id: string;
   name: string | null;
+  isDefault: boolean;
+  isActive: boolean;
   width: number;
   height: number;
   sections: FloorPlanSection[];
   tables?: FloorPlanTable[];
   walls?: FloorPlanWall[];
+}
+
+export interface FloorPlanSummary {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  isActive: boolean;
+  tableCount: number;
 }
 
 export interface PlanningReservation {
@@ -154,6 +170,7 @@ export interface PlanningReservation {
   partySize: number;
   customerName: string | null;
   state: string;
+  seatedAt: string | null;
 }
 
 // ─── ReactivationCampaign ───────────────────────────────────────────────
@@ -191,6 +208,10 @@ export interface CapacitySpecials {
   pmr?: number;
   chien?: boolean;
   poussette?: boolean;
+  serviceDurationMinutes?: number;
+  defaultServiceDurationMinutes?: number;
+  waitingListEnabled?: boolean;
+  waitingListMaxEntriesPerSlot?: number;
 }
 
 export interface RestaurantExposureSettings {
@@ -230,6 +251,27 @@ export interface OptInStatus {
   mcp: boolean;
   openaiReserve: boolean;
   policyVersion: string;
+}
+
+// ─── WaitingList ────────────────────────────────────────────────────────
+
+export type WaitingListStatus = 'PENDING' | 'PROMOTED' | 'CANCELLED' | 'EXPIRED';
+
+export interface WaitingListEntry {
+  id: string;
+  partySize: number;
+  customerFirstName: string;
+  customerLastName?: string | null;
+  customerPhone: string;
+  customerEmail?: string | null;
+  source?: string | null;
+  slotStart: string;
+  slotEnd: string;
+  preferredSectionName?: string | null;
+  status: WaitingListStatus;
+  position: number;
+  createdAt: string;
+  promotedReservationId?: string | null;
 }
 
 // ─── Utilitaire : extraction de message d'erreur ────────────────────────

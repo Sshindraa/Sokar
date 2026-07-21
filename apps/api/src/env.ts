@@ -100,8 +100,15 @@ const EnvSchema = z
     DEEPGRAM_API_KEY: z.string().optional(),
     CARTESIA_API_KEY: z.string().optional(),
     STRIPE_SECRET_KEY: z.string().optional(),
+    STRIPE_WEBHOOK_SECRET: z.string().optional(),
     // Captcha Cloudflare Turnstile pour les flux sensibles (SEC-009). Optionnel ; si défini, /api/rgpd/request-verification exige un token Turnstile.
     TURNSTILE_SECRET_KEY: z.string().optional(),
+    // SMTP pour l'envoi des emails transactionnels (notifications file d'attente, etc.)
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.string().optional(),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
+    EMAIL_FROM: z.string().optional(),
   })
   .refine(
     (data) => {
@@ -174,6 +181,32 @@ const EnvSchema = z
       message:
         'En production, CARTESIA_API_KEY doit être définie (≥20 chars). Pour désactiver la voice (staging), set VOICE_DISABLED=true.',
       path: ['CARTESIA_API_KEY'],
+    },
+  )
+  .refine(
+    (data) => {
+      // Si une clé Stripe est configurée, le secret de webhook est obligatoire
+      // (indépendamment de l'environnement, pour éviter les webhooks non vérifiés).
+      if (!data.STRIPE_SECRET_KEY) return true;
+      return !!data.STRIPE_WEBHOOK_SECRET;
+    },
+    {
+      message: 'STRIPE_WEBHOOK_SECRET doit être défini quand STRIPE_SECRET_KEY est configuré.',
+      path: ['STRIPE_WEBHOOK_SECRET'],
+    },
+  )
+  .refine(
+    (data) => {
+      if (data.NODE_ENV !== 'production') return true;
+      // En production, on ne valide que le préfixe Stripe (pas le webhook secret,
+      // déjà contrôlé par le refine précédent).
+      if (!data.STRIPE_SECRET_KEY) return true;
+      return data.STRIPE_SECRET_KEY.startsWith('sk_');
+    },
+    {
+      message:
+        'En production, STRIPE_SECRET_KEY doit être une clé Stripe valide (format sk_*) et STRIPE_WEBHOOK_SECRET doit être défini.',
+      path: ['STRIPE_SECRET_KEY'],
     },
   );
 

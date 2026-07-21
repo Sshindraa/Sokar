@@ -12,7 +12,7 @@
 - `Reservation` stocke `startsAt`, `endsAt`, `partySize`, `status`, `state`.
 - Deux moteurs de disponibilité coexistent :
   - `apps/api/src/modules/reservations/reservation.service.ts` (legacy voice) : génère des slots par pas de 30 min, compte 1 réservation = 1 créneau indisponible.
-  - `apps/api/src/modules/connect/availability.service.ts` (Connect/widget) : idem, ignore la capacité physique réelle.
+  - `apps/api/src/modules/connect/availability.service.ts` a été supprimé ; Connect/widget utilise maintenant `CapacityAwareAvailabilityService` (floor-plan).
   - `apps/api/src/modules/agentic-reservations/core/availability.service.ts` (MCP/voice agentic) : P0 ultra-conservateur, 1 table par slot/partySize.
 - `RestaurantExposureSettings.capacitySpecials` est un blob JSON qui contient aujourd’hui des compteurs par section (ex: `{ terrasse: 2 }`) mais pas de `serviceDuration`.
 - Aucun modèle `Table`, `Section`, `FloorPlan`.
@@ -283,7 +283,7 @@ export class TableAllocationService {
 Remplacer / unifier les services suivants :
 
 - `apps/api/src/modules/reservations/reservation.service.ts` (legacy)
-- `apps/api/src/modules/connect/availability.service.ts`
+- `apps/api/src/modules/connect/availability.service.ts` (supprimé ; Connect utilise déjà `CapacityAwareAvailabilityService`)
 - `apps/api/src/modules/agentic-reservations/core/availability.service.ts` (garder la surface API, changer l’implémentation interne)
 
 Le contrat de surface (`AvailabilityDto`) reste le même pour ne pas casser Connect/widget :
@@ -691,7 +691,7 @@ Réassignation manuelle → PATCH /reservations/:id (tableId)
 - `apps/api/src/modules/reservations/reservation.service.ts` :
   - utiliser le nouveau moteur ;
   - remplacer `RESERVATION_DURATION_MINUTES = 120` par la lecture de `serviceDuration` dans `capacitySpecials` pour calculer `endsAt`.
-- `apps/api/src/modules/connect/availability.service.ts` : wrapper autour du nouveau service ou remplacement.
+- `apps/api/src/modules/connect/availability.service.ts` : supprimé ; Connect utilise directement `CapacityAwareAvailabilityService`.
 - `apps/api/src/modules/agentic-reservations/core/availability.service.ts` : wrapper autour du nouveau service.
 - `apps/api/src/modules/agentic-reservations/core/hold.service.ts` : appeler `allocate` au moment du hold.
 - `apps/api/src/modules/agentic-reservations/core/reservation.service.ts` : appeler `allocate` au moment de la création si pas de hold.

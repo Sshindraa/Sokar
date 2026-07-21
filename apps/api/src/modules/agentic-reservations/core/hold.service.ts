@@ -146,6 +146,7 @@ export class HoldService {
     policy: PolicySnapshot;
     actor: string;
     tableId?: string | null;
+    preferredSectionId?: string;
   }): Promise<AgenticHold> {
     const expiresAt = computeHoldExpiresAt(args.policy);
     const maxAttempts = 2;
@@ -162,6 +163,7 @@ export class HoldService {
                 partySize: args.partySize,
                 startsAt: args.slotStart,
                 endsAt: args.slotEnd,
+                preferredSectionId: args.preferredSectionId,
               },
               tx,
             );
@@ -418,6 +420,7 @@ export class HoldService {
       policy: PolicySnapshot;
       actor: string;
       tableId?: string | null;
+      preferredSectionId?: string;
     },
     expiresAt: Date,
     tx?: Prisma.TransactionClient,

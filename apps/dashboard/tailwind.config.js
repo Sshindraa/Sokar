@@ -67,6 +67,8 @@ module.exports = {
         'glass-stroke': 'hsl(var(--glass-stroke))',
         // Métal champagne (#8E877B) — séparateurs, badges passifs, icônes secondaires.
         metal: 'hsl(var(--metal))',
+        'pricing-accent': 'hsl(var(--pricing-accent))',
+        'pricing-accent-glow': 'hsl(var(--pricing-accent-glow))',
         // Texte faible (#7E7A74) — métadonnées, labels secondaires (contraste borderline).
         faint: {
           DEFAULT: 'hsl(var(--faint-foreground))',
