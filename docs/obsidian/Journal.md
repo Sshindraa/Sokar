@@ -82,3 +82,4 @@ Log automatique des tâches Hermes.
 
 2026-07-21 20:45 — [voice, api, dashboard] Service Copilot : `reportDelay` enregistre un retard vocal identifié comme audit append-only et le remonte dans le cockpit vers une analyse automatique en lecture seule. Aucune réaffectation ni communication externe n’est automatique ; le responsable conserve la confirmation explicite.
 2026-07-21 21:05 — [api, dashboard] Service Copilot : nouvelle recommandation déterministe `server-rebalance` fondée sur les tables assignées et les couverts des 30 prochaines minutes. Elle propose de déplacer une table `CONFIRMED` uniquement au-delà d’un écart de charge significatif ; l’application passe par le PATCH table existant, déclenché explicitement par le responsable.
+2026-07-21 21:10 — [dashboard] Les réaffectations suggérées par `server-rebalance` exigent une confirmation explicite dans le cockpit, avec table et serveur cible visibles avant exécution.

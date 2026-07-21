@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, CheckCircle2, Clock, Phone, Scale } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { cn } from '@/lib/utils';
 import { useApi } from '../../lib/api';
 import type {
@@ -88,6 +89,7 @@ function RecommendationCard({
   onActionDone: () => void;
 }) {
   const { post, patch } = useApi();
+  const [confirmRebalanceOpen, setConfirmRebalanceOpen] = useState(false);
   const Icon = kindIcon[rec.kind];
   const metric = formatMetric(rec);
 
@@ -125,7 +127,11 @@ function RecommendationCard({
             ) : rec.action.type === 'api' ? (
               <button
                 type="button"
-                onClick={handleApiAction}
+                onClick={() =>
+                  rec.kind === 'server-rebalance'
+                    ? setConfirmRebalanceOpen(true)
+                    : void handleApiAction()
+                }
                 className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground transition-all duration-200 hover:bg-accent"
               >
                 {rec.action.label}
@@ -141,6 +147,17 @@ function RecommendationCard({
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmRebalanceOpen}
+        onCancel={() => setConfirmRebalanceOpen(false)}
+        onConfirm={() => {
+          setConfirmRebalanceOpen(false);
+          void handleApiAction();
+        }}
+        title="Confier cette table à un autre serveur ?"
+        description={`Cette action affectera ${rec.metrics?.tableName ?? 'la table'} à ${rec.metrics?.toServer ?? 'un autre serveur'}. Vérifiez que l’équipe est prévenue avant de confirmer.`}
+        confirmLabel="Confirmer l’affectation"
+      />
     </div>
   );
 }

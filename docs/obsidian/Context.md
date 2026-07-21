@@ -2,6 +2,8 @@
 
 ## Dernière activité
 
+2026-07-21 21:10 — [dashboard] **Service Copilot : confirmation d’équilibrage serveur** — Une recommandation `server-rebalance` n’exécute plus le PATCH directement : le cockpit affiche une confirmation nommant table et serveur cible, avec rappel de prévenir l’équipe. La décision reste entièrement humaine.
+
 2026-07-21 21:05 — [api, dashboard] **Service Copilot : équilibrage dynamique des serveurs** — Les recommandations analysent les tables actives affectées et les couverts `CONFIRMED`/`SEATED` des 30 prochaines minutes. En cas d’écart significatif, le cockpit propose de confier une table confirmée d’un serveur surchargé au serveur le moins chargé. Aucune réaffectation automatique : le responsable déclenche explicitement le PATCH existant, puis le Copilot se rafraîchit.
 
 2026-07-21 20:45 — [voice, api, dashboard] **Service Copilot : retard vocal soumis à validation humaine** — L’outil vocal `reportDelay` exige nom, date, heure et minutes de retard, identifie une réservation `CONFIRMED` exacte puis écrit uniquement l’événement append-only `reservation_delay_reported` (corrélé à l’appel). Le cockpit le remonte comme action prioritaire et ouvre directement l’analyse d’impact de la réservation. Aucun déplacement de table, promotion de file ou message à un tiers n’est exécuté depuis l’appel ; toute récupération reste soumise à la confirmation transactionnelle du responsable.
