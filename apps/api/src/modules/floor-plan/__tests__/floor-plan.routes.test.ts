@@ -194,7 +194,7 @@ describe('floorPlanRoutes', () => {
   });
 
   describe('Phase 5 — suggest-table / assign-table', () => {
-    it('suggest-table retourne la reco read-only (204+json, pas de mutation)', async () => {
+    it('suggest-table retourne le top-3 explicable (200+json, pas de mutation)', async () => {
       const app = await getApp();
       vi.mocked(db.reservation.findUnique).mockResolvedValue({
         restaurantId: 'test-rest-1',
@@ -203,9 +203,19 @@ describe('floorPlanRoutes', () => {
         endsAt: new Date(),
         tableId: 't-current',
       } as never);
-      const allocateSpy = vi
-        .spyOn(TableAllocationService.prototype, 'allocate')
-        .mockResolvedValue({ id: 't-suggested', capacity: 2, sectionId: 'sec-1' } as never);
+      const suggestSpy = vi.spyOn(TableAllocationService.prototype, 'suggest').mockResolvedValue([
+        {
+          table: {
+            id: 't-suggested',
+            name: 'Table 12',
+            capacity: 2,
+            minCapacity: 1,
+            sectionId: 'sec-1',
+          },
+          score: 100,
+          reasons: ['Capacité exacte pour 2 couverts'],
+        },
+      ] as never);
 
       const res = await app.inject({
         method: 'GET',
@@ -216,9 +226,35 @@ describe('floorPlanRoutes', () => {
       expect(res.statusCode).toBe(200);
       const body = res.json();
       expect(body.tableId).toBe('t-suggested');
-      expect(allocateSpy).toHaveBeenCalledWith(
+      expect(body.suggestions).toHaveLength(1);
+      expect(body.suggestions[0].reasons[0]).toContain('Capacité exacte');
+      expect(suggestSpy).toHaveBeenCalledWith(
         expect.objectContaining({ restaurantId: 'test-rest-1', partySize: 2 }),
+        3,
       );
+    });
+
+    it('suggest-table retourne tableId null quand aucune table n est disponible', async () => {
+      const app = await getApp();
+      vi.mocked(db.reservation.findUnique).mockResolvedValue({
+        restaurantId: 'test-rest-1',
+        partySize: 8,
+        startsAt: new Date(),
+        endsAt: new Date(),
+        tableId: null,
+      } as never);
+      vi.spyOn(TableAllocationService.prototype, 'suggest').mockResolvedValue([] as never);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/restaurants/test-rest-1/floor-plan/reservations/res-1/suggest-table',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.tableId).toBeNull();
+      expect(body.suggestions).toEqual([]);
     });
 
     it('suggest-table retourne 404 si la réservation nexiste pas (tenant scope)', async () => {

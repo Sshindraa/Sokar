@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FloorPlanCanvas,
@@ -219,7 +219,14 @@ describe('FloorPlanCanvas — taille des tables', () => {
 describe('FloorPlanCanvas — guides des murs', () => {
   beforeEach(() => {
     apiMocks.patch.mockReset();
-    apiMocks.patch.mockImplementation(async (_path: string, body: FloorPlanWall) => body);
+    apiMocks.patch.mockImplementation(async (path: string, body: Record<string, unknown>) => {
+      if (path.includes('/tables/')) {
+        const table = floorPlan.tables?.[0];
+        if (!table) throw new Error('Fixture table missing');
+        return { ...table, ...body };
+      }
+      return { ...activeWall, ...body };
+    });
   });
 
   it('affiche et applique le guide de même longueur pendant le resize d’un mur', async () => {
@@ -245,6 +252,193 @@ describe('FloorPlanCanvas — guides des murs', () => {
 
     const snappedWall = container.querySelector('line[x1="300"][x2="480"]');
     expect(snappedWall).toBeInTheDocument();
+  });
+
+  it('annule et rétablit une mutation géométrique de mur', async () => {
+    const { container } = render(<FloorPlanCanvas orgId="org_test" />);
+
+    await waitFor(() => {
+      expect(container.querySelector('line[x1="300"][x2="456"]')).toBeInTheDocument();
+    });
+
+    const undo = screen.getByRole('button', { name: 'Annuler' });
+    const redo = screen.getByRole('button', { name: 'Rétablir' });
+    expect(undo).toBeDisabled();
+    expect(redo).toBeDisabled();
+
+    fireEvent.click(container.querySelector('line[x1="300"][x2="456"]')!);
+    const endHandle = await waitFor(() => {
+      const handle = container.querySelector('circle[cx="456"][cy="280"]');
+      expect(handle).toBeInTheDocument();
+      return handle!;
+    });
+
+    fireEvent.pointerDown(endHandle, { clientX: 456, clientY: 280 });
+    fireEvent.pointerMove(window, { clientX: 608, clientY: 280 });
+    fireEvent.pointerUp(window);
+
+    await waitFor(() => expect(undo).toBeEnabled());
+    const movedWall = apiMocks.patch.mock.calls[
+      apiMocks.patch.mock.calls.length - 1
+    ][1] as FloorPlanWall;
+    expect(movedWall.x2).not.toBe(456);
+
+    fireEvent.keyDown(window, { key: 'z', metaKey: true });
+    await waitFor(() => {
+      const revertedWall = apiMocks.patch.mock.calls[
+        apiMocks.patch.mock.calls.length - 1
+      ][1] as FloorPlanWall;
+      expect(revertedWall).toMatchObject({ x1: 300, y1: 280, x2: 456, y2: 280 });
+    });
+
+    fireEvent.keyDown(window, { key: 'z', metaKey: true, shiftKey: true });
+    await waitFor(() => {
+      const restoredWall = apiMocks.patch.mock.calls[
+        apiMocks.patch.mock.calls.length - 1
+      ][1] as FloorPlanWall;
+      expect(restoredWall.x2).toBe(movedWall.x2);
+    });
+  });
+
+  it('ignore une réponse de drag arrivée après undo', async () => {
+    let resolveMove!: (wall: FloorPlanWall) => void;
+    const delayedMove = new Promise<FloorPlanWall>((resolve) => {
+      resolveMove = resolve;
+    });
+    apiMocks.patch
+      .mockImplementationOnce(() => delayedMove)
+      .mockImplementationOnce(async (_path: string, wall: Partial<FloorPlanWall>) => ({
+        ...activeWall,
+        ...wall,
+      }));
+
+    const { container } = render(<FloorPlanCanvas orgId="org_test" />);
+    await waitFor(() => {
+      expect(container.querySelector('line[x1="300"][x2="456"]')).toBeInTheDocument();
+    });
+
+    fireEvent.click(container.querySelector('line[x1="300"][x2="456"]')!);
+    const endHandle = await waitFor(() => {
+      const handle = container.querySelector('circle[cx="456"][cy="280"]');
+      expect(handle).toBeInTheDocument();
+      return handle!;
+    });
+    fireEvent.pointerDown(endHandle, { clientX: 456, clientY: 280 });
+    fireEvent.pointerMove(window, { clientX: 608, clientY: 280 });
+    fireEvent.pointerUp(window);
+
+    await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
+    const movedWall = apiMocks.patch.mock.calls[0][1] as FloorPlanWall;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Annuler' }));
+    await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(2));
+    await waitFor(() => {
+      expect(container.querySelector('line[x1="300"][x2="456"]')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      resolveMove(movedWall);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector('line[x1="300"][x2="456"]')).toBeInTheDocument();
+      expect(container.querySelector(`line[x1="300"][x2="${movedWall.x2}"]`)).toBeNull();
+    });
+  });
+
+  it('annule une position de mur modifiée depuis l’inspecteur', async () => {
+    const { container } = render(<FloorPlanCanvas orgId="org_test" />);
+    await waitFor(() => {
+      expect(container.querySelector('line[x1="300"][x2="456"]')).toBeInTheDocument();
+    });
+
+    fireEvent.click(container.querySelector('line[x1="300"][x2="456"]')!);
+    const positionX = await screen.findByLabelText('Position X');
+    fireEvent.change(positionX, { target: { value: '320' } });
+    fireEvent.blur(positionX);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Annuler' })).toBeEnabled());
+    fireEvent.keyDown(window, { key: 'z', metaKey: true });
+
+    await waitFor(() => {
+      const revertedWall = apiMocks.patch.mock.calls[
+        apiMocks.patch.mock.calls.length - 1
+      ][1] as FloorPlanWall;
+      expect(revertedWall).toMatchObject({ x1: 300, x2: 456 });
+    });
+  });
+
+  it('déplace une table sélectionnée avec les flèches et annule avec ⌘Z', async () => {
+    const { container } = render(<FloorPlanCanvas orgId="org_test" />);
+    await waitFor(() => {
+      expect(container.querySelector('line[x1="300"][x2="456"]')).toBeInTheDocument();
+    });
+
+    const table = await screen.findByRole('button', { name: 'T4 · 4 places' });
+    fireEvent.click(table);
+
+    const undo = screen.getByRole('button', { name: 'Annuler' });
+    expect(undo).toBeDisabled();
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    await waitFor(() => expect(undo).toBeEnabled());
+
+    const movedTable = apiMocks.patch.mock.calls[apiMocks.patch.mock.calls.length - 1][1] as {
+      positionX: number;
+      positionY: number;
+    };
+    expect(movedTable.positionX).toBe(65);
+    expect(movedTable.positionY).toBe(64);
+
+    fireEvent.keyDown(window, { key: 'z', metaKey: true });
+    await waitFor(() => {
+      const revertedTable = apiMocks.patch.mock.calls[apiMocks.patch.mock.calls.length - 1][1] as {
+        positionX: number;
+        positionY: number;
+      };
+      expect(revertedTable.positionX).toBe(64);
+      expect(revertedTable.positionY).toBe(64);
+    });
+
+    fireEvent.keyDown(window, { key: 'ArrowDown', shiftKey: true });
+    await waitFor(() => {
+      const shiftedTable = apiMocks.patch.mock.calls[apiMocks.patch.mock.calls.length - 1][1] as {
+        positionX: number;
+        positionY: number;
+      };
+      expect(shiftedTable.positionX).toBe(64);
+      expect(shiftedTable.positionY).toBe(74);
+    });
+  });
+
+  it('ouvre la confirmation de suppression avec Delete sur une table sélectionnée', async () => {
+    const { container } = render(<FloorPlanCanvas orgId="org_test" />);
+    await waitFor(() => {
+      expect(container.querySelector('line[x1="300"][x2="456"]')).toBeInTheDocument();
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'T4 · 4 places' }));
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    expect(await screen.findByRole('heading', { name: 'Supprimer 1 tables' })).toBeInTheDocument();
+  });
+
+  it('supprime le mur sélectionné avec Backspace', async () => {
+    const { container } = render(<FloorPlanCanvas orgId="org_test" />);
+    await waitFor(() => {
+      expect(container.querySelector('line[x1="300"][x2="456"]')).toBeInTheDocument();
+    });
+
+    fireEvent.click(container.querySelector('line[x1="300"][x2="456"]')!);
+    await screen.findByLabelText('Type');
+    fireEvent.keyDown(window, { key: 'Backspace' });
+
+    await waitFor(() => {
+      expect(apiMocks.del).toHaveBeenCalledWith(
+        expect.stringContaining('restaurants/org_test/floor-plan/walls/wall-active'),
+      );
+    });
   });
 });
 

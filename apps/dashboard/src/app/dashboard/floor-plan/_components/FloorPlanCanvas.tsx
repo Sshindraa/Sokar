@@ -69,6 +69,8 @@ import {
   AlignVerticalJustifyStart,
   AlignVerticalJustifyEnd,
   RotateCw,
+  Undo2,
+  Redo2,
   Grip,
   type LucideIcon,
 } from 'lucide-react';
@@ -100,6 +102,7 @@ import {
   useDraggable,
   useDroppable,
 } from '@dnd-kit/core';
+import { useUndoHistory } from './useUndoHistory';
 
 const DEFAULT_CANVAS_WIDTH = 1400;
 const DEFAULT_CANVAS_HEIGHT = 900;
@@ -131,6 +134,50 @@ export const TABLE_LAYOUT = {
 } as const;
 
 type TableStatus = 'free' | 'reserved' | 'upcoming' | 'late' | 'occupied' | 'inactive';
+
+/** Proposition d'allocation explicable renvoyée par l'API (Phase 5). */
+type TableSuggestion = {
+  tableId: string;
+  name: string;
+  capacity: number;
+  sectionId: string | null;
+  score: number;
+  reasons: string[];
+};
+
+type TableGeometry = Pick<
+  FloorPlanTable,
+  'id' | 'positionX' | 'positionY' | 'width' | 'height' | 'rotation'
+>;
+
+type WallGeometry = Pick<FloorPlanWall, 'id' | 'x1' | 'y1' | 'x2' | 'y2'>;
+
+/** Snapshot atomique d'une ou plusieurs mutations strictement géométriques. */
+type GeometrySnapshot = {
+  tables: TableGeometry[];
+  walls: WallGeometry[];
+};
+
+function snapshotTableGeometry(table: FloorPlanTable): TableGeometry {
+  return {
+    id: table.id,
+    positionX: table.positionX,
+    positionY: table.positionY,
+    width: table.width,
+    height: table.height,
+    rotation: table.rotation,
+  };
+}
+
+function snapshotWallGeometry(wall: FloorPlanWall): WallGeometry {
+  return {
+    id: wall.id,
+    x1: wall.x1,
+    y1: wall.y1,
+    x2: wall.x2,
+    y2: wall.y2,
+  };
+}
 
 type WallLengthGuide = {
   activeWallId: string;
@@ -199,6 +246,7 @@ type DragStartInfo = {
   height: number;
   table: CanvasTable;
   moveId?: number;
+  mutationVersion?: number;
 };
 
 type PaletteWallType = 'wall' | 'door' | 'bar';
@@ -1381,6 +1429,18 @@ export function FloorPlanCanvas({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Historique undo/redo des mutations de géométrie (édition uniquement).
+  // Une seule pile unifiée tables + murs : ⌘Z défait exactement la dernière
+  // mutation, quel que soit l'objet ou le nombre de tables concernées.
+  const {
+    record: recordGeometry,
+    undo: undoGeometrySnapshot,
+    redo: redoGeometrySnapshot,
+    canUndo,
+    canRedo,
+    reset: resetGeometryHistory,
+  } = useUndoHistory<GeometrySnapshot>();
+
   const [zoom, setZoom] = useState(1);
   const [gridVisible, setGridVisible] = useState(true);
   const [snap, setSnap] = useState(true);
@@ -1392,9 +1452,7 @@ export function FloorPlanCanvas({
   const [reservations, setReservations] = useState<PlanningReservation[]>([]);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [selectedServiceTableId, setSelectedServiceTableId] = useState<string | null>(null);
-  const [suggestedTable, setSuggestedTable] = useState<{ tableId: string; reason: string } | null>(
-    null,
-  );
+  const [suggestions, setSuggestions] = useState<TableSuggestion[]>([]);
   const [lockedWallIds, setLockedWallIds] = useState<Set<string>>(() => new Set());
 
   const [selectedTableIds, setSelectedTableIds] = useState<Set<string>>(() => new Set());
@@ -1416,6 +1474,7 @@ export function FloorPlanCanvas({
     height: number;
     currentWidth?: number;
     currentHeight?: number;
+    beforeTable?: FloorPlanTable;
   } | null>(null);
   const [rotateTableId, setRotateTableId] = useState<string | null>(null);
   const rotateStartRef = useRef<{
@@ -1425,6 +1484,7 @@ export function FloorPlanCanvas({
     centerX: number;
     centerY: number;
     currentRotation?: number;
+    beforeTable?: FloorPlanTable;
   } | null>(null);
 
   const [activeDragData, setActiveDragData] = useState<ActiveDragData | null>(null);
@@ -1432,6 +1492,8 @@ export function FloorPlanCanvas({
   const justDraggedRef = useRef(false);
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const tableMoveIdRef = useRef(0);
+  const tableMutationVersionRef = useRef(new Map<string, number>());
+  const wallMutationVersionRef = useRef(new Map<string, number>());
   const canvasRef = useRef<HTMLDivElement>(null);
   const canvasViewportRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -1494,13 +1556,18 @@ export function FloorPlanCanvas({
         ? `restaurants/${orgId}/floor-plans/${floorPlanId}`
         : `restaurants/${orgId}/floor-plan`;
       const data = await getRef.current<FloorPlan>(path);
+      // purge tout historique et version obsolète avant de remplacer le plan —
+      // les snapshots référencent les objets de l'ancien chargement
+      resetGeometryHistory();
+      tableMutationVersionRef.current.clear();
+      wallMutationVersionRef.current.clear();
       setFloorPlan(data);
     } catch (err) {
       setError(getErrorMessage(err, 'Impossible de charger le plan de salle'));
     } finally {
       setLoading(false);
     }
-  }, [orgId, floorPlanId]);
+  }, [orgId, floorPlanId, resetGeometryHistory]);
 
   const pollAbortRef = useRef<AbortController | null>(null);
   const pollInFlightRef = useRef(false);
@@ -1599,13 +1666,14 @@ export function FloorPlanCanvas({
   const suggestTable = useCallback(
     async (reservationId: string) => {
       if (!orgId) return;
-      setSuggestedTable(null);
+      setSuggestions([]);
       try {
         const query = floorPlanId ? `?floorPlanId=${floorPlanId}` : '';
-        const res = await getRef.current<{ tableId: string | null; reason: string }>(
+        const res = await getRef.current<{ suggestions?: TableSuggestion[]; reason?: string }>(
           `restaurants/${orgId}/floor-plan/reservations/${reservationId}/suggest-table${query}`,
         );
-        if (res.tableId) setSuggestedTable({ tableId: res.tableId, reason: res.reason });
+        const list = res.suggestions ?? [];
+        if (list.length > 0) setSuggestions(list);
         else setError(res.reason || 'Aucune table disponible');
       } catch (err) {
         setError(getErrorMessage(err, 'Impossible de suggérer une table'));
@@ -1625,7 +1693,7 @@ export function FloorPlanCanvas({
         setReservations((prev) =>
           prev.map((r) => (r.id === reservationId ? { ...r, tableId } : r)),
         );
-        setSuggestedTable(null);
+        setSuggestions([]);
         await loadReservations({ force: true });
       } catch (err) {
         setError(getErrorMessage(err, 'Impossible d’assigner la table'));
@@ -1851,6 +1919,8 @@ export function FloorPlanCanvas({
 
   async function patchTable(tableId: string, updates: Partial<FloorPlanTable>) {
     if (!orgId) return;
+    const mutationVersion = (tableMutationVersionRef.current.get(tableId) ?? 0) + 1;
+    tableMutationVersionRef.current.set(tableId, mutationVersion);
     setPlanSaved(false);
     try {
       setError('');
@@ -1858,8 +1928,10 @@ export function FloorPlanCanvas({
         `restaurants/${orgId}/floor-plan/tables/${tableId}`,
         { ...updates, ...(floorPlanId ? { floorPlanId } : {}) },
       );
+      if (tableMutationVersionRef.current.get(tableId) !== mutationVersion) return;
       setFloorPlan((prev) => (prev ? replaceTable(prev, updated) : prev));
     } catch (err) {
+      if (tableMutationVersionRef.current.get(tableId) !== mutationVersion) return;
       setError(getErrorMessage(err, 'Impossible de modifier la table'));
     }
   }
@@ -1998,6 +2070,11 @@ export function FloorPlanCanvas({
   async function deleteSelectedTables() {
     if (selectedTables.length === 0) return;
     setPlanSaved(false);
+    // Invalide tout snapshot qui ciblerait l'une de ces tables supprimées.
+    resetGeometryHistory();
+    for (const table of selectedTables) {
+      tableMutationVersionRef.current.delete(table.id);
+    }
     try {
       setError('');
       await Promise.all(
@@ -2040,7 +2117,7 @@ export function FloorPlanCanvas({
         : anchor === 'max'
           ? Math.max(...values.map((v) => v.max))
           : values[0].center;
-    for (const { table, width, height, x, y } of dimensions) {
+    const nextTables = dimensions.map(({ table, width, height, x, y }) => {
       let nextX = x;
       let nextY = y;
       if (axis === 'x') {
@@ -2049,11 +2126,30 @@ export function FloorPlanCanvas({
         nextY =
           anchor === 'min' ? target : anchor === 'max' ? target - height : target - height / 2;
       }
-      void patchTable(table.id, {
+      return {
+        ...table,
         positionX: Math.round(nextX),
         positionY: Math.round(nextY),
-      });
+      };
+    });
+
+    if (
+      nextTables.every(
+        (table, index) =>
+          table.positionX === dimensions[index].table.positionX &&
+          table.positionY === dimensions[index].table.positionY,
+      )
+    ) {
+      return;
     }
+
+    const before: GeometrySnapshot = {
+      tables: dimensions.map(({ table }) => snapshotTableGeometry(table)),
+      walls: [],
+    };
+    const after: GeometrySnapshot = { tables: nextTables.map(snapshotTableGeometry), walls: [] };
+    recordGeometry({ before, after });
+    applyGeometrySnapshot(after);
   }
 
   function distributeSelectedTables(axis: 'x' | 'y') {
@@ -2077,14 +2173,34 @@ export function FloorPlanCanvas({
     );
     const gap = Math.max(0, (totalSpace - totalSize) / (sorted.length - 1));
     let cursor = start;
-    for (const { table, size } of sorted) {
+    const nextTables = sorted.map(({ table, size }) => {
       const dimension = axis === 'x' ? size.width : size.height;
-      void patchTable(table.id, {
+      const nextTable = {
+        ...table,
         positionX: axis === 'x' ? Math.round(cursor) : table.positionX,
         positionY: axis === 'y' ? Math.round(cursor) : table.positionY,
-      });
+      };
       cursor += dimension + gap;
+      return nextTable;
+    });
+
+    if (
+      nextTables.every(
+        (table, index) =>
+          table.positionX === sorted[index].table.positionX &&
+          table.positionY === sorted[index].table.positionY,
+      )
+    ) {
+      return;
     }
+
+    const before: GeometrySnapshot = {
+      tables: sorted.map(({ table }) => snapshotTableGeometry(table)),
+      walls: [],
+    };
+    const after: GeometrySnapshot = { tables: nextTables.map(snapshotTableGeometry), walls: [] };
+    recordGeometry({ before, after });
+    applyGeometrySnapshot(after);
   }
 
   function startTableResize(e: React.PointerEvent, table: CanvasTable) {
@@ -2096,6 +2212,7 @@ export function FloorPlanCanvas({
       pointerY: e.clientY,
       width,
       height,
+      beforeTable: { ...table },
     };
     setResizeTableId(table.id);
     setSelectedTableIds(new Set([table.id]));
@@ -2114,6 +2231,7 @@ export function FloorPlanCanvas({
       startRotation: table.rotation ?? 0,
       centerX,
       centerY,
+      beforeTable: { ...table },
     };
     setRotateTableId(table.id);
     setSelectedTableIds(new Set([table.id]));
@@ -2180,16 +2298,45 @@ export function FloorPlanCanvas({
 
   function handleTablePointerUp() {
     if (resizeTableId && resizeStartRef.current) {
+      const start = resizeStartRef.current;
+      const finalWidth = Math.round(start.currentWidth ?? start.width);
+      const finalHeight = Math.round(start.currentHeight ?? start.height);
+      if (start.beforeTable && (finalWidth !== start.width || finalHeight !== start.height)) {
+        recordGeometry({
+          before: { tables: [snapshotTableGeometry(start.beforeTable)], walls: [] },
+          after: {
+            tables: [
+              snapshotTableGeometry({
+                ...start.beforeTable,
+                width: finalWidth,
+                height: finalHeight,
+              }),
+            ],
+            walls: [],
+          },
+        });
+      }
       void patchTable(resizeTableId, {
-        width: Math.round(resizeStartRef.current.currentWidth ?? resizeStartRef.current.width),
-        height: Math.round(resizeStartRef.current.currentHeight ?? resizeStartRef.current.height),
+        width: finalWidth,
+        height: finalHeight,
       });
       setResizeTableId(null);
       resizeStartRef.current = null;
     }
     if (rotateTableId && rotateStartRef.current) {
+      const start = rotateStartRef.current;
+      const finalRotation = start.currentRotation ?? start.startRotation;
+      if (start.beforeTable && finalRotation !== start.startRotation) {
+        recordGeometry({
+          before: { tables: [snapshotTableGeometry(start.beforeTable)], walls: [] },
+          after: {
+            tables: [snapshotTableGeometry({ ...start.beforeTable, rotation: finalRotation })],
+            walls: [],
+          },
+        });
+      }
       void patchTable(rotateTableId, {
-        rotation: rotateStartRef.current.currentRotation ?? rotateStartRef.current.startRotation,
+        rotation: finalRotation,
       });
       setRotateTableId(null);
       rotateStartRef.current = null;
@@ -2272,6 +2419,10 @@ export function FloorPlanCanvas({
     if (!orgId || !tableId) return;
     setConfirmOpen(false);
     setPendingDeleteTableId(null);
+    // Invalide tout snapshot qui ciblerait cette table supprimée.
+    // Appliquer un undo ultérieur la recréerait silencieusement en base.
+    resetGeometryHistory();
+    tableMutationVersionRef.current.delete(tableId);
     try {
       setError('');
       await del(
@@ -2292,6 +2443,8 @@ export function FloorPlanCanvas({
 
   async function updateWall(wall: FloorPlanWall, type: WallType, name: string | null) {
     if (!orgId) return;
+    const mutationVersion = (wallMutationVersionRef.current.get(wall.id) ?? 0) + 1;
+    wallMutationVersionRef.current.set(wall.id, mutationVersion);
     setError('');
     setPlanSaved(false);
     try {
@@ -2299,6 +2452,7 @@ export function FloorPlanCanvas({
         `restaurants/${orgId}/floor-plan/walls/${wall.id}`,
         { ...wall, type, name, ...(floorPlanId ? { floorPlanId } : {}) },
       );
+      if (wallMutationVersionRef.current.get(wall.id) !== mutationVersion) return;
       setFloorPlan((prev) => {
         if (!prev) return prev;
         return {
@@ -2307,15 +2461,112 @@ export function FloorPlanCanvas({
         };
       });
     } catch (err) {
+      if (wallMutationVersionRef.current.get(wall.id) !== mutationVersion) return;
       setError(getErrorMessage(err, 'Impossible de modifier le mur'));
       throw err;
     }
+  }
+
+  /** Met à jour la géométrie d'un mur sans toucher à type/name (undo/redo). */
+  async function updateWallGeometry(geometry: WallGeometry) {
+    if (!orgId) return;
+    const mutationVersion = (wallMutationVersionRef.current.get(geometry.id) ?? 0) + 1;
+    wallMutationVersionRef.current.set(geometry.id, mutationVersion);
+    setError('');
+    setPlanSaved(false);
+    try {
+      const updated = await patch<FloorPlanWall>(
+        `restaurants/${orgId}/floor-plan/walls/${geometry.id}`,
+        { ...geometry, ...(floorPlanId ? { floorPlanId } : {}) },
+      );
+      if (wallMutationVersionRef.current.get(geometry.id) !== mutationVersion) return;
+      setFloorPlan((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          walls: (prev.walls ?? []).map((w) => (w.id === updated.id ? updated : w)),
+        };
+      });
+    } catch (err) {
+      if (wallMutationVersionRef.current.get(geometry.id) !== mutationVersion) return;
+      setError(getErrorMessage(err, 'Impossible de modifier le mur'));
+    }
+  }
+
+  function tableGeometry(table: TableGeometry): Partial<FloorPlanTable> {
+    return {
+      positionX: table.positionX,
+      positionY: table.positionY,
+      width: table.width,
+      height: table.height,
+      rotation: table.rotation,
+    };
+  }
+
+  /**
+   * Réapplique un snapshot immédiatement dans le canvas, puis persiste sa
+   * géométrie. Une action de groupe (aligner/répartir) reste donc atomique du
+   * point de vue de la pile, tout en conservant les mutations API existantes.
+   */
+  function applyGeometrySnapshot(snapshot: GeometrySnapshot) {
+    if (snapshot.tables.length === 0 && snapshot.walls.length === 0) return;
+
+    const tableUpdates = new Map(snapshot.tables.map((table) => [table.id, table]));
+    const wallUpdates = new Map(snapshot.walls.map((wall) => [wall.id, wall]));
+    const currentTableIds = new Set(
+      [
+        ...(floorPlan?.sections.flatMap((section) => section.tables) ?? []),
+        ...(floorPlan?.tables ?? []),
+      ].map((table) => table.id),
+    );
+    const currentWalls = new Map((floorPlan?.walls ?? []).map((wall) => [wall.id, wall]));
+
+    setFloorPlan((prev) => {
+      if (!prev) return prev;
+      const mergeTableGeometry = (table: FloorPlanTable): FloorPlanTable => {
+        const geometry = tableUpdates.get(table.id);
+        return geometry ? { ...table, ...geometry } : table;
+      };
+      return {
+        ...prev,
+        sections: prev.sections.map((section) => ({
+          ...section,
+          tables: section.tables.map(mergeTableGeometry),
+        })),
+        tables: (prev.tables ?? []).map(mergeTableGeometry),
+        walls: (prev.walls ?? []).map((wall) => {
+          const geometry = wallUpdates.get(wall.id);
+          return geometry ? { ...wall, ...geometry } : wall;
+        }),
+      };
+    });
+
+    for (const table of snapshot.tables) {
+      if (currentTableIds.has(table.id)) void patchTable(table.id, tableGeometry(table));
+    }
+    for (const geometry of snapshot.walls) {
+      if (!currentWalls.has(geometry.id)) continue;
+      void updateWallGeometry(geometry);
+    }
+  }
+
+  function undoGeometry() {
+    const snapshot = undoGeometrySnapshot();
+    if (snapshot) applyGeometrySnapshot(snapshot);
+  }
+
+  function redoGeometry() {
+    const snapshot = redoGeometrySnapshot();
+    if (snapshot) applyGeometrySnapshot(snapshot);
   }
 
   async function deleteWall(wallId: string) {
     if (!orgId) return;
     setError('');
     setPlanSaved(false);
+    // Invalide tout snapshot qui ciblerait ce mur supprimé.
+    resetGeometryHistory();
+    wallMutationVersionRef.current.delete(wallId);
     try {
       await del(
         `restaurants/${orgId}/floor-plan/walls/${wallId}${
@@ -2372,7 +2623,11 @@ export function FloorPlanCanvas({
       x2: Math.round(wall.x1 + Math.cos(angle) * length),
       y2: Math.round(wall.y1 + Math.sin(angle) * length),
     };
-    void updateWall(nextWall, nextWall.type, nextWall.name ?? null);
+    if (nextWall.x2 === wall.x2 && nextWall.y2 === wall.y2) return;
+    const before: GeometrySnapshot = { tables: [], walls: [snapshotWallGeometry(wall)] };
+    const after: GeometrySnapshot = { tables: [], walls: [snapshotWallGeometry(nextWall)] };
+    recordGeometry({ before, after });
+    applyGeometrySnapshot(after);
   }
 
   function updateWallAngle(wall: FloorPlanWall, degrees: number) {
@@ -2384,7 +2639,11 @@ export function FloorPlanCanvas({
       x2: Math.round(wall.x1 + Math.cos(radians) * length),
       y2: Math.round(wall.y1 + Math.sin(radians) * length),
     };
-    void updateWall(nextWall, nextWall.type, nextWall.name ?? null);
+    if (nextWall.x2 === wall.x2 && nextWall.y2 === wall.y2) return;
+    const before: GeometrySnapshot = { tables: [], walls: [snapshotWallGeometry(wall)] };
+    const after: GeometrySnapshot = { tables: [], walls: [snapshotWallGeometry(nextWall)] };
+    recordGeometry({ before, after });
+    applyGeometrySnapshot(after);
   }
 
   async function handleSaveFloorSettings(e: React.FormEvent) {
@@ -2744,6 +3003,18 @@ export function FloorPlanCanvas({
     if (!wallDragStart) return;
     const currentWall = wallDragCurrentRef.current;
     if (currentWall) {
+      const before = wallDragStart.wall;
+      if (
+        currentWall.x1 !== before.x1 ||
+        currentWall.y1 !== before.y1 ||
+        currentWall.x2 !== before.x2 ||
+        currentWall.y2 !== before.y2
+      ) {
+        recordGeometry({
+          before: { tables: [], walls: [snapshotWallGeometry(before)] },
+          after: { tables: [], walls: [snapshotWallGeometry(currentWall)] },
+        });
+      }
       void updateWall(currentWall, currentWall.type, currentWall.name ?? null).catch(() => {
         // updateWall already sets the error message
       });
@@ -2786,8 +3057,13 @@ export function FloorPlanCanvas({
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.matches('input, textarea, select, [contenteditable="true"]')
+      ) {
+        return;
+      }
 
       if (event.key.toLowerCase() === 'g') {
         event.preventDefault();
@@ -2803,6 +3079,55 @@ export function FloorPlanCanvas({
           event.preventDefault();
           void duplicateWall(selectedWall);
         }
+      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z' && !live) {
+        // Undo/redo des mutations de géométrie (édition uniquement).
+        event.preventDefault();
+        if (event.shiftKey) {
+          redoGeometry();
+        } else {
+          undoGeometry();
+        }
+      } else if ((event.key === 'Delete' || event.key === 'Backspace') && !live) {
+        if (selectedTables.length > 0) {
+          event.preventDefault();
+          setMultiDeleteConfirmOpen(true);
+        } else if (selectedWall) {
+          event.preventDefault();
+          void deleteWall(selectedWall.id);
+        }
+      } else if (
+        ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key) &&
+        !live &&
+        selectedTables.length > 0
+      ) {
+        event.preventDefault();
+        const step = event.shiftKey ? 10 : 1;
+        const dx = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
+        const dy = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
+        const nextTables = selectedTables.map((table) => {
+          const dimensions = getTableSize(table);
+          return {
+            ...table,
+            positionX: Math.min(
+              Math.max(0, (table.positionX ?? 0) + dx),
+              Math.max(0, (floorPlan?.width ?? DEFAULT_CANVAS_WIDTH) - dimensions.width),
+            ),
+            positionY: Math.min(
+              Math.max(0, (table.positionY ?? 0) + dy),
+              Math.max(0, (floorPlan?.height ?? DEFAULT_CANVAS_HEIGHT) - dimensions.height),
+            ),
+          };
+        });
+        const before: GeometrySnapshot = {
+          tables: selectedTables.map((t) => snapshotTableGeometry(t)),
+          walls: [],
+        };
+        const after: GeometrySnapshot = {
+          tables: nextTables.map((t) => snapshotTableGeometry(t)),
+          walls: [],
+        };
+        recordGeometry({ before, after });
+        applyGeometrySnapshot(after);
       }
     };
     window.addEventListener('keydown', handleShortcut);
@@ -2829,6 +3154,8 @@ export function FloorPlanCanvas({
     if (table) {
       const { width, height } = getTableSize(table);
       const moveId = ++tableMoveIdRef.current;
+      const mutationVersion = (tableMutationVersionRef.current.get(table.id) ?? 0) + 1;
+      tableMutationVersionRef.current.set(table.id, mutationVersion);
       setActiveDragData({ kind: 'existingTable', table });
       setDragStart({
         tableId: table.id,
@@ -2838,6 +3165,7 @@ export function FloorPlanCanvas({
         height,
         table,
         moveId,
+        mutationVersion,
       });
     } else {
       setActiveDragData((event.active.data.current as PaletteItemData | undefined) ?? null);
@@ -2895,6 +3223,27 @@ export function FloorPlanCanvas({
       const clampedX = Math.max(0, Math.min(canvasWidth - start.width, snappedX));
       const clampedY = Math.max(0, Math.min(canvasHeight - start.height, snappedY));
 
+      if (clampedX !== start.originalX || clampedY !== start.originalY) {
+        recordGeometry({
+          before: {
+            tables: [
+              snapshotTableGeometry({
+                ...start.table,
+                positionX: start.originalX,
+                positionY: start.originalY,
+              }),
+            ],
+            walls: [],
+          },
+          after: {
+            tables: [
+              snapshotTableGeometry({ ...start.table, positionX: clampedX, positionY: clampedY }),
+            ],
+            walls: [],
+          },
+        });
+      }
+
       setFloorPlan((prev) =>
         prev ? replaceTablePosition(prev, start.tableId, clampedX, clampedY) : prev,
       );
@@ -2909,7 +3258,12 @@ export function FloorPlanCanvas({
             ...(floorPlanId ? { floorPlanId } : {}),
           },
         );
-        if (start.moveId !== tableMoveIdRef.current) return;
+        if (
+          start.moveId !== tableMoveIdRef.current ||
+          start.mutationVersion !== tableMutationVersionRef.current.get(start.tableId)
+        ) {
+          return;
+        }
         setFloorPlan((prev) =>
           prev
             ? replaceTablePosition(
@@ -2921,7 +3275,12 @@ export function FloorPlanCanvas({
             : prev,
         );
       } catch (err) {
-        if (start.moveId !== tableMoveIdRef.current) return;
+        if (
+          start.moveId !== tableMoveIdRef.current ||
+          start.mutationVersion !== tableMutationVersionRef.current.get(start.tableId)
+        ) {
+          return;
+        }
         setError(getErrorMessage(err, 'Impossible de déplacer la table'));
         setFloorPlan((prev) =>
           prev ? replaceTablePosition(prev, start.tableId, start.originalX, start.originalY) : prev,
@@ -3548,31 +3907,38 @@ export function FloorPlanCanvas({
                   </Button>
                 )}
               </div>
-              <div className="mt-2 flex gap-2">
+              <div className="mt-2">
                 <Button
                   size="sm"
                   variant="outline"
-                  className="flex-1"
+                  className="w-full"
                   onClick={() => void suggestTable(selectedServiceReservation.id)}
                 >
-                  Suggérer une table
+                  Suggérer des tables
                 </Button>
-                {suggestedTable && (
-                  <Button
-                    size="sm"
-                    className="flex-1"
-                    onClick={() =>
-                      void assignTable(selectedServiceReservation.id, suggestedTable.tableId)
-                    }
-                  >
-                    Assigner
-                  </Button>
-                )}
               </div>
-              {suggestedTable && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Proposition : table {suggestedTable.tableId} — {suggestedTable.reason}
-                </p>
+              {suggestions.length > 0 && (
+                <ul className="mt-2 space-y-2">
+                  {suggestions.map((s, idx) => (
+                    <li key={s.tableId} className="rounded-md border border-border p-2 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium">
+                          {idx === 0 ? 'Meilleure · ' : ''}
+                          {s.name} · {s.capacity} couverts
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => void assignTable(selectedServiceReservation.id, s.tableId)}
+                        >
+                          Assigner
+                        </Button>
+                      </div>
+                      <p className="mt-1 text-muted-foreground">{s.reasons.join(' · ')}</p>
+                    </li>
+                  ))}
+                </ul>
               )}
               {selectedServiceReservation.state === 'SEATED' &&
                 selectedServiceReservation.seatedAt && (
@@ -3672,9 +4038,11 @@ export function FloorPlanCanvas({
             <Label htmlFor="wall-inspector-type">Type</Label>
             <Select
               value={selectedWall.type}
-              onValueChange={(value) =>
-                void updateWall(selectedWall, value as WallType, selectedWall.name ?? null)
-              }
+              onValueChange={(value) => {
+                void updateWall(selectedWall, value as WallType, selectedWall.name ?? null).catch(
+                  () => {},
+                );
+              }}
             >
               <SelectTrigger id="wall-inspector-type" className="bg-background">
                 <SelectValue />
@@ -3696,13 +4064,13 @@ export function FloorPlanCanvas({
               defaultValue={selectedWall.name ?? ''}
               placeholder="Ex. Mur terrasse"
               className="bg-background"
-              onBlur={(event) =>
+              onBlur={(event) => {
                 void updateWall(
                   selectedWall,
                   selectedWall.type,
                   event.currentTarget.value.trim() || null,
-                )
-              }
+                ).catch(() => {});
+              }}
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -3759,7 +4127,15 @@ export function FloorPlanCanvas({
                       coordinate === 'x1'
                         ? { ...selectedWall, x1: value, x2: selectedWall.x2 + delta }
                         : { ...selectedWall, y1: value, y2: selectedWall.y2 + delta };
-                    void updateWall(nextWall, nextWall.type, nextWall.name ?? null);
+                    if (delta === 0) return;
+                    recordGeometry({
+                      before: { tables: [], walls: [snapshotWallGeometry(selectedWall)] },
+                      after: { tables: [], walls: [snapshotWallGeometry(nextWall)] },
+                    });
+                    applyGeometrySnapshot({
+                      tables: [],
+                      walls: [snapshotWallGeometry(nextWall)],
+                    });
                   }}
                 />
               </div>
@@ -4106,6 +4482,26 @@ export function FloorPlanCanvas({
                   <span className="px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Alignement
                   </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title="Annuler — ⌘Z"
+                    aria-label="Annuler"
+                    disabled={!canUndo}
+                    onClick={undoGeometry}
+                  >
+                    <Undo2 size={16} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title="Rétablir — ⌘⇧Z"
+                    aria-label="Rétablir"
+                    disabled={!canRedo}
+                    onClick={redoGeometry}
+                  >
+                    <Redo2 size={16} />
+                  </Button>
                   <Button
                     variant={snap ? 'secondary' : 'ghost'}
                     size="sm"

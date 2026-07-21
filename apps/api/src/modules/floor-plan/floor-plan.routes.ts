@@ -550,23 +550,38 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(409).send({ error: 'Créneau de réservation manquant' });
       }
 
-      const suggested = await allocation.allocate({
-        restaurantId: id,
-        partySize: reservation.partySize,
-        startsAt: reservation.startsAt,
-        endsAt: reservation.endsAt,
-        excludeTableIds: reservation.tableId ? [reservation.tableId] : undefined,
-      });
+      const suggestions = await allocation.suggest(
+        {
+          restaurantId: id,
+          partySize: reservation.partySize,
+          startsAt: reservation.startsAt,
+          endsAt: reservation.endsAt,
+          excludeTableIds: reservation.tableId ? [reservation.tableId] : undefined,
+        },
+        3,
+      );
 
-      if (!suggested) {
-        return reply.send({ tableId: null, reason: 'Aucune table disponible' });
+      if (suggestions.length === 0) {
+        return reply.send({
+          tableId: null,
+          reason: 'Aucune table disponible',
+          suggestions: [],
+        });
       }
 
+      const best = suggestions[0];
       return reply.send({
-        tableId: suggested.id,
-        reason: `Meilleure table (capacité ${suggested.capacity}, section ${
-          suggested.sectionId ?? '—'
-        })`,
+        // Compatibilité ascendante : l'UI historique lit `tableId`/`reason`.
+        tableId: best.table.id,
+        reason: best.reasons.join(' · '),
+        suggestions: suggestions.map((s) => ({
+          tableId: s.table.id,
+          name: s.table.name,
+          capacity: s.table.capacity,
+          sectionId: s.table.sectionId,
+          score: s.score,
+          reasons: s.reasons,
+        })),
       });
     },
   );

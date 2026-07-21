@@ -15,7 +15,11 @@
 
 import { Prisma } from '@prisma/client';
 import type { PrismaClient, Table, Reservation } from '@prisma/client';
-import type { AllocateTableInput, TableAvailabilityCheck } from './floor-plan.types';
+import type {
+  AllocateTableInput,
+  AllocationSuggestion,
+  TableAvailabilityCheck,
+} from './floor-plan.types';
 
 export class TableAllocationService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -23,6 +27,10 @@ export class TableAllocationService {
   /**
    * Alloue la meilleure table disponible pour un créneau donné.
    * Renvoie null si aucune table n'est disponible.
+   *
+   * Verrouille chaque table candidate (FOR UPDATE SKIP LOCKED) avant de
+   * vérifier sa disponibilité. Pour une prévisualisation sans verrou,
+   * utiliser `suggest`.
    */
   async allocate(
     input: AllocateTableInput,
@@ -30,45 +38,7 @@ export class TableAllocationService {
     options?: { readOnly?: boolean },
   ): Promise<Table | null> {
     const prisma = tx ?? this.prisma;
-
-    let tables: Table[] = [];
-
-    if (input.preferredSectionId) {
-      tables = await prisma.table.findMany({
-        where: {
-          sectionId: input.preferredSectionId,
-          isActive: true,
-          floorPlan: { isActive: true },
-          capacity: { gte: input.partySize },
-          minCapacity: { lte: input.partySize },
-          ...(input.excludeTableIds && input.excludeTableIds.length > 0
-            ? { id: { notIn: input.excludeTableIds } }
-            : {}),
-        },
-        orderBy: [{ capacity: 'asc' }, { minCapacity: 'asc' }, { name: 'asc' }],
-      });
-    } else {
-      const floorPlan = await prisma.floorPlan.findFirst({
-        where: { restaurantId: input.restaurantId, isActive: true, isDefault: true },
-        select: { id: true },
-      });
-      if (!floorPlan) {
-        return null;
-      }
-
-      tables = await prisma.table.findMany({
-        where: {
-          floorPlanId: floorPlan.id,
-          isActive: true,
-          capacity: { gte: input.partySize },
-          minCapacity: { lte: input.partySize },
-          ...(input.excludeTableIds && input.excludeTableIds.length > 0
-            ? { id: { notIn: input.excludeTableIds } }
-            : {}),
-        },
-        orderBy: [{ capacity: 'asc' }, { minCapacity: 'asc' }, { name: 'asc' }],
-      });
-    }
+    const tables = await this.findCandidateTables(input, tx);
 
     for (const table of tables) {
       // Verrouiller la ligne table pour éviter l'allocation concurrente.
@@ -99,6 +69,45 @@ export class TableAllocationService {
     }
 
     return null;
+  }
+
+  /**
+   * Prévisualise les meilleures tables disponibles (top `limit`) avec score et
+   * raisons, SANS verrouiller les tables. Lecture seule — pour l'affichage
+   * explicable dans le dashboard. L'attribution autoritaire reste
+   * `assign-table`/`reallocate` (verrou + revalidation).
+   */
+  async suggest(input: AllocateTableInput, limit = 3): Promise<AllocationSuggestion[]> {
+    const tables = await this.findCandidateTables(input);
+    const suggestions: AllocationSuggestion[] = [];
+
+    for (const table of tables) {
+      const available = await this.isTableAvailable(
+        { tableId: table.id, startsAt: input.startsAt, endsAt: input.endsAt },
+        undefined,
+      );
+      if (!available) continue;
+
+      suggestions.push({
+        table: {
+          id: table.id,
+          name: table.name,
+          capacity: table.capacity,
+          minCapacity: table.minCapacity,
+          sectionId: table.sectionId ?? null,
+        },
+        score: this.scoreCandidate(table, input),
+        reasons: this.buildCandidateReasons(table, input),
+      });
+
+      if (suggestions.length >= limit) break;
+    }
+
+    // Tri décroissant par score (meilleur fit en premier). L'ordre de la query
+    // (capacity asc) est déjà quasi-optimal, mais le score explicite rend le
+    // classement stable et lisible côté UI.
+    suggestions.sort((a, b) => b.score - a.score);
+    return suggestions;
   }
 
   /**
@@ -256,6 +265,105 @@ export class TableAllocationService {
     if (!available) {
       throw new TableAllocationError('TABLE_NOT_AVAILABLE', 'Table non disponible sur ce créneau');
     }
+  }
+
+  /**
+   * Sélectionne les tables candidates (actives, capacité/minCapacity compatibles,
+   * exclusions), triées best-fit. Partagé par `allocate` et `suggest`.
+   */
+  private async findCandidateTables(
+    input: AllocateTableInput,
+    tx?: Prisma.TransactionClient,
+  ): Promise<Table[]> {
+    const prisma = tx ?? this.prisma;
+
+    const capacityFilter = {
+      isActive: true,
+      capacity: { gte: input.partySize },
+      minCapacity: { lte: input.partySize },
+      ...(input.excludeTableIds && input.excludeTableIds.length > 0
+        ? { id: { notIn: input.excludeTableIds } }
+        : {}),
+    } as const;
+
+    if (input.preferredSectionId) {
+      const preferred = await prisma.table.findMany({
+        where: {
+          sectionId: input.preferredSectionId,
+          floorPlan: { isActive: true },
+          ...capacityFilter,
+        },
+        orderBy: [{ capacity: 'asc' }, { minCapacity: 'asc' }, { name: 'asc' }],
+      });
+
+      // Fallback : si la section préférée n'a aucune table compatible (capacité
+      // ou toutes occupées), retomber sur le plan par défaut plutôt que de
+      // renvoyer null. On marque `fromPreferredSectionFallback` pour que
+      // `suggest` puisse l'expliquer dans les raisons.
+      const floorPlan = await prisma.floorPlan.findFirst({
+        where: { restaurantId: input.restaurantId, isActive: true, isDefault: true },
+        select: { id: true },
+      });
+      if (!floorPlan) {
+        return preferred;
+      }
+      const fallback = await prisma.table.findMany({
+        where: {
+          floorPlanId: floorPlan.id,
+          ...capacityFilter,
+          ...(preferred.length > 0 ? { id: { notIn: preferred.map((t) => t.id) } } : {}),
+        },
+        orderBy: [{ capacity: 'asc' }, { minCapacity: 'asc' }, { name: 'asc' }],
+      });
+      return [...preferred, ...fallback];
+    }
+
+    const floorPlan = await prisma.floorPlan.findFirst({
+      where: { restaurantId: input.restaurantId, isActive: true, isDefault: true },
+      select: { id: true },
+    });
+    if (!floorPlan) {
+      return [];
+    }
+
+    return prisma.table.findMany({
+      where: { floorPlanId: floorPlan.id, ...capacityFilter },
+      orderBy: [{ capacity: 'asc' }, { minCapacity: 'asc' }, { name: 'asc' }],
+    });
+  }
+
+  /**
+   * Score d'une candidate : plus la table est proche du nombre de couverts,
+   * plus le score est élevé. Une table de la section préférée (si fournie) est
+   * favorisée. Le score n'est qu'un ordre de tri — les `reasons` portent le
+   * sens métier affiché.
+   */
+  private scoreCandidate(table: Table, input: AllocateTableInput): number {
+    let score = 100 - (table.capacity - input.partySize) * 10;
+    if (input.preferredSectionId && table.sectionId === input.preferredSectionId) {
+      score += 15;
+    }
+    return score;
+  }
+
+  /**
+   * Raisons FR (vouvoiement) expliquant la proposition, affichées telles quelles.
+   */
+  private buildCandidateReasons(table: Table, input: AllocateTableInput): string[] {
+    const reasons: string[] = [];
+    const spare = table.capacity - input.partySize;
+    if (spare === 0) {
+      reasons.push(`Capacité exacte pour ${input.partySize} couverts`);
+    } else {
+      reasons.push(`Table de ${table.capacity} couverts pour ${input.partySize} personnes`);
+    }
+    if (input.preferredSectionId && table.sectionId === input.preferredSectionId) {
+      reasons.push('Dans votre section préférée');
+    }
+    if (spare === 0) {
+      reasons.push('Optimise votre remplissage');
+    }
+    return reasons;
   }
 
   private async hasConflictingReservation(

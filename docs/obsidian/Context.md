@@ -2,6 +2,10 @@
 
 ## Dernière activité
 
+2026-07-21 13:05 — [api, dashboard] **Floor-plan : fallback de section + raccourcis d’édition** — `TableAllocationService` retombe sur les tables du plan par défaut quand la section préférée n’offre aucune table compatible ; la section reste prioritaire. En édition, Delete confirme la suppression des tables sélectionnées, Backspace supprime le mur sélectionné, et les flèches déplacent les tables sélectionnées de 1 px (10 px avec Shift), avec bornes canvas et historique undo/redo. Tests ciblés API 55/55, dashboard 103/103, lint API/dashboard et typecheck monorepo 12/12 verts.
+
+2026-07-21 12:31 — [api, dashboard] **Floor-plan : allocation explicable + undo/redo géométrique** — `suggest-table` prévisualise désormais jusqu’à trois tables compatibles, avec score et raisons, sans verrou SQL ; les champs legacy `tableId`/`reason` restent pour compatibilité. Le canvas garde 50 snapshots strictement géométriques pour déplacer/redimensionner/faire pivoter tables et murs, aligner/répartir les tables et modifier longueur/angle des murs ; boutons Annuler/Rétablir et raccourcis ⌘/Ctrl+Z, ⌘/Ctrl+⇧Z. Les versions de mutation par table/mur ignorent les réponses réseau périmées après undo/redo ; suppression d'une table/mur purge l'historique pour éviter toute recréation fantôme. Aucune migration. Tests dashboard 100/100, lint dashboard et typecheck racine 12/12 verts.
+
 2026-07-20 23:22 — [api] **Waiting list P3.3 : notifications de promotion (SMS/email)** — Worker BullMQ dédié `waiting-list-promote` + queue `waitingListPromote` ; `promoteEntry` planifie deux jobs (`channel: 'sms'` et `'email'`) après commit de la transaction avec `jobId` déterministe. Le worker vérifie que l'entrée est `PROMOTED`, récupère la réservation promue et envoie SMS/email si contact présent. Copy user-facing en `vous` avec restaurant, date, heure, couverts et téléphone du restaurant. `REDACT_PATHS` étendu (`*.email`, `*.customerEmail`, `*.customerPhoneNormalized`) ; `env.ts` documente les vars SMTP optionnelles. Tests 12/12 worker + 17/17 service, full API 1235/1241 (1 skip), typecheck + lint verts.
 
 2026-07-20 18:39 — [dashboard] **Dashboard : normalisation couleurs via design tokens** — Remplacement des classes Tailwind de couleurs fixes (cyan, amber, emerald, red, purple, blue, orange) par les tokens du design system (brand, success, warning, destructive, metal) dans `GaugeDial`, `MobileBottomNav`, `MobileDataCard`, `gift-card-list` et `onboarding-dashboard`. Typecheck + lint dashboard verts.
@@ -46,6 +50,7 @@
 
 ## Décisions récentes
 
+- **2026-07-21** — Floor-plan : l’allocation expose d’abord trois propositions explicables et read-only ; undo/redo reste volontairement borné à la géométrie réversible du canvas (50 actions locales, pas de création/suppression). La machine à états de service complète reste différée aux retours de pilotes.
 - **2026-06-24** — Sokar Connect v1.1 validée par Hamza (8 corrections v1→v1.1 intégrées : static export→standalone, suppression basePath, VPS+Caddy+Cloudflare proxy, gating corrigé, source de vérité unique, seed local/staging, audit log métier only, CORS durci). Spec : [[Sokar Connect P0]]
 - **2026-06-24** — Phase 0 Sokar Connect lancée : ordre T1→T2+T3→T4 avec STOP revue entre chaque. T1 (`migrate deploy`) **fait le 2026-06-24** (backfill Chez Sokar → Lyon/69001/FR), T2-T10 (API publique, JSON-LD, app connect, pages, analytics, sécurité) écrits et testés (38/38 tests verts). Reste : T4 app en prod + P1 pilote fermé (cf. [[Sokar Connect P0]]).
 - **2026-06-24** — Cleanup docs/ : `pilot/_archive/` créé, `runbook.md` extrait de `pilot/`, 3 versions agentic obsolètes archivées. Vault Obsidian re-activé après 5 semaines d'arrêt (cf. Journal).
