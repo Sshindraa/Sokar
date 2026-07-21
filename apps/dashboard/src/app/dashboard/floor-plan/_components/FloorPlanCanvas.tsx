@@ -1536,10 +1536,12 @@ export function FloorPlanCanvas({
   orgId,
   mode = 'design',
   floorPlanId,
+  initialDelayImpact,
 }: {
   orgId: string;
   mode?: 'service' | 'design';
   floorPlanId?: string;
+  initialDelayImpact?: { reservationId: string; delayMinutes: number } | null;
 }) {
   const { get, post, patch, del } = useApi();
   const getRef = useRef(get);
@@ -1590,6 +1592,7 @@ export function FloorPlanCanvas({
   const [delayImpactLoading, setDelayImpactLoading] = useState(false);
   const [delayRecoveryConfirmOpen, setDelayRecoveryConfirmOpen] = useState(false);
   const [applyingDelayRecovery, setApplyingDelayRecovery] = useState(false);
+  const initialDelayHandledRef = useRef(false);
   const [lockedWallIds, setLockedWallIds] = useState<Set<string>>(() => new Set());
 
   const [selectedTableIds, setSelectedTableIds] = useState<Set<string>>(() => new Set());
@@ -1889,6 +1892,30 @@ export function FloorPlanCanvas({
     },
     [orgId, delayMinutes],
   );
+
+  useEffect(() => {
+    if (!live || !initialDelayImpact || initialDelayHandledRef.current) return;
+    const reservation = reservations.find((item) => item.id === initialDelayImpact.reservationId);
+    if (!reservation?.tableId) return;
+    initialDelayHandledRef.current = true;
+    setDelayMinutes(initialDelayImpact.delayMinutes);
+    setSelectedServiceTableId(reservation.tableId);
+    void (async () => {
+      setDelayImpactLoading(true);
+      setDelayImpactReservationId(reservation.id);
+      try {
+        const result = await postRef.current<ServiceCopilotDelayImpact>(
+          `restaurants/${orgId}/service-copilot/delay-impact`,
+          { reservationId: reservation.id, delayMinutes: initialDelayImpact.delayMinutes },
+        );
+        setDelayImpact(result);
+      } catch (err) {
+        setError(getErrorMessage(err, 'Impossible d’analyser ce retard'));
+      } finally {
+        setDelayImpactLoading(false);
+      }
+    })();
+  }, [initialDelayImpact, live, orgId, reservations]);
 
   const applyDelayRecovery = useCallback(async () => {
     if (

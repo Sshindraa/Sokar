@@ -80,6 +80,35 @@ describe('ServiceCopilotService', () => {
   });
 
   describe('late-reservation', () => {
+    it('priorise un retard signalé par téléphone et ouvre son analyse', async () => {
+      const now = new Date('2026-07-17T18:00:00.000Z');
+      mocks.reservation.findMany.mockResolvedValue([]);
+      mocks.waitingListEntry.findMany.mockResolvedValue([]);
+      mocks.reservationAuditLog.findMany.mockImplementation(async (args: any) => {
+        if (args.where.event === 'reservation_delay_recovered') return [];
+        return [
+          {
+            reservationId: 'res-voice-delay',
+            createdAt: new Date(now.getTime() - 5 * 60_000),
+            metadata: { delayMinutes: 20, source: 'voice' },
+            reservation: { customerName: 'Martin' },
+          },
+        ];
+      });
+
+      const recs = await svc.getRecommendations('rest-1', now);
+
+      expect(recs[0]).toMatchObject({
+        kind: 'reported-delay',
+        priority: 'high',
+        entityId: 'res-voice-delay',
+        action: {
+          label: 'Analyser l’impact',
+          href: '/dashboard/floor-plan?reservationId=res-voice-delay&delayMinutes=20',
+        },
+      });
+    });
+
     it('recommande une réservation CONFIRMED démarrée il y a plus de 15 min', async () => {
       const now = new Date('2026-07-17T18:00:00.000Z');
       const startsAt = new Date(now.getTime() - 25 * 60_000);

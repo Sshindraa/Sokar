@@ -77,6 +77,33 @@ export function getRestaurantTools(_restaurantId: string) {
     {
       type: 'function',
       function: {
+        name: 'reportDelay',
+        description:
+          'Signale le retard d’un client au Copilot de salle. À appeler uniquement après avoir confirmé le nom, la date, l’heure exacte de la réservation et le nombre de minutes de retard. Ne modifie jamais une réservation ni une table : le responsable valide toute réorganisation.',
+        parameters: {
+          type: 'object',
+          properties: {
+            customerName: { type: 'string', description: 'Nom complet du client' },
+            date: { type: 'string', format: 'date', description: 'Date au format YYYY-MM-DD' },
+            time: {
+              type: 'string',
+              pattern: TIME_PATTERN,
+              description: 'Heure réservée au format HH:MM',
+            },
+            delayMinutes: {
+              type: 'integer',
+              minimum: 5,
+              maximum: 180,
+              description: 'Retard annoncé en minutes',
+            },
+          },
+          required: ['customerName', 'date', 'time', 'delayMinutes'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'takeMessage',
         description:
           'Enregistre un message du client pour le gérant. À utiliser quand le client laisse un message (demande spéciale, rappel demandé, réclamation) qui nécessite un traitement humain différé.',

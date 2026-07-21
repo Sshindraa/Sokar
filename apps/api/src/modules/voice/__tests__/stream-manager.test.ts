@@ -34,6 +34,9 @@ vi.mock('../../../shared/db/client', () => ({
       findFirst: vi.fn(),
       update: vi.fn(),
     },
+    reservationAuditLog: {
+      create: vi.fn(),
+    },
     message: {
       create: vi.fn(),
     },
@@ -461,6 +464,30 @@ describe('CallSessionManager — tool execution', () => {
         status: 'PENDING',
       },
     });
+  });
+
+  it('reportDelay : audite le retard sans modifier la réservation', async () => {
+    vi.mocked(db.reservation.findFirst).mockResolvedValue({ id: 'res-delay-1' } as never);
+    mockFetchToolCall(
+      'reportDelay',
+      { customerName: 'Jean', date: '2026-07-16', time: '19:30', delayMinutes: 20 },
+      'Merci, c’est noté.',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    await mgr.processUtterance(makeSession(), 'Nous aurons vingt minutes de retard');
+
+    expect(db.reservationAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event: 'reservation_delay_reported',
+          reservationId: 'res-delay-1',
+          correlationId: 'leg-test-1',
+          metadata: { delayMinutes: 20, source: 'voice' },
+        }),
+      }),
+    );
+    expect(ReservationService.update).not.toHaveBeenCalled();
   });
 
   it('handoffToManager : retourne le message de transfert', async () => {

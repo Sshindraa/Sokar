@@ -34,6 +34,7 @@ const iconColorClasses: Record<ServiceCopilotPriority, string> = {
 };
 
 const kindIcon = {
+  'reported-delay': Phone,
   'late-reservation': Phone,
   'table-soon-free': Clock,
   'waiting-list-compatible': AlertCircle,
@@ -47,7 +48,10 @@ function highestPriority(recommendations: ServiceCopilotRecommendation[]): Servi
 }
 
 function formatMetric(rec: ServiceCopilotRecommendation): string | null {
-  if (rec.kind === 'late-reservation' && typeof rec.metrics?.minutesLate === 'number') {
+  if (
+    (rec.kind === 'late-reservation' || rec.kind === 'reported-delay') &&
+    typeof rec.metrics?.minutesLate === 'number'
+  ) {
     return `${rec.metrics.minutesLate} min de retard`;
   }
   if (rec.kind === 'table-soon-free' && rec.metrics?.estimatedFreeAt) {

@@ -278,6 +278,7 @@ export interface WaitingListEntry {
 // ─── Service Copilot ────────────────────────────────────────────────────
 
 export type ServiceCopilotRecommendationKind =
+  | 'reported-delay'
   | 'late-reservation'
   | 'table-soon-free'
   | 'waiting-list-compatible';

@@ -24,8 +24,8 @@ describe('getRestaurantTools', () => {
   const tools = getRestaurantTools('rest-123');
   const byName = (name: string) => tools.find((t) => t.function.name === name);
 
-  it('returns exactly 7 tools: createReservation, checkAvailability, cancelReservation, takeMessage, handoffToManager, purchaseGiftCard, recommendGiftCardAmount', () => {
-    expect(tools).toHaveLength(7);
+  it('returns exactly 8 tools including reportDelay', () => {
+    expect(tools).toHaveLength(8);
     const names = tools.map((t) => t.function.name).sort();
     expect(names).toEqual([
       'cancelReservation',
@@ -34,6 +34,7 @@ describe('getRestaurantTools', () => {
       'handoffToManager',
       'purchaseGiftCard',
       'recommendGiftCardAmount',
+      'reportDelay',
       'takeMessage',
     ]);
   });
@@ -54,6 +55,22 @@ describe('getRestaurantTools', () => {
     // Pin the behaviour so a future change is intentional.
     expect(getRestaurantTools('rest-A')).toEqual(getRestaurantTools('rest-B'));
     expect(getRestaurantTools('rest-A')).toEqual(tools);
+  });
+});
+
+describe('reportDelay tool', () => {
+  const tool = getRestaurantTools('rest-1').find((t) => t.function.name === 'reportDelay')!;
+  const params = tool.function.parameters as unknown as {
+    properties: Record<string, { minimum?: number; maximum?: number; pattern?: string }>;
+    required: string[];
+  };
+
+  it('requires a precise booking identity and a bounded delay', () => {
+    expect(new Set(params.required)).toEqual(
+      new Set(['customerName', 'date', 'time', 'delayMinutes']),
+    );
+    expect(params.properties.time.pattern).toBe(TIME_PATTERN);
+    expect(params.properties.delayMinutes).toMatchObject({ minimum: 5, maximum: 180 });
   });
 });
 
@@ -249,6 +266,7 @@ describe('tool name stability (regression guard)', () => {
     'createReservation',
     'checkAvailability',
     'cancelReservation',
+    'reportDelay',
     'takeMessage',
     'handoffToManager',
     'purchaseGiftCard',

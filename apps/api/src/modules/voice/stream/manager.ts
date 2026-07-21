@@ -11,6 +11,7 @@ import { GiftCardService } from '../../gift-cards/gift-card.service';
 import { recommendGiftCardAmount } from '../../gift-cards/gift-card-recommender';
 import { sendSms } from '../../../shared/telnyx/client';
 import { trackGiftCardEvent } from '../../analytics/events.service';
+import { AuditLogService } from '../../agentic-reservations/core/audit-log.service';
 
 interface LlmResponse {
   choices?: Array<{ message: ChatMessage }>;
@@ -653,6 +654,42 @@ export class CallSessionManager {
               });
             }
             return `Je n'ai pas pu enregistrer votre message. Je vais vous transférer au gérant.`;
+          }
+        }
+
+        case 'reportDelay': {
+          const { customerName, date, time, delayMinutes } = args;
+          const startsAt = new Date(`${date}T${time}`);
+          if (!Number.isFinite(startsAt.getTime()) || !Number.isInteger(delayMinutes)) {
+            return 'Je n’ai pas pu identifier la réservation. Pouvez-vous confirmer votre nom, la date et l’heure de la réservation ?';
+          }
+
+          try {
+            const reservation = await db.reservation.findFirst({
+              where: {
+                restaurantId: session.restaurantId,
+                customerName: { equals: customerName, mode: 'insensitive' },
+                startsAt,
+                state: 'CONFIRMED',
+              },
+              select: { id: true },
+            });
+            if (!reservation) {
+              return 'Je n’ai pas trouvé cette réservation confirmée. Je vous transfère au gérant pour vous aider.';
+            }
+
+            await new AuditLogService(db).record({
+              event: 'reservation_delay_reported',
+              reservationId: reservation.id,
+              actor: 'voice:caller',
+              actorHash: AuditLogService.hashActor(`voice:${session.callLegId}`),
+              correlationId: session.callLegId,
+              metadata: { delayMinutes, source: 'voice' },
+            });
+            return `Merci, votre retard de ${delayMinutes} minutes est bien noté. L’équipe de salle va examiner les possibilités ; votre réservation n’est pas modifiée automatiquement.`;
+          } catch (err: unknown) {
+            logger.error({ err, callId: session.callControlId }, '[tool] reportDelay failed');
+            return 'Je n’ai pas pu enregistrer ce retard. Je vous transfère au gérant.';
           }
         }
 

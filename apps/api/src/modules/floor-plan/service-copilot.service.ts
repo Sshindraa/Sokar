@@ -9,7 +9,7 @@ import {
 
 export interface ServiceCopilotRecommendation {
   id: string;
-  kind: 'late-reservation' | 'table-soon-free' | 'waiting-list-compatible';
+  kind: 'reported-delay' | 'late-reservation' | 'table-soon-free' | 'waiting-list-compatible';
   priority: 'critical' | 'high' | 'medium' | 'low';
   title: string;
   reason: string;
@@ -130,6 +130,7 @@ export class ServiceCopilotService {
       this.fetchSeatedReservations(restaurantId, now),
       this.fetchWaitingListEntries(restaurantId, now, waitingListMax),
     ]);
+    const reportedDelays = await this.fetchReportedDelays(restaurantId, now);
 
     const seatedAtByReservation = await this.buildSeatedAtMap(seatedReservations.map((r) => r.id));
     const turnPredictions = await new ServiceTurnPredictionService(
@@ -147,6 +148,10 @@ export class ServiceCopilotService {
 
     const recommendations: ServiceCopilotRecommendation[] = [];
     const seen = new Set<string>();
+
+    for (const delay of reportedDelays) {
+      this.addUnique(recommendations, seen, this.buildReportedDelayRecommendation(delay));
+    }
 
     for (const reservation of lateReservations) {
       const rec = this.buildLateReservationRecommendation(reservation, now, timeZone);
@@ -190,6 +195,76 @@ export class ServiceCopilotService {
     });
 
     return recommendations.slice(0, 3);
+  }
+
+  private async fetchReportedDelays(restaurantId: string, now: Date) {
+    const logs = await this.prisma.reservationAuditLog.findMany({
+      where: {
+        event: 'reservation_delay_reported',
+        createdAt: { gte: new Date(now.getTime() - 4 * 60 * 60_000) },
+        reservation: { restaurantId, state: 'CONFIRMED' },
+      },
+      select: {
+        reservationId: true,
+        createdAt: true,
+        metadata: true,
+        reservation: { select: { customerName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+    const reported = logs.filter(
+      (log) =>
+        log.reservationId &&
+        typeof (log.metadata as { delayMinutes?: unknown } | null | undefined)?.delayMinutes ===
+          'number',
+    );
+    const reservationIds = reported.flatMap((log) =>
+      log.reservationId ? [log.reservationId] : [],
+    );
+    if (reservationIds.length === 0) return reported;
+    const recovered = await this.prisma.reservationAuditLog.findMany({
+      where: {
+        event: 'reservation_delay_recovered',
+        reservationId: { in: reservationIds },
+      },
+      select: { reservationId: true, createdAt: true },
+    });
+    const recoveredAt = new Map(
+      recovered.flatMap((log) =>
+        log.reservationId ? [[log.reservationId, log.createdAt] as const] : [],
+      ),
+    );
+    return reported.filter((log) => {
+      const recovery = log.reservationId ? recoveredAt.get(log.reservationId) : undefined;
+      return !recovery || recovery.getTime() < log.createdAt.getTime();
+    });
+  }
+
+  private buildReportedDelayRecommendation(
+    delay: Awaited<ReturnType<ServiceCopilotService['fetchReportedDelays']>>[number],
+  ): ServiceCopilotRecommendation {
+    const delayMinutes = (delay.metadata as { delayMinutes: number }).delayMinutes;
+    const reservationId = delay.reservationId!;
+    return {
+      id: randomUUID(),
+      kind: 'reported-delay',
+      priority: delayMinutes >= 30 ? 'critical' : 'high',
+      title: `${delay.reservation?.customerName ?? 'Client'} annonce ${delayMinutes} min de retard`,
+      reason:
+        'Signalé par téléphone. Analysez l’impact avant de déplacer une table ou de proposer une attente.',
+      action: {
+        type: 'link',
+        label: 'Analyser l’impact',
+        href: `/dashboard/floor-plan?reservationId=${encodeURIComponent(reservationId)}&delayMinutes=${delayMinutes}`,
+      },
+      entityId: reservationId,
+      expiresAt: new Date(delay.createdAt.getTime() + 4 * 60 * 60_000).toISOString(),
+      metrics: {
+        minutesLate: delayMinutes,
+        customerName: delay.reservation?.customerName ?? undefined,
+      },
+    };
   }
 
   private addUnique(

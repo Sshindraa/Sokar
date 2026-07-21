@@ -38,6 +38,12 @@ export default function FloorPlanPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeView = searchParams.get('view') === 'edit-plan' ? 'edit-plan' : 'service-live';
+  const reportedReservationId = searchParams.get('reservationId');
+  const reportedDelayMinutes = Number(searchParams.get('delayMinutes'));
+  const initialDelayImpact =
+    reportedReservationId && Number.isInteger(reportedDelayMinutes) && reportedDelayMinutes >= 5
+      ? { reservationId: reportedReservationId, delayMinutes: Math.min(reportedDelayMinutes, 180) }
+      : null;
   const [designTab, setDesignTab] = useState<'visual' | 'crud'>('visual');
 
   const [floorPlans, setFloorPlans] = useState<FloorPlanSummary[] | null>(null);
@@ -220,6 +226,7 @@ export default function FloorPlanPage() {
           orgId={orgId}
           mode="service"
           floorPlanId={selectedFloorPlanId}
+          initialDelayImpact={initialDelayImpact}
         />
       )}
       {selectedFloorPlanId && activeView === 'edit-plan' && designTab === 'visual' && (
