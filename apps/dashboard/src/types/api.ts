@@ -275,6 +275,44 @@ export interface WaitingListEntry {
   promotedReservationId?: string | null;
 }
 
+// ─── Service Copilot ────────────────────────────────────────────────────
+
+export type ServiceCopilotRecommendationKind =
+  | 'late-reservation'
+  | 'table-soon-free'
+  | 'waiting-list-compatible';
+
+export type ServiceCopilotPriority = 'critical' | 'high' | 'medium' | 'low';
+
+export interface ServiceCopilotRecommendation {
+  id: string;
+  kind: ServiceCopilotRecommendationKind;
+  priority: ServiceCopilotPriority;
+  title: string;
+  reason: string;
+  action: {
+    type: 'link' | 'call' | 'api';
+    label: string;
+    href?: string;
+    method?: 'PATCH' | 'POST' | 'DELETE';
+    path?: string;
+    body?: Record<string, unknown>;
+  };
+  entityId?: string;
+  expiresAt: string;
+  metrics?: {
+    minutesLate?: number;
+    estimatedFreeAt?: string;
+    covers?: number;
+    tableName?: string;
+    customerName?: string;
+  };
+}
+
+export interface ServiceCopilotRecommendationsResponse {
+  recommendations: ServiceCopilotRecommendation[];
+}
+
 // ─── Utilitaire : extraction de message d'erreur ────────────────────────
 
 /**

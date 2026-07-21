@@ -6,6 +6,7 @@ import { requireOrg } from '../../plugins/clerk';
 import { FloorPlanService, FloorPlanValidationError } from './floor-plan.service';
 import { TableAllocationService, TableAllocationError } from './table-allocation.service';
 import { CapacityAwareAvailabilityService } from './availability-capacity-aware.service';
+import { ServiceCopilotService } from './service-copilot.service';
 import { HoldService } from '../agentic-reservations/core/hold.service';
 import { ReservationService } from '../agentic-reservations/core/reservation.service';
 import { WaitingListService } from '../agentic-reservations/core/waiting-list.service';
@@ -145,6 +146,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
   const reservations = new ReservationService(db, audit, holds, idempotency);
   const allocation = new TableAllocationService(db);
   const waitingList = new WaitingListService(db, allocation, audit);
+  const copilot = new ServiceCopilotService(db);
 
   // ─── Legacy single floor-plan endpoints (default active floor plan) ───
 
@@ -253,6 +255,22 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
       await service.deleteFloorPlan(floorPlanId);
       return reply.status(204).send();
+    },
+  );
+
+  // ─── Service Copilot ───
+
+  app.get(
+    '/restaurants/:id/service-copilot/recommendations',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const restaurantId = (req.params as { id: string }).id;
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+
+      const recs = await copilot.getRecommendations(restaurantId);
+      return reply.send({ recommendations: recs });
     },
   );
 

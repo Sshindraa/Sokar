@@ -27,6 +27,10 @@ const DashboardCharts = dynamic(() => import('./DashboardCharts'), {
   ),
 });
 
+const ServiceCopilotWidget = dynamic(() => import('./ServiceCopilotWidget'), {
+  ssr: false,
+});
+
 const EmptySlotsWidget = dynamic(() => import('./EmptySlotsWidget'), {
   ssr: false,
 });
@@ -248,6 +252,8 @@ export default function DashboardPage() {
       )}
 
       {!error && !hasData && <EmptyDashboardState />}
+
+      <ServiceCopilotWidget />
 
       <EmptySlotsWidget />
 
