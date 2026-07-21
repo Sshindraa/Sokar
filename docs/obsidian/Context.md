@@ -2,6 +2,8 @@
 
 ## Dernière activité
 
+2026-07-21 20:05 — [dashboard, e2e] **Service Copilot : démo E2E déterministe** — Le test Playwright du plan de salle simule désormais, sans API ni données staging, les trois réponses du Copilot : table disponible (et absence de refus contradictoire), section Terrasse pleine avec bascule vers Salle, et restaurant complet avec prochain créneau. Le sélecteur de section est exercé. Les 12 E2E (iPhone, iPad, desktop), typecheck et lint dashboard sont verts.
+
 2026-07-21 19:42 — [api] **Service Copilot : refus uniquement en fallback** — Une simulation faisable affichait aussi le scénario contradictoire « Aucune table disponible ». `ServiceCopilotSimulationService` ne recherche et ne retourne désormais le prochain créneau / refus que si aucun placement direct ou changement de section n’est possible. Tests floor-plan ciblés 43/43 et typecheck API verts ; en attente de CI/staging.
 
 2026-07-21 19:28 — [api] **Correctif allocation : bornes `tsrange` Prisma** — Les simulations Service Copilot échouaient sur staging : Prisma lie les `Date` des `$queryRaw` en `timestamptz`, incompatible avec `tsrange(timestamp, timestamp)`. `TableAllocationService` convertit désormais explicitement les deux bornes en timestamp UTC, côté réservations et holds, sans migration. Régression couverte par un test des deux requêtes. Tests floor-plan ciblés 43/43 et typecheck API verts. Correctif `1c215f7` en attente de CI/staging.
