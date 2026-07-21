@@ -21,6 +21,10 @@ import { WaitingListService } from '../../agentic-reservations/core/waiting-list
 import { CapacityAwareAvailabilityService } from '../availability-capacity-aware.service';
 import { TableAllocationService, TableAllocationError } from '../table-allocation.service';
 import { ServiceCopilotDelayImpactService } from '../service-copilot-delay-impact.service';
+import {
+  DelayRecoveryConflictError,
+  ServiceCopilotDelayRecoveryService,
+} from '../service-copilot-delay-recovery.service';
 
 describe('floorPlanRoutes', () => {
   beforeEach(() => {
@@ -144,6 +148,53 @@ describe('floorPlanRoutes', () => {
 
       expect(res.statusCode).toBe(403);
       expect(simulate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /restaurants/:id/service-copilot/delay-impact/apply', () => {
+    const payload = {
+      reservationId: 'res-1',
+      delayMinutes: 20,
+      alternativeTableId: 'table-7',
+      waitingListEntryId: 'waiting-1',
+    };
+
+    it('applique seulement un plan explicitement confirmé', async () => {
+      const app = await getApp();
+      const apply = vi
+        .spyOn(ServiceCopilotDelayRecoveryService.prototype, 'apply')
+        .mockResolvedValue({ delayedReservationId: 'res-1', promotedReservationId: 'res-2' });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/service-copilot/delay-impact/apply',
+        headers: { authorization: 'Bearer test' },
+        payload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(apply).toHaveBeenCalledWith({
+        ...payload,
+        restaurantId: 'test-rest-1',
+        actor: 'test-rest-1',
+      });
+    });
+
+    it('retourne 409 si le plan a changé avant confirmation', async () => {
+      const app = await getApp();
+      vi.spyOn(ServiceCopilotDelayRecoveryService.prototype, 'apply').mockRejectedValue(
+        new DelayRecoveryConflictError('Le plan a changé.'),
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/service-copilot/delay-impact/apply',
+        headers: { authorization: 'Bearer test' },
+        payload,
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('Le plan a changé.');
     });
   });
 

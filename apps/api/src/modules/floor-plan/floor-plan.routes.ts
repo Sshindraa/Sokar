@@ -9,6 +9,10 @@ import { CapacityAwareAvailabilityService } from './availability-capacity-aware.
 import { ServiceCopilotService } from './service-copilot.service';
 import { ServiceCopilotSimulationService } from './service-copilot-simulation.service';
 import { ServiceCopilotDelayImpactService } from './service-copilot-delay-impact.service';
+import {
+  DelayRecoveryConflictError,
+  ServiceCopilotDelayRecoveryService,
+} from './service-copilot-delay-recovery.service';
 import { HoldService } from '../agentic-reservations/core/hold.service';
 import { ReservationService } from '../agentic-reservations/core/reservation.service';
 import { WaitingListService } from '../agentic-reservations/core/waiting-list.service';
@@ -147,6 +151,11 @@ const SimulateDelayImpactSchema = z.object({
   delayMinutes: z.number().int().min(5).max(180),
 });
 
+const ApplyDelayImpactSchema = SimulateDelayImpactSchema.extend({
+  alternativeTableId: z.string().min(1),
+  waitingListEntryId: z.string().min(1),
+});
+
 function getFloorPlanIdFromQuery(query: unknown): string | undefined {
   const parsed = z.object({ floorPlanId: z.string().optional() }).safeParse(query ?? {});
   return parsed.success ? parsed.data.floorPlanId : undefined;
@@ -163,6 +172,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
   const copilot = new ServiceCopilotService(db);
   const simulation = new ServiceCopilotSimulationService(db);
   const delayImpact = new ServiceCopilotDelayImpactService(db);
+  const delayRecovery = new ServiceCopilotDelayRecoveryService(db);
 
   // ─── Legacy single floor-plan endpoints (default active floor plan) ───
 
@@ -325,6 +335,34 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
         delayMinutes: body.delayMinutes,
       });
       return reply.send(result);
+    },
+  );
+
+  app.post(
+    '/restaurants/:id/service-copilot/delay-impact/apply',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const restaurantId = (req.params as { id: string }).id;
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+      const body = ApplyDelayImpactSchema.parse(req.body);
+      try {
+        const result = await delayRecovery.apply({
+          restaurantId,
+          reservationId: body.reservationId,
+          delayMinutes: body.delayMinutes,
+          alternativeTableId: body.alternativeTableId,
+          waitingListEntryId: body.waitingListEntryId,
+          actor: req.restaurantId ?? 'dashboard',
+        });
+        return reply.send(result);
+      } catch (err) {
+        if (err instanceof DelayRecoveryConflictError) {
+          return reply.status(409).send({ error: err.message });
+        }
+        throw err;
+      }
     },
   );
 

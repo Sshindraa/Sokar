@@ -26,6 +26,7 @@ export type AuditEvent =
   | 'reservation_cancelled'
   | 'reservation_no_show'
   | 'reservation_honored'
+  | 'reservation_delay_recovered'
   | 'reservation_failed'
   | 'consent_recorded'
   | 'opt_in_changed'

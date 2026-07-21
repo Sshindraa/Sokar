@@ -1588,6 +1588,8 @@ export function FloorPlanCanvas({
   const [delayImpact, setDelayImpact] = useState<ServiceCopilotDelayImpact | null>(null);
   const [delayImpactReservationId, setDelayImpactReservationId] = useState<string | null>(null);
   const [delayImpactLoading, setDelayImpactLoading] = useState(false);
+  const [delayRecoveryConfirmOpen, setDelayRecoveryConfirmOpen] = useState(false);
+  const [applyingDelayRecovery, setApplyingDelayRecovery] = useState(false);
   const [lockedWallIds, setLockedWallIds] = useState<Set<string>>(() => new Set());
 
   const [selectedTableIds, setSelectedTableIds] = useState<Set<string>>(() => new Set());
@@ -1887,6 +1889,36 @@ export function FloorPlanCanvas({
     },
     [orgId, delayMinutes],
   );
+
+  const applyDelayRecovery = useCallback(async () => {
+    if (
+      !orgId ||
+      !delayImpact ||
+      !delayImpact.feasible ||
+      !delayImpactReservationId ||
+      !delayImpact.alternativeTable ||
+      !delayImpact.waitingListEntry
+    ) {
+      return;
+    }
+    setApplyingDelayRecovery(true);
+    try {
+      await postRef.current(`restaurants/${orgId}/service-copilot/delay-impact/apply`, {
+        reservationId: delayImpactReservationId,
+        delayMinutes,
+        alternativeTableId: delayImpact.alternativeTable.id,
+        waitingListEntryId: delayImpact.waitingListEntry.id,
+      });
+      setDelayRecoveryConfirmOpen(false);
+      setDelayImpact(null);
+      await loadReservations({ force: true });
+    } catch (err) {
+      setDelayRecoveryConfirmOpen(false);
+      setError(getErrorMessage(err, 'Le plan a changé ; relancez l’analyse avant de confirmer.'));
+    } finally {
+      setApplyingDelayRecovery(false);
+    }
+  }, [orgId, delayImpact, delayImpactReservationId, delayMinutes, loadReservations]);
 
   const assignTable = useCallback(
     async (reservationId: string, tableId: string) => {
@@ -3830,6 +3862,18 @@ export function FloorPlanCanvas({
     />
   );
 
+  const delayRecoveryConfirm = (
+    <ConfirmDialog
+      open={delayRecoveryConfirmOpen}
+      onConfirm={() => void applyDelayRecovery()}
+      onCancel={() => setDelayRecoveryConfirmOpen(false)}
+      title="Appliquer le plan de récupération ?"
+      description="La réservation en retard sera déplacée à sa nouvelle heure et le groupe en attente sera confirmé sur la table libérée. Sokar reverra les conflits juste avant l’application."
+      confirmLabel={applyingDelayRecovery ? 'Application…' : 'Appliquer le plan'}
+      cancelLabel="Annuler"
+    />
+  );
+
   const multiDeleteConfirm = (
     <ConfirmDialog
       open={multiDeleteConfirmOpen}
@@ -4175,16 +4219,27 @@ export function FloorPlanCanvas({
                       {delayImpact.feasible &&
                       delayImpact.alternativeTable &&
                       delayImpact.waitingListEntry ? (
-                        <p className="text-muted-foreground">
-                          Plan proposé :{' '}
-                          {selectedServiceTable.displayName ?? selectedServiceTable.name} →{' '}
-                          {delayImpact.waitingListEntry.customerName} ;{' '}
-                          {selectedServiceReservation.customerName || 'Client'} →{' '}
-                          {delayImpact.alternativeTable.name}.
-                        </p>
+                        <>
+                          <p className="text-muted-foreground">
+                            Plan proposé :{' '}
+                            {selectedServiceTable.displayName ?? selectedServiceTable.name} →{' '}
+                            {delayImpact.waitingListEntry.customerName} ;{' '}
+                            {selectedServiceReservation.customerName || 'Client'} →{' '}
+                            {delayImpact.alternativeTable.name}.
+                          </p>
+                          <Button
+                            size="sm"
+                            className="w-full"
+                            onClick={() => setDelayRecoveryConfirmOpen(true)}
+                          >
+                            Confirmer et appliquer
+                          </Button>
+                        </>
                       ) : null}
                       <p className="text-muted-foreground">
-                        À valider : aucune modification n’est appliquée.
+                        {delayImpact.feasible
+                          ? 'La confirmation reverra les conflits juste avant application.'
+                          : 'Aucune modification n’est appliquée.'}
                       </p>
                     </div>
                   )}
@@ -4646,6 +4701,7 @@ export function FloorPlanCanvas({
         {dialog}
         {confirm}
         {settingsDialog}
+        {delayRecoveryConfirm}
       </>
     );
   }
@@ -4664,6 +4720,7 @@ export function FloorPlanCanvas({
         {dialog}
         {confirm}
         {settingsDialog}
+        {delayRecoveryConfirm}
       </>
     );
   }
@@ -5227,6 +5284,7 @@ export function FloorPlanCanvas({
       </Card>
       {dialog}
       {confirm}
+      {delayRecoveryConfirm}
       {multiDeleteConfirm}
       {settingsDialog}
       {duplicateDialog}
