@@ -10,6 +10,7 @@ import {
   type FloorPlanWall,
   type PlanningReservation,
   type TableShape,
+  type WaitingListEntry,
   type WallType,
 } from '@/types/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -52,6 +53,7 @@ import {
   CircleCheck,
   UserRound,
   Users,
+  ListOrdered,
   ListFilter,
   BarChart3,
   Plus,
@@ -114,6 +116,20 @@ const WALL_SNAP_DISTANCE = 40; // pixels in canvas coordinates
 const WALL_LENGTH_MATCH_DISTANCE = 24; // pixels in canvas coordinates
 const WALL_ALIGN_GUIDE_DISTANCE = 24; // pixels in canvas coordinates
 const WALL_PERPENDICULAR_DOT_TOLERANCE = 0.08;
+
+type WaitingListApiEntry = WaitingListEntry & {
+  preferredSection?: { name: string } | null;
+};
+
+function mapWaitingListEntries(data: unknown[]): WaitingListEntry[] {
+  return data.map((item) => {
+    const entry = item as WaitingListApiEntry;
+    return {
+      ...entry,
+      preferredSectionName: entry.preferredSectionName ?? entry.preferredSection?.name ?? null,
+    };
+  });
+}
 
 const TABLE_BORDER_WIDTH = 2;
 const TABLE_CONTENT_PADDING = 8;
@@ -1272,6 +1288,103 @@ export function StatsPanel({ reservations, allTables, tableStatuses, liveDate }:
   );
 }
 
+type WaitingListPanelProps = {
+  entries: WaitingListEntry[];
+  isLoading: boolean;
+  promotingEntryId: string | null;
+  entryErrors: Record<string, string>;
+  onPromote: (entryId: string) => void;
+};
+
+export function WaitingListPanel({
+  entries,
+  isLoading,
+  promotingEntryId,
+  entryErrors,
+  onPromote,
+}: WaitingListPanelProps) {
+  return (
+    <div className="h-full overflow-y-auto p-6">
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <ListOrdered size={18} className="text-primary" />
+            <h3 className="text-base font-semibold">Liste d&apos;attente</h3>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Les demandes en attente se rafraîchissent avec le plan de salle.
+          </p>
+        </div>
+        <Badge variant="outline">{entries.length} en attente</Badge>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((item) => (
+            <Skeleton key={item} className="h-28 w-full rounded-xl" />
+          ))}
+        </div>
+      ) : entries.length === 0 ? (
+        <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 p-6 text-center">
+          <ListOrdered size={40} className="mb-3 text-muted-foreground/40" />
+          <p className="text-sm font-medium">Aucune demande en attente</p>
+          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+            Les demandes apparaîtront ici lorsqu&apos;un créneau est complet.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {entries.map((entry) => {
+            const customerName =
+              `${entry.customerFirstName} ${entry.customerLastName ?? ''}`.trim();
+            const slotTime = format(parseISO(entry.slotStart), 'HH:mm', { locale: fr });
+
+            return (
+              <article
+                key={entry.id}
+                className="rounded-xl border border-border bg-card p-4 transition-all duration-200 hover:border-primary/30"
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary">#{entry.position}</Badge>
+                      <p className="truncate font-medium">{customerName}</p>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1.5">
+                        <Users size={15} /> {entry.partySize} couvert
+                        {entry.partySize > 1 ? 's' : ''}
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <Clock3 size={15} /> {slotTime}
+                      </span>
+                      <span>{entry.preferredSectionName || 'Sans préférence de section'}</span>
+                    </div>
+                  </div>
+                  <div className="shrink-0">
+                    <Button
+                      size="sm"
+                      disabled={promotingEntryId === entry.id}
+                      onClick={() => onPromote(entry.id)}
+                    >
+                      {promotingEntryId === entry.id ? 'Proposition...' : 'Proposer une table'}
+                    </Button>
+                    {entryErrors[entry.id] ? (
+                      <p className="mt-2 text-right text-xs text-destructive">
+                        {entryErrors[entry.id]}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FloorPlanPalette() {
   return (
     <div className="w-56 min-w-56 h-full border-r border-border bg-card flex flex-col gap-5 p-3 overflow-y-auto">
@@ -1446,10 +1559,16 @@ export function FloorPlanCanvas({
   const [snap, setSnap] = useState(true);
   const live = mode === 'service';
   const [liveDate, setLiveDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
-  const [serviceTab, setServiceTab] = useState<'plan' | 'stats'>('plan');
+  const [serviceTab, setServiceTab] = useState<'plan' | 'waiting-list' | 'stats'>('plan');
   const liveDateRef = useRef(liveDate);
   liveDateRef.current = liveDate;
   const [reservations, setReservations] = useState<PlanningReservation[]>([]);
+  const [waitingList, setWaitingList] = useState<WaitingListEntry[]>([]);
+  const [waitingListLoading, setWaitingListLoading] = useState(false);
+  const [promotingWaitingListEntryId, setPromotingWaitingListEntryId] = useState<string | null>(
+    null,
+  );
+  const [waitingListEntryErrors, setWaitingListEntryErrors] = useState<Record<string, string>>({});
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [selectedServiceTableId, setSelectedServiceTableId] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<TableSuggestion[]>([]);
@@ -1587,19 +1706,43 @@ export function FloorPlanCanvas({
         const query = floorPlanId
           ? `date=${liveDate}&floorPlanId=${floorPlanId}`
           : `date=${liveDate}`;
-        const data = await getRef.current<PlanningReservation[]>(
-          `restaurants/${orgId}/floor-plan/reservations?${query}`,
-          { signal: controller.signal },
-        );
+        setWaitingListLoading(true);
+        const [reservationsResult, waitingListResult] = await Promise.allSettled([
+          getRef.current<PlanningReservation[]>(
+            `restaurants/${orgId}/floor-plan/reservations?${query}`,
+            {
+              signal: controller.signal,
+            },
+          ),
+          getRef.current<unknown[]>(
+            `restaurants/${orgId}/waiting-list?date=${liveDate}&status=PENDING`,
+            { signal: controller.signal },
+          ),
+        ]);
         if (pollAbortRef.current !== controller) return;
         if (liveDateRef.current !== liveDate) return;
-        setReservations(data);
+        if (reservationsResult.status === 'rejected') throw reservationsResult.reason;
+        setReservations(reservationsResult.value);
+        if (waitingListResult.status === 'fulfilled') {
+          setWaitingList(
+            mapWaitingListEntries(
+              Array.isArray(waitingListResult.value) ? waitingListResult.value : [],
+            ),
+          );
+        } else {
+          setError(
+            getErrorMessage(waitingListResult.reason, "Impossible de charger la liste d'attente"),
+          );
+        }
         setLastUpdatedAt(Date.now());
       } catch (err) {
         if (pollAbortRef.current !== controller) return;
         if (controller.signal.aborted) return;
         setError(getErrorMessage(err, 'Impossible de charger les réservations'));
       } finally {
+        if (pollAbortRef.current === controller) {
+          setWaitingListLoading(false);
+        }
         if (pollAbortRef.current === controller) {
           pollInFlightRef.current = false;
         }
@@ -1658,6 +1801,32 @@ export function FloorPlanCanvas({
         await loadReservations({ force: true });
       } catch (err) {
         setError(getErrorMessage(err, 'Impossible de créer le walk-in'));
+      }
+    },
+    [orgId, loadReservations],
+  );
+
+  const promoteWaitingListEntry = useCallback(
+    async (entryId: string) => {
+      if (!orgId) return;
+      setPromotingWaitingListEntryId(entryId);
+      setWaitingListEntryErrors((prev) => {
+        const next = { ...prev };
+        delete next[entryId];
+        return next;
+      });
+      try {
+        await postRef.current(`restaurants/${orgId}/waiting-list/${entryId}/promote`);
+        await loadReservations({ force: true });
+      } catch (err) {
+        const message = getErrorMessage(err, 'Impossible de proposer une table');
+        if (message === 'no_compatible_table' || message.includes('no_compatible_table')) {
+          setWaitingListEntryErrors((prev) => ({ ...prev, [entryId]: 'Aucune table compatible' }));
+        } else {
+          setError(message);
+        }
+      } finally {
+        setPromotingWaitingListEntryId(null);
       }
     },
     [orgId, loadReservations],
@@ -4549,6 +4718,14 @@ export function FloorPlanCanvas({
                   </Button>
                   <Button
                     type="button"
+                    variant={serviceTab === 'waiting-list' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setServiceTab('waiting-list')}
+                  >
+                    Liste d&apos;attente
+                  </Button>
+                  <Button
+                    type="button"
                     variant={serviceTab === 'stats' ? 'secondary' : 'ghost'}
                     size="sm"
                     onClick={() => setServiceTab('stats')}
@@ -4565,6 +4742,9 @@ export function FloorPlanCanvas({
                 />
                 <Badge variant="outline" className="gap-1.5 py-1.5">
                   <ListFilter size={14} /> {reservations.length} réservations
+                </Badge>
+                <Badge variant="outline" className="gap-1.5 py-1.5">
+                  <ListOrdered size={14} /> {waitingList.length} en attente
                 </Badge>
                 <Badge variant="outline" className="gap-1.5 py-1.5">
                   <BarChart3 size={14} />
@@ -4590,6 +4770,14 @@ export function FloorPlanCanvas({
               allTables={allTables}
               tableStatuses={tableStatuses}
               liveDate={liveDate}
+            />
+          ) : live && serviceTab === 'waiting-list' ? (
+            <WaitingListPanel
+              entries={waitingList}
+              isLoading={waitingListLoading}
+              promotingEntryId={promotingWaitingListEntryId}
+              entryErrors={waitingListEntryErrors}
+              onPromote={promoteWaitingListEntry}
             />
           ) : (
             <DndContext
