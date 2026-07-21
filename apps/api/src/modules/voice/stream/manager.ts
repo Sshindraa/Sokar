@@ -12,6 +12,7 @@ import { recommendGiftCardAmount } from '../../gift-cards/gift-card-recommender'
 import { sendSms } from '../../../shared/telnyx/client';
 import { trackGiftCardEvent } from '../../analytics/events.service';
 import { AuditLogService } from '../../agentic-reservations/core/audit-log.service';
+import { zonedTimeToUtc } from '../../floor-plan/availability-capacity-aware.service';
 
 interface LlmResponse {
   choices?: Array<{ message: ChatMessage }>;
@@ -659,12 +660,22 @@ export class CallSessionManager {
 
         case 'reportDelay': {
           const { customerName, date, time, delayMinutes } = args;
-          const startsAt = new Date(`${date}T${time}`);
-          if (!Number.isFinite(startsAt.getTime()) || !Number.isInteger(delayMinutes)) {
+          if (
+            typeof date !== 'string' ||
+            typeof time !== 'string' ||
+            !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+            !/^([01]\d|2[0-3]):[0-5]\d$/.test(time) ||
+            !Number.isInteger(delayMinutes)
+          ) {
             return 'Je n’ai pas pu identifier la réservation. Pouvez-vous confirmer votre nom, la date et l’heure de la réservation ?';
           }
 
           try {
+            const restaurant = await db.restaurant.findUnique({
+              where: { id: session.restaurantId },
+              select: { timezone: true },
+            });
+            const startsAt = zonedTimeToUtc(date, time, restaurant?.timezone ?? 'Europe/Paris');
             const reservation = await db.reservation.findFirst({
               where: {
                 restaurantId: session.restaurantId,

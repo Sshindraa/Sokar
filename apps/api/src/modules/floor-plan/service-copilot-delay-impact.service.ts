@@ -25,6 +25,9 @@ export interface DelayImpactSimulation {
     customerName: string;
     partySize: number;
     requestedStartsAt: string;
+    proposedStartsAt: string;
+    proposedEndsAt: string;
+    isAvailableNow: boolean;
     customerFacingRequestedStartsAt?: string;
   };
   safeguards: string[];
@@ -71,7 +74,17 @@ export class ServiceCopilotDelayImpactService {
         tableId: true,
         startsAt: true,
         endsAt: true,
-        table: { select: { id: true, name: true, capacity: true, sectionId: true } },
+        table: {
+          select: {
+            id: true,
+            name: true,
+            capacity: true,
+            minCapacity: true,
+            sectionId: true,
+            isActive: true,
+            floorPlan: { select: { isActive: true } },
+          },
+        },
       },
     });
 
@@ -79,7 +92,9 @@ export class ServiceCopilotDelayImpactService {
       !reservation?.table ||
       !reservation.tableId ||
       !reservation.startsAt ||
-      !reservation.endsAt
+      !reservation.endsAt ||
+      !reservation.table.isActive ||
+      !reservation.table.floorPlan.isActive
     ) {
       return {
         feasible: false,
@@ -144,15 +159,25 @@ export class ServiceCopilotDelayImpactService {
         customerLastName: true,
         slotStart: true,
         slotEnd: true,
+        preferredSectionId: true,
       },
     });
 
     for (const entry of waitingEntries) {
-      if (entry.partySize > reservation.table.capacity) continue;
+      if (
+        entry.partySize > reservation.table.capacity ||
+        entry.partySize < reservation.table.minCapacity ||
+        (entry.preferredSectionId && entry.preferredSectionId !== reservation.table.sectionId)
+      ) {
+        continue;
+      }
+      const requestedDurationMs = entry.slotEnd.getTime() - entry.slotStart.getTime();
+      const proposedStartsAt = entry.slotStart > now ? entry.slotStart : now;
+      const proposedEndsAt = new Date(proposedStartsAt.getTime() + requestedDurationMs);
       const originalTableIsFree = await this.allocation.isTableAvailable({
         tableId: reservation.tableId,
-        startsAt: entry.slotStart,
-        endsAt: entry.slotEnd,
+        startsAt: proposedStartsAt,
+        endsAt: proposedEndsAt,
         excludeReservationId: reservation.id,
       });
       if (!originalTableIsFree) continue;
@@ -169,7 +194,10 @@ export class ServiceCopilotDelayImpactService {
           customerName,
           partySize: entry.partySize,
           requestedStartsAt: entry.slotStart.toISOString(),
-          customerFacingRequestedStartsAt: toCustomerFacingTime(entry.slotStart).toISOString(),
+          proposedStartsAt: proposedStartsAt.toISOString(),
+          proposedEndsAt: proposedEndsAt.toISOString(),
+          isAvailableNow: entry.slotStart <= now,
+          customerFacingRequestedStartsAt: toCustomerFacingTime(proposedStartsAt).toISOString(),
         },
         ...base,
       };

@@ -17,6 +17,12 @@ export class DelayRecoveryConflictError extends Error {
   }
 }
 
+type DelayRecoveryResult = {
+  delayedReservationId: string;
+  promotedReservationId: string;
+  idempotent?: boolean;
+};
+
 /**
  * Applique un plan de récupération précédemment présenté au responsable.
  *
@@ -40,7 +46,43 @@ export class ServiceCopilotDelayRecoveryService {
     alternativeTableId: string;
     waitingListEntryId: string;
     actor: string;
-  }): Promise<{ delayedReservationId: string; promotedReservationId: string }> {
+    waitingListAcceptanceConfirmed: boolean;
+    delayReportId?: string;
+    idempotencyKey?: string;
+  }): Promise<DelayRecoveryResult> {
+    const operationId =
+      args.delayReportId ??
+      args.idempotencyKey ??
+      `delay-recovery:${args.reservationId}:${args.delayMinutes}:${args.alternativeTableId}:${args.waitingListEntryId}`;
+    const existing = await this.findExistingRecovery(
+      this.prisma,
+      args.restaurantId,
+      args.reservationId,
+      operationId,
+    );
+    if (existing) return { ...existing, idempotent: true };
+    if (!args.waitingListAcceptanceConfirmed) {
+      throw new DelayRecoveryConflictError(
+        'Confirmez que le groupe de la liste d’attente est présent et accepte la table.',
+      );
+    }
+    if (args.delayReportId) {
+      const report = await this.prisma.reservationAuditLog.findFirst({
+        where: {
+          id: args.delayReportId,
+          event: 'reservation_delay_reported',
+          reservationId: args.reservationId,
+          reservation: { restaurantId: args.restaurantId },
+        },
+        select: { metadata: true },
+      });
+      const reportedDelay = (report?.metadata as { delayMinutes?: unknown } | null)?.delayMinutes;
+      if (!report || reportedDelay !== args.delayMinutes) {
+        throw new DelayRecoveryConflictError(
+          'Ce plan ne correspond plus au retard signalé. Relancez l’analyse.',
+        );
+      }
+    }
     const preflight = await new ServiceCopilotDelayImpactService(this.prisma).simulate({
       restaurantId: args.restaurantId,
       reservationId: args.reservationId,
@@ -63,6 +105,14 @@ export class ServiceCopilotDelayRecoveryService {
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM waiting_list_entries WHERE id = ${args.waitingListEntryId} FOR UPDATE`,
       );
+
+      const existing = await this.findExistingRecovery(
+        tx,
+        args.restaurantId,
+        args.reservationId,
+        operationId,
+      );
+      if (existing) return { ...existing, idempotent: true };
 
       const reservation = await tx.reservation.findFirst({
         where: {
@@ -97,13 +147,17 @@ export class ServiceCopilotDelayRecoveryService {
 
       const [originalTable, alternativeTable] = await Promise.all([
         tx.table.findFirst({
-          where: { id: reservation.tableId, floorPlan: { restaurantId: args.restaurantId } },
+          where: {
+            id: reservation.tableId,
+            isActive: true,
+            floorPlan: { restaurantId: args.restaurantId, isActive: true },
+          },
         }),
         tx.table.findFirst({
           where: {
             id: args.alternativeTableId,
             isActive: true,
-            floorPlan: { restaurantId: args.restaurantId },
+            floorPlan: { restaurantId: args.restaurantId, isActive: true },
           },
         }),
       ]);
@@ -114,7 +168,8 @@ export class ServiceCopilotDelayRecoveryService {
         alternativeTable.capacity < reservation.partySize ||
         alternativeTable.minCapacity > reservation.partySize ||
         originalTable.capacity < entry.partySize ||
-        originalTable.minCapacity > entry.partySize
+        originalTable.minCapacity > entry.partySize ||
+        (entry.preferredSectionId && entry.preferredSectionId !== originalTable.sectionId)
       ) {
         throw new DelayRecoveryConflictError('Les capacités des tables ne correspondent plus.');
       }
@@ -123,6 +178,8 @@ export class ServiceCopilotDelayRecoveryService {
         reservation.startsAt.getTime() + args.delayMinutes * 60_000,
       );
       const proposedEndsAt = new Date(reservation.endsAt.getTime() + args.delayMinutes * 60_000);
+      const promotedStartsAt = new Date(preflight.waitingListEntry!.proposedStartsAt);
+      const promotedEndsAt = new Date(preflight.waitingListEntry!.proposedEndsAt);
       const [alternativeIsFree, originalIsFree] = await Promise.all([
         this.allocation.isTableAvailable(
           {
@@ -136,8 +193,8 @@ export class ServiceCopilotDelayRecoveryService {
         this.allocation.isTableAvailable(
           {
             tableId: originalTable.id,
-            startsAt: entry.slotStart,
-            endsAt: entry.slotEnd,
+            startsAt: promotedStartsAt,
+            endsAt: promotedEndsAt,
             excludeReservationId: reservation.id,
           },
           tx,
@@ -163,8 +220,8 @@ export class ServiceCopilotDelayRecoveryService {
           customerPhone: entry.customerPhone,
           customerEmail: entry.customerEmail,
           reservedAt: new Date(),
-          startsAt: entry.slotStart,
-          endsAt: entry.slotEnd,
+          startsAt: promotedStartsAt,
+          endsAt: promotedEndsAt,
           tableId: originalTable.id,
           state: 'CONFIRMED' as ReservationState,
           status: 'CONFIRMED' as ReservationStatus,
@@ -187,6 +244,7 @@ export class ServiceCopilotDelayRecoveryService {
           event: 'reservation_delay_recovered',
           reservationId: delayed.id,
           actor: args.actor,
+          correlationId: operationId,
           metadata: {
             alternativeTableId: alternativeTable.id,
             delayMinutes: args.delayMinutes,
@@ -208,5 +266,29 @@ export class ServiceCopilotDelayRecoveryService {
 
       return { delayedReservationId: delayed.id, promotedReservationId: promoted.id };
     });
+  }
+
+  private async findExistingRecovery(
+    client: PrismaClient | Prisma.TransactionClient,
+    restaurantId: string,
+    reservationId: string,
+    operationId: string,
+  ): Promise<DelayRecoveryResult | null> {
+    const recovery = await client.reservationAuditLog.findFirst({
+      where: {
+        event: 'reservation_delay_recovered',
+        reservationId,
+        correlationId: operationId,
+        reservation: { restaurantId },
+      },
+      select: { metadata: true },
+    });
+    const metadata = recovery?.metadata as { promotedReservationId?: unknown } | null | undefined;
+    return recovery && typeof metadata?.promotedReservationId === 'string'
+      ? {
+          delayedReservationId: reservationId,
+          promotedReservationId: metadata.promotedReservationId,
+        }
+      : null;
   }
 }

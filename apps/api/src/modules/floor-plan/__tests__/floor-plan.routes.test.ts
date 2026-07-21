@@ -157,6 +157,8 @@ describe('floorPlanRoutes', () => {
       delayMinutes: 20,
       alternativeTableId: 'table-7',
       waitingListEntryId: 'waiting-1',
+      waitingListAcceptanceConfirmed: true,
+      idempotencyKey: 'delay-op-1',
     };
 
     it('applique seulement un plan explicitement confirmé', async () => {
@@ -176,6 +178,7 @@ describe('floorPlanRoutes', () => {
       expect(apply).toHaveBeenCalledWith({
         ...payload,
         restaurantId: 'test-rest-1',
+        delayReportId: undefined,
         actor: 'test-rest-1',
       });
     });

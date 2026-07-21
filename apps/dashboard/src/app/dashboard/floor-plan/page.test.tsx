@@ -121,6 +121,35 @@ describe('FloorPlanPage — switch desktop', () => {
     );
   });
 
+  it('transmet le signalement vocal puis nettoie son URL après application', async () => {
+    mocks.setSearchParams(
+      'reservationId=res-1&delayMinutes=25&delayReportId=report-1&serviceDate=2026-07-21&foo=bar',
+    );
+    render(<FloorPlanPage />);
+
+    await waitFor(() => expect(canvasMock).toHaveBeenCalled());
+    const props = canvasMock.mock.calls.at(-1)?.[0] as unknown as {
+      initialDelayImpact: {
+        reservationId: string;
+        delayMinutes: number;
+        delayReportId: string;
+        serviceDate: string;
+      };
+      onInitialDelayApplied: () => void;
+    };
+    expect(props.initialDelayImpact).toEqual({
+      reservationId: 'res-1',
+      delayMinutes: 25,
+      delayReportId: 'report-1',
+      serviceDate: '2026-07-21',
+    });
+
+    props.onInitialDelayApplied();
+    expect(mocks.replace).toHaveBeenCalledWith('/dashboard/floor-plan?foo=bar', {
+      scroll: false,
+    });
+  });
+
   it('passe au plan sélectionné et affiche le bon floorPlanId', async () => {
     render(<FloorPlanPage />);
 

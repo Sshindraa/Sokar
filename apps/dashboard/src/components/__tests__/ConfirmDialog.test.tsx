@@ -115,4 +115,60 @@ describe('ConfirmDialog', () => {
     );
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
+
+  it('exige la case de confirmation avant d’autoriser l’action', async () => {
+    const onAcknowledgementChange = vi.fn();
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <ConfirmDialog
+        open={true}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+        title="Appliquer ?"
+        description="Deux changements seront effectués."
+        acknowledgementLabel="Le groupe accepte la table."
+        acknowledgementChecked={false}
+        onAcknowledgementChange={onAcknowledgementChange}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Confirmer' })).toBeDisabled();
+    await user.click(screen.getByLabelText('Le groupe accepte la table.'));
+    expect(onAcknowledgementChange).toHaveBeenCalledWith(true);
+
+    rerender(
+      <ConfirmDialog
+        open={true}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+        title="Appliquer ?"
+        description="Deux changements seront effectués."
+        acknowledgementLabel="Le groupe accepte la table."
+        acknowledgementChecked={true}
+        onAcknowledgementChange={onAcknowledgementChange}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Confirmer' })).toBeEnabled();
+  });
+
+  it('verrouille confirmation, annulation et fermeture pendant une requête', async () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ConfirmDialog
+        open={true}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+        title="Application…"
+        description="Veuillez patienter."
+        pending={true}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Confirmer' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Annuler' })).toBeDisabled();
+    await user.keyboard('{Escape}');
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+  });
 });

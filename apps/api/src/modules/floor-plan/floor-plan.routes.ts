@@ -155,6 +155,9 @@ const SimulateDelayImpactSchema = z.object({
 const ApplyDelayImpactSchema = SimulateDelayImpactSchema.extend({
   alternativeTableId: z.string().min(1),
   waitingListEntryId: z.string().min(1),
+  waitingListAcceptanceConfirmed: z.boolean().optional().default(false),
+  delayReportId: z.string().min(1).optional(),
+  idempotencyKey: z.string().min(1).max(128).optional(),
 });
 
 function getFloorPlanIdFromQuery(query: unknown): string | undefined {
@@ -374,6 +377,9 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
           delayMinutes: body.delayMinutes,
           alternativeTableId: body.alternativeTableId,
           waitingListEntryId: body.waitingListEntryId,
+          waitingListAcceptanceConfirmed: body.waitingListAcceptanceConfirmed,
+          delayReportId: body.delayReportId,
+          idempotencyKey: body.idempotencyKey,
           actor: req.restaurantId ?? 'dashboard',
         });
         return reply.send(result);

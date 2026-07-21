@@ -4,6 +4,7 @@ import { ServiceCopilotCommunicationService } from '../service-copilot-communica
 describe('ServiceCopilotCommunicationService', () => {
   it('produit uniquement des brouillons à des heures arrondies', async () => {
     const prisma: any = {
+      restaurant: { findUnique: vi.fn().mockResolvedValue({ timezone: 'Europe/Paris' }) },
       reservation: {
         findFirst: vi
           .fn()
@@ -33,11 +34,14 @@ describe('ServiceCopilotCommunicationService', () => {
         customerName: 'Lina',
         partySize: 2,
         requestedStartsAt: '2026-07-21T21:03:00.000Z',
+        proposedStartsAt: '2026-07-21T21:18:00.000Z',
+        proposedEndsAt: '2026-07-21T22:48:00.000Z',
+        isAvailableNow: true,
       },
     });
     expect(drafts.map((draft) => draft.message)).toEqual([
       expect.stringContaining('22:10'),
-      expect.stringContaining('23:05'),
+      expect.stringContaining('23:20'),
     ]);
     expect(drafts.every((draft) => draft.delivery === 'review-required')).toBe(true);
     expect(drafts[0].eligibleChannel).toBe('sms');

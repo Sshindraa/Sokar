@@ -15,7 +15,15 @@ const delayedReservation = {
   tableId: 'table-12',
   startsAt: new Date('2026-07-21T17:30:00.000Z'),
   endsAt: new Date('2026-07-21T19:00:00.000Z'),
-  table: { id: 'table-12', name: 'T12', capacity: 2, sectionId: 'terrasse' },
+  table: {
+    id: 'table-12',
+    name: 'T12',
+    capacity: 2,
+    minCapacity: 1,
+    sectionId: 'terrasse',
+    isActive: true,
+    floorPlan: { isActive: true },
+  },
 };
 
 describe('ServiceCopilotDelayImpactService', () => {
@@ -25,6 +33,7 @@ describe('ServiceCopilotDelayImpactService', () => {
   let availableSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    vi.restoreAllMocks();
     mocks = makePrismaMock();
     service = new ServiceCopilotDelayImpactService(mocks.prisma);
     suggestSpy = vi.spyOn(TableAllocationService.prototype, 'suggest').mockResolvedValue([]);
@@ -120,5 +129,81 @@ describe('ServiceCopilotDelayImpactService', () => {
     expect(result.alternativeTable?.name).toBe('T7');
     expect(result.waitingListEntry).toBeUndefined();
     expect(result.summary).toContain('aucun groupe de liste d’attente');
+  });
+
+  it('refuse une table initiale inactive avant toute suggestion', async () => {
+    mocks.reservation.findFirst.mockResolvedValue({
+      ...delayedReservation,
+      table: { ...delayedReservation.table, isActive: false },
+    });
+
+    const result = await service.simulate({
+      restaurantId: 'rest-1',
+      reservationId: 'reservation-late',
+      delayMinutes: 20,
+    });
+
+    expect(result.feasible).toBe(false);
+    expect(suggestSpy).not.toHaveBeenCalled();
+  });
+
+  it('respecte minCapacity, la section préférée et ne crée jamais un créneau passé', async () => {
+    mocks.reservation.findFirst.mockResolvedValue({
+      ...delayedReservation,
+      table: { ...delayedReservation.table, capacity: 4, minCapacity: 2 },
+    });
+    mocks.waitingListEntry.findMany.mockResolvedValue([
+      {
+        id: 'too-small',
+        partySize: 1,
+        customerFirstName: 'Petit',
+        customerLastName: 'Groupe',
+        slotStart: new Date('2026-07-21T17:30:00.000Z'),
+        slotEnd: new Date('2026-07-21T19:00:00.000Z'),
+        preferredSectionId: null,
+      },
+      {
+        id: 'wrong-section',
+        partySize: 2,
+        customerFirstName: 'Autre',
+        customerLastName: 'Salle',
+        slotStart: new Date('2026-07-21T17:30:00.000Z'),
+        slotEnd: new Date('2026-07-21T19:00:00.000Z'),
+        preferredSectionId: 'salle',
+      },
+      {
+        id: 'compatible',
+        partySize: 2,
+        customerFirstName: 'Lina',
+        customerLastName: 'Dupont',
+        slotStart: new Date('2026-07-21T17:30:00.000Z'),
+        slotEnd: new Date('2026-07-21T19:00:00.000Z'),
+        preferredSectionId: 'terrasse',
+      },
+    ]);
+    suggestSpy.mockResolvedValue([
+      {
+        table: { id: 'table-7', name: 'T7', capacity: 2, minCapacity: 1, sectionId: 'salle' },
+        score: 100,
+        reasons: [],
+      },
+    ]);
+    availableSpy.mockResolvedValue(true);
+    const now = new Date('2026-07-21T17:40:00.000Z');
+
+    const result = await service.simulate({
+      restaurantId: 'rest-1',
+      reservationId: 'reservation-late',
+      delayMinutes: 20,
+      now,
+    });
+
+    expect(result.waitingListEntry).toMatchObject({
+      id: 'compatible',
+      proposedStartsAt: '2026-07-21T17:40:00.000Z',
+      proposedEndsAt: '2026-07-21T19:10:00.000Z',
+      isAvailableNow: true,
+    });
+    expect(availableSpy).toHaveBeenCalledTimes(1);
   });
 });

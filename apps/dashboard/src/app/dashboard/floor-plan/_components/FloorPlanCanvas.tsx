@@ -10,6 +10,8 @@ import {
   type FloorPlanWall,
   type PlanningReservation,
   type ServiceCopilotDelayImpact,
+  type ServiceCommunicationDraft,
+  type ServiceCommunicationDraftsResponse,
   type TableShape,
   type WaitingListEntry,
   type WallType,
@@ -76,6 +78,9 @@ import {
   Undo2,
   Redo2,
   Grip,
+  Phone,
+  X,
+  ArrowRight,
   type LucideIcon,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -1537,11 +1542,18 @@ export function FloorPlanCanvas({
   mode = 'design',
   floorPlanId,
   initialDelayImpact,
+  onInitialDelayApplied,
 }: {
   orgId: string;
   mode?: 'service' | 'design';
   floorPlanId?: string;
-  initialDelayImpact?: { reservationId: string; delayMinutes: number } | null;
+  initialDelayImpact?: {
+    reservationId: string;
+    delayMinutes: number;
+    delayReportId?: string;
+    serviceDate?: string;
+  } | null;
+  onInitialDelayApplied?: () => void;
 }) {
   const { get, post, patch, del } = useApi();
   const getRef = useRef(get);
@@ -1584,15 +1596,38 @@ export function FloorPlanCanvas({
   );
   const [waitingListEntryErrors, setWaitingListEntryErrors] = useState<Record<string, string>>({});
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const [loadedLiveDate, setLoadedLiveDate] = useState<string | null>(null);
   const [selectedServiceTableId, setSelectedServiceTableId] = useState<string | null>(null);
+  const [updatingReservationStateId, setUpdatingReservationStateId] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<TableSuggestion[]>([]);
   const [delayMinutes, setDelayMinutes] = useState(20);
   const [delayImpact, setDelayImpact] = useState<ServiceCopilotDelayImpact | null>(null);
   const [delayImpactReservationId, setDelayImpactReservationId] = useState<string | null>(null);
   const [delayImpactLoading, setDelayImpactLoading] = useState(false);
+  const [communicationDrafts, setCommunicationDrafts] = useState<ServiceCommunicationDraft[]>([]);
+  const [communicationDraftsLoading, setCommunicationDraftsLoading] = useState(false);
   const [delayRecoveryConfirmOpen, setDelayRecoveryConfirmOpen] = useState(false);
   const [applyingDelayRecovery, setApplyingDelayRecovery] = useState(false);
-  const initialDelayHandledRef = useRef(false);
+  const applyingDelayRecoveryRef = useRef(false);
+  const [reportedDelayBannerDismissed, setReportedDelayBannerDismissed] = useState(false);
+  const [delayRecoveryApplied, setDelayRecoveryApplied] = useState(false);
+  const [delayRecoveryIdempotencyKey, setDelayRecoveryIdempotencyKey] = useState<string | null>(
+    null,
+  );
+  const [waitingListAcceptanceConfirmed, setWaitingListAcceptanceConfirmed] = useState(false);
+  const [reportedDelayLookupError, setReportedDelayLookupError] = useState('');
+  const [appliedDelayRecovery, setAppliedDelayRecovery] = useState<{
+    delayedCustomerName: string;
+    delayedOriginalTableName: string;
+    delayedAlternativeTableName: string;
+    waitingCustomerName: string;
+    waitingTableName: string;
+  } | null>(null);
+  const lastInitialDelayImpactRef = useRef(initialDelayImpact);
+  if (initialDelayImpact) lastInitialDelayImpactRef.current = initialDelayImpact;
+  const displayedInitialDelayImpact =
+    initialDelayImpact ?? (appliedDelayRecovery ? lastInitialDelayImpactRef.current : null);
+  const initialDelayHandledRef = useRef<string | null>(null);
   const [lockedWallIds, setLockedWallIds] = useState<Set<string>>(() => new Set());
 
   const [selectedTableIds, setSelectedTableIds] = useState<Set<string>>(() => new Set());
@@ -1756,6 +1791,7 @@ export function FloorPlanCanvas({
           );
         }
         setLastUpdatedAt(Date.now());
+        setLoadedLiveDate(liveDate);
       } catch (err) {
         if (pollAbortRef.current !== controller) return;
         if (controller.signal.aborted) return;
@@ -1775,6 +1811,7 @@ export function FloorPlanCanvas({
   const updateReservationState = useCallback(
     async (reservationId: string, state: 'SEATED' | 'HONORED') => {
       if (!orgId) return;
+      setUpdatingReservationStateId(reservationId);
       try {
         await patchRef.current<void>(
           `restaurants/${orgId}/floor-plan/reservations/${reservationId}/state`,
@@ -1784,6 +1821,8 @@ export function FloorPlanCanvas({
         await loadReservations({ force: true });
       } catch (err) {
         setError(getErrorMessage(err, 'Impossible de mettre à jour le statut'));
+      } finally {
+        setUpdatingReservationStateId(null);
       }
     },
     [orgId, loadReservations],
@@ -1877,6 +1916,11 @@ export function FloorPlanCanvas({
       if (!orgId) return;
       setDelayImpactLoading(true);
       setDelayImpact(null);
+      setCommunicationDrafts([]);
+      setWaitingListAcceptanceConfirmed(false);
+      setDelayRecoveryApplied(false);
+      setAppliedDelayRecovery(null);
+      setDelayRecoveryIdempotencyKey(crypto.randomUUID());
       setDelayImpactReservationId(reservationId);
       try {
         const result = await postRef.current<ServiceCopilotDelayImpact>(
@@ -1893,12 +1937,60 @@ export function FloorPlanCanvas({
     [orgId, delayMinutes],
   );
 
+  const updateDelayMinutes = useCallback(
+    (nextDelayMinutes: number) => {
+      const normalized = Math.min(180, Math.max(5, nextDelayMinutes || 5));
+      setDelayMinutes(normalized);
+      if (delayImpact && normalized !== delayImpact.delayMinutes) {
+        setDelayImpact(null);
+        setCommunicationDrafts([]);
+        setWaitingListAcceptanceConfirmed(false);
+        setDelayRecoveryIdempotencyKey(null);
+      }
+    },
+    [delayImpact],
+  );
+
   useEffect(() => {
-    if (!live || !initialDelayImpact || initialDelayHandledRef.current) return;
+    if (live && initialDelayImpact?.serviceDate && initialDelayImpact.serviceDate !== liveDate) {
+      setLiveDate(initialDelayImpact.serviceDate);
+    }
+  }, [initialDelayImpact?.serviceDate, live, liveDate]);
+
+  useEffect(() => {
+    if (!live || !initialDelayImpact) {
+      initialDelayHandledRef.current = null;
+      setReportedDelayLookupError('');
+      return;
+    }
+    if (initialDelayImpact.serviceDate && initialDelayImpact.serviceDate !== liveDate) return;
+    const handledKey = `${initialDelayImpact.reservationId}:${initialDelayImpact.delayMinutes}:${initialDelayImpact.delayReportId ?? 'manual'}`;
+    if (initialDelayHandledRef.current === handledKey) return;
     const reservation = reservations.find((item) => item.id === initialDelayImpact.reservationId);
-    if (!reservation?.tableId) return;
-    initialDelayHandledRef.current = true;
+    if (!reservation) {
+      if (lastUpdatedAt && loadedLiveDate === liveDate) {
+        setReportedDelayLookupError(
+          'La réservation signalée n’est pas visible pour cette date. Vérifiez la date du service.',
+        );
+      }
+      return;
+    }
+    if (!reservation.tableId) {
+      setReportedDelayLookupError(
+        'Cette réservation n’a pas de table initiale : aucun déplacement automatique n’est possible.',
+      );
+      initialDelayHandledRef.current = handledKey;
+      return;
+    }
+    initialDelayHandledRef.current = handledKey;
     setDelayMinutes(initialDelayImpact.delayMinutes);
+    setReportedDelayBannerDismissed(false);
+    setDelayRecoveryApplied(false);
+    setAppliedDelayRecovery(null);
+    setWaitingListAcceptanceConfirmed(false);
+    setCommunicationDrafts([]);
+    setReportedDelayLookupError('');
+    setDelayRecoveryIdempotencyKey(crypto.randomUUID());
     setSelectedServiceTableId(reservation.tableId);
     void (async () => {
       setDelayImpactLoading(true);
@@ -1915,9 +2007,10 @@ export function FloorPlanCanvas({
         setDelayImpactLoading(false);
       }
     })();
-  }, [initialDelayImpact, live, orgId, reservations]);
+  }, [initialDelayImpact, lastUpdatedAt, live, liveDate, loadedLiveDate, orgId, reservations]);
 
   const applyDelayRecovery = useCallback(async () => {
+    if (applyingDelayRecoveryRef.current) return;
     if (
       !orgId ||
       !delayImpact ||
@@ -1928,24 +2021,73 @@ export function FloorPlanCanvas({
     ) {
       return;
     }
+    applyingDelayRecoveryRef.current = true;
     setApplyingDelayRecovery(true);
     try {
       await postRef.current(`restaurants/${orgId}/service-copilot/delay-impact/apply`, {
         reservationId: delayImpactReservationId,
-        delayMinutes,
+        delayMinutes: delayImpact.delayMinutes,
         alternativeTableId: delayImpact.alternativeTable.id,
         waitingListEntryId: delayImpact.waitingListEntry.id,
+        waitingListAcceptanceConfirmed,
+        delayReportId: initialDelayImpact?.delayReportId,
+        idempotencyKey: delayRecoveryIdempotencyKey ?? crypto.randomUUID(),
+      });
+      setAppliedDelayRecovery({
+        delayedCustomerName: delayImpact.delayedReservation?.customerName || 'Client',
+        delayedOriginalTableName:
+          delayImpact.delayedReservation?.originalTableName || 'Table initiale',
+        delayedAlternativeTableName: delayImpact.alternativeTable.name,
+        waitingCustomerName: delayImpact.waitingListEntry.customerName,
+        waitingTableName: delayImpact.delayedReservation?.originalTableName || 'Table libérée',
       });
       setDelayRecoveryConfirmOpen(false);
       setDelayImpact(null);
+      setCommunicationDrafts([]);
+      setDelayRecoveryApplied(true);
+      onInitialDelayApplied?.();
       await loadReservations({ force: true });
     } catch (err) {
       setDelayRecoveryConfirmOpen(false);
       setError(getErrorMessage(err, 'Le plan a changé ; relancez l’analyse avant de confirmer.'));
     } finally {
+      applyingDelayRecoveryRef.current = false;
       setApplyingDelayRecovery(false);
     }
-  }, [orgId, delayImpact, delayImpactReservationId, delayMinutes, loadReservations]);
+  }, [
+    orgId,
+    delayImpact,
+    delayImpactReservationId,
+    waitingListAcceptanceConfirmed,
+    initialDelayImpact?.delayReportId,
+    delayRecoveryIdempotencyKey,
+    onInitialDelayApplied,
+    loadReservations,
+  ]);
+
+  const loadCommunicationDrafts = useCallback(async () => {
+    if (!orgId || !delayImpactReservationId || !delayImpact?.feasible) return;
+    setCommunicationDraftsLoading(true);
+    try {
+      const result = await postRef.current<ServiceCommunicationDraftsResponse>(
+        `restaurants/${orgId}/service-copilot/delay-impact/drafts`,
+        { reservationId: delayImpactReservationId, delayMinutes: delayImpact.delayMinutes },
+      );
+      const planChanged =
+        result.impact.alternativeTable?.id !== delayImpact.alternativeTable?.id ||
+        result.impact.waitingListEntry?.id !== delayImpact.waitingListEntry?.id;
+      setDelayImpact(result.impact);
+      setCommunicationDrafts(result.drafts);
+      if (planChanged) {
+        setWaitingListAcceptanceConfirmed(false);
+        setError('Le plan a évolué pendant la préparation des messages. Vérifiez-le à nouveau.');
+      }
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de préparer les brouillons'));
+    } finally {
+      setCommunicationDraftsLoading(false);
+    }
+  }, [orgId, delayImpact, delayImpactReservationId]);
 
   const assignTable = useCallback(
     async (reservationId: string, tableId: string) => {
@@ -2100,6 +2242,17 @@ export function FloorPlanCanvas({
     () => allTables.find((table) => table.id === selectedServiceTableId) ?? null,
     [allTables, selectedServiceTableId],
   );
+  const reportedDelayReservation = useMemo(
+    () =>
+      displayedInitialDelayImpact
+        ? (reservations.find(
+            (reservation) => reservation.id === displayedInitialDelayImpact.reservationId,
+          ) ?? null)
+        : null,
+    [displayedInitialDelayImpact, reservations],
+  );
+  const reportedDelayOriginalTableId = delayImpact ? reportedDelayReservation?.tableId : null;
+  const reportedDelayAlternativeTableId = delayImpact?.alternativeTable?.id ?? null;
 
   function centerCanvas() {
     const viewport = canvasViewportRef.current;
@@ -3893,11 +4046,26 @@ export function FloorPlanCanvas({
     <ConfirmDialog
       open={delayRecoveryConfirmOpen}
       onConfirm={() => void applyDelayRecovery()}
-      onCancel={() => setDelayRecoveryConfirmOpen(false)}
-      title="Appliquer le plan de récupération ?"
-      description="La réservation en retard sera déplacée à sa nouvelle heure et le groupe en attente sera confirmé sur la table libérée. Sokar reverra les conflits juste avant l’application."
-      confirmLabel={applyingDelayRecovery ? 'Application…' : 'Appliquer le plan'}
+      onCancel={() => {
+        setDelayRecoveryConfirmOpen(false);
+        setWaitingListAcceptanceConfirmed(false);
+      }}
+      title="Confirmer les deux changements ?"
+      description={
+        delayImpact?.alternativeTable && delayImpact.waitingListEntry
+          ? `${delayImpact.waitingListEntry.customerName} prendra la table libérée et ${reportedDelayReservation?.customerName || 'la réservation retardée'} passera sur ${delayImpact.alternativeTable.name}. Sokar vérifiera encore les disponibilités. Aucun message n’est envoyé automatiquement.`
+          : 'Sokar vérifiera encore les disponibilités avant application. Aucun message n’est envoyé automatiquement.'
+      }
+      confirmLabel={applyingDelayRecovery ? 'Application…' : 'Confirmer les changements'}
       cancelLabel="Annuler"
+      pending={applyingDelayRecovery}
+      acknowledgementLabel={
+        delayImpact?.waitingListEntry
+          ? `${delayImpact.waitingListEntry.customerName} est présent(e) et accepte la table proposée.`
+          : undefined
+      }
+      acknowledgementChecked={waitingListAcceptanceConfirmed}
+      onAcknowledgementChange={setWaitingListAcceptanceConfirmed}
     />
   );
 
@@ -4180,22 +4348,32 @@ export function FloorPlanCanvas({
                   <Button
                     size="sm"
                     className="flex-1"
+                    title="Confirme l’arrivée réelle du groupe et occupe la table"
+                    disabled={updatingReservationStateId === selectedServiceReservation.id}
                     onClick={() =>
                       void updateReservationState(selectedServiceReservation.id, 'SEATED')
                     }
                   >
-                    Installer
+                    <UserRound size={15} className="mr-1.5" />
+                    {updatingReservationStateId === selectedServiceReservation.id
+                      ? 'Mise à jour…'
+                      : 'Installer à table'}
                   </Button>
                 )}
                 {selectedServiceReservation.state === 'SEATED' && (
                   <Button
                     size="sm"
                     className="flex-1"
+                    title="Clôture la réservation et rend la table disponible"
+                    disabled={updatingReservationStateId === selectedServiceReservation.id}
                     onClick={() =>
                       void updateReservationState(selectedServiceReservation.id, 'HONORED')
                     }
                   >
-                    Terminer
+                    <CircleCheck size={15} className="mr-1.5" />
+                    {updatingReservationStateId === selectedServiceReservation.id
+                      ? 'Mise à jour…'
+                      : 'Libérer la table'}
                   </Button>
                 )}
               </div>
@@ -4219,11 +4397,21 @@ export function FloorPlanCanvas({
                       min={5}
                       max={180}
                       value={delayMinutes}
-                      onChange={(event) => setDelayMinutes(Number(event.target.value) || 5)}
+                      disabled={Boolean(
+                        initialDelayImpact?.delayReportId &&
+                        delayImpactReservationId === selectedServiceReservation.id,
+                      )}
+                      onChange={(event) => updateDelayMinutes(Number(event.target.value))}
                       className="h-8 bg-background text-xs"
                     />
                     <span className="shrink-0 text-xs text-muted-foreground">min</span>
                   </div>
+                  {initialDelayImpact?.delayReportId &&
+                  delayImpactReservationId === selectedServiceReservation.id ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      Durée confirmée pendant l’appel client.
+                    </p>
+                  ) : null}
                   <Button
                     size="sm"
                     variant="outline"
@@ -4248,11 +4436,17 @@ export function FloorPlanCanvas({
                       delayImpact.waitingListEntry ? (
                         <>
                           <p className="text-muted-foreground">
-                            Plan proposé :{' '}
-                            {selectedServiceTable.displayName ?? selectedServiceTable.name} →{' '}
-                            {delayImpact.waitingListEntry.customerName} ;{' '}
-                            {selectedServiceReservation.customerName || 'Client'} →{' '}
-                            {delayImpact.alternativeTable.name}.
+                            Plan proposé : {delayImpact.waitingListEntry.customerName} · liste
+                            d’attente, sans table →{' '}
+                            {delayImpact.delayedReservation?.originalTableName ||
+                              selectedServiceTable.displayName ||
+                              selectedServiceTable.name}
+                            {' ; '}
+                            {selectedServiceReservation.customerName || 'Client'} ·{' '}
+                            {delayImpact.delayedReservation?.originalTableName ||
+                              selectedServiceTable.displayName ||
+                              selectedServiceTable.name}{' '}
+                            → {delayImpact.alternativeTable.name}.
                           </p>
                           {delayImpact.delayedReservation?.customerFacingProposedStartsAt ? (
                             <p className="text-muted-foreground">
@@ -4271,8 +4465,40 @@ export function FloorPlanCanvas({
                             className="w-full"
                             onClick={() => setDelayRecoveryConfirmOpen(true)}
                           >
-                            Confirmer et appliquer
+                            Vérifier et appliquer
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full"
+                            disabled={communicationDraftsLoading}
+                            onClick={() => void loadCommunicationDrafts()}
+                          >
+                            {communicationDraftsLoading ? 'Préparation…' : 'Préparer les messages'}
+                          </Button>
+                          {communicationDrafts.length > 0 ? (
+                            <div className="space-y-2 border-t border-border pt-2">
+                              {communicationDrafts.map((draft) => (
+                                <div
+                                  key={draft.recipient}
+                                  className="rounded border border-border p-2"
+                                >
+                                  <p className="font-medium text-foreground">
+                                    {draft.customerName} ·{' '}
+                                    {draft.eligibleChannel
+                                      ? `canal ${draft.eligibleChannel.toUpperCase()} autorisé`
+                                      : draft.deliveryBlocker === 'no-contact'
+                                        ? 'aucun contact'
+                                        : 'consentement transactionnel requis'}
+                                  </p>
+                                  <p className="mt-1 text-muted-foreground">{draft.message}</p>
+                                  <p className="mt-1 text-muted-foreground">
+                                    Brouillon uniquement — aucun envoi automatique.
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
                         </>
                       ) : null}
                       <p className="text-muted-foreground">
@@ -5025,6 +5251,180 @@ export function FloorPlanCanvas({
                   ref={canvasViewportRef}
                   className="relative min-w-0 flex-1 overflow-auto bg-muted"
                 >
+                  {displayedInitialDelayImpact && !reportedDelayBannerDismissed ? (
+                    <div
+                      role="region"
+                      aria-label="Retard signalé par téléphone"
+                      className={cn(
+                        'absolute left-3 right-3 top-3 z-40 rounded-xl border bg-background/95 p-3 shadow-lg backdrop-blur transition-all duration-200',
+                        delayRecoveryApplied ? 'border-success/30' : 'border-warning/30',
+                      )}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={cn(
+                            'mt-0.5 rounded-full p-2',
+                            delayRecoveryApplied ? 'bg-success/10' : 'bg-warning/10',
+                          )}
+                        >
+                          {delayRecoveryApplied ? (
+                            <CircleCheck size={18} className="text-success" />
+                          ) : (
+                            <Phone size={18} className="text-warning" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                'h-5 text-[10px] uppercase tracking-wide',
+                                delayRecoveryApplied
+                                  ? 'border-success/30 text-success'
+                                  : 'border-warning/30 text-warning',
+                              )}
+                            >
+                              {delayRecoveryApplied ? 'Communication requise' : 'Appel reçu'}
+                            </Badge>
+                            <p className="text-sm font-semibold text-foreground">
+                              {delayRecoveryApplied
+                                ? 'Plan de retard appliqué'
+                                : `${reportedDelayReservation?.customerName || 'Client'} · ${reportedDelayReservation?.partySize ?? '—'} pers. · +${displayedInitialDelayImpact.delayMinutes} min`}
+                            </p>
+                          </div>
+                          {delayRecoveryApplied ? (
+                            <div className="mt-2 rounded-lg border border-warning/25 bg-warning/[0.05] px-3 py-2">
+                              <p className="text-xs font-semibold text-foreground">Plan appliqué</p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                {appliedDelayRecovery
+                                  ? `${appliedDelayRecovery.waitingCustomerName} : liste d’attente → ${appliedDelayRecovery.waitingTableName}. ${appliedDelayRecovery.delayedCustomerName} : ${appliedDelayRecovery.delayedOriginalTableName} → ${appliedDelayRecovery.delayedAlternativeTableName}.`
+                                  : 'Les deux changements de table ont été enregistrés.'}
+                              </p>
+                              <p className="mt-1 text-xs font-medium text-warning">
+                                Prévenez les deux clients. Aucun message n’a été envoyé
+                                automatiquement.
+                              </p>
+                            </div>
+                          ) : reportedDelayLookupError ? (
+                            <p className="mt-2 text-xs font-medium text-warning">
+                              {reportedDelayLookupError}
+                            </p>
+                          ) : delayImpactLoading ? (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Analyse de la salle et de la liste d’attente…
+                            </p>
+                          ) : delayImpact &&
+                            delayImpactReservationId ===
+                              displayedInitialDelayImpact.reservationId ? (
+                            <>
+                              {delayImpact.feasible &&
+                              delayImpact.alternativeTable &&
+                              delayImpact.waitingListEntry ? (
+                                <div className="mt-2 space-y-2">
+                                  <div className="grid gap-2 sm:grid-cols-2">
+                                    <div className="rounded-lg border border-border bg-card px-3 py-2">
+                                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                        {delayImpact.waitingListEntry.isAvailableNow
+                                          ? 'Disponible maintenant'
+                                          : `Créneau ${format(
+                                              parseISO(
+                                                delayImpact.waitingListEntry
+                                                  .customerFacingRequestedStartsAt ??
+                                                  delayImpact.waitingListEntry.proposedStartsAt,
+                                              ),
+                                              'HH:mm',
+                                            )}`}
+                                      </p>
+                                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-foreground">
+                                        <span className="truncate">Liste d’attente</span>
+                                        <ArrowRight
+                                          size={13}
+                                          className="shrink-0 text-muted-foreground"
+                                        />
+                                        <span className="shrink-0">
+                                          {delayImpact.delayedReservation?.originalTableName ||
+                                            reportedDelayReservation?.tableName ||
+                                            'Table actuelle'}
+                                        </span>
+                                      </div>
+                                      <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                                        {delayImpact.waitingListEntry.customerName} n’avait pas
+                                        encore de table.
+                                      </p>
+                                    </div>
+                                    <div className="rounded-lg border border-border bg-card px-3 py-2">
+                                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                        {delayImpact.delayedReservation
+                                          ?.customerFacingProposedStartsAt
+                                          ? `À ${format(
+                                              parseISO(
+                                                delayImpact.delayedReservation
+                                                  .customerFacingProposedStartsAt,
+                                              ),
+                                              'HH:mm',
+                                            )}`
+                                          : 'À son arrivée'}
+                                      </p>
+                                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-foreground">
+                                        <span className="truncate">
+                                          {reportedDelayReservation?.customerName ||
+                                            'Réservation retardée'}
+                                        </span>
+                                        <span className="shrink-0 text-muted-foreground">
+                                          ·{' '}
+                                          {delayImpact.delayedReservation?.originalTableName ||
+                                            reportedDelayReservation?.tableName ||
+                                            'Table actuelle'}
+                                        </span>
+                                        <ArrowRight
+                                          size={13}
+                                          className="shrink-0 text-muted-foreground"
+                                        />
+                                        <span className="shrink-0">
+                                          {delayImpact.alternativeTable.name}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <p className="text-[11px] text-muted-foreground">
+                                      Vérification automatique avant application · Aucun SMS envoyé
+                                    </p>
+                                    <Button
+                                      size="sm"
+                                      className="shrink-0"
+                                      onClick={() => setDelayRecoveryConfirmOpen(true)}
+                                    >
+                                      Vérifier et appliquer
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="mt-2 text-xs font-medium text-warning">
+                                  Aucun changement sûr n’est proposé. Aucune modification n’est
+                                  appliquée.
+                                </p>
+                              )}
+                            </>
+                          ) : (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Ouvrez la table sélectionnée pour relancer l’analyse.
+                            </p>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 shrink-0 p-0"
+                          aria-label="Masquer le retard signalé"
+                          onClick={() => setReportedDelayBannerDismissed(true)}
+                        >
+                          <X size={16} />
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
                   <div
                     ref={canvasRef}
                     className="absolute origin-top-left bg-muted"
@@ -5227,7 +5627,14 @@ export function FloorPlanCanvas({
                           key={table.id}
                           table={table}
                           status={status}
-                          isSelected={!live && selectedTableIds.has(table.id)}
+                          isSelected={
+                            live
+                              ? selectedServiceTableId === table.id ||
+                                (!reportedDelayBannerDismissed &&
+                                  (reportedDelayOriginalTableId === table.id ||
+                                    reportedDelayAlternativeTableId === table.id))
+                              : selectedTableIds.has(table.id)
+                          }
                           draggable={!live}
                           droppable={live}
                           draggableReservation={live}

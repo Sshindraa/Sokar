@@ -14,7 +14,7 @@ export interface ServiceCommunicationDraft {
   confidence: 'medium';
 }
 
-/** Génère des brouillons factuels. Ne lit aucun contact et n'envoie jamais rien. */
+/** Génère des brouillons factuels et vérifie les canaux autorisés, sans aucun envoi. */
 export class ServiceCopilotCommunicationService {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -29,11 +29,13 @@ export class ServiceCopilotCommunicationService {
     );
     const waitingAt = new Date(
       impact.waitingListEntry.customerFacingRequestedStartsAt ??
-        toCustomerFacingTime(new Date(impact.waitingListEntry.requestedStartsAt)),
+        toCustomerFacingTime(new Date(impact.waitingListEntry.proposedStartsAt)),
     );
-    const delayedTime = formatCustomerFacingTime(delayedAt);
-    const waitingTime = formatCustomerFacingTime(waitingAt);
-    const [reservation, waitingEntry] = await Promise.all([
+    const [restaurant, reservation, waitingEntry] = await Promise.all([
+      this.prisma.restaurant.findUnique({
+        where: { id: restaurantId },
+        select: { timezone: true },
+      }),
       this.prisma.reservation.findFirst({
         where: { id: impact.delayedReservation.id, restaurantId },
         select: { customerPhone: true, customerEmail: true },
@@ -43,6 +45,9 @@ export class ServiceCopilotCommunicationService {
         select: { customerPhone: true, customerEmail: true },
       }),
     ]);
+    const timeZone = restaurant?.timezone ?? 'Europe/Paris';
+    const delayedTime = formatCustomerFacingTime(delayedAt, timeZone);
+    const waitingTime = formatCustomerFacingTime(waitingAt, timeZone);
     const [delayedDelivery, waitingDelivery] = await Promise.all([
       this.resolveDelivery(restaurantId, reservation),
       this.resolveDelivery(restaurantId, waitingEntry),
@@ -76,11 +81,12 @@ export class ServiceCopilotCommunicationService {
     if (!contact?.customerPhone && !contact?.customerEmail) {
       return { eligibleChannel: null, deliveryBlocker: 'no-contact' };
     }
-    const consent = contact.customerPhone
+    const subject = contact.customerPhone ?? contact.customerEmail;
+    const consent = subject
       ? await this.prisma.customerConsent.findFirst({
           where: {
             restaurantId,
-            subjectHash: ConsentService.hashSubject(contact.customerPhone),
+            subjectHash: ConsentService.hashSubject(subject),
           },
           orderBy: { consentedAt: 'desc' },
           select: { transactionalSms: true, transactionalEmail: true },

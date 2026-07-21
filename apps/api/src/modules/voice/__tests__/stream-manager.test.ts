@@ -29,6 +29,9 @@ vi.mock('../../reservations/reservation.service', () => ({
 
 vi.mock('../../../shared/db/client', () => ({
   db: {
+    restaurant: {
+      findUnique: vi.fn().mockResolvedValue({ timezone: 'Europe/Paris' }),
+    },
     reservation: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
@@ -485,6 +488,11 @@ describe('CallSessionManager — tool execution', () => {
           correlationId: 'leg-test-1',
           metadata: { delayMinutes: 20, source: 'voice' },
         }),
+      }),
+    );
+    expect(db.reservation.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ startsAt: new Date('2026-07-16T17:30:00.000Z') }),
       }),
     );
     expect(ReservationService.update).not.toHaveBeenCalled();

@@ -39,10 +39,20 @@ export default function FloorPlanPage() {
   const searchParams = useSearchParams();
   const activeView = searchParams.get('view') === 'edit-plan' ? 'edit-plan' : 'service-live';
   const reportedReservationId = searchParams.get('reservationId');
+  const reportedDelayReportId = searchParams.get('delayReportId');
+  const reportedServiceDate = searchParams.get('serviceDate');
   const reportedDelayMinutes = Number(searchParams.get('delayMinutes'));
   const initialDelayImpact =
     reportedReservationId && Number.isInteger(reportedDelayMinutes) && reportedDelayMinutes >= 5
-      ? { reservationId: reportedReservationId, delayMinutes: Math.min(reportedDelayMinutes, 180) }
+      ? {
+          reservationId: reportedReservationId,
+          delayMinutes: Math.min(reportedDelayMinutes, 180),
+          delayReportId: reportedDelayReportId ?? undefined,
+          serviceDate:
+            reportedServiceDate && /^\d{4}-\d{2}-\d{2}$/.test(reportedServiceDate)
+              ? reportedServiceDate
+              : undefined,
+        }
       : null;
   const [designTab, setDesignTab] = useState<'visual' | 'crud'>('visual');
 
@@ -66,6 +76,16 @@ export default function FloorPlanPage() {
     const query = params.toString();
     router.replace(`${pathname}${query ? `?${query}` : ''}`, { scroll: false });
   };
+
+  const clearReportedDelay = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('reservationId');
+    params.delete('delayMinutes');
+    params.delete('delayReportId');
+    params.delete('serviceDate');
+    const query = params.toString();
+    router.replace(`${pathname}${query ? `?${query}` : ''}`, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   const loadFloorPlans = useCallback(async () => {
     if (!orgId) return;
@@ -227,6 +247,7 @@ export default function FloorPlanPage() {
           mode="service"
           floorPlanId={selectedFloorPlanId}
           initialDelayImpact={initialDelayImpact}
+          onInitialDelayApplied={clearReportedDelay}
         />
       )}
       {selectedFloorPlanId && activeView === 'edit-plan' && designTab === 'visual' && (

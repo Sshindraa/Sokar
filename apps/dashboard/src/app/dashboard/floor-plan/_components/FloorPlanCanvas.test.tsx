@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FloorPlanCanvas,
@@ -82,6 +82,10 @@ vi.mock('@/lib/api', () => ({
 }));
 
 beforeEach(() => {
+  apiMocks.get.mockReset();
+  apiMocks.post.mockReset();
+  apiMocks.patch.mockReset();
+  apiMocks.del.mockReset();
   apiMocks.get.mockImplementation(async (path: string) => {
     if (path.includes('/reservations')) return [];
     return floorPlan;
@@ -499,6 +503,253 @@ describe("FloorPlanCanvas — liste d'attente Live service", () => {
     );
 
     expect(screen.getByText('Aucune table compatible')).toBeInTheDocument();
+  });
+});
+
+describe('FloorPlanCanvas — actions Live service', () => {
+  function makeReservation(state: 'CONFIRMED' | 'SEATED'): PlanningReservation {
+    const now = Date.now();
+    return {
+      id: `reservation-${state.toLowerCase()}`,
+      tableId: 'table-t4-minimum-round',
+      tableName: 'T4',
+      sectionName: null,
+      startsAt: new Date(now - 10 * 60_000).toISOString(),
+      endsAt: new Date(now + 80 * 60_000).toISOString(),
+      partySize: 4,
+      customerName: 'Martin Dupont',
+      state,
+      seatedAt: state === 'SEATED' ? new Date(now - 10 * 60_000).toISOString() : null,
+    };
+  }
+
+  it('emploie des actions métier explicites pour installer et libérer une table', async () => {
+    let reservations = [makeReservation('CONFIRMED')];
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return reservations;
+      if (path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+
+    const { unmount } = render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+    fireEvent.click(await screen.findByRole('button', { name: /Martin Dupont/ }));
+    expect(await screen.findByRole('button', { name: 'Installer à table' })).toBeInTheDocument();
+    unmount();
+
+    reservations = [makeReservation('SEATED')];
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+    fireEvent.click(await screen.findByRole('button', { name: /Martin Dupont/ }));
+    expect(await screen.findByRole('button', { name: 'Libérer la table' })).toBeInTheDocument();
+  });
+
+  it('affiche le retard vocal et son plan directement au-dessus du canevas', async () => {
+    const reservation = makeReservation('CONFIRMED');
+    const onInitialDelayApplied = vi.fn();
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return [reservation];
+      if (path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+    apiMocks.post.mockImplementation(async (path: string) => {
+      if (path.endsWith('/service-copilot/delay-impact/apply')) {
+        return { delayedReservationId: reservation.id, promotedReservationId: 'promoted-1' };
+      }
+      if (path.includes('/service-copilot/delay-impact')) {
+        return {
+          feasible: true,
+          summary: 'Un plan sûr est disponible.',
+          delayMinutes: 25,
+          delayedReservation: {
+            id: reservation.id,
+            customerName: reservation.customerName,
+            originalTableName: 'T4',
+            originalStartsAt: reservation.startsAt,
+            proposedStartsAt: reservation.startsAt,
+          },
+          alternativeTable: {
+            id: 'table-12',
+            name: 'T12',
+            capacity: 4,
+            sectionId: null,
+          },
+          waitingListEntry: {
+            id: 'waiting-list-2',
+            customerName: 'Alice Martin',
+            partySize: 4,
+            requestedStartsAt: reservation.startsAt,
+            proposedStartsAt: reservation.startsAt,
+            proposedEndsAt: reservation.endsAt,
+            isAvailableNow: true,
+          },
+          safeguards: [],
+        };
+      }
+      return {};
+    });
+
+    render(
+      <FloorPlanCanvas
+        orgId="org_test"
+        mode="service"
+        initialDelayImpact={{
+          reservationId: reservation.id,
+          delayMinutes: 25,
+          delayReportId: 'delay-report-1',
+        }}
+        onInitialDelayApplied={onInitialDelayApplied}
+      />,
+    );
+
+    expect(await screen.findByText('Martin Dupont · 4 pers. · +25 min')).toBeInTheDocument();
+    expect(screen.getByLabelText('Retard annoncé en minutes')).toBeDisabled();
+    expect(screen.getByText('Durée confirmée pendant l’appel client.')).toBeInTheDocument();
+    expect(await screen.findByText('Disponible maintenant')).toBeInTheDocument();
+    expect(screen.getByText('Liste d’attente')).toBeInTheDocument();
+    expect(screen.getByText('Alice Martin n’avait pas encore de table.')).toBeInTheDocument();
+    expect(screen.getByText('T12')).toBeInTheDocument();
+    fireEvent.click(
+      within(screen.getByRole('region', { name: 'Retard signalé par téléphone' })).getByRole(
+        'button',
+        { name: 'Vérifier et appliquer' },
+      ),
+    );
+
+    expect(
+      await screen.findByText(/Aucun message n’est envoyé automatiquement/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/Alice Martin est présent\(e\) et accepte la table proposée/),
+    ).toBeInTheDocument();
+    const confirmButton = screen.getByRole('button', { name: 'Confirmer les changements' });
+    expect(confirmButton).toBeDisabled();
+    fireEvent.click(
+      screen.getByLabelText(/Alice Martin est présent\(e\) et accepte la table proposée/),
+    );
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => expect(onInitialDelayApplied).toHaveBeenCalledTimes(1));
+    expect(apiMocks.post).toHaveBeenCalledWith(
+      'restaurants/org_test/service-copilot/delay-impact/apply',
+      expect.objectContaining({
+        reservationId: reservation.id,
+        delayMinutes: 25,
+        waitingListAcceptanceConfirmed: true,
+        delayReportId: 'delay-report-1',
+        idempotencyKey: expect.any(String),
+      }),
+    );
+    expect(await screen.findByText('Communication requise')).toBeInTheDocument();
+    expect(screen.getByText(/Alice Martin : liste d’attente → T4/)).toBeInTheDocument();
+    expect(screen.getByText(/Aucun message n’a été envoyé automatiquement/)).toBeInTheDocument();
+  });
+
+  it('invalide immédiatement un plan si la durée du retard change', async () => {
+    const reservation = makeReservation('CONFIRMED');
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return [reservation];
+      if (path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+    apiMocks.post.mockResolvedValue({
+      feasible: true,
+      summary: 'Plan calculé pour 25 minutes.',
+      delayMinutes: 25,
+      alternativeTable: { id: 'table-12', name: 'T12', capacity: 4, sectionId: null },
+      waitingListEntry: {
+        id: 'waiting-list-2',
+        customerName: 'Alice Martin',
+        partySize: 4,
+        requestedStartsAt: reservation.startsAt,
+        proposedStartsAt: reservation.startsAt,
+        proposedEndsAt: reservation.endsAt,
+        isAvailableNow: true,
+      },
+      safeguards: [],
+    });
+
+    render(
+      <FloorPlanCanvas
+        orgId="org_test"
+        mode="service"
+        initialDelayImpact={{ reservationId: reservation.id, delayMinutes: 25 }}
+      />,
+    );
+
+    expect(await screen.findByText('Plan calculé pour 25 minutes.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Retard annoncé en minutes'), {
+      target: { value: '40' },
+    });
+    expect(screen.queryByText('Plan calculé pour 25 minutes.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Disponible maintenant')).not.toBeInTheDocument();
+  });
+
+  it('analyse un second retard reçu sans remonter le composant', async () => {
+    const first = makeReservation('CONFIRMED');
+    const second = {
+      ...first,
+      id: 'reservation-second',
+      customerName: 'Deuxième Client',
+    };
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return [first, second];
+      if (path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+    apiMocks.post.mockResolvedValue({
+      feasible: false,
+      summary: 'Aucun plan.',
+      delayMinutes: 20,
+      safeguards: [],
+    });
+
+    const { rerender } = render(
+      <FloorPlanCanvas
+        orgId="org_test"
+        mode="service"
+        initialDelayImpact={{ reservationId: first.id, delayMinutes: 20 }}
+      />,
+    );
+    await waitFor(() =>
+      expect(apiMocks.post).toHaveBeenCalledWith(
+        'restaurants/org_test/service-copilot/delay-impact',
+        { reservationId: first.id, delayMinutes: 20 },
+      ),
+    );
+
+    rerender(
+      <FloorPlanCanvas
+        orgId="org_test"
+        mode="service"
+        initialDelayImpact={{ reservationId: second.id, delayMinutes: 30 }}
+      />,
+    );
+    await waitFor(() =>
+      expect(apiMocks.post).toHaveBeenCalledWith(
+        'restaurants/org_test/service-copilot/delay-impact',
+        { reservationId: second.id, delayMinutes: 30 },
+      ),
+    );
+  });
+
+  it('explique clairement quand la réservation signalée est absente de la date', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return [];
+      if (path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+
+    render(
+      <FloorPlanCanvas
+        orgId="org_test"
+        mode="service"
+        initialDelayImpact={{ reservationId: 'missing', delayMinutes: 20 }}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/La réservation signalée n’est pas visible pour cette date/),
+    ).toBeInTheDocument();
+    expect(apiMocks.post).not.toHaveBeenCalled();
   });
 });
 

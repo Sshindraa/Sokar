@@ -93,6 +93,15 @@ function formatTime(date: Date, timeZone: string): string {
   });
 }
 
+function formatLocalDate(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone,
+  }).format(date);
+}
+
 /**
  * Service Copilot — moteur de recommandations déterministes, explicables et
  * actionnables pour l'équipe de salle.
@@ -159,7 +168,7 @@ export class ServiceCopilotService {
     const seen = new Set<string>();
 
     for (const delay of reportedDelays) {
-      this.addUnique(recommendations, seen, this.buildReportedDelayRecommendation(delay));
+      this.addUnique(recommendations, seen, this.buildReportedDelayRecommendation(delay, timeZone));
     }
     if (serverRebalance) this.addUnique(recommendations, seen, serverRebalance);
 
@@ -215,10 +224,11 @@ export class ServiceCopilotService {
         reservation: { restaurantId, state: 'CONFIRMED' },
       },
       select: {
+        id: true,
         reservationId: true,
         createdAt: true,
         metadata: true,
-        reservation: { select: { customerName: true } },
+        reservation: { select: { customerName: true, startsAt: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 20,
@@ -253,6 +263,7 @@ export class ServiceCopilotService {
 
   private buildReportedDelayRecommendation(
     delay: Awaited<ReturnType<ServiceCopilotService['fetchReportedDelays']>>[number],
+    timeZone: string,
   ): ServiceCopilotRecommendation {
     const delayMinutes = (delay.metadata as { delayMinutes: number }).delayMinutes;
     const reservationId = delay.reservationId!;
@@ -266,7 +277,7 @@ export class ServiceCopilotService {
       action: {
         type: 'link',
         label: 'Analyser l’impact',
-        href: `/dashboard/floor-plan?reservationId=${encodeURIComponent(reservationId)}&delayMinutes=${delayMinutes}`,
+        href: `/dashboard/floor-plan?reservationId=${encodeURIComponent(reservationId)}&delayMinutes=${delayMinutes}&delayReportId=${encodeURIComponent(delay.id)}${delay.reservation?.startsAt ? `&serviceDate=${formatLocalDate(delay.reservation.startsAt, timeZone)}` : ''}`,
       },
       entityId: reservationId,
       expiresAt: new Date(delay.createdAt.getTime() + 4 * 60 * 60_000).toISOString(),

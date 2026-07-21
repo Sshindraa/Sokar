@@ -12,9 +12,12 @@ function makePrismaMock() {
     reservation: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
     waitingListEntry: { findFirst: vi.fn(), update: vi.fn() },
     table: { findFirst: vi.fn() },
-    reservationAuditLog: { create: vi.fn() },
+    reservationAuditLog: { create: vi.fn(), findFirst: vi.fn() },
   };
-  const prisma = { $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) };
+  const prisma = {
+    $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+    reservationAuditLog: { findFirst: vi.fn() },
+  };
   return { prisma: prisma as any, tx };
 }
 
@@ -35,6 +38,9 @@ const preflight = {
     customerName: 'Lina Dupont',
     partySize: 2,
     requestedStartsAt: '2026-07-21T17:30:00.000Z',
+    proposedStartsAt: '2026-07-21T17:30:00.000Z',
+    proposedEndsAt: '2026-07-21T19:00:00.000Z',
+    isAvailableNow: false,
   },
   safeguards: [],
 };
@@ -81,6 +87,7 @@ describe('ServiceCopilotDelayRecoveryService', () => {
       alternativeTableId: 'table-7',
       waitingListEntryId: 'waiting-1',
       actor: 'manager-1',
+      waitingListAcceptanceConfirmed: true,
     });
 
     expect(result).toEqual({
@@ -118,8 +125,76 @@ describe('ServiceCopilotDelayRecoveryService', () => {
         alternativeTableId: 'other-table',
         waitingListEntryId: 'waiting-1',
         actor: 'manager-1',
+        waitingListAcceptanceConfirmed: true,
       }),
     ).rejects.toBeInstanceOf(DelayRecoveryConflictError);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('refuse toute promotion sans acceptation explicite du groupe', async () => {
+    const { prisma } = makePrismaMock();
+    const service = new ServiceCopilotDelayRecoveryService(prisma as any);
+    const simulate = vi.spyOn(ServiceCopilotDelayImpactService.prototype, 'simulate');
+
+    await expect(
+      service.apply({
+        restaurantId: 'rest-1',
+        reservationId: 'reservation-1',
+        delayMinutes: 20,
+        alternativeTableId: 'table-7',
+        waitingListEntryId: 'waiting-1',
+        actor: 'manager-1',
+        waitingListAcceptanceConfirmed: false,
+      }),
+    ).rejects.toThrow('accepte la table');
+    expect(simulate).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('retourne le premier résultat pour une opération déjà appliquée, même sans clé cliente', async () => {
+    const { prisma } = makePrismaMock();
+    prisma.reservationAuditLog.findFirst.mockResolvedValue({
+      metadata: { promotedReservationId: 'promoted-1' },
+    });
+    const service = new ServiceCopilotDelayRecoveryService(prisma as any);
+
+    await expect(
+      service.apply({
+        restaurantId: 'rest-1',
+        reservationId: 'reservation-1',
+        delayMinutes: 20,
+        alternativeTableId: 'table-7',
+        waitingListEntryId: 'waiting-1',
+        actor: 'manager-1',
+        waitingListAcceptanceConfirmed: true,
+      }),
+    ).resolves.toEqual({
+      delayedReservationId: 'reservation-1',
+      promotedReservationId: 'promoted-1',
+      idempotent: true,
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('refuse de modifier le retard lié à un signalement vocal', async () => {
+    const { prisma } = makePrismaMock();
+    prisma.reservationAuditLog.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ metadata: { delayMinutes: 25 } });
+    const service = new ServiceCopilotDelayRecoveryService(prisma as any);
+
+    await expect(
+      service.apply({
+        restaurantId: 'rest-1',
+        reservationId: 'reservation-1',
+        delayMinutes: 20,
+        alternativeTableId: 'table-7',
+        waitingListEntryId: 'waiting-1',
+        actor: 'manager-1',
+        waitingListAcceptanceConfirmed: true,
+        delayReportId: 'delay-report-1',
+      }),
+    ).rejects.toThrow('ne correspond plus au retard signalé');
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });

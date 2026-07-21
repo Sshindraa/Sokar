@@ -345,9 +345,28 @@ export interface ServiceCopilotDelayImpact {
     customerName: string;
     partySize: number;
     requestedStartsAt: string;
+    proposedStartsAt: string;
+    proposedEndsAt: string;
+    isAvailableNow: boolean;
     customerFacingRequestedStartsAt?: string;
   };
   safeguards: string[];
+}
+
+export interface ServiceCommunicationDraft {
+  recipient: 'delayed-reservation' | 'waiting-list';
+  customerName: string;
+  message: string;
+  delivery: 'review-required';
+  eligibleChannel: 'sms' | 'email' | null;
+  deliveryBlocker?: 'no-contact' | 'no-transactional-consent';
+  reason: string;
+  confidence: 'medium';
+}
+
+export interface ServiceCommunicationDraftsResponse {
+  impact: ServiceCopilotDelayImpact;
+  drafts: ServiceCommunicationDraft[];
 }
 
 export type SimulationScenarioType = 'direct' | 'change-section' | 'refuse';
