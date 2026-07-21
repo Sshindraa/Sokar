@@ -9,6 +9,7 @@ import { CapacityAwareAvailabilityService } from './availability-capacity-aware.
 import { ServiceCopilotService } from './service-copilot.service';
 import { ServiceCopilotSimulationService } from './service-copilot-simulation.service';
 import { ServiceCopilotDelayImpactService } from './service-copilot-delay-impact.service';
+import { ServiceCopilotCommunicationService } from './service-copilot-communication.service';
 import {
   DelayRecoveryConflictError,
   ServiceCopilotDelayRecoveryService,
@@ -173,6 +174,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
   const simulation = new ServiceCopilotSimulationService(db);
   const delayImpact = new ServiceCopilotDelayImpactService(db);
   const delayRecovery = new ServiceCopilotDelayRecoveryService(db);
+  const communication = new ServiceCopilotCommunicationService();
 
   // ─── Legacy single floor-plan endpoints (default active floor plan) ───
 
@@ -335,6 +337,24 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
         delayMinutes: body.delayMinutes,
       });
       return reply.send(result);
+    },
+  );
+
+  app.post(
+    '/restaurants/:id/service-copilot/delay-impact/drafts',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const restaurantId = (req.params as { id: string }).id;
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+      const body = SimulateDelayImpactSchema.parse(req.body);
+      const impact = await delayImpact.simulate({
+        restaurantId,
+        reservationId: body.reservationId,
+        delayMinutes: body.delayMinutes,
+      });
+      return reply.send({ impact, drafts: communication.buildDrafts(impact) });
     },
   );
 
