@@ -382,7 +382,10 @@ export class TableAllocationService {
           AND state IN ('PENDING', 'CONFIRMED', 'SEATED')
           AND starts_at IS NOT NULL
           AND ends_at IS NOT NULL
-          AND tsrange(starts_at, ends_at) && tsrange(${check.startsAt}, ${check.endsAt})
+          AND tsrange(starts_at, ends_at) && tsrange(
+            CAST(${check.startsAt} AS timestamptz) AT TIME ZONE 'UTC',
+            CAST(${check.endsAt} AS timestamptz) AT TIME ZONE 'UTC'
+          )
           ${excludeClause}
         LIMIT 1
       `,
@@ -407,7 +410,10 @@ export class TableAllocationService {
           AND expires_at > NOW()
           AND slot_start IS NOT NULL
           AND slot_end IS NOT NULL
-          AND tsrange(slot_start, slot_end) && tsrange(${check.startsAt}, ${check.endsAt})
+          AND tsrange(slot_start, slot_end) && tsrange(
+            CAST(${check.startsAt} AS timestamptz) AT TIME ZONE 'UTC',
+            CAST(${check.endsAt} AS timestamptz) AT TIME ZONE 'UTC'
+          )
           ${excludeClause}
         LIMIT 1
       `,

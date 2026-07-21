@@ -23,6 +23,7 @@ function makeMockPrisma(
   const tables = new Map(initial.tables?.map((t) => [t.id, t]) ?? []);
   const reservations = new Map(initial.reservations?.map((r) => [r.id, r]) ?? []);
   const holds = new Map(initial.holds?.map((h) => [h.id, h]) ?? []);
+  const rawQueries: Array<{ sql: string; values: unknown[] }> = [];
   const floorPlanByRestaurant = new Map<
     string,
     { id: string; restaurantId: string; isActive: boolean; isDefault: boolean }
@@ -185,6 +186,7 @@ function makeMockPrisma(
       const s = arg as { sql?: string; values?: unknown[] };
       const sql = s.sql ?? '';
       const values = s.values ?? [];
+      rawQueries.push({ sql, values });
 
       if (sql.includes('floor_plan_tables')) {
         return [{ id: values[0] as string }];
@@ -230,7 +232,7 @@ function makeMockPrisma(
     },
   } as unknown as PrismaClient;
 
-  return { prisma, tables, reservations, holds };
+  return { prisma, tables, reservations, holds, rawQueries };
 }
 
 function makeTable(
@@ -735,6 +737,21 @@ describe('TableAllocationService', () => {
   });
 
   describe('isTableAvailable', () => {
+    it('convertit les bornes JavaScript en timestamp UTC pour les plages PostgreSQL', async () => {
+      const startsAt = new Date('2026-07-02T19:00:00.000Z');
+      const endsAt = new Date('2026-07-02T21:00:00.000Z');
+      const { prisma, rawQueries } = makeMockPrisma();
+      const service = new TableAllocationService(prisma);
+
+      await service.isTableAvailable({ tableId: 't-1', startsAt, endsAt });
+
+      const rangeQueries = rawQueries.filter(
+        (query) => query.sql.includes('reservations') || query.sql.includes('agentic_holds'),
+      );
+      expect(rangeQueries).toHaveLength(2);
+      expect(rangeQueries.every((query) => query.sql.includes("AT TIME ZONE 'UTC'"))).toBe(true);
+    });
+
     it('ignore le hold exclu avec excludeHoldId', async () => {
       const startsAt = new Date('2026-07-02T19:00:00Z');
       const endsAt = new Date('2026-07-02T21:00:00Z');
