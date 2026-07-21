@@ -55,32 +55,27 @@ export function buildDeepgramUrl(model: string, codec: 'PCMA' | 'PCMU'): string 
     utterance_end_ms: '1000',
   });
 
-  // Boost critical reservation vocabulary for FR
-  const vocabulary = [
-    'réservation:3.0',
-    'réservations:3.0',
-    'réserver:3.0',
-    'couverts:2.0',
-    'personnes:2.0',
-    'table:2.0',
-    'soir:2.0',
-    'heures:2.0',
-    'midi:2.0',
-    'deux:2.0',
-    'trois:2.0',
-    'quatre:2.0',
-    'cinq:2.0',
-    'six:2.0',
-    'sept:2.0',
-    'huit:2.0',
-    'neuf:2.0',
-    'dix:2.0',
-  ];
-  for (const item of vocabulary) {
-    if (isFlux) {
-      params.append('keyterm', item.split(':')[0]);
-    } else {
-      params.append('keywords', item);
+  // Boost critical reservation vocabulary for FR (Flux v2 model)
+  if (isFlux) {
+    const keyterms = [
+      'réservation',
+      'personnes',
+      'soir',
+      'heures',
+      'midi',
+      'couverts',
+      'deux',
+      'trois',
+      'quatre',
+      'cinq',
+      'six',
+      'sept',
+      'huit',
+      'neuf',
+      'dix',
+    ];
+    for (const term of keyterms) {
+      params.append('keyterm', term);
     }
   }
 
