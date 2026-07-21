@@ -1,5 +1,6 @@
 import type { PrismaClient, ReservationState, WaitingListStatus } from '@prisma/client';
 import { TableAllocationService } from './table-allocation.service';
+import { toCustomerFacingTime } from './customer-facing-time';
 
 export interface DelayImpactSimulation {
   feasible: boolean;
@@ -11,6 +12,7 @@ export interface DelayImpactSimulation {
     originalTableName: string;
     originalStartsAt: string;
     proposedStartsAt: string;
+    customerFacingProposedStartsAt?: string;
   };
   alternativeTable?: {
     id: string;
@@ -23,6 +25,7 @@ export interface DelayImpactSimulation {
     customerName: string;
     partySize: number;
     requestedStartsAt: string;
+    customerFacingRequestedStartsAt?: string;
   };
   safeguards: string[];
 }
@@ -108,6 +111,7 @@ export class ServiceCopilotDelayImpactService {
         originalTableName: reservation.table.name,
         originalStartsAt: reservation.startsAt.toISOString(),
         proposedStartsAt: proposedStartsAt.toISOString(),
+        customerFacingProposedStartsAt: toCustomerFacingTime(proposedStartsAt).toISOString(),
       },
       safeguards: [
         'Simulation en lecture seule : aucune réservation ni table n’a été modifiée.',
@@ -165,6 +169,7 @@ export class ServiceCopilotDelayImpactService {
           customerName,
           partySize: entry.partySize,
           requestedStartsAt: entry.slotStart.toISOString(),
+          customerFacingRequestedStartsAt: toCustomerFacingTime(entry.slotStart).toISOString(),
         },
         ...base,
       };

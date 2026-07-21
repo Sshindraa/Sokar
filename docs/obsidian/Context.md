@@ -2,6 +2,8 @@
 
 ## Dernière activité
 
+2026-07-21 22:10 — [api, dashboard] **Service Copilot : heures client arrondies** — Nouvelle règle déterministe `toCustomerFacingTime` : toute heure destinée à un client est arrondie vers le haut au créneau de 5 minutes suivant, afin de ne jamais promettre plus tôt que le calcul opérationnel (20:08 → 20:10). Le simulateur de retard expose cette heure distincte de l’heure interne exacte ; elle servira de source aux futurs brouillons de communication.
+
 2026-07-21 21:10 — [dashboard] **Service Copilot : confirmation d’équilibrage serveur** — Une recommandation `server-rebalance` n’exécute plus le PATCH directement : le cockpit affiche une confirmation nommant table et serveur cible, avec rappel de prévenir l’équipe. La décision reste entièrement humaine.
 
 2026-07-21 21:05 — [api, dashboard] **Service Copilot : équilibrage dynamique des serveurs** — Les recommandations analysent les tables actives affectées et les couverts `CONFIRMED`/`SEATED` des 30 prochaines minutes. En cas d’écart significatif, le cockpit propose de confier une table confirmée d’un serveur surchargé au serveur le moins chargé. Aucune réaffectation automatique : le responsable déclenche explicitement le PATCH existant, puis le Copilot se rafraîchit.

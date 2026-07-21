@@ -4254,6 +4254,18 @@ export function FloorPlanCanvas({
                             {selectedServiceReservation.customerName || 'Client'} →{' '}
                             {delayImpact.alternativeTable.name}.
                           </p>
+                          {delayImpact.delayedReservation?.customerFacingProposedStartsAt ? (
+                            <p className="text-muted-foreground">
+                              Heure à communiquer au client :{' '}
+                              {format(
+                                parseISO(
+                                  delayImpact.delayedReservation.customerFacingProposedStartsAt,
+                                ),
+                                'HH:mm',
+                              )}
+                              .
+                            </p>
+                          ) : null}
                           <Button
                             size="sm"
                             className="w-full"

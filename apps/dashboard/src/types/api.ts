@@ -332,6 +332,7 @@ export interface ServiceCopilotDelayImpact {
     originalTableName: string;
     originalStartsAt: string;
     proposedStartsAt: string;
+    customerFacingProposedStartsAt?: string;
   };
   alternativeTable?: {
     id: string;
@@ -344,6 +345,7 @@ export interface ServiceCopilotDelayImpact {
     customerName: string;
     partySize: number;
     requestedStartsAt: string;
+    customerFacingRequestedStartsAt?: string;
   };
   safeguards: string[];
 }
