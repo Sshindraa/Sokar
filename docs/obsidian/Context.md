@@ -2,6 +2,8 @@
 
 ## Dernière activité
 
+2026-07-21 19:42 — [api] **Service Copilot : refus uniquement en fallback** — Une simulation faisable affichait aussi le scénario contradictoire « Aucune table disponible ». `ServiceCopilotSimulationService` ne recherche et ne retourne désormais le prochain créneau / refus que si aucun placement direct ou changement de section n’est possible. Tests floor-plan ciblés 43/43 et typecheck API verts ; en attente de CI/staging.
+
 2026-07-21 19:28 — [api] **Correctif allocation : bornes `tsrange` Prisma** — Les simulations Service Copilot échouaient sur staging : Prisma lie les `Date` des `$queryRaw` en `timestamptz`, incompatible avec `tsrange(timestamp, timestamp)`. `TableAllocationService` convertit désormais explicitement les deux bornes en timestamp UTC, côté réservations et holds, sans migration. Régression couverte par un test des deux requêtes. Tests floor-plan ciblés 43/43 et typecheck API verts. Correctif `1c215f7` en attente de CI/staging.
 
 2026-07-21 18:45 — [api, dashboard] **Service Copilot : simulation what-if** — `ServiceCopilotSimulationService` ajoute `POST /restaurants/:id/service-copilot/simulate` pour tester les 3 scénarios (direct, changement de section, refuse + prochain créneau) sans mutation. Dashboard : widget `ServiceCopilotSimulator` dans `floor-plan` en mode `service-live` avec formulaire, résultats explicables et actions `link`. Tests service 3/3, typecheck et lint API/dashboard verts. Aucune migration DB.

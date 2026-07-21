@@ -87,7 +87,7 @@ describe('ServiceCopilotSimulationService', () => {
     const result = await svc.simulate({ restaurantId: 'rest-1', partySize: 2, startsAt });
 
     expect(result.feasible).toBe(true);
-    expect(result.scenarios).toHaveLength(2);
+    expect(result.scenarios).toHaveLength(1);
     expect(result.scenarios[0].type).toBe('direct');
     expect(result.scenarios[0].feasible).toBe(true);
     expect(result.scenarios[0].table?.name).toBe('T1');
@@ -137,12 +137,13 @@ describe('ServiceCopilotSimulationService', () => {
     });
 
     expect(result.feasible).toBe(true);
-    expect(result.scenarios).toHaveLength(3);
+    expect(result.scenarios).toHaveLength(2);
     expect(result.scenarios[0].type).toBe('direct');
     expect(result.scenarios[0].feasible).toBe(false);
     expect(result.scenarios[1].type).toBe('change-section');
     expect(result.scenarios[1].feasible).toBe(true);
     expect(result.scenarios[1].table?.name).toBe('T2');
+    expect(result.scenarios.some((scenario) => scenario.type === 'refuse')).toBe(false);
     expect(result.bestScenarioId).toBe(result.scenarios[1].id);
     expect(result.explanation).toContain('Salle');
   });

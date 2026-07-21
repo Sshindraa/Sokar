@@ -198,25 +198,28 @@ export class ServiceCopilotSimulationService {
       }
     }
 
-    // ─── Scénario 3 : refuse + prochain créneau ───
-    const nextAvailable = await this.findNextAvailable({
-      restaurantId,
-      partySize,
-      startsAt,
-      serviceDurationMinutes,
-      timeZone,
-      preferredSectionId,
-    });
-    const refuseScenario = this.buildRefuseScenario({
-      startsAt,
-      nextAvailable,
-      timeZone,
-    });
-    scenarios.push(refuseScenario);
+    const feasible = directScenario.feasible || changeSectionScenario?.feasible === true;
 
-    const feasible = scenarios.some(
-      (s) => s.feasible && (s.type === 'direct' || s.type === 'change-section'),
-    );
+    // ─── Scénario 3 : refuse + prochain créneau ───
+    // Le refus est un fallback : ne jamais l'afficher à côté d'un placement faisable.
+    let nextAvailable: { nextAvailableAt: Date; nextAvailableSectionId?: string } | null = null;
+    let refuseScenario: SimulationScenario | null = null;
+    if (!feasible) {
+      nextAvailable = await this.findNextAvailable({
+        restaurantId,
+        partySize,
+        startsAt,
+        serviceDurationMinutes,
+        timeZone,
+        preferredSectionId,
+      });
+      refuseScenario = this.buildRefuseScenario({
+        startsAt,
+        nextAvailable,
+        timeZone,
+      });
+      scenarios.push(refuseScenario);
+    }
 
     let bestScenarioId: string | undefined;
     if (directScenario.feasible && directInPreferred) {
@@ -226,7 +229,7 @@ export class ServiceCopilotSimulationService {
     } else if (directScenario.feasible) {
       bestScenarioId = directScenario.id;
     } else {
-      bestScenarioId = refuseScenario.id;
+      bestScenarioId = refuseScenario?.id;
     }
 
     const explanation = this.buildExplanation({
