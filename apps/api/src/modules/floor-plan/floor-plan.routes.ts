@@ -8,6 +8,7 @@ import { TableAllocationService, TableAllocationError } from './table-allocation
 import { CapacityAwareAvailabilityService } from './availability-capacity-aware.service';
 import { ServiceCopilotService } from './service-copilot.service';
 import { ServiceCopilotSimulationService } from './service-copilot-simulation.service';
+import { ServiceCopilotDelayImpactService } from './service-copilot-delay-impact.service';
 import { HoldService } from '../agentic-reservations/core/hold.service';
 import { ReservationService } from '../agentic-reservations/core/reservation.service';
 import { WaitingListService } from '../agentic-reservations/core/waiting-list.service';
@@ -141,6 +142,11 @@ const SimulateSchema = z.object({
   preferredSectionId: z.string().optional(),
 });
 
+const SimulateDelayImpactSchema = z.object({
+  reservationId: z.string().min(1),
+  delayMinutes: z.number().int().min(5).max(180),
+});
+
 function getFloorPlanIdFromQuery(query: unknown): string | undefined {
   const parsed = z.object({ floorPlanId: z.string().optional() }).safeParse(query ?? {});
   return parsed.success ? parsed.data.floorPlanId : undefined;
@@ -156,6 +162,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
   const waitingList = new WaitingListService(db, allocation, audit);
   const copilot = new ServiceCopilotService(db);
   const simulation = new ServiceCopilotSimulationService(db);
+  const delayImpact = new ServiceCopilotDelayImpactService(db);
 
   // ─── Legacy single floor-plan endpoints (default active floor plan) ───
 
@@ -298,6 +305,24 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
         startsAt: new Date(body.startsAt),
         endsAt: body.endsAt ? new Date(body.endsAt) : undefined,
         preferredSectionId: body.preferredSectionId,
+      });
+      return reply.send(result);
+    },
+  );
+
+  app.post(
+    '/restaurants/:id/service-copilot/delay-impact',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const restaurantId = (req.params as { id: string }).id;
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+      const body = SimulateDelayImpactSchema.parse(req.body);
+      const result = await delayImpact.simulate({
+        restaurantId,
+        reservationId: body.reservationId,
+        delayMinutes: body.delayMinutes,
       });
       return reply.send(result);
     },

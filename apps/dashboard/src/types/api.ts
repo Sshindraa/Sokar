@@ -317,6 +317,32 @@ export interface ServiceCopilotRecommendationsResponse {
   recommendations: ServiceCopilotRecommendation[];
 }
 
+export interface ServiceCopilotDelayImpact {
+  feasible: boolean;
+  summary: string;
+  delayMinutes: number;
+  delayedReservation?: {
+    id: string;
+    customerName: string;
+    originalTableName: string;
+    originalStartsAt: string;
+    proposedStartsAt: string;
+  };
+  alternativeTable?: {
+    id: string;
+    name: string;
+    capacity: number;
+    sectionId: string | null;
+  };
+  waitingListEntry?: {
+    id: string;
+    customerName: string;
+    partySize: number;
+    requestedStartsAt: string;
+  };
+  safeguards: string[];
+}
+
 export type SimulationScenarioType = 'direct' | 'change-section' | 'refuse';
 
 export interface SimulationAction {

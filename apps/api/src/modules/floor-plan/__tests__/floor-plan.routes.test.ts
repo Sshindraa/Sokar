@@ -20,6 +20,7 @@ import { ReservationService } from '../../agentic-reservations/core/reservation.
 import { WaitingListService } from '../../agentic-reservations/core/waiting-list.service';
 import { CapacityAwareAvailabilityService } from '../availability-capacity-aware.service';
 import { TableAllocationService, TableAllocationError } from '../table-allocation.service';
+import { ServiceCopilotDelayImpactService } from '../service-copilot-delay-impact.service';
 
 describe('floorPlanRoutes', () => {
   beforeEach(() => {
@@ -99,6 +100,50 @@ describe('floorPlanRoutes', () => {
       });
 
       expect(res.statusCode).toBe(409);
+    });
+  });
+
+  describe('POST /restaurants/:id/service-copilot/delay-impact', () => {
+    it('retourne une simulation read-only dans le périmètre du restaurant', async () => {
+      const app = await getApp();
+      const simulate = vi
+        .spyOn(ServiceCopilotDelayImpactService.prototype, 'simulate')
+        .mockResolvedValue({
+          feasible: false,
+          delayMinutes: 20,
+          summary: 'Aucune table alternative.',
+          safeguards: ['Aucune modification n’a été effectuée.'],
+        });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/service-copilot/delay-impact',
+        headers: { authorization: 'Bearer test' },
+        payload: { reservationId: 'res-1', delayMinutes: 20 },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(simulate).toHaveBeenCalledWith({
+        restaurantId: 'test-rest-1',
+        reservationId: 'res-1',
+        delayMinutes: 20,
+      });
+      expect(res.json().summary).toBe('Aucune table alternative.');
+    });
+
+    it('refuse une simulation pour un autre restaurant', async () => {
+      const app = await getApp();
+      const simulate = vi.spyOn(ServiceCopilotDelayImpactService.prototype, 'simulate');
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/other-rest/service-copilot/delay-impact',
+        headers: { authorization: 'Bearer test' },
+        payload: { reservationId: 'res-1', delayMinutes: 20 },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(simulate).not.toHaveBeenCalled();
     });
   });
 

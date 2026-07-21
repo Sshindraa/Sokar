@@ -9,6 +9,7 @@ import {
   type FloorPlanTable,
   type FloorPlanWall,
   type PlanningReservation,
+  type ServiceCopilotDelayImpact,
   type TableShape,
   type WaitingListEntry,
   type WallType,
@@ -1583,6 +1584,10 @@ export function FloorPlanCanvas({
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [selectedServiceTableId, setSelectedServiceTableId] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<TableSuggestion[]>([]);
+  const [delayMinutes, setDelayMinutes] = useState(20);
+  const [delayImpact, setDelayImpact] = useState<ServiceCopilotDelayImpact | null>(null);
+  const [delayImpactReservationId, setDelayImpactReservationId] = useState<string | null>(null);
+  const [delayImpactLoading, setDelayImpactLoading] = useState(false);
   const [lockedWallIds, setLockedWallIds] = useState<Set<string>>(() => new Set());
 
   const [selectedTableIds, setSelectedTableIds] = useState<Set<string>>(() => new Set());
@@ -1860,6 +1865,27 @@ export function FloorPlanCanvas({
       }
     },
     [orgId, floorPlanId],
+  );
+
+  const simulateDelayImpact = useCallback(
+    async (reservationId: string) => {
+      if (!orgId) return;
+      setDelayImpactLoading(true);
+      setDelayImpact(null);
+      setDelayImpactReservationId(reservationId);
+      try {
+        const result = await postRef.current<ServiceCopilotDelayImpact>(
+          `restaurants/${orgId}/service-copilot/delay-impact`,
+          { reservationId, delayMinutes },
+        );
+        setDelayImpact(result);
+      } catch (err) {
+        setError(getErrorMessage(err, 'Impossible d’analyser ce retard'));
+      } finally {
+        setDelayImpactLoading(false);
+      }
+    },
+    [orgId, delayMinutes],
   );
 
   const assignTable = useCallback(
@@ -4112,6 +4138,58 @@ export function FloorPlanCanvas({
                   Suggérer des tables
                 </Button>
               </div>
+              {selectedServiceReservation.state === 'CONFIRMED' && (
+                <div className="space-y-2 rounded-md border border-border bg-card p-3">
+                  <p className="text-xs font-semibold text-foreground">Retard annoncé</p>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      aria-label="Retard annoncé en minutes"
+                      type="number"
+                      min={5}
+                      max={180}
+                      value={delayMinutes}
+                      onChange={(event) => setDelayMinutes(Number(event.target.value) || 5)}
+                      className="h-8 bg-background text-xs"
+                    />
+                    <span className="shrink-0 text-xs text-muted-foreground">min</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    disabled={delayImpactLoading}
+                    onClick={() => void simulateDelayImpact(selectedServiceReservation.id)}
+                  >
+                    {delayImpactLoading ? 'Analyse…' : 'Analyser l’impact'}
+                  </Button>
+                  {delayImpact && delayImpactReservationId === selectedServiceReservation.id && (
+                    <div
+                      className={cn(
+                        'space-y-2 rounded-md border p-2 text-xs',
+                        delayImpact.feasible
+                          ? 'border-success/25 bg-success/[0.04]'
+                          : 'border-warning/25 bg-warning/[0.04]',
+                      )}
+                    >
+                      <p className="font-medium text-foreground">{delayImpact.summary}</p>
+                      {delayImpact.feasible &&
+                      delayImpact.alternativeTable &&
+                      delayImpact.waitingListEntry ? (
+                        <p className="text-muted-foreground">
+                          Plan proposé :{' '}
+                          {selectedServiceTable.displayName ?? selectedServiceTable.name} →{' '}
+                          {delayImpact.waitingListEntry.customerName} ;{' '}
+                          {selectedServiceReservation.customerName || 'Client'} →{' '}
+                          {delayImpact.alternativeTable.name}.
+                        </p>
+                      ) : null}
+                      <p className="text-muted-foreground">
+                        À valider : aucune modification n’est appliquée.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
               {suggestions.length > 0 && (
                 <ul className="mt-2 space-y-2">
                   {suggestions.map((s, idx) => (
