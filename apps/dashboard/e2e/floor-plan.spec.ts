@@ -1,5 +1,74 @@
 import { test, expect } from '@playwright/test';
 
+const demoFloorPlan = {
+  id: 'e2e-floor-plan',
+  name: 'Salle démo',
+  isDefault: true,
+  isActive: true,
+  width: 800,
+  height: 500,
+  sections: [
+    {
+      id: 'e2e-section',
+      name: 'Salle principale',
+      position: 0,
+      tables: [],
+    },
+  ],
+  tables: [
+    {
+      id: 'e2e-table-t1',
+      name: 'T1',
+      capacity: 2,
+      minCapacity: 1,
+      isActive: true,
+      positionX: 96,
+      positionY: 96,
+      width: 80,
+      height: 80,
+      rotation: 0,
+      shape: 'round',
+    },
+    {
+      id: 'e2e-table-t3',
+      name: 'T3',
+      capacity: 4,
+      minCapacity: 1,
+      isActive: true,
+      positionX: 280,
+      positionY: 96,
+      width: 96,
+      height: 80,
+      rotation: 0,
+      shape: 'rect',
+    },
+    {
+      id: 'e2e-table-t4',
+      name: 'T4',
+      capacity: 6,
+      minCapacity: 1,
+      isActive: true,
+      positionX: 480,
+      positionY: 96,
+      width: 112,
+      height: 80,
+      rotation: 0,
+      shape: 'rect',
+    },
+  ],
+  walls: [],
+};
+
+const demoFloorPlans = [
+  {
+    id: demoFloorPlan.id,
+    name: demoFloorPlan.name,
+    isDefault: true,
+    isActive: true,
+    tableCount: demoFloorPlan.tables.length,
+  },
+];
+
 /**
  * Garde-fou non-régression du plan de salle (/dashboard/floor-plan).
  *
@@ -13,6 +82,25 @@ import { test, expect } from '@playwright/test';
  */
 
 test.describe('/dashboard/floor-plan — navigation et données demo', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/proxy/**', async (route) => {
+      const { pathname } = new URL(route.request().url());
+      const response = pathname.endsWith('/floor-plans')
+        ? demoFloorPlans
+        : pathname.includes(`/floor-plans/${demoFloorPlan.id}`)
+          ? demoFloorPlan
+          : pathname.includes('/floor-plan/reservations')
+            ? []
+            : null;
+
+      await route.fulfill({
+        status: response ? 200 : 404,
+        contentType: 'application/json',
+        body: JSON.stringify(response ?? { error: 'Route démo non mockée' }),
+      });
+    });
+  });
+
   test('passe de Live service à Salle édition, Sections & tables puis Plan visuel', async ({
     page,
   }) => {

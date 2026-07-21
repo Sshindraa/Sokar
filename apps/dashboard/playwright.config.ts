@@ -140,6 +140,11 @@ export default defineConfig({
           env: {
             ...process.env,
             CI: '1', // bypass la garde-fou middleware sans clé Clerk
+            // Le test fonctionnel du plan de salle utilise des réponses proxy mockées.
+            // L'identifiant doit être disponible au build/client pour sortir du skeleton.
+            NEXT_PUBLIC_DEMO_RESTAURANT_ID:
+              process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID || 'e2e-demo-restaurant',
+            NEXT_PUBLIC_DEMO_STAGING: process.env.NEXT_PUBLIC_DEMO_STAGING || 'true',
             PORT: '3000',
             HOSTNAME: '0.0.0.0', // IPv4+IPv6 — localhost résout en ::1 sur macOS
           },
