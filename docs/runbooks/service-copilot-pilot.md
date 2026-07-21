@@ -60,6 +60,12 @@ Relever dans les journaux et la base, sur la fenêtre temporelle du test :
 Un 409 est acceptable uniquement si un conflit réel a été provoqué volontairement. Dans ce cas,
 aucune mutation partielle ne doit exister.
 
+Un second clic ou une reprise réseau du même « Vérifier et appliquer » est attendu : Sokar renvoie
+le premier résultat sans créer une seconde promotion. En revanche, si une même clé d’action revient
+avec des données différentes (retard, table, groupe ou acceptation), le système répond 409 et le
+responsable doit relancer l’analyse. Cette comparaison est aussi refaite une fois les ressources
+verrouillées, pour couvrir deux requêtes simultanées.
+
 ## Retour arrière transactionnel
 
 Après une application, « Annuler ce plan » restaure automatiquement le plan initial seulement si :

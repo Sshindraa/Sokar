@@ -102,6 +102,11 @@ compatibilité des consommateurs existants.
 la table d’origine, annule la réservation promue et remet l’entrée en `PENDING`. Les communications
 déjà effectuées restent à corriger humainement.
 
+`apply` conserve une empreinte SHA-256 des données métier confirmées. Un rejeu avec la même clé et
+le même plan retourne le premier résultat sans nouvelle écriture. Avec la même clé mais un retard,
+une table, une entrée d’attente ou une confirmation différente, il retourne `409` avec une demande
+de recharger l’analyse. Le contrôle est refait avant et après les verrous transactionnels.
+
 `delay-recoveries` lit les audits append-only et l’état métier courant, sans nouvelle table. Il permet
 au dashboard de retrouver un plan après rafraîchissement ou depuis un autre appareil. Le champ
 `revertible` reste indicatif : `revert` refait toujours la validation transactionnelle complète.

@@ -25,7 +25,7 @@ import '@fastify/websocket';
 import { WebSocket } from 'ws';
 import type { TelnyxStreamMessage, FluxEvent, CallSession } from './types';
 import { CallSessionManager } from './manager';
-import { sendAudioToDeepgram, closeDeepgram } from './deepgram-bridge';
+import { sendAudioToDeepgram, closeDeepgram, connectDeepgramFlux } from './deepgram-bridge';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
@@ -138,20 +138,20 @@ function handleTelnyxMessage(
       // Assigner le WebSocket Telnyx à la session (manquant — cause du silence)
       session.telnyxWs = socket;
 
-      // Deepgram est déjà en cours de connexion (pre-warmé dans call.initiated)
+      // Connecter et démarrer Deepgram Flux STT pour la session
       session.onDeepgramEvent = (event: FluxEvent) => handleFluxEvent(event, session, mgr);
-      session.deepgramReady
-        ?.then(() => {
+      connectDeepgramFlux(session)
+        .then(() => {
           writeDebugLog(`[stream] Deepgram ready for ${start.call_control_id}`);
           logger.info({ callId: start.call_control_id }, '[stream] Deepgram ready');
         })
         .catch((err) => {
-          writeDebugLog(`[stream] Deepgram pre-warm was not ready`, err);
+          writeDebugLog(`[stream] Deepgram failed to connect`, err);
           logger.error(
             { err, callId: start.call_control_id },
-            `[stream] Deepgram was not ready: ${err.message}`,
+            `[stream] Deepgram failed to connect: ${(err as Error).message}`,
           );
-          captureException(err, {
+          captureException(err as Error, {
             tags: { service: 'handler', action: 'deepgram-ready' },
             extra: { callId: start.call_control_id },
           });

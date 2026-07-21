@@ -6,6 +6,7 @@ import {
   type ReservationStatus,
   type WaitingListStatus,
 } from '@prisma/client';
+import { createHash } from 'node:crypto';
 import { AuditLogService } from '../agentic-reservations/core/audit-log.service';
 import { TableAllocationService } from './table-allocation.service';
 import { ServiceCopilotDelayImpactService } from './service-copilot-delay-impact.service';
@@ -44,7 +45,41 @@ type DelayRecoveryMetadata = {
   appliedEndsAt?: unknown;
   promotedStartsAt?: unknown;
   promotedEndsAt?: unknown;
+  idempotencyPayloadHash?: unknown;
+  idempotencyVersion?: unknown;
 };
+
+type DelayRecoveryApplyPayload = {
+  reservationId: string;
+  delayMinutes: number;
+  alternativeTableId: string;
+  waitingListEntryId: string;
+  waitingListAcceptanceConfirmed: boolean;
+  delayReportId?: string;
+};
+
+type ExistingDelayRecovery = DelayRecoveryResult & {
+  payloadHash?: string;
+  alternativeTableId?: string;
+  delayMinutes?: number;
+  waitingListEntryId?: string;
+};
+
+const DELAY_RECOVERY_IDEMPOTENCY_VERSION = 'v1';
+
+/** Empreinte stable des données qui définissent une application de plan. */
+export function computeDelayRecoveryPayloadHash(payload: DelayRecoveryApplyPayload): string {
+  const canonicalPayload = {
+    version: DELAY_RECOVERY_IDEMPOTENCY_VERSION,
+    reservationId: payload.reservationId,
+    delayMinutes: payload.delayMinutes,
+    alternativeTableId: payload.alternativeTableId,
+    waitingListEntryId: payload.waitingListEntryId,
+    waitingListAcceptanceConfirmed: payload.waitingListAcceptanceConfirmed,
+    delayReportId: payload.delayReportId ?? null,
+  };
+  return createHash('sha256').update(JSON.stringify(canonicalPayload)).digest('hex');
+}
 
 export type DelayRecoverySnapshot = {
   alternativeTableId: string;
@@ -121,6 +156,7 @@ export class ServiceCopilotDelayRecoveryService {
     delayReportId?: string;
     idempotencyKey?: string;
   }): Promise<DelayRecoveryResult> {
+    const payloadHash = computeDelayRecoveryPayloadHash(args);
     const operationId =
       args.delayReportId ??
       args.idempotencyKey ??
@@ -131,7 +167,7 @@ export class ServiceCopilotDelayRecoveryService {
       args.reservationId,
       operationId,
     );
-    if (existing) return { ...existing, operationId, idempotent: true };
+    if (existing) return this.asIdempotentResult(existing, args, payloadHash, operationId);
     if (!args.waitingListAcceptanceConfirmed) {
       throw new DelayRecoveryConflictError(
         'Confirmez que le groupe de la liste d’attente est présent et accepte la table.',
@@ -183,7 +219,7 @@ export class ServiceCopilotDelayRecoveryService {
         args.reservationId,
         operationId,
       );
-      if (existing) return { ...existing, operationId, idempotent: true };
+      if (existing) return this.asIdempotentResult(existing, args, payloadHash, operationId);
 
       const reservation = await tx.reservation.findFirst({
         where: {
@@ -328,6 +364,8 @@ export class ServiceCopilotDelayRecoveryService {
             appliedEndsAt: proposedEndsAt.toISOString(),
             promotedStartsAt: promotedStartsAt.toISOString(),
             promotedEndsAt: promotedEndsAt.toISOString(),
+            idempotencyPayloadHash: payloadHash,
+            idempotencyVersion: DELAY_RECOVERY_IDEMPOTENCY_VERSION,
           },
         },
         tx,
@@ -549,7 +587,7 @@ export class ServiceCopilotDelayRecoveryService {
     restaurantId: string,
     reservationId: string,
     operationId: string,
-  ): Promise<DelayRecoveryResult | null> {
+  ): Promise<ExistingDelayRecovery | null> {
     const recovery = await client.reservationAuditLog.findFirst({
       where: {
         event: 'reservation_delay_recovered',
@@ -559,14 +597,53 @@ export class ServiceCopilotDelayRecoveryService {
       },
       select: { metadata: true },
     });
-    const metadata = recovery?.metadata as { promotedReservationId?: unknown } | null | undefined;
+    const metadata = recovery?.metadata as DelayRecoveryMetadata | null | undefined;
     return recovery && typeof metadata?.promotedReservationId === 'string'
       ? {
           delayedReservationId: reservationId,
           promotedReservationId: metadata.promotedReservationId,
           operationId,
+          payloadHash:
+            typeof metadata.idempotencyPayloadHash === 'string'
+              ? metadata.idempotencyPayloadHash
+              : undefined,
+          alternativeTableId:
+            typeof metadata.alternativeTableId === 'string'
+              ? metadata.alternativeTableId
+              : undefined,
+          delayMinutes:
+            typeof metadata.delayMinutes === 'number' ? metadata.delayMinutes : undefined,
+          waitingListEntryId:
+            typeof metadata.waitingListEntryId === 'string'
+              ? metadata.waitingListEntryId
+              : undefined,
         }
       : null;
+  }
+
+  private asIdempotentResult(
+    existing: ExistingDelayRecovery,
+    args: DelayRecoveryApplyPayload,
+    payloadHash: string,
+    operationId: string,
+  ): DelayRecoveryResult {
+    const isCurrentPayload = existing.payloadHash
+      ? existing.payloadHash === payloadHash
+      : existing.alternativeTableId === args.alternativeTableId &&
+        existing.delayMinutes === args.delayMinutes &&
+        existing.waitingListEntryId === args.waitingListEntryId &&
+        args.waitingListAcceptanceConfirmed;
+    if (!isCurrentPayload) {
+      throw new DelayRecoveryConflictError(
+        'Cette clé d’action a déjà été utilisée pour un autre plan. Rechargez l’analyse avant de continuer.',
+      );
+    }
+    return {
+      delayedReservationId: existing.delayedReservationId,
+      promotedReservationId: existing.promotedReservationId,
+      operationId,
+      idempotent: true,
+    };
   }
 
   private async findExistingRevert(

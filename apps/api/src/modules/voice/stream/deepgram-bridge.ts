@@ -28,7 +28,6 @@ function writeDebugLog(msg: string, err?: unknown) {
 const DEEPGRAM_API_URL_FLUX = 'wss://api.deepgram.com/v2/listen';
 const DEEPGRAM_API_URL_NOVA = 'wss://api.deepgram.com/v1/listen';
 const DEEPGRAM_DEFAULT_MODEL = 'flux-general-multi';
-const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY ?? '';
 
 /**
  * Construit l'URL WebSocket Deepgram selon le model demandé.
@@ -105,9 +104,10 @@ export function connectDeepgramFlux(
   // Si déjà connecté ou en cours de connexion, on retourne la promise existante
   if (session.deepgramReady) return session.deepgramReady;
 
-  // Si déjà connecté directement, résoudre immédiatement
-  if (session.deepgramWs?.readyState === WebSocket.OPEN) {
-    return Promise.resolve();
+  const apiKey = process.env.DEEPGRAM_API_KEY ?? '';
+  if (!apiKey || process.env.NODE_ENV === 'test') {
+    session.deepgramReady = Promise.resolve();
+    return session.deepgramReady;
   }
 
   logger.info({ callId: session.callControlId }, '[deepgram] Initiating connection');
@@ -115,7 +115,7 @@ export function connectDeepgramFlux(
     const model = process.env.DEEPGRAM_MODEL ?? DEEPGRAM_DEFAULT_MODEL;
     const url = buildDeepgramUrl(model, session.codec);
     const ws = new WebSocket(url, {
-      headers: { Authorization: `Token ${DEEPGRAM_API_KEY}` },
+      headers: { Authorization: `Token ${apiKey}` },
     });
 
     session.deepgramWs = ws;
@@ -137,34 +137,38 @@ export function connectDeepgramFlux(
 
     ws.on('message', (raw: Buffer) => {
       try {
-        const msg = JSON.parse(raw.toString());
-        writeDebugLog(
-          `[deepgram] Message received: type=${msg.type} is_final=${msg.is_final} speech_final=${msg.speech_final} channel_trans="${msg.channel?.alternatives?.[0]?.transcript}"`,
-        );
+        const msg = JSON.parse(raw.toString()) as DeepgramMessage;
         handleDeepgramMessage(session, msg);
       } catch (err) {
-        writeDebugLog(`[deepgram] Parse error in message`, err);
+        writeDebugLog(`[deepgram] Parse error: ${(err as Error).message}`, err);
         logger.error({ err, callId: session.callControlId }, '[deepgram] Parse error');
       }
     });
 
     ws.on('error', (err: Error) => {
-      logger.error(
-        { err, callId: session.callControlId },
-        `[deepgram] Error for call: ${err.message}`,
-      );
+      writeDebugLog(`[deepgram] WebSocket error for call ${session.callControlId}`, err);
+      logger.error({ err, callId: session.callControlId }, `[deepgram] Error: ${err.message}`);
+
       if (process.env.SENTRY_DSN) {
         Sentry.captureException(err, {
-          tags: { service: 'deepgram-bridge' },
+          tags: { service: 'deepgram-bridge', event: 'websocket-error' },
           extra: { callId: session.callControlId },
         });
       }
-      onEvent?.({ type: 'Error', message: err.message });
+
+      session.deepgramWs = null;
+      session.deepgramReady = null;
       reject(err);
     });
 
-    ws.on('close', () => {
-      logger.info({ callId: session.callControlId }, '[deepgram] Disconnected for call');
+    ws.on('close', (code: number, reason: Buffer) => {
+      writeDebugLog(
+        `[deepgram] WebSocket closed for call ${session.callControlId}: code=${code} reason=${reason.toString()}`,
+      );
+      logger.info(
+        { callId: session.callControlId, code, reason: reason.toString() },
+        '[deepgram] Connection closed',
+      );
       session.deepgramWs = null;
       session.deepgramReady = null;
     });
@@ -188,9 +192,17 @@ export const DEEPGRAM_AUDIO_BUFFER_MAX = 400;
 export function sendAudioToDeepgram(session: CallSession, audioPayload: string): void {
   const audioBuffer = Buffer.from(audioPayload, 'base64');
 
+  // Déclencher la connexion Deepgram si pas encore initiée
+  if (!session.deepgramWs && !session.deepgramReady) {
+    connectDeepgramFlux(session).catch((err) => {
+      logger.error(
+        { err, callId: session.callControlId },
+        '[deepgram] Connection failed in sendAudioToDeepgram',
+      );
+    });
+  }
+
   const isOpen = session.deepgramWs && session.deepgramWs.readyState === WebSocket.OPEN;
-  // (uncomment if log is too verbose, but for now we want full diagnostics)
-  // writeDebugLog(`[deepgram] sendAudioToDeepgram: buffer_len=${audioBuffer.length} ws_open=${isOpen}`);
 
   if (isOpen) {
     session.deepgramWs!.send(audioBuffer);
