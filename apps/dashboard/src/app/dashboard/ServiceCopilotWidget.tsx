@@ -52,10 +52,19 @@ function formatMetric(rec: ServiceCopilotRecommendation): string | null {
   }
   if (rec.kind === 'table-soon-free' && rec.metrics?.estimatedFreeAt) {
     const d = new Date(rec.metrics.estimatedFreeAt);
-    return `libération estimée ${d.toLocaleTimeString('fr-FR', {
+    const time = d.toLocaleTimeString('fr-FR', {
       hour: '2-digit',
       minute: '2-digit',
-    })}`;
+    });
+    if (rec.metrics.predictionSource === 'scheduled')
+      return `libération estimée ${time} · durée configurée`;
+    return `libération estimée ${time} · confiance ${
+      rec.metrics.predictionConfidence === 'high'
+        ? 'élevée'
+        : rec.metrics.predictionConfidence === 'medium'
+          ? 'moyenne'
+          : 'faible'
+    }`;
   }
   if (rec.kind === 'waiting-list-compatible') {
     return `${rec.metrics?.covers ?? 0} couverts`;

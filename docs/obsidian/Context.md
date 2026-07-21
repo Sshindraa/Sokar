@@ -2,6 +2,8 @@
 
 ## Dernière activité
 
+2026-07-21 20:25 — [api, dashboard] **Service Copilot : prévision de libération en shadow mode** — `ServiceTurnPredictionService` dérive les durées réelles depuis les événements append-only `reservation_seated` → `reservation_honored` sur 90 jours (lecture bornée à 5 000 événements). Le Copilot privilégie la médiane par table et taille de groupe (≥ 6 services), sinon celle du restaurant (≥ 12), puis conserve explicitement la durée configurée si l’historique est insuffisant. Les recommandations indiquent source, échantillon et confiance ; aucune action n’est automatisée ni aucune migration nécessaire. Tests Copilot 12/12, typecheck API/dashboard et lint dashboard verts.
+
 2026-07-21 20:05 — [dashboard, e2e] **Service Copilot : démo E2E déterministe** — Le test Playwright du plan de salle simule désormais, sans API ni données staging, les trois réponses du Copilot : table disponible (et absence de refus contradictoire), section Terrasse pleine avec bascule vers Salle, et restaurant complet avec prochain créneau. Le sélecteur de section est exercé. Les 12 E2E (iPhone, iPad, desktop), typecheck et lint dashboard sont verts.
 
 2026-07-21 19:42 — [api] **Service Copilot : refus uniquement en fallback** — Une simulation faisable affichait aussi le scénario contradictoire « Aucune table disponible ». `ServiceCopilotSimulationService` ne recherche et ne retourne désormais le prochain créneau / refus que si aucun placement direct ou changement de section n’est possible. Tests floor-plan ciblés 43/43 et typecheck API verts ; en attente de CI/staging.

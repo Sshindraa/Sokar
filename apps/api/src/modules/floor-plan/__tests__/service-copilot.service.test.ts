@@ -182,6 +182,56 @@ describe('ServiceCopilotService', () => {
       expect(recs[0].kind).toBe('table-soon-free');
       expect(recs[0].title).toContain('T2');
     });
+
+    it('explique quand la prévision utilise l’historique de la table', async () => {
+      const now = new Date('2026-07-17T18:00:00.000Z');
+      const seatedAt = new Date(now.getTime() - 75 * 60_000);
+      const reservation = makeReservation({
+        id: 'res-historical',
+        state: 'SEATED',
+        startsAt: seatedAt,
+        table: { name: 'T6' },
+      });
+      const historical = Array.from({ length: 6 }, (_, index) => {
+        const start = new Date('2026-07-15T17:00:00.000Z');
+        return [
+          {
+            reservationId: `historical-${index}`,
+            event: 'reservation_seated',
+            createdAt: start,
+            reservation: { tableId: 'table-1', partySize: 2 },
+          },
+          {
+            reservationId: `historical-${index}`,
+            event: 'reservation_honored',
+            createdAt: new Date(start.getTime() + 90 * 60_000),
+            reservation: { tableId: 'table-1', partySize: 2 },
+          },
+        ];
+      }).flat();
+
+      mocks.reservation.findMany.mockImplementation(async (args: any) => {
+        if (args.where.state === 'SEATED') return [reservation];
+        return [];
+      });
+      mocks.reservationAuditLog.findMany.mockImplementation(async (args: any) => {
+        if (args.where.event === 'reservation_seated') {
+          return [{ reservationId: 'res-historical', createdAt: seatedAt }];
+        }
+        return historical;
+      });
+      mocks.waitingListEntry.findMany.mockResolvedValue([]);
+
+      const recs = await svc.getRecommendations('rest-1', now);
+
+      expect(recs[0].reason).toContain("d'après 6 services comparables");
+      expect(recs[0].metrics).toMatchObject({
+        estimatedDurationMinutes: 90,
+        predictionConfidence: 'medium',
+        predictionSource: 'historical-table',
+        predictionSampleSize: 6,
+      });
+    });
   });
 
   describe('waiting-list-compatible', () => {

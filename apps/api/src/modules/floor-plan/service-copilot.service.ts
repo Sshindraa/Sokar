@@ -2,6 +2,10 @@ import { randomUUID } from 'node:crypto';
 import type { PrismaClient, Reservation, WaitingListEntry } from '@prisma/client';
 import { TableAllocationService } from './table-allocation.service';
 import { resolveServiceDurationMinutes } from './floor-plan.types';
+import {
+  ServiceTurnPredictionService,
+  type TurnPrediction,
+} from './service-turn-prediction.service';
 
 export interface ServiceCopilotRecommendation {
   id: string;
@@ -25,6 +29,10 @@ export interface ServiceCopilotRecommendation {
     covers?: number;
     tableName?: string;
     customerName?: string;
+    estimatedDurationMinutes?: number;
+    predictionConfidence?: 'high' | 'medium' | 'low';
+    predictionSource?: 'historical-table' | 'historical-restaurant' | 'scheduled';
+    predictionSampleSize?: number;
   };
 }
 
@@ -124,6 +132,18 @@ export class ServiceCopilotService {
     ]);
 
     const seatedAtByReservation = await this.buildSeatedAtMap(seatedReservations.map((r) => r.id));
+    const turnPredictions = await new ServiceTurnPredictionService(
+      this.prisma,
+    ).predictForReservations({
+      restaurantId,
+      scheduledDurationMinutes: serviceDurationMinutes,
+      now,
+      targets: seatedReservations.map((reservation) => ({
+        reservationId: reservation.id,
+        tableId: reservation.tableId,
+        partySize: reservation.partySize,
+      })),
+    });
 
     const recommendations: ServiceCopilotRecommendation[] = [];
     const seen = new Set<string>();
@@ -137,10 +157,18 @@ export class ServiceCopilotService {
       // TODO(id:seated-audit-log): idéalement on lit l'audit log ; en attendant,
       // on utilise startsAt comme approximation si seatedAt n'est pas connu.
       const seatedAt = seatedAtByReservation.get(reservation.id) ?? reservation.startsAt ?? now;
+      const prediction = turnPredictions.get(reservation.id);
       const rec = this.buildTableSoonFreeRecommendation(
         reservation,
         seatedAt,
-        serviceDurationMinutes,
+        prediction ?? {
+          durationMinutes: serviceDurationMinutes,
+          lowerBoundMinutes: serviceDurationMinutes,
+          upperBoundMinutes: serviceDurationMinutes,
+          confidence: 'low',
+          source: 'scheduled',
+          sampleSize: 0,
+        },
         now,
         soonFreeMax,
         timeZone,
@@ -281,12 +309,12 @@ export class ServiceCopilotService {
   private buildTableSoonFreeRecommendation(
     reservation: ReservationWithTable,
     seatedAt: Date,
-    serviceDurationMinutes: number,
+    prediction: TurnPrediction,
     now: Date,
     soonFreeMax: Date,
     timeZone: string,
   ): ServiceCopilotRecommendation | null {
-    const estimatedFreeAt = new Date(seatedAt.getTime() + serviceDurationMinutes * 60_000);
+    const estimatedFreeAt = new Date(seatedAt.getTime() + prediction.durationMinutes * 60_000);
     if (
       estimatedFreeAt.getTime() <= now.getTime() ||
       estimatedFreeAt.getTime() > soonFreeMax.getTime()
@@ -300,7 +328,10 @@ export class ServiceCopilotService {
       kind: 'table-soon-free',
       priority: 'medium',
       title: `Table ${tableName} devrait se libérer vers ${formatTime(estimatedFreeAt, timeZone)} — prévenir ${reservation.customerName} (file d'attente)`,
-      reason: `Le service a commencé vers ${formatTime(seatedAt, timeZone)} ; libération estimée à ${formatTime(estimatedFreeAt, timeZone)}.`,
+      reason:
+        prediction.source === 'scheduled'
+          ? `Le service a commencé vers ${formatTime(seatedAt, timeZone)} ; libération estimée à ${formatTime(estimatedFreeAt, timeZone)} selon la durée configurée.`
+          : `Le service a commencé vers ${formatTime(seatedAt, timeZone)} ; libération estimée à ${formatTime(estimatedFreeAt, timeZone)} d'après ${prediction.sampleSize} services comparables.`,
       action: {
         type: 'link',
         label: 'Voir le plan',
@@ -313,6 +344,10 @@ export class ServiceCopilotService {
         covers: reservation.partySize,
         tableName,
         customerName: reservation.customerName,
+        estimatedDurationMinutes: prediction.durationMinutes,
+        predictionConfidence: prediction.confidence,
+        predictionSource: prediction.source,
+        predictionSampleSize: prediction.sampleSize,
       },
     };
   }

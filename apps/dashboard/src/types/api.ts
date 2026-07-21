@@ -306,6 +306,10 @@ export interface ServiceCopilotRecommendation {
     covers?: number;
     tableName?: string;
     customerName?: string;
+    estimatedDurationMinutes?: number;
+    predictionConfidence?: 'high' | 'medium' | 'low';
+    predictionSource?: 'historical-table' | 'historical-restaurant' | 'scheduled';
+    predictionSampleSize?: number;
   };
 }
 
