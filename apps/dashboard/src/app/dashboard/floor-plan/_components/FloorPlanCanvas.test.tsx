@@ -6,8 +6,9 @@ import {
   getSafeTableDimensions,
   StatsPanel,
   TABLE_LAYOUT,
+  WaitingListPanel,
 } from './FloorPlanCanvas';
-import type { FloorPlan, FloorPlanWall, PlanningReservation } from '@/types/api';
+import type { FloorPlan, FloorPlanWall, PlanningReservation, WaitingListEntry } from '@/types/api';
 
 const apiMocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -60,6 +61,20 @@ const floorPlan: FloorPlan = {
     },
   ],
   walls: [activeWall, referenceWall],
+};
+
+const waitingListEntry: WaitingListEntry = {
+  id: 'waiting-list-1',
+  partySize: 4,
+  customerFirstName: 'Alice',
+  customerLastName: 'Martin',
+  customerPhone: '+33612345678',
+  slotStart: '2025-06-10T19:30:00.000Z',
+  slotEnd: '2025-06-10T21:00:00.000Z',
+  preferredSectionName: 'Terrasse',
+  status: 'PENDING',
+  position: 1,
+  createdAt: '2025-06-10T18:00:00.000Z',
 };
 
 vi.mock('@/lib/api', () => ({
@@ -439,6 +454,51 @@ describe('FloorPlanCanvas — guides des murs', () => {
         expect.stringContaining('restaurants/org_test/floor-plan/walls/wall-active'),
       );
     });
+  });
+});
+
+describe("FloorPlanCanvas — liste d'attente Live service", () => {
+  it('charge les entrées PENDING, les affiche dans Live service et les promeut', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return [];
+      if (path.includes('/waiting-list')) return [waitingListEntry];
+      return floorPlan;
+    });
+    apiMocks.post.mockResolvedValue({ id: 'reservation-from-waiting-list' });
+
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: "Liste d'attente" }));
+
+    expect(await screen.findByText('Alice Martin')).toBeInTheDocument();
+    expect(screen.getByText('Terrasse')).toBeInTheDocument();
+    expect(screen.getByText('4 couverts')).toBeInTheDocument();
+    expect(apiMocks.get).toHaveBeenCalledWith(
+      expect.stringMatching(/restaurants\/org_test\/waiting-list\?date=.*&status=PENDING/),
+      expect.any(Object),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Proposer une table' }));
+
+    await waitFor(() => {
+      expect(apiMocks.post).toHaveBeenCalledWith(
+        'restaurants/org_test/waiting-list/waiting-list-1/promote',
+      );
+    });
+  });
+
+  it('affiche le refus de promotion dans la carte concernée', () => {
+    render(
+      <WaitingListPanel
+        entries={[waitingListEntry]}
+        isLoading={false}
+        promotingEntryId={null}
+        entryErrors={{ 'waiting-list-1': 'Aucune table compatible' }}
+        onPromote={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Aucune table compatible')).toBeInTheDocument();
   });
 });
 

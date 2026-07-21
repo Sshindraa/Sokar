@@ -2,6 +2,8 @@
 
 ## Dernière activité
 
+2026-07-21 14:15 — [dashboard] **Floor-plan : liste d’attente dans Live service** — Le cockpit expose désormais `Plan | Liste d’attente | Statistiques`. Le polling 10 s récupère en parallèle les réservations et les seules entrées `PENDING` à la date du service ; une panne de file n’empêche pas le plan de se rafraîchir. Chaque carte affiche position, client, couverts, créneau et préférence de section ; « Proposer une table » appelle la promotion autoritaire côté API puis re-fetch le cockpit. Aucune migration ni route nouvelle. Tests canvas 21/21, typecheck, lint et build dashboard verts.
+
 2026-07-21 13:43 — [dashboard, ci] **E2E floor-plan autonome** — La CI injecte les flags démo baked `NEXT_PUBLIC_DEMO_RESTAURANT_ID=e2e-demo-restaurant` et `NEXT_PUBLIC_DEMO_STAGING=true`, évitant le redirect Clerk en build de production. `floor-plan.spec.ts` intercepte les réponses `/api/proxy` nécessaires (liste, plan, réservations) : aucun Fastify n’est requis pour ce scénario. Reproduction CI locale : build standalone + E2E 12/12, dashboard 103/103, lint et typecheck monorepo 12/12 verts.
 
 2026-07-21 13:05 — [api, dashboard] **Floor-plan : fallback de section + raccourcis d’édition** — `TableAllocationService` retombe sur les tables du plan par défaut quand la section préférée n’offre aucune table compatible ; la section reste prioritaire. En édition, Delete confirme la suppression des tables sélectionnées, Backspace supprime le mur sélectionné, et les flèches déplacent les tables sélectionnées de 1 px (10 px avec Shift), avec bornes canvas et historique undo/redo. Tests ciblés API 55/55, dashboard 103/103, lint API/dashboard et typecheck monorepo 12/12 verts.
@@ -52,6 +54,7 @@
 
 ## Décisions récentes
 
+- **2026-07-21** — Floor-plan : la liste d’attente est une vue Live service dédiée et ne permet pas de forcer une table depuis le client. La promotion utilise exclusivement l’allocation transactionnelle existante côté API ; le drag-and-drop vers une table est différé.
 - **2026-07-21** — Floor-plan : l’allocation expose d’abord trois propositions explicables et read-only ; undo/redo reste volontairement borné à la géométrie réversible du canvas (50 actions locales, pas de création/suppression). La machine à états de service complète reste différée aux retours de pilotes.
 - **2026-06-24** — Sokar Connect v1.1 validée par Hamza (8 corrections v1→v1.1 intégrées : static export→standalone, suppression basePath, VPS+Caddy+Cloudflare proxy, gating corrigé, source de vérité unique, seed local/staging, audit log métier only, CORS durci). Spec : [[Sokar Connect P0]]
 - **2026-06-24** — Phase 0 Sokar Connect lancée : ordre T1→T2+T3→T4 avec STOP revue entre chaque. T1 (`migrate deploy`) **fait le 2026-06-24** (backfill Chez Sokar → Lyon/69001/FR), T2-T10 (API publique, JSON-LD, app connect, pages, analytics, sécurité) écrits et testés (38/38 tests verts). Reste : T4 app en prod + P1 pilote fermé (cf. [[Sokar Connect P0]]).
