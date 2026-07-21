@@ -16,18 +16,22 @@ export const highPriorityWebhookJobOptions: JobsOptions = {
   removeOnComplete: 2000,
 };
 
+export function sanitizeJobId(id: string): string {
+  return id.replaceAll(':', '_');
+}
+
 export function buildTelnyxWebhookJobId(eventType: string, callControlId: string): string {
-  return `telnyx:${eventType}:${callControlId}`;
+  return sanitizeJobId(`telnyx_${eventType}_${callControlId}`);
 }
 
 export function buildSmsJobId(kind: string, restaurantId: string, dedupeKey: string): string {
-  return `sms:${kind}:${restaurantId}:${dedupeKey}`;
+  return sanitizeJobId(`sms_${kind}_${restaurantId}_${dedupeKey}`);
 }
 
 export function buildDailyReportJobId(restaurantId: string, dayKey: string): string {
-  return `daily-report:${restaurantId}:${dayKey}`;
+  return sanitizeJobId(`daily-report_${restaurantId}_${dayKey}`);
 }
 
 export function buildReconciliationJobId(kind: string, dayKey: string): string {
-  return `reconciliation:${kind}:${dayKey}`;
+  return sanitizeJobId(`reconciliation_${kind}_${dayKey}`);
 }

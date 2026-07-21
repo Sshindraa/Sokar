@@ -23,12 +23,12 @@ describe('BullMQ reliable job options', () => {
     expect(highPriorityWebhookJobOptions.removeOnFail).toBe(false);
   });
 
-  it('builds deterministic idempotency keys for side-effecting jobs', () => {
-    expect(buildTelnyxWebhookJobId('answer', 'call-123')).toBe('telnyx:answer:call-123');
+  it('builds deterministic idempotency keys for side-effecting jobs and sanitizes colons', () => {
+    expect(buildTelnyxWebhookJobId('answer', 'v3:call-123')).toBe('telnyx_answer_v3_call-123');
     expect(buildSmsJobId('vip-alert', 'resto-1', 'call-leg-1')).toBe(
-      'sms:vip-alert:resto-1:call-leg-1',
+      'sms_vip-alert_resto-1_call-leg-1',
     );
-    expect(buildDailyReportJobId('resto-1', '2026-06-20')).toBe('daily-report:resto-1:2026-06-20');
-    expect(buildReconciliationJobId('calls', '2026-06-20')).toBe('reconciliation:calls:2026-06-20');
+    expect(buildDailyReportJobId('resto-1', '2026-06-20')).toBe('daily-report_resto-1_2026-06-20');
+    expect(buildReconciliationJobId('calls', '2026-06-20')).toBe('reconciliation_calls_2026-06-20');
   });
 });

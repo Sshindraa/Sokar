@@ -2,6 +2,7 @@ import { Worker, type Job } from 'bullmq';
 import { logger } from '../../logger/pino';
 import { captureException } from '../../sentry/client';
 import { queues } from '../queues';
+import { sanitizeJobId } from '../job-options';
 
 interface JobLogData {
   readonly restaurantId?: string;
@@ -61,7 +62,7 @@ async function moveFailedJobToDeadLetter(worker: Worker, job: Job, err: Error): 
       failedAt: new Date().toISOString(),
     },
     {
-      jobId: `dead:${worker.name}:${job.id ?? job.name}:${job.attemptsMade}`,
+      jobId: sanitizeJobId(`dead_${worker.name}_${job.id ?? job.name}_${job.attemptsMade}`),
       removeOnComplete: 5000,
       removeOnFail: false,
     },

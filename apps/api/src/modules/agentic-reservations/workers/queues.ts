@@ -6,7 +6,7 @@
 
 import { Queue } from 'bullmq';
 import { redisQueue } from '../../../shared/redis/client';
-import { defaultReliableJobOptions } from '../../../shared/queue/job-options';
+import { defaultReliableJobOptions, sanitizeJobId } from '../../../shared/queue/job-options';
 import { AGENTIC_QUEUE_REMOVE_ON_COMPLETE } from '../../../shared/queue/constants.js';
 import { queues } from '../../../shared/queue/queues';
 
@@ -45,7 +45,7 @@ export async function scheduleHoldExpiration(args: {
     { holdId: args.holdId },
     {
       delay,
-      jobId: `hold:${args.holdId}`,
+      jobId: sanitizeJobId(`hold_${args.holdId}`),
       removeOnComplete: AGENTIC_QUEUE_REMOVE_ON_COMPLETE,
       removeOnFail: AGENTIC_QUEUE_REMOVE_ON_COMPLETE,
     },
@@ -62,7 +62,7 @@ export async function scheduleQuoteExpiration(args: {
     { quoteId: args.quoteId },
     {
       delay,
-      jobId: `quote:${args.quoteId}`,
+      jobId: sanitizeJobId(`quote_${args.quoteId}`),
       removeOnComplete: AGENTIC_QUEUE_REMOVE_ON_COMPLETE,
       removeOnFail: AGENTIC_QUEUE_REMOVE_ON_COMPLETE,
     },
@@ -77,7 +77,7 @@ export async function scheduleAgenticNotification(args: {
 }): Promise<void> {
   await agenticNotifyQueue.add('notify', args, {
     delay: args.delayMs ?? 0,
-    jobId: `notify:${args.reservationId}:${args.reason}:${args.channel}`,
+    jobId: sanitizeJobId(`notify_${args.reservationId}_${args.reason}_${args.channel}`),
     removeOnComplete: 1000,
     removeOnFail: 1000,
   });
@@ -93,7 +93,7 @@ export async function scheduleWaitingListExpiration(args: {
     { entryId: args.entryId },
     {
       delay,
-      jobId: `waiting-list:${args.entryId}`,
+      jobId: sanitizeJobId(`waiting-list_${args.entryId}`),
       removeOnComplete: AGENTIC_QUEUE_REMOVE_ON_COMPLETE,
       removeOnFail: AGENTIC_QUEUE_REMOVE_ON_COMPLETE,
     },
@@ -106,7 +106,7 @@ export async function scheduleWaitingListPromotionNotification(args: {
 }): Promise<void> {
   const channels: Array<'sms' | 'email'> = ['sms', 'email'];
   for (const channel of channels) {
-    const jobId = `waiting-list-promote:${args.entryId}:${channel}`;
+    const jobId = sanitizeJobId(`waiting-list-promote_${args.entryId}_${channel}`);
     await queues.waitingListPromote.add(
       'notify',
       { entryId: args.entryId, reservationId: args.reservationId, channel },

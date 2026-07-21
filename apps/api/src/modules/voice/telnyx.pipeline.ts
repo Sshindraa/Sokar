@@ -6,12 +6,16 @@ import { buildSystemPrompt, type OpeningHours } from './prompts';
 import { detectOutcome, hadReservationIntent } from './outcome';
 import { CallSessionManager } from './stream/manager';
 import { VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
-import { buildSmsJobId, buildTelnyxWebhookJobId } from '../../shared/queue/job-options';
+import {
+  buildSmsJobId,
+  buildTelnyxWebhookJobId,
+  sanitizeJobId,
+} from '../../shared/queue/job-options';
 import { isVoicePipelineEnabled } from '../../shared/configcat';
 import { MS_TO_SECONDS } from '../../shared/constants/time.js';
 
 function buildRecoveryJobId(callLegId: string): string {
-  return `recovery:${callLegId}`;
+  return sanitizeJobId(`recovery_${callLegId}`);
 }
 
 interface TelnyxCallPayload {

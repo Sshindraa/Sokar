@@ -10,6 +10,9 @@ import {
   type FloorPlanWall,
   type PlanningReservation,
   type ServiceCopilotDelayImpact,
+  type ServiceCopilotDelayRecoveryHistoryItem,
+  type ServiceCopilotDelayRecoveryHistoryResponse,
+  type ServiceCopilotPulse,
   type ServiceCommunicationDraft,
   type ServiceCommunicationDraftsResponse,
   type TableShape,
@@ -126,6 +129,13 @@ const WALL_PERPENDICULAR_DOT_TOLERANCE = 0.08;
 
 type WaitingListApiEntry = WaitingListEntry & {
   preferredSection?: { name: string } | null;
+};
+
+type DelayRecoveryApiResult = {
+  delayedReservationId: string;
+  promotedReservationId: string;
+  operationId: string;
+  idempotent?: boolean;
 };
 
 function mapWaitingListEntries(data: unknown[]): WaitingListEntry[] {
@@ -461,6 +471,7 @@ function findNextPosition(
 type ChairPosition = {
   left: number;
   top: number;
+  rotation?: number;
 };
 
 type ChairLayoutInput = {
@@ -492,9 +503,11 @@ export function getChairPositions({
     const radiusY = height / 2 + chairClearance;
     for (let i = 0; i < chairCount; i++) {
       const angle = (i / chairCount) * 2 * Math.PI - Math.PI / 2;
+      const rotation = ((angle + Math.PI / 2) * 180) / Math.PI;
       chairs.push({
         left: centerX + radiusX * Math.cos(angle) - halfChairSize,
         top: centerY + radiusY * Math.sin(angle) - halfChairSize,
+        rotation,
       });
     }
     return chairs;
@@ -562,21 +575,25 @@ export function getChairPositions({
         chairs.push({
           left: position - halfChairSize - borderWidth,
           top: -(chairSize + chairGap + borderWidth),
+          rotation: 0,
         });
       } else if (side === 'bottom') {
         chairs.push({
           left: position - halfChairSize - borderWidth,
           top: height - borderWidth + chairGap,
+          rotation: 180,
         });
       } else if (side === 'left') {
         chairs.push({
           left: -(chairSize + chairGap + borderWidth),
           top: position - halfChairSize - borderWidth,
+          rotation: 270,
         });
       } else {
         chairs.push({
           left: width - borderWidth + chairGap,
           top: position - halfChairSize - borderWidth,
+          rotation: 90,
         });
       }
     }
@@ -590,6 +607,82 @@ export function getChairPositions({
   return chairs;
 }
 
+export function FloorPlanArmchairIcon({
+  className,
+  style,
+}: {
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={cn(
+        'w-full h-full select-none text-foreground/80 dark:text-foreground/90',
+        className,
+      )}
+      style={style}
+    >
+      {/* Backrest & Armrest Outer Shell */}
+      <path
+        d="M 12 88 C 12 40, 22 10, 50 10 C 78 10, 88 40, 88 88 Q 50 92, 12 88 Z"
+        className="fill-background stroke-current"
+        strokeWidth="7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Inner Seat Cushion Contour */}
+      <path
+        d="M 22 88 C 22 48, 30 26, 50 26 C 70 26, 78 48, 78 88 Z"
+        className="fill-muted/60 stroke-current"
+        strokeWidth="6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Backrest Seam Lines */}
+      <line
+        x1="33"
+        y1="32"
+        x2="22"
+        y2="19"
+        className="stroke-current"
+        strokeWidth="6"
+        strokeLinecap="round"
+      />
+      <line
+        x1="67"
+        y1="32"
+        x2="78"
+        y2="19"
+        className="stroke-current"
+        strokeWidth="6"
+        strokeLinecap="round"
+      />
+      {/* Armrest Outer Side Ticks */}
+      <line
+        x1="8"
+        y1="76"
+        x2="14"
+        y2="76"
+        className="stroke-current"
+        strokeWidth="6"
+        strokeLinecap="round"
+      />
+      <line
+        x1="86"
+        y1="76"
+        x2="92"
+        y2="76"
+        className="stroke-current"
+        strokeWidth="6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function renderChairs(table: CanvasTable): React.ReactNode[] {
   const { width, height } = getTableSize(table);
   const chairs = getChairPositions({
@@ -598,15 +691,25 @@ function renderChairs(table: CanvasTable): React.ReactNode[] {
     capacity: table.capacity,
     shape: table.shape,
   });
-  const chairClassName = 'absolute rounded-full border-2 border-background bg-muted-foreground/80';
   const baseStyle: React.CSSProperties = {
     width: TABLE_LAYOUT.chairSize,
     height: TABLE_LAYOUT.chairSize,
     boxSizing: 'border-box',
   };
 
-  return chairs.map(({ left, top }, index) => (
-    <div key={`chair-${index}`} className={chairClassName} style={{ ...baseStyle, left, top }} />
+  return chairs.map(({ left, top, rotation = 0 }, index) => (
+    <div
+      key={`chair-${index}`}
+      className="absolute pointer-events-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.15)] transition-transform duration-200"
+      style={{
+        ...baseStyle,
+        left,
+        top,
+        transform: `rotate(${rotation}deg)`,
+      }}
+    >
+      <FloorPlanArmchairIcon />
+    </div>
   ));
 }
 
@@ -1609,14 +1712,25 @@ export function FloorPlanCanvas({
   const [delayRecoveryConfirmOpen, setDelayRecoveryConfirmOpen] = useState(false);
   const [applyingDelayRecovery, setApplyingDelayRecovery] = useState(false);
   const applyingDelayRecoveryRef = useRef(false);
+  const [delayRecoveryRevertConfirmOpen, setDelayRecoveryRevertConfirmOpen] = useState(false);
+  const [revertingDelayRecovery, setRevertingDelayRecovery] = useState(false);
+  const revertingDelayRecoveryRef = useRef(false);
   const [reportedDelayBannerDismissed, setReportedDelayBannerDismissed] = useState(false);
   const [delayRecoveryApplied, setDelayRecoveryApplied] = useState(false);
+  const [delayRecoveryReverted, setDelayRecoveryReverted] = useState(false);
+  const [delayRecoveries, setDelayRecoveries] = useState<ServiceCopilotDelayRecoveryHistoryItem[]>(
+    [],
+  );
+  const [servicePulse, setServicePulse] = useState<ServiceCopilotPulse | null>(null);
   const [delayRecoveryIdempotencyKey, setDelayRecoveryIdempotencyKey] = useState<string | null>(
     null,
   );
   const [waitingListAcceptanceConfirmed, setWaitingListAcceptanceConfirmed] = useState(false);
   const [reportedDelayLookupError, setReportedDelayLookupError] = useState('');
   const [appliedDelayRecovery, setAppliedDelayRecovery] = useState<{
+    delayedReservationId: string;
+    promotedReservationId: string;
+    operationId: string;
     delayedCustomerName: string;
     delayedOriginalTableName: string;
     delayedAlternativeTableName: string;
@@ -1763,18 +1877,27 @@ export function FloorPlanCanvas({
           ? `date=${liveDate}&floorPlanId=${floorPlanId}`
           : `date=${liveDate}`;
         setWaitingListLoading(true);
-        const [reservationsResult, waitingListResult] = await Promise.allSettled([
-          getRef.current<PlanningReservation[]>(
-            `restaurants/${orgId}/floor-plan/reservations?${query}`,
-            {
-              signal: controller.signal,
-            },
-          ),
-          getRef.current<unknown[]>(
-            `restaurants/${orgId}/waiting-list?date=${liveDate}&status=PENDING`,
-            { signal: controller.signal },
-          ),
-        ]);
+        const [reservationsResult, waitingListResult, delayRecoveriesResult, pulseResult] =
+          await Promise.allSettled([
+            getRef.current<PlanningReservation[]>(
+              `restaurants/${orgId}/floor-plan/reservations?${query}`,
+              {
+                signal: controller.signal,
+              },
+            ),
+            getRef.current<unknown[]>(
+              `restaurants/${orgId}/waiting-list?date=${liveDate}&status=PENDING`,
+              { signal: controller.signal },
+            ),
+            getRef.current<ServiceCopilotDelayRecoveryHistoryResponse>(
+              `restaurants/${orgId}/service-copilot/delay-recoveries?date=${liveDate}&limit=10`,
+              { signal: controller.signal },
+            ),
+            getRef.current<ServiceCopilotPulse>(
+              `restaurants/${orgId}/service-copilot/pulse?date=${liveDate}`,
+              { signal: controller.signal },
+            ),
+          ]);
         if (pollAbortRef.current !== controller) return;
         if (liveDateRef.current !== liveDate) return;
         if (reservationsResult.status === 'rejected') throw reservationsResult.reason;
@@ -1789,6 +1912,27 @@ export function FloorPlanCanvas({
           setError(
             getErrorMessage(waitingListResult.reason, "Impossible de charger la liste d'attente"),
           );
+        }
+        if (delayRecoveriesResult.status === 'fulfilled') {
+          setDelayRecoveries(
+            Array.isArray(delayRecoveriesResult.value.recoveries)
+              ? delayRecoveriesResult.value.recoveries
+              : [],
+          );
+        } else {
+          setError(
+            getErrorMessage(
+              delayRecoveriesResult.reason,
+              'Impossible de charger l’historique des plans',
+            ),
+          );
+        }
+        if (pulseResult.status === 'fulfilled') {
+          setServicePulse(pulseResult.value);
+        } else {
+          // Le plan et les actions restent utilisables si le résumé secondaire
+          // est temporairement indisponible.
+          setServicePulse(null);
         }
         setLastUpdatedAt(Date.now());
         setLoadedLiveDate(liveDate);
@@ -1919,7 +2063,9 @@ export function FloorPlanCanvas({
       setCommunicationDrafts([]);
       setWaitingListAcceptanceConfirmed(false);
       setDelayRecoveryApplied(false);
+      setDelayRecoveryReverted(false);
       setAppliedDelayRecovery(null);
+      lastInitialDelayImpactRef.current = { reservationId, delayMinutes };
       setDelayRecoveryIdempotencyKey(crypto.randomUUID());
       setDelayImpactReservationId(reservationId);
       try {
@@ -1986,6 +2132,7 @@ export function FloorPlanCanvas({
     setDelayMinutes(initialDelayImpact.delayMinutes);
     setReportedDelayBannerDismissed(false);
     setDelayRecoveryApplied(false);
+    setDelayRecoveryReverted(false);
     setAppliedDelayRecovery(null);
     setWaitingListAcceptanceConfirmed(false);
     setCommunicationDrafts([]);
@@ -2024,16 +2171,22 @@ export function FloorPlanCanvas({
     applyingDelayRecoveryRef.current = true;
     setApplyingDelayRecovery(true);
     try {
-      await postRef.current(`restaurants/${orgId}/service-copilot/delay-impact/apply`, {
-        reservationId: delayImpactReservationId,
-        delayMinutes: delayImpact.delayMinutes,
-        alternativeTableId: delayImpact.alternativeTable.id,
-        waitingListEntryId: delayImpact.waitingListEntry.id,
-        waitingListAcceptanceConfirmed,
-        delayReportId: initialDelayImpact?.delayReportId,
-        idempotencyKey: delayRecoveryIdempotencyKey ?? crypto.randomUUID(),
-      });
+      const result = await postRef.current<DelayRecoveryApiResult>(
+        `restaurants/${orgId}/service-copilot/delay-impact/apply`,
+        {
+          reservationId: delayImpactReservationId,
+          delayMinutes: delayImpact.delayMinutes,
+          alternativeTableId: delayImpact.alternativeTable.id,
+          waitingListEntryId: delayImpact.waitingListEntry.id,
+          waitingListAcceptanceConfirmed,
+          delayReportId: initialDelayImpact?.delayReportId,
+          idempotencyKey: delayRecoveryIdempotencyKey ?? crypto.randomUUID(),
+        },
+      );
       setAppliedDelayRecovery({
+        delayedReservationId: result.delayedReservationId,
+        promotedReservationId: result.promotedReservationId,
+        operationId: result.operationId,
         delayedCustomerName: delayImpact.delayedReservation?.customerName || 'Client',
         delayedOriginalTableName:
           delayImpact.delayedReservation?.originalTableName || 'Table initiale',
@@ -2045,6 +2198,7 @@ export function FloorPlanCanvas({
       setDelayImpact(null);
       setCommunicationDrafts([]);
       setDelayRecoveryApplied(true);
+      setDelayRecoveryReverted(false);
       onInitialDelayApplied?.();
       await loadReservations({ force: true });
     } catch (err) {
@@ -2064,6 +2218,57 @@ export function FloorPlanCanvas({
     onInitialDelayApplied,
     loadReservations,
   ]);
+
+  const revertDelayRecovery = useCallback(async () => {
+    if (revertingDelayRecoveryRef.current || !orgId || !appliedDelayRecovery) return;
+    revertingDelayRecoveryRef.current = true;
+    setRevertingDelayRecovery(true);
+    try {
+      await postRef.current(`restaurants/${orgId}/service-copilot/delay-impact/revert`, {
+        reservationId: appliedDelayRecovery.delayedReservationId,
+        operationId: appliedDelayRecovery.operationId,
+      });
+      setDelayRecoveryRevertConfirmOpen(false);
+      setDelayRecoveryReverted(true);
+      await loadReservations({ force: true });
+    } catch (err) {
+      setDelayRecoveryRevertConfirmOpen(false);
+      setError(
+        getErrorMessage(
+          err,
+          'Le service a évolué depuis l’application. Corrigez la situation manuellement.',
+        ),
+      );
+    } finally {
+      revertingDelayRecoveryRef.current = false;
+      setRevertingDelayRecovery(false);
+    }
+  }, [orgId, appliedDelayRecovery, loadReservations]);
+
+  const openPersistedRecoveryRevert = useCallback(
+    (recovery: ServiceCopilotDelayRecoveryHistoryItem) => {
+      if (!recovery.revertible) return;
+      lastInitialDelayImpactRef.current = {
+        reservationId: recovery.delayedReservationId,
+        delayMinutes: recovery.delayMinutes,
+      };
+      setAppliedDelayRecovery({
+        delayedReservationId: recovery.delayedReservationId,
+        promotedReservationId: recovery.promotedReservationId,
+        operationId: recovery.operationId,
+        delayedCustomerName: recovery.delayedCustomerName,
+        delayedOriginalTableName: recovery.originalTableName,
+        delayedAlternativeTableName: recovery.alternativeTableName,
+        waitingCustomerName: recovery.waitingCustomerName,
+        waitingTableName: recovery.originalTableName,
+      });
+      setDelayRecoveryApplied(true);
+      setDelayRecoveryReverted(false);
+      setReportedDelayBannerDismissed(false);
+      setDelayRecoveryRevertConfirmOpen(true);
+    },
+    [],
+  );
 
   const loadCommunicationDrafts = useCallback(async () => {
     if (!orgId || !delayImpactReservationId || !delayImpact?.feasible) return;
@@ -4069,6 +4274,24 @@ export function FloorPlanCanvas({
     />
   );
 
+  const delayRecoveryRevertConfirm = (
+    <ConfirmDialog
+      open={delayRecoveryRevertConfirmOpen}
+      onConfirm={() => void revertDelayRecovery()}
+      onCancel={() => setDelayRecoveryRevertConfirmOpen(false)}
+      title="Annuler ce plan ?"
+      description={
+        appliedDelayRecovery
+          ? `${appliedDelayRecovery.delayedCustomerName} retrouvera ${appliedDelayRecovery.delayedOriginalTableName} et son horaire initial. La réservation créée pour ${appliedDelayRecovery.waitingCustomerName} sera annulée et le groupe retournera en liste d’attente. Les communications déjà effectuées ne peuvent pas être annulées.`
+          : 'Sokar restaurera le plan initial seulement si aucune donnée n’a changé depuis son application.'
+      }
+      confirmLabel={revertingDelayRecovery ? 'Annulation…' : 'Annuler ce plan'}
+      cancelLabel="Conserver le plan"
+      pending={revertingDelayRecovery}
+      variant="destructive"
+    />
+  );
+
   const multiDeleteConfirm = (
     <ConfirmDialog
       open={multiDeleteConfirmOpen}
@@ -4967,6 +5190,7 @@ export function FloorPlanCanvas({
         {confirm}
         {settingsDialog}
         {delayRecoveryConfirm}
+        {delayRecoveryRevertConfirm}
       </>
     );
   }
@@ -4986,6 +5210,7 @@ export function FloorPlanCanvas({
         {confirm}
         {settingsDialog}
         {delayRecoveryConfirm}
+        {delayRecoveryRevertConfirm}
       </>
     );
   }
@@ -5221,6 +5446,161 @@ export function FloorPlanCanvas({
           </div>
         ) : null}
 
+        {live && servicePulse ? (
+          <section
+            role="status"
+            aria-label="Pouls du service"
+            className={cn(
+              'flex flex-col gap-2 border-b border-border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between',
+              servicePulse.status === 'urgent'
+                ? 'bg-destructive/[0.06]'
+                : servicePulse.status === 'attention'
+                  ? 'bg-warning/[0.06]'
+                  : 'bg-success/[0.05]',
+            )}
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              {servicePulse.status === 'urgent' ? (
+                <AlertTriangle size={16} className="shrink-0 text-destructive" />
+              ) : servicePulse.status === 'attention' ? (
+                <AlertCircle size={16} className="shrink-0 text-warning" />
+              ) : (
+                <CircleCheck size={16} className="shrink-0 text-success" />
+              )}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      'h-5 text-[10px]',
+                      servicePulse.status === 'urgent'
+                        ? 'border-destructive/30 text-destructive'
+                        : servicePulse.status === 'attention'
+                          ? 'border-warning/30 text-warning'
+                          : 'border-success/30 text-success',
+                    )}
+                  >
+                    {servicePulse.status === 'urgent'
+                      ? 'Urgent'
+                      : servicePulse.status === 'attention'
+                        ? 'À surveiller'
+                        : 'Sous contrôle'}
+                  </Badge>
+                  <p className="text-xs font-semibold text-foreground">{servicePulse.headline}</p>
+                </div>
+                <p className="truncate text-[11px] text-muted-foreground">
+                  {servicePulse.isLiveDate
+                    ? 'Lecture en direct — les actions restent toujours confirmées manuellement.'
+                    : 'Synthèse de la date sélectionnée — aucune action automatique.'}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+              {servicePulse.lateArrivals > 0 ? (
+                <Badge variant="outline" className="border-destructive/30 text-destructive">
+                  {servicePulse.lateArrivals} retard{servicePulse.lateArrivals > 1 ? 's' : ''}
+                </Badge>
+              ) : null}
+              {servicePulse.isLiveDate ? (
+                <Badge variant="outline">{servicePulse.arrivalsToSeat} à installer</Badge>
+              ) : (
+                <Badge variant="outline">
+                  {servicePulse.confirmedReservations} confirmée
+                  {servicePulse.confirmedReservations > 1 ? 's' : ''}
+                </Badge>
+              )}
+              <Badge variant="outline">
+                {servicePulse.seatedTables} table{servicePulse.seatedTables > 1 ? 's' : ''} en
+                service
+              </Badge>
+              <Badge variant="outline">{servicePulse.pendingWaitingList} attente</Badge>
+              {servicePulse.isLiveDate && servicePulse.arrivalsNext30Minutes > 0 ? (
+                <Badge variant="outline">+{servicePulse.arrivalsNext30Minutes} dans 30 min</Badge>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {live && serviceTab === 'plan' && delayRecoveries.length > 0 ? (
+          <section
+            role="region"
+            aria-label="Historique des plans de retard"
+            className="border-b border-border bg-muted/30 px-3 py-2.5"
+          >
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Clock3 size={15} className="text-muted-foreground" />
+                <p className="text-xs font-semibold text-foreground">Plans de retard</p>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Conservés après actualisation · {delayRecoveries.length} opération
+                {delayRecoveries.length > 1 ? 's' : ''}
+              </p>
+            </div>
+            <div className="grid gap-2 lg:grid-cols-2 xl:grid-cols-3">
+              {delayRecoveries.slice(0, 3).map((recovery) => (
+                <div
+                  key={recovery.operationId}
+                  className="flex min-w-0 items-start justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2 transition-all duration-200"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <p className="truncate text-xs font-semibold text-foreground">
+                        {recovery.delayedCustomerName} · +{recovery.delayMinutes} min
+                      </p>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          'h-5 text-[10px]',
+                          recovery.status === 'reverted'
+                            ? 'border-success/30 text-success'
+                            : recovery.status === 'blocked'
+                              ? 'border-warning/30 text-warning'
+                              : 'border-primary/30 text-primary',
+                        )}
+                      >
+                        {recovery.status === 'reverted'
+                          ? 'Annulé'
+                          : recovery.status === 'blocked'
+                            ? 'À vérifier'
+                            : 'Appliqué'}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                      {recovery.delayedCustomerName} : {recovery.originalTableName} →{' '}
+                      {recovery.alternativeTableName} · {recovery.waitingCustomerName} →{' '}
+                      {recovery.originalTableName}
+                    </p>
+                    <p
+                      className={cn(
+                        'mt-1 truncate text-[10px]',
+                        recovery.blockedReason ? 'text-warning' : 'text-muted-foreground',
+                      )}
+                    >
+                      {recovery.blockedReason ??
+                        (recovery.revertedAt
+                          ? `Annulé à ${format(parseISO(recovery.revertedAt), 'HH:mm')}`
+                          : `Appliqué à ${format(parseISO(recovery.appliedAt), 'HH:mm')}`)}
+                    </p>
+                  </div>
+                  {recovery.revertible ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 shrink-0 transition-all duration-200"
+                      onClick={() => openPersistedRecoveryRevert(recovery)}
+                    >
+                      <Undo2 size={13} className="mr-1" />
+                      Annuler
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <CardContent className="p-0 overflow-hidden h-[600px]">
           {live && serviceTab === 'stats' ? (
             <StatsPanel
@@ -5284,26 +5664,57 @@ export function FloorPlanCanvas({
                                   : 'border-warning/30 text-warning',
                               )}
                             >
-                              {delayRecoveryApplied ? 'Communication requise' : 'Appel reçu'}
+                              {delayRecoveryReverted
+                                ? 'Plan restauré'
+                                : delayRecoveryApplied
+                                  ? 'Communication requise'
+                                  : 'Appel reçu'}
                             </Badge>
                             <p className="text-sm font-semibold text-foreground">
                               {delayRecoveryApplied
-                                ? 'Plan de retard appliqué'
+                                ? delayRecoveryReverted
+                                  ? 'Plan de retard annulé'
+                                  : 'Plan de retard appliqué'
                                 : `${reportedDelayReservation?.customerName || 'Client'} · ${reportedDelayReservation?.partySize ?? '—'} pers. · +${displayedInitialDelayImpact.delayMinutes} min`}
                             </p>
                           </div>
                           {delayRecoveryApplied ? (
                             <div className="mt-2 rounded-lg border border-warning/25 bg-warning/[0.05] px-3 py-2">
-                              <p className="text-xs font-semibold text-foreground">Plan appliqué</p>
+                              <p className="text-xs font-semibold text-foreground">
+                                {delayRecoveryReverted ? 'Plan initial restauré' : 'Plan appliqué'}
+                              </p>
                               <p className="mt-0.5 text-xs text-muted-foreground">
                                 {appliedDelayRecovery
-                                  ? `${appliedDelayRecovery.waitingCustomerName} : liste d’attente → ${appliedDelayRecovery.waitingTableName}. ${appliedDelayRecovery.delayedCustomerName} : ${appliedDelayRecovery.delayedOriginalTableName} → ${appliedDelayRecovery.delayedAlternativeTableName}.`
+                                  ? delayRecoveryReverted
+                                    ? `${appliedDelayRecovery.delayedCustomerName} retrouve ${appliedDelayRecovery.delayedOriginalTableName} et son horaire initial. ${appliedDelayRecovery.waitingCustomerName} retourne en liste d’attente.`
+                                    : `${appliedDelayRecovery.waitingCustomerName} : liste d’attente → ${appliedDelayRecovery.waitingTableName}. ${appliedDelayRecovery.delayedCustomerName} : ${appliedDelayRecovery.delayedOriginalTableName} → ${appliedDelayRecovery.delayedAlternativeTableName}.`
                                   : 'Les deux changements de table ont été enregistrés.'}
                               </p>
-                              <p className="mt-1 text-xs font-medium text-warning">
-                                Prévenez les deux clients. Aucun message n’a été envoyé
-                                automatiquement.
-                              </p>
+                              {delayRecoveryReverted ? (
+                                <p className="mt-1 text-xs font-medium text-warning">
+                                  Prévenez les deux clients : les communications humaines déjà
+                                  effectuées ne peuvent pas être annulées.
+                                </p>
+                              ) : (
+                                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                  <p className="text-xs font-medium text-warning">
+                                    Prévenez les deux clients. Aucun message n’a été envoyé
+                                    automatiquement.
+                                  </p>
+                                  {appliedDelayRecovery ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="shrink-0 transition-all duration-200"
+                                      onClick={() => setDelayRecoveryRevertConfirmOpen(true)}
+                                    >
+                                      <Undo2 size={14} className="mr-1.5" />
+                                      Annuler ce plan
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              )}
                             </div>
                           ) : reportedDelayLookupError ? (
                             <p className="mt-2 text-xs font-medium text-warning">
@@ -5731,6 +6142,7 @@ export function FloorPlanCanvas({
       {dialog}
       {confirm}
       {delayRecoveryConfirm}
+      {delayRecoveryRevertConfirm}
       {multiDeleteConfirm}
       {settingsDialog}
       {duplicateDialog}
