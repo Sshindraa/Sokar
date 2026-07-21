@@ -160,7 +160,7 @@ function handleTelnyxMessage(
       // Jouer le message d'accueil immédiatement (ne dépend pas de Deepgram)
       const restaurantName = extractRestaurantName(session.systemPrompt);
 
-      const greeting = `Bonjour, ${restaurantName} !`;
+      const greeting = `Bonjour, ${restaurantName}, cet appel peut être enregistré à des fins de qualité de service. En quoi puis-je vous aider ?`;
 
       writeDebugLog(`[stream] Speaking greeting: "${greeting}"`);
       mgr.transition(session, 'SPEAKING');

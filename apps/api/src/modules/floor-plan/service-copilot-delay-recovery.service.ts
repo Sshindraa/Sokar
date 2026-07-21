@@ -22,6 +22,7 @@ type DelayRecoveryResult = {
   delayedReservationId: string;
   promotedReservationId: string;
   operationId: string;
+  delayReportId?: string;
   idempotent?: boolean;
 };
 
@@ -30,6 +31,7 @@ type DelayRecoveryRevertResult = {
   promotedReservationId: string;
   waitingListEntryId: string;
   operationId: string;
+  delayReportId?: string;
   idempotent?: boolean;
 };
 
@@ -47,6 +49,7 @@ type DelayRecoveryMetadata = {
   promotedEndsAt?: unknown;
   idempotencyPayloadHash?: unknown;
   idempotencyVersion?: unknown;
+  delayReportId?: unknown;
 };
 
 type DelayRecoveryApplyPayload = {
@@ -366,6 +369,7 @@ export class ServiceCopilotDelayRecoveryService {
             promotedEndsAt: promotedEndsAt.toISOString(),
             idempotencyPayloadHash: payloadHash,
             idempotencyVersion: DELAY_RECOVERY_IDEMPOTENCY_VERSION,
+            delayReportId: args.delayReportId ?? null,
           },
         },
         tx,
@@ -384,6 +388,7 @@ export class ServiceCopilotDelayRecoveryService {
         delayedReservationId: delayed.id,
         promotedReservationId: promoted.id,
         operationId,
+        ...(args.delayReportId ? { delayReportId: args.delayReportId } : {}),
       };
     });
   }
@@ -418,6 +423,11 @@ export class ServiceCopilotDelayRecoveryService {
       select: { metadata: true },
     });
     const snapshot = parseDelayRecoverySnapshot(recovery?.metadata);
+    const delayReportId =
+      typeof (recovery?.metadata as DelayRecoveryMetadata | null | undefined)?.delayReportId ===
+      'string'
+        ? ((recovery?.metadata as DelayRecoveryMetadata).delayReportId as string)
+        : undefined;
     if (!snapshot) {
       throw new DelayRecoveryConflictError(
         'Ce plan ne contient pas les informations nécessaires pour être annulé en sécurité.',
@@ -578,6 +588,7 @@ export class ServiceCopilotDelayRecoveryService {
         promotedReservationId: promoted.id,
         waitingListEntryId: entry.id,
         operationId: args.operationId,
+        ...(delayReportId ? { delayReportId } : {}),
       };
     });
   }

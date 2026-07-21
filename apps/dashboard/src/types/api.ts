@@ -288,6 +288,9 @@ export type ServiceCopilotPriority = 'critical' | 'high' | 'medium' | 'low';
 
 export interface ServiceCopilotRecommendation {
   id: string;
+  occurrenceKey: string;
+  ruleVersion: string;
+  telemetryToken?: string;
   kind: ServiceCopilotRecommendationKind;
   priority: ServiceCopilotPriority;
   title: string;

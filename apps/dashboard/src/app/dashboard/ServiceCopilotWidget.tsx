@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AlertCircle, CheckCircle2, Clock, Phone, Scale } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -84,9 +84,11 @@ function formatMetric(rec: ServiceCopilotRecommendation): string | null {
 function RecommendationCard({
   rec,
   onActionDone,
+  onOpened,
 }: {
   rec: ServiceCopilotRecommendation;
   onActionDone: () => void;
+  onOpened: (recommendation: ServiceCopilotRecommendation) => void;
 }) {
   const { post, patch } = useApi();
   const [confirmRebalanceOpen, setConfirmRebalanceOpen] = useState(false);
@@ -95,6 +97,7 @@ function RecommendationCard({
 
   async function handleApiAction() {
     if (rec.action.type !== 'api' || !rec.action.method || !rec.action.path) return;
+    onOpened(rec);
     try {
       if (rec.action.method === 'PATCH') {
         await patch(rec.action.path, rec.action.body);
@@ -120,6 +123,7 @@ function RecommendationCard({
             {rec.action.type === 'link' && rec.action.href ? (
               <Link
                 href={rec.action.href}
+                onClick={() => onOpened(rec)}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground transition-all duration-200 hover:bg-accent"
               >
                 {rec.action.label}
@@ -139,6 +143,7 @@ function RecommendationCard({
             ) : rec.action.type === 'call' && rec.action.href ? (
               <a
                 href={rec.action.href}
+                onClick={() => onOpened(rec)}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-bold text-foreground transition-all duration-200 hover:bg-accent"
               >
                 {rec.action.label}
@@ -170,6 +175,22 @@ export default function ServiceCopilotWidget() {
 
   const api = useMemo(() => ({ get, post, patch }), [get, post, patch]);
 
+  const trackTelemetry = useCallback(
+    (recommendation: ServiceCopilotRecommendation, event: 'VIEWED' | 'OPENED') => {
+      if (!recommendation.telemetryToken || !orgId) return;
+      void post(`restaurants/${orgId}/service-copilot/telemetry`, {
+        token: recommendation.telemetryToken,
+        event,
+        idempotencyKey: `copilot:${event.toLowerCase()}:${recommendation.occurrenceKey}`,
+        clientTime: new Date().toISOString(),
+      }).catch(() => {
+        // La télémétrie est volontairement invisible et ne doit jamais perturber
+        // l’action de salle si le réseau est instable.
+      });
+    },
+    [orgId, post],
+  );
+
   useEffect(() => {
     if (!orgId) {
       setLoading(false);
@@ -183,7 +204,12 @@ export default function ServiceCopilotWidget() {
         const res = await api.get<ServiceCopilotRecommendationsResponse>(
           `restaurants/${orgId}/service-copilot/recommendations`,
         );
-        if (mounted) setData(res);
+        if (mounted) {
+          setData(res);
+          for (const recommendation of res.recommendations) {
+            trackTelemetry(recommendation, 'VIEWED');
+          }
+        }
       } catch {
         // En mode démo/E2E, l’endpoint peut ne pas être joignable ; on ignore
         // silencieusement pour ne pas polluer le cockpit avec un bandeau d’erreur.
@@ -197,7 +223,7 @@ export default function ServiceCopilotWidget() {
     return () => {
       mounted = false;
     };
-  }, [api, orgId, refreshNonce]);
+  }, [api, orgId, refreshNonce, trackTelemetry]);
 
   if (!orgId) return null;
 
@@ -248,6 +274,7 @@ export default function ServiceCopilotWidget() {
             key={rec.id}
             rec={rec}
             onActionDone={() => setRefreshNonce((n) => n + 1)}
+            onOpened={(recommendation) => trackTelemetry(recommendation, 'OPENED')}
           />
         ))}
       </div>

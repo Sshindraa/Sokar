@@ -59,7 +59,10 @@ export function extractRestaurantName(systemPrompt: string): string {
 export function stripRepeatedGreeting(text: string, session: CallSession): string {
   const restaurantName = extractRestaurantName(session.systemPrompt);
   const escapedName = restaurantName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const greetingPattern = new RegExp(`^\\s*Bonjour,\\s*${escapedName}\\s*!\\s*`, 'i');
+  const greetingPattern = new RegExp(
+    `^\\s*Bonjour,\\s*${escapedName}(?:,\\s*cet\\s+appel\\s+peut\\s+être\\s+enregistré\\s+à\\s+des\\s+fins\\s+de\\s+qualité\\s+de\\s+service\\.?)?\\s*[!.]?\\s*(?:En\\s+quoi\\s+puis-je\\s+vous\\s+aider\\s*\\??)?\\s*`,
+    'i',
+  );
 
   return text.replace(greetingPattern, '').trim();
 }
@@ -316,6 +319,8 @@ async function processTranscript(
       mgr.transition(session, 'LISTENING');
       return;
     }
+
+    mgr.transition(session, 'SPEAKING');
 
     if (!isSessionActiveForTts(session)) {
       writeDebugLog(`[processTranscript] Session inactive after LLM, skipping TTS`);

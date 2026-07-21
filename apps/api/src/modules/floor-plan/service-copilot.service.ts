@@ -9,6 +9,8 @@ import {
 
 export interface ServiceCopilotRecommendation {
   id: string;
+  occurrenceKey: string;
+  ruleVersion: string;
   kind:
     | 'reported-delay'
     | 'late-reservation'
@@ -45,6 +47,8 @@ export interface ServiceCopilotRecommendation {
 }
 
 type Priority = ServiceCopilotRecommendation['priority'];
+
+export const SERVICE_COPILOT_RULE_VERSION = 'v1';
 
 const PRIORITY_RANK: Record<Priority, number> = {
   critical: 0,
@@ -269,6 +273,8 @@ export class ServiceCopilotService {
     const reservationId = delay.reservationId!;
     return {
       id: randomUUID(),
+      occurrenceKey: `reported-delay:${delay.id}`,
+      ruleVersion: SERVICE_COPILOT_RULE_VERSION,
       kind: 'reported-delay',
       priority: delayMinutes >= 30 ? 'critical' : 'high',
       title: `${delay.reservation?.customerName ?? 'Client'} annonce ${delayMinutes} min de retard`,
@@ -346,6 +352,8 @@ export class ServiceCopilotService {
     if (imbalance < 4 || !candidate) return null;
     return {
       id: randomUUID(),
+      occurrenceKey: `server-rebalance:${candidate.id}:${fromServer}:${toServer}`,
+      ruleVersion: SERVICE_COPILOT_RULE_VERSION,
       kind: 'server-rebalance',
       priority: imbalance >= 8 ? 'high' : 'medium',
       title: `Rééquilibrer ${candidate.name} : ${fromServer} → ${toServer}`,
@@ -465,6 +473,8 @@ export class ServiceCopilotService {
 
     return {
       id: randomUUID(),
+      occurrenceKey: `late-reservation:${reservation.id}:${reservation.startsAt.toISOString()}`,
+      ruleVersion: SERVICE_COPILOT_RULE_VERSION,
       kind: 'late-reservation',
       priority,
       title: `${reservation.customerName} est en retard de ${minutesLate} min — appeler / marquer absent`,
@@ -502,6 +512,8 @@ export class ServiceCopilotService {
     const tableName = reservation.table?.name ?? '—';
     return {
       id: randomUUID(),
+      occurrenceKey: `table-soon-free:${reservation.id}:${seatedAt.toISOString()}`,
+      ruleVersion: SERVICE_COPILOT_RULE_VERSION,
       kind: 'table-soon-free',
       priority: 'medium',
       title: `Table ${tableName} devrait se libérer vers ${formatTime(estimatedFreeAt, timeZone)} — prévenir ${reservation.customerName} (file d'attente)`,
@@ -590,6 +602,8 @@ export class ServiceCopilotService {
 
     return {
       id: randomUUID(),
+      occurrenceKey: `waiting-list-compatible:${entry.id}`,
+      ruleVersion: SERVICE_COPILOT_RULE_VERSION,
       kind: 'waiting-list-compatible',
       priority,
       title: `${fullName}, ${entry.partySize} couverts, devient compatible dans ~${minutesUntil} min — proposer une table`,

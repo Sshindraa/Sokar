@@ -16,6 +16,8 @@ import {
 } from './service-copilot-delay-recovery.service';
 import { ServiceCopilotDelayRecoveryHistoryService } from './service-copilot-delay-recovery-history.service';
 import { ServiceCopilotPulseService } from './service-copilot-pulse.service';
+import { ServiceCopilotTelemetryService } from './service-copilot-telemetry.service';
+import { SERVICE_COPILOT_RULE_VERSION } from './service-copilot.service';
 import { HoldService } from '../agentic-reservations/core/hold.service';
 import { ReservationService } from '../agentic-reservations/core/reservation.service';
 import { WaitingListService } from '../agentic-reservations/core/waiting-list.service';
@@ -172,6 +174,13 @@ const DelayRecoveryHistoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(25).optional().default(10),
 });
 
+const CopilotTelemetryEventSchema = z.object({
+  token: z.string().min(20).max(4_096),
+  event: z.enum(['VIEWED', 'OPENED']),
+  idempotencyKey: z.string().min(1).max(256),
+  clientTime: z.string().datetime().optional(),
+});
+
 function getFloorPlanIdFromQuery(query: unknown): string | undefined {
   const parsed = z.object({ floorPlanId: z.string().optional() }).safeParse(query ?? {});
   return parsed.success ? parsed.data.floorPlanId : undefined;
@@ -191,6 +200,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
   const delayRecovery = new ServiceCopilotDelayRecoveryService(db);
   const delayRecoveryHistory = new ServiceCopilotDelayRecoveryHistoryService(db);
   const copilotPulse = new ServiceCopilotPulseService(db);
+  const telemetry = new ServiceCopilotTelemetryService(db);
   const communication = new ServiceCopilotCommunicationService(db);
 
   // ─── Legacy single floor-plan endpoints (default active floor plan) ───
@@ -315,7 +325,35 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const recs = await copilot.getRecommendations(restaurantId);
-      return reply.send({ recommendations: recs });
+      const recommendations = recs.map((recommendation) => {
+        const telemetryToken = telemetry.issueToken({ restaurantId, recommendation });
+        return telemetryToken ? { ...recommendation, telemetryToken } : recommendation;
+      });
+      return reply.send({ recommendations });
+    },
+  );
+
+  app.post(
+    '/restaurants/:id/service-copilot/telemetry',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const restaurantId = (req.params as { id: string }).id;
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+      const body = CopilotTelemetryEventSchema.parse(req.body);
+      try {
+        await telemetry.recordClientEvent({
+          token: body.token,
+          event: body.event,
+          idempotencyKey: body.idempotencyKey,
+          actor: req.userId,
+          clientTime: body.clientTime ? new Date(body.clientTime) : undefined,
+        });
+        return reply.status(204).send();
+      } catch {
+        return reply.status(400).send({ error: 'Événement Copilot invalide ou expiré.' });
+      }
     },
   );
 
@@ -410,9 +448,43 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
           idempotencyKey: body.idempotencyKey,
           actor: req.restaurantId ?? 'dashboard',
         });
+        if (body.delayReportId) {
+          try {
+            await telemetry.recordServerEvent({
+              restaurantId,
+              occurrenceKey: `reported-delay:${body.delayReportId}`,
+              kind: 'reported-delay',
+              entityId: body.reservationId,
+              ruleVersion: SERVICE_COPILOT_RULE_VERSION,
+              event: 'APPLIED',
+              idempotencyKey: `copilot-delay-applied:${result.operationId}`,
+              actor: req.userId,
+              metadata: { operationId: result.operationId },
+            });
+          } catch (telemetryError) {
+            req.log.warn({ err: telemetryError }, 'service copilot telemetry apply failed');
+          }
+        }
         return reply.send(result);
       } catch (err) {
         if (err instanceof DelayRecoveryConflictError) {
+          if (body.delayReportId) {
+            try {
+              await telemetry.recordServerEvent({
+                restaurantId,
+                occurrenceKey: `reported-delay:${body.delayReportId}`,
+                kind: 'reported-delay',
+                entityId: body.reservationId,
+                ruleVersion: SERVICE_COPILOT_RULE_VERSION,
+                event: 'CONFLICTED',
+                idempotencyKey: `copilot-delay-conflict:${body.idempotencyKey ?? body.delayReportId}`,
+                reasonCode: 'apply_conflict',
+                actor: req.userId,
+              });
+            } catch (telemetryError) {
+              req.log.warn({ err: telemetryError }, 'service copilot telemetry conflict failed');
+            }
+          }
           return reply.status(409).send({ error: err.message });
         }
         throw err;
@@ -436,6 +508,23 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
           operationId: body.operationId,
           actor: req.restaurantId ?? 'dashboard',
         });
+        if (result.delayReportId) {
+          try {
+            await telemetry.recordServerEvent({
+              restaurantId,
+              occurrenceKey: `reported-delay:${result.delayReportId}`,
+              kind: 'reported-delay',
+              entityId: body.reservationId,
+              ruleVersion: SERVICE_COPILOT_RULE_VERSION,
+              event: 'REVERTED',
+              idempotencyKey: `copilot-delay-reverted:${body.operationId}`,
+              actor: req.userId,
+              metadata: { operationId: body.operationId },
+            });
+          } catch (telemetryError) {
+            req.log.warn({ err: telemetryError }, 'service copilot telemetry revert failed');
+          }
+        }
         return reply.send(result);
       } catch (err) {
         if (err instanceof DelayRecoveryConflictError) {

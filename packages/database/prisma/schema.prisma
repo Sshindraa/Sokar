@@ -72,6 +72,7 @@ model Restaurant {
   agentClients         AgentClient[]
   images               RestaurantImage[]
   onboardingEvents     OnboardingEvent[]
+  copilotOccurrences   CopilotOccurrence[]
 
   // Sokar Connect (P0) — données publiques structurées, pas de flags de gating ici
   description   String?   @map("description")
@@ -562,6 +563,69 @@ model ReservationAuditLog {
   @@index([actorHash])
   @@index([event, createdAt])
   @@map("reservation_audit_log")
+}
+
+// ─── Service Copilot telemetry (V1 quality loop, shadow mode) ─────────────
+
+enum CopilotOccurrenceStatus {
+  OBSERVED
+  OPENED
+  APPLIED
+  REVERTED
+  CONFLICTED
+  EXPIRED
+  IGNORED
+}
+
+enum CopilotTelemetryEventType {
+  VIEWED
+  OPENED
+  APPLIED
+  REVERTED
+  CONFLICTED
+  EXPIRED
+  IGNORED
+}
+
+model CopilotOccurrence {
+  id            String                  @id @default(uuid())
+  restaurantId  String                  @map("restaurant_id")
+  occurrenceKey String                  @map("occurrence_key")
+  kind          String
+  entityId      String?                 @map("entity_id")
+  ruleVersion   String                  @map("rule_version")
+  isShadow      Boolean                 @default(true) @map("is_shadow")
+  status        CopilotOccurrenceStatus @default(OBSERVED)
+  eligibleAt    DateTime                @default(now()) @map("eligible_at")
+  expiresAt     DateTime?               @map("expires_at")
+  createdAt     DateTime                @default(now()) @map("created_at")
+  updatedAt     DateTime                @updatedAt @map("updated_at")
+
+  restaurant Restaurant              @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  events     CopilotTelemetryEvent[]
+
+  @@unique([restaurantId, occurrenceKey])
+  @@index([restaurantId, kind, status])
+  @@index([restaurantId, expiresAt])
+  @@map("copilot_occurrences")
+}
+
+model CopilotTelemetryEvent {
+  id             String                    @id @default(uuid())
+  occurrenceId   String                    @map("occurrence_id")
+  idempotencyKey String                    @unique @map("idempotency_key")
+  event          CopilotTelemetryEventType
+  reasonCode     String?                   @map("reason_code")
+  actorHash      String?                   @map("actor_hash")
+  metadata       Json                      @default("{}")
+  clientTime     DateTime?                 @map("client_time")
+  serverTime     DateTime                  @default(now()) @map("server_time")
+
+  occurrence CopilotOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+
+  @@index([occurrenceId, event])
+  @@index([serverTime])
+  @@map("copilot_telemetry_events")
 }
 
 model IdempotencyRecord {

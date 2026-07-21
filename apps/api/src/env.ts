@@ -95,6 +95,9 @@ const EnvSchema = z
     // HMAC partagé pour le feed OpenAI Reserve (RES-007). Si défini, /v1/businesses
     // exige un ?signature=... valide. Clé ≥ 32 chars, ne pas commiter.
     OPENAI_RESERVE_HMAC_KEY: z.string().min(32).optional(),
+    // HMAC des événements de qualité Service Copilot. Le navigateur ne peut
+    // pas déclarer une recommandation arbitraire : il ne renvoie qu’un token signé.
+    SERVICE_COPILOT_TELEMETRY_SECRET: z.string().min(32).optional(),
     // Clés API critiques — validées au démarrage en production
     TELNYX_API_KEY: z.string().optional(),
     DEEPGRAM_API_KEY: z.string().optional(),
@@ -127,6 +130,16 @@ const EnvSchema = z
     {
       message: `En production, les hosts URL doivent être dans l'allowlist: ${PROD_HOST_ALLOWLIST.join(', ')}`,
       path: ['PUBLIC_URL'],
+    },
+  )
+  .refine(
+    (data) => {
+      if (data.NODE_ENV !== 'production') return true;
+      return !!data.SERVICE_COPILOT_TELEMETRY_SECRET;
+    },
+    {
+      message: 'SERVICE_COPILOT_TELEMETRY_SECRET doit être défini en production (≥32 caractères).',
+      path: ['SERVICE_COPILOT_TELEMETRY_SECRET'],
     },
   )
   .refine(
