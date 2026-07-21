@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { AlertCircle, CheckCircle2, Clock, Phone } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, Phone, Scale } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useApi } from '../../lib/api';
@@ -38,6 +38,7 @@ const kindIcon = {
   'late-reservation': Phone,
   'table-soon-free': Clock,
   'waiting-list-compatible': AlertCircle,
+  'server-rebalance': Scale,
 };
 
 function highestPriority(recommendations: ServiceCopilotRecommendation[]): ServiceCopilotPriority {
@@ -72,6 +73,9 @@ function formatMetric(rec: ServiceCopilotRecommendation): string | null {
   }
   if (rec.kind === 'waiting-list-compatible') {
     return `${rec.metrics?.covers ?? 0} couverts`;
+  }
+  if (rec.kind === 'server-rebalance') {
+    return `${rec.metrics?.fromServer ?? '—'} → ${rec.metrics?.toServer ?? '—'}`;
   }
   return null;
 }

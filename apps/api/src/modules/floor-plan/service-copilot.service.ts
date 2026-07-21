@@ -9,7 +9,12 @@ import {
 
 export interface ServiceCopilotRecommendation {
   id: string;
-  kind: 'reported-delay' | 'late-reservation' | 'table-soon-free' | 'waiting-list-compatible';
+  kind:
+    | 'reported-delay'
+    | 'late-reservation'
+    | 'table-soon-free'
+    | 'waiting-list-compatible'
+    | 'server-rebalance';
   priority: 'critical' | 'high' | 'medium' | 'low';
   title: string;
   reason: string;
@@ -33,6 +38,9 @@ export interface ServiceCopilotRecommendation {
     predictionConfidence?: 'high' | 'medium' | 'low';
     predictionSource?: 'historical-table' | 'historical-restaurant' | 'scheduled';
     predictionSampleSize?: number;
+    fromServer?: string;
+    toServer?: string;
+    activeTables?: number;
   };
 }
 
@@ -131,6 +139,7 @@ export class ServiceCopilotService {
       this.fetchWaitingListEntries(restaurantId, now, waitingListMax),
     ]);
     const reportedDelays = await this.fetchReportedDelays(restaurantId, now);
+    const serverRebalance = await this.findServerRebalance(restaurantId, now);
 
     const seatedAtByReservation = await this.buildSeatedAtMap(seatedReservations.map((r) => r.id));
     const turnPredictions = await new ServiceTurnPredictionService(
@@ -152,6 +161,7 @@ export class ServiceCopilotService {
     for (const delay of reportedDelays) {
       this.addUnique(recommendations, seen, this.buildReportedDelayRecommendation(delay));
     }
+    if (serverRebalance) this.addUnique(recommendations, seen, serverRebalance);
 
     for (const reservation of lateReservations) {
       const rec = this.buildLateReservationRecommendation(reservation, now, timeZone);
@@ -263,6 +273,87 @@ export class ServiceCopilotService {
       metrics: {
         minutesLate: delayMinutes,
         customerName: delay.reservation?.customerName ?? undefined,
+      },
+    };
+  }
+
+  private async findServerRebalance(
+    restaurantId: string,
+    now: Date,
+  ): Promise<ServiceCopilotRecommendation | null> {
+    const table = (
+      this.prisma as unknown as {
+        table?: { findMany: (args: unknown) => Promise<unknown> };
+      }
+    ).table;
+    if (!table) return null;
+    const windowEnd = new Date(now.getTime() + 30 * 60_000);
+    const tables = (await table.findMany({
+      where: {
+        isActive: true,
+        assignedServer: { not: null },
+        floorPlan: { restaurantId, isActive: true },
+      },
+      select: {
+        id: true,
+        name: true,
+        assignedServer: true,
+        reservations: {
+          where: {
+            state: { in: ['CONFIRMED', 'SEATED'] },
+            startsAt: { lte: windowEnd },
+            endsAt: { gt: now },
+          },
+          select: { partySize: true, state: true },
+        },
+      },
+    })) as Array<{
+      id: string;
+      name: string;
+      assignedServer: string | null;
+      reservations: Array<{ partySize: number; state: string }>;
+    }>;
+    const byServer = new Map<string, { tables: typeof tables; covers: number }>();
+    for (const item of tables) {
+      if (!item.assignedServer) continue;
+      const load = byServer.get(item.assignedServer) ?? { tables: [], covers: 0 };
+      load.tables.push(item);
+      load.covers += item.reservations.reduce((sum, reservation) => sum + reservation.partySize, 0);
+      byServer.set(item.assignedServer, load);
+    }
+    if (byServer.size < 2) return null;
+    const ranked = [...byServer.entries()].sort(
+      ([, a], [, b]) => b.tables.length * 3 + b.covers - (a.tables.length * 3 + a.covers),
+    );
+    const [fromServer, fromLoad] = ranked[0];
+    const [toServer, toLoad] = ranked[ranked.length - 1];
+    const imbalance =
+      fromLoad.tables.length * 3 + fromLoad.covers - (toLoad.tables.length * 3 + toLoad.covers);
+    const candidate = fromLoad.tables.find((item) =>
+      item.reservations.some((reservation) => reservation.state === 'CONFIRMED'),
+    );
+    if (imbalance < 4 || !candidate) return null;
+    return {
+      id: randomUUID(),
+      kind: 'server-rebalance',
+      priority: imbalance >= 8 ? 'high' : 'medium',
+      title: `Rééquilibrer ${candidate.name} : ${fromServer} → ${toServer}`,
+      reason: `${fromServer} gère ${fromLoad.tables.length} tables et ${fromLoad.covers} couverts sur les 30 prochaines minutes, contre ${toLoad.tables.length} table${toLoad.tables.length > 1 ? 's' : ''} et ${toLoad.covers} couverts pour ${toServer}.`,
+      action: {
+        type: 'api',
+        label: `Confier ${candidate.name} à ${toServer}`,
+        method: 'PATCH',
+        path: `/restaurants/${restaurantId}/floor-plan/tables/${candidate.id}`,
+        body: { assignedServer: toServer },
+      },
+      entityId: candidate.id,
+      expiresAt: windowEnd.toISOString(),
+      metrics: {
+        fromServer,
+        toServer,
+        activeTables: fromLoad.tables.length,
+        covers: fromLoad.covers,
+        tableName: candidate.name,
       },
     };
   }

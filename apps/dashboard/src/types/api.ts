@@ -281,7 +281,8 @@ export type ServiceCopilotRecommendationKind =
   | 'reported-delay'
   | 'late-reservation'
   | 'table-soon-free'
-  | 'waiting-list-compatible';
+  | 'waiting-list-compatible'
+  | 'server-rebalance';
 
 export type ServiceCopilotPriority = 'critical' | 'high' | 'medium' | 'low';
 
@@ -311,6 +312,9 @@ export interface ServiceCopilotRecommendation {
     predictionConfidence?: 'high' | 'medium' | 'low';
     predictionSource?: 'historical-table' | 'historical-restaurant' | 'scheduled';
     predictionSampleSize?: number;
+    fromServer?: string;
+    toServer?: string;
+    activeTables?: number;
   };
 }
 

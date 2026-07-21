@@ -7,14 +7,16 @@ function makePrismaMock() {
   const reservation = { findMany: vi.fn() };
   const waitingListEntry = { findMany: vi.fn() };
   const reservationAuditLog = { findMany: vi.fn() };
+  const table = { findMany: vi.fn().mockResolvedValue([]) };
 
   const prisma: any = {
     restaurant,
     reservation,
     waitingListEntry,
     reservationAuditLog,
+    table,
   };
-  return { prisma, restaurant, reservation, waitingListEntry, reservationAuditLog };
+  return { prisma, restaurant, reservation, waitingListEntry, reservationAuditLog, table };
 }
 
 function makeReservation(overrides: {
@@ -80,6 +82,39 @@ describe('ServiceCopilotService', () => {
   });
 
   describe('late-reservation', () => {
+    it('propose de rééquilibrer une table confirmée entre deux serveurs', async () => {
+      const now = new Date('2026-07-17T18:00:00.000Z');
+      mocks.reservation.findMany.mockResolvedValue([]);
+      mocks.waitingListEntry.findMany.mockResolvedValue([]);
+      mocks.table.findMany.mockResolvedValue([
+        {
+          id: 't-1',
+          name: 'T1',
+          assignedServer: 'Léa',
+          reservations: [{ partySize: 4, state: 'CONFIRMED' }],
+        },
+        {
+          id: 't-2',
+          name: 'T2',
+          assignedServer: 'Léa',
+          reservations: [{ partySize: 2, state: 'SEATED' }],
+        },
+        { id: 't-3', name: 'T3', assignedServer: 'Camille', reservations: [] },
+      ]);
+
+      const recs = await svc.getRecommendations('rest-1', now);
+
+      expect(recs[0]).toMatchObject({
+        kind: 'server-rebalance',
+        priority: 'high',
+        action: {
+          method: 'PATCH',
+          path: '/restaurants/rest-1/floor-plan/tables/t-1',
+          body: { assignedServer: 'Camille' },
+        },
+      });
+    });
+
     it('priorise un retard signalé par téléphone et ouvre son analyse', async () => {
       const now = new Date('2026-07-17T18:00:00.000Z');
       mocks.reservation.findMany.mockResolvedValue([]);
