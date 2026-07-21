@@ -174,7 +174,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
   const simulation = new ServiceCopilotSimulationService(db);
   const delayImpact = new ServiceCopilotDelayImpactService(db);
   const delayRecovery = new ServiceCopilotDelayRecoveryService(db);
-  const communication = new ServiceCopilotCommunicationService();
+  const communication = new ServiceCopilotCommunicationService(db);
 
   // ─── Legacy single floor-plan endpoints (default active floor plan) ───
 
@@ -354,7 +354,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
         reservationId: body.reservationId,
         delayMinutes: body.delayMinutes,
       });
-      return reply.send({ impact, drafts: communication.buildDrafts(impact) });
+      return reply.send({ impact, drafts: await communication.buildDrafts(restaurantId, impact) });
     },
   );
 

@@ -2,6 +2,8 @@
 
 ## Dernière activité
 
+2026-07-21 22:21 — [api] **Service Copilot : éligibilité transactionnelle des brouillons** — Les brouillons de retard vérifient désormais le contact et le consentement transactionnel le plus récent, limité au restaurant. Ils n’indiquent `sms` ou `email` que si le consentement correspondant est actif ; sinon ils retournent explicitement `no-contact` ou `no-transactional-consent`. Le statut demeure `review-required` et aucun envoi n’existe.
+
 2026-07-21 22:16 — [api] **Service Copilot : brouillons de communication calculés** — `POST /restaurants/:id/service-copilot/delay-impact/drafts` réexécute la simulation read-only puis retourne des brouillons déterministes pour la réservation retardée et l’entrée de liste d’attente, basés sur les heures client arrondies. Chaque brouillon est `review-required` : aucun contact, canal ni envoi n’est lu ou exécuté. Une prochaine phase séparée vérifiera le consentement transactionnel avant de proposer un SMS/e-mail.
 
 2026-07-21 22:10 — [api, dashboard] **Service Copilot : heures client arrondies** — Nouvelle règle déterministe `toCustomerFacingTime` : toute heure destinée à un client est arrondie vers le haut au créneau de 5 minutes suivant, afin de ne jamais promettre plus tôt que le calcul opérationnel (20:08 → 20:10). Le simulateur de retard expose cette heure distincte de l’heure interne exacte ; elle servira de source aux futurs brouillons de communication.
