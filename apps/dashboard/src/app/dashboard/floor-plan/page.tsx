@@ -21,6 +21,7 @@ import {
 import { FloorPlanCanvas } from './_components/FloorPlanCanvas';
 import { FloorPlanCrud } from './_components/FloorPlanCrud';
 import { FloorPlanSelector } from './_components/FloorPlanSelector';
+import { ServiceCopilotSimulator } from './_components/ServiceCopilotSimulator';
 
 function getDefaultFloorPlan(floorPlans: FloorPlanSummary[]): FloorPlanSummary | null {
   return (
@@ -206,6 +207,13 @@ export default function FloorPlanPage() {
         </div>
       )}
 
+      {selectedFloorPlanId && activeView === 'service-live' && (
+        <ServiceCopilotSimulator
+          key={`simulator-${selectedFloorPlanId}`}
+          orgId={orgId}
+          selectedFloorPlanId={selectedFloorPlanId}
+        />
+      )}
       {selectedFloorPlanId && activeView === 'service-live' && (
         <FloorPlanCanvas
           key={`service-live-${selectedFloorPlanId}`}

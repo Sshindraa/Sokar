@@ -313,6 +313,60 @@ export interface ServiceCopilotRecommendationsResponse {
   recommendations: ServiceCopilotRecommendation[];
 }
 
+export type SimulationScenarioType = 'direct' | 'change-section' | 'refuse';
+
+export interface SimulationAction {
+  type: 'link' | 'api';
+  label: string;
+  href?: string;
+  method?: 'PATCH' | 'POST';
+  path?: string;
+  body?: Record<string, unknown>;
+}
+
+export interface SimulationMetrics {
+  coversGained: number;
+  conflictsCreated: number;
+  estimatedWaitMinutes: number | null;
+  tablesImpacted: string[];
+  reservationsToMove: {
+    id: string;
+    customerName?: string;
+    fromTableName?: string;
+    toTableName?: string;
+    newStartsAt?: string;
+  }[];
+}
+
+export interface SimulationScenario {
+  id: string;
+  type: SimulationScenarioType;
+  feasible: boolean;
+  confidence: 'high' | 'medium' | 'low';
+  title: string;
+  reason: string;
+  actions: SimulationAction[];
+  metrics: SimulationMetrics;
+  table?: {
+    id: string;
+    name: string;
+    capacity: number;
+    sectionId: string | null;
+    sectionName?: string | null;
+    floorPlanName?: string | null;
+  };
+  nextAvailableAt?: string;
+  nextAvailableSectionId?: string;
+}
+
+export interface SimulationResult {
+  query: { partySize: number; startsAt: string; endsAt: string };
+  feasible: boolean;
+  scenarios: SimulationScenario[];
+  bestScenarioId?: string;
+  explanation: string;
+}
+
 // ─── Utilitaire : extraction de message d'erreur ────────────────────────
 
 /**

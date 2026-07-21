@@ -7,6 +7,7 @@ import { FloorPlanService, FloorPlanValidationError } from './floor-plan.service
 import { TableAllocationService, TableAllocationError } from './table-allocation.service';
 import { CapacityAwareAvailabilityService } from './availability-capacity-aware.service';
 import { ServiceCopilotService } from './service-copilot.service';
+import { ServiceCopilotSimulationService } from './service-copilot-simulation.service';
 import { HoldService } from '../agentic-reservations/core/hold.service';
 import { ReservationService } from '../agentic-reservations/core/reservation.service';
 import { WaitingListService } from '../agentic-reservations/core/waiting-list.service';
@@ -133,6 +134,13 @@ const AssignTableSchema = z.object({
   tableId: z.string().min(1),
 });
 
+const SimulateSchema = z.object({
+  partySize: z.number().int().min(1).max(99),
+  startsAt: z.string().datetime(),
+  endsAt: z.string().datetime().optional(),
+  preferredSectionId: z.string().optional(),
+});
+
 function getFloorPlanIdFromQuery(query: unknown): string | undefined {
   const parsed = z.object({ floorPlanId: z.string().optional() }).safeParse(query ?? {});
   return parsed.success ? parsed.data.floorPlanId : undefined;
@@ -147,6 +155,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
   const allocation = new TableAllocationService(db);
   const waitingList = new WaitingListService(db, allocation, audit);
   const copilot = new ServiceCopilotService(db);
+  const simulation = new ServiceCopilotSimulationService(db);
 
   // ─── Legacy single floor-plan endpoints (default active floor plan) ───
 
@@ -271,6 +280,26 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
       const recs = await copilot.getRecommendations(restaurantId);
       return reply.send({ recommendations: recs });
+    },
+  );
+
+  app.post(
+    '/restaurants/:id/service-copilot/simulate',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const restaurantId = (req.params as { id: string }).id;
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+      const body = SimulateSchema.parse(req.body);
+      const result = await simulation.simulate({
+        restaurantId,
+        partySize: body.partySize,
+        startsAt: new Date(body.startsAt),
+        endsAt: body.endsAt ? new Date(body.endsAt) : undefined,
+        preferredSectionId: body.preferredSectionId,
+      });
+      return reply.send(result);
     },
   );
 
