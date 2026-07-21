@@ -25,6 +25,8 @@ import {
   DelayRecoveryConflictError,
   ServiceCopilotDelayRecoveryService,
 } from '../service-copilot-delay-recovery.service';
+import { ServiceCopilotDelayRecoveryHistoryService } from '../service-copilot-delay-recovery-history.service';
+import { ServiceCopilotPulseService } from '../service-copilot-pulse.service';
 
 describe('floorPlanRoutes', () => {
   beforeEach(() => {
@@ -165,7 +167,11 @@ describe('floorPlanRoutes', () => {
       const app = await getApp();
       const apply = vi
         .spyOn(ServiceCopilotDelayRecoveryService.prototype, 'apply')
-        .mockResolvedValue({ delayedReservationId: 'res-1', promotedReservationId: 'res-2' });
+        .mockResolvedValue({
+          delayedReservationId: 'res-1',
+          promotedReservationId: 'res-2',
+          operationId: 'delay-op-1',
+        });
 
       const res = await app.inject({
         method: 'POST',
@@ -198,6 +204,119 @@ describe('floorPlanRoutes', () => {
 
       expect(res.statusCode).toBe(409);
       expect(res.json().error).toBe('Le plan a changé.');
+    });
+  });
+
+  describe('POST /restaurants/:id/service-copilot/delay-impact/revert', () => {
+    const payload = { reservationId: 'res-1', operationId: 'delay-op-1' };
+
+    it('annule un plan dans le restaurant authentifié', async () => {
+      const app = await getApp();
+      const revert = vi
+        .spyOn(ServiceCopilotDelayRecoveryService.prototype, 'revert')
+        .mockResolvedValue({
+          delayedReservationId: 'res-1',
+          promotedReservationId: 'res-2',
+          waitingListEntryId: 'waiting-1',
+          operationId: 'delay-op-1',
+        });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/service-copilot/delay-impact/revert',
+        headers: { authorization: 'Bearer test' },
+        payload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(revert).toHaveBeenCalledWith({
+        ...payload,
+        restaurantId: 'test-rest-1',
+        actor: 'test-rest-1',
+      });
+    });
+
+    it('retourne 409 si le service a évolué depuis l’application', async () => {
+      const app = await getApp();
+      vi.spyOn(ServiceCopilotDelayRecoveryService.prototype, 'revert').mockRejectedValue(
+        new DelayRecoveryConflictError('Le plan a évolué.'),
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/service-copilot/delay-impact/revert',
+        headers: { authorization: 'Bearer test' },
+        payload,
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error).toBe('Le plan a évolué.');
+    });
+
+    it('refuse l’annulation pour un autre restaurant', async () => {
+      const app = await getApp();
+      const revert = vi.spyOn(ServiceCopilotDelayRecoveryService.prototype, 'revert');
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/other-rest/service-copilot/delay-impact/revert',
+        headers: { authorization: 'Bearer test' },
+        payload,
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(revert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /restaurants/:id/service-copilot/delay-recoveries', () => {
+    it('retourne l’historique persistant de la date demandée', async () => {
+      const app = await getApp();
+      const list = vi
+        .spyOn(ServiceCopilotDelayRecoveryHistoryService.prototype, 'list')
+        .mockResolvedValue([]);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/restaurants/test-rest-1/service-copilot/delay-recoveries?date=2026-07-22&limit=5',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ recoveries: [] });
+      expect(list).toHaveBeenCalledWith({
+        restaurantId: 'test-rest-1',
+        date: '2026-07-22',
+        limit: 5,
+      });
+    });
+
+    it('refuse une date invalide', async () => {
+      const app = await getApp();
+      const list = vi.spyOn(ServiceCopilotDelayRecoveryHistoryService.prototype, 'list');
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/restaurants/test-rest-1/service-copilot/delay-recoveries?date=22-07-2026',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(400);
+      expect(list).not.toHaveBeenCalled();
+    });
+
+    it('isole l’historique par restaurant', async () => {
+      const app = await getApp();
+      const list = vi.spyOn(ServiceCopilotDelayRecoveryHistoryService.prototype, 'list');
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/restaurants/other-rest/service-copilot/delay-recoveries?date=2026-07-22',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(list).not.toHaveBeenCalled();
     });
   });
 
@@ -590,6 +709,60 @@ describe('floorPlanRoutes', () => {
 
       expect(res.statusCode).toBe(204);
       expect(cancelSpy).toHaveBeenCalledWith('wl-1', 'test-rest-1');
+    });
+  });
+
+  describe('GET /restaurants/:id/service-copilot/pulse', () => {
+    it('retourne le pouls opérationnel de la date demandée', async () => {
+      const app = await getApp();
+      const getPulse = vi
+        .spyOn(ServiceCopilotPulseService.prototype, 'getPulse')
+        .mockResolvedValue({
+          date: '2026-07-22',
+          generatedAt: '2026-07-22T17:30:00.000Z',
+          isLiveDate: true,
+          status: 'attention',
+          headline: '1 arrivée à installer',
+          lateArrivals: 0,
+          arrivalsToSeat: 1,
+          arrivalsNext30Minutes: 2,
+          seatedTables: 4,
+          pendingWaitingList: 1,
+          confirmedReservations: 9,
+        });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/restaurants/test-rest-1/service-copilot/pulse?date=2026-07-22',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(getPulse).toHaveBeenCalledWith({
+        restaurantId: 'test-rest-1',
+        date: '2026-07-22',
+      });
+      expect(res.json().headline).toBe('1 arrivée à installer');
+    });
+
+    it('refuse une date invalide et un autre restaurant', async () => {
+      const app = await getApp();
+      const getPulse = vi.spyOn(ServiceCopilotPulseService.prototype, 'getPulse');
+
+      const invalidDate = await app.inject({
+        method: 'GET',
+        url: '/restaurants/test-rest-1/service-copilot/pulse?date=22-07-2026',
+        headers: { authorization: 'Bearer test' },
+      });
+      const wrongTenant = await app.inject({
+        method: 'GET',
+        url: '/restaurants/other-rest/service-copilot/pulse?date=2026-07-22',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(invalidDate.statusCode).toBe(400);
+      expect(wrongTenant.statusCode).toBe(403);
+      expect(getPulse).not.toHaveBeenCalled();
     });
   });
 

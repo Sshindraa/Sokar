@@ -14,6 +14,8 @@ import {
   DelayRecoveryConflictError,
   ServiceCopilotDelayRecoveryService,
 } from './service-copilot-delay-recovery.service';
+import { ServiceCopilotDelayRecoveryHistoryService } from './service-copilot-delay-recovery-history.service';
+import { ServiceCopilotPulseService } from './service-copilot-pulse.service';
 import { HoldService } from '../agentic-reservations/core/hold.service';
 import { ReservationService } from '../agentic-reservations/core/reservation.service';
 import { WaitingListService } from '../agentic-reservations/core/waiting-list.service';
@@ -160,6 +162,16 @@ const ApplyDelayImpactSchema = SimulateDelayImpactSchema.extend({
   idempotencyKey: z.string().min(1).max(128).optional(),
 });
 
+const RevertDelayImpactSchema = z.object({
+  reservationId: z.string().min(1),
+  operationId: z.string().min(1).max(256),
+});
+
+const DelayRecoveryHistoryQuerySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  limit: z.coerce.number().int().min(1).max(25).optional().default(10),
+});
+
 function getFloorPlanIdFromQuery(query: unknown): string | undefined {
   const parsed = z.object({ floorPlanId: z.string().optional() }).safeParse(query ?? {});
   return parsed.success ? parsed.data.floorPlanId : undefined;
@@ -177,6 +189,8 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
   const simulation = new ServiceCopilotSimulationService(db);
   const delayImpact = new ServiceCopilotDelayImpactService(db);
   const delayRecovery = new ServiceCopilotDelayRecoveryService(db);
+  const delayRecoveryHistory = new ServiceCopilotDelayRecoveryHistoryService(db);
+  const copilotPulse = new ServiceCopilotPulseService(db);
   const communication = new ServiceCopilotCommunicationService(db);
 
   // ─── Legacy single floor-plan endpoints (default active floor plan) ───
@@ -305,6 +319,20 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  app.get(
+    '/restaurants/:id/service-copilot/pulse',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const restaurantId = (req.params as { id: string }).id;
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+      const query = DateQuerySchema.pick({ date: true }).parse(req.query);
+      const pulse = await copilotPulse.getPulse({ restaurantId, date: query.date });
+      return reply.send(pulse);
+    },
+  );
+
   app.post(
     '/restaurants/:id/service-copilot/simulate',
     { preHandler: requireOrg() },
@@ -389,6 +417,50 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
         }
         throw err;
       }
+    },
+  );
+
+  app.post(
+    '/restaurants/:id/service-copilot/delay-impact/revert',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const restaurantId = (req.params as { id: string }).id;
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+      const body = RevertDelayImpactSchema.parse(req.body);
+      try {
+        const result = await delayRecovery.revert({
+          restaurantId,
+          reservationId: body.reservationId,
+          operationId: body.operationId,
+          actor: req.restaurantId ?? 'dashboard',
+        });
+        return reply.send(result);
+      } catch (err) {
+        if (err instanceof DelayRecoveryConflictError) {
+          return reply.status(409).send({ error: err.message });
+        }
+        throw err;
+      }
+    },
+  );
+
+  app.get(
+    '/restaurants/:id/service-copilot/delay-recoveries',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const restaurantId = (req.params as { id: string }).id;
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+      const query = DelayRecoveryHistoryQuerySchema.parse(req.query);
+      const recoveries = await delayRecoveryHistory.list({
+        restaurantId,
+        date: query.date,
+        limit: query.limit,
+      });
+      return reply.send({ recoveries });
     },
   );
 

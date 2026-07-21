@@ -28,6 +28,7 @@ export type AuditEvent =
   | 'reservation_honored'
   | 'reservation_delay_reported'
   | 'reservation_delay_recovered'
+  | 'reservation_delay_recovery_reverted'
   | 'reservation_failed'
   | 'consent_recorded'
   | 'opt_in_changed'
@@ -36,6 +37,7 @@ export type AuditEvent =
   | 'waiting_list_created'
   | 'waiting_list_cancelled'
   | 'waiting_list_cancelled_by_staff'
+  | 'waiting_list_restored'
   | 'waiting_list_promoted';
 
 export class AuditLogService {

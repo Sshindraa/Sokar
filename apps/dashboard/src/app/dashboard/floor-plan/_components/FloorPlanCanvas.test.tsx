@@ -523,6 +523,39 @@ describe('FloorPlanCanvas — actions Live service', () => {
     };
   }
 
+  it('affiche un pouls de service lisible avant le plan', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return [];
+      if (path.includes('/waiting-list')) return [];
+      if (path.includes('/service-copilot/pulse')) {
+        return {
+          date: '2026-07-22',
+          generatedAt: '2026-07-22T17:30:00.000Z',
+          isLiveDate: true,
+          status: 'urgent',
+          headline: '1 arrivée en retard à traiter',
+          lateArrivals: 1,
+          arrivalsToSeat: 2,
+          arrivalsNext30Minutes: 3,
+          seatedTables: 4,
+          pendingWaitingList: 1,
+          confirmedReservations: 9,
+        };
+      }
+      return floorPlan;
+    });
+
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+    const pulse = await screen.findByRole('status', { name: 'Pouls du service' });
+    expect(within(pulse).getByText('Urgent')).toBeInTheDocument();
+    expect(within(pulse).getByText('1 arrivée en retard à traiter')).toBeInTheDocument();
+    expect(within(pulse).getByText('1 retard')).toBeInTheDocument();
+    expect(within(pulse).getByText('2 à installer')).toBeInTheDocument();
+    expect(within(pulse).getByText('4 tables en service')).toBeInTheDocument();
+    expect(within(pulse).getByText('+3 dans 30 min')).toBeInTheDocument();
+  });
+
   it('emploie des actions métier explicites pour installer et libérer une table', async () => {
     let reservations = [makeReservation('CONFIRMED')];
     apiMocks.get.mockImplementation(async (path: string) => {
@@ -551,8 +584,20 @@ describe('FloorPlanCanvas — actions Live service', () => {
       return floorPlan;
     });
     apiMocks.post.mockImplementation(async (path: string) => {
+      if (path.endsWith('/service-copilot/delay-impact/revert')) {
+        return {
+          delayedReservationId: reservation.id,
+          promotedReservationId: 'promoted-1',
+          waitingListEntryId: 'waiting-list-2',
+          operationId: 'delay-report-1',
+        };
+      }
       if (path.endsWith('/service-copilot/delay-impact/apply')) {
-        return { delayedReservationId: reservation.id, promotedReservationId: 'promoted-1' };
+        return {
+          delayedReservationId: reservation.id,
+          promotedReservationId: 'promoted-1',
+          operationId: 'delay-report-1',
+        };
       }
       if (path.includes('/service-copilot/delay-impact')) {
         return {
@@ -641,6 +686,129 @@ describe('FloorPlanCanvas — actions Live service', () => {
     expect(await screen.findByText('Communication requise')).toBeInTheDocument();
     expect(screen.getByText(/Alice Martin : liste d’attente → T4/)).toBeInTheDocument();
     expect(screen.getByText(/Aucun message n’a été envoyé automatiquement/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Annuler ce plan' }));
+    expect(await screen.findByText('Annuler ce plan ?')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Les communications déjà effectuées ne peuvent pas être annulées/),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Annuler ce plan' }),
+    );
+
+    await waitFor(() =>
+      expect(apiMocks.post).toHaveBeenCalledWith(
+        'restaurants/org_test/service-copilot/delay-impact/revert',
+        { reservationId: reservation.id, operationId: 'delay-report-1' },
+      ),
+    );
+    expect(await screen.findByText('Plan initial restauré')).toBeInTheDocument();
+    expect(screen.getByText(/Alice Martin retourne en liste d’attente/)).toBeInTheDocument();
+  });
+
+  it('retrouve un plan appliqué après actualisation et permet de l’annuler', async () => {
+    const reservation = {
+      ...makeReservation('CONFIRMED'),
+      tableId: 'table-12',
+      tableName: 'T12',
+    };
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return [reservation];
+      if (path.includes('/waiting-list')) return [];
+      if (path.includes('/service-copilot/delay-recoveries')) {
+        return {
+          recoveries: [
+            {
+              operationId: 'persisted-operation-1',
+              delayedReservationId: reservation.id,
+              promotedReservationId: 'promoted-1',
+              waitingListEntryId: 'waiting-1',
+              delayedCustomerName: 'Martin Dupont',
+              waitingCustomerName: 'Alice Martin',
+              originalTableName: 'T4',
+              alternativeTableName: 'T12',
+              delayMinutes: 25,
+              originalStartsAt: reservation.startsAt,
+              appliedStartsAt: reservation.startsAt,
+              appliedAt: reservation.startsAt,
+              status: 'applied',
+              revertible: true,
+            },
+          ],
+        };
+      }
+      return floorPlan;
+    });
+    apiMocks.post.mockResolvedValue({
+      delayedReservationId: reservation.id,
+      promotedReservationId: 'promoted-1',
+      waitingListEntryId: 'waiting-1',
+      operationId: 'persisted-operation-1',
+    });
+
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+    const history = await screen.findByRole('region', {
+      name: 'Historique des plans de retard',
+    });
+    expect(within(history).getByText('Plans de retard')).toBeInTheDocument();
+    expect(within(history).getByText(/Martin Dupont : T4 → T12/)).toBeInTheDocument();
+    fireEvent.click(within(history).getByRole('button', { name: 'Annuler' }));
+    expect(await screen.findByText('Annuler ce plan ?')).toBeInTheDocument();
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Annuler ce plan' }),
+    );
+
+    await waitFor(() =>
+      expect(apiMocks.post).toHaveBeenCalledWith(
+        'restaurants/org_test/service-copilot/delay-impact/revert',
+        { reservationId: reservation.id, operationId: 'persisted-operation-1' },
+      ),
+    );
+    expect(await screen.findByText('Plan initial restauré')).toBeInTheDocument();
+  });
+
+  it('explique dans l’historique pourquoi une annulation est bloquée', async () => {
+    const reservation = makeReservation('CONFIRMED');
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return [reservation];
+      if (path.includes('/waiting-list')) return [];
+      if (path.includes('/service-copilot/delay-recoveries')) {
+        return {
+          recoveries: [
+            {
+              operationId: 'blocked-operation-1',
+              delayedReservationId: reservation.id,
+              promotedReservationId: 'promoted-1',
+              waitingListEntryId: 'waiting-1',
+              delayedCustomerName: 'Martin Dupont',
+              waitingCustomerName: 'Alice Martin',
+              originalTableName: 'T4',
+              alternativeTableName: 'T12',
+              delayMinutes: 25,
+              originalStartsAt: reservation.startsAt,
+              appliedStartsAt: reservation.startsAt,
+              appliedAt: reservation.startsAt,
+              status: 'blocked',
+              revertible: false,
+              blockedReason: 'Le groupe promu a déjà été modifié ou installé.',
+            },
+          ],
+        };
+      }
+      return floorPlan;
+    });
+
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+    const history = await screen.findByRole('region', {
+      name: 'Historique des plans de retard',
+    });
+    expect(within(history).getByText('À vérifier')).toBeInTheDocument();
+    expect(
+      within(history).getByText('Le groupe promu a déjà été modifié ou installé.'),
+    ).toBeInTheDocument();
+    expect(within(history).queryByRole('button', { name: 'Annuler' })).not.toBeInTheDocument();
   });
 
   it('invalide immédiatement un plan si la durée du retard change', async () => {

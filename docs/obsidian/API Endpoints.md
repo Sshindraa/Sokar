@@ -86,6 +86,30 @@ Prévisualisation read-only de l’allocation pour une réservation, avec
 verrou SQL. Les champs `tableId` et `reason` restent retournés pour la
 compatibilité des consommateurs existants.
 
+### Service Copilot — retard et récupération
+
+| Méthode | Route                                                                        | Description                                                                                 |
+| ------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| GET     | `/restaurants/:id/service-copilot/recommendations`                           | Recommandations déterministes, sans mutation.                                               |
+| POST    | `/restaurants/:id/service-copilot/delay-impact`                              | Simule le déplacement et la promotion de liste d’attente.                                   |
+| POST    | `/restaurants/:id/service-copilot/delay-impact/drafts`                       | Produit des brouillons `review-required`, sans envoi.                                       |
+| POST    | `/restaurants/:id/service-copilot/delay-impact/apply`                        | Revalide, verrouille et applique le plan. Retourne aussi `operationId`.                     |
+| POST    | `/restaurants/:id/service-copilot/delay-impact/revert`                       | Restaure le plan initial si aucune donnée n’a changé ; idempotent, audité, 409 sinon.       |
+| GET     | `/restaurants/:id/service-copilot/delay-recoveries?date=YYYY-MM-DD&limit=10` | Reconstitue l’historique persistant des plans appliqués, annulés ou devenus non annulables. |
+| GET     | `/restaurants/:id/service-copilot/pulse?date=YYYY-MM-DD`                     | Résumé serveur du service : retards, arrivées à installer, tables en service et attente.    |
+
+`revert` reçoit `reservationId` et l’`operationId` retourné par `apply`. Il restaure les horaires et
+la table d’origine, annule la réservation promue et remet l’entrée en `PENDING`. Les communications
+déjà effectuées restent à corriger humainement.
+
+`delay-recoveries` lit les audits append-only et l’état métier courant, sans nouvelle table. Il permet
+au dashboard de retrouver un plan après rafraîchissement ou depuis un autre appareil. Le champ
+`revertible` reste indicatif : `revert` refait toujours la validation transactionnelle complète.
+
+`pulse` est une lecture seule calculée dans le fuseau du restaurant. Sur la date courante, il
+signale les arrivées en retard, à installer et attendues dans les 30 prochaines minutes ; sur une
+autre date, il reste une synthèse non actionnable pour ne pas présenter de faux temps réel.
+
 ---
 
 ## Calls

@@ -322,6 +322,22 @@ export interface ServiceCopilotRecommendationsResponse {
   recommendations: ServiceCopilotRecommendation[];
 }
 
+export type ServiceCopilotPulseStatus = 'calm' | 'attention' | 'urgent';
+
+export interface ServiceCopilotPulse {
+  date: string;
+  generatedAt: string;
+  isLiveDate: boolean;
+  status: ServiceCopilotPulseStatus;
+  headline: string;
+  lateArrivals: number;
+  arrivalsToSeat: number;
+  arrivalsNext30Minutes: number;
+  seatedTables: number;
+  pendingWaitingList: number;
+  confirmedReservations: number;
+}
+
 export interface ServiceCopilotDelayImpact {
   feasible: boolean;
   summary: string;
@@ -367,6 +383,31 @@ export interface ServiceCommunicationDraft {
 export interface ServiceCommunicationDraftsResponse {
   impact: ServiceCopilotDelayImpact;
   drafts: ServiceCommunicationDraft[];
+}
+
+export type ServiceCopilotDelayRecoveryStatus = 'applied' | 'reverted' | 'blocked';
+
+export interface ServiceCopilotDelayRecoveryHistoryItem {
+  operationId: string;
+  delayedReservationId: string;
+  promotedReservationId: string;
+  waitingListEntryId: string;
+  delayedCustomerName: string;
+  waitingCustomerName: string;
+  originalTableName: string;
+  alternativeTableName: string;
+  delayMinutes: number;
+  originalStartsAt: string;
+  appliedStartsAt: string;
+  appliedAt: string;
+  revertedAt?: string;
+  status: ServiceCopilotDelayRecoveryStatus;
+  revertible: boolean;
+  blockedReason?: string;
+}
+
+export interface ServiceCopilotDelayRecoveryHistoryResponse {
+  recoveries: ServiceCopilotDelayRecoveryHistoryItem[];
 }
 
 export type SimulationScenarioType = 'direct' | 'change-section' | 'refuse';

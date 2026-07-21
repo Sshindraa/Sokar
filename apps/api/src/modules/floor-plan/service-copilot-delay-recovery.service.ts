@@ -20,8 +20,79 @@ export class DelayRecoveryConflictError extends Error {
 type DelayRecoveryResult = {
   delayedReservationId: string;
   promotedReservationId: string;
+  operationId: string;
   idempotent?: boolean;
 };
+
+type DelayRecoveryRevertResult = {
+  delayedReservationId: string;
+  promotedReservationId: string;
+  waitingListEntryId: string;
+  operationId: string;
+  idempotent?: boolean;
+};
+
+type DelayRecoveryMetadata = {
+  alternativeTableId?: unknown;
+  delayMinutes?: unknown;
+  waitingListEntryId?: unknown;
+  promotedReservationId?: unknown;
+  originalTableId?: unknown;
+  originalStartsAt?: unknown;
+  originalEndsAt?: unknown;
+  appliedStartsAt?: unknown;
+  appliedEndsAt?: unknown;
+  promotedStartsAt?: unknown;
+  promotedEndsAt?: unknown;
+};
+
+export type DelayRecoverySnapshot = {
+  alternativeTableId: string;
+  waitingListEntryId: string;
+  promotedReservationId: string;
+  originalTableId: string;
+  originalStartsAt: Date;
+  originalEndsAt: Date;
+  appliedStartsAt: Date;
+  appliedEndsAt: Date;
+  promotedStartsAt: Date;
+  promotedEndsAt: Date;
+};
+
+export function parseDelayRecoverySnapshot(
+  metadata: Prisma.JsonValue | null | undefined,
+): DelayRecoverySnapshot | null {
+  const value = metadata as DelayRecoveryMetadata | null | undefined;
+  const stringKeys = [
+    'alternativeTableId',
+    'waitingListEntryId',
+    'promotedReservationId',
+    'originalTableId',
+    'originalStartsAt',
+    'originalEndsAt',
+    'appliedStartsAt',
+    'appliedEndsAt',
+    'promotedStartsAt',
+    'promotedEndsAt',
+  ] as const;
+  if (!value || stringKeys.some((key) => typeof value[key] !== 'string')) return null;
+  const dates = {
+    originalStartsAt: new Date(value.originalStartsAt as string),
+    originalEndsAt: new Date(value.originalEndsAt as string),
+    appliedStartsAt: new Date(value.appliedStartsAt as string),
+    appliedEndsAt: new Date(value.appliedEndsAt as string),
+    promotedStartsAt: new Date(value.promotedStartsAt as string),
+    promotedEndsAt: new Date(value.promotedEndsAt as string),
+  };
+  if (Object.values(dates).some((date) => Number.isNaN(date.getTime()))) return null;
+  return {
+    alternativeTableId: value.alternativeTableId as string,
+    waitingListEntryId: value.waitingListEntryId as string,
+    promotedReservationId: value.promotedReservationId as string,
+    originalTableId: value.originalTableId as string,
+    ...dates,
+  };
+}
 
 /**
  * Applique un plan de récupération précédemment présenté au responsable.
@@ -60,7 +131,7 @@ export class ServiceCopilotDelayRecoveryService {
       args.reservationId,
       operationId,
     );
-    if (existing) return { ...existing, idempotent: true };
+    if (existing) return { ...existing, operationId, idempotent: true };
     if (!args.waitingListAcceptanceConfirmed) {
       throw new DelayRecoveryConflictError(
         'Confirmez que le groupe de la liste d’attente est présent et accepte la table.',
@@ -112,7 +183,7 @@ export class ServiceCopilotDelayRecoveryService {
         args.reservationId,
         operationId,
       );
-      if (existing) return { ...existing, idempotent: true };
+      if (existing) return { ...existing, operationId, idempotent: true };
 
       const reservation = await tx.reservation.findFirst({
         where: {
@@ -250,6 +321,13 @@ export class ServiceCopilotDelayRecoveryService {
             delayMinutes: args.delayMinutes,
             waitingListEntryId: entry.id,
             promotedReservationId: promoted.id,
+            originalTableId: originalTable.id,
+            originalStartsAt: reservation.startsAt.toISOString(),
+            originalEndsAt: reservation.endsAt.toISOString(),
+            appliedStartsAt: proposedStartsAt.toISOString(),
+            appliedEndsAt: proposedEndsAt.toISOString(),
+            promotedStartsAt: promotedStartsAt.toISOString(),
+            promotedEndsAt: promotedEndsAt.toISOString(),
           },
         },
         tx,
@@ -264,7 +342,205 @@ export class ServiceCopilotDelayRecoveryService {
         tx,
       );
 
-      return { delayedReservationId: delayed.id, promotedReservationId: promoted.id };
+      return {
+        delayedReservationId: delayed.id,
+        promotedReservationId: promoted.id,
+        operationId,
+      };
+    });
+  }
+
+  /**
+   * Annule un plan de récupération tant que ses deux réservations et son entrée
+   * de liste d’attente sont encore exactement dans l’état créé par `apply`.
+   * Toute intervention ultérieure rend le retour arrière dangereux et produit
+   * un conflit explicite, sans écriture partielle.
+   */
+  async revert(args: {
+    restaurantId: string;
+    reservationId: string;
+    operationId: string;
+    actor: string;
+  }): Promise<DelayRecoveryRevertResult> {
+    const existing = await this.findExistingRevert(
+      this.prisma,
+      args.restaurantId,
+      args.reservationId,
+      args.operationId,
+    );
+    if (existing) return { ...existing, idempotent: true };
+
+    const recovery = await this.prisma.reservationAuditLog.findFirst({
+      where: {
+        event: 'reservation_delay_recovered',
+        reservationId: args.reservationId,
+        correlationId: args.operationId,
+        reservation: { restaurantId: args.restaurantId },
+      },
+      select: { metadata: true },
+    });
+    const snapshot = parseDelayRecoverySnapshot(recovery?.metadata);
+    if (!snapshot) {
+      throw new DelayRecoveryConflictError(
+        'Ce plan ne contient pas les informations nécessaires pour être annulé en sécurité.',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      for (const reservationId of [args.reservationId, snapshot.promotedReservationId].sort()) {
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM reservations WHERE id = ${reservationId} FOR UPDATE`,
+        );
+      }
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM waiting_list_entries WHERE id = ${snapshot.waitingListEntryId} FOR UPDATE`,
+      );
+      for (const tableId of [snapshot.originalTableId, snapshot.alternativeTableId].sort()) {
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM floor_plan_tables WHERE id = ${tableId} FOR UPDATE`,
+        );
+      }
+
+      const alreadyReverted = await this.findExistingRevert(
+        tx,
+        args.restaurantId,
+        args.reservationId,
+        args.operationId,
+      );
+      if (alreadyReverted) return { ...alreadyReverted, idempotent: true };
+
+      const [delayed, promoted, entry, originalTable, alternativeTable] = await Promise.all([
+        tx.reservation.findFirst({
+          where: { id: args.reservationId, restaurantId: args.restaurantId },
+        }),
+        tx.reservation.findFirst({
+          where: { id: snapshot.promotedReservationId, restaurantId: args.restaurantId },
+        }),
+        tx.waitingListEntry.findFirst({
+          where: { id: snapshot.waitingListEntryId, restaurantId: args.restaurantId },
+        }),
+        tx.table.findFirst({
+          where: {
+            id: snapshot.originalTableId,
+            isActive: true,
+            floorPlan: { restaurantId: args.restaurantId, isActive: true },
+          },
+        }),
+        tx.table.findFirst({
+          where: {
+            id: snapshot.alternativeTableId,
+            isActive: true,
+            floorPlan: { restaurantId: args.restaurantId, isActive: true },
+          },
+        }),
+      ]);
+
+      const unchanged =
+        delayed?.state === ('CONFIRMED' as ReservationState) &&
+        delayed.tableId === snapshot.alternativeTableId &&
+        delayed.startsAt?.getTime() === snapshot.appliedStartsAt.getTime() &&
+        delayed.endsAt?.getTime() === snapshot.appliedEndsAt.getTime() &&
+        promoted?.state === ('CONFIRMED' as ReservationState) &&
+        promoted.status === ('CONFIRMED' as ReservationStatus) &&
+        promoted.source === 'service_copilot_delay_recovery' &&
+        promoted.tableId === snapshot.originalTableId &&
+        promoted.startsAt?.getTime() === snapshot.promotedStartsAt.getTime() &&
+        promoted.endsAt?.getTime() === snapshot.promotedEndsAt.getTime() &&
+        entry?.status === ('PROMOTED' as WaitingListStatus) &&
+        entry.promotedReservationId === snapshot.promotedReservationId &&
+        entry.expiresAt.getTime() > Date.now() &&
+        originalTable &&
+        alternativeTable;
+      if (!unchanged) {
+        throw new DelayRecoveryConflictError(
+          'Le plan a évolué depuis son application. Corrigez la situation manuellement.',
+        );
+      }
+
+      const originalTableIsFree = await this.allocation.isTableAvailable(
+        {
+          tableId: snapshot.originalTableId,
+          startsAt: snapshot.originalStartsAt,
+          endsAt: snapshot.originalEndsAt,
+          excludeReservationId: snapshot.promotedReservationId,
+        },
+        tx,
+      );
+      if (!originalTableIsFree) {
+        throw new DelayRecoveryConflictError(
+          'La table initiale est désormais occupée. Le plan ne peut pas être annulé automatiquement.',
+        );
+      }
+
+      await tx.reservation.update({
+        where: { id: delayed.id },
+        data: {
+          tableId: snapshot.originalTableId,
+          startsAt: snapshot.originalStartsAt,
+          endsAt: snapshot.originalEndsAt,
+        },
+      });
+      await tx.reservation.update({
+        where: { id: promoted.id },
+        data: {
+          state: 'CANCELLED' as ReservationState,
+          status: 'CANCELLED' as ReservationStatus,
+        },
+      });
+      await tx.waitingListEntry.update({
+        where: { id: entry.id },
+        data: {
+          status: 'PENDING' as WaitingListStatus,
+          promotedReservationId: null,
+          promotedAt: null,
+        },
+      });
+      await this.audit.record(
+        {
+          event: 'reservation_delay_recovery_reverted',
+          reservationId: delayed.id,
+          actor: args.actor,
+          correlationId: `revert:${args.operationId}`,
+          metadata: {
+            operationId: args.operationId,
+            restoredTableId: snapshot.originalTableId,
+            restoredStartsAt: snapshot.originalStartsAt.toISOString(),
+            restoredEndsAt: snapshot.originalEndsAt.toISOString(),
+            promotedReservationId: promoted.id,
+            waitingListEntryId: entry.id,
+          },
+        },
+        tx,
+      );
+      await this.audit.record(
+        {
+          event: 'reservation_cancelled',
+          reservationId: promoted.id,
+          actor: args.actor,
+          fromState: 'CONFIRMED',
+          toState: 'CANCELLED',
+          correlationId: `revert:${args.operationId}`,
+          metadata: { reason: 'delay_recovery_reverted' },
+        },
+        tx,
+      );
+      await this.audit.record(
+        {
+          event: 'waiting_list_restored',
+          reservationId: promoted.id,
+          actor: args.actor,
+          correlationId: `revert:${args.operationId}`,
+          metadata: { entryId: entry.id, reason: 'delay_recovery_reverted' },
+        },
+        tx,
+      );
+
+      return {
+        delayedReservationId: delayed.id,
+        promotedReservationId: promoted.id,
+        waitingListEntryId: entry.id,
+        operationId: args.operationId,
+      };
     });
   }
 
@@ -288,6 +564,38 @@ export class ServiceCopilotDelayRecoveryService {
       ? {
           delayedReservationId: reservationId,
           promotedReservationId: metadata.promotedReservationId,
+          operationId,
+        }
+      : null;
+  }
+
+  private async findExistingRevert(
+    client: PrismaClient | Prisma.TransactionClient,
+    restaurantId: string,
+    reservationId: string,
+    operationId: string,
+  ): Promise<DelayRecoveryRevertResult | null> {
+    const revert = await client.reservationAuditLog.findFirst({
+      where: {
+        event: 'reservation_delay_recovery_reverted',
+        reservationId,
+        correlationId: `revert:${operationId}`,
+        reservation: { restaurantId },
+      },
+      select: { metadata: true },
+    });
+    const metadata = revert?.metadata as
+      | { promotedReservationId?: unknown; waitingListEntryId?: unknown }
+      | null
+      | undefined;
+    return revert &&
+      typeof metadata?.promotedReservationId === 'string' &&
+      typeof metadata.waitingListEntryId === 'string'
+      ? {
+          delayedReservationId: reservationId,
+          promotedReservationId: metadata.promotedReservationId,
+          waitingListEntryId: metadata.waitingListEntryId,
+          operationId,
         }
       : null;
   }

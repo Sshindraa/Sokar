@@ -93,6 +93,7 @@ describe('ServiceCopilotDelayRecoveryService', () => {
     expect(result).toEqual({
       delayedReservationId: 'reservation-1',
       promotedReservationId: 'promoted-1',
+      operationId: 'delay-recovery:reservation-1:20:table-7:waiting-1',
     });
     expect(tx.$queryRaw).toHaveBeenCalledTimes(4);
     expect(tx.reservation.update).toHaveBeenCalledWith({
@@ -110,6 +111,23 @@ describe('ServiceCopilotDelayRecoveryService', () => {
       }),
     );
     expect(tx.reservationAuditLog.create).toHaveBeenCalledTimes(2);
+    expect(tx.reservationAuditLog.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event: 'reservation_delay_recovered',
+          metadata: expect.objectContaining({
+            originalTableId: 'table-12',
+            originalStartsAt: '2026-07-21T17:30:00.000Z',
+            originalEndsAt: '2026-07-21T19:00:00.000Z',
+            appliedStartsAt: '2026-07-21T17:50:00.000Z',
+            appliedEndsAt: '2026-07-21T19:20:00.000Z',
+            promotedStartsAt: '2026-07-21T17:30:00.000Z',
+            promotedEndsAt: '2026-07-21T19:00:00.000Z',
+          }),
+        }),
+      }),
+    );
   });
 
   it('n’écrit rien si le plan à confirmer ne correspond plus au préflight', async () => {
@@ -171,6 +189,7 @@ describe('ServiceCopilotDelayRecoveryService', () => {
     ).resolves.toEqual({
       delayedReservationId: 'reservation-1',
       promotedReservationId: 'promoted-1',
+      operationId: 'delay-recovery:reservation-1:20:table-7:waiting-1',
       idempotent: true,
     });
     expect(prisma.$transaction).not.toHaveBeenCalled();
@@ -195,6 +214,166 @@ describe('ServiceCopilotDelayRecoveryService', () => {
         delayReportId: 'delay-report-1',
       }),
     ).rejects.toThrow('ne correspond plus au retard signalé');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('restaure le plan initial seulement si les deux réservations sont inchangées', async () => {
+    const { prisma, tx } = makePrismaMock();
+    const service = new ServiceCopilotDelayRecoveryService(prisma);
+    const snapshot = {
+      alternativeTableId: 'table-7',
+      waitingListEntryId: 'waiting-1',
+      promotedReservationId: 'promoted-1',
+      originalTableId: 'table-12',
+      originalStartsAt: '2026-07-21T17:30:00.000Z',
+      originalEndsAt: '2026-07-21T19:00:00.000Z',
+      appliedStartsAt: '2026-07-21T17:50:00.000Z',
+      appliedEndsAt: '2026-07-21T19:20:00.000Z',
+      promotedStartsAt: '2026-07-21T17:30:00.000Z',
+      promotedEndsAt: '2026-07-21T19:00:00.000Z',
+    };
+    prisma.reservationAuditLog.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ metadata: snapshot });
+    tx.reservationAuditLog.findFirst.mockResolvedValue(null);
+    tx.reservation.findFirst
+      .mockResolvedValueOnce({
+        id: 'reservation-1',
+        state: 'CONFIRMED',
+        tableId: 'table-7',
+        startsAt: new Date(snapshot.appliedStartsAt),
+        endsAt: new Date(snapshot.appliedEndsAt),
+      })
+      .mockResolvedValueOnce({
+        id: 'promoted-1',
+        state: 'CONFIRMED',
+        status: 'CONFIRMED',
+        source: 'service_copilot_delay_recovery',
+        tableId: 'table-12',
+        startsAt: new Date(snapshot.promotedStartsAt),
+        endsAt: new Date(snapshot.promotedEndsAt),
+      });
+    tx.waitingListEntry.findFirst.mockResolvedValue({
+      id: 'waiting-1',
+      status: 'PROMOTED',
+      promotedReservationId: 'promoted-1',
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    tx.table.findFirst
+      .mockResolvedValueOnce({ id: 'table-12' })
+      .mockResolvedValueOnce({ id: 'table-7' });
+    vi.spyOn(TableAllocationService.prototype, 'isTableAvailable').mockResolvedValue(true);
+
+    await expect(
+      service.revert({
+        restaurantId: 'rest-1',
+        reservationId: 'reservation-1',
+        operationId: 'delay-report-1',
+        actor: 'manager-1',
+      }),
+    ).resolves.toEqual({
+      delayedReservationId: 'reservation-1',
+      promotedReservationId: 'promoted-1',
+      waitingListEntryId: 'waiting-1',
+      operationId: 'delay-report-1',
+    });
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(5);
+    expect(tx.reservation.update).toHaveBeenNthCalledWith(1, {
+      where: { id: 'reservation-1' },
+      data: {
+        tableId: 'table-12',
+        startsAt: new Date(snapshot.originalStartsAt),
+        endsAt: new Date(snapshot.originalEndsAt),
+      },
+    });
+    expect(tx.reservation.update).toHaveBeenNthCalledWith(2, {
+      where: { id: 'promoted-1' },
+      data: { state: 'CANCELLED', status: 'CANCELLED' },
+    });
+    expect(tx.waitingListEntry.update).toHaveBeenCalledWith({
+      where: { id: 'waiting-1' },
+      data: { status: 'PENDING', promotedReservationId: null, promotedAt: null },
+    });
+    expect(tx.reservationAuditLog.create).toHaveBeenCalledTimes(3);
+  });
+
+  it('refuse le retour arrière si la réservation promue a déjà été installée', async () => {
+    const { prisma, tx } = makePrismaMock();
+    const service = new ServiceCopilotDelayRecoveryService(prisma);
+    const snapshot = {
+      alternativeTableId: 'table-7',
+      waitingListEntryId: 'waiting-1',
+      promotedReservationId: 'promoted-1',
+      originalTableId: 'table-12',
+      originalStartsAt: '2026-07-21T17:30:00.000Z',
+      originalEndsAt: '2026-07-21T19:00:00.000Z',
+      appliedStartsAt: '2026-07-21T17:50:00.000Z',
+      appliedEndsAt: '2026-07-21T19:20:00.000Z',
+      promotedStartsAt: '2026-07-21T17:30:00.000Z',
+      promotedEndsAt: '2026-07-21T19:00:00.000Z',
+    };
+    prisma.reservationAuditLog.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ metadata: snapshot });
+    tx.reservationAuditLog.findFirst.mockResolvedValue(null);
+    tx.reservation.findFirst
+      .mockResolvedValueOnce({
+        id: 'reservation-1',
+        state: 'CONFIRMED',
+        tableId: 'table-7',
+        startsAt: new Date(snapshot.appliedStartsAt),
+        endsAt: new Date(snapshot.appliedEndsAt),
+      })
+      .mockResolvedValueOnce({
+        id: 'promoted-1',
+        state: 'SEATED',
+        status: 'SEATED',
+        source: 'service_copilot_delay_recovery',
+        tableId: 'table-12',
+        startsAt: new Date(snapshot.promotedStartsAt),
+        endsAt: new Date(snapshot.promotedEndsAt),
+      });
+    tx.waitingListEntry.findFirst.mockResolvedValue({
+      id: 'waiting-1',
+      status: 'PROMOTED',
+      promotedReservationId: 'promoted-1',
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    tx.table.findFirst.mockResolvedValue({ id: 'table' });
+
+    await expect(
+      service.revert({
+        restaurantId: 'rest-1',
+        reservationId: 'reservation-1',
+        operationId: 'delay-report-1',
+        actor: 'manager-1',
+      }),
+    ).rejects.toThrow('a évolué');
+    expect(tx.reservation.update).not.toHaveBeenCalled();
+    expect(tx.waitingListEntry.update).not.toHaveBeenCalled();
+  });
+
+  it('rend le retour arrière idempotent', async () => {
+    const { prisma } = makePrismaMock();
+    prisma.reservationAuditLog.findFirst.mockResolvedValue({
+      metadata: { promotedReservationId: 'promoted-1', waitingListEntryId: 'waiting-1' },
+    });
+    const service = new ServiceCopilotDelayRecoveryService(prisma as any);
+
+    await expect(
+      service.revert({
+        restaurantId: 'rest-1',
+        reservationId: 'reservation-1',
+        operationId: 'delay-report-1',
+        actor: 'manager-1',
+      }),
+    ).resolves.toEqual({
+      delayedReservationId: 'reservation-1',
+      promotedReservationId: 'promoted-1',
+      waitingListEntryId: 'waiting-1',
+      operationId: 'delay-report-1',
+      idempotent: true,
+    });
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
