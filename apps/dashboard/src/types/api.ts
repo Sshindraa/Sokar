@@ -129,6 +129,7 @@ export interface FloorPlanTable {
   height: number | null;
   rotation: number;
   shape: TableShape | null;
+  assignedServer?: string | null;
   sectionId?: string | null;
   sectionName?: string | null;
 }

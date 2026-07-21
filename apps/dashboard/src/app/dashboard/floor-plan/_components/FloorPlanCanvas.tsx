@@ -52,6 +52,7 @@ import {
   AlertTriangle,
   CircleCheck,
   UserRound,
+  UserX,
   Users,
   ListOrdered,
   ListFilter,
@@ -875,6 +876,15 @@ function TableCard({
             </p>
           ) : null}
         </div>
+        {table.assignedServer ? (
+          <div
+            className="mt-1 flex max-w-full items-center justify-center gap-1 truncate rounded border border-primary/20 bg-primary/10 px-1 py-0.5 text-[9px] font-semibold text-primary"
+            title={`Serveur : ${table.assignedServer}`}
+          >
+            <UserRound size={10} className="shrink-0" />
+            <span className="truncate">{table.assignedServer}</span>
+          </div>
+        ) : null}
         {showServiceDetails && status?.reservation && reservationStart && !isOverlay ? (
           <DraggableReservation
             reservation={status.reservation}
@@ -1560,6 +1570,7 @@ export function FloorPlanCanvas({
   const live = mode === 'service';
   const [liveDate, setLiveDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [serviceTab, setServiceTab] = useState<'plan' | 'waiting-list' | 'stats'>('plan');
+  const [selectedServerFilter, setSelectedServerFilter] = useState<string | null>(null);
   const liveDateRef = useRef(liveDate);
   liveDateRef.current = liveDate;
   const [reservations, setReservations] = useState<PlanningReservation[]>([]);
@@ -1969,6 +1980,21 @@ export function FloorPlanCanvas({
     }
     return map;
   }, [live, allTables, reservations]);
+
+  const allServers = useMemo(() => {
+    const set = new Set<string>();
+    for (const table of allTables) {
+      if (table.assignedServer) {
+        set.add(table.assignedServer);
+      }
+    }
+    return Array.from(set).sort();
+  }, [allTables]);
+
+  const unassignedCount = useMemo(
+    () => allTables.filter((t) => !t.assignedServer).length,
+    [allTables],
+  );
 
   const selectedWall = useMemo(
     () => (floorPlan?.walls ?? []).find((wall) => wall.id === selectedWallId) ?? null,
@@ -4740,6 +4766,38 @@ export function FloorPlanCanvas({
                   onChange={(e) => setLiveDate(e.target.value)}
                   className="w-40 bg-background border-border"
                 />
+                {allServers.length > 0 ? (
+                  <Select
+                    value={selectedServerFilter ?? '_all_'}
+                    onValueChange={(val) => setSelectedServerFilter(val === '_all_' ? null : val)}
+                  >
+                    <SelectTrigger className="h-8 w-auto gap-1 border-border bg-background px-2.5 text-xs font-medium">
+                      {selectedServerFilter === '_unassigned_' ? (
+                        <UserX size={13} className="shrink-0 text-muted-foreground" />
+                      ) : (
+                        <UserRound size={13} className="shrink-0 text-primary" />
+                      )}
+                      <SelectValue placeholder="Tous les serveurs" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_all_">Tous les serveurs ({allTables.length})</SelectItem>
+                      <SelectItem value="_unassigned_">
+                        <span className="flex items-center gap-1.5">
+                          <UserX size={13} className="shrink-0 text-muted-foreground" />
+                          Non affectées ({unassignedCount})
+                        </span>
+                      </SelectItem>
+                      {allServers.map((server) => {
+                        const count = allTables.filter((t) => t.assignedServer === server).length;
+                        return (
+                          <SelectItem key={server} value={server}>
+                            {server} ({count} {count > 1 ? 'tables' : 'table'})
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                ) : null}
                 <Badge variant="outline" className="gap-1.5 py-1.5">
                   <ListFilter size={14} /> {reservations.length} réservations
                 </Badge>
@@ -4984,6 +5042,12 @@ export function FloorPlanCanvas({
                     {allTables.map((table) => {
                       const { width, height } = getTableSize(table);
                       const status = live ? tableStatuses.get(table.id) : undefined;
+                      const isFilteredOut =
+                        live &&
+                        selectedServerFilter !== null &&
+                        (selectedServerFilter === '_unassigned_'
+                          ? !!table.assignedServer
+                          : table.assignedServer !== selectedServerFilter);
                       return (
                         <DraggableTable
                           key={table.id}
@@ -5004,6 +5068,9 @@ export function FloorPlanCanvas({
                             width,
                             height,
                             position: 'absolute',
+                            opacity: isFilteredOut ? 0.25 : 1,
+                            filter: isFilteredOut ? 'grayscale(80%)' : undefined,
+                            transition: 'all 0.2s ease',
                           }}
                         />
                       );

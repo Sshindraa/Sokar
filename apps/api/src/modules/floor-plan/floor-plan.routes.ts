@@ -51,6 +51,7 @@ const CreateTableSchema = z.object({
   height: OptionalDimension,
   rotation: OptionalInt,
   shape: z.string().max(20).optional(),
+  assignedServer: z.string().max(100).optional().nullable(),
   floorPlanId: z.string().optional(),
 });
 
@@ -65,6 +66,7 @@ const UpdateTableSchema = z.object({
   height: OptionalDimension,
   rotation: OptionalInt,
   shape: z.string().max(20).optional(),
+  assignedServer: z.string().max(100).optional().nullable(),
   isActive: z.boolean().optional(),
   floorPlanId: z.string().optional(),
 });

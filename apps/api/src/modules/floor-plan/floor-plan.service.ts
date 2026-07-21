@@ -89,6 +89,7 @@ export type CreateTableInput = {
   height?: number | null;
   rotation?: number;
   shape?: string;
+  assignedServer?: string | null;
 };
 
 export type UpdateTableInput = Partial<CreateTableInput> & {
@@ -397,6 +398,7 @@ export class FloorPlanService {
         height: input.height ?? null,
         rotation: input.rotation ?? 0,
         shape: input.shape ?? 'rect',
+        assignedServer: input.assignedServer ?? null,
       },
     });
   }
@@ -439,6 +441,7 @@ export class FloorPlanService {
         ...(input.height !== undefined && { height: input.height ?? null }),
         ...(input.rotation !== undefined && { rotation: input.rotation }),
         ...(input.shape !== undefined && { shape: input.shape }),
+        ...(input.assignedServer !== undefined && { assignedServer: input.assignedServer ?? null }),
         ...(input.isActive !== undefined && { isActive: input.isActive }),
       },
     });

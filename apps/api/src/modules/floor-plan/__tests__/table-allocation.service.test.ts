@@ -254,6 +254,7 @@ function makeTable(
     height: overrides.height ?? null,
     rotation: overrides.rotation ?? 0,
     shape: overrides.shape ?? 'rect',
+    assignedServer: overrides.assignedServer ?? null,
     isActive: overrides.isActive ?? true,
     createdAt: overrides.createdAt ?? new Date(),
     updatedAt: overrides.updatedAt ?? new Date(),

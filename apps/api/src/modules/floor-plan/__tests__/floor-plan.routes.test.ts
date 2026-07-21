@@ -493,4 +493,85 @@ describe('floorPlanRoutes', () => {
       expect(cancelSpy).toHaveBeenCalledWith('wl-1', 'test-rest-1');
     });
   });
+
+  describe('Affectation serveur — assignedServer', () => {
+    it('crée une table avec un serveur affecté', async () => {
+      const app = await getApp();
+      const createSpy = vi.spyOn(FloorPlanService.prototype, 'createTable').mockResolvedValue({
+        id: 'table-2',
+        name: 'T2',
+        capacity: 2,
+        minCapacity: 1,
+        assignedServer: 'Camille',
+        isActive: true,
+      } as unknown as Awaited<ReturnType<typeof FloorPlanService.prototype.createTable>>);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/floor-plan/tables',
+        headers: { authorization: 'Bearer test' },
+        payload: { sectionId: 'sec-1', name: 'T2', capacity: 2, assignedServer: 'Camille' },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(createSpy).toHaveBeenCalledWith(
+        'test-rest-1',
+        expect.objectContaining({ assignedServer: 'Camille' }),
+        undefined,
+      );
+      expect(res.json()).toMatchObject({ name: 'T2', assignedServer: 'Camille' });
+    });
+
+    it('met à jour le serveur affecté à une table', async () => {
+      const app = await getApp();
+      const updateSpy = vi.spyOn(FloorPlanService.prototype, 'updateTable').mockResolvedValue({
+        id: 'table-1',
+        name: 'T1',
+        capacity: 4,
+        assignedServer: 'Léa',
+      } as unknown as Awaited<ReturnType<typeof FloorPlanService.prototype.updateTable>>);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/restaurants/test-rest-1/floor-plan/tables/table-1',
+        headers: { authorization: 'Bearer test' },
+        payload: { assignedServer: 'Léa' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(updateSpy).toHaveBeenCalledWith(
+        'test-rest-1',
+        'table-1',
+        expect.objectContaining({ assignedServer: 'Léa' }),
+        undefined,
+      );
+      expect(res.json().assignedServer).toBe('Léa');
+    });
+
+    it('désaffecte le serveur d une table avec assignedServer null', async () => {
+      const app = await getApp();
+      const updateSpy = vi.spyOn(FloorPlanService.prototype, 'updateTable').mockResolvedValue({
+        id: 'table-1',
+        name: 'T1',
+        capacity: 4,
+        assignedServer: null,
+      } as unknown as Awaited<ReturnType<typeof FloorPlanService.prototype.updateTable>>);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/restaurants/test-rest-1/floor-plan/tables/table-1',
+        headers: { authorization: 'Bearer test' },
+        payload: { assignedServer: null },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(updateSpy).toHaveBeenCalledWith(
+        'test-rest-1',
+        'table-1',
+        expect.objectContaining({ assignedServer: null }),
+        undefined,
+      );
+      expect(res.json().assignedServer).toBeNull();
+    });
+  });
 });
