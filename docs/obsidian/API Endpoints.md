@@ -91,6 +91,8 @@ compatibilité des consommateurs existants.
 | Méthode | Route                                                                        | Description                                                                                 |
 | ------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | GET     | `/restaurants/:id/service-copilot/recommendations`                           | Recommandations déterministes, sans mutation.                                               |
+| POST    | `/restaurants/:id/service-copilot/telemetry`                                 | Événement silencieux `VIEWED`/`OPENED` signé, sans effet sur le service.                    |
+| GET     | `/restaurants/:id/service-copilot/telemetry-summary?days=30`                 | Indicateurs de qualité par type et état, pour un espace séparé du Live service.             |
 | POST    | `/restaurants/:id/service-copilot/delay-impact`                              | Simule le déplacement et la promotion de liste d’attente.                                   |
 | POST    | `/restaurants/:id/service-copilot/delay-impact/drafts`                       | Produit des brouillons `review-required`, sans envoi.                                       |
 | POST    | `/restaurants/:id/service-copilot/delay-impact/apply`                        | Revalide, verrouille et applique le plan. Retourne aussi `operationId`.                     |
@@ -106,6 +108,11 @@ déjà effectuées restent à corriger humainement.
 le même plan retourne le premier résultat sans nouvelle écriture. Avec la même clé mais un retard,
 une table, une entrée d’attente ou une confirmation différente, il retourne `409` avec une demande
 de recharger l’analyse. Le contrôle est refait avant et après les verrous transactionnels.
+
+Les recommandations peuvent contenir un `telemetryToken` HMAC émis par le serveur. Il ne permet
+que de déclarer les lectures et ouvertures ; les états appliqué, annulé ou en conflit sont enregistrés
+par les routes serveur de récupération de retard. La télémétrie est optionnelle hors production et
+nécessite `SERVICE_COPILOT_TELEMETRY_SECRET` (au moins 32 caractères) en production.
 
 `delay-recoveries` lit les audits append-only et l’état métier courant, sans nouvelle table. Il permet
 au dashboard de retrouver un plan après rafraîchissement ou depuis un autre appareil. Le champ

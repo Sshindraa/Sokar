@@ -27,6 +27,7 @@ import {
 } from '../service-copilot-delay-recovery.service';
 import { ServiceCopilotDelayRecoveryHistoryService } from '../service-copilot-delay-recovery-history.service';
 import { ServiceCopilotPulseService } from '../service-copilot-pulse.service';
+import { ServiceCopilotTelemetryService } from '../service-copilot-telemetry.service';
 
 describe('floorPlanRoutes', () => {
   beforeEach(() => {
@@ -709,6 +710,119 @@ describe('floorPlanRoutes', () => {
 
       expect(res.statusCode).toBe(204);
       expect(cancelSpy).toHaveBeenCalledWith('wl-1', 'test-rest-1');
+    });
+  });
+
+  describe('GET /restaurants/:id/service-copilot/telemetry-summary', () => {
+    it('retourne les métriques shadow mode du restaurant authentifié', async () => {
+      const app = await getApp();
+      const getSummary = vi
+        .spyOn(ServiceCopilotTelemetryService.prototype, 'getSummary')
+        .mockResolvedValue({
+          from: '2026-07-15T18:00:00.000Z',
+          to: '2026-07-22T18:00:00.000Z',
+          totals: {
+            observed: 0,
+            opened: 0,
+            applied: 4,
+            reverted: 0,
+            conflicted: 1,
+            expired: 0,
+            ignored: 2,
+          },
+          byKind: [],
+        });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/restaurants/test-rest-1/service-copilot/telemetry-summary?days=7',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(getSummary).toHaveBeenCalledWith({ restaurantId: 'test-rest-1', days: 7 });
+      expect(res.json().totals.applied).toBe(4);
+    });
+
+    it('refuse un autre restaurant et une période invalide', async () => {
+      const app = await getApp();
+      const getSummary = vi.spyOn(ServiceCopilotTelemetryService.prototype, 'getSummary');
+
+      const invalidDays = await app.inject({
+        method: 'GET',
+        url: '/restaurants/test-rest-1/service-copilot/telemetry-summary?days=91',
+        headers: { authorization: 'Bearer test' },
+      });
+      const wrongTenant = await app.inject({
+        method: 'GET',
+        url: '/restaurants/other-rest/service-copilot/telemetry-summary?days=7',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(invalidDays.statusCode).toBe(400);
+      expect(wrongTenant.statusCode).toBe(403);
+      expect(getSummary).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /restaurants/:id/service-copilot/telemetry', () => {
+    it('enregistre un événement signé dans le bon restaurant', async () => {
+      const app = await getApp();
+      const recordClientEvent = vi
+        .spyOn(ServiceCopilotTelemetryService.prototype, 'recordClientEvent')
+        .mockResolvedValue({ idempotent: false });
+
+      const jwtSample = 'mock-telemetry-token-string-value-valid';
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/service-copilot/telemetry',
+        headers: { authorization: 'Bearer test' },
+        payload: {
+          token: jwtSample,
+          event: 'VIEWED',
+          idempotencyKey: 'view-delay-1',
+          clientTime: '2026-07-22T18:00:00.000Z',
+        },
+      });
+
+      expect(res.statusCode).toBe(204);
+      expect(recordClientEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          restaurantId: 'test-rest-1',
+          event: 'VIEWED',
+          idempotencyKey: 'view-delay-1',
+        }),
+      );
+    });
+
+    it('refuse un événement invalide ou un autre restaurant', async () => {
+      const app = await getApp();
+      const recordClientEvent = vi.spyOn(
+        ServiceCopilotTelemetryService.prototype,
+        'recordClientEvent',
+      );
+
+      const invalid = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/service-copilot/telemetry',
+        headers: { authorization: 'Bearer test' },
+        payload: { token: 'short', event: 'APPLIED', idempotencyKey: 'bad' },
+      });
+      const jwtSample = 'mock-telemetry-token-string-value-valid';
+      const wrongTenant = await app.inject({
+        method: 'POST',
+        url: '/restaurants/other-rest/service-copilot/telemetry',
+        headers: { authorization: 'Bearer test' },
+        payload: {
+          token: jwtSample,
+          event: 'VIEWED',
+          idempotencyKey: 'wrong-tenant',
+        },
+      });
+
+      expect(invalid.statusCode).toBe(400);
+      expect(wrongTenant.statusCode).toBe(403);
+      expect(recordClientEvent).not.toHaveBeenCalled();
     });
   });
 

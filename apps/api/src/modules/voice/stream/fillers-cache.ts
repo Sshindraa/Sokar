@@ -24,6 +24,8 @@
  */
 import { WebSocket } from 'ws';
 import crypto from 'node:crypto';
+import type { CallSession } from './types';
+import { writeDebugLog } from './debug-log';
 import { logger } from '../../../shared/logger/pino';
 import { DEFAULT_CARTESIA_VOICE_ID, FILLER_CACHE_TTL_SECONDS } from '@sokar/config';
 import { redisCache } from '../../../shared/redis/client';
@@ -189,10 +191,14 @@ export async function initFillerCache(): Promise<void> {
  * 2. Redis si RAM miss (latence ~2ms, premier appel après restart)
  */
 export async function playFiller(
-  telnyxWs: WebSocket,
+  target: CallSession | WebSocket,
   style: 'CASUAL' | 'FORMAL' | 'WARM',
 ): Promise<void> {
-  if (telnyxWs.readyState !== WebSocket.OPEN) return;
+  const isSession = typeof target === 'object' && target !== null && 'callControlId' in target;
+  const session = isSession ? (target as CallSession) : undefined;
+  const ws = isSession ? (target as CallSession).telnyxWs : (target as WebSocket);
+
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
   const pool = FILLERS[style.toLowerCase() as keyof FillerSet];
   const text = pool[Math.floor(Math.random() * pool.length)];
@@ -219,8 +225,17 @@ export async function playFiller(
   }
 
   if (chunks && chunks.length > 0) {
+    writeDebugLog(`[fillers] Playing filler: "${text}" (${chunks.length} chunks, 20ms paced)`);
     for (const chunk of chunks) {
-      telnyxWs.send(JSON.stringify({ event: 'media', media: { payload: chunk } }));
+      if (session && (session.ended || session.state !== 'PROCESSING')) {
+        writeDebugLog(
+          `[fillers] Interrupted filler playback due to state change (state=${session.state})`,
+        );
+        break;
+      }
+      if (ws.readyState !== WebSocket.OPEN) break;
+      ws.send(JSON.stringify({ event: 'media', media: { payload: chunk } }));
+      await new Promise((r) => setTimeout(r, 20));
     }
   } else {
     logger.warn({ text }, '[fillers] No cached audio for filler (warm-up incomplete?)');

@@ -181,6 +181,10 @@ const CopilotTelemetryEventSchema = z.object({
   clientTime: z.string().datetime().optional(),
 });
 
+const CopilotTelemetrySummaryQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).optional().default(30),
+});
+
 function getFloorPlanIdFromQuery(query: unknown): string | undefined {
   const parsed = z.object({ floorPlanId: z.string().optional() }).safeParse(query ?? {});
   return parsed.success ? parsed.data.floorPlanId : undefined;
@@ -325,6 +329,11 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const recs = await copilot.getRecommendations(restaurantId);
+      telemetry
+        .finalizeExpired({ restaurantId })
+        .catch((telemetryError) =>
+          req.log.warn({ err: telemetryError }, 'service copilot telemetry expiry failed'),
+        );
       const recommendations = recs.map((recommendation) => {
         const telemetryToken = telemetry.issueToken({ restaurantId, recommendation });
         return telemetryToken ? { ...recommendation, telemetryToken } : recommendation;
@@ -344,6 +353,7 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
       const body = CopilotTelemetryEventSchema.parse(req.body);
       try {
         await telemetry.recordClientEvent({
+          restaurantId,
           token: body.token,
           event: body.event,
           idempotencyKey: body.idempotencyKey,
@@ -354,6 +364,20 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
       } catch {
         return reply.status(400).send({ error: 'Événement Copilot invalide ou expiré.' });
       }
+    },
+  );
+
+  app.get(
+    '/restaurants/:id/service-copilot/telemetry-summary',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const restaurantId = (req.params as { id: string }).id;
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+      const query = CopilotTelemetrySummaryQuerySchema.parse(req.query);
+      const summary = await telemetry.getSummary({ restaurantId, days: query.days });
+      return reply.send(summary);
     },
   );
 

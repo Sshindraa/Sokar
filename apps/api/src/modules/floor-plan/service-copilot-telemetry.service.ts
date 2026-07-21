@@ -19,7 +19,7 @@ type TelemetryTokenPayload = {
 type TelemetryClientEvent = 'VIEWED' | 'OPENED';
 
 type ServerTelemetryEvent =
-  | Exclude<TelemetryClientEvent, never>
+  | TelemetryClientEvent
   | 'APPLIED'
   | 'REVERTED'
   | 'CONFLICTED'
@@ -27,6 +27,16 @@ type ServerTelemetryEvent =
   | 'IGNORED';
 
 type TelemetryClient = PrismaClient | Prisma.TransactionClient;
+
+export type ServiceCopilotTelemetrySummary = {
+  from: string;
+  to: string;
+  totals: Record<Lowercase<CopilotOccurrenceStatus>, number>;
+  byKind: Array<{
+    kind: string;
+    totals: Record<Lowercase<CopilotOccurrenceStatus>, number>;
+  }>;
+};
 
 const EVENT_TO_STATUS: Record<ServerTelemetryEvent, CopilotOccurrenceStatus> = {
   VIEWED: 'OBSERVED',
@@ -85,6 +95,7 @@ export class ServiceCopilotTelemetryService {
   }
 
   async recordClientEvent(args: {
+    restaurantId: string;
     token: string;
     event: TelemetryClientEvent;
     idempotencyKey: string;
@@ -92,6 +103,9 @@ export class ServiceCopilotTelemetryService {
     clientTime?: Date;
   }): Promise<{ idempotent: boolean }> {
     const payload = this.verifyToken(args.token);
+    if (payload.restaurantId !== args.restaurantId) {
+      throw new Error('Jeton de télémétrie invalide.');
+    }
     return this.recordEvent({
       ...payload,
       event: args.event,
@@ -158,6 +172,51 @@ export class ServiceCopilotTelemetryService {
     return stale.length;
   }
 
+  async getSummary(args: {
+    restaurantId: string;
+    days?: number;
+    now?: Date;
+  }): Promise<ServiceCopilotTelemetrySummary> {
+    const now = args.now ?? new Date();
+    const days = args.days ?? 30;
+    const from = new Date(now.getTime() - days * 24 * 60 * 60_000);
+    await this.finalizeExpired({ restaurantId: args.restaurantId, now });
+    const grouped = await this.prisma.copilotOccurrence.groupBy({
+      by: ['kind', 'status'],
+      where: {
+        restaurantId: args.restaurantId,
+        createdAt: { gte: from, lte: now },
+      },
+      _count: { _all: true },
+    });
+    const emptyTotals = (): Record<Lowercase<CopilotOccurrenceStatus>, number> => ({
+      observed: 0,
+      opened: 0,
+      applied: 0,
+      reverted: 0,
+      conflicted: 0,
+      expired: 0,
+      ignored: 0,
+    });
+    const totals = emptyTotals();
+    const byKind = new Map<string, Record<Lowercase<CopilotOccurrenceStatus>, number>>();
+    for (const item of grouped) {
+      const key = item.status.toLowerCase() as Lowercase<CopilotOccurrenceStatus>;
+      totals[key] += item._count._all;
+      const kindTotals = byKind.get(item.kind) ?? emptyTotals();
+      kindTotals[key] += item._count._all;
+      byKind.set(item.kind, kindTotals);
+    }
+    return {
+      from: from.toISOString(),
+      to: now.toISOString(),
+      totals,
+      byKind: [...byKind.entries()]
+        .map(([kind, kindTotals]) => ({ kind, totals: kindTotals }))
+        .sort((a, b) => a.kind.localeCompare(b.kind)),
+    };
+  }
+
   private verifyToken(token: string): TelemetryTokenPayload {
     if (!this.secret) throw new Error('La télémétrie Service Copilot n’est pas configurée.');
     const [data, signature, extra] = token.split('.');
@@ -175,12 +234,13 @@ export class ServiceCopilotTelemetryService {
     } catch {
       throw new Error('Jeton de télémétrie invalide.');
     }
+    const expiresAt = payload.expiresAt ? new Date(payload.expiresAt) : undefined;
     if (
       !payload.restaurantId ||
       !payload.occurrenceKey ||
       !payload.kind ||
       !payload.ruleVersion ||
-      (payload.expiresAt && new Date(payload.expiresAt).getTime() < Date.now())
+      (expiresAt && (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() < Date.now()))
     ) {
       throw new Error('Jeton de télémétrie expiré ou incomplet.');
     }
@@ -205,6 +265,10 @@ export class ServiceCopilotTelemetryService {
     tx?: Prisma.TransactionClient,
   ): Promise<{ idempotent: boolean }> {
     const client = (tx ?? this.prisma) as TelemetryClient;
+    const expiresAt = args.expiresAt ? new Date(args.expiresAt) : null;
+    if (expiresAt && Number.isNaN(expiresAt.getTime())) {
+      throw new Error('Date d’expiration de télémétrie invalide.');
+    }
     const occurrence = await client.copilotOccurrence.upsert({
       where: {
         restaurantId_occurrenceKey: {
@@ -218,7 +282,7 @@ export class ServiceCopilotTelemetryService {
         kind: args.kind,
         entityId: args.entityId,
         ruleVersion: args.ruleVersion,
-        expiresAt: args.expiresAt ? new Date(args.expiresAt) : null,
+        expiresAt,
         status: EVENT_TO_STATUS[args.event],
       },
       update: {},

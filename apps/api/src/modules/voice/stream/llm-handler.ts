@@ -297,7 +297,7 @@ async function processTranscript(
     const fillerTimer = setTimeout(() => {
       if (!responseReceived && !session.ended && session.state === 'PROCESSING') {
         writeDebugLog(`[processTranscript] LLM took too long (>400ms). Playing a voice filler...`);
-        playFiller(session.telnyxWs, session.personality?.fillerStyle ?? 'CASUAL').catch((err) =>
+        playFiller(session, session.personality?.fillerStyle ?? 'CASUAL').catch((err) =>
           writeDebugLog(`[processTranscript] playFiller failed: ${err}`),
         );
       }
@@ -380,7 +380,7 @@ async function processTranscriptStreaming(
         writeDebugLog(
           `[processTranscriptStreaming] LLM took too long (>400ms). Playing a voice filler...`,
         );
-        playFiller(session.telnyxWs, session.personality?.fillerStyle ?? 'CASUAL').catch((err) =>
+        playFiller(session, session.personality?.fillerStyle ?? 'CASUAL').catch((err) =>
           writeDebugLog(`[processTranscriptStreaming] playFiller failed: ${err}`),
         );
       }

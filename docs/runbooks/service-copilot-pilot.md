@@ -134,6 +134,20 @@ jamais forcer l’état en base : le refus protège une réservation déjà inst
 Pendant le shadow mode, le responsable décide d’abord ce qu’il ferait sans Sokar, puis révèle la
 proposition du Copilot. Aucune proposition ne doit être appliquée automatiquement.
 
+### Télémétrie discrète
+
+La collecte ne modifie pas le Live service : aucun nouveau bandeau, bouton, compteur ou message
+n’est ajouté pendant le rush. À l’affichage et à l’ouverture d’une recommandation, le navigateur
+envoie seulement un événement silencieux. Les actions de récupération de retard enregistrent ensuite
+côté serveur les états appliqué, annulé ou bloqué par conflit. Une recommandation non ouverte avant
+son expiration devient `ignorée` ; une recommandation ouverte mais non appliquée devient `expirée`.
+
+Les événements sont rattachés à une occurrence signée HMAC, cloisonnée par restaurant et dédoublonnée
+par clé d’idempotence. L’identifiant de l’utilisateur est haché ; aucun contenu client, message ou
+décision n’est envoyé à un tiers. Toute panne de télémétrie est sans effet sur l’action opérationnelle.
+Consulter les résultats uniquement dans le futur espace qualité ou via le résumé API, jamais dans le
+flux de décision du Live service.
+
 Pour chaque situation, relever :
 
 | Champ                     | Valeur attendue                                |

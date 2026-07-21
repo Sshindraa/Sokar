@@ -26,6 +26,10 @@
 | `apps/dashboard/.env` (prod) | Clerk keys, `API_URL`, Sentry                                     |
 | `apps/connect/.env` (prod)   | `SITE_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`, `DASHBOARD_URL`     |
 
+Pour la télémétrie Service Copilot, définir `SERVICE_COPILOT_TELEMETRY_SECRET` dans l’environnement
+de l’API (valeur aléatoire d’au moins 32 caractères). Elle signe les jetons de recommandation ; ne pas
+la réutiliser pour un autre usage et ne jamais la mettre dans une variable `NEXT_PUBLIC_*`.
+
 ## Demo restaurant
 
 The seed creates a fictional `Chez Sokar` (slug `chez-sokar-demo`):
