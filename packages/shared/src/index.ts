@@ -17,6 +17,7 @@ export * from './agent';
 export * from './api';
 export * from './confidence';
 export * from './jsonld';
+export * from './phone';
 export * from './utils/fetch-with-timeout';
 export * from './utils/format';
 export * from './utils/opening-hours';

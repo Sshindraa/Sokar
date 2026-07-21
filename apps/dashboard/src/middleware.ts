@@ -7,9 +7,10 @@ const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 // Staging demo mode : si NEXT_PUBLIC_DEMO_RESTAURANT_ID + NEXT_PUBLIC_DEMO_STAGING
 // sont définis, on ne force pas la connexion sur /dashboard. La prod n'a jamais
 // ces variables → comportement inchangé.
-const isStagingDemo =
-  Boolean(process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID) &&
-  Boolean(process.env.NEXT_PUBLIC_DEMO_STAGING);
+const hasDemoRestaurant = Boolean(process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID);
+const isStagingDemo = hasDemoRestaurant && Boolean(process.env.NEXT_PUBLIC_DEMO_STAGING);
+const isLocalDemo = hasDemoRestaurant && process.env.NODE_ENV !== 'production';
+const isDemoMode = isStagingDemo || isLocalDemo;
 
 // En production, l'absence de clé Clerk est une erreur fatale : sans elle le
 // middleware devient un no-op et /dashboard + /onboarding sont accessibles
@@ -37,7 +38,7 @@ const middleware = hasClerkKey
       const rewrite = rewriteBookToWidget(req);
       if (rewrite) return rewrite;
 
-      if (isProtectedRoute(req) && !isStagingDemo) {
+      if (isProtectedRoute(req) && !isDemoMode) {
         const { userId } = await auth();
         if (!userId) {
           const signInUrl = new URL('/login', req.url);

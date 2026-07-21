@@ -28,6 +28,7 @@ export type SlugParam = z.infer<typeof SlugParamSchema>;
 export const AvailabilityQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
   partySize: z.coerce.number().int().min(1).max(50),
+  preferredSectionId: z.string().uuid().optional(),
 });
 export type AvailabilityQuery = z.infer<typeof AvailabilityQuerySchema>;
 
@@ -93,6 +94,7 @@ export const HoldInputSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^\d{2}:\d{2}$/),
   partySize: z.number().int().min(1).max(50),
+  preferredSectionId: z.string().uuid().optional(),
   source: SourceEnum.optional().default('web'),
   // Honeypot anti-bot : doit être vide. Si rempli → bot.
   website: z.string().optional(),

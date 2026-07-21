@@ -85,11 +85,12 @@ Ce qui manque pour la parité Zenchef :
 
 Aucun modèle Prisma pour les tables, sections, zones ou floor plan. <ref_file file="/Users/hamza/Projects/Sokar/packages/database/prisma/schema.prisma" />
 
-Le moteur de disponibilité actuel est **capacité-naïf** :
+Le moteur de disponibilité est maintenant **capacity-aware** grâce au plan de salle :
 
-- `ConnectAvailabilityService` compte 1 réservation = 1 créneau de 30 min pris. <ref_file file="/Users/hamza/Projects/Sokar/apps/api/src/modules/connect/availability.service.ts" />
+- `ConnectAvailabilityService` (code mort) a été supprimé ; Connect utilise désormais `CapacityAwareAvailabilityService`.
 - `ReservationService` (legacy) vérifie les overlaps sur 120 min. <ref_file file="/Users/hamza/Projects/Sokar/apps/api/src/modules/reservations/reservation.service.ts" />
-- `capacitySpecials.totalCapacity` existe mais n'est pas utilisé pour le calcul de disponibilité.
+- `CapacityAwareAvailabilityService` alloue une table physique par réservation et calcule les créneaux disponibles en fonction des tables actives et de leurs capacités. <ref_file file="/Users/hamza/Projects/Sokar/apps/api/src/modules/floor-plan/availability-capacity-aware.service.ts" />
+- `capacitySpecials.totalCapacity` est utilisé comme fallback pour initialiser le plan de salle.
 
 Le dashboard a une **liste** de réservations (`/dashboard/reservations`), pas de vue salle/planning. <ref_file file="/Users/hamza/Projects/Sokar/apps/dashboard/src/app/dashboard/reservations/page.tsx" />
 

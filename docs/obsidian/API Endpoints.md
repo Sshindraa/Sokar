@@ -1,6 +1,6 @@
 # API Endpoints
 
-> **Dernière mise à jour** : 2026-06-24
+> **Dernière mise à jour** : 2026-07-21
 > **Base URL dev** : `http://localhost:3001` (port configuré dans `apps/api/src/main.ts`)
 > **Auth globale** : Clerk (sauf routes explicitement publiques — MCP, voice webhook, public Sokar Connect, RGPD `request-verification`, `confirm-link`, `privacy-policy`)
 > **Génération** : inventaire auto depuis les fichiers `*.routes.ts` / `*.pipeline.ts`
@@ -71,6 +71,20 @@ Mise à jour / suppression.
 > en query param alors que `req.restaurantId` est injecté par `requireOrg`.
 > Voir `apps/api/src/modules/reservations/__tests__/reservation.routes.test.ts`
 > (TODO cleanup-call-and-reservation-routes).
+
+---
+
+## Floor plan
+
+Module : `apps/api/src/modules/floor-plan/floor-plan.routes.ts`
+
+### GET /restaurants/:id/floor-plan/reservations/:reservationId/suggest-table
+
+Prévisualisation read-only de l’allocation pour une réservation, avec
+`floorPlanId` optionnel. Retourne jusqu’à trois candidats dans `suggestions`
+(`tableId`, `name`, `capacity`, `sectionId`, `score`, `reasons`) sans poser de
+verrou SQL. Les champs `tableId` et `reason` restent retournés pour la
+compatibilité des consommateurs existants.
 
 ---
 
@@ -325,11 +339,11 @@ Smoke test Sentry + metrics.
 
 ---
 
-## Sokar Connect (à venir T2)
+## Sokar Connect (actif — T2-T10 faits le 2026-06-24)
 
-Module : `apps/api/src/modules/connect/` (à créer)
+Module : `apps/api/src/modules/connect/` (créé en T2, vérifié vert)
 
-Endpoints prévus, **tous publics** (no Clerk) :
+Endpoints, **tous publics** (no Clerk) :
 
 | Méthode | Route                          | Description                            |
 | ------- | ------------------------------ | -------------------------------------- |

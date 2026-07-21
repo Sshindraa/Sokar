@@ -27,10 +27,10 @@ const STATUS_LABELS: Record<string, string> = {
 
 const STATUS_VARIANT: Record<string, string> = {
   ACTIVE: 'border-success/30 bg-success/10 text-success',
-  REDEEMED: 'border-blue-500/30 bg-blue-500/10 text-blue-500',
+  REDEEMED: 'border-brand/30 bg-brand/10 text-brand',
   EXPIRED: 'border-warning/30 bg-warning/10 text-warning',
-  CANCELLED: 'border-red-500/30 bg-red-500/10 text-red-500',
-  CLOSED: 'border-purple-500/30 bg-purple-500/10 text-purple-500',
+  CANCELLED: 'border-destructive/30 bg-destructive/10 text-destructive',
+  CLOSED: 'border-metal/30 bg-metal/10 text-metal',
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -99,11 +99,11 @@ export default function GiftCardList({
               card.status === 'ACTIVE'
                 ? 'border-l-success'
                 : card.status === 'REDEEMED'
-                  ? 'border-l-blue-400'
+                  ? 'border-l-brand'
                   : card.status === 'CANCELLED'
-                    ? 'border-l-red-500'
+                    ? 'border-l-destructive'
                     : card.status === 'CLOSED'
-                      ? 'border-l-purple-500'
+                      ? 'border-l-metal'
                       : 'border-l-warning'
             }
             actions={[
@@ -125,7 +125,7 @@ export default function GiftCardList({
                     {
                       label: closingId === card.id ? 'Clôture...' : 'Clôturer',
                       icon: <Lock size={14} />,
-                      colorClass: 'bg-purple-600',
+                      colorClass: 'bg-metal',
                       onClick: (e: React.MouseEvent) => {
                         e.stopPropagation();
                         onClose(card);
@@ -138,7 +138,7 @@ export default function GiftCardList({
                     {
                       label: 'Annuler',
                       icon: <Ban size={14} />,
-                      colorClass: 'bg-red-600',
+                      colorClass: 'bg-destructive',
                       onClick: (e: React.MouseEvent) => {
                         e.stopPropagation();
                         onCancel(card);
@@ -230,7 +230,7 @@ export default function GiftCardList({
                 </TableCell>
                 <TableCell>
                   {card.type === 'CROWDFUNDED' ? (
-                    <span className="text-sm text-purple-500">Cagnotte</span>
+                    <span className="text-sm text-metal">Cagnotte</span>
                   ) : card.packName ? (
                     <span className="text-sm">Pack : {card.packName}</span>
                   ) : (
@@ -256,7 +256,7 @@ export default function GiftCardList({
                           ? 'text-success'
                           : card.stripePaymentStatus === 'pending'
                             ? 'text-warning'
-                            : 'text-red-500'
+                            : 'text-destructive'
                       }`}
                     >
                       {card.stripePaymentStatus === 'succeeded'
@@ -296,7 +296,7 @@ export default function GiftCardList({
                       <button
                         onClick={() => onClose(card)}
                         disabled={closingId === card.id}
-                        className="p-2 text-white/50 hover:text-purple-400 rounded-lg hover:bg-white/5 transition-all duration-200 disabled:opacity-50"
+                        className="p-2 text-white/50 hover:text-metal rounded-lg hover:bg-white/5 transition-all duration-200 disabled:opacity-50"
                         title="Clôturer la cagnotte"
                       >
                         <Lock size={16} />
@@ -305,7 +305,7 @@ export default function GiftCardList({
                     {onCancel && card.status === 'ACTIVE' && (
                       <button
                         onClick={() => onCancel(card)}
-                        className="p-2 text-white/50 hover:text-red-500 rounded-lg hover:bg-white/5 transition-all duration-200"
+                        className="p-2 text-white/50 hover:text-destructive rounded-lg hover:bg-white/5 transition-all duration-200"
                         title="Annuler la carte"
                       >
                         <Ban size={16} />

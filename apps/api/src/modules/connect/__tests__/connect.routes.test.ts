@@ -393,6 +393,48 @@ describe('Sokar Connect — Routes publiques', () => {
       });
       expect(res.statusCode).toBe(400);
     });
+
+    it('accepte un preferredSectionId optionnel', async () => {
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: RESTAURANT_ID,
+        slug: SLUG,
+        agenticOptIn: true,
+        publishedAt: new Date('2026-06-24'),
+        city: 'Lyon',
+        country: 'FR',
+        postalCode: '69001',
+        description: null,
+        formattedAddress: '12 Rue',
+        phoneNumber: '+334****0000',
+        phoneE164: '+334****0000',
+        cuisineType: ['Française'],
+        priceRange: 2,
+        openingHours: { mon: { open: '12:00', close: '14:30' } },
+        ambiance: [],
+        dietary: [],
+        noiseLevel: null,
+        exposureSettings: {
+          connectPublished: true,
+          connectAgentic: false,
+        },
+        images: [],
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+
+      vi.mocked(db.agenticHold.findMany).mockResolvedValue([]);
+      vi.mocked(db.reservation.findMany).mockResolvedValue([]);
+      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(
+        mockExposureSettings as unknown as Awaited<
+          ReturnType<typeof db.restaurantExposureSettings.findUnique>
+        >,
+      );
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/public/r/${SLUG}/availability?date=2026-06-29&partySize=2&preferredSectionId=11111111-1111-1111-1111-111111111111`,
+      });
+
+      expect(res.statusCode).toBe(200);
+    });
   });
 
   describe('POST /public/r/:slug/hold', () => {

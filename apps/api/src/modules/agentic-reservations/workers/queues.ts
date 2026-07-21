@@ -8,6 +8,7 @@ import { Queue } from 'bullmq';
 import { redisQueue } from '../../../shared/redis/client';
 import { defaultReliableJobOptions } from '../../../shared/queue/job-options';
 import { AGENTIC_QUEUE_REMOVE_ON_COMPLETE } from '../../../shared/queue/constants.js';
+import { queues } from '../../../shared/queue/queues';
 
 export const agenticExpireHoldQueue = new Queue('agentic-expire-hold', {
   connection: redisQueue,
@@ -20,6 +21,11 @@ export const agenticExpireQuoteQueue = new Queue('agentic-expire-quote', {
 });
 
 export const agenticNotifyQueue = new Queue('agentic-notify', {
+  connection: redisQueue,
+  defaultJobOptions: defaultReliableJobOptions,
+});
+
+export const agenticWaitingListExpireQueue = new Queue('agentic-waiting-list-expire', {
   connection: redisQueue,
   defaultJobOptions: defaultReliableJobOptions,
 });
@@ -75,4 +81,36 @@ export async function scheduleAgenticNotification(args: {
     removeOnComplete: 1000,
     removeOnFail: 1000,
   });
+}
+
+export async function scheduleWaitingListExpiration(args: {
+  entryId: string;
+  expiresAt: Date;
+}): Promise<void> {
+  const delay = Math.max(0, args.expiresAt.getTime() - Date.now());
+  await agenticWaitingListExpireQueue.add(
+    'expire',
+    { entryId: args.entryId },
+    {
+      delay,
+      jobId: `waiting-list:${args.entryId}`,
+      removeOnComplete: AGENTIC_QUEUE_REMOVE_ON_COMPLETE,
+      removeOnFail: AGENTIC_QUEUE_REMOVE_ON_COMPLETE,
+    },
+  );
+}
+
+export async function scheduleWaitingListPromotionNotification(args: {
+  entryId: string;
+  reservationId: string;
+}): Promise<void> {
+  const channels: Array<'sms' | 'email'> = ['sms', 'email'];
+  for (const channel of channels) {
+    const jobId = `waiting-list-promote:${args.entryId}:${channel}`;
+    await queues.waitingListPromote.add(
+      'notify',
+      { entryId: args.entryId, reservationId: args.reservationId, channel },
+      { jobId },
+    );
+  }
 }

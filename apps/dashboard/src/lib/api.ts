@@ -40,6 +40,7 @@ export function useApi() {
       method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
       path: string,
       body?: unknown,
+      options?: { signal?: AbortSignal },
     ): Promise<T> => {
       const url = `${PROXY}/${path.replace(/^\//, '')}`;
 
@@ -47,6 +48,7 @@ export function useApi() {
         method,
         headers: body ? { 'Content-Type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
+        signal: options?.signal,
       });
 
       let data: Record<string, unknown> = {};
@@ -69,7 +71,11 @@ export function useApi() {
     [],
   );
 
-  const get = useCallback(<T = unknown>(path: string) => apiFetch<T>('GET', path), [apiFetch]);
+  const get = useCallback(
+    <T = unknown>(path: string, options?: { signal?: AbortSignal }) =>
+      apiFetch<T>('GET', path, undefined, options),
+    [apiFetch],
+  );
   const post = useCallback(
     <T = unknown>(path: string, body?: unknown) => apiFetch<T>('POST', path, body),
     [apiFetch],

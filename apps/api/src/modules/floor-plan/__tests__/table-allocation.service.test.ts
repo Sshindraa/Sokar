@@ -1,15 +1,17 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import type { Table, Reservation, AgenticHold, PrismaClient } from '@prisma/client';
 import { TableAllocationService, TableAllocationError } from '../table-allocation.service.js';
 
 type MockTable = Table & {
   section: { id: string; name: string; position: number } | null;
-  floorPlan?: { id: string; restaurantId: string } | null;
+  floorPlan?: { id: string; restaurantId: string; isActive: boolean; isDefault: boolean } | null;
 };
 
 type MockReservation = Reservation;
 
 type MockHold = AgenticHold;
+
+const BLOCKING_RESERVATION_STATES = ['PENDING', 'CONFIRMED', 'SEATED'];
 
 function makeMockPrisma(
   initial: {
@@ -21,18 +23,36 @@ function makeMockPrisma(
   const tables = new Map(initial.tables?.map((t) => [t.id, t]) ?? []);
   const reservations = new Map(initial.reservations?.map((r) => [r.id, r]) ?? []);
   const holds = new Map(initial.holds?.map((h) => [h.id, h]) ?? []);
-  const floorPlanByRestaurant = new Map<string, { id: string; restaurantId: string }>();
+  const floorPlanByRestaurant = new Map<
+    string,
+    { id: string; restaurantId: string; isActive: boolean; isDefault: boolean }
+  >();
   for (const t of tables.values()) {
-    if (!floorPlanByRestaurant.has(restaurantId)) {
-      floorPlanByRestaurant.set(restaurantId, { id: t.floorPlanId, restaurantId });
+    const rId = t.floorPlan?.restaurantId;
+    if (rId && !floorPlanByRestaurant.has(rId)) {
+      floorPlanByRestaurant.set(rId, {
+        id: t.floorPlan?.id ?? t.floorPlanId,
+        restaurantId: rId,
+        isActive: t.floorPlan?.isActive ?? true,
+        isDefault: t.floorPlan?.isDefault ?? true,
+      });
     }
   }
 
   const prisma = {
     floorPlan: {
-      findUnique: async (args: unknown) => {
+      findFirst: async (args: unknown) => {
         const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
-        return floorPlanByRestaurant.get(where.restaurantId as string) ?? null;
+        const restaurantId = where.restaurantId as string | undefined;
+        const isActive = where.isActive as boolean | undefined;
+        const isDefault = where.isDefault as boolean | undefined;
+        const fp = floorPlanByRestaurant.get(restaurantId as string);
+        if (!fp) return null;
+        if (isActive === true && !fp.isActive) return null;
+        if (isActive === false && fp.isActive) return null;
+        if (isDefault === true && !fp.isDefault) return null;
+        if (isDefault === false && fp.isDefault) return null;
+        return fp;
       },
     },
     table: {
@@ -48,9 +68,18 @@ function makeMockPrisma(
         const minCapacity = where.minCapacity as { lte?: number } | undefined;
         const id = where.id as { notIn?: string[] } | undefined;
         const sectionId = where.sectionId as string | undefined;
+        const floorPlanRel = where.floorPlan as
+          | { isActive?: boolean; restaurantId?: string }
+          | undefined;
 
         if (whereFloorPlanId) {
           result = result.filter((t) => t.floorPlanId === whereFloorPlanId);
+        }
+        if (floorPlanRel?.restaurantId) {
+          result = result.filter((t) => t.floorPlan?.restaurantId === floorPlanRel.restaurantId);
+        }
+        if (floorPlanRel?.isActive === true) {
+          result = result.filter((t) => t.floorPlan?.isActive !== false);
         }
         if (isActive === true) {
           result = result.filter((t) => t.isActive);
@@ -99,6 +128,28 @@ function makeMockPrisma(
 
         return result.map((t) => ({ ...t, section: t.section }));
       },
+      findFirst: async (args: unknown) => {
+        const typedArgs = args as { where?: Record<string, unknown> };
+        const where = (typedArgs.where ?? {}) as Record<string, unknown>;
+        const id = where.id as string | undefined;
+        const floorPlan = where.floorPlan as { restaurantId?: string } | undefined;
+        const isActive = where.isActive as boolean | undefined;
+        const capacity = where.capacity as { gte?: number } | undefined;
+        const minCapacity = where.minCapacity as { lte?: number } | undefined;
+
+        for (const t of tables.values()) {
+          if (id !== undefined && t.id !== id) continue;
+          if (floorPlan?.restaurantId && t.floorPlan?.restaurantId !== floorPlan.restaurantId) {
+            continue;
+          }
+          if (isActive === true && !t.isActive) continue;
+          if (isActive === false && t.isActive) continue;
+          if (typeof capacity?.gte === 'number' && t.capacity < capacity.gte) continue;
+          if (typeof minCapacity?.lte === 'number' && t.minCapacity > minCapacity.lte) continue;
+          return { ...t, section: t.section };
+        }
+        return null;
+      },
       findUniqueOrThrow: async (args: unknown) => {
         const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
         const id = where.id as string;
@@ -108,31 +159,6 @@ function makeMockPrisma(
       },
     },
     reservation: {
-      findFirst: async (args: unknown) => {
-        const typedArgs = args as { where?: Record<string, unknown> };
-        const where = (typedArgs.where ?? {}) as Record<string, unknown>;
-        const tableId = where.tableId as string | undefined;
-        const state = where.state as { in?: string[] } | undefined;
-        const excludeId = where.id as { not?: string } | undefined;
-        const and = (where.AND ?? []) as Record<string, unknown>[];
-
-        for (const r of reservations.values()) {
-          if (r.tableId !== tableId) continue;
-          if (state?.in && !state.in.includes(r.state)) continue;
-          if (excludeId?.not && r.id === excludeId.not) continue;
-          if (and.length > 0) {
-            const [startCond, endCond] = and;
-            const startStartsAt = startCond.startsAt as Record<string, unknown> | undefined;
-            const endEndsAt = endCond.endsAt as Record<string, unknown> | undefined;
-            if (startStartsAt?.lt && !(r.startsAt! < (startStartsAt.lt as Date))) continue;
-            if (startStartsAt?.gte && !(r.startsAt! >= (startStartsAt.gte as Date))) continue;
-            if (endEndsAt?.gt && !(r.endsAt! > (endEndsAt.gt as Date))) continue;
-            if (endEndsAt?.lte && !(r.endsAt! <= (endEndsAt.lte as Date))) continue;
-          }
-          return r;
-        }
-        return null;
-      },
       findUniqueOrThrow: async (args: unknown) => {
         const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
         const id = where.id as string;
@@ -154,36 +180,48 @@ function makeMockPrisma(
         return updated;
       },
     },
-    agenticHold: {
-      findFirst: async (args: unknown) => {
-        const typedArgs = args as { where?: Record<string, unknown> };
-        const where = (typedArgs.where ?? {}) as Record<string, unknown>;
-        const tableId = where.tableId as string | undefined;
-        const status = where.status as string | undefined;
-        const expiresAt = where.expiresAt as { gt?: Date } | undefined;
-        const excludeId = where.id as { not?: string } | undefined;
-        const and = (where.AND ?? []) as Record<string, unknown>[];
+    agenticHold: {},
+    $queryRaw: async (arg: unknown) => {
+      const s = arg as { sql?: string; values?: unknown[] };
+      const sql = s.sql ?? '';
+      const values = s.values ?? [];
 
+      if (sql.includes('floor_plan_tables')) {
+        return [{ id: values[0] as string }];
+      }
+
+      if (sql.includes('reservations')) {
+        const [tableId, startsAt, endsAt, excludeId] = values;
+        for (const r of reservations.values()) {
+          if (r.tableId !== tableId) continue;
+          if (!BLOCKING_RESERVATION_STATES.includes(r.state)) continue;
+          if (!r.startsAt || !r.endsAt) continue;
+          if (excludeId && r.id === excludeId) continue;
+          if (r.startsAt < (endsAt as Date) && r.endsAt > (startsAt as Date)) {
+            return [{ exists: 1 }];
+          }
+        }
+        return [];
+      }
+
+      if (sql.includes('agentic_holds')) {
+        const [tableId, startsAt, endsAt, excludeId] = values;
+        const now = new Date();
         for (const h of holds.values()) {
           if (h.tableId !== tableId) continue;
-          if (status && h.status !== status) continue;
-          if (expiresAt?.gt && !(h.expiresAt > expiresAt.gt)) continue;
-          if (excludeId?.not && h.id === excludeId.not) continue;
-          if (and.length > 0) {
-            const [startCond, endCond] = and;
-            const startSlotStart = startCond.slotStart as Record<string, unknown> | undefined;
-            const endSlotEnd = endCond.slotEnd as Record<string, unknown> | undefined;
-            if (startSlotStart?.lt && !(h.slotStart < (startSlotStart.lt as Date))) continue;
-            if (startSlotStart?.gte && !(h.slotStart >= (startSlotStart.gte as Date))) continue;
-            if (endSlotEnd?.gt && !(h.slotEnd > (endSlotEnd.gt as Date))) continue;
-            if (endSlotEnd?.lte && !(h.slotEnd <= (endSlotEnd.lte as Date))) continue;
+          if (h.status !== 'ACTIVE') continue;
+          if (!(h.expiresAt > now)) continue;
+          if (!h.slotStart || !h.slotEnd) continue;
+          if (excludeId && h.id === excludeId) continue;
+          if (h.slotStart < (endsAt as Date) && h.slotEnd > (startsAt as Date)) {
+            return [{ exists: 1 }];
           }
-          return h;
         }
-        return null;
-      },
+        return [];
+      }
+
+      return [{ id: 'locked' }];
     },
-    $queryRaw: async () => [{ id: 'locked' }],
     $transaction: async (fn: unknown) => {
       if (Array.isArray(fn)) {
         return Promise.all(fn as unknown[]);
@@ -212,6 +250,9 @@ function makeTable(
     minCapacity: overrides.minCapacity ?? 1,
     positionX: overrides.positionX ?? null,
     positionY: overrides.positionY ?? null,
+    width: overrides.width ?? null,
+    height: overrides.height ?? null,
+    rotation: overrides.rotation ?? 0,
     shape: overrides.shape ?? 'rect',
     isActive: overrides.isActive ?? true,
     createdAt: overrides.createdAt ?? new Date(),
@@ -222,6 +263,8 @@ function makeTable(
       ({
         id: overrides.floorPlanId,
         restaurantId: overrides.restaurantId ?? 'r-1',
+        isActive: true,
+        isDefault: true,
       } as MockTable['floorPlan']),
   };
 }
@@ -244,6 +287,7 @@ function makeReservation(
     partySize: overrides.partySize,
     customerName: overrides.customerName ?? 'Client',
     customerPhone: overrides.customerPhone ?? null,
+    customerEmail: overrides.customerEmail ?? null,
     status: overrides.status ?? 'CONFIRMED',
     estimatedRevenue: overrides.estimatedRevenue ?? null,
     confirmedRevenue: overrides.confirmedRevenue ?? null,
@@ -363,7 +407,7 @@ describe('TableAllocationService', () => {
       expect(table!.id).toBe('t-terrasse');
     });
 
-    it('fallback sur toutes les sections si la préférence est impossible', async () => {
+    it('retombe sur le plan par défaut si la section préférée ne peut pas accueillir le groupe', async () => {
       const { prisma } = makeMockPrisma({
         tables: [
           makeTable({
@@ -394,7 +438,46 @@ describe('TableAllocationService', () => {
         preferredSectionId: sectionId,
       });
 
+      expect(table).not.toBeNull();
       expect(table!.id).toBe('t-inside');
+    });
+
+    it('allocate avec preferredSectionId choisit une table dans le floor plan de cette section', async () => {
+      const fp2 = 'fp-2';
+      const sectionTerrasse = { id: sectionId, name: 'Terrasse', position: 0 };
+      const { prisma } = makeMockPrisma({
+        tables: [
+          makeTable({
+            id: 't-inside',
+            floorPlanId,
+            capacity: 4,
+            name: 'Intérieur',
+            sectionId: null,
+            section: null,
+          }),
+          makeTable({
+            id: 't-terrasse',
+            floorPlanId: fp2,
+            capacity: 4,
+            name: 'Terrasse',
+            sectionId,
+            section: sectionTerrasse,
+            floorPlan: { id: fp2, restaurantId, isActive: true, isDefault: false },
+          }),
+        ],
+      });
+
+      const service = new TableAllocationService(prisma);
+      const table = await service.allocate({
+        restaurantId,
+        partySize: 4,
+        startsAt: new Date('2026-07-02T19:00:00Z'),
+        endsAt: new Date('2026-07-02T21:00:00Z'),
+        preferredSectionId: sectionId,
+      });
+
+      expect(table).not.toBeNull();
+      expect(table!.id).toBe('t-terrasse');
     });
 
     it('ignore les tables inactives', async () => {
@@ -488,6 +571,148 @@ describe('TableAllocationService', () => {
 
       expect(table).not.toBeNull();
       expect(table!.id).toBe('t-1');
+    });
+
+    it('ne verrouille pas les tables en mode lecture seule', async () => {
+      const { prisma } = makeMockPrisma({
+        tables: [makeTable({ id: 't-1', floorPlanId, capacity: 2 })],
+      });
+
+      // On garde le mock existant et on surcharge $queryRaw pour échouer
+      // explicitement si le service tentait quand même un verrou en lecture seule.
+      const readOnlyPrisma = {
+        ...prisma,
+        $queryRaw: async (arg: unknown) => {
+          const sql = (arg as { sql?: string }).sql ?? '';
+          if (sql.includes('FOR UPDATE')) {
+            throw new Error('SELECT FOR UPDATE should not be called in readOnly mode');
+          }
+          return [];
+        },
+      } as unknown as PrismaClient;
+
+      const service = new TableAllocationService(readOnlyPrisma);
+      const table = await service.allocate(
+        {
+          restaurantId,
+          partySize: 2,
+          startsAt: new Date('2026-07-02T20:00:00Z'),
+          endsAt: new Date('2026-07-02T22:00:00Z'),
+        },
+        undefined,
+        { readOnly: true },
+      );
+
+      expect(table).not.toBeNull();
+      expect(table!.id).toBe('t-1');
+    });
+  });
+
+  describe('suggest', () => {
+    const startsAt = new Date('2026-07-02T19:00:00Z');
+    const endsAt = new Date('2026-07-02T21:00:00Z');
+
+    it('retourne le top-3 trié best-fit avec score et raisons', async () => {
+      const { prisma } = makeMockPrisma({
+        tables: [
+          makeTable({ id: 't-6', floorPlanId, capacity: 6, name: 'Grande' }),
+          makeTable({ id: 't-2', floorPlanId, capacity: 2, name: 'Petite' }),
+          makeTable({ id: 't-4', floorPlanId, capacity: 4, name: 'Moyenne' }),
+        ],
+      });
+
+      const service = new TableAllocationService(prisma);
+      const out = await service.suggest({ restaurantId, partySize: 2, startsAt, endsAt }, 3);
+
+      expect(out).toHaveLength(3);
+      expect(out.map((s) => s.table.id)).toEqual(['t-2', 't-4', 't-6']);
+      expect(out[0].score).toBeGreaterThanOrEqual(out[1].score);
+      expect(out[1].score).toBeGreaterThanOrEqual(out[2].score);
+      expect(out[0].reasons[0]).toContain('Capacité exacte');
+      expect(out[0].table.name).toBe('Petite');
+      expect(out[0].table.capacity).toBe(2);
+    });
+
+    it('respecte limit', async () => {
+      const { prisma } = makeMockPrisma({
+        tables: [
+          makeTable({ id: 't-2', floorPlanId, capacity: 2 }),
+          makeTable({ id: 't-4', floorPlanId, capacity: 4 }),
+          makeTable({ id: 't-6', floorPlanId, capacity: 6 }),
+        ],
+      });
+
+      const service = new TableAllocationService(prisma);
+      const out = await service.suggest({ restaurantId, partySize: 2, startsAt, endsAt }, 2);
+
+      expect(out).toHaveLength(2);
+    });
+
+    it('exclut les tables indisponibles (conflit de réservation)', async () => {
+      const { prisma } = makeMockPrisma({
+        tables: [
+          makeTable({ id: 't-2', floorPlanId, capacity: 2 }),
+          makeTable({ id: 't-4', floorPlanId, capacity: 4 }),
+        ],
+        reservations: [
+          makeReservation({ id: 'r-1', tableId: 't-2', startsAt, endsAt, partySize: 2 }),
+        ],
+      });
+
+      const service = new TableAllocationService(prisma);
+      const out = await service.suggest({ restaurantId, partySize: 2, startsAt, endsAt }, 3);
+
+      expect(out.map((s) => s.table.id)).toEqual(['t-4']);
+    });
+
+    it('ne verrouille JAMAIS les tables (pas de FOR UPDATE)', async () => {
+      const { prisma } = makeMockPrisma({
+        tables: [makeTable({ id: 't-2', floorPlanId, capacity: 2 })],
+      });
+      const rawSpy = vi.spyOn(prisma, '$queryRaw');
+
+      const service = new TableAllocationService(prisma);
+      await service.suggest({ restaurantId, partySize: 2, startsAt, endsAt }, 3);
+
+      const lockCalls = rawSpy.mock.calls.filter((call) =>
+        String((call[0] as { sql?: string })?.sql ?? '').includes('floor_plan_tables'),
+      );
+      expect(lockCalls).toHaveLength(0);
+    });
+
+    it('retourne [] quand aucune table n est disponible', async () => {
+      const { prisma } = makeMockPrisma({
+        tables: [makeTable({ id: 't-1', floorPlanId, capacity: 1 })],
+      });
+
+      const service = new TableAllocationService(prisma);
+      const out = await service.suggest({ restaurantId, partySize: 8, startsAt, endsAt }, 3);
+
+      expect(out).toEqual([]);
+    });
+
+    it('mentionne la section préférée dans les raisons', async () => {
+      const section = { id: sectionId, name: 'Terrasse', position: 0 };
+      const { prisma } = makeMockPrisma({
+        tables: [
+          makeTable({
+            id: 't-terrasse',
+            floorPlanId,
+            capacity: 4,
+            sectionId,
+            section,
+          }),
+        ],
+      });
+
+      const service = new TableAllocationService(prisma);
+      const out = await service.suggest(
+        { restaurantId, partySize: 4, startsAt, endsAt, preferredSectionId: sectionId },
+        3,
+      );
+
+      expect(out).toHaveLength(1);
+      expect(out[0].reasons.join(' ')).toContain('section préférée');
     });
   });
 
@@ -708,6 +933,133 @@ describe('TableAllocationService', () => {
       const error = await service.reallocate('r-1', 't-2').catch((e) => e);
       expect(error).toBeInstanceOf(TableAllocationError);
       expect(error.code).toBe('TABLE_NOT_AVAILABLE');
+    });
+  });
+
+  describe('assertTableAvailableForSeating', () => {
+    it('réussit quand la table est disponible', async () => {
+      const startsAt = new Date('2026-07-02T19:00:00Z');
+      const endsAt = new Date('2026-07-02T21:00:00Z');
+      const { prisma } = makeMockPrisma({
+        tables: [makeTable({ id: 't-1', floorPlanId, capacity: 2 })],
+      });
+
+      const service = new TableAllocationService(prisma);
+      await expect(
+        service.assertTableAvailableForSeating(
+          { restaurantId, tableId: 't-1', partySize: 2, startsAt, endsAt },
+          prisma,
+        ),
+      ).resolves.toBeUndefined();
+    });
+
+    it('rejette une table introuvable', async () => {
+      const { prisma } = makeMockPrisma();
+      const service = new TableAllocationService(prisma);
+      const error = await service
+        .assertTableAvailableForSeating(
+          {
+            restaurantId,
+            tableId: 't-missing',
+            partySize: 2,
+            startsAt: new Date(),
+            endsAt: new Date(),
+          },
+          prisma,
+        )
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(TableAllocationError);
+      expect(error.code).toBe('TABLE_NOT_FOUND');
+    });
+
+    it('rejette une table déjà occupée', async () => {
+      const startsAt = new Date('2026-07-02T19:00:00Z');
+      const endsAt = new Date('2026-07-02T21:00:00Z');
+      const { prisma } = makeMockPrisma({
+        tables: [makeTable({ id: 't-1', floorPlanId, capacity: 2 })],
+        reservations: [
+          makeReservation({ id: 'r-1', tableId: 't-1', startsAt, endsAt, partySize: 2 }),
+        ],
+      });
+
+      const service = new TableAllocationService(prisma);
+      const error = await service
+        .assertTableAvailableForSeating(
+          { restaurantId, tableId: 't-1', partySize: 2, startsAt, endsAt },
+          prisma,
+        )
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(TableAllocationError);
+      expect(error.code).toBe('TABLE_NOT_AVAILABLE');
+    });
+
+    it('ignore la réservation actuelle avec excludeReservationId', async () => {
+      const startsAt = new Date('2026-07-02T19:00:00Z');
+      const endsAt = new Date('2026-07-02T21:00:00Z');
+      const { prisma } = makeMockPrisma({
+        tables: [makeTable({ id: 't-1', floorPlanId, capacity: 2 })],
+        reservations: [
+          makeReservation({
+            id: 'r-1',
+            tableId: 't-1',
+            startsAt,
+            endsAt,
+            partySize: 2,
+            state: 'SEATED',
+          }),
+        ],
+      });
+
+      const service = new TableAllocationService(prisma);
+      await expect(
+        service.assertTableAvailableForSeating(
+          {
+            restaurantId,
+            tableId: 't-1',
+            partySize: 2,
+            startsAt,
+            endsAt,
+            excludeReservationId: 'r-1',
+          },
+          prisma,
+        ),
+      ).resolves.toBeUndefined();
+    });
+
+    it('rejette une table inactive', async () => {
+      const startsAt = new Date('2026-07-02T19:00:00Z');
+      const endsAt = new Date('2026-07-02T21:00:00Z');
+      const { prisma } = makeMockPrisma({
+        tables: [makeTable({ id: 't-1', floorPlanId, capacity: 2, isActive: false })],
+      });
+
+      const service = new TableAllocationService(prisma);
+      const error = await service
+        .assertTableAvailableForSeating(
+          { restaurantId, tableId: 't-1', partySize: 2, startsAt, endsAt },
+          prisma,
+        )
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(TableAllocationError);
+      expect(error.code).toBe('TABLE_NOT_ACTIVE');
+    });
+
+    it('rejette une table trop petite', async () => {
+      const startsAt = new Date('2026-07-02T19:00:00Z');
+      const endsAt = new Date('2026-07-02T21:00:00Z');
+      const { prisma } = makeMockPrisma({
+        tables: [makeTable({ id: 't-1', floorPlanId, capacity: 2, minCapacity: 2 })],
+      });
+
+      const service = new TableAllocationService(prisma);
+      const error = await service
+        .assertTableAvailableForSeating(
+          { restaurantId, tableId: 't-1', partySize: 1, startsAt, endsAt },
+          prisma,
+        )
+        .catch((e) => e);
+      expect(error).toBeInstanceOf(TableAllocationError);
+      expect(error.code).toBe('TABLE_MIN_CAPACITY_TOO_HIGH');
     });
   });
 });

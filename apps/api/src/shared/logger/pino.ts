@@ -29,6 +29,9 @@ export const REDACT_PATHS = [
   // PII
   '*.phone',
   '*.customerPhone',
+  '*.customerPhoneNormalized',
+  '*.email',
+  '*.customerEmail',
 
   // Application env vars that contain secrets (used when `env` is logged)
   'env.SENTRY_DSN',

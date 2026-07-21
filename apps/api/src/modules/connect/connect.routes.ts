@@ -22,10 +22,17 @@ import { db } from '../../shared/db/client';
 import { redisCache } from '../../shared/redis/client';
 import { logger } from '../../shared/logger/pino';
 import { ConnectService, hashPhone } from './connect.service';
-import { CapacityAwareAvailabilityService } from '../floor-plan/availability-capacity-aware.service';
+import {
+  CapacityAwareAvailabilityService,
+  zonedTimeToUtc,
+} from '../floor-plan/availability-capacity-aware.service';
 import { TableAllocationService } from '../floor-plan/table-allocation.service';
 import { resolveServiceDurationMinutes } from '../floor-plan/floor-plan.types';
-import { HoldService } from '../agentic-reservations/core/hold.service';
+import {
+  CancelWaitingListTokenSchema,
+  WaitingListJoinInputSchema,
+} from '../floor-plan/waiting-list.types';
+import { HoldConflictError, HoldService } from '../agentic-reservations/core/hold.service';
 import { ReservationService } from '../agentic-reservations/core/reservation.service';
 import { AuditLogService } from '../agentic-reservations/core/audit-log.service';
 import { IdempotencyService } from '../agentic-reservations/core/idempotency.service';
@@ -34,6 +41,14 @@ import {
   buildPolicySnapshot,
   type PolicySnapshot,
 } from '../agentic-reservations/core/policies.service';
+import { WaitingListService } from '../agentic-reservations/core/waiting-list.service';
+import {
+  WaitingListAlreadyExistsError,
+  WaitingListAlreadyPromotedError,
+  WaitingListDisabledError,
+  WaitingListEntryNotFoundError,
+  WaitingListSlotFullError,
+} from '../agentic-reservations/core/waiting-list.errors';
 import { ConsentService } from '../rgpd/consent.service';
 import {
   computeIdempotencyScope,
@@ -60,6 +75,8 @@ import {
   RATE_LIMIT_AVAILABILITY_MAX,
   RATE_LIMIT_HOLD_MAX,
   RATE_LIMIT_CONFIRM_MAX,
+  RATE_LIMIT_WAITING_LIST_JOIN_MAX,
+  RATE_LIMIT_WAITING_LIST_CANCEL_MAX,
   PAGINATION_DEFAULT_LIMIT,
   PAGINATION_MAX_LIMIT,
 } from './constants';
@@ -96,6 +113,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
   const idempotency = new IdempotencyService(new PrismaIdempotencyStore(db));
   const reservations = new ReservationService(db, audit, holds, idempotency);
   const consents = new ConsentService(db);
+  const waitingList = new WaitingListService(db, tableAllocation, audit);
 
   // ─── Versioning : /public/v1/* → alias de /public/* (Phase 6) ───
   // La réécriture se fait au niveau du serveur (rewriteUrl dans main.ts),
@@ -407,6 +425,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         restaurantId: restaurant.id,
         date: queryParse.data.date,
         partySize: queryParse.data.partySize,
+        preferredSectionId: queryParse.data.preferredSectionId,
       });
 
       return reply.send(dto);
@@ -488,6 +507,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           channel: 'WEB',
           policy,
           actor: 'connect:web',
+          preferredSectionId: bodyParse.data.preferredSectionId,
         });
 
         // Émettre l'événement analytics reservation_hold_created (T9)
@@ -510,8 +530,13 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           sourceNormalized: source,
         });
       } catch (err: unknown) {
-        if (err instanceof Error && err.name === 'HoldConflictError') {
-          return reply.status(409).send({ error: 'Slot already held or reserved' });
+        if (err instanceof HoldConflictError) {
+          return reply.status(409).send({
+            error: 'no_table_available',
+            waitingListEnabled:
+              (settings?.capacitySpecials as Record<string, unknown> | undefined)
+                ?.waitingListEnabled === true,
+          });
         }
         logger.error({ err, slug: slugParse.data.slug }, 'connect hold creation failed');
         await emitConnectEvent(app.queues.connectAnalytics, {
@@ -756,6 +781,194 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           return reply.status(410).send({ error: message });
         }
         return reply.status(500).send({ error: message });
+      }
+    },
+  );
+
+  // ─── 5. POST /public/r/:slug/waiting-list ────────────────────
+  // Rejoint la file d'attente pour un créneau plein.
+
+  app.post(
+    '/public/r/:slug/waiting-list',
+    {
+      config: {
+        rateLimit: {
+          max: RATE_LIMIT_WAITING_LIST_JOIN_MAX,
+          timeWindow: '1 hour',
+        },
+      },
+    },
+    async (req, reply) => {
+      const slugParse = SlugParamSchema.safeParse(req.params);
+      if (!slugParse.success) {
+        return reply.status(400).send({ error: 'Invalid slug', details: slugParse.error.format() });
+      }
+      const bodyParse = WaitingListJoinInputSchema.safeParse(req.body);
+      if (!bodyParse.success) {
+        return reply.status(400).send({ error: 'Invalid body', details: bodyParse.error.format() });
+      }
+
+      const { date, time, partySize, customer, preferredSectionId, source } = bodyParse.data;
+
+      const restaurant = await canal.getPublishedBySlug(slugParse.data.slug);
+      if (!restaurant) {
+        return reply.status(404).send({ error: 'Restaurant not found or not published' });
+      }
+
+      const settings = await db.restaurantExposureSettings.findUnique({
+        where: { restaurantId: restaurant.id },
+      });
+
+      const capacitySpecials = (settings?.capacitySpecials ?? {}) as Record<string, unknown>;
+      const waitingListEnabled = capacitySpecials.waitingListEnabled === true;
+      const waitingListMaxEntriesPerSlot =
+        typeof capacitySpecials.waitingListMaxEntriesPerSlot === 'number'
+          ? capacitySpecials.waitingListMaxEntriesPerSlot
+          : 10;
+
+      if (partySize > (settings?.maxPartySize ?? 50)) {
+        return reply.status(409).send({
+          error: `Party size ${partySize} exceeds max (${settings?.maxPartySize ?? 50})`,
+        });
+      }
+
+      const restaurantWithTz = await db.restaurant.findUnique({
+        where: { id: restaurant.id },
+        select: { timezone: true },
+      });
+      const timeZone = restaurantWithTz?.timezone ?? 'Europe/Paris';
+
+      const serviceDurationMinutes = resolveServiceDurationMinutes(capacitySpecials);
+      const slotStart = zonedTimeToUtc(date, time, timeZone);
+      const slotEnd = new Date(slotStart.getTime() + serviceDurationMinutes * 60_000);
+
+      const availabilityDto = await availability.getAvailability({
+        restaurantId: restaurant.id,
+        date,
+        partySize,
+        preferredSectionId,
+      });
+
+      const slot = availabilityDto.slots.find((s) => s.time === time);
+      if (!slot) {
+        return reply.status(400).send({ error: 'invalid_slot' });
+      }
+      if (slot.available) {
+        return reply.status(409).send({ error: 'slot_now_available' });
+      }
+
+      const allocatedTable = await tableAllocation.allocate(
+        {
+          restaurantId: restaurant.id,
+          partySize,
+          startsAt: slotStart,
+          endsAt: slotEnd,
+          preferredSectionId,
+        },
+        undefined,
+        { readOnly: true },
+      );
+
+      if (allocatedTable) {
+        return reply.status(409).send({ error: 'slot_now_available' });
+      }
+
+      try {
+        const { entry, actionToken } = await waitingList.join({
+          restaurantId: restaurant.id,
+          partySize,
+          customerFirstName: customer.firstName,
+          customerLastName: customer.lastName,
+          customerPhone: customer.phone,
+          customerEmail: customer.email,
+          slotStart,
+          preferredSectionId,
+          source,
+          waitingListEnabled,
+          waitingListMaxEntriesPerSlot,
+          serviceDurationMinutes,
+        });
+
+        await emitConnectEvent(app.queues.connectAnalytics, {
+          event: 'waiting_list_joined',
+          restaurantId: restaurant.id,
+          restaurantSlug: restaurant.slug,
+          city: restaurant.address.city,
+          source,
+          date,
+          time,
+          partySize,
+        });
+
+        return reply.status(201).send({
+          entryId: entry.id,
+          position: entry.position,
+          actionToken,
+          expiresAt: entry.expiresAt.toISOString(),
+        });
+      } catch (err: unknown) {
+        if (err instanceof WaitingListSlotFullError) {
+          return reply.status(409).send({ error: 'waiting_list_full' });
+        }
+        if (err instanceof WaitingListAlreadyExistsError) {
+          return reply.status(409).send({ error: 'already_in_waiting_list' });
+        }
+        if (err instanceof WaitingListDisabledError) {
+          return reply.status(400).send({ error: 'waiting_list_not_enabled' });
+        }
+        logger.error({ err, slug: slugParse.data.slug }, 'connect waiting-list join failed');
+        return reply.status(500).send({ error: 'Internal error' });
+      }
+    },
+  );
+
+  // ─── 6. DELETE /public/r/:slug/waiting-list/:entryId ──────────
+  // Annule une entrée via son token d'action.
+
+  app.delete(
+    '/public/r/:slug/waiting-list/:entryId',
+    {
+      config: {
+        rateLimit: {
+          max: RATE_LIMIT_WAITING_LIST_CANCEL_MAX,
+          timeWindow: '1 hour',
+        },
+      },
+    },
+    async (req, reply) => {
+      const slugParse = SlugParamSchema.safeParse(req.params);
+      if (!slugParse.success) {
+        return reply.status(400).send({ error: 'Invalid slug', details: slugParse.error.format() });
+      }
+      const params = req.params as { entryId: string };
+      const tokenParse = CancelWaitingListTokenSchema.safeParse(req.query ?? {});
+      if (!tokenParse.success) {
+        return reply
+          .status(400)
+          .send({ error: 'Invalid token', details: tokenParse.error.format() });
+      }
+
+      const restaurant = await canal.getPublishedBySlug(slugParse.data.slug);
+      if (!restaurant) {
+        return reply.status(404).send({ error: 'Restaurant not found or not published' });
+      }
+
+      try {
+        await waitingList.cancelByToken({
+          entryId: params.entryId,
+          actionToken: tokenParse.data.token,
+          restaurantId: restaurant.id,
+        });
+        return reply.status(200).send({ status: 'cancelled' });
+      } catch (err: unknown) {
+        if (err instanceof WaitingListAlreadyPromotedError) {
+          return reply.status(409).send({ error: 'already_promoted' });
+        }
+        if (err instanceof WaitingListEntryNotFoundError) {
+          return reply.status(404).send({ error: 'entry_not_found' });
+        }
+        logger.error({ err, slug: slugParse.data.slug }, 'connect waiting-list cancel failed');
+        return reply.status(500).send({ error: 'Internal error' });
       }
     },
   );

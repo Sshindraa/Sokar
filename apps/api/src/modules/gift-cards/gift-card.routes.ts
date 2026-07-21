@@ -817,6 +817,13 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
 
   // ─── P2 — Stripe webhook ─────────────────────────────────────────
   app.post('/webhooks/stripe', async (req, reply) => {
+    // Rate limiting avant vérification de signature (route publique)
+    const ip = getClientIp(req);
+    const allowed = await checkRateLimit(rateLimitKey('stripe-webhook', ip), 300);
+    if (!allowed) {
+      return reply.status(429).send({ error: 'Trop de requêtes. Réessayez dans une minute.' });
+    }
+
     const signature = req.headers['stripe-signature'] as string | undefined;
     if (!signature) {
       return reply.status(400).send({ error: 'Missing stripe-signature header' });
@@ -834,6 +841,15 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
         const pi = event.data.object as { id: string; metadata?: Record<string, string> };
         const paymentService = new GiftCardPaymentService(db);
         await paymentService.handleStripeWebhook(pi.id, pi.metadata ?? {});
+      } else if (event.type === 'payment_intent.payment_failed') {
+        const pi = event.data.object as { id: string; metadata?: Record<string, string> };
+        const paymentService = new GiftCardPaymentService(db);
+        await paymentService.handlePaymentFailed(pi.id, pi.metadata ?? {});
+      } else {
+        logger.info(
+          { eventType: event.type },
+          '[gift-card-routes] Unhandled Stripe webhook event type',
+        );
       }
 
       return reply.send({ received: true });

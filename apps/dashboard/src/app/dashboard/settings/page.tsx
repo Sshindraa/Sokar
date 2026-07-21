@@ -3,11 +3,17 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApi } from '../../../lib/api';
-import { getErrorMessage, type Restaurant, type AgentPersonality } from '@/types/api';
+import {
+  getErrorMessage,
+  type Restaurant,
+  type AgentPersonality,
+  type CapacitySpecials,
+} from '@/types/api';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { OnboardingLockBanner } from '@/features/onboarding/onboarding-guard';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -20,6 +26,7 @@ import {
   ArrowUpRight,
   Calendar,
   Languages,
+  ListOrdered,
 } from 'lucide-react';
 import { SYSTEM_PROMPT_EXTRA_MAX_LENGTH } from '@/constants/ui';
 
@@ -72,6 +79,13 @@ export default function SettingsPage() {
   const [disconnecting, setDisconnecting] = useState(false);
   const [disconnectConfirmOpen, setDisconnectConfirmOpen] = useState(false);
 
+  // File d'attente
+  const [capacitySpecials, setCapacitySpecials] = useState<CapacitySpecials>({});
+  const [waitingListEnabled, setWaitingListEnabled] = useState(false);
+  const [waitingListMaxEntriesPerSlot, setWaitingListMaxEntriesPerSlot] = useState<number>(10);
+  const [savingWaitingList, setSavingWaitingList] = useState(false);
+  const [savedWaitingList, setSavedWaitingList] = useState(false);
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -107,6 +121,14 @@ export default function SettingsPage() {
           setVoiceIdCa(pers.voiceIdCa || '');
           setSystemPromptExtra(pers.systemPromptExtra || '');
         }
+        const specials = (data.exposureSettings?.capacitySpecials ?? {}) as CapacitySpecials;
+        setCapacitySpecials(specials);
+        setWaitingListEnabled(specials.waitingListEnabled === true);
+        setWaitingListMaxEntriesPerSlot(
+          typeof specials.waitingListMaxEntriesPerSlot === 'number'
+            ? specials.waitingListMaxEntriesPerSlot
+            : 10,
+        );
       } catch {
         setError('Impossible de charger les paramètres');
       } finally {
@@ -230,6 +252,26 @@ export default function SettingsPage() {
       setError(getErrorMessage(err, "Erreur lors de la sauvegarde des paramètres de l'agenda"));
     } finally {
       setSavingCalendar(false);
+    }
+  }
+
+  async function handleWaitingListSave(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingWaitingList(true);
+    setSavedWaitingList(false);
+    setError('');
+
+    try {
+      const nextSpecials: CapacitySpecials = { ...capacitySpecials, waitingListEnabled };
+      if (waitingListEnabled) {
+        nextSpecials.waitingListMaxEntriesPerSlot = waitingListMaxEntriesPerSlot;
+      }
+      await patch(`restaurants/${orgId}`, { capacitySpecials: nextSpecials });
+      setSavedWaitingList(true);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Erreur lors de la sauvegarde de la file d'attente"));
+    } finally {
+      setSavingWaitingList(false);
     }
   }
 
@@ -437,6 +479,64 @@ export default function SettingsPage() {
               </div>
             </form>
           )}
+        </CardContent>
+      </Card>
+
+      {/* File d&apos;attente */}
+      <Card className="sokar-card transition-all duration-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <ListOrdered size={18} />
+            File d&apos;attente
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleWaitingListSave} className="max-w-full sm:max-w-lg space-y-5">
+            <div className="flex flex-col gap-4 rounded-2xl border border-border bg-secondary p-5 transition-all duration-200 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-medium text-foreground">Activer la file d&apos;attente</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Proposer automatiquement une table aux clients en attente quand une place se
+                  libère.
+                </p>
+              </div>
+              <Switch
+                id="waiting-list-enabled"
+                checked={waitingListEnabled}
+                onCheckedChange={setWaitingListEnabled}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="waiting-list-max">
+                Nombre max d&apos;inscrits par créneau
+              </label>
+              <Input
+                id="waiting-list-max"
+                type="number"
+                min={1}
+                max={50}
+                value={waitingListMaxEntriesPerSlot}
+                disabled={!waitingListEnabled}
+                onChange={(e) => setWaitingListMaxEntriesPerSlot(Number(e.target.value))}
+                className="transition-all duration-200"
+              />
+              <p className="text-xs text-muted-foreground">Entre 1 et 50 inscrits.</p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="submit" disabled={savingWaitingList}>
+                <Save size={16} className="mr-1" />
+                {savingWaitingList ? 'Enregistrement...' : 'Enregistrer'}
+              </Button>
+              {savedWaitingList && (
+                <span className="flex items-center gap-1 text-sm text-primary">
+                  <CheckCircle2 size={16} />
+                  Enregistré
+                </span>
+              )}
+            </div>
+          </form>
         </CardContent>
       </Card>
 

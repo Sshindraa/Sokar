@@ -60,6 +60,9 @@ import './modules/agentic-reservations/workers/expire-hold.worker';
 import './modules/agentic-reservations/workers/expire-quote.worker';
 import './modules/agentic-reservations/workers/hold-cleanup.worker';
 import './modules/agentic-reservations/workers/idempotency-purge.worker';
+import './modules/agentic-reservations/workers/expire-waiting-list.worker';
+import './modules/agentic-reservations/workers/cleanup-waiting-list.worker';
+import './modules/agentic-reservations/workers/waiting-list-promote.worker';
 
 // Initialize Sentry as early as possible so that instrumentation hooks are
 // registered before the Fastify app (and its error handler) are built.
@@ -364,6 +367,13 @@ async function start() {
           'hold-cleanup-5min',
           { pattern: '*/5 * * * *', tz: 'Europe/Paris' },
           { name: 'cleanup-expired-holds', data: {} },
+        );
+
+        // Nettoyage des entrées de liste d'attente expirées (filet de sécurité).
+        await queues.waitingListCleanup.upsertJobScheduler(
+          'waiting-list-cleanup-5min',
+          { pattern: '*/5 * * * *', tz: 'Europe/Paris' },
+          { name: 'cleanup-expired-waiting-list', data: {} },
         );
 
         // Purge quotidienne des clés idempotency expirées (RES-005).

@@ -140,7 +140,10 @@ export default function DashboardPage() {
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   useEffect(() => {
-    if (!orgId) {
+    // Mode demo local/staging : sans Clerk, NEXT_PUBLIC_DEMO_RESTAURANT_ID
+    // agit comme un orgId forcé. On affiche les données de démo pour que le
+    // dashboard reste utilisable sans session réelle.
+    if (!orgId || orgId === process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID) {
       const demoAnalytics = DEMO_ANALYTICS_BY_PERIOD[period];
       setStats(summarizeAnalytics(demoAnalytics));
       setAnalytics(demoAnalytics);

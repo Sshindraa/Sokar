@@ -144,6 +144,10 @@ jobs:
     timeout-minutes: 20
     env:
       NEXT_TELEMETRY_DISABLED: 1
+      # Baked par `next build` : active le mode démo pour les E2E Playwright.
+      # Les réponses /api/proxy sont mockées dans les specs, aucune API n'est requise.
+      NEXT_PUBLIC_DEMO_RESTAURANT_ID: e2e-demo-restaurant
+      NEXT_PUBLIC_DEMO_STAGING: 'true'
     steps:
       - uses: actions/checkout@v4
 

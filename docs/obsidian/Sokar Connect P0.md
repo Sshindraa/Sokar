@@ -1,6 +1,6 @@
 # Sokar Connect — Agent-Ready Pages (Phase 0)
 
-> **Statut** : Phase 0 en cours (2026-06-24). Spec validée v1.1, T1 écrit, ⏸ STOP pour `migrate deploy`.
+> **Statut** : Phase 0 en cours (2026-06-24). Spec validée v1.1, T1 **déployé** (`migrate deploy` + backfillChez Sokar → Lyon/69001/FR, vérifié vert le 2026-06-24). T2-T10 écrits et testés (cf. Journal). Reste : T4 app + Nginx en prod, P1 pilote fermé.
 > **Spec complète** : `docs/connect-v1.1.md` (60 KB)
 > **v1 archivée** : `docs/connect-v1.md.archived` (45 KB)
 > **Module API** : `apps/api/src/modules/connect/` (à créer en T2)
@@ -22,7 +22,7 @@ et au fonctionnement réel d'OAI-SearchBot.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ apps/connect (Next.js 14, output:standalone)                    │
+│ apps/connect (Next.js 15, output:standalone)                    │
 │ /r/[slug]              page restaurant (SSR + ISR 60s)          │
 │ /r/[slug]/book         page booking (SSR, deep-link)            │
 │ /restaurants/[city]    page locale (noindex si <5 restos)       │
@@ -96,9 +96,7 @@ devant. **Pas de static export** (incompatible avec ISR/SSR).
 - `prisma generate` ✅ (exit 0)
 - `pnpm typecheck` global ✅ (api, dashboard, widget, database, types, shared)
 
-**STOP obligatoire** : `migrate deploy` non lancé. Hamza doit confirmer
-`packages/database/.env` (déjà présent, chmod 600, 59 bytes, pointant
-sur `postgresql://sokar:***@localhost:5432/sokar`).
+**État** : `migrate deploy` **effectué le 2026-06-24** (4 migrations appliquées : 3 Sokar Connect + `20260623225209_add_customer_call_activity_fields`). Backfill Chez Sokar → Lyon/69001/FR OK. `prisma generate` + `typecheck` API + `prisma db seed` verts (cf. Journal 2026-06-24 17:01).
 
 ## Anti-patterns rappelés
 
