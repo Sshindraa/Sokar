@@ -274,12 +274,20 @@ export function handleFluxEvent(
  * (processTranscriptStreaming) is the live code path. Kept for the
  * speculative / fallback flows that may re-introduce it.
  */
+export function normalizeSttTranscript(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/\b(un|une)\s+résumé\b/gi, 'une réservation')
+    .replace(/\bje\s+souhaite\s+un\s+résumé\b/gi, 'je souhaite une réservation');
+}
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function processTranscript(
   session: CallSession,
-  transcript: string,
+  rawTranscript: string,
   mgr: CallSessionManager,
 ): Promise<void> {
+  const transcript = normalizeSttTranscript(rawTranscript);
   if (!transcript.trim()) return;
   if (session.ended || session.telnyxWs.readyState !== WebSocket.OPEN) {
     writeDebugLog(`[processTranscript] Session ended or WS closed, skipping transcript`);
@@ -355,9 +363,10 @@ async function processTranscript(
  */
 async function processTranscriptStreaming(
   session: CallSession,
-  transcript: string,
+  rawTranscript: string,
   mgr: CallSessionManager,
 ): Promise<void> {
+  const transcript = normalizeSttTranscript(rawTranscript);
   if (!transcript.trim()) return;
   if (session.ended || session.telnyxWs.readyState !== WebSocket.OPEN) {
     writeDebugLog(`[processTranscriptStreaming] Session ended or WS closed, skipping`);

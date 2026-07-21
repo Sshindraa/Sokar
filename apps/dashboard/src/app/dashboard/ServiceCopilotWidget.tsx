@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { AlertCircle, CheckCircle2, Clock, Phone, Scale } from 'lucide-react';
+import { AlertCircle, BarChart3, CheckCircle2, Clock, Phone, Scale } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { cn } from '@/lib/utils';
@@ -249,6 +249,12 @@ export default function ServiceCopilotWidget() {
         <div>
           <h2 className="font-bold text-foreground">Service fluide</h2>
           <p className="text-sm text-muted-foreground">Aucune action requise.</p>
+          <Link
+            href="/dashboard/copilot/quality"
+            className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-foreground transition-all duration-200 hover:text-primary"
+          >
+            Voir la qualité Copilot <BarChart3 size={14} />
+          </Link>
         </div>
       </section>
     );
@@ -264,9 +270,17 @@ export default function ServiceCopilotWidget() {
         containerClasses[priority],
       )}
     >
-      <div className="mb-3 flex items-center gap-3">
-        <AlertCircle size={20} className={cn('shrink-0', iconColorClasses[priority])} />
-        <h2 className="text-lg font-bold text-foreground">Actions recommandées</h2>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <AlertCircle size={20} className={cn('shrink-0', iconColorClasses[priority])} />
+          <h2 className="text-lg font-bold text-foreground">Actions recommandées</h2>
+        </div>
+        <Link
+          href="/dashboard/copilot/quality"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-bold text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground"
+        >
+          Qualité <BarChart3 size={14} />
+        </Link>
       </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {recs.map((rec) => (

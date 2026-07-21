@@ -325,6 +325,27 @@ export interface ServiceCopilotRecommendationsResponse {
   recommendations: ServiceCopilotRecommendation[];
 }
 
+export type ServiceCopilotTelemetryStatus =
+  | 'observed'
+  | 'opened'
+  | 'applied'
+  | 'reverted'
+  | 'conflicted'
+  | 'expired'
+  | 'ignored';
+
+export type ServiceCopilotTelemetryTotals = Record<ServiceCopilotTelemetryStatus, number>;
+
+export interface ServiceCopilotTelemetrySummary {
+  from: string;
+  to: string;
+  totals: ServiceCopilotTelemetryTotals;
+  byKind: Array<{
+    kind: ServiceCopilotRecommendationKind | string;
+    totals: ServiceCopilotTelemetryTotals;
+  }>;
+}
+
 export type ServiceCopilotPulseStatus = 'calm' | 'attention' | 'urgent';
 
 export interface ServiceCopilotPulse {
