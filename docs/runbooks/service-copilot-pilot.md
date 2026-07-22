@@ -147,7 +147,10 @@ par clé d’idempotence. L’identifiant de l’utilisateur est haché ; aucun 
 décision n’est envoyé à un tiers. Toute panne de télémétrie est sans effet sur l’action opérationnelle.
 Consulter les résultats dans `Copilot → Qualité des recommandations` (`/dashboard/copilot/quality`)
 ou via le résumé API, jamais dans le flux de décision du Live service. Cette page permet de comparer
-les périodes 7, 30 et 90 jours, puis les résultats par type de recommandation.
+les périodes 7, 30 et 90 jours, puis les résultats par type de recommandation. Après le service,
+elle affiche les suggestions ouvertes ou expirées que Sokar ne peut pas observer physiquement : le
+responsable les classe « appliquée » ou « sans suite ». Les rééquilibrages de serveur, eux, sont
+contrôlés et enregistrés côté serveur : si la table ou son serveur a changé, Sokar refuse avec 409.
 
 Pour chaque situation, relever :
 

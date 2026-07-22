@@ -18,6 +18,9 @@ function makePrismaMock() {
       Object.assign(occurrence, data);
       return occurrence;
     }),
+    findUnique: vi.fn(
+      async ({ where }) => [...occurrences.values()].find((item) => item.id === where.id) ?? null,
+    ),
     findMany: vi.fn(async () => []),
     groupBy: vi.fn(
       async (): Promise<Array<{ kind: string; status: string; _count: { _all: number } }>> => [],
@@ -167,5 +170,35 @@ describe('ServiceCopilotTelemetryService', () => {
         }),
       ]),
     );
+  });
+
+  it('permet de qualifier après service une recommandation ouverte puis expirée', async () => {
+    const { prisma, occurrences } = makePrismaMock();
+    const service = new ServiceCopilotTelemetryService(
+      prisma,
+      'a-very-long-telemetry-secret-at-least-32',
+    );
+    await service.recordServerEvent({
+      restaurantId: 'rest-1',
+      occurrenceKey: recommendation.occurrenceKey,
+      kind: recommendation.kind,
+      entityId: recommendation.entityId,
+      ruleVersion: recommendation.ruleVersion,
+      event: 'OPENED',
+      idempotencyKey: 'opened-1',
+    });
+    const occurrence = [...occurrences.values()][0];
+    occurrence.status = 'EXPIRED';
+
+    await expect(
+      service.recordManualOutcome({
+        restaurantId: 'rest-1',
+        occurrenceId: occurrence.id,
+        event: 'APPLIED',
+        actor: 'user-1',
+      }),
+    ).resolves.toEqual({ idempotent: false });
+
+    expect(occurrence.status).toBe('APPLIED');
   });
 });

@@ -826,6 +826,123 @@ describe('floorPlanRoutes', () => {
     });
   });
 
+  describe('revue après service et action serveur du Copilot', () => {
+    it('retourne les recommandations à qualifier uniquement dans le restaurant authentifié', async () => {
+      const app = await getApp();
+      const listReviewItems = vi
+        .spyOn(ServiceCopilotTelemetryService.prototype, 'listReviewItems')
+        .mockResolvedValue([
+          {
+            id: 'occ-1',
+            kind: 'table-soon-free',
+            status: 'expired',
+            createdAt: '2026-07-22T18:00:00.000Z',
+            expiresAt: '2026-07-22T18:15:00.000Z',
+          },
+        ]);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/restaurants/test-rest-1/service-copilot/telemetry-review?days=7',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().occurrences).toHaveLength(1);
+      expect(listReviewItems).toHaveBeenCalledWith({
+        restaurantId: 'test-rest-1',
+        days: 7,
+        limit: 25,
+      });
+    });
+
+    it('enregistre une qualification post-service dans le périmètre du restaurant', async () => {
+      const app = await getApp();
+      const recordManualOutcome = vi
+        .spyOn(ServiceCopilotTelemetryService.prototype, 'recordManualOutcome')
+        .mockResolvedValue({ idempotent: false });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/service-copilot/telemetry-review/occ-1',
+        headers: { authorization: 'Bearer test' },
+        payload: { event: 'APPLIED' },
+      });
+
+      expect(res.statusCode).toBe(204);
+      expect(recordManualOutcome).toHaveBeenCalledWith({
+        restaurantId: 'test-rest-1',
+        occurrenceId: 'occ-1',
+        event: 'APPLIED',
+        actor: 'test-user-1',
+      });
+    });
+
+    it('applique un rééquilibrage seulement si le jeton et l’état attendu concordent', async () => {
+      const app = await getApp();
+      vi.spyOn(ServiceCopilotTelemetryService.prototype, 'getTokenContext').mockReturnValue({
+        occurrenceKey: 'server-rebalance:table-1',
+        kind: 'server-rebalance',
+        entityId: 'table-1',
+        ruleVersion: 'v1',
+        expiresAt: '2026-08-01T18:00:00.000Z',
+        metrics: { fromServer: 'Alice', toServer: 'Benoît' },
+      });
+      vi.mocked(db.table.updateMany).mockResolvedValue({ count: 1 } as never);
+      const recordServerEvent = vi
+        .spyOn(ServiceCopilotTelemetryService.prototype, 'recordServerEvent')
+        .mockResolvedValue({ idempotent: false });
+
+      const sampleJwt = 'mock-telemetry-token-string-value-valid';
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/service-copilot/actions/server-rebalance',
+        headers: { authorization: 'Bearer test' },
+        payload: { token: sampleJwt },
+      });
+
+      expect(res.statusCode).toBe(204);
+      expect(db.table.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: 'table-1', assignedServer: 'Alice' }),
+          data: { assignedServer: 'Benoît' },
+        }),
+      );
+      expect(recordServerEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'APPLIED', occurrenceKey: 'server-rebalance:table-1' }),
+      );
+    });
+
+    it('retourne 409 et trace le conflit quand le serveur de la table a changé', async () => {
+      const app = await getApp();
+      vi.spyOn(ServiceCopilotTelemetryService.prototype, 'getTokenContext').mockReturnValue({
+        occurrenceKey: 'server-rebalance:table-1',
+        kind: 'server-rebalance',
+        entityId: 'table-1',
+        ruleVersion: 'v1',
+        expiresAt: '2026-08-01T18:00:00.000Z',
+        metrics: { fromServer: 'Alice', toServer: 'Benoît' },
+      });
+      vi.mocked(db.table.updateMany).mockResolvedValue({ count: 0 } as never);
+      const recordServerEvent = vi
+        .spyOn(ServiceCopilotTelemetryService.prototype, 'recordServerEvent')
+        .mockResolvedValue({ idempotent: false });
+
+      const sampleJwt = 'mock-telemetry-token-string-value-valid';
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/service-copilot/actions/server-rebalance',
+        headers: { authorization: 'Bearer test' },
+        payload: { token: sampleJwt },
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(recordServerEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'CONFLICTED', reasonCode: 'table_assignment_changed' }),
+      );
+    });
+  });
+
   describe('GET /restaurants/:id/service-copilot/pulse', () => {
     it('retourne le pouls opérationnel de la date demandée', async () => {
       const app = await getApp();

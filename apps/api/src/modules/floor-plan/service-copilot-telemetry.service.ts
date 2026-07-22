@@ -14,6 +14,7 @@ type TelemetryTokenPayload = {
   entityId?: string;
   ruleVersion: string;
   expiresAt?: string;
+  metrics?: Pick<NonNullable<ServiceCopilotRecommendation['metrics']>, 'fromServer' | 'toServer'>;
 };
 
 type TelemetryClientEvent = 'VIEWED' | 'OPENED';
@@ -37,6 +38,19 @@ export type ServiceCopilotTelemetrySummary = {
     totals: Record<Lowercase<CopilotOccurrenceStatus>, number>;
   }>;
 };
+
+export type ServiceCopilotTelemetryReviewItem = {
+  id: string;
+  kind: string;
+  status: Lowercase<CopilotOccurrenceStatus>;
+  createdAt: string;
+  expiresAt: string | null;
+};
+
+export type ServiceCopilotTelemetryTokenContext = Pick<
+  TelemetryTokenPayload,
+  'occurrenceKey' | 'kind' | 'entityId' | 'ruleVersion' | 'expiresAt' | 'metrics'
+>;
 
 const EVENT_TO_STATUS: Record<ServerTelemetryEvent, CopilotOccurrenceStatus> = {
   VIEWED: 'OBSERVED',
@@ -62,6 +76,7 @@ function canTransition(current: CopilotOccurrenceStatus, next: CopilotOccurrence
   if (next === 'APPLIED') return true;
   if (next === 'REVERTED') return current === 'APPLIED';
   if (current === 'APPLIED') return false;
+  if (next === 'IGNORED') return true;
   if (current === 'CONFLICTED' || current === 'EXPIRED' || current === 'IGNORED') return false;
   return true;
 }
@@ -88,6 +103,12 @@ export class ServiceCopilotTelemetryService {
       entityId: args.recommendation.entityId,
       ruleVersion: args.recommendation.ruleVersion,
       expiresAt: args.recommendation.expiresAt,
+      metrics: args.recommendation.metrics
+        ? {
+            fromServer: args.recommendation.metrics.fromServer,
+            toServer: args.recommendation.metrics.toServer,
+          }
+        : undefined,
     };
     const data = encode(payload);
     const signature = createHmac('sha256', this.secret).update(data).digest('base64url');
@@ -112,6 +133,65 @@ export class ServiceCopilotTelemetryService {
       idempotencyKey: args.idempotencyKey,
       actor: args.actor,
       clientTime: args.clientTime,
+    });
+  }
+
+  getTokenContext(args: {
+    restaurantId: string;
+    token: string;
+  }): ServiceCopilotTelemetryTokenContext {
+    const payload = this.verifyToken(args.token);
+    if (payload.restaurantId !== args.restaurantId) {
+      throw new Error('Jeton de télémétrie invalide.');
+    }
+    return {
+      occurrenceKey: payload.occurrenceKey,
+      kind: payload.kind,
+      entityId: payload.entityId,
+      ruleVersion: payload.ruleVersion,
+      expiresAt: payload.expiresAt,
+      metrics: payload.metrics,
+    };
+  }
+
+  async recordManualOutcome(args: {
+    restaurantId: string;
+    occurrenceId: string;
+    event: 'APPLIED' | 'IGNORED';
+    actor?: string | null;
+  }): Promise<{ idempotent: boolean }> {
+    const occurrence = await this.prisma.copilotOccurrence.findUnique({
+      where: { id: args.occurrenceId },
+      select: {
+        id: true,
+        restaurantId: true,
+        occurrenceKey: true,
+        kind: true,
+        entityId: true,
+        ruleVersion: true,
+        expiresAt: true,
+        status: true,
+      },
+    });
+    if (!occurrence || occurrence.restaurantId !== args.restaurantId) {
+      throw new Error('Recommandation Copilot introuvable.');
+    }
+    const nextStatus = EVENT_TO_STATUS[args.event];
+    if (!canTransition(occurrence.status, nextStatus)) {
+      return { idempotent: true };
+    }
+    return this.recordEvent({
+      restaurantId: args.restaurantId,
+      occurrenceKey: occurrence.occurrenceKey,
+      kind: occurrence.kind,
+      entityId: occurrence.entityId ?? undefined,
+      ruleVersion: occurrence.ruleVersion,
+      expiresAt: occurrence.expiresAt ?? undefined,
+      event: args.event,
+      idempotencyKey: `copilot-manual-outcome:${occurrence.id}:${args.event}`,
+      reasonCode: 'post_service_review',
+      actor: args.actor,
+      metadata: { source: 'copilot_quality' },
     });
   }
 
@@ -215,6 +295,35 @@ export class ServiceCopilotTelemetryService {
         .map(([kind, kindTotals]) => ({ kind, totals: kindTotals }))
         .sort((a, b) => a.kind.localeCompare(b.kind)),
     };
+  }
+
+  async listReviewItems(args: {
+    restaurantId: string;
+    days?: number;
+    now?: Date;
+    limit?: number;
+  }): Promise<ServiceCopilotTelemetryReviewItem[]> {
+    const now = args.now ?? new Date();
+    const days = args.days ?? 30;
+    const from = new Date(now.getTime() - days * 24 * 60 * 60_000);
+    await this.finalizeExpired({ restaurantId: args.restaurantId, now });
+    const occurrences = await this.prisma.copilotOccurrence.findMany({
+      where: {
+        restaurantId: args.restaurantId,
+        createdAt: { gte: from, lte: now },
+        status: { in: ['OPENED', 'EXPIRED'] },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: args.limit ?? 25,
+      select: { id: true, kind: true, status: true, createdAt: true, expiresAt: true },
+    });
+    return occurrences.map((occurrence) => ({
+      id: occurrence.id,
+      kind: occurrence.kind,
+      status: occurrence.status.toLowerCase() as Lowercase<CopilotOccurrenceStatus>,
+      createdAt: occurrence.createdAt.toISOString(),
+      expiresAt: occurrence.expiresAt?.toISOString() ?? null,
+    }));
   }
 
   private verifyToken(token: string): TelemetryTokenPayload {

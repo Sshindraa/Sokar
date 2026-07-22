@@ -2,10 +2,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CopilotQualityPage from './page';
 
-const apiMocks = vi.hoisted(() => ({ get: vi.fn() }));
+const apiMocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 
 vi.mock('@/lib/api', () => ({
-  useApi: () => ({ orgId: 'org_test', get: apiMocks.get }),
+  useApi: () => ({ orgId: 'org_test', get: apiMocks.get, post: apiMocks.post }),
 }));
 
 const summary = {
@@ -39,7 +39,10 @@ const summary = {
 describe('CopilotQualityPage', () => {
   beforeEach(() => {
     apiMocks.get.mockReset();
-    apiMocks.get.mockResolvedValue(summary);
+    apiMocks.post.mockReset();
+    apiMocks.get.mockImplementation((path: string) =>
+      Promise.resolve(path.includes('telemetry-review') ? { occurrences: [] } : summary),
+    );
   });
 
   it('affiche les résultats dans Copilot et non dans la Salle', async () => {
@@ -70,9 +73,41 @@ describe('CopilotQualityPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '7 jours' }));
 
     await waitFor(() => {
-      expect(apiMocks.get).toHaveBeenLastCalledWith(
+      expect(apiMocks.get).toHaveBeenCalledWith(
         'restaurants/org_test/service-copilot/telemetry-summary?days=7',
         expect.anything(),
+      );
+    });
+  });
+
+  it('permet de qualifier après service une recommandation que Sokar ne peut pas observer', async () => {
+    apiMocks.get.mockImplementation((path: string) =>
+      Promise.resolve(
+        path.includes('telemetry-review')
+          ? {
+              occurrences: [
+                {
+                  id: 'occ-1',
+                  kind: 'table-soon-free',
+                  status: 'expired',
+                  createdAt: '2026-07-30T19:00:00.000Z',
+                  expiresAt: '2026-07-30T19:15:00.000Z',
+                },
+              ],
+            }
+          : summary,
+      ),
+    );
+    apiMocks.post.mockResolvedValue(undefined);
+    render(<CopilotQualityPage />);
+
+    await screen.findByText('À qualifier après le service');
+    fireEvent.click(screen.getByRole('button', { name: 'Marquer appliquée' }));
+
+    await waitFor(() => {
+      expect(apiMocks.post).toHaveBeenCalledWith(
+        'restaurants/org_test/service-copilot/telemetry-review/occ-1',
+        { event: 'APPLIED' },
       );
     });
   });

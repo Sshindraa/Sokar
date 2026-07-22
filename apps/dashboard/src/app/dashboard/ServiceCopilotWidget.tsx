@@ -90,7 +90,7 @@ function RecommendationCard({
   onActionDone: () => void;
   onOpened: (recommendation: ServiceCopilotRecommendation) => void;
 }) {
-  const { post, patch } = useApi();
+  const { orgId, post, patch } = useApi();
   const [confirmRebalanceOpen, setConfirmRebalanceOpen] = useState(false);
   const Icon = kindIcon[rec.kind];
   const metric = formatMetric(rec);
@@ -99,6 +99,12 @@ function RecommendationCard({
     if (rec.action.type !== 'api' || !rec.action.method || !rec.action.path) return;
     onOpened(rec);
     try {
+      if (rec.kind === 'server-rebalance' && rec.telemetryToken && orgId) {
+        await post(`restaurants/${orgId}/service-copilot/actions/server-rebalance`, {
+          token: rec.telemetryToken,
+        });
+        return;
+      }
       if (rec.action.method === 'PATCH') {
         await patch(rec.action.path, rec.action.body);
       } else if (rec.action.method === 'POST') {

@@ -181,8 +181,21 @@ const CopilotTelemetryEventSchema = z.object({
   clientTime: z.string().datetime().optional(),
 });
 
+const CopilotManualOutcomeSchema = z.object({
+  event: z.enum(['APPLIED', 'IGNORED']),
+});
+
+const CopilotServerRebalanceActionSchema = z.object({
+  token: z.string().min(20).max(4_096),
+});
+
 const CopilotTelemetrySummaryQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(90).optional().default(30),
+});
+
+const CopilotTelemetryReviewQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).optional().default(30),
+  limit: z.coerce.number().int().min(1).max(50).optional().default(25),
 });
 
 function getFloorPlanIdFromQuery(query: unknown): string | undefined {
@@ -378,6 +391,130 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
       const query = CopilotTelemetrySummaryQuerySchema.parse(req.query);
       const summary = await telemetry.getSummary({ restaurantId, days: query.days });
       return reply.send(summary);
+    },
+  );
+
+  app.get(
+    '/restaurants/:id/service-copilot/telemetry-review',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const restaurantId = (req.params as { id: string }).id;
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+      const query = CopilotTelemetryReviewQuerySchema.parse(req.query);
+      const occurrences = await telemetry.listReviewItems({
+        restaurantId,
+        days: query.days,
+        limit: query.limit,
+      });
+      return reply.send({ occurrences });
+    },
+  );
+
+  app.post(
+    '/restaurants/:id/service-copilot/telemetry-review/:occurrenceId',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id: restaurantId, occurrenceId } = req.params as {
+        id: string;
+        occurrenceId: string;
+      };
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+      const body = CopilotManualOutcomeSchema.parse(req.body);
+      try {
+        await telemetry.recordManualOutcome({
+          restaurantId,
+          occurrenceId,
+          event: body.event,
+          actor: req.userId,
+        });
+        return reply.status(204).send();
+      } catch {
+        return reply.status(404).send({ error: 'Recommandation Copilot introuvable.' });
+      }
+    },
+  );
+
+  app.post(
+    '/restaurants/:id/service-copilot/actions/server-rebalance',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const restaurantId = (req.params as { id: string }).id;
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+      const body = CopilotServerRebalanceActionSchema.parse(req.body);
+      let context;
+      try {
+        context = telemetry.getTokenContext({ restaurantId, token: body.token });
+      } catch {
+        return reply.status(400).send({ error: 'Action Copilot invalide ou expirée.' });
+      }
+      const fromServer = context.metrics?.fromServer;
+      const toServer = context.metrics?.toServer;
+      if (
+        context.kind !== 'server-rebalance' ||
+        !context.entityId ||
+        !fromServer ||
+        !toServer ||
+        fromServer === toServer
+      ) {
+        return reply.status(400).send({ error: 'Action Copilot invalide.' });
+      }
+
+      const updated = await db.table.updateMany({
+        where: {
+          id: context.entityId,
+          assignedServer: fromServer,
+          isActive: true,
+          floorPlan: { restaurantId, isActive: true },
+        },
+        data: { assignedServer: toServer },
+      });
+      if (updated.count !== 1) {
+        try {
+          await telemetry.recordServerEvent({
+            restaurantId,
+            occurrenceKey: context.occurrenceKey,
+            kind: context.kind,
+            entityId: context.entityId,
+            ruleVersion: context.ruleVersion,
+            expiresAt: context.expiresAt ? new Date(context.expiresAt) : undefined,
+            event: 'CONFLICTED',
+            idempotencyKey: `copilot-rebalance-conflict:${context.occurrenceKey}`,
+            reasonCode: 'table_assignment_changed',
+            actor: req.userId,
+          });
+        } catch (telemetryError) {
+          req.log.warn(
+            { err: telemetryError },
+            'service copilot telemetry rebalance conflict failed',
+          );
+        }
+        return reply
+          .status(409)
+          .send({ error: 'La table ou son serveur ont changé. Rechargez le Copilot.' });
+      }
+      try {
+        await telemetry.recordServerEvent({
+          restaurantId,
+          occurrenceKey: context.occurrenceKey,
+          kind: context.kind,
+          entityId: context.entityId,
+          ruleVersion: context.ruleVersion,
+          expiresAt: context.expiresAt ? new Date(context.expiresAt) : undefined,
+          event: 'APPLIED',
+          idempotencyKey: `copilot-rebalance-applied:${context.occurrenceKey}`,
+          actor: req.userId,
+          metadata: { fromServer, toServer },
+        });
+      } catch (telemetryError) {
+        req.log.warn({ err: telemetryError }, 'service copilot telemetry rebalance apply failed');
+      }
+      return reply.status(204).send();
     },
   );
 

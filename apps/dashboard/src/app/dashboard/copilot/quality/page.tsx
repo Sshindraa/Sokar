@@ -8,6 +8,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useApi } from '@/lib/api';
 import type {
   ServiceCopilotRecommendationKind,
+  ServiceCopilotTelemetryReviewItem,
+  ServiceCopilotTelemetryReviewResponse,
   ServiceCopilotTelemetryStatus,
   ServiceCopilotTelemetrySummary,
   ServiceCopilotTelemetryTotals,
@@ -110,12 +112,15 @@ function SummarySkeleton() {
 }
 
 export default function CopilotQualityPage() {
-  const { get, orgId } = useApi();
+  const { get, post, orgId } = useApi();
   const [days, setDays] = useState<(typeof PERIODS)[number]['days']>(30);
   const [summary, setSummary] = useState<ServiceCopilotTelemetrySummary | null>(null);
+  const [reviewItems, setReviewItems] = useState<ServiceCopilotTelemetryReviewItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!orgId) {
@@ -125,11 +130,20 @@ export default function CopilotQualityPage() {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    get<ServiceCopilotTelemetrySummary>(
-      `restaurants/${orgId}/service-copilot/telemetry-summary?days=${days}`,
-      { signal: controller.signal },
-    )
-      .then((result) => setSummary(result))
+    Promise.all([
+      get<ServiceCopilotTelemetrySummary>(
+        `restaurants/${orgId}/service-copilot/telemetry-summary?days=${days}`,
+        { signal: controller.signal },
+      ),
+      get<ServiceCopilotTelemetryReviewResponse>(
+        `restaurants/${orgId}/service-copilot/telemetry-review?days=${days}`,
+        { signal: controller.signal },
+      ),
+    ])
+      .then(([summaryResult, reviewResult]) => {
+        setSummary(summaryResult);
+        setReviewItems(reviewResult.occurrences ?? []);
+      })
       .catch((requestError: unknown) => {
         if ((requestError as { name?: string }).name !== 'AbortError') {
           setError('Impossible de charger les indicateurs Copilot pour le moment.');
@@ -153,6 +167,26 @@ export default function CopilotQualityPage() {
       actionRate: recommendations > 0 ? Math.round((actions / recommendations) * 100) : 0,
     };
   }, [summary]);
+
+  async function recordReviewOutcome(
+    occurrence: ServiceCopilotTelemetryReviewItem,
+    event: 'APPLIED' | 'IGNORED',
+  ) {
+    if (!orgId) return;
+    setReviewingId(occurrence.id);
+    setReviewError(null);
+    try {
+      await post(`restaurants/${orgId}/service-copilot/telemetry-review/${occurrence.id}`, {
+        event,
+      });
+      setReviewItems((items) => items.filter((item) => item.id !== occurrence.id));
+      setRefreshNonce((value) => value + 1);
+    } catch {
+      setReviewError('Impossible d’enregistrer ce résultat. Réessayez dans un instant.');
+    } finally {
+      setReviewingId(null);
+    }
+  }
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 pb-10">
@@ -299,6 +333,61 @@ export default function CopilotQualityPage() {
                             {item.totals[status]} {statusLabels[status]}
                           </span>
                         ))}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {reviewItems.length > 0 && (
+            <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+              <div className="border-b border-border px-5 py-4">
+                <h2 className="font-bold text-foreground">À qualifier après le service</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Pour les décisions terrain que Sokar ne peut pas observer seul, indiquez le
+                  résultat réel ici — jamais dans la Salle.
+                </p>
+              </div>
+              {reviewError && (
+                <p className="border-b border-destructive/20 bg-destructive/[0.04] px-5 py-3 text-sm text-destructive">
+                  {reviewError}
+                </p>
+              )}
+              <div className="divide-y divide-border">
+                {reviewItems.map((occurrence) => (
+                  <article
+                    key={occurrence.id}
+                    className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <h3 className="font-semibold text-foreground">
+                        {kindLabels[occurrence.kind as ServiceCopilotRecommendationKind] ??
+                          occurrence.kind}
+                      </h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Ouverte le {formatDate(occurrence.createdAt)} ·{' '}
+                        {statusLabels[occurrence.status]}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void recordReviewOutcome(occurrence, 'APPLIED')}
+                        disabled={reviewingId === occurrence.id}
+                      >
+                        Marquer appliquée
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void recordReviewOutcome(occurrence, 'IGNORED')}
+                        disabled={reviewingId === occurrence.id}
+                      >
+                        Sans suite
+                      </Button>
                     </div>
                   </article>
                 ))}

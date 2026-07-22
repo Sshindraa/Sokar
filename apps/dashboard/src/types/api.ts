@@ -346,6 +346,18 @@ export interface ServiceCopilotTelemetrySummary {
   }>;
 }
 
+export interface ServiceCopilotTelemetryReviewItem {
+  id: string;
+  kind: ServiceCopilotRecommendationKind | string;
+  status: Extract<ServiceCopilotTelemetryStatus, 'opened' | 'expired'>;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+export interface ServiceCopilotTelemetryReviewResponse {
+  occurrences: ServiceCopilotTelemetryReviewItem[];
+}
+
 export type ServiceCopilotPulseStatus = 'calm' | 'attention' | 'urgent';
 
 export interface ServiceCopilotPulse {
