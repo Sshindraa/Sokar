@@ -20,11 +20,21 @@ fail() {
   exit 1
 }
 
-# 1) Secret / dangerous-code scan on added lines only.
+# 1) Never version runtime environment files. Templates and deterministic test
+# fixtures are the only allowed exceptions.
+ENV_FILE_HITS=$(printf '%s\n' "$STAGED_FILES" | grep -E '(^|/)\.env($|\.)' | grep -Ev '(^|/)\.env(\.example|\.staging\.example|\.test)$' || true)
+[ -z "$ENV_FILE_HITS" ] || { echo "$ENV_FILE_HITS"; fail "runtime .env files must never be committed"; }
+
+# 2) Secret / dangerous-code scan on added lines only.
 ADDED=$(git diff --cached --unified=0 -- . ':(exclude)pnpm-lock.yaml' || true)
 
 SECRET_HITS=$(printf '%s\n' "$ADDED" | grep '^+' | grep -v '^+++' | grep -Ei "(api[_-]?key|secret|password|passwd|token|private[_-]?key|client[_-]?secret)\s*[:=]\s*['\"][^'\"]{8,}['\"]" || true)
 [ -z "$SECRET_HITS" ] || { echo "$SECRET_HITS"; fail "possible hardcoded secret in staged diff"; }
+
+# Provider-shaped credentials are often assigned without quotes or passed
+# directly to a CLI. Catch those forms before they ever leave the laptop.
+PROVIDER_SECRET_HITS=$(printf '%s\n' "$ADDED" | grep '^+' | grep -v '^+++' | grep -Ei '(dp\.st\.[A-Za-z0-9._-]{10,}|sk-or-v1-[A-Za-z0-9_-]{10,}|sk_(live|test)_[A-Za-z0-9_-]{12,}|re_[A-Za-z0-9_-]{16,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})' || true)
+[ -z "$PROVIDER_SECRET_HITS" ] || { echo "$PROVIDER_SECRET_HITS"; fail "provider credential detected in staged diff"; }
 
 CODE_ADDED=$(git diff --cached --unified=0 -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs' ':(exclude)scripts/smoke/*' ':(exclude)scripts/precommit-review.sh' || true)
 
