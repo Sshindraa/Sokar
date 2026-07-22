@@ -60,7 +60,7 @@ export function stripRepeatedGreeting(text: string, session: CallSession): strin
   const restaurantName = extractRestaurantName(session.systemPrompt);
   const escapedName = restaurantName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const greetingPattern = new RegExp(
-    `^\\s*Bonjour,\\s*${escapedName}(?:,\\s*cet\\s+appel\\s+peut\\s+être\\s+enregistré\\s+à\\s+des\\s+fins\\s+de\\s+qualité\\s+de\\s+service\\.?)?\\s*[!.]?\\s*(?:En\\s+quoi\\s+puis-je\\s+vous\\s+aider\\s*\\??)?\\s*`,
+    `^\\s*Bonjour\\s*,?\\s*${escapedName}\\s*[,!.]?\\s*(?:Cet\\s+appel\\s+(?:peut\\s+être|est)\\s+enregistré[^.!?]*[.!?]\\s*)?(?:En\\s+quoi\\s+puis-je\\s+vous\\s+aider\\s*\\??)?\\s*`,
     'i',
   );
 
