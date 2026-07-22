@@ -352,15 +352,14 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
             /\b(?:je\s+suis|mon\s+nom\s+est)\s+(?:[\p{L}-]+\s*){1,3}$/iu.test(
               session.turnTranscript,
             );
-          // Flux peut finaliser « Bonjour, je suis Martin » plusieurs secondes avant la
-          // suite de la phrase. Répondre après 1,5 s coupe alors le nom et déclenche un faux
-          // barge-in. On attend uniquement pour cette forme sémantiquement incomplète ; les
-          // demandes ordinaires conservent leur latence actuelle.
+          // Flux peut finaliser « Bonjour, je suis Martin » juste avant la suite de la
+          // phrase. On laisse une respiration de deux secondes à cette forme incomplète,
+          // sans imposer une attente artificielle longue au reste de la conversation.
           const timeoutMs = endsWithPunctuation
             ? 400
             : soundsLikeIdentityIntroduction
-              ? 5500
-              : 1500;
+              ? 2000
+              : 800;
 
           // Reset le timer existant (nouveau segment reçu = l'user continue peut-être)
           if (session.speechFinalTimer) {

@@ -68,6 +68,18 @@ export function stripRepeatedGreeting(text: string, session: CallSession): strin
 }
 
 /**
+ * Sérialise les écritures TTS d'un même tour. Deux flux Cartesia concurrents
+ * écriraient sinon leurs paquets G.711 en alternance sur le Media Stream Telnyx,
+ * ce qui produit une voix hachée et incompréhensible.
+ */
+export function queueTtsPlayback(
+  previous: Promise<void>,
+  playback: () => Promise<void>,
+): Promise<void> {
+  return previous.catch(() => undefined).then(playback);
+}
+
+/**
  * Vérifie si deux transcripts sont suffisamment proches pour
  * réutiliser un résultat LLM spéculatif.
  *
@@ -379,7 +391,7 @@ async function processTranscriptStreaming(
 
   writeDebugLog(`[processTranscriptStreaming] Starting LLM stream for: "${transcript}"`);
 
-  const ttsPromises: Promise<void>[] = [];
+  let ttsPlayback = Promise.resolve();
 
   try {
     session.abortController = new AbortController();
@@ -411,20 +423,25 @@ async function processTranscriptStreaming(
         mgr.transition(session, 'SPEAKING');
       }
 
-      if (!isSessionActiveForTts(session)) {
-        writeDebugLog(`[processTranscriptStreaming] Session inactive, skipping phrase`);
-        return;
-      }
+      // Les phrases arrivent en streaming : elles peuvent être reçues avant que
+      // Cartesia ait fini de jouer la précédente. Une file unique empêche leurs
+      // paquets audio de se mélanger sur le même WebSocket Telnyx.
+      ttsPlayback = queueTtsPlayback(ttsPlayback, async () => {
+        if (!isSessionActiveForTts(session)) {
+          writeDebugLog(`[processTranscriptStreaming] Session inactive, skipping phrase`);
+          return;
+        }
 
-      // Lancer TTS en background pour ne pas bloquer le stream LLM
-      const ttsPromise = speakTtsStreamed(session, cleanPhrase).catch((err: unknown) => {
-        writeDebugLog(`[processTranscriptStreaming] TTS error for phrase: "${cleanPhrase}"`, err);
+        try {
+          await speakTtsStreamed(session, cleanPhrase);
+        } catch (err: unknown) {
+          writeDebugLog(`[processTranscriptStreaming] TTS error for phrase: "${cleanPhrase}"`, err);
+        }
       });
-      ttsPromises.push(ttsPromise);
     });
 
     writeDebugLog(`[processTranscriptStreaming] LLM stream ended, waiting for TTS...`);
-    await Promise.all(ttsPromises);
+    await ttsPlayback;
     writeDebugLog(`[processTranscriptStreaming] All TTS completed`);
 
     mgr.transition(session, 'LISTENING');
