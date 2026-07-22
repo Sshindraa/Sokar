@@ -9,7 +9,7 @@ vi.mock('../../../shared/logger/pino', () => ({ logger: { error: vi.fn() } }));
 vi.mock('../../../shared/sentry/client', () => ({ captureException: vi.fn() }));
 vi.mock('../stream/debug-log', () => ({ writeDebugLog: vi.fn() }));
 
-import { queueTtsPlayback, stripRepeatedGreeting } from '../stream/llm-handler';
+import { buildLivenessResponse, queueTtsPlayback, stripRepeatedGreeting } from '../stream/llm-handler';
 import type { CallSession } from '../stream/types';
 
 const session = {
@@ -39,6 +39,32 @@ describe('stripRepeatedGreeting', () => {
     expect(
       stripRepeatedGreeting('Pour combien de personnes souhaitez-vous réserver ?', session),
     ).toBe('Pour combien de personnes souhaitez-vous réserver ?');
+  });
+});
+
+describe('buildLivenessResponse', () => {
+  it('reprend la dernière question pour un « allô » en cours d’appel', () => {
+    const inProgressSession = {
+      ...session,
+      history: [
+        { role: 'system', content: session.systemPrompt },
+        { role: 'user', content: 'Pour 20 h 30, c’est possible ?' },
+        { role: 'assistant', content: 'Quel est votre nom pour la réservation ?' },
+      ],
+    } as CallSession;
+
+    expect(buildLivenessResponse(inProgressSession, 'Allô ?')).toBe(
+      'Oui, je suis là. Quel est votre nom pour la réservation ?',
+    );
+  });
+
+  it('ne transforme pas le premier « allô » d’un appel en reprise de contexte', () => {
+    const newSession = {
+      ...session,
+      history: [{ role: 'system', content: session.systemPrompt }],
+    } as CallSession;
+
+    expect(buildLivenessResponse(newSession, 'Allô')).toBeNull();
   });
 });
 

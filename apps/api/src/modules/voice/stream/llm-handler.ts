@@ -67,6 +67,29 @@ export function stripRepeatedGreeting(text: string, session: CallSession): strin
   return text.replace(greetingPattern, '').trim();
 }
 
+/** Répond naturellement à une vérification de présence en cours d'appel. */
+export function buildLivenessResponse(session: CallSession, transcript: string): string | null {
+  const normalized = transcript
+    .toLocaleLowerCase('fr-FR')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^\p{L}\s]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const isLivenessCheck = /^(?:allo+|vous etes(?: toujours)? la|vous m entendez|ca a coupe)$/u.test(
+    normalized,
+  );
+  if (!isLivenessCheck) return null;
+
+  const lastAssistantMessage = [...session.history]
+    .reverse()
+    .find((message) => message.role === 'assistant' && message.content.trim())?.content;
+  if (!lastAssistantMessage) return null;
+
+  const lastQuestion = lastAssistantMessage.match(/(?:^|[.!]\s*)([^.?!]+\?)\s*$/u)?.[1]?.trim();
+  return lastQuestion ? `Oui, je suis là. ${lastQuestion}` : 'Oui, je suis là. Je vous écoute.';
+}
+
 /**
  * Sérialise les écritures TTS d'un même tour. Deux flux Cartesia concurrents
  * écriraient sinon leurs paquets G.711 en alternance sur le Media Stream Telnyx,
@@ -386,6 +409,22 @@ async function processTranscriptStreaming(
   }
   if (shouldSkipDuplicateTranscript(session, transcript)) {
     writeDebugLog(`[processTranscriptStreaming] Skipping duplicate transcript: "${transcript}"`);
+    return;
+  }
+
+  const livenessResponse = buildLivenessResponse(session, transcript);
+  if (livenessResponse) {
+    writeDebugLog(
+      `[processTranscriptStreaming] Resuming the previous turn after liveness check: "${transcript}"`,
+    );
+    session.turnCount++;
+    session.history.push(
+      { role: 'user', content: transcript },
+      { role: 'assistant', content: livenessResponse },
+    );
+    mgr.transition(session, 'SPEAKING');
+    await speakTtsStreamed(session, livenessResponse);
+    mgr.transition(session, 'LISTENING');
     return;
   }
 
