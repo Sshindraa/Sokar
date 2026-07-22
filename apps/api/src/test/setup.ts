@@ -37,6 +37,7 @@ vi.mock('@prisma/client', async (importOriginal) => {
       findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
     };
     reservation = {
       findMany: vi.fn(),

@@ -69,6 +69,11 @@ vi.mock('../../../shared/sentry/client', () => ({
   captureException: vi.fn(),
 }));
 
+vi.mock('../call-recording.service', () => ({
+  isCallRecordingEnabled: vi.fn().mockReturnValue(false),
+  startCallRecordingAfterConsent: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../../../shared/db/client', () => ({
   db: {
     call: {

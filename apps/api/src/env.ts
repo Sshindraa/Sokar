@@ -100,6 +100,20 @@ const EnvSchema = z
     SERVICE_COPILOT_TELEMETRY_SECRET: z.string().min(32).optional(),
     // Clés API critiques — validées au démarrage en production
     TELNYX_API_KEY: z.string().optional(),
+    // Enregistrements d'appels : opt-in explicite, stockage S3-compatible privé.
+    CALL_RECORDING_ENABLED: z.enum(['true', 'false']).default('false'),
+    CALL_RECORDINGS_BUCKET: z.string().min(1).optional(),
+    CALL_RECORDINGS_REGION: z.string().default('eu-west-3'),
+    CALL_RECORDINGS_ENDPOINT: z.string().url().optional(),
+    CALL_RECORDINGS_ACCESS_KEY_ID: z.string().optional(),
+    CALL_RECORDINGS_SECRET_ACCESS_KEY: z.string().optional(),
+    CALL_RECORDINGS_RETENTION_DAYS: z.coerce.number().int().min(1).max(30).default(30),
+    CALL_RECORDINGS_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .min(1_000_000)
+      .max(200_000_000)
+      .default(50_000_000),
     DEEPGRAM_API_KEY: z.string().optional(),
     CARTESIA_API_KEY: z.string().optional(),
     STRIPE_SECRET_KEY: z.string().optional(),
@@ -113,6 +127,19 @@ const EnvSchema = z
     SMTP_PASS: z.string().optional(),
     EMAIL_FROM: z.string().optional(),
   })
+  .refine((data) => data.CALL_RECORDING_ENABLED !== 'true' || !!data.CALL_RECORDINGS_BUCKET, {
+    message: 'CALL_RECORDINGS_BUCKET is required when CALL_RECORDING_ENABLED=true',
+    path: ['CALL_RECORDINGS_BUCKET'],
+  })
+  .refine(
+    (data) =>
+      (!!data.CALL_RECORDINGS_ACCESS_KEY_ID && !!data.CALL_RECORDINGS_SECRET_ACCESS_KEY) ||
+      (!data.CALL_RECORDINGS_ACCESS_KEY_ID && !data.CALL_RECORDINGS_SECRET_ACCESS_KEY),
+    {
+      message: 'CALL_RECORDINGS_ACCESS_KEY_ID and SECRET_ACCESS_KEY must be set together',
+      path: ['CALL_RECORDINGS_ACCESS_KEY_ID'],
+    },
+  )
   .refine(
     (data) => {
       if (data.NODE_ENV !== 'production') return true;

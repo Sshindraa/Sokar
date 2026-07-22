@@ -270,6 +270,44 @@ describe('handleDeepgramMessage — event dispatching', () => {
     if (session.speechFinalTimer) clearTimeout(session.speechFinalTimer);
   });
 
+  it('attend la suite après une présentation avant de déclencher UtteranceEnd', async () => {
+    vi.useFakeTimers();
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onDeepgramEvent = onEvent;
+
+    handleDeepgramMessage(session, {
+      type: 'Results',
+      is_final: true,
+      speech_final: false,
+      channel: { alternatives: [{ transcript: 'Bonjour je suis Martin', confidence: 0.98 }] },
+    });
+
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
+
+    handleDeepgramMessage(session, {
+      type: 'Results',
+      is_final: true,
+      speech_final: true,
+      channel: {
+        alternatives: [
+          {
+            transcript: "Test Copilot. J'ai une réservation demain à 19 heures 30.",
+            confidence: 0.98,
+          },
+        ],
+      },
+    });
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'UtteranceEnd',
+      transcript:
+        "Bonjour je suis Martin Test Copilot. J'ai une réservation demain à 19 heures 30.",
+    });
+    vi.useRealTimers();
+  });
+
   it('Results (not final, interim): does NOT fire UtteranceEnd immediately', () => {
     const session = makeSession();
     const onEvent = vi.fn();

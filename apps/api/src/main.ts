@@ -362,6 +362,14 @@ async function start() {
           { name: 'evaluate-alerts' },
         );
 
+        // Les enregistrements sont privés et temporaires : purge quotidienne
+        // des objets dont la rétention applicative est arrivée à échéance.
+        await queues.telnyxWebhooks.upsertJobScheduler(
+          'call-recordings-purge-daily',
+          { pattern: '20 3 * * *', tz: 'Europe/Paris' },
+          { name: 'purge-expired-recordings' },
+        );
+
         // Nettoyage des holds expirés (filet de sécurité, RES-008).
         await queues.holdCleanup.upsertJobScheduler(
           'hold-cleanup-5min',

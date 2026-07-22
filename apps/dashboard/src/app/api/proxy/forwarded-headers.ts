@@ -12,10 +12,12 @@ export function forwardedHeaders(req: NextRequest) {
   const cookie = req.headers.get('cookie') || '';
   const forwardedFor = req.headers.get('x-forwarded-for') || '';
   const requestId = req.headers.get('x-request-id') || '';
+  const range = req.headers.get('range') || '';
 
   const headers: Record<string, string> = {};
   if (cookie) headers.Cookie = cookie;
   if (forwardedFor) headers['X-Forwarded-For'] = forwardedFor;
   if (requestId) headers['X-Request-ID'] = requestId;
+  if (range) headers.Range = range;
   return headers;
 }

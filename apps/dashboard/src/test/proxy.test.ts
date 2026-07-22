@@ -35,6 +35,11 @@ describe('forwardedHeaders — proxy Next.js', () => {
     expect(headers.Cookie).toBe('__session=clerk-session-token');
   });
 
+  it('forward Range pour permettre la lecture et la navigation audio', () => {
+    const headers = forwardedHeaders(mockReq({ range: 'bytes=100-499' }));
+    expect(headers.Range).toBe('bytes=100-499');
+  });
+
   it('omet les headers absents (pas de valeur vide)', () => {
     const headers = forwardedHeaders(mockReq({}));
     expect(headers).toEqual({});

@@ -68,6 +68,7 @@ export interface Reservation {
 
 export type CallIntent = 'RESERVATION' | 'HOURS' | 'MENU' | 'CANCEL' | 'OTHER';
 export type CallOutcome = 'RESERVED' | 'INFO' | 'HANDOFF' | 'NO_ACTION' | 'ERROR';
+export type CallRecordingStatus = 'NOT_REQUESTED' | 'PENDING' | 'AVAILABLE' | 'FAILED' | 'DELETED';
 
 export interface Call {
   id: string;
@@ -77,6 +78,10 @@ export interface Call {
   intent: CallIntent | null;
   outcome: CallOutcome | null;
   carrier: string | null;
+  recordingStatus: CallRecordingStatus;
+  recordingStartedAt: string | null;
+  recordingEndedAt: string | null;
+  recordingExpiresAt: string | null;
   createdAt: string;
 }
 

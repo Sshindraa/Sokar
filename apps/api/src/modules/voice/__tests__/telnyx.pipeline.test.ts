@@ -502,6 +502,55 @@ describe('POST /voice/telnyx — unhandled event types', () => {
   });
 });
 
+describe('POST /voice/telnyx — call.recording.saved', () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    process.env.CALL_RECORDING_ENABLED = 'true';
+    app = await getApp();
+  });
+
+  afterAll(async () => {
+    delete process.env.CALL_RECORDING_ENABLED;
+    await closeApp();
+  });
+
+  it('enqueues immediate private storage of the MP3', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: {
+        data: {
+          event_type: 'call.recording.saved',
+          payload: {
+            call_control_id: 'cc-1',
+            call_leg_id: 'leg-1',
+            from: '+33****0001',
+            to: '+33****0000',
+            direction: 'incoming',
+            recording_id: 'rec-1',
+            recording_urls: { mp3: 'https://recordings.telnyx.com/signed.mp3' },
+            started_at: '2026-07-22T10:00:00.000Z',
+            ended_at: '2026-07-22T10:01:00.000Z',
+          },
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(queues.telnyxWebhooks.add).toHaveBeenCalledWith(
+      'store-recording',
+      expect.objectContaining({
+        callLegId: 'leg-1',
+        recordingId: 'rec-1',
+        downloadUrl: 'https://recordings.telnyx.com/signed.mp3',
+      }),
+      { jobId: expect.any(String) },
+    );
+  });
+});
+
 // ─── /voice/telnyx/end — restaurantId resolution regression suite ──────────
 //
 // Background: the guard (telnyxWebhookGuard) only verifies the Ed25519

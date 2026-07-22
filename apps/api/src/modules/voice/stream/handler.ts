@@ -32,6 +32,7 @@ import { writeDebugLog } from './debug-log';
 import { persistFluxCall, persistLatencyTrace } from './session-persistence';
 import { speakTtsStreamed } from './tts-handler';
 import { handleFluxEvent, extractRestaurantName } from './llm-handler';
+import { isCallRecordingEnabled, startCallRecordingAfterConsent } from '../call-recording.service';
 
 /**
  * Enregistre la route WebSocket pour le media stream Telnyx.
@@ -160,13 +161,29 @@ function handleTelnyxMessage(
       // Jouer le message d'accueil immédiatement (ne dépend pas de Deepgram)
       const restaurantName = extractRestaurantName(session.systemPrompt);
 
-      const greeting = `Bonjour, ${restaurantName}, cet appel peut être enregistré à des fins de qualité de service. En quoi puis-je vous aider ?`;
+      const recordingNotice = isCallRecordingEnabled()
+        ? ' Cet appel est enregistré à des fins de qualité de service et conservé au maximum trente jours.'
+        : '';
+      const greeting = `Bonjour, ${restaurantName}.${recordingNotice} En quoi puis-je vous aider ?`;
 
       writeDebugLog(`[stream] Speaking greeting: "${greeting}"`);
       mgr.transition(session, 'SPEAKING');
       speakTtsStreamed(session, greeting)
-        .then(() => {
+        .then(async () => {
           writeDebugLog(`[stream] Greeting spoken successfully, transitioning to LISTENING`);
+          try {
+            // L'enregistrement commence uniquement après l'annonce explicite.
+            await startCallRecordingAfterConsent(session);
+          } catch (err) {
+            logger.error(
+              { err, callId: session.callControlId },
+              '[stream] Failed to start call recording after consent notice',
+            );
+            captureException(err as Error, {
+              tags: { service: 'handler', action: 'recording-start' },
+              extra: { callId: session.callControlId },
+            });
+          }
           mgr.transition(session, 'LISTENING');
         })
         .catch((err) => {

@@ -348,7 +348,19 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
           // → Timer intelligent : court si ponctuation détectée, plus long sinon
           // → Le timer se RESET à chaque nouveau segment (évite de couper mid-phrase)
           const endsWithPunctuation = /[.!?]\s*$/.test(session.turnTranscript);
-          const timeoutMs = endsWithPunctuation ? 400 : 1500;
+          const soundsLikeIdentityIntroduction =
+            /\b(?:je\s+suis|mon\s+nom\s+est)\s+(?:[\p{L}-]+\s*){1,3}$/iu.test(
+              session.turnTranscript,
+            );
+          // Flux peut finaliser « Bonjour, je suis Martin » plusieurs secondes avant la
+          // suite de la phrase. Répondre après 1,5 s coupe alors le nom et déclenche un faux
+          // barge-in. On attend uniquement pour cette forme sémantiquement incomplète ; les
+          // demandes ordinaires conservent leur latence actuelle.
+          const timeoutMs = endsWithPunctuation
+            ? 400
+            : soundsLikeIdentityIntroduction
+              ? 5500
+              : 1500;
 
           // Reset le timer existant (nouveau segment reçu = l'user continue peut-être)
           if (session.speechFinalTimer) {

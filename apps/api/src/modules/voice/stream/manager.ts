@@ -26,6 +26,56 @@ function getVoiceLlmModel(): string {
   return process.env.VOICE_LLM_MODEL ?? VOICE_LLM_MODEL_DEFAULT;
 }
 
+function normalizeVoiceIdentity(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function tokenSimilarity(left: string, right: string): number {
+  if (left === right) return 1;
+  const rows = Array.from({ length: left.length + 1 }, (_, index) => index);
+
+  for (let leftIndex = 1; leftIndex <= right.length; leftIndex++) {
+    let diagonal = rows[0];
+    rows[0] = leftIndex;
+    for (let rightIndex = 1; rightIndex <= left.length; rightIndex++) {
+      const previous = rows[rightIndex];
+      rows[rightIndex] = Math.min(
+        rows[rightIndex] + 1,
+        rows[rightIndex - 1] + 1,
+        diagonal + (right[leftIndex - 1] === left[rightIndex - 1] ? 0 : 1),
+      );
+      diagonal = previous;
+    }
+  }
+
+  return 1 - rows[left.length] / Math.max(left.length, right.length);
+}
+
+/**
+ * Accepte une variation STT seulement si au moins deux mots ont été prononcés et que
+ * chacun correspond à un mot du nom enregistré. La sélection reste ensuite soumise à
+ * l'unicité du candidat sur le créneau exact.
+ */
+export function isSafeVoiceNameMatch(spokenName: string, storedName: string): boolean {
+  const spokenTokens = normalizeVoiceIdentity(spokenName).split(' ').filter(Boolean);
+  const storedTokens = normalizeVoiceIdentity(storedName).split(' ').filter(Boolean);
+  if (spokenTokens.length < 2 || storedTokens.length < 2) return false;
+
+  return spokenTokens.every((spokenToken) =>
+    storedTokens.some((storedToken) => tokenSimilarity(spokenToken, storedToken) >= 0.8),
+  );
+}
+
+function normalizeVoicePhone(value: string | null | undefined): string {
+  return value?.replace(/\D/g, '') ?? '';
+}
+
 export class CallSessionManager {
   private readonly sessions = new Map<string, CallSession>();
 
@@ -676,7 +726,7 @@ export class CallSessionManager {
               select: { timezone: true },
             });
             const startsAt = zonedTimeToUtc(date, time, restaurant?.timezone ?? 'Europe/Paris');
-            const reservation = await db.reservation.findFirst({
+            let reservation = await db.reservation.findFirst({
               where: {
                 restaurantId: session.restaurantId,
                 customerName: { equals: customerName, mode: 'insensitive' },
@@ -685,6 +735,41 @@ export class CallSessionManager {
               },
               select: { id: true },
             });
+
+            if (!reservation) {
+              const candidates = await db.reservation.findMany({
+                where: {
+                  restaurantId: session.restaurantId,
+                  startsAt,
+                  state: 'CONFIRMED',
+                },
+                select: { id: true, customerName: true, customerPhone: true },
+                take: 10,
+              });
+              const callerPhone = normalizeVoicePhone(session.from);
+              const phoneMatches = callerPhone
+                ? candidates.filter(
+                    (candidate) => normalizeVoicePhone(candidate.customerPhone) === callerPhone,
+                  )
+                : [];
+              const safeNameMatches = candidates.filter((candidate) =>
+                isSafeVoiceNameMatch(customerName, candidate.customerName),
+              );
+              const matches = phoneMatches.length === 1 ? phoneMatches : safeNameMatches;
+
+              if (matches.length === 1) {
+                reservation = { id: matches[0].id };
+                logger.info(
+                  {
+                    callId: session.callControlId,
+                    reservationId: reservation.id,
+                    strategy:
+                      phoneMatches.length === 1 ? 'caller_phone' : 'safe_name_on_exact_slot',
+                  },
+                  '[tool] reportDelay resolved non-exact voice identity',
+                );
+              }
+            }
             if (!reservation) {
               return 'Je n’ai pas trouvé cette réservation confirmée. Je vous transfère au gérant pour vous aider.';
             }

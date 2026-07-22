@@ -14,7 +14,7 @@
  */
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { WebSocket } from 'ws';
-import { CallSessionManager } from '../stream/manager';
+import { CallSessionManager, isSafeVoiceNameMatch } from '../stream/manager';
 import type { CallSession } from '../stream/types';
 
 // ── Module mocks ───────────────────────────────────────────────────────────
@@ -496,6 +496,51 @@ describe('CallSessionManager — tool execution', () => {
       }),
     );
     expect(ReservationService.update).not.toHaveBeenCalled();
+  });
+
+  it('reportDelay : résout une variation STT unique sur le créneau exact', async () => {
+    vi.mocked(db.reservation.findFirst).mockResolvedValue(null);
+    vi.mocked(db.reservation.findMany).mockResolvedValue([
+      {
+        id: 'res-delay-martin',
+        customerName: 'Martin Test Copilot',
+        customerPhone: '+33900000001',
+      },
+      {
+        id: 'res-delay-alice',
+        customerName: 'Alice Test Copilot',
+        customerPhone: '+33900000002',
+      },
+    ] as never);
+    mockFetchToolCall(
+      'reportDelay',
+      {
+        customerName: 'Martin copilote',
+        date: '2026-07-23',
+        time: '19:30',
+        delayMinutes: 25,
+      },
+      'Merci, c’est noté.',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    await mgr.processUtterance(makeSession(), 'Nous aurons vingt-cinq minutes de retard');
+
+    expect(db.reservationAuditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          event: 'reservation_delay_reported',
+          reservationId: 'res-delay-martin',
+          metadata: { delayMinutes: 25, source: 'voice' },
+        }),
+      }),
+    );
+  });
+
+  it('ne rapproche pas un prénom seul ni une identité ambiguë', () => {
+    expect(isSafeVoiceNameMatch('Martin copilote', 'Martin Test Copilot')).toBe(true);
+    expect(isSafeVoiceNameMatch('Martin', 'Martin Test Copilot')).toBe(false);
+    expect(isSafeVoiceNameMatch('Martin Durand', 'Martin Test Copilot')).toBe(false);
   });
 
   it('handoffToManager : retourne le message de transfert', async () => {

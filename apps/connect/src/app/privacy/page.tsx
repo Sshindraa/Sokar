@@ -19,7 +19,7 @@ export default function PrivacyPage() {
   return (
     <main id="main-content" className="mx-auto max-w-3xl px-6 py-12">
       <h1 className="text-3xl font-bold text-ink sm:text-4xl">Politique de confidentialité</h1>
-      <p className="mt-2 text-sm text-muted-foreground">Dernière mise à jour : 2 juillet 2026</p>
+      <p className="mt-2 text-sm text-muted-foreground">Dernière mise à jour : 22 juillet 2026</p>
 
       <div className="mt-8 space-y-8 text-ink">
         <section>
@@ -52,6 +52,10 @@ export default function PrivacyPage() {
             <li>Adresse e-mail (optionnelle, pour une confirmation par e-mail)</li>
             <li>Demandes spéciales éventuelles (allergies, accès, etc.)</li>
             <li>
+              Pour les appels téléphoniques : audio de la conversation et transcription, après
+              information donnée au début de l&apos;appel
+            </li>
+            <li>
               Métadonnées de navigation : source (Google, QR code, etc.) et hash de l&apos;adresse
               IP (jamais l&apos;IP en clair)
             </li>
@@ -67,7 +71,8 @@ export default function PrivacyPage() {
             </li>
             <li>
               <strong className="text-ink">Intérêt légitime</strong> : mesures d&apos;anti-fraude
-              (honeypot, rate-limiting) et analytics agrégées (compteurs Prometheus, sans PII).
+              (honeypot, rate-limiting), analytics agrégées (compteurs Prometheus, sans PII) et
+              contrôle qualité des appels annoncés au client.
             </li>
             <li>
               <strong className="text-ink">Consentement</strong> : SMS et e-mail transactionnels de
@@ -82,7 +87,8 @@ export default function PrivacyPage() {
             Les données de réservation sont conservées par le restaurant pour la durée nécessaire à
             la gestion de ses opérations (annulation, modification, no-show). Les métadonnées
             analytics agrégées ne contiennent aucune PII et sont conservées sous forme de compteurs
-            anonymisés.
+            anonymisés. Les enregistrements audio sont stockés de manière privée pendant 30 jours au
+            maximum, puis supprimés automatiquement.
           </p>
         </section>
 

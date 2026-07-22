@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { Readable } from 'node:stream';
+
+vi.mock('../../voice/call-recording.service', () => ({
+  getPrivateRecording: vi.fn(),
+  deletePrivateRecording: vi.fn(),
+}));
+
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
+import { deletePrivateRecording, getPrivateRecording } from '../../voice/call-recording.service';
 
 describe('call.routes', () => {
   beforeEach(() => {
@@ -141,6 +149,9 @@ describe('call.routes', () => {
   describe('DELETE /calls/:id', () => {
     it('supprime le call scoped au restaurant (204)', async () => {
       const app = await getApp();
+      vi.mocked(db.call.findUnique).mockResolvedValue({
+        recordingStorageKey: null,
+      } as unknown as Awaited<ReturnType<typeof db.call.findUnique>>);
       vi.mocked(db.call.delete).mockResolvedValue(
         {} as unknown as Awaited<ReturnType<typeof db.call.delete>>,
       );
@@ -155,6 +166,68 @@ describe('call.routes', () => {
       expect(db.call.delete).toHaveBeenCalledWith({
         where: { id: 'c1', restaurantId: 'test-rest-1' },
       });
+    });
+
+    it("supprime aussi l'objet audio privé lorsqu'il existe", async () => {
+      const app = await getApp();
+      vi.mocked(db.call.findUnique).mockResolvedValue({
+        recordingStorageKey: 'call-recordings/rest/call/rec.mp3',
+      } as unknown as Awaited<ReturnType<typeof db.call.findUnique>>);
+
+      const res = await app.inject({
+        method: 'DELETE',
+        url: '/calls/c1',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(204);
+      expect(deletePrivateRecording).toHaveBeenCalledWith('call-recordings/rest/call/rec.mp3');
+    });
+  });
+
+  describe('GET /calls/:id/recording', () => {
+    it("stream l'audio uniquement pour un call du restaurant authentifié", async () => {
+      const app = await getApp();
+      vi.mocked(db.call.findUnique).mockResolvedValue({
+        recordingStatus: 'AVAILABLE',
+        recordingStorageKey: 'call-recordings/rest/call/rec.mp3',
+        recordingContentType: 'audio/mpeg',
+        recordingSizeBytes: 4,
+        recordingExpiresAt: new Date(Date.now() + 60_000),
+      } as unknown as Awaited<ReturnType<typeof db.call.findUnique>>);
+      vi.mocked(getPrivateRecording).mockResolvedValue({
+        Body: Readable.from(Buffer.from([1, 2, 3, 4])),
+        ContentLength: 4,
+        ContentRange: 'bytes 0-3/4',
+      } as Awaited<ReturnType<typeof getPrivateRecording>>);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/calls/c1/recording',
+        headers: { authorization: 'Bearer test', range: 'bytes=0-3' },
+      });
+
+      expect(res.statusCode).toBe(206);
+      expect(res.headers['content-type']).toContain('audio/mpeg');
+      expect(res.headers['cache-control']).toBe('private, no-store');
+      expect(getPrivateRecording).toHaveBeenCalledWith(
+        'call-recordings/rest/call/rec.mp3',
+        'bytes=0-3',
+      );
+    });
+
+    it('ne révèle pas les enregistrements hors du restaurant', async () => {
+      const app = await getApp();
+      vi.mocked(db.call.findUnique).mockResolvedValue(null);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/calls/other/recording',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(getPrivateRecording).not.toHaveBeenCalled();
     });
   });
 });

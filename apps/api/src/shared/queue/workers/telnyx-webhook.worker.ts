@@ -1,6 +1,12 @@
 import { Worker } from 'bullmq';
 import { redisQueue } from '../../redis/client';
 import { setupWorkerListeners, jobLogger } from './helper';
+import {
+  purgeExpiredRecordings,
+  storeSavedRecording,
+  type SavedRecordingJobData,
+} from '../../../modules/voice/call-recording.service';
+import { db } from '../../db/client';
 
 export interface TelnyxAnswerJobData {
   readonly callControlId: string;
@@ -14,6 +20,33 @@ export const telnyxWebhookWorker = new Worker(
   'telnyx-webhooks',
   async (job) => {
     const log = jobLogger(job);
+
+    if (job.name === 'store-recording') {
+      const data = job.data as SavedRecordingJobData;
+      try {
+        await storeSavedRecording(data);
+        log.info(
+          { callLegId: data.callLegId, recordingId: data.recordingId },
+          'Telnyx recording stored privately',
+        );
+      } catch (err) {
+        await db.call.updateMany({
+          where: { callSid: data.callLegId },
+          data: {
+            recordingStatus: 'FAILED',
+            recordingError: (err instanceof Error ? err.message : String(err)).slice(0, 500),
+          },
+        });
+        throw err;
+      }
+      return;
+    }
+
+    if (job.name === 'purge-expired-recordings') {
+      await purgeExpiredRecordings();
+      return;
+    }
+
     const data = job.data as TelnyxAnswerJobData;
     const apiKey = process.env.TELNYX_API_KEY;
     if (!apiKey) {

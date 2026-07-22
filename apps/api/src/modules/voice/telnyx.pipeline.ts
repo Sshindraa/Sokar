@@ -30,6 +30,10 @@ interface TelnyxCallPayload {
       duration_sec?: number;
       start_time?: string;
       end_time?: string;
+      recording_id?: string;
+      recording_urls?: { mp3?: string; wav?: string };
+      started_at?: string;
+      ended_at?: string;
     };
   };
 }
@@ -54,6 +58,37 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
     const payload = body.data.payload;
 
     switch (eventType) {
+      case 'call.recording.saved': {
+        const recordingId = payload.recording_id;
+        const downloadUrl = payload.recording_urls?.mp3;
+        if (
+          process.env.CALL_RECORDING_ENABLED !== 'true' ||
+          !recordingId ||
+          !downloadUrl ||
+          !payload.call_leg_id
+        ) {
+          app.log.warn(
+            { callLegId: payload.call_leg_id, recordingId },
+            'Recording webhook ignored: feature disabled or incomplete payload',
+          );
+          return reply.send({ result: 'ignored' });
+        }
+
+        const jobId = buildTelnyxWebhookJobId('store-recording', recordingId);
+        await app.queues.telnyxWebhooks.add(
+          'store-recording',
+          {
+            callLegId: payload.call_leg_id,
+            recordingId,
+            downloadUrl,
+            startedAt: payload.started_at,
+            endedAt: payload.ended_at,
+          },
+          { jobId },
+        );
+        return reply.send({ result: 'ok' });
+      }
+
       case 'call.initiated': {
         let ctx: Awaited<ReturnType<typeof RestaurantService.loadContext>>;
         try {

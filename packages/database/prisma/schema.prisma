@@ -191,26 +191,37 @@ model Table {
 }
 
 model Call {
-  id           String        @id @default(uuid())
-  restaurantId String        @map("restaurant_id")
-  callSid      String        @unique @map("call_sid")
-  durationSec  Int?          @map("duration_sec")
-  transcript   String?
-  intent       CallIntent?
-  outcome      CallOutcome?
-  sttProvider  String?       @map("stt_provider")
-  llmProvider  String?       @map("llm_provider")
-  ttsProvider  String?       @map("tts_provider")
-  carrier      String?
-  createdAt    DateTime      @default(now()) @map("created_at")
-  updatedAt    DateTime      @default(now()) @updatedAt @map("updated_at")
-  restaurant   Restaurant    @relation(fields: [restaurantId], references: [id])
-  reservation  Reservation?
-  latencyTrace LatencyTrace?
-  messages     Message[]
+  id                          String              @id @default(uuid())
+  restaurantId                String              @map("restaurant_id")
+  callSid                     String              @unique @map("call_sid")
+  durationSec                 Int?                @map("duration_sec")
+  transcript                  String?
+  intent                      CallIntent?
+  outcome                     CallOutcome?
+  sttProvider                 String?             @map("stt_provider")
+  llmProvider                 String?             @map("llm_provider")
+  ttsProvider                 String?             @map("tts_provider")
+  carrier                     String?
+  recordingStatus             CallRecordingStatus @default(NOT_REQUESTED) @map("recording_status")
+  recordingProviderId         String?             @map("recording_provider_id")
+  recordingStorageKey         String?             @map("recording_storage_key")
+  recordingContentType        String?             @map("recording_content_type")
+  recordingSizeBytes          Int?                @map("recording_size_bytes")
+  recordingConsentAnnouncedAt DateTime?           @map("recording_consent_announced_at")
+  recordingStartedAt          DateTime?           @map("recording_started_at")
+  recordingEndedAt            DateTime?           @map("recording_ended_at")
+  recordingExpiresAt          DateTime?           @map("recording_expires_at")
+  recordingError              String?             @map("recording_error")
+  createdAt                   DateTime            @default(now()) @map("created_at")
+  updatedAt                   DateTime            @default(now()) @updatedAt @map("updated_at")
+  restaurant                  Restaurant          @relation(fields: [restaurantId], references: [id])
+  reservation                 Reservation?
+  latencyTrace                LatencyTrace?
+  messages                    Message[]
 
   @@index([restaurantId, createdAt(sort: Desc)])
   @@index([restaurantId, outcome, createdAt(sort: Desc)], map: "calls_restaurant_outcome_created_at_idx")
+  @@index([recordingStatus, recordingExpiresAt], map: "calls_recording_status_expires_at_idx")
   @@map("calls")
 }
 
@@ -404,6 +415,14 @@ enum CallOutcome {
   NO_ACTION
   HANDOFF
   ERROR
+}
+
+enum CallRecordingStatus {
+  NOT_REQUESTED
+  PENDING
+  AVAILABLE
+  FAILED
+  DELETED
 }
 
 enum ReservationStatus {

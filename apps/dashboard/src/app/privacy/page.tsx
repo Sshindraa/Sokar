@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
-const LAST_UPDATED = '23 juin 2026';
+const LAST_UPDATED = '22 juillet 2026';
 
 const COMPANY = {
   // [À REMPLIR] Raison sociale
@@ -116,7 +116,7 @@ const DATA_CATEGORIES = [
     legalBasis:
       "Intérêt légitime (amélioration du service) — le client final est informé en début d'appel.",
     retention:
-      "90 jours par défaut, configurable par restaurant. Transcription supprimée à l'effacement de la réservation.",
+      "30 jours au maximum pour l'audio, puis suppression automatique du stockage privé. Transcription supprimée à l'effacement de la réservation.",
   },
   {
     category: 'Données de paiement',

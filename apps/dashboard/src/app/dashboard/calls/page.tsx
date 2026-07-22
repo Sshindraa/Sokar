@@ -71,6 +71,33 @@ function IntentLabel({ intent }: { intent: string | null }) {
   }
 }
 
+function RecordingPlayer({ call }: { call: CallItem }) {
+  if (call.recordingStatus === 'PENDING') {
+    return <span className="text-xs text-muted-foreground">Traitement…</span>;
+  }
+  if (call.recordingStatus === 'FAILED') {
+    return <span className="text-xs text-destructive">Enregistrement indisponible</span>;
+  }
+  if (call.recordingStatus === 'DELETED') {
+    return <span className="text-xs text-muted-foreground">Expiré</span>;
+  }
+  if (call.recordingStatus !== 'AVAILABLE') {
+    return <span className="text-muted-foreground opacity-50">—</span>;
+  }
+
+  return (
+    <audio
+      controls
+      preload="none"
+      aria-label={`Réécouter l'appel du ${formatDate(call.createdAt, 'fr-FR')}`}
+      className="h-9 w-full min-w-[220px] max-w-[300px]"
+      src={`/api/proxy/calls/${call.id}/recording`}
+    >
+      Votre navigateur ne permet pas la lecture audio.
+    </audio>
+  );
+}
+
 export default function CallsPage() {
   const { get, orgId } = useApi();
   const isMobile = useIsMobile();
@@ -140,48 +167,48 @@ export default function CallsPage() {
         /* ========== MOBILE: Card List ========== */
         <div className="space-y-2.5">
           {calls.map((call) => (
-            <MobileDataCard
-              key={call.id}
-              title={IntentLabel({ intent: call.intent })}
-              subtitle={formatDate(call.createdAt, 'fr-FR', {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-              badge={<OutcomeBadge outcome={call.outcome} />}
-              accentClass={
-                call.outcome === 'RESERVED'
-                  ? 'border-l-success'
-                  : call.outcome === 'ERROR'
-                    ? 'border-l-destructive'
-                    : call.outcome === 'HANDOFF'
-                      ? 'border-l-warning'
-                      : 'border-l-border'
-              }
-              details={[
-                {
-                  label: 'Durée',
-                  value: formatDuration(call.durationSec),
-                },
-                {
-                  label: 'Opérateur',
-                  value: call.carrier || '—',
-                },
-                ...(call.transcript
-                  ? [
-                      {
-                        label: 'Transcript',
-                        value:
-                          call.transcript.length > 60
-                            ? call.transcript.slice(0, 60) + '…'
-                            : call.transcript,
-                      },
-                    ]
-                  : []),
-              ]}
-            />
+            <div key={call.id} className="space-y-2">
+              <MobileDataCard
+                title={IntentLabel({ intent: call.intent })}
+                subtitle={formatDate(call.createdAt, 'fr-FR', {
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+                badge={<OutcomeBadge outcome={call.outcome} />}
+                accentClass={
+                  call.outcome === 'RESERVED'
+                    ? 'border-l-success'
+                    : call.outcome === 'ERROR'
+                      ? 'border-l-destructive'
+                      : call.outcome === 'HANDOFF'
+                        ? 'border-l-warning'
+                        : 'border-l-border'
+                }
+                details={[
+                  { label: 'Durée', value: formatDuration(call.durationSec) },
+                  { label: 'Opérateur', value: call.carrier || '—' },
+                  ...(call.transcript
+                    ? [
+                        {
+                          label: 'Transcript',
+                          value:
+                            call.transcript.length > 60
+                              ? call.transcript.slice(0, 60) + '…'
+                              : call.transcript,
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+              {call.recordingStatus !== 'NOT_REQUESTED' ? (
+                <div className="px-1">
+                  <RecordingPlayer call={call} />
+                </div>
+              ) : null}
+            </div>
           ))}
         </div>
       ) : (
@@ -196,6 +223,7 @@ export default function CallsPage() {
                   <TableHead>Intention</TableHead>
                   <TableHead>Issue</TableHead>
                   <TableHead>Opérateur</TableHead>
+                  <TableHead>Enregistrement</TableHead>
                   <TableHead>Transcript</TableHead>
                 </TableRow>
               </TableHeader>
@@ -224,6 +252,9 @@ export default function CallsPage() {
                       <OutcomeBadge outcome={call.outcome} />
                     </TableCell>
                     <TableCell className="text-muted-foreground">{call.carrier || '—'}</TableCell>
+                    <TableCell>
+                      <RecordingPlayer call={call} />
+                    </TableCell>
                     <TableCell className="max-w-xs">
                       {call.transcript ? (
                         <span className="inline-flex items-center gap-1 text-muted-foreground">
