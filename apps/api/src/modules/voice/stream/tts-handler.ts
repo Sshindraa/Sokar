@@ -16,15 +16,49 @@ import { persistLatencyTrace } from './session-persistence';
 import {
   CARTESIA_RETRY_DELAY_MS,
   CARTESIA_TTS_MAX_ATTEMPTS,
-  TTS_CHUNK_PAUSE_MS,
+  TTS_FRAME_BYTES,
+  TTS_INITIAL_BUFFER_FRAMES,
   TTS_UNDERFEED_PAUSE_MS,
   TTS_PACE_PAUSE_MS,
 } from './constants';
+import { splitTelnyxAudioFrames } from './audio-frames';
 
 export function isSessionActiveForTts(session: CallSession): boolean {
   return (
     !session.ended && session.state === 'SPEAKING' && session.telnyxWs.readyState === WebSocket.OPEN
   );
+}
+
+function persistFirstAudioFrame(session: CallSession): void {
+  if (!session.latencyTrace || session.latencyTrace.totalE2eMs) return;
+
+  session.latencyTrace.totalE2eMs = Date.now() - session.latencyTrace.startTime;
+  persistLatencyTrace(session).catch((err) =>
+    logger.error(
+      { err, callId: session.callControlId },
+      '[speakTtsStreamed] persistLatencyTrace failed',
+    ),
+  );
+}
+
+async function sendPacedAudioFrames(session: CallSession, audio: Buffer): Promise<number> {
+  const frames = splitTelnyxAudioFrames(audio, session.codec);
+  let framesSent = 0;
+
+  for (const frame of frames) {
+    if (!isSessionActiveForTts(session)) break;
+    session.telnyxWs.send(
+      JSON.stringify({
+        event: 'media',
+        media: { payload: frame.toString('base64') },
+      }),
+    );
+    framesSent++;
+    persistFirstAudioFrame(session);
+    await new Promise((resolve) => setTimeout(resolve, TTS_PACE_PAUSE_MS));
+  }
+
+  return framesSent;
 }
 
 /**
@@ -179,38 +213,9 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
         session.latencyTrace.ttsFirstByteMs = Date.now() - session.latencyTrace.startTime;
       }
 
-      // Cache contient déjà du G.711 8kHz (1 byte = 1 sample, 160 bytes = 20ms).
-      const chunkSize = 160;
-      let chunksSent = 0;
-      for (let offset = 0; offset < cachedBuffer.length; offset += chunkSize) {
-        if (!isSessionActiveForTts(session)) {
-          writeDebugLog(`[speakTtsStreamed] Session inactive during send, stopping`);
-          break;
-        }
-        const chunk = cachedBuffer.slice(offset, offset + chunkSize);
-        session.telnyxWs.send(
-          JSON.stringify({
-            event: 'media',
-            media: { payload: chunk.toString('base64') },
-          }),
-        );
-        chunksSent++;
-
-        // Measure E2E latency on first chunk sent
-        if (session.latencyTrace && !session.latencyTrace.totalE2eMs) {
-          session.latencyTrace.totalE2eMs = Date.now() - session.latencyTrace.startTime;
-          persistLatencyTrace(session).catch((err) =>
-            logger.error(
-              { err, callId: session.callControlId },
-              '[speakTtsStreamed] persistLatencyTrace failed',
-            ),
-          );
-        }
-
-        await new Promise((r) => setTimeout(r, TTS_CHUNK_PAUSE_MS));
-      }
+      const framesSent = await sendPacedAudioFrames(session, cachedBuffer);
       writeDebugLog(
-        `[speakTtsStreamed] Sent ${chunksSent} cached audio chunks to Telnyx for sentence ${i}`,
+        `[speakTtsStreamed] Sent ${framesSent} cached audio frames to Telnyx for sentence ${i}`,
       );
       continue;
     }
@@ -285,15 +290,27 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
       let streamFinished = false;
       let firstByteReceived = false;
 
-      // Background playback loop (Consumer) — envoie des chunks de 160 octets
-      // (20ms d'audio 8kHz 8-bit) sur le WebSocket Telnyx.
+      // Background playback loop (Consumer). It waits for a 200 ms jitter
+      // buffer, then sends 100 ms G.711 frames at real time. This protects the
+      // call from short Cartesia/network bursts without creating a long queue.
       const playPromise = (async () => {
-        let chunksSent = 0;
+        let framesSent = 0;
+        let playbackStarted = false;
         while (true) {
           if (!isSessionActiveForTts(session)) {
             writeDebugLog(`[speakTtsStreamed] Session inactive during stream playback, stopping`);
             break;
           }
+
+          if (
+            !playbackStarted &&
+            !streamFinished &&
+            playbackQueue.length < TTS_INITIAL_BUFFER_FRAMES
+          ) {
+            await new Promise((r) => setTimeout(r, TTS_UNDERFEED_PAUSE_MS));
+            continue;
+          }
+          playbackStarted = true;
 
           if (playbackQueue.length === 0) {
             if (streamFinished) {
@@ -303,30 +320,20 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
             continue;
           }
 
-          const chunk = playbackQueue.shift()!;
+          const frame = playbackQueue.shift()!;
           session.telnyxWs.send(
             JSON.stringify({
               event: 'media',
-              media: { payload: chunk.toString('base64') },
+              media: { payload: frame.toString('base64') },
             }),
           );
-          chunksSent++;
-
-          // Latence de bout en bout (E2E) enregistrée lors du tout premier chunk envoyé
-          if (session.latencyTrace && !session.latencyTrace.totalE2eMs) {
-            session.latencyTrace.totalE2eMs = Date.now() - session.latencyTrace.startTime;
-            persistLatencyTrace(session).catch((err) =>
-              logger.error(
-                { err, callId: session.callControlId },
-                '[speakTtsStreamed] persistLatencyTrace failed',
-              ),
-            );
-          }
+          framesSent++;
+          persistFirstAudioFrame(session);
 
           await new Promise((r) => setTimeout(r, TTS_PACE_PAUSE_MS));
         }
         writeDebugLog(
-          `[speakTtsStreamed] Paced player sent ${chunksSent} chunks for sentence ${i}`,
+          `[speakTtsStreamed] Paced player sent ${framesSent} audio frames for sentence ${i}`,
         );
       })();
 
@@ -355,19 +362,25 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
 
         const fullBytes = Buffer.concat([remainingBytes, rawChunk]);
 
-        // Découpe en chunks de 160 bytes (20ms @ 8kHz 8-bit)
+        // Découpe en trames de 800 bytes (100ms @ 8kHz 8-bit).
         let offset = 0;
-        while (offset + 160 <= fullBytes.length) {
-          playbackQueue.push(fullBytes.slice(offset, offset + 160));
-          offset += 160;
+        while (offset + TTS_FRAME_BYTES <= fullBytes.length) {
+          playbackQueue.push(fullBytes.slice(offset, offset + TTS_FRAME_BYTES));
+          offset += TTS_FRAME_BYTES;
         }
         remainingBytes = fullBytes.slice(offset);
       }
 
-      // Flush final — pad avec des zeros si on a un reste < 160 bytes
+      // Flush final — pad avec du silence pour garder une trame RTP de 100 ms.
       if (remainingBytes.length > 0) {
-        if (remainingBytes.length < 160) {
-          const padded = Buffer.concat([remainingBytes, Buffer.alloc(160 - remainingBytes.length)]);
+        if (remainingBytes.length < TTS_FRAME_BYTES) {
+          const padded = Buffer.concat([
+            remainingBytes,
+            Buffer.alloc(
+              TTS_FRAME_BYTES - remainingBytes.length,
+              session.codec === 'PCMA' ? 0xd5 : 0xff,
+            ),
+          ]);
           playbackQueue.push(padded);
         } else {
           playbackQueue.push(remainingBytes);

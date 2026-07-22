@@ -26,6 +26,8 @@ import { WebSocket } from 'ws';
 import crypto from 'node:crypto';
 import type { CallSession } from './types';
 import { writeDebugLog } from './debug-log';
+import { splitTelnyxAudioFrames } from './audio-frames';
+import { TTS_FRAME_DURATION_MS } from './constants';
 import { logger } from '../../../shared/logger/pino';
 import { DEFAULT_CARTESIA_VOICE_ID, FILLER_CACHE_TTL_SECONDS } from '@sokar/config';
 import { redisCache } from '../../../shared/redis/client';
@@ -225,8 +227,10 @@ export async function playFiller(
   }
 
   if (chunks && chunks.length > 0) {
-    writeDebugLog(`[fillers] Playing filler: "${text}" (${chunks.length} chunks, 20ms paced)`);
-    for (const chunk of chunks) {
+    const audio = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk, 'base64')));
+    const frames = splitTelnyxAudioFrames(audio, fillerEncoding === 'pcm_alaw' ? 'PCMA' : 'PCMU');
+    writeDebugLog(`[fillers] Playing filler: "${text}" (${frames.length} frames, 100ms paced)`);
+    for (const frame of frames) {
       if (session && (session.ended || session.state !== 'PROCESSING')) {
         writeDebugLog(
           `[fillers] Interrupted filler playback due to state change (state=${session.state})`,
@@ -234,8 +238,8 @@ export async function playFiller(
         break;
       }
       if (ws.readyState !== WebSocket.OPEN) break;
-      ws.send(JSON.stringify({ event: 'media', media: { payload: chunk } }));
-      await new Promise((r) => setTimeout(r, 20));
+      ws.send(JSON.stringify({ event: 'media', media: { payload: frame.toString('base64') } }));
+      await new Promise((r) => setTimeout(r, TTS_FRAME_DURATION_MS));
     }
   } else {
     logger.warn({ text }, '[fillers] No cached audio for filler (warm-up incomplete?)');
