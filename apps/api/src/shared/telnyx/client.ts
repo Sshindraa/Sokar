@@ -80,10 +80,15 @@ export async function placeOutboundCall(
     throw new Error('TELNYX_FROM_NUMBER is required for outbound calls');
   }
 
+  const connectionId = options.connectionId ?? process.env.TELNYX_APP_ID;
+  if (!connectionId) {
+    throw new Error('TELNYX_APP_ID is required for outbound calls');
+  }
+
   const response = await t.calls.create({
     to,
     from,
-    connection_id: options.connectionId,
+    connection_id: connectionId,
     webhook_url: options.webhookUrl,
     webhook_url_method: 'POST',
     client_state: options.clientState
