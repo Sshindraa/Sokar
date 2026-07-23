@@ -69,10 +69,15 @@ export function shouldSkipDuplicateTranscript(session: CallSession, transcript: 
 }
 
 export function extractRestaurantName(systemPrompt: string): string {
-  return systemPrompt
-    .split('\n')[0]
+  const firstLine = systemPrompt.split('\n')[0] ?? '';
+  const withoutPrefix = firstLine
     .replace(/^Tu es l'hôte d'accueil et assistant vocal chaleureux de /, '')
     .replace(/^Tu es l'assistant vocal (?:chaleureux )?de /, '')
+
+  // The restaurant name is followed by an internal instruction in the system
+  // prompt. Only the name is safe to say aloud in the initial greeting.
+  return withoutPrefix
+    .replace(/\.\s+L'accueil a déjà été prononcé.*$/u, '')
     .replace(/\.$/, '')
     .trim();
 }

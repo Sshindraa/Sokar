@@ -112,6 +112,22 @@ describe('conversation state', () => {
     ).toBe("Désolé, 20 h n'est pas disponible. Je peux vous proposer 19 h 30 ou 20 h 30.");
   });
 
+  it('propose le gérant ou un message quand aucun créneau vérifié n’existe', () => {
+    expect(buildAvailabilityReply({ date: '2026-07-23', time: '20:00', partySize: 4 }, [])).toBe(
+      "Désolé, je n'ai pas de créneau disponible ce jour-là pour 4 personnes. Je peux vous passer le gérant ou prendre un message.",
+    );
+  });
+
+  it('demande de préciser le nombre après une transcription ambiguë', () => {
+    const session = makeSession();
+    session.conversation.intent = 'reservation';
+    recordAssistantReply(session, 'Vous serez combien ?');
+
+    expect(
+      buildDeterministicTurnResponse(session, 'content', "Je s'en sera pas de personne"),
+    ).toBe("Je n'ai pas bien compris le nombre de personnes. Vous serez combien ?");
+  });
+
   it("sélectionne les horaires vérifiés les plus proches de l'heure demandée", () => {
     expect(
       selectClosestAvailabilitySlots('20:00', ['12:00', '21:30', '19:30', '20:30', '22:00']),

@@ -168,7 +168,7 @@ export function buildAvailabilityReply(
 ): string {
   const time = request.time.replace(/^0/, '').replace(':00', ' h').replace(':', ' h ');
   if (availableSlots.length === 0) {
-    return `Désolé, il n'y a plus de créneau disponible ce jour-là pour ${request.partySize} personne${request.partySize > 1 ? 's' : ''}.`;
+    return `Désolé, je n'ai pas de créneau disponible ce jour-là pour ${request.partySize} personne${request.partySize > 1 ? 's' : ''}. Je peux vous passer le gérant ou prendre un message.`;
   }
   if (availableSlots.includes(request.time)) {
     return `Oui, ${time} est disponible pour ${request.partySize} personne${request.partySize > 1 ? 's' : ''}. Quel est votre nom pour la réservation ?`;
@@ -259,11 +259,21 @@ export function buildReservationProgressResponse(session: CallSession): string |
   return null;
 }
 
+function isAmbiguousPartySizeReply(session: CallSession, transcript: string): boolean {
+  if (session.conversation.pendingQuestion !== 'partySize') return false;
+  if (extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris').partySize) return false;
+
+  const normalized = normalizeTranscript(transcript);
+  return /\b(?:personne|personnes|on sera|nous serons|combien)\b/.test(normalized);
+}
+
 function pendingQuestionFrom(question: string): ConversationState['pendingQuestion'] {
   const normalized = normalizeTranscript(question);
   if (/\b(?:quelle date|quel jour|quand)/.test(normalized)) return 'date';
   if (/\b(?:quelle heure|a quelle heure|vers quelle heure)/.test(normalized)) return 'time';
-  if (/\b(?:combien de personnes|pour combien)/.test(normalized)) return 'partySize';
+  if (/\b(?:combien de personnes|pour combien|vous serez combien)/.test(normalized)) {
+    return 'partySize';
+  }
   if (/\b(?:votre nom|quel est votre nom|au nom de qui)/.test(normalized)) return 'customerName';
   if (/\b(?:telephone|numero)/.test(normalized)) return 'customerPhone';
   return null;
@@ -305,6 +315,9 @@ export function buildDeterministicTurnResponse(
   }
 
   if (speechAct === 'content' || speechAct === 'correction') {
+    if (isAmbiguousPartySizeReply(session, transcript)) {
+      return "Je n'ai pas bien compris le nombre de personnes. Vous serez combien ?";
+    }
     return (
       buildAvailabilityFollowupResponse(session, transcript) ??
       buildReservationProgressResponse(session)
