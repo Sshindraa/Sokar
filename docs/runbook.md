@@ -247,8 +247,8 @@ Scripts SQL d'urgence :
 
 | Type    | Script                          | Cible                        | Fréquence      | Rétention |
 | ------- | ------------------------------- | ---------------------------- | -------------- | --------- |
-| Local   | `scripts/backup-postgres.sh`    | `/var/backups/sokar` (VPS)   | cron 03:20 UTC | 14 jours  |
-| Offsite | `scripts/backup-postgres-r2.sh` | `r2:sokar-backups/postgres/` | cron 04:00 UTC | 30 jours  |
+| Local   | `scripts/database/backup-postgres.sh`    | `/var/backups/sokar` (VPS)   | cron 03:20 UTC | 14 jours  |
+| Offsite | `scripts/database/backup-postgres-r2.sh` | `r2:sokar-backups/postgres/` | cron 04:00 UTC | 30 jours  |
 
 - **Local** : dump `pg_dump --format=custom --compress=6`, vérifié par
   restauration temporaire (compare le nombre de tables source vs restauré).
@@ -256,13 +256,13 @@ Scripts SQL d'urgence :
   d'intégrité par hash SHA256 local vs distant**, rotation automatique,
   garde-fou de quota (5 GB / 10 GB free tier), alerte optionnelle via
   `ALERT_CMD`.
-- Cron installé sur le VPS par `scripts/deploy-r2-backup.sh`.
+- Cron installé sur le VPS par `scripts/ops/install-r2-backup.sh`.
 - Logs : `/var/log/sokar/postgres-r2-backup.log` (rotaté par
   `infra/logrotate/sokar`).
 
 ### Vérifier qu'un backup est restaurable (test régulier)
 
-Le script `scripts/test-restore-vierge.sh` prouve bout-en-bout qu'on sait
+Le script `scripts/database/test-restore-vierge.sh` prouve bout-en-bout qu'on sait
 restaurer sur une base vierge :
 
 1. Télécharge le dump R2 le plus récent
@@ -275,10 +275,10 @@ restaurer sur une base vierge :
 
 ```bash
 # Sur le VPS (ou en local avec Docker + rclone configuré)
-bash scripts/test-restore-vierge.sh
+bash scripts/database/test-restore-vierge.sh
 
 # Conserver la base de test pour debug
-KEEP_DB=1 bash scripts/test-restore-vierge.sh
+KEEP_DB=1 bash scripts/database/test-restore-vierge.sh
 ```
 
 **À exécuter au moins une fois après chaque changement de schéma
@@ -317,7 +317,7 @@ KEEP_DB=1 bash scripts/test-restore-vierge.sh
 5. **Restaurer** (la garde anti-prod est levée explicitement) :
 
    ```bash
-   SKIP_PROD_GUARD=1 bash scripts/restore-postgres-backup.sh /tmp/restore.dump sokar
+   SKIP_PROD_GUARD=1 bash scripts/database/restore-postgres-backup.sh /tmp/restore.dump sokar
    ```
 
 6. **Vérifier l'intégrité** :
@@ -350,7 +350,7 @@ rclone ls r2:sokar-backups/postgres/ | tail -5
 Si le dernier dump date de plus de 24h, redéployer :
 
 ```bash
-VPS_HOST=pmbtc bash scripts/deploy-r2-backup.sh --test
+VPS_HOST=pmbtc bash scripts/ops/install-r2-backup.sh --test
 ```
 
 ---

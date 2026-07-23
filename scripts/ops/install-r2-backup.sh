@@ -2,7 +2,7 @@
 # Déploie le backup R2 sur le VPS de production.
 #
 # Usage (depuis le Mac dev):
-#   VPS_HOST=pmbtc bash scripts/deploy-r2-backup.sh
+#   VPS_HOST=pmbtc bash scripts/ops/install-r2-backup.sh
 #
 # Étapes :
 #   1. Vérifie la présence locale du script et de la config rclone
@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-VPS_HOST="${VPS_HOST:?Usage: VPS_HOST=user@host bash scripts/deploy-r2-backup.sh}"
+VPS_HOST="${VPS_HOST:?Usage: VPS_HOST=user@host bash scripts/ops/install-r2-backup.sh}"
 VPS_PATH="${VPS_PATH:-/opt/sokar}"
 RUN_TEST=0
 
@@ -23,7 +23,7 @@ for arg in "$@"; do
     esac
 done
 
-SCRIPT_LOCAL="$(cd "$(dirname "$0")" && pwd)/backup-postgres-r2.sh"
+SCRIPT_LOCAL="$(cd "$(dirname "$0")/../database" && pwd)/backup-postgres-r2.sh"
 RCLONE_CONF="$HOME/.config/rclone/rclone.conf"
 
 # ── 1. Pré-checks locaux ─────────────────────────────────
@@ -35,8 +35,9 @@ echo "→ Pré-checks OK"
 # ── 2. Push script + config sur le VPS ───────────────────
 echo "→ Push du script sur $VPS_HOST:${VPS_PATH}/scripts/"
 ssh "$VPS_HOST" "mkdir -p ${VPS_PATH}/scripts /var/log/sokar"
-scp "$SCRIPT_LOCAL" "$VPS_HOST:${VPS_PATH}/scripts/backup-postgres-r2.sh"
-ssh "$VPS_HOST" "chmod +x ${VPS_PATH}/scripts/backup-postgres-r2.sh"
+ssh "$VPS_HOST" "mkdir -p ${VPS_PATH}/scripts/database"
+scp "$SCRIPT_LOCAL" "$VPS_HOST:${VPS_PATH}/scripts/database/backup-postgres-r2.sh"
+ssh "$VPS_HOST" "chmod +x ${VPS_PATH}/scripts/database/backup-postgres-r2.sh"
 
 echo "→ Push de la config rclone"
 scp "$RCLONE_CONF" "$VPS_HOST:/tmp/rclone.conf"
@@ -59,7 +60,7 @@ echo "✓ Bucket sokar-backups accessible"
 
 # ── 5. Activer le cron quotidien à 04:00 UTC ─────────────
 echo "→ Installation du cron"
-CRON_LINE="0 4 * * * export PATH=\$HOME/bin:/usr/bin:/bin && /opt/sokar/scripts/backup-postgres-r2.sh >> /var/log/sokar/postgres-r2-backup.log 2>&1"
+CRON_LINE="0 4 * * * export PATH=\$HOME/bin:/usr/bin:/bin && /opt/sokar/scripts/database/backup-postgres-r2.sh >> /var/log/sokar/postgres-r2-backup.log 2>&1"
 ssh "$VPS_HOST" "(crontab -l 2>/dev/null | grep -v backup-postgres-r2 || true; echo '$CRON_LINE') | crontab -"
 echo "✓ Cron installé:"
 ssh "$VPS_HOST" "crontab -l | grep backup-postgres-r2"
@@ -67,7 +68,7 @@ ssh "$VPS_HOST" "crontab -l | grep backup-postgres-r2"
 # ── 6. Test optionnel ─────────────────────────────────────
 if [ "$RUN_TEST" = 1 ]; then
     echo "→ Test de backup (mode --test)"
-    ssh "$VPS_HOST" "bash ${VPS_PATH}/scripts/backup-postgres-r2.sh"
+    ssh "$VPS_HOST" "bash ${VPS_PATH}/scripts/database/backup-postgres-r2.sh"
 fi
 
 echo ""

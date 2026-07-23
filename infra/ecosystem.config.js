@@ -29,7 +29,7 @@ module.exports = {
       name: 'sokar-dashboard',
       cwd: '/opt/sokar/apps/dashboard',
       // Wrapper bin/run-dashboard.sh (pas `next start`) :
-      //   - copie les static assets via scripts/copy-static.sh
+      //   - copie les static assets via apps/<app>/scripts/copy-static.sh
       //     (cf. pitfall #29 de la skill sokar-deployment — Next 14
       //     standalone ne copie PAS auto .next/static + public/)
       //   - lance le binaire standalone (node .next/standalone/.../server.js)

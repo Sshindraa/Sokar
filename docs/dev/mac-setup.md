@@ -31,7 +31,7 @@ git config --global pack.packSizeLimit 2g
 ## Diagnostic
 
 ```bash
-bash scripts/check-memory.sh
+bash scripts/quality/check-memory.sh
 ```
 
 Affiche un warning si `swap > 50%` ou `free_ram < 500MB`. Exit code 0
@@ -45,7 +45,7 @@ recommandée a 16 GB RAM minimum.
 
 ## Intégré au repo
 
-- `scripts/check-memory.sh` : le diagnostic (intégré au pre-push hook,
+- `scripts/quality/check-memory.sh` : le diagnostic (intégré au pre-push hook,
   affichage non-bloquant)
 - `scripts/prepush-quality-gate.sh` : appelle check-memory avant le push
 - Config git : non versionnée (machine-local). Chaque dev doit l'appliquer

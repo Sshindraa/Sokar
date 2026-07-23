@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Sauvegarde PostgreSQL de la base staging (sokar_staging).
 #
-# Wrapper autour de scripts/backup-postgres.sh qui positionne les variables
+# Wrapper autour de scripts/database/backup-postgres.sh qui positionne les variables
 # d'environnement par défaut pour staging.
 #
 # Usage:
 #   /usr/local/sbin/sokar-staging-backup-postgres
-#   BACKUP_DIR=/tmp/staging-dumps bash scripts/backup-staging-postgres.sh
+#   BACKUP_DIR=/tmp/staging-dumps bash scripts/database/backup-staging-postgres.sh
 
 set -euo pipefail
 
@@ -19,4 +19,4 @@ RETENTION_DAYS="${RETENTION_DAYS:-14}"
 
 export POSTGRES_DB POSTGRES_USER POSTGRES_CONTAINER BACKUP_DIR RETENTION_DAYS
 
-exec "${SOKAR_ROOT}/scripts/backup-postgres.sh"
+exec "${SOKAR_ROOT}/scripts/database/backup-postgres.sh"

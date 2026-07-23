@@ -9,7 +9,7 @@
 # Workaround: git config --global pack.threads 1 (set in setup-new-mac.sh)
 # But it's also useful to fail fast if the system is too constrained.
 #
-# Usage: scripts/check-memory.sh [warn|fail]
+# Usage: scripts/quality/check-memory.sh [warn|fail]
 #   warn (default) : prints a warning, returns 0
 #   fail           : returns 1 if system is under pressure
 

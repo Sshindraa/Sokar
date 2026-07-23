@@ -14,7 +14,7 @@ Tout ce qu'il faut pour cloner l'environnement complet de l'ancien Mac (`MacBook
 ### 1. Sur l'ancien Mac (ici)
 
 ```bash
-cd /Users/hamza/Desktop/Sokar/scripts/migrate/mac-migration-2026-07-01
+cd ~/Projects/Sokar/docs/archive/operations/mac-migration-2026-07-01
 ./bundle.sh
 # → te demande une passphrase (12+ caractères, note-la !)
 # → produit dans ./out/ :
@@ -45,7 +45,7 @@ gh repo clone Sshindraa/Sokar /Users/hamza/Desktop/Sokar
 # ou:  git clone https://github.com/Sshindraa/Sokar.git /Users/hamza/Desktop/Sokar
 
 # 6. Lance l'install :
-cd /Users/hamza/Desktop/Sokar/scripts/migrate/mac-migration-2026-07-01
+cd ~/Projects/Sokar/docs/archive/operations/mac-migration-2026-07-01
 ./install.sh /chemin/vers/sokar-mac-migration-*.tar.gz.enc
 # → te demande la passphrase
 # → restore Hermes, profils, SSH, .env, alias .zshrc

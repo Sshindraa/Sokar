@@ -117,7 +117,7 @@ sudo install -d -m 0755 -o "$(whoami)" -g "$(whoami)" /var/log/sokar
 echo "→ Installation du backup automatique de sokar_staging..."
 sudo install -d -m 0755 -o root -g root /var/backups/sokar-staging
 sudo install -o root -g root -m 0755 \
-  "${SOKAR_ROOT}/scripts/backup-staging-postgres.sh" \
+  "${SOKAR_ROOT}/scripts/database/backup-staging-postgres.sh" \
   /usr/local/sbin/sokar-staging-backup-postgres
 sudo install -o root -g root -m 0644 \
   "${SOKAR_ROOT}/infra/cron/sokar-staging-postgres-backup" \

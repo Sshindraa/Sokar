@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "WATCHPACK_POLLING=true next dev",
-    "build": "bash ../../scripts/guard-next-build.sh 3000 dashboard && next build",
+    "build": "bash ../../scripts/build/guard-next-build.sh 3000 dashboard && next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",

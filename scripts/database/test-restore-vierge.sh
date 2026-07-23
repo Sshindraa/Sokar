@@ -6,7 +6,7 @@
 # puis nettoie. C'est le vrai "on sait restaurer sur une base vierge".
 #
 # Usage (sur le VPS, ou en local avec Docker + rclone configuré) :
-#   bash scripts/test-restore-vierge.sh
+#   bash scripts/database/test-restore-vierge.sh
 #
 # Variables d'env:
 #   R2_BUCKET        — nom du bucket (défaut: sokar-backups)
@@ -154,7 +154,7 @@ echo "Pour restaurer en production (après incident) :"
 echo "  1. Télécharger le dump : rclone copyto r2:${BUCKET}/${PREFIX}/${LATEST} /tmp/restore.dump"
 echo "  2. Stopper l'API : pm2 stop sokar-api"
 echo "  3. Renommer la base prod : docker exec ${CONTAINER} psql -U ${DB_USER} -c 'ALTER DATABASE sokar RENAME TO sokar_broken;'"
-echo "  4. Restaurer : bash scripts/restore-postgres-backup.sh /tmp/restore.dump sokar"
+echo "  4. Restaurer : bash scripts/database/restore-postgres-backup.sh /tmp/restore.dump sokar"
 echo "     (restore-postgres-backup.sh refuse 'sokar' — lever la garde avec SKIP_PROD_GUARD=1 en cas d'urgence P0)"
 echo "  5. Relancer : pm2 start sokar-api"
 echo "  6. Vérifier : curl -fsS https://api.sokar.tech/health"
