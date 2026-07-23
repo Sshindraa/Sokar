@@ -3,7 +3,7 @@
 ## Policy
 
 - **Staging:** deploys automatically after a green CI and its smoke tests.
-- **Production:** requires explicit confirmation before execution. Any DB migration, payment, auth, voice, or critical config change must be flagged.
+- **Production:** deployment proceeds automatically once CI and staging are green. The release snapshot, health checks and rollback path remain mandatory; DB migration, payment, auth, voice and critical configuration changes are flagged in the deployment report.
 - Application rollback does not restore the database. See `docs/runbooks/rollback.md`.
 
 ## Staging deployment
