@@ -204,7 +204,8 @@ describe('CallSessionManager — singleton & CRUD', () => {
     expect(session.history).toHaveLength(2);
     expect(session.history[0].role).toBe('system');
     expect(session.history[1].role).toBe('assistant');
-    expect(session.history[1].content).toBe('Bonjour, Test Resto !');
+    expect(session.history[1].content).toBe('Bonjour, ici Test Resto. Je vous écoute.');
+    expect(session.responseGeneration).toBe(0);
   });
 
   it('create utilise giftCardMinimumAmount=10 par défaut', () => {
@@ -293,6 +294,22 @@ describe('CallSessionManager — state machine edge cases', () => {
     session.lastActivityAt = before - 1000;
     mgr.transition(session, 'LISTENING');
     expect(session.lastActivityAt).toBeGreaterThan(before - 1000);
+  });
+
+  it('invalide et annule la réponse lors d’un barge-in', () => {
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    const abortController = new AbortController();
+    const abortSpy = vi.spyOn(abortController, 'abort');
+    session.abortController = abortController;
+    mgr.transition(session, 'SPEAKING');
+
+    mgr.handleBargeIn(session);
+
+    expect(abortSpy).toHaveBeenCalledOnce();
+    expect(session.abortController).toBeNull();
+    expect(session.responseGeneration).toBe(1);
+    expect(session.state).toBe('LISTENING');
   });
 });
 

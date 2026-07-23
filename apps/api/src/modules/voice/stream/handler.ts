@@ -32,7 +32,11 @@ import { writeDebugLog } from './debug-log';
 import { persistFluxCall, persistLatencyTrace } from './session-persistence';
 import { speakTtsStreamed } from './tts-handler';
 import { handleFluxEvent, extractRestaurantName } from './llm-handler';
-import { isCallRecordingEnabled, startCallRecordingAfterConsent } from '../call-recording.service';
+import { startTestCallRecording } from '../call-recording.service';
+
+export function buildInitialGreeting(restaurantName: string): string {
+  return `Bonjour, ici ${restaurantName}. Je vous écoute.`;
+}
 
 /**
  * Enregistre la route WebSocket pour le media stream Telnyx.
@@ -161,10 +165,7 @@ function handleTelnyxMessage(
       // Jouer le message d'accueil immédiatement (ne dépend pas de Deepgram)
       const restaurantName = extractRestaurantName(session.systemPrompt);
 
-      const recordingNotice = isCallRecordingEnabled()
-        ? ' Cet appel est enregistré à des fins de qualité de service et conservé au maximum trente jours.'
-        : '';
-      const greeting = `Bonjour, ${restaurantName}.${recordingNotice} En quoi puis-je vous aider ?`;
+      const greeting = buildInitialGreeting(restaurantName);
 
       writeDebugLog(`[stream] Speaking greeting: "${greeting}"`);
       mgr.transition(session, 'SPEAKING');
@@ -172,15 +173,14 @@ function handleTelnyxMessage(
         .then(async () => {
           writeDebugLog(`[stream] Greeting spoken successfully, transitioning to LISTENING`);
           try {
-            // L'enregistrement commence uniquement après l'annonce explicite.
-            await startCallRecordingAfterConsent(session);
+            await startTestCallRecording(session);
           } catch (err) {
             logger.error(
               { err, callId: session.callControlId },
-              '[stream] Failed to start call recording after consent notice',
+              '[stream] Failed to start test call recording',
             );
             captureException(err as Error, {
-              tags: { service: 'handler', action: 'recording-start' },
+              tags: { service: 'handler', action: 'test-recording-start' },
               extra: { callId: session.callControlId },
             });
           }

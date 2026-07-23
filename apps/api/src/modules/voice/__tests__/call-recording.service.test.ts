@@ -20,18 +20,20 @@ vi.mock('@aws-sdk/client-s3', () => {
 });
 
 import { db } from '../../../shared/db/client';
-import { startCallRecordingAfterConsent, storeSavedRecording } from '../call-recording.service';
+import { startTestCallRecording, storeSavedRecording } from '../call-recording.service';
 import type { CallSession } from '../stream/types';
 
 const session = {
   callControlId: 'control-1',
   callLegId: 'leg-1',
+  restaurantId: 'rest-1',
 } as CallSession;
 
 describe('call recording service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.CALL_RECORDING_ENABLED = 'true';
+    process.env.CALL_RECORDING_TEST_RESTAURANT_IDS = 'rest-1';
     process.env.CALL_RECORDINGS_BUCKET = 'private-recordings';
     process.env.CALL_RECORDINGS_RETENTION_DAYS = '30';
     process.env.CALL_RECORDINGS_MAX_BYTES = '50000000';
@@ -41,6 +43,7 @@ describe('call recording service', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     delete process.env.CALL_RECORDING_ENABLED;
+    delete process.env.CALL_RECORDING_TEST_RESTAURANT_IDS;
     delete process.env.CALL_RECORDINGS_BUCKET;
     delete process.env.CALL_RECORDINGS_RETENTION_DAYS;
     delete process.env.CALL_RECORDINGS_MAX_BYTES;
@@ -49,7 +52,7 @@ describe('call recording service', () => {
   it('starts a dual-channel MP3 recording and marks the call pending', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 200 })));
 
-    await startCallRecordingAfterConsent(session);
+    await startTestCallRecording(session);
 
     expect(fetch).toHaveBeenCalledWith(
       'https://api.telnyx.com/v2/calls/control-1/actions/record_start',
@@ -62,6 +65,16 @@ describe('call recording service', () => {
       where: { callSid: 'leg-1' },
       data: expect.objectContaining({ recordingStatus: 'PENDING' }),
     });
+  });
+
+  it('does not record a restaurant absent from the test allowlist', async () => {
+    process.env.CALL_RECORDING_TEST_RESTAURANT_IDS = 'another-restaurant';
+    vi.stubGlobal('fetch', vi.fn());
+
+    await startTestCallRecording(session);
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(db.call.updateMany).not.toHaveBeenCalled();
   });
 
   it('copies the short-lived Telnyx file into private storage with retention metadata', async () => {

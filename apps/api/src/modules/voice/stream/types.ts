@@ -83,6 +83,8 @@ export interface CallSession {
   // Annulation LLM
   /** AbortController pour annuler la requête LLM en cours */
   abortController: AbortController | null;
+  /** Incrémente à chaque nouveau tour ou interruption pour invalider les callbacks tardifs. */
+  responseGeneration: number;
 
   // LLM spéculatif
   /** Promise LLM en cours (spéculation sur interim result) */

@@ -38,6 +38,7 @@ function makeSession(codec: 'PCMA' | 'PCMU' = 'PCMA'): CallSession {
       send: vi.fn(),
     },
     latencyTrace: undefined,
+    responseGeneration: 0,
   } as unknown as CallSession;
 }
 
@@ -79,5 +80,16 @@ describe('speakTtsStreamed — Telnyx RTP framing', () => {
     );
     expect(secondFrame.subarray(0, 3)).toEqual(source.subarray(TTS_FRAME_BYTES));
     expect(secondFrame.subarray(3)).toEqual(Buffer.alloc(TTS_FRAME_BYTES - 3, 0xff));
+  });
+
+  it('does not play audio produced by a stale response generation', async () => {
+    vi.mocked(getTtsCached).mockResolvedValue(Buffer.alloc(TTS_FRAME_BYTES, 0x55));
+    const session = makeSession();
+    session.responseGeneration = 2;
+
+    await speakTtsStreamed(session, 'Ancienne réponse.', 1);
+
+    expect(getTtsCached).not.toHaveBeenCalled();
+    expect(session.telnyxWs.send).not.toHaveBeenCalled();
   });
 });

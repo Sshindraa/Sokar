@@ -23,9 +23,16 @@ import {
 } from './constants';
 import { splitTelnyxAudioFrames } from './audio-frames';
 
-export function isSessionActiveForTts(session: CallSession): boolean {
+export function isSessionActiveForTts(
+  session: CallSession,
+  expectedResponseGeneration?: number,
+): boolean {
   return (
-    !session.ended && session.state === 'SPEAKING' && session.telnyxWs.readyState === WebSocket.OPEN
+    !session.ended &&
+    session.state === 'SPEAKING' &&
+    session.telnyxWs.readyState === WebSocket.OPEN &&
+    (expectedResponseGeneration === undefined ||
+      session.responseGeneration === expectedResponseGeneration)
   );
 }
 
@@ -41,12 +48,16 @@ function persistFirstAudioFrame(session: CallSession): void {
   );
 }
 
-async function sendPacedAudioFrames(session: CallSession, audio: Buffer): Promise<number> {
+async function sendPacedAudioFrames(
+  session: CallSession,
+  audio: Buffer,
+  expectedResponseGeneration?: number,
+): Promise<number> {
   const frames = splitTelnyxAudioFrames(audio, session.codec);
   let framesSent = 0;
 
   for (const frame of frames) {
-    if (!isSessionActiveForTts(session)) break;
+    if (!isSessionActiveForTts(session, expectedResponseGeneration)) break;
     session.telnyxWs.send(
       JSON.stringify({
         event: 'media',
@@ -142,10 +153,14 @@ export async function speakTelnyxNative(session: CallSession, text: string): Pro
  * pour un rendu plus naturel.
  * Consomme le stream HTTP de Cartesia au fil de l'eau.
  */
-export async function speakTtsStreamed(session: CallSession, text: string): Promise<void> {
+export async function speakTtsStreamed(
+  session: CallSession,
+  text: string,
+  expectedResponseGeneration?: number,
+): Promise<void> {
   const cleanedText = cleanTextForTts(text);
   if (!cleanedText) return;
-  if (!isSessionActiveForTts(session)) {
+  if (!isSessionActiveForTts(session, expectedResponseGeneration)) {
     writeDebugLog(
       `[speakTtsStreamed] Session inactive, state=${session.state}, ended=${session.ended}, skipping synthesis`,
     );
@@ -182,7 +197,7 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
     const sentence = sentences[i];
     const trimmed = sentence.trim();
     if (!trimmed) continue;
-    if (!isSessionActiveForTts(session)) {
+    if (!isSessionActiveForTts(session, expectedResponseGeneration)) {
       writeDebugLog(`[speakTtsStreamed] Session inactive before sentence ${i}, stopping`);
       break;
     }
@@ -193,7 +208,7 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
     if (i > 0) {
       writeDebugLog(`[speakTtsStreamed] Inter-sentence pause of 80ms...`);
       await new Promise((r) => setTimeout(r, 80));
-      if (!isSessionActiveForTts(session)) {
+      if (!isSessionActiveForTts(session, expectedResponseGeneration)) {
         writeDebugLog(`[speakTtsStreamed] Session inactive after pause, breaking loop`);
         break;
       }
@@ -213,7 +228,11 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
         session.latencyTrace.ttsFirstByteMs = Date.now() - session.latencyTrace.startTime;
       }
 
-      const framesSent = await sendPacedAudioFrames(session, cachedBuffer);
+      const framesSent = await sendPacedAudioFrames(
+        session,
+        cachedBuffer,
+        expectedResponseGeneration,
+      );
       writeDebugLog(
         `[speakTtsStreamed] Sent ${framesSent} cached audio frames to Telnyx for sentence ${i}`,
       );
@@ -297,7 +316,7 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
         let framesSent = 0;
         let playbackStarted = false;
         while (true) {
-          if (!isSessionActiveForTts(session)) {
+          if (!isSessionActiveForTts(session, expectedResponseGeneration)) {
             writeDebugLog(`[speakTtsStreamed] Session inactive during stream playback, stopping`);
             break;
           }

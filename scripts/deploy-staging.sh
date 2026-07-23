@@ -100,6 +100,16 @@ validate_env_files() {
         exit 1
     fi
 
+    # Le Service Copilot signe les événements navigateur avec ce secret.
+    # Valider avant d'arrêter les services évite une boucle PM2 au redémarrage.
+    local copilot_secret
+    copilot_secret=$(grep -E '^SERVICE_COPILOT_TELEMETRY_SECRET=' apps/api/.env \
+        | tail -n 1 | cut -d= -f2- | sed "s/^[\"'[:space:]]*//;s/[\"'[:space:]]*$//" || true)
+    if [ "${#copilot_secret}" -lt 32 ]; then
+        log_error "SERVICE_COPILOT_TELEMETRY_SECRET doit contenir au moins 32 caractères." >&2
+        exit 1
+    fi
+
     # Recherche de placeholders restants (CHANGE_ME ou ...)
     local placeholders
     placeholders=$(grep -nE '=(.*CHANGE_ME|.*\.\.\.)' apps/api/.env apps/dashboard/.env apps/connect/.env 2>/dev/null || true)
@@ -257,7 +267,7 @@ if [ "$DRY_RUN" = false ]; then
 fi
 
 recover_services() {
-    local exit_code=$?
+    local exit_code=${1:-$?}
     trap - ERR
     log info ""
     log_error "Déploiement staging interrompu (code ${exit_code})."
@@ -283,16 +293,7 @@ if [ "$DRY_RUN" = false ]; then
     trap recover_services ERR
 fi
 
-# ── 1. Free memory (keep API running) ──────────────────
-log info ""
-log info "📦 Freeing memory before build..."
-log info "   Stopping staging dashboard + connect (API stays up)..."
-pm2 stop sokar-staging-dashboard sokar-staging-connect 2>/dev/null || true
-
-FREE_BEFORE=$(free -m | awk '/^Mem:/ {print $4}')
-log info "   Memory free: ${FREE_BEFORE}MB"
-
-# ── 2. Pull code ────────────────────────────────────────
+# ── 1. Pull code ────────────────────────────────────────
 log info ""
 log info "📦 Pulling latest code from $BRANCH..."
 git checkout "$BRANCH"
@@ -378,6 +379,16 @@ else
 fi
 
 validate_env_files
+
+# Libérer la mémoire seulement après le préflight : une configuration invalide
+# ne doit jamais interrompre Dashboard ou Connect.
+log info ""
+log info "📦 Freeing memory before build..."
+log info "   Stopping staging dashboard + connect (API stays up)..."
+pm2 stop sokar-staging-dashboard sokar-staging-connect 2>/dev/null || true
+
+FREE_BEFORE=$(free -m | awk '/^Mem:/ {print $4}')
+log info "   Memory free: ${FREE_BEFORE}MB"
 
 # ── 4. Generate Prisma ──────────────────────────────────
 if [ "$SKIP_ALL_BUILDS" = true ] || [ "$NEED_PRISMA" = false ]; then
@@ -516,6 +527,18 @@ STAGING_DASH_VHOST=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: staging.so
 log info "   staging.sokar.tech/health via Nginx → $STAGING_API_VHOST"
 log info "   staging.sokar.tech/ via Nginx       → $STAGING_DASH_VHOST"
 
+# Un échec de health check n'émet pas ERR lorsqu'il se termine par `exit 1`.
+# Appeler explicitement la récupération avant de créer/supprimer les snapshots.
+if [ "$API_STATUS" != "200" ] \
+    || [ "$LIVEZ_STATUS" != "200" ] \
+    || [ "$DASH_STATUS" != "200" ] \
+    || [ "$CONNECT_STATUS" != "200" ]; then
+    log info ""
+    log_error "Staging deploy finished but checks failed"
+    log info "   API=$API_STATUS Livez=$LIVEZ_STATUS Dash=$DASH_STATUS Connect=$CONNECT_STATUS"
+    recover_services 1
+fi
+
 # ── 11. Snapshot post-build réussi ───────────────────────
 NEW_TIMESTAMP="$(date -u '+%Y%m%dT%H%M%SZ')"
 NEW_RELEASE="$RELEASES_DIR/$NEW_TIMESTAMP"
@@ -546,23 +569,12 @@ fi
 rm -rf "${PREV_RELEASE}" 2>/dev/null || true
 
 # ── Résultat ─────────────────────────────────────────────
-if [ "$API_STATUS" = "200" ] \
-    && [ "$LIVEZ_STATUS" = "200" ] \
-    && [ "$DASH_STATUS" = "200" ] \
-    && [ "$CONNECT_STATUS" = "200" ]; then
-    log info ""
-    log_ok "Staging deploy complete — API + Dashboard + Connect OK"
-    log info "   URLs : https://staging.sokar.tech (dashboard)"
-    log info "          https://api-staging.sokar.tech (API)"
-    log info "   Rollback : bash scripts/deploy-staging.sh rollback"
-    notify "✅ Sokar staging deploy OK (branch ${BRANCH}, hash $(git rev-parse --short HEAD))"
-    # Sauvegarder le hash pour le prochain déploiement incrémental
-    git rev-parse HEAD > "$RELEASES_DIR/.latest-hash"
-    trap - ERR
-else
-    log info ""
-    log_error "Staging deploy finished but checks failed"
-    log info "   API=$API_STATUS Livez=$LIVEZ_STATUS Dash=$DASH_STATUS Connect=$CONNECT_STATUS"
-    notify "🔴 Sokar staging deploy finished with failed checks (branch ${BRANCH})"
-    exit 1
-fi
+log info ""
+log_ok "Staging deploy complete — API + Dashboard + Connect OK"
+log info "   URLs : https://staging.sokar.tech (dashboard)"
+log info "          https://api-staging.sokar.tech (API)"
+log info "   Rollback : bash scripts/deploy-staging.sh rollback"
+notify "✅ Sokar staging deploy OK (branch ${BRANCH}, hash $(git rev-parse --short HEAD))"
+# Sauvegarder le hash pour le prochain déploiement incrémental
+git rev-parse HEAD > "$RELEASES_DIR/.latest-hash"
+trap - ERR

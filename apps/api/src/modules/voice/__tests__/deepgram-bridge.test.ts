@@ -200,6 +200,8 @@ describe('handleDeepgramMessage — event dispatching', () => {
 
   it('SpeechResumed: aborts the in-flight LLM and clears speculative state', () => {
     const session = makeSession();
+    const onEvent = vi.fn();
+    session.onDeepgramEvent = onEvent;
     const abortController = new AbortController();
     const abortSpy = vi.spyOn(abortController, 'abort');
     session.abortController = abortController;
@@ -214,6 +216,7 @@ describe('handleDeepgramMessage — event dispatching', () => {
     expect(session.speculativeLlm).toBeNull();
     expect(session.speculativeResult).toBeNull();
     expect(session.speculativeTranscript).toBe('');
+    expect(onEvent).toHaveBeenCalledWith({ type: 'SpeechResumed' });
   });
 
   it('Results (isFinal + speechFinal): flushes turnTranscript and fires UtteranceEnd', () => {
