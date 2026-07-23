@@ -34,7 +34,7 @@ export function classifyVoiceSpeechAct(transcript: string): VoiceSpeechAct {
     return 'backchannel';
   }
   if (
-    /^(?:merci[, ]+(?:c est tout|au revoir)|c est tout(?: merci)?|au revoir|bonne (?:journee|soiree)|a bientot)$/.test(
+    /^(?:(?:non\s+){1,2})?(?:merci(?:\s+(?:c est tout|au revoir))?|c est tout(?:\s+merci)?|au revoir|bonne (?:journee|soiree)|a bientot)$/.test(
       normalized,
     )
   ) {
@@ -180,6 +180,11 @@ export function recordUserTurn(
   speechAct: VoiceSpeechAct,
   now = new Date(),
 ): void {
+  if (speechAct === 'closing') {
+    session.conversation.closing = true;
+    return;
+  }
+
   if (speechAct === 'content' || speechAct === 'correction') {
     session.conversation.closing = false;
     session.conversation.intent = inferIntent(transcript) ?? session.conversation.intent;
@@ -295,11 +300,6 @@ export function buildDeterministicTurnResponse(
   speechAct: VoiceSpeechAct,
   transcript = '',
 ): string | null {
-  if (speechAct === 'closing') {
-    session.conversation.closing = true;
-    return 'Merci à vous. Bonne soirée !';
-  }
-
   // Deux incompréhensions consécutives constituent un échec de dialogue,
   // pas une invitation à poser une troisième fois la même question.
   if (speechAct === 'content' && session.conversation.misunderstandingCount >= 2) {

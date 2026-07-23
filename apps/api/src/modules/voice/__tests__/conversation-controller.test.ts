@@ -21,6 +21,7 @@ describe('classifyVoiceSpeechAct', () => {
     ['Allô ?', 'liveness'],
     ['D’accord.', 'backchannel'],
     ['Merci, c’est tout.', 'closing'],
+    ['Non non merci au revoir.', 'closing'],
     ['Non, plutôt 20 h 30.', 'correction'],
     ['Je voudrais réserver demain.', 'content'],
   ] as const)('classifie « %s » comme %s', (transcript, expected) => {
@@ -50,10 +51,11 @@ describe('conversation state', () => {
     );
   });
 
-  it('clôture brièvement sans rouvrir le dialogue', () => {
+  it('confie la formulation de clôture au LLM sans rouvrir le dialogue', () => {
     const session = makeSession();
 
-    expect(buildDeterministicTurnResponse(session, 'closing')).toBe('Merci à vous. Bonne soirée !');
+    recordUserTurn(session, 'Non non merci au revoir', 'closing');
+    expect(buildDeterministicTurnResponse(session, 'closing')).toBeNull();
     expect(session.conversation.closing).toBe(true);
   });
 

@@ -3,7 +3,7 @@ import type { WebSocket } from 'ws';
 /** États possibles de la conversation */
 export type CallState = 'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING';
 
-/** Acte de parole déterminé avant tout appel LLM pour les tours très courts. */
+/** Acte de parole détecté avant l'orchestration LLM. */
 export type VoiceSpeechAct = 'liveness' | 'backchannel' | 'closing' | 'correction' | 'content';
 
 /**
@@ -149,7 +149,7 @@ export interface CallSession {
   speculativeLlm: Promise<string> | null;
   /** Transcript utilisé pour la spéculation (pour vérifier si toujours valide) */
   speculativeTranscript: string;
-  /** Résultat LLM spéculatif mis en cache (résolu) */
+  /** Résultat LLM spéculatif mis en cache (résolu). */
   speculativeResult: string | null;
 
   // Transcript cumulé (persistance)
