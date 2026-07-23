@@ -175,6 +175,20 @@ describe('CallSessionManager — integration', () => {
       );
     });
 
+    it('cancels the active Cartesia context and invalidates its generation', () => {
+      const mgr = CallSessionManager.getInstance();
+      const session = makeSession();
+      const cancel = vi.fn();
+      session.ttsContext = { cancel };
+      mgr.transition(session, 'SPEAKING');
+
+      mgr.handleBargeIn(session);
+
+      expect(cancel).toHaveBeenCalledOnce();
+      expect(session.ttsContext).toBeNull();
+      expect(session.ttsGeneration).toBe(1);
+    });
+
     it('is a no-op when not SPEAKING', () => {
       const mgr = CallSessionManager.getInstance();
       const telnyxWs = makeTelnyxWs();

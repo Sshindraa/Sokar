@@ -17,11 +17,20 @@ describe('buildSystemPrompt', () => {
   };
 
   it('devrait generer le prompt de base sans CRM ni prompt extra', () => {
-    const prompt = buildSystemPrompt(baseCtx);
+    const prompt = buildSystemPrompt(baseCtx, new Date('2026-07-22T10:00:00Z'));
 
-    expect(prompt).toContain("Tu es l'assistant vocal de Chez Michel.");
+    expect(prompt).toContain("Tu es l'assistant vocal chaleureux de Chez Michel.");
     expect(prompt).toContain("L'accueil a déjà été prononcé");
-    expect(prompt).not.toContain('cet appel peut être enregistré');
+    expect(prompt).toContain('appelle checkAvailability immédiatement dans le même tour');
+    expect(prompt).toContain('Tu évites le ton administratif');
+    expect(prompt).toContain('EXEMPLES DE FORMULATION');
+    expect(prompt).toContain('Non, plutôt 20 h 30.');
+    expect(prompt).toContain("Merci, c'est tout.");
+    expect(prompt).toContain("Tu n'inventes jamais un horaire");
+    expect(prompt).toContain('toute alternative annoncée doit provenir exactement du résultat');
+    expect(prompt).not.toContain('Je peux vous proposer 19 h 30 ou 20 h 30');
+    expect(prompt).toContain('mercredi 22 juillet 2026, fuseau Europe/Paris');
+    expect(prompt).not.toContain('Au tout début de chaque appel');
     expect(prompt).toContain('Lundi : 12:00–14:30');
     expect(prompt).toContain('Dimanche : fermé');
     // Ne doit pas contenir d'extra ni de CRM
@@ -86,16 +95,16 @@ describe('buildSystemPrompt', () => {
     expect(secondLastLine).toBe(customerExtra);
   });
 
-  it('devrait injecter le customerGreeting VIP sans répéter l’accueil', () => {
+  it('devrait injecter le customerGreeting VIP dans les instructions de continuité', () => {
     const customerGreeting = ', content de vous revoir M. Jean';
     const prompt = buildSystemPrompt({
       ...baseCtx,
       customerGreeting,
     });
 
-    expect(prompt).toContain("L'accueil a déjà été prononcé");
+    expect(prompt).toContain('CLIENT RECONNU');
     expect(prompt).toContain(customerGreeting);
-    const ruleIdx = prompt.indexOf("L'accueil a déjà été prononcé");
+    const ruleIdx = prompt.indexOf('CLIENT RECONNU');
     const greetIdx = prompt.indexOf(customerGreeting);
     expect(greetIdx).toBeGreaterThan(ruleIdx);
     expect(greetIdx).toBeLessThan(ruleIdx + 200);

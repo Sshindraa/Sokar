@@ -24,8 +24,14 @@ import {
   buildDeepgramUrl,
   sendAudioToDeepgram,
   DEEPGRAM_AUDIO_BUFFER_MAX,
+  getSmartEndpointDelay,
+  SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS,
+  SMART_ENDPOINT_DELAY_INCOMPLETE_RESERVATION_MS,
+  SMART_ENDPOINT_DELAY_WITHOUT_PUNCTUATION_MS,
+  SMART_ENDPOINT_DELAY_WITH_PUNCTUATION_MS,
   handleDeepgramMessage,
 } from '../stream/deepgram-bridge';
+import { handleFluxEvent } from '../stream/llm-handler';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -167,6 +173,22 @@ describe('handleDeepgramMessage — event dispatching', () => {
     expect(onEvent).toHaveBeenCalledWith({ type: 'UtteranceStart' });
   });
 
+  it('UtteranceStart: invalide les callbacks d’un tour encore en traitement', () => {
+    const session = makeSession();
+    const abortController = new AbortController();
+    const abortSpy = vi.spyOn(abortController, 'abort');
+    session.state = 'PROCESSING';
+    session.ttsGeneration = 4;
+    session.abortController = abortController;
+
+    handleFluxEvent({ type: 'UtteranceStart' }, session, CallSessionManager.getInstance());
+
+    expect(abortSpy).toHaveBeenCalledOnce();
+    expect(session.ttsGeneration).toBe(5);
+    expect(session.responseGeneration).toBe(1);
+    expect(session.state).toBe('LISTENING');
+  });
+
   it('UtteranceEnd: forwards the transcript to onDeepgramEvent', () => {
     const session = makeSession();
     const onEvent = vi.fn();
@@ -219,6 +241,19 @@ describe('handleDeepgramMessage — event dispatching', () => {
     expect(onEvent).toHaveBeenCalledWith({ type: 'SpeechResumed' });
   });
 
+  it('SpeechResumed: invalide le tour en cours avant de reprendre l’écoute', () => {
+    const session = makeSession();
+    session.state = 'PROCESSING';
+    session.ttsGeneration = 2;
+
+    handleDeepgramMessage(session, { type: 'SpeechResumed' });
+
+    expect(session.ttsGeneration).toBe(3);
+    expect(session.responseGeneration).toBe(1);
+    expect(session.conversation.toolInFlight).toBeNull();
+    expect(session.state).toBe('LISTENING');
+  });
+
   it('Results (isFinal + speechFinal): flushes turnTranscript and fires UtteranceEnd', () => {
     const session = makeSession();
     const onEvent = vi.fn();
@@ -239,7 +274,7 @@ describe('handleDeepgramMessage — event dispatching', () => {
     expect(session.turnTranscript).toBe('');
   });
 
-  it('Results (isFinal, !speechFinal, ends with punctuation): starts a SHORT smart timer (400ms)', async () => {
+  it('Results (isFinal, !speechFinal, ends with punctuation): starts a 650ms smart timer', async () => {
     const session = makeSession();
     session.turnTranscript = 'Bonjour.';
 
@@ -257,7 +292,7 @@ describe('handleDeepgramMessage — event dispatching', () => {
     if (session.speechFinalTimer) clearTimeout(session.speechFinalTimer);
   });
 
-  it('Results (isFinal, !speechFinal, no punctuation): starts a LONG smart timer (1500ms)', async () => {
+  it('Results (isFinal, !speechFinal, no punctuation): starts a 1200ms smart timer', async () => {
     const session = makeSession();
     session.turnTranscript = 'Bonjour';
 
@@ -271,6 +306,29 @@ describe('handleDeepgramMessage — event dispatching', () => {
     expect(session.speechFinalTimer).not.toBeNull();
 
     if (session.speechFinalTimer) clearTimeout(session.speechFinalTimer);
+  });
+
+  it('choisit un délai qui protège les présentations incomplètes', () => {
+    expect(SMART_ENDPOINT_DELAY_WITH_PUNCTUATION_MS).toBe(650);
+    expect(SMART_ENDPOINT_DELAY_WITHOUT_PUNCTUATION_MS).toBe(1_200);
+    expect(SMART_ENDPOINT_DELAY_INCOMPLETE_RESERVATION_MS).toBe(1_300);
+    expect(SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS).toBe(2_500);
+    expect(getSmartEndpointDelay('Bonjour.')).toEqual({
+      timeoutMs: SMART_ENDPOINT_DELAY_WITH_PUNCTUATION_MS,
+      reason: 'punctuation',
+    });
+    expect(getSmartEndpointDelay('Je voudrais réserver')).toEqual({
+      timeoutMs: SMART_ENDPOINT_DELAY_WITHOUT_PUNCTUATION_MS,
+      reason: 'silence',
+    });
+    expect(getSmartEndpointDelay('Bonjour je suis Martin')).toEqual({
+      timeoutMs: SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS,
+      reason: 'incomplete_identity',
+    });
+    expect(getSmartEndpointDelay('Non, plutôt')).toEqual({
+      timeoutMs: SMART_ENDPOINT_DELAY_INCOMPLETE_RESERVATION_MS,
+      reason: 'incomplete_reservation',
+    });
   });
 
   it('attend la suite après une présentation avant de déclencher UtteranceEnd', async () => {

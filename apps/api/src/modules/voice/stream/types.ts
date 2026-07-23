@@ -3,6 +3,54 @@ import type { WebSocket } from 'ws';
 /** États possibles de la conversation */
 export type CallState = 'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING';
 
+/** Acte de parole déterminé avant tout appel LLM pour les tours très courts. */
+export type VoiceSpeechAct = 'liveness' | 'backchannel' | 'closing' | 'correction' | 'content';
+
+/**
+ * Mémoire métier minimale d'un appel. Le LLM conserve la compréhension fine ;
+ * cet état empêche les tours courts de réinitialiser artificiellement le dialogue.
+ */
+export interface ConversationState {
+  intent: 'reservation' | 'availability' | 'cancel' | 'delay' | 'message' | 'gift_card' | null;
+  slots: {
+    date?: string;
+    time?: string;
+    partySize?: number;
+    customerName?: string;
+    customerPhone?: string;
+  };
+  toolInFlight: 'checkAvailability' | null;
+  lastAvailabilityCheck: string | null;
+  /** Dernier résultat réellement renvoyé par le moteur de disponibilité. */
+  lastAvailabilityResult: {
+    key: string;
+    date: string;
+    time: string;
+    partySize: number;
+    slots: string[];
+  } | null;
+  pendingQuestion: 'date' | 'time' | 'partySize' | 'customerName' | 'customerPhone' | null;
+  lastAssistantQuestion: string | null;
+  misunderstandingCount: number;
+  closing: boolean;
+}
+
+/** Contrat minimal du contexte Cartesia actif, sans coupler le manager au transport. */
+export interface ActiveTtsContext {
+  cancel(): void;
+}
+
+/** Identité minimisée du tour courant pour les logs d'observabilité. */
+export interface VoiceTurnTelemetry {
+  id: string;
+  startedAt: number;
+  transcriptLength: number;
+  transcriptFingerprint: string;
+  llmFirstTokenAt?: number;
+  ttsFirstByteAt?: number;
+  firstAudioAt?: number;
+}
+
 /** Événements Deepgram Flux */
 export type FluxEvent =
   | { type: 'UtteranceStart' }
@@ -54,6 +102,7 @@ export interface CallSession {
   to: string;
   restaurantId: string;
   restaurantName: string;
+  timezone: string;
   /** Montant minimum d'une carte cadeau — stocké à la création de session */
   giftCardMinimumAmount: number;
   systemPrompt: string;
@@ -75,6 +124,20 @@ export interface CallSession {
   // Gestion audio
   audioBuffer: Buffer[];
   isSpeaking: boolean;
+  /**
+   * File de lecture TTS de l'appel. Les fragments livrés par le LLM arrivent
+   * parfois avant que Cartesia ait fini le précédent ; les sérialiser évite
+   * deux flux audio Telnyx superposés.
+   */
+  ttsPlayback: Promise<void>;
+  /** Invalide définitivement les fragments TTS interrompus par un barge-in. */
+  ttsGeneration: number;
+  /** Invalide une réponse en préparation dès que l'appelant reprend la parole. */
+  responseGeneration: number;
+  /** Contexte Cartesia optionnel pour la réponse LLM streamée en cours. */
+  ttsContext: ActiveTtsContext | null;
+  /** Tour utilisateur courant, créé à la finalisation Deepgram. */
+  currentTurn: VoiceTurnTelemetry | null;
 
   // Barge-in debounce
   /** Nombre de chunks inbound consécutifs reçus pendant SPEAKING */
@@ -83,8 +146,6 @@ export interface CallSession {
   // Annulation LLM
   /** AbortController pour annuler la requête LLM en cours */
   abortController: AbortController | null;
-  /** Incrémente à chaque nouveau tour ou interruption pour invalider les callbacks tardifs. */
-  responseGeneration: number;
 
   // LLM spéculatif
   /** Promise LLM en cours (spéculation sur interim result) */
@@ -118,6 +179,7 @@ export interface CallSession {
     fillerStyle: 'CASUAL' | 'FORMAL' | 'WARM';
     systemPromptExtra?: string | null;
   } | null;
+  conversation: ConversationState;
 }
 
 /** Config retournée à Telnyx pour lancer le media stream */

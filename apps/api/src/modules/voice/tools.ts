@@ -35,7 +35,7 @@ export function getRestaurantTools(_restaurantId: string) {
       function: {
         name: 'checkAvailability',
         description:
-          'Vérifie les créneaux disponibles pour une date donnée. À appeler quand le client demande si une table est disponible sans vouloir réserver tout de suite, ou pour proposer des alternatives si un créneau demandé est pris.',
+          'Vérifie immédiatement les disponibilités dès que la date et le nombre de personnes sont connus. Si le client a indiqué une heure, la transmettre aussi. Ne jamais annoncer une vérification sans appeler cet outil dans le même tour.',
         parameters: {
           type: 'object',
           properties: {
@@ -45,6 +45,11 @@ export function getRestaurantTools(_restaurantId: string) {
               minimum: 1,
               maximum: 7,
               description: 'Nombre de personnes',
+            },
+            time: {
+              type: 'string',
+              pattern: TIME_PATTERN,
+              description: 'Heure demandée au format HH:MM (optionnel)',
             },
           },
           required: ['date', 'partySize'],

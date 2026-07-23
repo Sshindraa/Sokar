@@ -16,10 +16,31 @@ import { playFiller } from './fillers-cache';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
-import { isSessionActiveForTts, speakTtsStreamed } from './tts-handler';
+import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from './tts-handler';
+import {
+  createCartesiaContextTurn,
+  isCartesiaContextV2Enabled,
+  type CartesiaContextTurn,
+} from './cartesia-context';
+import {
+  recordVoiceTurnClassification,
+  recordVoiceTurnEvent,
+  recordVoiceTurnLlmFirstToken,
+  startVoiceTurn,
+} from './turn-telemetry';
+import { isVoiceTtsContextV2Enabled } from '../../../shared/configcat';
 import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts.js';
+import {
+  buildAvailabilityReply,
+  buildDeterministicTurnResponse,
+  classifyVoiceSpeechAct,
+  getReadyAvailabilityRequest,
+  recordAssistantReply,
+  recordUserTurn,
+} from './conversation-controller';
 
 const recentTranscripts = new WeakMap<CallSession, { normalized: string; at: number }>();
+export const LLM_FILLER_DELAY_MS = 1_000;
 
 export function normalizeTranscriptForDedupe(transcript: string): string {
   return transcript
@@ -51,7 +72,7 @@ export function extractRestaurantName(systemPrompt: string): string {
   return systemPrompt
     .split('\n')[0]
     .replace(/^Tu es l'hôte d'accueil et assistant vocal chaleureux de /, '')
-    .replace(/^Tu es l'assistant vocal de /, '')
+    .replace(/^Tu es l'assistant vocal (?:chaleureux )?de /, '')
     .replace(/\.$/, '')
     .trim();
 }
@@ -64,10 +85,18 @@ export function stripRepeatedGreeting(text: string, session: CallSession): strin
     'i',
   );
 
-  return text.replace(greetingPattern, '').trim();
+  return text
+    .replace(greetingPattern, '')
+    .replace(/^\s*Bonjour\s*[!,.:]?\s*/i, '')
+    .replace(/^\s*En\s+quoi\s+puis-je\s+vous\s+aider\s*\?\s*/i, '')
+    .trim();
 }
 
-/** Répond naturellement à une vérification de présence en cours d'appel. */
+/**
+ * Réponse déterministe aux vérifications de présence en milieu d'appel.
+ * Un « allô ? » isolé n'est pas une nouvelle intention : laisser le LLM le
+ * traiter comme telle lui fait parfois rejouer la formule d'accueil.
+ */
 export function buildLivenessResponse(session: CallSession, transcript: string): string | null {
   const normalized = transcript
     .toLocaleLowerCase('fr-FR')
@@ -88,18 +117,6 @@ export function buildLivenessResponse(session: CallSession, transcript: string):
 
   const lastQuestion = lastAssistantMessage.match(/(?:^|[.!]\s*)([^.?!]+\?)\s*$/u)?.[1]?.trim();
   return lastQuestion ? `Oui, je suis là. ${lastQuestion}` : 'Oui, je suis là. Je vous écoute.';
-}
-
-/**
- * Sérialise les écritures TTS d'un même tour. Deux flux Cartesia concurrents
- * écriraient sinon leurs paquets G.711 en alternance sur le Media Stream Telnyx,
- * ce qui produit une voix hachée et incompréhensible.
- */
-export function queueTtsPlayback(
-  previous: Promise<void>,
-  playback: () => Promise<void>,
-): Promise<void> {
-  return previous.catch(() => undefined).then(playback);
 }
 
 /**
@@ -131,23 +148,6 @@ export function transcriptsMatch(a: string, b: string): boolean {
   return matches / shorter.length >= 0.8;
 }
 
-function interruptPendingResponse(session: CallSession, mgr: CallSessionManager): void {
-  session.abortController?.abort();
-  session.abortController = null;
-  session.speculativeLlm = null;
-  session.speculativeResult = null;
-  session.speculativeTranscript = '';
-
-  if (session.state === 'PROCESSING') {
-    session.responseGeneration++;
-    mgr.transition(session, 'LISTENING');
-  } else if (session.state === 'SPEAKING') {
-    mgr.handleBargeIn(session);
-  } else if (session.state === 'IDLE') {
-    mgr.transition(session, 'LISTENING');
-  }
-}
-
 /**
  * Gère les événements provenant de Deepgram Flux.
  */
@@ -158,12 +158,47 @@ export function handleFluxEvent(
 ): void {
   switch (event.type) {
     case 'UtteranceStart': {
-      interruptPendingResponse(session, mgr);
+      // Annuler toute requête LLM en cours (le caller continue de parler)
+      if (session.abortController) {
+        session.abortController.abort();
+        session.abortController = null;
+      }
+
+      // Si on était en spéculation (PROCESSING), le caller continue → reset
+      if (session.state === 'PROCESSING') {
+        // Les callbacks déjà bufferisés par le stream LLM peuvent arriver
+        // après l'abort réseau : on les rend inoffensifs eux aussi.
+        session.responseGeneration++;
+        session.ttsGeneration++;
+        session.ttsContext?.cancel();
+        session.ttsContext = null;
+        session.conversation.toolInFlight = null;
+        session.speculativeLlm = null;
+        session.speculativeResult = null;
+        session.speculativeTranscript = '';
+        mgr.transition(session, 'LISTENING');
+      } else if (session.state === 'IDLE') {
+        mgr.transition(session, 'LISTENING');
+      }
       break;
     }
 
     case 'SpeechResumed': {
-      interruptPendingResponse(session, mgr);
+      if (session.abortController) {
+        session.abortController.abort();
+        session.abortController = null;
+      }
+      if (session.state === 'PROCESSING') {
+        session.responseGeneration++;
+        session.ttsGeneration++;
+        session.ttsContext?.cancel();
+        session.ttsContext = null;
+        session.conversation.toolInFlight = null;
+        session.speculativeLlm = null;
+        session.speculativeResult = null;
+        session.speculativeTranscript = '';
+        mgr.transition(session, 'LISTENING');
+      }
       break;
     }
 
@@ -214,6 +249,7 @@ export function handleFluxEvent(
 
       // Cumuler le transcript pour persistance
       session.transcript += (session.transcript ? ' ' : '') + event.transcript;
+      startVoiceTurn(session, event.transcript);
 
       const isSpeculativeEnabled = process.env.SPECULATIVE_LLM_ENABLED === 'true';
       const speculativeTranscript = session.speculativeTranscript;
@@ -345,20 +381,8 @@ async function processTranscript(
   writeDebugLog(`[processTranscript] Received transcript: "${transcript}"`);
   try {
     session.abortController = new AbortController();
-    let responseReceived = false;
-    const fillerTimer = setTimeout(() => {
-      if (!responseReceived && !session.ended && session.state === 'PROCESSING') {
-        writeDebugLog(`[processTranscript] LLM took too long (>400ms). Playing a voice filler...`);
-        playFiller(session, session.personality?.fillerStyle ?? 'CASUAL').catch((err) =>
-          writeDebugLog(`[processTranscript] playFiller failed: ${err}`),
-        );
-      }
-    }, 400);
-
     writeDebugLog(`[processTranscript] Calling LLM...`);
     const llmResponse = await mgr.processUtterance(session, transcript);
-    responseReceived = true;
-    clearTimeout(fillerTimer);
 
     if (session.latencyTrace) {
       session.latencyTrace.llmFirstTokenMs = Date.now() - session.latencyTrace.startTime;
@@ -421,21 +445,27 @@ async function processTranscriptStreaming(
     return;
   }
 
-  session.abortController?.abort();
   const responseGeneration = ++session.responseGeneration;
-  const abortController = new AbortController();
-  session.abortController = abortController;
   const isCurrentResponse = () =>
-    !abortController.signal.aborted &&
-    session.abortController === abortController &&
-    session.responseGeneration === responseGeneration &&
-    !session.ended &&
-    session.telnyxWs.readyState === WebSocket.OPEN;
+    !session.ended && session.responseGeneration === responseGeneration;
   if (session.state === 'IDLE') mgr.transition(session, 'LISTENING');
   if (session.state === 'LISTENING') mgr.transition(session, 'PROCESSING');
 
   const livenessResponse = buildLivenessResponse(session, transcript);
+  const speechAct = classifyVoiceSpeechAct(transcript);
+  recordUserTurn(session, transcript, speechAct);
+  recordVoiceTurnClassification(session, speechAct);
+  logger.info(
+    {
+      callId: session.callControlId,
+      speechAct,
+      intent: session.conversation.intent,
+      pendingQuestion: session.conversation.pendingQuestion,
+    },
+    '[voice-turn] Classified final user turn',
+  );
   if (livenessResponse) {
+    recordVoiceTurnEvent(session, 'response_selected', { path: 'liveness' });
     writeDebugLog(
       `[processTranscriptStreaming] Resuming the previous turn after liveness check: "${transcript}"`,
     );
@@ -444,46 +474,159 @@ async function processTranscriptStreaming(
       { role: 'user', content: transcript },
       { role: 'assistant', content: livenessResponse },
     );
+    recordAssistantReply(session, livenessResponse);
     mgr.transition(session, 'SPEAKING');
-    try {
-      await speakTtsStreamed(session, livenessResponse, responseGeneration);
-      if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
-    } finally {
-      if (session.abortController === abortController) session.abortController = null;
-    }
+    await speakTtsStreamed(session, livenessResponse);
+    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
     return;
   }
 
-  writeDebugLog(`[processTranscriptStreaming] Starting LLM stream for: "${transcript}"`);
+  const deterministicResponse = buildDeterministicTurnResponse(session, speechAct, transcript);
+  if (deterministicResponse) {
+    recordVoiceTurnEvent(session, 'response_selected', {
+      path: 'deterministic',
+      responseKind: speechAct,
+    });
+    writeDebugLog(
+      `[processTranscriptStreaming] Handling ${speechAct} without LLM: "${transcript}"`,
+    );
+    session.turnCount++;
+    session.history.push(
+      { role: 'user', content: transcript },
+      { role: 'assistant', content: deterministicResponse },
+    );
+    recordAssistantReply(session, deterministicResponse);
+    mgr.transition(session, 'SPEAKING');
+    await speakTtsStreamed(session, deterministicResponse);
+    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+    return;
+  }
 
-  let ttsPlayback = Promise.resolve();
-  let fillerTimer: ReturnType<typeof setTimeout> | null = null;
+  const availabilityRequest = getReadyAvailabilityRequest(session);
+  if (availabilityRequest) {
+    recordVoiceTurnEvent(session, 'response_selected', { path: 'availability' });
+    session.conversation.toolInFlight = 'checkAvailability';
+    mgr.transition(session, 'PROCESSING');
+    const availabilityStartedAt = Date.now();
+    recordVoiceTurnEvent(session, 'availability_started', {
+      date: availabilityRequest.date,
+      time: availabilityRequest.time,
+      partySize: availabilityRequest.partySize,
+    });
+    try {
+      const availabilityPromise = mgr.getAvailability(
+        session,
+        availabilityRequest.date,
+        availabilityRequest.partySize,
+      );
+      let timeout: ReturnType<typeof setTimeout> | null = null;
+      let firstResult:
+        | { kind: 'result'; result: Awaited<typeof availabilityPromise> }
+        | { kind: 'timeout' };
+      try {
+        firstResult = await Promise.race([
+          availabilityPromise.then((result) => ({ kind: 'result' as const, result })),
+          new Promise<{ kind: 'timeout' }>((resolve) => {
+            timeout = setTimeout(() => resolve({ kind: 'timeout' }), LLM_FILLER_DELAY_MS);
+          }),
+        ]);
+      } finally {
+        if (timeout) clearTimeout(timeout);
+      }
+
+      if (!isCurrentResponse()) return;
+
+      const result =
+        firstResult.kind === 'result'
+          ? firstResult.result
+          : await (async () => {
+              if (!isCurrentResponse()) return availabilityPromise;
+              recordVoiceTurnEvent(session, 'filler_started', { purpose: 'availability' });
+              writeDebugLog(
+                `[voice-turn] Availability exceeds ${LLM_FILLER_DELAY_MS}ms; playing contextual filler`,
+              );
+              await playFiller(
+                session,
+                session.personality?.fillerStyle ?? 'CASUAL',
+                'availability',
+              );
+              if (!isCurrentResponse()) return availabilityPromise;
+              recordVoiceTurnEvent(session, 'filler_completed', { purpose: 'availability' });
+              return availabilityPromise;
+            })();
+      if (!isCurrentResponse()) return;
+      recordVoiceTurnEvent(session, 'availability_completed', {
+        durationMs: Date.now() - availabilityStartedAt,
+        slotCount: result.slots.length,
+      });
+      const response = buildAvailabilityReply(availabilityRequest, result.slots);
+      session.conversation.lastAvailabilityCheck = availabilityRequest.key;
+      session.conversation.lastAvailabilityResult = {
+        key: availabilityRequest.key,
+        date: availabilityRequest.date,
+        time: availabilityRequest.time,
+        partySize: availabilityRequest.partySize,
+        slots: [...result.slots],
+      };
+      session.turnCount++;
+      session.history.push(
+        { role: 'user', content: transcript },
+        { role: 'assistant', content: response },
+      );
+      recordAssistantReply(session, response);
+      mgr.transition(session, 'SPEAKING');
+      await speakTtsStreamed(session, response);
+      if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+      return;
+    } catch (err) {
+      recordVoiceTurnEvent(session, 'availability_failed', {
+        durationMs: Date.now() - availabilityStartedAt,
+      });
+      logger.warn(
+        { err, callId: session.callControlId },
+        '[voice-turn] Direct availability lookup failed; using the LLM fallback',
+      );
+    } finally {
+      if (isCurrentResponse()) session.conversation.toolInFlight = null;
+    }
+  }
+
+  if (!isCurrentResponse()) return;
+
+  writeDebugLog(`[processTranscriptStreaming] Starting LLM stream for: "${transcript}"`);
+  recordVoiceTurnEvent(session, 'response_selected', { path: 'llm' });
+
+  // Chaque tour possède son propre contrôleur : un ancien finally ne doit
+  // jamais effacer le contrôleur d'un tour plus récent après un barge-in.
+  const abortController = new AbortController();
+  session.abortController = abortController;
+  const ttsGeneration = session.ttsGeneration;
+  const isCurrentTurn = () =>
+    !abortController.signal.aborted &&
+    session.abortController === abortController &&
+    session.ttsGeneration === ttsGeneration &&
+    session.responseGeneration === responseGeneration &&
+    !session.ended &&
+    session.telnyxWs.readyState === WebSocket.OPEN;
+
+  // Double verrou : l'environnement garde le kill switch global fermé et
+  // ConfigCat ne cible que le restaurant canary choisi.
+  const useCartesiaContext =
+    isCartesiaContextV2Enabled() && (await isVoiceTtsContextV2Enabled(session.restaurantId));
+  const ttsPromises: Promise<void>[] = [];
+  const contextTtsRef: { current: CartesiaContextTurn | null } = { current: null };
 
   try {
-    let firstTokenReceived = false;
-    fillerTimer = setTimeout(() => {
-      if (!firstTokenReceived && isCurrentResponse() && session.state === 'PROCESSING') {
-        writeDebugLog(
-          `[processTranscriptStreaming] LLM took too long (>400ms). Playing a voice filler...`,
-        );
-        playFiller(session, session.personality?.fillerStyle ?? 'CASUAL', responseGeneration).catch(
-          (err) => writeDebugLog(`[processTranscriptStreaming] playFiller failed: ${err}`),
-        );
-      }
-    }, 400);
-
-    await mgr.processUtteranceStreaming(
+    const fullResponse = await mgr.processUtteranceStreaming(
       session,
       transcript,
       (phrase: string) => {
-        if (!isCurrentResponse()) return;
-        firstTokenReceived = true;
-        if (fillerTimer) clearTimeout(fillerTimer);
-
+        if (!isCurrentTurn()) return;
         writeDebugLog(`[processTranscriptStreaming] Phrase received: "${phrase}"`);
         if (session.latencyTrace && !session.latencyTrace.llmFirstTokenMs) {
           session.latencyTrace.llmFirstTokenMs = Date.now() - session.latencyTrace.startTime;
         }
+        recordVoiceTurnLlmFirstToken(session);
 
         const cleanPhrase = stripRepeatedGreeting(phrase, session);
         if (!cleanPhrase) return;
@@ -492,49 +635,69 @@ async function processTranscriptStreaming(
           mgr.transition(session, 'SPEAKING');
         }
 
-        // Les phrases arrivent en streaming : elles peuvent être reçues avant que
-        // Cartesia ait fini de jouer la précédente. Une file unique empêche leurs
-        // paquets audio de se mélanger sur le même WebSocket Telnyx.
-        ttsPlayback = queueTtsPlayback(ttsPlayback, async () => {
-          if (!isCurrentResponse() || !isSessionActiveForTts(session, responseGeneration)) {
-            writeDebugLog(`[processTranscriptStreaming] Session inactive, skipping phrase`);
-            return;
-          }
+        if (!isSessionActiveForTts(session)) {
+          writeDebugLog(`[processTranscriptStreaming] Session inactive, skipping phrase`);
+          return;
+        }
 
-          try {
-            await speakTtsStreamed(session, cleanPhrase, responseGeneration);
-          } catch (err: unknown) {
-            writeDebugLog(
-              `[processTranscriptStreaming] TTS error for phrase: "${cleanPhrase}"`,
-              err,
-            );
-          }
+        // Canary prosodique : les fragments d'une même réponse LLM partagent
+        // un contexte Cartesia. Le fallback HTTP reste inchangé sans flag.
+        contextTtsRef.current ??= createCartesiaContextTurn(session, useCartesiaContext);
+        if (contextTtsRef.current) {
+          session.ttsContext = contextTtsRef.current;
+          contextTtsRef.current.push(cleanTextForTts(cleanPhrase));
+          return;
+        }
+
+        // Lancer TTS en background pour ne pas bloquer le stream LLM
+        const ttsPromise = speakTtsStreamed(session, cleanPhrase).catch((err: unknown) => {
+          writeDebugLog(`[processTranscriptStreaming] TTS error for phrase: "${cleanPhrase}"`, err);
         });
+        ttsPromises.push(ttsPromise);
       },
       abortController.signal,
     );
+    if (!isCurrentTurn()) return;
+    recordAssistantReply(session, fullResponse);
 
     writeDebugLog(`[processTranscriptStreaming] LLM stream ended, waiting for TTS...`);
-    await ttsPlayback;
+    const contextTts = contextTtsRef.current;
+    if (contextTts) {
+      try {
+        await contextTts.finish();
+      } catch (err) {
+        logger.error(
+          { err, callId: session.callControlId },
+          '[processTranscriptStreaming] Cartesia context TTS failed',
+        );
+        // Sans aucun audio envoyé, la réponse peut encore être prononcée via
+        // le transport HTTP éprouvé. Après un audio partiel, on évite un doublon.
+        if (!contextTts.hasAudioOutput && isSessionActiveForTts(session)) {
+          await speakTtsStreamed(session, fullResponse);
+        }
+      }
+    } else {
+      await Promise.all(ttsPromises);
+    }
+    if (!isCurrentTurn()) return;
     writeDebugLog(`[processTranscriptStreaming] All TTS completed`);
 
-    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+    mgr.transition(session, 'LISTENING');
     writeDebugLog(`[processTranscriptStreaming] Transitioned back to LISTENING`);
   } catch (err: unknown) {
+    if (!isCurrentTurn()) return;
     writeDebugLog(`[processTranscriptStreaming] Caught error`, err);
-    if (isCurrentResponse()) {
-      logger.error(
-        { err, callId: session.callControlId },
-        `[pipeline] Streaming error: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      captureException(err, {
-        tags: { service: 'handler', action: 'processTranscriptStreaming' },
-        extra: { callId: session.callControlId, transcript },
-      });
-      mgr.transition(session, 'LISTENING');
-    }
+    logger.error(
+      { err, callId: session.callControlId },
+      `[pipeline] Streaming error: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    captureException(err, {
+      tags: { service: 'handler', action: 'processTranscriptStreaming' },
+      extra: { callId: session.callControlId, transcript },
+    });
+    mgr.transition(session, 'LISTENING');
   } finally {
-    if (fillerTimer) clearTimeout(fillerTimer);
+    if (session.ttsContext === contextTtsRef.current) session.ttsContext = null;
     if (session.abortController === abortController) session.abortController = null;
   }
 }

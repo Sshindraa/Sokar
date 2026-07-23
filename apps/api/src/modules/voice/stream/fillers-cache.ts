@@ -38,6 +38,8 @@ interface FillerSet {
   formal: string[];
 }
 
+export type FillerPurpose = 'availability' | 'generic';
+
 const FILLERS: FillerSet = {
   casual: [
     'Je regarde ça…',
@@ -59,6 +61,26 @@ const FILLERS: FillerSet = {
     'Je regarde cela pour vous…',
   ],
 };
+
+const FILLER_BY_PURPOSE: Record<FillerPurpose, Record<keyof FillerSet, string>> = {
+  availability: {
+    casual: 'Je regarde ça…',
+    warm: 'Pas de souci, je regarde ça…',
+    formal: 'Je consulte nos disponibilités…',
+  },
+  generic: {
+    casual: 'Un instant…',
+    warm: "Je m'en occupe, une seconde…",
+    formal: 'Veuillez patienter un instant…',
+  },
+};
+
+export function selectFillerText(
+  style: 'CASUAL' | 'FORMAL' | 'WARM',
+  purpose: FillerPurpose,
+): string {
+  return FILLER_BY_PURPOSE[purpose][style.toLowerCase() as keyof FillerSet];
+}
 
 /** Cache RAM : chunks audio (base64) pour chaque filler */
 const fillerCache = new Map<string, string[]>();
@@ -195,7 +217,7 @@ export async function initFillerCache(): Promise<void> {
 export async function playFiller(
   target: CallSession | WebSocket,
   style: 'CASUAL' | 'FORMAL' | 'WARM',
-  expectedResponseGeneration?: number,
+  purpose: FillerPurpose = 'generic',
 ): Promise<void> {
   const isSession = typeof target === 'object' && target !== null && 'callControlId' in target;
   const session = isSession ? (target as CallSession) : undefined;
@@ -203,8 +225,7 @@ export async function playFiller(
 
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-  const pool = FILLERS[style.toLowerCase() as keyof FillerSet];
-  const text = pool[Math.floor(Math.random() * pool.length)];
+  const text = selectFillerText(style, purpose);
 
   // 1. RAM
   let chunks = fillerCache.get(text);
@@ -232,13 +253,7 @@ export async function playFiller(
     const frames = splitTelnyxAudioFrames(audio, fillerEncoding === 'pcm_alaw' ? 'PCMA' : 'PCMU');
     writeDebugLog(`[fillers] Playing filler: "${text}" (${frames.length} frames, 100ms paced)`);
     for (const frame of frames) {
-      if (
-        session &&
-        (session.ended ||
-          session.state !== 'PROCESSING' ||
-          (expectedResponseGeneration !== undefined &&
-            session.responseGeneration !== expectedResponseGeneration))
-      ) {
+      if (session && (session.ended || session.state !== 'PROCESSING')) {
         writeDebugLog(
           `[fillers] Interrupted filler playback due to state change (state=${session.state})`,
         );

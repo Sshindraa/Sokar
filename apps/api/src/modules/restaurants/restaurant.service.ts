@@ -34,6 +34,7 @@ interface CachedRestaurantContext {
   readonly managerPhone: string;
   readonly managerEmail: string;
   readonly phoneNumber: string;
+  readonly timezone: string;
   readonly openingHours: unknown;
   readonly carrier: string;
   readonly smsConfirmEnabled: boolean;
@@ -93,6 +94,7 @@ function toCachedRestaurantContext(restaurant: {
   managerPhone: string;
   managerEmail: string;
   phoneNumber: string;
+  timezone: string;
   openingHours: unknown;
   carrier: string;
   smsConfirmEnabled: boolean;
@@ -108,6 +110,7 @@ function toCachedRestaurantContext(restaurant: {
     managerPhone: restaurant.managerPhone,
     managerEmail: restaurant.managerEmail,
     phoneNumber: restaurant.phoneNumber,
+    timezone: restaurant.timezone,
     openingHours: restaurant.openingHours,
     carrier: restaurant.carrier,
     smsConfirmEnabled: restaurant.smsConfirmEnabled,
@@ -139,6 +142,7 @@ export class RestaurantService {
         managerPhone: true,
         managerEmail: true,
         phoneNumber: true,
+        timezone: true,
         openingHours: true,
         carrier: true,
         smsConfirmEnabled: true,

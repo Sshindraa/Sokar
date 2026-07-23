@@ -188,6 +188,43 @@ export function connectDeepgramFlux(
  */
 export const DEEPGRAM_AUDIO_BUFFER_MAX = 400;
 
+// Délais de départ calibrés pour une conversation téléphonique : ils restent
+// perceptiblement réactifs, tout en laissant passer les pauses naturelles.
+export const SMART_ENDPOINT_DELAY_WITH_PUNCTUATION_MS = 650;
+export const SMART_ENDPOINT_DELAY_WITHOUT_PUNCTUATION_MS = 1_200;
+export const SMART_ENDPOINT_DELAY_INCOMPLETE_RESERVATION_MS = 1_300;
+export const SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS = 2_500;
+
+export function getSmartEndpointDelay(transcript: string): {
+  timeoutMs: number;
+  reason: 'punctuation' | 'incomplete_identity' | 'incomplete_reservation' | 'silence';
+} {
+  const endsWithPunctuation = /[.!?]\s*$/.test(transcript);
+  const soundsLikeIdentityIntroduction =
+    /\b(?:je\s+suis|mon\s+nom\s+est)\s+(?:[\p{L}-]+\s*){1,3}$/iu.test(transcript);
+  const startsWithCorrection =
+    /^\s*(?:non\b|plutot\b|en\s+fait\b|j['’]ai\s+dit\b|je\s+voulais\s+dire\b)/iu.test(transcript);
+  const endsWithReservationFragment =
+    /\b(?:pour|a|vers)\s*$|\b(?:demain|aujourd['’]hui)\s+(?:a|vers)\s*$/iu.test(transcript);
+
+  if (soundsLikeIdentityIntroduction) {
+    return {
+      timeoutMs: SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS,
+      reason: 'incomplete_identity',
+    };
+  }
+  if (startsWithCorrection || endsWithReservationFragment) {
+    return {
+      timeoutMs: SMART_ENDPOINT_DELAY_INCOMPLETE_RESERVATION_MS,
+      reason: 'incomplete_reservation',
+    };
+  }
+  if (endsWithPunctuation) {
+    return { timeoutMs: SMART_ENDPOINT_DELAY_WITH_PUNCTUATION_MS, reason: 'punctuation' };
+  }
+  return { timeoutMs: SMART_ENDPOINT_DELAY_WITHOUT_PUNCTUATION_MS, reason: 'silence' };
+}
+
 /**
  * Envoie un chunk audio Telnyx à Deepgram.
  * Convertit PCMU/L16 → format attendu par Deepgram.
@@ -277,6 +314,14 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
         session.abortController.abort();
         session.abortController = null;
       }
+      if (session.state === 'PROCESSING') {
+        session.responseGeneration++;
+        session.ttsGeneration++;
+        session.ttsContext?.cancel();
+        session.ttsContext = null;
+        session.conversation.toolInFlight = null;
+        mgr.transition(session, 'LISTENING');
+      }
       session.speculativeLlm = null;
       session.speculativeResult = null;
       session.speculativeTranscript = '';
@@ -345,18 +390,14 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
             session.onDeepgramEvent?.({ type: 'UtteranceEnd', transcript: fullTurnTranscript });
           }
         } else if (session.turnTranscript.trim()) {
-          // is_final=true avec du contenu MAIS speech_final=false
-          // → Timer intelligent : court si ponctuation détectée, plus long sinon
-          // → Le timer se RESET à chaque nouveau segment (évite de couper mid-phrase)
-          const endsWithPunctuation = /[.!?]\s*$/.test(session.turnTranscript);
-          const soundsLikeIdentityIntroduction =
-            /\b(?:je\s+suis|mon\s+nom\s+est)\s+(?:[\p{L}-]+\s*){1,3}$/iu.test(
-              session.turnTranscript,
-            );
-          // Flux peut finaliser « Bonjour, je suis Martin » juste avant la suite de la
-          // phrase. On laisse une respiration de deux secondes à cette forme incomplète,
-          // sans imposer une attente artificielle longue au reste de la conversation.
-          const timeoutMs = endsWithPunctuation ? 400 : soundsLikeIdentityIntroduction ? 2000 : 800;
+          // is_final=true avec du contenu MAIS speech_final=false.
+          // Le délai garde une marge de respiration après la ponctuation et protège
+          // les présentations incomplètes, sans attendre inutilement après un silence.
+          const endpoint = getSmartEndpointDelay(session.turnTranscript);
+          // Flux peut finaliser « Bonjour, je suis Martin » avant la suite de la phrase.
+          // Cette forme reçoit une courte marge supplémentaire, sans imposer un silence
+          // artificiel de plusieurs secondes à l'appelant.
+          const { timeoutMs } = endpoint;
 
           // Reset le timer existant (nouveau segment reçu = l'user continue peut-être)
           if (session.speechFinalTimer) {
@@ -364,7 +405,7 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
           }
 
           writeDebugLog(
-            `[deepgram] Starting ${timeoutMs}ms smart timer (punctuation=${endsWithPunctuation})`,
+            `[deepgram] Starting ${timeoutMs}ms smart timer (reason=${endpoint.reason})`,
           );
           session.speechFinalTimer = setTimeout(() => {
             if (session.turnTranscript.trim()) {
@@ -379,6 +420,7 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
                   callId: session.callControlId,
                   transcript: fallbackTranscript.slice(0, 100),
                   timeoutMs,
+                  endpointReason: endpoint.reason,
                 },
                 '[deepgram] Speech final (smart timer)',
               );

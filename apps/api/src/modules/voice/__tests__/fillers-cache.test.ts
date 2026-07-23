@@ -25,6 +25,7 @@ import {
   __resetFillerCacheForTests,
   initFillerCache,
   playFiller,
+  selectFillerText,
   setFillerCodec,
 } from '../stream/fillers-cache';
 import { redisCache } from '../../../shared/redis/client';
@@ -71,6 +72,16 @@ describe('setFillerCodec', () => {
   it('does not throw for either PCMA or PCMU', () => {
     expect(() => setFillerCodec('PCMA')).not.toThrow();
     expect(() => setFillerCodec('PCMU')).not.toThrow();
+  });
+});
+
+describe('selectFillerText', () => {
+  it('choisit un filler lié à une vérification de disponibilité', () => {
+    expect(selectFillerText('FORMAL', 'availability')).toBe('Je consulte nos disponibilités…');
+  });
+
+  it('conserve une formule neutre lorsqu’aucune action longue n’est connue', () => {
+    expect(selectFillerText('CASUAL', 'generic')).toBe('Un instant…');
   });
 });
 

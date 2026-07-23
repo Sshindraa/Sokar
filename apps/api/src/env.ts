@@ -118,6 +118,9 @@ const EnvSchema = z
       .default(50_000_000),
     DEEPGRAM_API_KEY: z.string().optional(),
     CARTESIA_API_KEY: z.string().optional(),
+    // Canary TTS : contexte WebSocket par réponse LLM. Désactivé par défaut,
+    // le chemin /tts/bytes reste la référence tant que la mesure audio manque.
+    VOICE_TTS_CONTEXT_V2_ENABLED: z.enum(['true', 'false']).default('false'),
     STRIPE_SECRET_KEY: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
     // Captcha Cloudflare Turnstile pour les flux sensibles (SEC-009). Optionnel ; si défini, /api/rgpd/request-verification exige un token Turnstile.
