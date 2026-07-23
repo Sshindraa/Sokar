@@ -4,13 +4,13 @@ Scripts d'automatisation pour Hermes CLI sur le projet Sokar.
 
 ## Scripts
 
-| Script            | Rôle                                                                                                                                                                                              | Usage                                          |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `setup.sh`        | Installation initiale : vérifie Hermes CLI, Docker, les vars d'env, et copie la config dans `~/.hermes/`                                                                                          | `zsh tools/hermes/scripts/setup.sh`            |
-| `start-hermes.sh` | Lance Hermes CLI en interactif avec la config Sokar (charge `.env`/`.env.local`, vérifie `OPENCODE_GO_API_KEY`)                                                                                   | `zsh tools/hermes/scripts/start-hermes.sh`     |
-| `check-hermes.sh` | Healthcheck : vérifie la présence de `hermes` CLI, du repo, et des vars critiques (`DATABASE_URL`, `OPENCODE_GO_API_KEY`, `GITHUB_TOKEN` optionnel)                                               | `zsh tools/hermes/scripts/check-hermes.sh`     |
-| `sokar.sh`        | Wrapper one-shot : concatène les args en une tâche, exécute `hermes -z`, journalise dans `Journal.md` + `Context.md` (Obsidian)                                                                   | `zsh tools/hermes/scripts/sokar.sh "ta tâche"` |
-| `mcp_serve.py`    | Serveur MCP — expose `execute_task` (exécution via Hermes) et `check_task` (vérification). Auto-détecte le type de tâche et met à jour la note Obsidian correspondante. Pas d'accès shell direct. | Démarré par Hermes, pas en CLI                 |
+| Script            | Rôle                                                                                                                                                                                              | Usage                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `setup.sh`        | Installation initiale : vérifie Hermes CLI, Docker, les vars d'env, et copie la config dans `~/.hermes/`                                                                                          | `zsh tools/hermes/scripts/setup.sh`               |
+| `start-hermes.sh` | Lance Hermes CLI en interactif avec la config Sokar (charge `.env`/`.env.local`, vérifie `OPENCODE_GO_API_KEY`)                                                                                   | `zsh tools/hermes/scripts/start-hermes.sh`        |
+| `check-hermes.sh` | Healthcheck : vérifie la présence de `hermes` CLI, du repo, et des vars critiques (`DATABASE_URL`, `OPENCODE_GO_API_KEY`, `GITHUB_TOKEN` optionnel)                                               | `zsh tools/hermes/scripts/check-hermes.sh`        |
+| `sokar.sh`        | Wrapper one-shot : concatène les args en une tâche, exécute `hermes -z`, journalise dans `Journal.md` + `Context.md` (Obsidian)                                                                   | `zsh tools/hermes/scripts/sokar.sh "votre tâche"` |
+| `mcp_serve.py`    | Serveur MCP — expose `execute_task` (exécution via Hermes) et `check_task` (vérification). Auto-détecte le type de tâche et met à jour la note Obsidian correspondante. Pas d'accès shell direct. | Démarré par Hermes, pas en CLI                    |
 
 ## Config associée
 

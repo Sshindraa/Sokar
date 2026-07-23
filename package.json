@@ -21,7 +21,7 @@
     "infra:up": "docker compose --env-file .env.local -f infra/docker-compose.yml up -d",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "infra:logs": "docker compose -f infra/docker-compose.yml logs -f",
-    "test:diagnostic": "node tools/diagnostics/test-stt-tts.mjs",
+    "test:diagnostic": "node --env-file=.env.local tools/diagnostics/test-stt-tts.mjs",
     "tunnel:status": "cloudflared tunnel info sokar",
     "tunnel:logs": "tail -n 50 -f ~/Library/Logs/com.cloudflare.cloudflared.err.log",
     "redis:start": "brew services start redis",

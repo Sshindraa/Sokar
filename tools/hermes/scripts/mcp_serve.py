@@ -20,7 +20,6 @@ Obsidian appropriée est mise à jour automatiquement.
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
 import uuid
@@ -260,10 +259,17 @@ def guess_module(task: str) -> str:
 def _run_hermes_background(task: str, workdir: str, task_id: str) -> None:
     """Lance hermes -z en background et écrit le résultat dans TASKS_DIR."""
     log_file = TASKS_DIR / f"{task_id}.log"
-    cmd = f"hermes -z {shlex.quote(task)} > {log_file} 2>&1"
     log(f"[bg] starting task {task_id}: {task[:200]}")
     try:
-        subprocess.Popen(cmd, shell=True, cwd=workdir, start_new_session=True)
+        f = log_file.open('w')
+        subprocess.Popen(
+            ['hermes', '-z', task],
+            cwd=workdir,
+            start_new_session=True,
+            stdout=f,
+            stderr=subprocess.STDOUT,
+        )
+        f.close()
     except Exception as e:
         log_file.write_text(f"[fatal] Failed to start hermes: {e}")
         log(f"[bg] error starting task {task_id}: {e}")
@@ -281,8 +287,8 @@ def _log_task_result(task: str, output: str) -> None:
             ["python3", str(sync_script), "diff"],
             capture_output=True, text=True, cwd=SOKAR_ROOT, timeout=30,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        log(f"[sync] auto_sync.py échec silencieux évité : {e}")
 
 
 def tool_execute_task(task: str, workdir: str | None = None) -> dict:

@@ -21,7 +21,7 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log "Vérification du PATH..."
 if [[ ":$PATH:" != *":$HERMES_BIN_DIR:"* ]]; then
     log "Ajout de $HERMES_BIN_DIR au PATH dans ~/.zshrc"
-    echo 'export PATH="$HOME/Library/Python/3.14/bin:$PATH"' >> ~/.zshrc
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
     export PATH="$HERMES_BIN_DIR:$PATH"
 fi
 
@@ -29,7 +29,8 @@ fi
 log "Vérification d'Hermes Agent..."
 if ! command -v hermes &> /dev/null; then
     error "Hermes non trouvé. Installe-le manuellement:"
-    echo "  pip3 install --user --break-system-packages hermes-agent"
+    echo "  python3 -m venv ~/.venvs/hermes && source ~/.venvs/hermes/bin/activate"
+    echo "  pip install hermes-agent"
     exit 1
 fi
 hermes_version=$(hermes --version 2>&1 || true)
@@ -50,7 +51,7 @@ source "$REPO_ROOT/.env" 2>/dev/null || source "$REPO_ROOT/.env.local" 2>/dev/nu
 missing=0
 if [ -z "${OPENCODE_GO_API_KEY:-}" ]; then
     error "OPENCODE_GO_API_KEY non défini."
-    echo "  Ajoute-le dans $REPO_ROOT/.env ou dans ton shell."
+    echo "  Ajoute-le dans $REPO_ROOT/.env ou dans votre shell."
     missing=1
 fi
 
@@ -74,6 +75,6 @@ log ""
 log "✅ Setup terminé !"
 log ""
 log "Utilisation:"
-log "  hermes -z \"ta tâche ici\""
+log "  hermes -z \"votre tâche ici\""
 log "  zsh $REPO_ROOT/tools/hermes/scripts/start-hermes.sh"
 log ""

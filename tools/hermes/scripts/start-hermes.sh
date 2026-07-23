@@ -21,7 +21,7 @@ fi
 
 if [ -z "${OPENCODE_GO_API_KEY:-}" ]; then
     echo "[ERROR] OPENCODE_GO_API_KEY non défini."
-    echo "  Ajoute-le dans $REPO_ROOT/.env ou exporte-le dans ton shell."
+    echo "  Ajoute-le dans $REPO_ROOT/.env ou exportez-le dans votre shell."
     exit 1
 fi
 

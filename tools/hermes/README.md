@@ -28,7 +28,7 @@ tools/hermes/
 ### Mode terminal (principal)
 
 ```zsh
-hermes -z "ta tâche ici"
+hermes -z "votre tâche ici"
 ```
 
 Exemples :
@@ -71,10 +71,10 @@ Le template utilise `key_env` :
 ## Stack Sokar reconnu
 
 - **apps/api** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx
-- **apps/dashboard** : Next.js 14 + React 18 + Tailwind 3
+- **apps/dashboard** : Next.js 15 + React 19 + Tailwind 3
 - **packages/database** : Prisma schema + client
 - **packages/config** : Shared config
-- **packages/types** : Shared TypeScript types
+- **packages/shared** : Shared utilities
 
 ## Commandes utiles
 
