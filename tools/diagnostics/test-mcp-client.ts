@@ -12,6 +12,11 @@
 
 const API_BASE = process.env.SOKAR_API_BASE ?? 'http://localhost:4000';
 const MCP_KEY = process.env.SOKAR_MCP_KEY ?? 'sk_sokar_agent_' + 'a'.repeat(40); // placeholder dev — surcharger via SOKAR_MCP_KEY
+const TEST_CITY = process.env.SOKAR_TEST_CITY ?? 'Lyon';
+const TEST_CUSTOMER_NAME = process.env.SOKAR_TEST_CUSTOMER_NAME ?? 'Claude Test';
+const TEST_CUSTOMER_PHONE = process.env.SOKAR_TEST_CUSTOMER_PHONE ?? '+33612345678';
+const TEST_OPEN_DAYS = process.env.SOKAR_TEST_OPEN_DAYS ?? '2,3,4,5,6';
+const OPEN_DAYS = new Set(TEST_OPEN_DAYS.split(',').map((d) => parseInt(d.trim(), 10))); // tue-sat, aligned with the demo seed.
 
 async function mcpCall(
   method: string,
@@ -35,8 +40,6 @@ async function mcpCall(
 
   return res.json();
 }
-
-const OPEN_DAYS = new Set([2, 3, 4, 5, 6]); // tue-sat, aligned with the demo seed.
 
 type TestSlot = {
   startsAt: string;
@@ -107,7 +110,7 @@ async function main() {
       {
         name: 'search_restaurants',
         arguments: {
-          city: 'Lyon',
+          city: TEST_CITY,
           partySize: 2,
           slotStart: candidate.startsAt,
           slotEnd: candidate.endsAt,
@@ -183,8 +186,8 @@ async function main() {
         partySize: 2,
         startsAt: selectedSlot.startsAt,
         endsAt: selectedSlot.endsAt,
-        customerName: 'Claude Test',
-        customerPhone: '+33612345678',
+        customerName: TEST_CUSTOMER_NAME,
+        customerPhone: TEST_CUSTOMER_PHONE,
         specialRequests: 'Table en terrasse si possible',
         idempotencyKey,
         consents: { reservationProcessing: true },
