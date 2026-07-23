@@ -286,6 +286,38 @@ export interface DeepgramMessage {
   speech_final?: boolean;
 }
 
+function normalizeEchoComparison(text: string): string[] {
+  return text
+    .toLocaleLowerCase('fr-FR')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/**
+ * Retourne true uniquement si Deepgram vient de reconnaître une séquence
+ * présente dans la phrase TTS qui est effectivement en train d'être jouée.
+ * Ce n'est pas un verrou sur l'accueil : dès que l'appelant ajoute des mots
+ * différents, son intervention coupe naturellement la voix.
+ */
+export function isLikelyAssistantEcho(session: CallSession, transcript: string): boolean {
+  const activeSpeech = session.assistantSpeech;
+  if (!activeSpeech || activeSpeech.expiresAt < Date.now()) {
+    session.assistantSpeech = null;
+    return false;
+  }
+
+  const incomingWords = normalizeEchoComparison(transcript);
+  const assistantWords = normalizeEchoComparison(activeSpeech.text);
+  if (incomingWords.length === 0 || assistantWords.length === 0) return false;
+
+  return assistantWords.some((_, startIndex) =>
+    incomingWords.every((word, offset) => assistantWords[startIndex + offset] === word),
+  );
+}
+
 /**
  * Dispatch un message Deepgram brut vers les bons handlers.
  * Exporté pour les tests (le message arrive normalement via le `ws.on('message')`
@@ -331,6 +363,13 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
     case 'UtteranceEnd': {
       const transcript = msg.channel?.alternatives?.[0]?.transcript ?? '';
       if (transcript.trim()) {
+        if (isLikelyAssistantEcho(session, transcript)) {
+          logger.info(
+            { callId: session.callControlId, transcript: transcript.slice(0, 100) },
+            '[echo] Ignoring assistant speech reflected in inbound audio.',
+          );
+          break;
+        }
         logger.info(
           { callId: session.callControlId, transcript: transcript.slice(0, 100) },
           '[deepgram] Utterance end',
@@ -347,12 +386,16 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
       const isSpeechFinal = msg.speech_final === true;
       const confidence = msg.channel?.alternatives?.[0]?.confidence ?? 0;
 
+      if (isLikelyAssistantEcho(session, transcript)) {
+        logger.info(
+          { callId: session.callControlId, transcript: transcript.slice(0, 100) },
+          '[echo] Ignoring assistant speech reflected in inbound audio.',
+        );
+        break;
+      }
+
       // Barge-in: si on est en train de parler et que l'utilisateur dit quelque chose (transcript non vide)
-      if (
-        session.state === 'SPEAKING' &&
-        session.greetingActive !== true &&
-        transcript.trim().length > 0
-      ) {
+      if (session.state === 'SPEAKING' && transcript.trim().length > 0) {
         logger.info(
           { callId: session.callControlId, transcript: transcript.trim() },
           '[barge-in] User spoke while assistant was speaking. Interrupting.',
