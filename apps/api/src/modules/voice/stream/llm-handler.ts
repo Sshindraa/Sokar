@@ -77,7 +77,7 @@ export function extractRestaurantName(systemPrompt: string): string {
   // The restaurant name is followed by an internal instruction in the system
   // prompt. Only the name is safe to say aloud in the initial greeting.
   return withoutPrefix
-    .replace(/\.\s+L'accueil a déjà été prononcé\b.*$/u, '')
+    .replace(/\.\s+L'accueil a déjà été prononcé.*$/u, '')
     .replace(/\.$/, '')
     .trim();
 }
