@@ -6,6 +6,7 @@ import { CallSessionManager } from './manager';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
 import { DEEPGRAM_CLOSE_DELAY_MS } from '../../../shared/constants/timeouts.js';
+import { isSpeculativeLlmEnabled } from './speculation';
 
 function writeDebugLog(msg: string, err?: unknown) {
   const e = err instanceof Error ? err : err ? new Error(String(err)) : undefined;
@@ -463,7 +464,7 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
       }
 
       // Spéculation LLM : interim stable, confiance > 0.95, au moins 3 mots
-      const isSpeculativeEnabled = process.env.SPECULATIVE_LLM_ENABLED === 'true';
+      const isSpeculativeEnabled = isSpeculativeLlmEnabled(session);
       const wordCount = transcript.trim().split(/\s+/).length;
       const lastTranscript = session.speculativeTranscript;
 

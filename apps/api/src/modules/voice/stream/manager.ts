@@ -23,6 +23,16 @@ interface LlmResponse {
   choices?: Array<{ message: ChatMessage }>;
 }
 
+interface LlmRequestOptions {
+  /** Omettre les outils pour les réponses conversationnelles sans effet métier. */
+  includeTools?: boolean;
+  /** Réduire la réponse quand une seule formule courte est attendue. */
+  maxTokens?: number;
+  temperature?: number;
+  /** Une pré-réponse ne doit jamais modifier l'historique de l'appel. */
+  persistHistory?: boolean;
+}
+
 /**
  * Résout le modèle LLM au runtime : env var VOICE_LLM_MODEL si définie,
  * sinon le défaut de @sokar/config.
@@ -259,7 +269,7 @@ export class CallSessionManager {
     session.history.push({ role: 'user', content: transcript });
 
     const signal = session.abortController?.signal;
-    const response = await this.callLlm(session, transcript, signal);
+    const response = (await this.callLlm(session, transcript, signal)) ?? '';
 
     if (!signal?.aborted && session.responseGeneration === responseGeneration) {
       this.transition(session, 'SPEAKING');
@@ -277,6 +287,7 @@ export class CallSessionManager {
     session: CallSession,
     transcript: string,
     onPhrase: (phrase: string) => Promise<void> | void,
+    options: LlmRequestOptions = {},
   ): Promise<string> {
     const responseGeneration = session.responseGeneration;
     this.transition(session, 'PROCESSING');
@@ -284,12 +295,31 @@ export class CallSessionManager {
     session.history.push({ role: 'user', content: transcript });
 
     const signal = session.abortController?.signal;
-    const fullText = await this.callLlmStreaming(session, onPhrase, signal);
+    const fullText = await this.callLlmStreaming(session, onPhrase, signal, options);
 
     if (!signal?.aborted && session.responseGeneration === responseGeneration) {
       this.transition(session, 'SPEAKING');
     }
     return fullText;
+  }
+
+  /**
+   * Prépare une réponse LLM sans muter l'historique ni exécuter d'outil.
+   * Elle ne peut être réutilisée que si Deepgram confirme ensuite exactement
+   * le même énoncé final : aucun effet métier ne peut donc partir trop tôt.
+   */
+  async prepareSpeculativeReply(
+    session: CallSession,
+    transcript: string,
+    signal: AbortSignal,
+  ): Promise<string> {
+    return (
+      (await this.callLlm(session, transcript, signal, {
+        includeTools: false,
+        maxTokens: 40,
+        persistHistory: false,
+      })) ?? ''
+    );
   }
 
   /**
@@ -337,12 +367,14 @@ export class CallSessionManager {
     session: CallSession,
     transcript: string,
     signal?: AbortSignal,
-  ): Promise<string> {
+    options: LlmRequestOptions = {},
+  ): Promise<string | null> {
     if (process.env.SOKAR_SIMULATE_MOCK_LLM === 'true') {
       return this.mockLlmResponse(session, transcript);
     }
 
-    const tools = getRestaurantTools(session.restaurantId);
+    const includeTools = options.includeTools !== false;
+    const tools = includeTools ? getRestaurantTools(session.restaurantId) : undefined;
     const messages = [...session.history];
 
     for (let round = 0; round < 3; round++) {
@@ -356,10 +388,9 @@ export class CallSessionManager {
         body: JSON.stringify({
           model: getVoiceLlmModel(),
           messages,
-          max_tokens: 150,
-          temperature: 0.7,
-          tools,
-          tool_choice: 'auto',
+          max_tokens: options.maxTokens ?? 150,
+          temperature: options.temperature ?? 0.7,
+          ...(tools ? { tools, tool_choice: 'auto' } : {}),
           ...(getVoiceLlmModel()?.includes('mistral')
             ? {
                 provider: { order: ['mistral'], allow_fallbacks: false },
@@ -380,13 +411,16 @@ export class CallSessionManager {
 
       // Si le LLM répond en texte → terminé
       if (msg.content?.trim()) {
-        session.history.push(msg);
+        if (options.persistHistory !== false) session.history.push(msg);
         return msg.content;
       }
 
       // Si le LLM appelle un outil
       const toolCalls = msg.tool_calls;
       if (toolCalls && toolCalls.length > 0) {
+        // Une pré-réponse ne déclenche jamais une opération métier. Le tour
+        // final reprendra alors le chemin LLM normal et ses outils.
+        if (!includeTools) return null;
         session.history.push(msg);
         messages.push(msg);
         for (const tc of toolCalls) {
@@ -401,7 +435,7 @@ export class CallSessionManager {
       }
 
       // Fallback
-      session.history.push(msg);
+      if (options.persistHistory !== false) session.history.push(msg);
       return msg.content ?? '';
     }
 
@@ -421,8 +455,10 @@ export class CallSessionManager {
     session: CallSession,
     onPhrase: (phrase: string) => Promise<void> | void,
     signal?: AbortSignal,
+    options: LlmRequestOptions = {},
   ): Promise<string> {
-    const tools = getRestaurantTools(session.restaurantId);
+    const includeTools = options.includeTools !== false;
+    const tools = includeTools ? getRestaurantTools(session.restaurantId) : undefined;
     const messages = [...session.history];
 
     for (let round = 0; round < 3; round++) {
@@ -436,10 +472,9 @@ export class CallSessionManager {
         body: JSON.stringify({
           model: getVoiceLlmModel(),
           messages,
-          max_tokens: 150,
-          temperature: 0.7,
-          tools,
-          tool_choice: 'auto',
+          max_tokens: options.maxTokens ?? 150,
+          temperature: options.temperature ?? 0.7,
+          ...(tools ? { tools, tool_choice: 'auto' } : {}),
           stream: true,
           ...(getVoiceLlmModel()?.includes('mistral')
             ? {

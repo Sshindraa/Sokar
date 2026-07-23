@@ -129,3 +129,36 @@ describe('handleFluxEvent — interruption pendant le traitement', () => {
     },
   );
 });
+
+describe('handleFluxEvent — pré-réflexion LLM', () => {
+  it('prépare une réponse sans changer l’état ni l’historique avant la fin confirmée', () => {
+    const previous = process.env.SPECULATIVE_LLM_ENABLED;
+    process.env.SPECULATIVE_LLM_ENABLED = 'true';
+    const speculativeSession = {
+      ...session,
+      state: 'LISTENING',
+      history: [{ role: 'system', content: session.systemPrompt }],
+      speculativeLlm: null,
+      speculativeResult: null,
+      speculativeTranscript: 'Non non merci au revoir',
+      abortController: null,
+    } as CallSession;
+    const mgr = {
+      prepareSpeculativeReply: vi.fn().mockResolvedValue('Avec plaisir, bonne soirée !'),
+    } as unknown as CallSessionManager;
+
+    handleFluxEvent(
+      { type: 'InterimHighConfidence', transcript: 'Non non merci au revoir' },
+      speculativeSession,
+      mgr,
+    );
+
+    expect(mgr.prepareSpeculativeReply).toHaveBeenCalledOnce();
+    expect(speculativeSession.state).toBe('LISTENING');
+    expect(speculativeSession.history).toHaveLength(1);
+    expect(speculativeSession.abortController).toBeInstanceOf(AbortController);
+
+    if (previous === undefined) delete process.env.SPECULATIVE_LLM_ENABLED;
+    else process.env.SPECULATIVE_LLM_ENABLED = previous;
+  });
+});

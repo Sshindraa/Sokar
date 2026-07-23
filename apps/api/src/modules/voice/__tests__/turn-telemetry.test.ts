@@ -39,4 +39,14 @@ describe('voice turn telemetry', () => {
     expect(logs.some((entry) => entry.includes('availability_completed'))).toBe(false);
     expect(vi.mocked(logger.info)).toHaveBeenCalledTimes(3);
   });
+
+  it('redémarre la mesure de latence à chaque tour', () => {
+    const session = makeSession();
+    session.latencyTrace = { startTime: 1, llmFirstTokenMs: 999 };
+
+    startVoiceTurn(session, 'Au revoir');
+
+    expect(session.latencyTrace?.startTime).toBe(session.currentTurn?.startedAt);
+    expect(session.latencyTrace?.llmFirstTokenMs).toBeUndefined();
+  });
 });

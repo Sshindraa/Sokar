@@ -29,6 +29,7 @@ import {
 } from './turn-telemetry';
 import { isVoiceTtsContextV2Enabled } from '../../../shared/configcat';
 import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts.js';
+import { isSpeculativeLlmEnabled } from './speculation';
 import {
   buildAvailabilityReply,
   buildDeterministicTurnResponse,
@@ -152,6 +153,15 @@ export function transcriptsMatch(a: string, b: string): boolean {
 }
 
 /**
+ * Une pré-réponse ne devient audible que si le STT a stabilisé exactement la
+ * même phrase (hors ponctuation). Une similarité approximative ne suffit pas
+ * ici : elle peut servir au diagnostic, jamais à valider une réponse vocale.
+ */
+function speculativeTranscriptMatches(a: string, b: string): boolean {
+  return normalizeTranscriptForDedupe(a) === normalizeTranscriptForDedupe(b);
+}
+
+/**
  * Gère les événements provenant de Deepgram Flux.
  */
 export function handleFluxEvent(
@@ -200,20 +210,15 @@ export function handleFluxEvent(
     case 'InterimHighConfidence': {
       // Spéculation LLM : lancer le LLM sans attendre la fin de l'utterance
       // Stocker la promise pour la réutiliser si l'utterance finale correspond
-      if (process.env.SPECULATIVE_LLM_ENABLED !== 'true') break;
+      if (!isSpeculativeLlmEnabled(session)) break;
       if (session.state !== 'LISTENING' && session.state !== 'IDLE') break;
 
-      if (!session.latencyTrace) {
-        session.latencyTrace = {
-          startTime: Date.now(),
-          sttFinalMs: 0,
-        };
-      }
-
-      // Utiliser la transition du manager pour rester cohérent avec la state machine
-      mgr.transition(session, 'PROCESSING'); // transition optimiste
+      // Ne change pas l'état de l'appel ni son historique : tant que Flux n'a
+      // pas confirmé le tour, l'appelant peut encore poursuivre sa phrase.
+      const abortController = new AbortController();
+      session.abortController = abortController;
       session.speculativeLlm = mgr
-        .processUtterance(session, event.transcript)
+        .prepareSpeculativeReply(session, event.transcript, abortController.signal)
         .then((response) => {
           session.speculativeResult = response;
           return response;
@@ -235,55 +240,73 @@ export function handleFluxEvent(
     }
 
     case 'UtteranceEnd': {
-      if (!session.latencyTrace) {
-        session.latencyTrace = {
-          startTime: Date.now(),
-          sttFinalMs: 0,
-        };
-      }
-
       // Cumuler le transcript pour persistance
       session.transcript += (session.transcript ? ' ' : '') + event.transcript;
       startVoiceTurn(session, event.transcript);
 
-      const isSpeculativeEnabled = process.env.SPECULATIVE_LLM_ENABLED === 'true';
+      const isSpeculativeEnabled = isSpeculativeLlmEnabled(session);
       const speculativeTranscript = session.speculativeTranscript;
+      const speechAct = classifyVoiceSpeechAct(event.transcript);
+      const startFinalStreaming = () => {
+        processTranscriptStreaming(session, event.transcript, mgr).catch((err) =>
+          logger.error(
+            { err, callId: session.callControlId },
+            '[flux] processTranscriptStreaming failed',
+          ),
+        );
+      };
 
       if (
         isSpeculativeEnabled &&
         session.speculativeLlm &&
         speculativeTranscript &&
-        transcriptsMatch(speculativeTranscript, event.transcript)
+        speechAct === 'closing' &&
+        classifyVoiceSpeechAct(speculativeTranscript) === 'closing' &&
+        speculativeTranscriptMatches(speculativeTranscript, event.transcript)
       ) {
-        // La spéculation est valide → utiliser le résultat en cache
+        // La formulation reste générée par le LLM, mais son raisonnement a
+        // commencé pendant la fin de phrase de l'appelant.
         logger.info(
           { callId: session.callControlId },
           '[speculative] Match! Using cached LLM response',
         );
-        session.speculativeLlm
-          .then(async (response) => {
-            if (response) {
-              // Vérifier que la session est toujours en attente (pas déjà en train de parler)
-              if (session.state !== 'LISTENING' && session.state !== 'IDLE') {
-                writeDebugLog(
-                  `[speculative] Session state is ${session.state}, skipping speculative speech`,
-                );
-                return;
-              }
-              mgr.transition(session, 'SPEAKING');
-              await speakTtsStreamed(session, response);
-              mgr.transition(session, 'LISTENING');
-            }
-          })
-          .catch((err) =>
-            logger.error(
-              { err, callId: session.callControlId },
-              '[speculative] speculativeLlm.then failed',
-            ),
-          );
+        const speculativeLlm = session.speculativeLlm;
         session.speculativeLlm = null;
         session.speculativeResult = null;
         session.speculativeTranscript = '';
+        speculativeLlm
+          .then(async (response) => {
+            const cleanResponse = stripRepeatedGreeting(response, session);
+            if (!cleanResponse || session.state === 'SPEAKING' || session.ended) {
+              if (!session.ended && session.state !== 'SPEAKING') startFinalStreaming();
+              return;
+            }
+
+            recordUserTurn(session, event.transcript, speechAct);
+            recordVoiceTurnClassification(session, speechAct);
+            session.turnCount++;
+            session.history.push(
+              { role: 'user', content: event.transcript },
+              { role: 'assistant', content: cleanResponse },
+            );
+            recordAssistantReply(session, cleanResponse);
+            session.latencyTrace!.llmFirstTokenMs = Date.now() - session.latencyTrace!.startTime;
+            recordVoiceTurnEvent(session, 'speculation_hit', {
+              llmFirstTokenMs: session.latencyTrace!.llmFirstTokenMs,
+            });
+            mgr.transition(session, 'SPEAKING');
+            await speakTtsStreamed(session, cleanResponse);
+            if (!session.ended) mgr.transition(session, 'LISTENING');
+          })
+          .catch((err) => {
+            logger.error(
+              { err, callId: session.callControlId },
+              '[speculative] speculativeLlm.then failed',
+            );
+            if (!session.ended && (session.state === 'LISTENING' || session.state === 'IDLE')) {
+              startFinalStreaming();
+            }
+          });
       } else {
         // Pas de spéculation valide ou mismatch / désactivé !
         if (session.speculativeLlm) {
@@ -298,17 +321,11 @@ export function handleFluxEvent(
           session.speculativeLlm = null;
           session.speculativeResult = null;
           session.speculativeTranscript = '';
-          mgr.transition(session, 'LISTENING');
+          if (session.state === 'PROCESSING') mgr.transition(session, 'LISTENING');
         }
 
         if (session.state === 'LISTENING' || session.state === 'IDLE') {
-          // LLM streaming phrase par phrase (fire-and-forget avec catch)
-          processTranscriptStreaming(session, event.transcript, mgr).catch((err) =>
-            logger.error(
-              { err, callId: session.callControlId },
-              '[flux] processTranscriptStreaming failed',
-            ),
-          );
+          startFinalStreaming();
         }
       }
       break;
@@ -581,6 +598,11 @@ async function processTranscriptStreaming(
   }
 
   writeDebugLog(`[processTranscriptStreaming] Starting LLM stream for: "${transcript}"`);
+  // Une clôture ne peut ni créer ni modifier une réservation : on conserve la
+  // formulation libre du LLM mais on omet le schéma d'outils et on borne la
+  // réponse, ce qui réduit le prompt et le temps de génération.
+  const llmOptions =
+    speechAct === 'closing' ? { includeTools: false, maxTokens: 40, temperature: 0.4 } : undefined;
 
   // Double verrou : l'environnement garde le kill switch global fermé et
   // ConfigCat ne cible que le restaurant canary choisi.
@@ -601,6 +623,9 @@ async function processTranscriptStreaming(
         writeDebugLog(`[processTranscriptStreaming] Phrase received: "${phrase}"`);
         if (session.latencyTrace && !session.latencyTrace.llmFirstTokenMs) {
           session.latencyTrace.llmFirstTokenMs = Date.now() - session.latencyTrace.startTime;
+          recordVoiceTurnEvent(session, 'llm_first_phrase', {
+            llmFirstTokenMs: session.latencyTrace.llmFirstTokenMs,
+          });
         }
 
         const cleanPhrase = stripRepeatedGreeting(phrase, session);
@@ -630,6 +655,7 @@ async function processTranscriptStreaming(
         });
         ttsPromises.push(ttsPromise);
       },
+      llmOptions,
     );
     if (!isCurrentResponse() || abortController.signal.aborted) return;
     recordAssistantReply(session, fullResponse);

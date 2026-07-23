@@ -5,6 +5,8 @@ import { logger } from '../../../shared/logger/pino';
 export type VoiceTurnEvent =
   | 'started'
   | 'classified'
+  | 'llm_first_phrase'
+  | 'speculation_hit'
   | 'availability_started'
   | 'availability_completed'
   | 'availability_failed'
@@ -25,12 +27,17 @@ function transcriptFingerprint(transcript: string): string {
  * ces événements servent au diagnostic du pipeline et minimisent les données.
  */
 export function startVoiceTurn(session: CallSession, transcript: string): void {
+  const startedAt = Date.now();
   session.currentTurn = {
     id: randomUUID(),
-    startedAt: Date.now(),
+    startedAt,
     transcriptLength: transcript.length,
     transcriptFingerprint: transcriptFingerprint(transcript),
   };
+  // Cette trace est volontairement bornée au tour courant. La persistance DB
+  // reste un dernier état d'appel, tandis que les logs structurés gardent la
+  // chronologie complète de chaque tour.
+  session.latencyTrace = { startTime: startedAt, sttFinalMs: 0 };
   recordVoiceTurnEvent(session, 'started');
 }
 
