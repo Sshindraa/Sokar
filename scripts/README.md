@@ -19,6 +19,7 @@ les opérations de production récurrentes :
 - `check-memory.sh` — garde-fou mémoire local.
 - `precommit-review.sh` — hook pre-commit.
 - `prepush-quality-gate.sh` — hook pre-push.
+- `agent/submit-pr.sh` — pousse la branche courante, crée/réutilise sa PR et demande l'auto-merge squash après CI (`pnpm pr:submit`).
 
 ## Sous-dossiers
 
