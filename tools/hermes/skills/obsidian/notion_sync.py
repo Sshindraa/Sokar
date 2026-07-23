@@ -26,6 +26,7 @@ USAGE:
 import json
 import os
 import re
+import ssl
 import subprocess
 import sys
 import time
@@ -43,6 +44,7 @@ NOTION_HEADERS = {
     "Content-Type": "application/json",
     "Notion-Version": "2022-06-28",
 }
+_SSL_CONTEXT = ssl.create_default_context()
 
 # ── Configuration ──
 
@@ -126,7 +128,7 @@ def _notion_get_page(page_id: str) -> dict | None:
     url = f"https://api.notion.com/v1/pages/{page_id}"
     req = urllib.request.Request(url, headers=NOTION_HEADERS, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=15, context=_SSL_CONTEXT) as resp:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
         log(f"Notion API error {e.code}: {e.reason}")
@@ -152,7 +154,7 @@ def _notion_get_block_children(block_id: str) -> list[dict] | None:
             url += f"&start_cursor={cursor}"
         req = urllib.request.Request(url, headers=NOTION_HEADERS, method="GET")
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=15, context=_SSL_CONTEXT) as resp:
                 data = json.loads(resp.read().decode())
         except Exception as e:
             log(f"Erreur récupération blocks Notion: {e}")
@@ -220,7 +222,7 @@ def _notion_update_page(page_id: str, content: str) -> bool:
     payload = json.dumps({"children": blocks}).encode("utf-8")
     req = urllib.request.Request(url, data=payload, headers=NOTION_HEADERS, method="PATCH")
     try:
-        with urllib.request.urlopen(req, timeout=15):
+        with urllib.request.urlopen(req, timeout=15, context=_SSL_CONTEXT):
             log(f"Page Notion mise à jour: {page_id}")
             return True
     except urllib.error.HTTPError as e:

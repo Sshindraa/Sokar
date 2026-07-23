@@ -13,6 +13,7 @@
 const API_BASE = process.env.SOKAR_API_BASE ?? 'http://localhost:4000';
 const CALLER_PHONE = process.env.SOKAR_CALLER_PHONE ?? '+336****5678';
 const MODE = process.env.SOKAR_SIMULATE_MODE ?? 'mock';
+const FIRST_TRANSCRIPT = process.env.SOKAR_FIRST_TRANSCRIPT ?? 'je voudrais faire une réservation';
 
 type Reservation = Record<string, unknown>;
 
@@ -48,7 +49,7 @@ async function main() {
   console.log('');
 
   // 2. Premier tour : demande de réservation
-  const firstTranscript = 'je voudrais faire une réservation';
+  const firstTranscript = FIRST_TRANSCRIPT;
   console.log(`Vous : ${firstTranscript}`);
   await sendUtterance(init.callControlId, firstTranscript);
 

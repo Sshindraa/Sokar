@@ -20,6 +20,14 @@ SOKAR_ROOT = find_sokar_root()
 VAULT_PATH = os.environ.get("OBSIDIAN_VAULT", str(SOKAR_ROOT / "docs" / "obsidian"))
 
 
+def _safe_vault_path(path: str) -> str | None:
+    """Résout un chemin relatif dans le vault et rejette toute tentative de sortie."""
+    full = os.path.normpath(os.path.join(VAULT_PATH, path))
+    if not full.startswith(os.path.abspath(VAULT_PATH) + os.sep) and full != os.path.abspath(VAULT_PATH):
+        return None
+    return full
+
+
 def _list_notes() -> list[str]:
     """List all markdown files in the vault (excluding .obsidian/)."""
     notes = []
@@ -37,7 +45,9 @@ def _read_note(path: str) -> str:
     """Read a note by relative path or title."""
     if not path.endswith(".md"):
         path += ".md"
-    full = os.path.join(VAULT_PATH, path)
+    full = _safe_vault_path(path)
+    if full is None:
+        return f"[ERROR] Invalid path: {path}"
     if not os.path.isfile(full):
         # Try to find by title anywhere in vault
         for root, _, files in os.walk(VAULT_PATH):
@@ -45,7 +55,10 @@ def _read_note(path: str) -> str:
                 continue
             for f in files:
                 if f.lower() == os.path.basename(path).lower():
-                    with open(os.path.join(root, f), "r", encoding="utf-8") as fh:
+                    found = _safe_vault_path(os.path.relpath(os.path.join(root, f), VAULT_PATH))
+                    if found is None:
+                        continue
+                    with open(found, "r", encoding="utf-8") as fh:
                         return fh.read()
         return f"[ERROR] Note not found: {path}"
     with open(full, "r", encoding="utf-8") as f:
@@ -56,7 +69,9 @@ def _write_note(path: str, content: str) -> str:
     """Write or overwrite a note."""
     if not path.endswith(".md"):
         path += ".md"
-    full = os.path.join(VAULT_PATH, path)
+    full = _safe_vault_path(path)
+    if full is None:
+        return f"[ERROR] Invalid path: {path}"
     os.makedirs(os.path.dirname(full), exist_ok=True)
     with open(full, "w", encoding="utf-8") as f:
         f.write(content)
@@ -82,7 +97,9 @@ def _append_to_note(path: str, text: str) -> str:
     """Append text to an existing note."""
     if not path.endswith(".md"):
         path += ".md"
-    full = os.path.join(VAULT_PATH, path)
+    full = _safe_vault_path(path)
+    if full is None:
+        return f"[ERROR] Invalid path: {path}"
     if not os.path.isfile(full):
         return f"[ERROR] Note not found: {path}"
     with open(full, "a", encoding="utf-8") as f:
@@ -123,7 +140,9 @@ def daily_note() -> str:
     """Create or open today's daily note."""
     today = datetime.now().strftime("%Y-%m-%d")
     path = f"Daily/{today}.md"
-    full = os.path.join(VAULT_PATH, path)
+    full = _safe_vault_path(path)
+    if full is None:
+        return f"[ERROR] Invalid path: {path}"
     if os.path.isfile(full):
         with open(full, "r", encoding="utf-8") as f:
             return f.read()
