@@ -12,7 +12,7 @@
  * Endpoint : GET /metrics (texte Prometheus, scraped par Grafana).
  */
 
-import { Counter, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
+import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
 
 let registry: Registry | null = null;
 
@@ -150,6 +150,11 @@ export function __resetMetrics(): void {
   openaiReserveFeedRequestsTotal.reset();
   failOpenTotal.reset();
   httpRequestsTotal.reset();
+  telnyxWebhookEventsTotal.reset();
+  alertsSentTotal.reset();
+  queueJobsGauge.reset();
+  callsMissingTranscriptGauge.reset();
+  reservationsMissingSmsGauge.reset();
 }
 
 // ─── Sokar Connect (Phase 1) ────────────────────────────────────────
@@ -219,5 +224,57 @@ export const connectIaBotHitsTotal = new Counter({
   name: 'sokar_connect_ia_bot_hits_total',
   help: 'Total IA bot hits on Sokar Connect public pages',
   labelNames: ['bot', 'path_class'] as const,
+  registers: [getRegistry()],
+});
+
+// ─── Monitoring ops (alerting actif) ─────────────────────────────────────
+
+/**
+ * Webhooks Telnyx reçus, par route et résultat.
+ * Alimente l'alerte « webhook Telnyx en erreur » (worker system-health).
+ * Labels : event (voice, voice_end) × result (processed, error, rejected).
+ */
+export const telnyxWebhookEventsTotal = new Counter({
+  name: 'sokar_telnyx_webhook_events_total',
+  help: 'Total Telnyx webhook events by route and result',
+  labelNames: ['event', 'result'] as const,
+  registers: [getRegistry()],
+});
+
+/**
+ * Alertes ops dispatchées par le monitoring (worker system-health + watchdog).
+ * Permet de vérifier que le canal d'alerte fonctionne (absence totale = silencieux).
+ * Labels : kind × channel (email, webhook, sms, sentry) × result (ok, error).
+ */
+export const alertsSentTotal = new Counter({
+  name: 'sokar_alerts_sent_total',
+  help: 'Total ops alerts dispatched by kind, channel and result',
+  labelNames: ['kind', 'channel', 'result'] as const,
+  registers: [getRegistry()],
+});
+
+/**
+ * Profondeur des files BullMQ par état, rafraîchie à chaque tick du worker
+ * system-health (toutes les 5 min). Alimente les alertes jobs en échec /
+ * dead-letter et le futur scraping Prometheus.
+ */
+export const queueJobsGauge = new Gauge({
+  name: 'sokar_queue_jobs',
+  help: 'BullMQ job counts by queue and state (refreshed every 5 min)',
+  labelNames: ['queue', 'state'] as const,
+  registers: [getRegistry()],
+});
+
+/** Appels Telnyx des dernières 24h sans transcription ou sans outcome. */
+export const callsMissingTranscriptGauge = new Gauge({
+  name: 'sokar_calls_missing_transcript_24h',
+  help: 'Calls in the last 24h without transcript or outcome (refreshed every 5 min)',
+  registers: [getRegistry()],
+});
+
+/** Réservations des dernières 24h confirmées sans SMS de confirmation tracé. */
+export const reservationsMissingSmsGauge = new Gauge({
+  name: 'sokar_reservations_missing_confirmation_sms_24h',
+  help: 'Reservations in the last 24h without a confirmation SMS audit trail (refreshed every 5 min)',
   registers: [getRegistry()],
 });

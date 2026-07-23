@@ -23,6 +23,7 @@ import {
   Sun,
   Radio,
   PencilRuler,
+  Activity,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -59,7 +60,9 @@ type NavKey =
   | 'giftCards'
   | 'agentic'
   | 'connect'
-  | 'widget';
+  | 'widget'
+  | 'provisioning'
+  | 'health';
 
 const navConfig: { href: string; key: NavKey; icon: LucideIcon }[] = [
   { href: '/dashboard', key: 'overview', icon: BarChart3 },
@@ -71,6 +74,8 @@ const navConfig: { href: string; key: NavKey; icon: LucideIcon }[] = [
   { href: '/dashboard/agentic', key: 'agentic', icon: Sparkles },
   { href: '/dashboard/connect', key: 'connect', icon: Zap },
   { href: '/dashboard/widget', key: 'widget', icon: Code },
+  { href: '/dashboard/admin/provisioning', key: 'provisioning', icon: Radio },
+  { href: '/dashboard/admin/health', key: 'health', icon: Activity },
 ];
 
 function SidebarNavItem({

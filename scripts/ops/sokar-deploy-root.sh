@@ -123,6 +123,10 @@ install_runtime() {
         install -d -m 0700 -o deploy -g deploy /var/backups/sokar
         install -m 0750 "$ROOT/scripts/database/backup-postgres.sh" /usr/local/sbin/sokar-backup-postgres
         install -m 0644 "$ROOT/infra/cron/sokar-postgres-backup" /etc/cron.d/sokar-postgres-backup
+        # Watchdog monitoring (toutes les 5 min) : API/dashboard/Redis/backup/disque/mémoire.
+        install -d -m 0750 /var/lib/sokar/watchdog
+        install -m 0755 "$ROOT/scripts/ops/sokar-watchdog.sh" /usr/local/sbin/sokar-watchdog
+        install -m 0644 "$ROOT/infra/cron/sokar-watchdog" /etc/cron.d/sokar-watchdog
         install -d -m 0755 -o www-data -g www-data /var/cache/nginx/connect
         install -m 0644 "$ROOT/infra/logrotate/sokar" /etc/logrotate.d/sokar
     elif [ "$ENVIRONMENT" = "staging" ]; then

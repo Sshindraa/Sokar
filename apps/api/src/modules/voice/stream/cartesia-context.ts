@@ -9,7 +9,7 @@ import {
 } from './constants';
 import { logger } from '../../../shared/logger/pino';
 import { persistLatencyTrace } from './session-persistence';
-import { recordVoiceTurnFirstAudio, recordVoiceTurnTtsFirstByte } from './turn-telemetry';
+import { recordVoiceTurnEvent } from './turn-telemetry';
 
 const CARTESIA_WEBSOCKET_URL = 'wss://api.cartesia.ai/tts/websocket';
 const CARTESIA_VERSION = '2026-03-01';
@@ -249,7 +249,6 @@ export class CartesiaContextTurn {
       if (this.session.latencyTrace && !this.session.latencyTrace.ttsFirstByteMs) {
         this.session.latencyTrace.ttsFirstByteMs = Date.now() - this.session.latencyTrace.startTime;
       }
-      recordVoiceTurnTtsFirstByte(this.session);
     }
     const bytes = Buffer.concat([this.remainder, chunk]);
     let offset = 0;
@@ -282,9 +281,12 @@ export class CartesiaContextTurn {
       this.session.telnyxWs.send(
         JSON.stringify({ event: 'media', media: { payload: frame.toString('base64') } }),
       );
-      recordVoiceTurnFirstAudio(this.session);
       if (this.session.latencyTrace && !this.session.latencyTrace.totalE2eMs) {
         this.session.latencyTrace.totalE2eMs = Date.now() - this.session.latencyTrace.startTime;
+        recordVoiceTurnEvent(this.session, 'tts_first_audio', {
+          ttsFirstByteMs: this.session.latencyTrace.ttsFirstByteMs ?? null,
+          totalE2eMs: this.session.latencyTrace.totalE2eMs,
+        });
         persistLatencyTrace(this.session).catch((err) =>
           logger.error(
             { err, callId: this.session.callControlId },

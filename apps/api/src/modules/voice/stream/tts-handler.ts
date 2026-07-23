@@ -22,7 +22,7 @@ import {
   TTS_PACE_PAUSE_MS,
 } from './constants';
 import { splitTelnyxAudioFrames } from './audio-frames';
-import { recordVoiceTurnFirstAudio, recordVoiceTurnTtsFirstByte } from './turn-telemetry';
+import { recordVoiceTurnEvent } from './turn-telemetry';
 
 export function isSessionActiveForTts(session: CallSession, generation?: number): boolean {
   return (
@@ -33,35 +33,14 @@ export function isSessionActiveForTts(session: CallSession, generation?: number)
   );
 }
 
-const TTS_ECHO_TAIL_MS = 600;
-
-/**
- * Mémorise le texte réellement émis pendant sa durée estimée de lecture.
- * Le flux entrant Telnyx peut contenir le retour acoustique du haut-parleur
- * de l'appelant : Deepgram le transcrit alors comme si le client parlait.
- */
-export function trackAssistantSpeech(
-  session: CallSession,
-  text: string,
-  estimatedDurationMs: number,
-): void {
-  session.assistantSpeech = {
-    text,
-    expiresAt: Date.now() + Math.max(600, estimatedDurationMs) + TTS_ECHO_TAIL_MS,
-  };
-}
-
-function estimateTextSpeechDurationMs(text: string): number {
-  const words = text.trim().split(/\s+/).filter(Boolean).length;
-  // Débit conservateur de 3,5 mots/s, avec une marge pour la prosodie.
-  return Math.max(700, Math.ceil((words / 3.5) * 1_000));
-}
-
 function persistFirstAudioFrame(session: CallSession): void {
-  recordVoiceTurnFirstAudio(session);
   if (!session.latencyTrace || session.latencyTrace.totalE2eMs) return;
 
   session.latencyTrace.totalE2eMs = Date.now() - session.latencyTrace.startTime;
+  recordVoiceTurnEvent(session, 'tts_first_audio', {
+    ttsFirstByteMs: session.latencyTrace.ttsFirstByteMs ?? null,
+    totalE2eMs: session.latencyTrace.totalE2eMs,
+  });
   persistLatencyTrace(session).catch((err) =>
     logger.error(
       { err, callId: session.callControlId },
@@ -73,7 +52,6 @@ function persistFirstAudioFrame(session: CallSession): void {
 async function sendPacedAudioFrames(
   session: CallSession,
   audio: Buffer,
-  text: string,
   generation?: number,
 ): Promise<number> {
   const frames = splitTelnyxAudioFrames(audio, session.codec);
@@ -81,9 +59,6 @@ async function sendPacedAudioFrames(
 
   for (const frame of frames) {
     if (!isSessionActiveForTts(session, generation)) break;
-    if (framesSent === 0) {
-      trackAssistantSpeech(session, text, frames.length * TTS_PACE_PAUSE_MS);
-    }
     session.telnyxWs.send(
       JSON.stringify({
         event: 'media',
@@ -167,7 +142,6 @@ export function cleanTextForTts(text: string): string {
 }
 
 export async function speakTelnyxNative(session: CallSession, text: string): Promise<void> {
-  trackAssistantSpeech(session, text, estimateTextSpeechDurationMs(text));
   writeDebugLog(`[speakTelnyxNative] Sending native Telnyx TTS speak command for: "${text}"`);
   try {
     const res = await fetch(
@@ -302,9 +276,8 @@ async function speakTtsFragment(
       if (session.latencyTrace && !session.latencyTrace.ttsFirstByteMs) {
         session.latencyTrace.ttsFirstByteMs = Date.now() - session.latencyTrace.startTime;
       }
-      recordVoiceTurnTtsFirstByte(session);
 
-      const framesSent = await sendPacedAudioFrames(session, cachedBuffer, trimmed, generation);
+      const framesSent = await sendPacedAudioFrames(session, cachedBuffer, generation);
       writeDebugLog(
         `[speakTtsStreamed] Sent ${framesSent} cached audio frames to Telnyx for sentence ${i}`,
       );
@@ -412,9 +385,6 @@ async function speakTtsFragment(
           }
 
           const frame = playbackQueue.shift()!;
-          if (framesSent === 0) {
-            trackAssistantSpeech(session, trimmed, estimateTextSpeechDurationMs(trimmed));
-          }
           session.telnyxWs.send(
             JSON.stringify({
               event: 'media',
@@ -449,7 +419,6 @@ async function speakTtsFragment(
           if (session.latencyTrace && !session.latencyTrace.ttsFirstByteMs) {
             session.latencyTrace.ttsFirstByteMs = Date.now() - session.latencyTrace.startTime;
           }
-          recordVoiceTurnTtsFirstByte(session);
         }
 
         const rawChunk = Buffer.from(value);

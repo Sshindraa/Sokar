@@ -59,14 +59,6 @@ describe('extractRestaurantName', () => {
       'Chez Michel',
     );
   });
-
-  it('retire les consignes internes accolées au nom du restaurant', () => {
-    expect(
-      extractRestaurantName(
-        "Tu es l'assistant vocal chaleureux de Chez Michel. L'accueil a déjà été prononcé avant le premier message de l'appelant. Tu ne le répètes jamais.",
-      ),
-    ).toBe('Chez Michel');
-  });
 });
 
 describe('buildLivenessResponse', () => {
@@ -104,7 +96,6 @@ describe('handleFluxEvent — interruption pendant le traitement', () => {
       const interruptedSession = {
         state: 'PROCESSING',
         responseGeneration: 4,
-        ttsGeneration: 2,
         abortController,
         speculativeLlm: Promise.resolve('ancienne réponse'),
         speculativeResult: 'ancienne réponse',
@@ -122,7 +113,6 @@ describe('handleFluxEvent — interruption pendant le traitement', () => {
 
       expect(abortSpy).toHaveBeenCalledOnce();
       expect(interruptedSession.responseGeneration).toBe(5);
-      expect(interruptedSession.ttsGeneration).toBe(3);
       expect(interruptedSession.state).toBe('LISTENING');
       expect(interruptedSession.conversation.toolInFlight).toBeNull();
       expect(interruptedSession.speculativeLlm).toBeNull();

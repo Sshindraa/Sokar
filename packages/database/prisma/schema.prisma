@@ -32,6 +32,11 @@ model Restaurant {
   onboardingActivatedAt DateTime?              @map("onboarding_activated_at")
   onboardingLastSeenAt  DateTime?              @map("onboarding_last_seen_at")
   firstCallAt           DateTime?              @map("first_call_at")
+  // Provisioning fields
+  provisioningStatus     String                 @default("PENDING") @map("provisioning_status")
+  telnyxPhoneNumberId    String?                @map("telnyx_phone_number_id")
+  forwardingConfiguredAt DateTime?              @map("forwarding_configured_at")
+  testCallValidatedAt    DateTime?              @map("test_call_validated_at")
   createdAt             DateTime               @default(now()) @map("created_at")
   updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at")
   calls                 Call[]

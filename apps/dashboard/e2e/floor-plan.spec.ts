@@ -317,8 +317,7 @@ test.describe('/dashboard/floor-plan — navigation et données demo', () => {
     await page.locator('#sim-starts-at').fill('2026-07-22T19:00');
     await page.getByRole('button', { name: 'Simuler' }).click();
 
-    await expect(
-      page.getByText(/^Aucune table disponible\. Prochain créneau crédible : 20:30/),
-    ).toBeVisible();
+    // Le rendu suit le fuseau du navigateur (UTC en CI, Europe/Paris en local).
+    await expect(page.getByText(/Prochain créneau : 22 juil\. \d{2}:30/)).toBeVisible();
   });
 });

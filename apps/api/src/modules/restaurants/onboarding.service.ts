@@ -201,6 +201,8 @@ export type RestaurantLike = {
   googleRefreshToken?: string | null;
   googleCalendarId?: string | null;
   phoneNumber?: string | null;
+  firstCallAt?: Date | null;
+  provisioningStatus?: string | null;
   onboardingTasks?: unknown;
   // Sokar Connect fields
   slug?: string | null;

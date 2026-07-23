@@ -36,6 +36,8 @@ import { giftCardPackRoutes } from './modules/gift-cards/gift-card-pack.routes';
 import { pilotRoutes } from './modules/pilot/pilot.routes';
 import { flagsRoutes } from './modules/admin/flags.routes';
 import { onboardingFunnelRoutes } from './modules/admin/onboarding-funnel.routes';
+import { provisioningRoutes } from './modules/admin/provisioning.routes';
+import { restaurantHealthRoutes } from './modules/admin/restaurant-health.routes';
 import { registerCors } from './plugins/cors';
 import { registerRateLimit } from './plugins/rate-limit';
 import { registerClerk } from './plugins/clerk';
@@ -56,6 +58,7 @@ import './shared/queue/workers/confirmation-sms.worker';
 import './shared/queue/workers/reactivation.worker';
 import './shared/queue/workers/google-places-sync.worker';
 import './shared/queue/workers/alert-evaluation.worker';
+import './shared/queue/workers/system-health.worker';
 import './modules/agentic-reservations/workers/expire-hold.worker';
 import './modules/agentic-reservations/workers/expire-quote.worker';
 import './modules/agentic-reservations/workers/hold-cleanup.worker';
@@ -239,6 +242,8 @@ export async function buildApp() {
   await app.register(pilotRoutes);
   await app.register(flagsRoutes);
   await app.register(onboardingFunnelRoutes);
+  await app.register(provisioningRoutes);
+  await app.register(restaurantHealthRoutes);
 
   // Routes de test — uniquement si ENABLE_TEST_ROUTES=true explicitement (SEC-005)
   if (env.ENABLE_TEST_ROUTES === 'true') {
@@ -360,6 +365,15 @@ async function start() {
           'alert-evaluation-5min',
           { pattern: '*/5 * * * *', tz: 'Europe/Paris' },
           { name: 'evaluate-alerts' },
+        );
+
+        // Monitoring système : toutes les 5 minutes. Checks métier (files
+        // BullMQ, appels sans transcription, réservations sans SMS) dispatchés
+        // sur les canaux ALERT_* avec cooldown 30 min. Cf. system-health.worker.ts.
+        await queues.systemHealth.upsertJobScheduler(
+          'system-health-5min',
+          { pattern: '*/5 * * * *', tz: 'Europe/Paris' },
+          { name: 'system-health-checks' },
         );
 
         // Les enregistrements sont privés et temporaires : purge quotidienne

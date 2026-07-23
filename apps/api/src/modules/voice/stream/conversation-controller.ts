@@ -6,7 +6,6 @@ export function createConversationState(): ConversationState {
     slots: {},
     toolInFlight: null,
     lastAvailabilityCheck: null,
-    lastAvailabilityResult: null,
     pendingQuestion: null,
     lastAssistantQuestion: null,
     misunderstandingCount: 0,
@@ -34,7 +33,7 @@ export function classifyVoiceSpeechAct(transcript: string): VoiceSpeechAct {
     return 'backchannel';
   }
   if (
-    /^(?:merci[, ]+(?:c est tout|au revoir)|c est tout(?: merci)?|au revoir|bonne (?:journee|soiree)|a bientot|(?:allez )?on arrete(?: on arrete)?|on peut arreter|j arrete|laisse tomber|laissez tomber|stop)$/.test(
+    /^(?:merci[, ]+(?:c est tout|au revoir)|c est tout(?: merci)?|au revoir|bonne (?:journee|soiree)|a bientot)$/.test(
       normalized,
     )
   ) {
@@ -112,15 +111,10 @@ export function extractConversationSlots(
     }
   }
 
-  const halfHourMatch = normalized.match(/\b([01]?\d|2[0-3])\s*heures?\s+et\s+demie\b/);
-  if (halfHourMatch) {
-    slots.time = `${halfHourMatch[1].padStart(2, '0')}:30`;
-  }
-
   const timeMatch = normalized.match(
     /\b(?:a|vers)?\s*([01]?\d|2[0-3])\s*(?::|h(?:eures?)?\s*)([0-5]\d)?\b/,
   );
-  if (timeMatch && !halfHourMatch) {
+  if (timeMatch) {
     const hour = Number(timeMatch[1]);
     const minute = Number(timeMatch[2] ?? '0');
     slots.time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
@@ -168,12 +162,13 @@ export function buildAvailabilityReply(
 ): string {
   const time = request.time.replace(/^0/, '').replace(':00', ' h').replace(':', ' h ');
   if (availableSlots.length === 0) {
-    return `Désolé, je n'ai pas de créneau disponible ce jour-là pour ${request.partySize} personne${request.partySize > 1 ? 's' : ''}. Je peux vous passer le gérant ou prendre un message.`;
+    return `Désolé, il n'y a plus de créneau disponible ce jour-là pour ${request.partySize} personne${request.partySize > 1 ? 's' : ''}.`;
   }
   if (availableSlots.includes(request.time)) {
     return `Oui, ${time} est disponible pour ${request.partySize} personne${request.partySize > 1 ? 's' : ''}. Quel est votre nom pour la réservation ?`;
   }
-  const alternatives = selectClosestAvailabilitySlots(request.time, availableSlots)
+  const alternatives = availableSlots
+    .slice(0, 2)
     .map((slot) => slot.replace(/^0/, '').replace(':00', ' h').replace(':', ' h '))
     .join(' ou ');
   return `Désolé, ${time} n'est pas disponible. Je peux vous proposer ${alternatives}.`;
@@ -188,92 +183,18 @@ export function recordUserTurn(
   if (speechAct === 'content' || speechAct === 'correction') {
     session.conversation.closing = false;
     session.conversation.intent = inferIntent(transcript) ?? session.conversation.intent;
-    const extracted = extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris', now);
-    const current = session.conversation.slots;
-    if (
-      (extracted.date && extracted.date !== current.date) ||
-      (extracted.partySize && extracted.partySize !== current.partySize)
-    ) {
-      session.conversation.lastAvailabilityResult = null;
-    }
-    Object.assign(current, extracted);
+    Object.assign(
+      session.conversation.slots,
+      extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris', now),
+    );
   }
-}
-
-function asksForAvailabilityAlternative(transcript: string): boolean {
-  const normalized = normalizeTranscript(transcript);
-  return /\b(?:que|qu est ce que) (?:vous|tu) propose(?:z)?(?: quoi)?\b|\b(?:vous|tu) propose(?:z)? quoi\b|\b(?:je|on) (?:lui )?propose quoi\b|\bquelles? (?:sont les )?alternatives?\b|\bautres? (?:heure|horaire|creneau)\b|\b(?:sinon|une autre heure)\b/.test(
-    normalized,
-  );
-}
-
-function formatAvailabilitySlot(slot: string): string {
-  return slot.replace(/^0/, '').replace(':00', ' h').replace(':', ' h ');
-}
-
-function timeToMinutes(value: string): number {
-  const [hour, minute] = value.split(':').map(Number);
-  return hour * 60 + minute;
-}
-
-export function selectClosestAvailabilitySlots(
-  requestedTime: string,
-  availableSlots: string[],
-  limit = 2,
-): string[] {
-  const requestedMinutes = timeToMinutes(requestedTime);
-  return [...availableSlots]
-    .sort((left, right) => {
-      const distance =
-        Math.abs(timeToMinutes(left) - requestedMinutes) -
-        Math.abs(timeToMinutes(right) - requestedMinutes);
-      return distance || left.localeCompare(right);
-    })
-    .slice(0, limit);
-}
-
-export function buildAvailabilityFollowupResponse(
-  session: CallSession,
-  transcript: string,
-): string | null {
-  if (!asksForAvailabilityAlternative(transcript)) return null;
-  const result = session.conversation.lastAvailabilityResult;
-  if (!result) return null;
-
-  if (result.slots.length === 0) {
-    return "Je n'ai aucun autre créneau ce jour-là. Vous voulez regarder un autre jour ?";
-  }
-
-  const alternatives = selectClosestAvailabilitySlots(result.time, result.slots)
-    .map(formatAvailabilitySlot)
-    .join(' ou ');
-  return `Je peux vous proposer ${alternatives}. Lequel vous convient ?`;
-}
-
-export function buildReservationProgressResponse(session: CallSession): string | null {
-  const { intent, slots } = session.conversation;
-  if (intent !== 'reservation' && intent !== 'availability') return null;
-  if (!slots.date) return 'Pour quel jour ?';
-  if (!slots.partySize) return 'Vous serez combien ?';
-  if (!slots.time) return 'Vous voulez venir vers quelle heure ?';
-  return null;
-}
-
-function isAmbiguousPartySizeReply(session: CallSession, transcript: string): boolean {
-  if (session.conversation.pendingQuestion !== 'partySize') return false;
-  if (extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris').partySize) return false;
-
-  const normalized = normalizeTranscript(transcript);
-  return /\b(?:personne|personnes|on sera|nous serons|combien)\b/.test(normalized);
 }
 
 function pendingQuestionFrom(question: string): ConversationState['pendingQuestion'] {
   const normalized = normalizeTranscript(question);
   if (/\b(?:quelle date|quel jour|quand)/.test(normalized)) return 'date';
   if (/\b(?:quelle heure|a quelle heure|vers quelle heure)/.test(normalized)) return 'time';
-  if (/\b(?:combien de personnes|pour combien|vous serez combien)/.test(normalized)) {
-    return 'partySize';
-  }
+  if (/\b(?:combien de personnes|pour combien)/.test(normalized)) return 'partySize';
   if (/\b(?:votre nom|quel est votre nom|au nom de qui)/.test(normalized)) return 'customerName';
   if (/\b(?:telephone|numero)/.test(normalized)) return 'customerPhone';
   return null;
@@ -297,7 +218,6 @@ export function recordAssistantReply(session: CallSession, reply: string): void 
 export function buildDeterministicTurnResponse(
   session: CallSession,
   speechAct: VoiceSpeechAct,
-  transcript = '',
 ): string | null {
   if (speechAct === 'closing') {
     session.conversation.closing = true;
@@ -312,16 +232,6 @@ export function buildDeterministicTurnResponse(
 
   if (speechAct === 'backchannel' && session.conversation.lastAssistantQuestion) {
     return `D'accord. ${session.conversation.lastAssistantQuestion}`;
-  }
-
-  if (speechAct === 'content' || speechAct === 'correction') {
-    if (isAmbiguousPartySizeReply(session, transcript)) {
-      return "Je n'ai pas bien compris le nombre de personnes. Vous serez combien ?";
-    }
-    return (
-      buildAvailabilityFollowupResponse(session, transcript) ??
-      buildReservationProgressResponse(session)
-    );
   }
 
   return null;

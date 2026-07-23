@@ -1,8 +1,30 @@
 # ── Sokar Prometheus alerting rules ──────────────────────────────────────────
-# Alertes sur l'observabilité Connect + MCP (Phase 1).
+# Architecture d'alerting ACTIVE (pilote) :
 #
-# Ces règles sont consommées par Prometheus quand il sera déployé sur le VPS.
-# En attendant, elles documentent les seuils et sont prêtes à l'emploi.
+#   1. Worker in-app `system-health` (toutes les 5 min, même process que l'API)
+#      — apps/api/src/shared/queue/workers/system-health.worker.ts
+#      Évalue : files BullMQ inaccessibles, jobs failed / dead-letter / backlog,
+#      appels sans transcription ou sans outcome (24h), réservations sans SMS
+#      de confirmation (24h). Dispatch : logs + Sentry + email (ALERT_EMAIL_TO)
+#      + webhook (ALERT_WEBHOOK_URL) + SMS critique (ALERT_SMS_TO).
+#
+#   2. Worker in-app `alert-evaluation` (toutes les 5 min)
+#      — apps/api/src/shared/queue/workers/alert-evaluation.worker.ts
+#      Évalue : taux 5xx global, 5xx Connect, latence p95 Connect, backlog
+#      connect-analytics. Sortie : logs + Sentry.
+#
+#   3. Watchdog VPS (cron toutes les 5 min)
+#      — scripts/ops/sokar-watchdog.sh (/usr/local/sbin/sokar-watchdog)
+#      Évalue : API/dashboard/connect injoignables, Redis/Postgres arrêtés,
+#      backup quotidien absent (>26h), disque/mémoire critiques.
+#      Notification : ALERT_WEBHOOK / ALERT_CMD + heartbeat externe
+#      (HEALTHCHECKS_PING_URL) qui couvre la panne totale du VPS.
+#
+# Les règles Prometheus ci-dessous REFLÈTENT les seuils actifs in-app : elles
+# deviennent effectives dès qu'un Prometheus scrape /metrics (les gauges
+# sokar_queue_jobs, sokar_calls_missing_transcript_24h et
+# sokar_reservations_missing_confirmation_sms_24h sont publiées à chaque tick
+# du worker system-health). Elles servent aussi de documentation des seuils.
 #
 # Chargement : ajouter dans prometheus.yml :
 #   rule_files:
@@ -11,6 +33,89 @@
 # Cf. docs/pilot/grafana-dashboard-connect.json pour les panels associés.
 
 groups:
+  # ── Alertes pilote (miroir des checks in-app actifs) ──────────────────────
+  - name: sokar-pilot-ops
+    interval: 5m
+    rules:
+      # Webhook Telnyx en erreur : signature rejetée ou handler 5xx.
+      # Miroir du check in-app sur sokar_telnyx_webhook_events_total.
+      - alert: TelnyxWebhookErrors
+        expr: increase(sokar_telnyx_webhook_events_total{result=~"error|rejected"}[15m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+          team: sokar
+        annotations:
+          summary: 'Webhooks Telnyx en erreur ({{ $value }} en 15 min)'
+          description: "Plus de 5 webhooks Telnyx rejetés (signature) ou en erreur 5xx sur 15 min. Les appels entrants ne sont peut-être plus traités. Vérifier les logs API (grep 'telnyx-guard' et 'voice/telnyx') et la file telnyx-webhooks."
+
+      # Jobs en échec : une file dépasse le seuil in-app (5 failed).
+      - alert: QueueFailedJobs
+        expr: sokar_queue_jobs{state="failed",queue!="dead-letter"} >= 5
+        for: 10m
+        labels:
+          severity: critical
+          team: sokar
+        annotations:
+          summary: 'File « {{ $labels.queue }} » : {{ $value }} jobs en échec'
+          description: "La file BullMQ {{ $labels.queue }} cumule les jobs failed. Vérifier les logs API (grep 'job failed') et la dead-letter."
+
+      # Dead-letter non vide : jobs définitivement perdus sans replay auto.
+      - alert: DeadLetterBacklog
+        expr: sokar_queue_jobs{queue="dead-letter",state="waiting"} > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: sokar
+        annotations:
+          summary: '{{ $value }} job(s) en dead-letter'
+          description: 'Des jobs ont épuisé toutes leurs tentatives et ne seront jamais rejoués automatiquement. Investigation manuelle requise.'
+
+      # Backlog : la file n'absorbe plus le travail (worker arrêté ou lent).
+      - alert: QueueBacklog
+        expr: sokar_queue_jobs{state="waiting",queue!="dead-letter"} >= 100
+        for: 10m
+        labels:
+          severity: warning
+          team: sokar
+        annotations:
+          summary: 'Backlog de {{ $value }} jobs dans « {{ $labels.queue }} »'
+          description: 'La file {{ $labels.queue }} accumule : worker arrêté, Redis lent ou pic de trafic.'
+
+      # Appels sans transcription / sans réponse (gauche du check in-app 24h).
+      - alert: CallsMissingTranscript
+        expr: sokar_calls_missing_transcript_24h > 0
+        for: 15m
+        labels:
+          severity: warning
+          team: sokar
+        annotations:
+          summary: '{{ $value }} appel(s) sans transcription ou sans outcome sur 24h'
+          description: 'Pipeline voix potentiellement cassé (Deepgram STT, stream WebSocket, webhook /voice/telnyx/end). Vérifier les logs API et passer un appel test.'
+
+      # Réservations créées sans SMS de confirmation tracé.
+      - alert: ReservationsMissingConfirmationSms
+        expr: sokar_reservations_missing_confirmation_sms_24h > 0
+        for: 15m
+        labels:
+          severity: warning
+          team: sokar
+        annotations:
+          summary: '{{ $value }} réservation(s) sans SMS de confirmation sur 24h'
+          description: "Des réservations avec téléphone client n'ont pas de trace d'envoi du SMS de confirmation. Vérifier la file sms-client, les logs outbound-confirm et le solde Telnyx."
+
+      # Canal d'alerte cassé : des erreurs d'envoi s'accumulent.
+      - alert: AlertDeliveryFailing
+        expr: increase(sokar_alerts_sent_total{result="error"}[1h]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: sokar
+        annotations:
+          summary: "Échec d'envoi d'alerte sur le canal {{ $labels.channel }}"
+          description: "Le dispatcher d'alertes n'arrive plus à envoyer sur {{ $labels.channel }}. Vérifier ALERT_EMAIL_TO / ALERT_WEBHOOK_URL / ALERT_SMS_TO et les logs API."
+
+  # ── Observabilité Connect + MCP (Phase 1) ────────────────────────────────
   - name: sokar-connect-observability
     interval: 5m
     rules:
