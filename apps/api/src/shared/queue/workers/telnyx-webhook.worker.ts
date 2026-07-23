@@ -3,7 +3,9 @@ import { redisQueue } from '../../redis/client';
 import { setupWorkerListeners, jobLogger } from './helper';
 import {
   purgeExpiredRecordings,
+  recoverPendingRecording,
   storeSavedRecording,
+  type RecoverRecordingJobData,
   type SavedRecordingJobData,
 } from '../../../modules/voice/call-recording.service';
 import { db } from '../../db/client';
@@ -44,6 +46,11 @@ export const telnyxWebhookWorker = new Worker(
 
     if (job.name === 'purge-expired-recordings') {
       await purgeExpiredRecordings();
+      return;
+    }
+
+    if (job.name === 'recover-recording') {
+      await recoverPendingRecording(job.data as RecoverRecordingJobData);
       return;
     }
 

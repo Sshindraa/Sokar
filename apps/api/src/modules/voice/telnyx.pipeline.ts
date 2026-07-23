@@ -263,6 +263,36 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           include: { reservation: true },
         });
 
+        // Telnyx peut omettre ou retarder `call.recording.saved`. Un appel de
+        // test déjà marqué PENDING est donc réconcilié depuis son API après la
+        // fin d'appel, avec retry queue et sans élargir l'allowlist.
+        if (
+          process.env.CALL_RECORDING_ENABLED === 'true' &&
+          callRecord?.recordingStatus === 'PENDING'
+        ) {
+          try {
+            const jobId = buildTelnyxWebhookJobId('recover-recording', payload.call_leg_id);
+            await app.queues.telnyxWebhooks.add(
+              'recover-recording',
+              { callLegId: payload.call_leg_id },
+              {
+                jobId,
+                delay: 30_000,
+                attempts: 5,
+                backoff: { type: 'exponential', delay: 30_000 },
+              },
+            );
+          } catch (err: unknown) {
+            app.log.warn(
+              {
+                err: err instanceof Error ? err.message : String(err),
+                callLegId: payload.call_leg_id,
+              },
+              'failed to enqueue recording recovery',
+            );
+          }
+        }
+
         if (callRecord?.reservation && payload.from) {
           const ctx = await RestaurantService.loadContext(payload.to);
           await CustomerService.incrementVisit(ctx.id, payload.from);

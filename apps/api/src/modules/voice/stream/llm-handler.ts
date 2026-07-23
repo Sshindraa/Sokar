@@ -68,10 +68,14 @@ export function shouldSkipDuplicateTranscript(session: CallSession, transcript: 
 }
 
 export function extractRestaurantName(systemPrompt: string): string {
-  return systemPrompt
-    .split('\n')[0]
+  const firstLine = systemPrompt.split('\n')[0] ?? '';
+  const withoutPrefix = firstLine
     .replace(/^Tu es l'hôte d'accueil et assistant vocal chaleureux de /, '')
-    .replace(/^Tu es l'assistant vocal (?:chaleureux )?de /, '')
+    .replace(/^Tu es l'assistant vocal (?:chaleureux )?de /, '');
+
+  // Le nom est suivi d'instructions internes : elles ne doivent jamais être vocalisées.
+  return withoutPrefix
+    .replace(/\.\s+L'accueil a déjà été prononcé.*$/u, '')
     .replace(/\.$/, '')
     .trim();
 }
@@ -471,7 +475,7 @@ async function processTranscriptStreaming(
     return;
   }
 
-  const deterministicResponse = buildDeterministicTurnResponse(session, speechAct);
+  const deterministicResponse = buildDeterministicTurnResponse(session, speechAct, transcript);
   if (deterministicResponse) {
     writeDebugLog(
       `[processTranscriptStreaming] Handling ${speechAct} without LLM: "${transcript}"`,
@@ -546,6 +550,13 @@ async function processTranscriptStreaming(
       });
       const response = buildAvailabilityReply(availabilityRequest, result.slots);
       session.conversation.lastAvailabilityCheck = availabilityRequest.key;
+      session.conversation.lastAvailabilityResult = {
+        key: availabilityRequest.key,
+        date: availabilityRequest.date,
+        time: availabilityRequest.time,
+        partySize: availabilityRequest.partySize,
+        slots: [...result.slots],
+      };
       session.turnCount++;
       session.history.push(
         { role: 'user', content: transcript },

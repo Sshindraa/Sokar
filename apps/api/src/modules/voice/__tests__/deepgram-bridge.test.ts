@@ -26,6 +26,7 @@ import {
   DEEPGRAM_AUDIO_BUFFER_MAX,
   getSmartEndpointDelay,
   SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS,
+  SMART_ENDPOINT_DELAY_INCOMPLETE_FRAGMENT_MS,
   SMART_ENDPOINT_DELAY_INCOMPLETE_RESERVATION_MS,
   SMART_ENDPOINT_DELAY_WITHOUT_PUNCTUATION_MS,
   SMART_ENDPOINT_DELAY_WITH_PUNCTUATION_MS,
@@ -283,6 +284,7 @@ describe('handleDeepgramMessage — event dispatching', () => {
     expect(SMART_ENDPOINT_DELAY_WITHOUT_PUNCTUATION_MS).toBe(1_200);
     expect(SMART_ENDPOINT_DELAY_INCOMPLETE_RESERVATION_MS).toBe(1_300);
     expect(SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS).toBe(2_500);
+    expect(SMART_ENDPOINT_DELAY_INCOMPLETE_FRAGMENT_MS).toBe(1_500);
     expect(getSmartEndpointDelay('Bonjour.')).toEqual({
       timeoutMs: SMART_ENDPOINT_DELAY_WITH_PUNCTUATION_MS,
       reason: 'punctuation',
@@ -298,6 +300,10 @@ describe('handleDeepgramMessage — event dispatching', () => {
     expect(getSmartEndpointDelay('Non, plutôt')).toEqual({
       timeoutMs: SMART_ENDPOINT_DELAY_INCOMPLETE_RESERVATION_MS,
       reason: 'incomplete_reservation',
+    });
+    expect(getSmartEndpointDelay('Ok donc')).toEqual({
+      timeoutMs: SMART_ENDPOINT_DELAY_INCOMPLETE_FRAGMENT_MS,
+      reason: 'incomplete_fragment',
     });
   });
 
