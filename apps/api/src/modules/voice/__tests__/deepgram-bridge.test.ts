@@ -31,7 +31,6 @@ import {
   SMART_ENDPOINT_DELAY_WITH_PUNCTUATION_MS,
   handleDeepgramMessage,
 } from '../stream/deepgram-bridge';
-import { handleFluxEvent } from '../stream/llm-handler';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -173,22 +172,6 @@ describe('handleDeepgramMessage — event dispatching', () => {
     expect(onEvent).toHaveBeenCalledWith({ type: 'UtteranceStart' });
   });
 
-  it('UtteranceStart: invalide les callbacks d’un tour encore en traitement', () => {
-    const session = makeSession();
-    const abortController = new AbortController();
-    const abortSpy = vi.spyOn(abortController, 'abort');
-    session.state = 'PROCESSING';
-    session.ttsGeneration = 4;
-    session.abortController = abortController;
-
-    handleFluxEvent({ type: 'UtteranceStart' }, session, CallSessionManager.getInstance());
-
-    expect(abortSpy).toHaveBeenCalledOnce();
-    expect(session.ttsGeneration).toBe(5);
-    expect(session.responseGeneration).toBe(1);
-    expect(session.state).toBe('LISTENING');
-  });
-
   it('UtteranceEnd: forwards the transcript to onDeepgramEvent', () => {
     const session = makeSession();
     const onEvent = vi.fn();
@@ -239,19 +222,6 @@ describe('handleDeepgramMessage — event dispatching', () => {
     expect(session.speculativeResult).toBeNull();
     expect(session.speculativeTranscript).toBe('');
     expect(onEvent).toHaveBeenCalledWith({ type: 'SpeechResumed' });
-  });
-
-  it('SpeechResumed: invalide le tour en cours avant de reprendre l’écoute', () => {
-    const session = makeSession();
-    session.state = 'PROCESSING';
-    session.ttsGeneration = 2;
-
-    handleDeepgramMessage(session, { type: 'SpeechResumed' });
-
-    expect(session.ttsGeneration).toBe(3);
-    expect(session.responseGeneration).toBe(1);
-    expect(session.conversation.toolInFlight).toBeNull();
-    expect(session.state).toBe('LISTENING');
   });
 
   it('Results (isFinal + speechFinal): flushes turnTranscript and fires UtteranceEnd', () => {
@@ -406,86 +376,6 @@ describe('handleDeepgramMessage — event dispatching', () => {
     expect(session.isSpeaking).toBe(false);
     const sentPayloads = vi.mocked(telnyxWs.send).mock.calls.map((c) => c[0] as string);
     expect(sentPayloads.some((p) => p.includes('"event":"clear"'))).toBe(true);
-  });
-
-  it('does not cut any assistant sentence when Deepgram hears its acoustic echo', () => {
-    const session = makeSession();
-    const telnyxWs = session.telnyxWs;
-    if (!telnyxWs) throw new Error('Missing telnyxWs');
-    const mgr = CallSessionManager.getInstance();
-    mgr.transition(session, 'SPEAKING');
-    session.isSpeaking = true;
-    session.assistantSpeech = {
-      text: 'Je peux vous proposer dix-neuf heures trente ou vingt heures.',
-      expiresAt: Date.now() + 2_000,
-    };
-
-    handleDeepgramMessage(session, {
-      type: 'Results',
-      is_final: false,
-      speech_final: false,
-      channel: { alternatives: [{ transcript: 'dix-neuf heures trente', confidence: 0.98 }] },
-    });
-
-    expect(session.state).toBe('SPEAKING');
-    expect(
-      vi
-        .mocked(telnyxWs.send)
-        .mock.calls.some(([payload]) => (payload as string).includes('"event":"clear"')),
-    ).toBe(false);
-  });
-
-  it('does not turn a finalized echo into a customer utterance', () => {
-    const session = makeSession();
-    const onEvent = vi.fn();
-    session.onDeepgramEvent = onEvent;
-    const mgr = CallSessionManager.getInstance();
-    mgr.transition(session, 'SPEAKING');
-    session.isSpeaking = true;
-    session.assistantSpeech = {
-      text: 'Je peux vous proposer dix-neuf heures trente ou vingt heures.',
-      expiresAt: Date.now() + 2_000,
-    };
-
-    handleDeepgramMessage(session, {
-      type: 'Results',
-      is_final: true,
-      speech_final: true,
-      channel: { alternatives: [{ transcript: 'vingt heures', confidence: 0.98 }] },
-    });
-
-    expect(session.turnTranscript).toBe('');
-    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
-    expect(session.state).toBe('SPEAKING');
-  });
-
-  it('keeps barge-in responsive when the caller starts with a shared word then diverges', () => {
-    const session = makeSession();
-    const telnyxWs = session.telnyxWs;
-    if (!telnyxWs) throw new Error('Missing telnyxWs');
-    const mgr = CallSessionManager.getInstance();
-    mgr.transition(session, 'SPEAKING');
-    session.isSpeaking = true;
-    session.assistantSpeech = {
-      text: 'Bonjour, ici Test. Je vous écoute.',
-      expiresAt: Date.now() + 2_000,
-    };
-
-    handleDeepgramMessage(session, {
-      type: 'Results',
-      is_final: false,
-      speech_final: false,
-      channel: {
-        alternatives: [{ transcript: 'Bonjour, je voudrais réserver', confidence: 0.98 }],
-      },
-    });
-
-    expect(session.state).toBe('LISTENING');
-    expect(
-      vi
-        .mocked(telnyxWs.send)
-        .mock.calls.some(([payload]) => (payload as string).includes('"event":"clear"')),
-    ).toBe(true);
   });
 
   it('Results during LISTENING: no barge-in (no Telnyx clear)', () => {

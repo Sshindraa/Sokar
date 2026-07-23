@@ -16,7 +16,7 @@ import { sendSms } from '../../../shared/telnyx/client';
 import { trackGiftCardEvent } from '../../analytics/events.service';
 import { AuditLogService } from '../../agentic-reservations/core/audit-log.service';
 import { zonedTimeToUtc } from '../../floor-plan/availability-capacity-aware.service';
-import { createConversationState, selectClosestAvailabilitySlots } from './conversation-controller';
+import { createConversationState } from './conversation-controller';
 import { recordVoiceTurnEvent } from './turn-telemetry';
 
 interface LlmResponse {
@@ -147,7 +147,6 @@ export class CallSessionManager {
       ttsContext: null,
       currentTurn: null,
       bargeInChunks: 0,
-      assistantSpeech: null,
       abortController: null,
       speculativeLlm: null,
       speculativeTranscript: '',
@@ -259,9 +258,10 @@ export class CallSessionManager {
     // Mettre à jour l'historique avec la phrase utilisateur
     session.history.push({ role: 'user', content: transcript });
 
-    const response = await this.callLlm(session, transcript);
+    const signal = session.abortController?.signal;
+    const response = await this.callLlm(session, transcript, signal);
 
-    if (session.responseGeneration === responseGeneration) {
+    if (!signal?.aborted && session.responseGeneration === responseGeneration) {
       this.transition(session, 'SPEAKING');
     }
     return response;
@@ -277,17 +277,16 @@ export class CallSessionManager {
     session: CallSession,
     transcript: string,
     onPhrase: (phrase: string) => Promise<void> | void,
-    signal?: AbortSignal,
   ): Promise<string> {
     const responseGeneration = session.responseGeneration;
     this.transition(session, 'PROCESSING');
     session.turnCount++;
     session.history.push({ role: 'user', content: transcript });
 
+    const signal = session.abortController?.signal;
     const fullText = await this.callLlmStreaming(session, onPhrase, signal);
-    if (signal?.aborted) throw signal.reason ?? new Error('LLM stream aborted');
 
-    if (session.responseGeneration === responseGeneration) {
+    if (!signal?.aborted && session.responseGeneration === responseGeneration) {
       this.transition(session, 'SPEAKING');
     }
     return fullText;
@@ -334,7 +333,11 @@ export class CallSessionManager {
    * Si le LLM décide d'appeler un outil, on l'exécute et on rappelle le LLM
    * avec le résultat — jusqu'à 3 rounds max.
    */
-  private async callLlm(session: CallSession, transcript: string): Promise<string> {
+  private async callLlm(
+    session: CallSession,
+    transcript: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
     if (process.env.SOKAR_SIMULATE_MOCK_LLM === 'true') {
       return this.mockLlmResponse(session, transcript);
     }
@@ -349,7 +352,7 @@ export class CallSessionManager {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
         },
-        signal: session.abortController?.signal,
+        signal,
         body: JSON.stringify({
           model: getVoiceLlmModel(),
           messages,
@@ -370,6 +373,7 @@ export class CallSessionManager {
       }
 
       const data = (await response.json()) as LlmResponse;
+      signal?.throwIfAborted();
       const msg = data.choices?.[0]?.message;
 
       if (!msg) throw new Error('Empty LLM response');
@@ -386,7 +390,9 @@ export class CallSessionManager {
         session.history.push(msg);
         messages.push(msg);
         for (const tc of toolCalls) {
+          signal?.throwIfAborted();
           const result = await this.executeTool(session, tc.function.name, tc.function.arguments);
+          signal?.throwIfAborted();
           const toolMsg: ChatMessage = { role: 'tool', tool_call_id: tc.id, content: result };
           session.history.push(toolMsg);
           messages.push(toolMsg);
@@ -502,7 +508,6 @@ export class CallSessionManager {
                 const phrase = match[1].trim();
                 if (phrase) {
                   // Lancer onPhrase sans await pour ne pas bloquer le stream
-                  if (signal?.aborted) continue;
                   Promise.resolve(onPhrase(phrase)).catch((err) =>
                     logger.error({ err }, 'onPhrase failed in sentence-buffered LLM stream'),
                   );
@@ -521,7 +526,7 @@ export class CallSessionManager {
       }
 
       // Yield le reste du buffer s'il reste quelque chose
-      if (sentenceBuffer.trim() && !signal?.aborted) {
+      if (sentenceBuffer.trim()) {
         await onPhrase(sentenceBuffer.trim());
       }
 
@@ -554,6 +559,7 @@ export class CallSessionManager {
         }
 
         const data = (await response.json()) as LlmResponse;
+        signal?.throwIfAborted();
         const msg = data.choices?.[0]?.message;
 
         if (!msg) throw new Error('Empty LLM response');
@@ -570,7 +576,9 @@ export class CallSessionManager {
           session.history.push(msg);
           messages.push(msg);
           for (const tc of toolCalls) {
+            signal?.throwIfAborted();
             const result = await this.executeTool(session, tc.function.name, tc.function.arguments);
+            signal?.throwIfAborted();
             const toolMsg: ChatMessage = { role: 'tool', tool_call_id: tc.id, content: result };
             session.history.push(toolMsg);
             messages.push(toolMsg);
@@ -583,6 +591,7 @@ export class CallSessionManager {
       }
 
       // Pas de tool call → streaming terminé normalement
+      signal?.throwIfAborted();
       if (fullText.trim()) {
         session.history.push({ role: 'assistant', content: fullText.trim() });
       }
@@ -654,7 +663,7 @@ export class CallSessionManager {
                 return `Le créneau de ${time} est disponible le ${date} pour ${partySize ?? 2} personne(s).`;
               }
 
-              const alternatives = selectClosestAvailabilitySlots(time, result.slots).join(', ');
+              const alternatives = result.slots.slice(0, 2).join(', ');
               return `Le créneau de ${time} n'est pas disponible le ${date} pour ${partySize ?? 2} personne(s). Créneaux proches disponibles : ${alternatives}.`;
             }
 

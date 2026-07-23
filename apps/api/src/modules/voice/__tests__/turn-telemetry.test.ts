@@ -9,9 +9,6 @@ import { logger } from '../../../shared/logger/pino';
 import {
   recordVoiceTurnClassification,
   recordVoiceTurnEvent,
-  recordVoiceTurnFirstAudio,
-  recordVoiceTurnLlmFirstToken,
-  recordVoiceTurnTtsFirstByte,
   startVoiceTurn,
 } from '../stream/turn-telemetry';
 
@@ -41,28 +38,5 @@ describe('voice turn telemetry', () => {
     expect(logs.some((entry) => entry.includes(transcript))).toBe(false);
     expect(logs.some((entry) => entry.includes('availability_completed'))).toBe(false);
     expect(vi.mocked(logger.info)).toHaveBeenCalledTimes(3);
-  });
-
-  it('journalise chaque jalon une seule fois pour chaque nouveau tour', () => {
-    const session = makeSession();
-
-    startVoiceTurn(session, 'Premier tour');
-    recordVoiceTurnLlmFirstToken(session);
-    recordVoiceTurnLlmFirstToken(session);
-    recordVoiceTurnTtsFirstByte(session);
-    recordVoiceTurnFirstAudio(session);
-
-    startVoiceTurn(session, 'Deuxième tour');
-    recordVoiceTurnTtsFirstByte(session);
-    recordVoiceTurnFirstAudio(session);
-
-    const messages = vi.mocked(logger.info).mock.calls.map(([, message]) => message);
-    expect(messages.filter((message) => message === '[voice-turn] llm_first_token')).toHaveLength(
-      1,
-    );
-    expect(messages.filter((message) => message === '[voice-turn] tts_first_byte')).toHaveLength(2);
-    expect(messages.filter((message) => message === '[voice-turn] tts_first_audio')).toHaveLength(
-      2,
-    );
   });
 });

@@ -25,7 +25,9 @@
     "agentic": "AI agents",
     "connect": "Connect",
     "widget": "Widget",
-    "settings": "Settings"
+    "provisioning": "Pilot Provisioning",
+    "settings": "Settings",
+    "health": "Health"
   },
   "dashboard": {
     "subdomain": "Sokar OS",

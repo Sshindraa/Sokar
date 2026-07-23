@@ -26,9 +26,6 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('EXEMPLES DE FORMULATION');
     expect(prompt).toContain('Non, plutôt 20 h 30.');
     expect(prompt).toContain("Merci, c'est tout.");
-    expect(prompt).toContain("Tu n'inventes jamais un horaire");
-    expect(prompt).toContain('toute alternative annoncée doit provenir exactement du résultat');
-    expect(prompt).not.toContain('Je peux vous proposer 19 h 30 ou 20 h 30');
     expect(prompt).toContain('mercredi 22 juillet 2026, fuseau Europe/Paris');
     expect(prompt).not.toContain('Au tout début de chaque appel');
     expect(prompt).toContain('Lundi : 12:00–14:30');

@@ -21,14 +21,6 @@ export interface ConversationState {
   };
   toolInFlight: 'checkAvailability' | null;
   lastAvailabilityCheck: string | null;
-  /** Dernier résultat réellement renvoyé par le moteur de disponibilité. */
-  lastAvailabilityResult: {
-    key: string;
-    date: string;
-    time: string;
-    partySize: number;
-    slots: string[];
-  } | null;
   pendingQuestion: 'date' | 'time' | 'partySize' | 'customerName' | 'customerPhone' | null;
   lastAssistantQuestion: string | null;
   misunderstandingCount: number;
@@ -40,24 +32,12 @@ export interface ActiveTtsContext {
   cancel(): void;
 }
 
-/**
- * Portion de phrase effectivement envoyée vers Telnyx, conservée très
- * brièvement afin de distinguer son écho acoustique de la voix du client.
- */
-export interface ActiveAssistantSpeech {
-  text: string;
-  expiresAt: number;
-}
-
 /** Identité minimisée du tour courant pour les logs d'observabilité. */
 export interface VoiceTurnTelemetry {
   id: string;
   startedAt: number;
   transcriptLength: number;
   transcriptFingerprint: string;
-  llmFirstTokenAt?: number;
-  ttsFirstByteAt?: number;
-  firstAudioAt?: number;
 }
 
 /** Événements Deepgram Flux */
@@ -151,8 +131,6 @@ export interface CallSession {
   // Barge-in debounce
   /** Nombre de chunks inbound consécutifs reçus pendant SPEAKING */
   bargeInChunks: number;
-  /** Phrase TTS récemment émise ; utilisée uniquement pour filtrer son écho. */
-  assistantSpeech: ActiveAssistantSpeech | null;
 
   // Annulation LLM
   /** AbortController pour annuler la requête LLM en cours */

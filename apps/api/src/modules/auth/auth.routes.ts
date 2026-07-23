@@ -40,6 +40,7 @@ export async function authSyncRoutes(app: FastifyInstance) {
         managerEmail: '',
         openingHours: {},
         plan: 'STARTER',
+        provisioningStatus: 'PENDING',
       },
     });
 

@@ -53,6 +53,7 @@ const FULL_RESTAURANT = {
   managerPhone: '+336****0000',
   managerEmail: 'boss@sokar.test',
   phoneNumber: 'pn-1234',
+  timezone: 'Europe/Paris',
   openingHours: { mon: { open: '12:00', close: '22:00' } },
   carrier: 'telnyx',
   smsConfirmEnabled: true,
@@ -111,6 +112,7 @@ describe('RestaurantService.loadContext', () => {
         id: true,
         name: true,
         phoneNumber: true,
+        timezone: true,
         personality: expect.objectContaining({ select: expect.any(Object) }),
       }),
     });

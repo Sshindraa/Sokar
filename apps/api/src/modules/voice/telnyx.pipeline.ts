@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
-import { telnyxWebhookGuard } from './telnyx.guard';
+import { telnyxWebhookGuard, webhookEventLabel } from './telnyx.guard';
+import { telnyxWebhookEventsTotal } from '../../shared/observability/metrics';
 import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
 import { buildSystemPrompt, type OpeningHours } from './prompts';
@@ -52,6 +53,23 @@ interface TelnyxCallEndPayload {
 }
 
 export async function telnyxVoiceRoutes(app: FastifyInstance) {
+  // Comptage des webhooks traités / en erreur (alerte « webhook Telnyx en
+  // erreur » du worker system-health). Les 403 du guard sont déjà comptées
+  // en result='rejected' — on les exclut ici pour ne pas double-compter.
+  app.addHook('onResponse', (req, reply, done) => {
+    try {
+      if (reply.statusCode !== 403) {
+        telnyxWebhookEventsTotal.inc({
+          event: webhookEventLabel(req.url),
+          result: reply.statusCode >= 500 ? 'error' : 'processed',
+        });
+      }
+    } catch {
+      // La métrique ne doit jamais casser le webhook.
+    }
+    done();
+  });
+
   app.post('/voice/telnyx', { preHandler: telnyxWebhookGuard }, async (req, reply) => {
     const body = req.body as TelnyxCallPayload;
     const eventType = body.data.event_type;

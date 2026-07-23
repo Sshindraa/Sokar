@@ -131,6 +131,14 @@ const EnvSchema = z
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
     EMAIL_FROM: z.string().optional(),
+    // Canaux d'alerte ops (monitoring pilote). Tous optionnels ; si aucun n'est
+    // défini, les alertes ne partent que dans les logs + Sentry.
+    //   ALERT_EMAIL_TO    : destinataires email des alertes, séparés par des virgules.
+    //   ALERT_WEBHOOK_URL : webhook Slack/Discord ({ "text": "..." }).
+    //   ALERT_SMS_TO      : numéro E.164 recevant un SMS pour les alertes critiques.
+    ALERT_EMAIL_TO: z.string().optional(),
+    ALERT_WEBHOOK_URL: z.string().url().optional(),
+    ALERT_SMS_TO: z.string().optional(),
   })
   .refine((data) => data.CALL_RECORDING_ENABLED !== 'true' || !!data.CALL_RECORDINGS_BUCKET, {
     message: 'CALL_RECORDINGS_BUCKET is required when CALL_RECORDING_ENABLED=true',

@@ -75,6 +75,15 @@ export const queues = {
       removeOnFail: 500,
     },
   }),
+  systemHealth: new Queue('system-health', {
+    connection: redisQueue,
+    defaultJobOptions: {
+      attempts: 2,
+      backoff: { type: 'fixed', delay: 10_000 },
+      removeOnComplete: 100,
+      removeOnFail: 500,
+    },
+  }),
   idempotencyPurge: new Queue('idempotency-purge', {
     connection: redisQueue,
     defaultJobOptions: {

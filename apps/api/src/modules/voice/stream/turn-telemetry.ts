@@ -5,14 +5,11 @@ import { logger } from '../../../shared/logger/pino';
 export type VoiceTurnEvent =
   | 'started'
   | 'classified'
-  | 'response_selected'
   | 'availability_started'
   | 'availability_completed'
   | 'availability_failed'
   | 'filler_started'
   | 'filler_completed'
-  | 'llm_first_token'
-  | 'tts_first_byte'
   | 'tts_first_audio'
   | 'barge_in';
 
@@ -71,31 +68,4 @@ export function recordVoiceTurnEvent(
     },
     `[voice-turn] ${event}`,
   );
-}
-
-export function recordVoiceTurnLlmFirstToken(session: CallSession): void {
-  const turn = session.currentTurn;
-  if (!turn || turn.llmFirstTokenAt !== undefined) return;
-  turn.llmFirstTokenAt = Date.now();
-  recordVoiceTurnEvent(session, 'llm_first_token', {
-    llmFirstTokenMs: turn.llmFirstTokenAt - turn.startedAt,
-  });
-}
-
-export function recordVoiceTurnTtsFirstByte(session: CallSession): void {
-  const turn = session.currentTurn;
-  if (!turn || turn.ttsFirstByteAt !== undefined) return;
-  turn.ttsFirstByteAt = Date.now();
-  recordVoiceTurnEvent(session, 'tts_first_byte', {
-    ttsFirstByteMs: turn.ttsFirstByteAt - turn.startedAt,
-  });
-}
-
-export function recordVoiceTurnFirstAudio(session: CallSession): void {
-  const turn = session.currentTurn;
-  if (!turn || turn.firstAudioAt !== undefined) return;
-  turn.firstAudioAt = Date.now();
-  recordVoiceTurnEvent(session, 'tts_first_audio', {
-    totalE2eMs: turn.firstAudioAt - turn.startedAt,
-  });
 }

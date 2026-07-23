@@ -43,16 +43,16 @@ export const VIP_PARTY_SIZE_THRESHOLD = 6;
 export const SPECULATIVE_MISS_THRESHOLD = 0.6;
 export const LLM_VIP_TURN_THRESHOLD = 5;
 
-// Modèle LLM utilisé dans le pipeline vocal (pas le modèle Hermes)
-// A/B test 2026-06-30 : mistral-small-3.2-24b-instruct retenu pour :
-//  - tool calling fiable (le 3b rate createReservation sur résa complète)
-//  - pas d'hallucination (le 3b invente des plats)
-//  - latence acceptable : +91ms first token, mais total plus rapide
-//  - le moins cher ($0.000000075/tok vs $0.0000001 pour le 3b)
+// Modèle LLM utilisé dans le pipeline vocal (pas le modèle Hermes).
+// Benchmark 2026-07-22 : Gemini 3.5 Flash-Lite retenu comme challenger live :
+//  - 36/36 appels d'outils strictement valides sur les scénarios Sokar assainis
+//  - phrase prête pour le TTS : p50 990ms, p95 1615ms
+//  - Mistral Small 3.2 : p50 1146ms, p95 2099ms sur le même protocole
+//  - coût observé environ 4,3x supérieur, mais inférieur à $0.001 par scénario benchmark
 //
 // Configurable via VOICE_LLM_MODEL env var (résolu dans manager.ts au runtime)
 // pour A/B test sans redeploiement de code.
-export const VOICE_LLM_MODEL_DEFAULT = 'mistralai/mistral-small-3.2-24b-instruct';
+export const VOICE_LLM_MODEL_DEFAULT = 'google/gemini-3.5-flash-lite';
 
 export const TTS_PROVIDERS = ['cartesia', 'deepgram-aura'] as const;
 export type TtsProvider = (typeof TTS_PROVIDERS)[number];

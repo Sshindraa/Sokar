@@ -25,7 +25,9 @@
     "agentic": "Agents IA",
     "connect": "Connect",
     "widget": "Widget",
-    "settings": "Réglages"
+    "provisioning": "Préparer un pilote",
+    "settings": "Réglages",
+    "health": "Santé"
   },
   "dashboard": {
     "subdomain": "Sokar OS",
