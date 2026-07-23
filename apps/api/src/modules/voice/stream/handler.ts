@@ -172,6 +172,7 @@ function handleTelnyxMessage(
       speakTtsStreamed(session, greeting)
         .then(async () => {
           writeDebugLog(`[stream] Greeting spoken successfully, transitioning to LISTENING`);
+          session.greetingActive = false;
           try {
             await startTestCallRecording(session);
           } catch (err) {
@@ -188,6 +189,7 @@ function handleTelnyxMessage(
         })
         .catch((err) => {
           writeDebugLog(`[stream] Greeting TTS failed`, err);
+          session.greetingActive = false;
           logger.error(
             { err, callId: session.callControlId },
             '[stream] Initial greeting TTS failed',

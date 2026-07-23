@@ -393,6 +393,7 @@ describe('handleDeepgramMessage — event dispatching', () => {
     if (!telnyxWs) throw new Error('Missing telnyxWs');
     mgr.transition(session, 'SPEAKING');
     session.isSpeaking = true;
+    session.greetingActive = false;
 
     handleDeepgramMessage(session, {
       type: 'Results',
@@ -406,6 +407,30 @@ describe('handleDeepgramMessage — event dispatching', () => {
     expect(session.isSpeaking).toBe(false);
     const sentPayloads = vi.mocked(telnyxWs.send).mock.calls.map((c) => c[0] as string);
     expect(sentPayloads.some((p) => p.includes('"event":"clear"'))).toBe(true);
+  });
+
+  it('does not cut the initial greeting when Deepgram hears a short echo', () => {
+    const session = makeSession();
+    const telnyxWs = session.telnyxWs;
+    if (!telnyxWs) throw new Error('Missing telnyxWs');
+    const mgr = CallSessionManager.getInstance();
+    mgr.transition(session, 'SPEAKING');
+    session.isSpeaking = true;
+    session.greetingActive = true;
+
+    handleDeepgramMessage(session, {
+      type: 'Results',
+      is_final: false,
+      speech_final: false,
+      channel: { alternatives: [{ transcript: 'Bonjour', confidence: 0.98 }] },
+    });
+
+    expect(session.state).toBe('SPEAKING');
+    expect(
+      vi
+        .mocked(telnyxWs.send)
+        .mock.calls.some(([payload]) => (payload as string).includes('"event":"clear"')),
+    ).toBe(false);
   });
 
   it('Results during LISTENING: no barge-in (no Telnyx clear)', () => {

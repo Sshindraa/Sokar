@@ -142,6 +142,8 @@ export interface CallSession {
   // Barge-in debounce
   /** Nombre de chunks inbound consécutifs reçus pendant SPEAKING */
   bargeInChunks: number;
+  /** True while the initial welcome audio is being played. */
+  greetingActive?: boolean;
 
   // Annulation LLM
   /** AbortController pour annuler la requête LLM en cours */
