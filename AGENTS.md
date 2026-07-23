@@ -45,6 +45,7 @@ sokar/
 6. Git can be unstable on this Mac when multiple IDEs are open. Before bulk git ops, inspect active git/IDE processes and prefer scoped staging.
 7. Session start: read the Obsidian vault for current state — `docs/obsidian/Context.md` (full, ~1.4k tokens) and the **last ~3 entries of `docs/obsidian/Journal.md`** (tail -3, NOT the full 47KB file). The vault is cross-session memory; AGENTS.md is repo-specific, the vault is the running log.
 8. After any significant change (architecture, schema, provider, feature flag, API route, decision, legacy removal), update the vault per the `obsidian-doc` skill — `Context.md` + append to `Journal.md`. Do not wait to be asked.
+9. After committing a change on a working branch, run `pnpm pr:submit`: it pushes the branch, creates or reuses its PR, and queues squash auto-merge once required CI checks pass. Never push directly to `main`.
 
 ## Commands
 
@@ -69,6 +70,7 @@ pnpm db:studio  # Prisma Studio
 # Agent
 hermes          # interactive agent
 hermes -z "task" # one-shot task
+pnpm pr:submit  # push branch, open PR, queue squash auto-merge after CI
 ```
 
 ## Code conventions

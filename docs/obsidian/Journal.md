@@ -2,6 +2,8 @@
 
 Log automatique des tâches Hermes.
 
+2026-07-23 15:40 — [git, automation] Ajout de `pnpm pr:submit` : les agents poussent leur branche, créent ou réutilisent la PR et demandent l'auto-merge squash après les checks requis.
+
 > **Note 2026-06-24** : Rétro-documentation des 5 semaines entre
 > 2026-05-21 et aujourd'hui. L'automatic Obsidian a sauté plusieurs
 > phases critiques. Reprise à partir de maintenant, plus de trous.
