@@ -3,7 +3,7 @@
  *
  * Usage :
  *   cd apps/api
- *   SOKAR_MCP_KEY=sk_sokar_agent_xxx pnpm --filter @sokar/api exec tsx ../../scripts/smoke/test-mcp-client.ts
+ *   SOKAR_MCP_KEY=sk_sokar_agent_xxx pnpm --filter @sokar/api exec tsx ../../tools/diagnostics/test-mcp-client.ts
  *
  * Variables d'environnement :
  *   SOKAR_API_BASE   (défaut http://localhost:4000)

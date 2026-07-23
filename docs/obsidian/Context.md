@@ -2,6 +2,8 @@
 
 ## Dernière activité
 
+2026-07-23 — [scripts, ops] **Surface scripts réduite** — Les SQL d'urgence ont quitté `scripts/sql/` pour `infra/sql/` et les diagnostics manuels ont quitté `scripts/smoke/` pour `tools/diagnostics/`. Les commandes package, guides MCP, hook de secrets et runbooks sont alignés ; `scripts/` ne porte plus de dossiers de diagnostic ou SQL.
+
 2026-07-23 — [scripts, ops] **Nettoyage structurel du dossier scripts** — Les helpers sont regroupés par domaine (`build`, `database`, `quality`, `ops`) ; les scripts ponctuels gift-cards et migration Mac sont archivés dans `docs/archive/operations/`. Les entrées production/staging et le shim R2 restent stables pour ne pas casser les cron VPS ; les chemins CI, runbooks et apps ont été mis à jour.
 
 2026-07-23 15:40 — [git, automation] **Soumission et fusion des PR automatisables pour les agents** — Ajout de `pnpm pr:submit` (`scripts/agent/submit-pr.sh`) : vérification de branche et worktree propre, push, création/réutilisation de la PR puis demande d’auto-merge squash. `AGENTS.md` documente désormais cette commande ; `main` conserve les checks obligatoires API, Dashboard, Connect, packages, Secret Scanning et CodeQL. Le dépôt GitHub autorise désormais l’auto-merge et supprime les branches distantes après fusion.

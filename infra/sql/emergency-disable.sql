@@ -5,7 +5,7 @@
 -- Objectif : couper immédiatement les features agentic en cas d'incident P0.
 --
 -- Usage :
---   psql $DATABASE_URL -f scripts/sql/emergency-disable.sql
+--   psql $DATABASE_URL -f infra/sql/emergency-disable.sql
 --
 -- Ce script est intentionnellement verbeux : chaque UPDATE affiche le nombre
 -- de lignes affectées (psql \echo + count implicit).

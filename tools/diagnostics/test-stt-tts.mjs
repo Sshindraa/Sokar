@@ -2,7 +2,7 @@
 /**
  * Test pipeline vocal — STT (Deepgram) ↔ TTS (Cartesia) ↔ LLM (OpenRouter)
  *
- * Usage : node scripts/smoke/test-stt-tts.mjs
+ * Usage : node tools/diagnostics/test-stt-tts.mjs
  *
  * Valide chaque API indépendamment pour vérifier que les clés .env sont valides.
  */
