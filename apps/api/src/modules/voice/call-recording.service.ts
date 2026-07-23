@@ -62,6 +62,22 @@ export interface SavedRecordingJobData {
   readonly endedAt?: string;
 }
 
+export interface RecoverRecordingJobData {
+  readonly callLegId: string;
+}
+
+interface TelnyxRecordingListItem {
+  id?: string;
+  status?: string;
+  download_urls?: { mp3?: string };
+  recording_started_at?: string;
+  recording_ended_at?: string;
+}
+
+interface TelnyxRecordingListResponse {
+  data?: TelnyxRecordingListItem[];
+}
+
 export async function startTestCallRecording(session: CallSession): Promise<void> {
   if (!isTestCallRecordingEnabled(session.restaurantId)) return;
 
@@ -152,6 +168,49 @@ export async function storeSavedRecording(data: SavedRecordingJobData): Promise<
       recordingExpiresAt: expiresAt,
       recordingError: null,
     },
+  });
+}
+
+/**
+ * Filet de sécurité si Telnyx ne livre pas le webhook `call.recording.saved`.
+ * La lecture est limitée à l'appel en attente : aucun enregistrement hors
+ * allowlist ne peut être créé car seuls les appels PENDING y arrivent.
+ */
+export async function recoverPendingRecording(data: RecoverRecordingJobData): Promise<void> {
+  if (!isCallRecordingEnabled()) return;
+
+  const call = await db.call.findUnique({
+    where: { callSid: data.callLegId },
+    select: { recordingStatus: true },
+  });
+  if (!call || call.recordingStatus !== 'PENDING') return;
+
+  const apiKey = process.env.TELNYX_API_KEY;
+  if (!apiKey) throw new Error('TELNYX_API_KEY not configured');
+
+  const url = new URL('https://api.telnyx.com/v2/recordings');
+  url.searchParams.set('filter[call_leg_id]', data.callLegId);
+  url.searchParams.set('page[size]', '10');
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error(`Telnyx recordings lookup failed: ${response.status}`);
+
+  const body = (await response.json()) as TelnyxRecordingListResponse;
+  const recording = body.data?.find(
+    (item) => item.status === 'completed' && item.id && item.download_urls?.mp3,
+  );
+  if (!recording?.id || !recording.download_urls?.mp3) {
+    throw new Error('Telnyx recording is not available yet');
+  }
+
+  await storeSavedRecording({
+    callLegId: data.callLegId,
+    recordingId: recording.id,
+    downloadUrl: recording.download_urls.mp3,
+    startedAt: recording.recording_started_at,
+    endedAt: recording.recording_ended_at,
   });
 }
 

@@ -21,6 +21,14 @@ export interface ConversationState {
   };
   toolInFlight: 'checkAvailability' | null;
   lastAvailabilityCheck: string | null;
+  /** Dernier résultat réellement renvoyé par le moteur de disponibilité. */
+  lastAvailabilityResult: {
+    key: string;
+    date: string;
+    time: string;
+    partySize: number;
+    slots: string[];
+  } | null;
   pendingQuestion: 'date' | 'time' | 'partySize' | 'customerName' | 'customerPhone' | null;
   lastAssistantQuestion: string | null;
   misunderstandingCount: number;

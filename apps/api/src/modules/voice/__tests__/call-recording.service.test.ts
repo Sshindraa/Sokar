@@ -20,7 +20,11 @@ vi.mock('@aws-sdk/client-s3', () => {
 });
 
 import { db } from '../../../shared/db/client';
-import { startTestCallRecording, storeSavedRecording } from '../call-recording.service';
+import {
+  recoverPendingRecording,
+  startTestCallRecording,
+  storeSavedRecording,
+} from '../call-recording.service';
 import type { CallSession } from '../stream/types';
 
 const session = {
@@ -118,6 +122,43 @@ describe('call recording service', () => {
         recordingSizeBytes: 4,
       }),
     });
+  });
+
+  it('recovers a pending recording when the provider webhook is missing', async () => {
+    vi.mocked(db.call.findUnique)
+      .mockResolvedValueOnce({ recordingStatus: 'PENDING' } as never)
+      .mockResolvedValueOnce({ id: 'call-1', restaurantId: 'rest-1' } as never);
+    const audio = new Uint8Array([1, 2, 3, 4]);
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: 'rec-1',
+                  status: 'completed',
+                  download_urls: { mp3: 'https://recordings.telnyx.com/signed.mp3' },
+                },
+              ],
+            }),
+            { status: 200 },
+          ),
+        )
+        .mockResolvedValueOnce(new Response(audio, { status: 200 })),
+    );
+
+    await recoverPendingRecording({ callLegId: 'leg-1' });
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      expect.any(URL),
+      expect.objectContaining({ headers: { Authorization: 'Bearer test-api-key' } }),
+    );
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('filter%5Bcall_leg_id%5D=leg-1');
+    expect(s3Send).toHaveBeenCalledOnce();
   });
 
   it('refuses a non-HTTPS provider URL', async () => {

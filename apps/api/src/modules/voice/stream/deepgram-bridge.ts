@@ -194,10 +194,16 @@ export const SMART_ENDPOINT_DELAY_WITH_PUNCTUATION_MS = 650;
 export const SMART_ENDPOINT_DELAY_WITHOUT_PUNCTUATION_MS = 1_200;
 export const SMART_ENDPOINT_DELAY_INCOMPLETE_RESERVATION_MS = 1_300;
 export const SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS = 2_500;
+export const SMART_ENDPOINT_DELAY_INCOMPLETE_FRAGMENT_MS = 1_500;
 
 export function getSmartEndpointDelay(transcript: string): {
   timeoutMs: number;
-  reason: 'punctuation' | 'incomplete_identity' | 'incomplete_reservation' | 'silence';
+  reason:
+    | 'punctuation'
+    | 'incomplete_identity'
+    | 'incomplete_reservation'
+    | 'incomplete_fragment'
+    | 'silence';
 } {
   const endsWithPunctuation = /[.!?]\s*$/.test(transcript);
   const soundsLikeIdentityIntroduction =
@@ -206,6 +212,12 @@ export function getSmartEndpointDelay(transcript: string): {
     /^\s*(?:non\b|plutot\b|en\s+fait\b|j['’]ai\s+dit\b|je\s+voulais\s+dire\b)/iu.test(transcript);
   const endsWithReservationFragment =
     /\b(?:pour|a|vers)\s*$|\b(?:demain|aujourd['’]hui)\s+(?:a|vers)\s*$/iu.test(transcript);
+  // « Ok donc », « du coup » ou « mais » sont des relances inachevées très
+  // fréquentes à l'oral. Répondre après 650 ms coupe l'appelant en deux tours.
+  const endsWithShortConnector =
+    /^(?:ok(?:ay)?|d['’]accord|donc|du coup|mais|alors|et)(?:\s+(?:donc|du coup|alors))?\s*[.!?]?$/iu.test(
+      transcript.trim(),
+    );
 
   if (soundsLikeIdentityIntroduction) {
     return {
@@ -217,6 +229,12 @@ export function getSmartEndpointDelay(transcript: string): {
     return {
       timeoutMs: SMART_ENDPOINT_DELAY_INCOMPLETE_RESERVATION_MS,
       reason: 'incomplete_reservation',
+    };
+  }
+  if (endsWithShortConnector) {
+    return {
+      timeoutMs: SMART_ENDPOINT_DELAY_INCOMPLETE_FRAGMENT_MS,
+      reason: 'incomplete_fragment',
     };
   }
   if (endsWithPunctuation) {

@@ -415,6 +415,28 @@ describe('POST /voice/telnyx — call.hangup', () => {
     });
   });
 
+  it('enqueues recording recovery when a test recording remains pending at hangup', async () => {
+    process.env.CALL_RECORDING_ENABLED = 'true';
+    vi.mocked(db.call.findUnique).mockResolvedValue({
+      reservation: null,
+      recordingStatus: 'PENDING',
+    } as unknown as Awaited<ReturnType<typeof db.call.findUnique>>);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeHangupPayload(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(queues.telnyxWebhooks.add).toHaveBeenCalledWith(
+      'recover-recording',
+      { callLegId: 'leg-1' },
+      expect.objectContaining({ attempts: 5, delay: 30_000 }),
+    );
+    delete process.env.CALL_RECORDING_ENABLED;
+  });
+
   it('skips the duration update when duration_sec is missing', async () => {
     vi.mocked(db.call.findUnique).mockResolvedValue({ reservation: null } as unknown as Awaited<
       ReturnType<typeof db.call.findUnique>
