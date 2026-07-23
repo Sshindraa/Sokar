@@ -348,7 +348,11 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
       const confidence = msg.channel?.alternatives?.[0]?.confidence ?? 0;
 
       // Barge-in: si on est en train de parler et que l'utilisateur dit quelque chose (transcript non vide)
-      if (session.state === 'SPEAKING' && transcript.trim().length > 0) {
+      if (
+        session.state === 'SPEAKING' &&
+        session.greetingActive !== true &&
+        transcript.trim().length > 0
+      ) {
         logger.info(
           { callId: session.callControlId, transcript: transcript.trim() },
           '[barge-in] User spoke while assistant was speaking. Interrupting.',
