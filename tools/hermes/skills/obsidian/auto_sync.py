@@ -20,7 +20,7 @@ CARTE NOTE → CHEMIN SOURCE :
 USAGE:
     python auto_sync.py daemon              # Mode daemon (git poll toutes les 30s)
     python auto_sync.py diff                # Analyse git diff en une passe
-    python auto_sync.py watch               # Watch filesystem avec watchdog
+    python auto_sync.py watch               # Watch filesystem (polling, watchdog non requis)
     python auto_sync.py update <note> [content]  # Mise à jour forcée d'une note
 """
 
@@ -38,7 +38,9 @@ def find_sokar_root() -> Path:
     for parent in [current] + list(current.parents):
         if (parent / "package.json").exists() and (parent / "pnpm-workspace.yaml").exists():
             return parent
-    return Path(os.environ.get("SOKAR_ROOT", str(Path.home() / "Desktop" / "Sokar")))
+    fallback = Path(os.environ.get("SOKAR_ROOT", str(Path.home() / "Projects" / "Sokar")))
+    print(f"[warn] find_sokar_root failed — using fallback: {fallback}", file=sys.stderr)
+    return fallback
 
 SOKAR_ROOT = find_sokar_root()
 VAULT_PATH = SOKAR_ROOT / "docs" / "obsidian"

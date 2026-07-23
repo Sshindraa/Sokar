@@ -2,36 +2,30 @@
 /**
  * Test pipeline vocal — STT (Deepgram) ↔ TTS (Cartesia) ↔ LLM (OpenRouter)
  *
- * Usage : node tools/diagnostics/test-stt-tts.mjs
+ * Usage : pnpm test:diagnostic  (ou node --env-file=.env.local tools/diagnostics/test-stt-tts.mjs)
  *
  * Valide chaque API indépendamment pour vérifier que les clés .env sont valides.
  */
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
 
-// ─── Load .env.local (convention Sokar — source de vérité en dev) ─────────────
-const envPath = resolve(process.cwd(), '.env.local');
-if (!existsSync(envPath)) {
-  console.log('❌ .env.local introuvable');
+// ─── Vérifier que .env.local est chargé (via --env-file) ─────────────────────
+if (
+  !process.env.DEEPGRAM_API_KEY &&
+  !process.env.CARTESIA_API_KEY &&
+  !process.env.OPENROUTER_API_KEY
+) {
+  console.log("❌ Variables d'environnement manquantes — .env.local non chargé.");
+  console.log('   Lancez via : pnpm test:diagnostic');
+  console.log('   ou          : node --env-file=.env.local tools/diagnostics/test-stt-tts.mjs');
   process.exit(1);
 }
 
-const raw = readFileSync(envPath);
-function getEnv(key) {
-  const idx = raw.indexOf(key + '=');
-  if (idx === -1) return '';
-  const valStart = idx + key.length + 1;
-  const end = raw.indexOf('\n', idx);
-  const valEnd = end === -1 ? raw.length : end;
-  let val = raw.slice(valStart, valEnd).toString('utf-8').trim();
-  if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
-  return val;
-}
-
-const DG_KEY = getEnv('DEEPGRAM_API_KEY');
-const CA_KEY = getEnv('CARTESIA_API_KEY');
-const OR_KEY = getEnv('OPENROUTER_API_KEY');
-const CA_VOICE = getEnv('CARTESIA_VOICE_ID') || 'f786b574-daa5-4673-aa0c-cbe3e8534c02';
+const DG_KEY = process.env.DEEPGRAM_API_KEY || '';
+const CA_KEY = process.env.CARTESIA_API_KEY || '';
+const OR_KEY = process.env.OPENROUTER_API_KEY || '';
+const CA_VOICE = process.env.CARTESIA_VOICE_ID || 'f786b574-daa5-4673-aa0c-cbe3e8534c02';
+const DG_MODEL = process.env.DEEPGRAM_MODEL || 'nova-3';
+const CA_MODEL = process.env.CARTESIA_MODEL || 'sonic-3.5';
+const OR_MODEL = process.env.OPENROUTER_MODEL || 'mistralai/ministral-3b-2512';
 
 function keyOk(k) {
   return k && k.length > 10 && k !== '...' && !k.includes('***');
@@ -86,7 +80,7 @@ async function testDeepgram() {
 
   try {
     const res = await fetch(
-      'https://api.deepgram.com/v1/listen?model=nova-3&language=fr&punctuate=true',
+      `https://api.deepgram.com/v1/listen?model=${DG_MODEL}&language=fr&punctuate=true`,
       {
         method: 'POST',
         headers: { Authorization: `Token ${DG_KEY}`, 'Content-Type': 'audio/wav' },
@@ -126,7 +120,7 @@ async function testCartesia() {
         'X-API-Key': CA_KEY,
       },
       body: JSON.stringify({
-        model_id: 'sonic-3.5',
+        model_id: CA_MODEL,
         transcript: 'Test de synthèse vocale Cartesia.',
         voice: { mode: 'id', id: CA_VOICE },
         output_format: { container: 'raw', encoding: 'pcm_mulaw', sample_rate: 8000 },
@@ -139,7 +133,7 @@ async function testCartesia() {
       const decoder = new TextDecoder();
       let buf = '';
       let chunks = 0;
-      let timeout = setTimeout(() => {}, 5000); // dummy
+      let timeout;
       const p = new Promise((resolvePromise) => {
         timeout = setTimeout(() => resolvePromise('timeout'), 5000);
         (async () => {
@@ -185,9 +179,9 @@ async function testOpenrouter() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OR_KEY}` },
       body: JSON.stringify({
-        model: 'mistralai/ministral-3b-2512',
+        model: OR_MODEL,
         messages: [
-          { role: 'system', content: 'Tu es un agent vocal concis.' },
+          { role: 'system', content: 'Vous êtes un agent vocal concis.' },
           { role: 'user', content: 'Dis bonjour en français.' },
         ],
         max_tokens: 50,
@@ -234,12 +228,12 @@ async function main() {
     if (!keyOk(CA_KEY))
       console.log('  • Cartesia : https://cartesia.ai → API Keys → créer une clé');
     console.log('');
-    console.log('  Ajoute-les dans .env :');
-    console.log('    DEEPGRAM_API_KEY="ta_cle"');
-    console.log('    CARTESIA_API_KEY="ta_cle"');
+    console.log('  Ajoutez-les dans .env :');
+    console.log('    DEEPGRAM_API_KEY="cle"');
+    console.log('    CARTESIA_API_KEY="cle"');
     console.log('    CARTESIA_VOICE_ID="f786b574-daa5-4673-aa0c-cbe3e8534c02"');
     console.log('');
-    console.log('  Sinon, tu peux tester le pipeline de logique métier sans audio :');
+    console.log('  Sinon, vous pouvez tester le pipeline de logique métier sans audio :');
     console.log('    curl -X POST http://localhost:4000/api/test/simulate-call \\');
     console.log('      -H "Content-Type: application/json" \\');
     console.log('      -d \'{"callerPhone": "+33612345678"}\'');
