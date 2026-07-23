@@ -2,6 +2,8 @@
 
 ## Dernière activité
 
+2026-07-23 — [ops, staging] **Récupération staging durcie après health checks en échec** — Le script valide le secret HMAC Service Copilot avant d’arrêter Dashboard/Connect, conserve explicitement le code d’échec et restaure les services dès qu’un health check API, livez, Dashboard ou Connect échoue, avant toute rotation des snapshots. `bash -n` vert. Aucun déploiement.
+
 2026-07-23 — [voice, api, git] **Correctifs voix isolés depuis `origin/main`** — Branche propre limitée à l’accueil « Bonjour, ici … Je vous écoute. », l’enregistrement temporaire soumis au double verrou activation + allowlist restaurant, et l’invalidation par génération des réponses interrompues. `UtteranceStart`, `SpeechResumed` et le barge-in annulent le réseau, les fillers, les callbacks LLM et les trames TTS obsolètes. La suite du dernier `main` passe de 227 à 232 tests voix, tous verts ; typecheck et lint API verts. Les tests canary qui portaient le total local mélangé à 263 sont volontairement exclus. Aucun déploiement.
 
 2026-07-23 — [security, GitHub, production] **Durcissement complémentaire après audit public** — Graphe de dépendances, alertes/correctifs Dependabot (groupés + malware) et CodeQL par défaut activés. La branche `main` impose désormais une pull request, la résolution des conversations et une branche à jour ; Secret Scanning, CodeQL, API, Dashboard, Sokar Connect et Packages sont obligatoires, y compris pour les administrateurs. Suppression et force-push restent interdits. La deploy key VPS en écriture a été remplacée et révoquée : le VPS utilise maintenant une clé dédiée lecture seule, vérifiée par `git ls-remote`. Le correctif E2E floor-plan rend l’assertion du prochain créneau indépendante du libellé de date localisé.
