@@ -1,6 +1,7 @@
 #!/bin/bash
-# Déploiement production de la feature cartes cadeaux (P1-P3 + shortCode).
-# Usage sur le VPS pmbtc : bash /opt/sokar/scripts/deploy-gift-cards-prod.sh --confirm-production
+# Archive historique du déploiement ponctuel de la feature cartes cadeaux.
+# Ne pas utiliser pour un nouveau déploiement ; l'entrée production actuelle est
+# scripts/deploy-vps.sh et le backfill vit sous apps/api/scripts/.
 
 set -Eeuo pipefail
 

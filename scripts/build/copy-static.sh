@@ -6,9 +6,9 @@
 # standalone crashe avec ENOENT sur les assets.
 #
 # Usage :
-#   bash scripts/copy-static.sh <app-name>
-#   bash scripts/copy-static.sh dashboard
-#   bash scripts/copy-static.sh connect
+#   bash scripts/build/copy-static.sh <app-name>
+#   bash scripts/build/copy-static.sh dashboard
+#   bash scripts/build/copy-static.sh connect
 #
 # Les wrappers apps/<app>/scripts/copy-static.sh délèguent à ce script.
 
@@ -16,8 +16,8 @@ set -euo pipefail
 
 APP_NAME="${1:?Usage: copy-static.sh <dashboard|connect>}"
 
-# Résoudre la racine du repo (parent du dossier scripts/)
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Résoudre la racine du repo (deux niveaux au-dessus de scripts/build/)
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 APP_DIR="$REPO_ROOT/apps/$APP_NAME"
 STANDALONE_DIR="$APP_DIR/.next/standalone/apps/$APP_NAME"
 NEXT_DIR="$APP_DIR/.next"

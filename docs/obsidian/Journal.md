@@ -2,6 +2,8 @@
 
 Log automatique des tâches Hermes.
 
+2026-07-23 — [scripts, ops] Nettoyage structurel : helpers déplacés sous `build/`, `database/`, `quality/` et `ops/`; gift-cards et migration Mac archivés sous `docs/archive/operations/`; CI, runbooks, hooks et wrappers mis à jour. Le shim `scripts/backup-postgres-r2.sh` préserve l'ancien cron VPS.
+
 2026-07-23 15:40 — [git, automation] Ajout de `pnpm pr:submit` : les agents poussent leur branche, créent ou réutilisent la PR et demandent l'auto-merge squash après les checks requis.
 
 > **Note 2026-06-24** : Rétro-documentation des 5 semaines entre

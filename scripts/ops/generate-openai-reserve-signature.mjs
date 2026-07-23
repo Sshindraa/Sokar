@@ -4,8 +4,8 @@
  * pour le feed OpenAI Reserve /v1/businesses (RES-007).
  *
  * Usage:
- *   node scripts/generate-openai-reserve-signature.mjs
- *   node scripts/generate-openai-reserve-signature.mjs --domain https://api-staging.sokar.tech
+ *   node scripts/ops/generate-openai-reserve-signature.mjs
+ *   node scripts/ops/generate-openai-reserve-signature.mjs --domain https://api-staging.sokar.tech
  */
 
 import { createHmac, randomBytes } from 'node:crypto';

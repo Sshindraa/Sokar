@@ -121,13 +121,13 @@ localstack() {
 install_runtime() {
     if [ "$ENVIRONMENT" = "prod" ]; then
         install -d -m 0700 -o deploy -g deploy /var/backups/sokar
-        install -m 0750 "$ROOT/scripts/backup-postgres.sh" /usr/local/sbin/sokar-backup-postgres
+        install -m 0750 "$ROOT/scripts/database/backup-postgres.sh" /usr/local/sbin/sokar-backup-postgres
         install -m 0644 "$ROOT/infra/cron/sokar-postgres-backup" /etc/cron.d/sokar-postgres-backup
         install -d -m 0755 -o www-data -g www-data /var/cache/nginx/connect
         install -m 0644 "$ROOT/infra/logrotate/sokar" /etc/logrotate.d/sokar
     elif [ "$ENVIRONMENT" = "staging" ]; then
         install -d -m 0755 -o root -g root /var/backups/sokar-staging
-        install -m 0755 "$ROOT/scripts/backup-staging-postgres.sh" /usr/local/sbin/sokar-staging-backup-postgres
+        install -m 0755 "$ROOT/scripts/database/backup-staging-postgres.sh" /usr/local/sbin/sokar-staging-backup-postgres
         install -m 0644 "$ROOT/infra/cron/sokar-staging-postgres-backup" /etc/cron.d/sokar-staging-postgres-backup
         install -d -m 0755 -o www-data -g www-data /var/cache/nginx/connect
         install -m 0644 "$ROOT/infra/logrotate/sokar" /etc/logrotate.d/sokar

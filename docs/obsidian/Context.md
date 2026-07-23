@@ -2,6 +2,8 @@
 
 ## Dernière activité
 
+2026-07-23 — [scripts, ops] **Nettoyage structurel du dossier scripts** — Les helpers sont regroupés par domaine (`build`, `database`, `quality`, `ops`) ; les scripts ponctuels gift-cards et migration Mac sont archivés dans `docs/archive/operations/`. Les entrées production/staging et le shim R2 restent stables pour ne pas casser les cron VPS ; les chemins CI, runbooks et apps ont été mis à jour.
+
 2026-07-23 15:40 — [git, automation] **Soumission et fusion des PR automatisables pour les agents** — Ajout de `pnpm pr:submit` (`scripts/agent/submit-pr.sh`) : vérification de branche et worktree propre, push, création/réutilisation de la PR puis demande d’auto-merge squash. `AGENTS.md` documente désormais cette commande ; `main` conserve les checks obligatoires API, Dashboard, Connect, packages, Secret Scanning et CodeQL. Le dépôt GitHub autorise désormais l’auto-merge et supprime les branches distantes après fusion.
 
 2026-07-23 14:55 — [voice, hotfix] **Qualité du dernier appel corrigée, prête au déploiement** — L’extraction du nom coupe maintenant les consignes internes du prompt : l’accueil ne peut plus prononcer « L’accueil a déjà été prononcé… ». Lorsque la disponibilité ne retourne aucun créneau vérifié, la réponse propose le gérant ou la prise de message, sans inventer d’alternative. Après une réponse STT ambiguë au nombre de personnes, l’assistant demande explicitement de le préciser. L’allowlist d’enregistrement demeure le double verrou ; `test-resto-1` doit être ajouté à `CALL_RECORDING_TEST_RESTAURANT_IDS` en production. Tests du contrôleur 24/24 et lint API verts ; typecheck global bloqué par un fixture floor-plan existant hors périmètre. Déploiement production en attente.

@@ -12,8 +12,8 @@ export NEXT_TELEMETRY_DISABLED=1
 # git pack-objects peut planter avec SIGBUS (signal 10) si le swap est saturé,
 # même avec pack.threads=1. On warn, on ne fail pas (le fix est déjà en place
 # via git config --global pack.threads 1).
-if [ -x "$ROOT/scripts/check-memory.sh" ]; then
-  bash "$ROOT/scripts/check-memory.sh" warn || true
+if [ -x "$ROOT/scripts/quality/check-memory.sh" ]; then
+  bash "$ROOT/scripts/quality/check-memory.sh" warn || true
 fi
 
 BASE_REF="${SOKAR_BASE_REF:-origin/main}"

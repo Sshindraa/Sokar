@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 4001",
-    "build": "bash ../../scripts/guard-next-build.sh 4001 widget && next build",
+    "build": "bash ../../scripts/build/guard-next-build.sh 4001 widget && next build",
     "start": "next start -p 4001",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",

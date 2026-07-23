@@ -2,8 +2,8 @@
 # Sauvegarde PostgreSQL production avec vérification par restauration temporaire.
 #
 # Usage:
-#   bash scripts/backup-postgres.sh
-#   BACKUP_DIR=/var/backups/sokar RETENTION_DAYS=14 bash scripts/backup-postgres.sh
+#   bash scripts/database/backup-postgres.sh
+#   BACKUP_DIR=/var/backups/sokar RETENTION_DAYS=14 bash scripts/database/backup-postgres.sh
 
 set -euo pipefail
 

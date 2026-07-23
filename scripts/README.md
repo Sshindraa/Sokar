@@ -1,39 +1,34 @@
 # Scripts Sokar
 
-Ce dossier doit rester petit et lisible. Avant d'ajouter un script, vérifie s'il
-peut être une commande `package.json`, une tâche CI, ou une note de runbook.
+Ce dossier contient uniquement les entrées d'exploitation et les helpers
+réutilisables du monorepo. Les procédures ponctuelles et historiques sont
+conservées dans [`docs/archive/operations/`](../docs/archive/operations/).
 
-## Surface officielle
+## Entrées publiques
 
-Ces scripts sont les chemins stables utilisés par les hooks, le déploiement ou
-les opérations de production récurrentes :
+Ces chemins sont stables et peuvent être appelés depuis la CI, les runbooks ou
+les commandes `package.json` :
 
-- `deploy-vps.sh` — déploiement production VPS (avec release dirs + rollback).
-  - `deploy-vps.sh [branch]` — déploiement normal (snapshot pré/post build).
-  - `deploy-vps.sh rollback [timestamp]` — rollback vers une release précédente.
-- `backup-postgres.sh` — backup PostgreSQL local avec vérification.
-- `backup-postgres-r2.sh` — backup PostgreSQL offsite vers Cloudflare R2 (SHA256, quota, rotation).
-- `deploy-r2-backup.sh` — déploie le backup R2 + rclone + cron sur le VPS.
-- `restore-postgres-backup.sh` — restauration contrôlée d'un dump (garde anti-prod, `SKIP_PROD_GUARD=1` pour P0).
-- `test-restore-vierge.sh` — prouve le restore bout-en-bout sur une base vierge depuis R2.
-- `check-memory.sh` — garde-fou mémoire local.
-- `precommit-review.sh` — hook pre-commit.
-- `prepush-quality-gate.sh` — hook pre-push.
-- `agent/submit-pr.sh` — pousse la branche courante, crée/réutilise sa PR et demande l'auto-merge squash après CI (`pnpm pr:submit`).
+- `deploy-vps.sh` — déploiement production avec releases, snapshots et rollback.
+- `deploy-staging.sh` — déploiement staging et smoke checks.
+- `precommit-review.sh` — garde-fous secrets et code dangereux avant commit.
+- `prepush-quality-gate.sh` — vérifications ciblées avant push.
+- `backup-postgres-r2.sh` — shim de compatibilité pour l'ancien cron VPS ; les nouvelles installations utilisent `database/backup-postgres-r2.sh`.
+- `agent/submit-pr.sh` — soumission et auto-merge des PR d'agents.
 
-## Sous-dossiers
+## Organisation
 
-- `ops/` — scripts one-shot d'installation ou de durcissement infra.
-- `smoke/` — outils manuels (dogfood IA, simulation voice, bridge MCP stdio, diagnostic clés API). Pas des tests automatisés — la couverture MCP/OAuth est dans `apps/api/src/modules/agentic-reservations/__tests__/` (Vitest).
-- `sql/` — requêtes SQL opérationnelles ou d'urgence.
-- `agent/` — automatisations liées aux agents locaux.
+- `build/` — helpers Next.js (`copy-static.sh`, `guard-next-build.sh`).
+- `database/` — sauvegarde, restauration et test de restauration PostgreSQL/R2.
+- `ops/` — installation et exploitation VPS, watchdog, TLS, staging et R2.
+- `quality/` — diagnostics locaux utilisés par les hooks.
+- `smoke/` — diagnostics manuels voix, MCP et dogfood ; ce ne sont pas des tests CI.
+- `sql/` — requêtes d'audit ou d'urgence, à exécuter avec validation explicite.
+- `agent/` — outils d'automatisation pour les agents IA.
 
-## Règle anti-cumul
+## Règle d'ajout
 
-Ajoute un nouveau script seulement si les trois points sont vrais :
-
-1. la commande sera réutilisée ;
-2. elle a un propriétaire clair (`prod`, `dev`, `smoke`, `agent`, `sql`) ;
-3. elle est référencée depuis ce README, `package.json`, un hook, ou un runbook.
-
-Sinon, garde la commande dans la documentation du runbook concerné.
+Avant d'ajouter un script, vérifier si une commande `package.json`, une tâche CI
+ou un runbook suffit. Un nouveau script doit être réutilisable, avoir un
+propriétaire (`build`, `database`, `ops`, `quality`, `smoke`, `sql` ou `agent`)
+et être référencé ici ou dans son runbook.

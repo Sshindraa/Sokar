@@ -39,7 +39,9 @@ hermes -z "task" # one-shot agent task
 
 ## Ops scripts
 
-- `scripts/deploy-gift-cards-prod.sh` — manual backfill of gift-card short codes on production.
+Les entrées d'exploitation sont regroupées dans [`scripts/README.md`](scripts/README.md).
+Les procédures historiques, comme l'ancien déploiement ponctuel des cartes-cadeaux,
+sont archivées sous `docs/archive/operations/` et ne constituent pas une surface de production.
 
 ## Agent context
 
