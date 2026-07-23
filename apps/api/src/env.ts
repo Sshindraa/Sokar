@@ -102,6 +102,8 @@ const EnvSchema = z
     TELNYX_API_KEY: z.string().optional(),
     // Enregistrements d'appels : opt-in explicite, stockage S3-compatible privé.
     CALL_RECORDING_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Liste CSV des seuls restaurants de test autorisés à lancer un enregistrement.
+    CALL_RECORDING_TEST_RESTAURANT_IDS: z.string().optional(),
     CALL_RECORDINGS_BUCKET: z.string().min(1).optional(),
     CALL_RECORDINGS_REGION: z.string().default('eu-west-3'),
     CALL_RECORDINGS_ENDPOINT: z.string().url().optional(),

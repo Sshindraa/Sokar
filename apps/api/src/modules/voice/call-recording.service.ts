@@ -14,6 +14,18 @@ export function isCallRecordingEnabled(): boolean {
   return process.env.CALL_RECORDING_ENABLED === 'true';
 }
 
+export function isTestCallRecordingEnabled(restaurantId: string): boolean {
+  if (!isCallRecordingEnabled()) return false;
+
+  const allowedRestaurantIds = new Set(
+    (process.env.CALL_RECORDING_TEST_RESTAURANT_IDS ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  return allowedRestaurantIds.has(restaurantId);
+}
+
 function bucket(): string {
   const value = process.env.CALL_RECORDINGS_BUCKET;
   if (!value) throw new Error('CALL_RECORDINGS_BUCKET not configured');
@@ -50,13 +62,12 @@ export interface SavedRecordingJobData {
   readonly endedAt?: string;
 }
 
-export async function startCallRecordingAfterConsent(session: CallSession): Promise<void> {
-  if (!isCallRecordingEnabled()) return;
+export async function startTestCallRecording(session: CallSession): Promise<void> {
+  if (!isTestCallRecordingEnabled(session.restaurantId)) return;
 
   const apiKey = process.env.TELNYX_API_KEY;
   if (!apiKey) throw new Error('TELNYX_API_KEY not configured');
 
-  const consentAnnouncedAt = new Date();
   const response = await fetch(
     `https://api.telnyx.com/v2/calls/${encodeURIComponent(session.callControlId)}/actions/record_start`,
     {
@@ -75,7 +86,6 @@ export async function startCallRecordingAfterConsent(session: CallSession): Prom
       where: { callSid: session.callLegId },
       data: {
         recordingStatus: 'FAILED',
-        recordingConsentAnnouncedAt: consentAnnouncedAt,
         recordingError: `Telnyx record_start ${response.status}: ${detail}`.slice(0, 500),
       },
     });
@@ -86,7 +96,6 @@ export async function startCallRecordingAfterConsent(session: CallSession): Prom
     where: { callSid: session.callLegId },
     data: {
       recordingStatus: 'PENDING',
-      recordingConsentAnnouncedAt: consentAnnouncedAt,
       recordingError: null,
     },
   });

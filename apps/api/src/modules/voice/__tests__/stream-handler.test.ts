@@ -70,8 +70,7 @@ vi.mock('../../../shared/sentry/client', () => ({
 }));
 
 vi.mock('../call-recording.service', () => ({
-  isCallRecordingEnabled: vi.fn().mockReturnValue(false),
-  startCallRecordingAfterConsent: vi.fn().mockResolvedValue(undefined),
+  startTestCallRecording: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../../shared/db/client', () => ({
@@ -88,8 +87,14 @@ vi.mock('../../../shared/db/client', () => ({
 
 // ── Imports under test ─────────────────────────────────────────────────────
 
-import { registerMediaStreamRoutes } from '../stream/handler';
+import { buildInitialGreeting, registerMediaStreamRoutes } from '../stream/handler';
 import { sendAudioToDeepgram, closeDeepgram } from '../stream/deepgram-bridge';
+
+describe('buildInitialGreeting', () => {
+  it('accueille naturellement sans identité virtuelle ni notice d’enregistrement', () => {
+    expect(buildInitialGreeting('Chez Michel')).toBe('Bonjour, ici Chez Michel. Je vous écoute.');
+  });
+});
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

@@ -46,16 +46,11 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   // Optional first-utterance VIP/returning greeting injected by the pipeline
   // (empty string if we don't recognise the caller — see buildReturningGreeting).
   const vipGreeting = ctx.customerGreeting
-    ? `\nGREETING: à ta toute première réponse, ajoute ce fragment APRÈS la règle absolue : "${ctx.customerGreeting}".`
+    ? `\nGREETING: lors de ta première réponse utile, ajoute naturellement ce fragment sans répéter l'accueil : "${ctx.customerGreeting}".`
     : '';
   const minimumGiftCardAmount = ctx.giftCardMinimumAmount ?? 10;
 
-  return `Tu es l'assistant vocal de ${ctx.name}.
-
-RÈGLE ABSOLUE : Au tout début de chaque appel, tu DOIS dire :
-"Bonjour, ${ctx.name}, cet appel peut être enregistré à des fins de qualité de service."${vipGreeting}
-
-Ensuite seulement, tu demandes en quoi tu peux aider.
+  return `Tu es l'assistant vocal de ${ctx.name}. L'accueil a déjà été prononcé avant le premier message de l'appelant. Tu ne le répètes jamais.${vipGreeting}
 
 COMPORTEMENT :
 - Tu réponds uniquement en français

@@ -195,6 +195,7 @@ export async function initFillerCache(): Promise<void> {
 export async function playFiller(
   target: CallSession | WebSocket,
   style: 'CASUAL' | 'FORMAL' | 'WARM',
+  expectedResponseGeneration?: number,
 ): Promise<void> {
   const isSession = typeof target === 'object' && target !== null && 'callControlId' in target;
   const session = isSession ? (target as CallSession) : undefined;
@@ -231,7 +232,13 @@ export async function playFiller(
     const frames = splitTelnyxAudioFrames(audio, fillerEncoding === 'pcm_alaw' ? 'PCMA' : 'PCMU');
     writeDebugLog(`[fillers] Playing filler: "${text}" (${frames.length} frames, 100ms paced)`);
     for (const frame of frames) {
-      if (session && (session.ended || session.state !== 'PROCESSING')) {
+      if (
+        session &&
+        (session.ended ||
+          session.state !== 'PROCESSING' ||
+          (expectedResponseGeneration !== undefined &&
+            session.responseGeneration !== expectedResponseGeneration))
+      ) {
         writeDebugLog(
           `[fillers] Interrupted filler playback due to state change (state=${session.state})`,
         );

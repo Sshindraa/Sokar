@@ -107,7 +107,7 @@ export class CallSessionManager {
     const restaurantName = opts.restaurantName;
     const giftCardMinimumAmount = opts.giftCardMinimumAmount ?? 10;
 
-    const greeting = `Bonjour, ${restaurantName} !`;
+    const greeting = `Bonjour, ici ${restaurantName}. Je vous écoute.`;
 
     const session: CallSession = {
       callControlId: opts.callControlId,
@@ -136,6 +136,7 @@ export class CallSessionManager {
       isSpeaking: false,
       bargeInChunks: 0,
       abortController: null,
+      responseGeneration: 0,
       speculativeLlm: null,
       speculativeTranscript: '',
       speculativeResult: null,
@@ -208,6 +209,9 @@ export class CallSessionManager {
 
   handleBargeIn(session: CallSession): void {
     if (session.state !== 'SPEAKING') return;
+    session.responseGeneration++;
+    session.abortController?.abort();
+    session.abortController = null;
     this.sendTelnyxClear(session);
     this.transition(session, 'LISTENING');
     session.isSpeaking = false;
@@ -222,6 +226,7 @@ export class CallSessionManager {
   // ─── LLM Processing ─────────────────────────────────────────────
 
   async processUtterance(session: CallSession, transcript: string): Promise<string> {
+    const responseGeneration = session.responseGeneration;
     this.transition(session, 'PROCESSING');
     session.turnCount++;
 
@@ -230,7 +235,9 @@ export class CallSessionManager {
 
     const response = await this.callLlm(session, transcript);
 
-    this.transition(session, 'SPEAKING');
+    if (session.responseGeneration === responseGeneration) {
+      this.transition(session, 'SPEAKING');
+    }
     return response;
   }
 
@@ -244,14 +251,19 @@ export class CallSessionManager {
     session: CallSession,
     transcript: string,
     onPhrase: (phrase: string) => Promise<void> | void,
+    signal?: AbortSignal,
   ): Promise<string> {
+    const responseGeneration = session.responseGeneration;
     this.transition(session, 'PROCESSING');
     session.turnCount++;
     session.history.push({ role: 'user', content: transcript });
 
-    const fullText = await this.callLlmStreaming(session, onPhrase);
+    const fullText = await this.callLlmStreaming(session, onPhrase, signal);
+    if (signal?.aborted) throw signal.reason ?? new Error('LLM stream aborted');
 
-    this.transition(session, 'SPEAKING');
+    if (session.responseGeneration === responseGeneration) {
+      this.transition(session, 'SPEAKING');
+    }
     return fullText;
   }
 
@@ -376,6 +388,7 @@ export class CallSessionManager {
   private async callLlmStreaming(
     session: CallSession,
     onPhrase: (phrase: string) => Promise<void> | void,
+    signal?: AbortSignal,
   ): Promise<string> {
     const tools = getRestaurantTools(session.restaurantId);
     const messages = [...session.history];
@@ -387,7 +400,7 @@ export class CallSessionManager {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
         },
-        signal: session.abortController?.signal,
+        signal,
         body: JSON.stringify({
           model: getVoiceLlmModel(),
           messages,
@@ -493,6 +506,7 @@ export class CallSessionManager {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
           },
+          signal,
           body: JSON.stringify({
             model: getVoiceLlmModel(),
             messages,

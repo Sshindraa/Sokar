@@ -20,9 +20,8 @@ describe('buildSystemPrompt', () => {
     const prompt = buildSystemPrompt(baseCtx);
 
     expect(prompt).toContain("Tu es l'assistant vocal de Chez Michel.");
-    expect(prompt).toContain(
-      'Bonjour, Chez Michel, cet appel peut être enregistré à des fins de qualité de service.',
-    );
+    expect(prompt).toContain("L'accueil a déjà été prononcé");
+    expect(prompt).not.toContain('cet appel peut être enregistré');
     expect(prompt).toContain('Lundi : 12:00–14:30');
     expect(prompt).toContain('Dimanche : fermé');
     // Ne doit pas contenir d'extra ni de CRM
@@ -87,20 +86,16 @@ describe('buildSystemPrompt', () => {
     expect(secondLastLine).toBe(customerExtra);
   });
 
-  it('devrait injecter le customerGreeting VIP dans la règle absolue', () => {
+  it('devrait injecter le customerGreeting VIP sans répéter l’accueil', () => {
     const customerGreeting = ', content de vous revoir M. Jean';
     const prompt = buildSystemPrompt({
       ...baseCtx,
       customerGreeting,
     });
 
-    // The absolute rule is preserved and the greeting fragment is appended.
-    expect(prompt).toContain(
-      'Bonjour, Chez Michel, cet appel peut être enregistré à des fins de qualité de service.',
-    );
+    expect(prompt).toContain("L'accueil a déjà été prononcé");
     expect(prompt).toContain(customerGreeting);
-    // It's right after the absolute-rule quote, not at the end.
-    const ruleIdx = prompt.indexOf('à des fins de qualité de service.');
+    const ruleIdx = prompt.indexOf("L'accueil a déjà été prononcé");
     const greetIdx = prompt.indexOf(customerGreeting);
     expect(greetIdx).toBeGreaterThan(ruleIdx);
     expect(greetIdx).toBeLessThan(ruleIdx + 200);

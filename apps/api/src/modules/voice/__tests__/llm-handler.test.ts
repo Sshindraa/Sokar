@@ -9,8 +9,14 @@ vi.mock('../../../shared/logger/pino', () => ({ logger: { error: vi.fn() } }));
 vi.mock('../../../shared/sentry/client', () => ({ captureException: vi.fn() }));
 vi.mock('../stream/debug-log', () => ({ writeDebugLog: vi.fn() }));
 
-import { buildLivenessResponse, queueTtsPlayback, stripRepeatedGreeting } from '../stream/llm-handler';
+import {
+  buildLivenessResponse,
+  handleFluxEvent,
+  queueTtsPlayback,
+  stripRepeatedGreeting,
+} from '../stream/llm-handler';
 import type { CallSession } from '../stream/types';
+import type { CallSessionManager } from '../stream/manager';
 
 const session = {
   systemPrompt: "Tu es l'assistant vocal de Test Restaurant.",
@@ -106,4 +112,38 @@ describe('queueTtsPlayback', () => {
 
     expect(events).toEqual(['next:played']);
   });
+});
+
+describe('handleFluxEvent — interruption pendant le traitement', () => {
+  it.each(['UtteranceStart', 'SpeechResumed'] as const)(
+    '%s invalide définitivement la réponse en préparation',
+    (eventType) => {
+      const abortController = new AbortController();
+      const abortSpy = vi.spyOn(abortController, 'abort');
+      const interruptedSession = {
+        state: 'PROCESSING',
+        responseGeneration: 4,
+        abortController,
+        speculativeLlm: Promise.resolve('ancienne réponse'),
+        speculativeResult: 'ancienne réponse',
+        speculativeTranscript: 'je voudrais réserver',
+      } as CallSession;
+      const mgr = {
+        transition: vi.fn((target: CallSession, state: CallSession['state']) => {
+          target.state = state;
+          return true;
+        }),
+        handleBargeIn: vi.fn(),
+      } as unknown as CallSessionManager;
+
+      handleFluxEvent({ type: eventType }, interruptedSession, mgr);
+
+      expect(abortSpy).toHaveBeenCalledOnce();
+      expect(interruptedSession.responseGeneration).toBe(5);
+      expect(interruptedSession.state).toBe('LISTENING');
+      expect(interruptedSession.speculativeLlm).toBeNull();
+      expect(interruptedSession.speculativeResult).toBeNull();
+      expect(interruptedSession.speculativeTranscript).toBe('');
+    },
+  );
 });

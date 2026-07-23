@@ -280,6 +280,7 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
       session.speculativeLlm = null;
       session.speculativeResult = null;
       session.speculativeTranscript = '';
+      session.onDeepgramEvent?.({ type: 'SpeechResumed' });
       break;
 
     case 'UtteranceEnd': {
@@ -355,11 +356,7 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
           // Flux peut finaliser « Bonjour, je suis Martin » juste avant la suite de la
           // phrase. On laisse une respiration de deux secondes à cette forme incomplète,
           // sans imposer une attente artificielle longue au reste de la conversation.
-          const timeoutMs = endsWithPunctuation
-            ? 400
-            : soundsLikeIdentityIntroduction
-              ? 2000
-              : 800;
+          const timeoutMs = endsWithPunctuation ? 400 : soundsLikeIdentityIntroduction ? 2000 : 800;
 
           // Reset le timer existant (nouveau segment reçu = l'user continue peut-être)
           if (session.speechFinalTimer) {
