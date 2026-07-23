@@ -33,6 +33,30 @@ export function isSessionActiveForTts(session: CallSession, generation?: number)
   );
 }
 
+const TTS_ECHO_TAIL_MS = 600;
+
+/**
+ * Mémorise le texte réellement émis pendant sa durée estimée de lecture.
+ * Le flux entrant Telnyx peut contenir le retour acoustique du haut-parleur
+ * de l'appelant : Deepgram le transcrit alors comme si le client parlait.
+ */
+export function trackAssistantSpeech(
+  session: CallSession,
+  text: string,
+  estimatedDurationMs: number,
+): void {
+  session.assistantSpeech = {
+    text,
+    expiresAt: Date.now() + Math.max(600, estimatedDurationMs) + TTS_ECHO_TAIL_MS,
+  };
+}
+
+function estimateTextSpeechDurationMs(text: string): number {
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  // Débit conservateur de 3,5 mots/s, avec une marge pour la prosodie.
+  return Math.max(700, Math.ceil((words / 3.5) * 1_000));
+}
+
 function persistFirstAudioFrame(session: CallSession): void {
   recordVoiceTurnFirstAudio(session);
   if (!session.latencyTrace || session.latencyTrace.totalE2eMs) return;
@@ -49,6 +73,7 @@ function persistFirstAudioFrame(session: CallSession): void {
 async function sendPacedAudioFrames(
   session: CallSession,
   audio: Buffer,
+  text: string,
   generation?: number,
 ): Promise<number> {
   const frames = splitTelnyxAudioFrames(audio, session.codec);
@@ -56,6 +81,9 @@ async function sendPacedAudioFrames(
 
   for (const frame of frames) {
     if (!isSessionActiveForTts(session, generation)) break;
+    if (framesSent === 0) {
+      trackAssistantSpeech(session, text, frames.length * TTS_PACE_PAUSE_MS);
+    }
     session.telnyxWs.send(
       JSON.stringify({
         event: 'media',
@@ -139,6 +167,7 @@ export function cleanTextForTts(text: string): string {
 }
 
 export async function speakTelnyxNative(session: CallSession, text: string): Promise<void> {
+  trackAssistantSpeech(session, text, estimateTextSpeechDurationMs(text));
   writeDebugLog(`[speakTelnyxNative] Sending native Telnyx TTS speak command for: "${text}"`);
   try {
     const res = await fetch(
@@ -275,7 +304,7 @@ async function speakTtsFragment(
       }
       recordVoiceTurnTtsFirstByte(session);
 
-      const framesSent = await sendPacedAudioFrames(session, cachedBuffer, generation);
+      const framesSent = await sendPacedAudioFrames(session, cachedBuffer, trimmed, generation);
       writeDebugLog(
         `[speakTtsStreamed] Sent ${framesSent} cached audio frames to Telnyx for sentence ${i}`,
       );
@@ -383,6 +412,9 @@ async function speakTtsFragment(
           }
 
           const frame = playbackQueue.shift()!;
+          if (framesSent === 0) {
+            trackAssistantSpeech(session, trimmed, estimateTextSpeechDurationMs(trimmed));
+          }
           session.telnyxWs.send(
             JSON.stringify({
               event: 'media',

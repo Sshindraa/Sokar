@@ -40,6 +40,15 @@ export interface ActiveTtsContext {
   cancel(): void;
 }
 
+/**
+ * Portion de phrase effectivement envoyée vers Telnyx, conservée très
+ * brièvement afin de distinguer son écho acoustique de la voix du client.
+ */
+export interface ActiveAssistantSpeech {
+  text: string;
+  expiresAt: number;
+}
+
 /** Identité minimisée du tour courant pour les logs d'observabilité. */
 export interface VoiceTurnTelemetry {
   id: string;
@@ -142,8 +151,8 @@ export interface CallSession {
   // Barge-in debounce
   /** Nombre de chunks inbound consécutifs reçus pendant SPEAKING */
   bargeInChunks: number;
-  /** True while the initial welcome audio is being played. */
-  greetingActive?: boolean;
+  /** Phrase TTS récemment émise ; utilisée uniquement pour filtrer son écho. */
+  assistantSpeech: ActiveAssistantSpeech | null;
 
   // Annulation LLM
   /** AbortController pour annuler la requête LLM en cours */

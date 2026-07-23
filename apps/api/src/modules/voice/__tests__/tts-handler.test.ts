@@ -64,6 +64,10 @@ describe('speakTtsStreamed — Telnyx RTP framing', () => {
     expect(frames).toHaveLength(2);
     expect(frames.every((frame) => frame.length === TTS_FRAME_BYTES)).toBe(true);
     expect(Buffer.concat(frames)).toEqual(source);
+    expect(session.assistantSpeech?.text).toBe(
+      'Pouvez-vous me donner votre nom, s’il vous plaît ?',
+    );
+    expect(session.assistantSpeech?.expiresAt).toBeGreaterThan(Date.now());
   });
 
   it('pads a partial PCMU frame with the codec silence byte', async () => {

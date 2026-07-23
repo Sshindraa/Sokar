@@ -147,7 +147,7 @@ export class CallSessionManager {
       ttsContext: null,
       currentTurn: null,
       bargeInChunks: 0,
-      greetingActive: true,
+      assistantSpeech: null,
       abortController: null,
       speculativeLlm: null,
       speculativeTranscript: '',
