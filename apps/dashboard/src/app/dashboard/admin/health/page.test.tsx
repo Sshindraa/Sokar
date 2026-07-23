@@ -91,7 +91,7 @@ describe('AdminHealthPage', () => {
     });
 
     expect(screen.getByRole('heading', { name: 'Santé du restaurant' })).toBeInTheDocument();
-    expect(screen.getByText('+33451221528')).toBeInTheDocument();
+    expect(await screen.findByText('+33451221528')).toBeInTheDocument();
     expect(screen.getByText('Martin Dupont')).toBeInTheDocument();
     expect(screen.getByText('Réservation prise')).toBeInTheDocument();
     expect(screen.getByText('SMS de confirmation')).toBeInTheDocument();
