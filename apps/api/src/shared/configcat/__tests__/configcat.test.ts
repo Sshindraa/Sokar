@@ -124,6 +124,7 @@ describe('configcat', () => {
   describe('FLAGS', () => {
     it('exposes the expected stable flag keys', () => {
       expect(FLAGS.VOICE_PIPELINE_ENABLED).toBe('voice_pipeline_enabled');
+      expect(FLAGS.VOICE_TTS_CONTEXT_V2).toBe('voice_tts_context_v2');
       expect(FLAGS.SPECULATIVE_LLM).toBe('speculative_llm');
       expect(FLAGS.RESTAURANT_PLAN).toBe('restaurant_plan');
       expect(FLAGS.NEW_FILLER_SYSTEM_V2).toBe('new_filler_system_v2');

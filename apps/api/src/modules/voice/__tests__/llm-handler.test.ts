@@ -1,18 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-
-vi.mock('../stream/fillers-cache', () => ({ playFiller: vi.fn() }));
-vi.mock('../stream/tts-handler', () => ({
-  isSessionActiveForTts: vi.fn(),
-  speakTtsStreamed: vi.fn(),
-}));
-vi.mock('../../../shared/logger/pino', () => ({ logger: { error: vi.fn() } }));
-vi.mock('../../../shared/sentry/client', () => ({ captureException: vi.fn() }));
-vi.mock('../stream/debug-log', () => ({ writeDebugLog: vi.fn() }));
-
 import {
   buildLivenessResponse,
+  extractRestaurantName,
   handleFluxEvent,
-  queueTtsPlayback,
+  LLM_FILLER_DELAY_MS,
   stripRepeatedGreeting,
 } from '../stream/llm-handler';
 import type { CallSession } from '../stream/types';
@@ -46,6 +37,28 @@ describe('stripRepeatedGreeting', () => {
       stripRepeatedGreeting('Pour combien de personnes souhaitez-vous réserver ?', session),
     ).toBe('Pour combien de personnes souhaitez-vous réserver ?');
   });
+
+  it('retire une relance générique isolée émise après l’accueil', () => {
+    expect(stripRepeatedGreeting('En quoi puis-je vous aider ?', session)).toBe('');
+  });
+
+  it('retire un second bonjour tout en conservant la réponse utile', () => {
+    expect(stripRepeatedGreeting('Bonjour ! Très bien, pour combien de personnes ?', session)).toBe(
+      'Très bien, pour combien de personnes ?',
+    );
+  });
+
+  it('attend une seconde avant un filler de recherche de disponibilité', () => {
+    expect(LLM_FILLER_DELAY_MS).toBe(1_000);
+  });
+});
+
+describe('extractRestaurantName', () => {
+  it('accepte le préfixe de prompt chaleureux', () => {
+    expect(extractRestaurantName("Tu es l'assistant vocal chaleureux de Chez Michel.")).toBe(
+      'Chez Michel',
+    );
+  });
 });
 
 describe('buildLivenessResponse', () => {
@@ -74,46 +87,6 @@ describe('buildLivenessResponse', () => {
   });
 });
 
-describe('queueTtsPlayback', () => {
-  it('joue les phrases dans leur ordre sans mélanger leurs flux audio', async () => {
-    const events: string[] = [];
-    let releaseFirst: (() => void) | undefined;
-    const firstDone = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-
-    const first = queueTtsPlayback(Promise.resolve(), async () => {
-      events.push('first:start');
-      await firstDone;
-      events.push('first:end');
-    });
-    const second = queueTtsPlayback(first, async () => {
-      events.push('second:start');
-      events.push('second:end');
-    });
-
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(events).toEqual(['first:start']);
-    releaseFirst?.();
-    await second;
-
-    expect(events).toEqual(['first:start', 'first:end', 'second:start', 'second:end']);
-  });
-
-  it('continue avec la phrase suivante si une synthèse précédente échoue', async () => {
-    const events: string[] = [];
-    const rejected = Promise.reject(new Error('Cartesia unavailable'));
-    rejected.catch(() => undefined);
-
-    await queueTtsPlayback(rejected, async () => {
-      events.push('next:played');
-    });
-
-    expect(events).toEqual(['next:played']);
-  });
-});
-
 describe('handleFluxEvent — interruption pendant le traitement', () => {
   it.each(['UtteranceStart', 'SpeechResumed'] as const)(
     '%s invalide définitivement la réponse en préparation',
@@ -123,24 +96,27 @@ describe('handleFluxEvent — interruption pendant le traitement', () => {
       const interruptedSession = {
         state: 'PROCESSING',
         responseGeneration: 4,
+        ttsGeneration: 2,
         abortController,
         speculativeLlm: Promise.resolve('ancienne réponse'),
         speculativeResult: 'ancienne réponse',
         speculativeTranscript: 'je voudrais réserver',
+        conversation: { toolInFlight: 'checkAvailability' },
       } as CallSession;
       const mgr = {
         transition: vi.fn((target: CallSession, state: CallSession['state']) => {
           target.state = state;
           return true;
         }),
-        handleBargeIn: vi.fn(),
       } as unknown as CallSessionManager;
 
       handleFluxEvent({ type: eventType }, interruptedSession, mgr);
 
       expect(abortSpy).toHaveBeenCalledOnce();
       expect(interruptedSession.responseGeneration).toBe(5);
+      expect(interruptedSession.ttsGeneration).toBe(3);
       expect(interruptedSession.state).toBe('LISTENING');
+      expect(interruptedSession.conversation.toolInFlight).toBeNull();
       expect(interruptedSession.speculativeLlm).toBeNull();
       expect(interruptedSession.speculativeResult).toBeNull();
       expect(interruptedSession.speculativeTranscript).toBe('');

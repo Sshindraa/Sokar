@@ -3,7 +3,10 @@ import { createHash } from 'node:crypto';
 import type { CallSession, CallState, ChatMessage } from './types';
 import { VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
 import { getRestaurantTools } from '../tools';
-import { ReservationService } from '../../reservations/reservation.service';
+import {
+  ReservationService,
+  type AvailabilityResult,
+} from '../../reservations/reservation.service';
 import { db } from '../../../shared/db/client';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
@@ -13,6 +16,8 @@ import { sendSms } from '../../../shared/telnyx/client';
 import { trackGiftCardEvent } from '../../analytics/events.service';
 import { AuditLogService } from '../../agentic-reservations/core/audit-log.service';
 import { zonedTimeToUtc } from '../../floor-plan/availability-capacity-aware.service';
+import { createConversationState, selectClosestAvailabilitySlots } from './conversation-controller';
+import { recordVoiceTurnEvent } from './turn-telemetry';
 
 interface LlmResponse {
   choices?: Array<{ message: ChatMessage }>;
@@ -92,6 +97,7 @@ export class CallSessionManager {
     to: string;
     restaurantId: string;
     restaurantName: string;
+    timezone?: string;
     /** Montant minimum carte cadeau — défaut 10€ */
     giftCardMinimumAmount?: number;
     systemPrompt: string;
@@ -107,7 +113,7 @@ export class CallSessionManager {
     const restaurantName = opts.restaurantName;
     const giftCardMinimumAmount = opts.giftCardMinimumAmount ?? 10;
 
-    const greeting = `Bonjour, ici ${restaurantName}. Je vous écoute.`;
+    const greeting = `Bonjour, ${restaurantName} !`;
 
     const session: CallSession = {
       callControlId: opts.callControlId,
@@ -117,6 +123,7 @@ export class CallSessionManager {
       to: opts.to,
       restaurantId: opts.restaurantId,
       restaurantName,
+      timezone: opts.timezone ?? 'Europe/Paris',
       giftCardMinimumAmount,
       systemPrompt: opts.systemPrompt,
       state: 'IDLE',
@@ -134,9 +141,13 @@ export class CallSessionManager {
       onDeepgramEvent: null,
       audioBuffer: [],
       isSpeaking: false,
+      ttsPlayback: Promise.resolve(),
+      ttsGeneration: 0,
+      responseGeneration: 0,
+      ttsContext: null,
+      currentTurn: null,
       bargeInChunks: 0,
       abortController: null,
-      responseGeneration: 0,
       speculativeLlm: null,
       speculativeTranscript: '',
       speculativeResult: null,
@@ -146,6 +157,7 @@ export class CallSessionManager {
       lastActivityAt: Date.now(),
       createdAt: Date.now(),
       personality: opts.personality ?? null,
+      conversation: createConversationState(),
     };
     this.sessions.set(sessionIdKey(opts.callControlId), session);
     return session;
@@ -167,6 +179,9 @@ export class CallSessionManager {
     session.ended = true;
     session.state = 'IDLE';
     session.isSpeaking = false;
+    session.ttsGeneration++;
+    session.ttsContext?.cancel();
+    session.ttsContext = null;
     if (session.speechFinalTimer) {
       clearTimeout(session.speechFinalTimer);
       session.speechFinalTimer = null;
@@ -210,11 +225,13 @@ export class CallSessionManager {
   handleBargeIn(session: CallSession): void {
     if (session.state !== 'SPEAKING') return;
     session.responseGeneration++;
-    session.abortController?.abort();
-    session.abortController = null;
+    session.ttsGeneration++;
+    session.ttsContext?.cancel();
+    session.ttsContext = null;
     this.sendTelnyxClear(session);
     this.transition(session, 'LISTENING');
     session.isSpeaking = false;
+    recordVoiceTurnEvent(session, 'barge_in');
     logger.info({ callId: session.callControlId }, '[barge-in] Call interrupted');
   }
 
@@ -224,6 +241,14 @@ export class CallSessionManager {
   }
 
   // ─── LLM Processing ─────────────────────────────────────────────
+
+  async getAvailability(
+    session: CallSession,
+    date: string,
+    partySize: number,
+  ): Promise<AvailabilityResult> {
+    return ReservationService.availability(session.restaurantId, date, partySize);
+  }
 
   async processUtterance(session: CallSession, transcript: string): Promise<string> {
     const responseGeneration = session.responseGeneration;
@@ -476,6 +501,7 @@ export class CallSessionManager {
                 const phrase = match[1].trim();
                 if (phrase) {
                   // Lancer onPhrase sans await pour ne pas bloquer le stream
+                  if (signal?.aborted) continue;
                   Promise.resolve(onPhrase(phrase)).catch((err) =>
                     logger.error({ err }, 'onPhrase failed in sentence-buffered LLM stream'),
                   );
@@ -494,7 +520,7 @@ export class CallSessionManager {
       }
 
       // Yield le reste du buffer s'il reste quelque chose
-      if (sentenceBuffer.trim()) {
+      if (sentenceBuffer.trim() && !signal?.aborted) {
         await onPhrase(sentenceBuffer.trim());
       }
 
@@ -613,17 +639,22 @@ export class CallSessionManager {
         }
 
         case 'checkAvailability': {
-          const { date, partySize } = args;
+          const { date, partySize, time } = args;
 
           try {
-            const result = await ReservationService.availability(
-              session.restaurantId,
-              date,
-              partySize ?? 2,
-            );
+            const result = await this.getAvailability(session, date, partySize ?? 2);
 
             if (result.slots.length === 0) {
               return `Désolé, il n'y a plus de créneaux disponibles le ${date} pour ${partySize ?? 2} personne(s). Le restaurant est soit fermé, soit complet à cette date.`;
+            }
+
+            if (time) {
+              if (result.slots.includes(time)) {
+                return `Le créneau de ${time} est disponible le ${date} pour ${partySize ?? 2} personne(s).`;
+              }
+
+              const alternatives = selectClosestAvailabilitySlots(time, result.slots).join(', ');
+              return `Le créneau de ${time} n'est pas disponible le ${date} pour ${partySize ?? 2} personne(s). Créneaux proches disponibles : ${alternatives}.`;
             }
 
             // Limiter à 8 créneaux pour ne pas noyer l'LLM

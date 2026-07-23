@@ -204,8 +204,7 @@ describe('CallSessionManager — singleton & CRUD', () => {
     expect(session.history).toHaveLength(2);
     expect(session.history[0].role).toBe('system');
     expect(session.history[1].role).toBe('assistant');
-    expect(session.history[1].content).toBe('Bonjour, ici Test Resto. Je vous écoute.');
-    expect(session.responseGeneration).toBe(0);
+    expect(session.history[1].content).toBe('Bonjour, Test Resto !');
   });
 
   it('create utilise giftCardMinimumAmount=10 par défaut', () => {
@@ -295,22 +294,6 @@ describe('CallSessionManager — state machine edge cases', () => {
     mgr.transition(session, 'LISTENING');
     expect(session.lastActivityAt).toBeGreaterThan(before - 1000);
   });
-
-  it('invalide et annule la réponse lors d’un barge-in', () => {
-    const mgr = CallSessionManager.getInstance();
-    const session = makeSession();
-    const abortController = new AbortController();
-    const abortSpy = vi.spyOn(abortController, 'abort');
-    session.abortController = abortController;
-    mgr.transition(session, 'SPEAKING');
-
-    mgr.handleBargeIn(session);
-
-    expect(abortSpy).toHaveBeenCalledOnce();
-    expect(session.abortController).toBeNull();
-    expect(session.responseGeneration).toBe(1);
-    expect(session.state).toBe('LISTENING');
-  });
 });
 
 describe('CallSessionManager — tool execution', () => {
@@ -396,6 +379,23 @@ describe('CallSessionManager — tool execution', () => {
 
     expect(ReservationService.availability).toHaveBeenCalledWith('rest-1', '2026-07-16', 2);
     expect(reply).toBe('Voici les créneaux disponibles.');
+  });
+
+  it('checkAvailability : vérifie le créneau exact demandé', async () => {
+    vi.mocked(ReservationService.availability).mockResolvedValue({
+      slots: ['19:30', '20:00', '20:30'],
+    } as unknown as Awaited<ReturnType<typeof ReservationService.availability>>);
+    mockFetchToolCall(
+      'checkAvailability',
+      { date: '2026-07-16', partySize: 2, time: '20:00' },
+      'Très bien, quel est votre nom ?',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    const reply = await mgr.processUtterance(makeSession(), 'Demain à 20 heures pour deux');
+
+    expect(ReservationService.availability).toHaveBeenCalledWith('rest-1', '2026-07-16', 2);
+    expect(reply).toBe('Très bien, quel est votre nom ?');
   });
 
   it('checkAvailability : retourne message si aucun créneau', async () => {

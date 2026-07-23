@@ -166,9 +166,19 @@ describe('checkAvailability tool', () => {
     });
   });
 
+  it('accepte l’heure demandée sans la rendre obligatoire', () => {
+    expect(params.properties.time).toEqual({
+      type: 'string',
+      pattern: TIME_PATTERN,
+      description: expect.stringContaining('optionnel'),
+    });
+    expect(params.required).not.toContain('time');
+  });
+
   it('description mentions checking availability without booking', () => {
     const desc = tool.function.description.toLowerCase();
     expect(desc).toMatch(/disponib|cr[ée]neau|available/);
+    expect(desc).toContain('même tour');
   });
 });
 

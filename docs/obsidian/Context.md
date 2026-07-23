@@ -2,6 +2,8 @@
 
 ## Dernière activité
 
+2026-07-23 12:22 — [voice, canary] **Context V2 Cartesia isolé après le correctif d'interruptions** — La branche `codex/voice-context-v2-canary`, fondée sur `main` fusionné (`e6b4abe`), ajoute le contexte WebSocket Cartesia par réponse LLM, le contrôleur conversationnel et la télémétrie par tour. L'activation exige `VOICE_TTS_CONTEXT_V2_ENABLED=true` et le flag ConfigCat `voice_tts_context_v2` pour le restaurant ciblé ; HTTP `/tts/bytes` reste le chemin par défaut. Suite API complète 1 395/1 395 (6 ignorés), voix 273/273, typecheck, lint et `git diff --check` verts. Aucun déploiement ni activation effectués.
+
 2026-07-23 — [ops, staging] **Récupération staging durcie après health checks en échec** — Le script valide le secret HMAC Service Copilot avant d’arrêter Dashboard/Connect, conserve explicitement le code d’échec et restaure les services dès qu’un health check API, livez, Dashboard ou Connect échoue, avant toute rotation des snapshots. `bash -n` vert. Aucun déploiement.
 
 2026-07-23 — [voice, api, git] **Correctifs voix isolés depuis `origin/main`** — Branche propre limitée à l’accueil « Bonjour, ici … Je vous écoute. », l’enregistrement temporaire soumis au double verrou activation + allowlist restaurant, et l’invalidation par génération des réponses interrompues. `UtteranceStart`, `SpeechResumed` et le barge-in annulent le réseau, les fillers, les callbacks LLM et les trames TTS obsolètes. La suite du dernier `main` passe de 227 à 232 tests voix, tous verts ; typecheck et lint API verts. Les tests canary qui portaient le total local mélangé à 263 sont volontairement exclus. Aucun déploiement.

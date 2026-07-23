@@ -187,6 +187,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           to: payload.to,
           restaurantId: ctx.id,
           restaurantName: ctx.name,
+          timezone: ctx.timezone,
           giftCardMinimumAmount: ctx.giftCardMinimumAmount ?? undefined,
           systemPrompt,
           isVip: customer?.isVip ?? false,

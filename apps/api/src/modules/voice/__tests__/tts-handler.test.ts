@@ -20,7 +20,7 @@ vi.mock('../stream/session-persistence', () => ({
 }));
 
 import { getTtsCached } from '../tts-cache';
-import { speakTtsStreamed } from '../stream/tts-handler';
+import { cleanTextForTts, getInterSentencePauseMs, speakTtsStreamed } from '../stream/tts-handler';
 import { TTS_FRAME_BYTES } from '../stream/constants';
 
 const setEnv = (key: string, value: string): void => {
@@ -38,7 +38,6 @@ function makeSession(codec: 'PCMA' | 'PCMU' = 'PCMA'): CallSession {
       send: vi.fn(),
     },
     latencyTrace: undefined,
-    responseGeneration: 0,
   } as unknown as CallSession;
 }
 
@@ -82,14 +81,55 @@ describe('speakTtsStreamed — Telnyx RTP framing', () => {
     expect(secondFrame.subarray(3)).toEqual(Buffer.alloc(TTS_FRAME_BYTES - 3, 0xff));
   });
 
-  it('does not play audio produced by a stale response generation', async () => {
-    vi.mocked(getTtsCached).mockResolvedValue(Buffer.alloc(TTS_FRAME_BYTES, 0x55));
+  it('serialises two fragments streamed by the LLM on the same call', async () => {
+    const first = Buffer.alloc(TTS_FRAME_BYTES, 0x11);
+    const second = Buffer.alloc(TTS_FRAME_BYTES, 0x22);
+    vi.mocked(getTtsCached).mockImplementation(async (text) =>
+      text.startsWith('Première') ? first : second,
+    );
     const session = makeSession();
-    session.responseGeneration = 2;
 
-    await speakTtsStreamed(session, 'Ancienne réponse.', 1);
+    await Promise.all([
+      speakTtsStreamed(session, 'Première phrase.'),
+      speakTtsStreamed(session, 'Deuxième phrase.'),
+    ]);
 
-    expect(getTtsCached).not.toHaveBeenCalled();
-    expect(session.telnyxWs.send).not.toHaveBeenCalled();
+    const frames = vi
+      .mocked(session.telnyxWs.send)
+      .mock.calls.map(([message]) =>
+        Buffer.from(JSON.parse(message as string).media.payload, 'base64'),
+      );
+    expect(frames).toEqual([first, second]);
+  });
+
+  it('does not resume a stale fragment after a barge-in generation change', async () => {
+    vi.mocked(getTtsCached).mockResolvedValue(Buffer.alloc(TTS_FRAME_BYTES, 0x11));
+    const session = makeSession();
+    (session as unknown as { ttsGeneration: number }).ttsGeneration = 0;
+
+    const stalePlayback = speakTtsStreamed(session, 'Réponse interrompue.');
+    (session as unknown as { ttsGeneration: number }).ttsGeneration = 1;
+    await stalePlayback;
+
+    expect(vi.mocked(session.telnyxWs.send)).not.toHaveBeenCalled();
+  });
+});
+
+describe('prosodie TTS', () => {
+  it('normalise les heures courantes avant synthèse', () => {
+    expect(cleanTextForTts('Rendez-vous à 19:30, ou 20h30.')).toBe(
+      'Rendez-vous à 19 heures 30, ou 20 heures 30.',
+    );
+  });
+
+  it('rend les numéros, abréviations et symboles non ambigus à l’oral', () => {
+    expect(cleanTextForTts('Mme Martin : 06 12 34 56 78, menu à 25€ & -10%.')).toBe(
+      'Madame Martin : 06, 12, 34, 56, 78, menu à 25 euros et -10 pour cent.',
+    );
+  });
+
+  it('marque plus la transition après une question ou une exclamation', () => {
+    expect(getInterSentencePauseMs('Quel est votre nom ?')).toBe(140);
+    expect(getInterSentencePauseMs('Très bien.')).toBe(100);
   });
 });

@@ -22,21 +22,19 @@ import {
   TTS_PACE_PAUSE_MS,
 } from './constants';
 import { splitTelnyxAudioFrames } from './audio-frames';
+import { recordVoiceTurnFirstAudio, recordVoiceTurnTtsFirstByte } from './turn-telemetry';
 
-export function isSessionActiveForTts(
-  session: CallSession,
-  expectedResponseGeneration?: number,
-): boolean {
+export function isSessionActiveForTts(session: CallSession, generation?: number): boolean {
   return (
     !session.ended &&
     session.state === 'SPEAKING' &&
     session.telnyxWs.readyState === WebSocket.OPEN &&
-    (expectedResponseGeneration === undefined ||
-      session.responseGeneration === expectedResponseGeneration)
+    (generation === undefined || (session.ttsGeneration ?? 0) === generation)
   );
 }
 
 function persistFirstAudioFrame(session: CallSession): void {
+  recordVoiceTurnFirstAudio(session);
   if (!session.latencyTrace || session.latencyTrace.totalE2eMs) return;
 
   session.latencyTrace.totalE2eMs = Date.now() - session.latencyTrace.startTime;
@@ -51,13 +49,13 @@ function persistFirstAudioFrame(session: CallSession): void {
 async function sendPacedAudioFrames(
   session: CallSession,
   audio: Buffer,
-  expectedResponseGeneration?: number,
+  generation?: number,
 ): Promise<number> {
   const frames = splitTelnyxAudioFrames(audio, session.codec);
   let framesSent = 0;
 
   for (const frame of frames) {
-    if (!isSessionActiveForTts(session, expectedResponseGeneration)) break;
+    if (!isSessionActiveForTts(session, generation)) break;
     session.telnyxWs.send(
       JSON.stringify({
         event: 'media',
@@ -88,6 +86,12 @@ export function addNaturalPauses(text: string): string {
   return result;
 }
 
+/** Pause ajoutée entre deux synthèses déjà ponctuées par Cartesia. */
+export function getInterSentencePauseMs(previousSentence: string): number {
+  if (/[!?…]\s*$/.test(previousSentence)) return 140;
+  return 100;
+}
+
 export function cleanTextForTts(text: string): string {
   let cleaned = text;
 
@@ -103,10 +107,27 @@ export function cleanTextForTts(text: string): string {
   cleaned = cleaned.replace(/__([^_]+)__/g, '$1');
   cleaned = cleaned.replace(/_([^_]+)_/g, '$1');
 
-  // 3. Normalise time patterns (e.g. 19h -> 19 heures)
+  // 3. Développe les symboles et abréviations qui sonnent artificiellement
+  // lorsqu'ils sont lus littéralement par un moteur TTS.
+  cleaned = cleaned
+    .replace(/&/g, ' et ')
+    .replace(/€/g, ' euros')
+    .replace(/%/g, ' pour cent')
+    .replace(/\bMme\.?\s/gi, 'Madame ')
+    .replace(/\bM\.\s/g, 'Monsieur ');
+
+  // 4. Rend un numéro français lisible en groupes. Les virgules laissent une
+  // micro-pause sans transformer le numéro en une suite de chiffres isolés.
+  cleaned = cleaned.replace(
+    /(?<!\d)(0[1-9])[ .-]?(\d{2})[ .-]?(\d{2})[ .-]?(\d{2})[ .-]?(\d{2})(?!\d)/g,
+    '$1, $2, $3, $4, $5',
+  );
+
+  // 5. Normalise les heures pour une prononciation téléphonique fluide.
+  cleaned = cleaned.replace(/\b([01]?\d|2[0-3])\s*(?:h|:)\s*([0-5]\d)\b/gi, '$1 heures $2');
   cleaned = cleaned.replace(/\b(\d+)\s*h\b/g, '$1 heures');
 
-  // 4. Space out alphanumeric codes (e.g. BB344719 -> B. B. 3. 4. 4. 7. 1. 9.)
+  // 6. Space out alphanumeric codes (e.g. BB344719 -> B. B. 3. 4. 4. 7. 1. 9.)
   cleaned = cleaned.replace(/\b([A-Z0-9]{5,})\b/g, (match) => {
     if (/\d/.test(match)) {
       return match.split('').join('. ');
@@ -114,7 +135,7 @@ export function cleanTextForTts(text: string): string {
     return match;
   });
 
-  return cleaned.trim();
+  return cleaned.replace(/\s{2,}/g, ' ').trim();
 }
 
 export async function speakTelnyxNative(session: CallSession, text: string): Promise<void> {
@@ -148,19 +169,44 @@ export async function speakTelnyxNative(session: CallSession, text: string): Pro
 }
 
 /**
- * Découpe le texte en phrases pour un streaming progressif.
- * Envoie chaque phrase séparément à Cartesia avec un délai inter-phrase
- * pour un rendu plus naturel.
- * Consomme le stream HTTP de Cartesia au fil de l'eau.
+ * Met un fragment TTS dans la file de lecture de l'appel.
+ *
+ * Le LLM stream peut livrer la phrase suivante pendant que Cartesia lit la
+ * précédente. Sans cette file, les deux producteurs écrivent simultanément
+ * sur le Media Stream Telnyx et la voix devient inintelligible. La tâche
+ * suivante vérifie l'état de session à son démarrage : un barge-in annule
+ * donc naturellement les fragments encore en attente.
  */
-export async function speakTtsStreamed(
+export async function speakTtsStreamed(session: CallSession, text: string): Promise<void> {
+  const previousPlayback = session.ttsPlayback ?? Promise.resolve();
+  const generation = session.ttsGeneration ?? 0;
+  const playback = previousPlayback
+    .catch((err: unknown) => {
+      logger.warn(
+        { err, callId: session.callControlId },
+        '[speakTtsStreamed] Previous queued TTS playback failed',
+      );
+    })
+    .then(() => speakTtsFragment(session, text, generation));
+
+  // Conserver une chaîne résiliente : une erreur d'un fragment ne doit pas
+  // empêcher les suivants d'être prononcés.
+  session.ttsPlayback = playback.catch(() => undefined);
+  return playback;
+}
+
+/**
+ * Découpe un fragment en phrases et consomme le stream HTTP de Cartesia.
+ * Cette fonction est appelée exclusivement via {@link speakTtsStreamed}.
+ */
+async function speakTtsFragment(
   session: CallSession,
   text: string,
-  expectedResponseGeneration?: number,
+  generation: number,
 ): Promise<void> {
   const cleanedText = cleanTextForTts(text);
   if (!cleanedText) return;
-  if (!isSessionActiveForTts(session, expectedResponseGeneration)) {
+  if (!isSessionActiveForTts(session, generation)) {
     writeDebugLog(
       `[speakTtsStreamed] Session inactive, state=${session.state}, ended=${session.ended}, skipping synthesis`,
     );
@@ -197,18 +243,18 @@ export async function speakTtsStreamed(
     const sentence = sentences[i];
     const trimmed = sentence.trim();
     if (!trimmed) continue;
-    if (!isSessionActiveForTts(session, expectedResponseGeneration)) {
+    if (!isSessionActiveForTts(session, generation)) {
       writeDebugLog(`[speakTtsStreamed] Session inactive before sentence ${i}, stopping`);
       break;
     }
 
-    // Pause inter-phrase (sauf pour la première)
-    // 80ms : pause naturelle suffisante entre phrases, sans ajouter de latence perçue.
-    // (précédemment 150ms — réduit pour améliorer la réactivité perçue)
+    // Pause inter-phrase (sauf pour la première), complémentaire à la prosodie
+    // déjà produite par Cartesia : question/exclamation légèrement plus marquée.
     if (i > 0) {
-      writeDebugLog(`[speakTtsStreamed] Inter-sentence pause of 80ms...`);
-      await new Promise((r) => setTimeout(r, 80));
-      if (!isSessionActiveForTts(session, expectedResponseGeneration)) {
+      const pauseMs = getInterSentencePauseMs(sentences[i - 1]);
+      writeDebugLog(`[speakTtsStreamed] Inter-sentence pause of ${pauseMs}ms...`);
+      await new Promise((r) => setTimeout(r, pauseMs));
+      if (!isSessionActiveForTts(session, generation)) {
         writeDebugLog(`[speakTtsStreamed] Session inactive after pause, breaking loop`);
         break;
       }
@@ -227,12 +273,9 @@ export async function speakTtsStreamed(
       if (session.latencyTrace && !session.latencyTrace.ttsFirstByteMs) {
         session.latencyTrace.ttsFirstByteMs = Date.now() - session.latencyTrace.startTime;
       }
+      recordVoiceTurnTtsFirstByte(session);
 
-      const framesSent = await sendPacedAudioFrames(
-        session,
-        cachedBuffer,
-        expectedResponseGeneration,
-      );
+      const framesSent = await sendPacedAudioFrames(session, cachedBuffer, generation);
       writeDebugLog(
         `[speakTtsStreamed] Sent ${framesSent} cached audio frames to Telnyx for sentence ${i}`,
       );
@@ -316,7 +359,7 @@ export async function speakTtsStreamed(
         let framesSent = 0;
         let playbackStarted = false;
         while (true) {
-          if (!isSessionActiveForTts(session, expectedResponseGeneration)) {
+          if (!isSessionActiveForTts(session, generation)) {
             writeDebugLog(`[speakTtsStreamed] Session inactive during stream playback, stopping`);
             break;
           }
@@ -374,6 +417,7 @@ export async function speakTtsStreamed(
           if (session.latencyTrace && !session.latencyTrace.ttsFirstByteMs) {
             session.latencyTrace.ttsFirstByteMs = Date.now() - session.latencyTrace.startTime;
           }
+          recordVoiceTurnTtsFirstByte(session);
         }
 
         const rawChunk = Buffer.from(value);
