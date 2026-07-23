@@ -16,6 +16,11 @@ const TestCallSchema = z.object({
     .optional(),
 });
 
+const provisioningMutationRateLimit = {
+  max: 30,
+  timeWindow: '1 minute',
+} as const;
+
 export async function provisioningRoutes(app: FastifyInstance) {
   // Liste des numéros Telnyx disponibles dans l'inventaire
   app.get(
@@ -89,7 +94,7 @@ export async function provisioningRoutes(app: FastifyInstance) {
   // 1. Attribution d'un numéro Telnyx à un restaurant
   app.post<{ Params: { restaurantId: string } }>(
     '/admin/provisioning/:restaurantId/assign-phone',
-    { preHandler: requireOrg() },
+    { preHandler: requireOrg(), config: { rateLimit: provisioningMutationRateLimit } },
     async (req, reply) => {
       const { restaurantId } = req.params;
       const body = AssignPhoneSchema.parse(req.body ?? {});
@@ -116,7 +121,7 @@ export async function provisioningRoutes(app: FastifyInstance) {
   // 2. Vérification du Webhook & activation du renvoi
   app.post<{ Params: { restaurantId: string } }>(
     '/admin/provisioning/:restaurantId/verify-webhook',
-    { preHandler: requireOrg() },
+    { preHandler: requireOrg(), config: { rateLimit: provisioningMutationRateLimit } },
     async (req, reply) => {
       const { restaurantId } = req.params;
 
@@ -138,7 +143,7 @@ export async function provisioningRoutes(app: FastifyInstance) {
   // 3. Déclenchement de l'appel test & validation
   app.post<{ Params: { restaurantId: string } }>(
     '/admin/provisioning/:restaurantId/test-call',
-    { preHandler: requireOrg() },
+    { preHandler: requireOrg(), config: { rateLimit: provisioningMutationRateLimit } },
     async (req, reply) => {
       const { restaurantId } = req.params;
       const body = TestCallSchema.parse(req.body ?? {});
@@ -175,7 +180,7 @@ export async function provisioningRoutes(app: FastifyInstance) {
   // 4. Finaliser et marquer le pilote comme 100% actif
   app.post<{ Params: { restaurantId: string } }>(
     '/admin/provisioning/:restaurantId/complete',
-    { preHandler: requireOrg() },
+    { preHandler: requireOrg(), config: { rateLimit: provisioningMutationRateLimit } },
     async (req, reply) => {
       const { restaurantId } = req.params;
 
