@@ -236,7 +236,7 @@ En cas de problème grave (P0) :
 
 Scripts SQL d'urgence :
 
-- `scripts/sql/emergency-disable.sql` (existe)
+- `infra/sql/emergency-disable.sql` (existe)
 - `scripts/reactivation.sql` (à créer)
 
 ---

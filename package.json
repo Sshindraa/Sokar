@@ -21,7 +21,7 @@
     "infra:up": "docker compose --env-file .env.local -f infra/docker-compose.yml up -d",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "infra:logs": "docker compose -f infra/docker-compose.yml logs -f",
-    "test:diagnostic": "node scripts/smoke/test-stt-tts.mjs",
+    "test:diagnostic": "node tools/diagnostics/test-stt-tts.mjs",
     "tunnel:status": "cloudflared tunnel info sokar",
     "tunnel:logs": "tail -n 50 -f ~/Library/Logs/com.cloudflare.cloudflared.err.log",
     "redis:start": "brew services start redis",
@@ -32,7 +32,7 @@
     "verify:prepush": "scripts/prepush-quality-gate.sh",
     "verify:ai": "scripts/agent/hermes-diff-review.sh head",
     "pr:submit": "scripts/agent/submit-pr.sh",
-    "dogfood:sokar": "scripts/smoke/dogfood-sokar.sh",
+    "dogfood:sokar": "tools/diagnostics/dogfood-sokar.sh",
     "deploy:prod": "ssh deploy@pmbtc 'cd /opt/sokar && git pull origin main && bash scripts/deploy-vps.sh --confirm-production'",
     "deploy:staging": "ssh deploy@pmbtc 'cd /opt/sokar-staging && git pull origin main && bash scripts/deploy-staging.sh'"
   },

@@ -429,7 +429,7 @@ pnpm db:seed
 cd ~/Projects/Sokar/apps/api
 SOKAR_MCP_KEY="sk_sokar_agent_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
 PATH="/usr/local/opt/node@22/bin:$PATH" \
-pnpm --filter @sokar/api exec tsx ../../scripts/smoke/test-mcp-client.ts
+pnpm --filter @sokar/api exec tsx ../../tools/diagnostics/test-mcp-client.ts
 ```
 
 Le client de test exécute:
@@ -454,7 +454,7 @@ cd ~/Projects/Sokar/apps/api
 SOKAR_API_BASE="http://localhost:4000" \
 SOKAR_MCP_KEY="sk_sokar_agent_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
 PATH="/usr/local/opt/node@22/bin:$PATH" \
-pnpm --filter @sokar/api exec tsx ../../scripts/smoke/sokar-mcp-stdio.ts
+pnpm --filter @sokar/api exec tsx ../../tools/diagnostics/sokar-mcp-stdio.ts
 ```
 
 Exemple `claude_desktop_config.json`:
@@ -469,7 +469,7 @@ Exemple `claude_desktop_config.json`:
         "~/Projects/Sokar/apps/api",
         "exec",
         "tsx",
-        "../../scripts/smoke/sokar-mcp-stdio.ts"
+        "../../tools/diagnostics/sokar-mcp-stdio.ts"
       ],
       "env": {
         "PATH": "/usr/local/opt/node@22/bin:/usr/local/bin:/usr/bin:/bin",

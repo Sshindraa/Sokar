@@ -22,9 +22,10 @@ les commandes `package.json` :
 - `database/` — sauvegarde, restauration et test de restauration PostgreSQL/R2.
 - `ops/` — installation et exploitation VPS, watchdog, TLS, staging et R2.
 - `quality/` — diagnostics locaux utilisés par les hooks.
-- `smoke/` — diagnostics manuels voix, MCP et dogfood ; ce ne sont pas des tests CI.
-- `sql/` — requêtes d'audit ou d'urgence, à exécuter avec validation explicite.
 - `agent/` — outils d'automatisation pour les agents IA.
+
+Les diagnostics manuels voix/MCP et dogfood vivent sous `tools/diagnostics/` ;
+les requêtes SQL d'audit et d'urgence vivent sous `infra/sql/`.
 
 ## Règle d'ajout
 
