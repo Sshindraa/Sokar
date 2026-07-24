@@ -37,35 +37,47 @@ export function buildGreetingText(restaurantName: string): string {
 /**
  * Génère une phrase via Cartesia TTS (format PCMA 8kHz, compatible Telnyx).
  * Utilise l'endpoint /tts/bytes (HTTP, non-streaming) pour simplicité.
+ *
+ * Retry automatique sur 429 (concurrency limit free tier = 2) avec backoff
+ * exponentiel : 500ms, 1000ms, 2000ms.
  */
-async function generateSentenceAudio(
-  text: string,
-  voiceId: string,
-): Promise<Buffer> {
-  const response = await fetch('https://api.cartesia.ai/tts/bytes', {
-    method: 'POST',
-    headers: {
-      'Cartesia-Version': '2026-03-01',
-      'X-API-Key': process.env.CARTESIA_API_KEY ?? '',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model_id: 'sonic-3.5',
-      transcript: text,
-      voice: { mode: 'id', id: voiceId },
-      output_format: {
-        container: 'raw',
-        encoding: 'pcm_alaw',
-        sample_rate: 8000,
+async function generateSentenceAudio(text: string, voiceId: string): Promise<Buffer> {
+  const maxRetries = 3;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const response = await fetch('https://api.cartesia.ai/tts/bytes', {
+      method: 'POST',
+      headers: {
+        'Cartesia-Version': '2026-03-01',
+        'X-API-Key': process.env.CARTESIA_API_KEY ?? '',
+        'Content-Type': 'application/json',
       },
-    }),
-  });
+      body: JSON.stringify({
+        model_id: 'sonic-3.5',
+        transcript: text,
+        voice: { mode: 'id', id: voiceId },
+        output_format: {
+          container: 'raw',
+          encoding: 'pcm_alaw',
+          sample_rate: 8000,
+        },
+      }),
+    });
 
-  if (!response.ok) {
+    if (response.ok) {
+      return Buffer.from(await response.arrayBuffer());
+    }
+
+    // 429 = concurrency limit — retry avec backoff
+    if (response.status === 429 && attempt < maxRetries) {
+      await response.text().catch(() => {});
+      const delayMs = 500 * Math.pow(2, attempt);
+      await new Promise((r) => setTimeout(r, delayMs));
+      continue;
+    }
+
     throw new Error(`Cartesia TTS ${response.status}: ${await response.text()}`);
   }
-
-  return Buffer.from(await response.arrayBuffer());
+  throw new Error('Cartesia TTS: max retries exceeded');
 }
 
 /**
