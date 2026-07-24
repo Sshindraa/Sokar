@@ -163,6 +163,8 @@ async function checkDeepgram(): Promise<CheckResult> {
       if (!process.env.DEEPGRAM_API_KEY) {
         throw new Error('DEEPGRAM_API_KEY not configured');
       }
+      // /v1/projects is a management endpoint only available on the US API.
+      // Voice endpoints (STT/TTS) use DEEPGRAM_API_HOST for EU routing.
       const res = await fetch('https://api.deepgram.com/v1/projects', {
         method: 'GET',
         headers: {

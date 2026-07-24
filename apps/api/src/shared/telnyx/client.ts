@@ -1,4 +1,15 @@
 const createTelnyx: (key: string) => import('telnyx').TelnyxClient = require('telnyx');
+import * as https from 'https';
+
+// Agent keep-alive persistant pour le SDK Telnyx (balance, SMS, WhatsApp, outbound calls).
+// Évite le handshake TLS (~113ms) à chaque appel en réutilisant la connexion.
+const telnyxHttpsAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 30_000,
+  maxSockets: 20,
+  maxFreeSockets: 10,
+  timeout: 60_000,
+});
 
 type TelnyxClient = import('telnyx').TelnyxClient;
 
@@ -10,6 +21,7 @@ function getTelnyx(): TelnyxClient {
       throw new Error('TELNYX_API_KEY is required');
     }
     _telnyx = createTelnyx(process.env.TELNYX_API_KEY);
+    (_telnyx as unknown as { setHttpAgent: (a: https.Agent) => void }).setHttpAgent(telnyxHttpsAgent);
   }
   return _telnyx;
 }

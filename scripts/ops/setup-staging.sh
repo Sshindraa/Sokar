@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time setup de l'environnement de staging Sokar sur le VPS pmbtc.
+# One-time setup de l'environnement de staging Sokar sur le VPS sokar.
 #
 # Ce script est idempotent : il peut être relancé sans casser une install existante.
 # Il ne déploie PAS automatiquement : il prépare le terrain et demande de remplir
@@ -8,15 +8,15 @@
 # Prérequis (hors portée du script) :
 #   - DNS `staging.sokar.tech` et `api-staging.sokar.tech` pointent vers le VPS.
 #   - Secrets GitHub `STAGING_HOST` et `STAGING_SSH_KEY` configurés.
-#   - Accès SSH root ou sudo sur pmbtc.
+#   - Accès SSH root ou sudo sur sokar.
 #
-# Usage (sur pmbtc, avec un utilisateur ayant sudo) :
+# Usage (sur sokar, avec un utilisateur ayant sudo) :
 #   bash scripts/ops/setup-staging.sh
 
 set -euo pipefail
 
-if [ "$(hostname)" != "pmbtc" ]; then
-  echo "❌ Ce script doit être exécuté sur le VPS pmbtc." >&2
+if [ "$(hostname)" != "sokar" ]; then
+  echo "❌ Ce script doit être exécuté sur le VPS sokar." >&2
   exit 1
 fi
 

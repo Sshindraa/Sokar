@@ -8,7 +8,7 @@
 #                                               # rollback vers la release précédente
 #       --with-db-rollback : restaure aussi la base Postgres depuis le backup de la release
 #
-# Cible : /opt/sokar-staging/ sur le VPS pmbtc.
+# Cible : /opt/sokar-staging/ sur le VPS sokar.
 # Ports  : API=4100, Dashboard=3100, Connect=4102 (décalés vs prod 4000/3000/4002).
 # Domaine: staging.sokar.tech (+ api-staging.sokar.tech pour l'API directe).
 #
@@ -214,8 +214,8 @@ log info "Branch: $BRANCH"
 [ "$DRY_RUN" = true ] && log warn "Mode: DRY-RUN (pas de restart ni migrations)"
 
 # Vérifier qu'on est sur le VPS
-if [ "$(hostname)" != "pmbtc" ]; then
-    log_error "Ce script s'exécute uniquement sur le VPS (pmbtc)"
+if [ "$(hostname)" != "sokar" ]; then
+    log_error "Ce script s'exécute uniquement sur le VPS (sokar)"
     exit 1
 fi
 

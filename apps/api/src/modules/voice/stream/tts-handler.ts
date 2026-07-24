@@ -10,8 +10,10 @@ import { WebSocket } from 'ws';
 import type { CallSession } from './types';
 import { getTtsCached, setTtsCached } from '../tts-cache';
 import { logger } from '../../../shared/logger/pino';
+import { telnyxFetch } from '../../../shared/telnyx/http-agent';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
+import { redactPii } from './pii-redact';
 import { persistLatencyTrace } from './session-persistence';
 import {
   CARTESIA_RETRY_DELAY_MS,
@@ -142,24 +144,23 @@ export function cleanTextForTts(text: string): string {
 }
 
 export async function speakTelnyxNative(session: CallSession, text: string): Promise<void> {
-  writeDebugLog(`[speakTelnyxNative] Sending native Telnyx TTS speak command for: "${text}"`);
+  writeDebugLog(
+    `[speakTelnyxNative] Sending native Telnyx TTS speak command for: "${redactPii(text)}"`,
+  );
   try {
-    const res = await fetch(
-      `https://api.telnyx.com/v2/calls/${session.callControlId}/actions/speak`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${process.env.TELNYX_API_KEY}`,
-        },
-        body: JSON.stringify({
-          payload: text,
-          voice: 'female',
-          language: 'fr-FR',
-          payload_type: 'text',
-        }),
+    const res = await telnyxFetch(`/v2/calls/${session.callControlId}/actions/speak`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.TELNYX_API_KEY}`,
       },
-    );
+      body: JSON.stringify({
+        payload: text,
+        voice: 'female',
+        language: 'fr-FR',
+        payload_type: 'text',
+      }),
+    });
     if (!res.ok) {
       const errText = await res.text();
       writeDebugLog(`[speakTelnyxNative] Telnyx native speak failed: ${res.status} ${errText}`);
@@ -217,7 +218,7 @@ async function speakTtsFragment(
   }
 
   writeDebugLog(
-    `[speakTtsStreamed] Starting synthesis for text: "${cleanedText}" (original: "${text}")`,
+    `[speakTtsStreamed] Starting synthesis for text: "${redactPii(cleanedText)}" (original: "${redactPii(text)}")`,
   );
 
   const isAlaw = session.codec === 'PCMA';
@@ -272,7 +273,7 @@ async function speakTtsFragment(
     }
 
     if (cachedBuffer) {
-      writeDebugLog(`[speakTtsStreamed] Cache HIT for sentence: "${trimmed}"`);
+      writeDebugLog(`[speakTtsStreamed] Cache HIT for sentence: "${redactPii(trimmed)}"`);
       if (session.latencyTrace && !session.latencyTrace.ttsFirstByteMs) {
         session.latencyTrace.ttsFirstByteMs = Date.now() - session.latencyTrace.startTime;
       }
@@ -335,7 +336,7 @@ async function speakTtsFragment(
         const err = new Error(`Cartesia stream failed with status ${status}`);
         captureException(err, {
           tags: { service: 'handler', action: 'speakTtsStreamed', type: 'http-status' },
-          extra: { callId: session.callControlId, status, sentence: trimmed },
+          extra: { callId: session.callControlId, status, sentence: redactPii(trimmed) },
         });
         await speakTelnyxNative(
           session,
@@ -472,7 +473,7 @@ async function speakTtsFragment(
       );
       captureException(err, {
         tags: { service: 'handler', action: 'speakTtsStreamed', type: 'exception' },
-        extra: { callId: session.callControlId, sentence: trimmed },
+        extra: { callId: session.callControlId, sentence: redactPii(trimmed) },
       });
       await speakTelnyxNative(
         session,

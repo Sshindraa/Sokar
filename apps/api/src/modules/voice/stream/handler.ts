@@ -32,6 +32,7 @@ import { writeDebugLog } from './debug-log';
 import { persistFluxCall, persistLatencyTrace } from './session-persistence';
 import { speakTtsStreamed } from './tts-handler';
 import { handleFluxEvent, extractRestaurantName } from './llm-handler';
+import { redactPii } from './pii-redact';
 import { startTestCallRecording } from '../call-recording.service';
 
 export function buildInitialGreeting(restaurantName: string): string {
@@ -242,7 +243,7 @@ function handleTelnyxMessage(
       const errorDetail = new Error(`Telnyx error event for call ${callId}`);
       captureException(errorDetail, {
         tags: { service: 'handler', event: 'telnyx-error' },
-        extra: { callId, payload: msg },
+        extra: { callId, payload: redactPii(typeof msg === 'string' ? msg : JSON.stringify(msg)) },
       });
       return;
 

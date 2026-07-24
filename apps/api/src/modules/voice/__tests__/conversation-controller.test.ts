@@ -108,12 +108,12 @@ describe('conversation state', () => {
         '20:30',
         '21:00',
       ]),
-    ).toBe("Désolé, 20 h n'est pas disponible. Je peux vous proposer 19 h 30 ou 20 h 30.");
+    ).toBe("Alors 20 h c'est complet, par contre j'ai 19 h 30 ou 20 h 30. Ça vous irait ?");
   });
 
-  it('propose le gérant ou un message quand aucun créneau vérifié n’existe', () => {
+  it('propose de regarder un autre jour quand aucun créneau vérifié n’existe', () => {
     expect(buildAvailabilityReply({ date: '2026-07-23', time: '20:00', partySize: 4 }, [])).toBe(
-      "Désolé, je n'ai pas de créneau disponible ce jour-là pour 4 personnes. Je peux vous passer le gérant ou prendre un message.",
+      'Ah, malheureusement on est complets ce jour-là pour 4 personnes. Vous voulez que je regarde un autre jour ?',
     );
   });
 

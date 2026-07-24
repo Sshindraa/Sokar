@@ -100,6 +100,10 @@ const EnvSchema = z
     SERVICE_COPILOT_TELEMETRY_SECRET: z.string().min(32).optional(),
     // Clés API critiques — validées au démarrage en production
     TELNYX_API_KEY: z.string().optional(),
+    // Base URL Telnyx pour les appels fetch directs — défaut US.
+    // Le SDK Telnyx utilise TELNYX_API_BASE (sans https://).
+    // Pour Frankfurt : TELNYX_API_URL=https://api.telnyx.eu + TELNYX_API_BASE=api.telnyx.eu
+    TELNYX_API_URL: z.string().default('https://api.telnyx.com'),
     // Enregistrements d'appels : opt-in explicite, stockage S3-compatible privé.
     CALL_RECORDING_ENABLED: z.enum(['true', 'false']).default('false'),
     // Liste CSV des seuls restaurants de test autorisés à lancer un enregistrement.
@@ -117,6 +121,8 @@ const EnvSchema = z
       .max(200_000_000)
       .default(50_000_000),
     DEEPGRAM_API_KEY: z.string().optional(),
+    // Host Deepgram — défaut US, set à api.eu.deepgram.com pour Frankfurt.
+    DEEPGRAM_API_HOST: z.string().default('api.deepgram.com'),
     CARTESIA_API_KEY: z.string().optional(),
     // Canary TTS : contexte WebSocket par réponse LLM. Désactivé par défaut,
     // le chemin /tts/bytes reste la référence tant que la mesure audio manque.

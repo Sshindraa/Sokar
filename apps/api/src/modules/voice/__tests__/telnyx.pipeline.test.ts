@@ -52,6 +52,14 @@ vi.mock('../../../shared/configcat', () => ({
   },
 }));
 
+// Mock telnyxFetch (used for direct answer call instead of BullMQ queue)
+vi.mock('../../../shared/telnyx/http-agent', () => ({
+  telnyxFetch: vi.fn(async () =>
+    new Response('{"data":{}}', { status: 200, headers: { 'Content-Type': 'application/json' } }),
+  ),
+  warmupTelnyxConnection: vi.fn(async () => undefined),
+}));
+
 // ── Imports under test (must come AFTER the vi.mock calls) ─────────────────
 
 import { getApp, closeApp } from '../../../test/helpers';
@@ -60,6 +68,7 @@ import { queues } from '../../../shared/queue/queues';
 import { RestaurantService } from '../../restaurants/restaurant.service';
 import { CustomerService } from '../../customers/customer.service';
 import { isVoicePipelineEnabled } from '../../../shared/configcat';
+import { telnyxFetch } from '../../../shared/telnyx/http-agent';
 import { CallSessionManager } from '../stream/manager';
 
 const mockLoadContext = vi.mocked(RestaurantService.loadContext);
@@ -68,6 +77,7 @@ const mockLookupOrCreate = vi.mocked(CustomerService.lookupOrCreate);
 const mockBuildVipPromptExtra = vi.mocked(CustomerService.buildVipPromptExtra);
 const mockIncrementVisit = vi.mocked(CustomerService.incrementVisit);
 const mockIsVoicePipelineEnabled = vi.mocked(isVoicePipelineEnabled);
+const mockTelnyxFetch = vi.mocked(telnyxFetch);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -202,17 +212,16 @@ describe('POST /voice/telnyx — call.initiated', () => {
     expect(session!.codec).toBe('PCMA');
     expect(session!.isVip).toBe(false);
 
-    // Answer job was enqueued
-    expect(queues.telnyxWebhooks.add).toHaveBeenCalledWith(
-      'answer-call',
+    // Answer call was made directly via telnyxFetch (not enqueued to BullMQ)
+    expect(mockTelnyxFetch).toHaveBeenCalledWith(
+      '/v2/calls/cc-1/actions/answer',
       expect.objectContaining({
-        callControlId: 'cc-1',
-        callLegId: 'leg-1',
-        codec: 'PCMA',
-        streamUrl: expect.stringMatching(/^wss:\/\/.*\/voice\/stream\/cc-1$/),
-        idempotencyKey: expect.any(String),
+        method: 'POST',
+        headers: expect.objectContaining({
+          'Idempotency-Key': expect.any(String),
+        }),
+        body: expect.stringContaining('wss://'),
       }),
-      { jobId: expect.any(String) },
     );
   });
 
@@ -244,8 +253,9 @@ describe('POST /voice/telnyx — call.initiated', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ result: 'ok' });
-    expect(mockIsVoicePipelineEnabled).not.toHaveBeenCalled();
-    expect(queues.telnyxWebhooks.add).not.toHaveBeenCalled();
+    // With Promise.all, lookupOrCreate runs in parallel with checkMarginHealth.
+    // The guard still prevents session creation and answer call.
+    expect(mockTelnyxFetch).not.toHaveBeenCalled();
     expect(CallSessionManager.getInstance().get('cc-1')).toBeUndefined();
   });
 
@@ -262,8 +272,9 @@ describe('POST /voice/telnyx — call.initiated', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ result: 'ok' });
-    expect(mockLookupOrCreate).not.toHaveBeenCalled();
-    expect(queues.telnyxWebhooks.add).not.toHaveBeenCalled();
+    // With Promise.all, lookupOrCreate runs in parallel with isVoicePipelineEnabled.
+    // The guard still prevents session creation and answer call.
+    expect(mockTelnyxFetch).not.toHaveBeenCalled();
     expect(CallSessionManager.getInstance().get('cc-1')).toBeUndefined();
   });
 
