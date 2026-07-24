@@ -46,7 +46,7 @@ function getVoiceLlmModel(): string {
 }
 
 /**
- * Résout le modèle LLM de fallback (Cerebras direct) au runtime.
+ * Résout le modèle LLM de fallback au runtime.
  */
 function getVoiceLlmFallbackModel(): string {
   return process.env.VOICE_LLM_FALLBACK_MODEL ?? VOICE_LLM_FALLBACK_MODEL_DEFAULT;
@@ -69,10 +69,27 @@ function getCerebrasBaseUrl(): string {
 }
 
 /**
+ * Détermine le provider primaire du LLM voice.
+ * - "cerebras"   : Gemma 4 31B sur Cerebras (modèle 2026, plus intelligent)
+ * - "openrouter" : Llama 3.3 70B sur Groq via OpenRouter (plus rapide)
+ * Défaut : "cerebras" (intelligence privilégiée pour la qualité des conversations).
+ */
+function getVoiceLlmProvider(): 'cerebras' | 'openrouter' {
+  return process.env.VOICE_LLM_PROVIDER === 'openrouter' ? 'openrouter' : 'cerebras';
+}
+
+/**
  * Retourne true si le fallback Cerebras est configuré (clé API présente).
  */
 function isCerebrasFallbackEnabled(): boolean {
   return Boolean(process.env.CEREBRAS_API_KEY);
+}
+
+/**
+ * Retourne true si le fallback OpenRouter est configuré (clé API présente).
+ */
+function isOpenRouterFallbackEnabled(): boolean {
+  return Boolean(process.env.OPENROUTER_API_KEY);
 }
 
 /**
@@ -83,15 +100,15 @@ function isCerebrasFallbackEnabled(): boolean {
  * - Gemini  : force le provider google-vertex (endpoints EU disponibles)
  * - Autres  : laisse OpenRouter choisir (default routing)
  */
-function getProviderRouting(): Record<string, unknown> | undefined {
-  const model = getVoiceLlmModel();
-  if (model.includes('llama')) {
+function getProviderRouting(model?: string): Record<string, unknown> | undefined {
+  const m = model ?? getVoiceLlmModel();
+  if (m.includes('llama')) {
     return { provider: { order: ['groq'], allow_fallbacks: false } };
   }
-  if (model.includes('mistral')) {
+  if (m.includes('mistral')) {
     return { provider: { order: ['mistral'], allow_fallbacks: false } };
   }
-  if (model.includes('gemini')) {
+  if (m.includes('gemini')) {
     // Préférer Vertex (EU disponible), fallback sur AI Studio si Vertex indispo
     return { provider: { order: ['google-vertex', 'google'], allow_fallbacks: true } };
   }
@@ -99,7 +116,7 @@ function getProviderRouting(): Record<string, unknown> | undefined {
 }
 
 /**
- * Détermine si une erreur HTTP justifie le fallback Cerebras.
+ * Détermine si une erreur HTTP justifie le fallback.
  * (429 = rate limit, 5xx = serveur en panne)
  */
 function isFallbackEligibleError(status: number): boolean {
@@ -496,10 +513,14 @@ export class CallSessionManager {
   }
 
   /**
-   * Fetch LLM completion avec fallback Cerebras automatique.
+   * Fetch LLM completion avec fallback automatique bidirectionnel.
    *
-   * 1. Tente OpenRouter (primaire : Llama 3.3 70B sur Groq, TTFT ~150ms)
-   * 2. Si erreur 429/5xx et Cerebras configuré → fallback Gemma 4 31B (modèle 2026)
+   * - Si VOICE_LLM_PROVIDER=cerebras (défaut) :
+   *   1. Cerebras direct (primaire : Gemma 4 31B, modèle 2026)
+   *   2. OpenRouter (fallback : Llama 3.3 70B sur Groq) sur 429/5xx
+   * - Si VOICE_LLM_PROVIDER=openrouter :
+   *   1. OpenRouter (primaire : Llama 3.3 70B sur Groq, TTFT ~150ms)
+   *   2. Cerebras direct (fallback : Gemma 4 31B) sur 429/5xx
    *
    * @returns Response object (non-streaming)
    */
@@ -512,41 +533,39 @@ export class CallSessionManager {
       signal?: AbortSignal;
     },
   ): Promise<Response> {
-    const body = {
-      model: getVoiceLlmModel(),
-      messages,
-      max_tokens: opts.maxTokens,
-      temperature: opts.temperature,
-      ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
-      ...(getProviderRouting() ?? {}),
-    };
+    if (getVoiceLlmProvider() === 'cerebras') {
+      const response = await this.fetchCerebrasCompletion(messages, opts, getVoiceLlmModel());
+      if (
+        !response.ok &&
+        isOpenRouterFallbackEnabled() &&
+        isFallbackEligibleError(response.status)
+      ) {
+        logger.warn(
+          { status: response.status, model: getVoiceLlmModel() },
+          'LLM primary (Cerebras) failed, falling back to OpenRouter',
+        );
+        await response.text().catch(() => {});
+        return this.fetchOpenRouterCompletion(messages, opts, getVoiceLlmFallbackModel());
+      }
+      return response;
+    }
 
-    const response = await fetch(`${getOpenRouterBaseUrl()}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      },
-      signal: opts.signal,
-      body: JSON.stringify(body),
-    });
-
+    // OpenRouter primary, Cerebras fallback
+    const response = await this.fetchOpenRouterCompletion(messages, opts, getVoiceLlmModel());
     if (!response.ok && isCerebrasFallbackEnabled() && isFallbackEligibleError(response.status)) {
       logger.warn(
         { status: response.status, model: getVoiceLlmModel() },
-        'LLM primary failed, falling back to Cerebras',
+        'LLM primary (OpenRouter) failed, falling back to Cerebras',
       );
-      // Consume the error body before retrying
       await response.text().catch(() => {});
-      return this.fetchCerebrasCompletion(messages, opts);
+      return this.fetchCerebrasCompletion(messages, opts, getVoiceLlmFallbackModel());
     }
-
     return response;
   }
 
   /**
-   * Fetch LLM completion via Cerebras direct API (fallback).
-   * Utilise Gemma 4 31B (modèle 2026, function calling natif).
+   * Fetch LLM completion via Cerebras direct API.
+   * Utilise Gemma 4 (temp=1.0, top_p=0.95 recommandés sur Cerebras).
    */
   private async fetchCerebrasCompletion(
     messages: ChatMessage[],
@@ -556,9 +575,10 @@ export class CallSessionManager {
       temperature: number;
       signal?: AbortSignal;
     },
+    model: string,
   ): Promise<Response> {
     const body = {
-      model: getVoiceLlmFallbackModel(),
+      model,
       messages,
       max_tokens: opts.maxTokens,
       // Gemma 4 recommande temp=1.0, top_p=0.95 sur Cerebras
@@ -579,10 +599,40 @@ export class CallSessionManager {
   }
 
   /**
-   * Fetch LLM streaming response avec fallback Cerebras automatique.
-   *
-   * 1. Tente OpenRouter streaming (primaire : Llama 3.3 70B sur Groq)
-   * 2. Si erreur 429/5xx et Cerebras configuré → fallback Gemma 4 31B streaming
+   * Fetch LLM completion via OpenRouter.
+   */
+  private async fetchOpenRouterCompletion(
+    messages: ChatMessage[],
+    opts: {
+      tools?: ReturnType<typeof getRestaurantTools>;
+      maxTokens: number;
+      temperature: number;
+      signal?: AbortSignal;
+    },
+    model: string,
+  ): Promise<Response> {
+    const body = {
+      model,
+      messages,
+      max_tokens: opts.maxTokens,
+      temperature: opts.temperature,
+      ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
+      ...(getProviderRouting(model) ?? {}),
+    };
+
+    return fetch(`${getOpenRouterBaseUrl()}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      },
+      signal: opts.signal,
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Fetch LLM streaming response avec fallback automatique bidirectionnel.
    *
    * @returns Response object (streaming)
    */
@@ -595,40 +645,38 @@ export class CallSessionManager {
       signal?: AbortSignal;
     },
   ): Promise<Response> {
-    const body = {
-      model: getVoiceLlmModel(),
-      messages,
-      max_tokens: opts.maxTokens,
-      temperature: opts.temperature,
-      ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
-      stream: true,
-      ...(getProviderRouting() ?? {}),
-    };
+    if (getVoiceLlmProvider() === 'cerebras') {
+      const response = await this.fetchCerebrasStreaming(messages, opts, getVoiceLlmModel());
+      if (
+        !response.ok &&
+        isOpenRouterFallbackEnabled() &&
+        isFallbackEligibleError(response.status)
+      ) {
+        logger.warn(
+          { status: response.status, model: getVoiceLlmModel() },
+          'LLM streaming primary (Cerebras) failed, falling back to OpenRouter',
+        );
+        await response.text().catch(() => {});
+        return this.fetchOpenRouterStreaming(messages, opts, getVoiceLlmFallbackModel());
+      }
+      return response;
+    }
 
-    const response = await fetch(`${getOpenRouterBaseUrl()}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      },
-      signal: opts.signal,
-      body: JSON.stringify(body),
-    });
-
+    // OpenRouter primary, Cerebras fallback
+    const response = await this.fetchOpenRouterStreaming(messages, opts, getVoiceLlmModel());
     if (!response.ok && isCerebrasFallbackEnabled() && isFallbackEligibleError(response.status)) {
       logger.warn(
         { status: response.status, model: getVoiceLlmModel() },
-        'LLM streaming primary failed, falling back to Cerebras',
+        'LLM streaming primary (OpenRouter) failed, falling back to Cerebras',
       );
       await response.text().catch(() => {});
-      return this.fetchCerebrasStreaming(messages, opts);
+      return this.fetchCerebrasStreaming(messages, opts, getVoiceLlmFallbackModel());
     }
-
     return response;
   }
 
   /**
-   * Fetch LLM streaming via Cerebras direct API (fallback).
+   * Fetch LLM streaming via Cerebras direct API.
    */
   private async fetchCerebrasStreaming(
     messages: ChatMessage[],
@@ -638,9 +686,10 @@ export class CallSessionManager {
       temperature: number;
       signal?: AbortSignal;
     },
+    model: string,
   ): Promise<Response> {
     const body = {
-      model: getVoiceLlmFallbackModel(),
+      model,
       messages,
       max_tokens: opts.maxTokens,
       temperature: 1.0,
@@ -654,6 +703,40 @@ export class CallSessionManager {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${process.env.CEREBRAS_API_KEY}`,
+      },
+      signal: opts.signal,
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Fetch LLM streaming via OpenRouter.
+   */
+  private async fetchOpenRouterStreaming(
+    messages: ChatMessage[],
+    opts: {
+      tools?: ReturnType<typeof getRestaurantTools>;
+      maxTokens: number;
+      temperature: number;
+      signal?: AbortSignal;
+    },
+    model: string,
+  ): Promise<Response> {
+    const body = {
+      model,
+      messages,
+      max_tokens: opts.maxTokens,
+      temperature: opts.temperature,
+      ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
+      stream: true,
+      ...(getProviderRouting(model) ?? {}),
+    };
+
+    return fetch(`${getOpenRouterBaseUrl()}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
       },
       signal: opts.signal,
       body: JSON.stringify(body),
