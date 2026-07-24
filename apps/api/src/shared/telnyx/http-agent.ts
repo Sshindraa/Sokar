@@ -36,11 +36,17 @@ export const telnyxAgent = new https.Agent({
 /**
  * Wrapper fetch qui active keepalive pour réutiliser la connexion TLS.
  */
-export async function telnyxFetch(
-  path: string,
-  init: RequestInit = {},
-): Promise<Response> {
+export async function telnyxFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const url = path.startsWith('http') ? path : `${TELNYX_API_URL}${path}`;
+  // Defense-in-depth: s'assurer que l'URL cible bien l'API Telnyx
+  // (évite SSRF si un caller passe une URL non contrôlée)
+  const parsed = new URL(url);
+  const allowed = new URL(TELNYX_API_URL);
+  if (parsed.origin !== allowed.origin) {
+    throw new Error(
+      `telnyxFetch: URL origin ${parsed.origin} does not match Telnyx API ${allowed.origin}`,
+    );
+  }
   return fetch(url, {
     ...init,
     keepalive: true,
