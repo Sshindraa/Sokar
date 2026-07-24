@@ -310,30 +310,44 @@ export async function playFiller(
 }
 
 async function generateFillerAudio(text: string): Promise<string[]> {
-  const response = await fetch('https://api.cartesia.ai/tts/sse', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Cartesia-Version': '2026-03-01',
-      'X-API-Key': process.env.CARTESIA_API_KEY ?? '',
-    },
-    body: JSON.stringify({
-      model_id: 'sonic-3.5',
-      transcript: text,
-      voice: {
-        mode: 'id',
-        id: process.env.CARTESIA_VOICE_ID ?? DEFAULT_CARTESIA_VOICE_ID,
-      },
-      output_format: {
-        container: 'raw',
-        encoding: fillerEncoding,
-        sample_rate: 8000,
-      },
-    }),
-  });
+  const maxRetries = 3;
+  let response: Response | null = null;
 
-  if (!response.ok) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    response = await fetch('https://api.cartesia.ai/tts/sse', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cartesia-Version': '2026-03-01',
+        'X-API-Key': process.env.CARTESIA_API_KEY ?? '',
+      },
+      body: JSON.stringify({
+        model_id: 'sonic-3.5',
+        transcript: text,
+        voice: {
+          mode: 'id',
+          id: process.env.CARTESIA_VOICE_ID ?? DEFAULT_CARTESIA_VOICE_ID,
+        },
+        output_format: {
+          container: 'raw',
+          encoding: fillerEncoding,
+          sample_rate: 8000,
+        },
+      }),
+    });
+
+    if (response.ok) break;
+    // 429 = concurrency limit — retry avec backoff
+    if (response.status === 429 && attempt < maxRetries) {
+      await response.text().catch(() => {});
+      await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt)));
+      continue;
+    }
     throw new Error(`Filler TTS ${response.status}`);
+  }
+
+  if (!response || !response.ok) {
+    throw new Error('Filler TTS: max retries exceeded');
   }
 
   const chunks: string[] = [];
