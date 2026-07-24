@@ -5,8 +5,8 @@
 
 set -euo pipefail
 
-if [ "$(hostname)" != "pmbtc" ]; then
-  echo "❌ Ce script doit être exécuté sur le VPS pmbtc." >&2
+if [ "$(hostname)" != "sokar" ]; then
+  echo "❌ Ce script doit être exécuté sur le VPS sokar." >&2
   exit 1
 fi
 
