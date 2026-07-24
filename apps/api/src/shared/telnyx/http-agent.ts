@@ -35,12 +35,11 @@ export const telnyxAgent = new https.Agent({
 
 /**
  * Wrapper fetch qui active keepalive pour réutiliser la connexion TLS.
+ * N'accepte que des paths relatifs (ex: /v2/calls/.../actions/answer)
+ * — l'origin est toujours TELNYX_API_URL, jamais user-provided.
  */
-export async function telnyxFetch(
-  path: string,
-  init: RequestInit = {},
-): Promise<Response> {
-  const url = path.startsWith('http') ? path : `${TELNYX_API_URL}${path}`;
+export async function telnyxFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const url = `${TELNYX_API_URL}${path}`;
   return fetch(url, {
     ...init,
     keepalive: true,
