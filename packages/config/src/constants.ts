@@ -44,15 +44,22 @@ export const SPECULATIVE_MISS_THRESHOLD = 0.6;
 export const LLM_VIP_TURN_THRESHOLD = 5;
 
 // Modèle LLM utilisé dans le pipeline vocal (pas le modèle Hermes).
-// Benchmark 2026-07-22 : Gemini 3.5 Flash-Lite retenu comme challenger live :
-//  - 36/36 appels d'outils strictement valides sur les scénarios Sokar assainis
-//  - phrase prête pour le TTS : p50 990ms, p95 1615ms
-//  - Mistral Small 3.2 : p50 1146ms, p95 2099ms sur le même protocole
-//  - coût observé environ 4,3x supérieur, mais inférieur à $0.001 par scénario benchmark
+// Benchmark 2026-07-24 : Llama 3.3 70B sur Groq retenu comme primaire :
+//  - 6/6 appels d'outils valides sur les scénarios benchmark
+//  - TTFT 151ms (Groq LPU), avg tool call 339ms
+//  - $0.59/$0.79 per M tokens sur Groq
 //
-// Configurable via VOICE_LLM_MODEL env var (résolu dans manager.ts au runtime)
-// pour A/B test sans redeploiement de code.
-export const VOICE_LLM_MODEL_DEFAULT = 'google/gemini-3.5-flash-lite';
+// Fallback : Gemma 4 31B sur Cerebras (modèle 2026, plus intelligent) :
+//  - 6/6 appels d'outils valides, function calling natif
+//  - TTFT 403ms (Cerebras WSE-3), 1442 tok/s throughput
+//  - $2.15/$2.70 per M tokens sur Cerebras
+//  - Déclenchement : erreur primaire (429, 5xx, timeout)
+//
+// Configurable via VOICE_LLM_MODEL / VOICE_LLM_FALLBACK_MODEL env vars
+// (résolu dans manager.ts au runtime) pour A/B test sans redeploiement.
+export const VOICE_LLM_MODEL_DEFAULT = 'meta-llama/llama-3.3-70b-instruct';
+export const VOICE_LLM_FALLBACK_MODEL_DEFAULT = 'gemma-4-31b';
+export const CEREBRAS_BASE_URL = 'https://api.cerebras.ai/v1';
 
 export const TTS_PROVIDERS = ['cartesia', 'deepgram-aura'] as const;
 export type TtsProvider = (typeof TTS_PROVIDERS)[number];
