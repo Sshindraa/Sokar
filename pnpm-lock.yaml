@@ -139,9 +139,6 @@ importers:
       telnyx:
         specifier: ^2.1.1
         version: 2.1.1
-      undici:
-        specifier: ^8.8.0
-        version: 8.8.0
       ws:
         specifier: ^8.21.0
         version: 8.21.0
@@ -6327,10 +6324,6 @@ packages:
   undici@7.28.0:
     resolution: {integrity: sha512-cRZYrTDwWznlnRiPjggAGxZXanty6M8RV1ff8Wm4LWXBp7/IG8v5DnOm74DtUBp9OONpK75YlPnIjQqX0dBDtA==}
     engines: {node: '>=20.18.1'}
-
-  undici@8.8.0:
-    resolution: {integrity: sha512-ubshXMXwF3MQIMF1y/WxZdNBnjEKeSg2wF5mcGUtU55YTw34tnVVpKRlLf7ruDXZ5344KokPVX4RBx1wJm64Bw==}
-    engines: {node: '>=22.19.0'}
 
   unicode-properties@1.4.1:
     resolution: {integrity: sha512-CLjCCLQ6UuMxWnbIylkisbRj31qxHPAurvena/0iwSVbQ2G1VY5/HjV0IRabOEbDHlzZlRdCrD4NhB0JtU40Pg==}
@@ -12792,8 +12785,6 @@ snapshots:
   undici-types@6.21.0: {}
 
   undici@7.28.0: {}
-
-  undici@8.8.0: {}
 
   unicode-properties@1.4.1:
     dependencies:

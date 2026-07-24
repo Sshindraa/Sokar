@@ -6,7 +6,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { db } from '../../shared/db/client';
 import { logger } from '../../shared/logger/pino';
-import { telnyxFetch, telnyxAgent } from '../../shared/telnyx/http-agent';
+import { telnyxFetch } from '../../shared/telnyx/http-agent';
 import type { CallSession } from './stream/types';
 
 const RECORDING_FORMAT = 'mp3';
@@ -194,8 +194,7 @@ export async function recoverPendingRecording(data: RecoverRecordingJobData): Pr
   url.searchParams.set('page[size]', '10');
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${apiKey}` },
-    // @ts-expect-error — dispatcher is an undici extension
-    dispatcher: telnyxAgent,
+    keepalive: true,
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error(`Telnyx recordings lookup failed: ${response.status}`);
