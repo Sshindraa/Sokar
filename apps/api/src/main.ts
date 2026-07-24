@@ -10,6 +10,7 @@ import { queues } from './shared/queue/queues';
 import { logger, newRequestId, REDACT_PATHS, REDACT_CENSOR } from './shared/logger/pino';
 import { telnyxVoiceRoutes } from './modules/voice/telnyx.pipeline';
 import { warmupTelnyxConnection } from './shared/telnyx/http-agent';
+import { initGreetingCache } from './modules/voice/stream/greeting-cache';
 import { smsInboundRoutes } from './modules/sms/sms-inbound.routes';
 import { whatsappWebhookRoutes } from './modules/whatsapp/whatsapp-webhook.routes';
 import { restaurantRoutes } from './modules/restaurants/restaurant.routes';
@@ -314,6 +315,17 @@ async function start() {
     initFillerCache().catch((err) => {
       logger.warn({ err }, 'Filler cache warmup failed (non-blocking)');
     });
+  });
+
+  // Pré-génération des greetings audio par restaurant au boot.
+  // Le greeting "Bonjour, ici {restaurant}. Je vous écoute." est la première
+  // chose que le client entend. Sans cache, il faut ~400-800ms pour le
+  // synthétiser via Cartesia. Pré-généré → cache hit instantané au runtime.
+  // Fire-and-forget : ne bloque pas l'API.
+  setImmediate(() => {
+    initGreetingCache()
+      .then(() => logger.info('Greeting cache warmup complete'))
+      .catch((err) => logger.warn({ err }, 'Greeting cache warmup failed (non-blocking)'));
   });
 
   // Warm-up Telnyx : pré-chauffe la connexion TLS vers l'API Telnyx (EU)
