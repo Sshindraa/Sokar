@@ -241,8 +241,8 @@ log_section "Sokar Deploy $DATE"
 log info "Branch: $BRANCH"
 
 # Vérifier qu'on est sur le VPS
-if [ "$(hostname)" != "sokar" ]; then
-    log_error "Ce script s'exécute uniquement sur le VPS (sokar)"
+if [ "$(hostname)" != "pmbtc" ]; then
+    log_error "Ce script s'exécute uniquement sur le VPS (pmbtc)"
     exit 1
 fi
 
