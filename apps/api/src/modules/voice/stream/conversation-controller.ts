@@ -339,7 +339,16 @@ export function recordAssistantReply(session: CallSession, reply: string): void 
   }
 }
 
-/** Réponses courtes qui ne nécessitent ni interprétation ni appel LLM. */
+/** Réponses courtes qui ne nécessitent ni interprétation ni appel LLM.
+ *
+ * Volontairement minimal : on laisse le LLM gérer le flux conversationnel
+ * (demander date/heure/nombre, répondre aux questions, gérer les corrections)
+ * pour des réponses naturelles et variées. Le déterministe ne garde que :
+ * - handoff après 2 incompréhensions (sécurité)
+ * - backchannel simple (l'utilisateur dit "oui" → reposer la dernière question)
+ * - clarification nombre de personnes ambigu
+ * - followup de disponibilité (alternatives proposées par l'outil)
+ */
 export function buildDeterministicTurnResponse(
   session: CallSession,
   speechAct: VoiceSpeechAct,
@@ -359,10 +368,9 @@ export function buildDeterministicTurnResponse(
     if (isAmbiguousPartySizeReply(session, transcript)) {
       return "Je n'ai pas bien compris le nombre de personnes. Vous serez combien ?";
     }
-    return (
-      buildAvailabilityFollowupResponse(session, transcript) ??
-      buildReservationProgressResponse(session, transcript)
-    );
+    // Followup de disponibilité : alternatives proposées par l'outil
+    // (ces réponses dépendent du résultat de checkAvailability, pas du LLM)
+    return buildAvailabilityFollowupResponse(session, transcript);
   }
 
   return null;

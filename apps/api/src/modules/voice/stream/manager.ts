@@ -462,7 +462,7 @@ export class CallSessionManager {
     for (let round = 0; round < 3; round++) {
       const response = await this.fetchLlmCompletion(messages, {
         tools,
-        maxTokens: options.maxTokens ?? 150,
+        maxTokens: options.maxTokens ?? 200,
         temperature: options.temperature ?? 0.7,
         signal,
       });
@@ -763,7 +763,7 @@ export class CallSessionManager {
     for (let round = 0; round < 3; round++) {
       const response = await this.fetchLlmStreaming(messages, {
         tools,
-        maxTokens: options.maxTokens ?? 150,
+        maxTokens: options.maxTokens ?? 200,
         temperature: options.temperature ?? 0.7,
         signal,
       });
