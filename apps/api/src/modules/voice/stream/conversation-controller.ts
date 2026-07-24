@@ -49,6 +49,16 @@ export function classifyVoiceSpeechAct(transcript: string): VoiceSpeechAct {
   ) {
     return 'closing';
   }
+  // Phrases contenant un pattern de clôture + texte supplémentaire :
+  // "C'est bon, allez on arrête", "ça ira laissez tomber", "non c'est bon je raccroche"
+  if (
+    /\b(?:c est bon|ca ira|ca va aller|laissez tomber|on arrete|je raccroche|pas la peine|pas besoin)\b/.test(
+      normalized,
+    ) &&
+    !/\b(?:reserv|table|heure|personne|demain|aujourd|soir|midi|annul)\b/.test(normalized)
+  ) {
+    return 'closing';
+  }
   if (/^(?:non\b|plutot\b|en fait\b|j ai dit\b|je voulais dire\b)/.test(normalized)) {
     return 'correction';
   }
@@ -259,9 +269,35 @@ export function buildAvailabilityFollowupResponse(
   return `Je peux vous proposer ${alternatives}. Lequel vous convient ?`;
 }
 
-export function buildReservationProgressResponse(session: CallSession): string | null {
+export function buildReservationProgressResponse(
+  session: CallSession,
+  transcript = '',
+): string | null {
   const { intent, slots } = session.conversation;
   if (intent !== 'reservation' && intent !== 'availability') return null;
+
+  // Ne pas répondre déterministiquement si le transcript de l'utilisateur
+  // n'est pas pertinent pour la réservation (plainte, question, frustration,
+  // phrase longue ou complexe). Dans ce cas, laisser le LLM gérer.
+  if (transcript) {
+    const normalized = normalizeTranscript(transcript);
+    // Mots qui indiquent que l'utilisateur ne répond pas à la question en attente
+    if (
+      /\b(?:pourquoi|comment|arrete|raccroche|laissez tomber|c est bon|allez|genant|bizarre|probleme|marche pas|entends pas|comprends pas)\b/.test(
+        normalized,
+      )
+    ) {
+      return null;
+    }
+    // Si le transcript est long (> 60 chars) et ne contient aucune info de slot,
+    // c'est probablement une phrase complexe → LLM
+    const extracted = extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris');
+    const hasSlotInfo = Boolean(extracted.date || extracted.time || extracted.partySize);
+    if (normalized.length > 60 && !hasSlotInfo) {
+      return null;
+    }
+  }
+
   if (!slots.date) return 'Pour quel jour ?';
   if (!slots.partySize) return 'Vous serez combien ?';
   if (!slots.time) return 'Vous voulez venir vers quelle heure ?';
@@ -325,7 +361,7 @@ export function buildDeterministicTurnResponse(
     }
     return (
       buildAvailabilityFollowupResponse(session, transcript) ??
-      buildReservationProgressResponse(session)
+      buildReservationProgressResponse(session, transcript)
     );
   }
 
