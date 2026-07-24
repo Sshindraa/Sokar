@@ -9,6 +9,7 @@ import { redisCache } from './shared/redis/client';
 import { queues } from './shared/queue/queues';
 import { logger, newRequestId, REDACT_PATHS, REDACT_CENSOR } from './shared/logger/pino';
 import { telnyxVoiceRoutes } from './modules/voice/telnyx.pipeline';
+import { warmupTelnyxConnection } from './shared/telnyx/http-agent';
 import { smsInboundRoutes } from './modules/sms/sms-inbound.routes';
 import { whatsappWebhookRoutes } from './modules/whatsapp/whatsapp-webhook.routes';
 import { restaurantRoutes } from './modules/restaurants/restaurant.routes';
@@ -313,6 +314,15 @@ async function start() {
     initFillerCache().catch((err) => {
       logger.warn({ err }, 'Filler cache warmup failed (non-blocking)');
     });
+  });
+
+  // Warm-up Telnyx : pré-chauffe la connexion TLS vers l'API Telnyx (EU)
+  // pour que le premier appel téléphonique n'ait pas à payer le handshake
+  // TLS de ~113ms. Fire-and-forget.
+  setImmediate(() => {
+    warmupTelnyxConnection()
+      .then(() => logger.info('Telnyx connection warmed (keep-alive ready)'))
+      .catch((err) => logger.warn({ err }, 'Telnyx warmup failed (non-blocking)'));
   });
 
   setImmediate(() => {

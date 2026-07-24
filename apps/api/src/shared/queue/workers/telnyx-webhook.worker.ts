@@ -1,4 +1,5 @@
 import { Worker } from 'bullmq';
+import { telnyxFetch } from '../../telnyx/http-agent';
 import { redisQueue } from '../../redis/client';
 import { setupWorkerListeners, jobLogger } from './helper';
 import {
@@ -60,8 +61,7 @@ export const telnyxWebhookWorker = new Worker(
       throw new Error('TELNYX_API_KEY not configured');
     }
 
-    const telnyxBaseUrl = process.env.TELNYX_API_URL ?? 'https://api.telnyx.com';
-    const res = await fetch(`${telnyxBaseUrl}/v2/calls/${data.callControlId}/actions/answer`, {
+    const res = await telnyxFetch(`/v2/calls/${data.callControlId}/actions/answer`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

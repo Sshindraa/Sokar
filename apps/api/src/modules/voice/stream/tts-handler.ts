@@ -10,6 +10,7 @@ import { WebSocket } from 'ws';
 import type { CallSession } from './types';
 import { getTtsCached, setTtsCached } from '../tts-cache';
 import { logger } from '../../../shared/logger/pino';
+import { telnyxFetch } from '../../../shared/telnyx/http-agent';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
 import { persistLatencyTrace } from './session-persistence';
@@ -144,8 +145,7 @@ export function cleanTextForTts(text: string): string {
 export async function speakTelnyxNative(session: CallSession, text: string): Promise<void> {
   writeDebugLog(`[speakTelnyxNative] Sending native Telnyx TTS speak command for: "${text}"`);
   try {
-    const telnyxBaseUrl = process.env.TELNYX_API_URL ?? 'https://api.telnyx.com';
-    const res = await fetch(`${telnyxBaseUrl}/v2/calls/${session.callControlId}/actions/speak`, {
+    const res = await telnyxFetch(`/v2/calls/${session.callControlId}/actions/speak`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

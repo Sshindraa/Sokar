@@ -6,6 +6,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { db } from '../../shared/db/client';
 import { logger } from '../../shared/logger/pino';
+import { telnyxFetch, telnyxAgent } from '../../shared/telnyx/http-agent';
 import type { CallSession } from './stream/types';
 
 const RECORDING_FORMAT = 'mp3';
@@ -84,9 +85,8 @@ export async function startTestCallRecording(session: CallSession): Promise<void
   const apiKey = process.env.TELNYX_API_KEY;
   if (!apiKey) throw new Error('TELNYX_API_KEY not configured');
 
-  const telnyxBaseUrl = process.env.TELNYX_API_URL ?? 'https://api.telnyx.com';
-  const response = await fetch(
-    `${telnyxBaseUrl}/v2/calls/${encodeURIComponent(session.callControlId)}/actions/record_start`,
+  const response = await telnyxFetch(
+    `/v2/calls/${encodeURIComponent(session.callControlId)}/actions/record_start`,
     {
       method: 'POST',
       headers: {
@@ -189,12 +189,13 @@ export async function recoverPendingRecording(data: RecoverRecordingJobData): Pr
   const apiKey = process.env.TELNYX_API_KEY;
   if (!apiKey) throw new Error('TELNYX_API_KEY not configured');
 
-  const telnyxBaseUrl = process.env.TELNYX_API_URL ?? 'https://api.telnyx.com';
-  const url = new URL(`${telnyxBaseUrl}/v2/recordings`);
+  const url = new URL(`${process.env.TELNYX_API_URL ?? 'https://api.telnyx.com'}/v2/recordings`);
   url.searchParams.set('filter[call_leg_id]', data.callLegId);
   url.searchParams.set('page[size]', '10');
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${apiKey}` },
+    // @ts-expect-error — dispatcher is an undici extension
+    dispatcher: telnyxAgent,
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error(`Telnyx recordings lookup failed: ${response.status}`);
