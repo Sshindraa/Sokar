@@ -84,8 +84,9 @@ export async function startTestCallRecording(session: CallSession): Promise<void
   const apiKey = process.env.TELNYX_API_KEY;
   if (!apiKey) throw new Error('TELNYX_API_KEY not configured');
 
+  const telnyxBaseUrl = process.env.TELNYX_API_URL ?? 'https://api.telnyx.com';
   const response = await fetch(
-    `https://api.telnyx.com/v2/calls/${encodeURIComponent(session.callControlId)}/actions/record_start`,
+    `${telnyxBaseUrl}/v2/calls/${encodeURIComponent(session.callControlId)}/actions/record_start`,
     {
       method: 'POST',
       headers: {
@@ -188,7 +189,8 @@ export async function recoverPendingRecording(data: RecoverRecordingJobData): Pr
   const apiKey = process.env.TELNYX_API_KEY;
   if (!apiKey) throw new Error('TELNYX_API_KEY not configured');
 
-  const url = new URL('https://api.telnyx.com/v2/recordings');
+  const telnyxBaseUrl = process.env.TELNYX_API_URL ?? 'https://api.telnyx.com';
+  const url = new URL(`${telnyxBaseUrl}/v2/recordings`);
   url.searchParams.set('filter[call_leg_id]', data.callLegId);
   url.searchParams.set('page[size]', '10');
   const response = await fetch(url, {

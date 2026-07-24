@@ -60,23 +60,21 @@ export const telnyxWebhookWorker = new Worker(
       throw new Error('TELNYX_API_KEY not configured');
     }
 
-    const res = await fetch(
-      `https://api.telnyx.com/v2/calls/${data.callControlId}/actions/answer`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-          'Idempotency-Key': data.idempotencyKey,
-        },
-        body: JSON.stringify({
-          stream_url: data.streamUrl,
-          stream_track: 'inbound_track',
-          stream_bidirectional_mode: 'rtp',
-          stream_bidirectional_codec: data.codec,
-        }),
+    const telnyxBaseUrl = process.env.TELNYX_API_URL ?? 'https://api.telnyx.com';
+    const res = await fetch(`${telnyxBaseUrl}/v2/calls/${data.callControlId}/actions/answer`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        'Idempotency-Key': data.idempotencyKey,
       },
-    );
+      body: JSON.stringify({
+        stream_url: data.streamUrl,
+        stream_track: 'inbound_track',
+        stream_bidirectional_mode: 'rtp',
+        stream_bidirectional_codec: data.codec,
+      }),
+    });
 
     if (!res.ok) {
       const body = await res.text();

@@ -26,8 +26,9 @@ function writeDebugLog(msg: string, err?: unknown) {
 // Le model_id officiel est `flux-general-multi` (multilingue, dont fr).
 // On garde l'override par env var (DEEPGRAM_MODEL) pour permettre un fallback
 // vers `nova-3` (v1/listen) si Flux est trop instable en prod.
-const DEEPGRAM_API_URL_FLUX = 'wss://api.deepgram.com/v2/listen';
-const DEEPGRAM_API_URL_NOVA = 'wss://api.deepgram.com/v1/listen';
+const DEEPGRAM_HOST = process.env.DEEPGRAM_API_HOST ?? 'api.deepgram.com';
+const DEEPGRAM_API_URL_FLUX = `wss://${DEEPGRAM_HOST}/v2/listen`;
+const DEEPGRAM_API_URL_NOVA = `wss://${DEEPGRAM_HOST}/v1/listen`;
 const DEEPGRAM_DEFAULT_MODEL = 'flux-general-multi';
 
 /**

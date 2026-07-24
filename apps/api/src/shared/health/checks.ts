@@ -163,7 +163,8 @@ async function checkDeepgram(): Promise<CheckResult> {
       if (!process.env.DEEPGRAM_API_KEY) {
         throw new Error('DEEPGRAM_API_KEY not configured');
       }
-      const res = await fetch('https://api.deepgram.com/v1/projects', {
+      const host = process.env.DEEPGRAM_API_HOST ?? 'api.deepgram.com';
+      const res = await fetch(`https://${host}/v1/projects`, {
         method: 'GET',
         headers: {
           Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
