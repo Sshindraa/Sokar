@@ -9,16 +9,21 @@
  *
  * Stratégie :
  * 1. Au boot, charger tous les restaurants actifs depuis la DB
- * 2. Pour chaque restaurant, générer le greeting via Cartesia (format PCMA 8kHz)
- * 3. Stocker dans Redis via setTtsCached (même cache que le TTS runtime)
- * 4. Au runtime, speakTtsStreamed trouve un cache hit → playback immédiat
+ * 2. Pour chaque restaurant, appliquer le même pipeline que speakTtsStreamed
+ *    (cleanTextForTts → addNaturalPauses → split en phrases)
+ * 3. Pour chaque phrase, générer l'audio via Cartesia et cacher dans Redis
+ *    via setTtsCached (même cache que le TTS runtime)
+ * 4. Au runtime, speakTtsStreamed trouve un cache hit pour chaque phrase
+ *    → playback immédiat (~2ms Redis lookup vs ~400-800ms Cartesia synthesis)
  *
- * Le greeting est une seule phrase, donc pas besoin de split. Le cache TTS
- * utilise la même clé que le runtime, garantissant un hit.
+ * IMPORTANT : Le pipeline de transformation du texte (clean + pauses + split)
+ * doit être identique à celui de speakTtsStreamed, sinon les clés de cache
+ * ne correspondront pas.
  */
 import { db } from '../../../shared/db/client';
 import { logger } from '../../../shared/logger/pino';
 import { getTtsCached, setTtsCached } from '../tts-cache';
+import { cleanTextForTts, addNaturalPauses } from './tts-handler';
 import { DEFAULT_CARTESIA_VOICE_ID } from '@sokar/config';
 
 /**
@@ -30,10 +35,10 @@ export function buildGreetingText(restaurantName: string): string {
 }
 
 /**
- * Génère le greeting via Cartesia TTS (format PCMA 8kHz, compatible Telnyx).
+ * Génère une phrase via Cartesia TTS (format PCMA 8kHz, compatible Telnyx).
  * Utilise l'endpoint /tts/bytes (HTTP, non-streaming) pour simplicité.
  */
-async function generateGreetingAudio(
+async function generateSentenceAudio(
   text: string,
   voiceId: string,
 ): Promise<Buffer> {
@@ -107,29 +112,43 @@ export async function initGreetingCache(restaurantNames?: string[]): Promise<voi
   for (const name of names) {
     const greetingText = buildGreetingText(name);
 
-    // Vérifier si déjà en cache (évite de régénérer au restart)
-    try {
-      const existing = await getTtsCached(greetingText, cacheVoiceId);
-      if (existing) {
-        skipped++;
-        continue;
-      }
-    } catch {
-      // Redis error — on continue et on génère
-    }
+    // Reproduire le même pipeline que speakTtsStreamed :
+    // cleanTextForTts → addNaturalPauses → split en phrases
+    const cleaned = cleanTextForTts(greetingText);
+    const withPauses = addNaturalPauses(cleaned);
+    const sentences = withPauses
+      .split(/(?<=[.!?])\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
 
-    // Générer via Cartesia
-    try {
-      const audio = await generateGreetingAudio(greetingText, voiceId);
-      await setTtsCached(greetingText, cacheVoiceId, audio);
-      cached++;
-    } catch (err) {
-      logger.warn({ err, restaurant: name }, '[greetings] Generation failed (non-blocking)');
-      failed++;
+    for (const sentence of sentences) {
+      // Vérifier si déjà en cache (évite de régénérer au restart)
+      try {
+        const existing = await getTtsCached(sentence, cacheVoiceId);
+        if (existing) {
+          skipped++;
+          continue;
+        }
+      } catch {
+        // Redis error — on continue et on génère
+      }
+
+      // Générer via Cartesia
+      try {
+        const audio = await generateSentenceAudio(sentence, voiceId);
+        await setTtsCached(sentence, cacheVoiceId, audio);
+        cached++;
+      } catch (err) {
+        logger.warn(
+          { err, restaurant: name, sentence },
+          '[greetings] Generation failed (non-blocking)',
+        );
+        failed++;
+      }
     }
   }
 
   logger.info(
-    `[greetings] Pre-cache: ${cached} generated, ${skipped} already cached, ${failed} failed (${names?.length ?? 0} total)`,
+    `[greetings] Pre-cache: ${cached} generated, ${skipped} already cached, ${failed} failed (${names?.length ?? 0} restaurants)`,
   );
 }
