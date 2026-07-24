@@ -1,5 +1,5 @@
 import { db } from '../../shared/db/client';
-import type { Prisma, Reservation, Restaurant } from '@prisma/client';
+import { Prisma, type Reservation, type Restaurant } from '@prisma/client';
 import { queues } from '../../shared/queue/queues';
 import { logger } from '../../shared/logger/pino';
 import { GoogleCalendarClient } from '../../shared/google-calendar/client';
@@ -44,8 +44,48 @@ function timeKey(date: Date): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
+/**
+ * Vérifie qu'une réservation existante correspond aux paramètres d'entrée.
+ * En cas de mismatch (bug amont, retry avec args différents), on log un warning
+ * mais on retourne quand même la réservation existante — la première création
+ * est la source de vérité.
+ */
+function logReplayMismatch(input: CreateReservationInput, existing: Reservation): void {
+  const mismatches: string[] = [];
+  if (existing.partySize !== input.partySize) mismatches.push('partySize');
+  if (existing.reservedAt.getTime() !== input.reservedAt.getTime()) mismatches.push('reservedAt');
+  if (existing.customerName !== input.customerName) mismatches.push('customerName');
+  if (mismatches.length > 0) {
+    logger.warn(
+      {
+        callId: input.callId,
+        reservationId: existing.id,
+        mismatches,
+      },
+      '[ReservationService] Replay-safe: existing reservation params differ from input (first creation is source of truth)',
+    );
+  }
+}
+
 export class ReservationService {
   static async create(input: CreateReservationInput) {
+    // Replay-safe : si une réservation existe déjà pour ce callId (retransmission
+    // webhook, retry LLM, fallback), on retourne la réservation existante sans
+    // recréer ni renvoyer un SMS. Le callId est unique en DB (schema.prisma).
+    if (input.callId) {
+      const existing = await db.reservation.findUnique({
+        where: { callId: input.callId },
+      });
+      if (existing) {
+        logReplayMismatch(input, existing);
+        logger.info(
+          { callId: input.callId, reservationId: existing.id },
+          '[ReservationService] Replay-safe: returning existing reservation for callId',
+        );
+        return existing;
+      }
+    }
+
     const restaurant = await db.restaurant.findUniqueOrThrow({
       where: { id: input.restaurantId },
       include: { exposureSettings: true },
@@ -74,6 +114,24 @@ export class ReservationService {
     // 2. Allouer et créer la réservation dans une transaction pour éviter
     //    l'allocation concurrente de la même table.
     const reservation = await db.$transaction(async (tx) => {
+      // Double-check inside la transaction : évite d'allouer une table si la
+      // réservation existe déjà (race entre le check externe et la transaction).
+      // Sans cela, une insertion concurrente entre le check externe et ici
+      // entraînerait une allocation de table orpheline (leak) au commit.
+      if (input.callId) {
+        const existingInTx = await tx.reservation.findUnique({
+          where: { callId: input.callId },
+        });
+        if (existingInTx) {
+          logReplayMismatch(input, existingInTx);
+          logger.info(
+            { callId: input.callId, reservationId: existingInTx.id },
+            '[ReservationService] Replay-safe: double-check in transaction found existing, skipping table allocation',
+          );
+          return existingInTx;
+        }
+      }
+
       const table = await tableAllocation.allocate(
         {
           restaurantId: input.restaurantId,
@@ -91,21 +149,31 @@ export class ReservationService {
         throw new Error('SLOT_NOT_AVAILABLE');
       }
 
-      return tx.reservation.create({
-        data: {
-          restaurantId: input.restaurantId,
-          callId: input.callId,
-          reservedAt: input.reservedAt,
-          startsAt: input.reservedAt,
-          endsAt: endTime,
-          partySize: input.partySize,
-          customerName: input.customerName,
-          customerPhone: input.customerPhone,
-          status: 'CONFIRMED',
-          tableId: table.id,
-          estimatedRevenue: input.partySize * 35,
-        },
-      });
+      try {
+        return await tx.reservation.create({
+          data: {
+            restaurantId: input.restaurantId,
+            callId: input.callId,
+            reservedAt: input.reservedAt,
+            startsAt: input.reservedAt,
+            endsAt: endTime,
+            partySize: input.partySize,
+            customerName: input.customerName,
+            customerPhone: input.customerPhone,
+            status: 'CONFIRMED',
+            tableId: table.id,
+            estimatedRevenue: input.partySize * 35,
+          },
+        });
+      } catch (err) {
+        // Race ultra-étroite : un autre tx a inséré entre le double-check et le
+        // create. On laisse l'erreur propager pour rollback la transaction
+        // (y compris l'allocation de table) — évite le leak de table. Le caller
+        // gère l'erreur gracieusement (transfert gérant). Le premier create a
+        // réussi, la réservation existe ; le retry suivant la trouvera via le
+        // check externe.
+        throw err;
+      }
     });
 
     // 3. Create Google Calendar event and store event ID

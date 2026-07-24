@@ -13,6 +13,7 @@ import { logger } from '../../../shared/logger/pino';
 import { telnyxFetch } from '../../../shared/telnyx/http-agent';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
+import { redactPii } from './pii-redact';
 import { persistLatencyTrace } from './session-persistence';
 import {
   CARTESIA_RETRY_DELAY_MS,
@@ -143,7 +144,9 @@ export function cleanTextForTts(text: string): string {
 }
 
 export async function speakTelnyxNative(session: CallSession, text: string): Promise<void> {
-  writeDebugLog(`[speakTelnyxNative] Sending native Telnyx TTS speak command for: "${text}"`);
+  writeDebugLog(
+    `[speakTelnyxNative] Sending native Telnyx TTS speak command for: "${redactPii(text)}"`,
+  );
   try {
     const res = await telnyxFetch(`/v2/calls/${session.callControlId}/actions/speak`, {
       method: 'POST',
@@ -215,7 +218,7 @@ async function speakTtsFragment(
   }
 
   writeDebugLog(
-    `[speakTtsStreamed] Starting synthesis for text: "${cleanedText}" (original: "${text}")`,
+    `[speakTtsStreamed] Starting synthesis for text: "${redactPii(cleanedText)}" (original: "${redactPii(text)}")`,
   );
 
   const isAlaw = session.codec === 'PCMA';
@@ -270,7 +273,7 @@ async function speakTtsFragment(
     }
 
     if (cachedBuffer) {
-      writeDebugLog(`[speakTtsStreamed] Cache HIT for sentence: "${trimmed}"`);
+      writeDebugLog(`[speakTtsStreamed] Cache HIT for sentence: "${redactPii(trimmed)}"`);
       if (session.latencyTrace && !session.latencyTrace.ttsFirstByteMs) {
         session.latencyTrace.ttsFirstByteMs = Date.now() - session.latencyTrace.startTime;
       }
@@ -333,7 +336,7 @@ async function speakTtsFragment(
         const err = new Error(`Cartesia stream failed with status ${status}`);
         captureException(err, {
           tags: { service: 'handler', action: 'speakTtsStreamed', type: 'http-status' },
-          extra: { callId: session.callControlId, status, sentence: trimmed },
+          extra: { callId: session.callControlId, status, sentence: redactPii(trimmed) },
         });
         await speakTelnyxNative(
           session,
@@ -470,7 +473,7 @@ async function speakTtsFragment(
       );
       captureException(err, {
         tags: { service: 'handler', action: 'speakTtsStreamed', type: 'exception' },
-        extra: { callId: session.callControlId, sentence: trimmed },
+        extra: { callId: session.callControlId, sentence: redactPii(trimmed) },
       });
       await speakTelnyxNative(
         session,

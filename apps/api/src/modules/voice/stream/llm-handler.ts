@@ -16,6 +16,7 @@ import { playFiller, selectRandomGoodbyeText } from './fillers-cache';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
+import { redactPii } from './pii-redact';
 import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from './tts-handler';
 import {
   createCartesiaContextTurn,
@@ -237,7 +238,7 @@ export function handleFluxEvent(
           );
           captureException(err, {
             tags: { service: 'handler', action: 'speculative-llm' },
-            extra: { callId: session.callControlId, transcript: event.transcript },
+            extra: { callId: session.callControlId, transcript: redactPii(event.transcript) },
           });
           session.speculativeLlm = null;
           session.speculativeResult = null;
@@ -392,11 +393,11 @@ async function processTranscript(
     return;
   }
   if (shouldSkipDuplicateTranscript(session, transcript)) {
-    writeDebugLog(`[processTranscript] Skipping duplicate transcript: "${transcript}"`);
+    writeDebugLog(`[processTranscript] Skipping duplicate transcript: "${redactPii(transcript)}"`);
     return;
   }
 
-  writeDebugLog(`[processTranscript] Received transcript: "${transcript}"`);
+  writeDebugLog(`[processTranscript] Received transcript: "${redactPii(transcript)}"`);
   try {
     session.abortController = new AbortController();
     writeDebugLog(`[processTranscript] Calling LLM...`);
@@ -406,7 +407,7 @@ async function processTranscript(
       session.latencyTrace.llmFirstTokenMs = Date.now() - session.latencyTrace.startTime;
     }
     const ttsResponse = stripRepeatedGreeting(llmResponse, session);
-    writeDebugLog(`[processTranscript] LLM responded: "${llmResponse}"`);
+    writeDebugLog(`[processTranscript] LLM responded: "${redactPii(llmResponse)}"`);
 
     if (!ttsResponse) {
       writeDebugLog(`[processTranscript] LLM response empty after greeting strip, skipping TTS`);
@@ -435,7 +436,7 @@ async function processTranscript(
     );
     captureException(err, {
       tags: { service: 'handler', action: 'processTranscript' },
-      extra: { callId: session.callControlId, transcript },
+      extra: { callId: session.callControlId, transcript: redactPii(transcript) },
     });
     mgr.transition(session, 'LISTENING');
   } finally {
@@ -459,7 +460,9 @@ async function processTranscriptStreaming(
     return;
   }
   if (shouldSkipDuplicateTranscript(session, transcript)) {
-    writeDebugLog(`[processTranscriptStreaming] Skipping duplicate transcript: "${transcript}"`);
+    writeDebugLog(
+      `[processTranscriptStreaming] Skipping duplicate transcript: "${redactPii(transcript)}"`,
+    );
     return;
   }
 
@@ -626,7 +629,7 @@ async function processTranscriptStreaming(
     return;
   }
 
-  writeDebugLog(`[processTranscriptStreaming] Starting LLM stream for: "${transcript}"`);
+  writeDebugLog(`[processTranscriptStreaming] Starting LLM stream for: "${redactPii(transcript)}"`);
   // Une clôture ne peut ni créer ni modifier une réservation : on conserve la
   // formulation libre du LLM mais on omet le schéma d'outils et on borne la
   // réponse, ce qui réduit le prompt et le temps de génération.
@@ -664,7 +667,7 @@ async function processTranscriptStreaming(
       transcript,
       (phrase: string) => {
         if (!isCurrentResponse() || abortController.signal.aborted) return;
-        writeDebugLog(`[processTranscriptStreaming] Phrase received: "${phrase}"`);
+        writeDebugLog(`[processTranscriptStreaming] Phrase received: "${redactPii(phrase)}"`);
         if (session.latencyTrace && !session.latencyTrace.llmFirstTokenMs) {
           session.latencyTrace.llmFirstTokenMs = Date.now() - session.latencyTrace.startTime;
           recordVoiceTurnEvent(session, 'llm_first_phrase', {
@@ -745,7 +748,7 @@ async function processTranscriptStreaming(
     );
     captureException(err, {
       tags: { service: 'handler', action: 'processTranscriptStreaming' },
-      extra: { callId: session.callControlId, transcript },
+      extra: { callId: session.callControlId, transcript: redactPii(transcript) },
     });
     mgr.transition(session, 'LISTENING');
   } finally {

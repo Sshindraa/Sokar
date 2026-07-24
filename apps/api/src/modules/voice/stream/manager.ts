@@ -7,6 +7,7 @@ import {
   CEREBRAS_BASE_URL,
 } from '@sokar/config';
 import { getRestaurantTools } from '../tools';
+import { validateToolArgs } from '../tool-schemas';
 import {
   ReservationService,
   type AvailabilityResult,
@@ -171,6 +172,98 @@ export function isSafeVoiceNameMatch(spokenName: string, storedName: string): bo
 
 function normalizeVoicePhone(value: string | null | undefined): string {
   return value?.replace(/\D/g, '') ?? '';
+}
+
+/**
+ * Circuit breaker simple pour les providers LLM voice.
+ * Après N échecs consécutifs, le provider est marqué "open" (skip) pendant
+ * un cooldown. Au prochain appel après le cooldown, on tente une requête
+ * "half-open" : si elle réussit, le breaker se ferme ; si elle échoue,
+ * le cooldown redémarre.
+ *
+ * État in-memory (non persistant) — se réinitialise au redémarrage du process.
+ * Suffisant pour un outage temporaire ; ne remplace pas un monitoring externe.
+ */
+interface CircuitBreakerState {
+  failures: number;
+  openedAt: number | null; // timestamp ms, null = closed
+}
+
+const CIRCUIT_BREAKER_THRESHOLD = 3; // 3 échecs consécutifs → open
+const CIRCUIT_BREAKER_COOLDOWN_MS = 30_000; // 30s de cooldown
+
+const circuitBreakers: Record<string, CircuitBreakerState> = {
+  cerebras: { failures: 0, openedAt: null },
+  openrouter: { failures: 0, openedAt: null },
+};
+
+function isCircuitBreakerOpen(provider: 'cerebras' | 'openrouter'): boolean {
+  const state = circuitBreakers[provider];
+  if (state.openedAt === null) return false;
+  const elapsed = Date.now() - state.openedAt;
+  if (elapsed >= CIRCUIT_BREAKER_COOLDOWN_MS) {
+    // Half-open : on laisse passer une requête pour tester le provider
+    logger.info({ provider }, `[circuit-breaker] ${provider} entering half-open state`);
+    return false;
+  }
+  return true;
+}
+
+function recordProviderSuccess(provider: 'cerebras' | 'openrouter'): void {
+  const wasOpen = circuitBreakers[provider].openedAt !== null;
+  circuitBreakers[provider] = { failures: 0, openedAt: null };
+  if (wasOpen) {
+    logger.info({ provider }, `[circuit-breaker] ${provider} closed (recovered)`);
+  }
+}
+
+function recordProviderFailure(provider: 'cerebras' | 'openrouter'): void {
+  const state = circuitBreakers[provider];
+  state.failures++;
+  if (state.failures >= CIRCUIT_BREAKER_THRESHOLD) {
+    const wasOpen = state.openedAt !== null;
+    state.openedAt = Date.now();
+    if (!wasOpen) {
+      logger.warn(
+        { provider, failures: state.failures },
+        `[circuit-breaker] ${provider} opened after ${state.failures} consecutive failures`,
+      );
+    } else {
+      logger.warn(
+        { provider, failures: state.failures },
+        `[circuit-breaker] ${provider} half-open request failed, cooldown restarted`,
+      );
+    }
+  }
+}
+
+function resetCircuitBreaker(provider: 'cerebras' | 'openrouter'): void {
+  circuitBreakers[provider] = { failures: 0, openedAt: null };
+}
+
+// Exporté pour les tests
+export function _resetCircuitBreakersForTesting(): void {
+  resetCircuitBreaker('cerebras');
+  resetCircuitBreaker('openrouter');
+}
+
+/**
+ * Timeout par requête LLM (ms). Si le provider ne répond pas dans ce délai,
+ * on abort et on fallback. Configurable via env var VOICE_LLM_TIMEOUT_MS.
+ * Défaut : 8000ms (8s) — suffisant pour TTFT + premiers tokens en streaming.
+ */
+const _timeoutMs = Number(process.env.VOICE_LLM_TIMEOUT_MS);
+const LLM_REQUEST_TIMEOUT_MS = Number.isFinite(_timeoutMs) && _timeoutMs > 0 ? _timeoutMs : 8000;
+
+/**
+ * Combine le signal de session avec un timeout par requête.
+ * Retourne un signal qui abort si l'un des deux se déclenche.
+ */
+function withRequestTimeout(sessionSignal?: AbortSignal): AbortSignal {
+  // AbortSignal.any est disponible en Node 20+
+  const timeoutSignal = AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS);
+  if (!sessionSignal) return timeoutSignal;
+  return AbortSignal.any([sessionSignal, timeoutSignal]);
 }
 
 export class CallSessionManager {
@@ -533,34 +626,114 @@ export class CallSessionManager {
       signal?: AbortSignal;
     },
   ): Promise<Response> {
-    if (getVoiceLlmProvider() === 'cerebras') {
-      const response = await this.fetchCerebrasCompletion(messages, opts, getVoiceLlmModel());
-      if (
-        !response.ok &&
-        isOpenRouterFallbackEnabled() &&
-        isFallbackEligibleError(response.status)
-      ) {
-        logger.warn(
-          { status: response.status, model: getVoiceLlmModel() },
-          'LLM primary (Cerebras) failed, falling back to OpenRouter',
-        );
-        await response.text().catch(() => {});
-        return this.fetchOpenRouterCompletion(messages, opts, getVoiceLlmFallbackModel());
+    const useCerebrasPrimary = getVoiceLlmProvider() === 'cerebras';
+
+    if (useCerebrasPrimary) {
+      // Circuit breaker : skip Cerebras si open
+      if (!isCircuitBreakerOpen('cerebras')) {
+        try {
+          const response = await this.fetchCerebrasCompletion(messages, opts, getVoiceLlmModel());
+          if (response.ok) {
+            recordProviderSuccess('cerebras');
+            return response;
+          }
+          // HTTP error — record failure, check fallback eligibility
+          recordProviderFailure('cerebras');
+          if (isOpenRouterFallbackEnabled() && isFallbackEligibleError(response.status)) {
+            logger.warn(
+              { status: response.status, model: getVoiceLlmModel() },
+              'LLM primary (Cerebras) failed, falling back to OpenRouter',
+            );
+            await response.text().catch(() => {});
+            return this.fetchWithFallback(
+              'openrouter',
+              messages,
+              opts,
+              getVoiceLlmFallbackModel(),
+              false,
+            );
+          }
+          return response;
+        } catch (err) {
+          // Network error / timeout — record failure, fallback
+          recordProviderFailure('cerebras');
+          if (isOpenRouterFallbackEnabled()) {
+            logger.warn(
+              { err: err instanceof Error ? err.message : String(err) },
+              'LLM primary (Cerebras) network error, falling back to OpenRouter',
+            );
+            return this.fetchWithFallback(
+              'openrouter',
+              messages,
+              opts,
+              getVoiceLlmFallbackModel(),
+              false,
+            );
+          }
+          throw err;
+        }
       }
-      return response;
+      // Circuit breaker open → skip directly to OpenRouter
+      logger.warn(
+        { provider: 'cerebras' },
+        '[circuit-breaker] Cerebras skipped (open), using OpenRouter',
+      );
+      return this.fetchWithFallback(
+        'openrouter',
+        messages,
+        opts,
+        getVoiceLlmFallbackModel(),
+        false,
+      );
     }
 
     // OpenRouter primary, Cerebras fallback
-    const response = await this.fetchOpenRouterCompletion(messages, opts, getVoiceLlmModel());
-    if (!response.ok && isCerebrasFallbackEnabled() && isFallbackEligibleError(response.status)) {
-      logger.warn(
-        { status: response.status, model: getVoiceLlmModel() },
-        'LLM primary (OpenRouter) failed, falling back to Cerebras',
-      );
-      await response.text().catch(() => {});
-      return this.fetchCerebrasCompletion(messages, opts, getVoiceLlmFallbackModel());
+    if (!isCircuitBreakerOpen('openrouter')) {
+      try {
+        const response = await this.fetchOpenRouterCompletion(messages, opts, getVoiceLlmModel());
+        if (response.ok) {
+          recordProviderSuccess('openrouter');
+          return response;
+        }
+        recordProviderFailure('openrouter');
+        if (isCerebrasFallbackEnabled() && isFallbackEligibleError(response.status)) {
+          logger.warn(
+            { status: response.status, model: getVoiceLlmModel() },
+            'LLM primary (OpenRouter) failed, falling back to Cerebras',
+          );
+          await response.text().catch(() => {});
+          return this.fetchWithFallback(
+            'cerebras',
+            messages,
+            opts,
+            getVoiceLlmFallbackModel(),
+            false,
+          );
+        }
+        return response;
+      } catch (err) {
+        recordProviderFailure('openrouter');
+        if (isCerebrasFallbackEnabled()) {
+          logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'LLM primary (OpenRouter) network error, falling back to Cerebras',
+          );
+          return this.fetchWithFallback(
+            'cerebras',
+            messages,
+            opts,
+            getVoiceLlmFallbackModel(),
+            false,
+          );
+        }
+        throw err;
+      }
     }
-    return response;
+    logger.warn(
+      { provider: 'openrouter' },
+      '[circuit-breaker] OpenRouter skipped (open), using Cerebras',
+    );
+    return this.fetchWithFallback('cerebras', messages, opts, getVoiceLlmFallbackModel(), false);
   }
 
   /**
@@ -593,7 +766,7 @@ export class CallSessionManager {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${process.env.CEREBRAS_API_KEY}`,
       },
-      signal: opts.signal,
+      signal: withRequestTimeout(opts.signal),
       body: JSON.stringify(body),
     });
   }
@@ -626,7 +799,7 @@ export class CallSessionManager {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
       },
-      signal: opts.signal,
+      signal: withRequestTimeout(opts.signal),
       body: JSON.stringify(body),
     });
   }
@@ -644,35 +817,171 @@ export class CallSessionManager {
       temperature: number;
       signal?: AbortSignal;
     },
-  ): Promise<Response> {
-    if (getVoiceLlmProvider() === 'cerebras') {
-      const response = await this.fetchCerebrasStreaming(messages, opts, getVoiceLlmModel());
-      if (
-        !response.ok &&
-        isOpenRouterFallbackEnabled() &&
-        isFallbackEligibleError(response.status)
-      ) {
-        logger.warn(
-          { status: response.status, model: getVoiceLlmModel() },
-          'LLM streaming primary (Cerebras) failed, falling back to OpenRouter',
-        );
-        await response.text().catch(() => {});
-        return this.fetchOpenRouterStreaming(messages, opts, getVoiceLlmFallbackModel());
+  ): Promise<{ response: Response; provider: 'cerebras' | 'openrouter' }> {
+    const useCerebrasPrimary = getVoiceLlmProvider() === 'cerebras';
+
+    if (useCerebrasPrimary) {
+      // Circuit breaker : skip Cerebras si open
+      if (!isCircuitBreakerOpen('cerebras')) {
+        try {
+          const response = await this.fetchCerebrasStreaming(messages, opts, getVoiceLlmModel());
+          if (response.ok) {
+            recordProviderSuccess('cerebras');
+            return { response, provider: 'cerebras' };
+          }
+          // HTTP error — record failure, check fallback eligibility
+          recordProviderFailure('cerebras');
+          if (isOpenRouterFallbackEnabled() && isFallbackEligibleError(response.status)) {
+            logger.warn(
+              { status: response.status, model: getVoiceLlmModel() },
+              'LLM streaming primary (Cerebras) failed, falling back to OpenRouter',
+            );
+            await response.text().catch(() => {});
+            const fallbackResponse = await this.fetchWithFallback(
+              'openrouter',
+              messages,
+              opts,
+              getVoiceLlmFallbackModel(),
+              true,
+            );
+            return { response: fallbackResponse, provider: 'openrouter' };
+          }
+          return { response, provider: 'cerebras' };
+        } catch (err) {
+          // Network error / timeout — record failure, fallback
+          recordProviderFailure('cerebras');
+          if (isOpenRouterFallbackEnabled()) {
+            logger.warn(
+              { err: err instanceof Error ? err.message : String(err) },
+              'LLM streaming primary (Cerebras) network error, falling back to OpenRouter',
+            );
+            const fallbackResponse = await this.fetchWithFallback(
+              'openrouter',
+              messages,
+              opts,
+              getVoiceLlmFallbackModel(),
+              true,
+            );
+            return { response: fallbackResponse, provider: 'openrouter' };
+          }
+          throw err;
+        }
       }
-      return response;
+      // Circuit breaker open → skip directly to OpenRouter
+      logger.warn(
+        { provider: 'cerebras' },
+        '[circuit-breaker] Cerebras skipped (open), using OpenRouter',
+      );
+      const fallbackResponse = await this.fetchWithFallback(
+        'openrouter',
+        messages,
+        opts,
+        getVoiceLlmFallbackModel(),
+        true,
+      );
+      return { response: fallbackResponse, provider: 'openrouter' };
     }
 
     // OpenRouter primary, Cerebras fallback
-    const response = await this.fetchOpenRouterStreaming(messages, opts, getVoiceLlmModel());
-    if (!response.ok && isCerebrasFallbackEnabled() && isFallbackEligibleError(response.status)) {
-      logger.warn(
-        { status: response.status, model: getVoiceLlmModel() },
-        'LLM streaming primary (OpenRouter) failed, falling back to Cerebras',
-      );
-      await response.text().catch(() => {});
-      return this.fetchCerebrasStreaming(messages, opts, getVoiceLlmFallbackModel());
+    if (!isCircuitBreakerOpen('openrouter')) {
+      try {
+        const response = await this.fetchOpenRouterStreaming(messages, opts, getVoiceLlmModel());
+        if (response.ok) {
+          recordProviderSuccess('openrouter');
+          return { response, provider: 'openrouter' };
+        }
+        recordProviderFailure('openrouter');
+        if (isCerebrasFallbackEnabled() && isFallbackEligibleError(response.status)) {
+          logger.warn(
+            { status: response.status, model: getVoiceLlmModel() },
+            'LLM streaming primary (OpenRouter) failed, falling back to Cerebras',
+          );
+          await response.text().catch(() => {});
+          const fallbackResponse = await this.fetchWithFallback(
+            'cerebras',
+            messages,
+            opts,
+            getVoiceLlmFallbackModel(),
+            true,
+          );
+          return { response: fallbackResponse, provider: 'cerebras' };
+        }
+        return { response, provider: 'openrouter' };
+      } catch (err) {
+        recordProviderFailure('openrouter');
+        if (isCerebrasFallbackEnabled()) {
+          logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'LLM streaming primary (OpenRouter) network error, falling back to Cerebras',
+          );
+          const fallbackResponse = await this.fetchWithFallback(
+            'cerebras',
+            messages,
+            opts,
+            getVoiceLlmFallbackModel(),
+            true,
+          );
+          return { response: fallbackResponse, provider: 'cerebras' };
+        }
+        throw err;
+      }
     }
-    return response;
+    logger.warn(
+      { provider: 'openrouter' },
+      '[circuit-breaker] OpenRouter skipped (open), using Cerebras',
+    );
+    const fallbackResponse = await this.fetchWithFallback(
+      'cerebras',
+      messages,
+      opts,
+      getVoiceLlmFallbackModel(),
+      true,
+    );
+    return { response: fallbackResponse, provider: 'cerebras' };
+  }
+
+  /**
+   * Fetch via le provider de fallback avec circuit breaker + timeout.
+   * Si le fallback échoue aussi, on relance l'erreur (pas de retry supplémentaire).
+   */
+  private async fetchWithFallback(
+    provider: 'cerebras' | 'openrouter',
+    messages: ChatMessage[],
+    opts: {
+      tools?: ReturnType<typeof getRestaurantTools>;
+      maxTokens: number;
+      temperature: number;
+      signal?: AbortSignal;
+    },
+    model: string,
+    isStreaming: boolean = false,
+  ): Promise<Response> {
+    if (isCircuitBreakerOpen(provider)) {
+      // Le fallback est aussi en circuit breaker — on tente quand même (half-open)
+      // car on n'a pas d'autre option. Si ça échoue, l'erreur remonte.
+      logger.warn(
+        { provider },
+        `[circuit-breaker] Fallback ${provider} is open, attempting half-open request`,
+      );
+    }
+    try {
+      const response = isStreaming
+        ? provider === 'cerebras'
+          ? await this.fetchCerebrasStreaming(messages, opts, model)
+          : await this.fetchOpenRouterStreaming(messages, opts, model)
+        : provider === 'cerebras'
+          ? await this.fetchCerebrasCompletion(messages, opts, model)
+          : await this.fetchOpenRouterCompletion(messages, opts, model);
+      if (response.ok) {
+        recordProviderSuccess(provider);
+      } else {
+        recordProviderFailure(provider);
+      }
+      return response;
+    } catch (err) {
+      recordProviderFailure(provider);
+      throw err;
+    }
   }
 
   /**
@@ -704,7 +1013,7 @@ export class CallSessionManager {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${process.env.CEREBRAS_API_KEY}`,
       },
-      signal: opts.signal,
+      signal: withRequestTimeout(opts.signal),
       body: JSON.stringify(body),
     });
   }
@@ -738,7 +1047,7 @@ export class CallSessionManager {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
       },
-      signal: opts.signal,
+      signal: withRequestTimeout(opts.signal),
       body: JSON.stringify(body),
     });
   }
@@ -761,7 +1070,7 @@ export class CallSessionManager {
     const messages = [...session.history];
 
     for (let round = 0; round < 3; round++) {
-      const response = await this.fetchLlmStreaming(messages, {
+      const { response, provider: providerUsed } = await this.fetchLlmStreaming(messages, {
         tools,
         maxTokens: options.maxTokens ?? 200,
         temperature: options.temperature ?? 0.7,
@@ -782,6 +1091,13 @@ export class CallSessionManager {
       let sentenceBuffer = '';
       let fullText = '';
       let hasToolCall = false;
+      let phrasesYielded = false;
+      let midStreamTimedOut = false;
+      const toolCallAccumulator: Array<{
+        id: string;
+        type: string;
+        function: { name: string; arguments: string };
+      }> = [];
 
       try {
         while (true) {
@@ -809,10 +1125,32 @@ export class CallSessionManager {
 
               if (!delta) continue;
 
-              // Tool call détecté → arrêter le stream et fallback
+              // Accumuler les deltas de tool_call au lieu de réémettre un appel non-streaming
               if (delta.tool_calls) {
                 hasToolCall = true;
-                break;
+                for (const tc of delta.tool_calls) {
+                  const idx = tc.index ?? 0;
+                  if (!toolCallAccumulator[idx]) {
+                    toolCallAccumulator[idx] = {
+                      id: tc.id ?? '',
+                      type: tc.type ?? 'function',
+                      function: {
+                        name: tc.function?.name ?? '',
+                        arguments: tc.function?.arguments ?? '',
+                      },
+                    };
+                  } else {
+                    // Delta subséquent : concaténer les arguments
+                    if (tc.function?.name)
+                      toolCallAccumulator[idx].function.name = tc.function.name;
+                    if (tc.function?.arguments)
+                      toolCallAccumulator[idx].function.arguments += tc.function.arguments;
+                    if (tc.id) toolCallAccumulator[idx].id = tc.id;
+                  }
+                }
+                // NE PAS break — continuer à lire le stream pour accumuler tous les deltas
+                // NE PAS continue — un delta peut contenir à la fois tool_calls et content.
+                // On laisse le code traiter delta.content ci-dessous.
               }
 
               const token = delta.content ?? '';
@@ -826,6 +1164,7 @@ export class CallSessionManager {
               if (match) {
                 const phrase = match[1].trim();
                 if (phrase) {
+                  phrasesYielded = true;
                   // Lancer onPhrase sans await pour ne pas bloquer le stream
                   Promise.resolve(onPhrase(phrase)).catch((err) =>
                     logger.error({ err }, 'onPhrase failed in sentence-buffered LLM stream'),
@@ -837,8 +1176,130 @@ export class CallSessionManager {
               // Ignorer les lignes mal formées
             }
           }
+        }
+      } catch (streamErr) {
+        // Timeout mid-stream ou autre erreur réseau pendant la lecture du stream
+        if (streamErr instanceof Error && streamErr.name === 'AbortError') {
+          // Si la session elle-même a été abortée (raccroché, barge-in),
+          // ne pas retry — l'appel est terminé, retry gaspillerait des appels API.
+          // withRequestTimeout combine le signal de session avec un signal de timeout ;
+          // quand seul le timeout fire, signal?.aborted est false.
+          if (signal?.aborted) {
+            throw streamErr;
+          }
+          // Le timeout a fire (pas la session) → retry sur l'autre provider
+          // Record failure for circuit breaker
+          recordProviderFailure(providerUsed);
 
-          if (hasToolCall) break;
+          if (!phrasesYielded && !fullText.trim() && !hasToolCall) {
+            // Aucun audio envoyé à l'utilisateur et aucun tool call commencé
+            // → on peut retry sur l'autre provider
+            logger.warn(
+              { provider: providerUsed, callId: session.callControlId },
+              `[stream] Mid-stream timeout on ${providerUsed}, no audio sent yet — retrying with fallback provider`,
+            );
+            // Retry avec l'autre provider
+            const fallbackProvider = providerUsed === 'cerebras' ? 'openrouter' : 'cerebras';
+            const fallbackModel = getVoiceLlmFallbackModel();
+            const retryResponse = await this.fetchWithFallback(
+              fallbackProvider,
+              messages,
+              {
+                tools,
+                maxTokens: options.maxTokens ?? 200,
+                temperature: options.temperature ?? 0.7,
+                signal,
+              },
+              fallbackModel,
+              true,
+            );
+
+            if (!retryResponse.ok) {
+              throw new Error(`LLM ${retryResponse.status}: ${await retryResponse.text()}`);
+            }
+            if (!retryResponse.body) {
+              throw new Error('LLM response body is null');
+            }
+
+            // Lire le stream de retry avec le même parser
+            const retryReader = retryResponse.body.getReader();
+            try {
+              while (true) {
+                const { done: retryDone, value: retryValue } = await retryReader.read();
+                if (retryDone) break;
+                buffer += decoder.decode(retryValue, { stream: true });
+                const retryLines = buffer.split('\n');
+                buffer = retryLines.pop() ?? '';
+                for (const line of retryLines) {
+                  const trimmed = line.trim();
+                  if (!trimmed.startsWith('data: ')) continue;
+                  const data = trimmed.slice(6);
+                  if (data === '[DONE]') break;
+                  try {
+                    const chunk = JSON.parse(data);
+                    const delta = chunk.choices?.[0]?.delta;
+                    if (!delta) continue;
+                    if (delta.tool_calls) {
+                      hasToolCall = true;
+                      for (const tc of delta.tool_calls) {
+                        const idx = tc.index ?? 0;
+                        if (!toolCallAccumulator[idx]) {
+                          toolCallAccumulator[idx] = {
+                            id: tc.id ?? '',
+                            type: tc.type ?? 'function',
+                            function: {
+                              name: tc.function?.name ?? '',
+                              arguments: tc.function?.arguments ?? '',
+                            },
+                          };
+                        } else {
+                          if (tc.function?.name)
+                            toolCallAccumulator[idx].function.name = tc.function.name;
+                          if (tc.function?.arguments)
+                            toolCallAccumulator[idx].function.arguments += tc.function.arguments;
+                          if (tc.id) toolCallAccumulator[idx].id = tc.id;
+                        }
+                      }
+                    }
+                    const token = delta.content ?? '';
+                    if (!token) continue;
+                    sentenceBuffer += token;
+                    fullText += token;
+                    const match = sentenceBuffer.match(/^(.+?[.!?])(\s+|$)/);
+                    if (match) {
+                      const phrase = match[1].trim();
+                      if (phrase) {
+                        phrasesYielded = true;
+                        Promise.resolve(onPhrase(phrase)).catch((err) =>
+                          logger.error({ err }, 'onPhrase failed in retry stream'),
+                        );
+                      }
+                      sentenceBuffer = sentenceBuffer.slice(match[0].length);
+                    }
+                  } catch {
+                    // Ignorer les lignes mal formées
+                  }
+                }
+              }
+            } finally {
+              retryReader.releaseLock();
+            }
+          } else {
+            // Du texte a déjà été envoyé à l'utilisateur → on ne peut pas retry
+            // (l'utilisateur entendrait du doublon). On retourne ce qu'on a.
+            midStreamTimedOut = true;
+            logger.warn(
+              {
+                provider: providerUsed,
+                callId: session.callControlId,
+                partialTextLength: fullText.length,
+              },
+              `[stream] Mid-stream timeout on ${providerUsed}, ${phrasesYielded ? 'audio already sent' : 'text accumulated'} — returning partial response`,
+            );
+          }
+        } else {
+          // Non-AbortError — rethrow
+          throw streamErr;
         }
       } finally {
         reader.releaseLock();
@@ -846,52 +1307,63 @@ export class CallSessionManager {
 
       // Yield le reste du buffer s'il reste quelque chose
       if (sentenceBuffer.trim()) {
+        phrasesYielded = true;
         await onPhrase(sentenceBuffer.trim());
       }
 
-      if (hasToolCall) {
-        // Fallback non-streaming pour gérer les tool calls
-        const response = await this.fetchLlmCompletion(messages, {
-          tools,
-          maxTokens: 150,
-          temperature: 0.7,
-          signal,
-        });
-
-        if (!response.ok) {
-          throw new Error(`LLM ${response.status}: ${await response.text()}`);
-        }
-
-        const data = (await response.json()) as LlmResponse;
-        signal?.throwIfAborted();
-        const msg = data.choices?.[0]?.message;
-
-        if (!msg) throw new Error('Empty LLM response');
-
-        if (msg.content?.trim()) {
-          session.history.push(msg);
-          const text = msg.content.trim();
-          await onPhrase(text);
-          return text;
-        }
-
-        const toolCalls = msg.tool_calls;
-        if (toolCalls && toolCalls.length > 0) {
-          session.history.push(msg);
-          messages.push(msg);
-          for (const tc of toolCalls) {
-            signal?.throwIfAborted();
-            const result = await this.executeTool(session, tc.function.name, tc.function.arguments);
-            signal?.throwIfAborted();
-            const toolMsg: ChatMessage = { role: 'tool', tool_call_id: tc.id, content: result };
-            session.history.push(toolMsg);
-            messages.push(toolMsg);
+      if (hasToolCall && !midStreamTimedOut) {
+        // Reconstruire les tool calls depuis les deltas accumulés
+        const toolCalls = toolCallAccumulator.filter((tc) => tc.function.name); // ignorer les entrées vides
+        if (toolCalls.length === 0) {
+          // Aucun tool call valide — traiter comme texte normal
+          if (fullText.trim()) {
+            session.history.push({ role: 'assistant', content: fullText.trim() });
           }
-          continue; // round suivant
+          return fullText.trim();
         }
 
-        session.history.push(msg);
-        return msg.content ?? '';
+        // Log warning si les arguments semblent incomplets (stream interrompu ?)
+        for (const tc of toolCalls) {
+          if (!tc.function.arguments || !tc.function.arguments.trim()) {
+            logger.warn(
+              { toolName: tc.function.name, callId: session.callControlId },
+              '[stream] Tool call reçu avec arguments vides — possible stream interrompu',
+            );
+          }
+        }
+
+        // Construire le message assistant avec les tool calls reconstruits
+        const assistantMsg: ChatMessage = {
+          role: 'assistant',
+          content: fullText.trim(),
+          tool_calls: toolCalls.map((tc) => ({
+            id: tc.id,
+            type: tc.type,
+            function: { name: tc.function.name, arguments: tc.function.arguments },
+          })),
+        };
+        session.history.push(assistantMsg);
+        messages.push(assistantMsg);
+
+        // Exécuter les tools directement (pas de réémission non-streaming)
+        for (const tc of toolCalls) {
+          signal?.throwIfAborted();
+          const result = await this.executeTool(session, tc.function.name, tc.function.arguments);
+          signal?.throwIfAborted();
+          const toolMsg: ChatMessage = { role: 'tool', tool_call_id: tc.id, content: result };
+          session.history.push(toolMsg);
+          messages.push(toolMsg);
+        }
+        continue; // round suivant — le LLM recevra les résultats des tools
+      }
+
+      if (midStreamTimedOut) {
+        // Timeout mid-stream avec audio déjà envoyé — retourner le texte partiel
+        // sans exécuter les tool calls potentiellement incomplets
+        if (fullText.trim()) {
+          session.history.push({ role: 'assistant', content: fullText.trim() });
+        }
+        return fullText.trim();
       }
 
       // Pas de tool call → streaming terminé normalement
@@ -913,7 +1385,15 @@ export class CallSessionManager {
    */
   private async executeTool(session: CallSession, name: string, argsJson: string): Promise<string> {
     try {
-      const args = JSON.parse(argsJson);
+      const validated = validateToolArgs(name, argsJson);
+      if (!validated.success) {
+        logger.warn(
+          { toolName: name, error: validated.error, callId: session.callControlId },
+          '[tool] Zod validation rejected tool args',
+        );
+        return "Je n'ai pas pu comprendre les informations transmises. Pouvez-vous reformuler ?";
+      }
+      const args = validated.data as Record<string, any>;
 
       switch (name) {
         case 'createReservation': {
@@ -988,13 +1468,15 @@ export class CallSessionManager {
         }
 
         case 'cancelReservation': {
-          const { customerName, date } = args;
+          const { customerName, date, time } = args;
 
           try {
             // Trouver la réservation par nom + date
             const dayStart = new Date(`${date}T00:00:00`);
             const dayEnd = new Date(`${date}T23:59:59`);
 
+            // Requête volontairement large (contains+insensitive) pour capter les
+            // variations STT ; l'affinage se fait en JS ci-dessous.
             const reservations = await db.reservation.findMany({
               where: {
                 restaurantId: session.restaurantId,
@@ -1002,19 +1484,89 @@ export class CallSessionManager {
                 reservedAt: { gte: dayStart, lte: dayEnd },
                 status: 'CONFIRMED',
               },
+              select: { id: true, customerName: true, customerPhone: true, reservedAt: true },
             });
 
             if (reservations.length === 0) {
               return `Je n'ai trouvé aucune réservation au nom de ${customerName} pour le ${date}. Vérifiez l'orthographe du nom ou la date.`;
             }
 
-            // Annuler la première réservation trouvée
-            const reservation = reservations[0];
-            await ReservationService.update(reservation.id, session.restaurantId, {
-              status: 'CANCELLED',
-            });
+            // Cas simple : une seule réservation → on annule uniquement si le nom
+            // correspond sûrement (contains est large — "Jean" peut matcher "Jean Dupont").
+            if (reservations.length === 1) {
+              if (isSafeVoiceNameMatch(customerName, reservations[0].customerName)) {
+                await ReservationService.update(reservations[0].id, session.restaurantId, {
+                  status: 'CANCELLED',
+                });
+                return `J'ai bien annulé la réservation de ${customerName} pour le ${date}. Un message de confirmation sera envoyé.`;
+              }
+              // Le nom ne correspond pas sûrement → transférer au gérant
+              return `Je n'ai pas pu identifier votre réservation avec certitude. Je vous transfère au gérant qui pourra s'en occuper.`;
+            }
 
-            return `J'ai bien annulé la réservation de ${customerName} pour le ${date}. Un message de confirmation sera envoyé.`;
+            // Plusieurs réservations au même nom → résolution progressive
+            // (même pattern que reportDelay) : téléphone appelant, puis nom sûr,
+            // puis heure exacte. Si toujours ambigu → handoff au gérant, pas d'annulation.
+            const callerPhone = normalizeVoicePhone(session.from);
+            let resolved: { id: string } | null = null;
+
+            // 1. Téléphone appelant
+            if (callerPhone) {
+              const phoneMatches = reservations.filter(
+                (r) => normalizeVoicePhone(r.customerPhone) === callerPhone,
+              );
+              if (phoneMatches.length === 1) {
+                resolved = { id: phoneMatches[0].id };
+              }
+            }
+
+            // 2. Nom sûr (au moins 2 mots correspondants)
+            if (!resolved) {
+              const safeNameMatches = reservations.filter((r) =>
+                isSafeVoiceNameMatch(customerName, r.customerName),
+              );
+              if (safeNameMatches.length === 1) {
+                resolved = { id: safeNameMatches[0].id };
+              }
+            }
+
+            // 3. Heure exacte si fournie — comparaison dans la timezone du restaurant
+            // (le LLM fournit l'heure locale, pas UTC).
+            if (!resolved && time) {
+              const restaurant = await db.restaurant.findUnique({
+                where: { id: session.restaurantId },
+                select: { timezone: true },
+              });
+              const timeZone = restaurant?.timezone ?? 'Europe/Paris';
+              const formatter = new Intl.DateTimeFormat('fr-FR', {
+                timeZone,
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false,
+              });
+              const timeMatches = reservations.filter((r) => {
+                const reservationTime = formatter.format(r.reservedAt);
+                return reservationTime === time;
+              });
+              if (timeMatches.length === 1) {
+                resolved = { id: timeMatches[0].id };
+              }
+            }
+
+            // 4. Résolu de manière unique → on annule
+            if (resolved) {
+              logger.info(
+                { callId: session.callControlId, reservationId: resolved.id, strategy: 'cancel' },
+                '[tool] cancelReservation resolved ambiguous match',
+              );
+              await ReservationService.update(resolved.id, session.restaurantId, {
+                status: 'CANCELLED',
+              });
+              return `J'ai bien annulé la réservation de ${customerName} pour le ${date}. Un message de confirmation sera envoyé.`;
+            }
+
+            // 5. Toujours ambigu → transfert au gérant, PAS d'annulation
+            return `J'ai trouvé plusieurs réservations au nom de ${customerName} pour le ${date}. Pour éviter d'annuler la mauvaise, je vous transfère au gérant qui pourra s'en occuper.`;
           } catch (err: unknown) {
             logger.error(
               {
@@ -1026,7 +1578,7 @@ export class CallSessionManager {
             if (process.env.SENTRY_DSN) {
               Sentry.captureException(err, {
                 tags: { service: 'manager-tool', tool: 'cancelReservation' },
-                extra: { callId: session.callControlId, customerName, date },
+                extra: { callId: session.callControlId, date },
               });
             }
             return `Désolé, une erreur est survenue lors de l'annulation. Je vais vous transférer au gérant qui pourra s'en occuper.`;
@@ -1060,7 +1612,7 @@ export class CallSessionManager {
             if (process.env.SENTRY_DSN) {
               Sentry.captureException(err, {
                 tags: { service: 'manager-tool', tool: 'takeMessage' },
-                extra: { callId: session.callControlId, customerName },
+                extra: { callId: session.callControlId },
               });
             }
             return `Je n'ai pas pu enregistrer votre message. Je vais vous transférer au gérant.`;
@@ -1228,7 +1780,6 @@ export class CallSessionManager {
                   extra: {
                     callId: session.callControlId,
                     giftCardId: card.id,
-                    senderPhone: normalizedPhone,
                   },
                 });
               }
@@ -1279,7 +1830,7 @@ export class CallSessionManager {
       if (process.env.SENTRY_DSN) {
         Sentry.captureException(err, {
           tags: { service: 'manager', tool: name },
-          extra: { callId: session.callControlId, argsJson },
+          extra: { callId: session.callControlId },
         });
       }
       return `Erreur lors de l'exécution de ${name}.`;

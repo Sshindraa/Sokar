@@ -17,6 +17,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { getRestaurantTools } from '../tools';
+import { validateToolArgs, VOICE_TOOL_SCHEMAS } from '../tool-schemas';
 
 const TIME_PATTERN = '^([0-1]\\d|2[0-3]):[0-5]\\d$';
 
@@ -214,6 +215,15 @@ describe('cancelReservation tool', () => {
     expect(desc).toMatch(/annul/);
     expect(desc).toMatch(/nom.*date|identifier/);
   });
+
+  it('time is an optional HH:MM property (helps disambiguate same-name reservations)', () => {
+    expect(params.properties.time).toEqual({
+      type: 'string',
+      pattern: TIME_PATTERN,
+      description: expect.stringContaining('optionnel'),
+    });
+    expect(params.required).not.toContain('time');
+  });
 });
 
 describe('takeMessage tool', () => {
@@ -333,5 +343,232 @@ describe('recommendGiftCardAmount tool', () => {
   it('description mentions advising an amount', () => {
     const desc = tool.function.description.toLowerCase();
     expect(desc).toMatch(/sugg[ée]r|conseil|montant/);
+  });
+});
+
+// ─── Zod-derived JSON Schema: functional equivalence ────────────
+// The JSON Schema exposed to the LLM is now derived from Zod schemas via
+// zod-to-json-schema. These tests pin that the derivation preserves the same
+// properties, required fields, and constraints as the previous hand-written
+// schema for every tool.
+
+describe('Zod-derived JSON Schema equivalence (all 8 tools)', () => {
+  const tools = getRestaurantTools('rest-1');
+
+  it.each(VOICE_TOOL_SCHEMAS.map((t) => t.name))(
+    '%s: derived parameters have type=object, properties, and a required array',
+    (name) => {
+      const tool = tools.find((t) => t.function.name === name)!;
+      const params = tool.function.parameters as {
+        type: string;
+        properties: Record<string, unknown>;
+        required: string[];
+      };
+      expect(params.type).toBe('object');
+      expect(params.properties).toBeDefined();
+      expect(Array.isArray(params.required)).toBe(true);
+    },
+  );
+
+  it('no derived schema leaks $schema or additionalProperties (clean LLM-facing output)', () => {
+    for (const tool of tools) {
+      const params = tool.function.parameters as Record<string, unknown>;
+      expect(params).not.toHaveProperty('$schema');
+      expect(params).not.toHaveProperty('additionalProperties');
+    }
+  });
+
+  it('createReservation preserves date format, time pattern, partySize bounds', () => {
+    const params = tools.find((t) => t.function.name === 'createReservation')!.function
+      .parameters as {
+      properties: Record<string, any>;
+      required: string[];
+    };
+    expect(params.properties.date).toMatchObject({ type: 'string', format: 'date' });
+    expect(params.properties.time).toMatchObject({ type: 'string', pattern: TIME_PATTERN });
+    expect(params.properties.partySize).toMatchObject({
+      type: 'integer',
+      minimum: 1,
+      maximum: 7,
+    });
+    expect(new Set(params.required)).toEqual(
+      new Set(['date', 'time', 'partySize', 'customerName']),
+    );
+  });
+
+  it('purchaseGiftCard preserves amount constraints (number, min 1, multipleOf 1)', () => {
+    const params = tools.find((t) => t.function.name === 'purchaseGiftCard')!.function
+      .parameters as { properties: Record<string, any>; required: string[] };
+    expect(params.properties.amount).toMatchObject({
+      type: 'number',
+      minimum: 1,
+      multipleOf: 1,
+    });
+    expect(new Set(params.required)).toEqual(
+      new Set(['amount', 'senderName', 'senderPhone', 'recipientName']),
+    );
+  });
+
+  it('reportDelay preserves delayMinutes bounds (min 5, max 180)', () => {
+    const params = tools.find((t) => t.function.name === 'reportDelay')!.function.parameters as {
+      properties: Record<string, any>;
+    };
+    expect(params.properties.delayMinutes).toMatchObject({ minimum: 5, maximum: 180 });
+  });
+
+  it('recommendGiftCardAmount preserves partySize min 1 (no max)', () => {
+    const params = tools.find((t) => t.function.name === 'recommendGiftCardAmount')!.function
+      .parameters as { properties: Record<string, any> };
+    expect(params.properties.partySize).toMatchObject({ type: 'integer', minimum: 1 });
+    expect(params.properties.partySize).not.toHaveProperty('maximum');
+  });
+});
+
+// ─── validateToolArgs: runtime validation ───────────────────────
+
+describe('validateToolArgs — valid args', () => {
+  it.each([
+    [
+      'createReservation',
+      { date: '2024-01-15', time: '19:30', partySize: 4, customerName: 'Marie Dupont' },
+    ],
+    ['checkAvailability', { date: '2024-01-15', partySize: 2 }],
+    ['checkAvailability', { date: '2024-01-15', partySize: 2, time: '20:00' }],
+    ['cancelReservation', { customerName: 'Marie', date: '2024-01-15' }],
+    ['cancelReservation', { customerName: 'Marie', date: '2024-01-15', time: '19:30' }],
+    ['reportDelay', { customerName: 'Marie', date: '2024-01-15', time: '19:30', delayMinutes: 15 }],
+    ['takeMessage', { customerName: 'Marie', message: 'Bonjour' }],
+    ['takeMessage', { customerName: 'Marie', message: 'Bonjour', callbackPhone: '+33612345678' }],
+    ['handoffToManager', {}],
+    [
+      'purchaseGiftCard',
+      { amount: 50, senderName: 'Marie', senderPhone: '+33612345678', recipientName: 'Paul' },
+    ],
+    ['recommendGiftCardAmount', { occasion: 'anniversaire', partySize: 2 }],
+  ])('%s accepts valid args', (name, args) => {
+    const result = validateToolArgs(name, JSON.stringify(args));
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data).toBeDefined();
+  });
+});
+
+describe('validateToolArgs — invalid args', () => {
+  it('createReservation rejects a bad time format (not HH:MM)', () => {
+    const result = validateToolArgs(
+      'createReservation',
+      JSON.stringify({ date: '2024-01-15', time: '25:00', partySize: 2, customerName: 'Marie' }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('cancelReservation rejects a bad time format (not HH:MM)', () => {
+    const result = validateToolArgs(
+      'cancelReservation',
+      JSON.stringify({ customerName: 'Marie', date: '2024-01-15', time: '25:99' }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('createReservation rejects a bad date format (not YYYY-MM-DD)', () => {
+    const result = validateToolArgs(
+      'createReservation',
+      JSON.stringify({ date: '15/01/2024', time: '19:30', partySize: 2, customerName: 'Marie' }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('createReservation rejects partySize out of bounds (0)', () => {
+    const result = validateToolArgs(
+      'createReservation',
+      JSON.stringify({ date: '2024-01-15', time: '19:30', partySize: 0, customerName: 'Marie' }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('createReservation rejects partySize out of bounds (8)', () => {
+    const result = validateToolArgs(
+      'createReservation',
+      JSON.stringify({ date: '2024-01-15', time: '19:30', partySize: 8, customerName: 'Marie' }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('createReservation rejects a missing required field (customerName)', () => {
+    const result = validateToolArgs(
+      'createReservation',
+      JSON.stringify({ date: '2024-01-15', time: '19:30', partySize: 2 }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('createReservation rejects a wrong type (partySize as string)', () => {
+    const result = validateToolArgs(
+      'createReservation',
+      JSON.stringify({ date: '2024-01-15', time: '19:30', partySize: '2', customerName: 'Marie' }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('purchaseGiftCard rejects a non-integer amount', () => {
+    const result = validateToolArgs(
+      'purchaseGiftCard',
+      JSON.stringify({
+        amount: 50.5,
+        senderName: 'Marie',
+        senderPhone: '+33612345678',
+        recipientName: 'Paul',
+      }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('purchaseGiftCard rejects amount below minimum (0)', () => {
+    const result = validateToolArgs(
+      'purchaseGiftCard',
+      JSON.stringify({
+        amount: 0,
+        senderName: 'Marie',
+        senderPhone: '+33612345678',
+        recipientName: 'Paul',
+      }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('purchaseGiftCard rejects missing required field (senderPhone)', () => {
+    const result = validateToolArgs(
+      'purchaseGiftCard',
+      JSON.stringify({ amount: 50, senderName: 'Marie', recipientName: 'Paul' }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('purchaseGiftCard rejects a wrong type (amount as string)', () => {
+    const result = validateToolArgs(
+      'purchaseGiftCard',
+      JSON.stringify({
+        amount: '50',
+        senderName: 'Marie',
+        senderPhone: '+33612345678',
+        recipientName: 'Paul',
+      }),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('returns a non-empty error string on failure (no Zod internals leaked to caller)', () => {
+    const result = validateToolArgs('createReservation', JSON.stringify({}));
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.length).toBeGreaterThan(0);
+  });
+
+  it('rejects malformed JSON gracefully', () => {
+    const result = validateToolArgs('createReservation', '{not valid json');
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an unknown tool name', () => {
+    const result = validateToolArgs('doesNotExist', '{}');
+    expect(result.success).toBe(false);
   });
 });

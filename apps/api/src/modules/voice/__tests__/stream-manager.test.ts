@@ -14,8 +14,13 @@
  */
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { WebSocket } from 'ws';
-import { CallSessionManager, isSafeVoiceNameMatch } from '../stream/manager';
-import type { CallSession } from '../stream/types';
+import {
+  CallSessionManager,
+  isSafeVoiceNameMatch,
+  _resetCircuitBreakersForTesting,
+} from '../stream/manager';
+import type { CallSession, ChatMessage } from '../stream/types';
+import type { getRestaurantTools } from '../tools';
 
 // ── Module mocks ───────────────────────────────────────────────────────────
 
@@ -415,15 +420,18 @@ describe('CallSessionManager — tool execution', () => {
     expect(ReservationService.availability).toHaveBeenCalledWith('rest-1', '2026-07-16', 6);
   });
 
-  it('cancelReservation : annule la résa trouvée', async () => {
+  it('cancelReservation : single match avec nom sûr → annule', async () => {
     vi.mocked(db.reservation.findMany).mockResolvedValue([
-      { id: 'res-cancel-1', customerName: 'Jean' } as unknown as Awaited<
-        ReturnType<typeof db.reservation.findMany>
-      >[number],
+      {
+        id: 'res-cancel-1',
+        customerName: 'Jean Dupont',
+        customerPhone: null,
+        reservedAt: new Date('2026-07-16T19:30:00'),
+      } as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>[number],
     ]);
     mockFetchToolCall(
       'cancelReservation',
-      { customerName: 'Jean', date: '2026-07-16' },
+      { customerName: 'Jean Dupont', date: '2026-07-16' },
       "C'est annulé.",
     );
 
@@ -435,7 +443,7 @@ describe('CallSessionManager — tool execution', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           restaurantId: 'rest-1',
-          customerName: { contains: 'Jean', mode: 'insensitive' },
+          customerName: { contains: 'Jean Dupont', mode: 'insensitive' },
           status: 'CONFIRMED',
         }),
       }),
@@ -458,6 +466,250 @@ describe('CallSessionManager — tool execution', () => {
     await mgr.processUtterance(session, 'Annuler');
 
     expect(ReservationService.update).not.toHaveBeenCalled();
+  });
+
+  it('cancelReservation : transfère au gérant si plusieurs réservations au même nom (ambiguïté)', async () => {
+    vi.mocked(db.reservation.findMany).mockResolvedValue([
+      {
+        id: 'res-amb-1',
+        customerName: 'Jean Dupont',
+        customerPhone: '+33****0099',
+        reservedAt: new Date('2026-07-16T19:30:00Z'),
+      },
+      {
+        id: 'res-amb-2',
+        customerName: 'Jean Dupont',
+        customerPhone: '+33****0088',
+        reservedAt: new Date('2026-07-16T20:00:00Z'),
+      },
+    ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
+    mockFetchToolCall(
+      'cancelReservation',
+      { customerName: 'Jean Dupont', date: '2026-07-16' },
+      'Annule ma résa.',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    await mgr.processUtterance(session, 'Annuler ma résa');
+
+    // Ambiguïté non résolue → PAS d'annulation (handoff au gérant côté tool).
+    expect(ReservationService.update).not.toHaveBeenCalled();
+  });
+
+  it('cancelReservation : résout par téléphone appelant si plusieurs réservations au même nom', async () => {
+    vi.mocked(db.reservation.findMany).mockResolvedValue([
+      {
+        id: 'res-phone-1',
+        customerName: 'Jean Dupont',
+        customerPhone: '+33****0001',
+        reservedAt: new Date('2026-07-16T19:30:00Z'),
+      },
+      {
+        id: 'res-phone-2',
+        customerName: 'Jean Dupont',
+        customerPhone: '+33****0002',
+        reservedAt: new Date('2026-07-16T20:00:00Z'),
+      },
+    ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
+    mockFetchToolCall(
+      'cancelReservation',
+      { customerName: 'Jean Dupont', date: '2026-07-16' },
+      'Annule ma résa.',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    await mgr.processUtterance(session, 'Annuler ma résa');
+
+    expect(ReservationService.update).toHaveBeenCalledWith('res-phone-1', 'rest-1', {
+      status: 'CANCELLED',
+    });
+  });
+
+  it('cancelReservation : résout par heure si fournie et téléphone ne matche pas', async () => {
+    vi.mocked(db.reservation.findMany).mockResolvedValue([
+      {
+        id: 'res-time-1',
+        customerName: 'Jean Dupont',
+        customerPhone: '+33****0099',
+        // 19:30 Paris (UTC+2 été) = 17:30 UTC
+        reservedAt: new Date('2026-07-16T17:30:00Z'),
+      },
+      {
+        id: 'res-time-2',
+        customerName: 'Jean Dupont',
+        customerPhone: '+33****0088',
+        // 20:00 Paris (UTC+2 été) = 18:00 UTC
+        reservedAt: new Date('2026-07-16T18:00:00Z'),
+      },
+    ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
+    mockFetchToolCall(
+      'cancelReservation',
+      { customerName: 'Jean Dupont', date: '2026-07-16', time: '19:30' },
+      'Annule ma résa de 19h30.',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    await mgr.processUtterance(session, 'Annuler ma résa de 19h30');
+
+    expect(ReservationService.update).toHaveBeenCalledWith('res-time-1', 'rest-1', {
+      status: 'CANCELLED',
+    });
+  });
+
+  it('cancelReservation : transfère si heure fournie mais plusieurs réservations à cette heure', async () => {
+    vi.mocked(db.reservation.findMany).mockResolvedValue([
+      {
+        id: 'res-same-1',
+        customerName: 'Jean Dupont',
+        customerPhone: '+33****0099',
+        // 19:30 Paris (UTC+2 été) = 17:30 UTC
+        reservedAt: new Date('2026-07-16T17:30:00Z'),
+      },
+      {
+        id: 'res-same-2',
+        customerName: 'Jean Dupont',
+        customerPhone: '+33****0088',
+        // 19:30 Paris (UTC+2 été) = 17:30 UTC
+        reservedAt: new Date('2026-07-16T17:30:00Z'),
+      },
+    ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
+    mockFetchToolCall(
+      'cancelReservation',
+      { customerName: 'Jean Dupont', date: '2026-07-16', time: '19:30' },
+      'Annule ma résa de 19h30.',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    await mgr.processUtterance(session, 'Annuler ma résa de 19h30');
+
+    // Plusieurs réservations à la même heure → ambiguïté, PAS d'annulation.
+    expect(ReservationService.update).not.toHaveBeenCalled();
+  });
+
+  it('cancelReservation : résout par nom sûr si téléphone ne matche pas', async () => {
+    vi.mocked(db.reservation.findMany).mockResolvedValue([
+      {
+        id: 'res-safename-1',
+        customerName: 'Jean Dupont',
+        customerPhone: '+33****0099',
+        reservedAt: new Date('2026-07-16T17:30:00Z'),
+      },
+      {
+        id: 'res-safename-2',
+        customerName: 'Jean Martin',
+        customerPhone: '+33****0088',
+        reservedAt: new Date('2026-07-16T18:00:00Z'),
+      },
+    ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
+    mockFetchToolCall(
+      'cancelReservation',
+      { customerName: 'Jean Dupont', date: '2026-07-16' },
+      'Annule ma résa.',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    await mgr.processUtterance(session, 'Annuler ma résa');
+
+    expect(ReservationService.update).toHaveBeenCalledWith('res-safename-1', 'rest-1', {
+      status: 'CANCELLED',
+    });
+  });
+
+  it('cancelReservation : single match mais nom ne correspond pas sûrement → transfert', async () => {
+    vi.mocked(db.reservation.findMany).mockResolvedValue([
+      {
+        id: 'res-unsafe-1',
+        customerName: 'Jean Dupont',
+        customerPhone: null,
+        reservedAt: new Date('2026-07-16T17:30:00Z'),
+      } as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>[number],
+    ]);
+    mockFetchToolCall(
+      'cancelReservation',
+      { customerName: 'Jean', date: '2026-07-16' },
+      'Annule ma résa.',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    await mgr.processUtterance(session, 'Annuler ma résa');
+
+    // "Jean" = 1 token → isSafeVoiceNameMatch retourne false → transfert, PAS d'annulation.
+    expect(ReservationService.update).not.toHaveBeenCalled();
+  });
+
+  it('cancelReservation : tous les customerPhone null → pas de faux match téléphone', async () => {
+    vi.mocked(db.reservation.findMany).mockResolvedValue([
+      {
+        id: 'res-nullphone-1',
+        customerName: 'Jean Dupont',
+        customerPhone: null,
+        reservedAt: new Date('2026-07-16T17:30:00Z'),
+      },
+      {
+        id: 'res-nullphone-2',
+        customerName: 'Jean Dupont',
+        customerPhone: null,
+        reservedAt: new Date('2026-07-16T18:00:00Z'),
+      },
+    ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
+    mockFetchToolCall(
+      'cancelReservation',
+      { customerName: 'Jean Dupont', date: '2026-07-16' },
+      'Annule ma résa.',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    await mgr.processUtterance(session, 'Annuler ma résa');
+
+    // normalizeVoicePhone(null) → "" ≠ "330001" → pas de match téléphone.
+    // Pas d'heure fournie → ambigu → transfert, PAS d'annulation.
+    expect(ReservationService.update).not.toHaveBeenCalled();
+  });
+
+  it('cancelReservation : résout par heure avec timezone restaurant', async () => {
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      timezone: 'Europe/Paris',
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.reservation.findMany).mockResolvedValue([
+      {
+        id: 'res-tz-1',
+        customerName: 'Jean Dupont',
+        customerPhone: '+33****0099',
+        // 19:30 Paris (UTC+2 été) = 17:30 UTC
+        reservedAt: new Date('2026-07-16T17:30:00Z'),
+      },
+      {
+        id: 'res-tz-2',
+        customerName: 'Jean Dupont',
+        customerPhone: '+33****0088',
+        // 20:00 Paris (UTC+2 été) = 18:00 UTC
+        reservedAt: new Date('2026-07-16T18:00:00Z'),
+      },
+    ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
+    mockFetchToolCall(
+      'cancelReservation',
+      { customerName: 'Jean Dupont', date: '2026-07-16', time: '19:30' },
+      'Annule ma résa de 19h30.',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    await mgr.processUtterance(session, 'Annuler ma résa de 19h30');
+
+    expect(db.restaurant.findUnique).toHaveBeenCalledWith({
+      where: { id: 'rest-1' },
+      select: { timezone: true },
+    });
+    expect(ReservationService.update).toHaveBeenCalledWith('res-tz-1', 'rest-1', {
+      status: 'CANCELLED',
+    });
   });
 
   it('takeMessage : enregistre le message en DB', async () => {
@@ -724,10 +976,12 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     expect(session.turnCount).toBe(1);
   });
 
-  it('détecte un tool_call dans le stream et fallback sur callLlm non-streaming', async () => {
-    // Round 0 — streaming fetch : détecte tool_calls dans le stream
+  it('reconstruit un tool_call depuis le stream sans réémission non-streaming', async () => {
+    // Round 0 — streaming fetch : accumulate les deltas de tool_call
     const sseWithToolCall = [
-      'data: {"choices":[{"delta":{"tool_calls":[{"id":"tc-1","type":"function","function":{"name":"handoffToManager","arguments":"{}"}}]}}]}\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"tc-1","type":"function","function":{"name":"handoffToManager","arguments":""}}]}}]}\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]}}]}\n',
+      'data: [DONE]\n',
     ];
     const encoder = new TextEncoder();
     const streamWithToolCall = new ReadableStream({
@@ -738,9 +992,6 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
         controller.close();
       },
     });
-
-    // Round 0 — fallback non-streaming fetch : retourne un tool_call
-    // (executé, puis `continue` vers round 1)
 
     // Round 1 — streaming fetch : retourne du texte normal (pas de tool_call)
     const sseText = [
@@ -757,33 +1008,12 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     });
 
     const fetchMock = vi.fn();
-    // 1. Streaming fetch (round 0) — détecte tool_call
+    // 1. Streaming fetch (round 0) — accumule les deltas de tool_call
     fetchMock.mockResolvedValueOnce({
       ok: true,
       body: streamWithToolCall,
     });
-    // 2. Non-streaming fallback (round 0) — retourne tool_call
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: vi.fn().mockResolvedValue({
-        choices: [
-          {
-            message: {
-              role: 'assistant',
-              content: null,
-              tool_calls: [
-                {
-                  id: 'tc-2',
-                  type: 'function',
-                  function: { name: 'handoffToManager', arguments: '{}' },
-                },
-              ],
-            },
-          },
-        ],
-      }),
-    });
-    // 3. Streaming fetch (round 1) — retourne du texte
+    // 2. Streaming fetch (round 1) — retourne du texte
     fetchMock.mockResolvedValueOnce({
       ok: true,
       body: streamText,
@@ -799,6 +1029,406 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     });
 
     expect(fullText).toBe('Transfert en cours.');
+    // Pas de réémission non-streaming : seulement 2 appels fetch (les 2 rounds streaming)
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('reconstruit un tool_call avec arguments fragmentés depuis le stream', async () => {
+    vi.mocked(ReservationService.create).mockResolvedValue({ id: 'res-new' } as unknown as Awaited<
+      ReturnType<typeof ReservationService.create>
+    >);
+
+    // Round 0 — streaming fetch : tool_call createReservation avec arguments fragmentés
+    const sseWithToolCall = [
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"tc-1","type":"function","function":{"name":"createReservation","arguments":""}}]}}]}\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"date\\":\\"2026-07-16\\""}}]}}]}\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":",\\"time\\":\\"19:30\\",\\"partySize\\":2,\\"customerName\\":\\"Jean Dupont\\"}"}}]}}]}\n',
+      'data: [DONE]\n',
+    ];
+    const encoder = new TextEncoder();
+    const streamWithToolCall = new ReadableStream({
+      start(controller) {
+        for (const chunk of sseWithToolCall) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      },
+    });
+
+    // Round 1 — streaming fetch : retourne du texte normal
+    const sseText = [
+      'data: {"choices":[{"delta":{"content":"C\'est confirmé."}}]}\n',
+      'data: [DONE]\n',
+    ];
+    const streamText = new ReadableStream({
+      start(controller) {
+        for (const chunk of sseText) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      },
+    });
+
+    const fetchMock = vi.fn();
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      body: streamWithToolCall,
+    });
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      body: streamText,
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    const phrases: string[] = [];
+
+    const fullText = await mgr.processUtteranceStreaming(
+      session,
+      'Réserver pour demain',
+      (phrase) => {
+        phrases.push(phrase);
+      },
+    );
+
+    expect(fullText).toBe("C'est confirmé.");
+    expect(ReservationService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        restaurantId: 'rest-1',
+        callId: 'leg-test-1',
+        partySize: 2,
+        customerName: 'Jean Dupont',
+        customerPhone: '+33****0001',
+      }),
+    );
+    // Seulement 2 appels fetch (les 2 rounds streaming), pas de fallback non-streaming
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('préserve le texte avant et après un tool_call dans le même stream', async () => {
+    // Round 0 — streaming fetch : texte, puis tool_call deltas, puis texte à nouveau
+    const sseWithToolCall = [
+      'data: {"choices":[{"delta":{"content":"Je vais vérifier."}}]}\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"tc-1","type":"function","function":{"name":"handoffToManager","arguments":""}}]}}]}\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]}}]}\n',
+      'data: {"choices":[{"delta":{"content":" Un instant."}}]}\n',
+      'data: [DONE]\n',
+    ];
+    const encoder = new TextEncoder();
+    const streamWithToolCall = new ReadableStream({
+      start(controller) {
+        for (const chunk of sseWithToolCall) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      },
+    });
+
+    // Round 1 — streaming fetch : retourne du texte normal (pas de tool_call)
+    const sseText = [
+      'data: {"choices":[{"delta":{"content":"Transfert en cours."}}]}\n',
+      'data: [DONE]\n',
+    ];
+    const streamText = new ReadableStream({
+      start(controller) {
+        for (const chunk of sseText) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      },
+    });
+
+    const fetchMock = vi.fn();
+    // 1. Streaming fetch (round 0) — texte + tool_call + texte
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      body: streamWithToolCall,
+    });
+    // 2. Streaming fetch (round 1) — retourne du texte
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      body: streamText,
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    const phrases: string[] = [];
+
+    const fullText = await mgr.processUtteranceStreaming(session, 'Parler au gérant', (phrase) => {
+      phrases.push(phrase);
+    });
+
+    // fullText est le retour du round 1 (dernier round)
+    expect(fullText).toBe('Transfert en cours.');
+
+    // Le texte du round 0 (avant et après le tool_call) est dans l'historique
+    // comme contenu du message assistant avec tool_calls.
+    const assistantWithToolCalls = session.history.find(
+      (m) => m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0,
+    );
+    expect(assistantWithToolCalls).toBeDefined();
+    expect(assistantWithToolCalls!.content).toContain('Je vais vérifier');
+    expect(assistantWithToolCalls!.content).toContain('Un instant');
+
+    // Seulement 2 appels fetch (les 2 rounds streaming), pas de fallback non-streaming
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  // ── Mid-stream timeout fallback ────────────────────────────────────────────
+
+  /**
+   * Crée un ReadableStream qui envoie les chunks fournis puis throw une AbortError
+   * sur le prochain read() (simule un timeout mid-stream).
+   */
+  function makeStreamThatAbortsAfter(chunks: string[]): ReadableStream<Uint8Array> {
+    const encoder = new TextEncoder();
+    let i = 0;
+    return new ReadableStream({
+      pull(controller) {
+        if (i < chunks.length) {
+          controller.enqueue(encoder.encode(chunks[i]));
+          i++;
+        } else {
+          // Simule l'AbortError propagée par AbortSignal.timeout pendant la lecture
+          controller.error(new DOMException('The operation was aborted', 'AbortError'));
+        }
+      },
+    });
+  }
+
+  /** Crée un ReadableStream normal qui envoie les chunks puis ferme. */
+  function makeNormalStream(chunks: string[]): ReadableStream<Uint8Array> {
+    const encoder = new TextEncoder();
+    return new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      },
+    });
+  }
+
+  it("mid-stream timeout : retry sur l'autre provider si aucun audio envoyé", async () => {
+    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    process.env.CEREBRAS_API_KEY = 'test-k1';
+    process.env.OPENROUTER_API_KEY = 'test-k2';
+    _resetCircuitBreakersForTesting();
+
+    // 1er fetch (Cerebras) : stream qui abort immédiatement (aucun token envoyé)
+    const abortingStream = makeStreamThatAbortsAfter([]);
+    // 2e fetch (OpenRouter fallback) : stream normal avec du texte
+    const retryStream = makeNormalStream([
+      'data: {"choices":[{"delta":{"content":"Bonjour, ça va ?"}}]}\n',
+      'data: [DONE]\n',
+    ]);
+
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('cerebras.ai')) {
+        return Promise.resolve({ ok: true, body: abortingStream });
+      }
+      return Promise.resolve({ ok: true, body: retryStream });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    const phrases: string[] = [];
+
+    const fullText = await mgr.processUtteranceStreaming(session, 'Salut', (phrase) => {
+      phrases.push(phrase);
+    });
+
+    // Le texte vient du retry (OpenRouter)
+    expect(fullText).toContain('Bonjour');
+    // 2 appels fetch : Cerebras (abort) + OpenRouter (retry)
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    delete process.env.VOICE_LLM_PROVIDER;
+    delete process.env.CEREBRAS_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+  });
+
+  it('mid-stream timeout : pas de retry si audio déjà envoyé', async () => {
+    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    process.env.CEREBRAS_API_KEY = 'test-k1';
+    process.env.OPENROUTER_API_KEY = 'test-k2';
+    _resetCircuitBreakersForTesting();
+
+    // 1er fetch (Cerebras) : stream qui envoie "Bonjour." puis abort
+    const abortingStream = makeStreamThatAbortsAfter([
+      'data: {"choices":[{"delta":{"content":"Bonjour."}}]}\n',
+    ]);
+    // 2e fetch (OpenRouter) : ne devrait PAS être appelé
+    const retryStream = makeNormalStream([
+      'data: {"choices":[{"delta":{"content":"Ne devrait pas être lu."}}]}\n',
+      'data: [DONE]\n',
+    ]);
+
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('cerebras.ai')) {
+        return Promise.resolve({ ok: true, body: abortingStream });
+      }
+      return Promise.resolve({ ok: true, body: retryStream });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    const phrases: string[] = [];
+
+    const fullText = await mgr.processUtteranceStreaming(session, 'Salut', (phrase) => {
+      phrases.push(phrase);
+    });
+
+    // Le texte partiel vient de Cerebras (avant le timeout)
+    expect(fullText).toContain('Bonjour');
+    // Pas de retry : seulement 1 appel fetch (Cerebras)
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Une phrase a été yield avant le timeout
+    expect(phrases).toContain('Bonjour.');
+
+    delete process.env.VOICE_LLM_PROVIDER;
+    delete process.env.CEREBRAS_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+  });
+
+  it('mid-stream timeout : pas de tool call incomplet exécuté', async () => {
+    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    process.env.CEREBRAS_API_KEY = 'test-k1';
+    process.env.OPENROUTER_API_KEY = 'test-k2';
+    _resetCircuitBreakersForTesting();
+
+    // 1er fetch (Cerebras) : stream qui envoie un tool_call partiel (nom sans arguments complets) puis abort
+    const abortingStream = makeStreamThatAbortsAfter([
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"tc-1","type":"function","function":{"name":"handoffToManager","arguments":""}}]}}]}\n',
+    ]);
+
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('cerebras.ai')) {
+        return Promise.resolve({ ok: true, body: abortingStream });
+      }
+      return Promise.resolve({
+        ok: true,
+        body: makeNormalStream(['data: [DONE]\n']),
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    const phrases: string[] = [];
+
+    const fullText = await mgr.processUtteranceStreaming(session, 'Parler au gérant', (phrase) => {
+      phrases.push(phrase);
+    });
+
+    // Pas de tool exécuté (tool call incomplet → skip)
+    // handoffToManager n'a pas d'effet métier mais on vérifie qu'aucun tool n'est exécuté
+    // en vérifiant qu'aucun message "tool" n'est ajouté à l'historique
+    const toolMessages = session.history.filter((m) => m.role === 'tool');
+    expect(toolMessages).toHaveLength(0);
+    // Pas de retry (tool_call détecté = hasToolCall=true, mais midStreamTimedOut=true → pas de retry non plus)
+    // Seulement 1 appel fetch
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    delete process.env.VOICE_LLM_PROVIDER;
+    delete process.env.CEREBRAS_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+  });
+
+  it('mid-stream session abort : pas de retry (raccroché)', async () => {
+    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    process.env.CEREBRAS_API_KEY = 'test-k1';
+    process.env.OPENROUTER_API_KEY = 'test-k2';
+    _resetCircuitBreakersForTesting();
+
+    const abortController = new AbortController();
+
+    // Stream qui envoie un chunk puis throw AbortError (session abortée = raccroché)
+    const encoder = new TextEncoder();
+    const abortingStream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Bonjour"}}]}\n'));
+        // Abort la session (simule raccroché / barge-in)
+        abortController.abort();
+        // Throw AbortError pour simuler le stream interrompu par l'abort
+        const err = new Error('Aborted');
+        err.name = 'AbortError';
+        throw err;
+      },
+    });
+
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('cerebras.ai')) {
+        return Promise.resolve({ ok: true, body: abortingStream });
+      }
+      // OpenRouter ne devrait jamais être appelé (pas de retry sur session abort)
+      return Promise.resolve({
+        ok: true,
+        body: makeNormalStream([
+          'data: {"choices":[{"delta":{"content":"Ne devrait pas être lu."}}]}\n',
+          'data: [DONE]\n',
+        ]),
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    session.abortController = abortController;
+
+    // L'erreur doit propager (session abortée, pas de retry)
+    await expect(mgr.processUtteranceStreaming(session, 'Salut', () => {})).rejects.toThrow();
+
+    // Seulement 1 appel fetch (Cerebras) — pas de retry sur session abort
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    delete process.env.VOICE_LLM_PROVIDER;
+    delete process.env.CEREBRAS_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+  });
+
+  it('mid-stream timeout : retry aussi timeout → erreur remonte', async () => {
+    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    process.env.CEREBRAS_API_KEY = 'test-k1';
+    process.env.OPENROUTER_API_KEY = 'test-k2';
+    _resetCircuitBreakersForTesting();
+
+    // Stream qui throw AbortError immédiatement (timeout, session non abortée)
+    const makeAbortStream = (): ReadableStream<Uint8Array> =>
+      new ReadableStream<Uint8Array>({
+        pull() {
+          const err = new Error('Aborted');
+          err.name = 'AbortError';
+          throw err;
+        },
+      });
+
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      // Cerebras puis OpenRouter — les deux timeout
+      if (url.includes('cerebras.ai')) {
+        return Promise.resolve({ ok: true, body: makeAbortStream() });
+      }
+      return Promise.resolve({ ok: true, body: makeAbortStream() });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    // Ne pas abort la session — simule un timeout-only
+
+    // L'erreur doit propager (retry aussi timeout)
+    await expect(mgr.processUtteranceStreaming(session, 'Salut', () => {})).rejects.toThrow();
+
+    // 2 appels : Cerebras + OpenRouter retry. Pas de retry supplémentaire.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    delete process.env.VOICE_LLM_PROVIDER;
+    delete process.env.CEREBRAS_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
   });
 });
 
@@ -864,5 +1494,321 @@ describe('CallSessionManager — cleanup avancé', () => {
     mgr.cleanup(session);
 
     expect(session.speechFinalTimer).toBeNull();
+  });
+});
+
+// ── Circuit breaker + timeout + network-error fallback ─────────────────────
+
+type LlmOpts = {
+  tools?: ReturnType<typeof getRestaurantTools>;
+  maxTokens: number;
+  temperature: number;
+  signal?: AbortSignal;
+};
+
+/** Accès au fetchLlmCompletion privé pour les tests unitaires du circuit breaker. */
+function callFetchLlmCompletion(
+  mgr: CallSessionManager,
+  messages: ChatMessage[],
+  opts: LlmOpts,
+): Promise<Response> {
+  return (
+    mgr as unknown as {
+      fetchLlmCompletion: (m: ChatMessage[], o: LlmOpts) => Promise<Response>;
+    }
+  ).fetchLlmCompletion(messages, opts);
+}
+
+/** Mock fetch qui retourne 503 pour Cerebras et 200 pour OpenRouter. */
+function mockFetchCerebrasFailOpenRouterOk() {
+  const fetchMock = vi.fn().mockImplementation((url: string) => {
+    if (url.includes('cerebras.ai')) {
+      return Promise.resolve({
+        ok: false,
+        status: 503,
+        text: vi.fn().mockResolvedValue('Service Unavailable'),
+        json: vi.fn().mockResolvedValue({}),
+      });
+    }
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      text: vi.fn().mockResolvedValue(''),
+      json: vi.fn().mockResolvedValue({
+        choices: [{ message: { role: 'assistant', content: 'OK from OpenRouter' } }],
+      }),
+    });
+  });
+  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  return fetchMock;
+}
+
+/** Mock fetch qui retourne 503 pour OpenRouter et 200 pour Cerebras. */
+function mockFetchOpenRouterFailCerebrasOk() {
+  const fetchMock = vi.fn().mockImplementation((url: string) => {
+    if (url.includes('openrouter.ai')) {
+      return Promise.resolve({
+        ok: false,
+        status: 503,
+        text: vi.fn().mockResolvedValue('Service Unavailable'),
+        json: vi.fn().mockResolvedValue({}),
+      });
+    }
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      text: vi.fn().mockResolvedValue(''),
+      json: vi.fn().mockResolvedValue({
+        choices: [{ message: { role: 'assistant', content: 'OK from Cerebras' } }],
+      }),
+    });
+  });
+  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  return fetchMock;
+}
+
+/** Mock fetch qui throw une TypeError (network error) pour Cerebras, 200 pour OpenRouter. */
+function mockFetchCerebrasNetworkErrorOpenRouterOk() {
+  const fetchMock = vi.fn().mockImplementation((url: string) => {
+    if (url.includes('cerebras.ai')) {
+      return Promise.reject(new TypeError('fetch failed'));
+    }
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      text: vi.fn().mockResolvedValue(''),
+      json: vi.fn().mockResolvedValue({
+        choices: [{ message: { role: 'assistant', content: 'OK from OpenRouter' } }],
+      }),
+    });
+  });
+  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  return fetchMock;
+}
+
+/** Mock fetch qui ne résout jamais et rejette sur abort du signal. */
+function mockFetchHanging() {
+  const fetchMock = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+    return new Promise<Response>((_resolve, reject) => {
+      const signal = init.signal;
+      if (signal) {
+        if (signal.aborted) {
+          reject(new DOMException('The operation was aborted', 'AbortError'));
+          return;
+        }
+        signal.addEventListener('abort', () => {
+          reject(new DOMException('The operation was aborted', 'AbortError'));
+        });
+      }
+    });
+  });
+  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  return fetchMock;
+}
+
+/** Mock fetch qui retourne 503 pour Cerebras ET OpenRouter (les deux providers en panne). */
+function mockFetchAllProvidersFail() {
+  const fetchMock = vi.fn().mockImplementation((_url: string) => {
+    return Promise.resolve({
+      ok: false,
+      status: 503,
+      text: vi.fn().mockResolvedValue('Service Unavailable'),
+      json: vi.fn().mockResolvedValue({}),
+    });
+  });
+  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  return fetchMock;
+}
+
+describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
+  let originalFetch: typeof globalThis.fetch;
+  let savedProvider: string | undefined;
+  let savedTimeout: string | undefined;
+  let savedCerebrasKey: string | undefined;
+  let savedOpenRouterKey: string | undefined;
+
+  beforeEach(() => {
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
+    originalFetch = globalThis.fetch;
+    savedProvider = process.env.VOICE_LLM_PROVIDER;
+    savedTimeout = process.env.VOICE_LLM_TIMEOUT_MS;
+    savedCerebrasKey = process.env.CEREBRAS_API_KEY;
+    savedOpenRouterKey = process.env.OPENROUTER_API_KEY;
+    _resetCircuitBreakersForTesting();
+    // Clés API présentes pour que les fallbacks soient activés
+    process.env.CEREBRAS_API_KEY = 'test-k1';
+    process.env.OPENROUTER_API_KEY = 'test-k2';
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    _resetCircuitBreakersForTesting();
+    // Restaurer les env vars
+    if (savedProvider === undefined) delete process.env.VOICE_LLM_PROVIDER;
+    else process.env.VOICE_LLM_PROVIDER = savedProvider;
+    if (savedTimeout === undefined) delete process.env.VOICE_LLM_TIMEOUT_MS;
+    else process.env.VOICE_LLM_TIMEOUT_MS = savedTimeout;
+    if (savedCerebrasKey === undefined) delete process.env.CEREBRAS_API_KEY;
+    else process.env.CEREBRAS_API_KEY = savedCerebrasKey;
+    if (savedOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = savedOpenRouterKey;
+    vi.useRealTimers();
+  });
+
+  it('circuit breaker : skip Cerebras après 3 échecs consécutifs', async () => {
+    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    const fetchMock = mockFetchCerebrasFailOpenRouterOk();
+    const mgr = CallSessionManager.getInstance();
+    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
+    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
+
+    // 3 appels : Cerebras 503 → fallback OpenRouter OK
+    for (let i = 0; i < 3; i++) {
+      const res = await callFetchLlmCompletion(mgr, messages, opts);
+      expect(res.ok).toBe(true);
+    }
+
+    // Le 4e appel : circuit breaker open → Cerebras n'est PAS appelé
+    fetchMock.mockClear();
+    const res4 = await callFetchLlmCompletion(mgr, messages, opts);
+    expect(res4.ok).toBe(true);
+
+    // Vérifier qu'aucun appel fetch ne contient l'URL Cerebras
+    const cerebrasCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('cerebras.ai'));
+    expect(cerebrasCalls).toHaveLength(0);
+    // OpenRouter doit avoir été appelé
+    const openRouterCalls = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes('openrouter.ai'),
+    );
+    expect(openRouterCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('fallback sur erreur réseau (timeout)', async () => {
+    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    mockFetchCerebrasNetworkErrorOpenRouterOk();
+    const mgr = CallSessionManager.getInstance();
+    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
+    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
+
+    const res = await callFetchLlmCompletion(mgr, messages, opts);
+    expect(res.ok).toBe(true);
+    expect(res.status).toBe(200);
+  });
+
+  it('timeout : abort la requête après VOICE_LLM_TIMEOUT_MS', async () => {
+    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    // Désactiver le fallback pour que l'erreur de timeout remonte directement
+    delete process.env.OPENROUTER_API_KEY;
+    process.env.VOICE_LLM_TIMEOUT_MS = '100';
+    mockFetchHanging();
+    const mgr = CallSessionManager.getInstance();
+    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
+    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
+
+    // La requête doit rejeter à cause du timeout (≤ 500ms de marge)
+    await expect(callFetchLlmCompletion(mgr, messages, opts)).rejects.toThrow();
+  });
+
+  it('circuit breaker : se réinitialise après cooldown', async () => {
+    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    vi.useFakeTimers();
+    const fetchMock = mockFetchCerebrasFailOpenRouterOk();
+    const mgr = CallSessionManager.getInstance();
+    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
+    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
+
+    // 3 échecs pour ouvrir le circuit breaker
+    for (let i = 0; i < 3; i++) {
+      await callFetchLlmCompletion(mgr, messages, opts);
+    }
+
+    // Avancer le temps au-delà du cooldown (31s)
+    vi.advanceTimersByTime(31_000);
+
+    // Le prochain appel doit tenter Cerebras à nouveau (half-open)
+    fetchMock.mockClear();
+    await callFetchLlmCompletion(mgr, messages, opts);
+    const cerebrasCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('cerebras.ai'));
+    expect(cerebrasCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('fallback bidirectionnel : OpenRouter primaire → Cerebras fallback', async () => {
+    process.env.VOICE_LLM_PROVIDER = 'openrouter';
+    mockFetchOpenRouterFailCerebrasOk();
+    const mgr = CallSessionManager.getInstance();
+    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
+    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
+
+    const res = await callFetchLlmCompletion(mgr, messages, opts);
+    expect(res.ok).toBe(true);
+    expect(res.status).toBe(200);
+  });
+
+  it('circuit breaker : half-open failure redémarre le cooldown', async () => {
+    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    vi.useFakeTimers();
+    const fetchMock = mockFetchCerebrasFailOpenRouterOk();
+    const mgr = CallSessionManager.getInstance();
+    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
+    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
+
+    // 3 échecs pour ouvrir le circuit breaker (Cerebras 503 → fallback OpenRouter OK)
+    for (let i = 0; i < 3; i++) {
+      await callFetchLlmCompletion(mgr, messages, opts);
+    }
+
+    // Avancer le temps au-delà du cooldown (31s) → half-open
+    vi.advanceTimersByTime(31_000);
+
+    // Le prochain appel tente Cerebras (half-open), échoue, fallback OpenRouter OK
+    fetchMock.mockClear();
+    await callFetchLlmCompletion(mgr, messages, opts);
+    const cerebrasCallsAfterHalfOpen = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes('cerebras.ai'),
+    );
+    expect(cerebrasCallsAfterHalfOpen.length).toBeGreaterThanOrEqual(1);
+
+    // Avancer le temps de 29s (toujours dans le nouveau cooldown)
+    vi.advanceTimersByTime(29_000);
+
+    // Le prochain appel doit SKIP Cerebras (cooldown non expiré), aller direct sur OpenRouter
+    fetchMock.mockClear();
+    await callFetchLlmCompletion(mgr, messages, opts);
+    const cerebrasCallsAfterRestart = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes('cerebras.ai'),
+    );
+    expect(cerebrasCallsAfterRestart).toHaveLength(0);
+    const openRouterCallsAfterRestart = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes('openrouter.ai'),
+    );
+    expect(openRouterCallsAfterRestart.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('circuit breaker : les deux providers en panne → erreur remonte au caller', async () => {
+    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    const fetchMock = mockFetchAllProvidersFail();
+    const mgr = CallSessionManager.getInstance();
+    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
+    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
+
+    // 3 appels : Cerebras 503 → fallback OpenRouter 503 → réponse 503 (erreur remonte)
+    for (let i = 0; i < 3; i++) {
+      const res = await callFetchLlmCompletion(mgr, messages, opts);
+      expect(res.ok).toBe(false);
+      expect(res.status).toBe(503);
+    }
+
+    // Les deux circuit breakers doivent être open (failures >= 3)
+    // 4e appel : les deux breakers sont open → fetchWithFallback tente half-open sur OpenRouter → échoue → 503
+    const callsBefore4th = fetchMock.mock.calls.length;
+    const res4 = await callFetchLlmCompletion(mgr, messages, opts);
+    expect(res4.ok).toBe(false);
+    expect(res4.status).toBe(503);
+
+    // Vérifier qu'il n'y a pas de retry infini : nombre d'appels fetch fini et borné
+    const callsAfter4th = fetchMock.mock.calls.length;
+    expect(callsAfter4th - callsBefore4th).toBeLessThanOrEqual(3);
+    expect(callsAfter4th).toBeLessThan(50);
   });
 });
