@@ -41,6 +41,39 @@ function getVoiceLlmModel(): string {
   return process.env.VOICE_LLM_MODEL ?? VOICE_LLM_MODEL_DEFAULT;
 }
 
+/**
+ * Résout l'URL de base OpenRouter au runtime : env var OPENROUTER_BASE_URL
+ * si définie, sinon le défaut US. Permet de pointer vers un endpoint EU
+ * ou un proxy sans redeploiement.
+ */
+function getOpenRouterBaseUrl(): string {
+  return process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1';
+}
+
+/**
+ * Retourne le routing provider OpenRouter selon le modèle utilisé.
+ *
+ * - Mistral : force le provider Mistral (déjà existant)
+ * - Gemini  : force le provider google-vertex (endpoints EU disponibles,
+ *             plus rapide que google-ai-studio qui est US-only)
+ * - Autres  : laisse OpenRouter choisir (default routing)
+ *
+ * Impact : google-vertex route via les régions Google Cloud (EU + US),
+ * alors que google-ai-studio n'a qu'un endpoint US. Depuis un VPS
+ * Frankfurt, google-vertex/europe-west1 réduit le TTFT de ~300-700ms.
+ */
+function getProviderRouting(): Record<string, unknown> | undefined {
+  const model = getVoiceLlmModel();
+  if (model.includes('mistral')) {
+    return { provider: { order: ['mistral'], allow_fallbacks: false } };
+  }
+  if (model.includes('gemini')) {
+    // Préférer Vertex (EU disponible), fallback sur AI Studio si Vertex indispo
+    return { provider: { order: ['google-vertex', 'google'], allow_fallbacks: true } };
+  }
+  return undefined;
+}
+
 function normalizeVoiceIdentity(value: string): string {
   return value
     .normalize('NFD')
@@ -378,7 +411,7 @@ export class CallSessionManager {
     const messages = [...session.history];
 
     for (let round = 0; round < 3; round++) {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const response = await fetch(`${getOpenRouterBaseUrl()}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -391,11 +424,7 @@ export class CallSessionManager {
           max_tokens: options.maxTokens ?? 150,
           temperature: options.temperature ?? 0.7,
           ...(tools ? { tools, tool_choice: 'auto' } : {}),
-          ...(getVoiceLlmModel()?.includes('mistral')
-            ? {
-                provider: { order: ['mistral'], allow_fallbacks: false },
-              }
-            : {}),
+          ...(getProviderRouting() ?? {}),
         }),
       });
 
@@ -462,7 +491,7 @@ export class CallSessionManager {
     const messages = [...session.history];
 
     for (let round = 0; round < 3; round++) {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const response = await fetch(`${getOpenRouterBaseUrl()}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -476,11 +505,7 @@ export class CallSessionManager {
           temperature: options.temperature ?? 0.7,
           ...(tools ? { tools, tool_choice: 'auto' } : {}),
           stream: true,
-          ...(getVoiceLlmModel()?.includes('mistral')
-            ? {
-                provider: { order: ['mistral'], allow_fallbacks: false },
-              }
-            : {}),
+          ...(getProviderRouting() ?? {}),
         }),
       });
 
@@ -567,7 +592,7 @@ export class CallSessionManager {
 
       if (hasToolCall) {
         // Fallback non-streaming pour gérer les tool calls
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        const response = await fetch(`${getOpenRouterBaseUrl()}/chat/completions`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -581,11 +606,7 @@ export class CallSessionManager {
             temperature: 0.7,
             tools,
             tool_choice: 'auto',
-            ...(getVoiceLlmModel()?.includes('mistral')
-              ? {
-                  provider: { order: ['mistral'], allow_fallbacks: false },
-                }
-              : {}),
+            ...(getProviderRouting() ?? {}),
           }),
         });
 
