@@ -45,10 +45,18 @@ export async function telnyxFetch(
  * n'ait pas à payer le handshake de 113ms.
  */
 export async function warmupTelnyxConnection(): Promise<void> {
+  // Warmup the undici agent (used by telnyxFetch for answer/speak/record)
   try {
-    // HEAD request — minimal overhead, établit juste la connexion
     await telnyxFetch('/v2/balance', { method: 'HEAD' });
   } catch {
     // 401/404 sont OK — l'important est que la connexion TLS soit établie
+  }
+
+  // Warmup the Telnyx SDK (uses https.Agent keep-alive for balance/SMS/WhatsApp)
+  try {
+    const telnyx = (await import('./client')).default;
+    await telnyx.balance.retrieve();
+  } catch {
+    // Non-blocking — la connexion TLS est établie même si l'auth échoue
   }
 }
