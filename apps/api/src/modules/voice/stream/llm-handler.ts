@@ -153,12 +153,19 @@ export function transcriptsMatch(a: string, b: string): boolean {
 }
 
 /**
- * Une pré-réponse ne devient audible que si le STT a stabilisé exactement la
- * même phrase (hors ponctuation). Une similarité approximative ne suffit pas
- * ici : elle peut servir au diagnostic, jamais à valider une réponse vocale.
+ * Une pré-réponse devient audible si le STT a stabilisé une phrase
+ * suffisamment proche de la phrase spéculative. On utilise un fuzzy match
+ * (80% de mots communs dans l'ordre) au lieu d'un match exact, car Deepgram
+ * peut légèrement modifier le transcript entre l'interim et le final
+ * (ponctuation, corrections de dernier mot).
  */
 function speculativeTranscriptMatches(a: string, b: string): boolean {
-  return normalizeTranscriptForDedupe(a) === normalizeTranscriptForDedupe(b);
+  const normA = normalizeTranscriptForDedupe(a);
+  const normB = normalizeTranscriptForDedupe(b);
+  // Match exact d'abord (cas le plus commun)
+  if (normA === normB) return true;
+  // Fuzzy match : 80% de mots communs dans l'ordre
+  return transcriptsMatch(normA, normB);
 }
 
 /**
@@ -260,8 +267,7 @@ export function handleFluxEvent(
         isSpeculativeEnabled &&
         session.speculativeLlm &&
         speculativeTranscript &&
-        speechAct === 'closing' &&
-        classifyVoiceSpeechAct(speculativeTranscript) === 'closing' &&
+        (speechAct === 'closing' || speechAct === 'backchannel') &&
         speculativeTranscriptMatches(speculativeTranscript, event.transcript)
       ) {
         // La formulation reste générée par le LLM, mais son raisonnement a
@@ -625,6 +631,22 @@ async function processTranscriptStreaming(
   // formulation libre du LLM mais on omet le schéma d'outils et on borne la
   // réponse, ce qui réduit le prompt et le temps de génération.
   const llmOptions = undefined;
+
+  // ── Thinking filler : combler le silence pendant que le LLM génère.
+  // Joue un filler court ("Alors…", "Voyons voir…") immédiatement après la
+  // phrase de l'utilisateur, avant que le LLM ne réponde. Cela élimine le
+  // "vide" de 700ms qui donne l'impression d'une IA qui réfléchit.
+  // Le filler est joué en parallèle du LLM : si le LLM répond avant la fin
+  // du filler, le filler est coupé par le barge-in naturel du TTS.
+  if (isCurrentResponse()) {
+    recordVoiceTurnEvent(session, 'filler_started', { purpose: 'thinking' });
+    playFiller(session, session.personality?.fillerStyle ?? 'CASUAL', 'generic').catch((err) => {
+      logger.warn(
+        { err, callId: session.callControlId },
+        '[thinking-filler] failed (non-blocking)',
+      );
+    });
+  }
 
   // Double verrou : l'environnement garde le kill switch global fermé et
   // ConfigCat ne cible que le restaurant canary choisi.

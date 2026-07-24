@@ -182,15 +182,15 @@ export function buildAvailabilityReply(
 ): string {
   const time = request.time.replace(/^0/, '').replace(':00', ' h').replace(':', ' h ');
   if (availableSlots.length === 0) {
-    return `Désolé, je n'ai pas de créneau disponible ce jour-là pour ${request.partySize} personne${request.partySize > 1 ? 's' : ''}. Je peux vous passer le gérant ou prendre un message.`;
+    return `Ah, malheureusement on est complets ce jour-là pour ${request.partySize} personne${request.partySize > 1 ? 's' : ''}. Vous voulez que je regarde un autre jour ?`;
   }
   if (availableSlots.includes(request.time)) {
-    return `Oui, ${time} est disponible pour ${request.partySize} personne${request.partySize > 1 ? 's' : ''}. Quel est votre nom pour la réservation ?`;
+    return `Parfait, ${time} c'est noté pour ${request.partySize} personne${request.partySize > 1 ? 's' : ''}. À quel nom je réserve ?`;
   }
   const alternatives = selectClosestAvailabilitySlots(request.time, availableSlots)
     .map((slot) => slot.replace(/^0/, '').replace(':00', ' h').replace(':', ' h '))
     .join(' ou ');
-  return `Désolé, ${time} n'est pas disponible. Je peux vous proposer ${alternatives}.`;
+  return `Alors ${time} c'est complet, par contre j'ai ${alternatives}. Ça vous irait ?`;
 }
 
 export function recordUserTurn(
