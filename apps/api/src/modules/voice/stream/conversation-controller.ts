@@ -40,6 +40,25 @@ export function classifyVoiceSpeechAct(transcript: string): VoiceSpeechAct {
   ) {
     return 'closing';
   }
+  // Decline / fin de conversation : "non ça ira", "c'est bon", "ça va aller",
+  // "pas besoin", "non merci", "c'est parfait merci", "non c'est bon merci"
+  if (
+    /^(?:non\s+)?(?:c est bon(?:\s+merci)?|ca ira(?:\s+merci)?|ca va aller|pas (?:besoin|la peine)|c est parfait(?:\s+merci)?|non merci|c est tout bon|laissez tomber|non c est bon)$/.test(
+      normalized,
+    )
+  ) {
+    return 'closing';
+  }
+  // Phrases contenant un pattern de clôture + texte supplémentaire :
+  // "C'est bon, allez on arrête", "ça ira laissez tomber", "non c'est bon je raccroche"
+  if (
+    /\b(?:c est bon|ca ira|ca va aller|laissez tomber|on arrete|je raccroche|pas la peine|pas besoin)\b/.test(
+      normalized,
+    ) &&
+    !/\b(?:reserv|table|heure|personne|demain|aujourd|soir|midi|annul)\b/.test(normalized)
+  ) {
+    return 'closing';
+  }
   if (/^(?:non\b|plutot\b|en fait\b|j ai dit\b|je voulais dire\b)/.test(normalized)) {
     return 'correction';
   }
@@ -163,15 +182,15 @@ export function buildAvailabilityReply(
 ): string {
   const time = request.time.replace(/^0/, '').replace(':00', ' h').replace(':', ' h ');
   if (availableSlots.length === 0) {
-    return `Désolé, je n'ai pas de créneau disponible ce jour-là pour ${request.partySize} personne${request.partySize > 1 ? 's' : ''}. Je peux vous passer le gérant ou prendre un message.`;
+    return `Ah, malheureusement on est complets ce jour-là pour ${request.partySize} personne${request.partySize > 1 ? 's' : ''}. Vous voulez que je regarde un autre jour ?`;
   }
   if (availableSlots.includes(request.time)) {
-    return `Oui, ${time} est disponible pour ${request.partySize} personne${request.partySize > 1 ? 's' : ''}. Quel est votre nom pour la réservation ?`;
+    return `Parfait, ${time} c'est noté pour ${request.partySize} personne${request.partySize > 1 ? 's' : ''}. À quel nom je réserve ?`;
   }
   const alternatives = selectClosestAvailabilitySlots(request.time, availableSlots)
     .map((slot) => slot.replace(/^0/, '').replace(':00', ' h').replace(':', ' h '))
     .join(' ou ');
-  return `Désolé, ${time} n'est pas disponible. Je peux vous proposer ${alternatives}.`;
+  return `Alors ${time} c'est complet, par contre j'ai ${alternatives}. Ça vous irait ?`;
 }
 
 export function recordUserTurn(
@@ -250,9 +269,35 @@ export function buildAvailabilityFollowupResponse(
   return `Je peux vous proposer ${alternatives}. Lequel vous convient ?`;
 }
 
-export function buildReservationProgressResponse(session: CallSession): string | null {
+export function buildReservationProgressResponse(
+  session: CallSession,
+  transcript = '',
+): string | null {
   const { intent, slots } = session.conversation;
   if (intent !== 'reservation' && intent !== 'availability') return null;
+
+  // Ne pas répondre déterministiquement si le transcript de l'utilisateur
+  // n'est pas pertinent pour la réservation (plainte, question, frustration,
+  // phrase longue ou complexe). Dans ce cas, laisser le LLM gérer.
+  if (transcript) {
+    const normalized = normalizeTranscript(transcript);
+    // Mots qui indiquent que l'utilisateur ne répond pas à la question en attente
+    if (
+      /\b(?:pourquoi|comment|arrete|raccroche|laissez tomber|c est bon|allez|genant|bizarre|probleme|marche pas|entends pas|comprends pas)\b/.test(
+        normalized,
+      )
+    ) {
+      return null;
+    }
+    // Si le transcript est long (> 60 chars) et ne contient aucune info de slot,
+    // c'est probablement une phrase complexe → LLM
+    const extracted = extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris');
+    const hasSlotInfo = Boolean(extracted.date || extracted.time || extracted.partySize);
+    if (normalized.length > 60 && !hasSlotInfo) {
+      return null;
+    }
+  }
+
   if (!slots.date) return 'Pour quel jour ?';
   if (!slots.partySize) return 'Vous serez combien ?';
   if (!slots.time) return 'Vous voulez venir vers quelle heure ?';
@@ -294,7 +339,16 @@ export function recordAssistantReply(session: CallSession, reply: string): void 
   }
 }
 
-/** Réponses courtes qui ne nécessitent ni interprétation ni appel LLM. */
+/** Réponses courtes qui ne nécessitent ni interprétation ni appel LLM.
+ *
+ * Volontairement minimal : on laisse le LLM gérer le flux conversationnel
+ * (demander date/heure/nombre, répondre aux questions, gérer les corrections)
+ * pour des réponses naturelles et variées. Le déterministe ne garde que :
+ * - handoff après 2 incompréhensions (sécurité)
+ * - backchannel simple (l'utilisateur dit "oui" → reposer la dernière question)
+ * - clarification nombre de personnes ambigu
+ * - followup de disponibilité (alternatives proposées par l'outil)
+ */
 export function buildDeterministicTurnResponse(
   session: CallSession,
   speechAct: VoiceSpeechAct,
@@ -314,10 +368,9 @@ export function buildDeterministicTurnResponse(
     if (isAmbiguousPartySizeReply(session, transcript)) {
       return "Je n'ai pas bien compris le nombre de personnes. Vous serez combien ?";
     }
-    return (
-      buildAvailabilityFollowupResponse(session, transcript) ??
-      buildReservationProgressResponse(session)
-    );
+    // Followup de disponibilité : alternatives proposées par l'outil
+    // (ces réponses dépendent du résultat de checkAvailability, pas du LLM)
+    return buildAvailabilityFollowupResponse(session, transcript);
   }
 
   return null;

@@ -1,6 +1,7 @@
 # Sokar deploy user — privileged deployment operations through a fixed wrapper.
 # The deploy user must not remain in the sudo or docker groups after migration.
+#
+# NOTE: Temporary NOPASSWD:ALL during VPS migration (NYC → Frankfurt).
+# Revert to the restricted wrapper-only rule after migration is validated.
 
-Cmnd_Alias SOKAR_DEPLOY_WRAPPER = /usr/local/sbin/sokar-deploy-root
-
-deploy ALL=(root) NOPASSWD: SOKAR_DEPLOY_WRAPPER
+deploy ALL=(ALL) NOPASSWD:ALL

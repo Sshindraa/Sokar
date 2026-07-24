@@ -7,6 +7,7 @@ import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
 import { DEEPGRAM_CLOSE_DELAY_MS } from '../../../shared/constants/timeouts.js';
 import { isSpeculativeLlmEnabled } from './speculation';
+import { redactPii } from './pii-redact';
 
 function writeDebugLog(msg: string, err?: unknown) {
   const e = err instanceof Error ? err : err ? new Error(String(err)) : undefined;
@@ -26,8 +27,9 @@ function writeDebugLog(msg: string, err?: unknown) {
 // Le model_id officiel est `flux-general-multi` (multilingue, dont fr).
 // On garde l'override par env var (DEEPGRAM_MODEL) pour permettre un fallback
 // vers `nova-3` (v1/listen) si Flux est trop instable en prod.
-const DEEPGRAM_API_URL_FLUX = 'wss://api.deepgram.com/v2/listen';
-const DEEPGRAM_API_URL_NOVA = 'wss://api.deepgram.com/v1/listen';
+const DEEPGRAM_HOST = process.env.DEEPGRAM_API_HOST ?? 'api.deepgram.com';
+const DEEPGRAM_API_URL_FLUX = `wss://${DEEPGRAM_HOST}/v2/listen`;
+const DEEPGRAM_API_URL_NOVA = `wss://${DEEPGRAM_HOST}/v1/listen`;
 const DEEPGRAM_DEFAULT_MODEL = 'flux-general-multi';
 
 /**
@@ -343,7 +345,7 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
       const transcript = msg.channel?.alternatives?.[0]?.transcript ?? '';
       if (transcript.trim()) {
         logger.info(
-          { callId: session.callControlId, transcript: transcript.slice(0, 100) },
+          { callId: session.callControlId, transcript: redactPii(transcript.slice(0, 100)) },
           '[deepgram] Utterance end',
         );
         session.onDeepgramEvent?.({ type: 'UtteranceEnd', transcript });
@@ -361,7 +363,7 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
       // Barge-in: si on est en train de parler et que l'utilisateur dit quelque chose (transcript non vide)
       if (session.state === 'SPEAKING' && transcript.trim().length > 0) {
         logger.info(
-          { callId: session.callControlId, transcript: transcript.trim() },
+          { callId: session.callControlId, transcript: redactPii(transcript.trim()) },
           '[barge-in] User spoke while assistant was speaking. Interrupting.',
         );
         if (session.abortController) {
@@ -377,7 +379,7 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
           logger.info(
             {
               callId: session.callControlId,
-              segment: transcript.slice(0, 100),
+              segment: redactPii(transcript.slice(0, 100)),
               speechFinal: isSpeechFinal,
             },
             '[deepgram] Segment finalized',
@@ -395,7 +397,10 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
             const fullTurnTranscript = session.turnTranscript;
             session.turnTranscript = '';
             logger.info(
-              { callId: session.callControlId, transcript: fullTurnTranscript.slice(0, 100) },
+              {
+                callId: session.callControlId,
+                transcript: redactPii(fullTurnTranscript.slice(0, 100)),
+              },
               '[deepgram] Speech final (turn completed)',
             );
             session.onDeepgramEvent?.({ type: 'UtteranceEnd', transcript: fullTurnTranscript });
@@ -424,12 +429,12 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
               session.turnTranscript = '';
               session.speechFinalTimer = null;
               writeDebugLog(
-                `[deepgram] Smart timer fired! (${timeoutMs}ms) UtteranceEnd: "${fallbackTranscript.slice(0, 80)}"`,
+                `[deepgram] Smart timer fired! (${timeoutMs}ms) UtteranceEnd: "${redactPii(fallbackTranscript.slice(0, 80))}"`,
               );
               logger.info(
                 {
                   callId: session.callControlId,
-                  transcript: fallbackTranscript.slice(0, 100),
+                  transcript: redactPii(fallbackTranscript.slice(0, 100)),
                   timeoutMs,
                   endpointReason: endpoint.reason,
                 },
@@ -450,7 +455,10 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
         const fullTurnTranscript = session.turnTranscript;
         session.turnTranscript = '';
         logger.info(
-          { callId: session.callControlId, transcript: fullTurnTranscript.slice(0, 100) },
+          {
+            callId: session.callControlId,
+            transcript: redactPii(fullTurnTranscript.slice(0, 100)),
+          },
           '[deepgram] Speech final (forced fallback)',
         );
         session.onDeepgramEvent?.({ type: 'UtteranceEnd', transcript: fullTurnTranscript });

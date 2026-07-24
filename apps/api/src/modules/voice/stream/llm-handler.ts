@@ -12,10 +12,11 @@
 import { WebSocket } from 'ws';
 import type { FluxEvent, CallSession } from './types';
 import type { CallSessionManager } from './manager';
-import { playFiller } from './fillers-cache';
+import { playFiller, selectRandomGoodbyeText } from './fillers-cache';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
+import { redactPii } from './pii-redact';
 import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from './tts-handler';
 import {
   createCartesiaContextTurn,
@@ -153,12 +154,19 @@ export function transcriptsMatch(a: string, b: string): boolean {
 }
 
 /**
- * Une pré-réponse ne devient audible que si le STT a stabilisé exactement la
- * même phrase (hors ponctuation). Une similarité approximative ne suffit pas
- * ici : elle peut servir au diagnostic, jamais à valider une réponse vocale.
+ * Une pré-réponse devient audible si le STT a stabilisé une phrase
+ * suffisamment proche de la phrase spéculative. On utilise un fuzzy match
+ * (80% de mots communs dans l'ordre) au lieu d'un match exact, car Deepgram
+ * peut légèrement modifier le transcript entre l'interim et le final
+ * (ponctuation, corrections de dernier mot).
  */
 function speculativeTranscriptMatches(a: string, b: string): boolean {
-  return normalizeTranscriptForDedupe(a) === normalizeTranscriptForDedupe(b);
+  const normA = normalizeTranscriptForDedupe(a);
+  const normB = normalizeTranscriptForDedupe(b);
+  // Match exact d'abord (cas le plus commun)
+  if (normA === normB) return true;
+  // Fuzzy match : 80% de mots communs dans l'ordre
+  return transcriptsMatch(normA, normB);
 }
 
 /**
@@ -230,7 +238,7 @@ export function handleFluxEvent(
           );
           captureException(err, {
             tags: { service: 'handler', action: 'speculative-llm' },
-            extra: { callId: session.callControlId, transcript: event.transcript },
+            extra: { callId: session.callControlId, transcript: redactPii(event.transcript) },
           });
           session.speculativeLlm = null;
           session.speculativeResult = null;
@@ -260,8 +268,7 @@ export function handleFluxEvent(
         isSpeculativeEnabled &&
         session.speculativeLlm &&
         speculativeTranscript &&
-        speechAct === 'closing' &&
-        classifyVoiceSpeechAct(speculativeTranscript) === 'closing' &&
+        (speechAct === 'closing' || speechAct === 'backchannel') &&
         speculativeTranscriptMatches(speculativeTranscript, event.transcript)
       ) {
         // La formulation reste générée par le LLM, mais son raisonnement a
@@ -386,11 +393,11 @@ async function processTranscript(
     return;
   }
   if (shouldSkipDuplicateTranscript(session, transcript)) {
-    writeDebugLog(`[processTranscript] Skipping duplicate transcript: "${transcript}"`);
+    writeDebugLog(`[processTranscript] Skipping duplicate transcript: "${redactPii(transcript)}"`);
     return;
   }
 
-  writeDebugLog(`[processTranscript] Received transcript: "${transcript}"`);
+  writeDebugLog(`[processTranscript] Received transcript: "${redactPii(transcript)}"`);
   try {
     session.abortController = new AbortController();
     writeDebugLog(`[processTranscript] Calling LLM...`);
@@ -400,7 +407,7 @@ async function processTranscript(
       session.latencyTrace.llmFirstTokenMs = Date.now() - session.latencyTrace.startTime;
     }
     const ttsResponse = stripRepeatedGreeting(llmResponse, session);
-    writeDebugLog(`[processTranscript] LLM responded: "${llmResponse}"`);
+    writeDebugLog(`[processTranscript] LLM responded: "${redactPii(llmResponse)}"`);
 
     if (!ttsResponse) {
       writeDebugLog(`[processTranscript] LLM response empty after greeting strip, skipping TTS`);
@@ -429,7 +436,7 @@ async function processTranscript(
     );
     captureException(err, {
       tags: { service: 'handler', action: 'processTranscript' },
-      extra: { callId: session.callControlId, transcript },
+      extra: { callId: session.callControlId, transcript: redactPii(transcript) },
     });
     mgr.transition(session, 'LISTENING');
   } finally {
@@ -453,7 +460,9 @@ async function processTranscriptStreaming(
     return;
   }
   if (shouldSkipDuplicateTranscript(session, transcript)) {
-    writeDebugLog(`[processTranscriptStreaming] Skipping duplicate transcript: "${transcript}"`);
+    writeDebugLog(
+      `[processTranscriptStreaming] Skipping duplicate transcript: "${redactPii(transcript)}"`,
+    );
     return;
   }
 
@@ -597,12 +606,50 @@ async function processTranscriptStreaming(
     }
   }
 
-  writeDebugLog(`[processTranscriptStreaming] Starting LLM stream for: "${transcript}"`);
+  // ── Court-circuit goodbye : si l'appelant clôt la conversation, répondre
+  // instantanément depuis le cache de fillers goodbye (~20ms) au lieu
+  // d'appeler le LLM (~600ms). Le LLM reste disponible pour les closings
+  // complexes (ex: "non merci, je vais rappeler plus tard") qui ne
+  // matchent pas les patterns closing simples.
+  if (speechAct === 'closing') {
+    const goodbyeText = selectRandomGoodbyeText(session.personality?.fillerStyle ?? 'CASUAL');
+    writeDebugLog(`[processTranscriptStreaming] Goodbye filler (cached): "${goodbyeText}"`);
+    session.history.push(
+      { role: 'user', content: transcript },
+      { role: 'assistant', content: goodbyeText },
+    );
+    recordAssistantReply(session, goodbyeText);
+    if (session.latencyTrace) {
+      session.latencyTrace.llmFirstTokenMs = 0; // cache hit, pas de LLM
+    }
+    recordVoiceTurnEvent(session, 'goodbye_filler_hit');
+    mgr.transition(session, 'SPEAKING');
+    await speakTtsStreamed(session, goodbyeText);
+    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+    return;
+  }
+
+  writeDebugLog(`[processTranscriptStreaming] Starting LLM stream for: "${redactPii(transcript)}"`);
   // Une clôture ne peut ni créer ni modifier une réservation : on conserve la
   // formulation libre du LLM mais on omet le schéma d'outils et on borne la
   // réponse, ce qui réduit le prompt et le temps de génération.
-  const llmOptions =
-    speechAct === 'closing' ? { includeTools: false, maxTokens: 40, temperature: 0.4 } : undefined;
+  const llmOptions = undefined;
+
+  // ── Thinking filler : combler le silence pendant que le LLM génère.
+  // Joue un filler court ("Alors…", "Voyons voir…") immédiatement après la
+  // phrase de l'utilisateur, avant que le LLM ne réponde. Cela élimine le
+  // "vide" de 700ms qui donne l'impression d'une IA qui réfléchit.
+  // Le filler est joué en parallèle du LLM : si le LLM répond avant la fin
+  // du filler, le filler est coupé par le barge-in naturel du TTS.
+  if (isCurrentResponse()) {
+    recordVoiceTurnEvent(session, 'filler_started', { purpose: 'thinking' });
+    playFiller(session, session.personality?.fillerStyle ?? 'CASUAL', 'generic').catch((err) => {
+      logger.warn(
+        { err, callId: session.callControlId },
+        '[thinking-filler] failed (non-blocking)',
+      );
+    });
+  }
 
   // Double verrou : l'environnement garde le kill switch global fermé et
   // ConfigCat ne cible que le restaurant canary choisi.
@@ -620,7 +667,7 @@ async function processTranscriptStreaming(
       transcript,
       (phrase: string) => {
         if (!isCurrentResponse() || abortController.signal.aborted) return;
-        writeDebugLog(`[processTranscriptStreaming] Phrase received: "${phrase}"`);
+        writeDebugLog(`[processTranscriptStreaming] Phrase received: "${redactPii(phrase)}"`);
         if (session.latencyTrace && !session.latencyTrace.llmFirstTokenMs) {
           session.latencyTrace.llmFirstTokenMs = Date.now() - session.latencyTrace.startTime;
           recordVoiceTurnEvent(session, 'llm_first_phrase', {
@@ -701,7 +748,7 @@ async function processTranscriptStreaming(
     );
     captureException(err, {
       tags: { service: 'handler', action: 'processTranscriptStreaming' },
-      extra: { callId: session.callControlId, transcript },
+      extra: { callId: session.callControlId, transcript: redactPii(transcript) },
     });
     mgr.transition(session, 'LISTENING');
   } finally {
