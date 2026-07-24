@@ -12,7 +12,7 @@
 import { WebSocket } from 'ws';
 import type { FluxEvent, CallSession } from './types';
 import type { CallSessionManager } from './manager';
-import { playFiller } from './fillers-cache';
+import { playFiller, selectRandomGoodbyeText } from './fillers-cache';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
@@ -597,12 +597,34 @@ async function processTranscriptStreaming(
     }
   }
 
+  // ── Court-circuit goodbye : si l'appelant clôt la conversation, répondre
+  // instantanément depuis le cache de fillers goodbye (~20ms) au lieu
+  // d'appeler le LLM (~600ms). Le LLM reste disponible pour les closings
+  // complexes (ex: "non merci, je vais rappeler plus tard") qui ne
+  // matchent pas les patterns closing simples.
+  if (speechAct === 'closing') {
+    const goodbyeText = selectRandomGoodbyeText(session.personality?.fillerStyle ?? 'CASUAL');
+    writeDebugLog(`[processTranscriptStreaming] Goodbye filler (cached): "${goodbyeText}"`);
+    session.history.push(
+      { role: 'user', content: transcript },
+      { role: 'assistant', content: goodbyeText },
+    );
+    recordAssistantReply(session, goodbyeText);
+    if (session.latencyTrace) {
+      session.latencyTrace.llmFirstTokenMs = 0; // cache hit, pas de LLM
+    }
+    recordVoiceTurnEvent(session, 'goodbye_filler_hit');
+    mgr.transition(session, 'SPEAKING');
+    await speakTtsStreamed(session, goodbyeText);
+    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+    return;
+  }
+
   writeDebugLog(`[processTranscriptStreaming] Starting LLM stream for: "${transcript}"`);
   // Une clôture ne peut ni créer ni modifier une réservation : on conserve la
   // formulation libre du LLM mais on omet le schéma d'outils et on borne la
   // réponse, ce qui réduit le prompt et le temps de génération.
-  const llmOptions =
-    speechAct === 'closing' ? { includeTools: false, maxTokens: 40, temperature: 0.4 } : undefined;
+  const llmOptions = undefined;
 
   // Double verrou : l'environnement garde le kill switch global fermé et
   // ConfigCat ne cible que le restaurant canary choisi.

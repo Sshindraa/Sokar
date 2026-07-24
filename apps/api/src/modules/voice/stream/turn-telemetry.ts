@@ -13,7 +13,8 @@ export type VoiceTurnEvent =
   | 'filler_started'
   | 'filler_completed'
   | 'tts_first_audio'
-  | 'barge_in';
+  | 'barge_in'
+  | 'goodbye_filler_hit';
 
 type EventFields = Record<string, boolean | number | string | null | undefined>;
 

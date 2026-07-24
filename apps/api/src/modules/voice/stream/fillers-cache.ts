@@ -38,7 +38,7 @@ interface FillerSet {
   formal: string[];
 }
 
-export type FillerPurpose = 'availability' | 'generic';
+export type FillerPurpose = 'availability' | 'generic' | 'goodbye';
 
 const FILLERS: FillerSet = {
   casual: [
@@ -62,6 +62,27 @@ const FILLERS: FillerSet = {
   ],
 };
 
+const GOODBYE_FILLERS: Record<keyof FillerSet, string[]> = {
+  casual: [
+    "D'accord, bonne soirée, au revoir.",
+    'Très bien, je vous souhaite une excellente soirée.',
+    'Pas de problème, au revoir et à bientôt.',
+    'Entendu, passez une bonne soirée.',
+  ],
+  warm: [
+    'Avec plaisir, passez une très bonne soirée, au revoir.',
+    "Merci de votre appel, au revoir et à très bientôt j'espère.",
+    'Très bien, excellente soirée à vous, au revoir.',
+    "C'est noté, au revoir et à bientôt !",
+  ],
+  formal: [
+    'Je vous remercie de votre appel. Au revoir.',
+    'Très bien, je vous souhaite une excellente soirée. Au revoir.',
+    'Merci et au revoir, passez une agréable soirée.',
+    'Entendu, au revoir et bonne soirée.',
+  ],
+};
+
 const FILLER_BY_PURPOSE: Record<FillerPurpose, Record<keyof FillerSet, string>> = {
   availability: {
     casual: 'Je regarde ça…',
@@ -73,6 +94,11 @@ const FILLER_BY_PURPOSE: Record<FillerPurpose, Record<keyof FillerSet, string>> 
     warm: "Je m'en occupe, une seconde…",
     formal: 'Veuillez patienter un instant…',
   },
+  goodbye: {
+    casual: "D'accord, bonne soirée, au revoir.",
+    warm: "Merci de votre appel, au revoir et à très bientôt j'espère.",
+    formal: 'Je vous remercie de votre appel. Au revoir.',
+  },
 };
 
 export function selectFillerText(
@@ -80,6 +106,14 @@ export function selectFillerText(
   purpose: FillerPurpose,
 ): string {
   return FILLER_BY_PURPOSE[purpose][style.toLowerCase() as keyof FillerSet];
+}
+
+/**
+ * Sélectionne un goodbye filler aléatoire (variation pour éviter la répétition).
+ */
+export function selectRandomGoodbyeText(style: 'CASUAL' | 'FORMAL' | 'WARM'): string {
+  const pool = GOODBYE_FILLERS[style.toLowerCase() as keyof FillerSet];
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 /** Cache RAM : chunks audio (base64) pour chaque filler */
@@ -127,7 +161,14 @@ function redisKey(text: string, voiceId: string, codec: 'pcm_alaw' | 'pcm_mulaw'
 export async function initFillerCache(): Promise<void> {
   if (initialized) return;
 
-  const allFillers = [...FILLERS.casual, ...FILLERS.warm, ...FILLERS.formal];
+  const allFillers = [
+    ...FILLERS.casual,
+    ...FILLERS.warm,
+    ...FILLERS.formal,
+    ...GOODBYE_FILLERS.casual,
+    ...GOODBYE_FILLERS.warm,
+    ...GOODBYE_FILLERS.formal,
+  ];
 
   const apiKey = process.env.CARTESIA_API_KEY;
   if (!apiKey) {

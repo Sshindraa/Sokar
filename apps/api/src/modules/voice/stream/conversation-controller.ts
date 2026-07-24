@@ -40,6 +40,15 @@ export function classifyVoiceSpeechAct(transcript: string): VoiceSpeechAct {
   ) {
     return 'closing';
   }
+  // Decline / fin de conversation : "non ça ira", "c'est bon", "ça va aller",
+  // "pas besoin", "non merci", "c'est parfait merci", "non c'est bon merci"
+  if (
+    /^(?:non\s+)?(?:c est bon(?:\s+merci)?|ca ira(?:\s+merci)?|ca va aller|pas (?:besoin|la peine)|c est parfait(?:\s+merci)?|non merci|c est tout bon|laissez tomber|non c est bon)$/.test(
+      normalized,
+    )
+  ) {
+    return 'closing';
+  }
   if (/^(?:non\b|plutot\b|en fait\b|j ai dit\b|je voulais dire\b)/.test(normalized)) {
     return 'correction';
   }
