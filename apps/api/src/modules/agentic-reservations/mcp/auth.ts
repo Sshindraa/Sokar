@@ -12,7 +12,7 @@
 
 import type { FastifyRequest } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
-import { createHash, timingSafeEqual } from 'crypto';
+import { timingSafeEqual } from 'crypto';
 import { env } from '../../../env';
 import { hashApiKey } from '../../../shared/crypto/api-key-hash';
 
