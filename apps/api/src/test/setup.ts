@@ -92,12 +92,12 @@ vi.mock('@sentry/node', () => ({
   setupFastifyErrorHandler: vi.fn(),
 }));
 
-// ── Mock nodemailer ──
-vi.mock('nodemailer', () => ({
-  default: {
-    createTransport: vi.fn(() => ({
-      sendMail: vi.fn().mockResolvedValue({}),
-    })),
+// ── Mock Resend (HTTP API email, remplace nodemailer) ──
+vi.mock('resend', () => ({
+  Resend: class MockResend {
+    emails = {
+      send: vi.fn().mockResolvedValue({ data: { id: 'test-email-id' }, error: null }),
+    };
   },
 }));
 
@@ -251,10 +251,7 @@ process.env.OPENROUTER_API_KEY = 'sk-or-test';
 process.env.CARTESIA_API_KEY = 'test-cartesia-key';
 process.env.STRIPE_SECRET_KEY = 'sk_test';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_t';
-process.env.SMTP_HOST ??= 'localhost';
-process.env.SMTP_PORT ??= '465';
-process.env.SMTP_USER ??= 'test';
-process.env.SMTP_PASS ??= 'test';
+process.env.RESEND_API_KEY ??= 're_test';
 process.env.EMAIL_FROM ??= 'noreply@test.sokar.fr';
 // Active explicitement les routes /api/test dans les tests (SEC-005).
 process.env.ENABLE_TEST_ROUTES = 'true';

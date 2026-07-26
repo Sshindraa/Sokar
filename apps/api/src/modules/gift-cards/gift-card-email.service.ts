@@ -5,7 +5,7 @@
  *   - sendRecipientGiftCard : carte cadeau au destinataire (code + lien PDF)
  *   - sendRestaurantSaleNotification : notification de vente au restaurateur
  *
- * Utilise nodemailer via shared/email.
+ * Utilise Resend HTTP API via shared/email.
  */
 import { sendEmail } from '../../shared/email';
 import { logger } from '../../shared/logger/pino';
