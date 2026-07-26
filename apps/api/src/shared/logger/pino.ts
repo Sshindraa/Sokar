@@ -45,7 +45,7 @@ export const REDACT_PATHS = [
   'env.GOOGLE_CLIENT_SECRET',
   'env.STRIPE_SECRET_KEY',
   'env.STRIPE_WEBHOOK_SECRET',
-  'env.SMTP_PASS',
+  'env.RESEND_API_KEY',
   'env.DATABASE_URL',
   'env.REDIS_URL',
   'env.METRICS_BASIC_AUTH_PASSWORD',

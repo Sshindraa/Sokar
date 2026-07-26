@@ -94,9 +94,9 @@ validate_env_files() {
         exit 1
     fi
 
-    # REDIS_URL : staging utilise db=2
-    if ! grep -qE 'REDIS_URL=.*:6379/2' apps/api/.env; then
-        log_error "REDIS_URL dans apps/api/.env doit utiliser db=2 (REDIS_URL=...:6379/2)." >&2
+    # REDIS_URL : staging utilise db=3 (isolé de prod db=0/1/2)
+    if ! grep -qE 'REDIS_URL=.*:6379/3' apps/api/.env; then
+        log_error "REDIS_URL dans apps/api/.env doit utiliser db=3 (REDIS_URL=...:6379/3)." >&2
         exit 1
     fi
 

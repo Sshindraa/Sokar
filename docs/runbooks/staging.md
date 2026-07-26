@@ -11,7 +11,7 @@
 - Root: `/opt/sokar-staging/`
 - Ports: API=4100, Dashboard=3100, Connect=4102 (prod: 4000/3000/4002)
 - DB Postgres: `sokar_staging`
-- Redis: db=2
+- Redis: db=3 (isolé de prod db=0/1/2)
 - PM2: `sokar-staging-api`, `sokar-staging-dashboard`, `sokar-staging-connect`
 - Nginx: `infra/nginx/sokar-staging.conf`
 

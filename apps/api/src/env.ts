@@ -131,11 +131,10 @@ const EnvSchema = z
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
     // Captcha Cloudflare Turnstile pour les flux sensibles (SEC-009). Optionnel ; si défini, /api/rgpd/request-verification exige un token Turnstile.
     TURNSTILE_SECRET_KEY: z.string().optional(),
-    // SMTP pour l'envoi des emails transactionnels (notifications file d'attente, etc.)
-    SMTP_HOST: z.string().optional(),
-    SMTP_PORT: z.string().optional(),
-    SMTP_USER: z.string().optional(),
-    SMTP_PASS: z.string().optional(),
+    // Resend HTTP API pour l'envoi des emails transactionnels (port 443,
+    // bypass SMTP block sur Frankfurt VPS). L'ancienne config SMTP_* est
+    // dépréciée — RESEND_API_KEY est la seule clé nécessaire.
+    RESEND_API_KEY: z.string().optional(),
     EMAIL_FROM: z.string().optional(),
     // Canaux d'alerte ops (monitoring pilote). Tous optionnels ; si aucun n'est
     // défini, les alertes ne partent que dans les logs + Sentry.

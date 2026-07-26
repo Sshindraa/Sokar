@@ -80,9 +80,7 @@ function makeJob(channel: 'sms' | 'email'): Job<WaitingListPromoteJobData> {
 describe('waiting-list-promote.worker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.stubEnv('SMTP_HOST', 'smtp.example.com');
-    vi.stubEnv('SMTP_USER', 'user@example.com');
-    vi.stubEnv('SMTP_PASS', 'secret');
+    vi.stubEnv('RESEND_API_KEY', 're_test');
   });
 
   it('envoie un SMS avec les bonnes informations', async () => {
@@ -258,10 +256,8 @@ describe('waiting-list-promote.worker', () => {
     expect(sendSms).not.toHaveBeenCalled();
   });
 
-  it("ignore l'email si SMTP n'est pas configuré", async () => {
-    vi.stubEnv('SMTP_HOST', '');
-    vi.stubEnv('SMTP_USER', '');
-    vi.stubEnv('SMTP_PASS', '');
+  it("ignore l'email si RESEND_API_KEY n'est pas configuré", async () => {
+    vi.stubEnv('RESEND_API_KEY', '');
 
     const entry = makeEntry();
     const db = makeDb(entry);

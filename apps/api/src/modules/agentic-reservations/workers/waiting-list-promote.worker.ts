@@ -79,8 +79,8 @@ export async function processWaitingListPromoteJob(
       log.warn({ entryId }, 'no customer email, skipping');
       return;
     }
-    if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      log.warn({ entryId }, 'SMTP not configured, skipping email');
+    if (!process.env.RESEND_API_KEY) {
+      log.warn({ entryId }, 'RESEND_API_KEY not configured, skipping email');
       return;
     }
     await deps.sendEmail({
