@@ -52,7 +52,10 @@ export function verifyApiKeyHash(key: string, stored: string): boolean {
     return timingSafeEqual(derived, expected);
   }
 
-  // Legacy SHA-256 (anciennes clés non encore rotées)
+  // Legacy SHA-256 (anciennes clés non encore rotées).
+  // CodeQL: ce path est uniquement pour vérifier les anciennes clés
+  // jusqu'à leur rotation. Les nouvelles clés utilisent scrypt (ci-dessus).
+  // lgtm[javascript/hashing-with-insufficient-computational-effort]
   const legacyHash = createHash('sha256').update(key).digest('hex');
   const a = Buffer.from(legacyHash, 'hex');
   const b = Buffer.from(stored, 'hex');
