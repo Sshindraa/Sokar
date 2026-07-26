@@ -24,14 +24,13 @@
   }
   const host = rawHost;
   const iframe = document.createElement('iframe');
-  iframe.src =
-    host +
-    '/widget/' +
-    encodeURIComponent(slug) +
-    '?embedded=1&primary=' +
-    encodeURIComponent(primary.replace('#', '')) +
-    '&accent=' +
-    encodeURIComponent(accent.replace('#', ''));
+  // Build URL safely via URL API to prevent DOM injection via data-host.
+  const widgetUrl = new URL(host);
+  widgetUrl.pathname = '/widget/' + encodeURIComponent(slug);
+  widgetUrl.searchParams.set('embedded', '1');
+  widgetUrl.searchParams.set('primary', primary.replace('#', ''));
+  widgetUrl.searchParams.set('accent', accent.replace('#', ''));
+  iframe.src = widgetUrl.toString();
   iframe.style.width = '100%';
   iframe.style.border = '0';
   iframe.scrolling = 'no';

@@ -11,6 +11,7 @@
  *   - Sanitize prompt injection dans create_reservation
  */
 
+import { createHash } from 'crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
 import { env } from '../../../env';
@@ -92,14 +93,17 @@ describe('MCP server', () => {
     it('retourne 403 si Origin refusé par le client DB', async () => {
       delete process.env.AGENT_DEV_KEY;
       const { db } = await import('../../../shared/db/client');
-      vi.mocked(db.agentClient.findUnique).mockResolvedValueOnce({
-        id: 'client-1',
-        restaurantId: null,
-        name: 'Claude',
-        scopes: ['mcp:read'],
-        allowedOrigins: ['https://cursor.sh'],
-        revokedAt: null,
-      } as unknown as Awaited<ReturnType<typeof db.agentClient.findUnique>>);
+      vi.mocked(db.agentClient.findMany).mockResolvedValueOnce([
+        {
+          id: 'client-1',
+          restaurantId: null,
+          name: 'Claude',
+          scopes: ['mcp:read'],
+          allowedOrigins: ['https://cursor.sh'],
+          revokedAt: null,
+          keyHash: createHash('sha256').update(VALID_KEY).digest('hex'),
+        },
+      ] as unknown as Awaited<ReturnType<typeof db.agentClient.findMany>>);
 
       const app = await getApp();
       const res = await app.inject({
@@ -223,14 +227,17 @@ describe('MCP server', () => {
     it('refuse une mutation avec un client read-only', async () => {
       delete process.env.AGENT_DEV_KEY;
       const { db } = await import('../../../shared/db/client');
-      vi.mocked(db.agentClient.findUnique).mockResolvedValueOnce({
-        id: 'client-readonly',
-        restaurantId: null,
-        name: 'Read only',
-        scopes: ['mcp:read'],
-        allowedOrigins: ['https://claude.ai'],
-        revokedAt: null,
-      } as unknown as Awaited<ReturnType<typeof db.agentClient.findUnique>>);
+      vi.mocked(db.agentClient.findMany).mockResolvedValueOnce([
+        {
+          id: 'client-readonly',
+          restaurantId: null,
+          name: 'Read only',
+          scopes: ['mcp:read'],
+          allowedOrigins: ['https://claude.ai'],
+          revokedAt: null,
+          keyHash: createHash('sha256').update(VALID_KEY).digest('hex'),
+        },
+      ] as unknown as Awaited<ReturnType<typeof db.agentClient.findMany>>);
 
       const app = await getApp();
       const res = await app.inject({

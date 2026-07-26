@@ -107,7 +107,7 @@ vi.mock('../shared/db/client', () => {
     },
     agentClient: {
       findUnique: vi.fn(),
-      findMany: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
