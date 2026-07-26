@@ -325,24 +325,28 @@ export async function restaurantRoutes(app: FastifyInstance) {
     );
   });
 
-  app.get('/restaurants/:id/public', async (req, reply) => {
-    const { id } = req.params as { id: string };
-    try {
-      const restaurant = await app.db.restaurant.findUniqueOrThrow({
-        where: { id },
-        select: {
-          id: true,
-          name: true,
-          openingHours: true,
-          phoneNumber: true,
-        },
-      });
-      return reply.send(restaurant);
-    } catch (err) {
-      app.log.error({ err }, 'Restaurant fetch failed');
-      return reply.status(404).send({ error: 'Restaurant not found' });
-    }
-  });
+  app.get(
+    '/restaurants/:id/public',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      try {
+        const restaurant = await app.db.restaurant.findUniqueOrThrow({
+          where: { id },
+          select: {
+            id: true,
+            name: true,
+            openingHours: true,
+            phoneNumber: true,
+          },
+        });
+        return reply.send(restaurant);
+      } catch (err) {
+        app.log.error({ err }, 'Restaurant fetch failed');
+        return reply.status(404).send({ error: 'Restaurant not found' });
+      }
+    },
+  );
 
   // Public route by slug — used by the embeddable widget (sokar.tech/widget/{slug}).
   // Renvoie les champs nécessaires au rendu de l'iframe + l'id Prisma
@@ -352,158 +356,166 @@ export async function restaurantRoutes(app: FastifyInstance) {
   // Note : on n'utilise PAS /public/r/:slug (déjà déclaré par Sokar Connect) parce
   // que ce dernier filtre sur connectPublished. Le widget doit fonctionner
   // pour tous les restos, pas seulement ceux publiés sur Sokar Connect.
-  app.get('/public/widget/:slug', async (req, reply) => {
-    const { slug } = req.params as { slug: string };
-    try {
-      const restaurant = await app.db.restaurant.findUniqueOrThrow({
-        where: { slug },
-        select: {
-          id: true,
-          name: true,
-          openingHours: true,
-          phoneNumber: true,
-          // Champs Sokar Connect utiles pour le rendu
-          slug: true,
-          city: true,
-          cuisineType: true,
-          coverImageUrl: true,
-          formattedAddress: true,
-          floorPlans: {
-            where: { isDefault: true, isActive: true },
-            select: {
-              sections: {
-                select: { id: true, name: true },
-                orderBy: { name: 'asc' },
+  app.get(
+    '/public/widget/:slug',
+    { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const { slug } = req.params as { slug: string };
+      try {
+        const restaurant = await app.db.restaurant.findUniqueOrThrow({
+          where: { slug },
+          select: {
+            id: true,
+            name: true,
+            openingHours: true,
+            phoneNumber: true,
+            // Champs Sokar Connect utiles pour le rendu
+            slug: true,
+            city: true,
+            cuisineType: true,
+            coverImageUrl: true,
+            formattedAddress: true,
+            floorPlans: {
+              where: { isDefault: true, isActive: true },
+              select: {
+                sections: {
+                  select: { id: true, name: true },
+                  orderBy: { name: 'asc' },
+                },
               },
             },
           },
-        },
-      });
-      const defaultFloorPlan = restaurant.floorPlans?.[0];
-      return reply.send({
-        ...restaurant,
-        sections: defaultFloorPlan?.sections ?? [],
-      });
-    } catch (err) {
-      app.log.error({ err, slug }, 'Restaurant fetch by slug (widget) failed');
-      return reply.status(404).send({ error: 'Restaurant not found' });
-    }
-  });
+        });
+        const defaultFloorPlan = restaurant.floorPlans?.[0];
+        return reply.send({
+          ...restaurant,
+          sections: defaultFloorPlan?.sections ?? [],
+        });
+      } catch (err) {
+        app.log.error({ err, slug }, 'Restaurant fetch by slug (widget) failed');
+        return reply.status(404).send({ error: 'Restaurant not found' });
+      }
+    },
+  );
 
   // ─── Preview public (mode démo hybride) ───────────────────────────
   // Sert les données du restaurant démo "Chez Sokar" (slug: chez-sokar-demo)
   // aux utilisateurs non-onboardés pour explorer le produit en lecture seule.
   // Pas d'auth : endpoint public. Aucune donnée sensible (pas de tokens,
   // pas d'API keys MCP, pas de refresh tokens Google).
-  app.get('/public/preview/restaurant', async (_req, reply) => {
-    try {
-      const restaurant = await app.db.restaurant.findFirst({
-        where: { slug: 'chez-sokar-demo' },
-        select: {
-          id: true,
-          name: true,
-          managerPhone: true,
-          managerEmail: true,
-          phoneNumber: true,
-          openingHours: true,
-          googleCalendarId: true,
-          slug: true,
-          description: true,
-          formattedAddress: true,
-          city: true,
-          postalCode: true,
-          country: true,
-          lat: true,
-          lng: true,
-          cuisineType: true,
-          priceRange: true,
-          ambiance: true,
-          dietary: true,
-          coverImageUrl: true,
-          plan: true,
-          personality: { select: { profileType: true, fillerStyle: true, speakingRate: true } },
-          exposureSettings: {
-            select: {
-              connectPublished: true,
-              connectAgentic: true,
-              maxPartySize: true,
-              capacitySpecials: true,
+  app.get(
+    '/public/preview/restaurant',
+    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+    async (_req, reply) => {
+      try {
+        const restaurant = await app.db.restaurant.findFirst({
+          where: { slug: 'chez-sokar-demo' },
+          select: {
+            id: true,
+            name: true,
+            managerPhone: true,
+            managerEmail: true,
+            phoneNumber: true,
+            openingHours: true,
+            googleCalendarId: true,
+            slug: true,
+            description: true,
+            formattedAddress: true,
+            city: true,
+            postalCode: true,
+            country: true,
+            lat: true,
+            lng: true,
+            cuisineType: true,
+            priceRange: true,
+            ambiance: true,
+            dietary: true,
+            coverImageUrl: true,
+            plan: true,
+            personality: { select: { profileType: true, fillerStyle: true, speakingRate: true } },
+            exposureSettings: {
+              select: {
+                connectPublished: true,
+                connectAgentic: true,
+                maxPartySize: true,
+                capacitySpecials: true,
+              },
             },
+            images: { select: { url: true, isCover: true, position: true, alt: true } },
           },
-          images: { select: { url: true, isCover: true, position: true, alt: true } },
-        },
-      });
+        });
 
-      if (!restaurant) {
-        return reply.status(404).send({ error: 'Demo restaurant not found' });
+        if (!restaurant) {
+          return reply.status(404).send({ error: 'Demo restaurant not found' });
+        }
+
+        // Récupère quelques appels, réservations et clients fictifs pour la démo
+        const [calls, reservations, customers] = await Promise.all([
+          app.db.call
+            .findMany({
+              where: { restaurantId: restaurant.id },
+              orderBy: { createdAt: 'desc' },
+              take: 10,
+              select: {
+                id: true,
+                createdAt: true,
+                durationSec: true,
+                intent: true,
+                outcome: true,
+                carrier: true,
+              },
+            })
+            .catch(() => []),
+          app.db.reservation
+            .findMany({
+              where: { restaurantId: restaurant.id },
+              orderBy: { createdAt: 'desc' },
+              take: 10,
+              select: {
+                id: true,
+                customerName: true,
+                customerPhone: true,
+                partySize: true,
+                reservedAt: true,
+                status: true,
+                estimatedRevenue: true,
+              },
+            })
+            .catch(() => []),
+          app.db.customer
+            .findMany({
+              where: { restaurantId: restaurant.id },
+              take: 10,
+              select: {
+                id: true,
+                name: true,
+                phone: true,
+                visitCount: true,
+                isVip: true,
+                notes: true,
+                lastSeenAt: true,
+              },
+            })
+            .catch(() => []),
+        ]);
+
+        return reply.send({
+          restaurant: {
+            ...restaurant,
+            lat: restaurant.lat ? Number(restaurant.lat) : null,
+            lng: restaurant.lng ? Number(restaurant.lng) : null,
+          },
+          calls,
+          reservations,
+          customers,
+          isPreview: true,
+        });
+      } catch (err) {
+        app.log.error({ err }, 'Preview restaurant fetch failed');
+        return reply.status(500).send({ error: 'Failed to load preview' });
       }
-
-      // Récupère quelques appels, réservations et clients fictifs pour la démo
-      const [calls, reservations, customers] = await Promise.all([
-        app.db.call
-          .findMany({
-            where: { restaurantId: restaurant.id },
-            orderBy: { createdAt: 'desc' },
-            take: 10,
-            select: {
-              id: true,
-              createdAt: true,
-              durationSec: true,
-              intent: true,
-              outcome: true,
-              carrier: true,
-            },
-          })
-          .catch(() => []),
-        app.db.reservation
-          .findMany({
-            where: { restaurantId: restaurant.id },
-            orderBy: { createdAt: 'desc' },
-            take: 10,
-            select: {
-              id: true,
-              customerName: true,
-              customerPhone: true,
-              partySize: true,
-              reservedAt: true,
-              status: true,
-              estimatedRevenue: true,
-            },
-          })
-          .catch(() => []),
-        app.db.customer
-          .findMany({
-            where: { restaurantId: restaurant.id },
-            take: 10,
-            select: {
-              id: true,
-              name: true,
-              phone: true,
-              visitCount: true,
-              isVip: true,
-              notes: true,
-              lastSeenAt: true,
-            },
-          })
-          .catch(() => []),
-      ]);
-
-      return reply.send({
-        restaurant: {
-          ...restaurant,
-          lat: restaurant.lat ? Number(restaurant.lat) : null,
-          lng: restaurant.lng ? Number(restaurant.lng) : null,
-        },
-        calls,
-        reservations,
-        customers,
-        isPreview: true,
-      });
-    } catch (err) {
-      app.log.error({ err }, 'Preview restaurant fetch failed');
-      return reply.status(500).send({ error: 'Failed to load preview' });
-    }
-  });
+    },
+  );
 
   app.patch('/restaurants/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };

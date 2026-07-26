@@ -12,76 +12,96 @@ import {
 } from './customer.schema';
 
 export async function customerRoutes(app: FastifyInstance) {
-  app.get('/customers', { preHandler: requireOrg() }, async (req, reply) => {
-    const query = CustomerQuerySchema.parse(req.query);
-    const restaurantId = req.restaurantId;
-    const where: Prisma.CustomerWhereInput = { restaurantId };
-    if (query.phone) where.phone = query.phone;
+  app.get(
+    '/customers',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 100, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const query = CustomerQuerySchema.parse(req.query);
+      const restaurantId = req.restaurantId;
+      const where: Prisma.CustomerWhereInput = { restaurantId };
+      if (query.phone) where.phone = query.phone;
 
-    const [customers, total] = await Promise.all([
-      db.customer.findMany({
-        where,
-        orderBy: { visitCount: 'desc' },
-        take: query.limit,
-        skip: query.offset,
-      }),
-      db.customer.count({ where }),
-    ]);
+      const [customers, total] = await Promise.all([
+        db.customer.findMany({
+          where,
+          orderBy: { visitCount: 'desc' },
+          take: query.limit,
+          skip: query.offset,
+        }),
+        db.customer.count({ where }),
+      ]);
 
-    return reply.send({ data: customers, total, limit: query.limit, offset: query.offset });
-  });
+      return reply.send({ data: customers, total, limit: query.limit, offset: query.offset });
+    },
+  );
 
-  app.post('/customers', { preHandler: requireOrg() }, async (req, reply) => {
-    const body = CreateCustomerSchema.parse(req.body);
-    const restaurantId = req.restaurantId!;
-    try {
-      const customer = await db.customer.upsert({
-        where: { restaurantId_phone: { restaurantId, phone: body.phone } },
-        create: {
-          restaurantId,
-          phone: body.phone,
-          name: body.name,
-          notes: body.notes,
-          specialOccasion: body.specialOccasion,
-          isVip: body.isVip,
-        },
-        update: {
-          name: body.name,
-          notes: body.notes,
-          specialOccasion: body.specialOccasion,
-          isVip: body.isVip,
-        },
-      });
-      return reply.status(201).send(customer);
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')
-        return reply.status(409).send({ error: 'Customer already exists' });
-      throw err;
-    }
-  });
+  app.post(
+    '/customers',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 100, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const body = CreateCustomerSchema.parse(req.body);
+      const restaurantId = req.restaurantId!;
+      try {
+        const customer = await db.customer.upsert({
+          where: { restaurantId_phone: { restaurantId, phone: body.phone } },
+          create: {
+            restaurantId,
+            phone: body.phone,
+            name: body.name,
+            notes: body.notes,
+            specialOccasion: body.specialOccasion,
+            isVip: body.isVip,
+          },
+          update: {
+            name: body.name,
+            notes: body.notes,
+            specialOccasion: body.specialOccasion,
+            isVip: body.isVip,
+          },
+        });
+        return reply.status(201).send(customer);
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')
+          return reply.status(409).send({ error: 'Customer already exists' });
+        throw err;
+      }
+    },
+  );
 
-  app.patch('/customers/:id', { preHandler: requireOrg() }, async (req, reply) => {
-    const { id } = CustomerParamsSchema.parse(req.params);
-    const restaurantId = req.restaurantId;
-    const body = UpdateCustomerSchema.parse(req.body);
-    const updated = await db.customer.update({ where: { id, restaurantId }, data: body });
-    await redisCache.del(`customer:${updated.restaurantId}:${updated.phone}`);
-    return reply.send(updated);
-  });
+  app.patch(
+    '/customers/:id',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 100, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const { id } = CustomerParamsSchema.parse(req.params);
+      const restaurantId = req.restaurantId;
+      const body = UpdateCustomerSchema.parse(req.body);
+      const updated = await db.customer.update({ where: { id, restaurantId }, data: body });
+      await redisCache.del(`customer:${updated.restaurantId}:${updated.phone}`);
+      return reply.send(updated);
+    },
+  );
 
-  app.delete('/customers/:id', { preHandler: requireOrg() }, async (req, reply) => {
-    const { id } = CustomerParamsSchema.parse(req.params);
-    const restaurantId = req.restaurantId;
-    await db.customer.delete({ where: { id, restaurantId } });
-    return reply.status(204).send();
-  });
+  app.delete(
+    '/customers/:id',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 100, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const { id } = CustomerParamsSchema.parse(req.params);
+      const restaurantId = req.restaurantId;
+      await db.customer.delete({ where: { id, restaurantId } });
+      return reply.status(204).send();
+    },
+  );
 
-  app.post('/customers/:id/vip', { preHandler: requireOrg() }, async (req, reply) => {
-    const { id } = CustomerParamsSchema.parse(req.params);
-    const restaurantId = req.restaurantId;
-    const { isVip } = ToggleVipSchema.parse(req.body);
-    const updated = await db.customer.update({ where: { id, restaurantId }, data: { isVip } });
-    await redisCache.del(`customer:${updated.restaurantId}:${updated.phone}`);
-    return reply.send(updated);
-  });
+  app.post(
+    '/customers/:id/vip',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 100, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const { id } = CustomerParamsSchema.parse(req.params);
+      const restaurantId = req.restaurantId;
+      const { isVip } = ToggleVipSchema.parse(req.body);
+      const updated = await db.customer.update({ where: { id, restaurantId }, data: { isVip } });
+      await redisCache.del(`customer:${updated.restaurantId}:${updated.phone}`);
+      return reply.send(updated);
+    },
+  );
 }

@@ -400,6 +400,22 @@ else
     NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database generate
 fi
 
+# ── Cache webpack persistant ──────────────────────────────────
+# On NE détruit PAS .next/cache/ : c'est le cache webpack qui permet
+# les incremental builds (3 min → ~1 min sur le compile). On ne supprime
+# que les artefacts de build (standalone, server, static, BUILD_ID).
+clean_next_artifacts() {
+    local app="$1"
+    local app_dir="$SOKAR_ROOT/apps/$app"
+    if [ -d "$app_dir/.next" ]; then
+        rm -rf "$app_dir/.next/standalone" "$app_dir/.next/server" "$app_dir/.next/static" "$app_dir/.next/types"
+        rm -f "$app_dir/.next/BUILD_ID"
+        rm -rf "$app_dir"/.next/eslint*
+        find "$app_dir/.next" -maxdepth 1 -name '*.nft.json' -delete
+        find "$app_dir/.next/server" -name '*.nft.json' -delete 2>/dev/null || true
+    fi
+}
+
 # ── 5. Build ─────────────────────────────────────────────
 if [ "$SKIP_ALL_BUILDS" = true ]; then
     log info ""
@@ -407,6 +423,11 @@ if [ "$SKIP_ALL_BUILDS" = true ]; then
 else
     log info ""
     log info "📦 Building..."
+
+    # Nettoyage des artefacts anciens juste avant le build (pas au début du script,
+    # sinon on peut supprimer le standalone d'une app qui n'est pas rebuildée).
+    [ "$NEED_DASHBOARD" = true ] && clean_next_artifacts dashboard
+    [ "$NEED_CONNECT" = true ] && clean_next_artifacts connect
 
     # Phase 1 : packages + API
     if [ "$NEED_PACKAGES" = true ] || [ "$NEED_API" = true ]; then

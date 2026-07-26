@@ -1,9 +1,10 @@
+import { createHash } from 'crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '@prisma/client';
 import {
   ALLOWED_ORIGINS,
   McpAuthError,
-  hashApiKey,
+  getApiKeyPrefix,
   validateApiKeyFormat,
   validateClientOrigin,
   validateDevApiKey,
@@ -55,29 +56,32 @@ describe('mcp auth', () => {
     it('valide un client DB actif', async () => {
       const prisma = {
         agentClient: {
-          findUnique: vi.fn().mockResolvedValue({
-            id: 'client-1',
-            restaurantId: 'rest-1',
-            name: 'Claude',
-            scopes: ['mcp:read'],
-            allowedOrigins: ['https://claude.ai'],
-            revokedAt: null,
-          }),
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: 'client-1',
+              restaurantId: 'rest-1',
+              name: 'Claude',
+              scopes: ['mcp:read'],
+              allowedOrigins: ['https://claude.ai'],
+              revokedAt: null,
+              keyHash: createHash('sha256').update(VALID_KEY).digest('hex'),
+            },
+          ]),
           update: vi.fn().mockResolvedValue({}),
         },
       } as unknown as PrismaClient;
 
       const ctx = await validateApiKey(VALID_KEY, prisma);
 
-      expect(prisma.agentClient.findUnique).toHaveBeenCalledWith({
-        where: { keyHash: hashApiKey(VALID_KEY) },
+      expect(prisma.agentClient.findMany).toHaveBeenCalledWith({
+        where: { keyPrefix: getApiKeyPrefix(VALID_KEY), revokedAt: null },
         select: {
           id: true,
           restaurantId: true,
           name: true,
           scopes: true,
           allowedOrigins: true,
-          revokedAt: true,
+          keyHash: true,
         },
       });
       expect(ctx).toEqual({
@@ -92,14 +96,7 @@ describe('mcp auth', () => {
     it('rejette un client révoqué', async () => {
       const prisma = {
         agentClient: {
-          findUnique: vi.fn().mockResolvedValue({
-            id: 'client-1',
-            restaurantId: null,
-            name: 'Claude',
-            scopes: ['mcp:read'],
-            allowedOrigins: [],
-            revokedAt: new Date(),
-          }),
+          findMany: vi.fn().mockResolvedValue([]),
           update: vi.fn(),
         },
       } as unknown as PrismaClient;

@@ -13,8 +13,9 @@
  */
 
 import type { PrismaClient, Prisma } from '@prisma/client';
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
 import { logger } from '../../../shared/logger/pino';
+import { hashApiKey } from '../../../shared/crypto/api-key-hash';
 import { PolicyValidationError, validateExposureSettings } from '../core/policies.service.js';
 import { AuditLogService } from '../core/audit-log.service.js';
 import {
@@ -446,7 +447,7 @@ export class AgenticAdminService {
   }
 
   private hashApiKey(apiKey: string): string {
-    return createHash('sha256').update(apiKey).digest('hex');
+    return hashApiKey(apiKey);
   }
 
   private getApiKeyPrefix(apiKey: string): string {

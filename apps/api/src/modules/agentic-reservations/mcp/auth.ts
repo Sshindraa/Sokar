@@ -12,8 +12,9 @@
 
 import type { FastifyRequest } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
-import { createHash, timingSafeEqual } from 'crypto';
+import { timingSafeEqual } from 'crypto';
 import { env } from '../../../env';
+import { verifyApiKeyHash } from '../../../shared/crypto/api-key-hash';
 
 // Origins par défaut. Surchargeable via MCP_ALLOWED_ORIGINS
 // (comma-separated, ex: "https://claude.ai,https://chatgpt.com")
@@ -75,9 +76,9 @@ function extractBearer(authHeader: string | undefined): string | null {
   return m ? m[1].trim() : null;
 }
 
-export function hashApiKey(key: string): string {
-  return createHash('sha256').update(key).digest('hex');
-}
+// hashApiKey (scrypt + salt aléatoire) est réexporté depuis shared/crypto
+// pour préserver l'API publique de ce module (admin.service l'utilise).
+export { hashApiKey } from '../../../shared/crypto/api-key-hash';
 
 export function getApiKeyPrefix(key: string): string {
   return key.slice(0, Math.min(key.length, VALID_KEY_PREFIX.length + 8));
@@ -140,19 +141,31 @@ export async function validateApiKey(
   // 2. Sinon, essayer une API key (format sk_sokar_agent_...)
   if (!validateApiKeyFormat(key)) return null;
 
-  const client = await prisma.agentClient.findUnique({
-    where: { keyHash: hashApiKey(key) },
+  // Lookup par keyPrefix (index non-unique) puis vérification timing-safe
+  // du hash. On ne peut pas faire findUnique sur keyHash car scrypt utilise
+  // un salt aléatoire (hash non-déterministe).
+  const keyPrefix = getApiKeyPrefix(key);
+  const candidates = await prisma.agentClient.findMany({
+    where: { keyPrefix, revokedAt: null },
     select: {
       id: true,
       restaurantId: true,
       name: true,
       scopes: true,
       allowedOrigins: true,
-      revokedAt: true,
+      keyHash: true,
     },
   });
 
-  if (client && !client.revokedAt) {
+  let client: (typeof candidates)[number] | null = null;
+  for (const c of candidates) {
+    if (verifyApiKeyHash(key, c.keyHash)) {
+      client = c;
+      break;
+    }
+  }
+
+  if (client) {
     await Promise.resolve(
       prisma.agentClient.update({
         where: { id: client.id },
