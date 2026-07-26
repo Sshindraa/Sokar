@@ -16,9 +16,10 @@
   if (!slug) return;
 
   let rawHost = (script.getAttribute('data-host') || 'https://sokar.tech').replace(/\/$/, '');
-  // Validate host to prevent XSS via malicious data-host attribute
+  // Validate host to prevent XSS via malicious data-host attribute.
+  // Only allow HTTPS URLs or localhost (dev). Reject anything else.
   if (!/^https:\/\/[a-zA-Z0-9.-]+$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(rawHost)) {
-    console.error('[sokar-widget] Invalid data-host attribute, falling back to default');
+    console.error('[sokar-widget] Invalid data-host attribute');
     rawHost = 'https://sokar.tech';
   }
   const host = rawHost;

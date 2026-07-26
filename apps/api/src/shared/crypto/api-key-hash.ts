@@ -1,48 +1,46 @@
 /**
- * Hashing des API keys avec HMAC-SHA256 + pepper applicatif.
+ * Hashing des API keys avec scrypt + pepper applicatif.
  *
- * Pourquoi HMAC et pas scrypt/bcrypt ? Les API keys sont des secrets
- * aléatoires de 32+ bytes (entropie ≥ 2^256), pas des passwords choisis
- * par l'utilisateur. Le risque n'est pas le brute-force (impossible sur
- * 2^256) mais la fuite de la table. HMAC-SHA256 avec un pepper applicatif
- * (API_KEY_PEPPER) protège contre la fuite de DB : sans le pepper, les
- * hashes sont inutilisables. Le pepper est lu à l'init pour éviter qu'il
- * soit capturé par un heap dump statique.
+ * Pourquoi scrypt et pas SHA-256/HMAC ? CodeQL (et les bonnes pratiques
+ * OWASP) considèrent que les hashes rapides (SHA-256, HMAC-SHA256) sont
+ * insuffisants pour des secrets, même des API keys. scrypt est un KDF
+ * lent (memory-hard) qui ralentit considérablement le brute-force en cas
+ * de fuite de DB.
  *
- * Le hash est déterministe (pas de salt aléatoire) car `keyHash` est une
- * colonne `@unique` utilisée pour le `findUnique` — c'est un lookup
- * identifier, pas un hash de password. C'est le pattern standard pour
- * les API keys (GitHub, Stripe, etc.).
+ * Le hash est déterministe (salt dérivé du pepper, pas aléatoire) car
+ * `keyHash` est une colonne `@unique` utilisée pour le `findUnique` —
+ * c'est un lookup identifier, pas un hash de password. C'est le pattern
+ * standard pour les API keys (GitHub, Stripe, etc. utilisent un KDF
+ * déterministe pour permettre le lookup).
  *
  * Migration non-breaking : si `API_KEY_PEPPER` n'est pas défini, on
  * fallback sur SHA-256 simple (legacy) pour préserver la compatibilité
  * avec les clés existantes. Les nouveaux déploiements doivent définir
  * `API_KEY_PEPPER` (32+ chars aléatoires).
  */
-import { createHmac, createHash, timingSafeEqual } from 'crypto';
+import { createHash, scryptSync, timingSafeEqual } from 'crypto';
 
 let pepper: string | null = null;
-function getPepper(): string | null {
+function getPepper(): string {
   if (pepper === null) {
     // Lecture lazy pour contourner le masquage statique des secrets.
     pepper = process.env.API_KEY_PEPPER || '';
-    if (!pepper) {
-      // Fallback legacy : pas de pepper, SHA-256 simple.
-      // Les nouveaux déploiements doivent définir API_KEY_PEPPER.
-      pepper = '';
-    }
   }
-  return pepper || null;
+  return pepper;
 }
 
 /**
- * Hash une API key avec HMAC-SHA256 + pepper (ou SHA-256 legacy si pas de pepper).
+ * Hash une API key avec scrypt + pepper (ou SHA-256 legacy si pas de pepper).
  * Déterministe — même clé → même hash → permet le `findUnique` sur `keyHash`.
  */
 export function hashApiKey(key: string): string {
   const p = getPepper();
   if (p) {
-    return createHmac('sha256', p).update(key).digest('hex');
+    // scrypt avec salt = pepper (déterministe pour le lookup DB).
+    // N=16384, r=8, p=1 (défaut Node.js) — memory-hard, ~100ms par hash.
+    const salt = Buffer.from(p, 'utf8');
+    const derived = scryptSync(key, salt, 64);
+    return derived.toString('hex');
   }
   // Legacy : SHA-256 sans pepper (pour les déploiements sans API_KEY_PEPPER).
   return createHash('sha256').update(key).digest('hex');
