@@ -339,96 +339,125 @@ async function start() {
 
   setImmediate(() => {
     (async () => {
+      // Chaque scheduler est inscrit dans son propre try/catch pour qu'un
+      // échec (ex: DB pas prête au boot) n'empêche pas l'inscription des
+      // autres. Sans ça, une seule upsertJobScheduler qui throw avorte
+      // silencieusement les 10+ schedulers suivants → alertes system-health
+      // qui disparaissent au prochain restart PM2.
+      const register = (label: string, fn: () => Promise<unknown>): Promise<void> =>
+        fn()
+          .then(() => {})
+          .catch((err) => {
+            logger.error({ err, scheduler: label }, 'Failed to register scheduler (non-blocking)');
+          });
+
+      // Evening-report : un scheduler par restaurant (boucle).
       try {
         const restaurants = await db.restaurant.findMany({ select: { id: true } });
         for (const r of restaurants) {
-          await queues.eveningReport.upsertJobScheduler(
-            `nightly-${r.id}`,
-            { pattern: '0 23 * * *', tz: 'Europe/Paris' },
-            { name: 'nightly', data: { restaurantId: r.id } },
+          await register(`evening-report/${r.id}`, () =>
+            queues.eveningReport.upsertJobScheduler(
+              `nightly-${r.id}`,
+              { pattern: '0 23 * * *', tz: 'Europe/Paris' },
+              { name: 'nightly', data: { restaurantId: r.id } },
+            ),
           );
         }
+      } catch (err) {
+        logger.error({ err }, 'Failed to load restaurants for evening-report schedulers');
+      }
 
-        await queues.reconciliation.upsertJobScheduler(
+      await register('reconciliation/calls', () =>
+        queues.reconciliation.upsertJobScheduler(
           'daily-call-reconciliation',
           { pattern: '20 3 * * *', tz: 'Europe/Paris' },
-          {
-            name: 'calls',
-            data: { kind: 'calls' },
-          },
-        );
-        await queues.reconciliation.upsertJobScheduler(
+          { name: 'calls', data: { kind: 'calls' } },
+        ),
+      );
+      await register('reconciliation/sms', () =>
+        queues.reconciliation.upsertJobScheduler(
           'daily-sms-reconciliation',
           { pattern: '35 3 * * *', tz: 'Europe/Paris' },
-          {
-            name: 'sms',
-            data: { kind: 'sms' },
-          },
-        );
+          { name: 'sms', data: { kind: 'sms' } },
+        ),
+      );
 
-        // SMS de rappel J-1 : envoie les SMS à 17h chaque jour
-        await queues.confirmationSms.upsertJobScheduler(
+      // SMS de rappel J-1 : envoie les SMS à 17h chaque jour
+      await register('confirmation-sms/scan', () =>
+        queues.confirmationSms.upsertJobScheduler(
           'daily-confirmation-scan',
           { pattern: '0 17 * * *', tz: 'Europe/Paris' },
           { name: 'confirmation-scan', data: { kind: 'scan' } },
-        );
+        ),
+      );
 
-        // Réactivation VIP dormant : scan hebdo le lundi à 10h
-        await queues.reactivation.upsertJobScheduler(
+      // Réactivation VIP dormant : scan hebdo le lundi à 10h
+      await register('reactivation/scan', () =>
+        queues.reactivation.upsertJobScheduler(
           'weekly-vip-reactivation',
           { pattern: '0 10 * * 1', tz: 'Europe/Paris' },
           { name: 'reactivation-scan', data: { kind: 'scan' } },
-        );
+        ),
+      );
 
-        // Alert evaluation : toutes les 5 minutes. Lit les métriques Prometheus,
-        // compare avec le snapshot précédent (Redis), déclenche les alertes
-        // Sentry avec cooldown 30 min. Cf. alert-evaluation.worker.ts.
-        await queues.alertEvaluation.upsertJobScheduler(
+      // Alert evaluation : toutes les 5 minutes. Lit les métriques Prometheus,
+      // compare avec le snapshot précédent (Redis), déclenche les alertes
+      // Sentry avec cooldown 30 min. Cf. alert-evaluation.worker.ts.
+      await register('alert-evaluation/5min', () =>
+        queues.alertEvaluation.upsertJobScheduler(
           'alert-evaluation-5min',
           { pattern: '*/5 * * * *', tz: 'Europe/Paris' },
           { name: 'evaluate-alerts' },
-        );
+        ),
+      );
 
-        // Monitoring système : toutes les 5 minutes. Checks métier (files
-        // BullMQ, appels sans transcription, réservations sans SMS) dispatchés
-        // sur les canaux ALERT_* avec cooldown 30 min. Cf. system-health.worker.ts.
-        await queues.systemHealth.upsertJobScheduler(
+      // Monitoring système : toutes les 5 minutes. Checks métier (files
+      // BullMQ, appels sans transcription, réservations sans SMS) dispatchés
+      // sur les canaux ALERT_* avec cooldown 30 min. Cf. system-health.worker.ts.
+      await register('system-health/5min', () =>
+        queues.systemHealth.upsertJobScheduler(
           'system-health-5min',
           { pattern: '*/5 * * * *', tz: 'Europe/Paris' },
           { name: 'system-health-checks' },
-        );
+        ),
+      );
 
-        // Les enregistrements sont privés et temporaires : purge quotidienne
-        // des objets dont la rétention applicative est arrivée à échéance.
-        await queues.telnyxWebhooks.upsertJobScheduler(
+      // Les enregistrements sont privés et temporaires : purge quotidienne
+      // des objets dont la rétention applicative est arrivée à échéance.
+      await register('telnyx-webhooks/recordings-purge', () =>
+        queues.telnyxWebhooks.upsertJobScheduler(
           'call-recordings-purge-daily',
           { pattern: '20 3 * * *', tz: 'Europe/Paris' },
           { name: 'purge-expired-recordings' },
-        );
+        ),
+      );
 
-        // Nettoyage des holds expirés (filet de sécurité, RES-008).
-        await queues.holdCleanup.upsertJobScheduler(
+      // Nettoyage des holds expirés (filet de sécurité, RES-008).
+      await register('hold-cleanup/5min', () =>
+        queues.holdCleanup.upsertJobScheduler(
           'hold-cleanup-5min',
           { pattern: '*/5 * * * *', tz: 'Europe/Paris' },
           { name: 'cleanup-expired-holds', data: {} },
-        );
+        ),
+      );
 
-        // Nettoyage des entrées de liste d'attente expirées (filet de sécurité).
-        await queues.waitingListCleanup.upsertJobScheduler(
+      // Nettoyage des entrées de liste d'attente expirées (filet de sécurité).
+      await register('waiting-list-cleanup/5min', () =>
+        queues.waitingListCleanup.upsertJobScheduler(
           'waiting-list-cleanup-5min',
           { pattern: '*/5 * * * *', tz: 'Europe/Paris' },
           { name: 'cleanup-expired-waiting-list', data: {} },
-        );
+        ),
+      );
 
-        // Purge quotidienne des clés idempotency expirées (RES-005).
-        await queues.idempotencyPurge.upsertJobScheduler(
+      // Purge quotidienne des clés idempotency expirées (RES-005).
+      await register('idempotency-purge/daily', () =>
+        queues.idempotencyPurge.upsertJobScheduler(
           'daily-idempotency-purge',
           { pattern: '0 4 * * *', tz: 'Europe/Paris' },
           { name: 'purge-expired', data: {} },
-        );
-      } catch (err) {
-        logger.error(err, 'Failed to register schedulers on startup');
-      }
+        ),
+      );
     })().catch((err) => logger.error({ err }, 'Startup scheduler IIFE failed'));
   });
 }
