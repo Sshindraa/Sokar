@@ -72,12 +72,16 @@ export class McpServer {
     // GET /mcp : utilisé par les clients MCP StreamableHTTP pour tenter d'ouvrir
     // un stream SSE. On ne supporte pas SSE, donc on retourne 405 sans auth.
     // L'authentification n'est pas requise ici : elle est vérifiée sur POST /mcp.
-    app.get('/mcp', async (_req: FastifyRequest, reply: FastifyReply) => {
-      return reply
-        .status(405)
-        .header('Allow', 'POST')
-        .send({ error: 'Method Not Allowed', code: 'METHOD_NOT_ALLOWED' });
-    });
+    app.get(
+      '/mcp',
+      { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
+      async (_req: FastifyRequest, reply: FastifyReply) => {
+        return reply
+          .status(405)
+          .header('Allow', 'POST')
+          .send({ error: 'Method Not Allowed', code: 'METHOD_NOT_ALLOWED' });
+      },
+    );
 
     // POST /mcp : endpoint principal JSON-RPC
     app.post('/mcp', async (req: FastifyRequest, reply: FastifyReply) => {

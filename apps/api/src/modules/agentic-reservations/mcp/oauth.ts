@@ -132,9 +132,12 @@ export async function validateOAuthToken(token: string): Promise<AuthContext | n
 // Si un client ne fait pas de DCR, on accepte ces redirect URIs
 const KNOWN_REDIRECT_PATTERNS: { pattern: RegExp; name: string }[] = [
   { pattern: /^https:\/\/claude\.ai\/api\/mcp\/auth_callback$/, name: 'Claude' },
-  { pattern: /^https:\/\/claude\.ai\/api\/mcp\/auth_callback\/.+$/, name: 'Claude' },
-  { pattern: /^https:\/\/chatgpt\.com\/backend-api\/mcp\/.+\/callback$/, name: 'ChatGPT' },
-  { pattern: /^https:\/\/chat\.mistral\.ai\/.+\/callback$/, name: 'Mistral' },
+  { pattern: /^https:\/\/claude\.ai\/api\/mcp\/auth_callback\/[a-zA-Z0-9_-]+$/, name: 'Claude' },
+  {
+    pattern: /^https:\/\/chatgpt\.com\/backend-api\/mcp\/[a-zA-Z0-9_-]+\/callback$/,
+    name: 'ChatGPT',
+  },
+  { pattern: /^https:\/\/chat\.mistral\.ai\/[a-zA-Z0-9_-]+\/callback$/, name: 'Mistral' },
   { pattern: /^http:\/\/localhost:\d+\/callback$/, name: 'Claude Code' },
   { pattern: /^http:\/\/127\.0\.0\.1:\d+\/callback$/, name: 'Claude Code' },
 ];
@@ -181,6 +184,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
   // ── 0. Protected resource metadata (MCP spec 2025-06-18) ──
   app.get(
     '/.well-known/oauth-protected-resource',
+    { config: { rateLimit: { max: 100, timeWindow: '1 minute' } } },
     async (_req: FastifyRequest, reply: FastifyReply) => {
       const issuer = getIssuer();
       return reply.header('Cache-Control', 'public, max-age=3600').send({
@@ -195,6 +199,7 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
   // ── 1. Metadata discovery (RFC 8414) ─────────────────
   app.get(
     '/.well-known/oauth-authorization-server',
+    { config: { rateLimit: { max: 100, timeWindow: '1 minute' } } },
     async (_req: FastifyRequest, reply: FastifyReply) => {
       const issuer = getIssuer();
       return reply.header('Cache-Control', 'public, max-age=3600').send({
@@ -275,233 +280,244 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
   // GET  → affiche une page de consentement
   // POST → process le consentement, redirige avec un code
 
-  app.get('/oauth/authorize', async (req: FastifyRequest, reply: FastifyReply) => {
-    const query = req.query as {
-      client_id?: string;
-      redirect_uri?: string;
-      response_type?: string;
-      state?: string;
-      scope?: string;
-      code_challenge?: string;
-      code_challenge_method?: string;
-    };
+  app.get(
+    '/oauth/authorize',
+    { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const query = req.query as {
+        client_id?: string;
+        redirect_uri?: string;
+        response_type?: string;
+        state?: string;
+        scope?: string;
+        code_challenge?: string;
+        code_challenge_method?: string;
+      };
 
-    // Valider les params
-    if (!query.client_id || !query.redirect_uri) {
-      return reply
-        .status(400)
-        .type('text/html')
-        .send(renderError('Paramètres manquants', 'client_id et redirect_uri sont requis.'));
-    }
-
-    if (query.response_type !== 'code') {
-      return reply
-        .status(400)
-        .type('text/html')
-        .send(renderError('Type non supporté', 'Seul response_type=code est supporté.'));
-    }
-
-    // Valider le client
-    const client = await getJson<RegisteredClient>(`sokar:oauth:client:${query.client_id}`);
-    let clientName = query.client_id || 'Unknown';
-
-    if (!client) {
-      const knownName = matchKnownRedirect(query.redirect_uri);
-      if (knownName) {
-        clientName = knownName;
-      } else {
+      // Valider les params
+      if (!query.client_id || !query.redirect_uri) {
         return reply
           .status(400)
           .type('text/html')
-          .send(
-            renderError('Client inconnu', `Aucun client enregistré avec l'ID ${query.client_id}.`),
-          );
+          .send(renderError('Paramètres manquants', 'client_id et redirect_uri sont requis.'));
       }
-    } else {
-      clientName = client.clientName;
-      if (!client.redirectUris.includes(query.redirect_uri)) {
+
+      if (query.response_type !== 'code') {
+        return reply
+          .status(400)
+          .type('text/html')
+          .send(renderError('Type non supporté', 'Seul response_type=code est supporté.'));
+      }
+
+      // Valider le client
+      const client = await getJson<RegisteredClient>(`sokar:oauth:client:${query.client_id}`);
+      let clientName = query.client_id || 'Unknown';
+
+      if (!client) {
+        const knownName = matchKnownRedirect(query.redirect_uri);
+        if (knownName) {
+          clientName = knownName;
+        } else {
+          return reply
+            .status(400)
+            .type('text/html')
+            .send(
+              renderError(
+                'Client inconnu',
+                `Aucun client enregistré avec l'ID ${query.client_id}.`,
+              ),
+            );
+        }
+      } else {
+        clientName = client.clientName;
+        if (!client.redirectUris.includes(query.redirect_uri)) {
+          return reply
+            .status(400)
+            .type('text/html')
+            .send(
+              renderError(
+                'Redirect URI non autorisé',
+                `L'URI ${query.redirect_uri} n'est pas enregistrée pour ce client.`,
+              ),
+            );
+        }
+      }
+
+      // Vérifier qu'au moins un restaurant a MCP activé — sinon le connector
+      // est inutile. Pas de scoping Clerk : le MCP est un API publique pour les
+      // clients (ChatGPT, Claude.ai, Mistral), pas pour les restaurateurs.
+      const anyMcp = await db.restaurantExposureSettings.findFirst({
+        where: { mcpEnabled: true },
+        select: { restaurantId: true },
+      });
+
+      if (!anyMcp) {
         return reply
           .status(400)
           .type('text/html')
           .send(
             renderError(
-              'Redirect URI non autorisé',
-              `L'URI ${query.redirect_uri} n'est pas enregistrée pour ce client.`,
+              'Aucun restaurant MCP',
+              "Aucun restaurant n'a MCP activé. Activez MCP dans le dashboard Sokar d'abord.",
             ),
           );
       }
-    }
 
-    // Vérifier qu'au moins un restaurant a MCP activé — sinon le connector
-    // est inutile. Pas de scoping Clerk : le MCP est un API publique pour les
-    // clients (ChatGPT, Claude.ai, Mistral), pas pour les restaurateurs.
-    const anyMcp = await db.restaurantExposureSettings.findFirst({
-      where: { mcpEnabled: true },
-      select: { restaurantId: true },
-    });
+      const scopes = query.scope
+        ? query.scope.split(' ').filter(Boolean)
+        : ['mcp:read', 'mcp:reserve', 'mcp:cancel'];
 
-    if (!anyMcp) {
-      return reply
-        .status(400)
-        .type('text/html')
-        .send(
-          renderError(
-            'Aucun restaurant MCP',
-            "Aucun restaurant n'a MCP activé. Activez MCP dans le dashboard Sokar d'abord.",
-          ),
-        );
-    }
+      // Générer un token CSRF pour protéger le consent form
+      const csrfToken = randomUUID();
+      await setJson(
+        `sokar:oauth:csrf:${csrfToken}`,
+        { clientId: query.client_id, redirectUri: query.redirect_uri },
+        TTL_CODE, // 10 min — même TTL que les auth codes
+      );
 
-    const scopes = query.scope
-      ? query.scope.split(' ').filter(Boolean)
-      : ['mcp:read', 'mcp:reserve', 'mcp:cancel'];
+      return reply.type('text/html').send(
+        renderConsentPage({
+          clientName: clientName,
+          clientId: query.client_id,
+          redirectUri: query.redirect_uri,
+          state: query.state || '',
+          scope: scopes.join(' '),
+          codeChallenge: query.code_challenge || '',
+          codeChallengeMethod: query.code_challenge_method || '',
+          csrfToken,
+        }),
+      );
+    },
+  );
 
-    // Générer un token CSRF pour protéger le consent form
-    const csrfToken = randomUUID();
-    await setJson(
-      `sokar:oauth:csrf:${csrfToken}`,
-      { clientId: query.client_id, redirectUri: query.redirect_uri },
-      TTL_CODE, // 10 min — même TTL que les auth codes
-    );
+  app.post(
+    '/oauth/authorize',
+    { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const body = req.body as {
+        client_id?: string;
+        redirect_uri?: string;
+        state?: string;
+        scope?: string;
+        restaurant_id?: string;
+        code_challenge?: string;
+        code_challenge_method?: string;
+        action?: string; // "approve" ou "deny"
+        csrf_token?: string;
+      };
 
-    return reply.type('text/html').send(
-      renderConsentPage({
-        clientName: clientName,
-        clientId: query.client_id,
-        redirectUri: query.redirect_uri,
-        state: query.state || '',
-        scope: scopes.join(' '),
-        codeChallenge: query.code_challenge || '',
-        codeChallengeMethod: query.code_challenge_method || '',
-        csrfToken,
-      }),
-    );
-  });
+      // Valider le token CSRF (protection contre les attaques cross-site
+      // sur le consent form — que ce soit approve ou deny)
+      if (!body.csrf_token) {
+        return reply
+          .status(403)
+          .type('text/html')
+          .send(renderError('Token CSRF manquant', 'Veuillez recharger la page de consentement.'));
+      }
+      const csrfData = await getJson<{ clientId: string; redirectUri: string }>(
+        `sokar:oauth:csrf:${body.csrf_token}`,
+      );
+      if (!csrfData) {
+        return reply
+          .status(403)
+          .type('text/html')
+          .send(
+            renderError(
+              'Token CSRF invalide',
+              'Le token de consentement a expiré. Veuillez recharger la page.',
+            ),
+          );
+      }
+      // Supprimer le token (one-time use)
+      await redisCache.del(`sokar:oauth:csrf:${body.csrf_token}`);
 
-  app.post('/oauth/authorize', async (req: FastifyRequest, reply: FastifyReply) => {
-    const body = req.body as {
-      client_id?: string;
-      redirect_uri?: string;
-      state?: string;
-      scope?: string;
-      restaurant_id?: string;
-      code_challenge?: string;
-      code_challenge_method?: string;
-      action?: string; // "approve" ou "deny"
-      csrf_token?: string;
-    };
+      // Vérifier la cohérence client_id / redirect_uri entre le CSRF et le form
+      if (
+        (body.client_id && csrfData.clientId && body.client_id !== csrfData.clientId) ||
+        (body.redirect_uri && csrfData.redirectUri && body.redirect_uri !== csrfData.redirectUri)
+      ) {
+        return reply
+          .status(403)
+          .type('text/html')
+          .send(
+            renderError(
+              'Incohérence CSRF',
+              'Les paramètres ne correspondent pas au token de consentement.',
+            ),
+          );
+      }
 
-    // Valider le token CSRF (protection contre les attaques cross-site
-    // sur le consent form — que ce soit approve ou deny)
-    if (!body.csrf_token) {
-      return reply
-        .status(403)
-        .type('text/html')
-        .send(renderError('Token CSRF manquant', 'Veuillez recharger la page de consentement.'));
-    }
-    const csrfData = await getJson<{ clientId: string; redirectUri: string }>(
-      `sokar:oauth:csrf:${body.csrf_token}`,
-    );
-    if (!csrfData) {
-      return reply
-        .status(403)
-        .type('text/html')
-        .send(
-          renderError(
-            'Token CSRF invalide',
-            'Le token de consentement a expiré. Veuillez recharger la page.',
-          ),
-        );
-    }
-    // Supprimer le token (one-time use)
-    await redisCache.del(`sokar:oauth:csrf:${body.csrf_token}`);
+      // Valider le client
+      const postClient = await getJson<RegisteredClient>(`sokar:oauth:client:${body.client_id}`);
 
-    // Vérifier la cohérence client_id / redirect_uri entre le CSRF et le form
-    if (
-      (body.client_id && csrfData.clientId && body.client_id !== csrfData.clientId) ||
-      (body.redirect_uri && csrfData.redirectUri && body.redirect_uri !== csrfData.redirectUri)
-    ) {
-      return reply
-        .status(403)
-        .type('text/html')
-        .send(
-          renderError(
-            'Incohérence CSRF',
-            'Les paramètres ne correspondent pas au token de consentement.',
-          ),
-        );
-    }
+      if (!postClient) {
+        const knownName = body.redirect_uri ? matchKnownRedirect(body.redirect_uri) : null;
+        if (!knownName) {
+          return reply
+            .status(400)
+            .type('text/html')
+            .send(renderError('Client inconnu', 'Client non trouvé.'));
+        }
+      } else {
+        if (!body.redirect_uri || !postClient.redirectUris.includes(body.redirect_uri)) {
+          return reply.status(400).type('text/html').send(renderError('Redirect URI invalide', ''));
+        }
+      }
 
-    // Valider le client
-    const postClient = await getJson<RegisteredClient>(`sokar:oauth:client:${body.client_id}`);
+      // Si l'utilisateur a refusé
+      if (body.action === 'deny') {
+        if (!body.redirect_uri) {
+          return reply.status(400).type('text/html').send(renderError('Redirect URI manquant', ''));
+        }
+        const denyUrl = new URL(body.redirect_uri);
+        denyUrl.searchParams.set('error', 'access_denied');
+        denyUrl.searchParams.set('error_description', 'User denied access');
+        if (body.state) denyUrl.searchParams.set('state', body.state);
+        return reply.redirect(denyUrl.toString());
+      }
 
-    if (!postClient) {
-      const knownName = body.redirect_uri ? matchKnownRedirect(body.redirect_uri) : null;
-      if (!knownName) {
+      // Refuser les requêtes sans client_id valide
+      if (!body.client_id) {
         return reply
           .status(400)
           .type('text/html')
-          .send(renderError('Client inconnu', 'Client non trouvé.'));
+          .send(renderError('Client manquant', 'client_id requis.'));
       }
-    } else {
-      if (!body.redirect_uri || !postClient.redirectUris.includes(body.redirect_uri)) {
-        return reply.status(400).type('text/html').send(renderError('Redirect URI invalide', ''));
-      }
-    }
 
-    // Si l'utilisateur a refusé
-    if (body.action === 'deny') {
+      // Générer le code d'autorisation
+      // restaurantId = null : le token MCP est public, il donne accès à tous
+      // les restaurants qui ont MCP activé. Le scoping se fait au niveau des
+      // tools (getMcpExposure vérifie mcpEnabled par restaurant).
+      const code = randomUUID();
+      const scopes = body.scope
+        ? body.scope.split(' ').filter(Boolean)
+        : ['mcp:read', 'mcp:reserve', 'mcp:cancel'];
+
+      const authCode: AuthCode = {
+        clientId: body.client_id || '',
+        restaurantId: null,
+        restaurantName: null,
+        scopes,
+        redirectUri: body.redirect_uri || '',
+        codeChallenge: body.code_challenge || undefined,
+        codeChallengeMethod: body.code_challenge_method || undefined,
+      };
+
+      await setJson(`sokar:oauth:code:${code}`, authCode, TTL_CODE);
+
+      logger.info({ clientId: body.client_id }, 'oauth: authorization code issued (public)');
+
+      // Rediriger vers le client avec le code
       if (!body.redirect_uri) {
         return reply.status(400).type('text/html').send(renderError('Redirect URI manquant', ''));
       }
-      const denyUrl = new URL(body.redirect_uri);
-      denyUrl.searchParams.set('error', 'access_denied');
-      denyUrl.searchParams.set('error_description', 'User denied access');
-      if (body.state) denyUrl.searchParams.set('state', body.state);
-      return reply.redirect(denyUrl.toString());
-    }
+      const redirectUrl = new URL(body.redirect_uri);
+      redirectUrl.searchParams.set('code', code);
+      if (body.state) redirectUrl.searchParams.set('state', body.state);
 
-    // Refuser les requêtes sans client_id valide
-    if (!body.client_id) {
-      return reply
-        .status(400)
-        .type('text/html')
-        .send(renderError('Client manquant', 'client_id requis.'));
-    }
-
-    // Générer le code d'autorisation
-    // restaurantId = null : le token MCP est public, il donne accès à tous
-    // les restaurants qui ont MCP activé. Le scoping se fait au niveau des
-    // tools (getMcpExposure vérifie mcpEnabled par restaurant).
-    const code = randomUUID();
-    const scopes = body.scope
-      ? body.scope.split(' ').filter(Boolean)
-      : ['mcp:read', 'mcp:reserve', 'mcp:cancel'];
-
-    const authCode: AuthCode = {
-      clientId: body.client_id || '',
-      restaurantId: null,
-      restaurantName: null,
-      scopes,
-      redirectUri: body.redirect_uri || '',
-      codeChallenge: body.code_challenge || undefined,
-      codeChallengeMethod: body.code_challenge_method || undefined,
-    };
-
-    await setJson(`sokar:oauth:code:${code}`, authCode, TTL_CODE);
-
-    logger.info({ clientId: body.client_id }, 'oauth: authorization code issued (public)');
-
-    // Rediriger vers le client avec le code
-    if (!body.redirect_uri) {
-      return reply.status(400).type('text/html').send(renderError('Redirect URI manquant', ''));
-    }
-    const redirectUrl = new URL(body.redirect_uri);
-    redirectUrl.searchParams.set('code', code);
-    if (body.state) redirectUrl.searchParams.set('state', body.state);
-
-    return reply.redirect(redirectUrl.toString());
-  });
+      return reply.redirect(redirectUrl.toString());
+    },
+  );
 
   // ── 4. Token endpoint ────────────────────────────────
   app.post('/oauth/token', async (req: FastifyRequest, reply: FastifyReply) => {

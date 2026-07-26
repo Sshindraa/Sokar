@@ -14,6 +14,7 @@ import type { FastifyRequest } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
 import { createHash, timingSafeEqual } from 'crypto';
 import { env } from '../../../env';
+import { hashApiKey } from '../../../shared/crypto/api-key-hash';
 
 // Origins par défaut. Surchargeable via MCP_ALLOWED_ORIGINS
 // (comma-separated, ex: "https://claude.ai,https://chatgpt.com")
@@ -75,9 +76,9 @@ function extractBearer(authHeader: string | undefined): string | null {
   return m ? m[1].trim() : null;
 }
 
-export function hashApiKey(key: string): string {
-  return createHash('sha256').update(key).digest('hex');
-}
+// hashApiKey est importé depuis shared/crypto/api-key-hash (HMAC-SHA256 + pepper).
+// Réexporté ici pour préserver l'API publique de ce module.
+export { hashApiKey } from '../../../shared/crypto/api-key-hash';
 
 export function getApiKeyPrefix(key: string): string {
   return key.slice(0, Math.min(key.length, VALID_KEY_PREFIX.length + 8));

@@ -15,7 +15,13 @@
   const accent = script.getAttribute('data-accent') || '#f97316';
   if (!slug) return;
 
-  const host = (script.getAttribute('data-host') || 'https://sokar.tech').replace(/\/$/, '');
+  let rawHost = (script.getAttribute('data-host') || 'https://sokar.tech').replace(/\/$/, '');
+  // Validate host to prevent XSS via malicious data-host attribute
+  if (!/^https:\/\/[a-zA-Z0-9.-]+$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(rawHost)) {
+    console.error('[sokar-widget] Invalid data-host attribute, falling back to default');
+    rawHost = 'https://sokar.tech';
+  }
+  const host = rawHost;
   const iframe = document.createElement('iframe');
   iframe.src =
     host +
@@ -34,7 +40,9 @@
   window.addEventListener('message', (e) => {
     if (e.origin !== host) return;
     if (e.data?.type === 'sokar-widget-resize' && e.data?.height) {
-      iframe.style.height = e.data.height + 'px';
+      if (typeof e.data?.height === 'number' && e.data.height > 0 && e.data.height < 10000) {
+        iframe.style.height = e.data.height + 'px';
+      }
     }
   });
 
