@@ -9,7 +9,7 @@
 ```
 Cloudflare (proxy + cache)
     ↓ HTTPS
-VPS (pmbtc) — Nginx :80, derrière Cloudflare
+VPS (sokar) — Nginx :80, derrière Cloudflare
     ├─ /, /pricing, /dashboard/*  → 127.0.0.1:3000 (sokar-dashboard, PM2)
     ├─ /r/*, /restaurants/*, /sitemap.xml, /robots.txt
     │                              → 127.0.0.1:4002 (sokar-connect, PM2)

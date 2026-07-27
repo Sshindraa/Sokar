@@ -3,7 +3,7 @@
 ## Staging
 
 ```zsh
-ssh deploy@pmbtc
+ssh deploy@sokar
 cd /opt/sokar-staging
 bash scripts/deploy-staging.sh rollback
 ```
@@ -11,7 +11,7 @@ bash scripts/deploy-staging.sh rollback
 ## Production
 
 ```zsh
-ssh deploy@pmbtc
+ssh deploy@sokar
 cd /opt/sokar
 bash scripts/deploy-vps.sh --confirm-production rollback
 ```
