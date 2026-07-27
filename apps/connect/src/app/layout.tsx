@@ -46,6 +46,17 @@ export const metadata: Metadata = {
       'max-video-preview': -1,
     },
   },
+  // Google Search Console verification (meta tag method).
+  // Pour activer : set NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION dans apps/connect/.env
+  // avec le token fourni par GSC, puis rebuild.
+  // Alternative : déposer le fichier google<hash>.html dans apps/connect/public/.
+  ...(process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
+    ? {
+        verification: {
+          google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
+        },
+      }
+    : {}),
   openGraph: {
     type: 'website',
     siteName: 'Sokar',
