@@ -173,13 +173,13 @@ automatiquement les artefacts d'avant le build et redémarre les services.
 
 ```bash
 # Lister les releases disponibles
-ssh pmbtc 'bash /opt/sokar/scripts/deploy-vps.sh rollback'
+ssh sokar 'bash /opt/sokar/scripts/deploy-vps.sh rollback'
 
 # Rollback vers la release précédente (recommandé)
-ssh pmbtc 'bash /opt/sokar/scripts/deploy-vps.sh rollback'
+ssh sokar 'bash /opt/sokar/scripts/deploy-vps.sh rollback'
 
 # Rollback vers une release spécifique
-ssh pmbtc 'bash /opt/sokar/scripts/deploy-vps.sh rollback 20260626T130000Z'
+ssh sokar 'bash /opt/sokar/scripts/deploy-vps.sh rollback 20260626T130000Z'
 ```
 
 Le rollback :
@@ -194,9 +194,9 @@ Le rollback :
 ### Vérifier l'état après rollback
 
 ```bash
-ssh pmbtc 'pm2 list | grep sokar'
-ssh pmbtc 'curl -s -o /dev/null -w "api: %{http_code}\n" http://localhost:4000/health'
-ssh pmbtc 'curl -s -o /dev/null -w "dash: %{http_code}\n" http://localhost:3000'
+ssh sokar 'pm2 list | grep sokar'
+ssh sokar 'curl -s -o /dev/null -w "api: %{http_code}\n" http://localhost:4000/health'
+ssh sokar 'curl -s -o /dev/null -w "dash: %{http_code}\n" http://localhost:3000'
 ```
 
 ---
@@ -245,8 +245,8 @@ Scripts SQL d'urgence :
 
 ### Topologie des backups
 
-| Type    | Script                          | Cible                        | Fréquence      | Rétention |
-| ------- | ------------------------------- | ---------------------------- | -------------- | --------- |
+| Type    | Script                                   | Cible                        | Fréquence      | Rétention |
+| ------- | ---------------------------------------- | ---------------------------- | -------------- | --------- |
 | Local   | `scripts/database/backup-postgres.sh`    | `/var/backups/sokar` (VPS)   | cron 03:20 UTC | 14 jours  |
 | Offsite | `scripts/database/backup-postgres-r2.sh` | `r2:sokar-backups/postgres/` | cron 04:00 UTC | 30 jours  |
 
@@ -342,15 +342,15 @@ KEEP_DB=1 bash scripts/database/test-restore-vierge.sh
 ### Vérifier que le cron tourne sur le VPS
 
 ```bash
-ssh pmbtc 'crontab -l | grep backup'
-ssh pmbtc 'tail -20 /var/log/sokar/postgres-r2-backup.log'
+ssh sokar 'crontab -l | grep backup'
+ssh sokar 'tail -20 /var/log/sokar/postgres-r2-backup.log'
 rclone ls r2:sokar-backups/postgres/ | tail -5
 ```
 
 Si le dernier dump date de plus de 24h, redéployer :
 
 ```bash
-VPS_HOST=pmbtc bash scripts/ops/install-r2-backup.sh --test
+VPS_HOST=sokar bash scripts/ops/install-r2-backup.sh --test
 ```
 
 ---

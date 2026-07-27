@@ -14,7 +14,7 @@
 - Dry-run: `bash scripts/deploy-staging.sh --dry-run`.
 - From Mac:
   ```zsh
-  ssh deploy@pmbtc "cd /opt/sokar-staging && git pull origin main && bash scripts/deploy-staging.sh"
+  ssh deploy@sokar "cd /opt/sokar-staging && git pull origin main && bash scripts/deploy-staging.sh"
   ```
 
 ## Production deployment
@@ -22,11 +22,11 @@
 - Script: `scripts/deploy-vps.sh`.
 - From Mac:
   ```zsh
-  ssh deploy@pmbtc "cd /opt/sokar && git pull origin main && bash scripts/deploy-vps.sh --confirm-production"
+  ssh deploy@sokar "cd /opt/sokar && git pull origin main && bash scripts/deploy-vps.sh --confirm-production"
   ```
 - Rollback:
   ```zsh
-  ssh deploy@pmbtc "cd /opt/sokar && bash scripts/deploy-vps.sh --confirm-production rollback"
+  ssh deploy@sokar "cd /opt/sokar && bash scripts/deploy-vps.sh --confirm-production rollback"
   ```
 - Privileged wrapper: `/usr/local/sbin/sokar-deploy-root`.
 - The `deploy` account is **not** in `sudo` or `docker` groups.
