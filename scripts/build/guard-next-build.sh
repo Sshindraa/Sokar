@@ -28,7 +28,7 @@ dev_listening() {
   fi
   # Pas de lsof : on ne bloque PAS par défaut. Un faux positif (bloquer un build
   # légitime en CI/prod) coûte plus cher qu'un crash webpack rare et récupérable.
-  # Le déploiement VPS stoppe Next avant de builder (scripts/deploy-vps.sh:333).
+  # Le déploiement VPS stoppe Next avant de builder (scripts/deploy.sh — free memory step).
   return 1
 }
 

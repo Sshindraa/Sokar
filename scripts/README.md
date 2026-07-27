@@ -9,8 +9,8 @@ conservées dans [`docs/archive/operations/`](../docs/archive/operations/).
 Ces chemins sont stables et peuvent être appelés depuis la CI, les runbooks ou
 les commandes `package.json` :
 
-- `deploy-vps.sh` — déploiement production avec releases, snapshots et rollback.
-- `deploy-staging.sh` — déploiement staging et smoke checks.
+- `deploy.sh` — déploiement unifié (`--env prod|staging`) avec releases, snapshots et rollback.
+- `ops/deploy-common.sh` — librairie partagée sourcée par `deploy.sh` (fonctions communes prod + staging).
 - `precommit-review.sh` — garde-fous secrets et code dangereux avant commit.
 - `prepush-quality-gate.sh` — vérifications ciblées avant push.
 - `backup-postgres-r2.sh` — shim de compatibilité pour l'ancien cron VPS ; les nouvelles installations utilisent `database/backup-postgres-r2.sh`.

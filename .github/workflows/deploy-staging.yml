@@ -48,7 +48,7 @@ jobs:
               sudo install -o root -g root -m 0755 \
                 scripts/ops/sokar-deploy-root.sh /usr/local/sbin/sokar-deploy-root
             fi
-            bash scripts/deploy-staging.sh
+            bash scripts/deploy.sh --env staging
 
   smoke-tests:
     name: Smoke tests against staging

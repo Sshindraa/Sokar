@@ -109,7 +109,7 @@ check_http() {
     ok "$check" "$label"
   else
     fail "$check" "$severity" \
-      "$label injoignable ($url). Vérifier : pm2 status, pm2 logs, puis scripts/deploy-vps.sh rollback si nécessaire."
+      "$label injoignable ($url). Vérifier : pm2 status, pm2 logs, puis scripts/deploy.sh --env prod --confirm-production rollback si nécessaire."
   fi
 }
 

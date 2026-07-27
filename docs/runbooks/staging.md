@@ -34,9 +34,9 @@
 ```zsh
 ssh deploy@sokar
 cd /opt/sokar-staging
-bash scripts/deploy-staging.sh              # full deploy
-bash scripts/deploy-staging.sh --dry-run    # simulation
-bash scripts/deploy-staging.sh rollback     # rollback
+bash scripts/deploy.sh --env staging              # full deploy
+bash scripts/deploy.sh --env staging --dry-run    # simulation
+bash scripts/deploy.sh --env staging rollback     # rollback
 pm2 status                                   # see services
 pm2 logs sokar-staging-api                   # API logs
 ```

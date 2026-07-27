@@ -18,7 +18,7 @@ VPS (sokar) — Nginx :80, derrière Cloudflare
 
 ## Process PM2
 
-Le déploiement normal passe par `scripts/deploy-vps.sh`, qui construit les
+Le déploiement normal passe par `scripts/deploy.sh --env prod`, qui construit les
 trois applications, installe la configuration Nginx, puis démarre les trois
 processus depuis `infra/ecosystem.config.js`.
 

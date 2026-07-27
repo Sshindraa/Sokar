@@ -159,7 +159,7 @@ interne.
 
 ## Rollback de déploiement
 
-Le script `scripts/deploy-vps.sh` snapshot les artefacts buildés (dist, .next,
+Le script `scripts/deploy.sh --env prod` snapshot les artefacts buildés (dist, .next,
 static) dans `/opt/sokar/releases/<timestamp>/` à chaque déploiement réussi.
 Les 5 dernières releases sont conservées.
 
@@ -173,13 +173,13 @@ automatiquement les artefacts d'avant le build et redémarre les services.
 
 ```bash
 # Lister les releases disponibles
-ssh sokar 'bash /opt/sokar/scripts/deploy-vps.sh rollback'
+ssh sokar 'bash /opt/sokar/scripts/deploy.sh --env prod --confirm-production rollback'
 
 # Rollback vers la release précédente (recommandé)
-ssh sokar 'bash /opt/sokar/scripts/deploy-vps.sh rollback'
+ssh sokar 'bash /opt/sokar/scripts/deploy.sh --env prod --confirm-production rollback'
 
 # Rollback vers une release spécifique
-ssh sokar 'bash /opt/sokar/scripts/deploy-vps.sh rollback 20260626T130000Z'
+ssh sokar 'bash /opt/sokar/scripts/deploy.sh --env prod --confirm-production rollback 20260626T130000Z'
 ```
 
 Le rollback :

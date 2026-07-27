@@ -1,6 +1,6 @@
 #!/bin/bash
 # Lightweight structured logging helpers for Sokar deploy/ops scripts.
-# Sourced by deploy-vps.sh, deploy-staging.sh, db-backup.sh, etc.
+# Sourced by deploy.sh, deploy-common.sh, db-backup.sh, etc.
 #
 # Usage:
 #   source "$(dirname "$0")/ops/logging.sh"
