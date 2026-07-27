@@ -33,9 +33,11 @@ jobs:
         env:
           ALERT_WEBHOOK: ${{ secrets.ALERT_WEBHOOK }}
         with:
-          host: ${{ secrets.PROD_HOST }}
+          # Prod et staging sont sur le même VPS → on réutilise STAGING_*.
+          # Si un jour prod a son propre VPS, créer PROD_HOST/PROD_SSH_KEY/PROD_USER.
+          host: ${{ secrets.STAGING_HOST }}
           username: deploy
-          key: ${{ secrets.PROD_SSH_KEY }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
           command_timeout: 18m
           envs: ALERT_WEBHOOK
           script: |
