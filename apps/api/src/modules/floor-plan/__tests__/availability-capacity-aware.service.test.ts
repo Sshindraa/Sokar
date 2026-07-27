@@ -129,6 +129,10 @@ function makeExposureSettings(
     connectAgentic: overrides.connectAgentic ?? false,
     connectPublishedAt: overrides.connectPublishedAt ?? null,
     connectDescription: overrides.connectDescription ?? null,
+    customDomain: overrides.customDomain ?? null,
+    customDomainStatus: overrides.customDomainStatus ?? null,
+    customDomainValidatedAt: overrides.customDomainValidatedAt ?? null,
+    customDomainCfId: overrides.customDomainCfId ?? null,
     updatedAt: overrides.updatedAt ?? new Date(),
   };
 }

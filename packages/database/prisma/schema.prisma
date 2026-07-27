@@ -738,6 +738,11 @@ model RestaurantExposureSettings {
   connectAgentic          Boolean    @default(false) @map("connect_agentic")
   connectPublishedAt      DateTime?  @map("connect_published_at")
   connectDescription      String?    @map("connect_description")
+  // Sokar Connect (P2) — premium subdomain via Cloudflare for SaaS
+  customDomain            String?    @map("custom_domain") @unique
+  customDomainStatus      String?    @map("custom_domain_status") // pending|dns_validated|ssl_provisioning|active|failed
+  customDomainValidatedAt DateTime?  @map("custom_domain_validated_at")
+  customDomainCfId        String?    @map("custom_domain_cf_id") // Cloudflare Custom Hostname ID
   updatedAt               DateTime   @updatedAt @map("updated_at")
   restaurant              Restaurant @relation(fields: [restaurantId], references: [id])
 

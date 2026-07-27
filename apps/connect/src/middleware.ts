@@ -56,6 +56,38 @@ export function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-nonce', nonce);
 
+  // Sokar Connect P2 — Premium subdomain detection.
+  // Si le host n'est pas sokar.tech (ou www.), on vérifie si c'est un custom domain.
+  // Le lookup DB se fait via l'API interne (Edge Runtime ne peut pas accéder à Prisma).
+  // On fire-and-forget le lookup et on rewrite si match.
+  const host = request.headers.get('host') ?? '';
+  const siteUrl = process.env.SITE_URL ?? 'https://sokar.tech';
+  const primaryHost = new URL(siteUrl).host; // sokar.tech
+  const isPrimaryHost =
+    host === primaryHost || host === `www.${primaryHost}` || host.startsWith('localhost:') || host.startsWith('127.0.0.1:');
+
+  if (!isPrimaryHost && host) {
+    // Custom domain potentiel — rewrite vers /restaurant/[slug] via lookup API.
+    // L'API interne résout customDomain → slug et on rewrite silencieusement.
+    // On ne peut pas faire d'async ici (middleware sync), donc on passe le host
+    // à l'API et on rewrite vers une route dynamique qui fera le lookup.
+    const apiUrl = process.env.API_URL;
+    if (apiUrl) {
+      // Fire-and-forget : on ne peut pas attendre la réponse en middleware sync.
+      // À la place, on rewrite vers /custom-domain qui fera le lookup server-side.
+      const url = request.nextUrl.clone();
+      url.pathname = '/custom-domain';
+      url.searchParams.set('host', host);
+      const rewriteResponse = NextResponse.rewrite(url, {
+        request: { headers: requestHeaders },
+      });
+      // Custom domain : pas de X-Frame-Options DENY (le restaurateur peut vouloir embed)
+      // mais frame-ancestors 'none' par défaut via isWidget=false, isPreview=false.
+      applySecurityHeaders(rewriteResponse, request, nonce, false, false, false);
+      return rewriteResponse;
+    }
+  }
+
   const response = NextResponse.next({
     request: { headers: requestHeaders },
   });
@@ -111,6 +143,19 @@ export function middleware(request: NextRequest) {
   // Pages widget — autorisées à être embarquées dans un iframe sur n'importe quel domaine
   const isWidget = request.nextUrl.pathname.startsWith('/widget/');
 
+  applySecurityHeaders(response, request, nonce, !isWidget, isWidget, isPreview);
+
+  return response;
+}
+
+function applySecurityHeaders(
+  response: NextResponse,
+  request: NextRequest,
+  nonce: string,
+  setXFrameDeny: boolean,
+  isWidget: boolean,
+  isPreview: boolean,
+) {
   // HSTS — force HTTPS pendant 2 ans (aligné avec nginx, spec §8.2)
   response.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
 
@@ -121,7 +166,7 @@ export function middleware(request: NextRequest) {
   // Sur /widget/* on ne met PAS X-Frame-Options : la directive CSP
   // frame-ancestors * suffit et est la seule valeur standard cross-browser
   // pour autoriser l'embedding depuis n'importe quel domaine.
-  if (!isWidget) {
+  if (setXFrameDeny) {
     response.headers.set('X-Frame-Options', isPreview ? 'SAMEORIGIN' : 'DENY');
   }
 
@@ -159,8 +204,6 @@ export function middleware(request: NextRequest) {
     "form-action 'self'",
   ].join('; ');
   response.headers.set('Content-Security-Policy', csp);
-
-  return response;
 }
 
 export const config = {

@@ -21,6 +21,10 @@ import {
   Gauge,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  CustomDomainCard,
+  type Props as CustomDomainCardProps,
+} from './custom-domain-card';
 
 // ── Types ──────────────────────────────────────────────
 
@@ -32,6 +36,8 @@ type ConnectSettings = {
   connectAgentic: boolean;
   connectPublishedAt: string | null;
   pageUrl: string;
+  customDomain?: string | null;
+  customDomainStatus?: string | null;
 };
 
 type ScoreItem = {
@@ -387,6 +393,15 @@ export default function ConnectDashboardPage() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Domaine personnalisé (P2) */}
+            <CustomDomainCard
+              restaurantId={settings.restaurantId}
+              customDomain={settings.customDomain ?? null}
+              customDomainStatus={
+                (settings.customDomainStatus as CustomDomainCardProps['customDomainStatus']) ?? null
+              }
+            />
 
             {/* Colonne droite : Aperçu live */}
             <Card>
