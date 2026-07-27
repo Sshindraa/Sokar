@@ -926,8 +926,16 @@ export async function restaurantRoutes(app: FastifyInstance) {
   app.post('/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
   app.post('/api/restaurant/onboarding/test-call', { preHandler: requireOrg() }, postTestCall);
 
-  app.post('/restaurant/onboarding/demo-call', { preHandler: requireOrg() }, postDemoCall);
-  app.post('/api/restaurant/onboarding/demo-call', { preHandler: requireOrg() }, postDemoCall);
+  app.post(
+    '/restaurant/onboarding/demo-call',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    postDemoCall,
+  );
+  app.post(
+    '/api/restaurant/onboarding/demo-call',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    postDemoCall,
+  );
 
   app.patch('/restaurants/:id/connect', { preHandler: requireOrg() }, patchConnect);
   app.patch('/api/restaurants/:id/connect', { preHandler: requireOrg() }, patchConnect);
