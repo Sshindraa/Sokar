@@ -1,0 +1,103 @@
+name: Deploy Production
+
+on:
+  workflow_run:
+    workflows: [Deploy Staging]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch: # déclenchement manuel (fallback)
+
+# Évite les déploiements concurrents en production.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  TURBO_TELEMETRY_DISABLED: 1
+
+jobs:
+  deploy:
+    name: Deploy to production VPS
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          ALERT_WEBHOOK: ${{ secrets.ALERT_WEBHOOK }}
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: deploy
+          key: ${{ secrets.PROD_SSH_KEY }}
+          command_timeout: 18m
+          envs: ALERT_WEBHOOK
+          script: |
+            set -euo pipefail
+            cd /opt/sokar
+            git checkout main
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
+            if [ ! -x /usr/local/sbin/sokar-deploy-root ]; then
+              sudo install -o root -g root -m 0755 \
+                scripts/ops/sokar-deploy-root.sh /usr/local/sbin/sokar-deploy-root
+            fi
+            bash scripts/deploy.sh --env prod --confirm-production
+
+  smoke-tests:
+    name: Smoke tests against production
+    runs-on: ubuntu-latest
+    needs: deploy
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - name: Curl health endpoints
+        run: |
+          set -euo pipefail
+
+          PROD_URL="https://sokar.tech"
+          API_PROD_URL="https://api.sokar.tech"
+
+          echo "=== Health checks ==="
+
+          # /health via api.sokar.tech
+          HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 "$API_PROD_URL/health" || echo "FAIL")
+          echo "api.sokar.tech/health → $HEALTH_STATUS"
+          [ "$HEALTH_STATUS" = "200" ] || exit 1
+
+          # /livez via api.sokar.tech
+          LIVEZ_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 "$API_PROD_URL/livez" || echo "FAIL")
+          echo "api.sokar.tech/livez → $LIVEZ_STATUS"
+          [ "$LIVEZ_STATUS" = "200" ] || exit 1
+
+          # /dashboard — peut rediriger vers Clerk (302) ou répondre 200.
+          # On accepte 200 et 302 comme valides.
+          DASH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 -L "$PROD_URL/dashboard" || echo "FAIL")
+          echo "sokar.tech/dashboard → $DASH_STATUS"
+          [ "$DASH_STATUS" = "200" ] || [ "$DASH_STATUS" = "302" ] || exit 1
+
+          # Page d'accueil
+          HOME_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 "$PROD_URL/" || echo "FAIL")
+          echo "sokar.tech/ → $HOME_STATUS"
+          [ "$HOME_STATUS" = "200" ] || exit 1
+
+          # Sokar Connect page
+          CONNECT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 "$PROD_URL/restaurant/chez-sokar-demo" || echo "FAIL")
+          echo "sokar.tech/restaurant/chez-sokar-demo → $CONNECT_STATUS"
+          [ "$CONNECT_STATUS" = "200" ] || exit 1
+
+          echo ""
+          echo "✅ All production smoke tests passed"

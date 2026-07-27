@@ -1,6 +1,6 @@
 #!/bin/bash
 # Helper partagé pour backup/restore Postgres et notifications lors des déploiements Sokar.
-# Sourcé par scripts/deploy-vps.sh et scripts/deploy-staging.sh.
+# Sourcé par scripts/deploy.sh (via scripts/ops/deploy-common.sh).
 #
 # Variables attendues en entrée :
 #   - SOKAR_ROOT : racine de l'application
