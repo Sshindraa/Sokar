@@ -68,6 +68,7 @@ import './modules/agentic-reservations/workers/idempotency-purge.worker';
 import './modules/agentic-reservations/workers/expire-waiting-list.worker';
 import './modules/agentic-reservations/workers/cleanup-waiting-list.worker';
 import './modules/agentic-reservations/workers/waiting-list-promote.worker';
+import './modules/gift-cards/workers/gift-card-reminder.worker';
 
 // Initialize Sentry as early as possible so that instrumentation hooks are
 // registered before the Fastify app (and its error handler) are built.
@@ -388,6 +389,15 @@ async function start() {
           'daily-confirmation-scan',
           { pattern: '0 17 * * *', tz: 'Europe/Paris' },
           { name: 'confirmation-scan', data: { kind: 'scan' } },
+        ),
+      );
+
+      // Rappel expiration carte cadeau : scan quotidien à 9h
+      await register('gift-card-reminder/daily', () =>
+        queues.giftCardReminder.upsertJobScheduler(
+          'daily-gift-card-reminder',
+          { pattern: '0 9 * * *', tz: 'Europe/Paris' },
+          { name: 'gift-card-reminder-scan', data: { kind: 'scan' } },
         ),
       );
 

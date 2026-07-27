@@ -289,3 +289,196 @@ export async function sendCrowdfundingClosed(input: {
     html,
   });
 }
+
+// ─── P2 — Rappel expiration + remboursement ────────────────────────
+
+type ExpirationReminderData = {
+  giftCardId: string;
+  code: string;
+  shortCode: string | null;
+  amount: number;
+  remainingAmount: number;
+  restaurantName: string;
+  recipientName: string | null;
+  recipientEmail: string;
+  expiresAt: Date;
+};
+
+/**
+ * Rappel d'expiration envoyé au destinataire avant l'expiration de la carte.
+ */
+export async function sendExpirationReminder(data: ExpirationReminderData): Promise<void> {
+  if (!data.recipientEmail) {
+    logger.warn(
+      { giftCardId: data.giftCardId },
+      '[gift-card-email] sendExpirationReminder: no recipient email, skipping',
+    );
+    return;
+  }
+
+  const expiryDate = data.expiresAt.toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+  const publicCode = data.shortCode ?? data.code;
+  const pdfUrl = `${process.env.API_URL ?? ''}/public/gift-cards/${publicCode}/pdf`;
+
+  const html = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+      <h1 style="color: #0F172A;">Votre carte cadeau expire bientôt</h1>
+      <p>Bonjour${data.recipientName ? ` ${data.recipientName}` : ''},</p>
+      <p>Nous vous rappelons que votre carte cadeau chez <strong>${data.restaurantName}</strong> expire le <strong>${expiryDate}</strong>.</p>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Solde restant</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;"><strong>${data.remainingAmount}€</strong></td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Code</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;"><strong>${publicCode}</strong></td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Expire le</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;"><strong>${expiryDate}</strong></td>
+        </tr>
+      </table>
+      <p>Utilisez votre code lors de votre prochaine réservation pour profiter de votre carte cadeau.</p>
+      <p style="margin-top: 30px;">
+        <a href="${pdfUrl}" style="display: inline-block; background: #0284C7; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">Télécharger la carte</a>
+      </p>
+      <p style="margin-top: 30px; color: #64748B; font-size: 12px;">
+        Si vous ne pouvez pas utiliser votre carte cadeau avant l'expiration, contactez directement le restaurant.
+      </p>
+    </div>
+  `;
+
+  try {
+    await sendEmail({
+      to: data.recipientEmail,
+      subject: `Votre carte cadeau ${data.restaurantName} expire bientôt`,
+      html,
+    });
+    logger.info(
+      { giftCardId: data.giftCardId, recipientEmail: data.recipientEmail },
+      '[gift-card-email] Expiration reminder sent',
+    );
+  } catch (err) {
+    logger.error(
+      { err: err instanceof Error ? err.message : String(err), giftCardId: data.giftCardId },
+      '[gift-card-email] Failed to send expiration reminder',
+    );
+    throw err;
+  }
+}
+
+type RefundEmailData = {
+  giftCardId: string;
+  shortCode: string | null;
+  code: string;
+  refundAmount: number;
+  restaurantName: string;
+  senderName: string | null;
+  senderEmail: string | null;
+  restaurantEmail: string;
+};
+
+/**
+ * Notification de remboursement envoyée à l'expéditeur.
+ */
+export async function sendRefundNotificationSender(data: RefundEmailData): Promise<void> {
+  if (!data.senderEmail) {
+    logger.warn(
+      { giftCardId: data.giftCardId },
+      '[gift-card-email] sendRefundNotificationSender: no sender email, skipping',
+    );
+    return;
+  }
+
+  const publicCode = data.shortCode ?? data.code;
+  const html = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+      <h1 style="color: #0F172A;">Remboursement de votre carte cadeau</h1>
+      <p>Bonjour${data.senderName ? ` ${data.senderName}` : ''},</p>
+      <p>Nous vous confirmons le remboursement de votre carte cadeau chez <strong>${data.restaurantName}</strong>.</p>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Carte</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;"><strong>${publicCode}</strong></td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Montant remboursé</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;"><strong>${data.refundAmount}€</strong></td>
+        </tr>
+      </table>
+      <p>Le remboursement sera effectué sur votre moyen de paiement d'origine sous 5 à 10 jours ouvrés.</p>
+    </div>
+  `;
+
+  try {
+    await sendEmail({
+      to: data.senderEmail,
+      subject: `Remboursement carte cadeau ${data.restaurantName}`,
+      html,
+    });
+    logger.info(
+      { giftCardId: data.giftCardId },
+      '[gift-card-email] Refund notification sent to sender',
+    );
+  } catch (err) {
+    logger.error(
+      { err: err instanceof Error ? err.message : String(err), giftCardId: data.giftCardId },
+      '[gift-card-email] Failed to send refund notification to sender',
+    );
+  }
+}
+
+/**
+ * Notification de remboursement envoyée au restaurateur.
+ */
+export async function sendRefundNotificationRestaurant(data: RefundEmailData): Promise<void> {
+  if (!data.restaurantEmail) {
+    logger.warn(
+      { giftCardId: data.giftCardId },
+      '[gift-card-email] sendRefundNotificationRestaurant: no restaurant email, skipping',
+    );
+    return;
+  }
+
+  const publicCode = data.shortCode ?? data.code;
+  const html = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+      <h1 style="color: #0F172A;">Carte cadeau annulée</h1>
+      <p>Bonjour,</p>
+      <p>Une carte cadeau chez <strong>${data.restaurantName}</strong> a été annulée et remboursée.</p>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Carte</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;"><strong>${publicCode}</strong></td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">Montant remboursé</td>
+          <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right;"><strong>${data.refundAmount}€</strong></td>
+        </tr>
+      </table>
+      <p>Le remboursement a été traité via Stripe et sera effectué sur le moyen de paiement d'origine du client.</p>
+    </div>
+  `;
+
+  try {
+    await sendEmail({
+      to: data.restaurantEmail,
+      subject: `Carte cadeau annulée — ${data.restaurantName}`,
+      html,
+    });
+    logger.info(
+      { giftCardId: data.giftCardId },
+      '[gift-card-email] Refund notification sent to restaurant',
+    );
+  } catch (err) {
+    logger.error(
+      { err: err instanceof Error ? err.message : String(err), giftCardId: data.giftCardId },
+      '[gift-card-email] Failed to send refund notification to restaurant',
+    );
+  }
+}

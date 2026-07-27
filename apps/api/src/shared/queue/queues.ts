@@ -120,4 +120,13 @@ export const queues = {
       removeOnFail: 1000,
     },
   }),
+  giftCardReminder: new Queue('gift-card-reminder', {
+    connection: redisQueue,
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 60_000 },
+      removeOnComplete: 100,
+      removeOnFail: 500,
+    },
+  }),
 };

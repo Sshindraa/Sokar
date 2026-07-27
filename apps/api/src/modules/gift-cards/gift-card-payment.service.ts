@@ -386,4 +386,43 @@ export class GiftCardPaymentService {
     }
     return redacted;
   }
+
+  /**
+   * Gère un webhook Stripe charge.refunded.
+   * Met à jour le statut Stripe de la carte cadeau associée.
+   */
+  async handleRefundUpdated(paymentIntentId: string, refundStatus: string): Promise<void> {
+    logger.info({ paymentIntentId, refundStatus }, '[gift-card-payment] Refund webhook received');
+
+    try {
+      const existing = await this.prisma.giftCard.findFirst({
+        where: { stripePaymentIntentId: paymentIntentId },
+      });
+
+      if (!existing) {
+        logger.info(
+          { paymentIntentId },
+          '[gift-card-payment] No gift card found for refund webhook, nothing to update',
+        );
+        return;
+      }
+
+      const stripeStatus = refundStatus === 'succeeded' ? 'refunded' : refundStatus;
+      await this.prisma.giftCard.update({
+        where: { id: existing.id },
+        data: { stripePaymentStatus: stripeStatus },
+      });
+
+      logger.info(
+        { paymentIntentId, giftCardId: existing.id, refundStatus },
+        '[gift-card-payment] Gift card Stripe status updated from refund webhook',
+      );
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error(
+        { paymentIntentId, err: errorMessage },
+        '[gift-card-payment] Failed to update gift card status for refund webhook',
+      );
+    }
+  }
 }

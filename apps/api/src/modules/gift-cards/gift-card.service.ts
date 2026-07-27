@@ -11,6 +11,10 @@ import {
 import { generateUniqueShortCode } from './gift-card-code.util.js';
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
 import { createRefund } from './stripe.service.js';
+import {
+  sendRefundNotificationSender,
+  sendRefundNotificationRestaurant,
+} from './gift-card-email.service';
 
 export class GiftCardError extends Error {
   constructor(message: string) {
@@ -256,13 +260,18 @@ export class GiftCardService {
     let refund: { id: string; amount: number } | undefined;
     if (giftCard.stripePaymentIntentId && giftCard.remainingAmount.greaterThan(0)) {
       const refundAmountCents = Math.round(giftCard.remainingAmount.toNumber() * 100);
-      refund = await createRefund({
-        paymentIntentId: giftCard.stripePaymentIntentId,
-        amount: refundAmountCents,
-      });
+      try {
+        refund = await createRefund({
+          paymentIntentId: giftCard.stripePaymentIntentId,
+          amount: refundAmountCents,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new GiftCardError(`Le remboursement Stripe a échoué : ${message}`);
+      }
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.giftCard.update({
         where: { id: giftCardId },
         data: {
@@ -288,6 +297,41 @@ export class GiftCardService {
 
       return updated;
     }, DEFAULT_TRANSACTION_OPTIONS);
+
+    // Notifications de remboursement (non-bloquantes)
+    if (refund) {
+      const refundAmount = refund.amount / 100;
+      const restaurant = await this.prisma.restaurant.findUnique({
+        where: { id: giftCard.restaurantId },
+        select: { name: true, managerEmail: true },
+      });
+      if (restaurant) {
+        await Promise.allSettled([
+          sendRefundNotificationSender({
+            giftCardId: giftCard.id,
+            shortCode: giftCard.shortCode,
+            code: giftCard.code,
+            refundAmount,
+            restaurantName: restaurant.name,
+            senderName: giftCard.senderName,
+            senderEmail: giftCard.senderEmail,
+            restaurantEmail: restaurant.managerEmail,
+          }),
+          sendRefundNotificationRestaurant({
+            giftCardId: giftCard.id,
+            shortCode: giftCard.shortCode,
+            code: giftCard.code,
+            refundAmount,
+            restaurantName: restaurant.name,
+            senderName: giftCard.senderName,
+            senderEmail: giftCard.senderEmail,
+            restaurantEmail: restaurant.managerEmail,
+          }),
+        ]);
+      }
+    }
+
+    return updated;
   }
 
   async getStats(restaurantId: string): Promise<GiftCardStats> {

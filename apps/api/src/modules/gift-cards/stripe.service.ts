@@ -23,6 +23,7 @@ export type CreatePaymentIntentInput = {
   amount: number; // en centimes
   currency: string;
   metadata: Record<string, string>;
+  idempotencyKey?: string;
 };
 
 /**
@@ -34,12 +35,15 @@ export async function createPaymentIntent(input: CreatePaymentIntentInput): Prom
   clientSecret: string;
 }> {
   const stripe = getStripe();
-  const intent = await stripe.paymentIntents.create({
-    amount: input.amount,
-    currency: input.currency,
-    metadata: input.metadata,
-    automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
-  });
+  const intent = await stripe.paymentIntents.create(
+    {
+      amount: input.amount,
+      currency: input.currency,
+      metadata: input.metadata,
+      automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
+    },
+    input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined,
+  );
   return {
     id: intent.id,
     clientSecret: intent.client_secret!,
