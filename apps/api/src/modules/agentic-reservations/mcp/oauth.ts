@@ -154,6 +154,7 @@ function matchKnownRedirect(uri: string): string | null {
 // Partagé entre tous les processus/VM via redisCache (db 1).
 const OAUTH_RATE_TOKEN = { max: 10, windowMs: 60_000, key: 'token' };
 const OAUTH_RATE_REGISTER = { max: 5, windowMs: 60_000, key: 'register' };
+const OAUTH_RATE_REVOKE = { max: 20, windowMs: 60_000, key: 'revoke' };
 
 // INCR atomique + PEXPIRE uniquement à la première incrémentation (fenêtre fixe).
 const OAUTH_RATE_LIMIT_SCRIPT = `
@@ -684,6 +685,11 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
   // ── 5. Revocation (RFC 7009) — minimal avec auth client ──
   app.post('/oauth/revoke', async (req: FastifyRequest, reply: FastifyReply) => {
+    if (!(await checkOauthRate(req.ip, OAUTH_RATE_REVOKE))) {
+      return reply
+        .status(429)
+        .send({ error: 'too_many_requests', error_description: 'Too many revocation requests' });
+    }
     const body = req.body as { token?: string; token_type_hint?: string };
 
     // Auth client obligatoire (Basic ou body) pour éviter que n'importe qui
