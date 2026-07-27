@@ -143,7 +143,7 @@ export function middleware(request: NextRequest) {
   // Pages widget — autorisées à être embarquées dans un iframe sur n'importe quel domaine
   const isWidget = request.nextUrl.pathname.startsWith('/widget/');
 
-  applySecurityHeaders(response, request, nonce, !isWidget && !isPreview, isWidget, isPreview);
+  applySecurityHeaders(response, request, nonce, !isWidget, isWidget, isPreview);
 
   return response;
 }
