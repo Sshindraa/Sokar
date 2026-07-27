@@ -500,6 +500,20 @@ describe('Sokar Connect — Routes publiques', () => {
       expect(body.holdId).toBe('hold_123');
       expect(body.holdToken).toBe('tok_abc');
       expect(body.status).toBe('pending');
+
+      // Regression: l'event analytics reservation_hold_created doit être queueé.
+      // Bug historique : le worker staging volait les jobs de prod (Redis DB partagé),
+      // donc holdsTotal=0 dans les KPIs. Ce test vérifie que l'emit est bien appelé.
+      expect(app.queues.connectAnalytics.add).toHaveBeenCalledWith(
+        'connect-event',
+        expect.objectContaining({
+          event: 'reservation_hold_created',
+          restaurantId: RESTAURANT_ID,
+          restaurantSlug: SLUG,
+          source: 'web',
+        }),
+        expect.any(Object),
+      );
     });
 
     it("force source='web' si connectAgentic=false et source=chatgpt", async () => {
