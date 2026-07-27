@@ -1,7 +1,7 @@
 # Spec — Cartes cadeaux dans Sokar
 
 > Statut : spec technique P1.  
-> But : permettre aux restaurateurs Sokar de vendre des cartes cadeaux digitales, intégrées nativement au parcours de réservation, avec packs expérience, option "réserver maintenant" et préparation cagnotte P2.
+> But : permettre aux restaurateurs Sokar de vendre des cartes cadeaux digitales, intégrées nativement au parcours de réservation, avec packs expérience, option "réserver maintenant" et cagnotte collective.
 
 ---
 
@@ -21,7 +21,7 @@
 3. Proposer une option "réserver maintenant" : l’expéditeur offre directement un créneau au bénéficiaire.
 4. Différencier Sokar via le concierge IA (recommandation de montant, message, créneaux).
 5. Offrir au restaurateur un dashboard de création, suivi et statistiques par type de cadeau.
-6. Garder le système compatible avec un futur paiement Stripe (P2), cagnotte groupe (P2) et marketplace (P3).
+6. Garder le système compatible avec un futur paiement Stripe (P2) et marketplace (P3). La cagnotte groupe est désormais incluse dans le P1.
 
 ### Différenciation Sokar vs Zenchef / OpenTable
 
@@ -32,7 +32,7 @@
 | Montant fixe           | Montant libre + packs expérience + suggestions IA               |
 | Cadeau anonyme         | Cadeau lié au CRM (expéditeur, destinataire, occasion)          |
 | Utilisation manuelle   | Utilisation automatique au moment de la réservation             |
-| Pas de cagnotte        | Cagnotte groupe (P2)                                            |
+| Pas de cagnotte        | Cagnotte collective (P1)                                        |
 | Pas de pack expérience | Packs "menu + vin", "dégustation", etc. gérés par le restaurant |
 
 ---
@@ -42,6 +42,7 @@
 ### In scope (P1)
 
 - Modèle de données Prisma : `GiftCard`, `GiftCardPack`, `GiftCardRedemption`, `GiftCardContribution`.
+- Cagnotte collective : création, contribution multi-contributeurs, déblocage automatique.
 - Flux d’achat : web + widget (mode test / manuel en P1).
 - Flux "réserver maintenant" : 3 créneaux proposés, choix du bénéficiaire, confirm sans CB.
 - Flux d’utilisation classique : code valable 12 mois, saisie au confirm.
@@ -55,7 +56,6 @@
 ### Out of scope (P1)
 
 - Paiement réel (Stripe) — mode test ou marquage manuel en P1.
-- Cagnotte multi-contributeurs (P2).
 - Cadeau physique / livraison (P3).
 - Marketplace de cartes cadeaux entre restaurants (P3).
 - Remboursement automatique (P2 ; P1 = annulation manuelle côté restaurateur).
@@ -68,7 +68,7 @@
 
 ### Choix retenu
 
-`GiftCard` est la source de vérité. `GiftCardRedemption` trace chaque utilisation pour permettre un solde restant et un historique. `GiftCardPack` liste les offres commerciales du restaurant. `GiftCardContribution` prépare la cagnotte groupe sans impacter l’API P1.
+`GiftCard` est la source de vérité. `GiftCardRedemption` trace chaque utilisation pour permettre un solde restant et un historique. `GiftCardPack` liste les offres commerciales du restaurant. `GiftCardContribution` stocke les contributions individuelles à la cagnotte collective (P1).
 
 `code` est unique et non-énumérable. P1 utilise un UUID ; P2 pourra ajouter un code court mnémonique avec rate-limiting et hash.
 
@@ -183,7 +183,7 @@ model Reservation {
 - `occasion` : input du concierge IA pour recommander le montant, le message et les créneaux.
 - `customerId` : lien CRM pour historique et segmentation.
 - `createdBy` / `purchaseReference` : traçabilité de l’origine (web, dashboard, voice, test).
-- `GiftCardContribution` : modèle préparatoire pour la cagnotte P2. P1, il ne sert que si le restaurateur crée une carte manuellement avec un premier verseur.
+- `GiftCardContribution` : stocke les contributions individuelles à la cagnotte collective (P1). Chaque contribution est liée à une carte cadeau de type cagnotte.
 - `Reservation.giftCardRedemptionSnap` : snapshot JSON de l’application (montant appliqué, complément, statut).
 
 ### Migrations requises
@@ -320,11 +320,11 @@ Si "Pack" : affichage de la liste des packs actifs avec leur description et mont
 
 ---
 
-## 8. Cagnotte groupe (P2)
+## 8. Cagnotte collective (P1)
 
 ### Modèle
 
-`GiftCardContribution` est déjà créé. En P2, on ajoute :
+`GiftCardContribution` stocke les contributions. La cagnotte utilise :
 
 - `GiftCard.isCagnotte` : boolean.
 - `GiftCard.targetAmount` : montant cible.
@@ -338,7 +338,7 @@ Si "Pack" : affichage de la liste des packs actifs avec leur description et mont
 4. Déblocage automatique quand `SUM(contributions) >= targetAmount`.
 5. La carte passe en `ACTIVE` et le bénéficiaire reçoit le code.
 
-### Endpoints publics P2
+### Endpoints publics P1
 
 - `POST /public/gift-cards/:code/contribute`
 - `GET /public/gift-cards/:code/progress`
@@ -477,13 +477,12 @@ Deux boutons : "Montant libre" / "Pack expérience".
 ### P1.5
 
 - Voice : dialogue d’achat par téléphone.
-- Amélioration UI cagnotte (préparation).
+- Amélioration UI cagnotte collective.
 - Soft-delete des packs.
 - Activation par restaurant (`Restaurant.giftCardEnabled`).
 
 ### P2
 
-- Cagnotte groupe multi-contributeurs.
 - Paiement Stripe réel.
 - Codes courts mnémoniques.
 - Rappels automatiques si carte non utilisée.
@@ -546,15 +545,15 @@ Deux boutons : "Montant libre" / "Pack expérience".
 
 ## 15. Critères d’acceptation
 
-- [ ] Le message vocal est retiré de P1.
-- [ ] L’option "réserver maintenant" est clairement optionnelle.
-- [ ] La carte cadeau a une validité par défaut de 12 mois.
-- [ ] Les packs expérience sont intégrés dans le modèle, l’API et le dashboard.
-- [ ] La cagnotte est planifiée en P2 avec modèle déjà créé.
-- [ ] Le dashboard expose les cartes cadeaux et les packs.
-- [ ] Le widget permet de choisir entre montant libre et pack.
-- [ ] Le copy est en français avec `vous`.
-- [ ] Les tests passent : `pnpm --filter @sokar/api test` et `pnpm --filter @sokar/api typecheck`.
+- [x] Le message vocal est retiré de P1.
+- [x] L’option "réserver maintenant" est clairement optionnelle.
+- [x] La carte cadeau a une validité par défaut de 12 mois.
+- [x] Les packs expérience sont intégrés dans le modèle, l’API et le dashboard.
+- [x] La cagnotte collective est implémentée en P1 (modèle, API, widget, dashboard).
+- [x] Le dashboard expose les cartes cadeaux et les packs.
+- [x] Le widget permet de choisir entre montant libre et pack.
+- [x] Le copy est en français avec `vous`.
+- [x] Les tests passent : `pnpm --filter @sokar/api test` et `pnpm --filter @sokar/api typecheck`.
 
 ---
 
