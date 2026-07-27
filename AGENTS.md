@@ -110,7 +110,7 @@ pnpm pr:submit  # push branch, open PR, queue squash auto-merge after CI
 ## Environment
 
 - **Dev:** `.env.local` (root), `packages/database/.env`, per-app `.env`.
-- **Staging:** `https://staging.sokar.tech` / `api-staging.sokar.tech` on VPS `pmbtc`.
-- **Prod:** `https://sokar.tech` / `api.sokar.tech` on VPS `pmbtc`.
+- **Staging:** `https://staging.sokar.tech` / `api-staging.sokar.tech` on VPS `sokar`.
+- **Prod:** `https://sokar.tech` / `api.sokar.tech` on VPS `sokar`.
 - One `.env` per app, no `.env.prod`. `NEXT_PUBLIC_*` is baked at build time.
 - See `docs/runbooks/environment.md` for details.

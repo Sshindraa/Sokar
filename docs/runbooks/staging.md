@@ -6,7 +6,7 @@
 - API directe: `https://api-staging.sokar.tech`
 - Sokar Connect: `https://staging.sokar.tech/restaurant/chez-sokar-demo`
 
-## Infrastructure (VPS `pmbtc`, isolated from prod)
+## Infrastructure (VPS `sokar`, isolated from prod)
 
 - Root: `/opt/sokar-staging/`
 - Ports: API=4100, Dashboard=3100, Connect=4102 (prod: 4000/3000/4002)
@@ -32,7 +32,7 @@
 ## Manual commands
 
 ```zsh
-ssh deploy@pmbtc
+ssh deploy@sokar
 cd /opt/sokar-staging
 bash scripts/deploy-staging.sh              # full deploy
 bash scripts/deploy-staging.sh --dry-run    # simulation
