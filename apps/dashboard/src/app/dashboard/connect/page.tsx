@@ -18,6 +18,7 @@ import {
   Sparkles,
   TrendingUp,
   ArrowRight,
+  Gauge,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -199,18 +200,27 @@ export default function ConnectDashboardPage() {
             assistants IA.
           </p>
         </div>
-        {/* Score circle */}
-        {score && !loading && (
-          <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
-            <ScoreCircle score={score.score} level={score.level} />
-            <div className="max-w-[200px]">
-              <p className="text-sm font-medium">
-                {score.completed}/{score.total} étapes complétées
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">{score.message}</p>
+        <div className="flex flex-col items-start gap-3 sm:items-end">
+          {/* Score circle */}
+          {score && !loading && (
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
+              <ScoreCircle score={score.score} level={score.level} />
+              <div className="max-w-[200px]">
+                <p className="text-sm font-medium">
+                  {score.completed}/{score.total} étapes complétées
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{score.message}</p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+          <Link
+            href="/dashboard/connect/pilot"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-all duration-200 hover:border-primary/40 hover:bg-accent"
+          >
+            <Gauge className="h-3.5 w-3.5" />
+            KPIs pilote P1
+          </Link>
+        </div>
       </div>
 
       {/* ── Messages ──────────────────────────────────── */}
