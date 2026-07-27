@@ -213,9 +213,10 @@ log info "Root: $SOKAR_ROOT"
 log info "Branch: $BRANCH"
 [ "$DRY_RUN" = true ] && log warn "Mode: DRY-RUN (pas de restart ni migrations)"
 
-# Vérifier qu'on est sur le VPS
-if [ "$(hostname)" != "sokar" ]; then
-    log_error "Ce script s'exécute uniquement sur le VPS (sokar)"
+# Vérifier qu'on est sur le VPS (accepte pmbtc et sokar — transition FRA VPS)
+HOSTNAME=$(hostname)
+if [ "$HOSTNAME" != "sokar" ] && [ "$HOSTNAME" != "pmbtc" ]; then
+    log_error "Ce script s'exécute uniquement sur le VPS (sokar/pmbtc)"
     exit 1
 fi
 
