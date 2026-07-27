@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import type { Prisma, GiftCard, GiftCardRedemption } from '@prisma/client';
 import { db } from '../../shared/db/client';
@@ -539,6 +540,7 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
+      const idempotencyKey = `gift-card-${body.restaurantId}-${randomUUID()}`;
       const intent = await createPaymentIntent({
         amount: Math.round(amount * 100), // centimes
         currency: 'eur',
@@ -560,6 +562,7 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
           preferredTime: body.preferredTime ?? '',
           preferredPartySize: body.preferredPartySize ? String(body.preferredPartySize) : '',
         },
+        idempotencyKey,
       });
 
       return reply.send({
@@ -851,6 +854,12 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
         const pi = event.data.object as { id: string; metadata?: Record<string, string> };
         const paymentService = new GiftCardPaymentService(db);
         await paymentService.handlePaymentFailed(pi.id, pi.metadata ?? {});
+      } else if (event.type === 'charge.refunded') {
+        const charge = event.data.object as { payment_intent: string | null; status: string };
+        if (charge.payment_intent) {
+          const paymentService = new GiftCardPaymentService(db);
+          await paymentService.handleRefundUpdated(charge.payment_intent, charge.status);
+        }
       } else {
         logger.info(
           { eventType: event.type },

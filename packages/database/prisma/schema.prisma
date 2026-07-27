@@ -793,6 +793,7 @@ model GiftCard {
   status            String   @default("ACTIVE") // ACTIVE, REDEEMED, EXPIRED, CANCELLED
   purchasedAt       DateTime @default(now()) @map("purchased_at")
   expiresAt         DateTime? @map("expires_at")
+  reminderSentAt    DateTime? @map("reminder_sent_at")
   validityMonths    Int      @default(12) @map("validity_months")
 
   // Montant libre ou pack expérience
