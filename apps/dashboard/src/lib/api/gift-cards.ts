@@ -54,6 +54,7 @@ export type GiftCardPack = {
   minPartySize: number;
   maxPartySize: number;
   isActive: boolean;
+  deletedAt: string | null;
 };
 
 export type CreateGiftCardInput = {
@@ -85,7 +86,7 @@ export type UpdateGiftCardPackInput = {
 };
 
 export function useGiftCardApi() {
-  const { get, post, patch, orgId } = useApi();
+  const { get, post, patch, del, orgId } = useApi();
 
   async function listGiftCards(params?: {
     status?: string;
@@ -143,6 +144,11 @@ export function useGiftCardApi() {
     return post<GiftCardPack>(`restaurants/${orgId}/gift-card-packs/${packId}/toggle`);
   }
 
+  async function deleteGiftCardPack(packId: string): Promise<GiftCardPack> {
+    if (!orgId) throw new Error('Organisation non chargée');
+    return del<GiftCardPack>(`restaurants/${orgId}/gift-card-packs/${packId}`);
+  }
+
   async function closeCrowdfunding(giftCardId: string): Promise<GiftCardListItem> {
     if (!orgId) throw new Error('Organisation non chargée');
     return post<GiftCardListItem>(`api/gift-cards/${giftCardId}/close?restaurantId=${orgId}`, {});
@@ -159,5 +165,6 @@ export function useGiftCardApi() {
     createGiftCardPack,
     updateGiftCardPack,
     toggleGiftCardPack,
+    deleteGiftCardPack,
   };
 }

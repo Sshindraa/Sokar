@@ -53,6 +53,7 @@ model Restaurant {
   waitingListEntries    WaitingListEntry[]
   giftCardMinimumAmount Int?                      @map("gift_card_minimum_amount")
   giftCardCommissionRate Decimal  @default(0.05) @map("gift_card_commission_rate") @db.Decimal(5, 4)
+  giftCardEnabled        Boolean                 @default(false) @map("gift_card_enabled")
 
   // Agentic reservations (P0)
   slug                 String?                     @unique @map("slug")
@@ -882,9 +883,10 @@ model GiftCardPack {
   minPartySize  Int      @default(1) @map("min_party_size")
   maxPartySize  Int      @default(2) @map("max_party_size")
   isActive      Boolean  @default(true) @map("is_active")
+  deletedAt     DateTime? @map("deleted_at")
   restaurant    Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   giftCards     GiftCard[]
 
-  @@index([restaurantId, isActive])
+  @@index([restaurantId, isActive, deletedAt])
   @@map("gift_card_packs")
 }

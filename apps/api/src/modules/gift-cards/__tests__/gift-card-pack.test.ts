@@ -86,6 +86,7 @@ describe('gift-card-pack routes', () => {
     vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
       id: 'pack-1',
       restaurantId: RESTAURANT_ID,
+      deletedAt: null,
     } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
     vi.mocked(db.giftCardPack.update).mockResolvedValue({
       id: 'pack-1',
@@ -112,6 +113,7 @@ describe('gift-card-pack routes', () => {
       id: 'pack-1',
       restaurantId: RESTAURANT_ID,
       isActive: true,
+      deletedAt: null,
     } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
     vi.mocked(db.giftCardPack.update).mockResolvedValue({
       id: 'pack-1',
@@ -124,6 +126,33 @@ describe('gift-card-pack routes', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/restaurants/${RESTAURANT_ID}/gift-card-packs/pack-1/toggle`,
+      headers: AUTH,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().isActive).toBe(false);
+  });
+
+  it('soft-delete un pack (DELETE)', async () => {
+    vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
+      id: 'pack-1',
+      restaurantId: RESTAURANT_ID,
+      isActive: true,
+      deletedAt: null,
+    } as unknown as Awaited<ReturnType<typeof db.giftCardPack.findFirst>>);
+    vi.mocked(db.giftCardPack.update).mockResolvedValue({
+      id: 'pack-1',
+      restaurantId: RESTAURANT_ID,
+      name: 'Menu dégustation',
+      amount: d(120),
+      isActive: false,
+      deletedAt: new Date('2026-01-01'),
+    } as unknown as Awaited<ReturnType<typeof db.giftCardPack.update>>);
+
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/restaurants/${RESTAURANT_ID}/gift-card-packs/pack-1`,
       headers: AUTH,
     });
 

@@ -206,6 +206,43 @@ describe('gift-card routes', () => {
       expect(body.messageSuggestion).toContain('Offrez');
     });
 
+    it('retourne 404 sur /packs/:slug quand giftCardEnabled est false', async () => {
+      vi.mocked(db.restaurant.findFirst).mockResolvedValue({
+        id: RESTAURANT_ID,
+        giftCardEnabled: false,
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findFirst>>);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: '/public/gift-cards/packs/test-slug',
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error).toBe('Cartes cadeaux non disponibles');
+    });
+
+    it('retourne 403 sur /payment-intent quand giftCardEnabled est false', async () => {
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: RESTAURANT_ID,
+        giftCardMinimumAmount: 10,
+        giftCardEnabled: false,
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'POST',
+        url: '/public/gift-cards/payment-intent',
+        payload: {
+          restaurantId: RESTAURANT_ID,
+          amount: 100,
+        },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error).toBe('Cartes cadeaux non disponibles pour ce restaurant');
+    });
+
     it('achète une carte cadeau avec paiement Stripe', async () => {
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         id: RESTAURANT_ID,
@@ -313,6 +350,7 @@ describe('gift-card routes', () => {
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         id: RESTAURANT_ID,
         giftCardMinimumAmount: 10,
+        giftCardEnabled: true,
       } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
 
       const app = await getApp();

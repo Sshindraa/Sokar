@@ -27,6 +27,7 @@ export interface Restaurant {
   googleRefreshToken: string | null;
   giftCardMinimumAmount: number | null;
   giftCardCommissionRate: number;
+  giftCardEnabled: boolean;
   slug: string | null;
   openingHours?: Record<string, OpeningHours | null>;
   exposureSettings?: RestaurantExposureSettings | null;

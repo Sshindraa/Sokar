@@ -45,7 +45,7 @@ describe('GiftCardPackService', () => {
 
       expect(packs).toHaveLength(2);
       expect(db.giftCardPack.findMany).toHaveBeenCalledWith({
-        where: { restaurantId: RESTAURANT_ID },
+        where: { restaurantId: RESTAURANT_ID, deletedAt: null },
         orderBy: { amount: 'asc' },
       });
     });
@@ -143,6 +143,7 @@ describe('GiftCardPackService', () => {
       vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
+        deletedAt: null,
       } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
       vi.mocked(db.giftCardPack.update).mockResolvedValue({
         id: 'pack-1',
@@ -181,6 +182,7 @@ describe('GiftCardPackService', () => {
       vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
+        deletedAt: null,
       } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
 
       await expect(service.update('pack-1', RESTAURANT_ID, { amount: -5 })).rejects.toThrow(
@@ -192,6 +194,7 @@ describe('GiftCardPackService', () => {
       vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
+        deletedAt: null,
       } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
 
       await expect(
@@ -203,6 +206,7 @@ describe('GiftCardPackService', () => {
       vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
+        deletedAt: null,
       } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
       vi.mocked(db.giftCardPack.update).mockResolvedValue({
         id: 'pack-1',
@@ -227,6 +231,7 @@ describe('GiftCardPackService', () => {
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
         isActive: false,
+        deletedAt: null,
       } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
       vi.mocked(db.giftCardPack.update).mockResolvedValue({
         id: 'pack-1',
@@ -247,6 +252,7 @@ describe('GiftCardPackService', () => {
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
         isActive: true,
+        deletedAt: null,
       } as unknown as Awaited<ReturnType<typeof db.giftCardPack.create>>);
       vi.mocked(db.giftCardPack.update).mockResolvedValue({
         id: 'pack-1',
@@ -268,6 +274,43 @@ describe('GiftCardPackService', () => {
       );
 
       await expect(service.toggle('pack-inexistant', RESTAURANT_ID)).rejects.toThrow(
+        'Pack cadeau introuvable',
+      );
+    });
+  });
+
+  describe('delete', () => {
+    it('soft-delete un pack existant', async () => {
+      vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
+        id: 'pack-1',
+        restaurantId: RESTAURANT_ID,
+        isActive: true,
+        deletedAt: null,
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.findFirst>>);
+      vi.mocked(db.giftCardPack.update).mockResolvedValue({
+        id: 'pack-1',
+        isActive: false,
+        deletedAt: new Date('2026-01-01'),
+      } as unknown as Awaited<ReturnType<typeof db.giftCardPack.update>>);
+
+      const pack = await service.delete('pack-1', RESTAURANT_ID);
+
+      expect(pack.id).toBe('pack-1');
+      expect(db.giftCardPack.update).toHaveBeenCalledWith({
+        where: { id: 'pack-1' },
+        data: expect.objectContaining({
+          isActive: false,
+          deletedAt: expect.any(Date),
+        }),
+      });
+    });
+
+    it('retourne erreur si le pack est introuvable ou déjà supprimé', async () => {
+      vi.mocked(db.giftCardPack.findFirst).mockResolvedValue(
+        null as unknown as Awaited<ReturnType<typeof db.giftCardPack.findFirst>>,
+      );
+
+      await expect(service.delete('pack-inexistant', RESTAURANT_ID)).rejects.toThrow(
         'Pack cadeau introuvable',
       );
     });

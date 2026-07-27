@@ -25,6 +25,7 @@ import {
   CheckCircle2,
   ArrowUpRight,
   Calendar,
+  Gift,
   Languages,
   ListOrdered,
 } from 'lucide-react';
@@ -86,6 +87,11 @@ export default function SettingsPage() {
   const [savingWaitingList, setSavingWaitingList] = useState(false);
   const [savedWaitingList, setSavedWaitingList] = useState(false);
 
+  // Cartes cadeaux
+  const [giftCardEnabled, setGiftCardEnabled] = useState(false);
+  const [savingGiftCard, setSavingGiftCard] = useState(false);
+  const [savedGiftCard, setSavedGiftCard] = useState(false);
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -129,6 +135,7 @@ export default function SettingsPage() {
             ? specials.waitingListMaxEntriesPerSlot
             : 10,
         );
+        setGiftCardEnabled(data.giftCardEnabled === true);
       } catch {
         setError('Impossible de charger les paramètres');
       } finally {
@@ -272,6 +279,26 @@ export default function SettingsPage() {
       setError(getErrorMessage(err, "Erreur lors de la sauvegarde de la file d'attente"));
     } finally {
       setSavingWaitingList(false);
+    }
+  }
+
+  async function handleGiftCardToggle(enabled: boolean) {
+    setGiftCardEnabled(enabled);
+    setSavingGiftCard(true);
+    setSavedGiftCard(false);
+    setError('');
+
+    try {
+      await patch(`restaurants/${orgId}`, { giftCardEnabled: enabled });
+      setSavedGiftCard(true);
+      if (restaurant) {
+        setRestaurant({ ...restaurant, giftCardEnabled: enabled });
+      }
+    } catch (err: unknown) {
+      setGiftCardEnabled(!enabled);
+      setError(getErrorMessage(err, 'Erreur lors de la sauvegarde des cartes cadeaux'));
+    } finally {
+      setSavingGiftCard(false);
     }
   }
 
@@ -537,6 +564,39 @@ export default function SettingsPage() {
               )}
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      {/* Cartes cadeaux */}
+      <Card className="sokar-card transition-all duration-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Gift size={18} />
+            Cartes cadeaux
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4 rounded-2xl border border-border bg-secondary p-5 transition-all duration-200 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium text-foreground">Activer les cartes cadeaux</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Permettez à vos clients d&apos;acheter des cartes cadeaux depuis votre widget de
+                réservation.
+              </p>
+              {savedGiftCard && (
+                <span className="mt-2 flex items-center gap-1 text-xs font-medium text-primary animate-fade-in">
+                  <CheckCircle2 size={14} />
+                  Enregistré
+                </span>
+              )}
+            </div>
+            <Switch
+              id="gift-card-enabled"
+              checked={giftCardEnabled}
+              disabled={savingGiftCard}
+              onCheckedChange={handleGiftCardToggle}
+            />
+          </div>
         </CardContent>
       </Card>
 

@@ -390,10 +390,13 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
     const slug = (req.params as { slug: string }).slug;
     const restaurant = await db.restaurant.findFirst({
       where: { slug },
-      select: { id: true },
+      select: { id: true, giftCardEnabled: true },
     });
     if (!restaurant) {
       return reply.status(404).send({ error: 'Restaurant introuvable' });
+    }
+    if (!restaurant.giftCardEnabled) {
+      return reply.status(404).send({ error: 'Cartes cadeaux non disponibles' });
     }
 
     const packs = await db.giftCardPack.findMany({
@@ -525,8 +528,11 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
     // Vérifier le montant minimum
     const restaurant = await db.restaurant.findUnique({
       where: { id: body.restaurantId },
-      select: { giftCardMinimumAmount: true },
+      select: { giftCardMinimumAmount: true, giftCardEnabled: true },
     });
+    if (!restaurant?.giftCardEnabled) {
+      return reply.status(403).send({ error: 'Cartes cadeaux non disponibles pour ce restaurant' });
+    }
     const minAmount = restaurant?.giftCardMinimumAmount ?? 10;
     if (amount < minAmount) {
       return reply.status(400).send({ error: `Le montant minimum est de ${minAmount}€` });

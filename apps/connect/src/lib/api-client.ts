@@ -73,6 +73,7 @@ export type WidgetRestaurantDto = {
   formattedAddress: string;
   coverImageUrl?: string | null;
   connectAgentic?: boolean;
+  giftCardEnabled?: boolean;
   sections: Array<{ id: string; name: string }>;
 };
 
