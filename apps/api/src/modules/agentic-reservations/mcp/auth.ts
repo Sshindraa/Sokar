@@ -72,7 +72,7 @@ const VALID_KEY_PREFIX = ['sk', '_sokar', '_agent_'].join('');
  */
 function extractBearer(authHeader: string | undefined): string | null {
   if (!authHeader) return null;
-  const m = authHeader.match(/^Bearer\s+(.+)$/i);
+  const m = authHeader.match(/^Bearer\s+(\S+)$/i);
   return m ? m[1].trim() : null;
 }
 
