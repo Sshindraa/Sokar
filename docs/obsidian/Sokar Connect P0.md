@@ -1,6 +1,6 @@
 # Sokar Connect — Agent-Ready Pages (Phase 0)
 
-> **Statut** : Phase 0 en cours (2026-06-24). Spec validée v1.1, T1 **déployé** (`migrate deploy` + backfillChez Sokar → Lyon/69001/FR, vérifié vert le 2026-06-24). T2-T10 écrits et testés (cf. Journal). Reste : T4 app + Nginx en prod, P1 pilote fermé.
+> **Statut** : Phase 0 en cours (2026-06-24). Spec validée v1.1, T1 **déployé** (`migrate deploy` + backfillChez Sokar → Lyon/69001/FR, vérifié vert le 2026-06-24). T1-T10 écrits, testés et **déployés en prod** (cf. Journal). T4 app + Nginx déployé en prod (vérifié 2026-07-27 : PM2 sokar-connect online, endpoints 200, HSTS, JSON-LD, CSP). Reste : P1 pilote fermé (10 restos réels, sitemap GSC, monitoring).
 > **Spec complète** : `docs/connect-v1.1.md` (60 KB)
 > **v1 archivée** : `docs/connect-v1.md.archived` (45 KB)
 > **Module API** : `apps/api/src/modules/connect/` (à créer en T2)
