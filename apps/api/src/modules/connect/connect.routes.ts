@@ -63,6 +63,7 @@ import {
   type Source,
 } from './connect.types';
 import { emitConnectEvent } from './connect-analytics';
+import { ConnectKpiService } from './connect-kpis.service';
 import { canConfirm, recordFailedConfirm } from './connect-rate-limit';
 import { connectRequestDuration } from '../../shared/observability/metrics';
 import {
@@ -972,6 +973,21 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       }
     },
   );
+
+  // ─── KPIs pilote P1 (internal, pas public) ────────────────────
+  // GET /api/internal/connect-kpis : agrège les 4 critères go/no-go P1.
+  // Pas d'auth forte (réseau interne), même pattern que /api/internal/pilot-kpis.
+  const connectKpis = new ConnectKpiService();
+
+  app.get('/api/internal/connect-kpis', async (_req, reply) => {
+    try {
+      const kpis = await connectKpis.getKpis();
+      return reply.send(kpis);
+    } catch (err) {
+      logger.error({ err }, 'connect kpis failed');
+      return reply.status(500).send({ error: 'Internal error' });
+    }
+  });
 }
 
 /**
