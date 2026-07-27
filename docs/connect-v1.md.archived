@@ -1,0 +1,1079 @@
+# Sokar Connect — Agent-Ready Pages (Spec d'implémentation v1)
+
+> Spec d'implémentation stricte, pas un brief stratégique. Anti-hype,
+> audit-first, transports séparés du métier.
+
+- Auteur: Hermes (review Hamza)
+- Cible Sokar: monorepo Fastify 5 + Prisma 6 + Next.js 14
+- Domaine public: `sokar.tech` (corrigé depuis `sokar.app` du brief)
+- Décisions validées v1: `apps/connect` nouvelle app · `agentic_reuse` · `sokar.tech` · `phase_1_seed_puis_attendre` · `redis_prometheus` · `optin_double_volet`
+
+---
+
+## 1. Résumé exécutif + architecture en couches
+
+**Thèse.** Sokar doit être un réseau public de restaurants réservables par
+IA. Le client final n'installe rien. Google, ChatGPT Search, Perplexity et
+les crawlers OpenAI découvrent le resto, lisent la page, et envoient
+l'utilisateur vers un lien Sokar prérempli pour confirmer.
+
+**Anti-harde.** Pas de revendication "ChatGPT réserve chez vous". Le claim
+est: "votre restaurant devient lisible et réservable depuis les moteurs
+et assistants IA". C'est conforme aux règles Google sur les données
+structurées et au fonctionnement réel d'OAI-SearchBot.
+
+### Diagramme (3 couches)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ COUCHE PUBLIQUE — apps/connect (Next.js 14, output:export)  │
+│  /r/[slug]                  page restaurant (SSR/ISR/SSG)   │
+│  /r/[slug]/book             page booking (SSR, deep-link)   │
+│  /restaurants/[city]        page locale (noindex si <5)     │
+│  /sitemap.xml               sitemap dynamique               │
+│  /robots.txt                robots.txt dynamique            │
+│  /llms.txt (P5, opt)        hint pour LLMs                  │
+└────────────────────────┬────────────────────────────────────┘
+                         │ HTTPS JSON (no Clerk, no auth)
+┌────────────────────────┴────────────────────────────────────┐
+│ COUCHE API — apps/api (Fastify 5)                           │
+│  Module agentic-reservations/core/  HoldService (réutilisé) │
+│  Module agentic-reservations/core/  ReservationService      │
+│  Module agentic-reservations/core/  PoliciesService         │
+│  Module agentic-reservations/core/  AuditLogService         │
+│  Module connect/  endpoint public GET /public/r/[slug]      │
+│  Module connect/  endpoint public GET availability + hold + │
+│                   confirm (channel=WEB)                     │
+│  Module connect/  endpoint public GET /sitemap.xml          │
+│  Module connect/  endpoint public GET /robots.txt           │
+└────────────────────────┬────────────────────────────────────┘
+                         │ Prisma
+┌────────────────────────┴────────────────────────────────────┐
+│ COUCHE DONNÉES — packages/database (Postgres)              │
+│  Restaurant  (slug, cuisineType, openingHours, etc.)        │
+│  RestaurantExposureSettings  (connectPublished, etc.)        │
+│  Reservation  (channel=WEB, state machine)                  │
+│  AgenticHold  (HOLD/QUOTE, partial unique index)            │
+│  CustomerConsent  (RGPD structured)                         │
+│  ReservationAuditLog  (append-only)                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Pourquoi 3 couches** : la couche publique ne doit jamais connaître
+Clerk, l'API ne doit jamais servir de HTML indexable (perf, séparation
+des caches), les données portent déjà la vérité du métier. Sokar Connect
+**consomme** les services agentic existants, **ne les duplique pas**.
+
+---
+
+## 2. Audit du schéma existant (Prisma / DB / API)
+
+### 2.1 Champs `Restaurant` réutilisables tels quels
+
+| Champ spec | Champ Prisma | Type | OK ? |
+|------------|--------------|------|------|
+| `name` | `name` | String | ✓ |
+| `slug` | `slug` | String? @unique | ✓ nullable, à backfiller |
+| `description` | (manquant) | — | ❌ P0 |
+| `addressLine1` | `formattedAddress` | String? | ⚠️ structurel à plat vs structuré |
+| `city` | déduit de `formattedAddress` | — | ⚠️ pas de champ dédié |
+| `country` | déduit | — | ⚠️ pas de champ dédié |
+| `latitude` | `lat` | Decimal? | ✓ |
+| `longitude` | `lng` | Decimal? | ✓ |
+| `phone` | `phoneNumber`/`phoneE164` | String/String? | ✓ |
+| `cuisineTypes` | `cuisineType` | String[] | ✓ |
+| `priceRange` `€`/`€€`/`€€€`/`€€€€` | `priceRange` | Int? (1..4) | ✓ sémantique à clarifier |
+| `openingHours` | `openingHours` | Json | ✓ structure JSON libre |
+| `acceptsReservations` | `agenticOptIn` | Boolean | ✓ |
+| `published` | (manquant) | — | ❌ P0 |
+| `images` | (manquant côté table) | — | ❌ P0 — modèle séparé `RestaurantImage` |
+| `ambiance`, `dietary` | `ambiance`, `dietary` | String[] | ✓ |
+| `noiseLevel` | `noiseLevel` | NoiseLevel? | ✓ |
+| `noiseLevel` enum | enum | CALME/MODERE/ANIME | ✓ |
+
+### 2.2 Champs manquants (P0)
+
+| Besoin | Proposition | Type | Raison |
+|--------|-------------|------|--------|
+| `description` courte | `Restaurant.description` | String? | SEO + JSON-LD `description` |
+| `published` flag | `Restaurant.connectPublished` | Boolean @default(false) | gating, voir §4 |
+| `city` structuré | `Restaurant.city` | String? | pages locales, pas d'analyse de `formattedAddress` |
+| `country` | `Restaurant.country` | String @default("FR") | structuration |
+| `postalCode` | `Restaurant.postalCode` | String? | structuration + page locale |
+| `coverImageUrl` | `Restaurant.coverImageUrl` | String? | JSON-LD image principale + OG |
+| `publishedAt` | `Restaurant.publishedAt` | DateTime? | sitemap lastmod |
+| Schema.org `acceptsReservations` URL | déduit | — | calc server-side, pas colonne |
+| Gating Sokar Connect spécifique | `RestaurantExposureSettings.connectPublished` | Boolean | opt-in double volet (voir §4) |
+
+### 2.3 Tables à créer (P0)
+
+**`RestaurantImage`** — galerie de photos (cover + galerie), URLs externes ou uploads.
+
+```prisma
+model RestaurantImage {
+  id           String   @id @default(uuid())
+  restaurantId String   @map("restaurant_id")
+  url          String
+  alt          String?
+  isCover      Boolean  @default(false) @map("is_cover")
+  position     Int      @default(0)
+  createdAt    DateTime @default(now()) @map("created_at")
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+
+  @@index([restaurantId, isCover, position])
+  @@map("restaurant_images")
+}
+```
+
+> Note: on évite un upload handler custom en P0. `url` pointe vers une
+> URL externe (Cloudinary, S3, ou ce que le restaurateur fournit). Si
+> upload nécessaire, c'est un ticket Phase 2 séparé.
+
+**`ConnectEvent`** — événements analytics (Phase 1: ne fait pas la table,
+passe par Redis). En P2, ajouter si on a besoin d'historique requêtable.
+
+**`CityPage`** et `CityCuisinePage` — **NON**. On dérive ces pages d'une
+aggregation en mémoire depuis `Restaurant` (count by city). Pas de
+dénormalisation prématurée. La règle d'indexation (5/10/20) est calculée
+au render, pas stockée.
+
+### 2.4 Migration strategy
+
+Additive, 2 fichiers SQL:
+
+1. `20260624000001_connect_columns` — colonnes nullable sur `restaurants`
+2. `20260624000002_connect_backfill` — backfill `city`/`postalCode` depuis
+   `formattedAddress` pour le seed existant (`Chez Sokar` → Lyon, 69001)
+3. `20260624000003_connect_restaurant_images` — nouvelle table
+
+Pas de colonne NOT NULL forcée tant que <100% des restos ont la valeur.
+
+### 2.5 État API actuelle
+
+- `restaurant.routes.ts` a `GET /restaurants/:id/public` (auth Clerk).
+  **Pas utilisable** pour Sokar Connect (auth + retourne l'ID pas le slug).
+- Pas de route `bySlug`.
+- Pas de route `/public/availability` exposée.
+- L'agentic-reservations a déjà `hold.service.ts` et
+  `reservation.service.ts` qui prennent `channel: ReservationChannel`.
+  On a juste à leur passer `WEB` au lieu de `MCP` ou `OPENAI_RESERVE`.
+
+### 2.6 État frontend actuelle
+
+- `apps/dashboard` (port 3000) — privé, Clerk
+- `apps/widget` (port 4001) — B2B widget embed sur site du restaurateur
+- **Aucun** consommateur public de l'API pour le SEO
+
+---
+
+## 3. Architecture cible — arborescence de fichiers
+
+```
+apps/
+├── connect/                          # NOUVELLE APP
+│   ├── package.json                  # @sokar/connect
+│   ├── next.config.js                # output: 'export', basePath: '/r'
+│   ├── tailwind.config.js
+│   ├── tsconfig.json
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── layout.tsx            # HTML root, OpenGraph defaults
+│   │   │   ├── page.tsx              # / -> redirect vers /sokar (ou landing)
+│   │   │   ├── not-found.tsx
+│   │   │   ├── r/
+│   │   │   │   └── [slug]/
+│   │   │   │       ├── page.tsx      # /r/[slug] — restaurant public
+│   │   │   │       ├── book/
+│   │   │   │       │   └── page.tsx  # /r/[slug]/book — booking
+│   │   │   │       └── _components/  # Server Components
+│   │   │   │           ├── JsonLd.tsx
+│   │   │   │           ├── OpeningHoursTable.tsx
+│   │   │   │           ├── BookingCta.tsx
+│   │   │   │           └── MetaTags.tsx
+│   │   │   ├── restaurants/
+│   │   │   │   └── [city]/
+│   │   │   │       ├── page.tsx      # /restaurants/[city]
+│   │   │   │       └── [cuisine]/
+│   │   │   │           └── page.tsx  # /restaurants/[city]/[cuisine]
+│   │   │   ├── sitemap.xml/
+│   │   │   │   └── route.ts          # Sitemap dynamique
+│   │   │   ├── robots.txt/
+│   │   │   │   └── route.ts          # robots.txt dynamique
+│   │   │   └── llms.txt/             # Phase 5
+│   │   │       └── route.ts
+│   │   ├── lib/
+│   │   │   ├── api-client.ts         # fetch /public/r/[slug]
+│   │   │   ├── seo.ts                # helpers title/description/canonical
+│   │   │   ├── jsonld.ts             # buildRestaurantJsonLd()
+│   │   │   ├── index-rules.ts        # shouldIndexCollectionPage()
+│   │   │   ├── analytics.ts          # emit ConnectEvent via fetch
+│   │   │   └── env.ts                # API_PUBLIC_URL, SITE_URL
+│   │   └── __tests__/                # Vitest, tests SEO + JSON-LD
+│   │       ├── jsonld.test.ts
+│   │       ├── seo.test.ts
+│   │       └── index-rules.test.ts
+│   └── public/
+│       └── og-default.png            # OG image par défaut
+│
+└── api/
+    └── src/
+        └── modules/
+            ├── connect/              # NOUVEAU MODULE
+            │   ├── connect.routes.ts # routes publiques SSR-friendly
+            │   ├── connect.service.ts
+            │   ├── jsonld.service.ts
+            │   ├── seo.service.ts
+            │   ├── sitemap.service.ts
+            │   ├── robots.service.ts
+            │   └── __tests__/
+            │       ├── connect.routes.test.ts
+            │       ├── jsonld.service.test.ts
+            │       └── sitemap.service.test.ts
+            └── agentic-reservations/ # INCHANGÉ mais réutilisé
+                └── core/             # hold, reservation, policies
+```
+
+### Pourquoi `apps/connect` et pas un module dans `apps/dashboard`
+
+1. **Build standalone obligatoire** (`output: 'export'`). La skill
+   `sokar-mcp-oauth-deploy` (juin 2026) a coûté 1h de downtime prod
+   parce qu'un build non-standalone n'avait pas été détecté. Empiler
+   les rôles = risque de régression silencieux.
+2. **Zéro Clerk dans le HTML rendu** aux crawlers. Le `layout.tsx`
+   actuel de `apps/dashboard` injecte `Providers` Clerk et un Header.
+   C'est exactement ce qu'on ne veut pas servir à ChatGPT/Google.
+3. **Perf <100KB de HTML initial** sans le bundle dashboard.
+4. **Tests isolés** (jsonld, SEO, index-rules) sans pollution des
+   tests dashboard.
+
+---
+
+## 4. Opt-in & configuration (double volet)
+
+### 4.1 Deux flags distincts
+
+```prisma
+model RestaurantExposureSettings {
+  restaurantId            String   @id @map("restaurant_id")
+  // Existant (P0 agentic-reservations)
+  mcpEnabled              Boolean  @default(false) @map("mcp_enabled")
+  openaiReserveEnabled    Boolean  @default(false) @map("openai_reserve_enabled")
+  exposedCreneaux         Json     @default("[]") @map("exposed_creneaux")
+  maxPartySize            Int      @default(12) @map("max_party_size")
+  minLeadTimeMinutes      Int      @default(30) @map("min_lead_time_minutes")
+  // NOUVEAU Sokar Connect
+  connectPublished         Boolean  @default(false) @map("connect_published")
+  connectAgentic           Boolean  @default(false) @map("connect_agentic")
+  connectPublishedAt       DateTime? @map("connect_published_at")
+  connectDescription       String?  @map("connect_description")
+  // ... autres champs existants à préserver
+}
+```
+
+### 4.2 Gating rules
+
+| Page | Condition indexation | Réponse si KO |
+|------|---------------------|---------------|
+| `/r/[slug]` | `agenticOptIn=true` ET `exposureSettings.connectPublished=true` ET `slug` non null | 200 noindex (preview restaurateur) ou 404 si restaurateur a explicitement unpublished |
+| `/r/[slug]/book` | toujours servi si page indexée | 200 |
+| `/restaurants/[city]` | count(city) ≥ 5 ET `city` indexable | 200 noindex si <5 |
+| `/restaurants/[city]/[cuisine]` | count ≥ 10 | 200 noindex si <10 |
+| `/r/[slug]/book` (action) | `connectAgentic=true` ET `agenticOptIn=true` | 503 si connectAgentic=false (formulaire en lecture seule) |
+
+### 4.3 Defaults
+
+Tout à `false` en P0. Le restaurateur active depuis son dashboard
+(onboarding step 6+ ou settings page). **Pas d'opt-out par défaut**
+pour les features transactionnelles — règle de la skill
+`feature-spec-strict` § hard limits.
+
+### 4.4 API publiques — auth
+
+| Endpoint | Auth requise | Rate limit |
+|----------|-------------|------------|
+| `GET /public/r/[slug]` | **Aucune** | 60 req/IP/min |
+| `GET /public/r/[slug]/availability` | Aucune | 30 req/IP/min |
+| `POST /public/r/[slug]/hold` | Aucune | 10 req/IP/min, 30/phone/jour |
+| `POST /public/r/[slug]/confirm` | Aucune + header `Idempotency-Key` | 5 req/phone/heure |
+| `GET /sitemap.xml` | Aucune | bypass |
+| `GET /robots.txt` | Aucune | bypass |
+
+Les endpoints publics ne sont **pas** derrière Clerk. Le risque
+d'abus est couvert par rate limit + anti-spam (voir §8).
+
+---
+
+## 5. Core engine — réutilisation du moteur agentic
+
+### 5.1 Quote vs Hold (déjà en place)
+
+Le moteur agentic distingue déjà `QUOTE` (TTL court, pas de lock) et
+`HOLD` (TTL plus long, contrainte partielle SQL). On réutilise tel quel.
+
+### 5.2 State machine (déjà en place)
+
+`ReservationState` = PENDING → CONFIRMED → SEATED → HONORED (ou CANCELLED/NO_SHOW/FAILED/EXPIRED).
+Pour Sokar Connect, on entre par `state=PENDING` quand le user clique "Confirmer"
+et que la confirmation SMS/email n'est pas faite, puis on bascule en
+`CONFIRMED` immédiatement (comme l'agentic) ou en `PENDING` si on
+attend une vérif OTP (à ajouter si Phase 2).
+
+> Pour Sokar Connect MVP, on **ne demande pas d'OTP** (phone déjà collecté
+> + email en option). Le client est `CONFIRMED` direct. RGPD: le
+> `CustomerConsent` est créé en `web_booking_intent` avec
+> `reservation_processing=true`.
+
+### 5.3 Idempotency (déjà en place)
+
+`IdempotencyRecord` avec clé composite `(scope, key)`. Pour Sokar Connect:
+`scope = "web:{restaurantId}:{clientFingerprint}"` où `clientFingerprint`
+est un cookie first-party posé au premier GET. Si le user reclique
+"Confirmer", même clé, même réponse.
+
+### 5.4 Concurrency / capacity lock (déjà en place)
+
+Contrainte partielle `one_active_hold_per_slot` sur `agentic_holds`.
+On la **garde** pour les réservations web, pas de lock séparé.
+
+### 5.5 Data confidence
+
+Le champ `attributeConfidence` existe déjà sur `Restaurant` (Json).
+Pour Sokar Connect, on consomme cette confidence pour décider quoi exposer:
+
+| Attribut | Confidence min pour exposer |
+|----------|----------------------------|
+| `cuisineType` | 0.5 (merchant_declared ou review_inferred) |
+| `priceRange` | 0.7 |
+| `openingHours` | 0.9 (merchant_declared) |
+| `ambiance` | 0.5 |
+| `dietary` | 0.7 |
+| `noiseLevel` | 0.5 |
+
+Si confidence < seuil, on n'inclut pas dans JSON-LD. Le HTML visible
+reste autorisé mais on évite les claims que le moteur pourrait juger
+trompeurs (cf. Google `sd-policies` sur aggregateRating inventé).
+
+### 5.6 Policies versioning (déjà en place)
+
+`policyVersion` snapshot au moment du hold. Pas de changement pour
+Sokar Connect.
+
+### 5.7 Channel = WEB
+
+Toute réservation créée via Sokar Connect porte `ReservationChannel.WEB`.
+L'audit log et le dashboard distinguent déjà `PHONE`, `MCP`,
+`OPENAI_RESERVE`, `ADMIN`, `API`. On ajoute `WEB` à l'enum (additif,
+pas breaking).
+
+### 5.8 Ajout enum (additif)
+
+```prisma
+enum ReservationChannel {
+  PHONE
+  WEB         // NOUVEAU
+  MCP
+  OPENAI_RESERVE
+  ADMIN
+  API
+}
+```
+
+---
+
+## 6. Adapter public — module `connect`
+
+### 6.1 Scope
+
+- Expose la fiche restaurant (HTML rendu côté `apps/connect` via SSR/ISR)
+- Expose la disponibilité en temps réel
+- Expose le hold + confirm (réutilise `HoldService` + `ReservationService`)
+- Génère JSON-LD, sitemap, robots.txt
+- **N'expose PAS**: hold tokens, agent clients, OAuth, voice config,
+  personality, internal IDs
+
+### 6.2 Endpoints API
+
+| Method | Path | Body / Query | Response | Notes |
+|--------|------|--------------|----------|-------|
+| GET | `/public/r/:slug` | — | `PublicRestaurantDto` | 200 ou 404 |
+| GET | `/public/r/:slug/availability` | `?date=YYYY-MM-DD&partySize=N` | `AvailabilityDto` | respecte horaires + capacity + holds |
+| POST | `/public/r/:slug/hold` | `{date, time, partySize, source}` | `{holdId, holdToken, expiresAt}` | TTL 5 min |
+| POST | `/public/r/:slug/confirm` | `{holdToken, customer, specialRequests, idempotencyKey}` | `{reservationId, status}` | PENDING→CONFIRMED |
+| GET | `/sitemap.xml` | — | XML | généré à la volée |
+| GET | `/robots.txt` | — | text | règles indexation |
+
+### 6.3 Fichiers
+
+```
+apps/api/src/modules/connect/
+├── connect.routes.ts         # Fastify plugin, public, no Clerk
+├── connect.service.ts        # agrégateur (slug → restaurant + exposure + images)
+├── availability.service.ts   # ré-utilise openingHours + holds
+├── jsonld.service.ts         # buildPublicRestaurantJsonLd()
+├── sitemap.service.ts        # buildSitemap()
+├── robots.service.ts         # buildRobots()
+└── __tests__/
+    ├── connect.routes.test.ts
+    ├── jsonld.service.test.ts
+    └── sitemap.service.test.ts
+```
+
+### 6.4 Wire-up
+
+Enregistrement dans `apps/api/src/main.ts` (ou via le router global),
+préfixe `/public`. Le module s'enregistre **sans** `requireOrg` et
+**sans** Clerk.
+
+### 6.5 Cache
+
+`/public/r/:slug` est caché 60s en Redis. `stale-while-revalidate=300`.
+L'invalidation se fait sur `Restaurant.update` (le hook de cache
+existant dans `restaurant.service.ts` doit être étendu, voir §10
+ticket 8).
+
+---
+
+## 7. Pages publiques — `apps/connect`
+
+### 7.1 `/r/[slug]` (page restaurant)
+
+**Rendu** : Server Component, `generateStaticParams` pour les slugs
+publiés, ISR `revalidate=60` pour la fraîcheur.
+
+**Props visibles** :
+- H1: `{name} — Restaurant {cuisineType[0]} à {city}`
+- Adresse, téléphone cliquable (`tel:`)
+- Horaires (table jour-par-jour)
+- Prix (`€€` = 2e de priceRange)
+- Galerie (cover + 3-4 vignettes, lazy load)
+- CTA "Réserver une table" → `/r/[slug]/book?source={referrerSource}`
+- Description courte (1-2 phrases, pas d'invention)
+- Lien menu externe si `websiteUrl`
+- Lien Instagram si `instagramUrl`
+
+**Sémantique** :
+- `<main>` racine
+- `<h1>` unique
+- Sections `<section>` avec `<h2>` explicites
+- Schema.org JSON-LD `<script type="application/ld+json">`
+- `<link rel="canonical">` sans query params
+- OpenGraph + Twitter Card
+
+**Meta** :
+- title: `{name} — Réservation en ligne à {city} | Sokar`
+- description: `Réservez une table chez {name}, restaurant {cuisineType[0]} à {city}. Horaires, adresse et réservation en ligne via Sokar.`
+- robots: `index, follow` si published, sinon `noindex, follow`
+
+### 7.2 `/r/[slug]/book` (page booking)
+
+**Rendu** : SSR. Lit `searchParams`: `partySize`, `date`, `time`, `source`,
+`utm_source`, `utm_medium`, `utm_campaign`.
+
+**Flow** :
+1. Read querystring → préremplir le state
+2. Stepper 3 étapes: `Choisis ton créneau` → `Tes coordonnées` → `Confirmation`
+3. Step 1: date picker + party size picker → fetch
+   `/public/r/:slug/availability` → afficher slots
+4. User clique un slot → POST `/public/r/:slug/hold` → reçoit `holdToken`
+5. Step 2: nom + téléphone + email (opt) + demandes spéciales
+6. Step 3: POST `/public/r/:slug/confirm` avec `Idempotency-Key`
+7. Success page: confirmation avec numéro de réservation
+8. Restaurant reçoit notification (BullMQ `restaurant_notification` queue
+   existante côté agentic — à étendre pour `channel=WEB`)
+
+**Sources tracking** : `source` query param → propagé jusqu'à
+`Reservation.source` (nouveau champ nullable). Valeurs normalisées:
+`google`, `chatgpt`, `perplexity`, `bing`, `restaurant_website`,
+`instagram`, `qr_code`, `direct`, `unknown`.
+
+**Analytics** : `booking_page_view`, `availability_requested`,
+`availability_slot_selected`, `reservation_hold_created`,
+`reservation_confirmed`, `reservation_failed` — émis vers la queue
+BullMQ `connect_analytics` (nouvelle, créée en P0).
+
+### 7.3 `/restaurants/[city]` (page locale)
+
+**Rendu** : SSR, cache 5 min.
+
+**Règle indexation** : `count(published restaurants in city) >= 5`.
+Sinon, retourne 200 mais avec `<meta name="robots" content="noindex,follow">`.
+
+**Sections** :
+- H1: `Restaurants réservables à {city}`
+- Texte SEO court (généré, pas inventé): "{n} restaurants à {city}
+  réservables en ligne via Sokar."
+- Grid de cartes (cover, nom, cuisine, quartier, prix, CTA)
+- Sections internes: "Cuisines populaires", "Avec terrasse", "Pour groupes"
+  (chacune calculée à partir des `Restaurant.*` fields, max 6 items)
+
+**Liens internes** vers `/restaurants/[city]/[cuisine]` (cuisines avec
+≥3 restos), vers `/r/[slug]` pour les cartes.
+
+### 7.4 `/restaurants/[city]/[cuisine]` (page cuisine)
+
+**Règle indexation** : `count(in city AND cuisine) >= 10`.
+Sinon noindex.
+
+**H1** : `Restaurants {cuisine} réservables à {city}`
+
+**Texte** : "Découvrez des restaurants {cuisine} à {city} réservables
+en ligne via Sokar. Consultez les horaires, adresses et disponibilités
+avant de réserver votre table."
+
+### 7.5 `/sitemap.xml`
+
+```ts
+export const dynamic = 'force-dynamic';
+
+export async function GET() {
+  const urls = await sitemapService.buildAll();
+  return new Response(generateSitemapXml(urls), {
+    headers: { 'content-type': 'application/xml; charset=utf-8' },
+  });
+}
+```
+
+Inclut : pages `/r/[slug]` publiées, pages `/restaurants/[city]`
+indexables, pages `/restaurants/[city]/[cuisine]` indexables, homepage
+sokar.tech. `lastmod` basé sur `Restaurant.updatedAt` et
+`connectPublishedAt`. `changefreq=daily` pour pages resto, `weekly`
+pour locales.
+
+### 7.6 `/robots.txt`
+
+```
+User-agent: *
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+# Décision Phase 5: GPTBot autorisé (référencement ChatGPT training).
+# À durcir si problème de coût scrape.
+User-agent: GPTBot
+Allow: /
+
+Sitemap: https://sokar.tech/sitemap.xml
+```
+
+### 7.7 `/llms.txt` (Phase 5)
+
+Fichier texte décrivant le réseau Sokar en langage naturel pour les
+LLMs qui le liraient. Phase 5 — pas en P0.
+
+---
+
+## 8. Sécurité
+
+### 8.1 Auth model (3 niveaux)
+
+- **Routes publiques Sokar Connect**: aucune auth. Rate limit par IP.
+- **Routes back-office restaurateur**: Clerk + `requireOrg` (existant).
+- **Routes agent (MCP, OpenAI Reserve)**: OAuth 2.0 + API key (existant).
+
+### 8.2 Transport hardening
+
+- HTTPS obligatoire (VPS nginx + certbot, déjà en place)
+- HSTS sur `sokar.tech` (à ajouter dans la conf nginx)
+- CORS: les endpoints publics acceptent `Origin: https://sokar.tech` et
+  `null` (pour les fetches server-side). Pas d'autres origines.
+- `Content-Security-Policy`: `default-src 'self'; img-src 'self' https: data:;`
+- `X-Content-Type-Options: nosniff`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+
+### 8.3 Rate limits (par IP, par phone, par slot)
+
+| Endpoint | Limite |
+|----------|--------|
+| `GET /public/r/:slug` | 60 req/IP/min |
+| `GET availability` | 30 req/IP/min |
+| `POST hold` | 10 req/IP/min, 20 req/phone/jour |
+| `POST confirm` | 5 req/phone/heure, 1 req/IP/sec |
+
+Implémentation: Redis `INCR` + `EXPIRE` (même pattern que les autres
+rate limits Sokar). Pas de Redis Cluster pour P0.
+
+### 8.4 Idempotency obligation
+
+`POST /confirm` exige un header `Idempotency-Key` (UUID v4 généré
+côté front). Le serveur vérifie dans `IdempotencyRecord` avant tout
+traitement. Si la clé existe avec le même payload hash → renvoie la
+réponse stockée.
+
+### 8.5 Audit log
+
+Toutes les actions (page_view, hold, confirm, expired) créent une
+entrée dans `reservation_audit_log` (append-only, déjà en place).
+Les page views vont dans Redis (queue BullMQ `connect_analytics`)
+et **PAS** en DB (trop volumineux).
+
+### 8.6 Anti-spam réservation
+
+- Phone validation E.164 + check `phone.length >= 8`
+- Email optionnel mais validé si fourni (regex simple, pas de check MX)
+- Bloquer les téléphones en `+000…` ou préfixes d'IVR spammy
+- Honeypot field `<input name="company" hidden>` (bots le remplissent)
+- Si >3 confirmations échouées pour un même phone en 1h → blocage 24h
+- Hold expire 5 min, libère le slot
+
+### 8.7 Pas de prompt injection defense en P0
+
+Les endpoints publics ne sont pas LLM-facing. Pas besoin de filtre
+d'injection. Si on appelle LLM (synthèse description, P5), ajouter
+alors.
+
+### 8.8 Secret redaction
+
+Les logs API ne doivent pas log les `holdToken` ou `customer.phone`.
+`pino` redact patterns à étendre.
+
+---
+
+## 9. RGPD
+
+### 9.1 Structured consents (déjà en place)
+
+`CustomerConsent` est déjà structuré. Pour Sokar Connect:
+
+```ts
+await db.customerConsent.create({
+  data: {
+    restaurantId: restaurant.id,
+    customerId: null, // pas encore créé
+    reservationId: null, // créé après confirm
+    subjectHash: hashPhone(body.customer.phone),
+    channel: 'WEB',
+    context: 'web_booking_intent',
+    reservationProcessing: true,
+    transactionalSms: true,
+    transactionalEmail: !!body.customer.email,
+    marketingOptIn: false, // double opt-in séparé
+    privacyPolicyVersion: restaurant.policyVersion,
+    consentIpHash: hashIp(req.ip),
+  },
+});
+```
+
+### 9.2 Données publiques
+
+Peuvent être publics (parce que publiées par le restaurateur):
+- nom, adresse, téléphone pro, horaires, cuisine, photos fournies,
+  lien réservation, prix, ambiance, dietary, noiseLevel, websiteUrl,
+  instagramUrl.
+
+### 9.3 Données NON publiques
+
+- `managerEmail`, `managerPhone`
+- IDs internes, `restaurant.id` (jamais exposé dans le HTML public,
+  on utilise `slug`)
+- `googleRefreshToken` (déjà non exposé par sérialisation Prisma select)
+- Liste clients, no-show rate, revenue
+
+### 9.4 Conservation
+
+- `Reservation` : 2 ans (cf. conservation comptable légale)
+- `CustomerConsent` : 3 ans (preuve consentement)
+- `ConnectEvent` (Redis) : 30 jours rolling
+- `page_view` analytics : 90 jours anonymisés (hashed sessionId)
+
+### 9.5 Right to erasure
+
+Le `RGPD Phase 5` (juin 2026) a déjà codé `/api/rgpd/erase`. Le
+endpoint public `/public/r/:slug/erase-request` n'existe pas. **À
+ne pas exposer publiquement** (cf. memory RGPD: erase téléphone seul
+= OK MVP interne, BLOQUANT pilote/prod). Le client qui veut effacer
+ses données contacte `dpo@sokar.tech`.
+
+### 9.6 Sous-traitants
+
+| Sous-traitant | Finalité | DPA |
+|---------------|----------|-----|
+| Telnyx (carrier voix) | Pas utilisé par Sokar Connect direct, mais SMS confirmation | À formaliser |
+| Twilio / autre SMS | SMS confirmation (futur) | À formaliser |
+| Cloudflare (CDN) | Servir `apps/connect` static | DPA Cloudflare standard |
+| Vercel / VPS | Host | DPA VPS |
+
+> Le brief a noté "DPA sous-traitants à formaliser". Sokar Connect n'ajoute
+> pas de nouveau sous-traitant par rapport à l'existant. À cocher
+> dans la checklist RGPD globale.
+
+---
+
+## 10. Tickets dev
+
+10 tickets. Chacun avec acceptance criteria et scope. Phasage en §11.
+
+### Ticket 1 — Migration DB Sokar Connect (P0)
+
+**Scope** :
+- 3 migrations additives sous `packages/database/prisma/migrations/`:
+  - `20260624000001_connect_columns` — colonnes nullable: `description`,
+    `city`, `country`, `postalCode`, `coverImageUrl`, `publishedAt`,
+    `connectPublished` (RestaurantExposureSettings)
+  - `20260624000002_connect_backfill` — backfill `Chez Sokar` (Lyon,
+    69001, FR)
+  - `20260624000003_connect_restaurant_images` — table
+- Modifier `schema.prisma` (additif)
+- Étendre `ReservationChannel` enum avec `WEB`
+- Étendre `Reservation.source` (String? optionnel, déduit du `source`
+  query param)
+- Étendre `RestaurantExposureSettings` avec `connectPublished`,
+  `connectAgentic`, `connectPublishedAt`, `connectDescription`
+- `pnpm db:generate` OK
+- Migration déployée en local
+
+**STOP** : avant `migrate deploy`, demande à Hamza de confirmer
+`packages/database/.env`. Ne pas pré-remplir. Cf. skill
+`sokar-prisma-migrate` § ".env : ne JAMAIS pré-remplir par l'agent".
+
+**Acceptance** :
+- [ ] `prisma migrate deploy` applique les 3 fichiers sans erreur
+- [ ] `Restaurant.connectPublished` existe, default false
+- [ ] `Reservation.source` existe, nullable
+- [ ] `RestaurantImage` existe
+- [ ] Seed tourne toujours (avec backfill Lyon/69001)
+- [ ] `_prisma_migrations` à jour
+
+### Ticket 2 — API publique Sokar Connect (P0)
+
+**Scope** :
+- Créer `apps/api/src/modules/connect/`
+- `connect.routes.ts` enregistré dans `main.ts` (ou router global)
+  sous le préfixe `/public`
+- 6 endpoints (§6.2)
+- Pas de Clerk, pas de `requireOrg`
+- Cache Redis sur `/public/r/:slug` (60s TTL, 300s SWR)
+- `Idempotency-Key` header obligatoire sur POST confirm
+- Tests Vitest (route-level + service-level)
+
+**Acceptance** :
+- [ ] `GET /public/r/chez-sokar-demo` retourne 200 + DTO
+- [ ] `GET /public/r/inexistant` retourne 404
+- [ ] `GET /public/r/chez-sokar-demo/availability?date=...&partySize=2`
+      retourne slots valides
+- [ ] `POST /hold` puis `POST /confirm` avec `Idempotency-Key` crée
+      une reservation avec `channel=WEB`
+- [ ] Replay du même `Idempotency-Key` + payload = même réponse
+- [ ] Replay avec payload différent = 409 Conflict
+- [ ] Rate limit 429 sur 11e POST /hold en 1 min
+- [ ] 401 abs (pas d'auth) — appels anonymes OK
+
+### Ticket 3 — JSON-LD Service (P0)
+
+**Scope** :
+- `jsonld.service.ts` avec `buildPublicRestaurantJsonLd(restaurant, opts)`
+- Respecte `attributeConfidence` (§5.5) : pas de claims non sourcés
+- Inclut `Restaurant`, `PostalAddress`, `GeoCoordinates` si lat/lng,
+  `openingHoursSpecification`, `acceptsReservations` (URL `/book`),
+  `potentialAction` avec `ReserveAction` et `EntryPoint.urlTemplate`
+- `aggregateRating` JAMAIS inclus en P0 (pas d'avis propriétaires)
+- Tests : parse JSON-LD avec `JSON.parse`, vérifier chaque champ,
+  tester le cas sans lat/lng, tester le cas sans openingHours
+
+**Acceptance** :
+- [ ] JSON.parse du output = OK
+- [ ] `acceptsReservations` est l'URL `/book` (pas un booléen)
+- [ ] `potentialAction.target.urlTemplate` contient `{partySize}`,
+      `{date}`, `{time}` literals
+- [ ] `openingHoursSpecification` respecte la structure schema.org
+- [ ] `geo` absent si pas de lat/lng (pas `null`)
+
+### Ticket 4 — Sitemap + Robots (P0)
+
+**Scope** :
+- `sitemap.service.ts` + route `GET /sitemap.xml`
+- `robots.service.ts` + route `GET /robots.txt`
+- Pas d'inclusion des pages `noindex`
+- Sitemap par défaut `https://sokar.tech/sitemap.xml`
+- Robots référence le sitemap
+- `OAI-SearchBot` explicit allow
+
+**Acceptance** :
+- [ ] `GET /sitemap.xml` retourne XML valide
+- [ ] URLs canonical uniquement (pas de query params)
+- [ ] `<lastmod>` ISO 8601
+- [ ] Restaurants non publiés absents
+- [ ] Pages locales <5 restos absentes
+- [ ] `GET /robots.txt` retourne `User-agent: *` + `Allow: /` + sitemap
+- [ ] `User-agent: OAI-SearchBot` présent
+
+### Ticket 5 — `apps/connect` setup (P0)
+
+**Scope** :
+- Nouvelle app Next.js 14 App Router
+- `package.json` `@sokar/connect` + workspace dep sur
+  `@sokar/shared` (pour les types)
+- `next.config.js` avec `output: 'export'`, `basePath: '/r'`,
+  `images: { unoptimized: true }`
+- `tailwind.config.js` (réutilise les design tokens du dashboard —
+  `bg-background`, `text-foreground`, etc.)
+- `tsconfig.json` strict
+- `pnpm-workspace.yaml` déjà OK (apps/* wildcard)
+- Turbo task `connect#dev` (port 4002), `connect#build`,
+  `connect#typecheck`
+- Lint config cohérente avec le reste
+
+**Acceptance** :
+- [ ] `pnpm --filter @sokar/connect dev` lance l'app sur :4002
+- [ ] `pnpm --filter @sokar/connect build` produit un dossier
+      `apps/connect/out/` (output: export)
+- [ ] `pnpm --filter @sokar/connect typecheck` passe
+- [ ] `pnpm turbo build` global passe
+
+### Ticket 6 — Page `/r/[slug]` (P0)
+
+**Scope** :
+- `apps/connect/src/app/r/[slug]/page.tsx` Server Component
+- `generateStaticParams` lit `/public/r/index` (nouveau endpoint
+  batch) ou cache les slugs
+- ISR `revalidate=60`
+- `generateMetadata` dynamique (title, description, OG, Twitter)
+- Composants: `JsonLd`, `OpeningHoursTable`, `BookingCta`, `MetaTags`
+- Respecte `connectPublished` (404 si non publié, 200 noindex si
+  restaurateur en preview)
+- French-first copy, design tokens Shadcn
+- LCP < 2.5s, HTML initial < 100KB
+
+**Acceptance** :
+- [ ] `curl -s localhost:4002/r/chez-sokar-demo` → HTML avec H1
+- [ ] JSON-LD `<script type="application/ld+json">` présent
+- [ ] `<link rel="canonical">` présent, sans query params
+- [ ] `<meta name="robots" content="index, follow">` si publié
+- [ ] Lighthouse mobile: Performance > 90, SEO > 95
+- [ ] HTML visible contient le nom, adresse, horaires (cohérent JSON-LD)
+
+### Ticket 7 — Page `/r/[slug]/book` (P0)
+
+**Scope** :
+- `apps/connect/src/app/r/[slug]/book/page.tsx`
+- Lit `searchParams` (partySize, date, time, source, utm_*)
+- Composants: `BookingStepper`, `DatePicker`, `PartySizePicker`,
+  `SlotGrid`, `CustomerForm`, `ConfirmationView`
+- Appels API: `GET availability`, `POST hold`, `POST confirm`
+- Émet événements analytics (queue BullMQ `connect_analytics`)
+- `Idempotency-Key` généré côté client (uuidv4)
+- Gestion d'erreurs: slot pris entre hold et confirm, hold expiré,
+  capacity exceeded
+
+**Acceptance** :
+- [ ] Deep-link
+      `/r/chez-sokar-demo/book?partySize=4&date=2026-06-24&time=20:00&source=chatgpt`
+      pré-remplit le formulaire
+- [ ] Slot demandé en premier dans la grille
+- [ ] Hold expiré (5 min) → retour step 1 avec message clair
+- [ ] Reservation confirmée → page de confirmation avec ID
+- [ ] `source=chatgpt` est propagé jusqu'à `Reservation.source`
+
+### Ticket 8 — Pages locales `/restaurants/[city]` (P0, noindex par défaut)
+
+**Scope** :
+- `apps/connect/src/app/restaurants/[city]/page.tsx`
+- `apps/connect/src/app/restaurants/[city]/[cuisine]/page.tsx`
+- `index-rules.ts` (Phase 1 code la mécanique, threshold à 5/10/20
+  par défaut — Hamza peut ajuster)
+- Seed artificiel: ajouter 5+ restos démo dans Lyon pour tester
+  l'indexation conditionnelle
+- Composant `RestaurantCard` (cover, nom, cuisine, prix, CTA)
+- Sections internes: "Cuisines populaires", "Avec terrasse", etc.
+
+**Acceptance** :
+- [ ] Avec <5 restos dans une ville: 200 noindex
+- [ ] Avec ≥5 restos: 200 index
+- [ ] Page cuisine: ≥10 index, <10 noindex
+- [ ] Liens internes entre pages (city → cuisine → resto)
+- [ ] City extraite de `Restaurant.city`, fallback parsing
+      `formattedAddress` si manquant (mais backfill déjà fait)
+
+### Ticket 9 — Tracking Sokar Connect (P0)
+
+**Scope** :
+- Nouvelle queue BullMQ `connect_analytics` dans
+  `apps/api/src/shared/queue/queues.ts`
+- Helper `emitConnectEvent(event, payload)` côté API
+- `connect_events_total` prom-client counter dans `/api/metrics`
+- Côté front `apps/connect`, helper `analytics.ts` qui POST à
+  `/public/events/connect` (nouveau endpoint batch)
+- Workers: agrégation horaire (compte par source, par city, par resto)
+- Tests unitaires sur `emitConnectEvent`
+
+**Acceptance** :
+- [ ] `reservation_confirmed` avec `source=chatgpt` apparaît dans
+      le compteur `connect_reservations_confirmed_total{source="chatgpt"}`
+- [ ] `page_view` n'est PAS enregistré en DB (Redis uniquement)
+- [ ] `GET /api/metrics` retourne les compteurs
+- [ ] Pas de PII dans les labels prom-client
+
+### Ticket 10 — RGPD + sécurité (P0)
+
+**Scope** :
+- Headers sécurité sur `apps/connect` (CSP, HSTS, X-Content-Type-Options,
+  Referrer-Policy)
+- Cookies first-party uniquement (no third-party)
+- Phone validation E.164
+- Honeypot field dans le formulaire
+- Rate limits implémentés (cf. §8.3)
+- Redaction tokens dans pino (extend `redact` patterns)
+- Privacy policy link dans le footer de chaque page publique
+- CORS: origines autorisées `https://sokar.tech`, `https://www.sokar.tech`,
+  `null` (server-side)
+
+**Acceptance** :
+- [ ] `curl -I` sur `/r/chez-sokar-demo` montre les headers
+- [ ] POST `/hold` rate-limited à 11e req/min = 429
+- [ ] Phone `+000000` refusé en validation
+- [ ] Pas de `holdToken` dans les logs
+
+---
+
+## 11. Plan d'exécution — 5 semaines
+
+| Semaine | Phase | Livrables | Stop revue |
+|---------|-------|-----------|------------|
+| 1 | P0 DB | Ticket 1 | ✓ Revue schema + migrations |
+| 1 | P0 API publique | Ticket 2 + 3 + 4 | ✓ Revue endpoints + JSON-LD |
+| 2 | P0 App setup | Ticket 5 | ✓ Revue scaffold |
+| 2-3 | P0 Pages | Ticket 6 + 7 | ✓ Revue page resto + book |
+| 3 | P0 Pages locales | Ticket 8 (avec seed Lyon ≥5) | ✓ Revue seuils indexation |
+| 4 | P0 Tracking + RGPD | Ticket 9 + 10 | ✓ Revue sécurité |
+| 5 | P1 Pilote fermé | 10 restos réels, sitemap soumis GSC, monitoring | ✓ Go/no-go pilote |
+
+### Pilote fermé (semaine 5-6)
+
+- 10 restos réels onboardés manuellement
+- Soumission sitemap à Google Search Console
+- Monitoring: erreurs 5xx, latence p95 `/public/r/:slug`, taux
+  hold→confirm
+- Critère go/no-go pour P2 (pages locales, premium subdomain, agent
+  enhancements):
+  - ≥30% des réservations web confirmées
+  - p95 < 500ms
+  - 0 fuite PII dans logs
+
+### P2 (post-pilote)
+
+- Pages locales indexées (Lyon, Paris si ≥5)
+- Premium subdomain (`reserve.chezmario.fr`)
+- Dashboard Sokar Connect dans `apps/dashboard/dashboard/connect`
+- Plus d'intent pages (`/terrasse`, `/groupe`, `/vegetarien`)
+
+### P5 (post-P2)
+
+- `/llms.txt`
+- OAI-SearchBot log analysis
+- Schema.org `Menu` et `MenuSection`
+- `aggregateRating` si on lance un système d'avis
+
+---
+
+## 12. Métriques de succès + Risques
+
+### 12.1 KPIs Phase 1
+
+| Métrique | Cible MVP | Source |
+|----------|-----------|--------|
+| Pages `/r/[slug]` indexées | 10/10 | Google Search Console |
+| Rich Results Test | 10/10 OK | Google Rich Results |
+| Lighthouse Perf mobile | > 90 | Lighthouse |
+| LCP p75 | < 2.5s | RUM (P2) |
+| Taux page_view → book click | > 8% | Redis analytics |
+| Taux book → hold | > 60% | Redis analytics |
+| Taux hold → confirm | > 50% | DB |
+| Réservations `channel=WEB` / jour | > 5 (pilote) | DB |
+
+### 12.2 Risques × Impact × Mitigation
+
+| Risque | Impact | Mitigation |
+|--------|--------|-----------|
+| Google ne crawl/indexe pas `/r/[slug]` | Aucun trafic | Soumission sitemap, backlinks depuis `apps/dashboard`, demander indexation manuelle 5 URLs |
+| ChatGPT search n'utilise pas OAI-SearchBot sur notre domaine | Pas d'acquisition agent | Étude P5, test avec 5 URLs dans Perplexity/ChatGPT manuellement |
+| Restaurateur publie infos fausses (adresse, horaires) | Réputation, SEO négatif | Backoffice: validation manuelle avant `connectPublished=true`, signalement utilisateur |
+| Spam de réservations | Capacity épuisée, no-show | Rate limit phone, honeypot, blocage si >3 echec/heure |
+| Double booking (race condition hold→confirm) | UX dégradée | Contrainte partielle SQL existe déjà |
+| `attributeConfidence` < 0.5 partout | Pages maigres | Onboarding force la saisie; minimum 4 champs requis pour publier |
+| Drain SEO par pages locales pauvres | Pénalité Google | `noindex` strict si <seuil; pas d'URLs en double |
+| VPS down | Tout Sokar Connect down | On est sur `sokar.tech` qui est déjà monitoré |
+| Vitest suite timeout sur 10 fichiers | CI rouge | Background + notify_on_complete pattern (cf. skill) |
+
+---
+
+## 13. Décisions en attente (à acter avant Phase 0)
+
+Ces décisions sont déjà prises via le questionnaire, mais je liste
+les points où Hamza doit trancher avant que je code:
+
+1. **Domaine final**: `sokar.tech` confirmé (pas `sokar.app`).
+   - Action: mettre à jour `openai-reserve.service.ts` ligne 172
+     (`https://app.sokar.com/r/${slug}` → `https://sokar.tech/r/${slug}`)
+   - Action: ajouter DNS `sokar.tech` → VPS, certbot
+   - Action: mettre à jour `Caddyfile` / `nginx.conf` (à créer) pour
+     servir `apps/connect/out/` sur `/r/*`
+   - **Mon avis**: c'est du cleanup, pas une nouvelle décision.
+
+2. **Phase 1 seed Lyon ≥5 restos**: on ajoute 4 restos fictifs
+   "Chez Sokar 2-5" avec `connectPublished=true` pour tester
+   l'indexation conditionnelle de `/restaurants/lyon`.
+   - **Mon avis**: oui, indispensable pour valider le seuil 5/10/20.
+
+3. **Nginx/Caddy**: on sert `apps/connect/out/` via le reverse proxy
+   existant. Caddy est déjà dans le VPS.
+   - **Mon avis**: on fait un `connect.conf` minimal, à tester avec
+     `curl -I https://sokar.tech/r/chez-sokar-demo` avant le go-live.
+
+4. **Tracking event durée de vie Redis**: 30 jours rolling.
+   - **Mon avis**: OK, c'est ce que la spec dit.
+
+5. **Opt-in UI côté dashboard**: où dans `apps/dashboard` ?
+   - Mon avis: nouvelle page `apps/dashboard/src/app/dashboard/connect/page.tsx`
+     dans la nav latérale "Sokar Connect", avec toggle `connectPublished`
+     et `connectAgentic` + preview de la page publique.
+
+6. **Sitemap à la racine `/sitemap.xml` ou sous `/sitemaps/connect.xml`?**
+   - **Mon avis**: `/sitemap.xml` racine pour P0, разделение en
+     sous-sitemaps en P2 si >5000 URLs.
+
+7. **Hébergement de la nouvelle app**: le widget est sur Cloudflare.
+   On garde la même cible (build static export → CDN) ou on
+   l'héberge sur le VPS ?
+   - **Mon avis**: CDN Cloudflare (cohérent avec le widget, perf).
+     Sinon VPS nginx + cache. Décision infra — peut être en P0.5
+     si on a le temps, sinon P2.
+
+---
+
+## 14. Anti-patterns rappelés
+
+- ❌ Ne pas inventer `aggregateRating` (cf. Google `sd-policies`)
+- ❌ Ne pas afficher "Disponible ce soir 20h" en HTML statique
+- ❌ Ne pas exposer `managerEmail` dans le HTML public
+- ❌ Ne pas indexer les pages `<5` restos (porte ouverte à la pénalité)
+- ❌ Ne pas dupliquer les routes (un seul canonical par resto)
+- ❌ Ne pas sur-vendre l'IA ("ChatGPT réserve chez vous")
+- ❌ Ne pas pré-remplir `.env` de DATABASE_URL
+- ❌ Ne pas utiliser `prisma migrate dev` (utiliser `migrate deploy`)
+- ❌ Ne pas appeler l'API publique depuis le code de l'API elle-même
+  (sinon layering cassé)
+
+---
+
+## 15. Fichiers de référence
+
+- `apps/api/src/modules/agentic-reservations/core/hold.service.ts` —
+  mécanique HOLD à réutiliser
+- `apps/api/src/modules/agentic-reservations/core/reservation.service.ts` —
+  mécanique reservation à réutiliser
+- `apps/api/src/modules/restaurants/restaurant.routes.ts:240` — modèle
+  pour `GET /restaurants/:id/public` à transformer
+- `apps/widget/next.config.js` — modèle `output: 'export'` à recopier
+- `apps/dashboard/src/app/layout.tsx` — design tokens Shadcn à
+  réutiliser (mais sans Clerk/Header)
+- Skill `sokar-feature-design` §3 (pièges Prisma) et §4 (anti-patterns)
+- Skill `feature-spec-strict` §1-13 (structure spec stricte)
+- Skill `sokar-prisma-migrate` §"Micro-rituel avant prisma migrate"
+
+---
+
+**Status**: v1.0, prêt pour review Hamza. Spec d'implémentation,
+pas brief. Numérotation des versions dans le titre pour traçabilité.
+
+**Prochaine étape**: GO / micro-corrections → v1.1 → Phase 0 strict
+(Tickets 1+2+3+4).
