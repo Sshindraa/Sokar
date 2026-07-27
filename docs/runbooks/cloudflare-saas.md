@@ -130,3 +130,55 @@ En cas de problème, on peut désactiver Cloudflare for SaaS :
 
 Cloudflare for SaaS : **$0.10 par custom hostname par mois** (au-delà du free tier de 100).
 Voir https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/pricing/
+
+## Subdomain gratuit *.sokar.tech (zero config)
+
+Chaque restaurant qui active Sokar Connect obtient automatiquement un subdomain gratuit
+`chezmario.sokar.tech` (basé sur le slug). Zero configuration, instantané.
+
+Le custom domain (`reserve.chezmario.fr`) reste une option premium avec le flux CNAME
+décrit ci-dessus. Le subdomain gratuit est détecté par le middleware Connect **avant**
+le flux custom domain, évitant tout lookup DB sur les sous-domaines Sokar.
+
+### Configuration one-time (Cloudflare)
+
+#### 1. Wildcard DNS record
+Dans le dashboard Cloudflare → sokar.tech → DNS :
+- Type : A
+- Name : `*`
+- IPv4 address : [IP du VPS]
+- Proxy status : Proxied (orange cloud)
+
+#### 2. Certificat Origin CA wildcard
+Dans le dashboard Cloudflare → sokar.tech → SSL/TLS → Origin Server → Create Certificate :
+- Private key type : RSA (2048)
+- Hostnames : `*.sokar.tech, sokar.tech`
+- Certificate Validity : 15 years
+- Copier le cert et la key sur le VPS :
+  - `/etc/letsencrypt/live/sokar.tech/fullchain.pem` (remplacer par le cert Origin CA)
+  - `/etc/letsencrypt/live/sokar.tech/privkey.pem` (remplacer par la key Origin CA)
+- Reload nginx : `sudo systemctl reload nginx`
+
+#### 3. Vérification
+```zsh
+curl -s -o /dev/null -w '%{http_code}' -H 'Host: chez-sokar-demo.sokar.tech' http://127.0.0.1/
+# Doit retourner 200
+```
+
+### Flux restaurateur (zero clic)
+
+1. Le restaurateur active Sokar Connect dans le dashboard
+2. Le subdomain `{slug}.sokar.tech` est immédiatement fonctionnel (détecté par le middleware)
+3. Le dashboard affiche le subdomain dans la carte « Sous-domaine gratuit » avec un bouton copier
+4. Aucune action supplémentaire requise — le SSL est géré par le wildcard Origin CA
+
+### Test en développement local
+
+Le routing subdomain ne fonctionne pas en local sans configuration DNS. Pour tester :
+
+1. Ajouter dans `/etc/hosts` :
+   ```
+   127.0.0.1 chezmario.localhost
+   ```
+2. Accéder à `http://chezmario.localhost:4002`
+3. Le middleware détecte `localhost` comme primary host, donc le subdomain routing ne se déclenche PAS en local avec `localhost`. Pour tester réellement le subdomain routing en local, il faut modifier le middleware temporairement ou utiliser un tunnel (ngrok, cloudflared).

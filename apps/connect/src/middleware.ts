@@ -66,6 +66,31 @@ export function middleware(request: NextRequest) {
   const isPrimaryHost =
     host === primaryHost || host === `www.${primaryHost}` || host.startsWith('localhost:') || host.startsWith('127.0.0.1:');
 
+  // Subdomain gratuit : *.sokar.tech (ex: chezmario.sokar.tech)
+  // Zero config — basé sur le slug du restaurant. Détecté AVANT les custom domains
+  // pour éviter un lookup DB inutile sur les subdomains Sokar.
+  //
+  // Sécurité (defense-in-depth) : le middleware Edge ne peut pas faire de DB lookup
+  // pour vérifier que le restaurant est publié. La validation se fait dans la page
+  // /restaurant/[slug]/page.tsx via fetchPublicRestaurant() qui retourne notFound()
+  // si le restaurant n'existe pas ou n'est pas publié. Le middleware ne fait donc
+  // qu'une rewrite neutre — pas de fuite de données sur les restaurants non publiés.
+  const isSubdomain = !isPrimaryHost && host.endsWith(`.${primaryHost}`);
+
+  if (isSubdomain && host) {
+    // Extraire le slug du subdomain (ex: chezmario.sokar.tech → chezmario)
+    const slug = host.slice(0, host.length - primaryHost.length - 1);
+    if (slug && slug !== 'www') {
+      const url = request.nextUrl.clone();
+      url.pathname = `/restaurant/${slug}`;
+      const rewriteResponse = NextResponse.rewrite(url, {
+        request: { headers: requestHeaders },
+      });
+      applySecurityHeaders(rewriteResponse, request, nonce, false, false, false);
+      return rewriteResponse;
+    }
+  }
+
   if (!isPrimaryHost && host) {
     // Custom domain potentiel — rewrite vers /restaurant/[slug] via lookup API.
     // L'API interne résout customDomain → slug et on rewrite silencieusement.
