@@ -36,6 +36,24 @@ export default async function GiftCardWidgetPage({
   if (!restaurant) {
     notFound();
   }
+  if (restaurant.giftCardEnabled === false) {
+    return (
+      <div className="relative min-h-[100dvh] w-full overflow-x-hidden bg-[hsl(var(--reservation-bg))]">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/30 to-transparent" />
+        <main className="relative z-10 mx-auto max-w-xl px-4 py-12 text-center">
+          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[hsl(var(--reservation-soft))]">
+            Carte cadeau
+          </p>
+          <h1 className="mt-2 font-display text-[2rem] font-black leading-none tracking-[-0.04em] text-[hsl(var(--reservation-ink))]">
+            Indisponible
+          </h1>
+          <p className="mt-3 text-sm font-medium text-[hsl(var(--reservation-soft))]">
+            Les cartes cadeaux ne sont pas disponibles pour ce restaurant.
+          </p>
+        </main>
+      </div>
+    );
+  }
 
   const isEmbedded = sp.embedded === '1';
   const primary = toHexColor(sp.primary, '#0F172A');

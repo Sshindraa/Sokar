@@ -48,6 +48,7 @@ const CreateRestaurantSchema = z.object({
   plan: z.enum(['STARTER', 'PRO', 'PREMIUM']).default('STARTER'),
   googleCalendarId: z.string().nullable().optional(),
   giftCardMinimumAmount: z.number().int().min(0).optional(),
+  giftCardEnabled: z.boolean().optional(),
 });
 
 const UpdatePersonalitySchema = z.object({
@@ -375,6 +376,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
             cuisineType: true,
             coverImageUrl: true,
             formattedAddress: true,
+            giftCardEnabled: true,
             floorPlans: {
               where: { isDefault: true, isActive: true },
               select: {

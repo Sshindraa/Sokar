@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, Package, Pencil, Plus, Power } from 'lucide-react';
+import { AlertCircle, Package, Pencil, Plus, Power, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -14,7 +14,7 @@ import GiftCardPackForm from '@/components/gift-cards/gift-card-pack-form';
 import { GiftCardSectionNav } from '@/components/gift-cards/GiftCardSectionNav';
 
 export default function GiftCardPacksPage() {
-  const { listGiftCardPacks, toggleGiftCardPack, orgId } = useGiftCardApi();
+  const { listGiftCardPacks, toggleGiftCardPack, deleteGiftCardPack, orgId } = useGiftCardApi();
 
   const [packs, setPacks] = useState<GiftCardPack[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +47,19 @@ export default function GiftCardPacksPage() {
       setPacks((prev) => prev.map((p) => (p.id === pack.id ? updated : p)));
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de modifier le statut du pack'));
+    }
+  }
+
+  async function handleDelete(pack: GiftCardPack) {
+    if (!confirm(`Supprimer le pack "${pack.name}" ? Cette action est irréversible.`)) {
+      return;
+    }
+    try {
+      setError('');
+      await deleteGiftCardPack(pack.id);
+      setPacks((prev) => prev.filter((p) => p.id !== pack.id));
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de supprimer le pack'));
     }
   }
 
@@ -168,6 +181,15 @@ export default function GiftCardPacksPage() {
                       className="transition-all duration-200"
                     >
                       <Power size={16} className={pack.isActive ? 'text-success' : ''} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDelete(pack)}
+                      title="Supprimer le pack"
+                      className="transition-all duration-200 hover:text-destructive"
+                    >
+                      <Trash2 size={16} />
                     </Button>
                   </div>
                 </div>

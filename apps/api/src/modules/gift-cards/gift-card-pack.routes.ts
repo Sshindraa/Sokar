@@ -72,4 +72,18 @@ export async function giftCardPackRoutes(app: FastifyInstance): Promise<void> {
       return reply.send(pack);
     },
   );
+
+  app.delete(
+    '/restaurants/:id/gift-card-packs/:packId',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id: restaurantId, packId } = req.params as { id: string; packId: string };
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+
+      const pack = await service.delete(packId, restaurantId);
+      return reply.send(pack);
+    },
+  );
 }

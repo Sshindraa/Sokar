@@ -12,9 +12,9 @@ export class GiftCardPackError extends Error {
 export class GiftCardPackService {
   constructor(private readonly prisma: PrismaClient) {}
 
-  async list(restaurantId: string): Promise<GiftCardPack[]> {
+  async list(restaurantId: string, includeDeleted = false): Promise<GiftCardPack[]> {
     return this.prisma.giftCardPack.findMany({
-      where: { restaurantId },
+      where: includeDeleted ? { restaurantId } : { restaurantId, deletedAt: null },
       orderBy: { amount: 'asc' },
     });
   }
@@ -46,7 +46,7 @@ export class GiftCardPackService {
     input: UpdateGiftCardPackInput,
   ): Promise<GiftCardPack> {
     const existing = await this.prisma.giftCardPack.findFirst({
-      where: { id: packId, restaurantId },
+      where: { id: packId, restaurantId, deletedAt: null },
     });
     if (!existing) {
       throw new GiftCardPackError('Pack cadeau introuvable');
@@ -80,7 +80,7 @@ export class GiftCardPackService {
 
   async toggle(packId: string, restaurantId: string): Promise<GiftCardPack> {
     const existing = await this.prisma.giftCardPack.findFirst({
-      where: { id: packId, restaurantId },
+      where: { id: packId, restaurantId, deletedAt: null },
     });
     if (!existing) {
       throw new GiftCardPackError('Pack cadeau introuvable');
@@ -89,6 +89,20 @@ export class GiftCardPackService {
     return this.prisma.giftCardPack.update({
       where: { id: packId },
       data: { isActive: !existing.isActive },
+    });
+  }
+
+  async delete(packId: string, restaurantId: string): Promise<GiftCardPack> {
+    const existing = await this.prisma.giftCardPack.findFirst({
+      where: { id: packId, restaurantId, deletedAt: null },
+    });
+    if (!existing) {
+      throw new GiftCardPackError('Pack cadeau introuvable');
+    }
+
+    return this.prisma.giftCardPack.update({
+      where: { id: packId },
+      data: { deletedAt: new Date(), isActive: false },
     });
   }
 }
