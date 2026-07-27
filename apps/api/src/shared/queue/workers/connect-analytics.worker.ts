@@ -42,9 +42,11 @@ export type ConnectAnalyticsJobData = {
 
 const VALID_EVENTS = new Set([
   'restaurant_page_view',
+  'widget_page_view',
   'restaurant_book_cta_clicked',
   'booking_page_view',
   'availability_requested',
+  'availability_slot_selected',
   'reservation_hold_created',
   'reservation_hold_expired',
   'reservation_confirmed',
@@ -52,6 +54,12 @@ const VALID_EVENTS = new Set([
   'ia_bot_hit',
   'availability_preview_shown',
   'availability_preview_clicked',
+  'gift_card_purchase_started',
+  'gift_card_purchase_completed',
+  'crowdfunding_create_started',
+  'crowdfunding_create_completed',
+  'crowdfunding_contribute_started',
+  'crowdfunding_contribute_completed',
 ]);
 
 /**
