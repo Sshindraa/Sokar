@@ -78,6 +78,7 @@ import {
   RATE_LIMIT_CONFIRM_MAX,
   RATE_LIMIT_WAITING_LIST_JOIN_MAX,
   RATE_LIMIT_WAITING_LIST_CANCEL_MAX,
+  RATE_LIMIT_RESOLVE_CUSTOM_DOMAIN_MAX,
   PAGINATION_DEFAULT_LIMIT,
   PAGINATION_MAX_LIMIT,
 } from './constants';
@@ -167,6 +168,48 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
   // Liste minimale (slug + updatedAt + publishedAt) des restaurants publiés.
   // Utilisé par apps/connect/src/app/sitemap.ts (cf. spec v1.1 §6.6).
   // Pas de PII, pas de description : juste ce qu'il faut pour le sitemap XML.
+
+  // ─── 1c. GET /public/resolve-custom-domain ───────────────────
+  // Résout un custom domain (host) → slug restaurant.
+  // Utilisé par apps/connect/src/app/custom-domain/page.tsx (P2 premium subdomain).
+  // Cache Redis 5 min pour éviter le lookup DB à chaque requête sur un custom domain.
+  app.get(
+    '/public/resolve-custom-domain',
+    {
+      config: {
+        rateLimit: { max: RATE_LIMIT_RESOLVE_CUSTOM_DOMAIN_MAX, timeWindow: '1 minute' },
+      },
+    },
+    async (req, reply) => {
+      const host = (req.query as { host?: string }).host;
+      if (!host) {
+        return reply.status(400).send({ error: 'Missing host parameter' });
+      }
+
+      // Cache Redis (5 min) — le mapping customDomain → slug change rarement
+      const cacheKey = `connect:custom-domain:${host}`;
+      const cached = await app.redisCache.get(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached) as { slug: string | null };
+        if (parsed.slug) {
+          return reply.send({ slug: parsed.slug });
+        }
+        return reply.status(404).send({ slug: null });
+      }
+
+      const settings = await app.db.restaurantExposureSettings.findFirst({
+        where: { customDomain: host, customDomainStatus: 'active' },
+        select: { restaurantId: true, restaurant: { select: { slug: true } } },
+      });
+      const slug = settings?.restaurant.slug ?? null;
+      // Cache le résultat (positif ou négatif) pendant 5 min
+      await app.redisCache.set(cacheKey, JSON.stringify({ slug }), 'EX', 300);
+      if (!slug) {
+        return reply.status(404).send({ slug: null });
+      }
+      return reply.send({ slug });
+    },
+  );
 
   app.get(
     '/public/sitemap-data',

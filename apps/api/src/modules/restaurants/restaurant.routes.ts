@@ -18,6 +18,13 @@ import {
 } from './onboarding.service';
 import { invalidateRestaurantContextCache } from './restaurant.service';
 import { computeConnectScore } from '../connect/connect-score.service';
+import {
+  createCustomHostname,
+  getCustomHostname,
+  deleteCustomHostname,
+  verifyCname,
+  isCloudflareSaaSEnabled,
+} from '../connect/cloudflare-saas.service';
 import { synthesizeText, isCartesiaConfigured } from '../voice/cartesia-synth';
 import { redisCache } from '../../shared/redis/client';
 
@@ -102,6 +109,13 @@ const UpdateConnectSchema = z.object({
   connectPublished: z.boolean().optional(),
   connectAgentic: z.boolean().optional(),
   capacitySpecials: CapacitySpecialsSchema.optional(),
+  // Sokar Connect P2 — premium subdomain
+  customDomain: z
+    .string()
+    .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i)
+    .max(253)
+    .optional()
+    .nullable(),
 });
 
 const PostImageSchema = z.object({
@@ -846,6 +860,73 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
     if (body.connectAgentic !== undefined) settingsData.connectAgentic = body.connectAgentic;
 
+    // Sokar Connect P2 — premium subdomain
+    if (body.customDomain !== undefined) {
+      const newDomain = body.customDomain;
+      const existingDomain = currentSettings.customDomain;
+
+      if (newDomain === null) {
+        // Désactivation : supprimer le Custom Hostname sur Cloudflare + clear DB
+        if (existingDomain && currentSettings.customDomainCfId) {
+          try {
+            await deleteCustomHostname(currentSettings.customDomainCfId);
+          } catch (err) {
+            logger.warn(
+              { err, cfId: currentSettings.customDomainCfId },
+              '[connect] Failed to delete CF Custom Hostname (continuing)',
+            );
+          }
+        }
+        settingsData.customDomain = null;
+        settingsData.customDomainStatus = null;
+        settingsData.customDomainValidatedAt = null;
+        settingsData.customDomainCfId = null;
+      } else if (newDomain !== existingDomain) {
+        // Changement de domaine : vérifier unicité + provisionner sur Cloudflare
+        const conflict = await app.db.restaurantExposureSettings.findFirst({
+          where: { customDomain: newDomain, restaurantId: { not: restaurantId } },
+        });
+        if (conflict) {
+          return reply
+            .status(409)
+            .send({ error: 'Ce domaine est déjà utilisé par un autre restaurant.' });
+        }
+
+        // Supprimer l'ancien Custom Hostname si existant
+        if (existingDomain && currentSettings.customDomainCfId) {
+          try {
+            await deleteCustomHostname(currentSettings.customDomainCfId);
+          } catch (err) {
+            logger.warn(
+              { err, cfId: currentSettings.customDomainCfId },
+              '[connect] Failed to delete old CF Custom Hostname (continuing)',
+            );
+          }
+        }
+
+        if (isCloudflareSaaSEnabled()) {
+          try {
+            const cfResult = await createCustomHostname(newDomain);
+            settingsData.customDomain = newDomain;
+            settingsData.customDomainStatus = cfResult.status;
+            settingsData.customDomainCfId = cfResult.id;
+            settingsData.customDomainValidatedAt = cfResult.status === 'active' ? now : null;
+          } catch (err) {
+            logger.error({ err, domain: newDomain }, '[connect] CF Custom Hostname creation failed');
+            return reply
+              .status(502)
+              .send({ error: 'Impossible de provisionner le domaine sur Cloudflare. Réessayez.' });
+          }
+        } else {
+          // Dev/test mode : pas de Cloudflare, on stocke juste le domaine
+          settingsData.customDomain = newDomain;
+          settingsData.customDomainStatus = 'pending';
+          settingsData.customDomainCfId = null;
+          settingsData.customDomainValidatedAt = null;
+        }
+      }
+    }
+
     // 4. Update Database in a transaction
     const [updatedRestaurant, updatedSettings] = await app.db.$transaction([
       app.db.restaurant.update({
@@ -864,6 +945,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
     if (updatedRestaurant.slug) {
       const cacheKey = `connect:restaurant:${updatedRestaurant.slug}`;
       await app.redisCache.del(cacheKey);
+    }
+    if (updatedSettings.customDomain) {
+      const domainCacheKey = `connect:custom-domain:${updatedSettings.customDomain}`;
+      await app.redisCache.del(domainCacheKey);
     }
 
     return reply.send({
@@ -968,6 +1053,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
       connectPublishedAt: exposure?.connectPublishedAt?.toISOString() ?? null,
       pageUrl: slug ? `${env.SITE_URL}/restaurant/${slug}` : null,
       capacitySpecials: (exposure?.capacitySpecials as Record<string, unknown> | null) ?? null,
+      customDomain: exposure?.customDomain ?? null,
+      customDomainStatus: exposure?.customDomainStatus ?? null,
     });
   };
 
@@ -1002,6 +1089,55 @@ export async function restaurantRoutes(app: FastifyInstance) {
 
   app.get('/restaurants/:id/connect/score', { preHandler: requireOrg() }, getConnectScore);
   app.get('/api/restaurants/:id/connect/score', { preHandler: requireOrg() }, getConnectScore);
+
+  // Sokar Connect P2 — premium subdomain verification
+  const verifyCustomDomainDns = async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const restaurantId = req.restaurantId;
+    if (id !== restaurantId) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+    const settings = await app.db.restaurantExposureSettings.findUnique({
+      where: { restaurantId },
+    });
+    if (!settings?.customDomain) {
+      return reply.status(400).send({ error: 'Aucun domaine personnalisé configuré.' });
+    }
+
+    // 1. Vérifier le CNAME localement (feedback immédiat)
+    const cnameResult = await verifyCname(settings.customDomain);
+
+    // 2. Si CF est configuré, rafraîchir le statut depuis Cloudflare
+    let cfStatus: string | null = null;
+    if (settings.customDomainCfId && isCloudflareSaaSEnabled()) {
+      try {
+        const cfResult = await getCustomHostname(settings.customDomainCfId);
+        cfStatus = cfResult.status;
+        const now = new Date();
+        await app.db.restaurantExposureSettings.update({
+          where: { restaurantId },
+          data: {
+            customDomainStatus: cfResult.status,
+            customDomainValidatedAt: cfResult.status === 'active' ? now : settings.customDomainValidatedAt,
+          },
+        });
+      } catch (err) {
+        logger.warn({ err, cfId: settings.customDomainCfId }, '[connect] CF status refresh failed');
+      }
+    }
+
+    return reply.send({
+      domain: settings.customDomain,
+      cnameValid: cnameResult.valid,
+      cnameTarget: cnameResult.target,
+      message: cnameResult.message,
+      cfStatus,
+      overallStatus: cfStatus ?? (cnameResult.valid ? 'dns_validated' : 'pending'),
+    });
+  };
+
+  app.post('/restaurants/:id/connect/verify-dns', { preHandler: requireOrg() }, verifyCustomDomainDns);
+  app.post('/api/restaurants/:id/connect/verify-dns', { preHandler: requireOrg() }, verifyCustomDomainDns);
 
   app.post('/restaurants/:id/images', { preHandler: requireOrg() }, postImage);
   app.post('/api/restaurants/:id/images', { preHandler: requireOrg() }, postImage);
