@@ -25,6 +25,7 @@ import {
   CustomDomainCard,
   type Props as CustomDomainCardProps,
 } from './custom-domain-card';
+import { SubdomainCard } from './subdomain-card';
 
 // ── Types ──────────────────────────────────────────────
 
@@ -394,7 +395,13 @@ export default function ConnectDashboardPage() {
               </Card>
             </div>
 
-            {/* Domaine personnalisé (P2) */}
+            {/* Subdomain gratuit (zero config) */}
+            <SubdomainCard
+              slug={settings.slug}
+              connectPublished={settings.connectPublished}
+            />
+
+            {/* Domaine personnalisé (P2 premium) */}
             <CustomDomainCard
               restaurantId={settings.restaurantId}
               customDomain={settings.customDomain ?? null}
