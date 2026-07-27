@@ -1136,8 +1136,16 @@ export async function restaurantRoutes(app: FastifyInstance) {
     });
   };
 
-  app.post('/restaurants/:id/connect/verify-dns', { preHandler: requireOrg() }, verifyCustomDomainDns);
-  app.post('/api/restaurants/:id/connect/verify-dns', { preHandler: requireOrg() }, verifyCustomDomainDns);
+  app.post(
+    '/restaurants/:id/connect/verify-dns',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    verifyCustomDomainDns,
+  );
+  app.post(
+    '/api/restaurants/:id/connect/verify-dns',
+    { preHandler: requireOrg(), config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+    verifyCustomDomainDns,
+  );
 
   app.post('/restaurants/:id/images', { preHandler: requireOrg() }, postImage);
   app.post('/api/restaurants/:id/images', { preHandler: requireOrg() }, postImage);
