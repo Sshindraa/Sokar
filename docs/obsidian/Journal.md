@@ -205,3 +205,5 @@ Log automatique des tâches Hermes.
 **Impact** : Aucun impact DB/schema/API. Scripts-only + seed + docs. Pipeline de déploiement autonome activé.
 
 **Blockers business restants** : Pilote P1 : contacter 10 restaurants réels, configurer GSC (créer propriété sokar.tech, token vérification, soumettre sitemap). Cloudflare SaaS : activer Cloudflare for SaaS sur le dashboard, créer API Token, récupérer Zone ID, lancer `scripts/ops/setup-cloudflare-saas.sh`.
+
+2026-07-28 20:50 — [gsc, seo, pilot, connect] **Google Search Console configuré** — Utilisateur confirme : propriété `https://sokar.tech` créée et vérifiée dans Google Search Console, sitemap `https://sokar.tech/sitemap.xml` soumis. Blocker business/technique GSC = RÉSOLU. Reste pour Pilote P1 : onboarding de 10 restaurants réels (contact, données, contrats).
