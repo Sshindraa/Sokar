@@ -75,7 +75,9 @@ describe('middleware subdomain routing (*.sokar.tech)', () => {
     const response = middleware(makeRequest('/', { host: 'chezmario.sokar.tech' }));
     // NextResponse.rewrite returns a response whose .headers includes the rewritten URL
     // in the `x-middleware-rewrite` header (Next.js internal).
-    expect(response.headers.get('x-middleware-rewrite')).toBe('https://chezmario.sokar.tech/restaurant/chezmario');
+    expect(response.headers.get('x-middleware-rewrite')).toBe(
+      'http://chezmario.sokar.tech/restaurant/chezmario',
+    );
   });
 
   it('does not rewrite www.sokar.tech (primary host)', () => {
@@ -113,7 +115,7 @@ describe('middleware subdomain routing (*.sokar.tech)', () => {
     // de format ici — la page /restaurant/[slug] retournera notFound() si invalide).
     const response = middleware(makeRequest('/', { host: 'foo.bar.sokar.tech' }));
     expect(response.headers.get('x-middleware-rewrite')).toBe(
-      'https://foo.bar.sokar.tech/restaurant/foo.bar',
+      'http://foo.bar.sokar.tech/restaurant/foo.bar',
     );
   });
 

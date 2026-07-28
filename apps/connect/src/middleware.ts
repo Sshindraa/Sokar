@@ -64,7 +64,10 @@ export function middleware(request: NextRequest) {
   const siteUrl = process.env.SITE_URL ?? 'https://sokar.tech';
   const primaryHost = new URL(siteUrl).host; // sokar.tech
   const isPrimaryHost =
-    host === primaryHost || host === `www.${primaryHost}` || host.startsWith('localhost:') || host.startsWith('127.0.0.1:');
+    host === primaryHost ||
+    host === `www.${primaryHost}` ||
+    host.startsWith('localhost:') ||
+    host.startsWith('127.0.0.1:');
 
   // Subdomain gratuit : *.sokar.tech (ex: chezmario.sokar.tech)
   // Zero config — basé sur le slug du restaurant. Détecté AVANT les custom domains
@@ -81,7 +84,11 @@ export function middleware(request: NextRequest) {
     // Extraire le slug du subdomain (ex: chezmario.sokar.tech → chezmario)
     const slug = host.slice(0, host.length - primaryHost.length - 1);
     if (slug && slug !== 'www') {
+      // Cloner nextUrl et forcer le protocole en http:// pour éviter le proxy
+      // interne HTTPS (EPROTO) derrière Nginx (X-Forwarded-Proto: https).
+      // Next.js 15 requiert une URL absolue ; on garde le même host mais en http.
       const url = request.nextUrl.clone();
+      url.protocol = 'http:';
       url.pathname = `/restaurant/${slug}`;
       const rewriteResponse = NextResponse.rewrite(url, {
         request: { headers: requestHeaders },
@@ -100,7 +107,9 @@ export function middleware(request: NextRequest) {
     if (apiUrl) {
       // Fire-and-forget : on ne peut pas attendre la réponse en middleware sync.
       // À la place, on rewrite vers /custom-domain qui fera le lookup server-side.
+      // Forcer http:// (cf. subdomain ci-dessus).
       const url = request.nextUrl.clone();
+      url.protocol = 'http:';
       url.pathname = '/custom-domain';
       url.searchParams.set('host', host);
       const rewriteResponse = NextResponse.rewrite(url, {
