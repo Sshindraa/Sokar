@@ -242,7 +242,7 @@ export default function ReservationWidget() {
     const observer = new ResizeObserver(sendHeight);
     observer.observe(document.body);
     return () => observer.disconnect();
-  }, [isEmbedded]);
+  }, [isEmbedded, explicitParentOrigin]);
 
   // Listen for resize messages from the nested gift-card iframe (Connect).
   // L'iframe gift-card est servie depuis la même origine que nous
@@ -272,7 +272,7 @@ export default function ReservationWidget() {
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [isEmbedded]);
+  }, [isEmbedded, explicitParentOrigin]);
 
   // Load public restaurant info.
   // Le path param peut être un slug (URL friendly) ou un id Prisma.

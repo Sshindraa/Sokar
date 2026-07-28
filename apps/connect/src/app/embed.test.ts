@@ -18,4 +18,14 @@ describe('/embed.js', () => {
     expect(code).toContain('sokar-widget-resize');
     expect(code).toContain('/widget/');
   });
+
+  it('transmet parentOrigin au widget dans l URL', () => {
+    const code = readFileSync(embedPath, 'utf-8');
+    expect(code).toContain("searchParams.set('parentOrigin'");
+  });
+
+  it('valide e.source === iframe.contentWindow dans le listener', () => {
+    const code = readFileSync(embedPath, 'utf-8');
+    expect(code).toContain('e.source !== iframe.contentWindow');
+  });
 });

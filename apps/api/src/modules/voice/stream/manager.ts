@@ -58,6 +58,16 @@ function recordLlmException(
   });
 }
 
+/**
+ * Détecte une annulation de session (barge-in, raccroché) — pas un timeout.
+ * Dans ce cas, on ne doit PAS enregistrer une failure provider ni lancer de
+ * fallback : la session est terminée, le signal est déjà aborted, toute
+ * requête ultérieure échouerait immédiatement.
+ */
+function isSessionAbortError(err: unknown, sessionSignal?: AbortSignal): boolean {
+  return err instanceof Error && err.name === 'AbortError' && !!sessionSignal?.aborted;
+}
+
 interface LlmResponse {
   choices?: Array<{ message: ChatMessage }>;
 }
@@ -690,6 +700,11 @@ export class CallSessionManager {
           }
           return response;
         } catch (err) {
+          // Session abort (barge-in, raccroché) — pas de failure ni fallback.
+          if (isSessionAbortError(err, opts.signal)) {
+            recordLlmException('cerebras', err, opts.signal);
+            throw err;
+          }
           // Network error / timeout — record failure, fallback
           recordProviderFailure('cerebras');
           recordLlmException('cerebras', err, opts.signal);
@@ -749,6 +764,11 @@ export class CallSessionManager {
         }
         return response;
       } catch (err) {
+        // Session abort (barge-in, raccroché) — pas de failure ni fallback.
+        if (isSessionAbortError(err, opts.signal)) {
+          recordLlmException('openrouter', err, opts.signal);
+          throw err;
+        }
         recordProviderFailure('openrouter');
         recordLlmException('openrouter', err, opts.signal);
         if (isCerebrasFallbackEnabled()) {
@@ -887,6 +907,11 @@ export class CallSessionManager {
           }
           return { response, provider: 'cerebras' };
         } catch (err) {
+          // Session abort (barge-in, raccroché) — pas de failure ni fallback.
+          if (isSessionAbortError(err, opts.signal)) {
+            recordLlmException('cerebras', err, opts.signal);
+            throw err;
+          }
           // Network error / timeout — record failure, fallback
           recordProviderFailure('cerebras');
           recordLlmException('cerebras', err, opts.signal);
@@ -949,6 +974,11 @@ export class CallSessionManager {
         }
         return { response, provider: 'openrouter' };
       } catch (err) {
+        // Session abort (barge-in, raccroché) — pas de failure ni fallback.
+        if (isSessionAbortError(err, opts.signal)) {
+          recordLlmException('openrouter', err, opts.signal);
+          throw err;
+        }
         recordProviderFailure('openrouter');
         recordLlmException('openrouter', err, opts.signal);
         if (isCerebrasFallbackEnabled()) {

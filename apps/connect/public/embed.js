@@ -30,6 +30,9 @@
   widgetUrl.searchParams.set('embedded', '1');
   widgetUrl.searchParams.set('primary', primary.replace('#', ''));
   widgetUrl.searchParams.set('accent', accent.replace('#', ''));
+  // Transmet l'origine du parent au widget pour qu'il puisse cibler
+  // window.parent.postMessage même avec Referrer-Policy: no-referrer.
+  widgetUrl.searchParams.set('parentOrigin', window.location.origin);
   iframe.src = widgetUrl.toString();
   iframe.style.width = '100%';
   iframe.style.border = '0';
@@ -39,6 +42,9 @@
   // Auto-resize via postMessage
   window.addEventListener('message', (e) => {
     if (e.origin !== host) return;
+    // Valide que le message provient bien de l'iframe du widget (pas d'une
+    // autre fenêtre/iframe du même domaine).
+    if (e.source !== iframe.contentWindow) return;
     if (e.data?.type === 'sokar-widget-resize' && e.data?.height) {
       if (typeof e.data?.height === 'number' && e.data.height > 0 && e.data.height < 10000) {
         iframe.style.height = e.data.height + 'px';
