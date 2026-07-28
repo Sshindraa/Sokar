@@ -7,6 +7,21 @@
 
 set -euo pipefail
 
+# Charge les helpers partagés (check_disk_space, log_error).
+# En production ce script est installé standalone (/usr/local/sbin/sokar-backup-postgres) ;
+# en dev il est lancé depuis le repo (scripts/database/). On détecte le layout.
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+if [ -f "$SCRIPT_DIR/../ops/disk.sh" ]; then
+  HELPERS_DIR="$SCRIPT_DIR/../ops"
+  SOKAR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+else
+  SOKAR_ROOT="${SOKAR_ROOT:-/opt/sokar}"
+  HELPERS_DIR="$SOKAR_ROOT/scripts/ops"
+fi
+export SOKAR_ROOT
+# shellcheck source=ops/disk.sh
+source "$HELPERS_DIR/disk.sh"
+
 CONTAINER="${POSTGRES_CONTAINER:-infra-postgres-1}"
 DB_NAME="${POSTGRES_DB:-sokar}"
 DB_USER="${POSTGRES_USER:-sokar}"
@@ -18,17 +33,6 @@ VERIFY_DB="${DB_NAME}_restore_check_${TIMESTAMP//[^0-9]/}"
 
 install -d -m 0700 "${BACKUP_DIR}"
 umask 077
-
-check_disk_space() {
-  local target_dir="$1"
-  local required_bytes="$2"
-  local available
-  available=$(df -B1 --output=avail "$target_dir" | tail -1)
-  if [ "$available" -lt "$required_bytes" ]; then
-    echo "❌ Disk space check failed: $target_dir has $available bytes, required $required_bytes" >&2
-    exit 1
-  fi
-}
 
 echo "→ Estimating database size..."
 DB_SIZE_BYTES="$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${DB_NAME}" -Atc "SELECT pg_database_size('${DB_NAME}');")"
