@@ -38,6 +38,7 @@
 #   copy_static(need_dash, need_connect)
 #   apply_migrations(need_prisma)
 #   install_nginx()
+#   validate_nginx_config()
 #   restart_services()
 #   health_checks()
 #   validate_env_files()
@@ -423,6 +424,29 @@ install_nginx() {
             exit 1
         fi
     fi
+
+    # Valider que le catch-all a default_server sur 443 (avant le reload).
+    validate_nginx_config
+}
+
+# Vérifier que le catch-all Nginx déclare default_server sur 443.
+# Bug PR #67 : les sous-domaines *.sokar.tech tombaient sur le dashboard au lieu
+# de Connect car default_server manquait sur le listen 443 du server_name _.
+validate_nginx_config() {
+    # Staging n'a pas de catch-all (pas de subdomains) — skip la validation.
+    if [ "$DEPLOY_ENV" != "prod" ]; then
+        return 0
+    fi
+
+    local conf_file="/etc/nginx/sites-available/sokar"
+
+    if ! grep -q "listen 443 ssl http2 default_server" "$conf_file" 2>/dev/null; then
+        log_error "Nginx catch-all missing 'default_server' on listen 443."
+        log_error "Subdomains *.sokar.tech will be routed to the wrong server block."
+        log_error "Check $conf_file — the server_name _ block must have default_server on 443."
+        exit 1
+    fi
+    log info "   ✅ Nginx catch-all default_server 443 — OK"
 }
 
 # Redémarrer les services PM2 + Nginx (+ LocalStack en prod)
@@ -556,6 +580,14 @@ health_checks() {
             http://127.0.0.1/widget/chez-sokar-demo/gift-card 2>/dev/null || echo "FAIL")
         log info "   gift-card widget page → $GIFT_CARD_WIDGET_STATUS"
 
+        # Subdomain routing check — verify *.sokar.tech middleware routes to Connect
+        # (not the dashboard). Bug historique : default_server manquant sur 443 →
+        # les sous-domaines tombaient sur le dashboard au lieu de Connect.
+        local SUBDOMAIN_STATUS
+        SUBDOMAIN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Host: chez-sokar-demo.sokar.tech" "http://127.0.0.1/" 2>/dev/null || echo "FAIL")
+        log info "   subdomain (Host: chez-sokar-demo.sokar.tech) → $SUBDOMAIN_STATUS"
+
         # Vérification post-déploiement : un asset CSS/JS réel doit répondre 200.
         # Bug historique : `curl -I /` répond 200 même si .next/static n'a pas été
         # copié dans le standalone → page blanche côté client. On extrait le premier
@@ -587,6 +619,7 @@ health_checks() {
             && [ "$PUBLIC_PAGE_STATUS" = "200" ] \
             && [ "$WIDGET_IFRAME_STATUS" = "OK" ] \
             && [ "$GIFT_CARD_WIDGET_STATUS" = "200" ] \
+            && [ "$SUBDOMAIN_STATUS" = "200" ] \
             && [ "$DASH_CSS_STATUS" = "200" ]; then
             DEPLOY_HEALTH_OK=true
         elif [ "$DASH_STATUS" = "200" ] && [ "$DASH_CSS_STATUS" != "200" ]; then

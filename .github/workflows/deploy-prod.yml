@@ -101,5 +101,24 @@ jobs:
           echo "sokar.tech/restaurant/chez-sokar-demo → $CONNECT_STATUS"
           [ "$CONNECT_STATUS" = "200" ] || exit 1
 
+          # Subdomain routing — verify *.sokar.tech resolves to the restaurant page
+          # (not the landing page). Catches Nginx default_server and middleware bugs.
+          SUBDOMAIN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 -H "Host: chez-sokar-demo.sokar.tech" "https://sokar.tech/" || echo "FAIL")
+          echo "chez-sokar-demo.sokar.tech (via Host header) → $SUBDOMAIN_STATUS"
+          [ "$SUBDOMAIN_STATUS" = "200" ] || exit 1
+
+          # Verify content is the restaurant page, not the landing page
+          SUBDOMAIN_CONTENT=$(curl -s --max-time 10 \
+            -H "Host: chez-sokar-demo.sokar.tech" "https://sokar.tech/" || echo "")
+          # Check for restaurant page title pattern (more stable than body copy).
+          # The restaurant page title always contains "Réservation" — the landing page doesn't.
+          if echo "$SUBDOMAIN_CONTENT" | grep -q "<title>.*Réservation"; then
+            echo "Subdomain content: restaurant page ✅"
+          else
+            echo "Subdomain content: WRONG (expected restaurant page, got landing page)"
+            exit 1
+          fi
+
           echo ""
           echo "✅ All production smoke tests passed"

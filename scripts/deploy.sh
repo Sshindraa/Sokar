@@ -7,6 +7,7 @@
 #   bash scripts/deploy.sh --env staging [branch]
 #   bash scripts/deploy.sh --env staging --dry-run
 #   bash scripts/deploy.sh --env staging --force
+#   bash scripts/deploy.sh --env staging --force-build
 #   bash scripts/deploy.sh --env staging rollback [--with-db-rollback] [release-timestamp]
 #   bash scripts/deploy.sh --help
 #
@@ -31,6 +32,7 @@ DEPLOY_ENV=""
 CONFIRM_PRODUCTION=false
 DRY_RUN=false
 FORCE=false
+FORCE_BUILD=false
 BRANCH="main"
 COMMAND="deploy"
 WITH_DB_ROLLBACK=false
@@ -55,6 +57,8 @@ Options:
   --confirm-production   Requis pour --env prod (safety check)
   --dry-run              Simulation (staging only — pas de restart ni migrations)
   --force                Ignore les modifications locales trackées (staging only)
+  --force-build          Force le rebuild de tous les apps même si le hash est inchangé
+                         (utile quand le cache .next/ est stale). Fonctionne en prod + staging.
   --with-db-rollback     Rollback inclut la restauration DB (avec rollback)
   --help, -h             Affiche cette aide
 
@@ -65,6 +69,7 @@ Examples:
   bash scripts/deploy.sh --env prod --confirm-production rollback 20260726T194319Z
   bash scripts/deploy.sh --env staging
   bash scripts/deploy.sh --env staging --dry-run
+  bash scripts/deploy.sh --env staging --force-build
   bash scripts/deploy.sh --env staging rollback
 EOF
 }
@@ -90,6 +95,10 @@ while [ $# -gt 0 ]; do
             ;;
         --force)
             FORCE=true
+            shift
+            ;;
+        --force-build)
+            FORCE_BUILD=true
             shift
             ;;
         --with-db-rollback)
@@ -416,6 +425,7 @@ if [ "${SOKAR_REEXECED:-0}" != "1" ] && [ "$PREV_HASH" != "$NEW_HASH" ]; then
             $([ "$CONFIRM_PRODUCTION" = true ] && echo "--confirm-production") \
             $([ "$DRY_RUN" = true ] && echo "--dry-run") \
             $([ "$FORCE" = true ] && echo "--force") \
+            $([ "$FORCE_BUILD" = true ] && echo "--force-build") \
             $([ "$WITH_DB_ROLLBACK" = true ] && echo "--with-db-rollback") \
             "$BRANCH"
     fi
@@ -426,6 +436,19 @@ fi
 # Si un app n'a pas changé, on skip son build (gain ~5 min sur le dashboard).
 LAST_DEPLOYED_HASH=$(cat "$RELEASES_DIR/.latest-hash" 2>/dev/null || echo "")
 detect_changed_apps "$LAST_DEPLOYED_HASH" "$NEW_HASH"
+
+# ── 10a. --force-build : bypass le skip basé sur le hash ─
+# Utile quand le cache .next/ est stale mais le hash git est inchangé.
+if [ "$FORCE_BUILD" = true ]; then
+    log_warn "--force-build : rebuild de tous les apps (hash skip bypassé)"
+    SKIP_ALL_BUILDS=false
+    NEED_DASHBOARD=true
+    NEED_CONNECT=true
+    NEED_API=true
+    NEED_PACKAGES=true
+    NEED_INSTALL=true
+    NEED_PRISMA=true
+fi
 
 # ── 11. Install deps (conditionnel) ──────────────────────
 if [ "$SKIP_ALL_BUILDS" = true ]; then
