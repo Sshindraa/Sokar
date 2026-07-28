@@ -84,14 +84,11 @@ export function middleware(request: NextRequest) {
     // Extraire le slug du subdomain (ex: chezmario.sokar.tech → chezmario)
     const slug = host.slice(0, host.length - primaryHost.length - 1);
     if (slug && slug !== 'www') {
-      // Forcer le protocole HTTP dans l'URL de rewrite pour éviter une boucle
-      // HTTPS interne (EPROTO) quand le standalone server est derrière Nginx
-      // avec X-Forwarded-Proto: https. Le rewrite est interne à Next.js,
-      // il ne sort jamais du processus — le protocole n'a pas d'importance
-      // pour le routing, mais un https:// provoque un proxy interne qui échoue.
-      const url = new URL(`/restaurant/${slug}`, 'http://localhost');
-      url.search = request.nextUrl.search;
-      const rewriteResponse = NextResponse.rewrite(url, {
+      // Rewrite interne via path relatif (pas d'URL absolue) pour éviter que
+      // Next.js ne traite ça comme un proxy externe. Derrière Nginx avec
+      // X-Forwarded-Proto: https, une URL absolue https:// provoque un proxy
+      // interne EPROTO (le standalone server n'écoute qu'en HTTP).
+      const rewriteResponse = NextResponse.rewrite(`/restaurant/${slug}${request.nextUrl.search}`, {
         request: { headers: requestHeaders },
       });
       applySecurityHeaders(rewriteResponse, request, nonce, false, false, false);
@@ -108,13 +105,11 @@ export function middleware(request: NextRequest) {
     if (apiUrl) {
       // Fire-and-forget : on ne peut pas attendre la réponse en middleware sync.
       // À la place, on rewrite vers /custom-domain qui fera le lookup server-side.
-      // Forcer http://localhost pour éviter le proxy HTTPS interne (cf. subdomain).
-      const url = new URL('/custom-domain', 'http://localhost');
-      url.search = request.nextUrl.search;
-      url.searchParams.set('host', host);
-      const rewriteResponse = NextResponse.rewrite(url, {
-        request: { headers: requestHeaders },
-      });
+      // Path relatif pour éviter le proxy externe (cf. subdomain ci-dessus).
+      const rewriteResponse = NextResponse.rewrite(
+        `/custom-domain?host=${encodeURIComponent(host)}${request.nextUrl.search ? '&' + request.nextUrl.search.slice(1) : ''}`,
+        { request: { headers: requestHeaders } },
+      );
       // Custom domain : pas de X-Frame-Options DENY (le restaurateur peut vouloir embed)
       // mais frame-ancestors 'none' par défaut via isWidget=false, isPreview=false.
       applySecurityHeaders(rewriteResponse, request, nonce, false, false, false);
