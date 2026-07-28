@@ -205,3 +205,5 @@ Log automatique des tâches Hermes.
 **Impact** : Aucun impact DB/schema/API. Scripts-only + seed + docs. Pipeline de déploiement autonome activé.
 
 **Blockers business restants** : Pilote P1 : contacter 10 restaurants réels, configurer GSC (créer propriété sokar.tech, token vérification, soumettre sitemap). Cloudflare SaaS : activer Cloudflare for SaaS sur le dashboard, créer API Token, récupérer Zone ID, lancer `scripts/ops/setup-cloudflare-saas.sh`.
+
+2026-07-28 20:30 — [cloudflare, saas, production] **Cloudflare SaaS VPS prod configuré** — Vérification post-session : les 3 vars (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ZONE_ID, CLOUDFLARE_SAAS_FALLBACK_ORIGIN) sont présentes dans /opt/sokar/apps/api/.env (prod), configurées lors d'une session précédente aujourd'hui. sokar-api online, health 200. Endpoint /public/resolve-custom-domain répond ({"slug":null} pour domaine non configuré — guard isCloudflareSaaSEnabled()=true). Staging non configuré (SaaS custom domain = prod only). Blocker business Cloudflare SaaS = RÉSOLU. Reste P1 Connect : onboarding 10 restaurants réels + Google Search Console.
