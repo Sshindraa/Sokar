@@ -122,6 +122,65 @@ export const openaiReserveFeedRequestsTotal = new Counter({
   registers: [getRegistry()],
 });
 
+// ─── Voice pipeline (observation only, no alerting yet) ─────────────
+
+/**
+ * Durée complète d'un tour de parole voice (du start du tour au premier
+ * audio TTS entendu par l'appelant). Buckets adaptés à la latence voice
+ * (cible p95 < 2s, p99 < 5s).
+ */
+export const voiceTurnDurationMs = new Histogram({
+  name: 'voice_turn_duration_ms',
+  help: "Durée complète d'un tour de parole voice (ms)",
+  buckets: [100, 200, 500, 1000, 2000, 5000, 10000, 30000],
+  registers: [getRegistry()],
+});
+
+/**
+ * Temps jusqu'au premier token LLM (TTFT). Cible < 500ms pour une
+ * conversation naturelle (Cerebras/Groq LPU).
+ */
+export const voiceLlmFirstTokenMs = new Histogram({
+  name: 'voice_llm_first_token_ms',
+  help: "Temps jusqu'au premier token LLM (TTFT, ms)",
+  buckets: [50, 100, 200, 500, 1000, 2000, 5000],
+  registers: [getRegistry()],
+});
+
+/**
+ * Temps jusqu'au premier audio TTS (Cartesia). Cible < 500ms.
+ */
+export const voiceTtsFirstAudioMs = new Histogram({
+  name: 'voice_tts_first_audio_ms',
+  help: "Temps jusqu'au premier audio TTS (ms)",
+  buckets: [50, 100, 200, 500, 1000, 2000, 5000],
+  registers: [getRegistry()],
+});
+
+/**
+ * Nombre total de fallbacks LLM (Cerebras → OpenRouter ou inverse).
+ * Permet de suivre la stabilité des providers voice.
+ * Labels : direction (cerebras_to_openrouter | openrouter_to_cerebras).
+ */
+export const voiceLlmFallbackTotal = new Counter({
+  name: 'voice_llm_fallback_total',
+  help: 'Nombre total de fallbacks LLM (Cerebras → OpenRouter ou inverse)',
+  labelNames: ['direction'] as const,
+  registers: [getRegistry()],
+});
+
+/**
+ * Erreurs par provider voice (Deepgram, Cartesia, LLM).
+ * Permet de corréler les fallbacks avec les erreurs sous-jacentes.
+ * Labels : provider (deepgram | cartesia | llm) × type (timeout | 5xx | 429 | ws_error).
+ */
+export const voiceProviderErrorsTotal = new Counter({
+  name: 'voice_provider_errors_total',
+  help: 'Erreurs par provider voice',
+  labelNames: ['provider', 'type'] as const,
+  registers: [getRegistry()],
+});
+
 // ─── Render ───────────────────────────────────────────────────
 
 /**
@@ -155,6 +214,11 @@ export function __resetMetrics(): void {
   queueJobsGauge.reset();
   callsMissingTranscriptGauge.reset();
   reservationsMissingSmsGauge.reset();
+  voiceTurnDurationMs.reset();
+  voiceLlmFirstTokenMs.reset();
+  voiceTtsFirstAudioMs.reset();
+  voiceLlmFallbackTotal.reset();
+  voiceProviderErrorsTotal.reset();
 }
 
 // ─── Sokar Connect (Phase 1) ────────────────────────────────────────

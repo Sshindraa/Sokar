@@ -8,6 +8,7 @@ import * as Sentry from '@sentry/node';
 import { DEEPGRAM_CLOSE_DELAY_MS } from '../../../shared/constants/timeouts.js';
 import { isSpeculativeLlmEnabled } from './speculation';
 import { redactPii } from './pii-redact';
+import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
 
 function writeDebugLog(msg: string, err?: unknown) {
   const e = err instanceof Error ? err : err ? new Error(String(err)) : undefined;
@@ -154,6 +155,7 @@ export function connectDeepgramFlux(
     ws.on('error', (err: Error) => {
       writeDebugLog(`[deepgram] WebSocket error for call ${session.callControlId}`, err);
       logger.error({ err, callId: session.callControlId }, `[deepgram] Error: ${err.message}`);
+      voiceProviderErrorsTotal.inc({ provider: 'deepgram', type: 'ws_error' });
 
       if (process.env.SENTRY_DSN) {
         Sentry.captureException(err, {

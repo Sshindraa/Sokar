@@ -14,7 +14,6 @@
   "dependencies": {
     "@sokar/shared": "workspace:*",
     "clsx": "^2.1.1",
-    "date-fns": "^4.1.0",
     "lucide-react": "^1.16.0",
     "next": "^15.5.21",
     "react": "^19.2.7",

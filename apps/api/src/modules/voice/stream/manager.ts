@@ -23,6 +23,10 @@ import { AuditLogService } from '../../agentic-reservations/core/audit-log.servi
 import { zonedTimeToUtc } from '../../floor-plan/availability-capacity-aware.service';
 import { createConversationState } from './conversation-controller';
 import { recordVoiceTurnEvent } from './turn-telemetry';
+import {
+  voiceLlmFallbackTotal,
+  voiceProviderErrorsTotal,
+} from '../../../shared/observability/metrics';
 
 interface LlmResponse {
   choices?: Array<{ message: ChatMessage }>;
@@ -639,6 +643,10 @@ export class CallSessionManager {
           }
           // HTTP error — record failure, check fallback eligibility
           recordProviderFailure('cerebras');
+          voiceProviderErrorsTotal.inc({
+            provider: 'llm',
+            type: response.status === 429 ? '429' : '5xx',
+          });
           if (isOpenRouterFallbackEnabled() && isFallbackEligibleError(response.status)) {
             logger.warn(
               { status: response.status, model: getVoiceLlmModel() },
@@ -657,6 +665,7 @@ export class CallSessionManager {
         } catch (err) {
           // Network error / timeout — record failure, fallback
           recordProviderFailure('cerebras');
+          voiceProviderErrorsTotal.inc({ provider: 'llm', type: 'timeout' });
           if (isOpenRouterFallbackEnabled()) {
             logger.warn(
               { err: err instanceof Error ? err.message : String(err) },
@@ -696,6 +705,10 @@ export class CallSessionManager {
           return response;
         }
         recordProviderFailure('openrouter');
+        voiceProviderErrorsTotal.inc({
+          provider: 'llm',
+          type: response.status === 429 ? '429' : '5xx',
+        });
         if (isCerebrasFallbackEnabled() && isFallbackEligibleError(response.status)) {
           logger.warn(
             { status: response.status, model: getVoiceLlmModel() },
@@ -713,6 +726,7 @@ export class CallSessionManager {
         return response;
       } catch (err) {
         recordProviderFailure('openrouter');
+        voiceProviderErrorsTotal.inc({ provider: 'llm', type: 'timeout' });
         if (isCerebrasFallbackEnabled()) {
           logger.warn(
             { err: err instanceof Error ? err.message : String(err) },
@@ -831,6 +845,10 @@ export class CallSessionManager {
           }
           // HTTP error — record failure, check fallback eligibility
           recordProviderFailure('cerebras');
+          voiceProviderErrorsTotal.inc({
+            provider: 'llm',
+            type: response.status === 429 ? '429' : '5xx',
+          });
           if (isOpenRouterFallbackEnabled() && isFallbackEligibleError(response.status)) {
             logger.warn(
               { status: response.status, model: getVoiceLlmModel() },
@@ -850,6 +868,7 @@ export class CallSessionManager {
         } catch (err) {
           // Network error / timeout — record failure, fallback
           recordProviderFailure('cerebras');
+          voiceProviderErrorsTotal.inc({ provider: 'llm', type: 'timeout' });
           if (isOpenRouterFallbackEnabled()) {
             logger.warn(
               { err: err instanceof Error ? err.message : String(err) },
@@ -891,6 +910,10 @@ export class CallSessionManager {
           return { response, provider: 'openrouter' };
         }
         recordProviderFailure('openrouter');
+        voiceProviderErrorsTotal.inc({
+          provider: 'llm',
+          type: response.status === 429 ? '429' : '5xx',
+        });
         if (isCerebrasFallbackEnabled() && isFallbackEligibleError(response.status)) {
           logger.warn(
             { status: response.status, model: getVoiceLlmModel() },
@@ -909,6 +932,7 @@ export class CallSessionManager {
         return { response, provider: 'openrouter' };
       } catch (err) {
         recordProviderFailure('openrouter');
+        voiceProviderErrorsTotal.inc({ provider: 'llm', type: 'timeout' });
         if (isCerebrasFallbackEnabled()) {
           logger.warn(
             { err: err instanceof Error ? err.message : String(err) },
@@ -956,6 +980,12 @@ export class CallSessionManager {
     model: string,
     isStreaming: boolean = false,
   ): Promise<Response> {
+    // Métrique : compter tous les fallbacks LLM (tous les chemins de fallback
+    // passent par ici). La direction est déduite du provider cible.
+    voiceLlmFallbackTotal.inc({
+      direction: provider === 'openrouter' ? 'cerebras_to_openrouter' : 'openrouter_to_cerebras',
+    });
+
     if (isCircuitBreakerOpen(provider)) {
       // Le fallback est aussi en circuit breaker — on tente quand même (half-open)
       // car on n'a pas d'autre option. Si ça échoue, l'erreur remonte.
@@ -976,10 +1006,15 @@ export class CallSessionManager {
         recordProviderSuccess(provider);
       } else {
         recordProviderFailure(provider);
+        voiceProviderErrorsTotal.inc({
+          provider: 'llm',
+          type: response.status === 429 ? '429' : '5xx',
+        });
       }
       return response;
     } catch (err) {
       recordProviderFailure(provider);
+      voiceProviderErrorsTotal.inc({ provider: 'llm', type: 'timeout' });
       throw err;
     }
   }

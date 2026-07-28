@@ -25,6 +25,7 @@ import {
 } from './constants';
 import { splitTelnyxAudioFrames } from './audio-frames';
 import { recordVoiceTurnEvent } from './turn-telemetry';
+import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
 
 export function isSessionActiveForTts(session: CallSession, generation?: number): boolean {
   return (
@@ -333,6 +334,10 @@ async function speakTtsFragment(
           { callId: session.callControlId, status },
           '[speakTtsStreamed] Cartesia stream failed after retry',
         );
+        voiceProviderErrorsTotal.inc({
+          provider: 'cartesia',
+          type: status === 429 ? '429' : '5xx',
+        });
         const err = new Error(`Cartesia stream failed with status ${status}`);
         captureException(err, {
           tags: { service: 'handler', action: 'speakTtsStreamed', type: 'http-status' },
@@ -471,6 +476,7 @@ async function speakTtsFragment(
         { err, callId: session.callControlId },
         `[speakTtsStreamed] Cartesia stream process error: ${err instanceof Error ? err.message : String(err)}`,
       );
+      voiceProviderErrorsTotal.inc({ provider: 'cartesia', type: 'ws_error' });
       captureException(err, {
         tags: { service: 'handler', action: 'speakTtsStreamed', type: 'exception' },
         extra: { callId: session.callControlId, sentence: redactPii(trimmed) },

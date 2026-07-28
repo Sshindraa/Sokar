@@ -64,6 +64,144 @@ describe('gift-card routes', () => {
       expect(body.items[0].code).toContain('****');
     });
 
+    it('le total reflète le filtre status (pas le total global)', async () => {
+      // 3 cartes : 2 ACTIVE, 1 REDEEMED. On filtre par status=ACTIVE → total doit être 2.
+      const baseCard = {
+        restaurantId: RESTAURANT_ID,
+        code: 'abc-1234-5678-9012',
+        amount: d(100),
+        remainingAmount: d(100),
+        currency: 'EUR',
+        createdBy: 'DASHBOARD',
+        purchaseReference: 'manual',
+        redemptions: [],
+      };
+      vi.mocked(db.giftCard.findMany).mockResolvedValue([
+        { id: 'gc-a', status: 'ACTIVE', ...baseCard },
+        { id: 'gc-b', status: 'ACTIVE', ...baseCard },
+      ] as unknown as Awaited<ReturnType<typeof db.giftCard.findMany>>);
+      (
+        vi.mocked(db.giftCard.count) as unknown as Mock<(...args: unknown[]) => unknown>
+      ).mockImplementation((args: unknown) => {
+        const a = args as { where?: { status?: string; restaurantId?: string } };
+        // Si le filtre status est transmis au count, on retourne 2 ; sinon 3 (bug).
+        if (a?.where?.status === 'ACTIVE') return 2;
+        return 3;
+      });
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: `/restaurants/${RESTAURANT_ID}/gift-cards?status=ACTIVE`,
+        headers: AUTH,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.total).toBe(2);
+      // Vérifie que count a bien reçu le filtre status dans son where
+      expect(vi.mocked(db.giftCard.count)).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ status: 'ACTIVE' }) }),
+      );
+    });
+
+    it('le total reflète le filtre search (pas le total global)', async () => {
+      // 3 cartes au total, 1 correspond au terme "Alice".
+      vi.mocked(db.giftCard.findMany).mockResolvedValue([
+        {
+          id: 'gc-a',
+          restaurantId: RESTAURANT_ID,
+          code: 'abc-1234-5678-9012',
+          amount: d(100),
+          remainingAmount: d(100),
+          currency: 'EUR',
+          status: 'ACTIVE',
+          createdBy: 'DASHBOARD',
+          purchaseReference: 'manual',
+          recipientName: 'Alice',
+          redemptions: [],
+        },
+      ] as unknown as Awaited<ReturnType<typeof db.giftCard.findMany>>);
+      (
+        vi.mocked(db.giftCard.count) as unknown as Mock<(...args: unknown[]) => unknown>
+      ).mockImplementation((args: unknown) => {
+        const a = args as { where?: { OR?: unknown[]; restaurantId?: string } };
+        // Si le filtre search (OR) est transmis au count, on retourne 1 ; sinon 3 (bug).
+        if (a?.where?.OR && a.where.OR.length > 0) return 1;
+        return 3;
+      });
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: `/restaurants/${RESTAURANT_ID}/gift-cards?search=Alice`,
+        headers: AUTH,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.total).toBe(1);
+      // Vérifie que count a bien reçu le filtre OR (search) dans son where
+      expect(vi.mocked(db.giftCard.count)).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ OR: expect.any(Array) }) }),
+      );
+    });
+
+    it('le total reflète le filtre type (pas le total global)', async () => {
+      // 3 cartes au total, 2 sont de type SINGLE.
+      vi.mocked(db.giftCard.findMany).mockResolvedValue([
+        {
+          id: 'gc-a',
+          restaurantId: RESTAURANT_ID,
+          code: 'abc-1234-5678-9012',
+          amount: d(100),
+          remainingAmount: d(100),
+          currency: 'EUR',
+          status: 'ACTIVE',
+          type: 'SINGLE',
+          createdBy: 'DASHBOARD',
+          purchaseReference: 'manual',
+          redemptions: [],
+        },
+        {
+          id: 'gc-b',
+          restaurantId: RESTAURANT_ID,
+          code: 'def-5678-9012-3456',
+          amount: d(50),
+          remainingAmount: d(50),
+          currency: 'EUR',
+          status: 'ACTIVE',
+          type: 'SINGLE',
+          createdBy: 'DASHBOARD',
+          purchaseReference: 'manual',
+          redemptions: [],
+        },
+      ] as unknown as Awaited<ReturnType<typeof db.giftCard.findMany>>);
+      (
+        vi.mocked(db.giftCard.count) as unknown as Mock<(...args: unknown[]) => unknown>
+      ).mockImplementation((args: unknown) => {
+        const a = args as { where?: { type?: string; restaurantId?: string } };
+        // Si le filtre type est transmis au count, on retourne 2 ; sinon 3 (bug).
+        if (a?.where?.type) return 2;
+        return 3;
+      });
+
+      const app = await getApp();
+      const res = await app.inject({
+        method: 'GET',
+        url: `/restaurants/${RESTAURANT_ID}/gift-cards?type=SINGLE`,
+        headers: AUTH,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.total).toBe(2);
+      // Vérifie que count a bien reçu le filtre type dans son where
+      expect(vi.mocked(db.giftCard.count)).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ type: 'SINGLE' }) }),
+      );
+    });
+
     it('crée une carte cadeau manuelle', async () => {
       vi.mocked(db.giftCard.create).mockResolvedValue({
         id: 'gc-1',
