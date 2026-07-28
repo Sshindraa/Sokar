@@ -64,7 +64,10 @@ export function middleware(request: NextRequest) {
   const siteUrl = process.env.SITE_URL ?? 'https://sokar.tech';
   const primaryHost = new URL(siteUrl).host; // sokar.tech
   const isPrimaryHost =
-    host === primaryHost || host === `www.${primaryHost}` || host.startsWith('localhost:') || host.startsWith('127.0.0.1:');
+    host === primaryHost ||
+    host === `www.${primaryHost}` ||
+    host.startsWith('localhost:') ||
+    host.startsWith('127.0.0.1:');
 
   // Subdomain gratuit : *.sokar.tech (ex: chezmario.sokar.tech)
   // Zero config — basé sur le slug du restaurant. Détecté AVANT les custom domains
@@ -81,8 +84,13 @@ export function middleware(request: NextRequest) {
     // Extraire le slug du subdomain (ex: chezmario.sokar.tech → chezmario)
     const slug = host.slice(0, host.length - primaryHost.length - 1);
     if (slug && slug !== 'www') {
-      const url = request.nextUrl.clone();
-      url.pathname = `/restaurant/${slug}`;
+      // Forcer le protocole HTTP dans l'URL de rewrite pour éviter une boucle
+      // HTTPS interne (EPROTO) quand le standalone server est derrière Nginx
+      // avec X-Forwarded-Proto: https. Le rewrite est interne à Next.js,
+      // il ne sort jamais du processus — le protocole n'a pas d'importance
+      // pour le routing, mais un https:// provoque un proxy interne qui échoue.
+      const url = new URL(`/restaurant/${slug}`, 'http://localhost');
+      url.search = request.nextUrl.search;
       const rewriteResponse = NextResponse.rewrite(url, {
         request: { headers: requestHeaders },
       });
@@ -100,8 +108,9 @@ export function middleware(request: NextRequest) {
     if (apiUrl) {
       // Fire-and-forget : on ne peut pas attendre la réponse en middleware sync.
       // À la place, on rewrite vers /custom-domain qui fera le lookup server-side.
-      const url = request.nextUrl.clone();
-      url.pathname = '/custom-domain';
+      // Forcer http://localhost pour éviter le proxy HTTPS interne (cf. subdomain).
+      const url = new URL('/custom-domain', 'http://localhost');
+      url.search = request.nextUrl.search;
       url.searchParams.set('host', host);
       const rewriteResponse = NextResponse.rewrite(url, {
         request: { headers: requestHeaders },
