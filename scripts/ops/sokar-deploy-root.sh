@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -Eeuo pipefail
 
@@ -35,58 +35,15 @@ case "$ENVIRONMENT" in
         ;;
 esac
 
-install_nginx() {
-    local _nginx_restore_done=false
-    cleanup_install_nginx() {
-        if [ "$_nginx_restore_done" = false ]; then
-            restore_nginx
-        fi
-    }
-    # Ensure the previous Nginx vhost is restored if any command below fails
-    # before the new config is confirmed valid (DEP-013).
-    trap cleanup_install_nginx EXIT
-
-    install -d -m 0755 /etc/nginx/snippets /etc/nginx/sites-available /etc/nginx/sites-enabled
-    install -m 0644 "$ROOT/infra/nginx/snippets/sokar-proxy.conf" /etc/nginx/snippets/sokar-proxy.conf
-    install -m 0644 "$ROOT/infra/nginx/snippets/sokar-cloudflare-real-ip.conf" /etc/nginx/snippets/sokar-cloudflare-real-ip.conf
-
-    if [ -f "/etc/nginx/sites-available/$VHOST" ]; then
-        install -m 0644 "/etc/nginx/sites-available/$VHOST" "/etc/nginx/sites-available/$VHOST.bak"
-    fi
-
-    if [ "$ENVIRONMENT" = "prod" ]; then
-        install -m 0644 "$ROOT/infra/nginx/sokar.conf" "/etc/nginx/sites-available/$VHOST"
-        ln -sfn "/etc/nginx/sites-available/$VHOST" "/etc/nginx/sites-enabled/$VHOST"
-    else
-        install -m 0644 "$ROOT/infra/nginx/sokar-staging.conf" "/etc/nginx/sites-available/$VHOST"
-        install -m 0644 "$ROOT/infra/nginx/sokar-staging.conf" "/etc/nginx/sites-enabled/$VHOST"
-    fi
-
-    if ! nginx -t; then
-        restore_nginx
-        _nginx_restore_done=true
-        if nginx -t; then
-            systemctl reload nginx || true
-        fi
-        trap - EXIT
-        return 1
-    fi
-
-    find "/etc/nginx/sites-available" -maxdepth 1 -type f -name "$VHOST.bak" -delete
-    _nginx_restore_done=true
-    trap - EXIT
-}
-
-restore_nginx() {
-    if [ -f "/etc/nginx/sites-available/$VHOST.bak" ]; then
-        install -m 0644 "/etc/nginx/sites-available/$VHOST.bak" "/etc/nginx/sites-available/$VHOST"
-        if [ "$ENVIRONMENT" = "prod" ]; then
-            ln -sfn "/etc/nginx/sites-available/$VHOST" "/etc/nginx/sites-enabled/$VHOST"
-        else
-            install -m 0644 "/etc/nginx/sites-available/$VHOST.bak" "/etc/nginx/sites-enabled/$VHOST"
-        fi
-    fi
-}
+# ── Source nginx-common.sh (install_nginx_vhost, restore_nginx_vhost) ─
+# En prod le wrapper est à /usr/local/sbin/ ; nginx-common.sh est dans le repo.
+if [ -f "$ROOT/scripts/ops/nginx-common.sh" ]; then
+    # shellcheck source=ops/nginx-common.sh
+    source "$ROOT/scripts/ops/nginx-common.sh"
+else
+    echo "Erreur: nginx-common.sh introuvable dans $ROOT/scripts/ops/" >&2
+    exit 1
+fi
 
 clean_next() {
     [ "$#" -eq 1 ] || usage
@@ -182,11 +139,11 @@ case "$ACTION" in
         ;;
     install-nginx)
         [ "$#" -eq 2 ] || usage
-        install_nginx
+        install_nginx_vhost "$ROOT" "$VHOST" "$ENVIRONMENT" "$CERT_ROOT"
         ;;
     restore-nginx)
         [ "$#" -eq 2 ] || usage
-        restore_nginx
+        restore_nginx_vhost "$VHOST" "$ENVIRONMENT"
         ;;
     reload-nginx)
         [ "$#" -eq 2 ] || usage

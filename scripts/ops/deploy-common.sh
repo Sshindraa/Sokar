@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -Eeuo pipefail
 # Librairie partagée pour les déploiements Sokar (prod + staging).
 # Sourcée par scripts/deploy.sh avant le parsing des arguments.
 #
@@ -803,4 +803,100 @@ validate_deploy_env() {
             exit 1
             ;;
     esac
+}
+
+# ── Handle rollback ──────────────────────────────────────
+# Extrait du bloc inline de deploy.sh (P2 scripts refactor).
+#
+# Variables globales attendues (set par validate_deploy_env / parse_deploy_args) :
+#   DEPLOY_ENV         prod | staging
+#   SOKAR_ROOT         /opt/sokar | /opt/sokar-staging
+#   RELEASES_DIR       $SOKAR_ROOT/releases
+#   WITH_DB_ROLLBACK   true | false
+#   TARGET_RELEASE     release cible (peut être vide → calculée automatiquement)
+#   PM2_DASH           nom du process PM2 dashboard
+#   PM2_CONNECT        nom du process PM2 connect
+#   ECOSYSTEM_FILE     infra/ecosystem.config.js | infra/ecosystem.staging.config.js
+#   PORT_API           port de l'API
+#   PORT_DASH          port du dashboard
+#   PRIVILEGED_WRAPPER /usr/local/sbin/sokar-deploy-root
+#
+# Variables globales set :
+#   TARGET_RELEASE  (calculée si vide — comportement existant)
+#
+# Fonctions appelées (déjà disponibles via sourcing) :
+#   list_releases(), restore_artifacts(), wait_for_services() — deploy-common.sh
+#   restore_db()                                               — db-backup.sh
+#   log_section(), log, log_ok, log_error, notify()            — logging.sh
+#
+# Retourne 0 en cas de succès, 1 en cas d'échec.
+# L'appelant (deploy.sh) gère le exit 0 final.
+handle_rollback() {
+    cd "$SOKAR_ROOT"
+    log_section "${DEPLOY_ENV^} Rollback"
+
+    # TARGET_RELEASE est désormais parsé par la boucle d'arguments principale
+    # (le prochain argument non-flag après "rollback" est traité comme release cible).
+
+    if [ -z "$TARGET_RELEASE" ]; then
+        # Pas de release spécifiée → prendre l'avant-dernière
+        # (la dernière est potentiellement celle qui vient de casser)
+        list_releases
+        log info ""
+        TARGET_RELEASE=$(ls -1 "$RELEASES_DIR" 2>/dev/null \
+            | grep -E '^[0-9]{8}T[0-9]{6}Z' \
+            | sort -r \
+            | sed -n '2p')
+        if [ -z "$TARGET_RELEASE" ]; then
+            log_error "Aucune release précédente trouvée dans $RELEASES_DIR"
+            return 1
+        fi
+        log info "→ Rollback vers : $TARGET_RELEASE"
+    fi
+
+    local RELEASE_PATH="$RELEASES_DIR/$TARGET_RELEASE"
+    if [ ! -d "$RELEASE_PATH" ]; then
+        log_error "Release $TARGET_RELEASE introuvable"
+        list_releases
+        return 1
+    fi
+
+    log info "→ Stop services..."
+    pm2 stop "$PM2_DASH" "$PM2_CONNECT" 2>/dev/null || true
+
+    log info "→ Restore artefacts..."
+    restore_artifacts "$RELEASE_PATH"
+
+    if [ "$WITH_DB_ROLLBACK" = true ]; then
+        log info "→ Restore DB..."
+        if ! restore_db "$RELEASE_PATH"; then
+            log_error "DB restore échoué — rollback annulé"
+            return 1
+        fi
+    fi
+
+    log info "→ Restart services..."
+    pm2 start "$ECOSYSTEM_FILE"
+    wait_for_services
+    pm2 save
+    sudo "$PRIVILEGED_WRAPPER" reload-nginx "$DEPLOY_ENV" 2>/dev/null || true
+
+    log info ""
+    log info "→ Vérification..."
+    API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT_API}/health" 2>/dev/null || echo "FAIL")
+    DASH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT_DASH}" 2>/dev/null || echo "FAIL")
+    log info "   api → $API_STATUS | dashboard → $DASH_STATUS"
+
+    if [ "$API_STATUS" = "200" ] && [ "$DASH_STATUS" = "200" ]; then
+        log info ""
+        log_ok "Rollback vers $TARGET_RELEASE terminé"
+        log info "   Meta: $(cat "$RELEASE_PATH/META" 2>/dev/null | tr '\n' ' ')"
+        notify "✅ Sokar ${DEPLOY_ENV} rollback OK (${TARGET_RELEASE})"
+    else
+        log info ""
+        log_error "Rollback terminé mais vérifications échouées — investiguer manuellement"
+        notify "🔴 Sokar ${DEPLOY_ENV} rollback failed (${TARGET_RELEASE})"
+        return 1
+    fi
+    return 0
 }
