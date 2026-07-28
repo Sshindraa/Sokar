@@ -6,6 +6,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { getErrorMessage } from '@/types/api';
+import { getParentOrigin } from './post-message-security';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -179,6 +180,9 @@ export default function ReservationWidget() {
   const searchParams = useSearchParams();
   const restaurantId = params.restaurantId;
   const isEmbedded = searchParams.get('embedded') === '1';
+  // Origine explicite du parent, passée par le snippet embed Sokar.
+  // Priorité sur document.referrer (qui peut être vide avec Referrer-Policy: no-referrer).
+  const explicitParentOrigin = searchParams.get('parentOrigin');
 
   // Restaurant public metadata
   const [restaurant, setRestaurant] = useState<RestaurantPublic | null>(null);
@@ -215,6 +219,7 @@ export default function ReservationWidget() {
   // ne perd pas son contexte de réservation.
   const [showGiftCard, setShowGiftCard] = useState(false);
   const [giftCardHeight, setGiftCardHeight] = useState<number | null>(null);
+  const giftCardIframeRef = useRef<HTMLIFrameElement | null>(null);
   const giftCardUrl = useMemo(() => {
     if (typeof window === 'undefined' || !restaurantId) return '';
     const origin = window.location.origin;
@@ -222,36 +227,52 @@ export default function ReservationWidget() {
   }, [restaurantId]);
 
   // Auto-resize iframe when embedded (même mécanisme que le widget Connect).
+  // On cible l'origine du parent (dérivée du referrer) plutôt que '*' afin
+  // d'éviter qu'un site intermédiaire n'intercepte les messages de resize.
   useEffect(() => {
     if (!isEmbedded || typeof window === 'undefined') return;
     const sendHeight = () => {
       const height = document.body.scrollHeight;
-      window.parent.postMessage({ type: 'sokar-widget-resize', height }, '*');
+      const parentOrigin = getParentOrigin(explicitParentOrigin);
+      if (parentOrigin) {
+        window.parent.postMessage({ type: 'sokar-widget-resize', height }, parentOrigin);
+      }
     };
     sendHeight();
     const observer = new ResizeObserver(sendHeight);
     observer.observe(document.body);
     return () => observer.disconnect();
-  }, [isEmbedded]);
+  }, [isEmbedded, explicitParentOrigin]);
 
   // Listen for resize messages from the nested gift-card iframe (Connect).
+  // L'iframe gift-card est servie depuis la même origine que nous
+  // (`window.location.origin`), on valide donc `event.origin` strictement.
   // On forwarde aussi au parent si on est soi-même embedded, pour que le
-  // site du resto ajuste la hauteur totale du widget.
+  // site du resto ajuste la hauteur totale du widget — en ciblant l'origine
+  // du parent plutôt que '*'.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const onMessage = (e: MessageEvent) => {
+      // Validation stricte : l'iframe gift-card est same-origin ET la source
+      // doit être l'iframe gift-card elle-même (pas une autre fenêtre).
+      if (e.origin !== window.location.origin) return;
+      if (!giftCardIframeRef.current || e.source !== giftCardIframeRef.current.contentWindow)
+        return;
       if (e.data?.type !== 'sokar-widget-resize' || typeof e.data?.height !== 'number') return;
       setGiftCardHeight(e.data.height);
       if (isEmbedded) {
-        window.parent.postMessage(
-          { type: 'sokar-widget-resize', height: document.body.scrollHeight },
-          '*',
-        );
+        const parentOrigin = getParentOrigin(explicitParentOrigin);
+        if (parentOrigin) {
+          window.parent.postMessage(
+            { type: 'sokar-widget-resize', height: document.body.scrollHeight },
+            parentOrigin,
+          );
+        }
       }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [isEmbedded]);
+  }, [isEmbedded, explicitParentOrigin]);
 
   // Load public restaurant info.
   // Le path param peut être un slug (URL friendly) ou un id Prisma.
@@ -1371,6 +1392,7 @@ export default function ReservationWidget() {
               <div className="flex-1 overflow-y-auto">
                 {giftCardUrl && (
                   <iframe
+                    ref={giftCardIframeRef}
                     src={giftCardUrl}
                     title="Offrir une carte cadeau"
                     className="block w-full border-0"

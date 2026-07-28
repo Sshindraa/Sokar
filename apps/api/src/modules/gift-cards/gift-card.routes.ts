@@ -273,7 +273,7 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
         orderBy: { purchasedAt: 'desc' },
         include: { redemptions: { orderBy: { redeemedAt: 'desc' } }, pack: true },
       }),
-      db.giftCard.count({ where: { restaurantId } }),
+      db.giftCard.count({ where }),
     ]);
 
     return reply.send({

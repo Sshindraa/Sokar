@@ -23,6 +23,50 @@ import { AuditLogService } from '../../agentic-reservations/core/audit-log.servi
 import { zonedTimeToUtc } from '../../floor-plan/availability-capacity-aware.service';
 import { createConversationState } from './conversation-controller';
 import { recordVoiceTurnEvent } from './turn-telemetry';
+import {
+  voiceLlmFallbackTotal,
+  voiceProviderErrorsTotal,
+} from '../../../shared/observability/metrics';
+
+// ─── LLM error classification for voice_provider_errors_total ──────────
+// Distingue les providers réels (cerebras | openrouter) et les types
+// d'erreur (429 | 4xx | 5xx | timeout | session_abort) pour permettre
+// de mesurer la fiabilité de chaque provider indépendamment.
+
+type LlmProvider = 'cerebras' | 'openrouter';
+
+function classifyLlmHttpStatus(status: number): string {
+  if (status === 429) return '429';
+  if (status >= 400 && status < 500) return '4xx';
+  return '5xx';
+}
+
+function recordLlmHttpError(provider: LlmProvider, status: number): void {
+  voiceProviderErrorsTotal.inc({ provider, type: classifyLlmHttpStatus(status) });
+}
+
+function recordLlmException(
+  provider: LlmProvider,
+  err: unknown,
+  sessionSignal?: AbortSignal,
+): void {
+  const isAbort = err instanceof Error && err.name === 'AbortError';
+  const isSessionAbort = isAbort && sessionSignal?.aborted;
+  voiceProviderErrorsTotal.inc({
+    provider,
+    type: isSessionAbort ? 'session_abort' : 'timeout',
+  });
+}
+
+/**
+ * Détecte une annulation de session (barge-in, raccroché) — pas un timeout.
+ * Dans ce cas, on ne doit PAS enregistrer une failure provider ni lancer de
+ * fallback : la session est terminée, le signal est déjà aborted, toute
+ * requête ultérieure échouerait immédiatement.
+ */
+function isSessionAbortError(err: unknown, sessionSignal?: AbortSignal): boolean {
+  return err instanceof Error && err.name === 'AbortError' && !!sessionSignal?.aborted;
+}
 
 interface LlmResponse {
   choices?: Array<{ message: ChatMessage }>;
@@ -639,6 +683,7 @@ export class CallSessionManager {
           }
           // HTTP error — record failure, check fallback eligibility
           recordProviderFailure('cerebras');
+          recordLlmHttpError('cerebras', response.status);
           if (isOpenRouterFallbackEnabled() && isFallbackEligibleError(response.status)) {
             logger.warn(
               { status: response.status, model: getVoiceLlmModel() },
@@ -655,8 +700,14 @@ export class CallSessionManager {
           }
           return response;
         } catch (err) {
+          // Session abort (barge-in, raccroché) — pas de failure ni fallback.
+          if (isSessionAbortError(err, opts.signal)) {
+            recordLlmException('cerebras', err, opts.signal);
+            throw err;
+          }
           // Network error / timeout — record failure, fallback
           recordProviderFailure('cerebras');
+          recordLlmException('cerebras', err, opts.signal);
           if (isOpenRouterFallbackEnabled()) {
             logger.warn(
               { err: err instanceof Error ? err.message : String(err) },
@@ -696,6 +747,7 @@ export class CallSessionManager {
           return response;
         }
         recordProviderFailure('openrouter');
+        recordLlmHttpError('openrouter', response.status);
         if (isCerebrasFallbackEnabled() && isFallbackEligibleError(response.status)) {
           logger.warn(
             { status: response.status, model: getVoiceLlmModel() },
@@ -712,7 +764,13 @@ export class CallSessionManager {
         }
         return response;
       } catch (err) {
+        // Session abort (barge-in, raccroché) — pas de failure ni fallback.
+        if (isSessionAbortError(err, opts.signal)) {
+          recordLlmException('openrouter', err, opts.signal);
+          throw err;
+        }
         recordProviderFailure('openrouter');
+        recordLlmException('openrouter', err, opts.signal);
         if (isCerebrasFallbackEnabled()) {
           logger.warn(
             { err: err instanceof Error ? err.message : String(err) },
@@ -831,6 +889,7 @@ export class CallSessionManager {
           }
           // HTTP error — record failure, check fallback eligibility
           recordProviderFailure('cerebras');
+          recordLlmHttpError('cerebras', response.status);
           if (isOpenRouterFallbackEnabled() && isFallbackEligibleError(response.status)) {
             logger.warn(
               { status: response.status, model: getVoiceLlmModel() },
@@ -848,8 +907,14 @@ export class CallSessionManager {
           }
           return { response, provider: 'cerebras' };
         } catch (err) {
+          // Session abort (barge-in, raccroché) — pas de failure ni fallback.
+          if (isSessionAbortError(err, opts.signal)) {
+            recordLlmException('cerebras', err, opts.signal);
+            throw err;
+          }
           // Network error / timeout — record failure, fallback
           recordProviderFailure('cerebras');
+          recordLlmException('cerebras', err, opts.signal);
           if (isOpenRouterFallbackEnabled()) {
             logger.warn(
               { err: err instanceof Error ? err.message : String(err) },
@@ -891,6 +956,7 @@ export class CallSessionManager {
           return { response, provider: 'openrouter' };
         }
         recordProviderFailure('openrouter');
+        recordLlmHttpError('openrouter', response.status);
         if (isCerebrasFallbackEnabled() && isFallbackEligibleError(response.status)) {
           logger.warn(
             { status: response.status, model: getVoiceLlmModel() },
@@ -908,7 +974,13 @@ export class CallSessionManager {
         }
         return { response, provider: 'openrouter' };
       } catch (err) {
+        // Session abort (barge-in, raccroché) — pas de failure ni fallback.
+        if (isSessionAbortError(err, opts.signal)) {
+          recordLlmException('openrouter', err, opts.signal);
+          throw err;
+        }
         recordProviderFailure('openrouter');
+        recordLlmException('openrouter', err, opts.signal);
         if (isCerebrasFallbackEnabled()) {
           logger.warn(
             { err: err instanceof Error ? err.message : String(err) },
@@ -956,6 +1028,12 @@ export class CallSessionManager {
     model: string,
     isStreaming: boolean = false,
   ): Promise<Response> {
+    // Métrique : compter tous les fallbacks LLM (tous les chemins de fallback
+    // passent par ici). La direction est déduite du provider cible.
+    voiceLlmFallbackTotal.inc({
+      direction: provider === 'openrouter' ? 'cerebras_to_openrouter' : 'openrouter_to_cerebras',
+    });
+
     if (isCircuitBreakerOpen(provider)) {
       // Le fallback est aussi en circuit breaker — on tente quand même (half-open)
       // car on n'a pas d'autre option. Si ça échoue, l'erreur remonte.
@@ -976,10 +1054,12 @@ export class CallSessionManager {
         recordProviderSuccess(provider);
       } else {
         recordProviderFailure(provider);
+        recordLlmHttpError(provider, response.status);
       }
       return response;
     } catch (err) {
       recordProviderFailure(provider);
+      recordLlmException(provider, err, opts.signal);
       throw err;
     }
   }
