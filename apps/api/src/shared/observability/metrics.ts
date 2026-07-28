@@ -170,9 +170,10 @@ export const voiceLlmFallbackTotal = new Counter({
 });
 
 /**
- * Erreurs par provider voice (Deepgram, Cartesia, LLM).
- * Permet de corréler les fallbacks avec les erreurs sous-jacentes.
- * Labels : provider (deepgram | cartesia | llm) × type (timeout | 5xx | 429 | ws_error).
+ * Erreurs par provider voice (Deepgram, Cartesia, Cerebras, OpenRouter).
+ * Permet de corréler les fallbacks avec les erreurs sous-jacentes et de
+ * mesurer la fiabilité de chaque provider LLM indépendamment.
+ * Labels : provider (deepgram | cartesia | cerebras | openrouter) × type (429 | 4xx | 5xx | timeout | session_abort | ws_error).
  */
 export const voiceProviderErrorsTotal = new Counter({
   name: 'voice_provider_errors_total',

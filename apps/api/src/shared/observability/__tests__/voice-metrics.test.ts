@@ -54,8 +54,10 @@ describe('Voice Prometheus metrics', () => {
   it('incrémente voice_provider_errors_total avec labels provider et type', async () => {
     voiceProviderErrorsTotal.inc({ provider: 'deepgram', type: 'ws_error' });
     voiceProviderErrorsTotal.inc({ provider: 'cartesia', type: '5xx' });
-    voiceProviderErrorsTotal.inc({ provider: 'llm', type: 'timeout' });
-    voiceProviderErrorsTotal.inc({ provider: 'llm', type: '429' });
+    voiceProviderErrorsTotal.inc({ provider: 'cerebras', type: 'timeout' });
+    voiceProviderErrorsTotal.inc({ provider: 'cerebras', type: '429' });
+    voiceProviderErrorsTotal.inc({ provider: 'openrouter', type: '4xx' });
+    voiceProviderErrorsTotal.inc({ provider: 'openrouter', type: 'session_abort' });
     const payload = await renderMetrics();
     expect(payload).toContain('voice_provider_errors_total');
     expect(payload).toMatch(
@@ -65,10 +67,16 @@ describe('Voice Prometheus metrics', () => {
       /voice_provider_errors_total\{[^}]*provider="cartesia"[^}]*type="5xx"[^}]*\} 1/,
     );
     expect(payload).toMatch(
-      /voice_provider_errors_total\{[^}]*provider="llm"[^}]*type="timeout"[^}]*\} 1/,
+      /voice_provider_errors_total\{[^}]*provider="cerebras"[^}]*type="timeout"[^}]*\} 1/,
     );
     expect(payload).toMatch(
-      /voice_provider_errors_total\{[^}]*provider="llm"[^}]*type="429"[^}]*\} 1/,
+      /voice_provider_errors_total\{[^}]*provider="cerebras"[^}]*type="429"[^}]*\} 1/,
+    );
+    expect(payload).toMatch(
+      /voice_provider_errors_total\{[^}]*provider="openrouter"[^}]*type="4xx"[^}]*\} 1/,
+    );
+    expect(payload).toMatch(
+      /voice_provider_errors_total\{[^}]*provider="openrouter"[^}]*type="session_abort"[^}]*\} 1/,
     );
   });
 

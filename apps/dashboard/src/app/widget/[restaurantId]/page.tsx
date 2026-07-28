@@ -180,6 +180,9 @@ export default function ReservationWidget() {
   const searchParams = useSearchParams();
   const restaurantId = params.restaurantId;
   const isEmbedded = searchParams.get('embedded') === '1';
+  // Origine explicite du parent, passée par le snippet embed Sokar.
+  // Priorité sur document.referrer (qui peut être vide avec Referrer-Policy: no-referrer).
+  const explicitParentOrigin = searchParams.get('parentOrigin');
 
   // Restaurant public metadata
   const [restaurant, setRestaurant] = useState<RestaurantPublic | null>(null);
@@ -230,7 +233,7 @@ export default function ReservationWidget() {
     if (!isEmbedded || typeof window === 'undefined') return;
     const sendHeight = () => {
       const height = document.body.scrollHeight;
-      const parentOrigin = getParentOrigin();
+      const parentOrigin = getParentOrigin(explicitParentOrigin);
       if (parentOrigin) {
         window.parent.postMessage({ type: 'sokar-widget-resize', height }, parentOrigin);
       }
@@ -258,7 +261,7 @@ export default function ReservationWidget() {
       if (e.data?.type !== 'sokar-widget-resize' || typeof e.data?.height !== 'number') return;
       setGiftCardHeight(e.data.height);
       if (isEmbedded) {
-        const parentOrigin = getParentOrigin();
+        const parentOrigin = getParentOrigin(explicitParentOrigin);
         if (parentOrigin) {
           window.parent.postMessage(
             { type: 'sokar-widget-resize', height: document.body.scrollHeight },

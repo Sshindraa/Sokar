@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, waitFor, act } from '@testing-library/react';
+import { render, waitFor, act, fireEvent } from '@testing-library/react';
 import ReservationWidget from './page';
 import { getParentOrigin } from './post-message-security';
 
@@ -158,6 +158,26 @@ describe('getParentOrigin', () => {
     setReferrer('not-a-valid-url');
     expect(getParentOrigin()).toBe('');
   });
+
+  it('utilise explicitParentOrigin en priorité sur le referrer', () => {
+    setReferrer('https://referrer.example.com/');
+    expect(getParentOrigin('https://explicit.example.com')).toBe('https://explicit.example.com');
+  });
+
+  it('retombe sur le referrer quand explicitParentOrigin est invalide', () => {
+    setReferrer('https://referrer.example.com/');
+    expect(getParentOrigin('not-a-url')).toBe('https://referrer.example.com');
+  });
+
+  it("retourne '' quand explicitParentOrigin est file:// (non-HTTP)", () => {
+    setReferrer('');
+    expect(getParentOrigin('file:///path/to/page.html')).toBe('');
+  });
+
+  it("retourne '' quand explicitParentOrigin et referrer sont tous deux vides", () => {
+    setReferrer('');
+    expect(getParentOrigin(null)).toBe('');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -265,5 +285,51 @@ describe('widget embarqué — listener entrant', () => {
       ([msg]) => (msg as { type?: string })?.type === 'sokar-widget-resize',
     ).length;
     expect(resizeCallsAfter).toBe(resizeCallsBefore);
+  });
+
+  it("accepte un message same-origin dont la source est l'iframe gift-card et forward au parent", async () => {
+    const { postMessageSpy, container } = await setupEmbedded('https://resto.example.com/');
+
+    // Ouvre la modal gift-card pour que l'iframe soit rendue et le ref assigné.
+    const giftCardButton = container.querySelector('button[class*="gift"], button[class*="carte"]');
+    // Fallback : cherche par texte
+    const button =
+      giftCardButton ??
+      Array.from(container.querySelectorAll('button')).find((b) =>
+        b.textContent?.includes('carte cadeau'),
+      );
+    expect(button).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(button!);
+    });
+
+    // Récupère l'iframe renderée et son contentWindow.
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement | null;
+    expect(iframe).toBeTruthy();
+    const iframeWindow = iframe!.contentWindow;
+    expect(iframeWindow).toBeTruthy();
+
+    const resizeCallsBefore = postMessageSpy.mock.calls.filter(
+      ([msg]) => (msg as { type?: string })?.type === 'sokar-widget-resize',
+    ).length;
+
+    // Message same-origin avec source === iframe.contentWindow : doit être accepté.
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          origin: window.location.origin,
+          source: iframeWindow,
+          data: { type: 'sokar-widget-resize', height: 5555 },
+        }),
+      );
+    });
+
+    // Le message doit être forwardé au parent (resizeCalls augmente).
+    await waitFor(() => {
+      const resizeCallsAfter = postMessageSpy.mock.calls.filter(
+        ([msg]) => (msg as { type?: string })?.type === 'sokar-widget-resize',
+      ).length;
+      expect(resizeCallsAfter).toBeGreaterThan(resizeCallsBefore);
+    });
   });
 });
