@@ -256,7 +256,7 @@ Scripts SQL d'urgence :
   d'intégrité par hash SHA256 local vs distant**, rotation automatique,
   garde-fou de quota (5 GB / 10 GB free tier), alerte optionnelle via
   `ALERT_CMD`.
-- Cron installé sur le VPS par `scripts/ops/install-r2-backup.sh`.
+- Cron installé sur le VPS par `scripts/_archive/install-r2-backup.sh` (script one-time déjà exécuté, conservé pour référence).
 - Logs : `/var/log/sokar/postgres-r2-backup.log` (rotaté par
   `infra/logrotate/sokar`).
 
@@ -350,7 +350,7 @@ rclone ls r2:sokar-backups/postgres/ | tail -5
 Si le dernier dump date de plus de 24h, redéployer :
 
 ```bash
-VPS_HOST=sokar bash scripts/ops/install-r2-backup.sh --test
+VPS_HOST=sokar bash scripts/_archive/install-r2-backup.sh --test
 ```
 
 ---

@@ -320,7 +320,7 @@ fi
 if [ "$HAS_CERT_CHECK" = true ]; then
     if ! sudo "$PRIVILEGED_WRAPPER" check-cert "$DEPLOY_ENV"; then
         log_error "Certificat origine absent. Lance d'abord :"
-        log info "   sudo bash scripts/ops/setup-origin-tls.sh"
+        log info "   sudo bash scripts/_archive/setup-origin-tls.sh"
         exit 1
     fi
 fi

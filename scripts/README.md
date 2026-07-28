@@ -13,7 +13,6 @@ les commandes `package.json` :
 - `ops/deploy-common.sh` — librairie partagée sourcée par `deploy.sh` (fonctions communes prod + staging).
 - `precommit-review.sh` — garde-fous secrets et code dangereux avant commit.
 - `prepush-quality-gate.sh` — vérifications ciblées avant push.
-- `backup-postgres-r2.sh` — shim de compatibilité pour l'ancien cron VPS ; les nouvelles installations utilisent `database/backup-postgres-r2.sh`.
 - `agent/submit-pr.sh` — soumission et auto-merge des PR d'agents.
 
 ## Organisation
@@ -23,6 +22,7 @@ les commandes `package.json` :
 - `ops/` — installation et exploitation VPS, watchdog, TLS, staging et R2.
 - `quality/` — diagnostics locaux utilisés par les hooks.
 - `agent/` — outils d'automatisation pour les agents IA.
+- `_archive/` — scripts one-time déjà exécutés, conservés pour référence (voir `_archive/README.md`).
 
 Les diagnostics manuels voix/MCP et dogfood vivent sous `tools/diagnostics/` ;
 les requêtes SQL d'audit et d'urgence vivent sous `infra/sql/`.
@@ -31,5 +31,5 @@ les requêtes SQL d'audit et d'urgence vivent sous `infra/sql/`.
 
 Avant d'ajouter un script, vérifier si une commande `package.json`, une tâche CI
 ou un runbook suffit. Un nouveau script doit être réutilisable, avoir un
-propriétaire (`build`, `database`, `ops`, `quality`, `smoke`, `sql` ou `agent`)
+propriétaire (`build`, `database`, `ops`, `quality`, `sql` ou `agent`)
 et être référencé ici ou dans son runbook.
