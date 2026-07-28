@@ -110,72 +110,7 @@ fi
 # Commande ROLLBACK
 # ══════════════════════════════════════════════════════════
 if [ "$COMMAND" = "rollback" ]; then
-    cd "$SOKAR_ROOT"
-    log_section "${DEPLOY_ENV^} Rollback"
-
-    # TARGET_RELEASE est désormais parsé par la boucle d'arguments principale
-    # (le prochain argument non-flag après "rollback" est traité comme release cible).
-
-    if [ -z "$TARGET_RELEASE" ]; then
-        # Pas de release spécifiée → prendre l'avant-dernière
-        # (la dernière est potentiellement celle qui vient de casser)
-        list_releases
-        log info ""
-        TARGET_RELEASE=$(ls -1 "$RELEASES_DIR" 2>/dev/null \
-            | grep -E '^[0-9]{8}T[0-9]{6}Z' \
-            | sort -r \
-            | sed -n '2p')
-        if [ -z "$TARGET_RELEASE" ]; then
-            log_error "Aucune release précédente trouvée dans $RELEASES_DIR"
-            exit 1
-        fi
-        log info "→ Rollback vers : $TARGET_RELEASE"
-    fi
-
-    RELEASE_PATH="$RELEASES_DIR/$TARGET_RELEASE"
-    if [ ! -d "$RELEASE_PATH" ]; then
-        log_error "Release $TARGET_RELEASE introuvable"
-        list_releases
-        exit 1
-    fi
-
-    log info "→ Stop services..."
-    pm2 stop "$PM2_DASH" "$PM2_CONNECT" 2>/dev/null || true
-
-    log info "→ Restore artefacts..."
-    restore_artifacts "$RELEASE_PATH"
-
-    if [ "$WITH_DB_ROLLBACK" = true ]; then
-        log info "→ Restore DB..."
-        if ! restore_db "$RELEASE_PATH"; then
-            log_error "DB restore échoué — rollback annulé"
-            exit 1
-        fi
-    fi
-
-    log info "→ Restart services..."
-    pm2 start "$ECOSYSTEM_FILE"
-    wait_for_services
-    pm2 save
-    sudo "$PRIVILEGED_WRAPPER" reload-nginx "$DEPLOY_ENV" 2>/dev/null || true
-
-    log info ""
-    log info "→ Vérification..."
-    API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT_API}/health" 2>/dev/null || echo "FAIL")
-    DASH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT_DASH}" 2>/dev/null || echo "FAIL")
-    log info "   api → $API_STATUS | dashboard → $DASH_STATUS"
-
-    if [ "$API_STATUS" = "200" ] && [ "$DASH_STATUS" = "200" ]; then
-        log info ""
-        log_ok "Rollback vers $TARGET_RELEASE terminé"
-        log info "   Meta: $(cat "$RELEASE_PATH/META" 2>/dev/null | tr '\n' ' ')"
-        notify "✅ Sokar ${DEPLOY_ENV} rollback OK (${TARGET_RELEASE})"
-    else
-        log info ""
-        log_error "Rollback terminé mais vérifications échouées — investiguer manuellement"
-        notify "🔴 Sokar ${DEPLOY_ENV} rollback failed (${TARGET_RELEASE})"
-        exit 1
-    fi
+    handle_rollback
     exit 0
 fi
 

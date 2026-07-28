@@ -35,7 +35,32 @@ pour leur page de réservation Sokar. Cloudflare gère le SSL automatiquement
 1. Dashboard Cloudflare → **sokar.tech** → **Overview**
 2. En bas à droite : **Zone ID** → copier
 
-### 4. Configurer les variables d'env sur le VPS
+### 4. Configurer les variables d'env sur le VPS (automatisée)
+
+Utiliser le script idempotent `scripts/ops/setup-cloudflare-saas.sh` depuis votre machine locale :
+
+```zsh
+bash scripts/ops/setup-cloudflare-saas.sh --env prod --token "cf-token-xxx" --zone-id "zone-xxx"
+```
+
+Le script :
+- Backup le `.env` (timestamp automatique)
+- Ajoute ou met à jour les 3 vars `CLOUDFLARE_*` (idempotent — ne redémarre pas si rien à changer)
+- Redémarre `sokar-api` via PM2
+- Vérifie le health check sur `localhost:4000/livez`
+- **Ne logge jamais le token en clair** (affiche `[REDACTED]`)
+
+Pour staging (optionnel — voir note ci-dessous) :
+
+```zsh
+bash scripts/ops/setup-cloudflare-saas.sh --env staging --token "cf-token-xxx" --zone-id "zone-xxx" --fallback-origin "staging.sokar.tech"
+```
+
+> **Note — Staging :** Les vars Cloudflare SaaS sont **optionnelles en staging**. Le guard `isCloudflareSaaSEnabled()` (dans `apps/api/src/modules/connect/cloudflare-saas.service.ts`) vérifie que `CLOUDFLARE_API_TOKEN` ET `CLOUDFLARE_ZONE_ID` sont définies. Si elles sont absentes, le customDomain est stocké en DB sans provisioning Cloudflare — l'API continue de fonctionner normalement. En staging, on laisse généralement ces vars vides.
+
+#### Procédure manuelle (fallback)
+
+Si le script ne fonctionne pas, vous pouvez configurer les vars manuellement :
 
 ```zsh
 ssh deploy@sokar
@@ -63,7 +88,7 @@ pm2 restart sokar-api
 
 ```zsh
 # Sur le VPS
-curl -s http://127.0.0.1:4000/health | jq .
+curl -s http://127.0.0.1:4000/livez | jq .
 # Doit retourner 200 OK
 ```
 

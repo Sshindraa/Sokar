@@ -101,6 +101,25 @@ jobs:
           echo ""
           echo "✅ All smoke tests passed"
 
+      - name: Test rollback staging
+        if: success() && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.head_branch == 'main')
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: deploy
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            bash /opt/sokar-staging/scripts/deploy.sh --env staging rollback
+        continue-on-error: true
+
+      - name: Verify rollback health
+        if: always() && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.head_branch == 'main')
+        run: |
+          sleep 5
+          curl -fsS https://api-staging.sokar.tech/livez || exit 1
+
       - name: Playwright E2E smoke test
         uses: actions/checkout@v4
 
