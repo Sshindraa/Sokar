@@ -32,6 +32,19 @@
 
 set -uo pipefail
 
+# Charge les helpers partagés (notify, log_*).
+# En production ce script est installé standalone (/usr/local/sbin/sokar-watchdog) ;
+# en dev il est lancé depuis le repo (scripts/ops/). On détecte le layout.
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+if [ -f "$SCRIPT_DIR/../ops/logging.sh" ]; then
+  HELPERS_DIR="$SCRIPT_DIR/../ops"
+else
+  SOKAR_ROOT="${SOKAR_ROOT:-/opt/sokar}"
+  HELPERS_DIR="$SOKAR_ROOT/scripts/ops"
+fi
+# shellcheck source=ops/logging.sh
+source "$HELPERS_DIR/logging.sh"
+
 ENV_FILE="${WATCHDOG_ENV_FILE:-/etc/sokar/watchdog.env}"
 if [ -f "$ENV_FILE" ]; then
   set -a
@@ -57,19 +70,7 @@ install -d -m 0750 "$STATE_DIR" 2>/dev/null || true
 
 ALL_OK=1
 
-notify() {
-  local message="$1"
-  if [ -n "${ALERT_WEBHOOK:-}" ]; then
-    local json_message
-    json_message=$(printf '%s' "$message" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
-    curl -fsS -m 10 -X POST -H 'Content-type: application/json' \
-      --data "{\"text\":\"${json_message}\"}" \
-      "$ALERT_WEBHOOK" >/dev/null 2>&1 || true
-  fi
-  if [ -n "${ALERT_CMD:-}" ]; then
-    $ALERT_CMD "$message" >/dev/null 2>&1 || true
-  fi
-}
+# notify() est fournie par scripts/ops/logging.sh (sourcé en haut de ce fichier).
 
 # Émet une alerte pour un check, avec cooldown. Usage :
 #   fail <check> <severity:CRITIQUE|WARNING> <message>

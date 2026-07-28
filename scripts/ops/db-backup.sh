@@ -10,6 +10,14 @@
 
 set -Eeuo pipefail
 
+# S'assure que les helpers partagés (notify, log_*) sont disponibles.
+# db-backup.sh est normalement sourcé par deploy.sh après logging.sh, mais on
+# garde une garde défensive pour les usages standalone.
+if ! command -v notify >/dev/null 2>&1; then
+  # shellcheck source=ops/logging.sh
+  source "${SOKAR_ROOT}/scripts/ops/logging.sh"
+fi
+
 # Charge DATABASE_URL depuis apps/api/.env si elle n'est pas déjà exportée.
 __load_db_env() {
   if [ -n "${DATABASE_URL:-}" ]; then
@@ -99,22 +107,5 @@ restore_db() {
   fi
 }
 
-# Envoie une notification via ALERT_CMD ou ALERT_WEBHOOK.
-# Usage: notify "message de notification"
-notify() {
-  local message="${1:-}"
-  if [ -z "$message" ]; then
-    return 0
-  fi
-
-  if [ -n "${ALERT_WEBHOOK:-}" ]; then
-    # Escapote basique des guillemets pour JSON valide
-    local json_message
-    json_message=$(printf '%s' "$message" | sed 's/"/\\"/g')
-    curl -s -X POST -H 'Content-type: application/json' \
-      --data "{\"text\":\"${json_message}\"}" \
-      "$ALERT_WEBHOOK" >/dev/null 2>&1 || true
-  elif [ -n "${ALERT_CMD:-}" ]; then
-    $ALERT_CMD "$message" || true
-  fi
-}
+# notify() est fournie par scripts/ops/logging.sh (sourcé en haut de ce fichier
+# ou par le script appelant, ex. deploy.sh).

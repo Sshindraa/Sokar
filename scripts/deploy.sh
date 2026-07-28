@@ -40,6 +40,15 @@ TARGET_RELEASE=""
 PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
 WAIT_TIMEOUT=${WAIT_TIMEOUT:-60}
 
+# ── Source libs ──────────────────────────────────────────
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=ops/logging.sh
+source "$SCRIPT_DIR/ops/logging.sh"
+# shellcheck source=ops/db-backup.sh
+source "$SCRIPT_DIR/ops/db-backup.sh"
+# shellcheck source=ops/deploy-common.sh
+source "$SCRIPT_DIR/ops/deploy-common.sh"
+
 # ── Aide ─────────────────────────────────────────────────
 print_usage() {
     cat <<'EOF'
@@ -75,140 +84,12 @@ EOF
 }
 
 # ── Parse args ───────────────────────────────────────────
-while [ $# -gt 0 ]; do
-    case "${1:-}" in
-        --env)
-            DEPLOY_ENV="${2:-}"
-            shift 2
-            ;;
-        --env=*)
-            DEPLOY_ENV="${1#*=}"
-            shift
-            ;;
-        --confirm-production)
-            CONFIRM_PRODUCTION=true
-            shift
-            ;;
-        --dry-run)
-            DRY_RUN=true
-            shift
-            ;;
-        --force)
-            FORCE=true
-            shift
-            ;;
-        --force-build)
-            FORCE_BUILD=true
-            shift
-            ;;
-        --with-db-rollback)
-            WITH_DB_ROLLBACK=true
-            shift
-            ;;
-        --help|-h)
-            print_usage
-            exit 0
-            ;;
-        rollback)
-            COMMAND="rollback"
-            shift
-            ;;
-        deploy)
-            COMMAND="deploy"
-            shift
-            ;;
-        *)
-            # Argument non-flag : en mode rollback c'est la release cible,
-            # sinon c'est la branche git à déployer.
-            if [ "$COMMAND" = "rollback" ]; then
-                if [ -z "$TARGET_RELEASE" ]; then
-                    TARGET_RELEASE="$1"
-                fi
-            else
-                if [ -z "${BRANCH_SET:-}" ]; then
-                    BRANCH="$1"
-                    BRANCH_SET=1
-                fi
-            fi
-            shift
-            ;;
-    esac
-done
+parse_deploy_args "$@"
 
 # ── Validation env ───────────────────────────────────────
-if [ -z "$DEPLOY_ENV" ]; then
-    echo "Erreur: --env est requis." >&2
-    echo "" >&2
-    print_usage >&2
-    exit 1
-fi
-
-case "$DEPLOY_ENV" in
-    prod)
-        SOKAR_ROOT="/opt/sokar"
-        RELEASES_DIR="$SOKAR_ROOT/releases"
-        PORT_API=4000
-        PORT_DASH=3000
-        PORT_CONNECT=4002
-        PM2_API="sokar-api"
-        PM2_DASH="sokar-dashboard"
-        PM2_CONNECT="sokar-connect"
-        ECOSYSTEM_FILE="infra/ecosystem.config.js"
-        NGINX_CONFIG="sokar"
-        DB_NAME="sokar"
-        KEEP_RELEASES=5
-        HAS_LOCALSTACK=true
-        HAS_LOGROTATE=true
-        HAS_CERT_CHECK=true
-        EXTENDED_HEALTH_CHECKS=true
-        # Prod : --dry-run non supporté
-        if [ "$DRY_RUN" = true ]; then
-            echo "Erreur: --dry-run n'est pas supporté en production." >&2
-            exit 1
-        fi
-        # Prod : --force non supporté
-        if [ "$FORCE" = true ]; then
-            echo "Erreur: --force n'est pas supporté en production." >&2
-            exit 1
-        fi
-        ;;
-    staging)
-        SOKAR_ROOT="/opt/sokar-staging"
-        RELEASES_DIR="$SOKAR_ROOT/releases"
-        PORT_API=4100
-        PORT_DASH=3100
-        PORT_CONNECT=4102
-        PM2_API="sokar-staging-api"
-        PM2_DASH="sokar-staging-dashboard"
-        PM2_CONNECT="sokar-staging-connect"
-        ECOSYSTEM_FILE="infra/ecosystem.staging.config.js"
-        NGINX_CONFIG="sokar-staging"
-        DB_NAME="sokar_staging"
-        KEEP_RELEASES=3
-        HAS_LOCALSTACK=false
-        HAS_LOGROTATE=false
-        HAS_CERT_CHECK=false
-        EXTENDED_HEALTH_CHECKS=false
-        # Staging : --confirm-production non requis (ignoré silencieusement)
-        ;;
-    *)
-        echo "Erreur: --env doit être 'prod' ou 'staging' (reçu: '$DEPLOY_ENV')." >&2
-        echo "" >&2
-        print_usage >&2
-        exit 1
-        ;;
-esac
+validate_deploy_env
 
 DATE=$(date '+%Y-%m-%d %H:%M:%S')
-
-# ── Source libs ──────────────────────────────────────────
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-# shellcheck source=ops/logging.sh
-source "$SCRIPT_DIR/ops/logging.sh"
-# shellcheck source=ops/db-backup.sh
-source "$SCRIPT_DIR/ops/db-backup.sh"
-# shellcheck source=ops/deploy-common.sh
-source "$SCRIPT_DIR/ops/deploy-common.sh"
 
 # ── Lock anti-déploiements concurrents ───────────────────
 # Placé après le source des libs (pour log_error) et avant toute opération.

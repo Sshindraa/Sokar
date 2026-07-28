@@ -21,6 +21,24 @@ set -euo pipefail
 # Forcer rclone dans le PATH (install user, pas /usr/bin)
 export PATH="$HOME/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
+# Charge les helpers partagés (check_disk_space, log_error).
+# En production ce script est installé standalone ; en dev depuis le repo (scripts/database/).
+# NB IMPORTANT : ce source DOIT rester AVANT la définition de log() locale ci-dessous.
+# Sans cela, logging.sh (sourcé transitivement par disk.sh) définirait son propre log()
+# qui primerait sur la version locale de ce script (qui écrit aussi dans LOG_PATH).
+# log_error reste dispo car non redéfini localement.
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+if [ -f "$SCRIPT_DIR/../ops/disk.sh" ]; then
+  HELPERS_DIR="$SCRIPT_DIR/../ops"
+  SOKAR_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+else
+  SOKAR_ROOT="${SOKAR_ROOT:-/opt/sokar}"
+  HELPERS_DIR="$SOKAR_ROOT/scripts/ops"
+fi
+export SOKAR_ROOT
+# shellcheck source=ops/disk.sh
+source "$HELPERS_DIR/disk.sh"
+
 CONTAINER="${POSTGRES_CONTAINER:-infra-postgres-1}"
 DB_NAME="${POSTGRES_DB:-sokar}"
 DB_USER="${POSTGRES_USER:-sokar}"
@@ -35,17 +53,6 @@ ALERT="${ALERT_CMD:-true}"
 
 log() { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*" | tee -a "$LOG_PATH" >&2; }
 alert() { $ALERT "$@"; }
-
-check_disk_space() {
-    local target_dir="$1"
-    local required_bytes="$2"
-    local available
-    available=$(df -B1 --output=avail "$target_dir" | tail -1)
-    if [ "$available" -lt "$required_bytes" ]; then
-        log "❌ Disk space check failed: $target_dir has $available bytes, required $required_bytes"
-        exit 1
-    fi
-}
 
 # ── Garde-fou de quota ────────────────────────────────────
 log "→ Vérification quota (limite: ${QUOTA_GB}GB)"

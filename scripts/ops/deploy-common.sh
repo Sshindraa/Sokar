@@ -1,8 +1,9 @@
 #!/bin/bash
+set -euo pipefail
 # Librairie partagée pour les déploiements Sokar (prod + staging).
-# Sourcée par scripts/deploy.sh après configuration des variables d'environnement.
+# Sourcée par scripts/deploy.sh avant le parsing des arguments.
 #
-# Variables attendues (set par deploy.sh avant de source ce fichier) :
+# Variables attendues (set par deploy.sh avant d'appeler les fonctions) :
 #   DEPLOY_ENV              prod | staging
 #   SOKAR_ROOT              /opt/sokar | /opt/sokar-staging
 #   RELEASES_DIR            $SOKAR_ROOT/releases
@@ -24,6 +25,8 @@
 #   WAIT_TIMEOUT            timeout en secondes pour wait_for_services
 #
 # Fonctions exposées :
+#   parse_deploy_args(args...)
+#   validate_deploy_env()
 #   ensure_privileged_wrapper()
 #   wait_for_services(timeout)
 #   snapshot_artifacts(target, label, [paths...])
@@ -661,4 +664,143 @@ health_checks() {
             recover_services 1
         fi
     fi
+}
+
+# ── Parse args ───────────────────────────────────────────
+# Extrait du bloc inline de deploy.sh.
+# Set les variables globales : DEPLOY_ENV, CONFIRM_PRODUCTION, DRY_RUN, FORCE,
+# FORCE_BUILD, BRANCH, COMMAND, WITH_DB_ROLLBACK, TARGET_RELEASE, BRANCH_SET.
+# Appelle print_usage (définie par deploy.sh) sur --help.
+parse_deploy_args() {
+    while [ $# -gt 0 ]; do
+        case "${1:-}" in
+            --env)
+                DEPLOY_ENV="${2:-}"
+                shift 2
+                ;;
+            --env=*)
+                DEPLOY_ENV="${1#*=}"
+                shift
+                ;;
+            --confirm-production)
+                CONFIRM_PRODUCTION=true
+                shift
+                ;;
+            --dry-run)
+                DRY_RUN=true
+                shift
+                ;;
+            --force)
+                FORCE=true
+                shift
+                ;;
+            --force-build)
+                FORCE_BUILD=true
+                shift
+                ;;
+            --with-db-rollback)
+                WITH_DB_ROLLBACK=true
+                shift
+                ;;
+            --help|-h)
+                print_usage
+                exit 0
+                ;;
+            rollback)
+                COMMAND="rollback"
+                shift
+                ;;
+            deploy)
+                COMMAND="deploy"
+                shift
+                ;;
+            *)
+                # Argument non-flag : en mode rollback c'est la release cible,
+                # sinon c'est la branche git à déployer.
+                if [ "$COMMAND" = "rollback" ]; then
+                    if [ -z "$TARGET_RELEASE" ]; then
+                        TARGET_RELEASE="$1"
+                    fi
+                else
+                    if [ -z "${BRANCH_SET:-}" ]; then
+                        BRANCH="$1"
+                        BRANCH_SET=1
+                    fi
+                fi
+                shift
+                ;;
+        esac
+    done
+}
+
+# ── Validation env ───────────────────────────────────────
+# Extrait du bloc inline de deploy.sh.
+# Set les variables globales : SOKAR_ROOT, RELEASES_DIR, PORT_API, PORT_DASH,
+# PORT_CONNECT, PM2_API, PM2_DASH, PM2_CONNECT, ECOSYSTEM_FILE, NGINX_CONFIG,
+# DB_NAME, KEEP_RELEASES, HAS_LOCALSTACK, HAS_LOGROTATE, HAS_CERT_CHECK,
+# EXTENDED_HEALTH_CHECKS.
+# Appelle print_usage et exit 1 si --env est manquant ou invalide.
+validate_deploy_env() {
+    if [ -z "$DEPLOY_ENV" ]; then
+        echo "Erreur: --env est requis." >&2
+        echo "" >&2
+        print_usage >&2
+        exit 1
+    fi
+
+    case "$DEPLOY_ENV" in
+        prod)
+            SOKAR_ROOT="/opt/sokar"
+            RELEASES_DIR="$SOKAR_ROOT/releases"
+            PORT_API=4000
+            PORT_DASH=3000
+            PORT_CONNECT=4002
+            PM2_API="sokar-api"
+            PM2_DASH="sokar-dashboard"
+            PM2_CONNECT="sokar-connect"
+            ECOSYSTEM_FILE="infra/ecosystem.config.js"
+            NGINX_CONFIG="sokar"
+            DB_NAME="sokar"
+            KEEP_RELEASES=5
+            HAS_LOCALSTACK=true
+            HAS_LOGROTATE=true
+            HAS_CERT_CHECK=true
+            EXTENDED_HEALTH_CHECKS=true
+            # Prod : --dry-run non supporté
+            if [ "$DRY_RUN" = true ]; then
+                echo "Erreur: --dry-run n'est pas supporté en production." >&2
+                exit 1
+            fi
+            # Prod : --force non supporté
+            if [ "$FORCE" = true ]; then
+                echo "Erreur: --force n'est pas supporté en production." >&2
+                exit 1
+            fi
+            ;;
+        staging)
+            SOKAR_ROOT="/opt/sokar-staging"
+            RELEASES_DIR="$SOKAR_ROOT/releases"
+            PORT_API=4100
+            PORT_DASH=3100
+            PORT_CONNECT=4102
+            PM2_API="sokar-staging-api"
+            PM2_DASH="sokar-staging-dashboard"
+            PM2_CONNECT="sokar-staging-connect"
+            ECOSYSTEM_FILE="infra/ecosystem.staging.config.js"
+            NGINX_CONFIG="sokar-staging"
+            DB_NAME="sokar_staging"
+            KEEP_RELEASES=3
+            HAS_LOCALSTACK=false
+            HAS_LOGROTATE=false
+            HAS_CERT_CHECK=false
+            EXTENDED_HEALTH_CHECKS=false
+            # Staging : --confirm-production non requis (ignoré silencieusement)
+            ;;
+        *)
+            echo "Erreur: --env doit être 'prod' ou 'staging' (reçu: '$DEPLOY_ENV')." >&2
+            echo "" >&2
+            print_usage >&2
+            exit 1
+            ;;
+    esac
 }

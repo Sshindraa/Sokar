@@ -48,3 +48,28 @@ log_warn() {
 log_error() {
   log error "❌ ${1:-}"
 }
+
+# Envoie une notification via ALERT_WEBHOOK (Slack/Discord) et/ou ALERT_CMD.
+# Usage: notify "message de notification"
+#
+# Variables d'env (optionnelles, no-op silencieux si vides) :
+#   ALERT_WEBHOOK — URL webhook Slack-like, payload {"text": "message"}
+#   ALERT_CMD     — commande appelée avec le message en $1
+notify() {
+  local message="${1:-}"
+  if [ -z "$message" ]; then
+    return 0
+  fi
+
+  if [ -n "${ALERT_WEBHOOK:-}" ]; then
+    # Échappement des guillemets et newlines pour un payload JSON valide.
+    local json_message
+    json_message=$(printf '%s' "$message" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+    curl -s -m 10 -X POST -H 'Content-type: application/json' \
+      --data "{\"text\":\"${json_message}\"}" \
+      "$ALERT_WEBHOOK" >/dev/null 2>&1 || true
+  fi
+  if [ -n "${ALERT_CMD:-}" ]; then
+    $ALERT_CMD "$message" >/dev/null 2>&1 || true
+  fi
+}

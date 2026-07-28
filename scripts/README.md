@@ -31,5 +31,5 @@ les requêtes SQL d'audit et d'urgence vivent sous `infra/sql/`.
 
 Avant d'ajouter un script, vérifier si une commande `package.json`, une tâche CI
 ou un runbook suffit. Un nouveau script doit être réutilisable, avoir un
-propriétaire (`build`, `database`, `ops`, `quality`, `sql` ou `agent`)
+propriétaire (`build`, `database`, `ops`, `quality` ou `agent`)
 et être référencé ici ou dans son runbook.
