@@ -14,8 +14,6 @@ import {
   Users,
   Sparkles,
   Zap,
-  Eye,
-  EyeOff,
   HeartHandshake,
   Code,
   Gift,
@@ -31,12 +29,11 @@ import { SyncOrganization } from './SyncOrganization';
 import { CreateRestaurantGate } from './CreateRestaurantGate';
 import MobileBottomNav from '@/components/MobileBottomNav';
 import { AccountMenu } from '@/components/AccountMenu';
-import { OnboardingProvider, useOnboarding } from '@/features/onboarding/onboarding-provider';
+import { OnboardingProvider } from '@/features/onboarding/onboarding-provider';
 import {
   DashboardOnboardingGate,
   DashboardOnboardingPanel,
 } from '@/features/onboarding/onboarding-dashboard';
-import { DemoModeProvider, useDemoMode } from '@/features/onboarding/use-demo-mode';
 import { DashboardThemeProvider, useDashboardTheme } from '@/features/theme/dashboard-theme';
 import { useApi } from '@/lib/api';
 
@@ -106,33 +103,6 @@ function SidebarNavItem({
 }
 
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
-
-function DemoModeToggle() {
-  const { state } = useOnboarding();
-  const { demoMode, setDemoMode } = useDemoMode();
-  const t = useTranslations('dashboard');
-
-  // Le toggle n'est visible que si l'onboarding voice n'est pas terminé
-  // (l'utilisateur a besoin de voir la démo pour comprendre le produit).
-  if (!hasClerkKey || !state || state.voiceOnboardingDone) return null;
-
-  return (
-    <button
-      type="button"
-      onClick={() => setDemoMode(!demoMode)}
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-200',
-        demoMode
-          ? 'border-warning/50 bg-warning/10 text-warning'
-          : 'border-border bg-card/80 text-muted-foreground hover:bg-accent hover:text-foreground',
-      )}
-      title={demoMode ? t('demoModeTooltipOn') : t('demoModeTooltipOff')}
-    >
-      {demoMode ? <EyeOff size={14} /> : <Eye size={14} />}
-      {demoMode ? t('demoModeOn') : t('demoModeOff')}
-    </button>
-  );
-}
 
 function ThemeToggle() {
   const { theme, toggleTheme } = useDashboardTheme();
@@ -316,7 +286,6 @@ function DashboardShell({ children }: { children: ReactNode }) {
         </span>
       </div>
       <div className="fixed right-8 top-4 z-50 hidden h-12 items-center gap-2 xl:flex">
-        <DemoModeToggle />
         <AccountMenu />
       </div>
       <div className="relative z-10 w-full px-4 py-3 pb-24 md:pl-24 md:pr-8 md:pb-8 xl:py-3">
@@ -332,7 +301,6 @@ function DashboardShell({ children }: { children: ReactNode }) {
             {restaurantName} HQ
           </span>
           <div className="flex shrink-0 items-center gap-2">
-            <DemoModeToggle />
             <div className="flex items-center gap-2 md:hidden">
               <ThemeToggle />
               <SettingsButton active={pathname.startsWith('/dashboard/settings')} />
@@ -352,13 +320,11 @@ function DashboardShell({ children }: { children: ReactNode }) {
 export default function DashboardLayoutClient({ children }: { children: ReactNode }) {
   return (
     <OnboardingProvider>
-      <DemoModeProvider>
-        <DashboardThemeProvider>
-          <CreateRestaurantGate>
-            <DashboardShell>{children}</DashboardShell>
-          </CreateRestaurantGate>
-        </DashboardThemeProvider>
-      </DemoModeProvider>
+      <DashboardThemeProvider>
+        <CreateRestaurantGate>
+          <DashboardShell>{children}</DashboardShell>
+        </CreateRestaurantGate>
+      </DashboardThemeProvider>
     </OnboardingProvider>
   );
 }

@@ -31,10 +31,6 @@
   },
   "dashboard": {
     "subdomain": "Sokar OS",
-    "demoModeOn": "Demo mode active",
-    "demoModeOff": "View demo",
-    "demoModeTooltipOn": "Disable demo mode",
-    "demoModeTooltipOff": "View the product with demo data",
     "themeToggle": "Theme",
     "themeTooltipLight": "Switch to dark mode",
     "themeTooltipDark": "Switch to light mode"

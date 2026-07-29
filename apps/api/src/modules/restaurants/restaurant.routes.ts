@@ -414,125 +414,6 @@ export async function restaurantRoutes(app: FastifyInstance) {
     },
   );
 
-  // ─── Preview public (mode démo hybride) ───────────────────────────
-  // Sert les données du restaurant démo "Chez Sokar" (slug: chez-sokar-demo)
-  // aux utilisateurs non-onboardés pour explorer le produit en lecture seule.
-  // Pas d'auth : endpoint public. Aucune donnée sensible (pas de tokens,
-  // pas d'API keys MCP, pas de refresh tokens Google).
-  app.get(
-    '/public/preview/restaurant',
-    { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
-    async (_req, reply) => {
-      try {
-        const restaurant = await app.db.restaurant.findFirst({
-          where: { slug: 'chez-sokar-demo' },
-          select: {
-            id: true,
-            name: true,
-            managerPhone: true,
-            managerEmail: true,
-            phoneNumber: true,
-            openingHours: true,
-            googleCalendarId: true,
-            slug: true,
-            description: true,
-            formattedAddress: true,
-            city: true,
-            postalCode: true,
-            country: true,
-            lat: true,
-            lng: true,
-            cuisineType: true,
-            priceRange: true,
-            ambiance: true,
-            dietary: true,
-            coverImageUrl: true,
-            plan: true,
-            personality: { select: { profileType: true, fillerStyle: true, speakingRate: true } },
-            exposureSettings: {
-              select: {
-                connectPublished: true,
-                connectAgentic: true,
-                maxPartySize: true,
-                capacitySpecials: true,
-              },
-            },
-            images: { select: { url: true, isCover: true, position: true, alt: true } },
-          },
-        });
-
-        if (!restaurant) {
-          return reply.status(404).send({ error: 'Demo restaurant not found' });
-        }
-
-        // Récupère quelques appels, réservations et clients fictifs pour la démo
-        const [calls, reservations, customers] = await Promise.all([
-          app.db.call
-            .findMany({
-              where: { restaurantId: restaurant.id },
-              orderBy: { createdAt: 'desc' },
-              take: 10,
-              select: {
-                id: true,
-                createdAt: true,
-                durationSec: true,
-                intent: true,
-                outcome: true,
-                carrier: true,
-              },
-            })
-            .catch(() => []),
-          app.db.reservation
-            .findMany({
-              where: { restaurantId: restaurant.id },
-              orderBy: { createdAt: 'desc' },
-              take: 10,
-              select: {
-                id: true,
-                customerName: true,
-                customerPhone: true,
-                partySize: true,
-                reservedAt: true,
-                status: true,
-                estimatedRevenue: true,
-              },
-            })
-            .catch(() => []),
-          app.db.customer
-            .findMany({
-              where: { restaurantId: restaurant.id },
-              take: 10,
-              select: {
-                id: true,
-                name: true,
-                phone: true,
-                visitCount: true,
-                isVip: true,
-                notes: true,
-                lastSeenAt: true,
-              },
-            })
-            .catch(() => []),
-        ]);
-
-        return reply.send({
-          restaurant: {
-            ...restaurant,
-            lat: restaurant.lat ? Number(restaurant.lat) : null,
-            lng: restaurant.lng ? Number(restaurant.lng) : null,
-          },
-          calls,
-          reservations,
-          customers,
-          isPreview: true,
-        });
-      } catch (err) {
-        app.log.error({ err }, 'Preview restaurant fetch failed');
-        return reply.status(500).send({ error: 'Failed to load preview' });
-      }
-    },
-  );
-
   app.patch('/restaurants/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const restaurantId = req.restaurantId;
@@ -912,7 +793,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
             settingsData.customDomainCfId = cfResult.id;
             settingsData.customDomainValidatedAt = cfResult.status === 'active' ? now : null;
           } catch (err) {
-            logger.error({ err, domain: newDomain }, '[connect] CF Custom Hostname creation failed');
+            logger.error(
+              { err, domain: newDomain },
+              '[connect] CF Custom Hostname creation failed',
+            );
             return reply
               .status(502)
               .send({ error: 'Impossible de provisionner le domaine sur Cloudflare. Réessayez.' });
@@ -1118,7 +1002,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
           where: { restaurantId },
           data: {
             customDomainStatus: cfResult.status,
-            customDomainValidatedAt: cfResult.status === 'active' ? now : settings.customDomainValidatedAt,
+            customDomainValidatedAt:
+              cfResult.status === 'active' ? now : settings.customDomainValidatedAt,
           },
         });
       } catch (err) {
