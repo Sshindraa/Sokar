@@ -13,7 +13,7 @@ Identité → Horaires → Personnalité → Calendar → Phone → Connect (5 �
 
 Chaque écran _collecte_ des données. **Aucun écran ne délivre la valeur.** L'aha moment — entendre l'IA répondre correctement à un appel, voir une résa bookée — n'arrive qu'**après** toute la config. C'est l'inverse exact du pattern gagnant identifié par Mobbin (Duolingo : tu apprends déjà pendant l'onboarding ; Speak : tu parles déjà avant l'inscription).
 
-Le mode démo existe (`use-demo-mode.tsx` → `/public/preview/restaurant` sur le seed `chez-sokar-demo`) mais c'est un **toggle global** post-onboarding, pas un déclencheur mid-flow. La machinerie TTS Cartesia existe dans `apps/api/src/modules/voice/` mais n'est exposée que via le pipeline d'appels live (`stream/handler.ts`), pas via un endpoint standalone utilisable pendant l'onboarding.
+La machinerie TTS Cartesia existe dans `apps/api/src/modules/voice/` mais n'est exposée que via le pipeline d'appels live (`stream/handler.ts`), pas via un endpoint standalone utilisable pendant l'onboarding.
 
 ## Les 7 idées de la vidéo (rappel)
 
@@ -65,7 +65,6 @@ La vidéo place le founder's touch _après_ la première action de valeur (Airbn
 ## Vérifications rapides côté code (à faire)
 
 - Confirmer que la checklist `onboarding-dashboard.tsx` **persiste après dismiss** (pattern Mural +10% rétention J7). Si elle disparaît au dismiss, c'est un quick win.
-- Confirmer que `use-demo-mode.tsx` peut être déclenché **à l'étape 3** et pas seulement en toggle global — c'est le branchement technique de l'action 1.
 - Vérifier s'il existe déjà un endpoint TTS standalone réutilisable, ou s'il faut en créer un (`POST /onboarding/demo-call`).
 
 ## En une phrase
