@@ -11,6 +11,7 @@ import {
 } from '@sokar/config';
 import { getRestaurantPlanOverride } from '../../shared/configcat';
 import { DAY_SECONDS, HOUR_SECONDS } from '../../shared/constants/time.js';
+import { getVoiceLlmProvider, type VoiceLlmProvider } from '../voice/llm-provider';
 
 /** TTL du compteur mensuel d'appels : ~33 jours en secondes */
 const MONTHLY_CALL_COUNTER_TTL_SECONDS = 33 * DAY_SECONDS;
@@ -19,7 +20,7 @@ interface SafeProviderConfig {
   readonly carrier: string;
   readonly sttProvider: 'deepgram';
   readonly sttModel: string;
-  readonly llmProvider: 'openrouter';
+  readonly llmProvider: VoiceLlmProvider;
   readonly llmModel: string;
   readonly ttsProvider: 'cartesia';
   readonly ttsModel: string;
@@ -75,7 +76,7 @@ function buildProviderConfig(restaurant: {
     carrier: restaurant.carrier,
     sttProvider: 'deepgram',
     sttModel: process.env.DEEPGRAM_MODEL ?? 'nova-3',
-    llmProvider: 'openrouter',
+    llmProvider: getVoiceLlmProvider(),
     llmModel: process.env.VOICE_LLM_MODEL ?? VOICE_LLM_MODEL_DEFAULT,
     ttsProvider: 'cartesia',
     ttsModel: CARTESIA_MODEL,

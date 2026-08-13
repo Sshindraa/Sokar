@@ -6,7 +6,8 @@ import { CustomerService } from '../customers/customer.service';
 import { buildSystemPrompt, type OpeningHours } from './prompts';
 import { detectOutcome, hadReservationIntent } from './outcome';
 import { CallSessionManager } from './stream/manager';
-import { VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
+import { getVoiceLlmProvider } from './llm-provider';
+
 import {
   buildSmsJobId,
   buildTelnyxWebhookJobId,
@@ -282,7 +283,10 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             })
             .catch((err) => {
               app.log.error(
-                { err: err instanceof Error ? err.message : String(err), callId: payload.call_control_id },
+                {
+                  err: err instanceof Error ? err.message : String(err),
+                  callId: payload.call_control_id,
+                },
                 'Direct answer threw — falling back to queue retry',
               );
               // Fallback : enqueue le job pour retry automatique
@@ -440,7 +444,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         transcript: transcript ?? null,
         outcome,
         sttProvider: stt_provider ?? 'deepgram-nova3',
-        llmProvider: llm_provider ?? process.env.VOICE_LLM_MODEL ?? VOICE_LLM_MODEL_DEFAULT,
+        llmProvider: llm_provider ?? getVoiceLlmProvider(),
         ttsProvider: tts_provider ?? 'cartesia-sonic3.5',
         carrier: 'telnyx',
       },
@@ -455,7 +459,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         transcript: transcript ?? null,
         outcome,
         sttProvider: stt_provider ?? 'deepgram-nova3',
-        llmProvider: llm_provider ?? process.env.VOICE_LLM_MODEL ?? VOICE_LLM_MODEL_DEFAULT,
+        llmProvider: llm_provider ?? getVoiceLlmProvider(),
         ttsProvider: tts_provider ?? 'cartesia-sonic3.5',
         carrier: 'telnyx',
       },

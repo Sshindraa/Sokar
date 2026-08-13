@@ -52,7 +52,7 @@ const recommendation = {
   reason: 'Test',
   action: { type: 'link' as const, label: 'Analyser', href: '/dashboard/floor-plan' },
   entityId: 'reservation-1',
-  expiresAt: '2026-08-01T20:00:00.000Z',
+  expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
 };
 
 describe('ServiceCopilotTelemetryService', () => {
