@@ -23,6 +23,7 @@ import { AuditLogService } from '../../agentic-reservations/core/audit-log.servi
 import { zonedTimeToUtc } from '../../floor-plan/availability-capacity-aware.service';
 import { createConversationState } from './conversation-controller';
 import { recordVoiceTurnEvent } from './turn-telemetry';
+import { getVoiceLlmProvider } from '../llm-provider';
 import {
   voiceLlmFallbackTotal,
   voiceProviderErrorsTotal,
@@ -119,9 +120,6 @@ function getCerebrasBaseUrl(): string {
  * - "openrouter" : Llama 3.3 70B sur Groq via OpenRouter (plus rapide)
  * Défaut : "cerebras" (intelligence privilégiée pour la qualité des conversations).
  */
-function getVoiceLlmProvider(): 'cerebras' | 'openrouter' {
-  return process.env.VOICE_LLM_PROVIDER === 'openrouter' ? 'openrouter' : 'cerebras';
-}
 
 /**
  * Retourne true si le fallback Cerebras est configuré (clé API présente).
