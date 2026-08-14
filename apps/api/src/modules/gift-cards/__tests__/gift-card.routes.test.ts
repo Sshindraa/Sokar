@@ -8,6 +8,13 @@ import { logger } from '../../../shared/logger/pino.js';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service';
 import { ReservationService } from '../../agentic-reservations/core/reservation.service';
 
+// Le handler webhook envoie un vrai SMS Telnyx (gift-card-payment.service).
+// Sans mock, un appel réseau réel traîne sous charge parallèle → test flaky (~15s).
+vi.mock('../../../shared/telnyx/client', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../../shared/telnyx/client')>();
+  return { ...mod, sendSms: vi.fn().mockResolvedValue(undefined) };
+});
+
 function d(value: number) {
   return new Prisma.Decimal(value);
 }
