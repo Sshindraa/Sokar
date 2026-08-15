@@ -13,7 +13,12 @@ import { Prisma } from '@prisma/client';
 import '../../../test/helpers.js';
 import { db } from '../../../shared/db/client.js';
 import { retrievePaymentIntent } from '../stripe.service.js';
-import { GiftCardPaymentService, GiftCardPaymentError } from '../gift-card-payment.service.js';
+import {
+  GiftCardPaymentConflictError,
+  GiftCardPaymentService,
+  GiftCardPaymentError,
+} from '../gift-card-payment.service.js';
+import { GiftCardService } from '../gift-card.service.js';
 import { logger } from '../../../shared/logger/pino.js';
 
 // setup.ts mocke le client Telnyx avec un chemin relatif incorrect (../../ au
@@ -42,6 +47,10 @@ describe('GiftCardPaymentService', () => {
     vi.mocked(retrievePaymentIntent).mockResolvedValue({
       id: 'pi_test',
       status: 'succeeded',
+      amount: 10000,
+      amountReceived: 10000,
+      currency: 'eur',
+      metadata: { restaurantId: RESTAURANT_ID, amount: '100', packId: '' },
     });
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
       id: RESTAURANT_ID,
@@ -51,6 +60,8 @@ describe('GiftCardPaymentService', () => {
       managerEmail: 'manager@chezsokar.fr',
       managerPhone: null,
     } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.giftCard.findFirst).mockReset();
+    vi.mocked(db.giftCard.findFirst).mockResolvedValue(null);
     vi.mocked(db.giftCard.create).mockResolvedValue({
       id: 'gc-1',
       restaurantId: RESTAURANT_ID,
@@ -93,6 +104,10 @@ describe('GiftCardPaymentService', () => {
       vi.mocked(retrievePaymentIntent).mockResolvedValue({
         id: 'pi_test',
         status: 'requires_payment_method',
+        amount: 10000,
+        amountReceived: 0,
+        currency: 'eur',
+        metadata: { restaurantId: RESTAURANT_ID, amount: '100', packId: '' },
       });
 
       await expect(
@@ -105,6 +120,14 @@ describe('GiftCardPaymentService', () => {
     });
 
     it('retourne erreur si le restaurant est introuvable', async () => {
+      vi.mocked(retrievePaymentIntent).mockResolvedValue({
+        id: 'pi_test',
+        status: 'succeeded',
+        amount: 10000,
+        amountReceived: 10000,
+        currency: 'eur',
+        metadata: { restaurantId: 'inexistant', amount: '100', packId: '' },
+      });
       vi.mocked(db.restaurant.findUnique).mockResolvedValue(
         null as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>,
       );
@@ -118,16 +141,35 @@ describe('GiftCardPaymentService', () => {
       ).rejects.toThrow('Restaurant introuvable');
     });
 
-    it('retourne erreur si le montant est manquant et sans pack', async () => {
+    it('retourne erreur si les metadata du montant sont manquantes', async () => {
+      vi.mocked(retrievePaymentIntent).mockResolvedValue({
+        id: 'pi_test',
+        status: 'succeeded',
+        amount: 10000,
+        amountReceived: 10000,
+        currency: 'eur',
+        metadata: { restaurantId: RESTAURANT_ID, packId: '' },
+      });
+
       await expect(
         service.purchaseWithPayment({
           restaurantId: RESTAURANT_ID,
           paymentIntentId: 'pi_test',
+          amount: 100,
         }),
-      ).rejects.toThrow('Le montant est requis');
+      ).rejects.toThrow('informations du montant');
     });
 
     it('retourne erreur si le montant est inférieur au minimum', async () => {
+      vi.mocked(retrievePaymentIntent).mockResolvedValue({
+        id: 'pi_test',
+        status: 'succeeded',
+        amount: 500,
+        amountReceived: 500,
+        currency: 'eur',
+        metadata: { restaurantId: RESTAURANT_ID, amount: '5', packId: '' },
+      });
+
       await expect(
         service.purchaseWithPayment({
           restaurantId: RESTAURANT_ID,
@@ -138,6 +180,14 @@ describe('GiftCardPaymentService', () => {
     });
 
     it('utilise le montant du pack quand packId est fourni', async () => {
+      vi.mocked(retrievePaymentIntent).mockResolvedValue({
+        id: 'pi_test',
+        status: 'succeeded',
+        amount: 15000,
+        amountReceived: 15000,
+        currency: 'eur',
+        metadata: { restaurantId: RESTAURANT_ID, amount: '', packId: 'pack-1' },
+      });
       vi.mocked(db.giftCardPack.findFirst).mockResolvedValue({
         id: 'pack-1',
         restaurantId: RESTAURANT_ID,
@@ -163,6 +213,14 @@ describe('GiftCardPaymentService', () => {
     });
 
     it('retourne erreur si le pack est introuvable', async () => {
+      vi.mocked(retrievePaymentIntent).mockResolvedValue({
+        id: 'pi_test',
+        status: 'succeeded',
+        amount: 15000,
+        amountReceived: 15000,
+        currency: 'eur',
+        metadata: { restaurantId: RESTAURANT_ID, amount: '', packId: 'pack-inexistant' },
+      });
       vi.mocked(db.giftCardPack.findFirst).mockResolvedValue(
         null as unknown as Awaited<ReturnType<typeof db.giftCardPack.findFirst>>,
       );
@@ -232,6 +290,103 @@ describe('GiftCardPaymentService', () => {
       });
 
       expect(vi.mocked(sendSms)).not.toHaveBeenCalled();
+    });
+
+    it('refuse un montant différent de celui des metadata Stripe', async () => {
+      await expect(
+        service.purchaseWithPayment({
+          restaurantId: RESTAURANT_ID,
+          paymentIntentId: 'pi_test',
+          amount: 101,
+        }),
+      ).rejects.toThrow('montant ne correspond pas');
+      expect(db.giftCard.create).not.toHaveBeenCalled();
+    });
+
+    it('refuse un restaurant différent de celui des metadata Stripe', async () => {
+      await expect(
+        service.purchaseWithPayment({
+          restaurantId: 'other-restaurant',
+          paymentIntentId: 'pi_test',
+          amount: 100,
+        }),
+      ).rejects.toThrow('restaurant ne correspond pas');
+      expect(db.giftCard.create).not.toHaveBeenCalled();
+    });
+
+    it('refuse une devise autre que EUR', async () => {
+      vi.mocked(retrievePaymentIntent).mockResolvedValue({
+        id: 'pi_test',
+        status: 'succeeded',
+        amount: 10000,
+        amountReceived: 10000,
+        currency: 'usd',
+        metadata: { restaurantId: RESTAURANT_ID, amount: '100', packId: '' },
+      });
+
+      await expect(
+        service.purchaseWithPayment({
+          restaurantId: RESTAURANT_ID,
+          paymentIntentId: 'pi_test',
+          amount: 100,
+        }),
+      ).rejects.toThrow('devise');
+    });
+
+    it('refuse un amount_received inférieur au montant Stripe', async () => {
+      vi.mocked(retrievePaymentIntent).mockResolvedValue({
+        id: 'pi_test',
+        status: 'succeeded',
+        amount: 10000,
+        amountReceived: 9900,
+        currency: 'eur',
+        metadata: { restaurantId: RESTAURANT_ID, amount: '100', packId: '' },
+      });
+
+      await expect(
+        service.purchaseWithPayment({
+          restaurantId: RESTAURANT_ID,
+          paymentIntentId: 'pi_test',
+          amount: 100,
+        }),
+      ).rejects.toThrow('montant du paiement');
+    });
+
+    it('refuse le rejeu séquentiel du même PaymentIntent', async () => {
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue({
+        id: 'gc-existing',
+      } as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>);
+
+      await expect(
+        service.purchaseWithPayment({
+          restaurantId: RESTAURANT_ID,
+          paymentIntentId: 'pi_test',
+          amount: 100,
+        }),
+      ).rejects.toBeInstanceOf(GiftCardPaymentConflictError);
+      expect(db.giftCard.create).not.toHaveBeenCalled();
+    });
+
+    it('transforme une collision P2002 concurrente en conflit métier', async () => {
+      vi.mocked(db.giftCard.findFirst)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          id: 'gc-concurrent',
+        } as unknown as Awaited<ReturnType<typeof db.giftCard.findFirst>>);
+      vi.spyOn(GiftCardService.prototype, 'create').mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('unique', {
+          code: 'P2002',
+          clientVersion: '6.19.0',
+        }),
+      );
+
+      await expect(
+        service.purchaseWithPayment({
+          restaurantId: RESTAURANT_ID,
+          paymentIntentId: 'pi_test',
+          amount: 100,
+        }),
+      ).rejects.toBeInstanceOf(GiftCardPaymentConflictError);
     });
   });
 

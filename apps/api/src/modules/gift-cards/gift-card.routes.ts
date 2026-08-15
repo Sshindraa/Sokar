@@ -9,7 +9,11 @@ import { GiftCardSlotsService } from './gift-card-slots.service';
 import { GiftCardBookService } from './gift-card-book.service';
 import { recommendGiftCardAmount } from './gift-card-recommender';
 import { createPaymentIntent, constructWebhookEvent } from './stripe.service';
-import { GiftCardPaymentService } from './gift-card-payment.service';
+import {
+  GiftCardPaymentConflictError,
+  GiftCardPaymentError,
+  GiftCardPaymentService,
+} from './gift-card-payment.service';
 import { GiftCardCrowdfundingService } from './gift-card-crowdfunding.service';
 import { generateGiftCardPdf } from './gift-card-pdf.service';
 import { logger } from '../../shared/logger/pino';
@@ -624,6 +628,12 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error({ err: message }, '[gift-card-routes] Purchase with payment failed');
+      if (err instanceof GiftCardPaymentConflictError) {
+        return reply.status(409).send({ error: message });
+      }
+      if (err instanceof GiftCardPaymentError) {
+        return reply.status(400).send({ error: message });
+      }
       return reply.status(400).send({ error: message });
     }
   });

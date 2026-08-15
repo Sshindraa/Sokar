@@ -35,9 +35,11 @@ vi.mock('../../floor-plan/availability-capacity-aware.service', () => {
 
   return {
     CapacityAwareAvailabilityService,
-    zonedTimeToUtc: vi.fn().mockImplementation((_date: string, time: string) => {
+    zonedTimeToUtc: vi.fn().mockImplementation((date: string, time: string) => {
       const [h, m] = time.split(':').map(Number);
-      return new Date(Date.UTC(2026, 5, 29, h, m));
+      const offsetHours = date === '2026-07-02' ? 2 : date === '2026-01-02' ? 1 : 0;
+      const [year, month, day] = date.split('-').map(Number);
+      return new Date(Date.UTC(year, month - 1, day, h - offsetHours, m));
     }),
   };
 });
@@ -91,6 +93,33 @@ const mockExposureSettings = {
   noShowPolicy: 'warning',
   notificationChannels: ['sms', 'email'],
   capacitySpecials: {},
+};
+
+const mockHoldRestaurant = {
+  id: RESTAURANT_ID,
+  slug: SLUG,
+  name: 'Chez Sokar',
+  description: 'Bistrot français à Lyon',
+  formattedAddress: '12 Rue',
+  city: 'Lyon',
+  country: 'FR',
+  postalCode: '69001',
+  phoneNumber: '+334****0000',
+  phoneE164: '+334****0000',
+  cuisineType: ['Française'],
+  priceRange: 2,
+  openingHours: { mon: { open: '12:00', close: '22:00' } },
+  ambiance: [],
+  dietary: [],
+  noiseLevel: null,
+  timezone: 'Europe/Paris',
+  agenticOptIn: true,
+  publishedAt: new Date('2026-06-24'),
+  exposureSettings: {
+    connectPublished: true,
+    connectAgentic: false,
+  },
+  images: [],
 };
 
 let app: FastifyInstance;
@@ -513,6 +542,70 @@ describe('Sokar Connect — Routes publiques', () => {
           source: 'web',
         }),
         expect.any(Object),
+      );
+    });
+
+    it('convertit 19:00 en heure locale Europe/Paris vers 17:00 UTC en été', async () => {
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue(
+        mockHoldRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>,
+      );
+      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(
+        mockExposureSettings as unknown as Awaited<
+          ReturnType<typeof db.restaurantExposureSettings.findUnique>
+        >,
+      );
+      vi.mocked(db.agenticHold.create).mockResolvedValue({
+        id: 'hold-summer',
+        holdToken: 'token',
+        expiresAt: new Date(),
+      } as never);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/public/r/${SLUG}/hold`,
+        payload: { date: '2026-07-02', time: '19:00', partySize: 2, source: 'web' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(db.agenticHold.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            slotStart: new Date('2026-07-02T17:00:00.000Z'),
+            slotEnd: new Date('2026-07-02T19:00:00.000Z'),
+          }),
+        }),
+      );
+    });
+
+    it('convertit 19:00 en heure locale Europe/Paris vers 18:00 UTC en hiver', async () => {
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue(
+        mockHoldRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>,
+      );
+      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(
+        mockExposureSettings as unknown as Awaited<
+          ReturnType<typeof db.restaurantExposureSettings.findUnique>
+        >,
+      );
+      vi.mocked(db.agenticHold.create).mockResolvedValue({
+        id: 'hold-winter',
+        holdToken: 'token',
+        expiresAt: new Date(),
+      } as never);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/public/r/${SLUG}/hold`,
+        payload: { date: '2026-01-02', time: '19:00', partySize: 2, source: 'web' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(db.agenticHold.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            slotStart: new Date('2026-01-02T18:00:00.000Z'),
+            slotEnd: new Date('2026-01-02T20:00:00.000Z'),
+          }),
+        }),
       );
     });
 

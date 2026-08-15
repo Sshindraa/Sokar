@@ -539,7 +539,12 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         settings?.capacitySpecials as Record<string, unknown> | undefined,
       );
 
-      const slotStart = new Date(`${bodyParse.data.date}T${bodyParse.data.time}:00.000Z`);
+      const restaurantWithTz = await db.restaurant.findUnique({
+        where: { id: restaurant.id },
+        select: { timezone: true },
+      });
+      const timeZone = restaurantWithTz?.timezone ?? 'Europe/Paris';
+      const slotStart = zonedTimeToUtc(bodyParse.data.date, bodyParse.data.time, timeZone);
       const slotEnd = new Date(slotStart.getTime() + serviceDurationMinutes * 60 * 1000);
 
       try {
