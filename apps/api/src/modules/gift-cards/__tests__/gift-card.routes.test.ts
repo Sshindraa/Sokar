@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, vi, type Mock } from 'vites
 import { Prisma } from '@prisma/client';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
-import { constructWebhookEvent } from '../stripe.service';
+import { constructWebhookEvent, retrievePaymentIntent } from '../stripe.service';
 import { checkRateLimit } from '../../../shared/redis/rate-limit';
 import { logger } from '../../../shared/logger/pino.js';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service';
@@ -17,6 +17,17 @@ vi.mock('../../../shared/telnyx/client', async (importOriginal) => {
 
 function d(value: number) {
   return new Prisma.Decimal(value);
+}
+
+function mockRetrievedPaymentIntent(amount: number, metadata: Record<string, string>): void {
+  vi.mocked(retrievePaymentIntent).mockResolvedValue({
+    id: 'pi_test',
+    status: 'succeeded',
+    amount: Math.round(amount * 100),
+    amountReceived: Math.round(amount * 100),
+    currency: 'eur',
+    metadata,
+  });
 }
 
 const AUTH = { authorization: 'Bearer fake-token' };
@@ -389,6 +400,12 @@ describe('gift-card routes', () => {
     });
 
     it('achète une carte cadeau avec paiement Stripe', async () => {
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue(null);
+      mockRetrievedPaymentIntent(120, {
+        restaurantId: RESTAURANT_ID,
+        packId: '',
+        amount: '120',
+      });
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         id: RESTAURANT_ID,
         name: 'Test Resto',
@@ -438,6 +455,12 @@ describe('gift-card routes', () => {
     });
 
     it('achète un pack expérience avec paiement Stripe', async () => {
+      vi.mocked(db.giftCard.findFirst).mockResolvedValue(null);
+      mockRetrievedPaymentIntent(150, {
+        restaurantId: RESTAURANT_ID,
+        packId: 'pack-1',
+        amount: '150',
+      });
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         id: RESTAURANT_ID,
         name: 'Test Resto',
@@ -719,6 +742,14 @@ describe('gift-card routes', () => {
     it('recrée une carte cadeau depuis le webhook avec metadata complètes', async () => {
       mockWebhookEvent('pi_webhook_1', WEBHOOK_METADATA);
       vi.mocked(db.giftCard.findFirst).mockResolvedValue(null);
+      vi.mocked(retrievePaymentIntent).mockResolvedValue({
+        id: 'pi_webhook_1',
+        status: 'succeeded',
+        amount: 12000,
+        amountReceived: 12000,
+        currency: 'eur',
+        metadata: WEBHOOK_METADATA,
+      });
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         id: RESTAURANT_ID,
         name: 'Test Resto',
