@@ -15,8 +15,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { OnboardingLockBanner } from '@/features/onboarding/onboarding-guard';
-import { AlertCircle, CheckCircle2, Code, Copy, ExternalLink, Palette } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  Code,
+  Copy,
+  ExternalLink,
+  Palette,
+  RefreshCw,
+} from 'lucide-react';
 import { CLIPBOARD_RESET_DELAY_MS } from '@/constants/ui';
+import { getErrorMessage } from '@/types/api';
 
 const DEFAULT_PRIMARY = '#0f172a';
 const DEFAULT_ACCENT = '#f97316';
@@ -49,16 +58,27 @@ export default function WidgetIntegrationPage() {
   const [settings, setSettings] = useState<ConnectSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [primary, setPrimary] = useState(DEFAULT_PRIMARY);
   const [accent, setAccent] = useState(DEFAULT_ACCENT);
 
   const loadData = useCallback(() => {
-    if (!orgId) return;
+    if (!orgId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
+    setError(null);
     get<ConnectSettings>(`restaurants/${orgId}/connect`)
-      .then((s) => setSettings(s))
-      .catch((err: Error) => setError(err.message))
+      .then((s) => {
+        setSettings(s);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        setSettings(null);
+        setError(getErrorMessage(err, 'Impossible de charger la configuration du widget.'));
+      })
       .finally(() => setLoading(false));
   }, [orgId, get]);
 
@@ -68,12 +88,13 @@ export default function WidgetIntegrationPage() {
 
   async function handleCopy() {
     if (!settings) return;
+    setCopyError(null);
     try {
       await navigator.clipboard.writeText(buildSnippet(settings.slug, primary, accent));
       setCopied(true);
       setTimeout(() => setCopied(false), CLIPBOARD_RESET_DELAY_MS);
     } catch {
-      setError('Impossible de copier le snippet. Veuillez le sélectionner manuellement.');
+      setCopyError('Impossible de copier le snippet. Veuillez le sélectionner manuellement.');
     }
   }
 
@@ -104,10 +125,10 @@ export default function WidgetIntegrationPage() {
         </p>
       </div>
 
-      {error && (
+      {copyError && (
         <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>{error}</span>
+          <span>{copyError}</span>
         </div>
       )}
 
@@ -116,6 +137,27 @@ export default function WidgetIntegrationPage() {
           <Skeleton className="h-32 w-full rounded-xl" />
           <Skeleton className="h-64 w-full rounded-xl" />
         </div>
+      ) : error ? (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="flex flex-col items-center gap-4 py-12 text-center">
+            <AlertCircle className="h-8 w-8 text-destructive" />
+            <div className="space-y-1">
+              <p className="font-medium text-destructive">{error}</p>
+              <p className="text-sm text-muted-foreground">
+                Vérifiez que votre restaurant est bien configuré ou que le serveur est accessible.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadData}
+              className="gap-2 transition-all duration-200 hover:bg-destructive/10 hover:text-destructive"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Réessayer
+            </Button>
+          </CardContent>
+        </Card>
       ) : !settings ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
