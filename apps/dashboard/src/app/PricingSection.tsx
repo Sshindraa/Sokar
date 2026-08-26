@@ -122,7 +122,7 @@ export default function PricingSection() {
 
                   <Link
                     href={getPlanSignupHref(plan.label as PublicPlan, yearly)}
-                    aria-label={`Démarrer l'essai ${plan.label}`}
+                    aria-label={`Souscrire ${plan.label}`}
                     className={cn(
                       'relative z-10 inline-flex w-full items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold text-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pricing-accent/60 active:scale-[0.98]',
                       plan.featured
@@ -130,7 +130,7 @@ export default function PricingSection() {
                         : 'border border-white/20 text-white hover:bg-white/10 hover:border-white/30',
                     )}
                   >
-                    Démarrer l&apos;essai
+                    Souscrire
                     <ArrowUpRight size={14} />
                   </Link>
                 </div>

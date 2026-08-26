@@ -15,6 +15,7 @@ import { generateGiftCardPdf } from './gift-card-pdf.service';
 import { logger } from '../../shared/logger/pino';
 import { checkRateLimit, rateLimitKey, getClientIp } from '../../shared/redis/rate-limit';
 import { GIFT_CARD_MESSAGE_MAX_LENGTH, GIFT_CARD_IMAGE_URL_MAX_LENGTH } from './constants';
+import { handleBillingWebhook } from '../billing/billing.service';
 
 const ListGiftCardsQuerySchema = z.object({
   status: z.enum(['ACTIVE', 'REDEEMED', 'EXPIRED', 'CANCELLED', 'CLOSED']).optional(),
@@ -860,6 +861,11 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
           const paymentService = new GiftCardPaymentService(db);
           await paymentService.handleRefundUpdated(charge.payment_intent, charge.status);
         }
+      } else if (await handleBillingWebhook(event)) {
+        logger.info(
+          { eventType: event.type },
+          '[stripe-webhook] Subscription billing state updated',
+        );
       } else {
         logger.info(
           { eventType: event.type },

@@ -11,6 +11,12 @@ vi.mock('@prisma/client', async (importOriginal) => {
       create: vi.fn(),
       update: vi.fn(),
     };
+    restaurantBilling = {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      upsert: vi.fn(),
+    };
     giftCard = {
       create: vi.fn(),
       findUnique: vi.fn(),
@@ -119,6 +125,16 @@ vi.mock('../../shared/telnyx/client', () => ({
 // ── Mock Stripe (SDK non nécessaire en tests unitaires) ──
 vi.mock('stripe', () => {
   class Stripe {
+    customers = {
+      create: vi.fn().mockResolvedValue({ id: 'cus_test' }),
+    };
+    checkout = {
+      sessions: {
+        create: vi
+          .fn()
+          .mockResolvedValue({ id: 'cs_test', url: 'https://checkout.stripe.test/cs_test' }),
+      },
+    };
     paymentIntents = {
       create: vi.fn().mockResolvedValue({ id: 'pi_test', client_secret: 'pi_t_s' }),
       retrieve: vi.fn().mockResolvedValue({ id: 'pi_test', status: 'succeeded' }),

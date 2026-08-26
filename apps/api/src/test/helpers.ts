@@ -101,6 +101,12 @@ vi.mock('../shared/db/client', () => {
       findMany: vi.fn(),
       count: vi.fn(),
     },
+    restaurantBilling: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      upsert: vi.fn(),
+    },
     agentPersonality: {
       findUnique: vi.fn(),
       upsert: vi.fn(),

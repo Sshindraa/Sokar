@@ -125,10 +125,10 @@ Ce qui manque pour un vrai marketing automation :
 
 - `capacitySpecials` expose `depositRequired`, `depositAmount`, `depositThreshold` dans l'API et l'onboarding. <ref_snippet file="/Users/hamza/Projects/Sokar/apps/api/src/modules/restaurants/restaurant.routes.ts" lines="83-91" /> <ref_snippet file="/Users/hamza/Projects/Sokar/apps/dashboard/src/features/onboarding/steps.tsx" lines="1359-1379" />
 - **Aucun traitement** dans les flows de réservation (Connect, Voice, MCP, Widget).
-- **Aucune infrastructure de paiement** : pas de Stripe, Mollie, Adyen, webhook, modèle `Payment`.
-- Mention de Stripe dans la page de confidentialité mais pas d'intégration réelle.
+- **Stripe existe pour les cartes cadeaux et les abonnements SaaS** (Checkout + webhook) ; les dépôts de garantie de réservation ne sont pas encore branchés.
+- Les prix récurrents d'abonnement sont injectés par variables d'environnement (`STRIPE_PRICE_*`) et doivent être créés dans le compte Stripe avant activation.
 
-**Conclusion** : le modèle de données est prêt, mais il manque le processing de paiement. C'est un "demi-gap" : plus simple que le floor plan, mais pas trivial.
+**Conclusion** : le modèle de données des dépôts est prêt, mais leur processing dédié manque encore. C'est un "demi-gap" : plus simple que le floor plan, mais pas trivial.
 
 ### 4.6 Cartes cadeaux / vouchers — absent
 

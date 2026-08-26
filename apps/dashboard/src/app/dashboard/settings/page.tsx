@@ -61,6 +61,7 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [billingNotice, setBillingNotice] = useState<string | null>(null);
 
   // Personality
   const [personality, setPersonality] = useState<AgentPersonality | null>(null);
@@ -100,6 +101,11 @@ export default function SettingsPage() {
       } else if (params.get('google_sync') === 'error') {
         const msg = params.get('message') || "Erreur d'association de l'agenda";
         setError(msg);
+        window.history.replaceState({}, '', window.location.pathname);
+      } else if (params.get('billing') === 'success') {
+        setBillingNotice(
+          'Souscription confirmée. Votre formule sera synchronisée dès réception du webhook Stripe.',
+        );
         window.history.replaceState({}, '', window.location.pathname);
       }
     }
@@ -314,6 +320,13 @@ export default function SettingsPage() {
         <div className="sokar-error">
           <AlertCircle size={18} />
           {error}
+        </div>
+      )}
+
+      {billingNotice && (
+        <div className="flex items-start gap-2 rounded-xl border border-primary/30 bg-primary/10 p-4 text-sm text-foreground">
+          <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-primary" />
+          <span>{billingNotice}</span>
         </div>
       )}
 

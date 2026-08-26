@@ -36,6 +36,7 @@ import {
 } from '@/features/onboarding/onboarding-dashboard';
 import { DashboardThemeProvider, useDashboardTheme } from '@/features/theme/dashboard-theme';
 import { useApi } from '@/lib/api';
+import { SubscribeFromPricing } from './SubscribeFromPricing';
 
 // OnboardingModal importe steps.tsx (1725 lignes, tous les composants de step).
 // Lazy-load pour éviter de charger tout l'onboarding dans le bundle du dashboard
@@ -276,6 +277,7 @@ function DashboardShell({ children }: { children: ReactNode }) {
     <div className={cn(theme, 'sokar-page relative min-h-screen overflow-hidden pt-[4.5rem]')}>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,hsl(var(--foreground)/0.10),transparent_36%),linear-gradient(hsl(var(--border)/0.18)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.14)_1px,transparent_1px)] bg-[auto,72px_72px,72px_72px] opacity-70" />
       {hasClerkKey && <SyncOrganization />}
+      <SubscribeFromPricing />
       <DashboardOnboardingGate />
       <OnboardingModal />
       <DashboardModeSwitcher salleMode={pathname.startsWith('/dashboard/floor-plan')} />
