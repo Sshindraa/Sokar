@@ -37,6 +37,9 @@ vi.mock('../../../shared/db/client', () => {
       findMany: vi.fn().mockResolvedValue([]),
       findFirst: vi.fn().mockResolvedValue(null),
     },
+    reservationAuditLog: {
+      create: vi.fn(),
+    },
     $queryRaw: vi.fn().mockResolvedValue([{ id: 'locked' }]),
     $transaction: vi.fn(async (fn: (tx: PrismaClient) => Promise<unknown>) => fn(mockDb)),
   } as unknown as PrismaClient;
@@ -263,6 +266,7 @@ describe('ReservationService - Google Calendar Sync', () => {
       const mockReservationWithRest = {
         id: 'res-456',
         googleEventId: 'event-789',
+        state: 'CONFIRMED',
         restaurant: mockRestaurant,
       };
 
@@ -293,6 +297,20 @@ describe('ReservationService - Google Calendar Sync', () => {
         status: 'CANCELLED',
       });
 
+      expect(db.reservation.update).toHaveBeenCalledWith({
+        where: { id: 'res-456', restaurantId: 'rest-123' },
+        data: { status: 'CANCELLED', state: 'CANCELLED' },
+      });
+      expect(db.reservationAuditLog.create).toHaveBeenCalledWith({
+        data: {
+          event: 'reservation_cancelled',
+          reservationId: 'res-456',
+          actor: 'legacy:reservation-update',
+          fromState: 'CONFIRMED',
+          toState: 'CANCELLED',
+          metadata: { source: 'legacy_reservation_update' },
+        },
+      });
       expect(GoogleCalendarClient.deleteEvent).toHaveBeenCalledWith(
         'refresh-token-xyz',
         'primary',

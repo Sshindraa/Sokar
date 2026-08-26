@@ -1,5 +1,11 @@
 import { db } from '../../shared/db/client';
-import { Prisma, type Reservation, type Restaurant } from '@prisma/client';
+import {
+  Prisma,
+  type Reservation,
+  type ReservationState,
+  type ReservationStatus,
+  type Restaurant,
+} from '@prisma/client';
 import { queues } from '../../shared/queue/queues';
 import { logger } from '../../shared/logger/pino';
 import { GoogleCalendarClient } from '../../shared/google-calendar/client';
@@ -42,6 +48,24 @@ function dateKey(date: Date): string {
 
 function timeKey(date: Date): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * Le dashboard historique manipule encore `status`, alors que les parcours
+ * agentiques utilisent `state`. Les deux colonnes décrivent le même état
+ * métier pour les statuts exposés par cette route et doivent rester alignées.
+ */
+const STATUS_TO_STATE: Record<ReservationStatus, ReservationState> = {
+  CONFIRMED: 'CONFIRMED',
+  CANCELLED: 'CANCELLED',
+  SEATED: 'SEATED',
+  NO_SHOW: 'NO_SHOW',
+};
+
+function getLegacyStatus(
+  status: Prisma.ReservationUpdateInput['status'],
+): ReservationStatus | null {
+  return typeof status === 'string' ? (status as ReservationStatus) : null;
 }
 
 /**
@@ -230,15 +254,42 @@ export class ReservationService {
     return reservation;
   }
 
-  static async update(id: string, restaurantId: string, data: Prisma.ReservationUpdateInput) {
+  static async update(
+    id: string,
+    restaurantId: string,
+    data: Prisma.ReservationUpdateInput,
+    actor = 'legacy:reservation-update',
+  ) {
     const reservation = await db.reservation.findUniqueOrThrow({
       where: { id, restaurantId },
       include: { restaurant: true },
     });
 
-    const updated = await db.reservation.update({
-      where: { id, restaurantId },
-      data,
+    const status = getLegacyStatus(data.status);
+    const updateData: Prisma.ReservationUpdateInput = status
+      ? { ...data, state: STATUS_TO_STATE[status] }
+      : data;
+
+    const updated = await db.$transaction(async (tx) => {
+      const result = await tx.reservation.update({
+        where: { id, restaurantId },
+        data: updateData,
+      });
+
+      if (status === 'CANCELLED' && reservation.state !== 'CANCELLED') {
+        await tx.reservationAuditLog.create({
+          data: {
+            event: 'reservation_cancelled',
+            reservationId: id,
+            actor,
+            fromState: reservation.state,
+            toState: 'CANCELLED',
+            metadata: { source: 'legacy_reservation_update' },
+          },
+        });
+      }
+
+      return result;
     });
 
     // Sync updates to Google Calendar
