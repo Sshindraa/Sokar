@@ -2,6 +2,8 @@ import type { NextRequest } from 'next/server';
 import { forwardedHeaders } from '../forwarded-headers';
 
 const API_ORIGIN = process.env.API_URL || 'http://127.0.0.1:4000';
+const API_UNAVAILABLE_MESSAGE =
+  'Impossible de joindre le serveur API. Veuillez réessayer dans quelques instants.';
 
 async function parseResponse(res: Response) {
   const text = await res.text();
@@ -22,16 +24,24 @@ function proxyResponse(data: unknown, status: number) {
   return Response.json(data, { status });
 }
 
+async function withProxyErrorHandling(handler: () => Promise<Response>): Promise<Response> {
+  try {
+    return await handler();
+  } catch {
+    return Response.json({ error: API_UNAVAILABLE_MESSAGE }, { status: 502 });
+  }
+}
+
 /**
  * Proxy universel : /api/proxy/customers?phone=xxx → http://localhost:4000/customers?phone=xxx
  * Forward le cookie Clerk pour l'authentification.
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
-  const { path } = await params;
-  const search = req.nextUrl.search;
-  const url = `${API_ORIGIN}/${path.join('/')}${search}`;
+  return withProxyErrorHandling(async () => {
+    const { path } = await params;
+    const search = req.nextUrl.search;
+    const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
-  try {
     const res = await fetch(url, {
       headers: forwardedHeaders(req),
     });
@@ -53,21 +63,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
     const data = await parseResponse(res);
     return proxyResponse(data, res.status);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'API unreachable';
-    return Response.json(
-      { error: `Impossible de joindre le serveur API (${message})` },
-      { status: 502 },
-    );
-  }
+  });
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
-  const { path } = await params;
-  const search = req.nextUrl.search;
-  const url = `${API_ORIGIN}/${path.join('/')}${search}`;
+  return withProxyErrorHandling(async () => {
+    const { path } = await params;
+    const search = req.nextUrl.search;
+    const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
-  try {
     const body = req.headers.get('content-type')?.includes('application/json')
       ? await req.json()
       : undefined;
@@ -83,21 +87,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
 
     const data = await parseResponse(res);
     return proxyResponse(data, res.status);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'API unreachable';
-    return Response.json(
-      { error: `Impossible de joindre le serveur API (${message})` },
-      { status: 502 },
-    );
-  }
+  });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
-  const { path } = await params;
-  const search = req.nextUrl.search;
-  const url = `${API_ORIGIN}/${path.join('/')}${search}`;
+  return withProxyErrorHandling(async () => {
+    const { path } = await params;
+    const search = req.nextUrl.search;
+    const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
-  try {
     const body = await req.json();
 
     const res = await fetch(url, {
@@ -111,21 +109,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
 
     const data = await parseResponse(res);
     return proxyResponse(data, res.status);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'API unreachable';
-    return Response.json(
-      { error: `Impossible de joindre le serveur API (${message})` },
-      { status: 502 },
-    );
-  }
+  });
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
-  const { path } = await params;
-  const search = req.nextUrl.search;
-  const url = `${API_ORIGIN}/${path.join('/')}${search}`;
+  return withProxyErrorHandling(async () => {
+    const { path } = await params;
+    const search = req.nextUrl.search;
+    const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
-  try {
     const body = await req.json();
 
     const res = await fetch(url, {
@@ -139,24 +131,18 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
 
     const data = await parseResponse(res);
     return proxyResponse(data, res.status);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'API unreachable';
-    return Response.json(
-      { error: `Impossible de joindre le serveur API (${message})` },
-      { status: 502 },
-    );
-  }
+  });
 }
 
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ path: string[] }> },
 ) {
-  const { path } = await params;
-  const search = req.nextUrl.search;
-  const url = `${API_ORIGIN}/${path.join('/')}${search}`;
+  return withProxyErrorHandling(async () => {
+    const { path } = await params;
+    const search = req.nextUrl.search;
+    const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
-  try {
     const res = await fetch(url, {
       method: 'DELETE',
       headers: forwardedHeaders(req),
@@ -164,11 +150,5 @@ export async function DELETE(
 
     const data = await parseResponse(res);
     return proxyResponse(data, res.status);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'API unreachable';
-    return Response.json(
-      { error: `Impossible de joindre le serveur API (${message})` },
-      { status: 502 },
-    );
-  }
+  });
 }

@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET, POST, PATCH, PUT, DELETE } from '../app/api/proxy/[...path]/route';
 import type { NextRequest } from 'next/server';
 
+const API_UNAVAILABLE_MESSAGE =
+  'Impossible de joindre le serveur API. Veuillez réessayer dans quelques instants.';
+
 function createMockRequest(
   urlStr: string,
   options: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
@@ -39,8 +42,9 @@ describe('Proxy route handlers error resilience', () => {
 
     expect(res.status).toBe(502);
     const body = await res.json();
-    expect(body.error).toContain('Impossible de joindre le serveur API');
-    expect(body.error).toContain('ECONNREFUSED');
+    expect(body.error).toBe(API_UNAVAILABLE_MESSAGE);
+    expect(body.error).not.toContain('ECONNREFUSED');
+    expect(body.error).not.toContain('127.0.0.1:4000');
   });
 
   it('POST retourne 502 avec message explicite lorsque le fetch backend échoue', async () => {
@@ -56,7 +60,7 @@ describe('Proxy route handlers error resilience', () => {
 
     expect(res.status).toBe(502);
     const body = await res.json();
-    expect(body.error).toContain('Impossible de joindre le serveur API');
+    expect(body.error).toBe(API_UNAVAILABLE_MESSAGE);
   });
 
   it('PATCH retourne 502 lorsque le backend échoue', async () => {
@@ -72,7 +76,7 @@ describe('Proxy route handlers error resilience', () => {
 
     expect(res.status).toBe(502);
     const body = await res.json();
-    expect(body.error).toContain('Impossible de joindre le serveur API');
+    expect(body.error).toBe(API_UNAVAILABLE_MESSAGE);
   });
 
   it('PUT retourne 502 lorsque le backend échoue', async () => {
@@ -87,6 +91,7 @@ describe('Proxy route handlers error resilience', () => {
     });
 
     expect(res.status).toBe(502);
+    expect((await res.json()).error).toBe(API_UNAVAILABLE_MESSAGE);
   });
 
   it('DELETE retourne 502 lorsque le backend échoue', async () => {
@@ -100,5 +105,6 @@ describe('Proxy route handlers error resilience', () => {
     });
 
     expect(res.status).toBe(502);
+    expect((await res.json()).error).toBe(API_UNAVAILABLE_MESSAGE);
   });
 });
