@@ -6,10 +6,19 @@ import Image from 'next/image';
 import { ArrowUpRight, Check } from 'lucide-react';
 import MobileNav from '@/components/MobileNav';
 import { cn, triggerHaptic } from '@/lib/utils';
+import { getPlanSignupHref, type PublicPlan } from '@/app/pricing-links';
 
 /* ===== DATA ===== */
 
-const plans = [
+const plans: Array<{
+  label: PublicPlan;
+  price: string;
+  period: string;
+  description: string;
+  features: string[];
+  sitePrice?: string;
+  featured?: boolean;
+}> = [
   {
     label: 'Essential',
     price: '149',
@@ -211,6 +220,20 @@ export default function PricingPage() {
 
                   {/* Description */}
                   <p className="text-sm text-white/50 leading-relaxed mb-8">{plan.description}</p>
+
+                  <Link
+                    href={getPlanSignupHref(plan.label, yearly)}
+                    aria-label={`Démarrer l'essai ${plan.label}`}
+                    className={cn(
+                      'relative z-10 inline-flex w-full items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold text-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pricing-accent/60 active:scale-[0.98]',
+                      plan.featured
+                        ? 'bg-white text-black hover:bg-white/90 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]'
+                        : 'border border-white/20 text-white hover:bg-white/10 hover:border-white/30',
+                    )}
+                  >
+                    Démarrer l&apos;essai
+                    <ArrowUpRight size={14} />
+                  </Link>
                 </div>
 
                 {/* Features */}
@@ -224,19 +247,6 @@ export default function PricingPage() {
                     </li>
                   ))}
                 </ul>
-
-                {/* CTA */}
-                <Link
-                  href="/register"
-                  className={cn(
-                    'relative z-10 w-full rounded-full py-3 text-sm font-semibold text-center transition-all duration-200',
-                    plan.featured
-                      ? 'bg-white text-black hover:bg-white/90 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] active:scale-[0.98]'
-                      : 'border border-white/20 text-white hover:bg-white/10 hover:border-white/30 active:scale-[0.98]',
-                  )}
-                >
-                  S&apos;inscrire
-                </Link>
               </div>
             );
           })}
