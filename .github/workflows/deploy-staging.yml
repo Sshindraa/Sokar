@@ -120,6 +120,23 @@ jobs:
           sleep 5
           curl -fsS https://api-staging.sokar.tech/livez || exit 1
 
+      - name: Restore current staging release
+        if: always() && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.head_branch == 'main')
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: deploy
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            latest=$(tr -d '[:space:]' < /opt/sokar-staging/releases/.latest)
+            test -n "$latest"
+            # Le test de rollback restaure l’avant-dernière release ;
+            # remettre explicitement la release courante évite de laisser
+            # staging servir un artefact historique après un workflow vert.
+            bash /opt/sokar-staging/scripts/deploy.sh --env staging rollback "$latest"
+
       - name: Playwright E2E smoke test
         uses: actions/checkout@v4
 

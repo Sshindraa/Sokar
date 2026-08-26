@@ -2,6 +2,8 @@
 
 Log automatique des tâches Hermes.
 
+2026-08-26 — [deploy, staging, dashboard, pilot] **Annulation dashboard revalidée après déploiement** — Le smoke test de rollback avait laissé staging sur l’ancienne release, dont l’artefact API ne contenait pas le correctif PR #91. Après régénération de `apps/api/dist` sans cache incrémental et redémarrage ciblé de l’API, le parcours authentifié sur « Sokar Dashboard Cancel Test » confirme `status=CANCELLED` et `state=CANCELLED`, avec audit `reservation_cancelled` et créneau 17:00 disponible. Le workflow de déploiement est durci : la release courante (`releases/.latest`) est restaurée explicitement après le test de rollback, avant les E2E. Aucun téléphone ni SMS utilisé.
+
 2026-08-26 — [dashboard, api, pilot, staging] **Annulation dashboard testée et incohérence corrigée** — Une réservation isolée « Sokar Dashboard Cancel Test » a été créée sans téléphone sur `chez-sokar-demo` staging, puis annulée depuis le dashboard authentifié. Le test a exposé une divergence : `status` passait à `CANCELLED`, mais `state` restait `CONFIRMED` et aucun audit n’était écrit. Le correctif local synchronise les deux colonnes dans une transaction et journalise `reservation_cancelled`. Tests API ciblés (32/32) et typecheck verts ; PR à soumettre puis revalidation après déploiement staging.
 
 > **Note 2026-06-24** : Rétro-documentation des 5 semaines entre
