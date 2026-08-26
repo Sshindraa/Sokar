@@ -5,19 +5,46 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowLeft, Sparkles, PhoneCall, CalendarCheck, TrendingUp, CheckCircle } from 'lucide-react';
+import {
+  ArrowLeft,
+  Sparkles,
+  PhoneCall,
+  CalendarCheck,
+  TrendingUp,
+  CheckCircle,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+const SIGNUP_PLANS = {
+  essential: { label: 'Essential', billingLabel: 'facturation annuelle' },
+  pro: { label: 'Pro', billingLabel: 'facturation annuelle' },
+  'multi-site': { label: 'Multi-site', billingLabel: 'facturation annuelle' },
+} as const;
+
+type SignupSelection = {
+  label: (typeof SIGNUP_PLANS)[keyof typeof SIGNUP_PLANS]['label'];
+  billingLabel: string;
+};
 
 // Scénario de l'assistant Sokar pour le simulateur conversationnel
 const SIMULATOR_STEPS = [
   { sender: 'client', text: 'Bonjour, je voudrais réserver une table pour ce soir.' },
   { sender: 'assistant', text: 'Bonjour ! Avec plaisir. Pour combien de personnes ce soir ?' },
   { sender: 'client', text: 'Nous serons 4 personnes.' },
-  { sender: 'assistant', text: "Parfait. J'ai de la disponibilité à 20h00 ou 21h30. Qu'est-ce qui vous convient ?" },
+  {
+    sender: 'assistant',
+    text: "Parfait. J'ai de la disponibilité à 20h00 ou 21h30. Qu'est-ce qui vous convient ?",
+  },
   { sender: 'client', text: "20h c'est super !" },
-  { sender: 'assistant', text: 'C’est noté. Une table pour 4 personnes ce soir à 20h00 au nom de... ?' },
+  {
+    sender: 'assistant',
+    text: 'C’est noté. Une table pour 4 personnes ce soir à 20h00 au nom de... ?',
+  },
   { sender: 'client', text: 'Au nom de Martin.' },
-  { sender: 'assistant', text: 'C’est réservé M. Martin ! Vous allez recevoir un SMS de confirmation à l’instant. À ce soir !' },
+  {
+    sender: 'assistant',
+    text: 'C’est réservé M. Martin ! Vous allez recevoir un SMS de confirmation à l’instant. À ce soir !',
+  },
   { sender: 'client', text: 'Parfait, merci beaucoup. Au revoir !' },
   { sender: 'assistant', text: 'Merci à vous, au revoir et bon appétit !' },
 ];
@@ -31,6 +58,22 @@ export default function RegisterPage() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isTyping, setIsTyping] = useState(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const [selectedPlan, setSelectedPlan] = useState<SignupSelection | null>(null);
+
+  // Conserve le choix effectué depuis la page Tarifs sans dépendre de Clerk.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const plan = params.get('plan');
+    const offer = plan ? SIGNUP_PLANS[plan as keyof typeof SIGNUP_PLANS] : undefined;
+
+    if (offer) {
+      setSelectedPlan({
+        label: offer.label,
+        billingLabel:
+          params.get('billing') === 'monthly' ? 'facturation mensuelle' : offer.billingLabel,
+      });
+    }
+  }, []);
 
   // Redirection si déjà connecté
   useEffect(() => {
@@ -96,11 +139,17 @@ export default function RegisterPage() {
         {/* Glow atmosphérique en arrière-plan */}
         <div className="absolute inset-0 bg-background" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[35rem] h-[35rem] rounded-full blur-3xl opacity-20 bg-primary" />
-        
+
         <div className="relative flex flex-col items-center gap-6 z-10">
           <div className="relative flex items-center justify-center h-20 w-20 rounded-full border border-border bg-card/50 backdrop-blur-xl shadow-2xl">
             <div className="absolute inset-0 rounded-full border border-primary/30 border-t-primary animate-spin" />
-            <Image src="/logo-nav.png" alt="Sokar" width={40} height={40} className="h-10 w-10 animate-pulse" />
+            <Image
+              src="/logo-nav.png"
+              alt="Sokar"
+              width={40}
+              height={40}
+              className="h-10 w-10 animate-pulse"
+            />
           </div>
           <p className="text-sm font-medium tracking-wider text-muted-foreground animate-pulse">
             Redirection vers votre espace...
@@ -115,7 +164,6 @@ export default function RegisterPage() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_72%_30%,hsl(var(--foreground)/0.16),transparent_34%),linear-gradient(hsl(var(--border)/0.15)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.12)_1px,transparent_1px)] bg-[auto,76px_76px,76px_76px] opacity-60" />
       {/* Colonne gauche : Formulaire */}
       <div className="relative z-10 flex w-full flex-col justify-between bg-background/90 p-6 backdrop-blur-xl sm:p-10 lg:w-[45%]">
-        
         {/* En-tête avec bouton retour & Logo */}
         <div className="flex items-center justify-between">
           <Link
@@ -125,9 +173,15 @@ export default function RegisterPage() {
             <ArrowLeft size={14} />
             Accueil
           </Link>
-          
+
           <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-90">
-            <Image src="/logo-nav.png" alt="Sokar Logo" width={32} height={32} className="h-8 w-8" />
+            <Image
+              src="/logo-nav.png"
+              alt="Sokar Logo"
+              width={32}
+              height={32}
+              className="h-8 w-8"
+            />
             <span className="text-lg font-bold tracking-tight text-foreground">Sokar</span>
           </Link>
         </div>
@@ -137,11 +191,15 @@ export default function RegisterPage() {
           <div className="text-center max-w-sm mx-auto mb-6">
             <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/50 px-3 py-1 text-xs font-semibold text-muted-foreground transition-all duration-300 hover:border-foreground/15">
               <Sparkles size={11} className="text-muted-foreground" />
-              Essai gratuit de 14 jours sans carte
+              {selectedPlan
+                ? `Formule ${selectedPlan.label} · ${selectedPlan.billingLabel}`
+                : 'Essai gratuit de 14 jours sans carte'}
             </div>
             <h2 className="text-3xl font-bold tracking-tight mt-3">Créez votre compte</h2>
             <p className="text-sm text-muted-foreground mt-2">
-              {"Rejoignez Sokar et automatisez l'accueil téléphonique de votre établissement dès aujourd'hui"}
+              {
+                "Rejoignez Sokar et automatisez l'accueil téléphonique de votre établissement dès aujourd'hui"
+              }
             </p>
           </div>
 
@@ -174,16 +232,22 @@ export default function RegisterPage() {
                   card: 'shadow-none border border-border bg-card/60 backdrop-blur-xl p-0 w-full rounded-2xl overflow-hidden',
                   main: 'p-6',
                   header: 'hidden', // On masque le header Clerk brut au profit du nôtre
-                  socialButtonsBlockButton: 'border border-border bg-secondary/40 text-foreground hover:bg-accent hover:text-foreground transition-all duration-200 rounded-xl h-10',
-                  formFieldLabel: 'text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1',
-                  formFieldInput: 'flex h-10 w-full rounded-lg border border-input bg-background/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-all duration-200',
-                  formButtonPrimary: 'bg-primary text-primary-foreground hover:bg-primary/95 transition-all duration-200 rounded-lg h-10 text-sm font-semibold shadow-md shadow-primary/10 active:scale-[0.98]',
+                  socialButtonsBlockButton:
+                    'border border-border bg-secondary/40 text-foreground hover:bg-accent hover:text-foreground transition-all duration-200 rounded-xl h-10',
+                  formFieldLabel:
+                    'text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1',
+                  formFieldInput:
+                    'flex h-10 w-full rounded-lg border border-input bg-background/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-all duration-200',
+                  formButtonPrimary:
+                    'bg-primary text-primary-foreground hover:bg-primary/95 transition-all duration-200 rounded-lg h-10 text-sm font-semibold shadow-md shadow-primary/10 active:scale-[0.98]',
                   footerActionText: 'text-xs text-muted-foreground',
-                  footerActionLink: 'text-xs text-foreground font-semibold hover:underline transition-colors',
+                  footerActionLink:
+                    'text-xs text-foreground font-semibold hover:underline transition-colors',
                   dividerLine: 'bg-border',
                   dividerText: 'text-muted-foreground text-xs uppercase font-bold tracking-widest',
                   identityPreviewCard: 'border border-border bg-secondary/30 rounded-xl p-3',
-                  formResendCodeButton: 'text-foreground hover:text-muted-foreground transition-colors font-medium',
+                  formResendCodeButton:
+                    'text-foreground hover:text-muted-foreground transition-colors font-medium',
                 },
               }}
             />
@@ -198,7 +262,6 @@ export default function RegisterPage() {
 
       {/* Colonne droite : Preview interactive / Design Premium */}
       <div className="relative hidden flex-1 overflow-hidden border-l border-border/40 bg-background/55 p-8 backdrop-blur-sm lg:flex lg:flex-col lg:justify-between xl:p-10">
-        
         {/* Atmosphère Lumineuse Dynamique */}
         <div className="absolute inset-0 bg-gradient-to-br from-background via-muted to-background z-0" />
         <div className="absolute top-[15%] left-[25%] w-[40rem] h-[25rem] rounded-full blur-3xl opacity-20 bg-foreground/10 mix-blend-screen pointer-events-none" />
@@ -217,7 +280,6 @@ export default function RegisterPage() {
 
         {/* Visual Showcase Center */}
         <div className="my-auto max-w-2xl mx-auto w-full z-10 space-y-6">
-          
           {/* Métrique d'Aperçu Flottante */}
           <div className="grid grid-cols-2 gap-4">
             <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-xl p-5 shadow-lg transition-all duration-300 hover:-translate-y-0.5">
@@ -230,7 +292,9 @@ export default function RegisterPage() {
                 </span>
               </div>
               <p className="mt-5 text-3xl font-bold tracking-tight">412</p>
-              <p className="mt-1 text-xs text-muted-foreground font-medium">Appels traités ce mois</p>
+              <p className="mt-1 text-xs text-muted-foreground font-medium">
+                Appels traités ce mois
+              </p>
             </div>
 
             <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-xl p-5 shadow-lg transition-all duration-300 hover:-translate-y-0.5">
@@ -243,7 +307,9 @@ export default function RegisterPage() {
                 </span>
               </div>
               <p className="mt-5 text-3xl font-bold tracking-tight">98.4%</p>
-              <p className="mt-1 text-xs text-muted-foreground font-medium">Taux de réponse garanti</p>
+              <p className="mt-1 text-xs text-muted-foreground font-medium">
+                Taux de réponse garanti
+              </p>
             </div>
           </div>
 
@@ -253,17 +319,25 @@ export default function RegisterPage() {
             <div className="border-b border-border bg-secondary/20 px-5 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-full bg-primary/10 border border-border flex items-center justify-center shadow-inner">
-                  <Image src="/logo-nav.png" alt="Sokar AI" width={20} height={20} className="h-5 w-5 animate-pulse" />
+                  <Image
+                    src="/logo-nav.png"
+                    alt="Sokar AI"
+                    width={20}
+                    height={20}
+                    className="h-5 w-5 animate-pulse"
+                  />
                 </div>
                 <div>
-                  <h4 className="text-sm font-semibold tracking-tight text-foreground">Assistant Vocal Sokar</h4>
+                  <h4 className="text-sm font-semibold tracking-tight text-foreground">
+                    Assistant Vocal Sokar
+                  </h4>
                   <p className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                     En communication avec un client
                   </p>
                 </div>
               </div>
-              
+
               <div className="h-1.5 w-24 bg-border rounded-full overflow-hidden relative">
                 <div className="h-full bg-gradient-to-r from-muted-foreground to-foreground rounded-full w-2/3 animate-pulse" />
               </div>
@@ -278,10 +352,10 @@ export default function RegisterPage() {
                 <div
                   key={idx}
                   className={cn(
-                    "flex flex-col max-w-[80%] rounded-2xl px-4 py-2.5 text-sm transition-all duration-300 scale-95 origin-bottom animate-in fade-in slide-in-from-bottom-2",
+                    'flex flex-col max-w-[80%] rounded-2xl px-4 py-2.5 text-sm transition-all duration-300 scale-95 origin-bottom animate-in fade-in slide-in-from-bottom-2',
                     step.sender === 'assistant'
-                      ? "bg-secondary text-foreground self-start rounded-tl-none border border-border"
-                      : "bg-primary text-primary-foreground self-end rounded-tr-none shadow-md shadow-primary/5"
+                      ? 'bg-secondary text-foreground self-start rounded-tl-none border border-border'
+                      : 'bg-primary text-primary-foreground self-end rounded-tr-none shadow-md shadow-primary/5',
                   )}
                 >
                   <p className="leading-relaxed font-medium">{step.text}</p>
@@ -291,9 +365,18 @@ export default function RegisterPage() {
               {/* Indicateur de saisie IA */}
               {isTyping && (
                 <div className="flex items-center gap-1 bg-secondary text-foreground border border-border rounded-2xl rounded-tl-none px-4 py-3 self-start max-w-[80%] transition-opacity duration-300">
-                  <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <span
+                    className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce"
+                    style={{ animationDelay: '0ms' }}
+                  />
+                  <span
+                    className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce"
+                    style={{ animationDelay: '150ms' }}
+                  />
+                  <span
+                    className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce"
+                    style={{ animationDelay: '300ms' }}
+                  />
                 </div>
               )}
             </div>
@@ -303,12 +386,16 @@ export default function RegisterPage() {
         {/* Testimonial Block */}
         <div className="z-10 bg-card/40 border border-border/80 backdrop-blur-md rounded-2xl p-5 shadow-lg max-w-xl mx-auto w-full transition-all duration-200">
           <p className="text-sm italic leading-relaxed text-muted-foreground">
-            {"\"Sokar gère 100% des appels entrants pendant les heures de pointe. L'assistant prend les réservations directement et envoie le SMS de confirmation. Mon équipe reste concentrée sur la cuisine et le service.\""}
+            {
+              '"Sokar gère 100% des appels entrants pendant les heures de pointe. L\'assistant prend les réservations directement et envoie le SMS de confirmation. Mon équipe reste concentrée sur la cuisine et le service."'
+            }
           </p>
           <div className="mt-4 flex items-center justify-between border-t border-border/40 pt-3">
             <div>
               <p className="text-xs font-semibold text-foreground">Chef Matthieu</p>
-              <p className="text-xs text-muted-foreground">Bistrot L’Ardoise — 2 étoiles Michelin</p>
+              <p className="text-xs text-muted-foreground">
+                Bistrot L’Ardoise — 2 étoiles Michelin
+              </p>
             </div>
             <div className="flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2.5 py-1 text-xs font-semibold text-emerald-400">
               <CheckCircle size={10} />
@@ -316,7 +403,6 @@ export default function RegisterPage() {
             </div>
           </div>
         </div>
-
       </div>
     </div>
   );

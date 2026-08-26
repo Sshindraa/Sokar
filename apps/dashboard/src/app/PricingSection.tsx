@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { PLANS, DISPLAY_PRICE } from '@/app/constants';
-import { Check } from 'lucide-react';
+import { getPlanSignupHref, type PublicPlan } from '@/app/pricing-links';
+import { ArrowUpRight, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function PricingSection() {
@@ -117,6 +119,20 @@ export default function PricingSection() {
                     {plan.label === 'Multi-site' &&
                       'Pour piloter plusieurs établissements avec une seule équipe.'}
                   </p>
+
+                  <Link
+                    href={getPlanSignupHref(plan.label as PublicPlan, yearly)}
+                    aria-label={`Démarrer l'essai ${plan.label}`}
+                    className={cn(
+                      'relative z-10 inline-flex w-full items-center justify-center gap-2 rounded-full py-3 text-sm font-semibold text-center transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pricing-accent/60 active:scale-[0.98]',
+                      plan.featured
+                        ? 'bg-white text-black hover:bg-white/90 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]'
+                        : 'border border-white/20 text-white hover:bg-white/10 hover:border-white/30',
+                    )}
+                  >
+                    Démarrer l&apos;essai
+                    <ArrowUpRight size={14} />
+                  </Link>
                 </div>
 
                 {/* Features */}
