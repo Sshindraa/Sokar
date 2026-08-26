@@ -62,8 +62,12 @@ export function useApi() {
       }
 
       if (!res.ok) {
-        const errorMsg = data.error || data.message || `Erreur ${res.status}`;
-        throw new Error(typeof errorMsg === 'string' ? errorMsg : `Erreur ${res.status}`);
+        const errorMsg =
+          (typeof data.message === 'string' && data.message.trim() ? data.message : null) ||
+          (typeof data.error === 'string' && data.error.trim() ? data.error : null) ||
+          (typeof data.detail === 'string' && data.detail.trim() ? data.detail : null) ||
+          `Erreur ${res.status}`;
+        throw new Error(errorMsg);
       }
 
       return data as T;

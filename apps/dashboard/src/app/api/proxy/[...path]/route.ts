@@ -31,27 +31,35 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
   const search = req.nextUrl.search;
   const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
-  const res = await fetch(url, {
-    headers: forwardedHeaders(req),
-  });
+  try {
+    const res = await fetch(url, {
+      headers: forwardedHeaders(req),
+    });
 
-  if (res.headers.get('content-type')?.startsWith('audio/')) {
-    const headers = new Headers();
-    for (const name of [
-      'content-type',
-      'content-length',
-      'content-range',
-      'accept-ranges',
-      'cache-control',
-    ]) {
-      const value = res.headers.get(name);
-      if (value) headers.set(name, value);
+    if (res.headers.get('content-type')?.startsWith('audio/')) {
+      const headers = new Headers();
+      for (const name of [
+        'content-type',
+        'content-length',
+        'content-range',
+        'accept-ranges',
+        'cache-control',
+      ]) {
+        const value = res.headers.get(name);
+        if (value) headers.set(name, value);
+      }
+      return new Response(res.body, { status: res.status, headers });
     }
-    return new Response(res.body, { status: res.status, headers });
-  }
 
-  const data = await parseResponse(res);
-  return proxyResponse(data, res.status);
+    const data = await parseResponse(res);
+    return proxyResponse(data, res.status);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'API unreachable';
+    return Response.json(
+      { error: `Impossible de joindre le serveur API (${message})` },
+      { status: 502 },
+    );
+  }
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
@@ -59,21 +67,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
   const search = req.nextUrl.search;
   const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
-  const body = req.headers.get('content-type')?.includes('application/json')
-    ? await req.json()
-    : undefined;
+  try {
+    const body = req.headers.get('content-type')?.includes('application/json')
+      ? await req.json()
+      : undefined;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...forwardedHeaders(req),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...forwardedHeaders(req),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
 
-  const data = await parseResponse(res);
-  return proxyResponse(data, res.status);
+    const data = await parseResponse(res);
+    return proxyResponse(data, res.status);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'API unreachable';
+    return Response.json(
+      { error: `Impossible de joindre le serveur API (${message})` },
+      { status: 502 },
+    );
+  }
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
@@ -81,19 +97,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
   const search = req.nextUrl.search;
   const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
-  const body = await req.json();
+  try {
+    const body = await req.json();
 
-  const res = await fetch(url, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      ...forwardedHeaders(req),
-    },
-    body: JSON.stringify(body),
-  });
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...forwardedHeaders(req),
+      },
+      body: JSON.stringify(body),
+    });
 
-  const data = await parseResponse(res);
-  return proxyResponse(data, res.status);
+    const data = await parseResponse(res);
+    return proxyResponse(data, res.status);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'API unreachable';
+    return Response.json(
+      { error: `Impossible de joindre le serveur API (${message})` },
+      { status: 502 },
+    );
+  }
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
@@ -101,19 +125,27 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
   const search = req.nextUrl.search;
   const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
-  const body = await req.json();
+  try {
+    const body = await req.json();
 
-  const res = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      ...forwardedHeaders(req),
-    },
-    body: JSON.stringify(body),
-  });
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...forwardedHeaders(req),
+      },
+      body: JSON.stringify(body),
+    });
 
-  const data = await parseResponse(res);
-  return proxyResponse(data, res.status);
+    const data = await parseResponse(res);
+    return proxyResponse(data, res.status);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'API unreachable';
+    return Response.json(
+      { error: `Impossible de joindre le serveur API (${message})` },
+      { status: 502 },
+    );
+  }
 }
 
 export async function DELETE(
@@ -124,11 +156,19 @@ export async function DELETE(
   const search = req.nextUrl.search;
   const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
-  const res = await fetch(url, {
-    method: 'DELETE',
-    headers: forwardedHeaders(req),
-  });
+  try {
+    const res = await fetch(url, {
+      method: 'DELETE',
+      headers: forwardedHeaders(req),
+    });
 
-  const data = await parseResponse(res);
-  return proxyResponse(data, res.status);
+    const data = await parseResponse(res);
+    return proxyResponse(data, res.status);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'API unreachable';
+    return Response.json(
+      { error: `Impossible de joindre le serveur API (${message})` },
+      { status: 502 },
+    );
+  }
 }
