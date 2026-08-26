@@ -36,6 +36,7 @@ packages/
 | `customers`            | CRM, VIP, consentements.                                                            |
 | `floor-plan`           | Plan de salle, sections, tables, disponibilité capacitaire.                         |
 | `gift-cards`           | Cartes cadeaux, packs, redeem, contributions, Stripe.                               |
+| `billing`              | Abonnements SaaS Stripe Checkout, synchronisation webhook et état de formule.       |
 | `connect`              | API publique Connect, disponibilités, Google Places, JSON-LD.                       |
 | `dashboard`            | Métriques dashboard, réactivation.                                                  |
 | `analytics`            | Événements, ROI, rapports.                                                          |
@@ -111,8 +112,9 @@ packages/
 
 ## Paiements
 
-- Seules les cartes cadeaux sont en P1 (pas de Stripe réel en P1, mode test/marquage).
-- Module `gift-cards/` : routes, service, paiement, Stripe helper.
+- Les abonnements SaaS passent par Stripe Checkout (`POST /billing/checkout-session`) ; les six prix récurrents sont configurés par `STRIPE_PRICE_*`.
+- Le webhook partagé `/webhooks/stripe` synchronise les abonnements et conserve l'état dans `RestaurantBilling`.
+- Module `gift-cards/` : cartes cadeaux, packs, redeem, contributions et paiements Stripe.
 - Modèles : `GiftCard`, `GiftCardPack`, `GiftCardRedemption`, `GiftCardContribution`.
 - Spec : `docs/gift-cards-spec.md`.
 

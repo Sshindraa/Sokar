@@ -22,9 +22,25 @@ const SIGNUP_PLANS = {
 } as const;
 
 type SignupSelection = {
+  slug: keyof typeof SIGNUP_PLANS;
+  billing: 'monthly' | 'annual';
   label: (typeof SIGNUP_PLANS)[keyof typeof SIGNUP_PLANS]['label'];
   billingLabel: string;
 };
+
+function readSignupSelection(search: string): SignupSelection | null {
+  const params = new URLSearchParams(search);
+  const plan = params.get('plan') as keyof typeof SIGNUP_PLANS | null;
+  const offer = plan ? SIGNUP_PLANS[plan] : undefined;
+  if (!plan || !offer) return null;
+  const billing = params.get('billing') === 'monthly' ? 'monthly' : 'annual';
+  return {
+    slug: plan,
+    billing,
+    label: offer.label,
+    billingLabel: billing === 'monthly' ? 'facturation mensuelle' : offer.billingLabel,
+  };
+}
 
 // Scénario de l'assistant Sokar pour le simulateur conversationnel
 const SIMULATOR_STEPS = [
@@ -62,23 +78,17 @@ export default function RegisterPage() {
 
   // Conserve le choix effectué depuis la page Tarifs sans dépendre de Clerk.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const plan = params.get('plan');
-    const offer = plan ? SIGNUP_PLANS[plan as keyof typeof SIGNUP_PLANS] : undefined;
-
-    if (offer) {
-      setSelectedPlan({
-        label: offer.label,
-        billingLabel:
-          params.get('billing') === 'monthly' ? 'facturation mensuelle' : offer.billingLabel,
-      });
-    }
+    setSelectedPlan(readSignupSelection(window.location.search));
   }, []);
 
   // Redirection si déjà connecté
   useEffect(() => {
     if (isLoaded && isSignedIn) {
-      router.replace('/dashboard');
+      const selection = readSignupSelection(window.location.search);
+      const query = selection
+        ? `?subscribe_plan=${encodeURIComponent(selection.slug)}&billing=${selection.billing}`
+        : '';
+      router.replace(`/dashboard${query}`);
     }
   }, [isLoaded, isSignedIn, router]);
 
@@ -193,7 +203,7 @@ export default function RegisterPage() {
               <Sparkles size={11} className="text-muted-foreground" />
               {selectedPlan
                 ? `Formule ${selectedPlan.label} · ${selectedPlan.billingLabel}`
-                : 'Essai gratuit de 14 jours sans carte'}
+                : 'Création de votre espace restaurant'}
             </div>
             <h2 className="text-3xl font-bold tracking-tight mt-3">Créez votre compte</h2>
             <p className="text-sm text-muted-foreground mt-2">
@@ -219,6 +229,11 @@ export default function RegisterPage() {
             </div>
           ) : (
             <SignUp
+              forceRedirectUrl={
+                selectedPlan
+                  ? `/dashboard?subscribe_plan=${encodeURIComponent(selectedPlan.slug)}&billing=${selectedPlan.billing}`
+                  : '/dashboard'
+              }
               appearance={{
                 variables: {
                   colorPrimary: 'hsl(var(--foreground))',
