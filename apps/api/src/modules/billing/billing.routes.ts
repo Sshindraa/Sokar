@@ -5,6 +5,7 @@ import {
   BILLING_INTERVALS,
   BillingAlreadySubscribedError,
   BillingCheckoutError,
+  BillingInvalidSiteCountError,
   BillingNotConfiguredError,
   BillingRestaurantNotFoundError,
   PUBLIC_BILLING_PLANS,
@@ -14,6 +15,7 @@ import {
 const CheckoutSchema = z.object({
   plan: z.enum(PUBLIC_BILLING_PLANS),
   billing: z.enum(BILLING_INTERVALS),
+  siteCount: z.number().int().min(2).max(100).optional(),
 });
 
 export async function billingRoutes(app: FastifyInstance) {
@@ -25,6 +27,7 @@ export async function billingRoutes(app: FastifyInstance) {
         restaurantId: req.restaurantId!,
         plan: input.plan,
         billing: input.billing,
+        siteCount: input.siteCount,
       });
       return reply.send(session);
     } catch (error) {
@@ -43,6 +46,12 @@ export async function billingRoutes(app: FastifyInstance) {
         return reply.status(409).send({
           error: 'BILLING_ALREADY_SUBSCRIBED',
           message: 'Une souscription est déjà active pour ce restaurant.',
+        });
+      }
+      if (error instanceof BillingInvalidSiteCountError) {
+        return reply.status(400).send({
+          error: 'INVALID_SITE_COUNT',
+          message: 'Choisissez entre 2 et 100 établissements pour la formule Multi-site.',
         });
       }
       if (error instanceof BillingCheckoutError) {

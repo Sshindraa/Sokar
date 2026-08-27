@@ -5,6 +5,8 @@ import { db } from '../../../shared/db/client';
 const originalEnv = {
   secret: process.env.STRIPE_SECRET_KEY,
   price: process.env.STRIPE_PRICE_PRO_MONTHLY,
+  multiSitePrice: process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY,
+  multiSiteAddonPrice: process.env.STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,
 };
 
 describe('billing.routes - POST /billing/checkout-session', () => {
@@ -12,6 +14,8 @@ describe('billing.routes - POST /billing/checkout-session', () => {
     vi.clearAllMocks();
     process.env.STRIPE_SECRET_KEY = 'sk_test_unit';
     delete process.env.STRIPE_PRICE_PRO_MONTHLY;
+    delete process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY;
+    delete process.env.STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY;
   });
 
   afterEach(() => {
@@ -19,6 +23,12 @@ describe('billing.routes - POST /billing/checkout-session', () => {
     else process.env.STRIPE_SECRET_KEY = originalEnv.secret;
     if (originalEnv.price === undefined) delete process.env.STRIPE_PRICE_PRO_MONTHLY;
     else process.env.STRIPE_PRICE_PRO_MONTHLY = originalEnv.price;
+    if (originalEnv.multiSitePrice === undefined)
+      delete process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY;
+    else process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY = originalEnv.multiSitePrice;
+    if (originalEnv.multiSiteAddonPrice === undefined)
+      delete process.env.STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY;
+    else process.env.STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY = originalEnv.multiSiteAddonPrice;
   });
 
   afterAll(async () => {
@@ -117,5 +127,40 @@ describe('billing.routes - POST /billing/checkout-session', () => {
       error: 'BILLING_ALREADY_SUBSCRIBED',
       message: 'Une souscription est déjà active pour ce restaurant.',
     });
+  });
+
+  it('facture la base et les établissements supplémentaires du Multi-site', async () => {
+    process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY = 'price_multi_site_monthly_test';
+    process.env.STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY = 'price_multi_site_addon_monthly_test';
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-1',
+      name: 'Bistrot du Coin',
+      managerEmail: 'manager@example.com',
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/billing/checkout-session',
+      headers: { authorization: 'Bearer test' },
+      payload: { plan: 'multi-site', billing: 'monthly', siteCount: 3 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const checkoutCreate = (
+      globalThis as unknown as {
+        __sokarStripeCheckoutSessionCreate: { mock: { calls: unknown[][] } };
+      }
+    ).__sokarStripeCheckoutSessionCreate;
+    expect(checkoutCreate.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        line_items: [
+          { price: 'price_multi_site_monthly_test', quantity: 1 },
+          { price: 'price_multi_site_addon_monthly_test', quantity: 2 },
+        ],
+        metadata: expect.objectContaining({ siteCount: '3' }),
+      }),
+    );
   });
 });

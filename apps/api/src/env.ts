@@ -129,7 +129,7 @@ const EnvSchema = z
     VOICE_TTS_CONTEXT_V2_ENABLED: z.enum(['true', 'false']).default('false'),
     STRIPE_SECRET_KEY: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
-    // Stripe Billing — six recurring prices (monthly + annual for each public plan).
+    // Stripe Billing — recurring base prices plus Multi-site establishment add-ons.
     // They remain optional so the API can start before Billing is configured;
     // the checkout endpoint returns a sanitized 503 until they are present.
     STRIPE_PRICE_ESSENTIAL_MONTHLY: z.string().optional(),
@@ -138,6 +138,8 @@ const EnvSchema = z
     STRIPE_PRICE_PRO_ANNUAL: z.string().optional(),
     STRIPE_PRICE_MULTI_SITE_MONTHLY: z.string().optional(),
     STRIPE_PRICE_MULTI_SITE_ANNUAL: z.string().optional(),
+    STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY: z.string().optional(),
+    STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL: z.string().optional(),
     // Captcha Cloudflare Turnstile pour les flux sensibles (SEC-009). Optionnel ; si défini, /api/rgpd/request-verification exige un token Turnstile.
     TURNSTILE_SECRET_KEY: z.string().optional(),
     // Resend HTTP API pour l'envoi des emails transactionnels (port 443,
