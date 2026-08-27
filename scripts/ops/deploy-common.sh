@@ -124,11 +124,24 @@ snapshot_artifacts() {
     log info "   → Snapshot artefacts vers $target ($label)"
     install -d -m 0755 "$target"
     for p in "${paths[@]}"; do
-        if [ -e "$SOKAR_ROOT/$p" ]; then
+        local source="$SOKAR_ROOT/$p"
+        local destination="$target/$p"
+        if [ -e "$source" ]; then
             install -d -m 0755 "$target/$(dirname "$p")"
-            # `.next` peut être un symlink vers la release active : le snapshot
-            # doit contenir les fichiers et non un lien relatif cassé.
-            cp -aL "$SOKAR_ROOT/$p" "$target/$(dirname "$p")/"
+            if [ -L "$source" ]; then
+                # `.next` peut être un symlink vers la release active. On
+                # dereference uniquement ce lien de premier niveau, tout en
+                # conservant les symlinks pnpm internes du standalone.
+                local resolved_source
+                resolved_source="$(readlink "$source")"
+                if [[ "$resolved_source" != /* ]]; then
+                    resolved_source="$(cd "$(dirname "$source")" && cd "$resolved_source" && pwd)"
+                fi
+                install -d -m 0755 "$destination"
+                cp -a "$resolved_source"/. "$destination"/
+            else
+                cp -a "$source" "$target/$(dirname "$p")/"
+            fi
         fi
     done
     # Metadata
