@@ -48,9 +48,14 @@ test "$(cat "$TMP_ROOT/apps/dashboard/.next/standalone/apps/dashboard/server.js"
 test "$(cat "$TMP_ROOT/apps/connect/.next/standalone/apps/connect/server.js")" = 'new-connect'
 test -d "$NEXT_PREVIOUS_DIR_DASHBOARD"
 test -d "$NEXT_PREVIOUS_DIR_CONNECT"
+mkdir -p "$TMP_ROOT/apps/dashboard/.next-deploy-fixture-dashboard/standalone/node_modules/styled-jsx-target"
+printf 'styled-jsx-fixture\n' > "$TMP_ROOT/apps/dashboard/.next-deploy-fixture-dashboard/standalone/node_modules/styled-jsx-target/package.json"
+ln -s styled-jsx-target "$TMP_ROOT/apps/dashboard/.next-deploy-fixture-dashboard/standalone/node_modules/styled-jsx"
 snapshot_artifacts "$TMP_ROOT/release" test "apps/dashboard/.next" "apps/connect/.next"
 test -d "$TMP_ROOT/release/apps/dashboard/.next/standalone/apps/dashboard"
 test -d "$TMP_ROOT/release/apps/connect/.next/standalone/apps/connect"
+test -L "$TMP_ROOT/release/apps/dashboard/.next/standalone/node_modules/styled-jsx"
+test "$(readlink "$TMP_ROOT/release/apps/dashboard/.next/standalone/node_modules/styled-jsx")" = 'styled-jsx-target'
 
 mkdir -p \
   "$TMP_ROOT/apps/dashboard/.next-deploy-fixture2-dashboard/standalone/apps/dashboard" \
