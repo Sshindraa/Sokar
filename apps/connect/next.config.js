@@ -4,6 +4,9 @@ const nextConfig = {
   // Sokar Connect est servi par un Node Next standalone derrière Nginx
   // (cf. spec connect-v1.1 §3.3 hébergement). PAS static export.
   output: 'standalone',
+  // Le déploiement peut construire une release isolée avant de remplacer
+  // atomiquement le dossier actif `.next`.
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   // Pas de basePath global (cf. spec v1.1 §2.1) : le reverse-proxy route
   // /restaurant/*, /restaurants/*, /sitemap.xml, /robots.txt vers ce serveur.
   poweredByHeader: false,

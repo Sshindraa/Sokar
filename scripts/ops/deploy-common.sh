@@ -46,6 +46,18 @@ set -Eeuo pipefail
 #   health_checks()
 #   validate_env_files()
 
+# Build Next.js hors du dossier actif afin que les services continuent de
+# répondre pendant toute la compilation. Ces variables sont réinitialisées à
+# chaque déploiement et ne sont jamais persistées dans le dépôt.
+NEXT_DIST_DIR_DASHBOARD="${NEXT_DIST_DIR_DASHBOARD:-}"
+NEXT_DIST_DIR_CONNECT="${NEXT_DIST_DIR_CONNECT:-}"
+NEXT_BUILD_CONFIG_BACKUP_DIR="${NEXT_BUILD_CONFIG_BACKUP_DIR:-}"
+NEXT_PREVIOUS_DIR_DASHBOARD="${NEXT_PREVIOUS_DIR_DASHBOARD:-}"
+NEXT_PREVIOUS_DIR_CONNECT="${NEXT_PREVIOUS_DIR_CONNECT:-}"
+NEXT_BUILD_ACTIVATED_DASHBOARD="${NEXT_BUILD_ACTIVATED_DASHBOARD:-false}"
+NEXT_BUILD_ACTIVATED_CONNECT="${NEXT_BUILD_ACTIVATED_CONNECT:-false}"
+NEXT_BUILDS_ACTIVATED="${NEXT_BUILDS_ACTIVATED:-false}"
+
 # Artefacts à snapshoter (chemins relatifs à SOKAR_ROOT)
 ARTIFACT_PATHS=(
     "apps/api/dist"
@@ -114,7 +126,9 @@ snapshot_artifacts() {
     for p in "${paths[@]}"; do
         if [ -e "$SOKAR_ROOT/$p" ]; then
             install -d -m 0755 "$target/$(dirname "$p")"
-            cp -a "$SOKAR_ROOT/$p" "$target/$(dirname "$p")/"
+            # `.next` peut être un symlink vers la release active : le snapshot
+            # doit contenir les fichiers et non un lien relatif cassé.
+            cp -aL "$SOKAR_ROOT/$p" "$target/$(dirname "$p")/"
         fi
     done
     # Metadata
@@ -129,12 +143,17 @@ snapshot_artifacts() {
 
 restore_artifacts() {
     local source="$1"
+    shift
+    local paths=("$@")
+    if [ ${#paths[@]} -eq 0 ]; then
+        paths=("${ARTIFACT_PATHS[@]}")
+    fi
     if [ ! -d "$source" ]; then
         log_error "Release $source introuvable" >&2
         return 1
     fi
     log info "   → Restore artefacts depuis $source"
-    for p in "${ARTIFACT_PATHS[@]}"; do
+    for p in "${paths[@]}"; do
         if [ -e "$source/$p" ]; then
             rm -rf "$SOKAR_ROOT/$p"
             install -d -m 0755 "$SOKAR_ROOT/$(dirname "$p")"
@@ -189,6 +208,165 @@ clean_next_artifacts() {
     fi
 }
 
+# Next réécrit parfois tsconfig.json et next-env.d.ts lorsqu'un distDir
+# différent de `.next` est utilisé. Les sauvegarder évite de laisser le dépôt
+# de production modifié après un build et garantit que les chemins redeviennent
+# corrects après la bascule atomique.
+backup_next_build_configs() {
+    NEXT_BUILD_CONFIG_BACKUP_DIR="$(mktemp -d /tmp/sokar-next-config.XXXXXX)"
+    for app in dashboard connect; do
+        for file in tsconfig.json next-env.d.ts; do
+            if [ -f "$SOKAR_ROOT/apps/$app/$file" ]; then
+                cp -a "$SOKAR_ROOT/apps/$app/$file" \
+                    "$NEXT_BUILD_CONFIG_BACKUP_DIR/${app}-${file}"
+            else
+                touch "$NEXT_BUILD_CONFIG_BACKUP_DIR/.absent-${app}-${file}"
+            fi
+        done
+    done
+}
+
+restore_next_build_configs() {
+    if [ -z "${NEXT_BUILD_CONFIG_BACKUP_DIR:-}" ] || [ ! -d "$NEXT_BUILD_CONFIG_BACKUP_DIR" ]; then
+        return 0
+    fi
+    for app in dashboard connect; do
+        for file in tsconfig.json next-env.d.ts; do
+            local backup="$NEXT_BUILD_CONFIG_BACKUP_DIR/${app}-${file}"
+            if [ -f "$backup" ]; then
+                cp -a "$backup" "$SOKAR_ROOT/apps/$app/$file"
+            elif [ -f "$NEXT_BUILD_CONFIG_BACKUP_DIR/.absent-${app}-${file}" ]; then
+                rm -f "$SOKAR_ROOT/apps/$app/$file"
+            fi
+        done
+    done
+    rm -rf "$NEXT_BUILD_CONFIG_BACKUP_DIR"
+    NEXT_BUILD_CONFIG_BACKUP_DIR=""
+}
+
+cleanup_next_build_dirs() {
+    for app in dashboard connect; do
+        local dist_dir=""
+        if [ "$app" = dashboard ]; then
+            dist_dir="${NEXT_DIST_DIR_DASHBOARD:-}"
+        else
+            dist_dir="${NEXT_DIST_DIR_CONNECT:-}"
+        fi
+        if [ -n "$dist_dir" ] && [[ "$dist_dir" == .next-deploy-* ]]; then
+            rm -rf "$SOKAR_ROOT/apps/$app/$dist_dir"
+        fi
+    done
+    restore_next_build_configs
+}
+
+# Expose les dossiers `.next-deploy-*` via un symlink `.next` uniquement après
+# compilation et validation. Le serveur standalone conserve ainsi le distDir
+# sérialisé par Next.js tout en permettant un changement atomique de cible.
+activate_next_builds() {
+    local stamp="$(date -u '+%Y%m%dT%H%M%SZ')-$$"
+    local app dist_dir active_dir previous_dir app_dir active_target
+    local activated_dashboard=false
+    local activated_connect=false
+
+    for app in dashboard connect; do
+        if [ "$app" = dashboard ]; then
+            dist_dir="${NEXT_DIST_DIR_DASHBOARD:-}"
+        else
+            dist_dir="${NEXT_DIST_DIR_CONNECT:-}"
+        fi
+        [ -n "$dist_dir" ] || continue
+        active_dir="$SOKAR_ROOT/apps/$app/.next"
+        previous_dir="$SOKAR_ROOT/apps/$app/.next-previous-$stamp-$app"
+
+        if [ ! -f "$SOKAR_ROOT/apps/$app/$dist_dir/standalone/apps/$app/server.js" ]; then
+            log_error "Build $app invalide : server.js standalone introuvable."
+            restore_activated_next_builds
+            return 1
+        fi
+        if [ ! -e "$active_dir" ]; then
+            log_error "Dossier .next actif introuvable pour $app."
+            restore_activated_next_builds
+            return 1
+        fi
+
+        app_dir="$SOKAR_ROOT/apps/$app"
+        rm -rf "$previous_dir"
+        if [ -L "$active_dir" ]; then
+            active_target="$(readlink "$active_dir")"
+            case "$active_target" in
+                .next-deploy-*)
+                    rm "$active_dir"
+                    if ! mv "$app_dir/$active_target" "$previous_dir"; then
+                        ln -s "$active_target" "$active_dir"
+                        restore_activated_next_builds
+                        return 1
+                    fi
+                    ;;
+                *)
+                    log_error "Symlink .next inattendu pour $app : $active_target"
+                    restore_activated_next_builds
+                    return 1
+                    ;;
+            esac
+        else
+            mv "$active_dir" "$previous_dir"
+        fi
+
+        if ! ln -s "$dist_dir" "$active_dir"; then
+            rm -f "$active_dir"
+            mv "$previous_dir" "$active_dir" 2>/dev/null || true
+            restore_activated_next_builds
+            return 1
+        fi
+
+        if [ "$app" = dashboard ]; then
+            NEXT_PREVIOUS_DIR_DASHBOARD="$previous_dir"
+            NEXT_BUILD_ACTIVATED_DASHBOARD=true
+            activated_dashboard=true
+        else
+            NEXT_PREVIOUS_DIR_CONNECT="$previous_dir"
+            NEXT_BUILD_ACTIVATED_CONNECT=true
+            activated_connect=true
+        fi
+    done
+
+    if [ "$activated_dashboard" = true ] || [ "$activated_connect" = true ]; then
+        NEXT_BUILDS_ACTIVATED=true
+    else
+        NEXT_BUILDS_ACTIVATED=false
+    fi
+    restore_next_build_configs
+}
+
+restore_activated_next_builds() {
+    local app previous_dir active_dir
+    for app in dashboard connect; do
+        if [ "$app" = dashboard ]; then
+            previous_dir="${NEXT_PREVIOUS_DIR_DASHBOARD:-}"
+        else
+            previous_dir="${NEXT_PREVIOUS_DIR_CONNECT:-}"
+        fi
+        [ -n "$previous_dir" ] || continue
+        active_dir="$SOKAR_ROOT/apps/$app/.next"
+        if [ -e "$previous_dir" ]; then
+            rm -rf "$active_dir"
+            mv "$previous_dir" "$active_dir"
+        fi
+    done
+    NEXT_PREVIOUS_DIR_DASHBOARD=""
+    NEXT_PREVIOUS_DIR_CONNECT=""
+    NEXT_BUILD_ACTIVATED_DASHBOARD=false
+    NEXT_BUILD_ACTIVATED_CONNECT=false
+    NEXT_BUILDS_ACTIVATED=false
+}
+
+cleanup_previous_next_builds() {
+    [ -n "${NEXT_PREVIOUS_DIR_DASHBOARD:-}" ] && rm -rf "$NEXT_PREVIOUS_DIR_DASHBOARD"
+    [ -n "${NEXT_PREVIOUS_DIR_CONNECT:-}" ] && rm -rf "$NEXT_PREVIOUS_DIR_CONNECT"
+    NEXT_PREVIOUS_DIR_DASHBOARD=""
+    NEXT_PREVIOUS_DIR_CONNECT=""
+}
+
 # Trap ERR — remet les services en ligne après un échec de déploiement.
 # Utilise RESTORE_ON_FAIL (snapshot pré-build) et les variables PM2_*.
 recover_services() {
@@ -197,17 +375,29 @@ recover_services() {
     log info ""
     log_error "Déploiement ${DEPLOY_ENV} interrompu (code ${exit_code})."
 
-    # Restore les artefacts d'avant le build si un snapshot existe
+    # Tant que la nouvelle release n'est pas activée, l'ancienne version est
+    # toujours servie : on nettoie uniquement les artefacts temporaires.
     if [ -n "${RESTORE_ON_FAIL:-}" ] && [ -d "${RESTORE_ON_FAIL}" ]; then
         log info "   → Restore artefacts pré-build (${RESTORE_ON_FAIL##*/})..."
-        pm2 stop "$PM2_DASH" "$PM2_CONNECT" 2>/dev/null || true
-        restore_artifacts "${RESTORE_ON_FAIL}"
+        if [ "${NEXT_BUILDS_ACTIVATED:-false}" = true ]; then
+            pm2 stop "$PM2_DASH" "$PM2_CONNECT" 2>/dev/null || true
+            restore_artifacts "${RESTORE_ON_FAIL}"
+            restore_activated_next_builds
+        else
+            # L'API est encore le seul artefact construit en place ; restaurer
+            # uniquement son dist évite de toucher aux serveurs Next actifs.
+            restore_artifacts "${RESTORE_ON_FAIL}" "apps/api/dist"
+        fi
     fi
 
     log info "   → Remise en ligne des services ${DEPLOY_ENV}..."
-    pm2 restart "$PM2_API" "$PM2_DASH" "$PM2_CONNECT" 2>/dev/null \
-        || pm2 resurrect 2>/dev/null \
-        || true
+    if [ "${NEXT_BUILDS_ACTIVATED:-false}" = true ]; then
+        pm2 restart "$PM2_API" "$PM2_DASH" "$PM2_CONNECT" 2>/dev/null \
+            || pm2 resurrect 2>/dev/null \
+            || true
+    elif [ "${NEED_API:-false}" = true ]; then
+        pm2 restart "$PM2_API" 2>/dev/null || true
+    fi
 
     if [ "$DEPLOY_ENV" = "prod" ]; then
         log info "   Rollback Nginx vers la configuration précédente..."
@@ -218,6 +408,8 @@ recover_services() {
 
     # Nettoyer le snapshot pré-build (il n'a pas servi)
     rm -rf "${RESTORE_ON_FAIL}" 2>/dev/null || true
+    cleanup_next_build_dirs
+    cleanup_previous_next_builds
 
     log info ""
     log_error "Services ${DEPLOY_ENV} restaurés à l'état pré-build. Le déploiement a échoué."
@@ -333,19 +525,34 @@ build_dashboard_connect() {
     local need_dash="$1"
     local need_connect="$2"
 
+    NEXT_DIST_DIR_DASHBOARD=""
+    NEXT_DIST_DIR_CONNECT=""
+    if [ "$need_dash" = true ] || [ "$need_connect" = true ]; then
+        backup_next_build_configs
+        local build_stamp="$(date -u '+%Y%m%dT%H%M%SZ')-$$"
+        if [ "$need_dash" = true ]; then
+            NEXT_DIST_DIR_DASHBOARD=".next-deploy-${build_stamp}-dashboard"
+            rm -rf "$SOKAR_ROOT/apps/dashboard/$NEXT_DIST_DIR_DASHBOARD"
+        fi
+        if [ "$need_connect" = true ]; then
+            NEXT_DIST_DIR_CONNECT=".next-deploy-${build_stamp}-connect"
+            rm -rf "$SOKAR_ROOT/apps/connect/$NEXT_DIST_DIR_CONNECT"
+        fi
+    fi
+
     local build_dash_cmd=""
     local build_connect_cmd=""
     if [ "$need_dash" = true ]; then
-        build_dash_cmd="NODE_OPTIONS='--max-old-space-size=2048' NEXT_TELEMETRY_DISABLED=1 SENTRY_SUPPRESS_GLOBAL_ERROR_HANDLER_FILE_WARNING=1 pnpm --filter @sokar/dashboard build"
+        build_dash_cmd="NODE_OPTIONS='--max-old-space-size=2048' NEXT_TELEMETRY_DISABLED=1 NEXT_BUILD_ALLOW_DEV=1 NEXT_DIST_DIR='$NEXT_DIST_DIR_DASHBOARD' SENTRY_SUPPRESS_GLOBAL_ERROR_HANDLER_FILE_WARNING=1 pnpm --filter @sokar/dashboard build"
     fi
     if [ "$need_connect" = true ]; then
-        build_connect_cmd="NODE_OPTIONS='--max-old-space-size=1024' NEXT_TELEMETRY_DISABLED=1 pnpm --filter @sokar/connect build"
+        build_connect_cmd="NODE_OPTIONS='--max-old-space-size=1024' NEXT_TELEMETRY_DISABLED=1 NEXT_BUILD_ALLOW_DEV=1 NEXT_DIST_DIR='$NEXT_DIST_DIR_CONNECT' pnpm --filter @sokar/connect build"
     fi
 
-    # Nettoyage des artefacts anciens juste avant le build (pas au début du script,
-    # sinon on peut supprimer le standalone d'une app qui n'est pas rebuildée).
-    [ "$need_dash" = true ] && clean_next_artifacts dashboard
-    [ "$need_connect" = true ] && clean_next_artifacts connect
+    # Les services restent actifs pendant le build : les sorties sont écrites
+    # dans les dossiers .next-deploy-* et ne remplacent `.next` qu'après
+    # validation. Le garde-fou de build est explicitement levé ici, et jamais
+    # dans les commandes de développement usuelles.
 
     if [ -n "$build_dash_cmd" ] && [ -n "$build_connect_cmd" ]; then
         log info "   → Lancement dashboard + connect en parallèle..."
@@ -361,18 +568,26 @@ build_dashboard_connect() {
         if [ "$dash_exit" -ne 0 ]; then
             log_error "Dashboard build échoué (exit $dash_exit)"
             kill "$connect_pid" 2>/dev/null || true
+            cleanup_next_build_dirs
             exit 1
         fi
         if [ "$connect_exit" -ne 0 ]; then
             log_error "Connect build échoué (exit $connect_exit)"
+            cleanup_next_build_dirs
             exit 1
         fi
     elif [ -n "$build_dash_cmd" ]; then
         log info "   → Dashboard build seul..."
-        eval "$build_dash_cmd"
+        if ! eval "$build_dash_cmd"; then
+            cleanup_next_build_dirs
+            return 1
+        fi
     elif [ -n "$build_connect_cmd" ]; then
         log info "   → Connect build seul..."
-        eval "$build_connect_cmd"
+        if ! eval "$build_connect_cmd"; then
+            cleanup_next_build_dirs
+            return 1
+        fi
     else
         log info "   ⏭️  Aucun build Next.js nécessaire"
     fi
@@ -384,12 +599,14 @@ copy_static() {
     local need_connect="$2"
 
     if [ "$need_dash" = true ]; then
-        bash "$SOKAR_ROOT/apps/dashboard/scripts/copy-static.sh"
+        NEXT_DIST_DIR="$NEXT_DIST_DIR_DASHBOARD" \
+            bash "$SOKAR_ROOT/apps/dashboard/scripts/copy-static.sh"
     else
         log info "   ⏭️  Dashboard non rebuild — static déjà en place"
     fi
     if [ "$need_connect" = true ]; then
-        bash "$SOKAR_ROOT/apps/connect/scripts/copy-static.sh"
+        NEXT_DIST_DIR="$NEXT_DIST_DIR_CONNECT" \
+            bash "$SOKAR_ROOT/apps/connect/scripts/copy-static.sh"
     else
         log info "   ⏭️  Connect non rebuild — static déjà en place"
     fi
@@ -456,7 +673,24 @@ validate_nginx_config() {
 restart_services() {
     log info ""
     log info "📦 Restarting ${DEPLOY_ENV} services..."
+
+    # Le build a été préparé hors ligne. La coupure éventuelle est limitée au
+    # remplacement du processus, pas à toute la durée de compilation.
+    if [ "${NEXT_BUILD_ACTIVATED_DASHBOARD:-false}" = true ]; then
+        pm2 stop "$PM2_DASH" 2>/dev/null || true
+    fi
+    if [ "${NEXT_BUILD_ACTIVATED_CONNECT:-false}" = true ]; then
+        pm2 stop "$PM2_CONNECT" 2>/dev/null || true
+    fi
+
     pm2 start "$ECOSYSTEM_FILE"
+
+    # L'API n'est redémarrée que si son artefact ou son schéma a changé. Les
+    # déploiements purement Dashboard/Connect ne provoquent ainsi aucun arrêt
+    # du backend.
+    if [ "${NEED_API:-false}" = true ]; then
+        pm2 restart "$PM2_API" 2>/dev/null || true
+    fi
     pm2 save
     sudo "$PRIVILEGED_WRAPPER" reload-nginx "$DEPLOY_ENV"
 

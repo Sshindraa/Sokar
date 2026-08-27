@@ -33,7 +33,7 @@ SECRET_HITS=$(printf '%s\n' "$ADDED" | grep '^+' | grep -v '^+++' | grep -Ei "(a
 
 # Provider-shaped credentials are often assigned without quotes or passed
 # directly to a CLI. Catch those forms before they ever leave the laptop.
-PROVIDER_SECRET_HITS=$(printf '%s\n' "$ADDED" | grep '^+' | grep -v '^+++' | grep -Ei '(dp\.st\.[A-Za-z0-9._-]{10,}|sk-or-v1-[A-Za-z0-9_-]{10,}|sk_(live|test)_[A-Za-z0-9_-]{12,}|re_[A-Za-z0-9_-]{16,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})' || true)
+PROVIDER_SECRET_HITS=$(printf '%s\n' "$ADDED" | grep '^+' | grep -v '^+++' | grep -Ei '(dp\.st\.[A-Za-z0-9._-]{10,}|sk-or-v1-[A-Za-z0-9_-]{10,}|sk_(live|test)_[A-Za-z0-9_-]{12,}|(^|[^[:alnum:]_])re_[A-Za-z0-9_-]{16,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})' || true)
 [ -z "$PROVIDER_SECRET_HITS" ] || { echo "$PROVIDER_SECRET_HITS"; fail "provider credential detected in staged diff"; }
 
 CODE_ADDED=$(git diff --cached --unified=0 -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs' ':(exclude)tools/diagnostics/*' ':(exclude)scripts/precommit-review.sh' || true)

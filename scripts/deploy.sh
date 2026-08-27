@@ -14,9 +14,10 @@
 # Ce script remplace scripts/deploy-vps.sh (prod) et scripts/deploy-staging.sh (staging).
 # La logique commune est dans scripts/ops/deploy-common.sh.
 #
-# Zero-downtime: l'API reste en ligne pendant le build. Seuls dashboard et
-# Sokar Connect sont arrêtés (Next.js standalone ne peut pas servir pendant que
-# `next build` écrase .next). Le redémarrage final prend ~5s.
+# Zero-downtime : les trois services restent en ligne pendant la compilation.
+# Dashboard et Sokar Connect sont construits dans des dossiers .next-deploy-*
+# puis basculés seulement après les validations. Le redémarrage final est
+# limité à quelques secondes.
 #
 # Release dirs: snapshot des artefacts avant/après build dans
 # $RELEASES_DIR/. Rollback instantané si build échoue ou sur commande.
@@ -201,9 +202,9 @@ fi
 log info ""
 log info "📦 Freeing memory before build..."
 
-# Stop ONLY Next.js apps — API stays up (it doesn't use .next).
-log info "   Stopping $PM2_DASH + $PM2_CONNECT (API stays up)..."
-pm2 stop "$PM2_DASH" "$PM2_CONNECT" 2>/dev/null || true
+# Dashboard et Connect restent servis pendant le build : les nouveaux
+# artefacts sont écrits dans des dossiers isolés puis activés atomiquement.
+log info "   Dashboard + Connect restent en ligne pendant la compilation..."
 
 if [ "$HAS_LOCALSTACK" = true ]; then
     # Stop LocalStack (libère ~420MB)
@@ -283,12 +284,11 @@ fi
 if [ "$DEPLOY_ENV" = "staging" ]; then
     validate_env_files
 
-    # Libérer la mémoire seulement après le préflight : une configuration invalide
-    # ne doit jamais interrompre Dashboard ou Connect.
+    # La configuration est validée avant toute préparation de release ; une
+    # erreur ne doit jamais interrompre Dashboard ou Connect.
     log info ""
     log info "📦 Freeing memory before build..."
-    log info "   Stopping staging dashboard + connect (API stays up)..."
-    pm2 stop "$PM2_DASH" "$PM2_CONNECT" 2>/dev/null || true
+    log info "   Staging Dashboard + Connect restent en ligne..."
 
     FREE_BEFORE=$(free -m | awk '/^Mem:/ {print $4}')
     log info "   Memory free: ${FREE_BEFORE}MB"
@@ -388,6 +388,18 @@ if [ "$HAS_LOGROTATE" = true ] && [ "$DRY_RUN" = false ]; then
     sudo "$PRIVILEGED_WRAPPER" install-runtime "$DEPLOY_ENV"
 fi
 
+# Activer les dossiers Next.js préparés seulement après une copie complète des
+# assets, les migrations et la validation Nginx.
+if [ "$DRY_RUN" = false ] && [ "$SKIP_ALL_BUILDS" = false ]; then
+    log info ""
+    log info "📦 Activating validated Next.js releases..."
+    activate_next_builds
+elif [ "$DRY_RUN" = true ] && [ "$SKIP_ALL_BUILDS" = false ]; then
+    # Un dry-run ne doit laisser ni release temporaire ni modification des
+    # fichiers de configuration générés par Next.js.
+    cleanup_next_build_dirs
+fi
+
 # ── 20. Restart services (skip si DRY_RUN) ───────────────
 if [ "$DRY_RUN" = true ]; then
     log info ""
@@ -431,6 +443,7 @@ if [ "$EXTENDED_HEALTH_CHECKS" = true ]; then
             echo "$NEW_TIMESTAMP" > "$RELEASES_DIR/.latest"
             cleanup_releases "$KEEP_RELEASES"
         fi
+        cleanup_previous_next_builds
         # Sauvegarder le hash pour le prochain déploiement incrémental
         git rev-parse HEAD > "$RELEASES_DIR/.latest-hash"
 
@@ -467,6 +480,7 @@ else
 
         # Nettoyer le snapshot pré-build
         rm -rf "${PREV_RELEASE}" 2>/dev/null || true
+        cleanup_previous_next_builds
 
         # ── Résultat ─────────────────────────────────────
         log info ""

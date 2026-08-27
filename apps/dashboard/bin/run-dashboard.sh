@@ -16,6 +16,16 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${APP_DIR}"
 
+# Une release déployée est exposée via `.next` (symlink vers son dossier
+# `.next-deploy-*`). Le serveur standalone doit connaître le distDir d'origine
+# afin de retrouver ses manifestes et ses assets.
+if [ -L ".next" ]; then
+  ACTIVE_NEXT_DIST_DIR="$(readlink ".next")"
+else
+  ACTIVE_NEXT_DIST_DIR=".next"
+fi
+export NEXT_DIST_DIR="${NEXT_DIST_DIR:-${ACTIVE_NEXT_DIST_DIR}}"
+
 # 1. Copier les assets statiques à chaque démarrage.
 #    Next.js 14 standalone ne copie PAS auto .next/static ni public/
 #    dans le bundle standalone → page blanche si oublié.

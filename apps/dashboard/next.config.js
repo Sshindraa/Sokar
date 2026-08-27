@@ -11,6 +11,10 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // Les déploiements produisent une release dans un dossier isolé puis
+  // basculent `.next` atomiquement. En local/CI, le dossier historique reste
+  // `.next`.
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   // Désactivé : sharp non disponible sur le VPS
   images: {
     unoptimized: true,
