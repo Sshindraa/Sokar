@@ -10,6 +10,19 @@
 
 All deployments use `scripts/deploy.sh --env prod|staging`. The shared logic lives in `scripts/ops/deploy-common.sh` (sourced by `deploy.sh`).
 
+### Disponibilité pendant un déploiement
+
+Dashboard et Connect restent en ligne pendant toute la compilation Next.js.
+Chaque application est construite dans un dossier `.next-deploy-*`, puis le
+dossier `.next` actif est remplacé uniquement après la copie des assets, les
+migrations et la validation Nginx. En cas d'échec avant la bascule, la release
+actuelle continue de servir les visiteurs ; après la bascule, les health checks
+peuvent restaurer automatiquement le snapshot précédent.
+
+Le redémarrage PM2 final est limité aux applications réellement reconstruites.
+Un déploiement qui ne touche qu'au Dashboard ou à Connect ne redémarre pas
+l'API.
+
 ## Staging deployment
 
 - CI/CD: `.github/workflows/deploy-staging.yml` triggered on `main` push (after CI green).
@@ -62,6 +75,7 @@ ssh deploy@sokar "cd /opt/sokar-staging && bash scripts/deploy.sh --env staging 
 
 ## Post-deploy notes (production)
 
-- `deploy.sh --env prod` incremental clean only cleans `apps/{dashboard,connect}/.next/standalone` for apps that are actually rebuilt.
+- `deploy.sh --env prod` builds Next.js into isolated `apps/{dashboard,connect}/.next-deploy-*` directories; the active `.next` tree is kept intact until activation.
+- Les fichiers `tsconfig.json` et `next-env.d.ts` éventuellement réécrits par Next pendant un build isolé sont restaurés avant la fin du déploiement.
 - If `apps/<app>/.next/standalone/apps/<app>/server.js` is missing, the script forces a rebuild of that app.
 - `deploy.sh --env staging` also does incremental build detection (same logic as prod).

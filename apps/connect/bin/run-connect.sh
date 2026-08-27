@@ -10,8 +10,17 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${APP_DIR}"
 
+# `.next` pointe vers le dossier de release actif après un déploiement sans
+# interruption. Conserver le distDir original pour le runtime standalone.
+if [ -L ".next" ]; then
+  ACTIVE_NEXT_DIST_DIR="$(readlink ".next")"
+else
+  ACTIVE_NEXT_DIST_DIR=".next"
+fi
+export NEXT_DIST_DIR="${NEXT_DIST_DIR:-${ACTIVE_NEXT_DIST_DIR}}"
+
 # 1. Copier les assets statiques si pas déjà fait
-if [ ! -d ".next/standalone/apps/connect/.next/static" ]; then
+if [ ! -d ".next/standalone/apps/connect/${NEXT_DIST_DIR}/static" ]; then
   echo "→ Running copy-static.sh"
   bash scripts/copy-static.sh
 fi

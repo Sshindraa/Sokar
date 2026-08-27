@@ -10,14 +10,19 @@
 #   <port>  port d'écoute de l'app en dev (ex. 3000 pour le dashboard)
 #   [app]   nom affiché dans le message d'erreur
 #
-# Override : NEXT_BUILD_ALLOW_DEV=1 autorise le build malgré un dev actif
-#            (à utiliser seulement si le dev server est sur une autre machine/port).
+# Override : NEXT_BUILD_ALLOW_DEV=1 autorise le build malgré un serveur actif
+#            (utilisé uniquement par le déploiement, qui construit dans un
+#            distDir isolé ; à ne jamais ajouter aux commandes dev locales).
 set -euo pipefail
 
 PORT="${1:-3000}"
 APP="${2:-cette app}"
 
 if [ "${NEXT_BUILD_ALLOW_DEV:-}" = "1" ]; then
+  if [ "${NEXT_DIST_DIR:-.next}" = ".next" ]; then
+    echo "🛑 NEXT_BUILD_ALLOW_DEV=1 exige un NEXT_DIST_DIR isolé (pas .next)." >&2
+    exit 1
+  fi
   exit 0
 fi
 
@@ -28,7 +33,6 @@ dev_listening() {
   fi
   # Pas de lsof : on ne bloque PAS par défaut. Un faux positif (bloquer un build
   # légitime en CI/prod) coûte plus cher qu'un crash webpack rare et récupérable.
-  # Le déploiement VPS stoppe Next avant de builder (scripts/deploy.sh — free memory step).
   return 1
 }
 

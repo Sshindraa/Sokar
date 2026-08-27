@@ -11,6 +11,7 @@ les commandes `package.json` :
 
 - `deploy.sh` — déploiement unifié (`--env prod|staging`) avec releases, snapshots et rollback.
 - `ops/deploy-common.sh` — librairie partagée sourcée par `deploy.sh` (fonctions communes prod + staging).
+- `ops/test-deploy-common.sh` — fixture locale d'activation/rollback des releases Next.js.
 - `precommit-review.sh` — garde-fous secrets et code dangereux avant commit.
 - `prepush-quality-gate.sh` — vérifications ciblées avant push.
 - `agent/submit-pr.sh` — soumission et auto-merge des PR d'agents.
