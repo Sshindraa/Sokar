@@ -26,7 +26,13 @@ type SignupSelection = {
   billing: 'monthly' | 'annual';
   label: (typeof SIGNUP_PLANS)[keyof typeof SIGNUP_PLANS]['label'];
   billingLabel: string;
+  siteCount?: number;
 };
+
+function readSiteCount(value: string | null): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 2 && parsed <= 100 ? parsed : 2;
+}
 
 function readSignupSelection(search: string): SignupSelection | null {
   const params = new URLSearchParams(search);
@@ -39,7 +45,17 @@ function readSignupSelection(search: string): SignupSelection | null {
     billing,
     label: offer.label,
     billingLabel: billing === 'monthly' ? 'facturation mensuelle' : offer.billingLabel,
+    ...(plan === 'multi-site' ? { siteCount: readSiteCount(params.get('sites')) } : {}),
   };
+}
+
+function selectionQuery(selection: SignupSelection): string {
+  const params = new URLSearchParams({
+    subscribe_plan: selection.slug,
+    billing: selection.billing,
+  });
+  if (selection.slug === 'multi-site') params.set('sites', String(selection.siteCount ?? 2));
+  return `?${params.toString()}`;
 }
 
 // Scénario de l'assistant Sokar pour le simulateur conversationnel
@@ -85,9 +101,7 @@ export default function RegisterPage() {
   useEffect(() => {
     if (isLoaded && isSignedIn) {
       const selection = readSignupSelection(window.location.search);
-      const query = selection
-        ? `?subscribe_plan=${encodeURIComponent(selection.slug)}&billing=${selection.billing}`
-        : '';
+      const query = selection ? selectionQuery(selection) : '';
       router.replace(`/dashboard${query}`);
     }
   }, [isLoaded, isSignedIn, router]);
@@ -202,7 +216,7 @@ export default function RegisterPage() {
             <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary/50 px-3 py-1 text-xs font-semibold text-muted-foreground transition-all duration-300 hover:border-foreground/15">
               <Sparkles size={11} className="text-muted-foreground" />
               {selectedPlan
-                ? `Formule ${selectedPlan.label} · ${selectedPlan.billingLabel}`
+                ? `Formule ${selectedPlan.label}${selectedPlan.siteCount ? ` · ${selectedPlan.siteCount} établissements` : ''} · ${selectedPlan.billingLabel}`
                 : 'Création de votre espace restaurant'}
             </div>
             <h2 className="text-3xl font-bold tracking-tight mt-3">Créez votre compte</h2>
@@ -212,6 +226,34 @@ export default function RegisterPage() {
               }
             </p>
           </div>
+
+          {selectedPlan?.slug === 'multi-site' && (
+            <div className="mx-auto mb-5 w-full max-w-sm rounded-xl border border-border bg-card/50 p-4">
+              <label
+                htmlFor="multi-site-count"
+                className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+              >
+                Nombre d’établissements
+              </label>
+              <input
+                id="multi-site-count"
+                type="number"
+                min={2}
+                max={100}
+                value={selectedPlan.siteCount ?? 2}
+                onChange={(event) =>
+                  setSelectedPlan({
+                    ...selectedPlan,
+                    siteCount: readSiteCount(event.target.value),
+                  })
+                }
+                className="mt-2 flex h-10 w-full rounded-lg border border-input bg-background/50 px-3 py-2 text-sm text-foreground transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <p className="mt-2 text-xs text-muted-foreground">
+                249 € de base + 99 € par établissement supplémentaire.
+              </p>
+            </div>
+          )}
 
           {!isLoaded ? (
             <div className="mx-auto w-full max-w-sm space-y-5">
@@ -230,9 +272,7 @@ export default function RegisterPage() {
           ) : (
             <SignUp
               forceRedirectUrl={
-                selectedPlan
-                  ? `/dashboard?subscribe_plan=${encodeURIComponent(selectedPlan.slug)}&billing=${selectedPlan.billing}`
-                  : '/dashboard'
+                selectedPlan ? `/dashboard${selectionQuery(selectedPlan)}` : '/dashboard'
               }
               appearance={{
                 variables: {

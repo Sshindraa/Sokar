@@ -46,4 +46,19 @@ describe('SubscribeFromPricing', () => {
     expect(mocks.post).not.toHaveBeenCalled();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
+
+  it('transmet le nombre de sites pour une souscription Multi-site', async () => {
+    mocks.search = 'subscribe_plan=multi-site&billing=monthly&sites=4';
+    mocks.post.mockResolvedValue({ url: 'https://checkout.stripe.test/session' });
+
+    render(<SubscribeFromPricing />);
+
+    await waitFor(() => {
+      expect(mocks.post).toHaveBeenCalledWith('billing/checkout-session', {
+        plan: 'multi-site',
+        billing: 'monthly',
+        siteCount: 4,
+      });
+    });
+  });
 });

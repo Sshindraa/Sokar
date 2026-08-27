@@ -34,6 +34,14 @@ const PRICE_ENV_BY_PLAN: Record<
   },
 };
 
+const MULTI_SITE_ADDON_PRICE_ENV_BY_INTERVAL: Record<BillingInterval, keyof NodeJS.ProcessEnv> = {
+  monthly: 'STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY',
+  annual: 'STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL',
+};
+
+const MIN_MULTI_SITE_COUNT = 2;
+const MAX_MULTI_SITE_COUNT = 100;
+
 export class BillingNotConfiguredError extends Error {
   readonly code = 'BILLING_NOT_CONFIGURED';
 
@@ -70,6 +78,15 @@ export class BillingAlreadySubscribedError extends Error {
   }
 }
 
+export class BillingInvalidSiteCountError extends Error {
+  readonly code = 'INVALID_SITE_COUNT';
+
+  constructor() {
+    super('Multi-site requires between 2 and 100 establishments');
+    this.name = 'BillingInvalidSiteCountError';
+  }
+}
+
 let stripeClient: Stripe | null = null;
 
 function getStripe(): Stripe {
@@ -93,6 +110,25 @@ export function resolvePriceId(plan: PublicBillingPlan, billing: BillingInterval
   const envName = PRICE_ENV_BY_PLAN[plan][billing];
   const value = process.env[envName]?.trim();
   return value?.startsWith('price_') ? value : null;
+}
+
+export function resolveMultiSiteAddonPriceId(billing: BillingInterval): string | null {
+  const envName = MULTI_SITE_ADDON_PRICE_ENV_BY_INTERVAL[billing];
+  const value = process.env[envName]?.trim();
+  return value?.startsWith('price_') ? value : null;
+}
+
+function normalizeSiteCount(plan: PublicBillingPlan, siteCount?: number): number {
+  if (plan !== 'multi-site') return 1;
+  const normalized = siteCount ?? MIN_MULTI_SITE_COUNT;
+  if (
+    !Number.isInteger(normalized) ||
+    normalized < MIN_MULTI_SITE_COUNT ||
+    normalized > MAX_MULTI_SITE_COUNT
+  ) {
+    throw new BillingInvalidSiteCountError();
+  }
+  return normalized;
 }
 
 export function getPublicPlanFromPriceId(priceId: string): PublicBillingPlan | null {
@@ -122,9 +158,15 @@ export async function createCheckoutSession(input: {
   restaurantId: string;
   plan: PublicBillingPlan;
   billing: BillingInterval;
+  siteCount?: number;
 }): Promise<{ id: string; url: string }> {
   const priceId = resolvePriceId(input.plan, input.billing);
-  if (!priceId) throw new BillingNotConfiguredError();
+  const siteCount = normalizeSiteCount(input.plan, input.siteCount);
+  const addonPriceId =
+    input.plan === 'multi-site' ? resolveMultiSiteAddonPriceId(input.billing) : null;
+  if (!priceId || (input.plan === 'multi-site' && !addonPriceId)) {
+    throw new BillingNotConfiguredError();
+  }
 
   const restaurant = await db.restaurant.findUnique({ where: { id: input.restaurantId } });
   if (!restaurant) throw new BillingRestaurantNotFoundError();
@@ -159,21 +201,27 @@ export async function createCheckoutSession(input: {
   }
 
   try {
+    const lineItems = [
+      { price: priceId, quantity: 1 },
+      ...(addonPriceId ? [{ price: addonPriceId, quantity: siteCount - 1 }] : []),
+    ];
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
       client_reference_id: restaurant.id,
-      line_items: [{ price: priceId, quantity: 1 }],
+      line_items: lineItems,
       metadata: {
         restaurantId: restaurant.id,
         plan: input.plan,
         billing: input.billing,
+        siteCount: String(siteCount),
       },
       subscription_data: {
         metadata: {
           restaurantId: restaurant.id,
           plan: input.plan,
           billing: input.billing,
+          siteCount: String(siteCount),
         },
       },
       success_url: dashboardUrl(

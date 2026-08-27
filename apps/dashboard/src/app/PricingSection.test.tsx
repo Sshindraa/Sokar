@@ -25,7 +25,7 @@ describe('PricingSection', () => {
     );
     expect(screen.getByRole('link', { name: 'Souscrire Multi-site' })).toHaveAttribute(
       'href',
-      '/register?plan=multi-site&billing=annual',
+      '/register?plan=multi-site&billing=annual&sites=2',
     );
   });
 

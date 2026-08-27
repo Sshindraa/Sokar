@@ -19,6 +19,11 @@ function isBilling(value: string | null): value is Billing {
   return value !== null && (BILLING as readonly string[]).includes(value);
 }
 
+function readSiteCount(value: string | null): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 2 && parsed <= 100 ? parsed : 2;
+}
+
 /** Starts the hosted Stripe Checkout after Clerk has created the restaurant. */
 export function SubscribeFromPricing() {
   const searchParams = useSearchParams();
@@ -31,7 +36,9 @@ export function SubscribeFromPricing() {
   const billingParam = searchParams.get('billing');
   const plan = isPlan(planParam) ? planParam : null;
   const billing = isBilling(billingParam) ? billingParam : null;
-  const requestKey = plan && billing && orgId ? `${orgId}:${plan}:${billing}` : null;
+  const siteCount = plan === 'multi-site' ? readSiteCount(searchParams.get('sites')) : undefined;
+  const requestKey =
+    plan && billing && orgId ? `${orgId}:${plan}:${billing}:${siteCount ?? 1}` : null;
 
   useEffect(() => {
     if (!requestKey || !plan || !billing || attempted.current === requestKey) return;
@@ -44,6 +51,7 @@ export function SubscribeFromPricing() {
           const session = await post<{ url: string }>('billing/checkout-session', {
             plan,
             billing,
+            ...(siteCount ? { siteCount } : {}),
           });
           if (!session.url) throw new Error('La page de paiement est indisponible.');
           window.location.assign(session.url);
@@ -61,7 +69,7 @@ export function SubscribeFromPricing() {
         }
       }
     })();
-  }, [billing, orgId, plan, post, requestKey, retry]);
+  }, [billing, orgId, plan, post, requestKey, retry, siteCount]);
 
   if (!requestKey || !error) {
     return requestKey ? (

@@ -12,7 +12,7 @@ La carte bancaire n'est jamais collectée par le dashboard Sokar. Les URLs de re
 
 ## Configuration
 
-Créer les six prix récurrents dans le compte Stripe correspondant à l'environnement, puis renseigner dans `apps/api/.env` :
+Créer les huit prix récurrents dans le compte Stripe correspondant à l'environnement (six prix de base et deux add-ons Multi-site), puis renseigner dans `apps/api/.env` :
 
 ```text
 STRIPE_PRICE_ESSENTIAL_MONTHLY=price_...
@@ -21,9 +21,11 @@ STRIPE_PRICE_PRO_MONTHLY=price_...
 STRIPE_PRICE_PRO_ANNUAL=price_...
 STRIPE_PRICE_MULTI_SITE_MONTHLY=price_...
 STRIPE_PRICE_MULTI_SITE_ANNUAL=price_...
+STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY=price_...
+STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL=price_...
 ```
 
-Les valeurs doivent être des identifiants Stripe `price_...`. Tant qu'une valeur manque, l'API renvoie `503 BILLING_NOT_CONFIGURED` et aucune session n'est créée.
+Les valeurs doivent être des identifiants Stripe `price_...`. Les prix `MULTI_SITE` couvrent la base (249€/mois) ; les prix `MULTI_SITE_ADDON` couvrent chaque établissement supplémentaire (99€/mois). Le checkout reçoit `siteCount` (2 par défaut, maximum 100) et ajoute une ligne Stripe par établissement supplémentaire. Tant qu'une valeur manque, l'API renvoie `503 BILLING_NOT_CONFIGURED` et aucune session n'est créée.
 
 Le secret `STRIPE_WEBHOOK_SECRET` existant doit rester configuré sur le même endpoint `POST /webhooks/stripe`. Les événements d'abonnement à activer sont :
 
@@ -34,4 +36,4 @@ Le secret `STRIPE_WEBHOOK_SECRET` existant doit rester configuré sur le même e
 
 ## Test sans paiement
 
-En local, utiliser des clés `sk_test_...` et les six prix de test. Les tests automatisés couvrent la validation du parcours, la création de Checkout et les quatre transitions webhook. Ne jamais mettre une clé live ou un prix live dans le dépôt.
+En local, utiliser des clés `sk_test_...` et les huit prix de test. Les tests automatisés couvrent la validation du parcours, la création de Checkout et les quatre transitions webhook. Ne jamais mettre une clé live ou un prix live dans le dépôt.
