@@ -32,6 +32,14 @@ jobs:
         uses: appleboy/ssh-action@v1
         env:
           ALERT_WEBHOOK: ${{ secrets.ALERT_WEBHOOK }}
+          STRIPE_PRICE_ESSENTIAL_MONTHLY: ${{ vars.STRIPE_PRODUCTION_ESSENTIAL_MONTHLY }}
+          STRIPE_PRICE_ESSENTIAL_ANNUAL: ${{ vars.STRIPE_PRODUCTION_ESSENTIAL_ANNUAL }}
+          STRIPE_PRICE_PRO_MONTHLY: ${{ vars.STRIPE_PRODUCTION_PRO_MONTHLY }}
+          STRIPE_PRICE_PRO_ANNUAL: ${{ vars.STRIPE_PRODUCTION_PRO_ANNUAL }}
+          STRIPE_PRICE_MULTI_SITE_MONTHLY: ${{ vars.STRIPE_PRODUCTION_MULTI_SITE_MONTHLY }}
+          STRIPE_PRICE_MULTI_SITE_ANNUAL: ${{ vars.STRIPE_PRODUCTION_MULTI_SITE_ANNUAL }}
+          STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY: ${{ vars.STRIPE_PRODUCTION_MULTI_SITE_ADDON_MONTHLY }}
+          STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL: ${{ vars.STRIPE_PRODUCTION_MULTI_SITE_ADDON_ANNUAL }}
         with:
           # Prod et staging sont sur le même VPS → on réutilise STAGING_*.
           # Si un jour prod a son propre VPS, créer PROD_HOST/PROD_SSH_KEY/PROD_USER.
@@ -39,7 +47,7 @@ jobs:
           username: deploy
           key: ${{ secrets.STAGING_SSH_KEY }}
           command_timeout: 18m
-          envs: ALERT_WEBHOOK
+          envs: ALERT_WEBHOOK,STRIPE_PRICE_ESSENTIAL_MONTHLY,STRIPE_PRICE_ESSENTIAL_ANNUAL,STRIPE_PRICE_PRO_MONTHLY,STRIPE_PRICE_PRO_ANNUAL,STRIPE_PRICE_MULTI_SITE_MONTHLY,STRIPE_PRICE_MULTI_SITE_ANNUAL,STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL
           script: |
             set -euo pipefail
             cd /opt/sokar
@@ -51,6 +59,7 @@ jobs:
               sudo install -o root -g root -m 0755 \
                 scripts/ops/sokar-deploy-root.sh /usr/local/sbin/sokar-deploy-root
             fi
+            bash scripts/ops/sync-stripe-prices.sh prod
             bash scripts/deploy.sh --env prod --confirm-production
 
   smoke-tests:
