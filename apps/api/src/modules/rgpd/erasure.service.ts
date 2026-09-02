@@ -26,6 +26,7 @@ import { LONG_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
 import { ConsentService } from './consent.service';
 import { AuditLogService } from '../agentic-reservations/core/audit-log.service';
 import { trackRgpdEvent } from '../analytics/events.service';
+import { observeReservationMutation } from '../../shared/observability/reservation-contract';
 
 export class ErasureSubjectNotFoundError extends Error {
   constructor(message: string) {
@@ -93,6 +94,16 @@ export class ErasureService {
       });
       return result.count;
     }, LONG_TRANSACTION_OPTIONS);
+    if (reservationsAnonymized > 0) {
+      observeReservationMutation({
+        source: 'rgpd',
+        operation: 'anonymize',
+        idempotency: 'not_applicable',
+        audit: 'written',
+        notification: 'not_sent',
+        capacity: 'unchanged',
+      });
+    }
 
     // 3. Anonymiser les messages d'appels (Message contient customerPhone/customerName).
     //    La table Call n'a pas de colonne customerPhone directe.

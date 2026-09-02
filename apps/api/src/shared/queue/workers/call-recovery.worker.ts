@@ -4,6 +4,19 @@ import { sendSms } from '../../telnyx/client';
 import { setupWorkerListeners, jobLogger } from './helper';
 import { queues } from '../queues';
 import { CALL_RECOVERY_WORKER_CONCURRENCY } from '../constants';
+import {
+  acquireNotificationClaim,
+  buildNotificationClaimKey,
+  classifyNotificationError,
+  enqueueNotificationReconciliation,
+  normalizeNotificationSendResult,
+  NotificationProviderRefusedError,
+  recordNotificationResult,
+  type NotificationClaimStore,
+  type NotificationProviderResult,
+  type NotificationReconciliationQueue,
+} from '../notification-idempotency';
+import { recordNotificationProviderResult } from '../../observability/metrics';
 
 export interface CallRecoveryJobData {
   callId: string;
@@ -16,16 +29,48 @@ export interface CallRecoveryJobData {
   reason: 'no_action_with_intent' | 'handoff_dropped' | 'transport_error';
 }
 
+export interface CallRecoveryDependencies {
+  claimStore: NotificationClaimStore;
+  sendSms: typeof sendSms;
+  reconciliationQueue?: NotificationReconciliationQueue;
+}
+
+function resolveDependencies(
+  input: NotificationClaimStore | CallRecoveryDependencies,
+): CallRecoveryDependencies {
+  if ('claimStore' in input) return input;
+  return { claimStore: input, sendSms, reconciliationQueue: queues.reconciliation };
+}
+
+async function requeueUnknownRecovery(
+  queue: NotificationReconciliationQueue | undefined,
+  claimKey: string,
+  providerMessageId?: string,
+): Promise<void> {
+  if (!queue) return;
+  await enqueueNotificationReconciliation(queue, {
+    claimKey,
+    provider: 'telnyx',
+    channel: 'sms',
+    ...(providerMessageId ? { providerMessageId } : {}),
+  });
+}
+
 /**
  * Sends a single follow-up SMS to a caller whose reservation attempt
  * did not finalize. Idempotent via callId — BullMQ jobId = the same key.
  *
- * Failure handling: 3 retries with exponential backoff; on terminal
- * failure the job is moved to dead-letter via setupWorkerListeners.
+ * Failure handling: the queue policy (5 attempts with exponential backoff)
+ * retries certain refusals; on terminal failure the job is moved to
+ * dead-letter via setupWorkerListeners.
  */
-export async function processCallRecoveryJob(job: Job): Promise<void> {
+export async function processCallRecoveryJob(
+  job: Job,
+  dependencies: NotificationClaimStore | CallRecoveryDependencies = redisQueue,
+): Promise<void> {
   const log = jobLogger(job);
   const data = job.data as CallRecoveryJobData;
+  const deps = resolveDependencies(dependencies);
 
   const opening = data.customerName ? `Bonjour ${data.customerName.split(' ')[0]}, ` : 'Bonjour, ';
 
@@ -42,7 +87,114 @@ export async function processCallRecoveryJob(job: Job): Promise<void> {
 
   const message = `${opening}votre réservation chez ${data.restaurantName} n'a pas pu être confirmée.${tail}`;
 
-  await sendSms(data.customerPhone, message);
+  const claimKey = buildNotificationClaimKey('call-recovery-sms', data.callId);
+  const claim = await acquireNotificationClaim(deps.claimStore, claimKey, {
+    provider: 'telnyx',
+    channel: 'sms',
+  });
+  if (!claim.acquired || !claim.token) {
+    if (claim.record?.status === 'unknown') {
+      try {
+        await requeueUnknownRecovery(
+          deps.reconciliationQueue,
+          claimKey,
+          claim.record.providerMessageId,
+        );
+      } catch (err) {
+        log.error(
+          { err: err instanceof Error ? err.message : String(err), outcome: 'unknown' },
+          'failed to requeue unknown recovery SMS',
+        );
+      }
+    }
+    log.info({ callId: data.callId, reason: data.reason }, 'recovery SMS skipped: duplicate claim');
+    return;
+  }
+
+  try {
+    const result = normalizeNotificationSendResult(
+      await deps.sendSms(data.customerPhone, message),
+      'telnyx',
+      'sms',
+    );
+    recordNotificationProviderResult('telnyx', 'sms', result.outcome);
+    const transitioned = await recordNotificationResult(
+      deps.claimStore,
+      claimKey,
+      claim.token,
+      result.outcome,
+      {
+        provider: result.provider,
+        channel: result.channel,
+        ...(result.providerMessageId ? { providerMessageId: result.providerMessageId } : {}),
+      },
+    );
+    if (result.outcome === 'unknown') {
+      if (transitioned) {
+        try {
+          await requeueUnknownRecovery(
+            deps.reconciliationQueue,
+            claimKey,
+            result.providerMessageId,
+          );
+        } catch (err) {
+          log.error(
+            { err: err instanceof Error ? err.message : String(err), outcome: 'unknown' },
+            'failed to queue recovery SMS reconciliation',
+          );
+        }
+      }
+      log.warn({ outcome: 'unknown' }, 'recovery SMS provider result unknown');
+      return;
+    }
+    if (result.outcome === 'failure_certain') {
+      log.warn({ outcome: result.outcome }, 'recovery SMS provider refused the message');
+      throw new NotificationProviderRefusedError(result.provider, result.channel);
+    }
+  } catch (err) {
+    if (err instanceof NotificationProviderRefusedError) throw err;
+    const outcome: NotificationProviderResult = classifyNotificationError(err);
+    recordNotificationProviderResult('telnyx', 'sms', outcome);
+    const providerMessageId =
+      err &&
+      typeof err === 'object' &&
+      'providerMessageId' in err &&
+      typeof (err as { providerMessageId?: unknown }).providerMessageId === 'string'
+        ? (err as { providerMessageId: string }).providerMessageId
+        : undefined;
+    const transitioned = await recordNotificationResult(
+      deps.claimStore,
+      claimKey,
+      claim.token,
+      outcome,
+      {
+        provider: 'telnyx',
+        channel: 'sms',
+        ...(providerMessageId ? { providerMessageId } : {}),
+      },
+    );
+    if (outcome === 'unknown') {
+      if (transitioned) {
+        try {
+          await requeueUnknownRecovery(deps.reconciliationQueue, claimKey, providerMessageId);
+        } catch (reconciliationError) {
+          log.error(
+            {
+              err:
+                reconciliationError instanceof Error
+                  ? reconciliationError.message
+                  : String(reconciliationError),
+              outcome: 'unknown',
+            },
+            'failed to queue recovery SMS reconciliation',
+          );
+        }
+      }
+      log.warn({ outcome }, 'recovery SMS provider result unknown');
+      return;
+    }
+    throw err;
+  }
 
   // Best-effort analytics event so the dashboard counter increments
   // even if a downstream reservation is never created.
@@ -60,9 +212,13 @@ export async function processCallRecoveryJob(job: Job): Promise<void> {
   log.info({ callId: data.callId, reason: data.reason }, 'recovery SMS sent');
 }
 
-export const callRecoveryWorker = new Worker('call-recovery', processCallRecoveryJob, {
-  connection: redisQueue,
-  concurrency: CALL_RECOVERY_WORKER_CONCURRENCY,
-});
+export const callRecoveryWorker = new Worker(
+  'call-recovery',
+  (job) => processCallRecoveryJob(job),
+  {
+    connection: redisQueue,
+    concurrency: CALL_RECOVERY_WORKER_CONCURRENCY,
+  },
+);
 
 setupWorkerListeners(callRecoveryWorker);

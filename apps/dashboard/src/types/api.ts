@@ -51,6 +51,15 @@ export interface AgentPersonality {
 // ─── Reservation ────────────────────────────────────────────────────────
 
 export type ReservationStatus = 'CONFIRMED' | 'CANCELLED' | 'SEATED' | 'NO_SHOW';
+export type ReservationState =
+  | 'PENDING'
+  | 'CONFIRMED'
+  | 'SEATED'
+  | 'HONORED'
+  | 'CANCELLED'
+  | 'NO_SHOW'
+  | 'FAILED'
+  | 'EXPIRED';
 
 export interface Reservation {
   id: string;
@@ -60,6 +69,8 @@ export interface Reservation {
   customerName: string;
   customerPhone: string | null;
   status: ReservationStatus;
+  /** `state` is the business source of truth; legacy rows may omit it. */
+  state?: ReservationState;
   estimatedRevenue: number | null;
   tableId: string | null;
   table?: { name: string } | null;

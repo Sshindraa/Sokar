@@ -8,7 +8,7 @@
  * concurrency.test.ts, exécutés contre la vraie DB locale.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Prisma, PrismaClient } from '@prisma/client';
 import {
   HoldAlreadyConsumedError,
@@ -18,6 +18,10 @@ import {
 } from '../core/hold.service.js';
 import { AuditLogService } from '../core/audit-log.service.js';
 import { buildPolicySnapshot } from '../core/policies.service.js';
+import {
+  TableAllocationError,
+  type TableAllocationService,
+} from '../../floor-plan/table-allocation.service.js';
 
 type HoldRow = {
   id: string;
@@ -201,9 +205,12 @@ function makeFakes() {
   } as unknown as PrismaClient;
 
   const audit = new AuditLogService(prisma);
-  const service = new HoldService(prisma, audit);
+  const tableAllocation = {
+    assertTableAvailableForSeating: vi.fn().mockResolvedValue(undefined),
+  } as unknown as TableAllocationService;
+  const service = new HoldService(prisma, audit, tableAllocation);
 
-  return { prisma, holds, audits, audit, service };
+  return { prisma, holds, audits, audit, service, tableAllocation };
 }
 
 describe('hold.service', () => {
@@ -290,6 +297,45 @@ describe('hold.service', () => {
       });
       expect(h.type).toBe('HOLD');
       expect(h.holdToken).toBeTruthy();
+      expect(fakes.tableAllocation.assertTableAvailableForSeating).toHaveBeenCalledWith(
+        expect.objectContaining({
+          restaurantId: 'r-1',
+          tableId: 't-1',
+          partySize: 4,
+        }),
+        expect.anything(),
+      );
+    });
+
+    it('traduit une table explicite indisponible en conflit de hold', async () => {
+      const policy = buildPolicySnapshot({
+        policyVersion: '2026-06-20',
+        maxPartySize: 12,
+        minLeadTimeMinutes: 30,
+        requireManualValidation: false,
+        quoteTtlSeconds: 300,
+        holdTtlSeconds: 420,
+        noShowPolicy: 'warning',
+        notificationChannels: ['sms'],
+        capacitySpecials: {},
+      });
+      vi.mocked(fakes.tableAllocation.assertTableAvailableForSeating).mockRejectedValueOnce(
+        new TableAllocationError('TABLE_NOT_AVAILABLE', 'Table non disponible'),
+      );
+
+      await expect(
+        fakes.service.createHold({
+          restaurantId: 'r-1',
+          partySize: 4,
+          slotStart: new Date('2026-06-22T19:00:00Z'),
+          slotEnd: new Date('2026-06-22T21:00:00Z'),
+          channel: 'MCP',
+          policy,
+          actor: 'agent:test',
+          tableId: 't-1',
+        }),
+      ).rejects.toThrow(HoldConflictError);
+      expect(fakes.holds.size).toBe(0);
     });
 
     it('rejette 2 holds actifs sur le même slot avec HoldConflictError', async () => {

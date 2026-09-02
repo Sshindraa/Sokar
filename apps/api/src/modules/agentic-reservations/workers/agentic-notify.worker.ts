@@ -39,6 +39,17 @@ export const agenticNotifyWorker = new Worker(
       return;
     }
 
+    // `status=CONFIRMED` n'est pas une preuve suffisante lorsqu'une demande
+    // manuelle est encore `PENDING`. Ne jamais présenter ce log MVP comme une
+    // notification de confirmation avant la transition métier.
+    if (data.reason === 'created' && reservation.state !== 'CONFIRMED') {
+      log.info(
+        { reservationId: reservation.id, state: reservation.state },
+        'agentic reservation pending validation, skipping confirmation notify',
+      );
+      return;
+    }
+
     // MVP : log structuré (pino) — Sentry breadcrumb à ajouter quand
     // Sentry.captureAgenticEvent() sera défini.
     logger.info(

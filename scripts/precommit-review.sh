@@ -38,7 +38,10 @@ PROVIDER_SECRET_HITS=$(printf '%s\n' "$ADDED" | grep '^+' | grep -v '^+++' | gre
 
 CODE_ADDED=$(git diff --cached --unified=0 -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs' ':(exclude)tools/diagnostics/*' ':(exclude)scripts/precommit-review.sh' || true)
 
-DANGEROUS_HITS=$(printf '%s\n' "$CODE_ADDED" | grep '^+' | grep -v '^+++' | grep -E "\beval\(|\bFunction\(|child_process\.(exec|execSync)\(|shell:\s*true|innerHTML\s*=" || true)
+# Redis Lua calls (`store.eval(...)`) and object methods named `eval` are not
+# JavaScript dynamic evaluation. Exclude those explicit forms while retaining
+# the global `eval(...)` guard.
+DANGEROUS_HITS=$(printf '%s\n' "$CODE_ADDED" | grep '^+' | grep -v '^+++' | grep -E "\beval\(|\bFunction\(|child_process\.(exec|execSync)\(|shell:\s*true|innerHTML\s*=" | grep -Ev '(\.eval\(|async[[:space:]]+eval\()' || true)
 [ -z "$DANGEROUS_HITS" ] || { echo "$DANGEROUS_HITS"; fail "dangerous construct found in staged code diff"; }
 
 # Autorise console.log si précédé de "// eslint-disable-next-line no-console"

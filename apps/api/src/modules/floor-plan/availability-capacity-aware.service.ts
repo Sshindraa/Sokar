@@ -17,6 +17,18 @@ import { TableAllocationService } from './table-allocation.service';
 import { HOURS_TO_MINUTES } from '../../shared/constants/time.js';
 import { redisCache } from '../../shared/redis/client';
 import { logger } from '../../shared/logger/pino';
+import { ACTIVE_RESERVATION_STATES, intervalsOverlap } from '../../shared/reservations/capacity.js';
+import {
+  DEFAULT_RESTAURANT_TIMEZONE,
+  zonedTimeToUtc,
+} from '../../shared/timezone/restaurant-time.js';
+
+// Compatibilité pour les callers internes existants. L'implémentation est
+// désormais centralisée dans shared/timezone.
+export {
+  DEFAULT_RESTAURANT_TIMEZONE,
+  zonedTimeToUtc,
+} from '../../shared/timezone/restaurant-time.js';
 
 const SLOT_MINUTES = 30;
 const AVAILABILITY_CACHE_TTL_SECONDS = 30;
@@ -102,7 +114,7 @@ export class CapacityAwareAvailabilityService {
       return emptyAvailability(args);
     }
 
-    const timeZone = restaurant.timezone ?? 'Europe/Paris';
+    const timeZone = restaurant.timezone ?? DEFAULT_RESTAURANT_TIMEZONE;
     const serviceDurationMinutes = resolveServiceDurationMinutes(
       restaurant.exposureSettings?.capacitySpecials,
     );
@@ -129,19 +141,24 @@ export class CapacityAwareAvailabilityService {
       this.prisma.reservation.findMany({
         where: {
           restaurantId: args.restaurantId,
-          state: { in: ['PENDING', 'CONFIRMED', 'SEATED'] },
-          tableId: { not: null },
-          startsAt: { gte: dayStart, lt: dayEnd },
+          state: { in: [...ACTIVE_RESERVATION_STATES] },
+          OR: [
+            { startsAt: { lt: dayEnd }, endsAt: { gt: dayStart } },
+            // Legacy rows may have startsAt but no endsAt; their duration is
+            // reconstructed below from the restaurant service duration.
+            { startsAt: { gte: dayStart, lt: dayEnd }, endsAt: null },
+            { startsAt: null, reservedAt: { gte: dayStart, lt: dayEnd } },
+          ],
         },
-        select: { tableId: true, startsAt: true, endsAt: true },
+        select: { tableId: true, startsAt: true, endsAt: true, reservedAt: true },
       }),
       this.prisma.agenticHold.findMany({
         where: {
           restaurantId: args.restaurantId,
           status: 'ACTIVE',
           expiresAt: { gt: new Date() },
-          tableId: { not: null },
-          slotStart: { gte: dayStart, lt: dayEnd },
+          slotStart: { lt: dayEnd },
+          slotEnd: { gt: dayStart },
         },
         select: { tableId: true, slotStart: true, slotEnd: true },
       }),
@@ -166,14 +183,23 @@ export class CapacityAwareAvailabilityService {
     ]);
 
     const busyByTable = new Map<string, Array<{ start: Date; end: Date }>>();
+    const globallyBlockedIntervals: Array<{ start: Date; end: Date }> = [];
     for (const r of reservations) {
-      if (!r.tableId || !r.startsAt || !r.endsAt) continue;
+      const start = r.startsAt ?? r.reservedAt;
+      const end = r.endsAt ?? new Date(start.getTime() + serviceDurationMinutes * 60_000);
+      if (!r.tableId) {
+        globallyBlockedIntervals.push({ start, end });
+        continue;
+      }
       const list = busyByTable.get(r.tableId) ?? [];
-      list.push({ start: r.startsAt, end: r.endsAt });
+      list.push({ start, end });
       busyByTable.set(r.tableId, list);
     }
     for (const h of holds) {
-      if (!h.tableId) continue;
+      if (!h.tableId) {
+        globallyBlockedIntervals.push({ start: h.slotStart, end: h.slotEnd });
+        continue;
+      }
       const list = busyByTable.get(h.tableId) ?? [];
       list.push({ start: h.slotStart, end: h.slotEnd });
       busyByTable.set(h.tableId, list);
@@ -187,10 +213,13 @@ export class CapacityAwareAvailabilityService {
         candidateTables.some((table) => {
           if (table.minCapacity > args.partySize) return false;
           const busy = busyByTable.get(table.id) ?? [];
-          return !busy.some((b) => overlaps(b.start, b.end, slotStart, slotEnd));
+          return !busy.some((b) => intervalsOverlap(b.start, b.end, slotStart, slotEnd));
         });
 
-      const available = hasAvailableTable(tables);
+      const hasGlobalConflict = globallyBlockedIntervals.some((interval) =>
+        intervalsOverlap(interval.start, interval.end, slotStart, slotEnd),
+      );
+      const available = !hasGlobalConflict && hasAvailableTable(tables);
 
       return { time, available };
     });
@@ -234,10 +263,6 @@ function emptyAvailability(args: {
   };
 }
 
-function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
-  return aStart < bEnd && bStart < aEnd;
-}
-
 function computeDayOfWeek(dateStr: string): number {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
@@ -256,47 +281,4 @@ function generateSlots(open: string, close: string, stepMinutes: number): string
     cur += stepMinutes;
   }
   return slots;
-}
-
-/**
- * Convertit une date locale (ex: "2026-07-02" + "19:00") dans une timezone
- * donnée en Date UTC.
- *
- * Ex: ("2026-07-02", "19:00", "Europe/Paris") → 17:00 UTC (été, UTC+2)
- *     ("2026-01-02", "19:00", "Europe/Paris") → 18:00 UTC (hiver, UTC+1)
- *
- * Utilise Intl.DateTimeFormat pour calculer l'offset DST au moment donné.
- */
-export function zonedTimeToUtc(dateStr: string, timeStr: string, timeZone: string): Date {
-  const [h, m] = timeStr.split(':').map(Number);
-  // Date "naive" : comme si l'heure locale était UTC
-  const naive = new Date(
-    `${dateStr}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`,
-  );
-
-  // Formater cette date dans la timezone cible pour voir l'heure locale réelle
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-  const parts = formatter.formatToParts(naive);
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '0';
-  const localYear = parseInt(get('year'), 10);
-  const localMonth = parseInt(get('month'), 10) - 1; // 0-indexed
-  const localDay = parseInt(get('day'), 10);
-  const localHour = parseInt(get('hour'), 10) % 24; // Intl peut retourner "24" pour minuit
-  const localMinute = parseInt(get('minute'), 10);
-
-  // Construire la date UTC qui correspond à cette heure locale affichée
-  const localAsUtc = Date.UTC(localYear, localMonth, localDay, localHour, localMinute, 0);
-  // L'offset = différence entre l'heure locale affichée et l'heure naive
-  const offsetMs = localAsUtc - naive.getTime();
-
-  // Ajuster : si la timezone est en avance (ex: +2h), on retire 2h de la naive
-  return new Date(naive.getTime() - offsetMs);
 }

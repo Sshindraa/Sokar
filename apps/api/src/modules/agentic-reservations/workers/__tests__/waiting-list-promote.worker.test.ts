@@ -3,7 +3,13 @@ import type { Job } from 'bullmq';
 import type { PrismaClient } from '@prisma/client';
 
 vi.mock('../../../../shared/redis/client', () => ({
-  redisQueue: { url: 'redis://localhost:6379' },
+  redisQueue: {
+    url: 'redis://localhost:6379',
+    set: vi.fn().mockResolvedValue('OK'),
+    get: vi.fn().mockResolvedValue(null),
+    del: vi.fn().mockResolvedValue(1),
+    eval: vi.fn().mockResolvedValue(0),
+  },
 }));
 vi.mock('../../../../shared/telnyx/client', () => ({
   sendSms: vi.fn().mockResolvedValue(undefined),
@@ -26,6 +32,7 @@ import {
   processWaitingListPromoteJob,
   type WaitingListPromoteJobData,
 } from '../waiting-list-promote.worker';
+import type { NotificationClaimStore } from '../../../../shared/queue/notification-idempotency';
 
 const slotStart = new Date('2026-01-14T19:30:00.000Z');
 
@@ -43,7 +50,7 @@ const baseEntry = {
     phoneNumber: '+33123456789',
     phoneE164: '+33123456789',
   },
-  promotedReservation: { id: 'res-1' },
+  promotedReservation: { id: 'res-1', status: 'CONFIRMED', state: 'CONFIRMED' },
 };
 
 function makeEntry(overrides: Record<string, unknown> = {}) {
@@ -75,6 +82,55 @@ function makeJob(channel: 'sms' | 'email'): Job<WaitingListPromoteJobData> {
     name: 'notify',
     data: { entryId: 'wl-1', reservationId: 'res-1', channel },
   } as unknown as Job<WaitingListPromoteJobData>;
+}
+
+function makeClaimStore() {
+  const claims = new Map<string, string>();
+  const set = vi.fn(
+    async (
+      key: string,
+      value = 'claimed',
+      _expirationMode?: 'EX',
+      _expirationSeconds?: number,
+      existenceMode?: 'NX',
+    ) => {
+      if (existenceMode === 'NX' && claims.has(key)) return null;
+      claims.set(key, value);
+      return 'OK';
+    },
+  );
+  const get = vi.fn(async (key: string) => claims.get(key) ?? null);
+  const del = vi.fn(async (key: string) => {
+    claims.delete(key);
+    return 1;
+  });
+  const evalScript = vi.fn(
+    async (
+      _script: string,
+      _numberOfKeys: number,
+      key: string,
+      token: string,
+      nextValue: string,
+    ) => {
+      const current = claims.get(key);
+      if (!current || !current.includes(`\"token\":\"${token}\"`)) return 0;
+      if (nextValue === '__DELETE__') claims.delete(key);
+      else claims.set(key, nextValue);
+      return 1;
+    },
+  );
+  const store: NotificationClaimStore = { set, get, del, eval: evalScript };
+  return { claims, store, set, get, del, evalScript };
+}
+
+function makeReconciliationQueue() {
+  const jobIds = new Set<string>();
+  const queue = {
+    add: vi.fn(async (_name: string, _data: unknown, options: { jobId: string }) => {
+      jobIds.add(options.jobId);
+    }),
+  };
+  return { queue, jobIds };
 }
 
 describe('waiting-list-promote.worker', () => {
@@ -189,8 +245,10 @@ describe('waiting-list-promote.worker', () => {
     expect(sendSms).not.toHaveBeenCalled();
   });
 
-  it("propage l'erreur de sendSms pour le retry BullMQ", async () => {
-    vi.mocked(sendSms).mockRejectedValueOnce(new Error('Telnyx API error'));
+  it('propage un refus certain de sendSms pour le retry BullMQ', async () => {
+    vi.mocked(sendSms).mockRejectedValueOnce(
+      Object.assign(new Error('Telnyx API error'), { statusCode: 400 }),
+    );
     const entry = makeEntry();
     const db = makeDb(entry);
 
@@ -254,6 +312,82 @@ describe('waiting-list-promote.worker', () => {
     });
 
     expect(sendSms).not.toHaveBeenCalled();
+  });
+
+  it('ignore une notification si la réservation promue est devenue terminale', async () => {
+    const entry = makeEntry({
+      promotedReservation: { id: 'res-1', status: 'CANCELLED', state: 'CANCELLED' },
+    });
+    const db = makeDb(entry);
+
+    await processWaitingListPromoteJob(makeJob('sms'), {
+      db,
+      sendSms,
+      sendEmail,
+      formatDate: fakeFormatDate,
+    });
+
+    expect(sendSms).not.toHaveBeenCalled();
+  });
+
+  it.each(['sms', 'email'] as const)(
+    'ne prend pas de claim et ne notifie pas une promotion PENDING (%s)',
+    async (channel) => {
+      const entry = makeEntry({
+        promotedReservation: { id: 'res-1', status: 'CONFIRMED', state: 'PENDING' },
+      });
+      const db = makeDb(entry);
+      const { store, set } = makeClaimStore();
+
+      await processWaitingListPromoteJob(makeJob(channel), {
+        db,
+        sendSms,
+        sendEmail,
+        formatDate: fakeFormatDate,
+        claimStore: store,
+      });
+
+      expect(sendSms).not.toHaveBeenCalled();
+      expect(sendEmail).not.toHaveBeenCalled();
+      expect(set).not.toHaveBeenCalled();
+    },
+  );
+
+  it('déduplique deux jobs SMS pour la même entrée de waiting list', async () => {
+    const entry = makeEntry();
+    const db = makeDb(entry);
+    const { store } = makeClaimStore();
+    const deps = { db, sendSms, sendEmail, formatDate: fakeFormatDate, claimStore: store };
+
+    await Promise.all([
+      processWaitingListPromoteJob(makeJob('sms'), deps),
+      processWaitingListPromoteJob(makeJob('sms'), deps),
+    ]);
+
+    expect(sendSms).toHaveBeenCalledTimes(1);
+  });
+
+  it('conserve la claim et ne renvoie pas après un timeout SMS', async () => {
+    const entry = makeEntry();
+    const db = makeDb(entry);
+    const { store, claims } = makeClaimStore();
+    const { queue, jobIds } = makeReconciliationQueue();
+    vi.mocked(sendSms).mockRejectedValue(new Error('Telnyx timeout'));
+    const deps = {
+      db,
+      sendSms,
+      sendEmail,
+      formatDate: fakeFormatDate,
+      claimStore: store,
+      reconciliationQueue: queue,
+    };
+
+    await processWaitingListPromoteJob(makeJob('sms'), deps);
+    await processWaitingListPromoteJob(makeJob('sms'), deps);
+
+    expect(sendSms).toHaveBeenCalledTimes(1);
+    expect(claims.size).toBe(1);
+    expect(jobIds.size).toBe(1);
   });
 
   it("ignore l'email si RESEND_API_KEY n'est pas configuré", async () => {

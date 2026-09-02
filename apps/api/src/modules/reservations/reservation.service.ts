@@ -12,6 +12,11 @@ import { GoogleCalendarClient } from '../../shared/google-calendar/client';
 import { CapacityAwareAvailabilityService } from '../floor-plan/availability-capacity-aware.service';
 import { TableAllocationService } from '../floor-plan/table-allocation.service';
 import { resolveServiceDurationMinutes } from '../floor-plan/floor-plan.types';
+import {
+  observeReservationMutation,
+  type ReservationNotificationObservation,
+} from '../../shared/observability/reservation-contract';
+import { buildReservationNotificationJobId } from '../../shared/queue/job-options';
 
 const availability = new CapacityAwareAvailabilityService(db);
 const tableAllocation = new TableAllocationService(db);
@@ -106,6 +111,17 @@ export class ReservationService {
           { callId: input.callId, reservationId: existing.id },
           '[ReservationService] Replay-safe: returning existing reservation for callId',
         );
+        observeReservationMutation({
+          source: 'voice',
+          operation: 'create_replay',
+          status: existing.status,
+          state: existing.state,
+          idempotency: 'reused',
+          audit: 'not_applicable',
+          notification: 'not_applicable',
+          capacity: 'unchanged',
+          mutated: false,
+        });
         return existing;
       }
     }
@@ -152,6 +168,17 @@ export class ReservationService {
             { callId: input.callId, reservationId: existingInTx.id },
             '[ReservationService] Replay-safe: double-check in transaction found existing, skipping table allocation',
           );
+          observeReservationMutation({
+            source: 'voice',
+            operation: 'create_replay',
+            status: existingInTx.status,
+            state: existingInTx.state,
+            idempotency: 'reused',
+            audit: 'not_applicable',
+            notification: 'not_applicable',
+            capacity: 'unchanged',
+            mutated: false,
+          });
           return existingInTx;
         }
       }
@@ -174,7 +201,7 @@ export class ReservationService {
       }
 
       try {
-        return await tx.reservation.create({
+        const created = await tx.reservation.create({
           data: {
             restaurantId: input.restaurantId,
             callId: input.callId,
@@ -189,6 +216,23 @@ export class ReservationService {
             estimatedRevenue: input.partySize * 35,
           },
         });
+
+        await tx.reservationAuditLog.create({
+          data: {
+            event: 'reservation_created',
+            reservationId: created.id,
+            actor: input.callId ? 'voice:reservation-service' : 'legacy:reservation-service',
+            fromState: null,
+            toState: 'CONFIRMED',
+            metadata: {
+              source: 'legacy_reservation_service',
+              callId: input.callId ?? null,
+              partySize: input.partySize,
+            },
+          },
+        });
+
+        return created;
       } catch (err) {
         // Race ultra-étroite : un autre tx a inséré entre le double-check et le
         // create. On laisse l'erreur propager pour rollback la transaction
@@ -229,28 +273,45 @@ export class ReservationService {
     }
 
     // 4. Enqueue SMS confirmation to client
+    let notification: ReservationNotificationObservation = 'not_applicable';
     if (input.customerPhone) {
       try {
         if (restaurant.smsConfirmEnabled) {
-          await queues.smsClient.add('client-confirm', {
-            reservationId: reservation.id,
-            customerPhone: input.customerPhone,
-            customerName: input.customerName,
-            restaurantName: restaurant.name,
-            date: input.reservedAt.toLocaleDateString('fr-FR'),
-            time: input.reservedAt.toLocaleTimeString('fr-FR', {
-              hour: '2-digit',
-              minute: '2-digit',
-            }),
-            partySize: input.partySize,
-          });
+          await queues.smsClient.add(
+            'client-confirm',
+            {
+              reservationId: reservation.id,
+              customerPhone: input.customerPhone,
+              customerName: input.customerName,
+              restaurantName: restaurant.name,
+              date: input.reservedAt.toLocaleDateString('fr-FR'),
+              time: input.reservedAt.toLocaleTimeString('fr-FR', {
+                hour: '2-digit',
+                minute: '2-digit',
+              }),
+              partySize: input.partySize,
+            },
+            { jobId: buildReservationNotificationJobId('confirmation', reservation.id) },
+          );
+          notification = 'queued';
         }
       } catch (err) {
+        notification = 'failed';
         logger.error({ err }, '[ReservationService] Failed to enqueue SMS confirmation');
       }
     }
 
     await CapacityAwareAvailabilityService.invalidateAvailability(input.restaurantId);
+    observeReservationMutation({
+      source: input.callId ? 'voice' : 'legacy_service',
+      operation: 'create',
+      status: reservation.status,
+      state: reservation.state,
+      idempotency: input.callId ? 'keyed' : 'unkeyed',
+      audit: 'written',
+      notification,
+      capacity: 'reserved',
+    });
     return reservation;
   }
 
@@ -276,15 +337,23 @@ export class ReservationService {
         data: updateData,
       });
 
-      if (status === 'CANCELLED' && reservation.state !== 'CANCELLED') {
+      const fromState = reservation.state as ReservationState | null | undefined;
+      const toState = (result.state ?? (status ? STATUS_TO_STATE[status] : fromState)) as
+        | ReservationState
+        | null
+        | undefined;
+      if (fromState && toState && fromState !== toState) {
         await tx.reservationAuditLog.create({
           data: {
-            event: 'reservation_cancelled',
+            event: toState === 'CANCELLED' ? 'reservation_cancelled' : 'reservation_state_changed',
             reservationId: id,
             actor,
-            fromState: reservation.state,
-            toState: 'CANCELLED',
-            metadata: { source: 'legacy_reservation_update' },
+            fromState,
+            toState,
+            metadata:
+              toState === 'CANCELLED'
+                ? { source: 'legacy_reservation_update' }
+                : { source: 'legacy_reservation_update', status: status ?? null },
           },
         });
       }
@@ -337,6 +406,17 @@ export class ReservationService {
     }
 
     await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
+    observeReservationMutation({
+      source: 'legacy_service',
+      operation: status === 'CANCELLED' ? 'cancel' : 'update',
+      status: updated.status,
+      state: updated.state,
+      idempotency: 'not_applicable',
+      audit: reservation.state !== updated.state ? 'written' : 'not_applicable',
+      notification: 'not_applicable',
+      capacity:
+        status === 'CANCELLED' && reservation.state !== 'CANCELLED' ? 'released' : 'unchanged',
+    });
     return updated;
   }
 
@@ -346,7 +426,46 @@ export class ReservationService {
       include: { restaurant: true },
     });
 
-    // Delete Google Calendar event if it exists
+    // Le contrat HTTP DELETE est conservé pour les callers historiques, mais
+    // une réservation auditée ne doit plus être supprimée physiquement : la FK
+    // de l'audit est append-only et l'effacement de la ligne ferait échouer
+    // PostgreSQL. On clôture donc la réservation dans un état terminal tout en
+    // conservant sa preuve métier.
+    const needsTerminalTransition =
+      reservation.status !== 'CANCELLED' || reservation.state !== 'CANCELLED';
+
+    const updated = await db.$transaction(async (tx) => {
+      const result = needsTerminalTransition
+        ? await tx.reservation.update({
+            where: { id, restaurantId },
+            data: { status: 'CANCELLED', state: 'CANCELLED' },
+          })
+        : reservation;
+
+      if (needsTerminalTransition) {
+        await tx.reservationAuditLog.create({
+          data: {
+            event: 'reservation_deleted',
+            reservationId: id,
+            actor: 'legacy:reservation-delete',
+            fromState: reservation.state,
+            toState: 'CANCELLED',
+            metadata: {
+              source: 'legacy_reservation_service',
+              mode: 'terminal_state',
+            },
+          },
+        });
+      }
+
+      return result;
+    });
+
+    let calendarCleared = false;
+
+    // Delete Google Calendar event if it exists. La réservation reste clôturée
+    // même si le provider calendrier est indisponible ; le retry suivant pourra
+    // reprendre avec le même googleEventId.
     if (
       reservation.restaurant.googleRefreshToken &&
       reservation.restaurant.googleCalendarId &&
@@ -358,6 +477,12 @@ export class ReservationService {
           reservation.restaurant.googleCalendarId,
           reservation.googleEventId,
         );
+
+        await db.reservation.update({
+          where: { id, restaurantId },
+          data: { googleEventId: null },
+        });
+        calendarCleared = true;
       } catch (err: unknown) {
         logger.error(
           { err: err instanceof Error ? err.message : String(err), reservationId: id },
@@ -366,8 +491,20 @@ export class ReservationService {
       }
     }
 
-    await db.reservation.delete({ where: { id, restaurantId } });
-    await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
+    if (needsTerminalTransition) {
+      await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
+    }
+    observeReservationMutation({
+      source: 'legacy_service',
+      operation: 'delete',
+      status: updated.status,
+      state: updated.state,
+      idempotency: 'not_applicable',
+      audit: needsTerminalTransition ? 'written' : 'not_applicable',
+      notification: 'not_applicable',
+      capacity: needsTerminalTransition ? 'released' : 'unchanged',
+      mutated: needsTerminalTransition || calendarCleared,
+    });
   }
 
   static async allocateTable(id: string, restaurantId: string): Promise<Reservation> {
@@ -380,6 +517,17 @@ export class ReservationService {
     });
 
     if (reservation.tableId) {
+      observeReservationMutation({
+        source: 'legacy_service',
+        operation: 'allocate_replay',
+        status: reservation.status,
+        state: reservation.state,
+        idempotency: 'not_applicable',
+        audit: 'not_applicable',
+        notification: 'not_applicable',
+        capacity: 'unchanged',
+        mutated: false,
+      });
       return reservation;
     }
 
@@ -402,14 +550,35 @@ export class ReservationService {
         throw err;
       }
 
-      return tx.reservation.update({
+      const updated = await tx.reservation.update({
         where: { id },
         data: { tableId: table.id, startsAt, endsAt },
         include: { table: { select: { name: true } } },
       });
+      await tx.reservationAuditLog.create({
+        data: {
+          event: 'reservation_table_allocated',
+          reservationId: id,
+          actor: 'legacy:table-allocation',
+          fromState: reservation.state,
+          toState: reservation.state,
+          metadata: { tableId: table.id },
+        },
+      });
+      return updated;
     });
 
     await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
+    observeReservationMutation({
+      source: 'legacy_service',
+      operation: 'allocate',
+      status: updated.status,
+      state: updated.state,
+      idempotency: 'not_applicable',
+      audit: 'written',
+      notification: 'not_applicable',
+      capacity: 'reserved',
+    });
     return updated;
   }
 
@@ -423,7 +592,13 @@ export class ReservationService {
       where.reservedAt = { gte: start, lte: end };
     }
     return db.reservation.findMany({
-      where,
+      where: {
+        ...where,
+        // Le DELETE legacy est désormais une clôture terminale. L'événement
+        // d'archive masque la ligne de la liste opérationnelle, sans supprimer
+        // la réservation ni ses audits de la base.
+        auditLog: { none: { event: 'reservation_deleted' } },
+      },
       orderBy: { reservedAt: 'asc' },
       include: { table: { select: { name: true } } },
     });

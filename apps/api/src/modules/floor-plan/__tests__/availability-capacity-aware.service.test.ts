@@ -161,14 +161,19 @@ function makeTable(
 }
 
 function makeReservation(
-  overrides: Partial<Reservation> & { id: string; tableId: string; startsAt: Date; endsAt: Date },
+  overrides: Partial<Reservation> & {
+    id: string;
+    tableId: string | null;
+    startsAt: Date | null;
+    endsAt: Date | null;
+  },
 ): Reservation {
   return {
     id: overrides.id,
     restaurantId: overrides.restaurantId ?? 'r-1',
     callId: overrides.callId ?? null,
     customerId: overrides.customerId ?? null,
-    reservedAt: overrides.reservedAt ?? overrides.startsAt,
+    reservedAt: overrides.reservedAt ?? overrides.startsAt ?? new Date(),
     partySize: overrides.partySize ?? 2,
     customerName: overrides.customerName ?? 'Client',
     customerPhone: overrides.customerPhone ?? null,
@@ -203,7 +208,12 @@ function makeReservation(
 }
 
 function makeHold(
-  overrides: Partial<AgenticHold> & { id: string; tableId: string; slotStart: Date; slotEnd: Date },
+  overrides: Partial<AgenticHold> & {
+    id: string;
+    tableId: string | null;
+    slotStart: Date;
+    slotEnd: Date;
+  },
 ): AgenticHold {
   return {
     id: overrides.id,
@@ -295,14 +305,50 @@ function makeMockPrisma(initial: {
         const state = where.state as { in?: string[] } | undefined;
         const tableId = where.tableId as { not?: string | null } | undefined;
         const startsAt = where.startsAt as { gte?: Date; lt?: Date } | undefined;
+        const reservedAt = where.reservedAt as { gte?: Date; lt?: Date } | undefined;
+        const or = where.OR as Array<Record<string, unknown>> | undefined;
         return reservations.filter((r) => {
           if (restaurantId && r.restaurantId !== restaurantId) return false;
           if (state?.in && !state.in.includes(r.state)) return false;
           const tableIdNot = tableId?.not;
           if (tableIdNot === null && r.tableId === null) return false;
           if (tableIdNot != null && r.tableId !== tableIdNot) return false;
-          if (startsAt?.gte && r.startsAt! < startsAt.gte) return false;
-          if (startsAt?.lt && r.startsAt! >= startsAt.lt) return false;
+          if (or) {
+            const matchesRange = (value: Date | null | undefined, range: unknown) => {
+              if (!(value instanceof Date)) return false;
+              const bounds = range as { gte?: Date; gt?: Date; lt?: Date };
+              return (
+                (!bounds.gte || value >= bounds.gte) &&
+                (!bounds.gt || value > bounds.gt) &&
+                (!bounds.lt || value < bounds.lt)
+              );
+            };
+            const matchesOr = or.some((condition) => {
+              if ('startsAt' in condition) {
+                if (condition.startsAt === null) {
+                  return r.startsAt === null && matchesRange(r.reservedAt, condition.reservedAt);
+                }
+                if (!matchesRange(r.startsAt, condition.startsAt)) return false;
+                if ('endsAt' in condition && condition.endsAt === null) {
+                  return r.endsAt === null;
+                }
+                if ('endsAt' in condition && condition.endsAt) {
+                  return matchesRange(r.endsAt, condition.endsAt);
+                }
+                return true;
+              }
+              if ('reservedAt' in condition) {
+                return matchesRange(r.reservedAt, condition.reservedAt);
+              }
+              return false;
+            });
+            if (!matchesOr) return false;
+          } else {
+            if (startsAt?.gte && (!r.startsAt || r.startsAt < startsAt.gte)) return false;
+            if (startsAt?.lt && (!r.startsAt || r.startsAt >= startsAt.lt)) return false;
+            if (reservedAt?.gte && r.reservedAt < reservedAt.gte) return false;
+            if (reservedAt?.lt && r.reservedAt >= reservedAt.lt) return false;
+          }
           return true;
         });
       },
@@ -315,6 +361,7 @@ function makeMockPrisma(initial: {
         const expiresAt = where.expiresAt as { gt?: Date } | undefined;
         const tableId = where.tableId as { not?: string | null } | undefined;
         const slotStart = where.slotStart as { gte?: Date; lt?: Date } | undefined;
+        const slotEnd = where.slotEnd as { gt?: Date } | undefined;
         return holds.filter((h) => {
           if (restaurantId && h.restaurantId !== restaurantId) return false;
           if (status && h.status !== status) return false;
@@ -324,6 +371,7 @@ function makeMockPrisma(initial: {
           if (tableIdNot != null && h.tableId !== tableIdNot) return false;
           if (slotStart?.gte && h.slotStart < slotStart.gte) return false;
           if (slotStart?.lt && h.slotStart >= slotStart.lt) return false;
+          if (slotEnd?.gt && h.slotEnd <= slotEnd.gt) return false;
           return true;
         });
       },
@@ -409,6 +457,78 @@ describe('CapacityAwareAvailabilityService', () => {
 
     const slot20 = dto.slots.find((s) => s.time === '20:00');
     expect(slot20!.available).toBe(false);
+  });
+
+  it('réservation PENDING avec projection status CONFIRMED bloque la capacité', async () => {
+    const startsAt = new Date('2026-07-02T17:00:00Z');
+    const endsAt = new Date('2026-07-02T19:00:00Z');
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [makeTable({ id: 't-1', floorPlanId: FLOOR_PLAN_ID, capacity: 4 })],
+      reservations: [
+        makeReservation({
+          id: 'r-pending',
+          tableId: 't-1',
+          startsAt,
+          endsAt,
+          status: 'CONFIRMED',
+          state: 'PENDING',
+        }),
+      ],
+    });
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const dto = await service.getAvailability({ restaurantId: RESTAURANT_ID, date, partySize: 2 });
+
+    const slot20 = dto.slots.find((s) => s.time === '20:00');
+    expect(slot20!.available).toBe(false);
+  });
+
+  it('réservation active sans table bloque la capacité globale', async () => {
+    const startsAt = new Date('2026-07-02T17:00:00Z');
+    const endsAt = new Date('2026-07-02T19:00:00Z');
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [makeTable({ id: 't-1', floorPlanId: FLOOR_PLAN_ID, capacity: 4 })],
+      reservations: [
+        makeReservation({
+          id: 'r-pending-unassigned',
+          tableId: null,
+          startsAt,
+          endsAt,
+          status: 'CONFIRMED',
+          state: 'PENDING',
+        }),
+      ],
+    });
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const dto = await service.getAvailability({ restaurantId: RESTAURANT_ID, date, partySize: 2 });
+
+    expect(dto.slots.find((s) => s.time === '20:00')?.available).toBe(false);
+  });
+
+  it('hold actif sans table bloque la capacité globale', async () => {
+    const slotStart = new Date('2026-07-02T17:00:00Z');
+    const slotEnd = new Date('2026-07-02T19:00:00Z');
+    const { prisma } = makeMockPrisma({
+      restaurant: makeBaseRestaurant(),
+      tables: [makeTable({ id: 't-1', floorPlanId: FLOOR_PLAN_ID, capacity: 4 })],
+      holds: [
+        makeHold({
+          id: 'h-unassigned',
+          tableId: null,
+          slotStart,
+          slotEnd,
+          expiresAt: new Date(Date.now() + 10 * 60_000),
+        }),
+      ],
+    });
+
+    const service = new CapacityAwareAvailabilityService(prisma);
+    const dto = await service.getAvailability({ restaurantId: RESTAURANT_ID, date, partySize: 2 });
+
+    expect(dto.slots.find((s) => s.time === '20:00')?.available).toBe(false);
   });
 
   it('partySize supérieur à la plus grande table → indisponible', async () => {

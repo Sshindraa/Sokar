@@ -28,7 +28,10 @@ import {
   computeQuoteExpiresAt,
 } from './policies.service.js';
 import type { ReservationChannel as Channel } from './state-machine.js';
-import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
+import {
+  TableAllocationError,
+  TableAllocationService,
+} from '../../floor-plan/table-allocation.service.js';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service.js';
 
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../../shared/db/transaction-options';
@@ -71,8 +74,9 @@ export class HoldService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly audit: AuditLogService,
+    tableAllocation?: TableAllocationService,
   ) {
-    this.tableAllocation = new TableAllocationService(prisma);
+    this.tableAllocation = tableAllocation ?? new TableAllocationService(prisma);
   }
 
   /**
@@ -171,6 +175,28 @@ export class HoldService {
               throw new HoldConflictError(args.restaurantId, args.slotStart, args.partySize);
             }
             tableId = table.id;
+          } else {
+            // Un `tableId` fourni par un caller est une préférence validée,
+            // pas une preuve de disponibilité. Rejouer le même contrôle que
+            // pour une allocation interne évite le bypass du masque global
+            // (réservation/hold sans table) et des conflits physiques.
+            try {
+              await this.tableAllocation.assertTableAvailableForSeating(
+                {
+                  restaurantId: args.restaurantId,
+                  tableId,
+                  partySize: args.partySize,
+                  startsAt: args.slotStart,
+                  endsAt: args.slotEnd,
+                },
+                tx,
+              );
+            } catch (err) {
+              if (err instanceof TableAllocationError) {
+                throw new HoldConflictError(args.restaurantId, args.slotStart, args.partySize);
+              }
+              throw err;
+            }
           }
 
           const existingHold = await tx.agenticHold.findFirst({
@@ -240,6 +266,27 @@ export class HoldService {
           });
 
           continue;
+        }
+
+        // Sous forte contention, Prisma peut expirer l'attente d'une
+        // connexion (P2028) alors qu'un autre appel a déjà créé le hold.
+        // Rejouer aveuglément serait dangereux ; relire l'état courant permet
+        // de rendre ce cas équivalent à un conflit métier déterministe.
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2028') {
+          const activeHold = await this.prisma.agenticHold.findFirst({
+            where: {
+              restaurantId: args.restaurantId,
+              partySize: args.partySize,
+              slotStart: args.slotStart,
+              type: 'HOLD' as HoldType,
+              status: 'ACTIVE' as HoldStatus,
+              expiresAt: { gt: new Date() },
+            },
+            select: { id: true },
+          });
+          if (activeHold) {
+            throw new HoldConflictError(args.restaurantId, args.slotStart, args.partySize);
+          }
         }
 
         throw err;

@@ -30,7 +30,7 @@ describe('analytics.routes tenant isolation', () => {
     expect(db.reservation.findMany).toHaveBeenCalledWith({
       where: {
         restaurantId: 'test-rest-1',
-        status: 'CONFIRMED',
+        state: 'CONFIRMED',
         createdAt: { gte: expect.any(Date), lte: expect.any(Date) },
       },
     });

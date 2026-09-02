@@ -2,6 +2,7 @@ import { db } from '../../shared/db/client';
 import { sendSms } from '../../shared/telnyx/client';
 import { ReservationService } from '../reservations/reservation.service';
 import { logger } from '../../shared/logger/pino';
+import { observeReservationMutation } from '../../shared/observability/reservation-contract';
 
 /**
  * Parser et handler partagés pour les réponses entrantes SMS et WhatsApp.
@@ -87,6 +88,16 @@ export async function handleReply(
         confirmedAt: new Date(),
       },
     });
+    observeReservationMutation({
+      source: 'direct',
+      operation: 'confirmation_reply',
+      status: reservation.status,
+      state: reservation.state,
+      idempotency: 'not_applicable',
+      audit: 'not_applicable',
+      notification: 'not_sent',
+      capacity: 'unchanged',
+    });
     logger.info(
       { reservationId: reservation.id, from, channel },
       'reservation confirmed via reply',
@@ -105,6 +116,16 @@ export async function handleReply(
         confirmationStatus: 'CANCELLED',
         confirmedAt: new Date(),
       },
+    });
+    observeReservationMutation({
+      source: 'direct',
+      operation: 'cancel',
+      status: 'CANCELLED',
+      state: 'CANCELLED',
+      idempotency: 'not_applicable',
+      audit: 'written',
+      notification: reservation.restaurant.managerPhone ? 'direct' : 'not_sent',
+      capacity: 'released',
     });
 
     // SMS au gérant : table libérée

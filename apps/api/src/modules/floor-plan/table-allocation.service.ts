@@ -20,6 +20,9 @@ import type {
   AllocationSuggestion,
   TableAvailabilityCheck,
 } from './floor-plan.types';
+import { observeReservationMutation } from '../../shared/observability/reservation-contract';
+import { CapacityAwareAvailabilityService } from './availability-capacity-aware.service.js';
+import { ACTIVE_RESERVATION_STATES } from '../../shared/reservations/capacity.js';
 
 export class TableAllocationService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -38,6 +41,17 @@ export class TableAllocationService {
     options?: { readOnly?: boolean },
   ): Promise<Table | null> {
     const prisma = tx ?? this.prisma;
+
+    // Une réservation ou un hold actif sans table réserve la capacité globale
+    // du restaurant. Toutes les allocations (waiting-list, walk-in, legacy et
+    // Connect) doivent respecter ce masque, pas uniquement le chemin agentic.
+    if (tx) {
+      await this.lockRestaurantCapacity(tx, input.restaurantId);
+    }
+    if (await this.hasGlobalCapacityConflict(input, tx)) {
+      return null;
+    }
+
     const tables = await this.findCandidateTables(input, tx);
 
     for (const table of tables) {
@@ -131,9 +145,44 @@ export class TableAllocationService {
    * Libère la table d'une réservation (met tableId à null).
    */
   async releaseTable(reservationId: string): Promise<void> {
-    await this.prisma.reservation.update({
-      where: { id: reservationId },
-      data: { tableId: null },
+    const released = await this.prisma.$transaction(async (tx) => {
+      const reservation = await tx.reservation.findUniqueOrThrow({
+        where: { id: reservationId },
+        select: { id: true, restaurantId: true, tableId: true, state: true, status: true },
+      });
+
+      if (!reservation.tableId) return { ...reservation, hadTable: false };
+
+      const updated = await tx.reservation.update({
+        where: { id: reservationId },
+        data: { tableId: null },
+      });
+      await tx.reservationAuditLog.create({
+        data: {
+          event: 'reservation_table_released',
+          reservationId,
+          actor: 'dashboard:table-allocation',
+          fromState: reservation.state,
+          toState: reservation.state,
+          metadata: { tableId: reservation.tableId },
+        },
+      });
+      return { ...updated, restaurantId: reservation.restaurantId, hadTable: true };
+    });
+    if (released.hadTable) {
+      await CapacityAwareAvailabilityService.invalidateAvailability(released.restaurantId);
+    }
+    observeReservationMutation({
+      source: 'dashboard',
+      operation: 'release',
+      status: released.status,
+      state: released.state,
+      idempotency: 'not_applicable',
+      audit: released.hadTable ? 'written' : 'not_applicable',
+      notification: 'not_applicable',
+      // Détacher une table ne libère pas nécessairement la réservation :
+      // findBlockingReservation peut encore la considérer active au créneau.
+      capacity: 'not_released',
     });
   }
 
@@ -180,7 +229,22 @@ export class TableAllocationService {
       throw new TableAllocationError('RESERVATION_TIMES_MISSING', 'Reservation times are missing');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockRestaurantCapacity(tx, reservation.restaurantId);
+      if (
+        await this.hasGlobalCapacityConflict(
+          {
+            restaurantId: reservation.restaurantId,
+            partySize: reservation.partySize,
+            startsAt: reservation.startsAt as Date,
+            endsAt: reservation.endsAt as Date,
+          },
+          tx,
+        )
+      ) {
+        throw new TableAllocationError('TABLE_NOT_AVAILABLE', 'Le créneau est bloqué globalement');
+      }
+
       const locked = await this.lockTable(tx, newTableId);
       if (!locked) {
         throw new TableAllocationError('TABLE_NOT_AVAILABLE', 'Target table is not available');
@@ -200,11 +264,38 @@ export class TableAllocationService {
         throw new TableAllocationError('TABLE_NOT_AVAILABLE', 'Target table is not available');
       }
 
-      return tx.reservation.update({
+      const updated = await tx.reservation.update({
         where: { id: reservationId },
         data: { tableId: newTableId },
       });
+      await tx.reservationAuditLog.create({
+        data: {
+          event: 'reservation_table_reallocated',
+          reservationId,
+          actor: 'dashboard:table-allocation',
+          fromState: reservation.state,
+          toState: reservation.state,
+          metadata: {
+            previousTableId: reservation.tableId,
+            newTableId,
+          },
+        },
+      });
+      return updated;
     });
+
+    await CapacityAwareAvailabilityService.invalidateAvailability(reservation.restaurantId);
+    observeReservationMutation({
+      source: 'dashboard',
+      operation: 'reallocate',
+      status: updated.status,
+      state: updated.state,
+      idempotency: 'not_applicable',
+      audit: 'written',
+      notification: 'not_applicable',
+      capacity: 'unchanged',
+    });
+    return updated;
   }
 
   /**
@@ -223,6 +314,21 @@ export class TableAllocationService {
     },
     tx: Prisma.TransactionClient,
   ): Promise<void> {
+    await this.lockRestaurantCapacity(tx, args.restaurantId);
+    if (
+      await this.hasGlobalCapacityConflict(
+        {
+          restaurantId: args.restaurantId,
+          partySize: args.partySize,
+          startsAt: args.startsAt,
+          endsAt: args.endsAt,
+        },
+        tx,
+      )
+    ) {
+      throw new TableAllocationError('TABLE_NOT_AVAILABLE', 'Le créneau est bloqué globalement');
+    }
+
     const table = await tx.table.findFirst({
       where: { id: args.tableId, floorPlan: { restaurantId: args.restaurantId } },
       select: { id: true, isActive: true, capacity: true, minCapacity: true },
@@ -391,6 +497,67 @@ export class TableAllocationService {
       `,
     );
     return rows.length > 0 && Number(rows[0].exists) === 1;
+  }
+
+  private async hasGlobalCapacityConflict(
+    input: AllocateTableInput,
+    tx?: Prisma.TransactionClient,
+    excludeHoldId?: string,
+  ): Promise<boolean> {
+    const prisma = tx ?? this.prisma;
+    const reservation = await prisma.reservation.findFirst({
+      where: {
+        restaurantId: input.restaurantId,
+        tableId: null,
+        state: { in: [...ACTIVE_RESERVATION_STATES] },
+        OR: [
+          {
+            startsAt: { lt: input.endsAt },
+            endsAt: { gt: input.startsAt },
+          },
+          {
+            startsAt: { gte: input.startsAt, lt: input.endsAt },
+            endsAt: null,
+          },
+          {
+            startsAt: null,
+            reservedAt: { gte: input.startsAt, lt: input.endsAt },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    if (reservation) return true;
+
+    const hold = await prisma.agenticHold.findFirst({
+      where: {
+        restaurantId: input.restaurantId,
+        type: 'HOLD',
+        status: 'ACTIVE',
+        tableId: null,
+        expiresAt: { gt: new Date() },
+        ...(excludeHoldId ? { id: { not: excludeHoldId } } : {}),
+        slotStart: { lt: input.endsAt },
+        slotEnd: { gt: input.startsAt },
+      },
+      select: { id: true },
+    });
+    return Boolean(hold);
+  }
+
+  private async lockRestaurantCapacity(
+    tx: Prisma.TransactionClient,
+    restaurantId: string,
+  ): Promise<void> {
+    const query = Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${restaurantId}, 0))`;
+    // Les doubles Prisma historiques des tests n'exposent que $queryRaw ; le
+    // client réel utilise $executeRaw, qui ne tente pas de désérialiser le
+    // retour void de pg_advisory_xact_lock.
+    if (typeof tx.$executeRaw === 'function') {
+      await tx.$executeRaw(query);
+      return;
+    }
+    await tx.$queryRaw(query);
   }
 
   private async hasConflictingHold(

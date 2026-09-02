@@ -61,6 +61,7 @@ function makeWaitingListEntry(overrides: Partial<WaitingListEntry> = {}): Waitin
 describe('ReservationsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Element.prototype.scrollIntoView = vi.fn();
     mocks.get.mockResolvedValue([]);
     mocks.post.mockResolvedValue({});
     mocks.del.mockResolvedValue(undefined);
@@ -129,6 +130,24 @@ describe('ReservationsPage', () => {
     });
     expect(screen.queryByText('Sans table')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Allouer' })).not.toBeInTheDocument();
+  });
+
+  it('annule une réservation via le contrat status du dashboard', async () => {
+    mocks.get.mockResolvedValue([makeReservation()]);
+    mocks.patch.mockResolvedValue({});
+    render(<ReservationsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('combobox')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('combobox'));
+    fireEvent.click(await screen.findByRole('option', { name: 'Annulée' }));
+
+    await waitFor(() => {
+      expect(mocks.patch).toHaveBeenCalledWith('reservations/r1', { status: 'CANCELLED' });
+      expect(screen.getByText('Annulée')).toBeInTheDocument();
+    });
   });
 
   describe("File d'attente", () => {

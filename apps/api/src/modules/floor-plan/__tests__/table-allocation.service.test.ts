@@ -160,6 +160,54 @@ function makeMockPrisma(
       },
     },
     reservation: {
+      findFirst: async (args: unknown) => {
+        const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
+        const restaurantId = where.restaurantId as string | undefined;
+        const tableId = where.tableId;
+        const state = where.state as { in?: string[] } | undefined;
+        const or = where.OR as Array<Record<string, unknown>> | undefined;
+        const matchesRange = (value: Date | null | undefined, range: unknown) => {
+          if (!(value instanceof Date)) return false;
+          const bounds = range as { gte?: Date; gt?: Date; lt?: Date };
+          return (
+            (!bounds.gte || value >= bounds.gte) &&
+            (!bounds.gt || value > bounds.gt) &&
+            (!bounds.lt || value < bounds.lt)
+          );
+        };
+        for (const reservation of reservations.values()) {
+          if (restaurantId && reservation.restaurantId !== restaurantId) continue;
+          if (tableId === null && reservation.tableId !== null) continue;
+          if (state?.in && !state.in.includes(reservation.state)) continue;
+          if (
+            or &&
+            !or.some((condition) => {
+              if ('startsAt' in condition && condition.startsAt === null) {
+                return (
+                  reservation.startsAt === null &&
+                  matchesRange(reservation.reservedAt, condition.reservedAt)
+                );
+              }
+              if (
+                'startsAt' in condition &&
+                !matchesRange(reservation.startsAt, condition.startsAt)
+              ) {
+                return false;
+              }
+              if ('endsAt' in condition && condition.endsAt === null) {
+                return reservation.endsAt === null;
+              }
+              if ('endsAt' in condition && condition.endsAt) {
+                return matchesRange(reservation.endsAt, condition.endsAt);
+              }
+              return true;
+            })
+          )
+            continue;
+          return { id: reservation.id };
+        }
+        return null;
+      },
       findUniqueOrThrow: async (args: unknown) => {
         const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
         const id = where.id as string;
@@ -181,7 +229,30 @@ function makeMockPrisma(
         return updated;
       },
     },
-    agenticHold: {},
+    reservationAuditLog: {
+      create: async (args: unknown) => args,
+    },
+    agenticHold: {
+      findFirst: async (args: unknown) => {
+        const where = ((args as Record<string, unknown>).where ?? {}) as Record<string, unknown>;
+        const restaurantId = where.restaurantId as string | undefined;
+        const tableId = where.tableId;
+        const status = where.status as string | undefined;
+        const expiresAt = where.expiresAt as { gt?: Date } | undefined;
+        const slotStart = where.slotStart as { lt?: Date } | undefined;
+        const slotEnd = where.slotEnd as { gt?: Date } | undefined;
+        for (const hold of holds.values()) {
+          if (restaurantId && hold.restaurantId !== restaurantId) continue;
+          if (tableId === null && hold.tableId !== null) continue;
+          if (status && hold.status !== status) continue;
+          if (expiresAt?.gt && hold.expiresAt <= expiresAt.gt) continue;
+          if (slotStart?.lt && hold.slotStart >= slotStart.lt) continue;
+          if (slotEnd?.gt && hold.slotEnd <= slotEnd.gt) continue;
+          return { id: hold.id };
+        }
+        return null;
+      },
+    },
     $queryRaw: async (arg: unknown) => {
       const s = arg as { sql?: string; values?: unknown[] };
       const sql = s.sql ?? '';
@@ -224,6 +295,7 @@ function makeMockPrisma(
 
       return [{ id: 'locked' }];
     },
+    $executeRaw: async () => 1,
     $transaction: async (fn: unknown) => {
       if (Array.isArray(fn)) {
         return Promise.all(fn as unknown[]);
@@ -374,6 +446,56 @@ describe('TableAllocationService', () => {
 
       expect(table).not.toBeNull();
       expect(table!.id).toBe('t-2');
+    });
+
+    it('refuse toute allocation lorsqu’une réservation active sans table masque le créneau', async () => {
+      const startsAt = new Date('2026-07-02T19:00:00Z');
+      const { prisma } = makeMockPrisma({
+        tables: [makeTable({ id: 't-2', floorPlanId, capacity: 2 })],
+        reservations: [
+          makeReservation({
+            id: 'r-global',
+            tableId: null,
+            startsAt,
+            endsAt: new Date('2026-07-02T21:00:00Z'),
+            partySize: 2,
+          }),
+        ],
+      });
+
+      const service = new TableAllocationService(prisma);
+      const table = await service.allocate({
+        restaurantId,
+        partySize: 2,
+        startsAt: new Date('2026-07-02T20:00:00Z'),
+        endsAt: new Date('2026-07-02T22:00:00Z'),
+      });
+
+      expect(table).toBeNull();
+    });
+
+    it('refuse toute allocation lorsqu’un hold actif sans table masque le créneau', async () => {
+      const { prisma } = makeMockPrisma({
+        tables: [makeTable({ id: 't-2', floorPlanId, capacity: 2 })],
+        holds: [
+          makeHold({
+            id: 'h-global',
+            tableId: null,
+            slotStart: new Date('2026-07-02T19:00:00Z'),
+            slotEnd: new Date('2026-07-02T21:00:00Z'),
+          }),
+        ],
+      });
+
+      const service = new TableAllocationService(prisma);
+      const table = await service.allocate({
+        restaurantId,
+        partySize: 2,
+        startsAt: new Date('2026-07-02T20:00:00Z'),
+        endsAt: new Date('2026-07-02T22:00:00Z'),
+      });
+
+      expect(table).toBeNull();
     });
 
     it('respecte la préférence de section', async () => {
@@ -733,6 +855,8 @@ describe('TableAllocationService', () => {
       await service.releaseTable('r-1');
 
       expect(reservations.get('r-1')?.tableId).toBeNull();
+      expect(reservations.get('r-1')?.status).toBe('CONFIRMED');
+      expect(reservations.get('r-1')?.state).toBe('CONFIRMED');
     });
   });
 

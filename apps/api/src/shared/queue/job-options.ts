@@ -28,6 +28,11 @@ export function buildSmsJobId(kind: string, restaurantId: string, dedupeKey: str
   return sanitizeJobId(`sms_${kind}_${restaurantId}_${dedupeKey}`);
 }
 
+/** Stable job ID for a reservation notification side effect. */
+export function buildReservationNotificationJobId(kind: string, reservationId: string): string {
+  return sanitizeJobId(`reservation-notification_${kind}_${reservationId}`);
+}
+
 export function buildDailyReportJobId(restaurantId: string, dayKey: string): string {
   return sanitizeJobId(`daily-report_${restaurantId}_${dayKey}`);
 }

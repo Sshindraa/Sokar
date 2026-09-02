@@ -50,7 +50,7 @@ export const eveningReportWorker = new Worker(
       return;
     }
 
-    const confirmedReservations = reservations.filter((r) => r.status === 'CONFIRMED');
+    const confirmedReservations = reservations.filter((r) => r.state === 'CONFIRMED');
     const reserved = confirmedReservations.length;
     const cancelled = reservations.filter((r) => r.status === 'CANCELLED').length;
     const totalCouverts = confirmedReservations.reduce(

@@ -53,6 +53,7 @@ vi.mock('../../floor-plan/table-allocation.service', () => ({
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { redisCache } from '../../../shared/redis/client';
+import { ReservationService } from '../../agentic-reservations/core/reservation.service';
 
 const SLUG = 'chez-sokar-demo';
 const RESTAURANT_ID = 'ba5be41b-eb72-4e05-bb9c-b576e39e33ba';
@@ -641,6 +642,101 @@ describe('Sokar Connect — Routes publiques', () => {
   });
 
   describe('POST /public/r/:slug/confirm', () => {
+    it('consomme un hold puis confirme la réservation sans notification client', async () => {
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: RESTAURANT_ID,
+        slug: SLUG,
+        agenticOptIn: true,
+        publishedAt: new Date('2026-06-24'),
+        city: 'Lyon',
+        country: 'FR',
+        postalCode: '69001',
+        description: null,
+        formattedAddress: '12 Rue',
+        phoneNumber: '+334****0000',
+        phoneE164: '+334****0000',
+        cuisineType: ['Française'],
+        priceRange: 2,
+        openingHours: { mon: { open: '12:00', close: '22:00' } },
+        ambiance: [],
+        dietary: [],
+        noiseLevel: null,
+        exposureSettings: {
+          connectPublished: true,
+          connectAgentic: true,
+        },
+        images: [],
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+      vi.mocked(db.restaurantExposureSettings.findUnique).mockResolvedValue(
+        mockExposureSettings as unknown as Awaited<
+          ReturnType<typeof db.restaurantExposureSettings.findUnique>
+        >,
+      );
+      vi.mocked(db.customerConsent.create).mockResolvedValue({
+        id: 'consent-confirm',
+      } as unknown as Awaited<ReturnType<typeof db.customerConsent.create>>);
+      vi.mocked(db.agenticHold.findFirst).mockResolvedValue({
+        id: 'hold-confirm',
+        holdToken: 'tok-c',
+        status: 'ACTIVE',
+        expiresAt: new Date(Date.now() + 60_000),
+        restaurantId: RESTAURANT_ID,
+        partySize: 2,
+        slotStart: new Date('2026-06-29T20:00:00Z'),
+        slotEnd: new Date('2026-06-29T21:30:00Z'),
+        tableId: null,
+      } as unknown as Awaited<ReturnType<typeof db.agenticHold.findFirst>>);
+
+      const createReservation = vi
+        .spyOn(ReservationService.prototype, 'createReservation')
+        .mockResolvedValue({
+          reservationId: 'reservation-confirm',
+          state: 'CONFIRMED',
+          reused: false,
+        });
+
+      try {
+        const res = await app.inject({
+          method: 'POST',
+          url: `/public/r/${SLUG}/confirm`,
+          payload: {
+            holdToken: 'tok-c',
+            idempotencyKey: '11111111-1111-4111-8111-111111111111',
+            customer: {
+              firstName: 'Alice',
+              phone: '+33612345678',
+            },
+          },
+        });
+
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toMatchObject({
+          reservationId: 'reservation-confirm',
+          status: 'confirmed',
+          state: 'CONFIRMED',
+          reused: false,
+        });
+        expect(createReservation).toHaveBeenCalledWith(
+          expect.objectContaining({
+            holdToken: 'tok-c',
+            actor: 'connect:web',
+            channel: 'WEB',
+          }),
+          expect.objectContaining({ key: '11111111-1111-4111-8111-111111111111' }),
+        );
+        expect(app.queues.connectAnalytics.add).toHaveBeenCalledWith(
+          'connect-event',
+          expect.objectContaining({
+            event: 'reservation_confirmed',
+            reservationId: 'reservation-confirm',
+          }),
+          expect.any(Object),
+        );
+      } finally {
+        createReservation.mockRestore();
+      }
+    });
+
     it('retourne 410 si hold expiré', async () => {
       vi.mocked(db.restaurant.findUnique).mockResolvedValue({
         id: RESTAURANT_ID,

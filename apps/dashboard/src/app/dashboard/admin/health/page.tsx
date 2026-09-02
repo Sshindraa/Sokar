@@ -76,6 +76,7 @@ interface RestaurantHealth {
     reservedAt: string;
     createdAt: string;
     status: string;
+    state?: string;
     channel: string;
   } | null;
   lastSms: {
@@ -364,7 +365,9 @@ export default function AdminHealthPage() {
                       {formatDateTime(health.lastReservation.reservedAt)}
                     </p>
                     <div className="flex flex-wrap gap-1.5">
-                      <Badge variant="outline">{health.lastReservation.status}</Badge>
+                      <Badge variant="outline">
+                        {health.lastReservation.state ?? health.lastReservation.status}
+                      </Badge>
                       <Badge variant="outline">{health.lastReservation.channel}</Badge>
                     </div>
                   </>

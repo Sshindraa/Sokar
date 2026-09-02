@@ -23,7 +23,7 @@ export async function computeRoi(restaurantId: string, period: string): Promise<
     db.reservation.findMany({
       where: {
         restaurantId,
-        status: 'CONFIRMED',
+        state: 'CONFIRMED',
         createdAt: { gte: start, lte: end },
       },
     }),

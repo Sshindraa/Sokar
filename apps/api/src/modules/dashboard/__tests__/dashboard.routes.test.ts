@@ -24,6 +24,7 @@ describe('dashboard.routes tenant isolation', () => {
         estimatedRevenue: 70,
         confirmedRevenue: null,
         status: 'CONFIRMED',
+        state: 'CONFIRMED',
         createdAt: new Date(),
       },
       {
@@ -31,6 +32,7 @@ describe('dashboard.routes tenant isolation', () => {
         estimatedRevenue: 180,
         confirmedRevenue: 220,
         status: 'CONFIRMED',
+        state: 'CONFIRMED',
         createdAt: new Date(),
       },
       {
@@ -38,6 +40,7 @@ describe('dashboard.routes tenant isolation', () => {
         estimatedRevenue: 300,
         confirmedRevenue: null,
         status: 'CANCELLED',
+        state: 'CANCELLED',
         createdAt: new Date(),
       },
     ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
@@ -75,7 +78,7 @@ describe('dashboard.routes tenant isolation', () => {
         partySize: true,
         estimatedRevenue: true,
         confirmedRevenue: true,
-        status: true,
+        state: true,
         createdAt: true,
       },
     });
@@ -107,6 +110,7 @@ describe('dashboard.routes tenant isolation', () => {
         partySize: 3,
         estimatedRevenue: 120,
         confirmedRevenue: null,
+        state: 'CONFIRMED',
       },
     ] as unknown as Awaited<ReturnType<typeof db.reservation.findMany>>);
 
@@ -133,7 +137,7 @@ describe('dashboard.routes tenant isolation', () => {
       where: {
         restaurantId: 'test-rest-1',
         createdAt: { gte: expect.any(Date) },
-        status: 'CONFIRMED',
+        state: 'CONFIRMED',
       },
       select: {
         createdAt: true,

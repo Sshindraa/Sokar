@@ -95,7 +95,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
           partySize: true,
           estimatedRevenue: true,
           confirmedRevenue: true,
-          status: true,
+          state: true,
           createdAt: true,
         },
       }),
@@ -109,7 +109,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     ]);
 
     const confirmedReservations = reservations.filter(
-      (reservation) => reservation.status === 'CONFIRMED',
+      (reservation) => reservation.state === 'CONFIRMED',
     );
     const totalReservations = confirmedReservations.length;
     const covers = confirmedReservations.reduce(
@@ -170,7 +170,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
         select: { createdAt: true },
       }),
       db.reservation.findMany({
-        where: { restaurantId, createdAt: { gte: start }, status: 'CONFIRMED' },
+        where: { restaurantId, createdAt: { gte: start }, state: 'CONFIRMED' },
         select: {
           createdAt: true,
           partySize: true,
@@ -290,7 +290,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const upcomingReservations = await db.reservation.findMany({
       where: {
         restaurantId,
-        status: 'CONFIRMED',
+        state: 'CONFIRMED',
         reservedAt: { gte: today, lt: weekEnd },
       },
       select: { reservedAt: true, partySize: true, estimatedRevenue: true, confirmedRevenue: true },
@@ -302,7 +302,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
     const historicalReservations = await db.reservation.findMany({
       where: {
         restaurantId,
-        status: 'CONFIRMED',
+        state: 'CONFIRMED',
         reservedAt: { gte: historyStart, lt: today },
       },
       select: { partySize: true, estimatedRevenue: true, confirmedRevenue: true },
@@ -423,7 +423,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
         reservedAt: { lt: new Date() },
       },
       select: {
-        status: true,
+        state: true,
         confirmationStatus: true,
         partySize: true,
         estimatedRevenue: true,
@@ -449,9 +449,9 @@ export async function dashboardRoutes(app: FastifyInstance) {
     );
     const withoutSms = reservations.filter((r) => r.confirmationStatus === 'NOT_REQUIRED');
 
-    const noShowsTotal = reservations.filter((r) => r.status === 'NO_SHOW');
-    const noShowsWithSms = withSms.filter((r) => r.status === 'NO_SHOW');
-    const noShowsWithoutSms = withoutSms.filter((r) => r.status === 'NO_SHOW');
+    const noShowsTotal = reservations.filter((r) => r.state === 'NO_SHOW');
+    const noShowsWithSms = withSms.filter((r) => r.state === 'NO_SHOW');
+    const noShowsWithoutSms = withoutSms.filter((r) => r.state === 'NO_SHOW');
 
     const rateWithSms = withSms.length > 0 ? (noShowsWithSms.length / withSms.length) * 100 : 0;
     const rateWithoutSms =

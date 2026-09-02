@@ -49,6 +49,10 @@ vi.mock('@prisma/client', async (importOriginal) => {
       findMany: vi.fn(),
       create: vi.fn(),
     };
+    reservationAuditLog = {
+      findFirst: vi.fn(),
+      create: vi.fn(),
+    };
     onboardingEvent = {
       create: vi.fn().mockResolvedValue({ id: 'test-evt-1' }),
       findMany: vi.fn().mockResolvedValue([]),
@@ -98,11 +102,21 @@ vi.mock('@sentry/node', () => ({
   setupFastifyErrorHandler: vi.fn(),
 }));
 
+const notificationProviderMocks = vi.hoisted(() => ({
+  resendSend: vi.fn().mockResolvedValue({ data: { id: 'test-email-id' }, error: null }),
+  resendGet: vi.fn().mockResolvedValue({ data: { last_event: 'delivered' }, error: null }),
+  telnyxCreate: vi.fn().mockResolvedValue({}),
+  telnyxRetrieve: vi.fn().mockResolvedValue({}),
+}));
+(globalThis as Record<string, unknown>).__sokarNotificationProviderMocks =
+  notificationProviderMocks;
+
 // ── Mock Resend (HTTP API email, remplace nodemailer) ──
 vi.mock('resend', () => ({
   Resend: class MockResend {
     emails = {
-      send: vi.fn().mockResolvedValue({ data: { id: 'test-email-id' }, error: null }),
+      send: notificationProviderMocks.resendSend,
+      get: notificationProviderMocks.resendGet,
     };
   },
 }));
@@ -110,7 +124,10 @@ vi.mock('resend', () => ({
 // ── Mock telnyx (SDK CJS, non compatible ESM via vitest) ──
 vi.mock('telnyx', () => ({
   createTelnyx: () => ({
-    messages: { create: vi.fn().mockResolvedValue({}) },
+    messages: {
+      create: notificationProviderMocks.telnyxCreate,
+      retrieve: notificationProviderMocks.telnyxRetrieve,
+    },
   }),
 }));
 
@@ -269,7 +286,7 @@ process.env.TTS_CACHE_ENABLED = 'false';
 process.env.VIP_PUSH_ENABLED = 'false';
 process.env.CLERK_PUBLISHABLE_KEY = 'pk_test_dummy-test-key';
 process.env.CLERK_SECRET_KEY = 'sk_test_dummy-secret-key';
-process.env.OPENROUTER_API_KEY = 'sk-or-test';
+process.env.OPENROUTER_API_KEY = 'or-key';
 process.env.CARTESIA_API_KEY = 'test-cartesia-key';
 process.env.STRIPE_SECRET_KEY = 'sk_test';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_t';

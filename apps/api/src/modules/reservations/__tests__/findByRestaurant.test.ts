@@ -34,7 +34,10 @@ describe('ReservationService.findByRestaurant', () => {
     const result = await ReservationService.findByRestaurant(restaurantId);
 
     expect(db.reservation.findMany).toHaveBeenCalledWith({
-      where: { restaurantId },
+      where: {
+        restaurantId,
+        auditLog: { none: { event: 'reservation_deleted' } },
+      },
       orderBy: { reservedAt: 'asc' },
       include: { table: { select: { name: true } } },
     });
@@ -51,6 +54,7 @@ describe('ReservationService.findByRestaurant', () => {
     const call = vi.mocked(db.reservation.findMany).mock.calls[0][0]!;
     const reservedAt = call.where!.reservedAt as { gte: Date; lte: Date };
     expect(call.where!.restaurantId).toBe(restaurantId);
+    expect(call.where!.auditLog).toEqual({ none: { event: 'reservation_deleted' } });
     expect(reservedAt.gte).toBeInstanceOf(Date);
     expect(reservedAt.lte).toBeInstanceOf(Date);
     // Sanity: borne inférieure = minuit, borne supérieure = fin de journée
@@ -68,6 +72,9 @@ describe('ReservationService.findByRestaurant', () => {
 
     const call = vi.mocked(db.reservation.findMany).mock.calls[0][0]!;
     expect(call.where!.reservedAt).toBeUndefined();
-    expect(call.where!).toEqual({ restaurantId: 'rest-123' });
+    expect(call.where!).toEqual({
+      restaurantId: 'rest-123',
+      auditLog: { none: { event: 'reservation_deleted' } },
+    });
   });
 });

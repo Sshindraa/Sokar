@@ -19,6 +19,7 @@ import {
   isSafeVoiceNameMatch,
   _resetCircuitBreakersForTesting,
 } from '../stream/manager';
+import { voiceConfig, type VoiceConfig } from '../../../env';
 import type { CallSession, ChatMessage } from '../stream/types';
 import type { getRestaurantTools } from '../tools';
 
@@ -127,6 +128,33 @@ function makeSession(overrides: Partial<CallSession> = {}): CallSession {
     giftCardMinimumAmount: overrides.giftCardMinimumAmount,
     personality: overrides.personality,
   });
+}
+
+type VoiceConfigSnapshot = Pick<
+  VoiceConfig,
+  | 'VOICE_LLM_PROVIDER'
+  | 'VOICE_LLM_MODEL'
+  | 'VOICE_LLM_FALLBACK_MODEL'
+  | 'VOICE_LLM_TIMEOUT_MS'
+  | 'OPENROUTER_BASE_URL'
+  | 'CEREBRAS_API_KEY'
+  | 'OPENROUTER_API_KEY'
+>;
+
+function snapshotVoiceConfig(): VoiceConfigSnapshot {
+  return {
+    VOICE_LLM_PROVIDER: voiceConfig.VOICE_LLM_PROVIDER,
+    VOICE_LLM_MODEL: voiceConfig.VOICE_LLM_MODEL,
+    VOICE_LLM_FALLBACK_MODEL: voiceConfig.VOICE_LLM_FALLBACK_MODEL,
+    VOICE_LLM_TIMEOUT_MS: voiceConfig.VOICE_LLM_TIMEOUT_MS,
+    OPENROUTER_BASE_URL: voiceConfig.OPENROUTER_BASE_URL,
+    CEREBRAS_API_KEY: voiceConfig.CEREBRAS_API_KEY,
+    OPENROUTER_API_KEY: voiceConfig.OPENROUTER_API_KEY,
+  };
+}
+
+function restoreVoiceConfig(snapshot: VoiceConfigSnapshot): void {
+  Object.assign(voiceConfig, snapshot);
 }
 
 /** Mock fetch pour retourner d'abord un tool_call, puis une réponse texte. */
@@ -444,7 +472,7 @@ describe('CallSessionManager — tool execution', () => {
         where: expect.objectContaining({
           restaurantId: 'rest-1',
           customerName: { contains: 'Jean Dupont', mode: 'insensitive' },
-          status: 'CONFIRMED',
+          state: { in: ['PENDING', 'CONFIRMED'] },
         }),
       }),
     );
@@ -927,16 +955,19 @@ describe('CallSessionManager — tool execution', () => {
 
 describe('CallSessionManager — processUtteranceStreaming', () => {
   let originalFetch: typeof globalThis.fetch;
+  let savedVoiceConfig: VoiceConfigSnapshot;
 
   beforeEach(() => {
     (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
       new CallSessionManager();
     delete process.env.SOKAR_SIMULATE_MOCK_LLM;
     originalFetch = globalThis.fetch;
+    savedVoiceConfig = snapshotVoiceConfig();
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    restoreVoiceConfig(savedVoiceConfig);
   });
 
   it('parse un stream SSE et yield les phrases via onPhrase', async () => {
@@ -1212,9 +1243,9 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
   }
 
   it("mid-stream timeout : retry sur l'autre provider si aucun audio envoyé", async () => {
-    process.env.VOICE_LLM_PROVIDER = 'cerebras';
-    process.env.CEREBRAS_API_KEY = 'test-k1';
-    process.env.OPENROUTER_API_KEY = 'test-k2';
+    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
+    voiceConfig.CEREBRAS_API_KEY = 'test-k1';
+    voiceConfig.OPENROUTER_API_KEY = 'test-k2';
     _resetCircuitBreakersForTesting();
 
     // 1er fetch (Cerebras) : stream qui abort immédiatement (aucun token envoyé)
@@ -1245,16 +1276,12 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     expect(fullText).toContain('Bonjour');
     // 2 appels fetch : Cerebras (abort) + OpenRouter (retry)
     expect(fetchMock).toHaveBeenCalledTimes(2);
-
-    delete process.env.VOICE_LLM_PROVIDER;
-    delete process.env.CEREBRAS_API_KEY;
-    delete process.env.OPENROUTER_API_KEY;
   });
 
   it('mid-stream timeout : pas de retry si audio déjà envoyé', async () => {
-    process.env.VOICE_LLM_PROVIDER = 'cerebras';
-    process.env.CEREBRAS_API_KEY = 'test-k1';
-    process.env.OPENROUTER_API_KEY = 'test-k2';
+    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
+    voiceConfig.CEREBRAS_API_KEY = 'test-k1';
+    voiceConfig.OPENROUTER_API_KEY = 'test-k2';
     _resetCircuitBreakersForTesting();
 
     // 1er fetch (Cerebras) : stream qui envoie "Bonjour." puis abort
@@ -1289,16 +1316,12 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     // Une phrase a été yield avant le timeout
     expect(phrases).toContain('Bonjour.');
-
-    delete process.env.VOICE_LLM_PROVIDER;
-    delete process.env.CEREBRAS_API_KEY;
-    delete process.env.OPENROUTER_API_KEY;
   });
 
   it('mid-stream timeout : pas de tool call incomplet exécuté', async () => {
-    process.env.VOICE_LLM_PROVIDER = 'cerebras';
-    process.env.CEREBRAS_API_KEY = 'test-k1';
-    process.env.OPENROUTER_API_KEY = 'test-k2';
+    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
+    voiceConfig.CEREBRAS_API_KEY = 'test-k1';
+    voiceConfig.OPENROUTER_API_KEY = 'test-k2';
     _resetCircuitBreakersForTesting();
 
     // 1er fetch (Cerebras) : stream qui envoie un tool_call partiel (nom sans arguments complets) puis abort
@@ -1333,16 +1356,12 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     // Pas de retry (tool_call détecté = hasToolCall=true, mais midStreamTimedOut=true → pas de retry non plus)
     // Seulement 1 appel fetch
     expect(fetchMock).toHaveBeenCalledTimes(1);
-
-    delete process.env.VOICE_LLM_PROVIDER;
-    delete process.env.CEREBRAS_API_KEY;
-    delete process.env.OPENROUTER_API_KEY;
   });
 
   it('mid-stream session abort : pas de retry (raccroché)', async () => {
-    process.env.VOICE_LLM_PROVIDER = 'cerebras';
-    process.env.CEREBRAS_API_KEY = 'test-k1';
-    process.env.OPENROUTER_API_KEY = 'test-k2';
+    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
+    voiceConfig.CEREBRAS_API_KEY = 'test-k1';
+    voiceConfig.OPENROUTER_API_KEY = 'test-k2';
     _resetCircuitBreakersForTesting();
 
     const abortController = new AbortController();
@@ -1385,16 +1404,12 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
 
     // Seulement 1 appel fetch (Cerebras) — pas de retry sur session abort
     expect(fetchMock).toHaveBeenCalledTimes(1);
-
-    delete process.env.VOICE_LLM_PROVIDER;
-    delete process.env.CEREBRAS_API_KEY;
-    delete process.env.OPENROUTER_API_KEY;
   });
 
   it('mid-stream timeout : retry aussi timeout → erreur remonte', async () => {
-    process.env.VOICE_LLM_PROVIDER = 'cerebras';
-    process.env.CEREBRAS_API_KEY = 'test-k1';
-    process.env.OPENROUTER_API_KEY = 'test-k2';
+    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
+    voiceConfig.CEREBRAS_API_KEY = 'test-k1';
+    voiceConfig.OPENROUTER_API_KEY = 'test-k2';
     _resetCircuitBreakersForTesting();
 
     // Stream qui throw AbortError immédiatement (timeout, session non abortée)
@@ -1425,10 +1440,6 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
 
     // 2 appels : Cerebras + OpenRouter retry. Pas de retry supplémentaire.
     expect(fetchMock).toHaveBeenCalledTimes(2);
-
-    delete process.env.VOICE_LLM_PROVIDER;
-    delete process.env.CEREBRAS_API_KEY;
-    delete process.env.OPENROUTER_API_KEY;
   });
 });
 
@@ -1622,42 +1633,28 @@ function mockFetchAllProvidersFail() {
 
 describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
   let originalFetch: typeof globalThis.fetch;
-  let savedProvider: string | undefined;
-  let savedTimeout: string | undefined;
-  let savedCerebrasKey: string | undefined;
-  let savedOpenRouterKey: string | undefined;
+  let savedVoiceConfig: VoiceConfigSnapshot;
 
   beforeEach(() => {
     (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
       new CallSessionManager();
     originalFetch = globalThis.fetch;
-    savedProvider = process.env.VOICE_LLM_PROVIDER;
-    savedTimeout = process.env.VOICE_LLM_TIMEOUT_MS;
-    savedCerebrasKey = process.env.CEREBRAS_API_KEY;
-    savedOpenRouterKey = process.env.OPENROUTER_API_KEY;
+    savedVoiceConfig = snapshotVoiceConfig();
     _resetCircuitBreakersForTesting();
     // Clés API présentes pour que les fallbacks soient activés
-    process.env.CEREBRAS_API_KEY = 'test-k1';
-    process.env.OPENROUTER_API_KEY = 'test-k2';
+    voiceConfig.CEREBRAS_API_KEY = 'test-k1';
+    voiceConfig.OPENROUTER_API_KEY = 'test-k2';
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
     _resetCircuitBreakersForTesting();
-    // Restaurer les env vars
-    if (savedProvider === undefined) delete process.env.VOICE_LLM_PROVIDER;
-    else process.env.VOICE_LLM_PROVIDER = savedProvider;
-    if (savedTimeout === undefined) delete process.env.VOICE_LLM_TIMEOUT_MS;
-    else process.env.VOICE_LLM_TIMEOUT_MS = savedTimeout;
-    if (savedCerebrasKey === undefined) delete process.env.CEREBRAS_API_KEY;
-    else process.env.CEREBRAS_API_KEY = savedCerebrasKey;
-    if (savedOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
-    else process.env.OPENROUTER_API_KEY = savedOpenRouterKey;
+    restoreVoiceConfig(savedVoiceConfig);
     vi.useRealTimers();
   });
 
   it('circuit breaker : skip Cerebras après 3 échecs consécutifs', async () => {
-    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
     const fetchMock = mockFetchCerebrasFailOpenRouterOk();
     const mgr = CallSessionManager.getInstance();
     const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
@@ -1685,7 +1682,7 @@ describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
   });
 
   it('fallback sur erreur réseau (timeout)', async () => {
-    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
     mockFetchCerebrasNetworkErrorOpenRouterOk();
     const mgr = CallSessionManager.getInstance();
     const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
@@ -1697,10 +1694,10 @@ describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
   });
 
   it('timeout : abort la requête après VOICE_LLM_TIMEOUT_MS', async () => {
-    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
     // Désactiver le fallback pour que l'erreur de timeout remonte directement
-    delete process.env.OPENROUTER_API_KEY;
-    process.env.VOICE_LLM_TIMEOUT_MS = '100';
+    voiceConfig.OPENROUTER_API_KEY = undefined;
+    voiceConfig.VOICE_LLM_TIMEOUT_MS = 100;
     mockFetchHanging();
     const mgr = CallSessionManager.getInstance();
     const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
@@ -1711,7 +1708,7 @@ describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
   });
 
   it('circuit breaker : se réinitialise après cooldown', async () => {
-    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
     vi.useFakeTimers();
     const fetchMock = mockFetchCerebrasFailOpenRouterOk();
     const mgr = CallSessionManager.getInstance();
@@ -1734,7 +1731,7 @@ describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
   });
 
   it('fallback bidirectionnel : OpenRouter primaire → Cerebras fallback', async () => {
-    process.env.VOICE_LLM_PROVIDER = 'openrouter';
+    voiceConfig.VOICE_LLM_PROVIDER = 'openrouter';
     mockFetchOpenRouterFailCerebrasOk();
     const mgr = CallSessionManager.getInstance();
     const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
@@ -1746,7 +1743,7 @@ describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
   });
 
   it('circuit breaker : half-open failure redémarre le cooldown', async () => {
-    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
     vi.useFakeTimers();
     const fetchMock = mockFetchCerebrasFailOpenRouterOk();
     const mgr = CallSessionManager.getInstance();
@@ -1786,7 +1783,7 @@ describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
   });
 
   it('circuit breaker : les deux providers en panne → erreur remonte au caller', async () => {
-    process.env.VOICE_LLM_PROVIDER = 'cerebras';
+    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
     const fetchMock = mockFetchAllProvidersFail();
     const mgr = CallSessionManager.getInstance();
     const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];

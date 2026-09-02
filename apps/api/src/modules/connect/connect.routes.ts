@@ -66,6 +66,7 @@ import { emitConnectEvent } from './connect-analytics';
 import { ConnectKpiService } from './connect-kpis.service';
 import { canConfirm, recordFailedConfirm } from './connect-rate-limit';
 import { connectRequestDuration } from '../../shared/observability/metrics';
+import { observeReservationMutation } from '../../shared/observability/reservation-contract';
 import {
   RATE_LIMIT_PREVIEW_MAX,
   RATE_LIMIT_SITEMAP_MAX,
@@ -539,7 +540,12 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         settings?.capacitySpecials as Record<string, unknown> | undefined,
       );
 
-      const slotStart = new Date(`${bodyParse.data.date}T${bodyParse.data.time}:00.000Z`);
+      const restaurantWithTz = await db.restaurant.findUnique({
+        where: { id: restaurant.id },
+        select: { timezone: true },
+      });
+      const timeZone = restaurantWithTz?.timezone ?? 'Europe/Paris';
+      const slotStart = zonedTimeToUtc(bodyParse.data.date, bodyParse.data.time, timeZone);
       const slotEnd = new Date(slotStart.getTime() + serviceDurationMinutes * 60 * 1000);
 
       try {
@@ -773,6 +779,14 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           await db.reservation.update({
             where: { id: result.reservationId },
             data: { source },
+          });
+          observeReservationMutation({
+            source: 'connect',
+            operation: 'source_patch',
+            idempotency: 'not_applicable',
+            audit: 'not_applicable',
+            notification: 'not_sent',
+            capacity: 'unchanged',
           });
         }
 

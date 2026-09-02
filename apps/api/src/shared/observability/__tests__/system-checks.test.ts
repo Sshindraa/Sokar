@@ -159,17 +159,15 @@ describe('appels sans transcription', () => {
   });
 
   it('findCallsWithoutTranscript interroge les appels telnyx sans transcript/outcome', async () => {
-    const findMany = vi
-      .fn()
-      .mockResolvedValue([
-        {
-          callSid: 'c1',
-          restaurantId: 'r1',
-          createdAt: new Date(),
-          transcript: null,
-          outcome: 'INFO',
-        },
-      ]);
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        callSid: 'c1',
+        restaurantId: 'r1',
+        createdAt: new Date(),
+        transcript: null,
+        outcome: 'INFO',
+      },
+    ]);
     const db = { call: { findMany } } as never;
 
     const result = await findCallsWithoutTranscript(db, new Date('2026-07-22T12:00:00Z'));
@@ -207,6 +205,7 @@ describe('réservations sans SMS de confirmation', () => {
     expect(where.createdAt.lte.toISOString()).toBe('2026-07-22T11:30:00.000Z');
     expect(where.customerPhone).toEqual({ not: null });
     expect(where.restaurant).toEqual({ smsConfirmEnabled: true });
+    expect(where.state).toBe('CONFIRMED');
     expect(where.auditLog).toEqual({ none: { event: CONFIRMATION_SMS_SENT_EVENT } });
   });
 

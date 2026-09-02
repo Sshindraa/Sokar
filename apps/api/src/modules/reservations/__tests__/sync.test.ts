@@ -324,11 +324,18 @@ describe('ReservationService - Google Calendar Sync', () => {
   });
 
   describe('delete', () => {
-    it('should delete Google event and delete reservation locally', async () => {
+    it('should close reservation, preserve audit history, and delete Google event', async () => {
       const mockReservationWithRest = {
         id: 'res-456',
+        status: 'CONFIRMED',
+        state: 'CONFIRMED',
         googleEventId: 'event-789',
         restaurant: mockRestaurant,
+      };
+      const updatedReservation = {
+        ...mockReservationWithRest,
+        status: 'CANCELLED',
+        state: 'CANCELLED',
       };
 
       vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(
@@ -336,17 +343,66 @@ describe('ReservationService - Google Calendar Sync', () => {
           ReturnType<typeof db.reservation.findUniqueOrThrow>
         >,
       );
+      vi.mocked(db.reservation.update)
+        .mockResolvedValueOnce(
+          updatedReservation as unknown as Awaited<ReturnType<typeof db.reservation.update>>,
+        )
+        .mockResolvedValueOnce({
+          ...updatedReservation,
+          googleEventId: null,
+        } as unknown as Awaited<ReturnType<typeof db.reservation.update>>);
 
       await ReservationService.delete('res-456', 'rest-123');
 
+      expect(db.reservation.update).toHaveBeenCalledWith({
+        where: { id: 'res-456', restaurantId: 'rest-123' },
+        data: { status: 'CANCELLED', state: 'CANCELLED' },
+      });
+      expect(db.reservationAuditLog.create).toHaveBeenCalledWith({
+        data: {
+          event: 'reservation_deleted',
+          reservationId: 'res-456',
+          actor: 'legacy:reservation-delete',
+          fromState: 'CONFIRMED',
+          toState: 'CANCELLED',
+          metadata: {
+            source: 'legacy_reservation_service',
+            mode: 'terminal_state',
+          },
+        },
+      });
       expect(GoogleCalendarClient.deleteEvent).toHaveBeenCalledWith(
         'refresh-token-xyz',
         'primary',
         'event-789',
       );
-      expect(db.reservation.delete).toHaveBeenCalledWith({
+      expect(db.reservation.update).toHaveBeenCalledWith({
         where: { id: 'res-456', restaurantId: 'rest-123' },
+        data: { googleEventId: null },
       });
+      expect(db.reservation.delete).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent when reservation is already terminally closed', async () => {
+      const cancelledReservation = {
+        id: 'res-456',
+        status: 'CANCELLED',
+        state: 'CANCELLED',
+        googleEventId: null,
+        restaurant: mockRestaurant,
+      };
+
+      vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(
+        cancelledReservation as unknown as Awaited<
+          ReturnType<typeof db.reservation.findUniqueOrThrow>
+        >,
+      );
+
+      await ReservationService.delete('res-456', 'rest-123');
+
+      expect(db.reservation.update).not.toHaveBeenCalled();
+      expect(db.reservationAuditLog.create).not.toHaveBeenCalled();
+      expect(db.reservation.delete).not.toHaveBeenCalled();
     });
   });
 

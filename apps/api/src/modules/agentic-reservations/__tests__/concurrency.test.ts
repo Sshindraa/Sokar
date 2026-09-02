@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('@prisma/client');
 
+import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { HoldConflictError, HoldService } from '../core/hold.service.js';
 import { AuditLogService } from '../core/audit-log.service.js';
@@ -27,6 +28,13 @@ import {
   computeIdempotencyScope,
   hashPayload,
 } from '../core/idempotency.service.js';
+import {
+  ReservationService,
+  ReservationSlotUnavailableError,
+} from '../core/reservation.service.js';
+import { ReservationService as LegacyReservationService } from '../../reservations/reservation.service';
+import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service.js';
+import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
 
 const prisma = new PrismaClient();
 const audit = new AuditLogService(prisma);
@@ -37,6 +45,8 @@ const runIntegration = process.env.AGENTIC_INT_TESTS === '1';
 const describeIntegration = runIntegration ? describe : describe.skip;
 
 let testRestaurantId: string;
+let testFloorPlanId: string;
+let testTableId: string;
 
 const policy = buildPolicySnapshot({
   policyVersion: '2026-06-20',
@@ -50,49 +60,151 @@ const policy = buildPolicySnapshot({
   capacitySpecials: {},
 });
 
+const ACTIVE_RESERVATION_STATES = ['PENDING', 'CONFIRMED', 'SEATED'] as const;
+type ActiveReservationState = (typeof ACTIVE_RESERVATION_STATES)[number];
+
+let capacitySlotOffset = 0;
+
+function nextCapacitySlot(): { date: string; startsAt: Date; endsAt: Date } {
+  const startsAt = new Date(Date.UTC(2099, 5, 5 + capacitySlotOffset, 17, 0, 0));
+  capacitySlotOffset += 1;
+  return {
+    date: startsAt.toISOString().slice(0, 10),
+    startsAt,
+    endsAt: new Date(startsAt.getTime() + 2 * 60 * 60 * 1000),
+  };
+}
+
+async function createCapacityReservation(args: {
+  state: ActiveReservationState;
+  tableId: string | null;
+  startsAt: Date;
+  endsAt: Date;
+}): Promise<string> {
+  const id = `capacity-reservation-${randomUUID()}`;
+  await prisma.reservation.create({
+    data: {
+      id,
+      restaurantId: testRestaurantId,
+      reservedAt: args.startsAt,
+      partySize: 4,
+      customerName: 'Capacity test',
+      customerPhone: '+33600000000',
+      channel: 'MCP',
+      state: args.state,
+      status: args.state === 'SEATED' ? 'SEATED' : 'CONFIRMED',
+      startsAt: args.startsAt,
+      endsAt: args.endsAt,
+      createdByClient: 'test:capacity',
+      consents: {},
+      privacyPolicyVersion: '2026-06-20',
+      tableId: args.tableId,
+    },
+  });
+  return id;
+}
+
+async function createCapacityHold(args: {
+  tableId: string | null;
+  startsAt: Date;
+  endsAt: Date;
+}): Promise<string> {
+  const id = `capacity-hold-${randomUUID()}`;
+  await prisma.agenticHold.create({
+    data: {
+      id,
+      restaurantId: testRestaurantId,
+      type: 'HOLD',
+      partySize: 4,
+      slotStart: args.startsAt,
+      slotEnd: args.endsAt,
+      channel: 'MCP',
+      holdToken: `capacity-token-${randomUUID()}`,
+      expiresAt: new Date(args.endsAt.getTime() + 10 * 60 * 1000),
+      status: 'ACTIVE',
+      policyVersion: '2026-06-20',
+      tableId: args.tableId,
+    },
+  });
+  return id;
+}
+
+async function slotAvailability(
+  service: CapacityAwareAvailabilityService,
+  date: string,
+): Promise<boolean> {
+  const result = await service.getAvailability({
+    restaurantId: testRestaurantId,
+    date,
+    partySize: 4,
+  });
+  const slot = result.slots.find((candidate) => candidate.time === '19:00');
+  expect(slot).toBeDefined();
+  return slot?.available ?? false;
+}
+
 beforeAll(async () => {
   if (!runIntegration) return;
-  // Crée un restaurant de test (idempotent : on nettoie d'abord)
-  // reservation_audit_log est append-only : on swallow le DELETE refusé.
-  await prisma.reservationAuditLog
-    .deleteMany({
-      where: { metadata: { path: ['restaurantId'], equals: 'resto-test-concurrency' } },
-    })
-    .catch(() => undefined);
-  await prisma.agenticHold.deleteMany({ where: { restaurantId: 'resto-test-concurrency' } });
-  await prisma.restaurant.deleteMany({ where: { id: 'resto-test-concurrency' } });
+  // Chaque exécution utilise des identifiants uniques. La fixture peut donc
+  // tourner plusieurs fois sur la même base sans tenter de supprimer des
+  // réservations référencées par l'audit append-only.
+  testRestaurantId = `resto-test-concurrency-${randomUUID()}`;
+  testFloorPlanId = `floor-plan-test-concurrency-${randomUUID()}`;
+  testTableId = `table-test-concurrency-${randomUUID()}`;
+  const testPhoneNumber = `+331${Date.now().toString().slice(-8)}`;
 
   const r = await prisma.restaurant.create({
     data: {
-      id: 'resto-test-concurrency',
+      id: testRestaurantId,
       name: 'Resto Test Concurrency',
-      slug: 'resto-test-concurrency',
+      slug: testRestaurantId,
       managerPhone: '+33600000000',
       managerEmail: 'test@example.com',
-      phoneNumber: '+33100000001',
-      openingHours: {},
+      phoneNumber: testPhoneNumber,
+      openingHours: {
+        monday: { open: '00:00', close: '23:59' },
+        tuesday: { open: '00:00', close: '23:59' },
+        wednesday: { open: '00:00', close: '23:59' },
+        thursday: { open: '00:00', close: '23:59' },
+        friday: { open: '00:00', close: '23:59' },
+        saturday: { open: '00:00', close: '23:59' },
+        sunday: { open: '00:00', close: '23:59' },
+      },
       agenticOptIn: true,
     },
   });
   testRestaurantId = r.id;
+
+  const floorPlan = await prisma.floorPlan.create({
+    data: {
+      id: testFloorPlanId,
+      restaurantId: testRestaurantId,
+      name: 'Plan de test concurrence',
+      isDefault: true,
+      isActive: true,
+    },
+  });
+  testFloorPlanId = floorPlan.id;
+
+  const table = await prisma.table.create({
+    data: {
+      id: testTableId,
+      floorPlanId: testFloorPlanId,
+      name: 'Table test concurrence',
+      capacity: 12,
+      minCapacity: 1,
+      isActive: true,
+    },
+  });
+  expect(table.id).toBe(testTableId);
 });
 
 afterAll(async () => {
   if (!runIntegration) return;
-  await prisma.agenticHold.deleteMany({ where: { restaurantId: testRestaurantId } });
-  // reservation_audit_log est append-only : le DELETE est refusé par le trigger.
-  // C'est attendu, on swallow l'erreur de cleanup (les logs de test sont OK
-  // à laisser en DB locale).
-  await prisma.reservationAuditLog
-    .deleteMany({
-      where: { metadata: { path: ['restaurantId'], equals: testRestaurantId } },
-    })
-    .catch(() => undefined);
-  await prisma.idempotencyRecord.deleteMany({
-    where: { scope: { contains: testRestaurantId } },
-  });
-  await prisma.reservation.deleteMany({ where: { restaurantId: testRestaurantId } });
-  await prisma.restaurant.deleteMany({ where: { id: testRestaurantId } });
+  // Les audits sont append-only et empêchent la suppression des réservations
+  // qui leur sont liées. Les identifiants uniques isolent la fixture ; la CI
+  // détruit la base éphémère en fin de job (et le runbook local supprime le
+  // conteneur dédié après validation).
   await prisma.$disconnect();
 });
 
@@ -283,4 +395,258 @@ describeIntegration('audit log — append-only enforcement', () => {
 
     await expect(prisma.reservationAuditLog.delete({ where: { id: log.id } })).rejects.toThrow();
   });
+});
+
+describeIntegration('legacy reservation delete — terminal state with audit', () => {
+  it('clôture une réservation auditée sans suppression physique', async () => {
+    const slot = nextCapacitySlot();
+    const reservationId = await createCapacityReservation({
+      state: 'CONFIRMED',
+      tableId: testTableId,
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+    });
+
+    await prisma.reservationAuditLog.create({
+      data: {
+        event: 'reservation_table_released',
+        reservationId,
+        actor: 'test',
+        fromState: 'CONFIRMED',
+        toState: 'CONFIRMED',
+        metadata: {},
+      },
+    });
+
+    await LegacyReservationService.delete(reservationId, testRestaurantId);
+
+    const retained = await prisma.reservation.findUnique({
+      where: { id: reservationId },
+      select: { status: true, state: true },
+    });
+    expect(retained).toMatchObject({ status: 'CANCELLED', state: 'CANCELLED' });
+
+    const deletionAudit = await prisma.reservationAuditLog.findFirst({
+      where: { reservationId, event: 'reservation_deleted' },
+    });
+    expect(deletionAudit).toBeTruthy();
+    expect(deletionAudit?.fromState).toBe('CONFIRMED');
+    expect(deletionAudit?.toState).toBe('CANCELLED');
+
+    const operationalRows = await LegacyReservationService.findByRestaurant(testRestaurantId);
+    expect(operationalRows.some((row) => row.id === reservationId)).toBe(false);
+  });
+});
+
+describeIntegration('capacity — active reservations with or without table', () => {
+  it.each(ACTIVE_RESERVATION_STATES)(
+    '%s bloque avec ou sans table dans CapacityAwareAvailabilityService',
+    async (state) => {
+      const withTable = nextCapacitySlot();
+      const withoutTable = nextCapacitySlot();
+      const reservationIds = await Promise.all([
+        createCapacityReservation({
+          state,
+          tableId: testTableId,
+          startsAt: withTable.startsAt,
+          endsAt: withTable.endsAt,
+        }),
+        createCapacityReservation({
+          state,
+          tableId: null,
+          startsAt: withoutTable.startsAt,
+          endsAt: withoutTable.endsAt,
+        }),
+      ]);
+
+      try {
+        const service = new CapacityAwareAvailabilityService(prisma);
+
+        await expect(slotAvailability(service, withTable.date)).resolves.toBe(false);
+        await expect(slotAvailability(service, withoutTable.date)).resolves.toBe(false);
+      } finally {
+        await prisma.reservation.deleteMany({ where: { id: { in: reservationIds } } });
+      }
+    },
+  );
+});
+
+describeIntegration('capacity — active holds with or without table', () => {
+  it.each([
+    { label: 'avec table', withTable: true, physicalAvailable: false },
+    { label: 'sans table', withTable: false, physicalAvailable: true },
+  ])(
+    '$label : vérifie les deux prédicats de capacité',
+    async ({ withTable, physicalAvailable }) => {
+      const slot = nextCapacitySlot();
+      const holdId = await createCapacityHold({
+        tableId: withTable ? testTableId : null,
+        startsAt: slot.startsAt,
+        endsAt: slot.endsAt,
+      });
+
+      try {
+        const availability = new CapacityAwareAvailabilityService(prisma);
+        const allocation = new TableAllocationService(prisma);
+
+        await expect(slotAvailability(availability, slot.date)).resolves.toBe(false);
+        await expect(
+          allocation.isTableAvailable({
+            tableId: testTableId,
+            startsAt: slot.startsAt,
+            endsAt: slot.endsAt,
+          }),
+        ).resolves.toBe(physicalAvailable);
+      } finally {
+        await prisma.agenticHold.delete({ where: { id: holdId } });
+      }
+    },
+  );
+});
+
+describeIntegration('capacity — explicit table hold revalidation', () => {
+  it.each([
+    { label: 'réservation active sans table', blocker: 'reservation-global' as const },
+    { label: 'hold actif sans table', blocker: 'hold-global' as const },
+    { label: 'réservation active sur la table', blocker: 'reservation-table' as const },
+    { label: 'hold actif sur la table', blocker: 'hold-table' as const },
+  ])('$label : refuse un hold avec tableId explicite', async ({ blocker }) => {
+    const slot = nextCapacitySlot();
+    let reservationId: string | null = null;
+    let holdId: string | null = null;
+
+    if (blocker.startsWith('reservation')) {
+      reservationId = await createCapacityReservation({
+        state: 'CONFIRMED',
+        tableId: blocker === 'reservation-table' ? testTableId : null,
+        startsAt: slot.startsAt,
+        endsAt: slot.endsAt,
+      });
+    } else {
+      holdId = await createCapacityHold({
+        tableId: blocker === 'hold-table' ? testTableId : null,
+        startsAt: slot.startsAt,
+        endsAt: slot.endsAt,
+      });
+    }
+
+    try {
+      await expect(
+        holds.createHold({
+          restaurantId: testRestaurantId,
+          partySize: 4,
+          slotStart: slot.startsAt,
+          slotEnd: slot.endsAt,
+          channel: 'MCP',
+          policy,
+          actor: 'agent:explicit-table-test',
+          tableId: testTableId,
+        }),
+      ).rejects.toBeInstanceOf(HoldConflictError);
+
+      const created = await prisma.agenticHold.count({
+        where: {
+          restaurantId: testRestaurantId,
+          slotStart: slot.startsAt,
+          type: 'HOLD',
+          status: 'ACTIVE',
+        },
+      });
+      expect(created).toBe(holdId ? 1 : 0);
+    } finally {
+      if (reservationId) {
+        await prisma.reservation.delete({ where: { id: reservationId } });
+      }
+      if (holdId) {
+        await prisma.agenticHold.delete({ where: { id: holdId } });
+      }
+    }
+  });
+});
+
+describeIntegration('capacity — releaseTable', () => {
+  it.each(ACTIVE_RESERVATION_STATES)(
+    '%s détache la table sans changer la réservation ; la capacité globale reste bloquée',
+    async (state) => {
+      const slot = nextCapacitySlot();
+      const reservationId = await createCapacityReservation({
+        state,
+        tableId: testTableId,
+        startsAt: slot.startsAt,
+        endsAt: slot.endsAt,
+      });
+
+      const allocation = new TableAllocationService(prisma);
+      await allocation.releaseTable(reservationId);
+
+      const reservation = await prisma.reservation.findUniqueOrThrow({
+        where: { id: reservationId },
+        select: { tableId: true, state: true, status: true },
+      });
+      expect(reservation).toEqual({
+        tableId: null,
+        state,
+        status: state === 'SEATED' ? 'SEATED' : 'CONFIRMED',
+      });
+
+      await expect(
+        allocation.isTableAvailable({
+          tableId: testTableId,
+          startsAt: slot.startsAt,
+          endsAt: slot.endsAt,
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        slotAvailability(new CapacityAwareAvailabilityService(prisma), slot.date),
+      ).resolves.toBe(false);
+    },
+  );
+});
+
+describeIntegration('capacity — réservation active sans table dans le chemin agentic', () => {
+  it.each(ACTIVE_RESERVATION_STATES)(
+    '%s est bloquante pour findBlockingReservation même sans table',
+    async (state) => {
+      const slot = nextCapacitySlot();
+      const reservationId = await createCapacityReservation({
+        state,
+        tableId: null,
+        startsAt: slot.startsAt,
+        endsAt: slot.endsAt,
+      });
+      const scope = `${testRestaurantId}:capacity-global:${state}:${randomUUID()}`;
+      const key = `capacity-global-${randomUUID()}`;
+      const service = new ReservationService(prisma, audit, holds, idem);
+
+      try {
+        await expect(
+          service.createReservation(
+            {
+              restaurantId: testRestaurantId,
+              partySize: 4,
+              startsAt: slot.startsAt,
+              endsAt: slot.endsAt,
+              customerName: 'Capacity contender',
+              customerPhone: '+33600000001',
+              channel: 'MCP',
+              policy,
+              actor: 'test:capacity',
+            },
+            {
+              scope,
+              key,
+              payloadHash: hashPayload({
+                partySize: 4,
+                startsAt: slot.startsAt.toISOString(),
+              }),
+              ttlSeconds: 60,
+            },
+          ),
+        ).rejects.toBeInstanceOf(ReservationSlotUnavailableError);
+      } finally {
+        await prisma.reservation.delete({ where: { id: reservationId } });
+        await prisma.idempotencyRecord.deleteMany({ where: { scope, key } });
+      }
+    },
+  );
 });
