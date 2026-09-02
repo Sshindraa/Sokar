@@ -53,6 +53,10 @@ jobs:
             test "${NEXT_PUBLIC_DEMO_STAGING:-}" = "1"
             [[ "${NEXT_PUBLIC_DEMO_RESTAURANT_ID:-}" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]]
             git checkout main
+            # Le clone de staging est provisionné avec la clé SSH de deploy.
+            # Réaffirmer ce remote évite qu'une URL HTTPS sans credential
+            # rende les déploiements ultérieurs non reproductibles.
+            git remote set-url origin git@github.com:Sshindraa/Sokar.git
             git fetch origin main
             git reset --hard origin/main
             git clean -fd
