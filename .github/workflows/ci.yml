@@ -192,6 +192,11 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Build API workspace dependencies
+        # Ce job s'exécute sur une machine vierge : les packages workspace et
+        # le client Prisma doivent être générés avant le chargement de Vitest.
+        run: pnpm turbo build --filter=@sokar/api...
+
       - name: Apply disposable database migrations
         run: pnpm --filter @sokar/database migrate:deploy
 
