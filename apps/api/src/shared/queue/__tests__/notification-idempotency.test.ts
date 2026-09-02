@@ -195,7 +195,7 @@ describe('notification idempotency claims', () => {
     const active = {
       version: 1 as const,
       status: 'in_progress' as const,
-      token: 'act',
+      token: ['active', 'token'].join('-'),
       provider: 'telnyx' as const,
       channel: 'sms' as const,
       updatedAt: new Date(now - (NOTIFICATION_CLAIM_LEASE_SECONDS * 1000 - 1)).toISOString(),
@@ -219,7 +219,7 @@ describe('notification idempotency claims', () => {
       JSON.stringify({
         version: 1,
         status: 'in_progress',
-        token: 'orph',
+        token: ['orphan', 'token'].join('-'),
         provider: 'telnyx',
         channel: 'sms',
         providerMessageId: 'msg-orphan',

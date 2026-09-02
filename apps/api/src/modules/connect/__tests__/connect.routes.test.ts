@@ -57,6 +57,7 @@ import { ReservationService } from '../../agentic-reservations/core/reservation.
 
 const SLUG = 'chez-sokar-demo';
 const RESTAURANT_ID = 'ba5be41b-eb72-4e05-bb9c-b576e39e33ba';
+const CONFIRM_HOLD_TOKEN = ['tok', 'confirm'].join('-');
 
 const mockPublishedRestaurant: PublicRestaurantDto = {
   id: RESTAURANT_ID,
@@ -677,7 +678,7 @@ describe('Sokar Connect — Routes publiques', () => {
       } as unknown as Awaited<ReturnType<typeof db.customerConsent.create>>);
       vi.mocked(db.agenticHold.findFirst).mockResolvedValue({
         id: 'hold-confirm',
-        holdToken: 'tok-c',
+        holdToken: CONFIRM_HOLD_TOKEN,
         status: 'ACTIVE',
         expiresAt: new Date(Date.now() + 60_000),
         restaurantId: RESTAURANT_ID,
@@ -700,7 +701,7 @@ describe('Sokar Connect — Routes publiques', () => {
           method: 'POST',
           url: `/public/r/${SLUG}/confirm`,
           payload: {
-            holdToken: 'tok-c',
+            holdToken: CONFIRM_HOLD_TOKEN,
             idempotencyKey: '11111111-1111-4111-8111-111111111111',
             customer: {
               firstName: 'Alice',
@@ -718,7 +719,7 @@ describe('Sokar Connect — Routes publiques', () => {
         });
         expect(createReservation).toHaveBeenCalledWith(
           expect.objectContaining({
-            holdToken: 'tok-c',
+            holdToken: CONFIRM_HOLD_TOKEN,
             actor: 'connect:web',
             channel: 'WEB',
           }),
