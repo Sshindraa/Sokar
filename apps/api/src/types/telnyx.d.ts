@@ -20,6 +20,7 @@ declare module 'telnyx' {
   export interface TelnyxClient {
     messages: {
       create(params: { from: string; to: string; text: string }): Promise<TelnyxMessageResult>;
+      retrieve(id: string): Promise<TelnyxMessageResult>;
     };
     calls: {
       create(params: {

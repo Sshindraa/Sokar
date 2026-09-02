@@ -1,11 +1,8 @@
 import { WebSocket } from 'ws';
 import { createHash } from 'node:crypto';
 import type { CallSession, CallState, ChatMessage } from './types';
-import {
-  VOICE_LLM_MODEL_DEFAULT,
-  VOICE_LLM_FALLBACK_MODEL_DEFAULT,
-  CEREBRAS_BASE_URL,
-} from '@sokar/config';
+import { CEREBRAS_BASE_URL } from '@sokar/config';
+import { voiceConfig } from '../../../env';
 import { getRestaurantTools } from '../tools';
 import { validateToolArgs } from '../tool-schemas';
 import {
@@ -84,27 +81,24 @@ interface LlmRequestOptions {
 }
 
 /**
- * Résout le modèle LLM au runtime : env var VOICE_LLM_MODEL si définie,
- * sinon le défaut de @sokar/config.
+ * Résout le modèle LLM depuis la configuration voice validée au démarrage.
  */
 function getVoiceLlmModel(): string {
-  return process.env.VOICE_LLM_MODEL ?? VOICE_LLM_MODEL_DEFAULT;
+  return voiceConfig.VOICE_LLM_MODEL;
 }
 
 /**
- * Résout le modèle LLM de fallback au runtime.
+ * Résout le modèle LLM de fallback depuis la configuration validée au démarrage.
  */
 function getVoiceLlmFallbackModel(): string {
-  return process.env.VOICE_LLM_FALLBACK_MODEL ?? VOICE_LLM_FALLBACK_MODEL_DEFAULT;
+  return voiceConfig.VOICE_LLM_FALLBACK_MODEL;
 }
 
 /**
- * Résout l'URL de base OpenRouter au runtime : env var OPENROUTER_BASE_URL
- * si définie, sinon le défaut US. Permet de pointer vers un endpoint EU
- * ou un proxy sans redeploiement.
+ * Résout l'URL de base OpenRouter depuis la configuration voice validée.
  */
 function getOpenRouterBaseUrl(): string {
-  return process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1';
+  return voiceConfig.OPENROUTER_BASE_URL;
 }
 
 /**
@@ -125,14 +119,14 @@ function getCerebrasBaseUrl(): string {
  * Retourne true si le fallback Cerebras est configuré (clé API présente).
  */
 function isCerebrasFallbackEnabled(): boolean {
-  return Boolean(process.env.CEREBRAS_API_KEY);
+  return Boolean(voiceConfig.CEREBRAS_API_KEY);
 }
 
 /**
  * Retourne true si le fallback OpenRouter est configuré (clé API présente).
  */
 function isOpenRouterFallbackEnabled(): boolean {
-  return Boolean(process.env.OPENROUTER_API_KEY);
+  return Boolean(voiceConfig.OPENROUTER_API_KEY);
 }
 
 /**
@@ -291,19 +285,15 @@ export function _resetCircuitBreakersForTesting(): void {
 
 /**
  * Timeout par requête LLM (ms). Si le provider ne répond pas dans ce délai,
- * on abort et on fallback. Configurable via env var VOICE_LLM_TIMEOUT_MS.
- * Défaut : 8000ms (8s) — suffisant pour TTFT + premiers tokens en streaming.
+ * on abort et on fallback. La valeur est validée dans env.ts.
  */
-const _timeoutMs = Number(process.env.VOICE_LLM_TIMEOUT_MS);
-const LLM_REQUEST_TIMEOUT_MS = Number.isFinite(_timeoutMs) && _timeoutMs > 0 ? _timeoutMs : 8000;
-
 /**
  * Combine le signal de session avec un timeout par requête.
  * Retourne un signal qui abort si l'un des deux se déclenche.
  */
 function withRequestTimeout(sessionSignal?: AbortSignal): AbortSignal {
   // AbortSignal.any est disponible en Node 20+
-  const timeoutSignal = AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS);
+  const timeoutSignal = AbortSignal.timeout(voiceConfig.VOICE_LLM_TIMEOUT_MS);
   if (!sessionSignal) return timeoutSignal;
   return AbortSignal.any([sessionSignal, timeoutSignal]);
 }
@@ -820,7 +810,7 @@ export class CallSessionManager {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.CEREBRAS_API_KEY}`,
+        Authorization: `Bearer ${voiceConfig.CEREBRAS_API_KEY}`,
       },
       signal: withRequestTimeout(opts.signal),
       body: JSON.stringify(body),
@@ -853,7 +843,7 @@ export class CallSessionManager {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${voiceConfig.OPENROUTER_API_KEY}`,
       },
       signal: withRequestTimeout(opts.signal),
       body: JSON.stringify(body),
@@ -1089,7 +1079,7 @@ export class CallSessionManager {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.CEREBRAS_API_KEY}`,
+        Authorization: `Bearer ${voiceConfig.CEREBRAS_API_KEY}`,
       },
       signal: withRequestTimeout(opts.signal),
       body: JSON.stringify(body),
@@ -1123,7 +1113,7 @@ export class CallSessionManager {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${voiceConfig.OPENROUTER_API_KEY}`,
       },
       signal: withRequestTimeout(opts.signal),
       body: JSON.stringify(body),
@@ -1560,7 +1550,10 @@ export class CallSessionManager {
                 restaurantId: session.restaurantId,
                 customerName: { contains: customerName, mode: 'insensitive' },
                 reservedAt: { gte: dayStart, lte: dayEnd },
-                status: 'CONFIRMED',
+                // `state` porte la sémantique métier. Une demande PENDING
+                // reste annulable, tandis que les états terminaux ne doivent
+                // pas être proposés comme réservation active.
+                state: { in: ['PENDING', 'CONFIRMED'] },
               },
               select: { id: true, customerName: true, customerPhone: true, reservedAt: true },
             });

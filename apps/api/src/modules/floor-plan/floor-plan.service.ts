@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import type { PrismaClient, Section, Table, Wall } from '@prisma/client';
 import { zonedTimeToUtc } from './availability-capacity-aware.service.js';
 import { TableAllocationService } from './table-allocation.service.js';
+import { observeReservationMutation } from '../../shared/observability/reservation-contract';
 
 /** Capacité minimale par défaut d'une table (1 personne) */
 const DEFAULT_TABLE_MIN_CAPACITY = 1;
@@ -569,8 +570,11 @@ export class FloorPlanService {
     const endsAt = new Date(now.getTime() + 2 * 60 * 60 * 1000);
     const idempotencyScope = 'walk-in';
     const payloadHash = `${args.restaurantId}:${args.tableId}:${args.idempotencyKey}`;
+    let replayed = false;
+    let createdStatus: string | undefined;
+    let createdState: string | undefined;
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await this.tableAllocation.assertTableAvailableForSeating(
         {
           restaurantId: args.restaurantId,
@@ -602,13 +606,17 @@ export class FloorPlanService {
             source: 'WALK_IN',
           },
         });
+        createdStatus = reservation.status;
+        createdState = reservation.state;
 
         await tx.reservationAuditLog.create({
           data: {
             event: 'reservation_seated',
             reservationId: reservation.id,
             actor: args.restaurantId,
-            fromState: 'PENDING',
+            // Une création walk-in n'est pas une transition PENDING → SEATED:
+            // aucune réservation n'existait avant l'INSERT.
+            fromState: null,
             toState: 'SEATED',
             metadata: { source: 'WALK_IN' },
           },
@@ -621,11 +629,27 @@ export class FloorPlanService {
             where: { idempotencyScope, idempotencyKey: args.idempotencyKey },
             select: { id: true },
           });
-          if (existing) return { id: existing.id };
+          if (existing) {
+            replayed = true;
+            return { id: existing.id };
+          }
         }
         throw err;
       }
     });
+
+    observeReservationMutation({
+      source: 'walk_in',
+      operation: replayed ? 'create_replay' : 'create',
+      status: createdStatus,
+      state: createdState,
+      idempotency: replayed ? 'reused' : 'keyed',
+      audit: replayed ? 'not_applicable' : 'written',
+      notification: 'not_applicable',
+      capacity: replayed ? 'unchanged' : 'reserved',
+      mutated: !replayed,
+    });
+    return result;
   }
 
   async createWall(

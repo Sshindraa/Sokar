@@ -312,6 +312,9 @@ export async function findReservationsWithoutConfirmationSms(
       createdAt: { gte: windowStart, lte: graceEnd },
       customerPhone: { not: null },
       restaurant: { smsConfirmEnabled: true },
+      // Une demande PENDING ne doit pas être signalée comme un SMS manquant :
+      // elle n'est pas encore confirmée côté métier.
+      state: 'CONFIRMED',
       auditLog: { none: { event: CONFIRMATION_SMS_SENT_EVENT } },
     },
     select: { id: true, restaurantId: true, customerName: true, createdAt: true },

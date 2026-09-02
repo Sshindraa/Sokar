@@ -29,6 +29,7 @@ import {
   WaitingListEntryNotFoundError,
   WaitingListSlotFullError,
 } from './waiting-list.errors.js';
+import { observeReservationMutation } from '../../../shared/observability/reservation-contract';
 
 function hashActionToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -215,6 +216,7 @@ export class WaitingListService {
     entryId: string,
     outerTx?: Prisma.TransactionClient,
   ): Promise<Reservation | null> {
+    let replayed = false;
     const doPromote = async (prisma: Prisma.TransactionClient): Promise<Reservation | null> => {
       await prisma.$queryRaw(
         Prisma.sql`SELECT * FROM waiting_list_entries WHERE id = ${entryId} FOR UPDATE`,
@@ -229,6 +231,7 @@ export class WaitingListService {
         const existing = await prisma.reservation.findUnique({
           where: { id: entry.promotedReservationId },
         });
+        replayed = existing !== null;
         return existing ?? null;
       }
 
@@ -299,7 +302,21 @@ export class WaitingListService {
 
     if (outerTx) {
       // When called inside an outer transaction, the caller is responsible for scheduling the promotion notification after commit.
-      return doPromote(outerTx);
+      const reservation = await doPromote(outerTx);
+      if (reservation) {
+        observeReservationMutation({
+          source: 'waiting_list',
+          operation: replayed ? 'promote_replay' : 'promote',
+          status: reservation.status,
+          state: reservation.state,
+          idempotency: replayed ? 'reused' : 'unkeyed',
+          audit: replayed ? 'not_applicable' : 'written',
+          notification: 'not_applicable',
+          capacity: replayed ? 'unchanged' : 'reserved',
+          mutated: !replayed,
+        });
+      }
+      return reservation;
     }
 
     const reservation = await this.prisma.$transaction(doPromote, DEFAULT_TRANSACTION_OPTIONS);
@@ -307,6 +324,17 @@ export class WaitingListService {
       await scheduleWaitingListPromotionNotification({
         entryId,
         reservationId: reservation.id,
+      });
+      observeReservationMutation({
+        source: 'waiting_list',
+        operation: replayed ? 'promote_replay' : 'promote',
+        status: reservation.status,
+        state: reservation.state,
+        idempotency: replayed ? 'reused' : 'unkeyed',
+        audit: replayed ? 'not_applicable' : 'written',
+        notification: 'queued',
+        capacity: replayed ? 'unchanged' : 'reserved',
+        mutated: !replayed,
       });
     }
     return reservation;

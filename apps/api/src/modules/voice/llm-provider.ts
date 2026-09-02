@@ -1,3 +1,5 @@
+import { voiceConfig } from '../../env';
+
 /**
  * Résolution du provider LLM vocal — source de vérité unique.
  *
@@ -9,5 +11,5 @@
 export type VoiceLlmProvider = 'cerebras' | 'openrouter';
 
 export function getVoiceLlmProvider(): VoiceLlmProvider {
-  return process.env.VOICE_LLM_PROVIDER === 'openrouter' ? 'openrouter' : 'cerebras';
+  return voiceConfig.VOICE_LLM_PROVIDER;
 }

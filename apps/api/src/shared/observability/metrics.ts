@@ -42,6 +42,96 @@ export const reservationStateTransitionsTotal = new Counter({
   registers: [getRegistry()],
 });
 
+// ─── Reservation contract visibility (Phase 3A) ─────────────────────
+
+/**
+ * Mutations de réservation observées par chemin d'implémentation.
+ * Labels volontairement bornés : aucun identifiant métier ou PII.
+ */
+export const reservationMutationsTotal = new Counter({
+  name: 'sokar_reservation_mutations_total',
+  help: 'Total reservation mutations observed by source and operation',
+  labelNames: ['source', 'operation'] as const,
+  registers: [getRegistry()],
+});
+
+/**
+ * Observations de contrat pour comparer status/state, idempotence, audit,
+ * notifications et capacité sans modifier le chemin métier.
+ * `mismatch_type` contient aussi les observations nominales afin de rendre
+ * visibles les différences entre chemins sans multiplier les labels.
+ */
+export const reservationContractObservationsTotal = new Counter({
+  name: 'sokar_reservation_contract_observations_total',
+  help: 'Reservation contract observations by source, operation and bounded observation type',
+  labelNames: ['source', 'operation', 'mismatch_type'] as const,
+  registers: [getRegistry()],
+});
+
+/**
+ * Sous-ensemble dédié aux incohérences status/state. Les valeurs d'état ne
+ * sont pas des labels : seul le type borné de divergence l'est.
+ */
+export const reservationStatusStateMismatchesTotal = new Counter({
+  name: 'sokar_reservation_status_state_mismatches_total',
+  help: 'Total observed reservation status/state mismatches',
+  labelNames: ['source', 'operation', 'mismatch_type'] as const,
+  registers: [getRegistry()],
+});
+
+/**
+ * Résultats des appels de notification et de leur réconciliation.
+ * Les labels sont strictement bornés : aucun identifiant métier, contact ou
+ * contenu de message ne doit être ajouté ici.
+ */
+export const notificationProviderResultsTotal = new Counter({
+  name: 'sokar_notification_provider_results_total',
+  help: 'Notification provider results and reconciliation outcomes',
+  labelNames: ['provider', 'channel', 'result'] as const,
+  registers: [getRegistry()],
+});
+
+export type NotificationProviderMetricResult =
+  | 'success'
+  | 'failure_certain'
+  | 'unknown'
+  | 'reconciled_success'
+  | 'reconciled_failure'
+  | 'reconciled_unknown';
+
+export function recordNotificationProviderResult(
+  provider: 'telnyx' | 'resend',
+  channel: 'sms' | 'whatsapp' | 'email',
+  result: NotificationProviderMetricResult,
+): void {
+  notificationProviderResultsTotal.inc({ provider, channel, result });
+}
+
+/**
+ * Lifecycle events for the operational claim sweep. Values are deliberately
+ * fixed and contain no claim key, reservation id or provider identifier.
+ */
+export const notificationClaimEventsTotal = new Counter({
+  name: 'sokar_notification_claim_events_total',
+  help: 'Notification claim recovery and coordination events',
+  labelNames: ['event'] as const,
+  registers: [getRegistry()],
+});
+
+export type NotificationClaimEvent =
+  | 'active'
+  | 'orphan_recovered'
+  | 'manual_review'
+  | 'raced'
+  | 'unknown_requeued'
+  | 'queue_unavailable'
+  | 'scan_unavailable'
+  | 'scan_failed';
+
+export function recordNotificationClaimEvent(event: NotificationClaimEvent): void {
+  notificationClaimEventsTotal.inc({ event });
+}
+
 // ─── check_availability duration ──────────────────────────────
 
 export const checkAvailabilityDuration = new Histogram({
@@ -198,6 +288,11 @@ export async function renderMetrics(): Promise<string> {
 export function __resetMetrics(): void {
   holdCreatedTotal.reset();
   reservationStateTransitionsTotal.reset();
+  reservationMutationsTotal.reset();
+  reservationContractObservationsTotal.reset();
+  reservationStatusStateMismatchesTotal.reset();
+  notificationProviderResultsTotal.reset();
+  notificationClaimEventsTotal.reset();
   checkAvailabilityDuration.reset();
   idempotencyHitsTotal.reset();
   piiLeaksTotal.reset();

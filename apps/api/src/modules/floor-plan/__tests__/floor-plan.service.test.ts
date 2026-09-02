@@ -137,6 +137,8 @@ describe('FloorPlanService', () => {
       expect(mocks.reservationAuditLog.create).toHaveBeenCalledTimes(1);
       const logArg = mocks.reservationAuditLog.create.mock.calls[0][0];
       expect(logArg.data.event).toBe('reservation_seated');
+      expect(logArg.data.fromState).toBeNull();
+      expect(logArg.data.toState).toBe('SEATED');
       expect(TableAllocationService.prototype.assertTableAvailableForSeating).toHaveBeenCalledWith(
         expect.objectContaining({
           restaurantId: 'rest-1',

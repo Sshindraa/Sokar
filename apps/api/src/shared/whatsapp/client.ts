@@ -21,6 +21,12 @@
  */
 
 const createTelnyx: (key: string) => TelnyxClient = require('telnyx');
+import {
+  extractProviderMessageId,
+  type NotificationProviderResult,
+  type NotificationSendResult,
+} from '../queue/notification-idempotency';
+import { lookupTelnyxMessage } from '../telnyx/client';
 
 interface TelnyxWhatsappTemplateMessage {
   from: string;
@@ -41,6 +47,7 @@ interface TelnyxWhatsappTemplateMessage {
 interface TelnyxClient {
   messages: {
     sendWhatsapp: (payload: TelnyxWhatsappTemplateMessage) => Promise<unknown>;
+    retrieve: (id: string) => Promise<unknown>;
   };
 }
 
@@ -76,11 +83,11 @@ export async function sendWhatsAppTemplate(
   templateName: string,
   languageCode: string,
   params: string[],
-): Promise<void> {
+): Promise<void | NotificationSendResult> {
   const t = getTelnyx();
   const from = process.env.TELNYX_FROM_NUMBER!;
 
-  await t.messages.sendWhatsapp({
+  const response = await t.messages.sendWhatsapp({
     from,
     to,
     whatsapp_message: {
@@ -100,4 +107,18 @@ export async function sendWhatsAppTemplate(
       },
     },
   });
+  const providerMessageId = extractProviderMessageId(response);
+  return {
+    outcome: 'success',
+    provider: 'telnyx',
+    channel: 'whatsapp',
+    ...(providerMessageId ? { providerMessageId } : {}),
+  };
+}
+
+/** Telnyx exposes the same message status endpoint for SMS and WhatsApp. */
+export async function lookupWhatsAppMessage(
+  providerMessageId: string,
+): Promise<NotificationProviderResult> {
+  return lookupTelnyxMessage(providerMessageId);
 }

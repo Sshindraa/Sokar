@@ -6,9 +6,9 @@ import {
   CIRCUIT_BREAKER_HOURLY_LIMIT,
   DEFAULT_CARTESIA_VOICE_ID,
   INTERNAL_CALL_ALERT_THRESHOLD,
-  VOICE_LLM_MODEL_DEFAULT,
   REDIS_CTX_TTL_SECONDS,
 } from '@sokar/config';
+import { voiceConfig } from '../../env';
 import { getRestaurantPlanOverride } from '../../shared/configcat';
 import { DAY_SECONDS, HOUR_SECONDS } from '../../shared/constants/time.js';
 import { getVoiceLlmProvider, type VoiceLlmProvider } from '../voice/llm-provider';
@@ -77,7 +77,7 @@ function buildProviderConfig(restaurant: {
     sttProvider: 'deepgram',
     sttModel: process.env.DEEPGRAM_MODEL ?? 'nova-3',
     llmProvider: getVoiceLlmProvider(),
-    llmModel: process.env.VOICE_LLM_MODEL ?? VOICE_LLM_MODEL_DEFAULT,
+    llmModel: voiceConfig.VOICE_LLM_MODEL,
     ttsProvider: 'cartesia',
     ttsModel: CARTESIA_MODEL,
     voiceId:

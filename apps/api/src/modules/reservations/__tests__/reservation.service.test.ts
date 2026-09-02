@@ -40,6 +40,9 @@ vi.mock('../../../shared/db/client', () => {
       findMany: vi.fn().mockResolvedValue([]),
       findFirst: vi.fn().mockResolvedValue(null),
     },
+    reservationAuditLog: {
+      create: vi.fn(),
+    },
     $queryRaw: vi.fn().mockResolvedValue([{ id: 'locked' }]),
     $transaction: vi.fn(async (fn: (tx: PrismaClient) => Promise<unknown>) => fn(mockDb)),
   } as unknown as PrismaClient;
@@ -167,6 +170,37 @@ describe('ReservationService.create - replay-safe (idempotent on callId)', () =>
     expect(db.$transaction).toHaveBeenCalled();
     expect(db.reservation.create).toHaveBeenCalled();
     expect(result.id).toBe('res-new');
+  });
+
+  it('create : envoie une seule confirmation SMS sur le chemin normal legacy', async () => {
+    const mockReservation = {
+      id: 'res-sms',
+      restaurantId: 'rest-123',
+      reservedAt: new Date('2099-06-05T19:00:00'),
+      partySize: 4,
+      customerName: 'Alice',
+      customerPhone: '+33612345678',
+      googleEventId: null,
+    };
+
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(
+      mockRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
+    vi.mocked(db.reservation.create).mockResolvedValue(
+      mockReservation as unknown as Awaited<ReturnType<typeof db.reservation.create>>,
+    );
+
+    await ReservationService.create(makeInput({ callId: undefined }));
+
+    expect(queues.smsClient.add).toHaveBeenCalledTimes(1);
+    expect(queues.smsClient.add).toHaveBeenCalledWith(
+      'client-confirm',
+      expect.objectContaining({
+        reservationId: 'res-sms',
+        customerPhone: '+33612345678',
+      }),
+      { jobId: 'reservation-notification_confirmation_res-sms' },
+    );
   });
 
   it('create : P2002 race ultra-étroite → rollback la transaction (pas de leak de table)', async () => {

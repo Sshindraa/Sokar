@@ -42,6 +42,12 @@ import {
   assertCanTransition,
   InvalidStateInvariantError,
 } from './state-machine.js';
+import {
+  inferReservationObservationSource,
+  observeReservationMutation,
+  reservationCapacityEffect,
+} from '../../../shared/observability/reservation-contract';
+import { ACTIVE_RESERVATION_STATES } from '../../../shared/reservations/capacity.js';
 import { GiftCardService } from '../../gift-cards/gift-card.service.js';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service.js';
@@ -137,6 +143,8 @@ export class ReservationService {
     input: CreateReservationInput,
     idempotency: { scope: string; key: string; payloadHash: string; ttlSeconds: number },
   ): Promise<CreateReservationResult> {
+    const observationSource = inferReservationObservationSource(input.actor, input.channel);
+
     // 1. Valider la policy
     validateReservationAgainstPolicy(input.policy, {
       partySize: input.partySize,
@@ -180,6 +188,16 @@ export class ReservationService {
         idempotency.payloadHash,
       );
       if (existing) {
+        observeReservationMutation({
+          source: observationSource,
+          operation: 'create_replay',
+          state: existing.state,
+          idempotency: 'reused',
+          audit: 'not_applicable',
+          notification: 'not_applicable',
+          capacity: 'unchanged',
+          mutated: false,
+        });
         return existing;
       }
       throw new IdempotencyPendingError(idempotency.scope, idempotency.key);
@@ -192,6 +210,27 @@ export class ReservationService {
         const now = new Date();
         let consumedHoldId: string | null = null;
         let shouldConsumeAfterReservation = false;
+
+        // Les réservations/holds sans table utilisent une capacité globale
+        // conservatrice. Le verrou advisory est posé au niveau du restaurant
+        // (et non du seul startsAt) : deux créneaux qui se chevauchent doivent
+        // être sérialisés, sinon chacun pourrait lire l'absence de blocker
+        // avant le commit de l'autre.
+        await this.lockCapacitySlot(tx, input.restaurantId);
+        const globalBlocker = await this.findGlobalUnassignedBlocker(tx, {
+          restaurantId: input.restaurantId,
+          startsAt: input.startsAt,
+          endsAt: input.endsAt,
+          now,
+          excludeHoldId: holdId,
+        });
+        if (globalBlocker) {
+          throw new ReservationSlotUnavailableError(
+            input.restaurantId,
+            input.startsAt,
+            input.partySize,
+          );
+        }
 
         if (holdId) {
           const hold = await tx.agenticHold.findUnique({ where: { id: holdId } });
@@ -274,6 +313,10 @@ export class ReservationService {
               tableId,
               startsAt: input.startsAt,
               endsAt: input.endsAt,
+              // Le hold synthétique (ou le hold Connect consommé) est la
+              // réservation de capacité courante ; il ne doit pas se
+              // détecter lui-même comme blocker global.
+              excludeHoldId: consumedHoldId ?? undefined,
             },
             tx,
           );
@@ -405,6 +448,7 @@ export class ReservationService {
     const final = await this.prisma.reservation.findUnique({ where: { id: reservationId } });
 
     let giftCardApplication: GiftCardApplicationResult | undefined;
+    let giftCardSnapshotUpdated = false;
     if (
       input.giftCardCode &&
       input.giftCardReservationAmount &&
@@ -432,6 +476,7 @@ export class ReservationService {
               } as Prisma.InputJsonValue,
             },
           });
+          giftCardSnapshotUpdated = true;
         }
       } catch (err) {
         logger.warn(
@@ -439,6 +484,29 @@ export class ReservationService {
           'gift card application failed after reservation creation',
         );
       }
+    }
+
+    observeReservationMutation({
+      source: observationSource,
+      operation: 'create',
+      status: final?.status,
+      state: final?.state ?? 'CONFIRMED',
+      idempotency: 'keyed',
+      audit: 'written',
+      notification: 'not_sent',
+      capacity: 'reserved',
+    });
+    if (giftCardSnapshotUpdated) {
+      observeReservationMutation({
+        source: 'gift_card',
+        operation: 'update',
+        status: final?.status,
+        state: final?.state ?? 'CONFIRMED',
+        idempotency: 'not_applicable',
+        audit: 'not_applicable',
+        notification: 'not_applicable',
+        capacity: 'unchanged',
+      });
     }
 
     return {
@@ -479,16 +547,19 @@ export class ReservationService {
     actor: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
+    let fromState: ReservationState | undefined;
+    let statusAfterTransition: ReservationStatus | undefined;
     await this.prisma.$transaction(async (tx) => {
       const reservation = await tx.reservation.findUnique({
         where: { id: args.reservationId, restaurantId: args.restaurantId },
       });
       if (!reservation) throw new ReservationNotFoundError(args.reservationId);
 
-      const fromState = reservation.state as ReservationState;
+      fromState = reservation.state as ReservationState;
       assertCanTransition(fromState, args.toState, reservation);
 
       const newStatus = this.statusForState(args.toState);
+      statusAfterTransition = newStatus ?? (reservation.status as ReservationStatus);
 
       if (args.toState === 'SEATED') {
         if (!reservation.tableId) {
@@ -532,6 +603,24 @@ export class ReservationService {
           metadata: (args.metadata ?? {}) as Prisma.InputJsonValue,
         },
       });
+    });
+
+    const capacity = reservationCapacityEffect(fromState, args.toState);
+    if (capacity !== 'unchanged') {
+      // Les transitions terminales libèrent la capacité logique. Le cache
+      // doit être invalidé après le commit, sinon une réponse availability
+      // peut rester bloquée jusqu'à son TTL.
+      await CapacityAwareAvailabilityService.invalidateAvailability(args.restaurantId);
+    }
+    observeReservationMutation({
+      source: inferReservationObservationSource(args.actor),
+      operation: 'transition',
+      status: statusAfterTransition,
+      state: args.toState,
+      idempotency: 'not_applicable',
+      audit: 'written',
+      notification: 'not_sent',
+      capacity,
     });
   }
 
@@ -591,6 +680,16 @@ export class ReservationService {
     });
 
     await CapacityAwareAvailabilityService.invalidateAvailability(reservation.restaurantId);
+    observeReservationMutation({
+      source: inferReservationObservationSource(args.actor),
+      operation: 'cancel',
+      status: 'CANCELLED',
+      state: 'CANCELLED',
+      idempotency: 'not_applicable',
+      audit: 'written',
+      notification: 'not_sent',
+      capacity: 'released',
+    });
   }
 
   private eventForTransition(to: ReservationState): string {
@@ -656,6 +755,68 @@ export class ReservationService {
       },
       select: { id: true },
     });
+  }
+
+  private async findGlobalUnassignedBlocker(
+    tx: Prisma.TransactionClient,
+    args: {
+      restaurantId: string;
+      startsAt: Date;
+      endsAt: Date;
+      now: Date;
+      excludeHoldId?: string | null;
+    },
+  ): Promise<{ kind: 'reservation' | 'hold'; id: string } | null> {
+    const reservation = await tx.reservation.findFirst({
+      where: {
+        restaurantId: args.restaurantId,
+        tableId: null,
+        state: { in: [...ACTIVE_RESERVATION_STATES] },
+        OR: [
+          {
+            startsAt: { lt: args.endsAt },
+            endsAt: { gt: args.startsAt },
+          },
+          {
+            startsAt: { gte: args.startsAt, lt: args.endsAt },
+            endsAt: null,
+          },
+          {
+            startsAt: null,
+            reservedAt: { gte: args.startsAt, lt: args.endsAt },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    if (reservation) return { kind: 'reservation', id: reservation.id };
+
+    const hold = await tx.agenticHold.findFirst({
+      where: {
+        restaurantId: args.restaurantId,
+        type: 'HOLD',
+        status: 'ACTIVE',
+        tableId: null,
+        expiresAt: { gt: args.now },
+        ...(args.excludeHoldId ? { id: { not: args.excludeHoldId } } : {}),
+        slotStart: { lt: args.endsAt },
+        slotEnd: { gt: args.startsAt },
+      },
+      select: { id: true },
+    });
+    return hold ? { kind: 'hold', id: hold.id } : null;
+  }
+
+  private async lockCapacitySlot(
+    tx: Prisma.TransactionClient,
+    restaurantId: string,
+  ): Promise<void> {
+    const query = Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${restaurantId}, 0))`;
+    if (typeof tx.$executeRaw === 'function') {
+      await tx.$executeRaw(query);
+      return;
+    }
+    await tx.$queryRaw(query);
   }
 
   private async expireOverdueHoldForSlot(

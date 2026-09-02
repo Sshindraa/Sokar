@@ -1,5 +1,10 @@
 const createTelnyx: (key: string) => import('telnyx').TelnyxClient = require('telnyx');
 import * as https from 'https';
+import {
+  extractProviderMessageId,
+  type NotificationProviderResult,
+  type NotificationSendResult,
+} from '../queue/notification-idempotency';
 
 // Agent keep-alive persistant pour le SDK Telnyx (balance, SMS, WhatsApp, outbound calls).
 // Évite le handshake TLS (~113ms) à chaque appel en réutilisant la connexion.
@@ -21,7 +26,9 @@ function getTelnyx(): TelnyxClient {
       throw new Error('TELNYX_API_KEY is required');
     }
     _telnyx = createTelnyx(process.env.TELNYX_API_KEY);
-    (_telnyx as unknown as { setHttpAgent: (a: https.Agent) => void }).setHttpAgent(telnyxHttpsAgent);
+    (_telnyx as unknown as { setHttpAgent: (a: https.Agent) => void }).setHttpAgent(
+      telnyxHttpsAgent,
+    );
   }
   return _telnyx;
 }
@@ -34,13 +41,14 @@ const telnyx = new Proxy({} as TelnyxClient, {
 
 export default telnyx;
 
-export async function sendSms(to: string, text: string): Promise<void> {
+export async function sendSms(to: string, text: string): Promise<void | NotificationSendResult> {
   const t = getTelnyx();
-  await t.messages.create({
+  const response = await t.messages.create({
     from: process.env.TELNYX_FROM_NUMBER!,
     to,
     text,
   });
+  return normalizeTelnyxSendResponse(response, 'sms');
 }
 
 /**
@@ -55,13 +63,16 @@ export async function sendSms(to: string, text: string): Promise<void> {
  * @param to  Numéro du destinataire (E.164, ex: +33612345678)
  * @param text Contenu du message texte
  */
-export async function sendWhatsApp(to: string, text: string): Promise<void> {
+export async function sendWhatsApp(
+  to: string,
+  text: string,
+): Promise<void | NotificationSendResult> {
   const t = getTelnyx();
   const from = process.env.TELNYX_WHATSAPP_FROM ?? process.env.TELNYX_FROM_NUMBER;
   if (!from) {
     throw new Error('TELNYX_WHATSAPP_FROM or TELNYX_FROM_NUMBER is required for WhatsApp');
   }
-  await t.messages.create({
+  const response = await t.messages.create({
     from,
     to,
     text,
@@ -69,6 +80,76 @@ export async function sendWhatsApp(to: string, text: string): Promise<void> {
     // accepte type: 'whatsapp' pour router via WhatsApp Business.
     ...({ type: 'whatsapp' } as Record<string, string>),
   });
+  return normalizeTelnyxSendResponse(response, 'whatsapp');
+}
+
+type TelnyxMessageDeliveryStatus =
+  | 'queued'
+  | 'sending'
+  | 'sent'
+  | 'expired'
+  | 'sending_failed'
+  | 'delivery_unconfirmed'
+  | 'delivered'
+  | 'delivery_failed';
+
+export function normalizeTelnyxSendResponse(
+  response: unknown,
+  channel: 'sms' | 'whatsapp' = 'sms',
+): NotificationSendResult {
+  const providerMessageId = extractProviderMessageId(response);
+  return {
+    outcome: 'success',
+    provider: 'telnyx',
+    channel,
+    ...(providerMessageId ? { providerMessageId } : {}),
+  };
+}
+
+function extractTelnyxMessageStatus(response: unknown): TelnyxMessageDeliveryStatus | undefined {
+  const root =
+    response && typeof response === 'object' ? (response as Record<string, unknown>) : null;
+  const payload =
+    root?.data && typeof root.data === 'object' ? (root.data as Record<string, unknown>) : root;
+  const recipients = payload?.to;
+  if (!Array.isArray(recipients) || !recipients[0] || typeof recipients[0] !== 'object') {
+    return undefined;
+  }
+  const status = (recipients[0] as Record<string, unknown>).status;
+  return typeof status === 'string' ? (status as TelnyxMessageDeliveryStatus) : undefined;
+}
+
+export function classifyTelnyxMessageResponse(response: unknown): NotificationProviderResult {
+  const status = extractTelnyxMessageStatus(response);
+  if (status === 'sending_failed' || status === 'expired') return 'failure_certain';
+  if (
+    status === 'queued' ||
+    status === 'sending' ||
+    status === 'sent' ||
+    status === 'delivered' ||
+    status === 'delivery_failed'
+  ) {
+    // The claim protects the accepted provider request, not final handset
+    // delivery. A delivery failure must not trigger a blind duplicate.
+    return 'success';
+  }
+  return 'unknown';
+}
+
+/**
+ * Queries a Telnyx message without exposing the provider response to callers.
+ * A retrieval error is deliberately unknown: a failed lookup is not proof
+ * that the original message was not accepted.
+ */
+export async function lookupTelnyxMessage(
+  providerMessageId: string,
+): Promise<NotificationProviderResult> {
+  try {
+    const response = await getTelnyx().messages.retrieve(providerMessageId);
+    return classifyTelnyxMessageResponse(response);
+  } catch {
+    return 'unknown';
+  }
 }
 
 export interface OutboundCallOptions {

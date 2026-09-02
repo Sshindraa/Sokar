@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import { AuditLogService } from '../agentic-reservations/core/audit-log.service';
 import { TableAllocationService } from './table-allocation.service';
 import { ServiceCopilotDelayImpactService } from './service-copilot-delay-impact.service';
+import { observeReservationMutation } from '../../shared/observability/reservation-contract';
 
 export class DelayRecoveryConflictError extends Error {
   constructor(message: string) {
@@ -170,7 +171,28 @@ export class ServiceCopilotDelayRecoveryService {
       args.reservationId,
       operationId,
     );
-    if (existing) return this.asIdempotentResult(existing, args, payloadHash, operationId);
+    if (existing) {
+      const result = this.asIdempotentResult(existing, args, payloadHash, operationId);
+      observeReservationMutation({
+        source: 'copilot',
+        operation: 'recovery_update',
+        idempotency: 'reused',
+        audit: 'not_applicable',
+        notification: 'not_applicable',
+        capacity: 'unchanged',
+        mutated: false,
+      });
+      observeReservationMutation({
+        source: 'copilot',
+        operation: 'recovery_create',
+        idempotency: 'reused',
+        audit: 'not_applicable',
+        notification: 'not_applicable',
+        capacity: 'unchanged',
+        mutated: false,
+      });
+      return result;
+    }
     if (!args.waitingListAcceptanceConfirmed) {
       throw new DelayRecoveryConflictError(
         'Confirmez que le groupe de la liste d’attente est présent et accepte la table.',
@@ -208,7 +230,7 @@ export class ServiceCopilotDelayRecoveryService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result: DelayRecoveryResult = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM reservations WHERE id = ${args.reservationId} FOR UPDATE`,
       );
@@ -391,6 +413,31 @@ export class ServiceCopilotDelayRecoveryService {
         ...(args.delayReportId ? { delayReportId: args.delayReportId } : {}),
       };
     });
+
+    const idempotent = result.idempotent === true;
+    observeReservationMutation({
+      source: 'copilot',
+      operation: 'recovery_update',
+      status: idempotent ? undefined : 'CONFIRMED',
+      state: idempotent ? undefined : 'CONFIRMED',
+      idempotency: idempotent ? 'reused' : 'keyed',
+      audit: idempotent ? 'not_applicable' : 'written',
+      notification: idempotent ? 'not_applicable' : 'not_sent',
+      capacity: 'unchanged',
+      mutated: !idempotent,
+    });
+    observeReservationMutation({
+      source: 'copilot',
+      operation: 'recovery_create',
+      status: idempotent ? undefined : 'CONFIRMED',
+      state: idempotent ? undefined : 'CONFIRMED',
+      idempotency: idempotent ? 'reused' : 'keyed',
+      audit: idempotent ? 'not_applicable' : 'written',
+      notification: idempotent ? 'not_applicable' : 'not_sent',
+      capacity: idempotent ? 'unchanged' : 'reserved',
+      mutated: !idempotent,
+    });
+    return result;
   }
 
   /**
@@ -411,7 +458,27 @@ export class ServiceCopilotDelayRecoveryService {
       args.reservationId,
       args.operationId,
     );
-    if (existing) return { ...existing, idempotent: true };
+    if (existing) {
+      observeReservationMutation({
+        source: 'copilot',
+        operation: 'revert_update',
+        idempotency: 'reused',
+        audit: 'not_applicable',
+        notification: 'not_applicable',
+        capacity: 'unchanged',
+        mutated: false,
+      });
+      observeReservationMutation({
+        source: 'copilot',
+        operation: 'revert_cancel',
+        idempotency: 'reused',
+        audit: 'not_applicable',
+        notification: 'not_applicable',
+        capacity: 'unchanged',
+        mutated: false,
+      });
+      return { ...existing, idempotent: true };
+    }
 
     const recovery = await this.prisma.reservationAuditLog.findFirst({
       where: {
@@ -434,7 +501,7 @@ export class ServiceCopilotDelayRecoveryService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result: DelayRecoveryRevertResult = await this.prisma.$transaction(async (tx) => {
       for (const reservationId of [args.reservationId, snapshot.promotedReservationId].sort()) {
         await tx.$queryRaw(
           Prisma.sql`SELECT id FROM reservations WHERE id = ${reservationId} FOR UPDATE`,
@@ -591,6 +658,31 @@ export class ServiceCopilotDelayRecoveryService {
         ...(delayReportId ? { delayReportId } : {}),
       };
     });
+
+    const idempotent = result.idempotent === true;
+    observeReservationMutation({
+      source: 'copilot',
+      operation: 'revert_update',
+      status: idempotent ? undefined : 'CONFIRMED',
+      state: idempotent ? undefined : 'CONFIRMED',
+      idempotency: idempotent ? 'reused' : 'keyed',
+      audit: idempotent ? 'not_applicable' : 'written',
+      notification: idempotent ? 'not_applicable' : 'not_sent',
+      capacity: 'unchanged',
+      mutated: !idempotent,
+    });
+    observeReservationMutation({
+      source: 'copilot',
+      operation: 'revert_cancel',
+      status: idempotent ? undefined : 'CANCELLED',
+      state: idempotent ? undefined : 'CANCELLED',
+      idempotency: idempotent ? 'reused' : 'keyed',
+      audit: idempotent ? 'not_applicable' : 'written',
+      notification: idempotent ? 'not_applicable' : 'not_sent',
+      capacity: idempotent ? 'unchanged' : 'released',
+      mutated: !idempotent,
+    });
+    return result;
   }
 
   private async findExistingRecovery(

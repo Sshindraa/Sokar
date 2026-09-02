@@ -9,6 +9,7 @@
  */
 import { sendEmail } from '../../shared/email';
 import { logger } from '../../shared/logger/pino';
+import type { NotificationSendResult } from '../../shared/queue/notification-idempotency';
 
 type GiftCardEmailData = {
   giftCardId: string;
@@ -307,7 +308,9 @@ type ExpirationReminderData = {
 /**
  * Rappel d'expiration envoyé au destinataire avant l'expiration de la carte.
  */
-export async function sendExpirationReminder(data: ExpirationReminderData): Promise<void> {
+export async function sendExpirationReminder(
+  data: ExpirationReminderData,
+): Promise<void | NotificationSendResult> {
   if (!data.recipientEmail) {
     logger.warn(
       { giftCardId: data.giftCardId },
@@ -354,7 +357,7 @@ export async function sendExpirationReminder(data: ExpirationReminderData): Prom
   `;
 
   try {
-    await sendEmail({
+    const result = await sendEmail({
       to: data.recipientEmail,
       subject: `Votre carte cadeau ${data.restaurantName} expire bientôt`,
       html,
@@ -363,6 +366,7 @@ export async function sendExpirationReminder(data: ExpirationReminderData): Prom
       { giftCardId: data.giftCardId, recipientEmail: data.recipientEmail },
       '[gift-card-email] Expiration reminder sent',
     );
+    return result;
   } catch (err) {
     logger.error(
       { err: err instanceof Error ? err.message : String(err), giftCardId: data.giftCardId },

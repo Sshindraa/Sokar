@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
+import { VOICE_LLM_FALLBACK_MODEL_DEFAULT, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
 
 function isValidCorsOrigins(val: string): boolean {
   return val
@@ -59,6 +60,38 @@ const PROD_HOST_ALLOWLIST = [
   'staging.sokar.tech',
   'api-staging.sokar.tech',
 ];
+
+const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+const DEFAULT_VOICE_LLM_TIMEOUT_MS = 8000;
+
+// Le code voice historique traitait toute valeur autre que "openrouter"
+// comme "cerebras". La normalisation conserve ce fallback tout en exposant
+// uniquement un provider valide au reste de l'application.
+const voiceLlmProviderSchema = z.preprocess(
+  (value) => (value === 'openrouter' || value === 'cerebras' ? value : undefined),
+  z.enum(['cerebras', 'openrouter']).default('cerebras'),
+);
+
+// Même compatibilité que manager.ts avant centralisation : une valeur absente,
+// invalide, non positive ou non finie retombe sur 8 secondes.
+const voiceLlmTimeoutSchema = z.preprocess((value) => {
+  if (value === undefined) return DEFAULT_VOICE_LLM_TIMEOUT_MS;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_VOICE_LLM_TIMEOUT_MS;
+}, z.number().positive());
+
+/** Configuration LLM voice issue des variables d'environnement validées. */
+export const VoiceConfigSchema = z.object({
+  VOICE_LLM_PROVIDER: voiceLlmProviderSchema,
+  VOICE_LLM_MODEL: z.string().default(VOICE_LLM_MODEL_DEFAULT),
+  VOICE_LLM_FALLBACK_MODEL: z.string().default(VOICE_LLM_FALLBACK_MODEL_DEFAULT),
+  VOICE_LLM_TIMEOUT_MS: voiceLlmTimeoutSchema,
+  OPENROUTER_BASE_URL: z.string().url().default(DEFAULT_OPENROUTER_BASE_URL),
+  CEREBRAS_API_KEY: z.string().optional(),
+  OPENROUTER_API_KEY: z.string().optional(),
+});
+
+export type VoiceConfig = z.infer<typeof VoiceConfigSchema>;
 
 const EnvSchema = z
   .object({
@@ -156,6 +189,7 @@ const EnvSchema = z
     ALERT_WEBHOOK_URL: z.string().url().optional(),
     ALERT_SMS_TO: z.string().optional(),
   })
+  .merge(VoiceConfigSchema)
   .refine((data) => data.CALL_RECORDING_ENABLED !== 'true' || !!data.CALL_RECORDINGS_BUCKET, {
     message: 'CALL_RECORDINGS_BUCKET is required when CALL_RECORDING_ENABLED=true',
     path: ['CALL_RECORDINGS_BUCKET'],
@@ -294,3 +328,7 @@ function parseEnv() {
 }
 
 export const env = parseEnv();
+
+// Vue typée dédiée au pipeline voice. Elle référence le même objet validé que
+// `env` afin d'éviter une seconde source de vérité ou une copie de secrets.
+export const voiceConfig: VoiceConfig = env;

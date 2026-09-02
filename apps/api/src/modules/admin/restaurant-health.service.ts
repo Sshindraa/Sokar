@@ -52,6 +52,7 @@ export interface RestaurantHealth {
     reservedAt: string;
     createdAt: string;
     status: string;
+    state: string;
     channel: string;
   } | null;
   lastSms: {
@@ -112,6 +113,7 @@ export async function buildRestaurantHealth(
         reservedAt: true,
         createdAt: true,
         status: true,
+        state: true,
         channel: true,
       },
     }),
@@ -189,6 +191,7 @@ export async function buildRestaurantHealth(
           reservedAt: lastReservation.reservedAt.toISOString(),
           createdAt: lastReservation.createdAt.toISOString(),
           status: lastReservation.status,
+          state: lastReservation.state,
           channel: lastReservation.channel,
         }
       : null,

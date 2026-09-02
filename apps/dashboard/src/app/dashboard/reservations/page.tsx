@@ -7,7 +7,7 @@ import { useApi } from '../../../lib/api';
 import {
   getErrorMessage,
   type Reservation,
-  type ReservationStatus,
+  type ReservationState,
   type WaitingListEntry,
   type WaitingListStatus,
 } from '@/types/api';
@@ -45,8 +45,11 @@ import {
 } from '@/components/ui/select';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 
-const isActiveForTable = (status: ReservationStatus) =>
-  status === 'CONFIRMED' || status === 'SEATED';
+const reservationState = (reservation: Reservation): ReservationState =>
+  reservation.state ?? reservation.status;
+
+const isActiveForTable = (state: ReservationState | string) =>
+  state === 'PENDING' || state === 'CONFIRMED' || state === 'SEATED';
 
 type Tab = 'reservations' | 'waiting-list';
 
@@ -127,7 +130,15 @@ export default function ReservationsPage() {
       setError('');
       await patch(`reservations/${id}`, { status: newStatus });
       setReservations((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, status: newStatus as Reservation['status'] } : r)),
+        prev.map((r) =>
+          r.id === id
+            ? {
+                ...r,
+                status: newStatus as Reservation['status'],
+                state: newStatus as ReservationState,
+              }
+            : r,
+        ),
       );
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de mettre à jour le statut'));
@@ -278,79 +289,84 @@ export default function ReservationsPage() {
           ) : isMobile ? (
             /* ========== MOBILE: Reservation Card List ========== */
             <div className="space-y-2.5">
-              {reservations.map((res) => (
-                <MobileDataCard
-                  key={res.id}
-                  title={res.customerName}
-                  subtitle={res.customerPhone || undefined}
-                  badge={<StatusBadge status={res.status} />}
-                  accentClass={
-                    res.status === 'CONFIRMED'
-                      ? 'border-l-success'
-                      : res.status === 'CANCELLED'
-                        ? 'border-l-destructive'
-                        : res.status === 'SEATED'
-                          ? 'border-l-brand'
-                          : 'border-l-border'
-                  }
-                  actions={[
-                    {
-                      label: 'Confirmer',
-                      icon: <Check size={14} />,
-                      colorClass: 'bg-success',
-                      onClick: () => updateStatus(res.id, 'CONFIRMED'),
-                    },
-                    {
-                      label: 'Annuler',
-                      icon: <X size={14} />,
-                      colorClass: 'bg-warning',
-                      onClick: () => updateStatus(res.id, 'CANCELLED'),
-                    },
-                    {
-                      label: 'Supprimer',
-                      icon: <Trash2 size={14} />,
-                      colorClass: 'bg-destructive',
-                      onClick: () => deleteReservation(res.id),
-                    },
-                    ...(!res.tableId && isActiveForTable(res.status)
-                      ? [
-                          {
-                            label: 'Allouer',
-                            icon: <LayoutGrid size={14} />,
-                            colorClass: 'bg-primary',
-                            onClick: () => allocateTable(res.id),
-                          },
-                        ]
-                      : []),
-                  ]}
-                  details={[
-                    {
-                      label: 'Date',
-                      value: format(new Date(res.reservedAt), 'dd MMM HH:mm', { locale: fr }),
-                    },
-                    {
-                      label: 'Couverts',
-                      value: `${res.partySize} pers.`,
-                    },
-                    {
-                      label: 'Table',
-                      value: res.tableId ? (
-                        (res.table?.name ?? '—')
-                      ) : isActiveForTable(res.status) ? (
-                        <Badge className="bg-warning text-warning-foreground border-warning">
-                          Sans table
-                        </Badge>
-                      ) : (
-                        '—'
-                      ),
-                    },
-                    {
-                      label: 'Revenu',
-                      value: res.estimatedRevenue ? `${res.estimatedRevenue}€` : '—',
-                    },
-                  ]}
-                />
-              ))}
+              {reservations.map((res) =>
+                (() => {
+                  const state = reservationState(res);
+                  return (
+                    <MobileDataCard
+                      key={res.id}
+                      title={res.customerName}
+                      subtitle={res.customerPhone || undefined}
+                      badge={<StatusBadge status={state} />}
+                      accentClass={
+                        state === 'CONFIRMED'
+                          ? 'border-l-success'
+                          : state === 'CANCELLED'
+                            ? 'border-l-destructive'
+                            : state === 'SEATED'
+                              ? 'border-l-brand'
+                              : 'border-l-border'
+                      }
+                      actions={[
+                        {
+                          label: 'Confirmer',
+                          icon: <Check size={14} />,
+                          colorClass: 'bg-success',
+                          onClick: () => updateStatus(res.id, 'CONFIRMED'),
+                        },
+                        {
+                          label: 'Annuler',
+                          icon: <X size={14} />,
+                          colorClass: 'bg-warning',
+                          onClick: () => updateStatus(res.id, 'CANCELLED'),
+                        },
+                        {
+                          label: 'Retirer',
+                          icon: <Trash2 size={14} />,
+                          colorClass: 'bg-destructive',
+                          onClick: () => deleteReservation(res.id),
+                        },
+                        ...(!res.tableId && isActiveForTable(state)
+                          ? [
+                              {
+                                label: 'Allouer',
+                                icon: <LayoutGrid size={14} />,
+                                colorClass: 'bg-primary',
+                                onClick: () => allocateTable(res.id),
+                              },
+                            ]
+                          : []),
+                      ]}
+                      details={[
+                        {
+                          label: 'Date',
+                          value: format(new Date(res.reservedAt), 'dd MMM HH:mm', { locale: fr }),
+                        },
+                        {
+                          label: 'Couverts',
+                          value: `${res.partySize} pers.`,
+                        },
+                        {
+                          label: 'Table',
+                          value: res.tableId ? (
+                            (res.table?.name ?? '—')
+                          ) : isActiveForTable(state) ? (
+                            <Badge className="bg-warning text-warning-foreground border-warning">
+                              Sans table
+                            </Badge>
+                          ) : (
+                            '—'
+                          ),
+                        },
+                        {
+                          label: 'Revenu',
+                          value: res.estimatedRevenue ? `${res.estimatedRevenue}€` : '—',
+                        },
+                      ]}
+                    />
+                  );
+                })(),
+              )}
             </div>
           ) : (
             /* ========== DESKTOP: Reservation Table ========== */
@@ -375,67 +391,80 @@ export default function ReservationsPage() {
                         key={res.id}
                         className="transition-all duration-200 hover:bg-accent"
                       >
-                        <TableCell className="font-medium">{res.customerName}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {res.customerPhone || <span className="opacity-50">—</span>}
-                        </TableCell>
-                        <TableCell>
-                          {format(new Date(res.reservedAt), 'dd MMM yyyy HH:mm', { locale: fr })}
-                        </TableCell>
-                        <TableCell>{res.partySize}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {res.estimatedRevenue ? (
-                            `${res.estimatedRevenue}€`
-                          ) : (
-                            <span className="opacity-50">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Select
-                            value={res.status}
-                            onValueChange={(val) => updateStatus(res.id, val)}
-                          >
-                            <SelectTrigger className="w-[130px] h-8 bg-transparent border-border text-foreground font-sans text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="bg-popover border-border text-popover-foreground">
-                              <SelectItem value="CONFIRMED">Confirmée</SelectItem>
-                              <SelectItem value="CANCELLED">Annulée</SelectItem>
-                              <SelectItem value="SEATED">Installée</SelectItem>
-                              <SelectItem value="NO_SHOW">No-show</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell>
-                          {res.tableId ? (
-                            (res.table?.name ?? '—')
-                          ) : isActiveForTable(res.status) ? (
-                            <div className="flex items-center gap-2">
-                              <Badge className="bg-warning text-warning-foreground border-warning">
-                                Sans table
-                              </Badge>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={allocatingId === res.id}
-                                onClick={() => allocateTable(res.id)}
-                              >
-                                Allouer
-                              </Button>
-                            </div>
-                          ) : (
-                            '—'
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <button
-                            onClick={() => deleteReservation(res.id)}
-                            className="p-2 text-muted-foreground hover:text-destructive rounded-lg hover:bg-accent transition-all duration-200"
-                            title="Supprimer la réservation"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </TableCell>
+                        {(() => {
+                          const state = reservationState(res);
+                          return (
+                            <>
+                              <TableCell className="font-medium">{res.customerName}</TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {res.customerPhone || <span className="opacity-50">—</span>}
+                              </TableCell>
+                              <TableCell>
+                                {format(new Date(res.reservedAt), 'dd MMM yyyy HH:mm', {
+                                  locale: fr,
+                                })}
+                              </TableCell>
+                              <TableCell>{res.partySize}</TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {res.estimatedRevenue ? (
+                                  `${res.estimatedRevenue}€`
+                                ) : (
+                                  <span className="opacity-50">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {state === 'PENDING' ? (
+                                  <StatusBadge status={state} />
+                                ) : (
+                                  <Select
+                                    value={res.status}
+                                    onValueChange={(val) => updateStatus(res.id, val)}
+                                  >
+                                    <SelectTrigger className="w-[130px] h-8 bg-transparent border-border text-foreground font-sans text-xs">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-popover border-border text-popover-foreground">
+                                      <SelectItem value="CONFIRMED">Confirmée</SelectItem>
+                                      <SelectItem value="CANCELLED">Annulée</SelectItem>
+                                      <SelectItem value="SEATED">Installée</SelectItem>
+                                      <SelectItem value="NO_SHOW">No-show</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {res.tableId ? (
+                                  (res.table?.name ?? '—')
+                                ) : isActiveForTable(state) ? (
+                                  <div className="flex items-center gap-2">
+                                    <Badge className="bg-warning text-warning-foreground border-warning">
+                                      Sans table
+                                    </Badge>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={allocatingId === res.id}
+                                      onClick={() => allocateTable(res.id)}
+                                    >
+                                      Allouer
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  '—'
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <button
+                                  onClick={() => deleteReservation(res.id)}
+                                  className="p-2 text-muted-foreground hover:text-destructive rounded-lg hover:bg-accent transition-all duration-200"
+                                  title="Retirer la réservation"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </TableCell>
+                            </>
+                          );
+                        })()}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -558,9 +587,9 @@ export default function ReservationsPage() {
           setConfirmOpen(false);
           setPendingDeleteId(null);
         }}
-        title="Supprimer la réservation"
-        description="Êtes-vous sûr de vouloir supprimer cette réservation ? Cette action est irréversible."
-        confirmLabel="Supprimer"
+        title="Retirer la réservation"
+        description="Cette réservation sera clôturée et retirée de la liste opérationnelle. Son historique restera conservé."
+        confirmLabel="Retirer"
         variant="destructive"
       />
     </div>
@@ -585,6 +614,10 @@ function StatusBadge({ status }: { status: string }) {
       );
     case 'NO_SHOW':
       return <Badge variant="secondary">No-show</Badge>;
+    case 'PENDING':
+      return (
+        <Badge className="bg-warning text-warning-foreground border-warning">En attente</Badge>
+      );
     default:
       return <Badge variant="outline">{status}</Badge>;
   }

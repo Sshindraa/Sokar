@@ -137,6 +137,73 @@ jobs:
         run: pnpm --filter @sokar/api build
 
   # ─────────────────────────────────────────────────────────────
+  # API integrity: disposable Postgres + Redis. This is intentionally
+  # separate from the mocked API suite so reservation concurrency,
+  # exclusion constraints and append-only audit triggers are exercised on
+  # every pull request instead of remaining opt-in locally.
+  # ─────────────────────────────────────────────────────────────
+  api-integration:
+    name: API integration (Postgres)
+    runs-on: ubuntu-latest
+    needs: packages
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sokar
+          POSTGRES_PASSWORD: sokar
+          POSTGRES_DB: sokar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sokar -d sokar_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://sokar:sokar@127.0.0.1:5432/sokar_test
+      REDIS_URL: redis://127.0.0.1:6379
+      AGENTIC_INT_TESTS: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build API workspace dependencies
+        # Ce job s'exécute sur une machine vierge : les packages workspace et
+        # le client Prisma doivent être générés avant le chargement de Vitest.
+        run: pnpm turbo build --filter=@sokar/api...
+
+      - name: Apply disposable database migrations
+        run: pnpm --filter @sokar/database migrate:deploy
+
+      - name: Run API integration suite
+        run: pnpm --filter @sokar/api test:int
+
+  # ─────────────────────────────────────────────────────────────
   # Dashboard: real ESLint (next lint), TypeScript via tsc --noEmit,
   # and next build (catches server/client component boundary errors).
   # ─────────────────────────────────────────────────────────────

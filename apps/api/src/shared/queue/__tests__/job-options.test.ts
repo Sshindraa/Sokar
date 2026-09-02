@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDailyReportJobId,
   buildReconciliationJobId,
+  buildReservationNotificationJobId,
   buildSmsJobId,
   buildTelnyxWebhookJobId,
   defaultReliableJobOptions,
@@ -30,5 +31,8 @@ describe('BullMQ reliable job options', () => {
     );
     expect(buildDailyReportJobId('resto-1', '2026-06-20')).toBe('daily-report_resto-1_2026-06-20');
     expect(buildReconciliationJobId('calls', '2026-06-20')).toBe('reconciliation_calls_2026-06-20');
+    expect(buildReservationNotificationJobId('confirmation', 'res:123')).toBe(
+      'reservation-notification_confirmation_res_123',
+    );
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { AuditLogService } from '../core/audit-log.service.js';
 import { HoldService } from '../core/hold.service.js';
@@ -12,6 +12,7 @@ import {
   ReservationService,
   ReservationSlotUnavailableError,
 } from '../core/reservation.service.js';
+import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service.js';
 
 type HoldRow = {
   id: string;
@@ -28,6 +29,7 @@ type HoldRow = {
   status: 'ACTIVE' | 'CONSUMED' | 'EXPIRED' | 'RELEASED';
   policyVersion: string;
   reservationId: string | null;
+  tableId: string | null;
   createdAt: Date;
 };
 
@@ -37,6 +39,8 @@ type ReservationRow = {
   partySize: number;
   reservedAt: Date;
   startsAt: Date | null;
+  endsAt: Date | null;
+  tableId: string | null;
   state:
     | 'PENDING'
     | 'CONFIRMED'
@@ -46,6 +50,7 @@ type ReservationRow = {
     | 'NO_SHOW'
     | 'FAILED'
     | 'EXPIRED';
+  status: 'CONFIRMED' | 'CANCELLED' | 'SEATED' | 'NO_SHOW';
   consumedHoldId: string | null;
 };
 
@@ -138,12 +143,31 @@ function makeFakes() {
           status,
           policyVersion: data.policyVersion as string,
           reservationId: (data.reservationId as string | null | undefined) ?? null,
+          tableId: (data.tableId as string | null | undefined) ?? null,
           createdAt: new Date(),
         };
         holds.set(id, row);
         return row;
       },
-      findFirst: async () => null,
+      findFirst: async ({ where }: { where: Record<string, unknown> }) => {
+        for (const hold of holds.values()) {
+          if (where.restaurantId !== undefined && hold.restaurantId !== where.restaurantId)
+            continue;
+          if (where.type !== undefined && hold.type !== where.type) continue;
+          if (where.status !== undefined && hold.status !== where.status) continue;
+          if (where.tableId === null && hold.tableId !== null) continue;
+          const idFilter = where.id as { not?: string } | undefined;
+          if (idFilter?.not && hold.id === idFilter.not) continue;
+          const expiresAt = where.expiresAt as { gt?: Date } | undefined;
+          if (expiresAt?.gt && hold.expiresAt <= expiresAt.gt) continue;
+          const slotStart = where.slotStart as { lt?: Date } | undefined;
+          const slotEnd = where.slotEnd as { gt?: Date } | undefined;
+          if (slotStart?.lt && hold.slotStart >= slotStart.lt) continue;
+          if (slotEnd?.gt && hold.slotEnd <= slotEnd.gt) continue;
+          return { id: hold.id };
+        }
+        return null;
+      },
       findUnique: async ({ where }: { where: { id: string } }) => holds.get(where.id) ?? null,
       findMany: async ({
         where,
@@ -221,7 +245,10 @@ function makeFakes() {
           partySize: data.partySize as number,
           reservedAt: data.reservedAt as Date,
           startsAt: (data.startsAt as Date | null | undefined) ?? null,
+          endsAt: (data.endsAt as Date | null | undefined) ?? null,
+          tableId: (data.tableId as string | null | undefined) ?? null,
           state: data.state as ReservationRow['state'],
+          status: data.status as ReservationRow['status'],
           consumedHoldId: (data.consumedHoldId as string | null | undefined) ?? null,
         };
         reservations.set(id, row);
@@ -233,7 +260,8 @@ function makeFakes() {
         const stateIn = state?.in as unknown[] | undefined;
         for (const reservation of reservations.values()) {
           if (reservation.restaurantId !== where.restaurantId) continue;
-          if (reservation.partySize !== where.partySize) continue;
+          if (where.partySize !== undefined && reservation.partySize !== where.partySize) continue;
+          if (where.tableId === null && reservation.tableId !== null) continue;
           if (stateIn && !stateIn.includes(reservation.state)) continue;
           const or0 = OR?.[0];
           const or1 = OR?.[1];
@@ -251,12 +279,34 @@ function makeFakes() {
             (or1StartsAt instanceof Date &&
               reservation.startsAt instanceof Date &&
               reservation.startsAt.getTime() === or1StartsAt.getTime());
-          if (sameReservedAt || sameStartsAt) return { id: reservation.id };
+          const overlap = OR?.some((condition) => {
+            const starts = condition.startsAt as { lt?: Date } | null | undefined;
+            const ends = condition.endsAt as { gt?: Date } | null | undefined;
+            if (starts?.lt && ends?.gt && reservation.startsAt && reservation.endsAt) {
+              return reservation.startsAt < starts.lt && reservation.endsAt > ends.gt;
+            }
+            if (condition.startsAt === null && condition.reservedAt) {
+              const range = condition.reservedAt as { gte?: Date; lt?: Date };
+              return (
+                reservation.startsAt === null &&
+                (!range.gte || reservation.reservedAt >= range.gte) &&
+                (!range.lt || reservation.reservedAt < range.lt)
+              );
+            }
+            return false;
+          });
+          if (sameReservedAt || sameStartsAt || overlap) return { id: reservation.id };
         }
         return null;
       },
       findUnique: async ({ where }: { where: { id: string } }) =>
         reservations.get(where.id) ?? null,
+      update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+        const reservation = reservations.get(where.id);
+        if (!reservation) throw new Error('not found');
+        Object.assign(reservation, data);
+        return reservation;
+      },
     },
     reservationAuditLog: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -271,7 +321,7 @@ function makeFakes() {
   const idempotency = new IdempotencyService(makeIdempotencyStore());
   const reservationsService = new ReservationService(prisma, audit, holdService, idempotency);
 
-  return { audits, holds, reservationsService };
+  return { audits, holds, reservations, reservationsService };
 }
 
 const policy = buildPolicySnapshot({
@@ -372,6 +422,7 @@ describe('reservation.service', () => {
       status: 'ACTIVE',
       policyVersion: policy.policyVersion,
       reservationId: null,
+      tableId: null,
       createdAt: new Date(Date.now() - 10_000),
     });
 
@@ -399,5 +450,159 @@ describe('reservation.service', () => {
     expect(fakes.holds.get('expired-hold')?.status).toBe('EXPIRED');
     expect(fakes.audits.map((audit) => audit.event)).toContain('hold_expired');
     expect([...fakes.holds.values()].filter((hold) => hold.status === 'CONSUMED')).toHaveLength(1);
+  });
+
+  it('caractérise la dualité : validation manuelle = state PENDING mais status CONFIRMED', async () => {
+    const fakes = makeFakes();
+    const startsAt = new Date(Date.now() + 3_600_000);
+    const manualPolicy = { ...policy, requireManualValidation: true };
+
+    const result = await fakes.reservationsService.createReservation(
+      {
+        restaurantId: 'r-1',
+        partySize: 4,
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + 90 * 60_000),
+        customerName: 'Jean Test',
+        customerPhone: '+33600000000',
+        channel: 'MCP',
+        policy: manualPolicy,
+        actor: 'agent:test',
+      },
+      {
+        scope: 'scope-manual',
+        key: 'key-manual',
+        payloadHash: hashPayload({ manual: true, startsAt }),
+        ttlSeconds: 300,
+      },
+    );
+
+    const stored = [...fakes.reservations.values()][0];
+    expect(result.state).toBe('PENDING');
+    expect(stored.state).toBe('PENDING');
+    expect(stored.status).toBe('CONFIRMED');
+    expect(fakes.audits).toContainEqual(
+      expect.objectContaining({
+        event: 'reservation_created',
+        toState: 'PENDING',
+        metadata: expect.objectContaining({ requiresManualValidation: true }),
+      }),
+    );
+  });
+
+  it('refuse un créneau chevauchant une réservation active sans table, quelle que soit la taille', async () => {
+    const fakes = makeFakes();
+    const startsAt = new Date(Date.now() + 3_600_000);
+    fakes.reservations.set('unassigned-active', {
+      id: 'unassigned-active',
+      restaurantId: 'r-1',
+      partySize: 8,
+      reservedAt: startsAt,
+      startsAt,
+      endsAt: new Date(startsAt.getTime() + 90 * 60_000),
+      tableId: null,
+      state: 'CONFIRMED',
+      status: 'CONFIRMED',
+      consumedHoldId: null,
+    });
+
+    await expect(
+      fakes.reservationsService.createReservation(
+        {
+          restaurantId: 'r-1',
+          partySize: 2,
+          startsAt: new Date(startsAt.getTime() + 30 * 60_000),
+          endsAt: new Date(startsAt.getTime() + 120 * 60_000),
+          customerName: 'Blocked client',
+          customerPhone: '+33600000000',
+          channel: 'MCP',
+          policy,
+          actor: 'agent:test',
+        },
+        {
+          scope: 'scope-global-block',
+          key: 'key-global-block',
+          payloadHash: hashPayload({ global: true }),
+          ttlSeconds: 300,
+        },
+      ),
+    ).rejects.toBeInstanceOf(ReservationSlotUnavailableError);
+  });
+
+  it('rejoue une création agentic sans recréer hold, réservation ou audit', async () => {
+    const fakes = makeFakes();
+    const startsAt = new Date(Date.now() + 3_600_000);
+    const input = {
+      restaurantId: 'r-1',
+      partySize: 4,
+      startsAt,
+      endsAt: new Date(startsAt.getTime() + 90 * 60_000),
+      customerName: 'Jean Test',
+      customerPhone: '+33600000000',
+      channel: 'MCP' as const,
+      policy,
+      actor: 'agent:test',
+    };
+    const idempotency = {
+      scope: 'scope-replay',
+      key: 'key-replay',
+      payloadHash: hashPayload({ replay: true, startsAt }),
+      ttlSeconds: 300,
+    };
+
+    const first = await fakes.reservationsService.createReservation(input, idempotency);
+    const holdCount = fakes.holds.size;
+    const reservationCount = fakes.reservations.size;
+    const auditCount = fakes.audits.length;
+
+    const replay = await fakes.reservationsService.createReservation(input, idempotency);
+
+    expect(replay).toEqual({
+      reservationId: first.reservationId,
+      state: first.state,
+      reused: true,
+    });
+    expect(fakes.holds.size).toBe(holdCount);
+    expect(fakes.reservations.size).toBe(reservationCount);
+    expect(fakes.audits).toHaveLength(auditCount);
+  });
+
+  it('invalide le cache après une transition qui libère la capacité', async () => {
+    const fakes = makeFakes();
+    const reservation = {
+      id: 'res-transition',
+      restaurantId: 'r-1',
+      partySize: 4,
+      reservedAt: new Date(Date.now() + 3_600_000),
+      startsAt: new Date(Date.now() + 3_600_000),
+      endsAt: new Date(Date.now() + 5_400_000),
+      tableId: null,
+      state: 'CONFIRMED' as const,
+      status: 'CONFIRMED' as const,
+      consumedHoldId: null,
+    };
+    fakes.reservations.set(reservation.id, reservation);
+    const invalidate = vi
+      .spyOn(CapacityAwareAvailabilityService, 'invalidateAvailability')
+      .mockResolvedValue(undefined);
+
+    await fakes.reservationsService.transitionState({
+      reservationId: reservation.id,
+      restaurantId: 'r-1',
+      toState: 'FAILED',
+      actor: 'agent:test',
+    });
+
+    expect(reservation.state).toBe('FAILED');
+    expect(reservation.status).toBe('CONFIRMED');
+    expect(invalidate).toHaveBeenCalledWith('r-1');
+    expect(fakes.audits).toContainEqual(
+      expect.objectContaining({
+        event: 'reservation_failed',
+        fromState: 'CONFIRMED',
+        toState: 'FAILED',
+      }),
+    );
+    invalidate.mockRestore();
   });
 });
