@@ -89,10 +89,14 @@ describe('buildDeepgramUrl', () => {
     expect(buildDeepgramUrl('flux-general-multi', 'PCMU')).toContain('encoding=mulaw');
   });
 
-  it('always sets sample_rate=8000 and channels=1 (Telnyx Media Stream constraint)', () => {
+  it('sets the Telnyx sample rate and keeps channels only on Nova v1', () => {
     const url = buildDeepgramUrl('flux-general-multi', 'PCMA');
     expect(url).toContain('sample_rate=8000');
-    expect(url).toContain('channels=1');
+    expect(url).not.toContain('channels=1');
+
+    const novaUrl = buildDeepgramUrl('nova-3', 'PCMA');
+    expect(novaUrl).toContain('sample_rate=8000');
+    expect(novaUrl).toContain('channels=1');
   });
 
   it('includes the FR reservation keyterms (boosts recognition)', () => {
