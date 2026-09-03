@@ -35,6 +35,13 @@ fi
 
 # ─── 2. Clonage du repo ────────────────────────────────────────────────────
 echo "→ Clonage du repo Sokar..."
+# Clé hôte GitHub officielle, épinglée avant tout clone SSH.
+github_host_key='github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
+install -d -m 0700 "${HOME}/.ssh"
+touch "${HOME}/.ssh/known_hosts"
+chmod 0600 "${HOME}/.ssh/known_hosts"
+grep -qxF "${github_host_key}" "${HOME}/.ssh/known_hosts" || \
+  printf '%s\n' "${github_host_key}" >> "${HOME}/.ssh/known_hosts"
 if [ ! -d "${SOKAR_ROOT}/.git" ]; then
   git clone "${REPO_URL}" "${SOKAR_ROOT}"
 fi
