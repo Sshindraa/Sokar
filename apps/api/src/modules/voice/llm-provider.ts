@@ -4,11 +4,11 @@ import { voiceConfig } from '../../env';
  * Résolution du provider LLM vocal — source de vérité unique.
  *
  * Le provider réel est piloté par VOICE_LLM_PROVIDER ('cerebras' par défaut,
- * 'openrouter' en alternative). Les métadonnées d'appel (SafeProviderConfig,
+ * 'openrouter' ou 'groq' en alternative). Les métadonnées d'appel (SafeProviderConfig,
  * enregistrement Call.llmProvider) doivent refléter CE provider, jamais le
  * modèle — un mélange modèle/providers rend les compteurs mensuels inexploitables.
  */
-export type VoiceLlmProvider = 'cerebras' | 'openrouter';
+export type VoiceLlmProvider = 'cerebras' | 'openrouter' | 'groq';
 
 export function getVoiceLlmProvider(): VoiceLlmProvider {
   return voiceConfig.VOICE_LLM_PROVIDER;

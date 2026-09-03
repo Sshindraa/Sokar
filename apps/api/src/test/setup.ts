@@ -287,6 +287,7 @@ process.env.VIP_PUSH_ENABLED = 'false';
 process.env.CLERK_PUBLISHABLE_KEY = 'pk_test_dummy-test-key';
 process.env.CLERK_SECRET_KEY = 'sk_test_dummy-secret-key';
 process.env.OPENROUTER_API_KEY = 'or-key';
+process.env.GROQ_API_KEY = 'gsk-test-key';
 process.env.CARTESIA_API_KEY = 'test-cartesia-key';
 process.env.STRIPE_SECRET_KEY = 'sk_test';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_t';

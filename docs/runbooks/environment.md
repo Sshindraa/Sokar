@@ -30,6 +30,29 @@ Pour la télémétrie Service Copilot, définir `SERVICE_COPILOT_TELEMETRY_SECRE
 de l’API (valeur aléatoire d’au moins 32 caractères). Elle signe les jetons de recommandation ; ne pas
 la réutiliser pour un autre usage et ne jamais la mettre dans une variable `NEXT_PUBLIC_*`.
 
+## Voice LLM
+
+Le provider vocal est sélectionné au démarrage de l’API par `VOICE_LLM_PROVIDER` :
+
+- `cerebras` (défaut historique) : `VOICE_LLM_MODEL` sur Cerebras ;
+- `openrouter` : `VOICE_LLM_MODEL` sur OpenRouter ;
+- `groq` : `VOICE_LLM_MODEL` directement sur l’API Groq OpenAI-compatible.
+
+Pour le modèle Qwen 3.8 direct sur Groq, définir dans `apps/api/.env` :
+
+```dotenv
+GROQ_API_KEY="gsk_..."
+GROQ_BASE_URL="https://api.groq.com/openai/v1"
+VOICE_LLM_PROVIDER="groq"
+VOICE_LLM_MODEL="qwen/qwen3.8-27b"
+VOICE_LLM_FALLBACK_MODEL="meta-llama/llama-3.3-70b-instruct"
+```
+
+La clé est un secret local au VPS et ne doit jamais être commitée ou envoyée dans le chat. Une réponse
+Groq en 402 (quota), 429 (limite) ou 5xx, ainsi qu’une erreur réseau, bascule vers OpenRouter si
+`OPENROUTER_API_KEY` est défini. En production, l’API refuse de démarrer si la clé du provider primaire
+est absente.
+
 ## Demo restaurant
 
 The seed creates a fictional `Chez Sokar` (slug `chez-sokar-demo`):

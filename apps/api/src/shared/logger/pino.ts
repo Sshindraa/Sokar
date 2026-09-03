@@ -37,6 +37,7 @@ export const REDACT_PATHS = [
   'env.SENTRY_DSN',
   'env.CLERK_SECRET_KEY',
   'env.OPENROUTER_API_KEY',
+  'env.GROQ_API_KEY',
   'env.CARTESIA_API_KEY',
   'env.TELNYX_API_KEY',
   'env.TELNYX_PUBLIC_KEY',

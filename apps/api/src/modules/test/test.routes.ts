@@ -13,7 +13,7 @@ const SimulateCallSchema = z.object({
   callerPhone: z.string().min(5),
   /** Optionnel : numéro du restaurant (défaut = Chez Sokar démo) */
   restaurantPhone: z.string().min(5).optional(),
-  /** Mode LLM : auto (clé OpenRouter requise) ou mock (réponses fixes) */
+  /** Mode LLM : auto (clé provider vocal requise) ou mock (réponses fixes) */
   mode: z.enum(['auto', 'mock']).default('auto'),
 });
 
