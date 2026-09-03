@@ -226,9 +226,14 @@ log info "   Memory free: ${FREE_BEFORE}MB"
 log info ""
 log info "📦 Pulling latest code${DEPLOY_ENV:+ from $BRANCH}..."
 PREV_HASH=$(git rev-parse HEAD 2>/dev/null || log info "")
-git checkout "$BRANCH"
-git pull origin "$BRANCH"
-NEW_HASH=$(git rev-parse HEAD)
+if [ "${SOKAR_SKIP_GIT_PULL:-0}" = "1" ]; then
+    NEW_HASH=$(git rev-parse HEAD)
+    log info "   Git pull skipped: source snapshot already synchronized ($NEW_HASH)"
+else
+    git checkout "$BRANCH"
+    git pull origin "$BRANCH"
+    NEW_HASH=$(git rev-parse HEAD)
+fi
 
 # ── 9a. Re-exec si le script lui-même a été modifié ──────
 # Bash charge le script en mémoire au démarrage. Si le git pull met à jour
