@@ -1716,7 +1716,7 @@ describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
     voiceConfig.GROQ_API_KEY = 'gsk-test';
 
     const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url.includes('api.groq.com')) {
+      if (new URL(url).hostname === 'api.groq.com') {
         return Promise.resolve({
           ok: false,
           status: 402,
