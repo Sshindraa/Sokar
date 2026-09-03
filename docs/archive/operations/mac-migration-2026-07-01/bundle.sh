@@ -121,7 +121,7 @@ cat > "$ROOT/shell/extras.zsh" <<'ZSH'
 export PATH="/usr/local/opt/node@22/bin:$PATH"
 export PATH="$HOME/.npm-global/bin:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
-alias pmbtc-tunnel="ssh -i ~/.ssh/digitalocean_pmbtc -L 3002:127.0.0.1:3002 deploy@159.223.175.135 -N"
+alias sokar-tunnel="ssh -i ~/.ssh/sokar_ovh -L 3002:127.0.0.1:3002 deploy@57.131.148.179 -N"
 alias sokar="cd /Users/hamza/Desktop/Sokar"
 ZSH
 echo
@@ -159,7 +159,7 @@ macOS     : $(sw_vers -productVersion)
   mac-migration/
     hermes/         config.yaml, auth.json, .env, memories/, kanban.db, cron_jobs.json, skills/
     profiles/       default + backend + dashboard + database + supervisor (config+auth+bin+state)
-    ssh/            config, known_hosts, digitalocean_pmbtc{,.pub}, mac_tunnel_key
+    ssh/            config, known_hosts, sokar_ovh{,.pub}, mac_tunnel_key
     sokar/          .env.local + database.env
     shell/extras.zsh PATH & alias à sourcer
 
@@ -171,14 +171,14 @@ macOS     : $(sw_vers -productVersion)
      demandera la passphrase, installera Hermes via pipx, replacera les
      profils, SSH, .env, alias et clonera Sokar si pas déjà fait.
   4. Relance le terminal, fais:  hermes doctor
-     puis:                            ssh pmbtc 'hostname && pwd'
+     puis:                            ssh sokar 'hostname && pwd'
 
 === Notes ===
   - Les sessions de debug des profils ont été droppées (sessions/, request_dump_*).
     Ça économise ~500 MB et elles sont régénérées à l'usage.
   - Les hooks/, lsp/package-lock.json optionnels sont inclus s'ils existent.
-  - Le VPS est joignable depuis l'ancien Mac à l'écriture de ce bundle;
-    le test était :  ssh -i ~/.ssh/digitalocean_pmbtc deploy@159.223.175.135
+  - Le VPS OVH est joignable depuis l'ancien Mac à l'écriture de ce bundle;
+    le test était :  ssh -i ~/.ssh/sokar_ovh deploy@57.131.148.179
 EOF
 cp -p "$README" "$OUT_DIR/README-LATEST.txt"
 

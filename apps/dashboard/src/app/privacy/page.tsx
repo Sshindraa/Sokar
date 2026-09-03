@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
-const LAST_UPDATED = '22 juillet 2026';
+const LAST_UPDATED = '3 septembre 2026';
 
 const COMPANY = {
   // [À REMPLIR] Raison sociale
@@ -30,11 +30,10 @@ const COMPANY = {
   legalRepresentative: '[À REMPLIR — Représentant légal]',
   // [À REMPLIR] Email de contact DPO/privacy
   dpoEmail: '[À REMPLIR — dpo@sokar.tech]',
-  // Hébergeur principal : DigitalOcean, LLC (datacenter nyc1, USA)
-  hostingProvider: 'DigitalOcean, LLC (datacenter nyc1, New York, USA)',
-  // Localisation des serveurs = hors UE (USA)
-  hostingLocation:
-    'New York, États-Unis — transfert hors UE couvert par SCC et EU-US Data Privacy Framework',
+  // Hébergeur principal : OVHcloud (datacenter de Francfort, Allemagne)
+  hostingProvider: 'OVHcloud (datacenter de Francfort, Allemagne)',
+  // Localisation des serveurs = Union européenne
+  hostingLocation: 'Francfort, Allemagne (Union européenne)',
 };
 
 // Sous-traitants : nom → finalité → localisation
@@ -173,7 +172,7 @@ const SECURITY_MEASURES = [
   'PII redaction systématique dans les réponses du Model Context Protocol.',
   'Audit log horodaté pour les événements RGPD (export, effacement, consentement).',
   'Backups PostgreSQL chiffrés, restaurables, testés tous les 90 jours.',
-  'Hébergeur DigitalOcean certifié ISO 27001, SOC 2 Type II et PCI DSS (Level 1).',
+  'Hébergeur OVHcloud (datacenter de Francfort, Allemagne).',
   'Code audité (interne) avant chaque release, scan automatisé des secrets.',
 ];
 
@@ -276,14 +275,11 @@ export default function PrivacyPage() {
             de décisions d&apos;adéquation.
           </p>
           <p className="mt-3">
-            <strong>Note spécifique DigitalOcean (hébergeur principal) :</strong> les serveurs de
-            production sont situés à New York (USA). Le transfert de données vers les États-Unis est
-            encadré par les clauses contractuelles types (SCC) de la Commission européenne et
-            bénéficie du cadre de transfert de données UE-États-Unis (EU-US Data Privacy Framework)
-            adopté en juillet 2023, auquel DigitalOcean a adhéré. Les données sont chiffrées en
-            transit (TLS 1.3 systématique) ; les disques de stockage ne sont pas chiffrés au repos
-            (chiffrement LUKS non activé sur le droplet — décision documentée, à durcir avant le
-            passage à l&apos;hébergement en production à grande échelle).
+            <strong>Hébergement principal OVHcloud :</strong> les serveurs de production sont situés
+            à Francfort, en Allemagne (Union européenne). Les données de l&apos;hébergement
+            principal restent donc dans l&apos;UE ; les éventuels transferts liés aux sous-traitants
+            listés ci-dessus sont encadrés par les clauses contractuelles types (SCC) ou les
+            décisions d&apos;adéquation applicables.
           </p>
           <div className="mt-6 overflow-hidden rounded-2xl border border-white/8">
             <table className="w-full text-left text-sm">

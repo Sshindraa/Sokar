@@ -5,9 +5,8 @@ import {
   type NotificationSendResult,
 } from '../queue/notification-idempotency';
 
-// Resend HTTP API (port 443) — bypass SMTP block on Frankfurt VPS.
-// DigitalOcean Frankfurt filtre les ports SMTP sortants (465/587/2525).
-// L'API HTTP de Resend utilise le port 443 (HTTPS) qui passe partout.
+// Resend HTTP API (port 443) — l'envoi ne dépend plus des ports SMTP sortants du VPS.
+// L'API HTTP de Resend utilise le port 443 (HTTPS).
 //
 // Init lazy : on ne crée le client Resend qu'au premier envoi. Si
 // RESEND_API_KEY est vide (ex: staging sans config email), le module
