@@ -1737,6 +1737,17 @@ export class CallSessionManager {
         case 'createReservation': {
           const { date, time, partySize, customerName, customerPhone } = args;
 
+          // Même si un provider LLM contourne la réponse déterministe, une
+          // épellation en attente ne doit jamais déclencher d'effet métier.
+          if (session.conversation.spellingCandidate) {
+            return "Je dois d'abord confirmer l'orthographe de votre nom. Pouvez-vous me redonner les lettres, s'il vous plaît ?";
+          }
+
+          // Le nom confirmé par notre garde déterministe est la source de
+          // vérité ; il ne peut pas être réécrit en mot plausible par le LLM.
+          const confirmedCustomerName = session.conversation.slots.customerName;
+          const reservationCustomerName = confirmedCustomerName ?? customerName ?? 'Client';
+
           try {
             const callRecordId = await this.resolveCallRecordId(session);
             if (!callRecordId) {
@@ -1748,11 +1759,11 @@ export class CallSessionManager {
               callId: callRecordId,
               reservedAt: new Date(`${date}T${time}`),
               partySize: partySize ?? 1,
-              customerName: customerName ?? 'Client',
+              customerName: reservationCustomerName,
               customerPhone: customerPhone ?? session.from,
             });
 
-            return `Réservation confirmée pour ${customerName ?? 'le client'}, le ${date} à ${time}, pour ${partySize ?? 1} personne(s). Un SMS de confirmation va être envoyé au client.`;
+            return `Réservation confirmée pour ${reservationCustomerName}, le ${date} à ${time}, pour ${partySize ?? 1} personne(s). Un SMS de confirmation va être envoyé au client.`;
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err);
             logger.error(

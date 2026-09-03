@@ -9,6 +9,7 @@ export function createConversationState(): ConversationState {
     lastAvailabilityResult: null,
     pendingQuestion: null,
     lastAssistantQuestion: null,
+    spellingCandidate: null,
     misunderstandingCount: 0,
     closing: false,
   };
@@ -22,6 +23,236 @@ function normalizeTranscript(value: string): string {
     .replace(/[^\p{L}\p{N}:\s-]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Tokens que Flux peut produire quand l'appelant épelle un nom en français.
+ * Le but n'est pas de remplacer le STT, mais de conserver la granularité des
+ * lettres avant que le LLM ne les normalise en un mot (« K I F » → « Kif »).
+ */
+const SPOKEN_LETTER_TOKENS: Record<string, string> = {
+  a: 'A',
+  be: 'B',
+  ce: 'C',
+  de: 'D',
+  e: 'E',
+  efe: 'F',
+  eff: 'F',
+  effe: 'F',
+  ge: 'G',
+  ache: 'H',
+  i: 'I',
+  ji: 'J',
+  dji: 'J',
+  ka: 'K',
+  elle: 'L',
+  emme: 'M',
+  enne: 'N',
+  o: 'O',
+  pe: 'P',
+  ku: 'Q',
+  erre: 'R',
+  esse: 'S',
+  te: 'T',
+  u: 'U',
+  ve: 'V',
+  ix: 'X',
+  zede: 'Z',
+  tiret: '-',
+  apostrophe: "'",
+};
+
+const SPELLING_FILLER_TOKENS = new Set([
+  'et',
+  'puis',
+  'ensuite',
+  'par',
+  'lettre',
+  'lettres',
+  'euh',
+  'heu',
+]);
+
+const NAME_INTRODUCTION_PATTERN =
+  /\b(?:au\s+nom\s+de|nom\s+de|mon\s+nom\s+est|mon\s+nom|je\s+m\s+appelle|je\s+suis)\b/u;
+const SPELLING_INTRODUCTION_PATTERN =
+  /\b(?:epel(?:er|e|ez)?|epell(?:e|er|ez)?|lettres?(?:\s+par\s+lettre)?|alphabet)\b/u;
+
+export interface SpelledNameCandidate {
+  /** Lettres normalisées, par exemple `KIF` ou `DUPONT`. */
+  value: string;
+  /** Vrai lorsque chaque token utile est une lettre sans bruit inconnu. */
+  confident: boolean;
+}
+
+function tokenToSpokenLetter(token: string): string | null {
+  if (/^[a-z]$/u.test(token)) return token.toUpperCase();
+  return SPOKEN_LETTER_TOKENS[token] ?? null;
+}
+
+/**
+ * Extrait une séquence de lettres d'un transcript déjà produit par le STT.
+ * Retourne null pour un nom normal (« Jean Dupont »), afin de ne pas bloquer
+ * le flux habituel. Les phrases explicitement épelées peuvent contenir des
+ * mots de comparaison ou des artefacts STT : elles sont alors marquées
+ * `confident: false` et doivent être répétées, jamais devinées.
+ */
+export function parseSpelledNameTranscript(transcript: string): SpelledNameCandidate | null {
+  const normalized = normalizeTranscript(transcript);
+  if (!normalized) return null;
+
+  const nameIntro = normalized.match(NAME_INTRODUCTION_PATTERN);
+  const spellingIntroMatch = normalized.match(SPELLING_INTRODUCTION_PATTERN);
+  const spellingIntro = Boolean(spellingIntroMatch);
+  // Quand le locuteur dit « je vais épeler mon nom : ... », on conserve le
+  // dernier marqueur rencontré (ici « mon nom ») pour ignorer les mots de
+  // liaison et analyser uniquement les caractères qui suivent.
+  const markers = [nameIntro, spellingIntroMatch].filter(
+    (marker): marker is RegExpMatchArray => Boolean(marker),
+  );
+  const marker = markers.sort(
+    (left, right) => (right.index ?? 0) + right[0].length - ((left.index ?? 0) + left[0].length),
+  )[0];
+  const tail = marker
+    ? normalized.slice((marker.index ?? 0) + marker[0].length).trim()
+    : normalized;
+  const tokens = tail.split(/\s+/u).filter(Boolean);
+  const expandedTokens: string[] = [];
+
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    const next = tokens[index + 1];
+    if (token === 'double' && next === 've') {
+      expandedTokens.push('double ve');
+      index++;
+    } else if (token === 'i' && next === 'grec') {
+      expandedTokens.push('i grec');
+      index++;
+    } else {
+      expandedTokens.push(token);
+    }
+  }
+
+  const letters: string[] = [];
+  let unknownTokenCount = 0;
+  for (const token of expandedTokens) {
+    if (SPELLING_FILLER_TOKENS.has(token)) continue;
+    if (token === 'double ve') {
+      letters.push('W');
+      continue;
+    }
+    if (token === 'i grec') {
+      letters.push('Y');
+      continue;
+    }
+    const letter = tokenToSpokenLetter(token);
+    if (letter) {
+      letters.push(letter);
+    } else {
+      unknownTokenCount++;
+    }
+  }
+
+  // Deux lettres suffisent quand la personne a explicitement dit « épeler »;
+  // sans marqueur, trois lettres évitent de prendre un article isolé pour un
+  // début d'épellation.
+  const minimumLetters = spellingIntro ? 2 : 3;
+  if (letters.filter((letter) => /[A-Z]/u.test(letter)).length < minimumLetters) {
+    return null;
+  }
+
+  // Un transcript long avec quelques lettres fortuites n'est pas une
+  // épellation. Une introduction de nom ou le motif « épeler » est requis,
+  // sauf pour une courte suite de trois lettres prononcées seules.
+  const shortLetterSequence = expandedTokens.length <= letters.length + 1;
+  if (!nameIntro && !spellingIntro && !shortLetterSequence) return null;
+
+  const value = letters.join('');
+  if (value.length > 32 || !/[A-Z]{2,}/u.test(value)) return null;
+
+  return { value, confident: unknownTokenCount === 0 };
+}
+
+function formatSpelledName(value: string): string {
+  return value
+    .split('')
+    .map((letter) => (letter === '-' ? 'tiret' : letter === "'" ? 'apostrophe' : letter))
+    .join(', ');
+}
+
+function isNameConfirmation(transcript: string): boolean {
+  const normalized = normalizeTranscript(transcript);
+  return /^(?:oui|ouais|ok(?:ay)?|d accord|bien sur|exactement|tout a fait|c est ca|c est bien ca|voila)(?:\s+(?:c est ca|c est bien ca|exactement|voila))?$/u.test(
+    normalized,
+  );
+}
+
+function isNameRejection(transcript: string): boolean {
+  const normalized = normalizeTranscript(transcript);
+  return /^(?:non|pas du tout|ce n est pas ca|ce n est pas le bon nom|j ai dit non)$/u.test(
+    normalized,
+  );
+}
+
+export interface CustomerNameTurnResult {
+  /** Réponse déterministe à prononcer, ou null pour laisser le LLM continuer. */
+  response: string | null;
+  /** Nom confirmé à injecter explicitement dans le tour LLM suivant. */
+  confirmedName: string | null;
+}
+
+/**
+ * Protège la collecte du nom avec le STT courant. Une séquence de lettres ne
+ * part plus directement vers Qwen : elle est répétée puis confirmée. Le nom
+ * n'est copié dans les slots qu'après un « oui » explicite.
+ */
+export function handleCustomerNameTurn(
+  session: CallSession,
+  transcript: string,
+): CustomerNameTurnResult {
+  if (session.conversation.pendingQuestion !== 'customerName') {
+    return { response: null, confirmedName: null };
+  }
+
+  const candidate = parseSpelledNameTranscript(transcript);
+  if (candidate) {
+    if (!candidate.confident) {
+      session.conversation.spellingCandidate = null;
+      return {
+        response:
+          "J'ai entendu une suite de lettres, mais je ne suis pas sûr de l'orthographe. Pouvez-vous me redonner votre nom, lettre par lettre, lentement ?",
+        confirmedName: null,
+      };
+    }
+
+    session.conversation.spellingCandidate = candidate.value;
+    return {
+      response: `J'ai noté : ${formatSpelledName(candidate.value)}. C'est bien votre nom ?`,
+      confirmedName: null,
+    };
+  }
+
+  const pendingCandidate = session.conversation.spellingCandidate;
+  if (pendingCandidate && isNameConfirmation(transcript)) {
+    session.conversation.slots.customerName = pendingCandidate;
+    session.conversation.spellingCandidate = null;
+    session.conversation.pendingQuestion = null;
+    session.conversation.lastAssistantQuestion = null;
+    return { response: null, confirmedName: pendingCandidate };
+  }
+
+  if (pendingCandidate && isNameRejection(transcript)) {
+    session.conversation.spellingCandidate = null;
+    return {
+      response: "D'accord. Pouvez-vous me redonner votre nom, lettre par lettre, lentement ?",
+      confirmedName: null,
+    };
+  }
+
+  // L'appelant peut abandonner l'épellation et donner directement un nom
+  // normal (« non, Dupont »). On laisse alors le LLM reprendre ce cas.
+  session.conversation.spellingCandidate = null;
+  return { response: null, confirmedName: null };
 }
 
 export function classifyVoiceSpeechAct(transcript: string): VoiceSpeechAct {
@@ -324,7 +555,12 @@ function pendingQuestionFrom(question: string): ConversationState['pendingQuesti
   if (/\b(?:combien de personnes|pour combien|vous serez combien)/.test(normalized)) {
     return 'partySize';
   }
-  if (/\b(?:votre nom|quel est votre nom|au nom de qui)/.test(normalized)) return 'customerName';
+  if (
+    /\b(?:votre nom|quel est votre nom|au nom de qui|a quel nom|quel nom|nom pour la reservation)\b/.test(
+      normalized,
+    )
+  )
+    return 'customerName';
   if (/\b(?:telephone|numero)/.test(normalized)) return 'customerPhone';
   return null;
 }

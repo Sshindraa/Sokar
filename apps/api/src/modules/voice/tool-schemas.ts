@@ -119,7 +119,7 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
   {
     name: 'createReservation',
     description:
-      'Crée une réservation. À appeler uniquement après avoir confirmé date, heure, nombre de personnes et nom du client.',
+      "Crée une réservation. À appeler uniquement après avoir confirmé date, heure, nombre de personnes et nom du client. Si le nom a été épelé, chaque lettre doit avoir été répétée et confirmée explicitement ; ne transforme jamais une suite comme « K I F » en un mot.",
     schema: CreateReservationSchema,
   },
   {

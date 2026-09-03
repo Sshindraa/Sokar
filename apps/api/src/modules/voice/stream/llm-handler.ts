@@ -36,6 +36,7 @@ import {
   buildDeterministicTurnResponse,
   classifyVoiceSpeechAct,
   getReadyAvailabilityRequest,
+  handleCustomerNameTurn,
   recordAssistantReply,
   recordUserTurn,
 } from './conversation-controller';
@@ -501,6 +502,32 @@ async function processTranscriptStreaming(
     return;
   }
 
+  // Le STT reste Flux pour la conversation générale. Pour une suite de
+  // lettres, on évite toutefois que le LLM la transforme en mot plausible
+  // (ex. « K I F » → « Kif ») et on exige une confirmation explicite.
+  const customerNameTurn = handleCustomerNameTurn(session, transcript);
+  if (customerNameTurn.response) {
+    writeDebugLog(
+      `[processTranscriptStreaming] Handling customer-name spelling without LLM: "${redactPii(transcript)}"`,
+    );
+    session.turnCount++;
+    session.history.push(
+      { role: 'user', content: transcript },
+      { role: 'assistant', content: customerNameTurn.response },
+    );
+    recordAssistantReply(session, customerNameTurn.response);
+    mgr.transition(session, 'SPEAKING');
+    await speakTtsStreamed(session, customerNameTurn.response);
+    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+    return;
+  }
+
+  const transcriptForLlm = customerNameTurn.confirmedName
+    ? `${transcript}. Nom confirmé lettre par lettre : ${customerNameTurn.confirmedName
+        .split('')
+        .join(' ')}`
+    : transcript;
+
   const deterministicResponse = buildDeterministicTurnResponse(session, speechAct, transcript);
   if (deterministicResponse) {
     writeDebugLog(
@@ -664,7 +691,7 @@ async function processTranscriptStreaming(
     session.abortController = abortController;
     const fullResponse = await mgr.processUtteranceStreaming(
       session,
-      transcript,
+      transcriptForLlm,
       (phrase: string) => {
         if (!isCurrentResponse() || abortController.signal.aborted) return;
         writeDebugLog(`[processTranscriptStreaming] Phrase received: "${redactPii(phrase)}"`);

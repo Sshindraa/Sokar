@@ -31,6 +31,8 @@ export interface ConversationState {
   } | null;
   pendingQuestion: 'date' | 'time' | 'partySize' | 'customerName' | 'customerPhone' | null;
   lastAssistantQuestion: string | null;
+  /** Nom épelé détecté, en attente de confirmation explicite par l'appelant. */
+  spellingCandidate: string | null;
   misunderstandingCount: number;
   closing: boolean;
 }

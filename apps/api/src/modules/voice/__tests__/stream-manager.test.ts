@@ -387,6 +387,55 @@ describe('CallSessionManager — tool execution', () => {
     expect(reply).toBe("Parfait, c'est noté.");
   });
 
+  it("createReservation : conserve le nom épelé après confirmation", async () => {
+    vi.mocked(ReservationService.create).mockResolvedValue({ id: 'res-spelled' } as unknown as Awaited<
+      ReturnType<typeof ReservationService.create>
+    >);
+    mockFetchToolCall(
+      'createReservation',
+      {
+        date: '2026-07-16',
+        time: '19:30',
+        partySize: 2,
+        // Le provider pourrait encore normaliser K-I-F en « Kif » : le slot
+        // confirmé doit rester la source de vérité.
+        customerName: 'Kif',
+      },
+      'C’est confirmé.',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    session.conversation.slots.customerName = 'KIF';
+    const reply = await mgr.processUtterance(session, 'Oui, c’est bien ça');
+
+    expect(ReservationService.create).toHaveBeenCalledWith(
+      expect.objectContaining({ customerName: 'KIF' }),
+    );
+    expect(reply).toBe('C’est confirmé.');
+  });
+
+  it("createReservation : bloque une épellation encore non confirmée", async () => {
+    mockFetchToolCall(
+      'createReservation',
+      {
+        date: '2026-07-16',
+        time: '19:30',
+        partySize: 2,
+        customerName: 'Kif',
+      },
+      'Je vais d’abord vérifier le nom.',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    session.conversation.spellingCandidate = 'KIF';
+    const reply = await mgr.processUtterance(session, 'Au nom de K I F');
+
+    expect(ReservationService.create).not.toHaveBeenCalled();
+    expect(reply).toBe('Je vais d’abord vérifier le nom.');
+  });
+
   it('createReservation : retourne message de créneau indisponible si SLOT_NOT_AVAILABLE', async () => {
     vi.mocked(ReservationService.create).mockRejectedValue(new Error('SLOT_NOT_AVAILABLE'));
     mockFetchToolCall(

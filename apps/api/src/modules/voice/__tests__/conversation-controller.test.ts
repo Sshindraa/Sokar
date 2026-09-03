@@ -7,6 +7,8 @@ import {
   createConversationState,
   extractConversationSlots,
   getReadyAvailabilityRequest,
+  handleCustomerNameTurn,
+  parseSpelledNameTranscript,
   recordAssistantReply,
   recordUserTurn,
 } from '../stream/conversation-controller';
@@ -40,6 +42,60 @@ describe('conversation state', () => {
     expect(session.conversation.lastAssistantQuestion).toBe(
       'Quel est votre nom pour la réservation ?',
     );
+  });
+
+  it('reconnaît aussi la formulation courte « à quel nom je réserve ? »', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Parfait. À quel nom je réserve ?');
+
+    expect(session.conversation.pendingQuestion).toBe('customerName');
+  });
+
+  it('conserve les lettres d’une épellation claire avec le STT courant', () => {
+    expect(parseSpelledNameTranscript('Au nom de K I F')).toEqual({
+      value: 'KIF',
+      confident: true,
+    });
+  });
+
+  it('refuse de deviner quand Flux ajoute du bruit dans une épellation', () => {
+    expect(parseSpelledNameTranscript('Un nom de actif a de k i f')).toEqual({
+      value: 'ADKIF',
+      confident: false,
+    });
+  });
+
+  it('fait répéter une épellation incertaine au lieu de la transmettre au LLM', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
+
+    const result = handleCustomerNameTurn(session, 'Un nom de actif a de k i f');
+
+    expect(result).toEqual({
+      response:
+        "J'ai entendu une suite de lettres, mais je ne suis pas sûr de l'orthographe. Pouvez-vous me redonner votre nom, lettre par lettre, lentement ?",
+      confirmedName: null,
+    });
+    expect(session.conversation.spellingCandidate).toBeNull();
+    expect(session.conversation.slots.customerName).toBeUndefined();
+  });
+
+  it('répète puis confirme une épellation claire avant de renseigner le slot nom', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
+
+    expect(handleCustomerNameTurn(session, 'Au nom de K I F')).toEqual({
+      response: "J'ai noté : K, I, F. C'est bien votre nom ?",
+      confirmedName: null,
+    });
+    expect(session.conversation.slots.customerName).toBeUndefined();
+
+    expect(handleCustomerNameTurn(session, 'Oui, c’est ça')).toEqual({
+      response: null,
+      confirmedName: 'KIF',
+    });
+    expect(session.conversation.slots.customerName).toBe('KIF');
+    expect(session.conversation.spellingCandidate).toBeNull();
   });
 
   it('reprend une question après un acquiescement sans appeler le LLM', () => {
