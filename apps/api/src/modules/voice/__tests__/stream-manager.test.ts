@@ -1676,7 +1676,7 @@ describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
   it('Groq utilise Qwen 3.8 en mode instruct avec tool use', async () => {
     voiceConfig.VOICE_LLM_PROVIDER = 'groq';
     voiceConfig.VOICE_LLM_MODEL = 'qwen/qwen3.8-27b';
-    voiceConfig.GROQ_API_KEY = 'gsk-test';
+    voiceConfig.GROQ_API_KEY = 'test-groq-api-key-not-secret';
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -1699,7 +1699,7 @@ describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://api.groq.com/openai/v1/chat/completions');
     expect(init.headers).toMatchObject({
-      Authorization: 'Bearer gsk-test',
+      Authorization: 'Bearer test-groq-api-key-not-secret',
       'Content-Type': 'application/json',
     });
     expect(JSON.parse(String(init.body))).toMatchObject({
@@ -1713,7 +1713,7 @@ describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
     voiceConfig.VOICE_LLM_PROVIDER = 'groq';
     voiceConfig.VOICE_LLM_MODEL = 'qwen/qwen3.8-27b';
     voiceConfig.VOICE_LLM_FALLBACK_MODEL = 'meta-llama/llama-3.3-70b-instruct';
-    voiceConfig.GROQ_API_KEY = 'gsk-test';
+    voiceConfig.GROQ_API_KEY = 'test-groq-api-key-not-secret';
 
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (new URL(url).hostname === 'api.groq.com') {
@@ -1750,7 +1750,7 @@ describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
   it('Groq expose le chemin streaming et le provider utilisé', async () => {
     voiceConfig.VOICE_LLM_PROVIDER = 'groq';
     voiceConfig.VOICE_LLM_MODEL = 'qwen/qwen3.8-27b';
-    voiceConfig.GROQ_API_KEY = 'gsk-test';
+    voiceConfig.GROQ_API_KEY = 'test-groq-api-key-not-secret';
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
