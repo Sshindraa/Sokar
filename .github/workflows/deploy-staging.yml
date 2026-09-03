@@ -53,22 +53,40 @@ jobs:
             test "${NEXT_PUBLIC_DEMO_STAGING:-}" = "1"
             [[ "${NEXT_PUBLIC_DEMO_RESTAURANT_ID:-}" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]]
             git checkout main
-            # Le dépôt est public : HTTPS évite toute clé GitHub persistante
-            # sur le compte deploy et ne transmet aucun credential au VPS.
-            git remote set-url origin https://github.com/Sshindraa/Sokar.git
-            # Isoler Git de la configuration globale du compte deploy : certains
-            # hôtes ont un helper/une réécriture d'URL qui force une auth HTTPS,
-            # même pour ce dépôt public. Aucun credential n'est requis ici.
-            GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 \
-              git -c credential.helper= fetch --no-tags origin main
-            git reset --hard origin/main
-            git clean -fd
+            # Le VPS ne peut pas utiliser son helper GitHub pour le fetch HTTPS.
+            # On transfère donc une archive publique du commit exact depuis
+            # codeload.github.com, sans token ni clé GitHub sur le VPS, puis on
+            # crée un snapshot Git local pour conserver les rollbacks/hash.
+            SOURCE_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+            [[ "$SOURCE_SHA" =~ ^[[:xdigit:]]{40}$ ]]
+            git reset --hard
+            git clean -fd -e releases/
+            SOURCE_TMP=$(mktemp -d /tmp/sokar-staging-source.XXXXXX)
+            trap 'rm -rf "$SOURCE_TMP"' EXIT
+            curl --fail --silent --show-error --location --retry 3 --max-time 120 \
+              "https://codeload.github.com/Sshindraa/Sokar/tar.gz/${SOURCE_SHA}" \
+              -o "$SOURCE_TMP/source.tar.gz"
+            mkdir "$SOURCE_TMP/tree"
+            tar -xzf "$SOURCE_TMP/source.tar.gz" --strip-components=1 -C "$SOURCE_TMP/tree"
+            while IFS= read -r -d '' tracked_path; do
+              if [ ! -e "$SOURCE_TMP/tree/$tracked_path" ] && [ ! -L "$SOURCE_TMP/tree/$tracked_path" ]; then
+                rm -f -- "$tracked_path"
+              fi
+            done < <(git ls-files -z)
+            cp -a "$SOURCE_TMP/tree/." .
+            git add --all
+            if ! git diff --cached --quiet; then
+              git -c user.name='Sokar staging snapshot' \
+                -c user.email='deploy@sokar.tech' \
+                commit -m "staging snapshot ${SOURCE_SHA}"
+            fi
+            git status --short
             if [ ! -x /usr/local/sbin/sokar-deploy-root ]; then
               sudo install -o root -g root -m 0755 \
                 scripts/ops/sokar-deploy-root.sh /usr/local/sbin/sokar-deploy-root
             fi
             bash scripts/ops/sync-stripe-prices.sh staging
-            bash scripts/deploy.sh --env staging
+            SOKAR_SKIP_GIT_PULL=1 bash scripts/deploy.sh --env staging
 
   smoke-tests:
     name: Smoke tests against staging
