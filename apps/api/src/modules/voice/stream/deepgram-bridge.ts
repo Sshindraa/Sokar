@@ -40,7 +40,7 @@ const DEEPGRAM_DEFAULT_MODEL = 'flux-general-multi';
  *
  * @param model model_id Deepgram ('flux-general-multi' | 'nova-3' | ...)
  * @param codec codec Telnyx (PCMA = alaw, PCMU = mulaw)
- * @returns URL complète avec query string (model, encoding, sample_rate, keyterms...)
+ * @returns URL complète avec query string (model, encoding, sample_rate, language_hint/keyterms...)
  */
 export function buildDeepgramUrl(model: string, codec: 'PCMA' | 'PCMU'): string {
   const isAlaw = codec === 'PCMA';
@@ -48,16 +48,23 @@ export function buildDeepgramUrl(model: string, codec: 'PCMA' | 'PCMU'): string 
   const apiUrl = isFlux ? DEEPGRAM_API_URL_FLUX : DEEPGRAM_API_URL_NOVA;
   const params = new URLSearchParams({
     model,
-    language: 'fr',
     encoding: isAlaw ? 'alaw' : 'mulaw',
     sample_rate: '8000',
     channels: '1',
-    interim_results: 'true',
-    punctuate: 'true',
-    smart_format: 'true',
-    endpointing: '150',
-    utterance_end_ms: '1000',
   });
+
+  if (isFlux) {
+    // Flux v2 uses language_hint for the multilingual model. The Nova v1
+    // `language`/`interim_results` parameters are not valid on /v2/listen.
+    params.set('language_hint', 'fr');
+  } else {
+    params.set('language', 'fr');
+    params.set('interim_results', 'true');
+    params.set('punctuate', 'true');
+    params.set('smart_format', 'true');
+    params.set('endpointing', '150');
+    params.set('utterance_end_ms', '1000');
+  }
 
   // Boost critical reservation vocabulary for FR (Flux v2 model)
   if (isFlux) {
@@ -297,7 +304,13 @@ export function closeDeepgram(session: CallSession): void {
 // ─── Parsing des messages Deepgram Flux ──────────────────────────
 
 export interface DeepgramMessage {
-  type: string;
+  /** Legacy v1/Nova messages use `type`; Flux v2 uses `event`. */
+  type?: string;
+  event?: string;
+  /** Flux v2 puts the transcript at the top level. */
+  transcript?: string;
+  message?: string;
+  error?: string;
   is_final?: boolean;
   channel?: {
     alternatives?: Array<{ transcript: string; confidence: number }>;
@@ -309,6 +322,29 @@ export interface DeepgramMessage {
   speech_final?: boolean;
 }
 
+function getDeepgramTranscript(msg: DeepgramMessage): string {
+  if (msg.transcript?.trim()) return msg.transcript;
+  return msg.channel?.alternatives?.[0]?.transcript ?? '';
+}
+
+function handleBargeInFromTranscript(
+  session: CallSession,
+  mgr: CallSessionManager,
+  transcript: string,
+): void {
+  if (session.state !== 'SPEAKING' || !transcript.trim()) return;
+
+  logger.info(
+    { callId: session.callControlId, transcript: redactPii(transcript.trim()) },
+    '[barge-in] User spoke while assistant was speaking. Interrupting.',
+  );
+  if (session.abortController) {
+    session.abortController.abort();
+    session.abortController = null;
+  }
+  mgr.handleBargeIn(session);
+}
+
 /**
  * Dispatch un message Deepgram brut vers les bons handlers.
  * Exporté pour les tests (le message arrive normalement via le `ws.on('message')`
@@ -317,10 +353,18 @@ export interface DeepgramMessage {
  */
 export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage): void {
   const mgr = CallSessionManager.getInstance();
+  // Flux v2 emits `event` (StartOfTurn, EndOfTurn, ...), while the legacy
+  // Nova-compatible path emits `type` (Results, UtteranceEnd, ...).
+  const eventType = msg.event ?? msg.type;
 
-  switch (msg.type) {
+  switch (eventType) {
+    case 'StartOfTurn':
     case 'UtteranceStart': {
       logger.info({ callId: session.callControlId }, '[deepgram] Utterance start');
+
+      // Flux guarantees a non-empty transcript on StartOfTurn, making it the
+      // reliable barge-in signal while Cartesia is speaking.
+      handleBargeInFromTranscript(session, mgr, getDeepgramTranscript(msg));
 
       // Annuler toute spéculation en cours (le caller continue)
       session.speculativeLlm = null;
@@ -331,6 +375,7 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
       break;
     }
 
+    case 'TurnResumed':
     case 'SpeechResumed':
       // Le caller continue après une pause → annuler la spéculation et le LLM en cours
       if (session.abortController) {
@@ -343,8 +388,40 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
       session.onDeepgramEvent?.({ type: 'SpeechResumed' });
       break;
 
+    case 'EagerEndOfTurn': {
+      const transcript = getDeepgramTranscript(msg);
+      if (transcript.trim()) {
+        logger.info(
+          { callId: session.callControlId, transcript: redactPii(transcript.slice(0, 100)) },
+          '[deepgram] Eager end of turn',
+        );
+        session.onDeepgramEvent?.({ type: 'EagerEndOfTurn', transcript });
+      }
+      break;
+    }
+
+    case 'EndOfTurn': {
+      // Flux v2 already provides the complete turn transcript at the top level.
+      // Do not wait for a Nova `Results`/`speech_final` message, which Flux does
+      // not emit and which previously left the live call silent.
+      const transcript = getDeepgramTranscript(msg);
+      if (session.speechFinalTimer) {
+        clearTimeout(session.speechFinalTimer);
+        session.speechFinalTimer = null;
+      }
+      session.turnTranscript = '';
+      if (transcript.trim()) {
+        logger.info(
+          { callId: session.callControlId, transcript: redactPii(transcript.slice(0, 100)) },
+          '[deepgram] End of turn',
+        );
+        session.onDeepgramEvent?.({ type: 'UtteranceEnd', transcript });
+      }
+      break;
+    }
+
     case 'UtteranceEnd': {
-      const transcript = msg.channel?.alternatives?.[0]?.transcript ?? '';
+      const transcript = getDeepgramTranscript(msg);
       if (transcript.trim()) {
         logger.info(
           { callId: session.callControlId, transcript: redactPii(transcript.slice(0, 100)) },
@@ -357,23 +434,13 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
 
     case 'Results':
     case 'FinalTranscript': {
-      const transcript = msg.channel?.alternatives?.[0]?.transcript ?? '';
+      const transcript = getDeepgramTranscript(msg);
       const isFinal = msg.is_final === true;
       const isSpeechFinal = msg.speech_final === true;
       const confidence = msg.channel?.alternatives?.[0]?.confidence ?? 0;
 
       // Barge-in: si on est en train de parler et que l'utilisateur dit quelque chose (transcript non vide)
-      if (session.state === 'SPEAKING' && transcript.trim().length > 0) {
-        logger.info(
-          { callId: session.callControlId, transcript: redactPii(transcript.trim()) },
-          '[barge-in] User spoke while assistant was speaking. Interrupting.',
-        );
-        if (session.abortController) {
-          session.abortController.abort();
-          session.abortController = null;
-        }
-        mgr.handleBargeIn(session);
-      }
+      handleBargeInFromTranscript(session, mgr, transcript);
 
       if (isFinal) {
         if (transcript.trim()) {
@@ -490,6 +557,13 @@ export function handleDeepgramMessage(session: CallSession, msg: DeepgramMessage
         session.speculativeTranscript = transcript;
         session.onDeepgramEvent?.({ type: 'InterimHighConfidence', transcript });
       }
+      break;
+    }
+
+    case 'Error': {
+      const message = msg.message ?? msg.error ?? 'Unknown Deepgram error';
+      logger.error({ callId: session.callControlId, message }, '[deepgram] Provider error');
+      session.onDeepgramEvent?.({ type: 'Error', message });
       break;
     }
 

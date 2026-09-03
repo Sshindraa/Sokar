@@ -5,6 +5,7 @@
  *  1. buildDeepgramUrl — model + endpoint routing (Flux v2 / Nova v1)
  *  2. sendAudioToDeepgram — buffer cap (400 chunks, drop oldest on overflow)
  *  3. handleDeepgramMessage — Flux event dispatching:
+ *      - Flux v2 `event` messages (StartOfTurn / EndOfTurn / TurnResumed)
  *      - UtteranceStart → cancel speculative LLM state, fire onDeepgramEvent
  *      - UtteranceEnd → fire onDeepgramEvent with transcript
  *      - SpeechResumed → abort in-flight LLM, clear speculative state
@@ -68,7 +69,8 @@ describe('buildDeepgramUrl', () => {
     const url = buildDeepgramUrl('flux-general-multi', 'PCMA');
     expect(url).toMatch(/^wss:\/\/api\.deepgram\.com\/v2\/listen\?/);
     expect(url).toContain('model=flux-general-multi');
-    expect(url).toContain('language=fr');
+    expect(url).toContain('language_hint=fr');
+    expect(url).not.toContain('language=fr');
   });
 
   it('routes any flux-* model to the v2 endpoint', () => {
@@ -171,6 +173,71 @@ describe('handleDeepgramMessage — event dispatching', () => {
     expect(session.speculativeResult).toBeNull();
     expect(session.speculativeTranscript).toBe('');
     expect(onEvent).toHaveBeenCalledWith({ type: 'UtteranceStart' });
+  });
+
+  it('Flux StartOfTurn: reads the top-level transcript and fires UtteranceStart', () => {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onDeepgramEvent = onEvent;
+
+    handleDeepgramMessage(session, {
+      event: 'StartOfTurn',
+      transcript: 'Bonjour, je voudrais réserver',
+    });
+
+    expect(onEvent).toHaveBeenCalledWith({ type: 'UtteranceStart' });
+  });
+
+  it('Flux StartOfTurn: interrupts TTS as a barge-in signal', () => {
+    const session = makeSession();
+    const mgr = CallSessionManager.getInstance();
+    const telnyxWs = session.telnyxWs;
+    if (!telnyxWs) throw new Error('Missing telnyxWs');
+    mgr.transition(session, 'SPEAKING');
+    session.isSpeaking = true;
+
+    handleDeepgramMessage(session, {
+      event: 'StartOfTurn',
+      transcript: 'Attendez, je voulais préciser',
+    });
+
+    expect(session.state).toBe('LISTENING');
+    expect(session.isSpeaking).toBe(false);
+    const sentPayloads = vi.mocked(telnyxWs.send).mock.calls.map((c) => c[0] as string);
+    expect(sentPayloads.some((p) => p.includes('"event":"clear"'))).toBe(true);
+  });
+
+  it('Flux EndOfTurn: forwards the complete top-level transcript immediately', () => {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onDeepgramEvent = onEvent;
+
+    handleDeepgramMessage(session, {
+      event: 'EndOfTurn',
+      transcript: 'Bonjour, je voudrais réserver une table pour demain.',
+    });
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'UtteranceEnd',
+      transcript: 'Bonjour, je voudrais réserver une table pour demain.',
+    });
+  });
+
+  it('Flux TurnResumed: maps to SpeechResumed so an unfinished turn is cancelled', () => {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onDeepgramEvent = onEvent;
+    const abortController = new AbortController();
+    const abortSpy = vi.spyOn(abortController, 'abort');
+    session.abortController = abortController;
+
+    handleDeepgramMessage(session, {
+      event: 'TurnResumed',
+      transcript: 'Bonjour, je voudrais réserver et...',
+    });
+
+    expect(abortSpy).toHaveBeenCalled();
+    expect(onEvent).toHaveBeenCalledWith({ type: 'SpeechResumed' });
   });
 
   it('UtteranceEnd: forwards the transcript to onDeepgramEvent', () => {
