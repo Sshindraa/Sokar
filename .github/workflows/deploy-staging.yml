@@ -78,7 +78,7 @@ jobs:
             if ! git diff --cached --quiet; then
               git -c user.name='Sokar staging snapshot' \
                 -c user.email='deploy@sokar.tech' \
-                commit -m "staging snapshot ${SOURCE_SHA}"
+                commit -m "chore(staging): snapshot ${SOURCE_SHA}"
             fi
             git status --short
             if [ ! -x /usr/local/sbin/sokar-deploy-root ]; then
