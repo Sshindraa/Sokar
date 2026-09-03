@@ -35,6 +35,9 @@ vi.mock('../../reservations/reservation.service', () => ({
 
 vi.mock('../../../shared/db/client', () => ({
   db: {
+    call: {
+      findUnique: vi.fn().mockResolvedValue({ id: 'call-record-1', restaurantId: 'rest-1' }),
+    },
     restaurant: {
       findUnique: vi.fn().mockResolvedValue({ timezone: 'Europe/Paris' }),
     },
@@ -375,7 +378,7 @@ describe('CallSessionManager — tool execution', () => {
     expect(ReservationService.create).toHaveBeenCalledWith(
       expect.objectContaining({
         restaurantId: 'rest-1',
-        callId: 'leg-test-1',
+        callId: 'call-record-1',
         partySize: 2,
         customerName: 'Jean',
         customerPhone: '+33****0001',
@@ -400,6 +403,21 @@ describe('CallSessionManager — tool execution', () => {
     // puis le LLM produit une réponse finale.
     expect(reply).toBe('Désolé pour le désagrément.');
     expect(ReservationService.create).toHaveBeenCalled();
+  });
+
+  it('createReservation : transfère si le call Telnyx ne possède pas de ligne interne', async () => {
+    vi.mocked(db.call.findUnique).mockResolvedValueOnce(null);
+    mockFetchToolCall(
+      'createReservation',
+      { date: '2026-07-16', time: '19:30', partySize: 2, customerName: 'Jean' },
+      'Je vous transfère au gérant.',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    const reply = await mgr.processUtterance(makeSession(), 'Je voudrais réserver');
+
+    expect(ReservationService.create).not.toHaveBeenCalled();
+    expect(reply).toBe('Je vous transfère au gérant.');
   });
 
   it('checkAvailability : retourne les créneaux disponibles', async () => {
@@ -763,7 +781,7 @@ describe('CallSessionManager — tool execution', () => {
     expect(db.message.create).toHaveBeenCalledWith({
       data: {
         restaurantId: 'rest-1',
-        callId: 'leg-test-1',
+        callId: 'call-record-1',
         customerName: 'Paul',
         customerPhone: '+33****0001',
         content: 'Rappelez-moi',
@@ -1133,7 +1151,7 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     expect(ReservationService.create).toHaveBeenCalledWith(
       expect.objectContaining({
         restaurantId: 'rest-1',
-        callId: 'leg-test-1',
+        callId: 'call-record-1',
         partySize: 2,
         customerName: 'Jean Dupont',
         customerPhone: '+33****0001',

@@ -440,6 +440,7 @@ describe('validateToolArgs — valid args', () => {
     ['takeMessage', { customerName: 'Marie', message: 'Bonjour' }],
     ['takeMessage', { customerName: 'Marie', message: 'Bonjour', callbackPhone: '+33612345678' }],
     ['handoffToManager', {}],
+    ['handoffToManager', null],
     [
       'purchaseGiftCard',
       { amount: 50, senderName: 'Marie', senderPhone: '+33612345678', recipientName: 'Paul' },
@@ -570,5 +571,9 @@ describe('validateToolArgs — invalid args', () => {
   it('rejects an unknown tool name', () => {
     const result = validateToolArgs('doesNotExist', '{}');
     expect(result.success).toBe(false);
+  });
+
+  it('accepts empty arguments for handoffToManager', () => {
+    expect(validateToolArgs('handoffToManager', '').success).toBe(true);
   });
 });

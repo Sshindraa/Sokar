@@ -33,6 +33,9 @@ vi.mock('../../reservations/reservation.service', () => ({
 
 vi.mock('../../../shared/db/client', () => ({
   db: {
+    call: {
+      findUnique: vi.fn().mockResolvedValue({ id: 'call-record-1', restaurantId: 'rest-1' }),
+    },
     restaurant: {
       findUnique: vi.fn().mockResolvedValue({ timezone: 'Europe/Paris' }),
     },
@@ -235,7 +238,7 @@ describe('voice regression harness', () => {
     expect(ReservationService.create).toHaveBeenCalledWith(
       expect.objectContaining({
         restaurantId: 'rest-1',
-        callId: 'leg-test-1',
+        callId: 'call-record-1',
         partySize: 2,
         customerName: 'Jean Dupont',
       }),
@@ -479,7 +482,7 @@ describe('voice regression harness', () => {
     expect(db.message.create).toHaveBeenCalledWith({
       data: {
         restaurantId: 'rest-1',
-        callId: 'leg-test-1',
+        callId: 'call-record-1',
         customerName: 'Marie',
         customerPhone: '+33****0002',
         content: 'Rappelez-moi',
@@ -511,10 +514,10 @@ describe('voice regression harness', () => {
   // ── Scénario 10 : createReservation replay-safe (callId existant) ───────
 
   it('S10 — createReservation : replay-safe (callId déjà existant) → pas de doublon', async () => {
-    // La réservation existe déjà pour ce callLegId → replay-safe retourne l'existante
+    // La réservation existe déjà pour l'ID interne du Call → replay-safe retourne l'existante
     vi.mocked(db.reservation.findUnique).mockResolvedValue({
       id: 'res-existing',
-      callId: 'leg-test-1',
+      callId: 'call-record-1',
       restaurantId: 'rest-1',
       customerName: 'Jean Dupont',
       customerPhone: '+33****0001',
@@ -543,10 +546,10 @@ describe('voice regression harness', () => {
     await mgr.processUtterance(session, 'Réserver pour 2');
 
     // Le service create a bien été appelé (par executeTool), mais en interne
-    // ReservationService.create a trouvé la résa existante via callId et l'a retournée
+    // ReservationService.create a trouvé la résa existante via l'ID interne du Call et l'a retournée
     // sans créer de doublon. On vérifie que create a été appelé avec le bon callId.
     expect(ReservationService.create).toHaveBeenCalledWith(
-      expect.objectContaining({ callId: 'leg-test-1' }),
+      expect.objectContaining({ callId: 'call-record-1' }),
     );
   });
 });
