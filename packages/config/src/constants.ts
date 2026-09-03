@@ -44,27 +44,36 @@ export const SPECULATIVE_MISS_THRESHOLD = 0.6;
 export const LLM_VIP_TURN_THRESHOLD = 5;
 
 // Modèle LLM utilisé dans le pipeline vocal (pas le modèle Hermes).
-// Benchmark 2026-07-24 : Gemma 4 31B sur Cerebras retenu comme primaire :
+// Le provider et le modèle restent configurables par environnement pour les
+// canaries et les bascules sans changement de code.
+// Référence qualité : Gemma 4 31B sur Cerebras :
 //  - Modèle 2026 (avril), plus intelligent que Llama 3.3 70B
 //  - 6/6 appels d'outils valides, function calling natif
 //  - TTFT 403ms (Cerebras WSE-3), 1442 tok/s throughput
 //  - $2.15/$2.70 per M tokens sur Cerebras
 //
-// Fallback : Llama 3.3 70B sur Groq via OpenRouter (plus rapide) :
+// Fallback historique : Llama 3.3 70B sur Groq via OpenRouter (plus rapide) :
 //  - 6/6 appels d'outils valides
 //  - TTFT 151ms (Groq LPU), avg tool call 339ms
 //  - $0.59/$0.79 per M tokens sur Groq
-//  - Déclenchement : erreur primaire (429, 5xx, timeout)
+//  - Déclenchement : erreur primaire (402, 429, 5xx, timeout)
 //
-// Architecture bidirectionnelle : VOICE_LLM_PROVIDER détermine le primaire.
+// Provider Groq direct disponible pour Qwen 3.8 27B :
+// - endpoint OpenAI-compatible api.groq.com/openai/v1
+// - tool use + streaming supportés, mode instruct (reasoning désactivé) adapté à la voix
+// - identifiant : qwen/qwen3.8-27b
+//
+// Architecture bidirectionnelle historique : VOICE_LLM_PROVIDER détermine le primaire.
 // - "cerebras" (défaut) : Gemma 4 primaire, Llama fallback
 // - "openrouter"        : Llama primaire, Gemma fallback
+// - "groq"              : Qwen 3.8 27B primaire, Llama OpenRouter fallback
 //
 // Configurable via VOICE_LLM_MODEL / VOICE_LLM_FALLBACK_MODEL / VOICE_LLM_PROVIDER
 // env vars (résolu dans manager.ts au runtime) pour A/B test sans redeploiement.
 export const VOICE_LLM_MODEL_DEFAULT = 'gemma-4-31b';
 export const VOICE_LLM_FALLBACK_MODEL_DEFAULT = 'meta-llama/llama-3.3-70b-instruct';
 export const CEREBRAS_BASE_URL = 'https://api.cerebras.ai/v1';
+export const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 
 export const TTS_PROVIDERS = ['cartesia', 'deepgram-aura'] as const;
 export type TtsProvider = (typeof TTS_PROVIDERS)[number];

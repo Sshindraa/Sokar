@@ -137,8 +137,10 @@ type VoiceConfigSnapshot = Pick<
   | 'VOICE_LLM_FALLBACK_MODEL'
   | 'VOICE_LLM_TIMEOUT_MS'
   | 'OPENROUTER_BASE_URL'
+  | 'GROQ_BASE_URL'
   | 'CEREBRAS_API_KEY'
   | 'OPENROUTER_API_KEY'
+  | 'GROQ_API_KEY'
 >;
 
 function snapshotVoiceConfig(): VoiceConfigSnapshot {
@@ -148,8 +150,10 @@ function snapshotVoiceConfig(): VoiceConfigSnapshot {
     VOICE_LLM_FALLBACK_MODEL: voiceConfig.VOICE_LLM_FALLBACK_MODEL,
     VOICE_LLM_TIMEOUT_MS: voiceConfig.VOICE_LLM_TIMEOUT_MS,
     OPENROUTER_BASE_URL: voiceConfig.OPENROUTER_BASE_URL,
+    GROQ_BASE_URL: voiceConfig.GROQ_BASE_URL,
     CEREBRAS_API_KEY: voiceConfig.CEREBRAS_API_KEY,
     OPENROUTER_API_KEY: voiceConfig.OPENROUTER_API_KEY,
+    GROQ_API_KEY: voiceConfig.GROQ_API_KEY,
   };
 }
 
@@ -1530,6 +1534,22 @@ function callFetchLlmCompletion(
   ).fetchLlmCompletion(messages, opts);
 }
 
+/** Accès au fetchLlmStreaming privé pour vérifier le chemin SSE Groq. */
+function callFetchLlmStreaming(
+  mgr: CallSessionManager,
+  messages: ChatMessage[],
+  opts: LlmOpts,
+): Promise<{ response: Response; provider: string }> {
+  return (
+    mgr as unknown as {
+      fetchLlmStreaming: (
+        m: ChatMessage[],
+        o: LlmOpts,
+      ) => Promise<{ response: Response; provider: string }>;
+    }
+  ).fetchLlmStreaming(messages, opts);
+}
+
 /** Mock fetch qui retourne 503 pour Cerebras et 200 pour OpenRouter. */
 function mockFetchCerebrasFailOpenRouterOk() {
   const fetchMock = vi.fn().mockImplementation((url: string) => {
@@ -1651,6 +1671,113 @@ describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
     _resetCircuitBreakersForTesting();
     restoreVoiceConfig(savedVoiceConfig);
     vi.useRealTimers();
+  });
+
+  it('Groq utilise Qwen 3.8 en mode instruct avec tool use', async () => {
+    voiceConfig.VOICE_LLM_PROVIDER = 'groq';
+    voiceConfig.VOICE_LLM_MODEL = 'qwen/qwen3.8-27b';
+    voiceConfig.GROQ_API_KEY = 'gsk-test';
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: vi.fn().mockResolvedValue(''),
+      json: vi.fn().mockResolvedValue({
+        choices: [{ message: { role: 'assistant', content: 'Bonjour' } }],
+      }),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const mgr = CallSessionManager.getInstance();
+    const res = await callFetchLlmCompletion(mgr, [{ role: 'user', content: 'Bonjour' }], {
+      maxTokens: 100,
+      temperature: 0.7,
+    });
+
+    expect(res.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://api.groq.com/openai/v1/chat/completions');
+    expect(init.headers).toMatchObject({
+      Authorization: 'Bearer gsk-test',
+      'Content-Type': 'application/json',
+    });
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      model: 'qwen/qwen3.8-27b',
+      reasoning_effort: 'none',
+      top_p: 0.8,
+    });
+  });
+
+  it('Groq retombe sur OpenRouter quand le quota renvoie HTTP 402', async () => {
+    voiceConfig.VOICE_LLM_PROVIDER = 'groq';
+    voiceConfig.VOICE_LLM_MODEL = 'qwen/qwen3.8-27b';
+    voiceConfig.VOICE_LLM_FALLBACK_MODEL = 'meta-llama/llama-3.3-70b-instruct';
+    voiceConfig.GROQ_API_KEY = 'gsk-test';
+
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('api.groq.com')) {
+        return Promise.resolve({
+          ok: false,
+          status: 402,
+          text: vi.fn().mockResolvedValue('Payment Required'),
+          json: vi.fn().mockResolvedValue({}),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(''),
+        json: vi.fn().mockResolvedValue({
+          choices: [{ message: { role: 'assistant', content: 'Réponse de secours' } }],
+        }),
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const mgr = CallSessionManager.getInstance();
+    const res = await callFetchLlmCompletion(mgr, [{ role: 'user', content: 'Bonjour' }], {
+      maxTokens: 100,
+      temperature: 0.7,
+    });
+
+    expect(res.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('api.groq.com');
+    expect(String(fetchMock.mock.calls[1][0])).toContain('openrouter.ai');
+  });
+
+  it('Groq expose le chemin streaming et le provider utilisé', async () => {
+    voiceConfig.VOICE_LLM_PROVIDER = 'groq';
+    voiceConfig.VOICE_LLM_MODEL = 'qwen/qwen3.8-27b';
+    voiceConfig.GROQ_API_KEY = 'gsk-test';
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      }),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const mgr = CallSessionManager.getInstance();
+    const result = await callFetchLlmStreaming(mgr, [{ role: 'user', content: 'Bonjour' }], {
+      maxTokens: 100,
+      temperature: 0.7,
+    });
+
+    expect(result.provider).toBe('groq');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://api.groq.com/openai/v1/chat/completions');
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      model: 'qwen/qwen3.8-27b',
+      stream: true,
+      reasoning_effort: 'none',
+    });
   });
 
   it('circuit breaker : skip Cerebras après 3 échecs consécutifs', async () => {

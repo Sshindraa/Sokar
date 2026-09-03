@@ -248,22 +248,22 @@ export const voiceTtsFirstAudioMs = new Histogram({
 });
 
 /**
- * Nombre total de fallbacks LLM (Cerebras → OpenRouter ou inverse).
+ * Nombre total de fallbacks LLM (provider primaire → provider de secours).
  * Permet de suivre la stabilité des providers voice.
- * Labels : direction (cerebras_to_openrouter | openrouter_to_cerebras).
+ * Labels : direction (ex. groq_to_openrouter, cerebras_to_openrouter).
  */
 export const voiceLlmFallbackTotal = new Counter({
   name: 'voice_llm_fallback_total',
-  help: 'Nombre total de fallbacks LLM (Cerebras → OpenRouter ou inverse)',
+  help: 'Nombre total de fallbacks LLM (provider primaire → provider de secours)',
   labelNames: ['direction'] as const,
   registers: [getRegistry()],
 });
 
 /**
- * Erreurs par provider voice (Deepgram, Cartesia, Cerebras, OpenRouter).
+ * Erreurs par provider voice (Deepgram, Cartesia, Cerebras, Groq, OpenRouter).
  * Permet de corréler les fallbacks avec les erreurs sous-jacentes et de
  * mesurer la fiabilité de chaque provider LLM indépendamment.
- * Labels : provider (deepgram | cartesia | cerebras | openrouter) × type (429 | 4xx | 5xx | timeout | session_abort | ws_error).
+ * Labels : provider (deepgram | cartesia | cerebras | groq | openrouter) × type (429 | 4xx | 5xx | timeout | session_abort | ws_error).
  */
 export const voiceProviderErrorsTotal = new Counter({
   name: 'voice_provider_errors_total',

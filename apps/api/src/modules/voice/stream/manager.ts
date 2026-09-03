@@ -27,11 +27,11 @@ import {
 } from '../../../shared/observability/metrics';
 
 // ─── LLM error classification for voice_provider_errors_total ──────────
-// Distingue les providers réels (cerebras | openrouter) et les types
+// Distingue les providers réels (cerebras | groq | openrouter) et les types
 // d'erreur (429 | 4xx | 5xx | timeout | session_abort) pour permettre
 // de mesurer la fiabilité de chaque provider indépendamment.
 
-type LlmProvider = 'cerebras' | 'openrouter';
+type LlmProvider = 'cerebras' | 'groq' | 'openrouter';
 
 function classifyLlmHttpStatus(status: number): string {
   if (status === 429) return '429';
@@ -108,12 +108,20 @@ function getCerebrasBaseUrl(): string {
   return CEREBRAS_BASE_URL;
 }
 
+/** URL de base Groq (API OpenAI-compatible), surchargeable pour les tests. */
+function getGroqBaseUrl(): string {
+  return voiceConfig.GROQ_BASE_URL;
+}
+
 /**
- * Détermine le provider primaire du LLM voice.
- * - "cerebras"   : Gemma 4 31B sur Cerebras (modèle 2026, plus intelligent)
- * - "openrouter" : Llama 3.3 70B sur Groq via OpenRouter (plus rapide)
- * Défaut : "cerebras" (intelligence privilégiée pour la qualité des conversations).
+ * Détermine le provider de secours pour le provider primaire.
+ * Groq (Qwen 3.8) retombe sur OpenRouter (Llama) ; les deux routes
+ * historiques Cerebras/OpenRouter restent inchangées pour compatibilité.
  */
+function getFallbackProvider(primary: LlmProvider): LlmProvider {
+  if (primary === 'groq' || primary === 'cerebras') return 'openrouter';
+  return 'cerebras';
+}
 
 /**
  * Retourne true si le fallback Cerebras est configuré (clé API présente).
@@ -154,10 +162,10 @@ function getProviderRouting(model?: string): Record<string, unknown> | undefined
 
 /**
  * Détermine si une erreur HTTP justifie le fallback.
- * (429 = rate limit, 5xx = serveur en panne)
+ * (402 = quota épuisé, 429 = rate limit, 5xx = serveur en panne)
  */
 function isFallbackEligibleError(status: number): boolean {
-  return status === 429 || status >= 500;
+  return status === 402 || status === 429 || status >= 500;
 }
 
 function normalizeVoiceIdentity(value: string): string {
@@ -230,10 +238,11 @@ const CIRCUIT_BREAKER_COOLDOWN_MS = 30_000; // 30s de cooldown
 
 const circuitBreakers: Record<string, CircuitBreakerState> = {
   cerebras: { failures: 0, openedAt: null },
+  groq: { failures: 0, openedAt: null },
   openrouter: { failures: 0, openedAt: null },
 };
 
-function isCircuitBreakerOpen(provider: 'cerebras' | 'openrouter'): boolean {
+function isCircuitBreakerOpen(provider: LlmProvider): boolean {
   const state = circuitBreakers[provider];
   if (state.openedAt === null) return false;
   const elapsed = Date.now() - state.openedAt;
@@ -245,7 +254,7 @@ function isCircuitBreakerOpen(provider: 'cerebras' | 'openrouter'): boolean {
   return true;
 }
 
-function recordProviderSuccess(provider: 'cerebras' | 'openrouter'): void {
+function recordProviderSuccess(provider: LlmProvider): void {
   const wasOpen = circuitBreakers[provider].openedAt !== null;
   circuitBreakers[provider] = { failures: 0, openedAt: null };
   if (wasOpen) {
@@ -253,7 +262,7 @@ function recordProviderSuccess(provider: 'cerebras' | 'openrouter'): void {
   }
 }
 
-function recordProviderFailure(provider: 'cerebras' | 'openrouter'): void {
+function recordProviderFailure(provider: LlmProvider): void {
   const state = circuitBreakers[provider];
   state.failures++;
   if (state.failures >= CIRCUIT_BREAKER_THRESHOLD) {
@@ -273,13 +282,14 @@ function recordProviderFailure(provider: 'cerebras' | 'openrouter'): void {
   }
 }
 
-function resetCircuitBreaker(provider: 'cerebras' | 'openrouter'): void {
+function resetCircuitBreaker(provider: LlmProvider): void {
   circuitBreakers[provider] = { failures: 0, openedAt: null };
 }
 
 // Exporté pour les tests
 export function _resetCircuitBreakersForTesting(): void {
   resetCircuitBreaker('cerebras');
+  resetCircuitBreaker('groq');
   resetCircuitBreaker('openrouter');
 }
 
@@ -530,7 +540,7 @@ export class CallSessionManager {
   }
 
   /**
-   * Mode simulation sans clé OpenRouter : réponses fixes qui déclenchent
+   * Mode simulation sans clé LLM : réponses fixes qui déclenchent
    * createReservation sur demande explicite.
    */
   private async mockLlmResponse(session: CallSession, transcript: string): Promise<string> {
@@ -640,6 +650,9 @@ export class CallSessionManager {
   /**
    * Fetch LLM completion avec fallback automatique bidirectionnel.
    *
+   * - Si VOICE_LLM_PROVIDER=groq :
+   *   1. Groq direct (primaire : Qwen 3.8 27B, mode instruct)
+   *   2. OpenRouter (fallback : Llama 3.3 70B) sur 402/429/5xx
    * - Si VOICE_LLM_PROVIDER=cerebras (défaut) :
    *   1. Cerebras direct (primaire : Gemma 4 31B, modèle 2026)
    *   2. OpenRouter (fallback : Llama 3.3 70B sur Groq) sur 429/5xx
@@ -658,6 +671,70 @@ export class CallSessionManager {
       signal?: AbortSignal;
     },
   ): Promise<Response> {
+    if (getVoiceLlmProvider() === 'groq') {
+      // Circuit breaker : skip Groq si open
+      if (!isCircuitBreakerOpen('groq')) {
+        try {
+          const response = await this.fetchGroqCompletion(messages, opts, getVoiceLlmModel());
+          if (response.ok) {
+            recordProviderSuccess('groq');
+            return response;
+          }
+          recordProviderFailure('groq');
+          recordLlmHttpError('groq', response.status);
+          if (isOpenRouterFallbackEnabled() && isFallbackEligibleError(response.status)) {
+            logger.warn(
+              { status: response.status, model: getVoiceLlmModel() },
+              'LLM primary (Groq) failed, falling back to OpenRouter',
+            );
+            await response.text().catch(() => {});
+            return this.fetchWithFallback(
+              'openrouter',
+              messages,
+              opts,
+              getVoiceLlmFallbackModel(),
+              false,
+              'groq',
+            );
+          }
+          return response;
+        } catch (err) {
+          // Session abort (barge-in, raccroché) — pas de failure ni fallback.
+          if (isSessionAbortError(err, opts.signal)) {
+            recordLlmException('groq', err, opts.signal);
+            throw err;
+          }
+          recordProviderFailure('groq');
+          recordLlmException('groq', err, opts.signal);
+          if (isOpenRouterFallbackEnabled()) {
+            logger.warn(
+              { err: err instanceof Error ? err.message : String(err) },
+              'LLM primary (Groq) network error, falling back to OpenRouter',
+            );
+            return this.fetchWithFallback(
+              'openrouter',
+              messages,
+              opts,
+              getVoiceLlmFallbackModel(),
+              false,
+              'groq',
+            );
+          }
+          throw err;
+        }
+      }
+      // Circuit breaker open → skip directly to OpenRouter
+      logger.warn({ provider: 'groq' }, '[circuit-breaker] Groq skipped (open), using OpenRouter');
+      return this.fetchWithFallback(
+        'openrouter',
+        messages,
+        opts,
+        getVoiceLlmFallbackModel(),
+        false,
+        'groq',
+      );
+    }
+
     const useCerebrasPrimary = getVoiceLlmProvider() === 'cerebras';
 
     if (useCerebrasPrimary) {
@@ -818,6 +895,44 @@ export class CallSessionManager {
   }
 
   /**
+   * Fetch LLM completion via Groq direct API.
+   * Qwen 3.8 est utilisé en mode instruct (reasoning désactivé) afin de
+   * préserver le temps de réponse vocal ; le modèle supporte le tool use.
+   */
+  private async fetchGroqCompletion(
+    messages: ChatMessage[],
+    opts: {
+      tools?: ReturnType<typeof getRestaurantTools>;
+      maxTokens: number;
+      temperature: number;
+      signal?: AbortSignal;
+    },
+    model: string,
+  ): Promise<Response> {
+    const body = {
+      model,
+      messages,
+      max_tokens: opts.maxTokens,
+      temperature: opts.temperature,
+      top_p: 0.8,
+      // Qwen 3.8 est par défaut en mode instruct ; l'expliciter évite qu'une
+      // modification du défaut fournisseur ne fasse remonter des tokens de raisonnement.
+      reasoning_effort: 'none',
+      ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
+    };
+
+    return fetch(`${getGroqBaseUrl()}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${voiceConfig.GROQ_API_KEY}`,
+      },
+      signal: withRequestTimeout(opts.signal),
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
    * Fetch LLM completion via OpenRouter.
    */
   private async fetchOpenRouterCompletion(
@@ -863,7 +978,74 @@ export class CallSessionManager {
       temperature: number;
       signal?: AbortSignal;
     },
-  ): Promise<{ response: Response; provider: 'cerebras' | 'openrouter' }> {
+  ): Promise<{ response: Response; provider: LlmProvider }> {
+    if (getVoiceLlmProvider() === 'groq') {
+      // Circuit breaker : skip Groq si open
+      if (!isCircuitBreakerOpen('groq')) {
+        try {
+          const response = await this.fetchGroqStreaming(messages, opts, getVoiceLlmModel());
+          if (response.ok) {
+            recordProviderSuccess('groq');
+            return { response, provider: 'groq' };
+          }
+          recordProviderFailure('groq');
+          recordLlmHttpError('groq', response.status);
+          if (isOpenRouterFallbackEnabled() && isFallbackEligibleError(response.status)) {
+            logger.warn(
+              { status: response.status, model: getVoiceLlmModel() },
+              'LLM streaming primary (Groq) failed, falling back to OpenRouter',
+            );
+            await response.text().catch(() => {});
+            const fallbackResponse = await this.fetchWithFallback(
+              'openrouter',
+              messages,
+              opts,
+              getVoiceLlmFallbackModel(),
+              true,
+              'groq',
+            );
+            return { response: fallbackResponse, provider: 'openrouter' };
+          }
+          return { response, provider: 'groq' };
+        } catch (err) {
+          // Session abort (barge-in, raccroché) — pas de failure ni fallback.
+          if (isSessionAbortError(err, opts.signal)) {
+            recordLlmException('groq', err, opts.signal);
+            throw err;
+          }
+          recordProviderFailure('groq');
+          recordLlmException('groq', err, opts.signal);
+          if (isOpenRouterFallbackEnabled()) {
+            logger.warn(
+              { err: err instanceof Error ? err.message : String(err) },
+              'LLM streaming primary (Groq) network error, falling back to OpenRouter',
+            );
+            const fallbackResponse = await this.fetchWithFallback(
+              'openrouter',
+              messages,
+              opts,
+              getVoiceLlmFallbackModel(),
+              true,
+              'groq',
+            );
+            return { response: fallbackResponse, provider: 'openrouter' };
+          }
+          throw err;
+        }
+      }
+      // Circuit breaker open → skip directement à OpenRouter
+      logger.warn({ provider: 'groq' }, '[circuit-breaker] Groq skipped (open), using OpenRouter');
+      const fallbackResponse = await this.fetchWithFallback(
+        'openrouter',
+        messages,
+        opts,
+        getVoiceLlmFallbackModel(),
+        true,
+        'groq',
+      );
+      return { response: fallbackResponse, provider: 'openrouter' };
+    }
+
     const useCerebrasPrimary = getVoiceLlmProvider() === 'cerebras';
 
     if (useCerebrasPrimary) {
@@ -1005,7 +1187,7 @@ export class CallSessionManager {
    * Si le fallback échoue aussi, on relance l'erreur (pas de retry supplémentaire).
    */
   private async fetchWithFallback(
-    provider: 'cerebras' | 'openrouter',
+    provider: LlmProvider,
     messages: ChatMessage[],
     opts: {
       tools?: ReturnType<typeof getRestaurantTools>;
@@ -1015,12 +1197,12 @@ export class CallSessionManager {
     },
     model: string,
     isStreaming: boolean = false,
+    sourceProvider?: LlmProvider,
   ): Promise<Response> {
     // Métrique : compter tous les fallbacks LLM (tous les chemins de fallback
     // passent par ici). La direction est déduite du provider cible.
-    voiceLlmFallbackTotal.inc({
-      direction: provider === 'openrouter' ? 'cerebras_to_openrouter' : 'openrouter_to_cerebras',
-    });
+    const source = sourceProvider ?? (provider === 'openrouter' ? 'cerebras' : 'openrouter');
+    voiceLlmFallbackTotal.inc({ direction: `${source}_to_${provider}` });
 
     if (isCircuitBreakerOpen(provider)) {
       // Le fallback est aussi en circuit breaker — on tente quand même (half-open)
@@ -1034,10 +1216,14 @@ export class CallSessionManager {
       const response = isStreaming
         ? provider === 'cerebras'
           ? await this.fetchCerebrasStreaming(messages, opts, model)
-          : await this.fetchOpenRouterStreaming(messages, opts, model)
+          : provider === 'groq'
+            ? await this.fetchGroqStreaming(messages, opts, model)
+            : await this.fetchOpenRouterStreaming(messages, opts, model)
         : provider === 'cerebras'
           ? await this.fetchCerebrasCompletion(messages, opts, model)
-          : await this.fetchOpenRouterCompletion(messages, opts, model);
+          : provider === 'groq'
+            ? await this.fetchGroqCompletion(messages, opts, model)
+            : await this.fetchOpenRouterCompletion(messages, opts, model);
       if (response.ok) {
         recordProviderSuccess(provider);
       } else {
@@ -1080,6 +1266,41 @@ export class CallSessionManager {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${voiceConfig.CEREBRAS_API_KEY}`,
+      },
+      signal: withRequestTimeout(opts.signal),
+      body: JSON.stringify(body),
+    });
+  }
+
+  /**
+   * Fetch LLM streaming via Groq direct API.
+   */
+  private async fetchGroqStreaming(
+    messages: ChatMessage[],
+    opts: {
+      tools?: ReturnType<typeof getRestaurantTools>;
+      maxTokens: number;
+      temperature: number;
+      signal?: AbortSignal;
+    },
+    model: string,
+  ): Promise<Response> {
+    const body = {
+      model,
+      messages,
+      max_tokens: opts.maxTokens,
+      temperature: opts.temperature,
+      top_p: 0.8,
+      reasoning_effort: 'none',
+      ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
+      stream: true,
+    };
+
+    return fetch(`${getGroqBaseUrl()}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${voiceConfig.GROQ_API_KEY}`,
       },
       signal: withRequestTimeout(opts.signal),
       body: JSON.stringify(body),
@@ -1267,7 +1488,7 @@ export class CallSessionManager {
               `[stream] Mid-stream timeout on ${providerUsed}, no audio sent yet — retrying with fallback provider`,
             );
             // Retry avec l'autre provider
-            const fallbackProvider = providerUsed === 'cerebras' ? 'openrouter' : 'cerebras';
+            const fallbackProvider = getFallbackProvider(providerUsed);
             const fallbackModel = getVoiceLlmFallbackModel();
             const retryResponse = await this.fetchWithFallback(
               fallbackProvider,
@@ -1280,6 +1501,7 @@ export class CallSessionManager {
               },
               fallbackModel,
               true,
+              providerUsed,
             );
 
             if (!retryResponse.ok) {

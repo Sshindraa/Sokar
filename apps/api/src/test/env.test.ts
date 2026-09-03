@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { VOICE_LLM_FALLBACK_MODEL_DEFAULT, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
+import {
+  GROQ_BASE_URL,
+  VOICE_LLM_FALLBACK_MODEL_DEFAULT,
+  VOICE_LLM_MODEL_DEFAULT,
+} from '@sokar/config';
 import { VoiceConfigSchema } from '../env';
 
 describe('VoiceConfigSchema', () => {
@@ -12,9 +16,11 @@ describe('VoiceConfigSchema', () => {
       VOICE_LLM_FALLBACK_MODEL: VOICE_LLM_FALLBACK_MODEL_DEFAULT,
       VOICE_LLM_TIMEOUT_MS: 8000,
       OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1',
+      GROQ_BASE_URL,
     });
     expect(config.CEREBRAS_API_KEY).toBeUndefined();
     expect(config.OPENROUTER_API_KEY).toBeUndefined();
+    expect(config.GROQ_API_KEY).toBeUndefined();
   });
 
   it('parse les overrides typés et conserve les clés API optionnelles', () => {
@@ -24,8 +30,10 @@ describe('VoiceConfigSchema', () => {
       VOICE_LLM_FALLBACK_MODEL: 'fallback/test-model',
       VOICE_LLM_TIMEOUT_MS: '1250',
       OPENROUTER_BASE_URL: 'https://router.example.test/v1',
+      GROQ_BASE_URL: 'https://groq.example.test/openai/v1',
       CEREBRAS_API_KEY: 'csk',
       OPENROUTER_API_KEY: 'or-key',
+      GROQ_API_KEY: 'gsk-key',
     });
 
     expect(config).toEqual({
@@ -34,8 +42,25 @@ describe('VoiceConfigSchema', () => {
       VOICE_LLM_FALLBACK_MODEL: 'fallback/test-model',
       VOICE_LLM_TIMEOUT_MS: 1250,
       OPENROUTER_BASE_URL: 'https://router.example.test/v1',
+      GROQ_BASE_URL: 'https://groq.example.test/openai/v1',
       CEREBRAS_API_KEY: 'csk',
       OPENROUTER_API_KEY: 'or-key',
+      GROQ_API_KEY: 'gsk-key',
+    });
+  });
+
+  it('accepte Groq comme provider vocal', () => {
+    const config = VoiceConfigSchema.parse({
+      VOICE_LLM_PROVIDER: 'groq',
+      VOICE_LLM_MODEL: 'qwen/qwen3.8-27b',
+      GROQ_API_KEY: 'gsk-key',
+    });
+
+    expect(config).toMatchObject({
+      VOICE_LLM_PROVIDER: 'groq',
+      VOICE_LLM_MODEL: 'qwen/qwen3.8-27b',
+      GROQ_BASE_URL,
+      GROQ_API_KEY: 'gsk-key',
     });
   });
 
