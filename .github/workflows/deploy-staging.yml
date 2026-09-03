@@ -56,7 +56,7 @@ jobs:
             # Le dépôt est public : HTTPS évite toute clé GitHub persistante
             # sur le compte deploy et ne transmet aucun credential au VPS.
             git remote set-url origin https://github.com/Sshindraa/Sokar.git
-            git fetch --no-tags origin main
+            GIT_TERMINAL_PROMPT=0 git -c credential.helper= fetch --no-tags origin main
             git reset --hard origin/main
             git clean -fd
             if [ ! -x /usr/local/sbin/sokar-deploy-root ]; then
