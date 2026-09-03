@@ -50,7 +50,6 @@ export function buildDeepgramUrl(model: string, codec: 'PCMA' | 'PCMU'): string 
     model,
     encoding: isAlaw ? 'alaw' : 'mulaw',
     sample_rate: '8000',
-    channels: '1',
   });
 
   if (isFlux) {
@@ -58,6 +57,9 @@ export function buildDeepgramUrl(model: string, codec: 'PCMA' | 'PCMU'): string 
     // `language`/`interim_results` parameters are not valid on /v2/listen.
     params.set('language_hint', 'fr');
   } else {
+    // Nova v1 accepts the explicit channel count; Flux v2 rejects the
+    // `channels` query parameter (the Telnyx stream is already mono).
+    params.set('channels', '1');
     params.set('language', 'fr');
     params.set('interim_results', 'true');
     params.set('punctuate', 'true');
