@@ -181,9 +181,18 @@ export type ValidateToolArgsResult =
  * client).
  */
 export function validateToolArgs(name: string, argsJson: string): ValidateToolArgsResult {
+  // Les providers OpenAI-compatible émettent parfois `null` ou une chaîne
+  // vide pour un tool sans argument. handoffToManager n'en attend aucun :
+  // normaliser ces deux représentations évite de transformer un transfert
+  // valide en demande de reformulation au milieu d'un appel.
+  const serializedArgs = typeof argsJson === 'string' ? argsJson : '';
+  if (name === 'handoffToManager' && !serializedArgs.trim()) {
+    return { success: true, data: {} };
+  }
+
   let parsed: unknown;
   try {
-    parsed = JSON.parse(argsJson);
+    parsed = JSON.parse(serializedArgs);
   } catch {
     return {
       success: false,
@@ -194,6 +203,10 @@ export function validateToolArgs(name: string, argsJson: string): ValidateToolAr
   const schema = SCHEMA_BY_NAME.get(name);
   if (!schema) {
     return { success: false, error: `Tool inconnu : ${name}` };
+  }
+
+  if (name === 'handoffToManager' && parsed === null) {
+    return { success: true, data: {} };
   }
 
   const result = schema.safeParse(parsed);

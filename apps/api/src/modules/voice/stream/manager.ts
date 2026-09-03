@@ -477,6 +477,54 @@ export class CallSessionManager {
     return ReservationService.availability(session.restaurantId, date, partySize);
   }
 
+  /**
+   * Résout l'ID primaire du Call à partir du call_leg_id Telnyx.
+   *
+   * `call_leg_id` est le `callSid` métier du provider, pas la clé étrangère
+   * Prisma utilisée par Reservation et Message. Ne jamais le transmettre
+   * directement à ces tables : PostgreSQL rejetterait l'écriture (ou, pire,
+   * l'idempotence de réservation ne fonctionnerait pas).
+   */
+  private async resolveCallRecordId(session: CallSession): Promise<string | null> {
+    try {
+      const call = await db.call.findUnique({
+        where: { callSid: session.callLegId },
+        select: { id: true, restaurantId: true },
+      });
+
+      if (!call) {
+        logger.error(
+          { callId: session.callControlId, callLegId: session.callLegId },
+          '[tool] Call record missing for voice session',
+        );
+        return null;
+      }
+
+      // Defense-in-depth : un call_leg_id ne doit jamais pouvoir être réutilisé
+      // pour rattacher une réservation ou un message au mauvais restaurant.
+      if (call.restaurantId !== session.restaurantId) {
+        logger.error(
+          {
+            callId: session.callControlId,
+            callLegId: session.callLegId,
+            callRestaurantId: call.restaurantId,
+            sessionRestaurantId: session.restaurantId,
+          },
+          '[tool] Call record belongs to another restaurant',
+        );
+        return null;
+      }
+
+      return call.id;
+    } catch (err) {
+      logger.error(
+        { err, callId: session.callControlId, callLegId: session.callLegId },
+        '[tool] Failed to resolve internal Call record',
+      );
+      return null;
+    }
+  }
+
   async processUtterance(session: CallSession, transcript: string): Promise<string> {
     const responseGeneration = session.responseGeneration;
     this.transition(session, 'PROCESSING');
@@ -1690,9 +1738,14 @@ export class CallSessionManager {
           const { date, time, partySize, customerName, customerPhone } = args;
 
           try {
+            const callRecordId = await this.resolveCallRecordId(session);
+            if (!callRecordId) {
+              return "Je n'ai pas pu rattacher cet appel à la réservation. Je vais vous transférer au gérant.";
+            }
+
             await ReservationService.create({
               restaurantId: session.restaurantId,
-              callId: session.callLegId,
+              callId: callRecordId,
               reservedAt: new Date(`${date}T${time}`),
               partySize: partySize ?? 1,
               customerName: customerName ?? 'Client',
@@ -1882,10 +1935,15 @@ export class CallSessionManager {
           const { customerName, message, callbackPhone } = args;
 
           try {
+            const callRecordId = await this.resolveCallRecordId(session);
+            if (!callRecordId) {
+              return "Je n'ai pas pu rattacher votre message à cet appel. Je vais vous transférer au gérant.";
+            }
+
             await db.message.create({
               data: {
                 restaurantId: session.restaurantId,
-                callId: session.callLegId,
+                callId: callRecordId,
                 customerName: customerName ?? 'Client',
                 customerPhone: callbackPhone ?? session.from,
                 content: message,

@@ -131,12 +131,16 @@ export function extractConversationSlots(
     }
   }
 
+  // Deepgram transcrit parfois « 19 30 » sans séparateur. On accepte cette
+  // forme en plus de « 19:30 », « 19h30 » et « 19 heures 30 », tout en
+  // conservant l'heure seule uniquement lorsqu'elle est explicitement suivie
+  // de h/heures (pour ne pas confondre « 2 personnes » avec une heure).
   const timeMatch = normalized.match(
-    /\b(?:a|vers)?\s*([01]?\d|2[0-3])\s*(?::|h(?:eures?)?\s*)([0-5]\d)?\b/,
+    /\b(?:a|vers)?\s*([01]?\d|2[0-3])(?:(?:\s*(?::|h(?:eures?)?)\s*)([0-5]\d)?|\s+([0-5]\d))\b/,
   );
   if (timeMatch) {
     const hour = Number(timeMatch[1]);
-    const minute = Number(timeMatch[2] ?? '0');
+    const minute = Number(timeMatch[2] ?? timeMatch[3] ?? '0');
     slots.time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
   }
 

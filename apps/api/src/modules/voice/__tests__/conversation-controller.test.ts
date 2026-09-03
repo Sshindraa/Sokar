@@ -159,6 +159,21 @@ describe('conversation state', () => {
     });
   });
 
+  it('reconnaît une heure transcrite sans séparateur (« 19 30 »)', () => {
+    expect(
+      extractConversationSlots('Demain à 19 30 pour deux personnes', 'Europe/Paris'),
+    ).toMatchObject({
+      time: '19:30',
+      partySize: 2,
+    });
+  });
+
+  it('ne confond pas le nombre de personnes avec une heure', () => {
+    expect(extractConversationSlots('Demain pour 2 personnes', 'Europe/Paris')).not.toHaveProperty(
+      'time',
+    );
+  });
+
   it('résout le prochain jour de semaine dans le fuseau du restaurant', () => {
     expect(
       extractConversationSlots(
