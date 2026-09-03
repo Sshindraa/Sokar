@@ -141,7 +141,7 @@ echo
 echo "== Vérifications =="
 echo -n "  config.yaml: "; [[ -s ~/.hermes/config.yaml ]] && echo "OK ($(wc -c <~/.hermes/config.yaml) B)" || echo "MANQUANT"
 echo -n "  auth.json:   "; [[ -s ~/.hermes/auth.json ]] && echo "OK" || echo "MANQUANT"
-echo -n "  SSH pmbtc:   "; [[ -f ~/.ssh/digitalocean_pmbtc ]] && echo "OK" || echo "MANQUANT"
+echo -n "  SSH sokar:   "; [[ -f ~/.ssh/sokar_ovh ]] && echo "OK" || echo "MANQUANT"
 echo -n "  SSH config:  "; [[ -f ~/.ssh/config ]] && echo "OK" || echo "MANQUANT"
 echo -n "  profiles:    "; ls -1 ~/.hermes/profiles/ 2>/dev/null | tr '\n' ' '; echo "(default = racine)"
 
