@@ -129,12 +129,19 @@ const SPELLING_FILLER_TOKENS = new Set([
 ]);
 
 const NAME_INTRODUCTION_PATTERN =
-  /\b(?:au nom de|un nom de|nom de|mon nom est|mon nom|je m appelle|je suis)\b/u;
+  /\b(?:au nom de|un nom de|(?:en|un) nombre de actifs?|nom de|mon nom est|mon nom|je m appelle|je suis)\b/u;
 const SPELLING_INTRODUCTION_PATTERN =
   /\b(?:epel(?:er|e|ez|ant)?|epell(?:er|e|ez|ant)?|lettres?(?: par lettre)?|alphabet)\b/u;
 const FULL_RESTART_MARKER_PATTERN =
   /\b(?:je recommence|je reprends|je vous redonne|je vais vous redonner)\b/u;
 const CONTINUATION_MARKER_PATTERN = /\b(?:la suite|le reste|continue(?:r|z)?)\b/u;
+/**
+ * Flux peut placer « non » ou « pardon » devant une nouvelle épellation.
+ * Retirer uniquement ce préfixe permet de reconnaître la correction sans
+ * transformer une phrase ordinaire contenant « non » en suite de lettres.
+ */
+const SPELLING_CORRECTION_PREFIX_PATTERN =
+  /^(?:non|pardon|excusez|en fait|je me suis trompe|je voulais dire|j ai dit)\s+/u;
 
 export interface SpelledNameCandidate {
   /** Lettres normalisées, par exemple `KIF` ou `DUPONT`. */
@@ -287,12 +294,16 @@ export function parseSpelledNameTranscriptDetailed(
   const normalized = normalizeTranscript(transcript);
   if (!normalized) return null;
 
-  const nameIntroductionMatch = normalized.match(NAME_INTRODUCTION_PATTERN);
-  const spellingIntroductionMatch = normalized.match(SPELLING_INTRODUCTION_PATTERN);
-  const fullRestartMarkerMatch = normalized.match(FULL_RESTART_MARKER_PATTERN);
-  const continuationMarkerMatch = normalized.match(CONTINUATION_MARKER_PATTERN);
+  // Une correction courte (« Non, A D K I F ») reste une épellation. Le
+  // préfixe est ignoré uniquement en tête ; « je ne sais pas, non… » reste
+  // donc une phrase ordinaire et ne passe pas dans ce parseur.
+  const spellingInput = normalized.replace(SPELLING_CORRECTION_PREFIX_PATTERN, '');
+  const nameIntroductionMatch = spellingInput.match(NAME_INTRODUCTION_PATTERN);
+  const spellingIntroductionMatch = spellingInput.match(SPELLING_INTRODUCTION_PATTERN);
+  const fullRestartMarkerMatch = spellingInput.match(FULL_RESTART_MARKER_PATTERN);
+  const continuationMarkerMatch = spellingInput.match(CONTINUATION_MARKER_PATTERN);
   const hasNameIntroduction = Boolean(nameIntroductionMatch);
-  const lexicalTranscript = tokenizeSpellingTranscript(normalized);
+  const lexicalTranscript = tokenizeSpellingTranscript(spellingInput);
   const hasExplicitSpellingCue =
     Boolean(spellingIntroductionMatch) ||
     hasWord(lexicalTranscript, 'comme') ||
@@ -301,13 +312,13 @@ export function parseSpelledNameTranscriptDetailed(
     hasWord(lexicalTranscript, 'espace') ||
     hasWord(lexicalTranscript, 'trait');
 
-  const markerEnd = lastMarkerEnd(normalized, [
+  const markerEnd = lastMarkerEnd(spellingInput, [
     nameIntroductionMatch,
     spellingIntroductionMatch,
     fullRestartMarkerMatch,
     continuationMarkerMatch,
   ]);
-  const tail = markerEnd > 0 ? normalized.slice(markerEnd).trim() : normalized;
+  const tail = markerEnd > 0 ? spellingInput.slice(markerEnd).trim() : spellingInput;
   const tokens = tokenizeSpellingTranscript(tail);
   if (!tokens.length) return null;
 
@@ -957,11 +968,17 @@ export function handleCustomerNameTurn(
   if (targeted) return targeted;
 
   const parsed = parseSpelledNameTranscriptDetailed(transcript);
+  // Même si Flux a perdu la question « quel nom ? », un « non, A D K I F »
+  // est une correction explicite. Le traiter comme une épellation garde le
+  // verrou métier actif et empêche le LLM de confirmer une valeur devinée.
+  const explicitNameCorrection =
+    Boolean(parsed?.value) && hasUnrecognizedNameCorrectionCue(transcript);
   const parsedBelongsToName =
     Boolean(parsed) &&
     (nameQuestionContext(session) ||
       Boolean(parsed?.hasExplicitSpellingCue) ||
       Boolean(parsed?.hasNameIntroduction) ||
+      explicitNameCorrection ||
       Boolean(parsed?.isFragment && session.conversation.pendingQuestion === 'customerName'));
 
   if (
