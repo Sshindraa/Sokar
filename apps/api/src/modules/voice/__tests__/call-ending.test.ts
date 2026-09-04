@@ -104,16 +104,17 @@ describe('farewell playback and hangup', () => {
     expect(session.ended).toBe(true);
   });
 
-  it('attend le webhook natif au lieu d’un mark sur une file vide', async () => {
+  it('attend aussi le webhook natif quand le mark de la file vide est déjà reçu', async () => {
     const { session, mgr } = fixture();
     vi.mocked(speakTtsStreamed).mockImplementationOnce(async (s) => {
       s.ending!.nativePlayback = true;
     });
     const done = finishCall(session, mgr, 'Au revoir.');
     await vi.advanceTimersByTimeAsync(0);
-    expect(session.telnyxWs.send).toHaveBeenCalledTimes(1); // clear only
-    expect(telnyxFetch).not.toHaveBeenCalled();
+    expect(session.telnyxWs.send).toHaveBeenCalledTimes(2);
     acknowledgeCallEnding(session, session.ending!.markName);
+    expect(telnyxFetch).not.toHaveBeenCalled();
+    acknowledgeCallEnding(session, session.ending!.markName, 'native');
     await done;
     expect(telnyxFetch).toHaveBeenCalledOnce();
   });

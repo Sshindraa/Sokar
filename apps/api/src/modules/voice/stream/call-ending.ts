@@ -20,10 +20,19 @@ export function isExplicitCallEnd(transcript: string): boolean {
   );
 }
 
-export function acknowledgeCallEnding(session: CallSession, name: string): void {
+export function acknowledgeCallEnding(
+  session: CallSession,
+  name: string,
+  source: 'media' | 'native' = 'media',
+): void {
   if (!session.ending || session.ending.markName !== name || session.ended) return;
-  session.ending.playbackCompleted = true;
-  session.ending.complete?.();
+  if (source === 'media') session.ending.mediaCompleted = true;
+  else session.ending.nativeCompleted = true;
+  session.ending.playbackCompleted = Boolean(
+    session.ending.mediaCompleted &&
+    (!session.ending.nativePlayback || session.ending.nativeCompleted),
+  );
+  if (session.ending.playbackCompleted) session.ending.complete?.();
 }
 
 /** Stop accepting turns only after the caller explicitly ends the conversation. */
@@ -69,7 +78,7 @@ export async function finishCall(
         );
         resolve();
       }, 15_000);
-      if (!ending.nativePlayback && session.telnyxWs.readyState === WebSocket.OPEN) {
+      if (session.telnyxWs.readyState === WebSocket.OPEN) {
         session.telnyxWs.send(JSON.stringify({ event: 'mark', mark: { name: ending.markName } }));
       }
     });

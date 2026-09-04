@@ -191,6 +191,8 @@ export interface CallSession {
     markName: string;
     nativePlayback: boolean;
     playbackCompleted: boolean;
+    mediaCompleted?: boolean;
+    nativeCompleted?: boolean;
     complete?: () => void;
     timer?: ReturnType<typeof setTimeout>;
   };

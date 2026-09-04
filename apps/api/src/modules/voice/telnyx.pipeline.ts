@@ -321,7 +321,11 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
       case 'call.speak.ended': {
         const session = CallSessionManager.getInstance().get(payload.call_control_id);
         if (session && payload.client_state) {
-          acknowledgeCallEnding(session, Buffer.from(payload.client_state, 'base64').toString());
+          acknowledgeCallEnding(
+            session,
+            Buffer.from(payload.client_state, 'base64').toString(),
+            'native',
+          );
         }
         return reply.send({ result: 'ok' });
       }

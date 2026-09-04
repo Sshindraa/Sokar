@@ -348,6 +348,7 @@ async function speakTtsFragment(
           tags: { service: 'handler', action: 'speakTtsStreamed', type: 'http-status' },
           extra: { callId: session.callControlId, status, sentence: redactPii(trimmed) },
         });
+        if (!isSessionActiveForTts(session, generation)) return;
         await speakTelnyxNative(
           session,
           'Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?',
@@ -486,6 +487,7 @@ async function speakTtsFragment(
         tags: { service: 'handler', action: 'speakTtsStreamed', type: 'exception' },
         extra: { callId: session.callControlId, sentence: redactPii(trimmed) },
       });
+      if (!isSessionActiveForTts(session, generation)) return;
       await speakTelnyxNative(
         session,
         'Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?',
