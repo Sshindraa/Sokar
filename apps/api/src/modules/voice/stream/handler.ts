@@ -33,6 +33,7 @@ import { persistFluxCall, persistLatencyTrace } from './session-persistence';
 import { speakTtsStreamed } from './tts-handler';
 import { handleFluxEvent, extractRestaurantName } from './llm-handler';
 import { redactPii } from './pii-redact';
+import { acknowledgeCallEnding } from './call-ending';
 import { startTestCallRecording } from '../call-recording.service';
 
 export function buildInitialGreeting(restaurantName: string): string {
@@ -203,12 +204,18 @@ function handleTelnyxMessage(
       return session;
     }
 
+    case 'mark': {
+      const session = mgr.get(callId);
+      if (session && msg.mark) acknowledgeCallEnding(session, msg.mark.name);
+      return session;
+    }
+
     case 'media': {
       const payload = msg.media?.payload;
       if (!payload) return;
 
       const session = mgr.get(callId);
-      if (!session) return session;
+      if (!session || session.ended || session.ending) return session;
 
       // Forwarder l'audio à Deepgram
       sendAudioToDeepgram(session, payload);

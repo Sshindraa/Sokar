@@ -12,6 +12,7 @@
 import { WebSocket } from 'ws';
 import type { FluxEvent, CallSession } from './types';
 import type { CallSessionManager } from './manager';
+import { finishCall, isExplicitCallEnd } from './call-ending';
 import { playFiller, selectRandomGoodbyeText } from './fillers-cache';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
@@ -31,18 +32,29 @@ import {
 import { isVoiceTtsContextV2Enabled } from '../../../shared/configcat';
 import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts.js';
 import { isSpeculativeLlmEnabled } from './speculation';
+import { isNameCollectionBlocking } from './conversation-controller';
+import { setDeepgramSpellingProfile } from './deepgram-bridge';
 import {
   buildAvailabilityReply,
   buildDeterministicTurnResponse,
   classifyVoiceSpeechAct,
   getReadyAvailabilityRequest,
   handleCustomerNameTurn,
+  parseSpelledNameTranscriptDetailed,
   recordAssistantReply,
   recordUserTurn,
+  resetNameCollectionAfterFallback,
 } from './conversation-controller';
 
 const recentTranscripts = new WeakMap<CallSession, { normalized: string; at: number }>();
 export const LLM_FILLER_DELAY_MS = 1_000;
+
+function syncSpellingFluxProfile(session: CallSession): void {
+  setDeepgramSpellingProfile(
+    session,
+    isNameCollectionBlocking(session) || session.conversation.pendingQuestion === 'customerName',
+  );
+}
 
 export function normalizeTranscriptForDedupe(transcript: string): string {
   return transcript
@@ -178,6 +190,7 @@ export function handleFluxEvent(
   session: CallSession,
   mgr: CallSessionManager,
 ): void {
+  if (session.ended || session.ending) return;
   switch (event.type) {
     case 'UtteranceStart': {
       // Annuler toute requête LLM en cours (le caller continue de parler)
@@ -220,6 +233,18 @@ export function handleFluxEvent(
       // Spéculation LLM : lancer le LLM sans attendre la fin de l'utterance
       // Stocker la promise pour la réutiliser si l'utterance finale correspond
       if (!isSpeculativeLlmEnabled(session)) break;
+      const spellingInterim = parseSpelledNameTranscriptDetailed(event.transcript);
+      const nameContextExpected =
+        session.conversation?.pendingQuestion === 'customerName' ||
+        ((session.conversation?.intent === 'reservation' ||
+          session.conversation?.intent === 'availability') &&
+          !session.conversation?.slots.customerName);
+      if (
+        isNameCollectionBlocking(session) ||
+        session.conversation?.pendingQuestion === 'customerName' ||
+        Boolean(spellingInterim && nameContextExpected)
+      )
+        break;
       if (session.state !== 'LISTENING' && session.state !== 'IDLE') break;
 
       // Ne change pas l'état de l'appel ni son historique : tant que Flux n'a
@@ -265,11 +290,24 @@ export function handleFluxEvent(
         );
       };
 
+      // Une spéculation commencée avant l'entrée dans la collecte du nom ne
+      // doit jamais court-circuiter le contrôle déterministe de confirmation.
+      if (
+        isNameCollectionBlocking(session) ||
+        session.conversation?.pendingQuestion === 'customerName'
+      ) {
+        session.speculativeLlm = null;
+        session.speculativeResult = null;
+        session.speculativeTranscript = '';
+        startFinalStreaming();
+        break;
+      }
+
       if (
         isSpeculativeEnabled &&
         session.speculativeLlm &&
         speculativeTranscript &&
-        (speechAct === 'closing' || speechAct === 'backchannel') &&
+        speechAct === 'backchannel' &&
         speculativeTranscriptMatches(speculativeTranscript, event.transcript)
       ) {
         // La formulation reste générée par le LLM, mais son raisonnement a
@@ -389,7 +427,7 @@ async function processTranscript(
 ): Promise<void> {
   const transcript = normalizeSttTranscript(rawTranscript);
   if (!transcript.trim()) return;
-  if (session.ended || session.telnyxWs.readyState !== WebSocket.OPEN) {
+  if (session.ended || session.ending || session.telnyxWs.readyState !== WebSocket.OPEN) {
     writeDebugLog(`[processTranscript] Session ended or WS closed, skipping transcript`);
     return;
   }
@@ -449,14 +487,14 @@ async function processTranscript(
  * Version streaming : reçoit les phrases du LLM au fur et à mesure
  * et lance le TTS immédiatement sans attendre la réponse complète.
  */
-async function processTranscriptStreaming(
+export async function processTranscriptStreaming(
   session: CallSession,
   rawTranscript: string,
   mgr: CallSessionManager,
 ): Promise<void> {
   const transcript = normalizeSttTranscript(rawTranscript);
   if (!transcript.trim()) return;
-  if (session.ended || session.telnyxWs.readyState !== WebSocket.OPEN) {
+  if (session.ended || session.ending || session.telnyxWs.readyState !== WebSocket.OPEN) {
     writeDebugLog(`[processTranscriptStreaming] Session ended or WS closed, skipping`);
     return;
   }
@@ -474,7 +512,9 @@ async function processTranscriptStreaming(
   if (session.state === 'LISTENING') mgr.transition(session, 'PROCESSING');
 
   const livenessResponse = buildLivenessResponse(session, transcript);
-  const speechAct = classifyVoiceSpeechAct(transcript);
+  const classifiedAct = classifyVoiceSpeechAct(transcript);
+  const explicitEnd = isExplicitCallEnd(transcript);
+  const speechAct = classifiedAct === 'closing' && !explicitEnd ? 'backchannel' : classifiedAct;
   recordUserTurn(session, transcript, speechAct);
   recordVoiceTurnClassification(session, speechAct);
   logger.info(
@@ -486,6 +526,53 @@ async function processTranscriptStreaming(
     },
     '[voice-turn] Classified final user turn',
   );
+  if (explicitEnd) {
+    const goodbye = selectRandomGoodbyeText(session.personality?.fillerStyle ?? 'CASUAL');
+    session.turnCount++;
+    session.history.push(
+      { role: 'user', content: transcript },
+      { role: 'assistant', content: goodbye },
+    );
+    recordAssistantReply(session, goodbye);
+    await finishCall(session, mgr, goodbye);
+    return;
+  }
+
+  if (/^merci[.! ]*$/i.test(transcript)) {
+    const question = session.conversation.lastAssistantQuestion;
+    const response = question ? `Je vous en prie. ${question}` : 'Je vous en prie.';
+    session.history.push(
+      { role: 'user', content: transcript },
+      { role: 'assistant', content: response },
+    );
+    recordAssistantReply(session, response);
+    mgr.transition(session, 'SPEAKING');
+    await speakTtsStreamed(session, response);
+    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+    return;
+  }
+
+  // A short, unrecognized utterance after our farewell needs clarification,
+  // not a newly invented cancellation/modification intent (real call: "Nova").
+  const previousReply =
+    session.history.filter((message) => message.role === 'assistant').at(-1)?.content ?? '';
+  if (
+    speechAct === 'content' &&
+    /au revoir|à demain/i.test(previousReply) &&
+    transcript.trim().split(/\s+/).length <= 3 &&
+    !/attendez|ajout|annul|modif|reserv|personne|heure/i.test(transcript)
+  ) {
+    const response = "Pardon, je n'ai pas bien compris. Vous souhaitiez ajouter quelque chose ?";
+    session.history.push(
+      { role: 'user', content: transcript },
+      { role: 'assistant', content: response },
+    );
+    recordAssistantReply(session, response);
+    mgr.transition(session, 'SPEAKING');
+    await speakTtsStreamed(session, response);
+    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+    return;
+  }
   if (livenessResponse) {
     writeDebugLog(
       `[processTranscriptStreaming] Resuming the previous turn after liveness check: "${transcript}"`,
@@ -496,6 +583,7 @@ async function processTranscriptStreaming(
       { role: 'assistant', content: livenessResponse },
     );
     recordAssistantReply(session, livenessResponse);
+    syncSpellingFluxProfile(session);
     mgr.transition(session, 'SPEAKING');
     await speakTtsStreamed(session, livenessResponse);
     if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
@@ -511,16 +599,26 @@ async function processTranscriptStreaming(
       `[processTranscriptStreaming] Handling customer-name spelling without LLM: "${redactPii(transcript)}"`,
     );
     session.turnCount++;
+    let response = customerNameTurn.response;
+    if (customerNameTurn.escalate) {
+      response = await mgr.recordNameSpellingFallback(session);
+      resetNameCollectionAfterFallback(session);
+    }
     session.history.push(
       { role: 'user', content: transcript },
-      { role: 'assistant', content: customerNameTurn.response },
+      { role: 'assistant', content: response },
     );
-    recordAssistantReply(session, customerNameTurn.response);
+    recordAssistantReply(session, response);
+    syncSpellingFluxProfile(session);
     mgr.transition(session, 'SPEAKING');
-    await speakTtsStreamed(session, customerNameTurn.response);
+    await speakTtsStreamed(session, response);
     if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
     return;
   }
+
+  // La confirmation libère le profil Flux avant de repasser au LLM. Le texte
+  // confirmé est injecté explicitement ; le LLM ne peut pas le « corriger ».
+  syncSpellingFluxProfile(session);
 
   const transcriptForLlm = customerNameTurn.confirmedName
     ? `${transcript}. Nom confirmé lettre par lettre : ${customerNameTurn.confirmedName
@@ -539,6 +637,7 @@ async function processTranscriptStreaming(
       { role: 'assistant', content: deterministicResponse },
     );
     recordAssistantReply(session, deterministicResponse);
+    syncSpellingFluxProfile(session);
     mgr.transition(session, 'SPEAKING');
     await speakTtsStreamed(session, deterministicResponse);
     if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
@@ -616,6 +715,7 @@ async function processTranscriptStreaming(
         { role: 'assistant', content: response },
       );
       recordAssistantReply(session, response);
+      syncSpellingFluxProfile(session);
       mgr.transition(session, 'SPEAKING');
       await speakTtsStreamed(session, response);
       if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
@@ -631,29 +731,6 @@ async function processTranscriptStreaming(
     } finally {
       if (isCurrentResponse()) session.conversation.toolInFlight = null;
     }
-  }
-
-  // ── Court-circuit goodbye : si l'appelant clôt la conversation, répondre
-  // instantanément depuis le cache de fillers goodbye (~20ms) au lieu
-  // d'appeler le LLM (~600ms). Le LLM reste disponible pour les closings
-  // complexes (ex: "non merci, je vais rappeler plus tard") qui ne
-  // matchent pas les patterns closing simples.
-  if (speechAct === 'closing') {
-    const goodbyeText = selectRandomGoodbyeText(session.personality?.fillerStyle ?? 'CASUAL');
-    writeDebugLog(`[processTranscriptStreaming] Goodbye filler (cached): "${goodbyeText}"`);
-    session.history.push(
-      { role: 'user', content: transcript },
-      { role: 'assistant', content: goodbyeText },
-    );
-    recordAssistantReply(session, goodbyeText);
-    if (session.latencyTrace) {
-      session.latencyTrace.llmFirstTokenMs = 0; // cache hit, pas de LLM
-    }
-    recordVoiceTurnEvent(session, 'goodbye_filler_hit');
-    mgr.transition(session, 'SPEAKING');
-    await speakTtsStreamed(session, goodbyeText);
-    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
-    return;
   }
 
   writeDebugLog(`[processTranscriptStreaming] Starting LLM stream for: "${redactPii(transcript)}"`);
@@ -733,6 +810,7 @@ async function processTranscriptStreaming(
     );
     if (!isCurrentResponse() || abortController.signal.aborted) return;
     recordAssistantReply(session, fullResponse);
+    syncSpellingFluxProfile(session);
 
     writeDebugLog(`[processTranscriptStreaming] LLM stream ended, waiting for TTS...`);
     const contextTts = contextTtsRef.current;

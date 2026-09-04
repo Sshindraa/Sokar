@@ -8,9 +8,12 @@ import {
   extractConversationSlots,
   getReadyAvailabilityRequest,
   handleCustomerNameTurn,
+  isNameCollectionBlocking,
   parseSpelledNameTranscript,
+  parseSpelledNameTranscriptDetailed,
   recordAssistantReply,
   recordUserTurn,
+  resetNameCollectionAfterFallback,
 } from '../stream/conversation-controller';
 import type { CallSession } from '../stream/types';
 
@@ -65,19 +68,83 @@ describe('conversation state', () => {
     });
   });
 
+  it.each([
+    ['A K I F', 'AKIF'],
+    ['a ka i effe', 'AKIF'],
+    ['K-I-F', 'KIF'],
+    ['Je vous épelle : L I', 'LI'],
+    ['A comme Anatole, K comme Karim, I comme Isabelle, F comme François', 'AKIF'],
+    ['A comme Anatole K I F', 'AKIF'],
+    ['A deux L A N', 'ALLAN'],
+    ['double L', 'LL'],
+    ['double vé i grec', 'WY'],
+    ['K tiret I F', 'K-IF'],
+    ['K trait d’union I F', 'K-IF'],
+  ])('parse %s sans corriger le transcript en %s', (transcript, expected) => {
+    expect(parseSpelledNameTranscript(transcript)).toMatchObject({
+      value: expected,
+      confident: true,
+    });
+  });
+
+  it('conserve les positions ambiguës dans le candidat détaillé', () => {
+    const parsed = parseSpelledNameTranscriptDetailed('Un nom de actif a de k i f');
+
+    expect(parsed).toMatchObject({
+      value: 'ADKIF',
+      partialCandidate: '?ADKIF',
+      confident: false,
+      ambiguousPositions: [0],
+    });
+    expect(parsed?.tokens[0]).toMatchObject({ kind: 'ambiguous', value: null, position: 0 });
+  });
+
+  it('ne traite pas les particules et noms composés ordinaires comme une épellation', () => {
+    expect(parseSpelledNameTranscript('Jean de La Fontaine')).toBeNull();
+    expect(parseSpelledNameTranscript('Anne-Marie')).toBeNull();
+    expect(parseSpelledNameTranscript('de')).toBeNull();
+  });
+
   it('fait répéter une épellation incertaine au lieu de la transmettre au LLM', () => {
     const session = makeSession();
     recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
 
     const result = handleCustomerNameTurn(session, 'Un nom de actif a de k i f');
 
-    expect(result).toEqual({
-      response:
-        "J'ai entendu une suite de lettres, mais je ne suis pas sûr de l'orthographe. Pouvez-vous me redonner votre nom, lettre par lettre, lentement ?",
+    expect(result).toMatchObject({
+      response: "J'ai compris ?-A-D-K-I-F. Quelle est la première lettre, s'il vous plaît ?",
       confirmedName: null,
     });
+    expect(session.conversation.nameCollection.state).toBe('clarifying');
+    expect(session.conversation.nameCollection.ambiguousPositions).toEqual([0]);
     expect(session.conversation.spellingCandidate).toBeNull();
     expect(session.conversation.slots.customerName).toBeUndefined();
+  });
+
+  it('remplit uniquement la zone demandée quand la clarification utilise « comme »', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
+
+    expect(handleCustomerNameTurn(session, 'Au nom de K actif I F')).toMatchObject({
+      response: "J'ai compris K-?-I-F. Quelle est la deuxième lettre, s'il vous plaît ?",
+    });
+    expect(handleCustomerNameTurn(session, 'K comme Karim')).toEqual({
+      response: "K-K-I-F, c'est bien cela ?",
+      confirmedName: null,
+    });
+  });
+
+  it('accepte la lettre C seule comme réponse de clarification', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
+
+    expect(handleCustomerNameTurn(session, 'Un nom de actif a de k i f')).toMatchObject({
+      response: "J'ai compris ?-A-D-K-I-F. Quelle est la première lettre, s'il vous plaît ?",
+    });
+    expect(handleCustomerNameTurn(session, 'C')).toEqual({
+      response: "C-A-D-K-I-F, c'est bien cela ?",
+      confirmedName: null,
+    });
   });
 
   it('répète puis confirme une épellation claire avant de renseigner le slot nom', () => {
@@ -85,7 +152,7 @@ describe('conversation state', () => {
     recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
 
     expect(handleCustomerNameTurn(session, 'Au nom de K I F')).toEqual({
-      response: "J'ai noté : K, I, F. C'est bien votre nom ?",
+      response: "K-I-F, c'est bien cela ?",
       confirmedName: null,
     });
     expect(session.conversation.slots.customerName).toBeUndefined();
@@ -96,6 +163,220 @@ describe('conversation state', () => {
     });
     expect(session.conversation.slots.customerName).toBe('KIF');
     expect(session.conversation.spellingCandidate).toBeNull();
+  });
+
+  it('conserve deux fragments et ne les transmet qu’après confirmation', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
+
+    expect(handleCustomerNameTurn(session, 'A K')).toEqual({
+      response:
+        "J'ai noté A-K pour l'instant. Vous pouvez continuer, ou me dire si c'est tout le nom.",
+      confirmedName: null,
+    });
+    expect(session.conversation.nameCollection.state).toBe('collecting');
+
+    expect(handleCustomerNameTurn(session, 'I F')).toEqual({
+      response: "A-K-I-F, c'est bien cela ?",
+      confirmedName: null,
+    });
+    expect(session.conversation.nameCollection.state).toBe('confirming');
+    expect(session.conversation.slots.customerName).toBeUndefined();
+
+    expect(handleCustomerNameTurn(session, 'Oui')).toEqual({
+      response: null,
+      confirmedName: 'AKIF',
+    });
+    expect(session.conversation.nameCollection.state).toBe('confirmed');
+  });
+
+  it('concatène aussi une continuation de trois lettres au fragment précédent', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom ?');
+
+    handleCustomerNameTurn(session, 'A B');
+    expect(handleCustomerNameTurn(session, 'C D E')).toEqual({
+      response: "A-B-C-D-E, c'est bien cela ?",
+      confirmedName: null,
+    });
+  });
+
+  it('ne libère pas le verrou quand la dernière lettre arrive seule', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom ?');
+
+    handleCustomerNameTurn(session, 'A B');
+    expect(handleCustomerNameTurn(session, 'C')).toEqual({
+      response: "A-B-C, c'est bien cela ?",
+      confirmedName: null,
+    });
+    expect(session.conversation.nameCollection.state).toBe('confirming');
+    expect(isNameCollectionBlocking(session)).toBe(true);
+  });
+
+  it('distingue une continuation d’une reprise complète sans concaténer aveuglément', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom ?');
+
+    expect(handleCustomerNameTurn(session, 'A B')).toMatchObject({
+      response:
+        "J'ai noté A-B pour l'instant. Vous pouvez continuer, ou me dire si c'est tout le nom.",
+    });
+    expect(handleCustomerNameTurn(session, 'La suite I F')).toMatchObject({
+      response: "A-B-I-F, c'est bien cela ?",
+    });
+    expect(handleCustomerNameTurn(session, 'Je recommence K I F')).toMatchObject({
+      response: "K-I-F, c'est bien cela ?",
+    });
+  });
+
+  it('corrige une position ciblée en conservant les autres lettres', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom ?');
+    handleCustomerNameTurn(session, 'A B I F');
+
+    expect(handleCustomerNameTurn(session, 'Non, la deuxième lettre est un K')).toEqual({
+      response: "A-K-I-F, c'est bien cela ?",
+      confirmedName: null,
+    });
+    expect(handleCustomerNameTurn(session, 'Oui')).toEqual({
+      response: null,
+      confirmedName: 'AKIF',
+    });
+  });
+
+  it('invalide une confirmation précédente lorsqu’une correction arrive ensuite', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom ?');
+    handleCustomerNameTurn(session, 'A B I F');
+    handleCustomerNameTurn(session, 'Oui');
+
+    expect(handleCustomerNameTurn(session, 'La première lettre est un K')).toMatchObject({
+      response: "K-B-I-F, c'est bien cela ?",
+      confirmedName: null,
+    });
+    expect(session.conversation.slots.customerName).toBeUndefined();
+    expect(handleCustomerNameTurn(session, 'Oui')).toMatchObject({ confirmedName: 'KBIF' });
+  });
+
+  it('ignore une phrase ordinaire après confirmation sans modifier le nom', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom ?');
+    handleCustomerNameTurn(session, 'A B I F');
+    handleCustomerNameTurn(session, 'Oui');
+
+    expect(handleCustomerNameTurn(session, 'Je voudrais une table à midi')).toEqual({
+      response: null,
+      confirmedName: null,
+    });
+    expect(session.conversation.nameCollection.state).toBe('confirmed');
+    expect(session.conversation.nameCollection.confirmedName).toBe('ABIF');
+    expect(session.conversation.slots.customerName).toBe('ABIF');
+  });
+
+  it('garde la réservation bloquée si une correction reste inexpliquée après confirmation', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom ?');
+    handleCustomerNameTurn(session, 'A B I F');
+    handleCustomerNameTurn(session, 'Oui');
+
+    expect(handleCustomerNameTurn(session, 'Non, je ne sais plus quelle lettre corriger')).toEqual({
+      response:
+        "Je n'ai pas compris la correction. Quelle lettre souhaitez-vous modifier, s'il vous plaît ?",
+      confirmedName: null,
+    });
+    expect(session.conversation.nameCollection.state).toBe('collecting');
+    expect(session.conversation.nameCollection.awaitingCorrection).toBe(true);
+    expect(session.conversation.nameCollection.confirmedName).toBeNull();
+    expect(session.conversation.slots.customerName).toBeUndefined();
+    expect(isNameCollectionBlocking(session)).toBe(true);
+  });
+
+  it('borne les corrections incomprises au même compteur de clarification', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom ?');
+    handleCustomerNameTurn(session, 'A B I F');
+
+    expect(
+      handleCustomerNameTurn(session, 'Non, je ne sais plus quelle lettre corriger'),
+    ).not.toHaveProperty('escalate');
+    expect(handleCustomerNameTurn(session, 'Je ne sais pas')).toMatchObject({
+      escalate: true,
+      confirmedName: null,
+    });
+    expect(session.conversation.nameCollection.clarificationCount).toBe(2);
+  });
+
+  it('ne traite pas une suite isolée comme correction après confirmation', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom ?');
+    handleCustomerNameTurn(session, 'K I F');
+    handleCustomerNameTurn(session, 'Oui');
+
+    expect(handleCustomerNameTurn(session, 'A K')).toEqual({
+      response: null,
+      confirmedName: null,
+    });
+    expect(session.conversation.slots.customerName).toBe('KIF');
+  });
+
+  it('n’autorise pas un oui sans candidat effectivement présenté', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom ?');
+    handleCustomerNameTurn(session, 'A K');
+
+    const result = handleCustomerNameTurn(session, 'Oui');
+    expect(result.confirmedName).toBeNull();
+    expect(session.conversation.slots.customerName).toBeUndefined();
+  });
+
+  it('escalade après deux clarifications infructueuses', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom ?');
+    handleCustomerNameTurn(session, 'Un nom de actif a de k i f');
+
+    expect(handleCustomerNameTurn(session, 'Je ne sais pas')).not.toHaveProperty('escalate');
+    expect(handleCustomerNameTurn(session, 'Je ne sais toujours pas')).toMatchObject({
+      escalate: true,
+      confirmedName: null,
+    });
+    expect(session.conversation.nameCollection.clarificationCount).toBe(2);
+  });
+
+  it('réinitialise la clarification après l’enregistrement d’une prise de message', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom ?');
+    handleCustomerNameTurn(session, 'Un nom de actif a de k i f');
+    handleCustomerNameTurn(session, 'Je ne sais pas');
+    expect(handleCustomerNameTurn(session, 'Je ne sais toujours pas')).toMatchObject({
+      escalate: true,
+    });
+
+    resetNameCollectionAfterFallback(session);
+
+    expect(session.conversation.nameCollection.state).toBe('idle');
+    expect(session.conversation.nameCollection.fallbackRecorded).toBe(true);
+    expect(session.conversation.pendingQuestion).toBeNull();
+    expect(isNameCollectionBlocking(session)).toBe(false);
+  });
+
+  it('termine la collecte sur une clôture sans déclencher la prise de message', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom ?');
+    handleCustomerNameTurn(session, 'A B');
+    handleCustomerNameTurn(session, 'Non, je me suis trompé');
+    expect(session.conversation.nameCollection.awaitingCorrection).toBe(true);
+
+    expect(handleCustomerNameTurn(session, 'Non merci, au revoir')).toEqual({
+      response: null,
+      confirmedName: null,
+    });
+    expect(session.conversation.nameCollection.state).toBe('idle');
+    expect(session.conversation.nameCollection.awaitingCorrection).toBe(false);
+    expect(session.conversation.nameCollection.fallbackRecorded).toBe(false);
+    expect(session.conversation.pendingQuestion).toBeNull();
+    expect(session.conversation.spellingCandidate).toBeNull();
+    expect(isNameCollectionBlocking(session)).toBe(false);
   });
 
   it('reprend une question après un acquiescement sans appeler le LLM', () => {

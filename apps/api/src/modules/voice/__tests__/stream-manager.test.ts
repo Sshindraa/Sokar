@@ -387,10 +387,10 @@ describe('CallSessionManager — tool execution', () => {
     expect(reply).toBe("Parfait, c'est noté.");
   });
 
-  it("createReservation : conserve le nom épelé après confirmation", async () => {
-    vi.mocked(ReservationService.create).mockResolvedValue({ id: 'res-spelled' } as unknown as Awaited<
-      ReturnType<typeof ReservationService.create>
-    >);
+  it('createReservation : conserve le nom épelé après confirmation', async () => {
+    vi.mocked(ReservationService.create).mockResolvedValue({
+      id: 'res-spelled',
+    } as unknown as Awaited<ReturnType<typeof ReservationService.create>>);
     mockFetchToolCall(
       'createReservation',
       {
@@ -415,7 +415,7 @@ describe('CallSessionManager — tool execution', () => {
     expect(reply).toBe('C’est confirmé.');
   });
 
-  it("createReservation : bloque une épellation encore non confirmée", async () => {
+  it('createReservation : bloque une épellation encore non confirmée', async () => {
     mockFetchToolCall(
       'createReservation',
       {
@@ -434,6 +434,105 @@ describe('CallSessionManager — tool execution', () => {
 
     expect(ReservationService.create).not.toHaveBeenCalled();
     expect(reply).toBe('Je vais d’abord vérifier le nom.');
+  });
+
+  it.each(['collecting', 'clarifying', 'confirming'] as const)(
+    'createReservation : bloque l’état de nom %s même sans candidat complet',
+    async (state) => {
+      mockFetchToolCall(
+        'createReservation',
+        {
+          date: '2026-07-16',
+          time: '19:30',
+          partySize: 2,
+          customerName: 'Kif',
+        },
+        'Le nom doit encore être confirmé.',
+      );
+
+      const mgr = CallSessionManager.getInstance();
+      const session = makeSession();
+      session.conversation.nameCollection.state = state;
+      session.conversation.nameCollection.partialCandidate = 'A?';
+      session.conversation.spellingCandidate = null;
+
+      await mgr.processUtterance(session, 'Réserver maintenant');
+
+      expect(ReservationService.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('createReservation : reste bloquée après une prise de message de secours', async () => {
+    mockFetchToolCall(
+      'createReservation',
+      {
+        date: '2026-07-16',
+        time: '19:30',
+        partySize: 2,
+        customerName: 'Kif',
+      },
+      'Le nom doit encore être traité par le gérant.',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    session.conversation.nameCollection.fallbackRecorded = true;
+
+    await mgr.processUtterance(session, 'Réserver maintenant');
+
+    expect(ReservationService.create).not.toHaveBeenCalled();
+  });
+
+  it('createReservation : utilise le nom confirmé même si le LLM en fournit un autre', async () => {
+    vi.mocked(ReservationService.create).mockResolvedValue({
+      id: 'res-confirmed',
+    } as unknown as Awaited<ReturnType<typeof ReservationService.create>>);
+    mockFetchToolCall(
+      'createReservation',
+      {
+        date: '2026-07-16',
+        time: '19:30',
+        partySize: 2,
+        customerName: 'Kif',
+      },
+      'Réservation enregistrée.',
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    session.conversation.nameCollection.state = 'confirmed';
+    session.conversation.nameCollection.confirmedName = 'A-K-I-F';
+
+    await mgr.processUtterance(session, 'Réserver');
+
+    expect(ReservationService.create).toHaveBeenCalledWith(
+      expect.objectContaining({ customerName: 'A-K-I-F' }),
+    );
+  });
+
+  it('recordNameSpellingFallback : persiste réellement un message après deux échecs', async () => {
+    vi.mocked(db.message.create).mockResolvedValue({ id: 'msg-spelling' } as unknown as Awaited<
+      ReturnType<typeof db.message.create>
+    >);
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    session.conversation.nameCollection.state = 'clarifying';
+    session.conversation.nameCollection.clarificationCount = 2;
+
+    const reply = await mgr.recordNameSpellingFallback(session);
+
+    expect(db.message.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        restaurantId: 'rest-1',
+        callId: 'call-record-1',
+        customerName: 'Client',
+        customerPhone: '+33****0001',
+        content: expect.stringContaining('orthographe de son nom'),
+        status: 'PENDING',
+      }),
+    });
+    expect(reply).toContain("J'ai bien noté votre message");
   });
 
   it('createReservation : retourne message de créneau indisponible si SLOT_NOT_AVAILABLE', async () => {
@@ -1079,6 +1178,54 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     expect(session.state).toBe('SPEAKING');
     expect(session.turnCount).toBe(1);
   });
+
+  it.each([false, true])(
+    'coupe après la question et ignore toute confirmation ou outil du même tour (fragmenté=%s)',
+    async (fragmented) => {
+      const text =
+        'D’accord, je note A, K, I, F. Est-ce correct ? C’est noté. Votre réservation est confirmée.';
+      const tool = {
+        index: 0,
+        id: 'premature',
+        type: 'function',
+        function: {
+          name: 'createReservation',
+          arguments: JSON.stringify({
+            date: '2026-09-05',
+            time: '19:30',
+            partySize: 4,
+            customerName: 'Akif',
+          }),
+        },
+      };
+      const deltas = fragmented
+        ? [{ tool_calls: [tool] }, ...Array.from(text, (content) => ({ content }))]
+        : [{ content: text, tool_calls: [tool] }];
+      const stream = new ReadableStream({
+        start(controller) {
+          for (const delta of deltas)
+            controller.enqueue(
+              new TextEncoder().encode(`data: ${JSON.stringify({ choices: [{ delta }] })}\n`),
+            );
+          controller.close();
+        },
+      });
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, body: stream });
+      const mgr = CallSessionManager.getInstance();
+      const session = makeSession();
+      const phrases: string[] = [];
+      const create = vi.mocked(ReservationService.create);
+      create.mockClear();
+      const response = await mgr.processUtteranceStreaming(session, 'Akif', (phrase) => {
+        phrases.push(phrase);
+      });
+      expect(response).toBe('D’accord, je note A, K, I, F. Est-ce correct ?');
+      expect(phrases.join(' ')).toBe(response);
+      expect(create).not.toHaveBeenCalled();
+      expect(session.history.at(-1)).toEqual({ role: 'assistant', content: response });
+      expect(globalThis.fetch).toHaveBeenCalledOnce();
+    },
+  );
 
   it('reconstruit un tool_call depuis le stream sans réémission non-streaming', async () => {
     // Round 0 — streaming fetch : accumulate les deltas de tool_call
