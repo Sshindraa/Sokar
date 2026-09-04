@@ -107,6 +107,9 @@ describe('buildDeepgramUrl', () => {
     const url = buildDeepgramUrl('flux-general-multi', 'PCMA');
     expect(url).toContain('keyterm=r%C3%A9servation');
     expect(url).toContain('keyterm=personnes');
+    expect(url).toContain('keyterm=deux+k');
+    expect(url).toContain('keyterm=double');
+    expect(url).toContain('keyterm=double+k');
     // Multi-value param: URLSearchParams produces keyterm=...&keyterm=...
     const matches = url.match(/keyterm=/g) ?? [];
     expect(matches.length).toBeGreaterThanOrEqual(10);

@@ -68,6 +68,20 @@ describe('conversation state', () => {
     });
   });
 
+  it('reconnaît la variante Flux « en nombre de actifs » dans une question de nom', () => {
+    expect(parseSpelledNameTranscript('En nombre de actifs, a de k i f')).toEqual({
+      value: 'ADKIF',
+      confident: true,
+    });
+  });
+
+  it('ignore le préfixe de correction avant une nouvelle épellation', () => {
+    expect(parseSpelledNameTranscript('Non, a d k i f')).toEqual({
+      value: 'ADKIF',
+      confident: true,
+    });
+  });
+
   it.each([
     ['A K I F', 'AKIF'],
     ['a ka i effe', 'AKIF'],
@@ -121,6 +135,22 @@ describe('conversation state', () => {
     expect(session.conversation.slots.customerName).toBeUndefined();
   });
 
+  it('garde la correction « non, A D K I F » dans le flux déterministe', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
+
+    expect(handleCustomerNameTurn(session, 'En nombre de actifs, a de k i f')).toMatchObject({
+      response: "A-D-K-I-F, c'est bien cela ?",
+      confirmedName: null,
+    });
+    expect(handleCustomerNameTurn(session, 'Non, a d k i f')).toMatchObject({
+      response: "A-D-K-I-F, c'est bien cela ?",
+      confirmedName: null,
+    });
+    expect(session.conversation.nameCollection.state).toBe('confirming');
+    expect(session.conversation.slots.customerName).toBeUndefined();
+  });
+
   it('remplit uniquement la zone demandée quand la clarification utilise « comme »', () => {
     const session = makeSession();
     recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
@@ -163,6 +193,16 @@ describe('conversation state', () => {
     });
     expect(session.conversation.slots.customerName).toBe('KIF');
     expect(session.conversation.spellingCandidate).toBeNull();
+  });
+
+  it('conserve le doublon explicite « A deux K I F »', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
+
+    expect(handleCustomerNameTurn(session, 'Au nom de A deux K I F')).toEqual({
+      response: "A-K-K-I-F, c'est bien cela ?",
+      confirmedName: null,
+    });
   });
 
   it('conserve deux fragments et ne les transmet qu’après confirmation', () => {
