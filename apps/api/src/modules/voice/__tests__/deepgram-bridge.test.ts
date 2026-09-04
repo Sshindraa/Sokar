@@ -31,7 +31,9 @@ import {
   SMART_ENDPOINT_DELAY_INCOMPLETE_RESERVATION_MS,
   SMART_ENDPOINT_DELAY_WITHOUT_PUNCTUATION_MS,
   SMART_ENDPOINT_DELAY_WITH_PUNCTUATION_MS,
+  FLUX_SPELLING_EOT_GRACE_MS,
   handleDeepgramMessage,
+  setDeepgramSpellingProfile,
 } from '../stream/deepgram-bridge';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -70,6 +72,8 @@ describe('buildDeepgramUrl', () => {
     expect(url).toMatch(/^wss:\/\/api\.deepgram\.com\/v2\/listen\?/);
     expect(url).toContain('model=flux-general-multi');
     expect(url).toContain('language_hint=fr');
+    expect(url).toContain('eot_threshold=0.7');
+    expect(url).toContain('eot_timeout_ms=5000');
     expect(url).not.toContain('language=fr');
   });
 
@@ -224,6 +228,163 @@ describe('handleDeepgramMessage — event dispatching', () => {
     expect(onEvent).toHaveBeenCalledWith({
       type: 'UtteranceEnd',
       transcript: 'Bonjour, je voudrais réserver une table pour demain.',
+    });
+  });
+
+  it('Flux EndOfTurn: forwards word scores and EOT confidence separately', () => {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onDeepgramEvent = onEvent;
+
+    handleDeepgramMessage(session, {
+      event: 'EndOfTurn',
+      transcript: 'A ka i effe',
+      words: [
+        { word: 'A', punctuated_word: 'A', confidence: 0.81, start: 0, end: 0.2 },
+        { word: 'ka', confidence: 0.94, start: 0.2, end: 0.4 },
+      ],
+      end_of_turn_confidence: 0.97,
+      trigger: 'eot_threshold',
+    });
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'UtteranceEnd',
+      transcript: 'A ka i effe',
+      words: [
+        { word: 'A', punctuatedWord: 'A', confidence: 0.81, start: 0, end: 0.2 },
+        { word: 'ka', confidence: 0.94, start: 0.2, end: 0.4 },
+      ],
+      endOfTurnConfidence: 0.97,
+      trigger: 'eot_threshold',
+    });
+  });
+
+  it('temporise brièvement un EndOfTurn natif pendant la collecte du nom', () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeSession();
+      const onEvent = vi.fn();
+      session.onDeepgramEvent = onEvent;
+      session.conversation.nameCollection.state = 'collecting';
+
+      handleDeepgramMessage(session, {
+        event: 'EndOfTurn',
+        transcript: 'A K',
+      });
+
+      expect(onEvent).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(FLUX_SPELLING_EOT_GRACE_MS - 1);
+      expect(onEvent).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(onEvent).toHaveBeenCalledWith({ type: 'UtteranceEnd', transcript: 'A K' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('conserve les lettres finalisées quand Flux émet ensuite TurnResumed', () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeSession();
+      const onEvent = vi.fn();
+      session.onDeepgramEvent = onEvent;
+      session.conversation.nameCollection.state = 'collecting';
+
+      handleDeepgramMessage(session, { event: 'EndOfTurn', transcript: 'A K' });
+      // TurnResumed suit EagerEndOfTurn et fournit le transcript révisé du
+      // tour. Le préfixe déjà finalisé ne doit pas disparaître.
+      handleDeepgramMessage(session, { event: 'TurnResumed', transcript: 'A K I F' });
+      handleDeepgramMessage(session, { event: 'EndOfTurn', transcript: 'A K I F' });
+      vi.advanceTimersByTime(FLUX_SPELLING_EOT_GRACE_MS);
+
+      expect(onEvent).toHaveBeenCalledWith({ type: 'SpeechResumed' });
+      expect(onEvent).toHaveBeenCalledWith({ type: 'UtteranceEnd', transcript: 'A K I F' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ne réintroduit pas une lettre retirée par le transcript EndOfTurn final', () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeSession();
+      const onEvent = vi.fn();
+      session.onDeepgramEvent = onEvent;
+      session.conversation.nameCollection.state = 'collecting';
+      session.turnTranscript = 'A K I F';
+
+      handleDeepgramMessage(session, { event: 'EndOfTurn', transcript: 'A K I' });
+      vi.advanceTimersByTime(FLUX_SPELLING_EOT_GRACE_MS);
+
+      expect(onEvent).toHaveBeenCalledWith({ type: 'UtteranceEnd', transcript: 'A K I' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('active et restaure le profil Flux via Configure sur la même socket', () => {
+    const session = makeSession();
+    const wsMock = makeWsMock();
+    session.deepgramWs = wsMock;
+    session.deepgramModel = 'flux-general-multi';
+
+    setDeepgramSpellingProfile(session, true);
+    expect(wsMock.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'Configure',
+        thresholds: { eot_threshold: 0.9, eot_timeout_ms: 5000 },
+      }),
+    );
+
+    setDeepgramSpellingProfile(session, false);
+    expect(wsMock.send).toHaveBeenLastCalledWith(
+      JSON.stringify({
+        type: 'Configure',
+        thresholds: { eot_threshold: 0.7, eot_timeout_ms: 5000 },
+      }),
+    );
+  });
+
+  it('enregistre ConfigureSuccess et ne casse pas le tour sur ConfigureFailure', () => {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onDeepgramEvent = onEvent;
+    setDeepgramSpellingProfile(session, true);
+
+    handleDeepgramMessage(session, {
+      type: 'ConfigureSuccess',
+      thresholds: { eot_threshold: 0.9, eot_timeout_ms: 5000 },
+    });
+    expect(session.deepgramTurnConfig?.applied).toEqual({
+      eotThreshold: 0.9,
+      eotTimeoutMs: 5000,
+    });
+
+    handleDeepgramMessage(session, {
+      type: 'ConfigureFailure',
+      message: 'unsupported threshold',
+    });
+    expect(session.deepgramTurnConfig?.applied).toEqual({
+      eotThreshold: 0.9,
+      eotTimeoutMs: 5000,
+    });
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'ConfigureFailure',
+      message: 'unsupported threshold',
+    });
+  });
+
+  it('accepte aussi la configuration retournée sous la clé config', () => {
+    const session = makeSession();
+
+    handleDeepgramMessage(session, {
+      event: 'ConfigureSuccess',
+      config: { eot_threshold: 0.9, eot_timeout_ms: 5_000 },
+    });
+
+    expect(session.deepgramTurnConfig?.applied).toEqual({
+      eotThreshold: 0.9,
+      eotTimeoutMs: 5_000,
     });
   });
 

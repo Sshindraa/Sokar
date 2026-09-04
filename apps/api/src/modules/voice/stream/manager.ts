@@ -18,7 +18,7 @@ import { sendSms } from '../../../shared/telnyx/client';
 import { trackGiftCardEvent } from '../../analytics/events.service';
 import { AuditLogService } from '../../agentic-reservations/core/audit-log.service';
 import { zonedTimeToUtc } from '../../floor-plan/availability-capacity-aware.service';
-import { createConversationState } from './conversation-controller';
+import { createConversationState, isNameCollectionBlocking } from './conversation-controller';
 import { recordVoiceTurnEvent } from './turn-telemetry';
 import { getVoiceLlmProvider } from '../llm-provider';
 import {
@@ -404,6 +404,8 @@ export class CallSessionManager {
 
   cleanup(session: CallSession): void {
     session.ended = true;
+    if (session.ending?.timer) clearTimeout(session.ending.timer);
+    session.ending?.complete?.();
     session.state = 'IDLE';
     session.isSpeaking = false;
     session.ttsGeneration++;
@@ -413,6 +415,11 @@ export class CallSessionManager {
       clearTimeout(session.speechFinalTimer);
       session.speechFinalTimer = null;
     }
+    if (session.deepgramEndOfTurnTimer) {
+      clearTimeout(session.deepgramEndOfTurnTimer);
+      session.deepgramEndOfTurnTimer = null;
+    }
+    session.pendingDeepgramEndOfTurn = null;
     if (session.abortController) {
       session.abortController.abort();
       session.abortController = null;
@@ -431,13 +438,15 @@ export class CallSessionManager {
   // ─── State Machine ──────────────────────────────────────────────
 
   transition(session: CallSession, newState: CallState): boolean {
-    if (session.ended && newState !== 'IDLE') return false;
+    if ((session.ended || session.ending) && newState !== 'IDLE' && newState !== 'CLOSING')
+      return false;
 
     const valid: Record<CallState, CallState[]> = {
-      IDLE: ['LISTENING', 'SPEAKING'],
-      LISTENING: ['PROCESSING', 'IDLE'],
-      PROCESSING: ['SPEAKING', 'LISTENING', 'IDLE'],
-      SPEAKING: ['LISTENING', 'IDLE'],
+      IDLE: ['LISTENING', 'SPEAKING', 'CLOSING'],
+      LISTENING: ['PROCESSING', 'IDLE', 'CLOSING'],
+      PROCESSING: ['SPEAKING', 'LISTENING', 'IDLE', 'CLOSING'],
+      SPEAKING: ['LISTENING', 'IDLE', 'CLOSING'],
+      CLOSING: ['IDLE'],
     };
 
     if (!valid[session.state].includes(newState)) return false;
@@ -475,6 +484,24 @@ export class CallSessionManager {
     partySize: number,
   ): Promise<AvailabilityResult> {
     return ReservationService.availability(session.restaurantId, date, partySize);
+  }
+
+  /**
+   * Fallback humain réellement persisté après deux clarifications de nom
+   * infructueuses. Il réutilise le tool de prise de message, plutôt que de
+   * prononcer une promesse de transfert sans effet côté restaurant.
+   */
+  async recordNameSpellingFallback(session: CallSession): Promise<string> {
+    return this.executeTool(
+      session,
+      'takeMessage',
+      JSON.stringify({
+        customerName: session.conversation.nameCollection?.confirmedName ?? 'Client',
+        message:
+          "Le client a besoin d'une aide humaine pour confirmer l'orthographe de son nom avant sa réservation.",
+        callbackPhone: session.from,
+      }),
+    );
   }
 
   /**
@@ -662,8 +689,10 @@ export class CallSessionManager {
 
       // Si le LLM répond en texte → terminé
       if (msg.content?.trim()) {
-        if (options.persistHistory !== false) session.history.push(msg);
-        return msg.content;
+        const questionEnd = msg.content.indexOf('?');
+        const content = questionEnd < 0 ? msg.content : msg.content.slice(0, questionEnd + 1);
+        if (options.persistHistory !== false) session.history.push({ role: 'assistant', content });
+        return content;
       }
 
       // Si le LLM appelle un outil
@@ -1430,6 +1459,25 @@ export class CallSessionManager {
       let hasToolCall = false;
       let phrasesYielded = false;
       let midStreamTimedOut = false;
+      let questionReached = false;
+      const emitCompletePhrases = () => {
+        let match: RegExpMatchArray | null;
+        while ((match = sentenceBuffer.match(/^([\s\S]+?(?:\?|[.!](?=\s|$)))\s*/))) {
+          const phrase = match[1].trim();
+          sentenceBuffer = sentenceBuffer.slice(match[0].length);
+          if (!phrase) continue;
+          phrasesYielded = true;
+          Promise.resolve(onPhrase(phrase)).catch((err) =>
+            logger.error({ err }, 'onPhrase failed in LLM stream'),
+          );
+          if (phrase.endsWith('?')) {
+            questionReached = true;
+            fullText = fullText.slice(0, fullText.indexOf('?') + 1);
+            sentenceBuffer = '';
+            break;
+          }
+        }
+      };
       const toolCallAccumulator: Array<{
         id: string;
         type: string;
@@ -1496,22 +1544,15 @@ export class CallSessionManager {
               sentenceBuffer += token;
               fullText += token;
 
-              // Détecter fin de phrase : . ! ? suivi d'espace ou fin
-              const match = sentenceBuffer.match(/^(.+?[.!?])(\s+|$)/);
-              if (match) {
-                const phrase = match[1].trim();
-                if (phrase) {
-                  phrasesYielded = true;
-                  // Lancer onPhrase sans await pour ne pas bloquer le stream
-                  Promise.resolve(onPhrase(phrase)).catch((err) =>
-                    logger.error({ err }, 'onPhrase failed in sentence-buffered LLM stream'),
-                  );
-                }
-                sentenceBuffer = sentenceBuffer.slice(match[0].length);
-              }
+              emitCompletePhrases();
+              if (questionReached) break;
             } catch {
               // Ignorer les lignes mal formées
             }
+          }
+          if (questionReached) {
+            await reader.cancel().catch(() => undefined);
+            break;
           }
         }
       } catch (streamErr) {
@@ -1603,20 +1644,15 @@ export class CallSessionManager {
                     if (!token) continue;
                     sentenceBuffer += token;
                     fullText += token;
-                    const match = sentenceBuffer.match(/^(.+?[.!?])(\s+|$)/);
-                    if (match) {
-                      const phrase = match[1].trim();
-                      if (phrase) {
-                        phrasesYielded = true;
-                        Promise.resolve(onPhrase(phrase)).catch((err) =>
-                          logger.error({ err }, 'onPhrase failed in retry stream'),
-                        );
-                      }
-                      sentenceBuffer = sentenceBuffer.slice(match[0].length);
-                    }
+                    emitCompletePhrases();
+                    if (questionReached) break;
                   } catch {
                     // Ignorer les lignes mal formées
                   }
+                }
+                if (questionReached) {
+                  await retryReader.cancel().catch(() => undefined);
+                  break;
                 }
               }
             } finally {
@@ -1641,6 +1677,12 @@ export class CallSessionManager {
         }
       } finally {
         reader.releaseLock();
+      }
+
+      if (questionReached) {
+        signal?.throwIfAborted();
+        session.history.push({ role: 'assistant', content: fullText.trim() });
+        return fullText.trim();
       }
 
       // Yield le reste du buffer s'il reste quelque chose
@@ -1722,6 +1764,7 @@ export class CallSessionManager {
    * Exécute un appel d'outil et retourne le résultat texte.
    */
   private async executeTool(session: CallSession, name: string, argsJson: string): Promise<string> {
+    if (session.ending || session.ended) return 'Appel terminé.';
     try {
       const validated = validateToolArgs(name, argsJson);
       if (!validated.success) {
@@ -1739,13 +1782,18 @@ export class CallSessionManager {
 
           // Même si un provider LLM contourne la réponse déterministe, une
           // épellation en attente ne doit jamais déclencher d'effet métier.
-          if (session.conversation.spellingCandidate) {
+          if (
+            isNameCollectionBlocking(session) ||
+            session.conversation.nameCollection?.fallbackRecorded
+          ) {
             return "Je dois d'abord confirmer l'orthographe de votre nom. Pouvez-vous me redonner les lettres, s'il vous plaît ?";
           }
 
           // Le nom confirmé par notre garde déterministe est la source de
           // vérité ; il ne peut pas être réécrit en mot plausible par le LLM.
-          const confirmedCustomerName = session.conversation.slots.customerName;
+          const confirmedCustomerName =
+            session.conversation.nameCollection?.confirmedName ??
+            session.conversation.slots.customerName;
           const reservationCustomerName = confirmedCustomerName ?? customerName ?? 'Client';
 
           try {

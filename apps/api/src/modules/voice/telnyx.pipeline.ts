@@ -6,6 +6,7 @@ import { CustomerService } from '../customers/customer.service';
 import { buildSystemPrompt, type OpeningHours } from './prompts';
 import { detectOutcome, hadReservationIntent } from './outcome';
 import { CallSessionManager } from './stream/manager';
+import { acknowledgeCallEnding } from './stream/call-ending';
 import { getVoiceLlmProvider } from './llm-provider';
 
 import {
@@ -30,6 +31,7 @@ interface TelnyxCallPayload {
       from: string;
       to: string;
       direction: string;
+      client_state?: string;
       duration_sec?: number;
       start_time?: string;
       end_time?: string;
@@ -314,6 +316,18 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         }
 
         return; // réponse déjà envoyée
+      }
+
+      case 'call.speak.ended': {
+        const session = CallSessionManager.getInstance().get(payload.call_control_id);
+        if (session && payload.client_state) {
+          acknowledgeCallEnding(
+            session,
+            Buffer.from(payload.client_state, 'base64').toString(),
+            'native',
+          );
+        }
+        return reply.send({ result: 'ok' });
       }
 
       case 'call.hangup': {

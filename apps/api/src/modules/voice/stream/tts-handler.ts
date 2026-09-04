@@ -30,7 +30,7 @@ import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics'
 export function isSessionActiveForTts(session: CallSession, generation?: number): boolean {
   return (
     !session.ended &&
-    session.state === 'SPEAKING' &&
+    (session.state === 'SPEAKING' || session.state === 'CLOSING') &&
     session.telnyxWs.readyState === WebSocket.OPEN &&
     (generation === undefined || (session.ttsGeneration ?? 0) === generation)
   );
@@ -148,6 +148,8 @@ export async function speakTelnyxNative(session: CallSession, text: string): Pro
   writeDebugLog(
     `[speakTelnyxNative] Sending native Telnyx TTS speak command for: "${redactPii(text)}"`,
   );
+  if (session.ending?.nativePlayback) return;
+  if (session.ending) session.ending.nativePlayback = true;
   try {
     const res = await telnyxFetch(`/v2/calls/${session.callControlId}/actions/speak`, {
       method: 'POST',
@@ -156,10 +158,13 @@ export async function speakTelnyxNative(session: CallSession, text: string): Pro
         Authorization: `Bearer ${process.env.TELNYX_API_KEY}`,
       },
       body: JSON.stringify({
-        payload: text,
+        payload: session.ending ? 'Au revoir, bonne journée.' : text,
         voice: 'female',
         language: 'fr-FR',
         payload_type: 'text',
+        ...(session.ending
+          ? { client_state: Buffer.from(session.ending.markName).toString('base64') }
+          : {}),
       }),
     });
     if (!res.ok) {
@@ -343,6 +348,7 @@ async function speakTtsFragment(
           tags: { service: 'handler', action: 'speakTtsStreamed', type: 'http-status' },
           extra: { callId: session.callControlId, status, sentence: redactPii(trimmed) },
         });
+        if (!isSessionActiveForTts(session, generation)) return;
         await speakTelnyxNative(
           session,
           'Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?',
@@ -481,6 +487,7 @@ async function speakTtsFragment(
         tags: { service: 'handler', action: 'speakTtsStreamed', type: 'exception' },
         extra: { callId: session.callControlId, sentence: redactPii(trimmed) },
       });
+      if (!isSessionActiveForTts(session, generation)) return;
       await speakTelnyxNative(
         session,
         'Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?',

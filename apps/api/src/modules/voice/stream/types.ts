@@ -1,10 +1,66 @@
 import type { WebSocket } from 'ws';
 
 /** États possibles de la conversation */
-export type CallState = 'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING';
+export type CallState = 'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING' | 'CLOSING';
 
 /** Acte de parole détecté avant l'orchestration LLM. */
 export type VoiceSpeechAct = 'liveness' | 'backchannel' | 'closing' | 'correction' | 'content';
+
+export type NameCollectionState = 'idle' | 'collecting' | 'clarifying' | 'confirming' | 'confirmed';
+
+export type SpellingTokenKind = 'letter' | 'separator' | 'ambiguous';
+
+/** Token conservé pendant une épellation, y compris quand Flux n'est pas sûr. */
+export interface SpellingToken {
+  /** Position logique dans le nom (les séparateurs ne consomment pas d'ordinal). */
+  position: number;
+  raw: string;
+  value: string | null;
+  kind: SpellingTokenKind;
+}
+
+/** État dédié à la collecte du nom, indépendant de la dernière question LLM. */
+export interface NameCollection {
+  state: NameCollectionState;
+  /** Candidat avec `?` aux positions ambiguës, séparateurs explicites conservés. */
+  partialCandidate: string;
+  tokens: SpellingToken[];
+  ambiguousPositions: number[];
+  /** Nombre de réponses infructueuses aux demandes de clarification. */
+  clarificationCount: number;
+  /** Une correction a été détectée mais sa position/lettre reste à préciser. */
+  awaitingCorrection: boolean;
+  /** Valeur effectivement présentée à l'appelant pour confirmation. */
+  presentedCandidate: string | null;
+  confirmedName: string | null;
+  /** Une prise de message humaine a terminé la collecte sans confirmer le nom. */
+  fallbackRecorded: boolean;
+}
+
+/** Mot Flux et ses métadonnées STT. La confiance du mot n'est pas la confiance EOT. */
+export interface FluxWord {
+  word: string;
+  punctuatedWord?: string;
+  confidence?: number;
+  start?: number;
+  end?: number;
+}
+
+/** Seuils de détection de fin de tour configurables via le message Flux Configure. */
+export interface FluxTurnConfig {
+  eotThreshold: number;
+  eotTimeoutMs: number;
+  eagerEotThreshold?: number;
+}
+
+export interface DeepgramTurnConfigState {
+  base: FluxTurnConfig;
+  desired: FluxTurnConfig;
+  applied: FluxTurnConfig | null;
+  spellingActive: boolean;
+  /** Profil réellement actif avant l'entrée dans le mode épellation. */
+  previous?: FluxTurnConfig | null;
+}
 
 /**
  * Mémoire métier minimale d'un appel. Le LLM conserve la compréhension fine ;
@@ -33,6 +89,7 @@ export interface ConversationState {
   lastAssistantQuestion: string | null;
   /** Nom épelé détecté, en attente de confirmation explicite par l'appelant. */
   spellingCandidate: string | null;
+  nameCollection: NameCollection;
   misunderstandingCount: number;
   closing: boolean;
 }
@@ -53,11 +110,33 @@ export interface VoiceTurnTelemetry {
 /** Événements Deepgram Flux */
 export type FluxEvent =
   | { type: 'UtteranceStart' }
-  | { type: 'UtteranceEnd'; transcript: string }
+  | {
+      type: 'UtteranceEnd';
+      transcript: string;
+      words?: FluxWord[];
+      endOfTurnConfidence?: number;
+      trigger?: string;
+    }
   | { type: 'SpeechResumed' }
-  | { type: 'EagerEndOfTurn'; transcript: string }
-  | { type: 'FinalTranscript'; transcript: string }
-  | { type: 'InterimHighConfidence'; transcript: string }
+  | {
+      type: 'EagerEndOfTurn';
+      transcript: string;
+      words?: FluxWord[];
+      endOfTurnConfidence?: number;
+      trigger?: string;
+    }
+  | {
+      type: 'FinalTranscript';
+      transcript: string;
+      words?: FluxWord[];
+    }
+  | {
+      type: 'InterimHighConfidence';
+      transcript: string;
+      words?: FluxWord[];
+    }
+  | { type: 'ConfigureSuccess'; config: FluxTurnConfig }
+  | { type: 'ConfigureFailure'; message: string }
   | { type: 'Error'; message: string };
 
 /** Message entrant de Telnyx Media Stream WebSocket */
@@ -80,6 +159,7 @@ export interface TelnyxStreamMessage {
   stop?: {
     call_control_id: string;
   };
+  mark?: { name: string };
   stream_id?: string;
 }
 
@@ -107,6 +187,15 @@ export interface CallSession {
   systemPrompt: string;
   state: CallState;
   ended: boolean;
+  ending?: {
+    markName: string;
+    nativePlayback: boolean;
+    playbackCompleted: boolean;
+    mediaCompleted?: boolean;
+    nativeCompleted?: boolean;
+    complete?: () => void;
+    timer?: ReturnType<typeof setTimeout>;
+  };
   turnCount: number;
   isVip: boolean;
   codec: 'PCMA' | 'PCMU';
@@ -119,6 +208,19 @@ export interface CallSession {
   deepgramReady: Promise<void> | null;
   /** Callback mutable pour les événements Deepgram (remplacé par le handler WS) */
   onDeepgramEvent: ((event: FluxEvent) => void) | null;
+  /** Model actif ; permet de garder la logique v1 Nova séparée du protocole Flux v2. */
+  deepgramModel?: string;
+  /** Profil EOT courant ; conservé même quand le WebSocket est reconnecté. */
+  deepgramTurnConfig?: DeepgramTurnConfigState;
+  /** Timer de grâce pour un EndOfTurn Flux reçu pendant une épellation. */
+  deepgramEndOfTurnTimer?: ReturnType<typeof setTimeout> | null;
+  /** EndOfTurn Flux mis en attente pendant cette courte grâce. */
+  pendingDeepgramEndOfTurn?: {
+    transcript: string;
+    words?: FluxWord[];
+    endOfTurnConfidence?: number;
+    trigger?: string;
+  } | null;
 
   // Gestion audio
   audioBuffer: Buffer[];
