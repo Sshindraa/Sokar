@@ -472,6 +472,40 @@ export function parseSpelledNameTranscript(transcript: string): SpelledNameCandi
   return { value: parsed.value, confident: parsed.confident };
 }
 
+/**
+ * Flux peut conserver des mots de reprise avant la vraie épellation :
+ * « Non, non, attendez… A deux K I F ». Le parseur principal reste strict
+ * pour ne pas transformer une phrase ordinaire en nom ; dans un contexte de
+ * collecte de nom, on essaie donc uniquement les suffixes qui forment une
+ * épellation complète et sans ambiguïté.
+ */
+function parseTrailingSpellingTranscript(transcript: string): DetailedSpelledNameCandidate | null {
+  const normalized = normalizeTranscript(transcript);
+  const words = normalized.split(/\s+/u).filter(Boolean);
+  if (words.length < 3) return null;
+
+  for (let start = 0; start <= words.length - 2; start++) {
+    const suffix = words.slice(start).join(' ');
+    const parsed = parseSpelledNameTranscriptDetailed(suffix);
+    if (!parsed || !parsed.confident || parsed.value.length < 2) continue;
+
+    // Un suffixe est accepté seulement si le préfixe ressemble à une reprise
+    // ou à une correction. Cela évite de lire « à la carte » comme « A-K ».
+    const prefix = words.slice(0, start).join(' ');
+    if (
+      prefix &&
+      !/\b(?:non|pardon|excusez|attends?|attendez|reprends?|recommence|redonne|en fait|je voulais dire|j ai dit|lettres?|epelle)/u.test(
+        prefix,
+      )
+    ) {
+      continue;
+    }
+    return parsed;
+  }
+
+  return null;
+}
+
 function createTokensFromValue(value: string): SpellingToken[] {
   const tokens: SpellingToken[] = [];
   let position = 0;
@@ -605,6 +639,12 @@ function ordinalLabel(position: number): string {
 function ambiguityQuestion(collection: NameCollection): string {
   const position = collection.ambiguousPositions[0] ?? 0;
   const partial = formatCandidateForSpeech(collection.partialCandidate);
+  // Ne jamais vocaliser un « ? » ou une suite de lettres fabriquée à partir
+  // d'un mot ASR inconnu (« Aikif »). Demander une reprise claire est plus
+  // naturel et évite d'orienter l'appelant vers une fausse orthographe.
+  if (collection.partialCandidate.includes('?')) {
+    return "Je n'ai pas bien saisi l'orthographe. Pouvez-vous me redonner le nom lettre par lettre, s'il vous plaît ?";
+  }
   return (
     "J'ai compris " +
     partial +
@@ -967,7 +1007,11 @@ export function handleCustomerNameTurn(
   const targeted = applyTargetedCorrection(session, transcript);
   if (targeted) return targeted;
 
-  const parsed = parseSpelledNameTranscriptDetailed(transcript);
+  const parsed =
+    parseSpelledNameTranscriptDetailed(transcript) ??
+    (nameQuestionContext(session) || isNameCollectionActive(session)
+      ? parseTrailingSpellingTranscript(transcript)
+      : null);
   // Même si Flux a perdu la question « quel nom ? », un « non, A D K I F »
   // est une correction explicite. Le traiter comme une épellation garde le
   // verrou métier actif et empêche le LLM de confirmer une valeur devinée.
@@ -980,6 +1024,31 @@ export function handleCustomerNameTurn(
       Boolean(parsed?.hasNameIntroduction) ||
       explicitNameCorrection ||
       Boolean(parsed?.isFragment && session.conversation.pendingQuestion === 'customerName'));
+
+  // « Non » en réponse à une demande de lettre signifie que le candidat est
+  // faux, y compris quand nous étions encore en clarification. Le traiter
+  // comme une nouvelle épellation évite de répéter la même question ambiguë.
+  if (
+    isNameRejection(transcript) &&
+    (collection.state === 'clarifying' ||
+      collection.state === 'collecting' ||
+      collection.state === 'confirming')
+  ) {
+    collection.state = 'collecting';
+    collection.presentedCandidate = null;
+    collection.confirmedName = null;
+    collection.tokens = [];
+    collection.partialCandidate = '';
+    collection.ambiguousPositions = [];
+    collection.clarificationCount = 0;
+    collection.awaitingCorrection = false;
+    collection.fallbackRecorded = false;
+    session.conversation.spellingCandidate = null;
+    return {
+      response: "D'accord. Pouvez-vous me redonner votre nom, lettre par lettre, lentement ?",
+      confirmedName: null,
+    };
+  }
 
   if (
     collection.state === 'confirming' &&
@@ -1303,6 +1372,12 @@ export function extractConversationSlots(
     const hour = Number(timeMatch[1]);
     const minute = Number(timeMatch[2] ?? timeMatch[3] ?? '0');
     slots.time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  } else if (/\b(?:a|vers)?\s*midi\b/.test(normalized)) {
+    // « à midi » est la formulation la plus courante au téléphone ; elle
+    // doit déclencher la même vérification qu'une heure numérique.
+    slots.time = '12:00';
+  } else if (/\b(?:a|vers)?\s*minuit\b/.test(normalized)) {
+    slots.time = '00:00';
   }
 
   const partyMatch = normalized.match(
@@ -1356,6 +1431,15 @@ export function buildAvailabilityReply(
     .map((slot) => slot.replace(/^0/, '').replace(':00', ' h').replace(':', ' h '))
     .join(' ou ');
   return `Alors ${time} c'est complet, par contre j'ai ${alternatives}. Ça vous irait ?`;
+}
+
+/**
+ * Réponse de repli quand le moteur de disponibilité est indisponible. Elle ne
+ * confirme jamais le créneau et ne demande pas le nom avant une vérification
+ * réussie.
+ */
+export function buildAvailabilityErrorReply(): string {
+  return "Je n'arrive pas à vérifier ce créneau pour le moment. Voulez-vous que je vous passe le gérant ?";
 }
 
 export function recordUserTurn(

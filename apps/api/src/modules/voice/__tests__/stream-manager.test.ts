@@ -603,6 +603,43 @@ describe('CallSessionManager — tool execution', () => {
     expect(reply).toBe('Très bien, quel est votre nom ?');
   });
 
+  it('createReservationFromConversation : utilise le créneau vérifié et le nom confirmé', async () => {
+    vi.mocked(ReservationService.create).mockResolvedValue({
+      id: 'res-direct-1',
+    } as unknown as Awaited<ReturnType<typeof ReservationService.create>>);
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    session.conversation.slots = {
+      date: '2026-07-16',
+      time: '12:00',
+      partySize: 4,
+      customerName: 'AKKIF',
+    };
+    session.conversation.nameCollection.state = 'confirmed';
+    session.conversation.nameCollection.confirmedName = 'AKKIF';
+    session.conversation.lastAvailabilityResult = {
+      key: '2026-07-16:12:00:4',
+      date: '2026-07-16',
+      time: '12:00',
+      partySize: 4,
+      slots: ['12:00', '12:30'],
+    };
+
+    const reply = await mgr.createReservationFromConversation(session);
+
+    expect(reply).toContain('Réservation confirmée');
+    expect(ReservationService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        restaurantId: 'rest-1',
+        callId: 'call-record-1',
+        partySize: 4,
+        customerName: 'AKKIF',
+        customerPhone: '+33****0001',
+      }),
+    );
+  });
+
   it('checkAvailability : retourne message si aucun créneau', async () => {
     vi.mocked(ReservationService.availability).mockResolvedValue({
       slots: [],

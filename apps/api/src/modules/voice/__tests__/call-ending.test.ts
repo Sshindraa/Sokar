@@ -45,6 +45,7 @@ function fixture() {
     }),
     processUtteranceStreaming: vi.fn(),
     getAvailability: vi.fn(),
+    createReservationFromConversation: vi.fn().mockResolvedValue(null),
   } as unknown as CallSessionManager;
   return { session, mgr };
 }
@@ -147,6 +148,90 @@ describe('farewell playback and hangup', () => {
     expect(session.ending).toBeUndefined();
     expect(telnyxFetch).not.toHaveBeenCalled();
     expect(session.state).toBe('LISTENING');
+  });
+
+  it('ne délègue pas au LLM la collecte des slots de réservation', async () => {
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.date = '2026-09-05';
+
+    await processTranscriptStreaming(session, 'Pour quatre personnes', mgr);
+
+    expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
+    expect(speakTtsStreamed).toHaveBeenCalledWith(session, 'Vous voulez venir vers quelle heure ?');
+    expect(session.conversation.pendingQuestion).toBe('time');
+  });
+
+  it('vérifie « à midi » avant de demander le nom', async () => {
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots = {
+      date: '2026-09-05',
+      partySize: 4,
+    };
+    vi.mocked(mgr.getAvailability).mockResolvedValue({
+      slots: ['12:00'],
+    } as unknown as Awaited<ReturnType<CallSessionManager['getAvailability']>>);
+
+    await processTranscriptStreaming(session, "Est-ce que c'est possible à midi ?", mgr);
+
+    expect(mgr.getAvailability).toHaveBeenCalledWith(session, '2026-09-05', 4);
+    expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
+    expect(speakTtsStreamed).toHaveBeenCalledWith(
+      session,
+      'Oui, nous avons de la place pour 4 personnes à 12 h. À quel nom je réserve ?',
+    );
+    expect(session.conversation.pendingQuestion).toBe('customerName');
+  });
+
+  it("ne prétend pas qu'un créneau est disponible si la vérification échoue", async () => {
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots = {
+      date: '2026-09-05',
+      partySize: 4,
+    };
+    vi.mocked(mgr.getAvailability).mockRejectedValue(new Error('calendar unavailable'));
+
+    await processTranscriptStreaming(session, "Est-ce que c'est possible à midi ?", mgr);
+
+    expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
+    expect(speakTtsStreamed).toHaveBeenCalledWith(
+      session,
+      "Je n'arrive pas à vérifier ce créneau pour le moment. Voulez-vous que je vous passe le gérant ?",
+    );
+  });
+
+  it('réserve directement après la confirmation explicite du nom', async () => {
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots = {
+      date: '2026-09-05',
+      time: '12:00',
+      partySize: 4,
+    };
+    session.conversation.lastAvailabilityResult = {
+      key: '2026-09-05:12:00:4',
+      date: '2026-09-05',
+      time: '12:00',
+      partySize: 4,
+      slots: ['12:00'],
+    };
+    session.conversation.pendingQuestion = 'customerName';
+    session.conversation.lastAssistantQuestion = 'À quel nom je réserve ?';
+    vi.mocked(mgr.createReservationFromConversation).mockResolvedValue(
+      'Réservation confirmée pour AKKIF.',
+    );
+
+    await processTranscriptStreaming(session, 'Au nom de A deux k i f', mgr);
+    await processTranscriptStreaming(session, 'Oui', mgr);
+
+    expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
+    expect(mgr.createReservationFromConversation).toHaveBeenCalledWith(session);
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      "C'est réservé au nom de AKKIF, samedi 5 septembre à midi, pour 4 personnes. Je vous envoie un SMS de confirmation.",
+    );
   });
 
   it('clarifie un transcript ambigu après le départ au lieu d’inventer une annulation', async () => {
