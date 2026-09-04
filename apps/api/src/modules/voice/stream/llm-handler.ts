@@ -35,8 +35,10 @@ import { isSpeculativeLlmEnabled } from './speculation';
 import { isNameCollectionBlocking } from './conversation-controller';
 import { setDeepgramSpellingProfile } from './deepgram-bridge';
 import {
+  buildAvailabilityErrorReply,
   buildAvailabilityReply,
   buildDeterministicTurnResponse,
+  buildReservationProgressResponse,
   classifyVoiceSpeechAct,
   getReadyAvailabilityRequest,
   handleCustomerNameTurn,
@@ -54,6 +56,27 @@ function syncSpellingFluxProfile(session: CallSession): void {
     session,
     isNameCollectionBlocking(session) || session.conversation.pendingQuestion === 'customerName',
   );
+}
+
+function formatReservationTimeForSpeech(time: string): string {
+  if (time === '12:00') return 'midi';
+  if (time === '00:00') return 'minuit';
+  const [hours, minutes] = time.split(':').map(Number);
+  if (minutes === 0) return `${hours} heures`;
+  return `${hours} heures ${String(minutes).padStart(2, '0')}`;
+}
+
+function buildReservationConfirmationResponse(session: CallSession, customerName: string): string {
+  const { date, time, partySize } = session.conversation.slots;
+  if (!date || !time || !partySize) return `C'est réservé au nom de ${customerName}.`;
+
+  const formattedDate = new Intl.DateTimeFormat('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'UTC',
+  }).format(new Date(`${date}T12:00:00.000Z`));
+  return `C'est réservé au nom de ${customerName}, ${formattedDate} à ${formatReservationTimeForSpeech(time)}, pour ${partySize} personne${partySize > 1 ? 's' : ''}. Je vous envoie un SMS de confirmation.`;
 }
 
 export function normalizeTranscriptForDedupe(transcript: string): string {
@@ -595,6 +618,10 @@ export async function processTranscriptStreaming(
   // (ex. « K I F » → « Kif ») et on exige une confirmation explicite.
   const customerNameTurn = handleCustomerNameTurn(session, transcript);
   if (customerNameTurn.response) {
+    // Un nouveau tour peut avoir invalidé cette réponse pendant la lecture
+    // TTS précédente (barge-in). Une réponse périmée ne doit jamais remettre
+    // l'état en SPEAKING ni bloquer le tour suivant.
+    if (!isCurrentResponse()) return;
     writeDebugLog(
       `[processTranscriptStreaming] Handling customer-name spelling without LLM: "${redactPii(transcript)}"`,
     );
@@ -610,6 +637,7 @@ export async function processTranscriptStreaming(
     );
     recordAssistantReply(session, response);
     syncSpellingFluxProfile(session);
+    if (!isCurrentResponse()) return;
     mgr.transition(session, 'SPEAKING');
     await speakTtsStreamed(session, response);
     if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
@@ -618,7 +646,32 @@ export async function processTranscriptStreaming(
 
   // La confirmation libère le profil Flux avant de repasser au LLM. Le texte
   // confirmé est injecté explicitement ; le LLM ne peut pas le « corriger ».
+  if (!isCurrentResponse()) return;
   syncSpellingFluxProfile(session);
+
+  // Si le créneau a déjà été vérifié et que le client vient de confirmer le
+  // nom, finaliser directement. Cela évite de perdre un « oui » dans un appel
+  // LLM indisponible et garantit que le nom épelé reste la source de vérité.
+  if (customerNameTurn.confirmedName) {
+    const reservationResult = await mgr.createReservationFromConversation(session);
+    if (!isCurrentResponse()) return;
+    if (reservationResult) {
+      const response = reservationResult.startsWith('Réservation confirmée')
+        ? buildReservationConfirmationResponse(session, customerNameTurn.confirmedName)
+        : reservationResult;
+      session.turnCount++;
+      session.history.push(
+        { role: 'user', content: transcript },
+        { role: 'assistant', content: response },
+      );
+      recordAssistantReply(session, response);
+      syncSpellingFluxProfile(session);
+      mgr.transition(session, 'SPEAKING');
+      await speakTtsStreamed(session, response);
+      if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+      return;
+    }
+  }
 
   const transcriptForLlm = customerNameTurn.confirmedName
     ? `${transcript}. Nom confirmé lettre par lettre : ${customerNameTurn.confirmedName
@@ -626,8 +679,11 @@ export async function processTranscriptStreaming(
         .join(' ')}`
     : transcript;
 
-  const deterministicResponse = buildDeterministicTurnResponse(session, speechAct, transcript);
+  const deterministicResponse =
+    buildDeterministicTurnResponse(session, speechAct, transcript) ??
+    buildReservationProgressResponse(session, transcript);
   if (deterministicResponse) {
+    if (!isCurrentResponse()) return;
     writeDebugLog(
       `[processTranscriptStreaming] Handling ${speechAct} without LLM: "${transcript}"`,
     );
@@ -638,6 +694,7 @@ export async function processTranscriptStreaming(
     );
     recordAssistantReply(session, deterministicResponse);
     syncSpellingFluxProfile(session);
+    if (!isCurrentResponse()) return;
     mgr.transition(session, 'SPEAKING');
     await speakTtsStreamed(session, deterministicResponse);
     if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
@@ -726,8 +783,22 @@ export async function processTranscriptStreaming(
       });
       logger.warn(
         { err, callId: session.callControlId },
-        '[voice-turn] Direct availability lookup failed; using the LLM fallback',
+        '[voice-turn] Direct availability lookup failed; using a safe deterministic fallback',
       );
+      if (isCurrentResponse()) {
+        const response = buildAvailabilityErrorReply();
+        session.turnCount++;
+        session.history.push(
+          { role: 'user', content: transcript },
+          { role: 'assistant', content: response },
+        );
+        recordAssistantReply(session, response);
+        syncSpellingFluxProfile(session);
+        mgr.transition(session, 'SPEAKING');
+        await speakTtsStreamed(session, response);
+        if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+      }
+      return;
     } finally {
       if (isCurrentResponse()) session.conversation.toolInFlight = null;
     }

@@ -7,6 +7,7 @@ import {
   createConversationState,
   extractConversationSlots,
   getReadyAvailabilityRequest,
+  buildReservationProgressResponse,
   handleCustomerNameTurn,
   isNameCollectionBlocking,
   parseSpelledNameTranscript,
@@ -126,7 +127,8 @@ describe('conversation state', () => {
     const result = handleCustomerNameTurn(session, 'Un nom de actif a de k i f');
 
     expect(result).toMatchObject({
-      response: "J'ai compris ?-A-D-K-I-F. Quelle est la première lettre, s'il vous plaît ?",
+      response:
+        "Je n'ai pas bien saisi l'orthographe. Pouvez-vous me redonner le nom lettre par lettre, s'il vous plaît ?",
       confirmedName: null,
     });
     expect(session.conversation.nameCollection.state).toBe('clarifying');
@@ -156,7 +158,8 @@ describe('conversation state', () => {
     recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
 
     expect(handleCustomerNameTurn(session, 'Au nom de K actif I F')).toMatchObject({
-      response: "J'ai compris K-?-I-F. Quelle est la deuxième lettre, s'il vous plaît ?",
+      response:
+        "Je n'ai pas bien saisi l'orthographe. Pouvez-vous me redonner le nom lettre par lettre, s'il vous plaît ?",
     });
     expect(handleCustomerNameTurn(session, 'K comme Karim')).toEqual({
       response: "K-K-I-F, c'est bien cela ?",
@@ -169,7 +172,8 @@ describe('conversation state', () => {
     recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
 
     expect(handleCustomerNameTurn(session, 'Un nom de actif a de k i f')).toMatchObject({
-      response: "J'ai compris ?-A-D-K-I-F. Quelle est la première lettre, s'il vous plaît ?",
+      response:
+        "Je n'ai pas bien saisi l'orthographe. Pouvez-vous me redonner le nom lettre par lettre, s'il vous plaît ?",
     });
     expect(handleCustomerNameTurn(session, 'C')).toEqual({
       response: "C-A-D-K-I-F, c'est bien cela ?",
@@ -228,6 +232,41 @@ describe('conversation state', () => {
       confirmedName: 'AKIF',
     });
     expect(session.conversation.nameCollection.state).toBe('confirmed');
+  });
+
+  it('reprend proprement une épellation bruitée puis comprend la correction « A deux K I F »', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
+
+    expect(handleCustomerNameTurn(session, 'Au nom de Aikif, a de k i f')).toMatchObject({
+      response:
+        "Je n'ai pas bien saisi l'orthographe. Pouvez-vous me redonner le nom lettre par lettre, s'il vous plaît ?",
+      confirmedName: null,
+    });
+    expect(session.conversation.nameCollection.state).toBe('clarifying');
+
+    expect(handleCustomerNameTurn(session, 'Non.')).toEqual({
+      response: "D'accord. Pouvez-vous me redonner votre nom, lettre par lettre, lentement ?",
+      confirmedName: null,
+    });
+    expect(session.conversation.nameCollection.state).toBe('collecting');
+
+    expect(
+      handleCustomerNameTurn(
+        session,
+        'Non, non, non, non. Attends, attends, attends. A deux k i f.',
+      ),
+    ).toEqual({
+      response: "A-K-K-I-F, c'est bien cela ?",
+      confirmedName: null,
+    });
+    expect(session.conversation.nameCollection.state).toBe('confirming');
+
+    expect(handleCustomerNameTurn(session, 'Oui.')).toEqual({
+      response: null,
+      confirmedName: 'AKKIF',
+    });
+    expect(session.conversation.slots.customerName).toBe('AKKIF');
   });
 
   it('concatène aussi une continuation de trois lettres au fragment précédent', () => {
@@ -478,6 +517,23 @@ describe('conversation state', () => {
     });
   });
 
+  it('garde la collecte de réservation sur une seule question à la fois', () => {
+    const session = makeSession();
+    session.timezone = 'Europe/Paris';
+    recordUserTurn(
+      session,
+      'Je voudrais réserver demain soir',
+      'content',
+      new Date('2026-09-04T10:00:00Z'),
+    );
+    expect(buildReservationProgressResponse(session)).toBe('Vous serez combien ?');
+
+    recordUserTurn(session, 'Pour quatre personnes', 'content');
+    expect(buildReservationProgressResponse(session, 'Pour quatre personnes')).toBe(
+      'Vous voulez venir vers quelle heure ?',
+    );
+  });
+
   it('convertit les heures et ne propose que deux alternatives', () => {
     expect(
       buildAvailabilityReply({ date: '2026-07-23', time: '20:00', partySize: 2 }, [
@@ -542,6 +598,19 @@ describe('conversation state', () => {
     ).toMatchObject({
       time: '19:30',
       partySize: 2,
+    });
+  });
+
+  it('reconnaît « à midi » comme une heure vérifiable', () => {
+    expect(
+      extractConversationSlots(
+        'Demain soir, pour quatre personnes. Est-ce possible à midi ?',
+        'Europe/Paris',
+      ),
+    ).toMatchObject({
+      date: expect.any(String),
+      time: '12:00',
+      partySize: 4,
     });
   });
 

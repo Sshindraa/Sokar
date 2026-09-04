@@ -487,6 +487,35 @@ export class CallSessionManager {
   }
 
   /**
+   * Finalise une réservation après la confirmation explicite du nom. Le
+   * résultat de disponibilité doit correspondre exactement aux créneaux
+   * courants ; cela permet de réserver sans repasser par un LLM qui pourrait
+   * perdre le « oui » ou réécrire le nom épelé.
+   */
+  async createReservationFromConversation(session: CallSession): Promise<string | null> {
+    const { slots, nameCollection, lastAvailabilityResult } = session.conversation;
+    const customerName = nameCollection?.confirmedName ?? slots.customerName;
+    if (!slots.date || !slots.time || !slots.partySize || !customerName) return null;
+
+    const key = `${slots.date}:${slots.time}:${slots.partySize}`;
+    if (lastAvailabilityResult?.key !== key || !lastAvailabilityResult.slots.includes(slots.time)) {
+      return null;
+    }
+
+    return this.executeTool(
+      session,
+      'createReservation',
+      JSON.stringify({
+        date: slots.date,
+        time: slots.time,
+        partySize: slots.partySize,
+        customerName,
+        customerPhone: session.from,
+      }),
+    );
+  }
+
+  /**
    * Fallback humain réellement persisté après deux clarifications de nom
    * infructueuses. Il réutilise le tool de prise de message, plutôt que de
    * prononcer une promesse de transfert sans effet côté restaurant.
