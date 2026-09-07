@@ -31,6 +31,10 @@ jobs:
         uses: appleboy/ssh-action@v1
         env:
           ALERT_WEBHOOK: ${{ secrets.ALERT_WEBHOOK }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          ALERT_SMS_TO: ${{ secrets.ALERT_SMS_TO }}
           STRIPE_PRICE_ESSENTIAL_MONTHLY: ${{ vars.STRIPE_STAGING_ESSENTIAL_MONTHLY }}
           STRIPE_PRICE_ESSENTIAL_ANNUAL: ${{ vars.STRIPE_STAGING_ESSENTIAL_ANNUAL }}
           STRIPE_PRICE_PRO_MONTHLY: ${{ vars.STRIPE_STAGING_PRO_MONTHLY }}
@@ -46,7 +50,7 @@ jobs:
           username: deploy
           key: ${{ secrets.STAGING_SSH_KEY }}
           command_timeout: 18m
-          envs: ALERT_WEBHOOK,STRIPE_PRICE_ESSENTIAL_MONTHLY,STRIPE_PRICE_ESSENTIAL_ANNUAL,STRIPE_PRICE_PRO_MONTHLY,STRIPE_PRICE_PRO_ANNUAL,STRIPE_PRICE_MULTI_SITE_MONTHLY,STRIPE_PRICE_MULTI_SITE_ANNUAL,STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL,NEXT_PUBLIC_DEMO_RESTAURANT_ID,NEXT_PUBLIC_DEMO_STAGING
+          envs: ALERT_WEBHOOK,SENTRY_DSN,ALERT_EMAIL_TO,ALERT_WEBHOOK_URL,ALERT_SMS_TO,STRIPE_PRICE_ESSENTIAL_MONTHLY,STRIPE_PRICE_ESSENTIAL_ANNUAL,STRIPE_PRICE_PRO_MONTHLY,STRIPE_PRICE_PRO_ANNUAL,STRIPE_PRICE_MULTI_SITE_MONTHLY,STRIPE_PRICE_MULTI_SITE_ANNUAL,STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL,NEXT_PUBLIC_DEMO_RESTAURANT_ID,NEXT_PUBLIC_DEMO_STAGING
           script: |
             set -euo pipefail
             cd /opt/sokar-staging
@@ -84,6 +88,9 @@ jobs:
             if [ ! -x /usr/local/sbin/sokar-deploy-root ]; then
               sudo install -o root -g root -m 0755 \
                 scripts/ops/sokar-deploy-root.sh /usr/local/sbin/sokar-deploy-root
+            fi
+            if [ -n "${SENTRY_DSN:-}${ALERT_EMAIL_TO:-}${ALERT_WEBHOOK_URL:-}${ALERT_SMS_TO:-}" ]; then
+              bash scripts/ops/sync-alerting-config.sh staging
             fi
             bash scripts/ops/sync-stripe-prices.sh staging
             SOKAR_SKIP_GIT_PULL=1 bash scripts/deploy.sh --env staging
@@ -202,8 +209,5 @@ jobs:
           # the staging URL. The PLAYWRIGHT_BASE_URL env var overrides the
           # dev server baseURL in playwright.config.ts.
           pnpm exec playwright test dashboard.spec.ts --project=desktop-1440 \
-            --reporter=list 2>&1 || true
-          # E2E against staging est best-effort : les tests peuvent échouer
-          # si Clerk redirige ou si les données de démo diffèrent. On log
-          # les résultats sans faire échouer le workflow.
-          echo "E2E smoke test completed (best-effort, non-blocking)"
+            --reporter=list
+          echo "E2E smoke test completed (blocking)"

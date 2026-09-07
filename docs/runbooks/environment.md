@@ -26,6 +26,15 @@
 | `apps/dashboard/.env` (prod) | Clerk keys, `API_URL`, Sentry                                     |
 | `apps/connect/.env` (prod)   | `SITE_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`, `DASHBOARD_URL`     |
 
+### Alerting de production
+
+Les secrets GitHub de l’environnement `production` (et, si souhaité, `staging`)
+peuvent fournir `SENTRY_DSN`, `ALERT_EMAIL_TO`, `ALERT_WEBHOOK_URL` et
+`ALERT_SMS_TO`. Le workflow les synchronise vers `apps/api/.env` sans les
+afficher. `ALERT_WEBHOOK` et `HEALTHCHECKS_PING_URL` alimentent le watchdog VPS
+dans `/etc/sokar/watchdog.env`, fichier root lisible uniquement par le cron.
+Si aucun secret n’est défini, le déploiement conserve la configuration existante.
+
 Pour la télémétrie Service Copilot, définir `SERVICE_COPILOT_TELEMETRY_SECRET` dans l’environnement
 de l’API (valeur aléatoire d’au moins 32 caractères). Elle signe les jetons de recommandation ; ne pas
 la réutiliser pour un autre usage et ne jamais la mettre dans une variable `NEXT_PUBLIC_*`.
