@@ -1,5 +1,7 @@
 # Contexte Sokar
 
+2026-09-07 16:09 — [launch, staging, multisite] **Backfill staging et mode démo corrigé** — Le dry-run a trouvé 10 restaurants historiques ; le backfill staging les a rattachés transactionnellement aux comptes. Le dashboard expose désormais la carte Établissements et le plan Multi-Site. Le mode démo staging résout aussi `accountId`/`clerkOrganizationId` depuis le restaurant afin que Checkout et les opérations multi-site OWNER ne soient pas bloqués par `SITE_ADMIN_REQUIRED`. Test ciblé Clerk : 5/5 ; CI/staging/prod du commit précédent restent verts. Nouveau cycle CI/staging à lancer pour cette correction.
+
 2026-09-07 15:30 — [launch, dashboard, isolation] **Contexte site réinitialisé au changement d’organisation** — Le `SiteProvider` vide désormais le site actif et le compte mémorisés avant de charger une nouvelle organisation Clerk, puis efface aussi le compte en cas d’erreur de chargement. Dashboard 159/159 et typecheck verts.
 
 2026-09-07 15:28 — [launch, billing, portal] **Portail client Stripe ajouté** — Les propriétaires peuvent ouvrir `POST /billing/portal-session` depuis les paramètres pour gérer formule, factures et résiliation. Le portail réutilise le client du compte/site principal, refuse les membres non propriétaires et renvoie une erreur contrôlée si aucune souscription n’est liée. Tests Billing : 17/17 ; validation Stripe signée et staging restent ouvertes.

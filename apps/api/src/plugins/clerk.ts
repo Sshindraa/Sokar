@@ -39,8 +39,27 @@ export function requireOrg() {
     // DEMO_STAGING n'est défini qu'en staging → la prod reste inchangée.
     const demoMode = process.env.NODE_ENV !== 'production' || process.env.DEMO_STAGING === '1';
     if (demoMode && process.env.DEMO_RESTAURANT_ID) {
-      req.restaurantId = process.env.DEMO_RESTAURANT_ID;
+      const demoRestaurantId = process.env.DEMO_RESTAURANT_ID;
+      const demoRestaurant = await db.restaurant.findUnique({
+        where: { id: demoRestaurantId },
+        select: { accountId: true, siteStatus: true },
+      });
+      if (!demoRestaurant) {
+        return reply.status(404).send({
+          error: 'DEMO_RESTAURANT_NOT_FOUND',
+          message: 'Restaurant de démonstration indisponible.',
+        });
+      }
+      if (demoRestaurant.siteStatus === 'SUSPENDED' || demoRestaurant.siteStatus === 'ARCHIVED') {
+        return reply.status(404).send({
+          error: 'SITE_UNAVAILABLE',
+          message: 'Établissement indisponible ou accès refusé.',
+        });
+      }
+      req.restaurantId = demoRestaurantId;
       req.siteId = req.restaurantId;
+      req.accountId = demoRestaurant.accountId ?? undefined;
+      req.clerkOrganizationId = demoRestaurantId;
       req.userId = process.env.DEMO_USER_ID ?? 'demo-user';
       req.siteRole = 'OWNER';
       req.log = req.log.child({
