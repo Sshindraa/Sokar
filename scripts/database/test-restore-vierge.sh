@@ -49,9 +49,10 @@ trap cleanup EXIT
 
 # ── 1. Récupérer le dump le plus récent depuis R2 ───────────
 log "→ Listing R2 r2:${BUCKET}/${PREFIX}/"
-# rclone lsf n'a pas --sort-by en v1.69 ; on liste avec timestamp et trie côté shell.
+# rclone lsf n'a pas --sort-by ni --time-format dans la version installée ;
+# on liste avec le timestamp natif (format tsp) et trie côté shell.
 # Format: "modified_date;size;name" → on prend la dernière ligne triée par date.
-LATEST=$(rclone lsf "r2:${BUCKET}/${PREFIX}/" --format "tsp" --time-format "2006-01-02 15:04:05" --max-depth 1 --files-only 2>/dev/null \
+LATEST=$(rclone lsf "r2:${BUCKET}/${PREFIX}/" --format "tsp" --max-depth 1 --files-only 2>/dev/null \
   | sort -t';' -k1 -r | head -1 | cut -d';' -f3) \
   || fail "Impossible de lister r2:${BUCKET}/${PREFIX}/"
 [ -n "${LATEST}" ] || fail "Aucun dump dans r2:${BUCKET}/${PREFIX}/"
