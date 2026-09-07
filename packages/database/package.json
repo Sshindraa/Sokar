@@ -12,6 +12,7 @@
     "generate": "prisma generate",
     "push": "prisma db push",
     "seed": "prisma db seed",
+    "backfill:restaurant-accounts": "tsx prisma/scripts/backfill-restaurant-accounts.ts",
     "seed:floor-plan": "tsx scripts/migrate-floor-plan.ts",
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",

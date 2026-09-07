@@ -37,6 +37,7 @@ import {
 import { DashboardThemeProvider, useDashboardTheme } from '@/features/theme/dashboard-theme';
 import { useApi } from '@/lib/api';
 import { SubscribeFromPricing } from './SubscribeFromPricing';
+import { SiteProvider, SiteSwitcher } from '@/features/sites/site-context';
 
 // OnboardingModal importe steps.tsx (1725 lignes, tous les composants de step).
 // Lazy-load pour éviter de charger tout l'onboarding dans le bundle du dashboard
@@ -282,10 +283,11 @@ function DashboardShell({ children }: { children: ReactNode }) {
       <OnboardingModal />
       <DashboardModeSwitcher salleMode={pathname.startsWith('/dashboard/floor-plan')} />
       <DashboardSidebar pathname={pathname} salleView={searchParams.get('view') ?? ''} />
-      <div className="fixed left-24 top-4 z-50 hidden h-12 max-w-[calc(50vw-18rem)] items-center xl:flex">
+      <div className="fixed left-24 top-4 z-50 hidden h-12 max-w-[calc(50vw-18rem)] items-center gap-3 xl:flex">
         <span className="truncate text-lg font-black tracking-tight text-foreground font-display">
           {restaurantName} HQ
         </span>
+        <SiteSwitcher />
       </div>
       <div className="fixed right-8 top-4 z-50 hidden h-12 items-center gap-2 xl:flex">
         <AccountMenu />
@@ -299,9 +301,12 @@ function DashboardShell({ children }: { children: ReactNode }) {
             libérer l'espace vertical du contenu.
         */}
         <div className="mb-3 flex items-center justify-between gap-2 xl:hidden">
-          <span className="truncate text-base font-black tracking-tight text-foreground font-display sm:text-lg">
-            {restaurantName} HQ
-          </span>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-base font-black tracking-tight text-foreground font-display sm:text-lg">
+              {restaurantName} HQ
+            </span>
+            <SiteSwitcher className="w-[11rem] max-w-[44vw]" />
+          </div>
           <div className="flex shrink-0 items-center gap-2">
             <div className="flex items-center gap-2 md:hidden">
               <ThemeToggle />
@@ -319,12 +324,22 @@ function DashboardShell({ children }: { children: ReactNode }) {
   );
 }
 
+function DashboardSiteBoundary({ children }: { children: ReactNode }) {
+  // useApi fournit l'organisation Clerk sans que le provider de sites ait à
+  // appeler directement les hooks Clerk. Cela garde le mode démo compatible
+  // avec les aperçus locaux sans ClerkProvider.
+  const { organizationId } = useApi();
+  return <SiteProvider organizationId={organizationId}>{children}</SiteProvider>;
+}
+
 export default function DashboardLayoutClient({ children }: { children: ReactNode }) {
   return (
     <OnboardingProvider>
       <DashboardThemeProvider>
         <CreateRestaurantGate>
-          <DashboardShell>{children}</DashboardShell>
+          <DashboardSiteBoundary>
+            <DashboardShell>{children}</DashboardShell>
+          </DashboardSiteBoundary>
         </CreateRestaurantGate>
       </DashboardThemeProvider>
     </OnboardingProvider>

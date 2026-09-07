@@ -12,6 +12,11 @@ vi.mock('../plugins/clerk', () => ({
         return reply.status(401).send({ error: 'Authentication required' });
       }
       req.restaurantId = 'test-rest-1';
+      req.siteId = 'test-rest-1';
+      req.accountId = 'test-account-1';
+      req.clerkOrganizationId = 'test-rest-1';
+      const requestedRole = req.headers?.['x-test-site-role'];
+      req.siteRole = requestedRole === 'STAFF' ? 'STAFF' : 'OWNER';
       req.userId = 'test-user-1';
     };
   },
@@ -104,11 +109,34 @@ vi.mock('../shared/db/client', () => {
     restaurant: {
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       findFirst: vi.fn(),
       findUnique: vi.fn(),
       findUniqueOrThrow: vi.fn(),
       findMany: vi.fn(),
       count: vi.fn(),
+    },
+    restaurantAccount: {
+      upsert: vi.fn().mockResolvedValue({ id: 'test-account-1' }),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      findMany: vi.fn(),
+    },
+    restaurantAccountMembership: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn(),
+      create: vi.fn().mockResolvedValue({ id: 'test-membership-1' }),
+      upsert: vi.fn().mockResolvedValue({ id: 'test-membership-1' }),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    restaurantAccountBilling: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      upsert: vi.fn(),
     },
     restaurantBilling: {
       findUnique: vi.fn(),

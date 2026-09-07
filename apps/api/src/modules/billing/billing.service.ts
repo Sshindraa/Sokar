@@ -72,6 +72,15 @@ export class BillingCheckoutError extends Error {
   }
 }
 
+export class BillingCustomerNotFoundError extends Error {
+  readonly code = 'BILLING_CUSTOMER_NOT_FOUND';
+
+  constructor() {
+    super('No Stripe customer is associated with this account');
+    this.name = 'BillingCustomerNotFoundError';
+  }
+}
+
 export class BillingAlreadySubscribedError extends Error {
   readonly code = 'BILLING_ALREADY_SUBSCRIBED';
 
@@ -165,6 +174,8 @@ function normalizeIdempotencyKey(value: string | undefined): string | undefined 
  */
 export function buildCheckoutIdempotencyKey(input: {
   restaurantId: string;
+  /** Account scope keeps two sites from creating two subscriptions. */
+  scopeId?: string;
   plan: PublicBillingPlan;
   billing: BillingInterval;
   siteCount: number;
@@ -173,7 +184,7 @@ export function buildCheckoutIdempotencyKey(input: {
 }): string {
   const bucket = Math.floor((input.now?.getTime() ?? Date.now()) / CHECKOUT_IDEMPOTENCY_BUCKET_MS);
   const source = [
-    input.restaurantId,
+    input.scopeId ?? input.restaurantId,
     input.plan,
     input.billing,
     input.siteCount,
@@ -193,6 +204,7 @@ function dashboardUrl(path: string): string {
 
 export async function createCheckoutSession(input: {
   restaurantId: string;
+  accountId?: string;
   plan: PublicBillingPlan;
   billing: BillingInterval;
   siteCount?: number;
@@ -200,10 +212,6 @@ export async function createCheckoutSession(input: {
 }): Promise<{ id: string; url: string }> {
   const priceId = resolvePriceId(input.plan, input.billing);
   const siteCount = normalizeSiteCount(input.plan, input.siteCount);
-  const idempotencyKey = buildCheckoutIdempotencyKey({
-    ...input,
-    siteCount,
-  });
   const addonPriceId =
     input.plan === 'multi-site' ? resolveMultiSiteAddonPriceId(input.billing) : null;
   if (!priceId || (input.plan === 'multi-site' && !addonPriceId)) {
@@ -213,10 +221,33 @@ export async function createCheckoutSession(input: {
   const restaurant = await db.restaurant.findUnique({ where: { id: input.restaurantId } });
   if (!restaurant) throw new BillingRestaurantNotFoundError();
 
-  const billing = await db.restaurantBilling.findUnique({ where: { restaurantId: restaurant.id } });
+  // The account ID comes from the authenticated site resolver. Once the
+  // additive backfill has run, the database relation is the final authority;
+  // a legacy restaurant can still use the historical single-site path.
+  const accountId = restaurant.accountId ?? input.accountId;
+  const accountBilling = accountId
+    ? await db.restaurantAccountBilling.findUnique({ where: { accountId } })
+    : null;
+  const billingAnchor = accountId
+    ? ((await db.restaurant.findFirst({
+        where: { accountId, isPrimary: true, siteStatus: { not: 'ARCHIVED' } },
+      })) ?? restaurant)
+    : restaurant;
+  const idempotencyKey = buildCheckoutIdempotencyKey({
+    ...input,
+    restaurantId: billingAnchor.id,
+    scopeId: accountId,
+    siteCount,
+  });
+
+  const billing = await db.restaurantBilling.findUnique({
+    where: { restaurantId: billingAnchor.id },
+  });
   if (
-    billing?.stripeSubscriptionId &&
-    ['active', 'trialing', 'past_due'].includes(billing.subscriptionStatus ?? '')
+    (accountBilling?.stripeSubscriptionId &&
+      ['active', 'trialing', 'past_due'].includes(accountBilling.subscriptionStatus ?? '')) ||
+    (billing?.stripeSubscriptionId &&
+      ['active', 'trialing', 'past_due'].includes(billing.subscriptionStatus ?? ''))
   ) {
     throw new BillingAlreadySubscribedError();
   }
@@ -227,27 +258,30 @@ export async function createCheckoutSession(input: {
   ) {
     return { id: billing.checkoutSessionId, url: billing.checkoutSessionUrl };
   }
-  let customerId = billing?.stripeCustomerId ?? null;
+  let customerId = accountBilling?.stripeCustomerId ?? billing?.stripeCustomerId ?? null;
   const stripe = getStripe();
 
   if (!customerId) {
     const customer = await stripe.customers.create(
       {
-        name: restaurant.name,
-        email: normalizeEmail(restaurant.managerEmail),
-        metadata: { restaurantId: restaurant.id },
+        name: billingAnchor.name,
+        email: normalizeEmail(billingAnchor.managerEmail),
+        metadata: {
+          restaurantId: restaurant.id,
+          ...(accountId ? { accountId } : {}),
+        },
       },
       {
         idempotencyKey: `sokar-customer-${createHash('sha256')
-          .update(restaurant.id)
+          .update(accountId ?? billingAnchor.id)
           .digest('hex')
           .slice(0, 48)}`,
       },
     );
     customerId = customer.id;
     await db.restaurantBilling.upsert({
-      where: { restaurantId: restaurant.id },
-      create: { restaurantId: restaurant.id, stripeCustomerId: customerId },
+      where: { restaurantId: billingAnchor.id },
+      create: { restaurantId: billingAnchor.id, stripeCustomerId: customerId },
       update: { stripeCustomerId: customerId },
     });
   }
@@ -265,6 +299,7 @@ export async function createCheckoutSession(input: {
         line_items: lineItems,
         metadata: {
           restaurantId: restaurant.id,
+          ...(accountId ? { accountId } : {}),
           plan: input.plan,
           billing: input.billing,
           siteCount: String(siteCount),
@@ -272,6 +307,7 @@ export async function createCheckoutSession(input: {
         subscription_data: {
           metadata: {
             restaurantId: restaurant.id,
+            ...(accountId ? { accountId } : {}),
             plan: input.plan,
             billing: input.billing,
             siteCount: String(siteCount),
@@ -287,7 +323,7 @@ export async function createCheckoutSession(input: {
 
     if (!session.url) throw new BillingCheckoutError();
     await db.restaurantBilling.update({
-      where: { restaurantId: restaurant.id },
+      where: { restaurantId: billingAnchor.id },
       data: {
         checkoutIdempotencyKey: idempotencyKey,
         checkoutSessionId: session.id,
@@ -302,7 +338,7 @@ export async function createCheckoutSession(input: {
   } catch (error) {
     if (isUniqueViolation(error)) {
       const existing = await db.restaurantBilling.findUnique({
-        where: { restaurantId: restaurant.id },
+        where: { restaurantId: billingAnchor.id },
       });
       if (
         existing?.checkoutIdempotencyKey === idempotencyKey &&
@@ -316,6 +352,50 @@ export async function createCheckoutSession(input: {
     logger.error(
       { err: error instanceof Error ? error.message : String(error), restaurantId: restaurant.id },
       '[billing] Stripe Checkout session creation failed',
+    );
+    throw new BillingCheckoutError();
+  }
+}
+
+/**
+ * Opens Stripe's hosted customer portal. Billing remains account-scoped for
+ * multi-site customers, while legacy restaurants keep their existing billing
+ * row until the backfill is complete.
+ */
+export async function createBillingPortalSession(input: {
+  restaurantId: string;
+  accountId?: string;
+}): Promise<{ url: string }> {
+  const restaurant = await db.restaurant.findUnique({ where: { id: input.restaurantId } });
+  if (!restaurant) throw new BillingRestaurantNotFoundError();
+
+  const accountId = restaurant.accountId ?? input.accountId;
+  const accountBilling = accountId
+    ? await db.restaurantAccountBilling.findUnique({ where: { accountId } })
+    : null;
+  const billingAnchor = accountId
+    ? ((await db.restaurant.findFirst({
+        where: { accountId, isPrimary: true, siteStatus: { not: 'ARCHIVED' } },
+      })) ?? restaurant)
+    : restaurant;
+  const billing = await db.restaurantBilling.findUnique({
+    where: { restaurantId: billingAnchor.id },
+  });
+  const customerId = accountBilling?.stripeCustomerId ?? billing?.stripeCustomerId;
+  if (!customerId) throw new BillingCustomerNotFoundError();
+
+  try {
+    const session = await getStripe().billingPortal.sessions.create({
+      customer: customerId,
+      return_url: dashboardUrl('/dashboard/settings?billing=portal-return'),
+    });
+    if (!session.url) throw new BillingCheckoutError();
+    return { url: session.url };
+  } catch (error) {
+    if (error instanceof BillingCheckoutError) throw error;
+    logger.error(
+      { err: error instanceof Error ? error.message : String(error), accountId: accountId ?? null },
+      '[billing] Stripe customer portal session creation failed',
     );
     throw new BillingCheckoutError();
   }
@@ -474,6 +554,78 @@ function subscriptionUpdateData(subscription: SubscriptionObject, deleted: boole
   };
 }
 
+function metadataSiteCount(metadata: Record<string, string>): number {
+  const parsed = Number(metadata.siteCount);
+  return Number.isInteger(parsed) &&
+    parsed >= MIN_MULTI_SITE_COUNT &&
+    parsed <= MAX_MULTI_SITE_COUNT
+    ? parsed
+    : 1;
+}
+
+/**
+ * Keep the multi-site entitlement at account scope. The historical
+ * RestaurantBilling projection remains the source for single-site webhooks,
+ * while this projection is what the site-management API uses for quotas.
+ */
+async function projectAccountBilling(
+  restaurantId: string,
+  data: {
+    stripeCustomerId?: string | null;
+    stripeSubscriptionId?: string | null;
+    subscriptionStatus?: string | null;
+    subscriptionPriceId?: string | null;
+    plan?: Plan;
+    entitledSiteCount: number;
+    subscriptionCurrentPeriodEnd?: Date | null;
+    subscriptionCancelAtPeriodEnd?: boolean;
+    lastStripeEventCreated: number;
+    lastStripeEventId: string;
+  },
+): Promise<void> {
+  const restaurant = await db.restaurant.findUnique({
+    where: { id: restaurantId },
+    select: { accountId: true },
+  });
+  if (!restaurant?.accountId) return;
+
+  if (data.plan) {
+    await db.restaurant.updateMany({
+      where: { accountId: restaurant.accountId },
+      data: { plan: data.plan },
+    });
+  }
+
+  await db.restaurantAccountBilling.upsert({
+    where: { accountId: restaurant.accountId },
+    create: {
+      accountId: restaurant.accountId,
+      stripeCustomerId: data.stripeCustomerId ?? null,
+      stripeSubscriptionId: data.stripeSubscriptionId ?? null,
+      subscriptionStatus: data.subscriptionStatus ?? null,
+      subscriptionPriceId: data.subscriptionPriceId ?? null,
+      entitledSiteCount: data.entitledSiteCount,
+      entitlementSource: 'STRIPE',
+      subscriptionCurrentPeriodEnd: data.subscriptionCurrentPeriodEnd ?? null,
+      subscriptionCancelAtPeriodEnd: data.subscriptionCancelAtPeriodEnd ?? false,
+      lastStripeEventCreated: data.lastStripeEventCreated,
+      lastStripeEventId: data.lastStripeEventId,
+    },
+    update: {
+      stripeCustomerId: data.stripeCustomerId ?? undefined,
+      stripeSubscriptionId: data.stripeSubscriptionId ?? undefined,
+      subscriptionStatus: data.subscriptionStatus ?? undefined,
+      subscriptionPriceId: data.subscriptionPriceId ?? undefined,
+      entitledSiteCount: data.entitledSiteCount,
+      entitlementSource: 'STRIPE',
+      subscriptionCurrentPeriodEnd: data.subscriptionCurrentPeriodEnd ?? null,
+      subscriptionCancelAtPeriodEnd: data.subscriptionCancelAtPeriodEnd ?? false,
+      lastStripeEventCreated: data.lastStripeEventCreated,
+      lastStripeEventId: data.lastStripeEventId,
+    },
+  });
+}
+
 async function handleCheckoutCompleted(event: Stripe.Event): Promise<boolean> {
   const session = event.data.object as Stripe.Checkout.Session;
   if (session.mode !== 'subscription') return false;
@@ -487,9 +639,23 @@ async function handleCheckoutCompleted(event: Stripe.Event): Promise<boolean> {
   const customerId = stripeObjectId(session.customer);
   const billingInterval =
     metadata.billing && isBillingInterval(metadata.billing) ? metadata.billing : 'monthly';
+  const siteCount = metadataSiteCount(metadata);
   await db.restaurant.update({
     where: { id: restaurantId },
     data: { plan: PLAN_TO_DATABASE[plan] },
+  });
+  // Project the account entitlement before advancing the legacy restaurant
+  // checkpoint. If this write fails, Stripe can retry the event instead of
+  // seeing a stale checkpoint and skipping the projection.
+  await projectAccountBilling(restaurantId, {
+    stripeCustomerId: customerId,
+    stripeSubscriptionId: subscriptionId,
+    subscriptionStatus: 'active',
+    subscriptionPriceId: resolvePriceId(plan, billingInterval),
+    plan: PLAN_TO_DATABASE[plan],
+    entitledSiteCount: siteCount,
+    lastStripeEventCreated: eventCreated(event),
+    lastStripeEventId: eventId(event),
   });
   await db.restaurantBilling.upsert({
     where: { restaurantId },
@@ -539,6 +705,7 @@ async function handleSubscriptionEvent(
   const plan = planFromMetadata ?? (priceId ? getPublicPlanFromPriceId(priceId) : null);
   const deleted = eventType === 'customer.subscription.deleted';
   const billingData = subscriptionUpdateData(subscription, deleted);
+  const siteCount = deleted ? 1 : metadataSiteCount(metadata);
   if (plan && deleted) {
     await db.restaurant.update({ where: { id: restaurantId }, data: { plan: 'STARTER' } });
   } else if (plan && eventType !== 'customer.subscription.deleted') {
@@ -547,6 +714,15 @@ async function handleSubscriptionEvent(
       data: { plan: PLAN_TO_DATABASE[plan] },
     });
   }
+  // Keep this projection ahead of the legacy checkpoint for the same retry
+  // reason as checkout.session.completed above.
+  await projectAccountBilling(restaurantId, {
+    ...billingData,
+    plan: plan ? (deleted ? 'STARTER' : PLAN_TO_DATABASE[plan]) : undefined,
+    entitledSiteCount: siteCount,
+    lastStripeEventCreated: eventCreated(event),
+    lastStripeEventId: eventId(event),
+  });
   await db.restaurantBilling.upsert({
     where: { restaurantId },
     create: {

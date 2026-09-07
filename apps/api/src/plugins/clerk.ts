@@ -1,5 +1,10 @@
 import { clerkPlugin, getAuth } from '@clerk/fastify';
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import {
+  resolveRestaurantContext,
+  RestaurantContextError,
+} from '../modules/restaurants/site-context';
+import { db } from '../shared/db/client';
 
 export function isClerkConfigured() {
   return Boolean(process.env.CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY);
@@ -35,9 +40,12 @@ export function requireOrg() {
     const demoMode = process.env.NODE_ENV !== 'production' || process.env.DEMO_STAGING === '1';
     if (demoMode && process.env.DEMO_RESTAURANT_ID) {
       req.restaurantId = process.env.DEMO_RESTAURANT_ID;
+      req.siteId = req.restaurantId;
       req.userId = process.env.DEMO_USER_ID ?? 'demo-user';
+      req.siteRole = 'OWNER';
       req.log = req.log.child({
         restaurant_id: req.restaurantId,
+        site_id: req.siteId,
         user_id: req.userId,
       });
       return;
@@ -51,12 +59,60 @@ export function requireOrg() {
     if (!orgId) {
       return reply.status(401).send({ error: 'Organization required' });
     }
-    req.restaurantId = orgId;
+
+    const requestedSiteId = getRequestedSiteId(req);
+    try {
+      const context = await resolveRestaurantContext(db, {
+        organizationId: orgId,
+        userId,
+        requestedSiteId,
+      });
+      req.restaurantId = context.siteId;
+      req.siteId = context.siteId;
+      req.accountId = context.accountId;
+      req.clerkOrganizationId = context.clerkOrganizationId;
+      req.siteRole = context.role;
+      if (
+        context.role === 'READ_ONLY' &&
+        !['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase())
+      ) {
+        return reply.status(403).send({
+          error: 'READ_ONLY_ACCESS',
+          message: 'Ce membre dispose d’un accès en lecture seule.',
+        });
+      }
+    } catch (error) {
+      if (error instanceof RestaurantContextError) {
+        req.log.warn(
+          { code: error.code, organization_id: orgId, requested_site_id: requestedSiteId ?? null },
+          'Restaurant site context denied',
+        );
+        return reply.status(error.code === 'ACCOUNT_SUSPENDED' ? 403 : 404).send({
+          error: error.code,
+          message: 'Établissement indisponible ou accès refusé.',
+        });
+      }
+      throw error;
+    }
     req.userId = userId;
     // Re-bind req.log to a child logger that carries restaurant + user.
     // We keep request_id (already on the parent) by chaining .child().
-    req.log = req.log.child({ restaurant_id: orgId, user_id: userId ?? null });
+    req.log = req.log.child({
+      account_id: req.accountId ?? null,
+      clerk_organization_id: orgId,
+      restaurant_id: req.restaurantId,
+      site_id: req.siteId,
+      site_role: req.siteRole,
+      user_id: userId ?? null,
+    });
   };
+}
+
+function getRequestedSiteId(req: FastifyRequest): string | undefined {
+  const value = req.headers['x-sokar-site-id'];
+  const siteId = Array.isArray(value) ? value[0] : value;
+  const trimmed = siteId?.trim();
+  return trimmed && trimmed.length <= 128 ? trimmed : undefined;
 }
 
 /**

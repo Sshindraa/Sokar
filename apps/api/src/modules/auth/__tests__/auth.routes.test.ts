@@ -78,9 +78,28 @@ describe('auth.routes - POST /api/auth/sync', () => {
     expect(db.restaurant.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         id: 'test-rest-1',
+        accountId: 'test-account-1',
+        isPrimary: true,
+        siteStatus: 'ACTIVE',
         name: 'Le Bistrot',
         plan: 'STARTER',
       }),
+    });
+    expect(db.restaurantAccount.upsert).toHaveBeenCalledWith({
+      where: { clerkOrganizationId: 'test-rest-1' },
+      create: { clerkOrganizationId: 'test-rest-1', name: 'Le Bistrot' },
+      update: { name: 'Le Bistrot' },
+    });
+    expect(db.restaurantAccountMembership.findFirst).toHaveBeenCalledWith({
+      where: { accountId: 'test-account-1', restaurantId: null, clerkUserId: 'test-user-1' },
+    });
+    expect(db.restaurantAccountMembership.create).toHaveBeenCalledWith({
+      data: {
+        accountId: 'test-account-1',
+        restaurantId: null,
+        clerkUserId: 'test-user-1',
+        role: 'OWNER',
+      },
     });
     expect(queues.eveningReport.upsertJobScheduler).toHaveBeenCalledWith(
       'nightly-test-rest-1',

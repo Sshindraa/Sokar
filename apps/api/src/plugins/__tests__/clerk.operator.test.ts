@@ -1,7 +1,8 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getAuth } from '@clerk/fastify';
-import { requireSokarOperator } from '../clerk';
+import { db } from '../../shared/db/client';
+import { requireOrg, requireSokarOperator } from '../clerk';
 
 vi.mock('@clerk/fastify', () => ({
   clerkPlugin: vi.fn(),
@@ -16,13 +17,17 @@ const originalEnv = {
   operatorIds: process.env.SOKAR_OPERATOR_USER_IDS,
 };
 
-function makeRequest() {
+function makeRequest(
+  method = 'GET',
+  headers: Record<string, string> = { authorization: 'Bearer test' },
+) {
   const log = {
     child: vi.fn(() => log),
     warn: vi.fn(),
   };
   return {
-    headers: { authorization: 'Bearer test' },
+    method,
+    headers,
     log,
   } as unknown as FastifyRequest;
 }
@@ -91,5 +96,36 @@ describe('requireSokarOperator', () => {
 
     expect(reply.status).not.toHaveBeenCalled();
     expect(request.userId).toBe('user-operator');
+  });
+
+  it('bloque les mutations d’un membre READ_ONLY après résolution du site', async () => {
+    configure('user-read-only');
+    vi.mocked(getAuth).mockReturnValue({ orgId: 'org_1', userId: 'user-read-only' } as never);
+    vi.mocked(db.restaurantAccount.findUnique).mockResolvedValue({
+      id: 'account_1',
+      status: 'ACTIVE',
+      restaurants: [
+        {
+          id: 'site_1',
+          siteStatus: 'ACTIVE',
+          isPrimary: true,
+          createdAt: new Date(),
+        },
+      ],
+      memberships: [{ restaurantId: 'site_1', clerkUserId: 'user-read-only', role: 'READ_ONLY' }],
+    } as never);
+    const request = makeRequest('PATCH', {
+      authorization: 'Bearer test',
+      'x-sokar-site-id': 'site_1',
+    });
+    const reply = makeReply();
+
+    await requireOrg()(request, reply);
+
+    expect(reply.status).toHaveBeenCalledWith(403);
+    expect(reply.send).toHaveBeenCalledWith({
+      error: 'READ_ONLY_ACCESS',
+      message: 'Ce membre dispose d’un accès en lecture seule.',
+    });
   });
 });

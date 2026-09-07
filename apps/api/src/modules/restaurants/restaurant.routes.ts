@@ -27,6 +27,7 @@ import {
 } from '../connect/cloudflare-saas.service';
 import { synthesizeText, isCartesiaConfigured } from '../voice/cartesia-synth';
 import { redisCache } from '../../shared/redis/client';
+import { listAccessibleRestaurantSites, RestaurantContextError } from './site-context';
 
 type RestaurantWithIncludes = Prisma.RestaurantGetPayload<{
   include: { personality: true; exposureSettings: true; images: true };
@@ -61,6 +62,34 @@ const RestaurantProfileSchema = z.object({
 });
 
 const CreateRestaurantSchema = RestaurantProfileSchema;
+
+const CreateSiteSchema = z.object({
+  name: z.string().trim().min(2).max(100),
+  phoneNumber: z.string().trim().min(5).max(32),
+  managerPhone: z.string().trim().max(32).default(''),
+  managerEmail: z
+    .string()
+    .trim()
+    .refine((value) => value === '' || z.string().email().safeParse(value).success, {
+      message: 'Adresse email invalide',
+    })
+    .default(''),
+  openingHours: z.record(z.string(), z.unknown()).default({}),
+});
+
+const UpdateSiteSchema = z
+  .object({
+    name: z.string().trim().min(2).max(100).optional(),
+    siteStatus: z.enum(['ACTIVE', 'SUSPENDED', 'ARCHIVED']).optional(),
+  })
+  .refine((value) => value.name !== undefined || value.siteStatus !== undefined, {
+    message: 'Aucune modification fournie',
+  });
+
+const SiteMemberSchema = z.object({
+  clerkUserId: z.string().trim().min(1).max(128),
+  role: z.enum(['MANAGER', 'STAFF', 'READ_ONLY']).default('STAFF'),
+});
 
 const UpdatePersonalitySchema = z.object({
   profileType: z.enum(['BISTROT_BRASSERIE', 'GASTRONOMIQUE', 'SEMI_GASTRO']).optional(),
@@ -329,6 +358,221 @@ export async function restaurantRoutes(app: FastifyInstance) {
   app.get('/api/restaurant/onboarding', { preHandler: requireOrg() }, getOnboarding);
   app.patch('/restaurant/onboarding', { preHandler: requireOrg() }, patchOnboarding);
   app.patch('/api/restaurant/onboarding', { preHandler: requireOrg() }, patchOnboarding);
+
+  // Site selector source of truth for the multi-site dashboard. The active
+  // site is still enforced by requireOrg() on every subsequent route.
+  app.get('/restaurants/sites', { preHandler: requireOrg() }, async (req, reply) => {
+    try {
+      const sites = await listAccessibleRestaurantSites(app.db, {
+        organizationId: req.clerkOrganizationId ?? req.restaurantId,
+        userId: req.userId,
+      });
+      return reply.send({
+        accountId: req.accountId ?? null,
+        activeSiteId: req.siteId ?? req.restaurantId,
+        sites,
+      });
+    } catch (error) {
+      if (error instanceof RestaurantContextError) {
+        return reply.status(error.code === 'ACCOUNT_SUSPENDED' ? 403 : 404).send({
+          error: error.code,
+          message: 'Établissements indisponibles ou accès refusé.',
+        });
+      }
+      throw error;
+    }
+  });
+
+  // Les opérations de cycle de vie d'un établissement sont réservées au
+  // propriétaire du compte. Le rôle est résolu côté serveur ; l'UI ne peut
+  // pas s'auto-attribuer un accès en envoyant un autre accountId.
+  app.post('/restaurants/sites', { preHandler: requireOrg() }, async (req, reply) => {
+    if (req.siteRole !== 'OWNER' || !req.accountId) {
+      return reply.status(403).send({ error: 'SITE_ADMIN_REQUIRED' });
+    }
+
+    const input = CreateSiteSchema.parse(req.body ?? {});
+    const [account, currentSite, activeSiteCount] = await Promise.all([
+      app.db.restaurantAccount.findUnique({
+        where: { id: req.accountId },
+        select: { id: true, status: true },
+      }),
+      app.db.restaurant.findUnique({
+        where: { id: req.restaurantId },
+        select: { accountId: true, plan: true },
+      }),
+      app.db.restaurant.count({
+        where: { accountId: req.accountId, siteStatus: { not: 'ARCHIVED' } },
+      }),
+    ]);
+
+    if (!account || account.status !== 'ACTIVE' || currentSite?.accountId !== req.accountId) {
+      return reply.status(404).send({ error: 'ACCOUNT_NOT_FOUND' });
+    }
+
+    const accountBilling = await app.db.restaurantAccountBilling.findUnique({
+      where: { accountId: req.accountId },
+      select: { entitledSiteCount: true },
+    });
+    const entitledSiteCount =
+      accountBilling?.entitledSiteCount ?? (currentSite.plan === 'PREMIUM' ? 2 : 1);
+    if (activeSiteCount >= entitledSiteCount) {
+      return reply.status(402).send({
+        error: 'MULTI_SITE_SUBSCRIPTION_REQUIRED',
+        message: 'La formule Multi-site est nécessaire pour ajouter un établissement.',
+      });
+    }
+
+    try {
+      const restaurant = await app.db.restaurant.create({
+        data: {
+          accountId: req.accountId,
+          isPrimary: false,
+          siteStatus: 'ACTIVE',
+          name: input.name,
+          phoneNumber: input.phoneNumber,
+          managerPhone: input.managerPhone,
+          managerEmail: input.managerEmail,
+          openingHours: input.openingHours as Prisma.InputJsonValue,
+          plan: currentSite.plan,
+          provisioningStatus: 'PENDING',
+        },
+      });
+
+      try {
+        await app.queues.eveningReport.upsertJobScheduler(
+          `nightly-${restaurant.id}`,
+          { pattern: '0 23 * * *', tz: 'Europe/Paris' },
+          { name: 'nightly', data: { restaurantId: restaurant.id } },
+        );
+      } catch (error) {
+        req.log.warn({ err: error, restaurantId: restaurant.id }, 'Failed to schedule site report');
+      }
+
+      return reply.status(201).send({
+        id: restaurant.id,
+        name: restaurant.name,
+        siteStatus: restaurant.siteStatus,
+        isPrimary: restaurant.isPrimary,
+        role: 'OWNER',
+      });
+    } catch (error: unknown) {
+      if ((error as { code?: string })?.code === 'P2002') {
+        return reply.status(409).send({ error: 'PHONE_NUMBER_ALREADY_REGISTERED' });
+      }
+      throw error;
+    }
+  });
+
+  app.patch('/restaurants/sites/:id', { preHandler: requireOrg() }, async (req, reply) => {
+    if (req.siteRole !== 'OWNER' || !req.accountId) {
+      return reply.status(403).send({ error: 'SITE_ADMIN_REQUIRED' });
+    }
+
+    const { id } = req.params as { id: string };
+    const input = UpdateSiteSchema.parse(req.body ?? {});
+    const site = await app.db.restaurant.findUnique({
+      where: { id },
+      select: { id: true, accountId: true, isPrimary: true, siteStatus: true, name: true },
+    });
+    if (!site || site.accountId !== req.accountId) {
+      return reply.status(404).send({ error: 'SITE_NOT_FOUND' });
+    }
+
+    if (site.isPrimary && input.siteStatus !== undefined && input.siteStatus !== 'ACTIVE') {
+      const activeOtherSites = await app.db.restaurant.count({
+        where: {
+          accountId: req.accountId,
+          id: { not: id },
+          siteStatus: { not: 'ARCHIVED' },
+        },
+      });
+      if (activeOtherSites === 0) {
+        return reply.status(409).send({
+          error: 'PRIMARY_SITE_REQUIRED',
+          message: 'Conservez au moins un établissement actif avant de désactiver le principal.',
+        });
+      }
+    }
+
+    const updated = await app.db.restaurant.update({
+      where: { id },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.siteStatus !== undefined ? { siteStatus: input.siteStatus } : {}),
+      },
+      select: { id: true, name: true, siteStatus: true, isPrimary: true },
+    });
+    return reply.send({ ...updated, role: 'OWNER' });
+  });
+
+  app.post('/restaurants/sites/:id/members', { preHandler: requireOrg() }, async (req, reply) => {
+    if (req.siteRole !== 'OWNER' || !req.accountId) {
+      return reply.status(403).send({ error: 'SITE_ADMIN_REQUIRED' });
+    }
+
+    const { id: restaurantId } = req.params as { id: string };
+    const input = SiteMemberSchema.parse(req.body ?? {});
+    const site = await app.db.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: { id: true, accountId: true, siteStatus: true },
+    });
+    if (!site || site.accountId !== req.accountId || site.siteStatus === 'ARCHIVED') {
+      return reply.status(404).send({ error: 'SITE_NOT_FOUND' });
+    }
+
+    const existing = await app.db.restaurantAccountMembership.findFirst({
+      where: { accountId: req.accountId, restaurantId, clerkUserId: input.clerkUserId },
+    });
+    const membership = existing
+      ? await app.db.restaurantAccountMembership.update({
+          where: { id: existing.id },
+          data: { role: input.role },
+        })
+      : await app.db.restaurantAccountMembership.create({
+          data: {
+            accountId: req.accountId,
+            restaurantId,
+            clerkUserId: input.clerkUserId,
+            role: input.role,
+          },
+        });
+    return reply.status(existing ? 200 : 201).send({
+      id: membership.id,
+      restaurantId,
+      clerkUserId: input.clerkUserId,
+      role: membership.role,
+    });
+  });
+
+  app.delete(
+    '/restaurants/sites/:id/members/:clerkUserId',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      if (req.siteRole !== 'OWNER' || !req.accountId) {
+        return reply.status(403).send({ error: 'SITE_ADMIN_REQUIRED' });
+      }
+
+      const { id: restaurantId, clerkUserId } = req.params as {
+        id: string;
+        clerkUserId: string;
+      };
+      const site = await app.db.restaurant.findUnique({
+        where: { id: restaurantId },
+        select: { accountId: true },
+      });
+      if (!site || site.accountId !== req.accountId) {
+        return reply.status(404).send({ error: 'SITE_NOT_FOUND' });
+      }
+
+      const membership = await app.db.restaurantAccountMembership.findFirst({
+        where: { accountId: req.accountId, restaurantId, clerkUserId },
+      });
+      if (!membership) return reply.status(404).send({ error: 'SITE_MEMBER_NOT_FOUND' });
+      await app.db.restaurantAccountMembership.delete({ where: { id: membership.id } });
+      return reply.status(204).send();
+    },
+  );
 
   app.get('/restaurants/:id', { preHandler: requireOrg() }, async (req, reply) => {
     const { id } = req.params as { id: string };

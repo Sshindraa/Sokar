@@ -7,8 +7,10 @@ import {
   BillingCheckoutError,
   BillingInvalidSiteCountError,
   BillingNotConfiguredError,
+  BillingCustomerNotFoundError,
   BillingRestaurantNotFoundError,
   PUBLIC_BILLING_PLANS,
+  createBillingPortalSession,
   createCheckoutSession,
 } from './billing.service';
 
@@ -20,6 +22,12 @@ const CheckoutSchema = z.object({
 
 export async function billingRoutes(app: FastifyInstance) {
   app.post('/billing/checkout-session', { preHandler: requireOrg() }, async (req, reply) => {
+    if (req.accountId && req.siteRole !== 'OWNER') {
+      return reply.status(403).send({
+        error: 'BILLING_OWNER_REQUIRED',
+        message: 'Seul le propriétaire du compte peut gérer la facturation.',
+      });
+    }
     const input = CheckoutSchema.parse(req.body);
     const idempotencyHeader = req.headers['idempotency-key'];
     const idempotencyKey = Array.isArray(idempotencyHeader)
@@ -29,6 +37,7 @@ export async function billingRoutes(app: FastifyInstance) {
     try {
       const session = await createCheckoutSession({
         restaurantId: req.restaurantId!,
+        accountId: req.accountId,
         plan: input.plan,
         billing: input.billing,
         siteCount: input.siteCount,
@@ -73,6 +82,57 @@ export async function billingRoutes(app: FastifyInstance) {
       return reply.status(502).send({
         error: 'BILLING_CHECKOUT_FAILED',
         message: 'Impossible de préparer la souscription. Réessayez dans un instant.',
+      });
+    }
+  });
+
+  app.post('/billing/portal-session', { preHandler: requireOrg() }, async (req, reply) => {
+    if (req.accountId && req.siteRole !== 'OWNER') {
+      return reply.status(403).send({
+        error: 'BILLING_OWNER_REQUIRED',
+        message: 'Seul le propriétaire du compte peut gérer la facturation.',
+      });
+    }
+
+    try {
+      return reply.send(
+        await createBillingPortalSession({
+          restaurantId: req.restaurantId!,
+          accountId: req.accountId,
+        }),
+      );
+    } catch (error) {
+      if (error instanceof BillingNotConfiguredError) {
+        return reply.status(503).send({
+          error: 'BILLING_NOT_CONFIGURED',
+          message: 'La gestion de votre abonnement sera bientôt disponible.',
+        });
+      }
+      if (error instanceof BillingRestaurantNotFoundError) {
+        return reply
+          .status(404)
+          .send({ error: 'RESTAURANT_NOT_FOUND', message: 'Restaurant introuvable.' });
+      }
+      if (error instanceof BillingCustomerNotFoundError) {
+        return reply.status(409).send({
+          error: 'BILLING_CUSTOMER_NOT_FOUND',
+          message: 'Aucune souscription Stripe active pour ce compte.',
+        });
+      }
+      if (error instanceof BillingCheckoutError) {
+        return reply.status(502).send({
+          error: 'BILLING_PORTAL_FAILED',
+          message: 'Impossible d’ouvrir la gestion de l’abonnement. Réessayez dans un instant.',
+        });
+      }
+
+      req.log.error(
+        { err: error instanceof Error ? error.message : String(error) },
+        '[billing] Unexpected portal error',
+      );
+      return reply.status(502).send({
+        error: 'BILLING_PORTAL_FAILED',
+        message: 'Impossible d’ouvrir la gestion de l’abonnement. Réessayez dans un instant.',
       });
     }
   });

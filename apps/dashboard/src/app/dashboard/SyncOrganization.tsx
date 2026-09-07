@@ -26,7 +26,9 @@ export function SyncOrganization() {
         });
 
         if (res.ok) {
-          // Sync successful — no action needed
+          // Réveille le provider multi-site : le premier chargement peut être
+          // arrivé avant la création du restaurant dans la base.
+          window.dispatchEvent(new Event('sokar:organization-synced'));
         } else {
           const err = await res.json();
           console.warn('[sync] Failed:', err);

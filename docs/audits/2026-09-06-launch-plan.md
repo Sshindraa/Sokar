@@ -48,24 +48,24 @@ Le catalogue est affiché et présenté dès le jour 1. Pour chaque module, le c
 
 ## Référence de départ
 
-La production auditée est le commit `b7d14da15777e8aab074859b519387bffdc32687`, identique à `main` sur GitHub et au VPS au moment de l’audit. Le poste local contient des modifications non publiées et se trouve sur un autre commit ; elles sont conservées. Un worktree propre a été créé le 6 septembre dans `/private/tmp/sokar-launch-10`, sur la branche `codex/launch-10-restaurants` à partir de ce commit, sans changer la branche de travail actuelle.
+La production auditée est le commit `b7d14da15777e8aab074859b519387bffdc32687`, identique à `main` sur GitHub et au VPS au moment de l’audit. Le poste local contient des modifications non publiées et se trouve sur un autre commit ; elles sont conservées. Le worktree de lancement utilisé pour ce lot est `/Users/hamza/Projects/Sokar/.worktrees/sokar-billing-10`, sur la branche actuelle `codex/phase-0-ops`, sans changer la branche de travail principale.
 
 Les risques et preuves de départ sont dans l’[audit détaillé](/Users/hamza/Projects/Sokar/docs/audits/2026-09-06-launch-readiness.md) et ses fichiers de preuve. Ils comprennent notamment deux défauts P0 d’isolation, une attribution de plan contournable, des SMS non opérationnels, des alertes absentes, des événements Stripe non idempotents et des contrôles CI incomplets.
 
 ## Feuille de route
 
-| Phase | But                                                        |        Durée indicative | Statut       |
-| ----- | ---------------------------------------------------------- | ----------------------: | ------------ |
-| 0     | Cadrage de l’offre, périmètre et préparation de la release |              0,5–1 jour | **EN COURS** |
-| 1     | Isolation des tenants et autorisations serveur             |               2–4 jours | À faire      |
-| 2     | Parcours réservation, voix, SMS et support                 |               3–5 jours | À faire      |
-| 2B    | Modules commerciaux proposés dès le lancement              |               5–8 jours | À faire      |
-| 3     | Stripe, droits et cycle d’abonnement                       |               2–3 jours | À faire      |
-| 4     | Observabilité, files, sauvegardes et reprise               |               2–3 jours | À faire      |
-| 5     | RGPD, contrats et surface commerciale                      | 2–4 jours, en parallèle | À faire      |
-| 6     | Qualification, CI et release candidate                     |               2–3 jours | À faire      |
-| 7     | Dogfood interne puis deux restaurants pilotes              |  7–10 jours calendaires | À faire      |
-| 8     | Déploiement par vagues jusqu’à dix restaurants             |  7–14 jours calendaires | À faire      |
+| Phase | But                                                        |        Durée indicative | Statut                                                                                                                       |
+| ----- | ---------------------------------------------------------- | ----------------------: | ---------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Cadrage de l’offre, périmètre et préparation de la release |              0,5–1 jour | **EN COURS**                                                                                                                 |
+| 1     | Isolation des tenants et autorisations serveur             |               2–4 jours | À faire                                                                                                                      |
+| 2     | Parcours réservation, voix, SMS et support                 |               3–5 jours | À faire                                                                                                                      |
+| 2B    | Modules commerciaux proposés dès le lancement              |               5–8 jours | En cours — multi-site account/site, droits, quota et sélecteur dashboard avancés ; staging et autres modules restent ouverts |
+| 3     | Stripe, droits et cycle d’abonnement                       |               2–3 jours | En cours — Checkout/portail propriétaire, idempotence, ledger et projection compte codés ; cycle signé staging à valider     |
+| 4     | Observabilité, files, sauvegardes et reprise               |               2–3 jours | À faire                                                                                                                      |
+| 5     | RGPD, contrats et surface commerciale                      | 2–4 jours, en parallèle | À faire                                                                                                                      |
+| 6     | Qualification, CI et release candidate                     |               2–3 jours | À faire                                                                                                                      |
+| 7     | Dogfood interne puis deux restaurants pilotes              |  7–10 jours calendaires | À faire                                                                                                                      |
+| 8     | Déploiement par vagues jusqu’à dix restaurants             |  7–14 jours calendaires | À faire                                                                                                                      |
 
 L’estimation ajustée représente environ 25 à 40 jours de développement, auxquels s’ajoutent les dépendances fournisseurs, la validation juridique et la période pilote. En travaillant seul, compter environ six à huit semaines ; avec deux personnes disponibles, réduire surtout les temps d’attente et de support.
 
@@ -83,9 +83,9 @@ L’estimation ajustée représente environ 25 à 40 jours de développement, au
 
 ### Actions restantes
 
-- [x] créer un worktree dédié basé sur `b7d14da` et une branche de lancement dédiée (`.worktrees/sokar-billing-10`, `codex/launch-10-restaurants`) ;
+- [x] créer un worktree dédié basé sur `b7d14da` et une branche de lancement dédiée (`.worktrees/sokar-billing-10`, `codex/phase-0-ops`) ;
 - [x] convertir chaque risque P0/P1 en ticket avec propriétaire, date cible, preuve attendue et niveau de rollback (backlog phase 0 créé ; dates et pilotes restent à renseigner) ;
-- [ ] attribuer à chaque module commercial un propriétaire, un prix, une porte d’activation et une preuve de démonstration ;
+- [x] attribuer à chaque module commercial un propriétaire, un prix, une porte d’activation et une preuve de démonstration ([registre commercial](/Users/hamza/Projects/Sokar/docs/audits/2026-09-07-phase-0-commercial-register.md)) ; les dépendances externes et la cohorte restent ouvertes ;
 - [ ] nommer les responsables produit, API, dashboard, voix/SMS, infra, juridique et support (une personne peut cumuler plusieurs rôles) ;
 - [ ] confirmer les dépendances externes : profil de messagerie Telnyx et numéro émetteur, Sentry et canal d’alerte, accès Stripe Billing Portal, identité légale et DPA, comptes Google nécessaires ;
 - [ ] choisir les dix restaurants, leur ordre de cohorte, la date de l’appel d’onboarding et le canal de support ;

@@ -5,7 +5,10 @@ import { BillingWebhookInProgressError, handleBillingWebhook } from '../billing.
 describe('billing.service - Stripe subscription webhooks', () => {
   afterEach(() => {
     vi.clearAllMocks();
+    vi.mocked(db.restaurant.findUnique).mockReset();
+    vi.mocked(db.restaurantAccountBilling.upsert).mockReset();
     delete process.env.STRIPE_PRICE_PRO_MONTHLY;
+    delete process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY;
   });
 
   it('active une formule depuis checkout.session.completed', async () => {
@@ -44,6 +47,46 @@ describe('billing.service - Stripe subscription webhooks', () => {
         }),
       }),
     );
+  });
+
+  it('projette le quota multi-site au niveau du compte', async () => {
+    process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY = 'price_multi_site_monthly_test';
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      accountId: 'account_1',
+    } as never);
+
+    const handled = await handleBillingWebhook({
+      type: 'checkout.session.completed',
+      id: 'evt_checkout_multi_1',
+      created: 101,
+      data: {
+        object: {
+          mode: 'subscription',
+          id: 'cs_multi_test',
+          client_reference_id: 'test-rest-1',
+          customer: 'cus_multi_test',
+          subscription: 'sub_multi_test',
+          metadata: {
+            restaurantId: 'test-rest-1',
+            plan: 'multi-site',
+            billing: 'monthly',
+            siteCount: '3',
+          },
+        },
+      },
+    } as never);
+
+    expect(handled).toBe(true);
+    expect(db.restaurantAccountBilling.upsert).toHaveBeenCalledWith({
+      where: { accountId: 'account_1' },
+      create: expect.objectContaining({
+        accountId: 'account_1',
+        entitledSiteCount: 3,
+        stripeSubscriptionId: 'sub_multi_test',
+      }),
+      update: expect.objectContaining({ entitledSiteCount: 3 }),
+    });
   });
 
   it('synchronise le statut et rétrograde au plan Essential après suppression', async () => {

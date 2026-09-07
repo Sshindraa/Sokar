@@ -5,6 +5,7 @@ import { Loader2, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { getErrorMessage } from '@/types/api';
+import { useApi } from '@/lib/api';
 
 // ─── DEMO CALL PLAYER ──────────────────────────────────────────
 // Aha moment mid-onboarding : l'utilisateur écoute l'assistant vocal
@@ -34,6 +35,7 @@ const DEMO_SCRIPTS = [
 ] as const;
 
 export function DemoCallPlayer({ onPlayed }: { onPlayed?: () => void }) {
+  const { siteId } = useApi();
   const [activeScript, setActiveScript] = useState<'reservation' | 'cancellation' | 'menu'>(
     'reservation',
   );
@@ -58,7 +60,10 @@ export function DemoCallPlayer({ onPlayed }: { onPlayed?: () => void }) {
     try {
       const res = await fetch('/api/proxy/restaurant/onboarding/demo-call', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(siteId ? { 'X-Sokar-Site-ID': siteId } : {}),
+        },
         body: JSON.stringify({ scriptId: activeScript }),
       });
 

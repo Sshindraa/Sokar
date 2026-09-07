@@ -7,9 +7,33 @@ vi.mock('@prisma/client', async (importOriginal) => {
     restaurant = {
       findUnique: vi.fn(),
       findUniqueOrThrow: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    restaurantAccount = {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      upsert: vi.fn(),
+    };
+    restaurantAccountMembership = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      upsert: vi.fn(),
+      delete: vi.fn(),
+    };
+    restaurantAccountBilling = {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      upsert: vi.fn(),
     };
     restaurantBilling = {
       findUnique: vi.fn(),
@@ -149,9 +173,14 @@ const stripeMocks = vi.hoisted(() => ({
   checkoutSessionCreate: vi
     .fn()
     .mockResolvedValue({ id: 'cs_test', url: 'https://checkout.stripe.test/cs_test' }),
+  billingPortalSessionCreate: vi
+    .fn()
+    .mockResolvedValue({ url: 'https://billing.stripe.test/portal' }),
 }));
 (globalThis as Record<string, unknown>).__sokarStripeCheckoutSessionCreate =
   stripeMocks.checkoutSessionCreate;
+(globalThis as Record<string, unknown>).__sokarStripeBillingPortalSessionCreate =
+  stripeMocks.billingPortalSessionCreate;
 
 vi.mock('stripe', () => {
   class Stripe {
@@ -161,6 +190,11 @@ vi.mock('stripe', () => {
     checkout = {
       sessions: {
         create: stripeMocks.checkoutSessionCreate,
+      },
+    };
+    billingPortal = {
+      sessions: {
+        create: stripeMocks.billingPortalSessionCreate,
       },
     };
     paymentIntents = {

@@ -30,6 +30,8 @@ import {
   ListOrdered,
 } from 'lucide-react';
 import { SYSTEM_PROMPT_EXTRA_MAX_LENGTH } from '@/constants/ui';
+import { SiteManagementCard } from '@/features/sites/site-management-card';
+import { useSiteSelection } from '@/features/sites/site-context';
 
 const PLAN_FEATURES: Record<string, { label: string; calls: string }> = {
   STARTER: { label: 'Essential', calls: '1 500 appels / mois' },
@@ -51,6 +53,7 @@ const FILLER_OPTIONS = [
 
 export default function SettingsPage() {
   const { get, post, patch, orgId } = useApi();
+  const { accountId, activeSite } = useSiteSelection();
   const tLanguage = useTranslations('languageSwitcher');
 
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
@@ -62,6 +65,7 @@ export default function SettingsPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [billingNotice, setBillingNotice] = useState<string | null>(null);
+  const [openingBillingPortal, setOpeningBillingPortal] = useState(false);
 
   // Personality
   const [personality, setPersonality] = useState<AgentPersonality | null>(null);
@@ -106,6 +110,9 @@ export default function SettingsPage() {
         setBillingNotice(
           'Souscription confirmée. Votre formule sera synchronisée dès réception du webhook Stripe.',
         );
+        window.history.replaceState({}, '', window.location.pathname);
+      } else if (params.get('billing') === 'portal-return') {
+        setBillingNotice('Vous êtes revenu du portail de gestion de votre abonnement.');
         window.history.replaceState({}, '', window.location.pathname);
       }
     }
@@ -308,8 +315,23 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleOpenBillingPortal() {
+    setOpeningBillingPortal(true);
+    setError('');
+    try {
+      const session = await post<{ url?: string }>('billing/portal-session');
+      if (!session.url) throw new Error('Le portail de gestion est indisponible.');
+      window.location.assign(session.url);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Impossible d'ouvrir la gestion de l'abonnement"));
+    } finally {
+      setOpeningBillingPortal(false);
+    }
+  }
+
   const plan = restaurant?.plan ?? 'STARTER';
   const planInfo = PLAN_FEATURES[plan] ?? PLAN_FEATURES.STARTER;
+  const canManageBilling = !accountId || activeSite?.role === 'OWNER';
 
   return (
     <div className="space-y-8">
@@ -376,6 +398,8 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      <SiteManagementCard />
+
       {/* Préférences d'affichage */}
       <Card className="sokar-card transition-all duration-200">
         <CardHeader>
@@ -410,12 +434,23 @@ export default function SettingsPage() {
                 {planInfo.calls} · Pas de commission · Support email
               </p>
             </div>
-            <Button variant="outline" asChild>
-              <a href="/pricing">
-                Changer de plan
-                <ArrowUpRight size={14} className="ml-1" />
-              </a>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {canManageBilling && (
+                <Button
+                  variant="outline"
+                  onClick={handleOpenBillingPortal}
+                  disabled={openingBillingPortal}
+                >
+                  {openingBillingPortal ? 'Ouverture...' : 'Gérer l’abonnement'}
+                </Button>
+              )}
+              <Button variant="outline" asChild>
+                <a href="/pricing">
+                  Changer de plan
+                  <ArrowUpRight size={14} className="ml-1" />
+                </a>
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
