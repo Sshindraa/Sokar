@@ -35,6 +35,11 @@ Cette règle évite un faux timeout sans masquer une erreur de chargement, puisq
 les données restaurant, l'état de disponibilité et le changement de date restent
 assertés.
 
+La porte de promotion peut être vérifiée sans modifier la production : lancer le
+workflow `Deploy Staging` avec `force_smoke_failure=true`. Après les smoke tests,
+le job échoue intentionnellement et le workflow `Deploy Production`, qui exige un
+staging vert, doit rester absent.
+
 ## Visual regression
 
 `pnpm test:visual` captures screenshots of 6 critical pages (`/dashboard`, `/dashboard/reservations`, `/dashboard/calls`, `/dashboard/gift-cards`, `/`, `/pricing`) on 3 viewports (iPhone 14, iPad Mini, desktop 1440px) and compares them to the baseline in `apps/dashboard/e2e/__snapshots__/`. Tolerance threshold: 0.2% pixel diff.
