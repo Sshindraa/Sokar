@@ -185,6 +185,42 @@ describe('restaurant routes — sites accessibles', () => {
     expect(db.restaurant.update).not.toHaveBeenCalled();
   });
 
+  it('transfère le principal au plus ancien site actif avant sa suspension', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-1',
+      accountId: 'test-account-1',
+      isPrimary: true,
+      siteStatus: 'ACTIVE',
+      name: 'Chez Sokar',
+    } as never);
+    vi.mocked(db.restaurant.findFirst).mockResolvedValue({ id: 'site_two' } as never);
+    vi.mocked(db.restaurant.update).mockResolvedValue({
+      id: 'test-rest-1',
+      name: 'Chez Sokar',
+      siteStatus: 'SUSPENDED',
+      isPrimary: false,
+    } as never);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/restaurants/sites/test-rest-1',
+      headers: { authorization: 'Bearer test' },
+      payload: { siteStatus: 'SUSPENDED' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(db.restaurant.update).toHaveBeenNthCalledWith(1, {
+      where: { id: 'site_two' },
+      data: { isPrimary: true },
+    });
+    expect(db.restaurant.update).toHaveBeenNthCalledWith(2, {
+      where: { id: 'test-rest-1' },
+      data: { siteStatus: 'SUSPENDED', isPrimary: false },
+      select: { id: true, name: true, siteStatus: true, isPrimary: true },
+    });
+  });
+
   it('n’ajoute un membre qu’après validation de son appartenance Clerk', async () => {
     const app = await getApp();
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({

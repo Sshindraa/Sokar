@@ -483,30 +483,46 @@ export async function restaurantRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'SITE_NOT_FOUND' });
     }
 
-    if (site.isPrimary && input.siteStatus !== undefined && input.siteStatus !== 'ACTIVE') {
-      const activeOtherSites = await app.db.restaurant.count({
-        where: {
-          accountId: req.accountId,
-          id: { not: id },
-          siteStatus: { not: 'ARCHIVED' },
-        },
-      });
-      if (activeOtherSites === 0) {
-        return reply.status(409).send({
-          error: 'PRIMARY_SITE_REQUIRED',
-          message: 'Conservez au moins un établissement actif avant de désactiver le principal.',
+    const deactivatingPrimary =
+      site.isPrimary &&
+      input.siteStatus !== undefined &&
+      input.siteStatus !== 'ACTIVE' &&
+      input.siteStatus !== site.siteStatus;
+
+    const updated = await app.db.$transaction(async (tx) => {
+      if (deactivatingPrimary) {
+        const replacement = await tx.restaurant.findFirst({
+          where: {
+            accountId: req.accountId,
+            id: { not: id },
+            siteStatus: 'ACTIVE',
+          },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true },
+        });
+        if (!replacement) return null;
+        await tx.restaurant.update({
+          where: { id: replacement.id },
+          data: { isPrimary: true },
         });
       }
-    }
 
-    const updated = await app.db.restaurant.update({
-      where: { id },
-      data: {
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.siteStatus !== undefined ? { siteStatus: input.siteStatus } : {}),
-      },
-      select: { id: true, name: true, siteStatus: true, isPrimary: true },
+      return tx.restaurant.update({
+        where: { id },
+        data: {
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.siteStatus !== undefined ? { siteStatus: input.siteStatus } : {}),
+          ...(deactivatingPrimary ? { isPrimary: false } : {}),
+        },
+        select: { id: true, name: true, siteStatus: true, isPrimary: true },
+      });
     });
+    if (!updated) {
+      return reply.status(409).send({
+        error: 'PRIMARY_SITE_REQUIRED',
+        message: 'Conservez au moins un établissement actif avant de désactiver le principal.',
+      });
+    }
     return reply.send({ ...updated, role: 'OWNER' });
   });
 

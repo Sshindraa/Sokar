@@ -40,7 +40,7 @@ Le script traite chaque restaurant dans une transaction et affiche uniquement le
 - Le Checkout de souscription est réservé au rôle `OWNER`. Depuis un site secondaire, il réutilise le client Stripe et la clé d'idempotence du compte, enregistre le site courant dans les métadonnées et conserve les tentatives sur le site principal.
 - Le bouton de paramètres appelle `POST /billing/portal-session` pour ouvrir le portail Stripe hébergé ; il permet de changer de formule, consulter les factures ou résilier sans exposer de données de paiement au dashboard.
 - Un ajout est refusé avec `MULTI_SITE_SUBSCRIPTION_REQUIRED` lorsque le quota `RestaurantAccountBilling.entitledSiteCount` est atteint. Les webhooks Stripe projettent le `siteCount` au niveau du compte ; staging a créé un troisième site puis refusé le quatrième hors quota.
-- Le site principal ne peut pas être suspendu ou archivé s'il est le dernier établissement actif. Une suspension/archivage n'efface aucune donnée et les requêtes d'un site indisponible sont refusées par le resolver.
+- Le site principal ne peut pas être suspendu ou archivé s'il est le dernier établissement actif. S'il existe un autre site actif, la route transfère `isPrimary` au plus ancien site actif dans la même transaction avant de changer le statut. Une suspension/archivage n'efface aucune donnée et les requêtes d'un site indisponible sont refusées par le resolver.
 
 ## Contrôles après application
 
@@ -50,5 +50,6 @@ Le script traite chaque restaurant dans une transaction et affiche uniquement le
 - appeler `POST /restaurants/sites/:id/members` avec une identité membre réelle de l’organisation puis avec une identité externe ; vérifier la création dans le premier cas et l’absence d’écriture dans le second ;
 - vérifier qu'une requête avec `X-Sokar-Site-ID` vers un site non attribué est refusée ;
 - vérifier qu'un site suspendu est absent du sélecteur puis réapparaît après réactivation ;
+- désactiver le site principal avec un site secondaire actif et vérifier que le secondaire devient principal ; rejouer le cas sans remplacement et vérifier `PRIMARY_SITE_REQUIRED` ;
 - conserver le backup et le rapport de migration dans la release ;
 - ne pas activer la facturation multi-site sans preuve d'entitlement Stripe, provisioning de deux sites et test d'un membre Clerk limité à un site ; les deux premiers sont maintenant validés sur staging.
