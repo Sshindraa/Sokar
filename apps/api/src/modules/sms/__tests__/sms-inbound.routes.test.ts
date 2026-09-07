@@ -63,12 +63,38 @@ describe('POST /sms/telnyx/inbound', () => {
     expect(mockHandleReply).toHaveBeenCalledWith('+336****5678', 'OUI', 'sms');
   });
 
-  it('ignore les events non-message.received (statuts, etc.)', async () => {
+  it('accuse réception des événements de statut sans dispatcher de réponse client', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/sms/telnyx/inbound',
       payload: {
-        data: { event_type: 'message.sent', payload: { from: { phone_number: '+33' } } },
+        data: {
+          event_type: 'message.finalized',
+          payload: {
+            id: 'msg-1',
+            to: [{ phone_number: '+336****5678', status: 'delivered' }],
+          },
+        },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload)).toEqual({ result: 'ignored' });
+    expect(mockHandleReply).not.toHaveBeenCalled();
+  });
+
+  it('trace une livraison SMS échouée et répond rapidement à Telnyx', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sms/telnyx/inbound',
+      payload: {
+        data: {
+          event_type: 'message.finalized',
+          payload: {
+            id: 'msg-2',
+            to: [{ phone_number: '+336****5678', status: 'delivery_failed' }],
+            errors: [{ code: '40305' }],
+          },
+        },
       },
     });
     expect(res.statusCode).toBe(200);

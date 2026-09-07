@@ -36,7 +36,14 @@ export const smsManagerWorker = new Worker(
       to = r.managerPhone;
     }
 
-    await telnyx.messages.create({ from: process.env.TELNYX_FROM_NUMBER!, to, text: message });
+    await telnyx.messages.create({
+      from: process.env.TELNYX_FROM_NUMBER!,
+      to,
+      text: message,
+      ...(process.env.TELNYX_MESSAGING_PROFILE_ID
+        ? { messaging_profile_id: process.env.TELNYX_MESSAGING_PROFILE_ID }
+        : {}),
+    });
     log.info('[SMS] Manager alert sent');
   },
   { connection: redisQueue },
