@@ -306,6 +306,7 @@ export function __resetMetrics(): void {
   failOpenTotal.reset();
   httpRequestsTotal.reset();
   telnyxWebhookEventsTotal.reset();
+  telnyxMessagingEventsTotal.reset();
   alertsSentTotal.reset();
   queueJobsGauge.reset();
   callsMissingTranscriptGauge.reset();
@@ -398,6 +399,17 @@ export const telnyxWebhookEventsTotal = new Counter({
   name: 'sokar_telnyx_webhook_events_total',
   help: 'Total Telnyx webhook events by route and result',
   labelNames: ['event', 'result'] as const,
+  registers: [getRegistry()],
+});
+
+/**
+ * Événements de messagerie Telnyx reçus, avec statut de livraison borné.
+ * Aucun identifiant de message ou numéro de téléphone n'est exposé en label.
+ */
+export const telnyxMessagingEventsTotal = new Counter({
+  name: 'sokar_telnyx_messaging_events_total',
+  help: 'Total Telnyx messaging webhook events by event type and bounded status',
+  labelNames: ['event', 'status'] as const,
   registers: [getRegistry()],
 });
 

@@ -2,12 +2,20 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { telnyxWebhookGuard } from '../voice/telnyx.guard';
 import { handleReply } from './reply-handler';
+import { telnyxMessagingEventsTotal } from '../../shared/observability/metrics';
 
 const TelnyxFromSchema = z.union([z.string(), z.object({ phone_number: z.string() })]);
+const TelnyxRecipientSchema = z.object({
+  phone_number: z.string().optional(),
+  status: z.string().optional(),
+});
 
 const TelnyxWebhookPayloadSchema = z.object({
+  id: z.string().optional(),
   from: TelnyxFromSchema.optional(),
   text: z.string().optional(),
+  to: z.array(TelnyxRecipientSchema).optional(),
+  errors: z.array(z.unknown()).optional(),
 });
 
 const TelnyxWebhookBodySchema = z.object({
@@ -16,6 +24,35 @@ const TelnyxWebhookBodySchema = z.object({
     payload: TelnyxWebhookPayloadSchema,
   }),
 });
+
+type MessagingStatus =
+  | 'received'
+  | 'sent'
+  | 'delivered'
+  | 'delivery_failed'
+  | 'delivery_unconfirmed'
+  | 'unknown';
+
+function normalizeMessagingStatus(eventType: string, status?: string): MessagingStatus {
+  if (eventType === 'message.received') return 'received';
+  if (eventType === 'message.sent') return 'sent';
+  switch (status) {
+    case 'delivered':
+      return 'delivered';
+    case 'delivery_unconfirmed':
+    case 'dlr_timeout':
+      return 'delivery_unconfirmed';
+    case 'delivery_failed':
+    case 'sending_failed':
+    case 'failed':
+    case 'gw_timeout':
+      return 'delivery_failed';
+    case 'sent':
+      return 'sent';
+    default:
+      return 'unknown';
+  }
+}
 
 /**
  * Handler pour les SMS entrants de Telnyx (réponses clients).
@@ -33,7 +70,30 @@ export async function smsInboundRoutes(app: FastifyInstance) {
     }
 
     const { data } = parseResult.data;
+    const firstRecipient = data.payload.to?.[0];
+    const status = normalizeMessagingStatus(data.event_type, firstRecipient?.status);
+    if (
+      data.event_type === 'message.received' ||
+      data.event_type === 'message.sent' ||
+      data.event_type === 'message.finalized'
+    ) {
+      telnyxMessagingEventsTotal.inc({
+        event: data.event_type.replace('message.', ''),
+        status,
+      });
+    }
+
     if (data.event_type !== 'message.received') {
+      if (data.event_type === 'message.finalized' && status === 'delivery_failed') {
+        req.log.warn(
+          { messageId: data.payload.id, status, errorCount: data.payload.errors?.length ?? 0 },
+          'Telnyx SMS delivery failed',
+        );
+      } else if (data.event_type === 'message.finalized' && status === 'delivered') {
+        req.log.info({ messageId: data.payload.id, status }, 'Telnyx SMS delivered');
+      } else if (data.event_type === 'message.sent') {
+        req.log.info({ messageId: data.payload.id, status }, 'Telnyx SMS accepted by carrier');
+      }
       return reply.send({ result: 'ignored' });
     }
 

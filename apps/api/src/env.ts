@@ -144,6 +144,9 @@ const EnvSchema = z
     SERVICE_COPILOT_TELEMETRY_SECRET: z.string().min(32).optional(),
     // Clés API critiques — validées au démarrage en production
     TELNYX_API_KEY: z.string().optional(),
+    // Profil Telnyx utilisé pour les SMS transactionnels et leurs webhooks.
+    // Le numéro expéditeur doit aussi être affecté à ce profil côté Telnyx.
+    TELNYX_MESSAGING_PROFILE_ID: z.string().optional(),
     // Base URL Telnyx pour les appels fetch directs — défaut US.
     // Le SDK Telnyx utilise TELNYX_API_BASE (sans https://).
     // Pour Frankfurt : TELNYX_API_URL=https://api.telnyx.eu + TELNYX_API_BASE=api.telnyx.eu

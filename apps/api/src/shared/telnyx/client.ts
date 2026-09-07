@@ -43,10 +43,12 @@ export default telnyx;
 
 export async function sendSms(to: string, text: string): Promise<void | NotificationSendResult> {
   const t = getTelnyx();
+  const messagingProfileId = process.env.TELNYX_MESSAGING_PROFILE_ID;
   const response = await t.messages.create({
     from: process.env.TELNYX_FROM_NUMBER!,
     to,
     text,
+    ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
   });
   return normalizeTelnyxSendResponse(response, 'sms');
 }
