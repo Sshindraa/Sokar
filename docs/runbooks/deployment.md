@@ -70,7 +70,15 @@ ssh deploy@sokar "cd /opt/sokar-staging && bash scripts/deploy.sh --env staging 
 - `curl /health` and `/livez` on `api-staging.sokar.tech` (staging) / `api.sokar.tech` (prod) → 200.
 - `curl /dashboard` → 200 or 302 (Clerk redirect).
 - `curl /` and `/restaurant/chez-sokar-demo` → 200.
-- Playwright E2E functional tests on staging (best-effort, non-blocking).
+- Playwright E2E functional tests on staging are blocking: Dashboard smoke plus
+  the public reservation widget (including availability) and the Connect
+  restaurant page. The Connect confirmation flow and gift-card purchase are
+  intentionally excluded because they write business data or require the demo
+  restaurant's commercial feature flag; they belong to a controlled staging
+  campaign with cleanup and payment/notification checks.
+- The local CI dashboard smoke uses DOM readiness for the public widget instead
+  of `networkidle`; remote restaurant imagery must not turn a valid release into
+  a timeout. Business assertions remain blocking.
 - Production: no Playwright E2E (too risky); curl smoke tests only.
 
 ## Post-deploy notes (production)

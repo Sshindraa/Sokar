@@ -208,6 +208,21 @@ jobs:
           # Run only the functional E2E tests (not visual regression) against
           # the staging URL. The PLAYWRIGHT_BASE_URL env var overrides the
           # dev server baseURL in playwright.config.ts.
-          pnpm exec playwright test dashboard.spec.ts --project=desktop-1440 \
+          pnpm exec playwright test dashboard.spec.ts widget.spec.ts --project=desktop-1440 \
             --reporter=list
-          echo "E2E smoke test completed (blocking)"
+          echo "Dashboard E2E smoke test completed (blocking)"
+
+      - name: Install Connect Playwright browsers
+        run: pnpm --filter @sokar/connect exec playwright install --with-deps chromium
+
+      - name: Run Connect E2E smoke against staging
+        env:
+          PLAYWRIGHT_BASE_URL: https://staging.sokar.tech
+          API_URL: https://api-staging.sokar.tech
+        run: |
+          cd apps/connect
+          # La fiche publique est servie par Connect. Le widget de réservation
+          # (/widget/[slug]) est servi par Dashboard et est testé juste au-dessus.
+          pnpm exec playwright test restaurant-page.spec.ts --project=desktop-1280 \
+            --reporter=list
+          echo "Connect E2E smoke test completed (blocking)"
