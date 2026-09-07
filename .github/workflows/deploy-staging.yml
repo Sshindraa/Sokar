@@ -6,6 +6,12 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch: # déclenchement manuel
+    inputs:
+      force_smoke_failure:
+        description: 'Échouer volontairement après les smoke tests pour prouver le blocage de promotion'
+        required: false
+        type: boolean
+        default: false
 
 # Évite les déploiements concurrents sur staging.
 concurrency:
@@ -226,3 +232,9 @@ jobs:
           pnpm exec playwright test restaurant-page.spec.ts --project=desktop-1280 \
             --reporter=list
           echo "Connect E2E smoke test completed (blocking)"
+
+      - name: Intentional promotion gate failure (proof only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.force_smoke_failure == true }}
+        run: |
+          echo "Intentional staging failure requested: production promotion must remain skipped."
+          exit 1

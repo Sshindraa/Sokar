@@ -79,6 +79,11 @@ ssh deploy@sokar "cd /opt/sokar-staging && bash scripts/deploy.sh --env staging 
 - The local CI dashboard smoke uses DOM readiness for the public widget instead
   of `networkidle`; remote restaurant imagery must not turn a valid release into
   a timeout. Business assertions remain blocking.
+- To rehearse the promotion gate without touching production, dispatch
+  `Deploy Staging` with `force_smoke_failure=true`. The staging deploy, rollback,
+  health checks and public E2E still run, then the workflow fails deliberately;
+  `Deploy Production` must not start because it requires a successful staging
+  workflow. Use this only as a controlled release exercise.
 - Production: no Playwright E2E (too risky); curl smoke tests only.
 
 ## Post-deploy notes (production)
