@@ -1,6 +1,15 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeApp, getApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
+import { clerkClient } from '@clerk/fastify';
+
+vi.mock('@clerk/fastify', () => ({
+  clerkClient: {
+    organizations: {
+      getOrganizationMembershipList: vi.fn(),
+    },
+  },
+}));
 
 describe('restaurant routes — sites accessibles', () => {
   beforeEach(() => {
@@ -174,5 +183,96 @@ describe('restaurant routes — sites accessibles', () => {
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe('PRIMARY_SITE_REQUIRED');
     expect(db.restaurant.update).not.toHaveBeenCalled();
+  });
+
+  it('n’ajoute un membre qu’après validation de son appartenance Clerk', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'site_two',
+      accountId: 'test-account-1',
+      siteStatus: 'ACTIVE',
+    } as never);
+    vi.mocked(clerkClient.organizations.getOrganizationMembershipList).mockResolvedValue({
+      data: [{ publicUserData: { userId: 'user_2' } }],
+    } as never);
+    vi.mocked(db.restaurantAccountMembership.create).mockResolvedValue({
+      id: 'membership_2',
+      restaurantId: 'site_two',
+      clerkUserId: 'user_2',
+      role: 'STAFF',
+    } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/restaurants/sites/site_two/members',
+      headers: { authorization: 'Bearer test' },
+      payload: { clerkUserId: 'user_2', role: 'STAFF' },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(clerkClient.organizations.getOrganizationMembershipList).toHaveBeenCalledWith({
+      organizationId: 'test-rest-1',
+      userId: ['user_2'],
+      limit: 1,
+    });
+    expect(db.restaurantAccountMembership.create).toHaveBeenCalledWith({
+      data: {
+        accountId: 'test-account-1',
+        restaurantId: 'site_two',
+        clerkUserId: 'user_2',
+        role: 'STAFF',
+      },
+    });
+  });
+
+  it('refuse un utilisateur absent de l’organisation Clerk sans écriture locale', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'site_two',
+      accountId: 'test-account-1',
+      siteStatus: 'ACTIVE',
+    } as never);
+    vi.mocked(clerkClient.organizations.getOrganizationMembershipList).mockResolvedValue({
+      data: [],
+    } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/restaurants/sites/site_two/members',
+      headers: { authorization: 'Bearer test' },
+      payload: { clerkUserId: 'user_outside', role: 'STAFF' },
+    });
+
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toEqual({
+      error: 'CLERK_MEMBER_REQUIRED',
+      message: 'L’utilisateur doit d’abord appartenir à votre organisation Clerk.',
+    });
+    expect(db.restaurantAccountMembership.create).not.toHaveBeenCalled();
+    expect(db.restaurantAccountMembership.update).not.toHaveBeenCalled();
+  });
+
+  it('bloque l’écriture si la vérification Clerk est indisponible', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'site_two',
+      accountId: 'test-account-1',
+      siteStatus: 'ACTIVE',
+    } as never);
+    vi.mocked(clerkClient.organizations.getOrganizationMembershipList).mockRejectedValue(
+      new Error('Clerk timeout'),
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/restaurants/sites/site_two/members',
+      headers: { authorization: 'Bearer test' },
+      payload: { clerkUserId: 'user_2', role: 'STAFF' },
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toBe('CLERK_MEMBERSHIP_UNAVAILABLE');
+    expect(db.restaurantAccountMembership.create).not.toHaveBeenCalled();
+    expect(db.restaurantAccountMembership.update).not.toHaveBeenCalled();
   });
 });
