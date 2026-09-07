@@ -40,25 +40,51 @@ export function requireOrg() {
     const demoMode = process.env.NODE_ENV !== 'production' || process.env.DEMO_STAGING === '1';
     if (demoMode && process.env.DEMO_RESTAURANT_ID) {
       const demoRestaurantId = process.env.DEMO_RESTAURANT_ID;
-      const demoRestaurant = await db.restaurant.findUnique({
+      const demoAnchor = await db.restaurant.findUnique({
         where: { id: demoRestaurantId },
-        select: { accountId: true, siteStatus: true },
+        select: { id: true, accountId: true, siteStatus: true },
       });
-      if (!demoRestaurant) {
+      if (!demoAnchor) {
         return reply.status(404).send({
           error: 'DEMO_RESTAURANT_NOT_FOUND',
           message: 'Restaurant de démonstration indisponible.',
         });
       }
-      if (demoRestaurant.siteStatus === 'SUSPENDED' || demoRestaurant.siteStatus === 'ARCHIVED') {
+      if (demoAnchor.siteStatus === 'SUSPENDED' || demoAnchor.siteStatus === 'ARCHIVED') {
         return reply.status(404).send({
           error: 'SITE_UNAVAILABLE',
           message: 'Établissement indisponible ou accès refusé.',
         });
       }
-      req.restaurantId = demoRestaurantId;
+      const requestedSiteId = getRequestedSiteId(req);
+      let demoRestaurant = demoAnchor;
+      if (requestedSiteId && requestedSiteId !== demoRestaurantId) {
+        if (!demoAnchor.accountId) {
+          return reply.status(404).send({
+            error: 'SITE_ACCESS_DENIED',
+            message: 'Établissement indisponible ou accès refusé.',
+          });
+        }
+        const requestedSite = await db.restaurant.findUnique({
+          where: { id: requestedSiteId },
+          select: { id: true, accountId: true, siteStatus: true },
+        });
+        if (
+          !requestedSite ||
+          requestedSite.accountId !== demoAnchor.accountId ||
+          requestedSite.siteStatus === 'SUSPENDED' ||
+          requestedSite.siteStatus === 'ARCHIVED'
+        ) {
+          return reply.status(404).send({
+            error: 'SITE_ACCESS_DENIED',
+            message: 'Établissement indisponible ou accès refusé.',
+          });
+        }
+        demoRestaurant = requestedSite;
+      }
+      req.restaurantId = demoRestaurant.id;
       req.siteId = req.restaurantId;
-      req.accountId = demoRestaurant.accountId ?? undefined;
+      req.accountId = demoAnchor.accountId ?? undefined;
       req.clerkOrganizationId = demoRestaurantId;
       req.userId = process.env.DEMO_USER_ID ?? 'demo-user';
       req.siteRole = 'OWNER';

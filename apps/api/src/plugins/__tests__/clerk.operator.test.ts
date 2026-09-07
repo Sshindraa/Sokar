@@ -136,6 +136,7 @@ describe('requireSokarOperator', () => {
     process.env.DEMO_STAGING = '1';
     process.env.DEMO_USER_ID = 'demo-user';
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'demo-restaurant',
       accountId: 'demo-account',
       siteStatus: 'ACTIVE',
     } as never);
@@ -152,5 +153,37 @@ describe('requireSokarOperator', () => {
     expect(request.clerkOrganizationId).toBe('demo-restaurant');
     expect(request.userId).toBe('demo-user');
     expect(request.siteRole).toBe('OWNER');
+  });
+
+  it('respecte le site demandé dans le contexte démo si le compte le possède', async () => {
+    process.env.DEMO_RESTAURANT_ID = 'demo-restaurant';
+    process.env.DEMO_STAGING = '1';
+    process.env.DEMO_USER_ID = 'demo-user';
+    vi.mocked(db.restaurant.findUnique)
+      .mockReset()
+      .mockResolvedValueOnce({
+        id: 'demo-restaurant',
+        accountId: 'demo-account',
+        siteStatus: 'ACTIVE',
+      } as never)
+      .mockResolvedValueOnce({
+        id: 'demo-site-2',
+        accountId: 'demo-account',
+        siteStatus: 'ACTIVE',
+      } as never);
+
+    const request = makeRequest('GET', {
+      authorization: 'Bearer test',
+      'x-sokar-site-id': 'demo-site-2',
+    });
+    const reply = makeReply();
+
+    await requireOrg()(request, reply);
+
+    expect(reply.status).not.toHaveBeenCalled();
+    expect(request.restaurantId).toBe('demo-site-2');
+    expect(request.siteId).toBe('demo-site-2');
+    expect(request.accountId).toBe('demo-account');
+    expect(request.clerkOrganizationId).toBe('demo-restaurant');
   });
 });

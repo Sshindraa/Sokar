@@ -1,5 +1,7 @@
 # Contexte Sokar
 
+2026-09-07 16:25 — [launch, staging, multisite] **Sélecteur démo multi-site aligné** — Le mode démo staging honore maintenant `X-Sokar-Site-ID` après vérification que le site demandé appartient au compte démo et reste actif. La création de `Sokar Lyon Test` est passée via le dashboard ; le sélecteur bascule dessus, avec un défaut de lecture des paramètres identifié avant ce correctif. Test Clerk : 6/6 ; typecheck et formatage API verts. Nouveau cycle CI/staging requis.
+
 2026-09-07 16:09 — [launch, staging, multisite] **Backfill staging et mode démo corrigé** — Le dry-run a trouvé 10 restaurants historiques ; le backfill staging les a rattachés transactionnellement aux comptes. Le dashboard expose désormais la carte Établissements et le plan Multi-Site. Le mode démo staging résout aussi `accountId`/`clerkOrganizationId` depuis le restaurant afin que Checkout et les opérations multi-site OWNER ne soient pas bloqués par `SITE_ADMIN_REQUIRED`. Test ciblé Clerk : 5/5 ; CI/staging/prod du commit précédent restent verts. Nouveau cycle CI/staging à lancer pour cette correction.
 
 2026-09-07 15:30 — [launch, dashboard, isolation] **Contexte site réinitialisé au changement d’organisation** — Le `SiteProvider` vide désormais le site actif et le compte mémorisés avant de charger une nouvelle organisation Clerk, puis efface aussi le compte en cas d’erreur de chargement. Dashboard 159/159 et typecheck verts.
