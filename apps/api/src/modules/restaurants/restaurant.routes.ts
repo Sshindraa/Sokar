@@ -28,6 +28,10 @@ import {
 import { synthesizeText, isCartesiaConfigured } from '../voice/cartesia-synth';
 import { redisCache } from '../../shared/redis/client';
 import { listAccessibleRestaurantSites, RestaurantContextError } from './site-context';
+import {
+  assertClerkOrganizationMember,
+  ClerkMembershipVerificationError,
+} from './clerk-membership.service';
 
 type RestaurantWithIncludes = Prisma.RestaurantGetPayload<{
   include: { personality: true; exposureSettings: true; images: true };
@@ -519,6 +523,28 @@ export async function restaurantRoutes(app: FastifyInstance) {
     });
     if (!site || site.accountId !== req.accountId || site.siteStatus === 'ARCHIVED') {
       return reply.status(404).send({ error: 'SITE_NOT_FOUND' });
+    }
+
+    try {
+      await assertClerkOrganizationMember({
+        organizationId: req.clerkOrganizationId,
+        userId: input.clerkUserId,
+      });
+    } catch (error) {
+      if (error instanceof ClerkMembershipVerificationError) {
+        if (error.code === 'NOT_MEMBER') {
+          return reply.status(422).send({
+            error: 'CLERK_MEMBER_REQUIRED',
+            message: 'L’utilisateur doit d’abord appartenir à votre organisation Clerk.',
+          });
+        }
+        req.log.error({ err: error }, 'Clerk membership verification unavailable');
+        return reply.status(503).send({
+          error: 'CLERK_MEMBERSHIP_UNAVAILABLE',
+          message: 'Impossible de vérifier l’utilisateur auprès de Clerk.',
+        });
+      }
+      throw error;
     }
 
     const existing = await app.db.restaurantAccountMembership.findFirst({

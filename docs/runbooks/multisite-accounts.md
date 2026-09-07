@@ -36,6 +36,7 @@ Le script traite chaque restaurant dans une transaction et affiche uniquement le
 - Le proxy dashboard transmet `X-Sokar-Site-ID` à chaque requête API. Le serveur résout toujours le compte, le site et le rôle avant d'exécuter une route.
 - Un membre `READ_ONLY` peut consulter son périmètre mais reçoit `READ_ONLY_ACCESS` sur toute mutation HTTP ; les opérations de cycle de vie restent réservées à `OWNER`.
 - Le propriétaire peut ajouter un site via `POST /restaurants/sites`, modifier son nom ou son statut via `PATCH /restaurants/sites/:id`, et gérer un membre via `/restaurants/sites/:id/members`.
+- L’ajout d’un membre vérifie côté serveur `getOrganizationMembershipList` avec l’organisation Clerk de la session. Un utilisateur absent reçoit `CLERK_MEMBER_REQUIRED` (HTTP 422), Clerk indisponible reçoit `CLERK_MEMBERSHIP_UNAVAILABLE` (HTTP 503), et aucune ligne `RestaurantAccountMembership` n’est écrite dans ces deux cas.
 - Le Checkout de souscription est réservé au rôle `OWNER`. Depuis un site secondaire, il réutilise le client Stripe et la clé d'idempotence du compte, enregistre le site courant dans les métadonnées et conserve les tentatives sur le site principal.
 - Le bouton de paramètres appelle `POST /billing/portal-session` pour ouvrir le portail Stripe hébergé ; il permet de changer de formule, consulter les factures ou résilier sans exposer de données de paiement au dashboard.
 - Un ajout est refusé avec `MULTI_SITE_SUBSCRIPTION_REQUIRED` lorsque le quota `RestaurantAccountBilling.entitledSiteCount` est atteint. Les webhooks Stripe projettent le `siteCount` au niveau du compte ; staging a créé un troisième site puis refusé le quatrième hors quota.
@@ -46,6 +47,7 @@ Le script traite chaque restaurant dans une transaction et affiche uniquement le
 - vérifier que le nombre de restaurants avec `account_id IS NULL` est nul ou documenté ;
 - vérifier qu'un compte possède exactement un établissement principal pendant la transition ;
 - appeler `GET /restaurants/sites` avec deux organisations Clerk de test ;
+- appeler `POST /restaurants/sites/:id/members` avec une identité membre réelle de l’organisation puis avec une identité externe ; vérifier la création dans le premier cas et l’absence d’écriture dans le second ;
 - vérifier qu'une requête avec `X-Sokar-Site-ID` vers un site non attribué est refusée ;
 - vérifier qu'un site suspendu est absent du sélecteur puis réapparaît après réactivation ;
 - conserver le backup et le rapport de migration dans la release ;
