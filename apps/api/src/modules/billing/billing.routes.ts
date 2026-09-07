@@ -21,6 +21,10 @@ const CheckoutSchema = z.object({
 export async function billingRoutes(app: FastifyInstance) {
   app.post('/billing/checkout-session', { preHandler: requireOrg() }, async (req, reply) => {
     const input = CheckoutSchema.parse(req.body);
+    const idempotencyHeader = req.headers['idempotency-key'];
+    const idempotencyKey = Array.isArray(idempotencyHeader)
+      ? idempotencyHeader[0]
+      : idempotencyHeader;
 
     try {
       const session = await createCheckoutSession({
@@ -28,6 +32,7 @@ export async function billingRoutes(app: FastifyInstance) {
         plan: input.plan,
         billing: input.billing,
         siteCount: input.siteCount,
+        idempotencyKey,
       });
       return reply.send(session);
     } catch (error) {

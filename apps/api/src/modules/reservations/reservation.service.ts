@@ -96,6 +96,23 @@ function logReplayMismatch(input: CreateReservationInput, existing: Reservation)
   }
 }
 
+export const RESERVATION_REPLAY_SCOPE_MISMATCH = 'RESERVATION_REPLAY_SCOPE_MISMATCH';
+
+/** A callId is an idempotency key, never a cross-tenant lookup key. */
+function assertReplayScope(input: CreateReservationInput, existing: Reservation): void {
+  if (existing.restaurantId !== input.restaurantId) {
+    logger.warn(
+      {
+        callId: input.callId,
+        requestedRestaurantId: input.restaurantId,
+        actualRestaurantId: existing.restaurantId,
+      },
+      '[ReservationService] Rejected replay key from another restaurant',
+    );
+    throw new Error(RESERVATION_REPLAY_SCOPE_MISMATCH);
+  }
+}
+
 export class ReservationService {
   static async create(input: CreateReservationInput) {
     // Replay-safe : si une réservation existe déjà pour ce callId (retransmission
@@ -106,6 +123,7 @@ export class ReservationService {
         where: { callId: input.callId },
       });
       if (existing) {
+        assertReplayScope(input, existing);
         logReplayMismatch(input, existing);
         logger.info(
           { callId: input.callId, reservationId: existing.id },
@@ -163,6 +181,7 @@ export class ReservationService {
           where: { callId: input.callId },
         });
         if (existingInTx) {
+          assertReplayScope(input, existingInTx);
           logReplayMismatch(input, existingInTx);
           logger.info(
             { callId: input.callId, reservationId: existingInTx.id },

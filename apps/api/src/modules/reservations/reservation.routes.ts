@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireOrg } from '../../plugins/clerk';
-import { ReservationService } from './reservation.service';
+import { ReservationService, RESERVATION_REPLAY_SCOPE_MISMATCH } from './reservation.service';
 import {
   AvailabilityQuerySchema,
   CreateReservationSchema,
@@ -54,6 +54,9 @@ export async function reservationRoutes(app: FastifyInstance) {
     } catch (err) {
       if (err instanceof Error && err.message === 'SLOT_NOT_AVAILABLE') {
         throw createSlotNotAvailableError();
+      }
+      if (err instanceof Error && err.message === RESERVATION_REPLAY_SCOPE_MISMATCH) {
+        return reply.status(409).send({ error: 'RESERVATION_REPLAY_REJECTED' });
       }
       throw err;
     }

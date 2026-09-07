@@ -15,6 +15,15 @@ vi.mock('../plugins/clerk', () => ({
       req.userId = 'test-user-1';
     };
   },
+  requireSokarOperator: () => {
+    return async (req: FastifyRequest, reply: FastifyReply) => {
+      const authHeader = req.headers?.authorization;
+      if (!authHeader) {
+        return reply.status(401).send({ error: 'Authentication required' });
+      }
+      req.userId = 'test-operator-1';
+    };
+  },
   requireAuth: () => {
     return async (req: FastifyRequest, reply: FastifyReply) => {
       const authHeader = req.headers?.authorization;
@@ -106,6 +115,11 @@ vi.mock('../shared/db/client', () => {
       create: vi.fn(),
       update: vi.fn(),
       upsert: vi.fn(),
+    },
+    stripeWebhookEvent: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
     },
     agentPersonality: {
       findUnique: vi.fn(),

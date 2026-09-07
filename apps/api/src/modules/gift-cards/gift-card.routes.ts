@@ -844,9 +844,18 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
     // Fallback : si rawBody n'est pas set, on stringify req.body.
     const rawBody = (req as { rawBody?: string }).rawBody ?? JSON.stringify(req.body ?? {});
 
+    let event: Awaited<ReturnType<typeof constructWebhookEvent>>;
     try {
-      const event = await constructWebhookEvent(rawBody, signature);
+      event = await constructWebhookEvent(rawBody, signature);
+    } catch (err: unknown) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[gift-card-routes] Stripe webhook signature verification failed',
+      );
+      return reply.status(400).send({ error: 'Webhook signature verification failed' });
+    }
 
+    try {
       if (event.type === 'payment_intent.succeeded') {
         const pi = event.data.object as { id: string; metadata?: Record<string, string> };
         const paymentService = new GiftCardPaymentService(db);
@@ -877,9 +886,9 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
     } catch (err: unknown) {
       logger.error(
         { err: err instanceof Error ? err.message : String(err) },
-        '[gift-card-routes] Stripe webhook verification failed',
+        '[gift-card-routes] Stripe webhook processing failed',
       );
-      return reply.status(400).send({ error: 'Webhook signature verification failed' });
+      return reply.status(500).send({ error: 'WEBHOOK_PROCESSING_FAILED' });
     }
   });
 }

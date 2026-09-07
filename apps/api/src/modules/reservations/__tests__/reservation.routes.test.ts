@@ -13,7 +13,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
-import { ReservationService } from '../reservation.service';
+import { ReservationService, RESERVATION_REPLAY_SCOPE_MISMATCH } from '../reservation.service';
 
 describe('reservation.routes', () => {
   beforeEach(() => {
@@ -275,6 +275,28 @@ describe('reservation.routes', () => {
         error: 'SLOT_NOT_AVAILABLE',
         statusCode: 409,
       });
+    });
+
+    it('mappe un replay inter-restaurant en 409 sans exposer la réservation', async () => {
+      const app = await getApp();
+      vi.spyOn(ReservationService, 'create').mockRejectedValue(
+        new Error(RESERVATION_REPLAY_SCOPE_MISMATCH),
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/reservations',
+        payload: {
+          restaurantId: 'rest-123',
+          callId: 'call-cross-tenant',
+          reservedAt: '2099-06-05T19:00:00.000Z',
+          partySize: 2,
+          customerName: 'Alice',
+        },
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toEqual({ error: 'RESERVATION_REPLAY_REJECTED' });
     });
   });
 

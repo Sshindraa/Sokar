@@ -128,6 +128,10 @@ const EnvSchema = z
     METRICS_BASIC_AUTH_USER: z.string().optional(),
     METRICS_BASIC_AUTH_PASSWORD: z.string().min(1).optional(),
     METRICS_ALLOWLIST_IPS: z.string().default('127.0.0.1, ::1'),
+    // IDs Clerk des opérateurs Sokar autorisés à utiliser les routes globales
+    // de provisioning et de santé. CSV, obligatoire dans l'environnement de
+    // déploiement avant d'ouvrir l'administration multi-restaurant.
+    SOKAR_OPERATOR_USER_IDS: z.string().optional(),
     // Auth MCP dev (SEC-007). ENABLE_DEV_AUTH doit être explicitement true pour activer AGENT_DEV_KEY.
     // En production, rester false. AGENT_DEV_KEY doit faire ≥32 caractères si défini.
     ENABLE_DEV_AUTH: z.enum(['true', 'false']).default('false'),
@@ -250,6 +254,21 @@ const EnvSchema = z
       message:
         'En production, CORS_ORIGINS doit être défini explicitement (ex: "https://sokar.tech,https://www.sokar.tech"). Aucun fallback hardcoded.',
       path: ['CORS_ORIGINS'],
+    },
+  )
+  .refine(
+    (data) => {
+      if (data.NODE_ENV !== 'production') return true;
+      return Boolean(
+        data.SOKAR_OPERATOR_USER_IDS?.split(',')
+          .map((id) => id.trim())
+          .filter(Boolean).length,
+      );
+    },
+    {
+      message:
+        'SOKAR_OPERATOR_USER_IDS doit contenir au moins un ID Clerk en production pour protéger les routes globales.',
+      path: ['SOKAR_OPERATOR_USER_IDS'],
     },
   )
   .refine(
