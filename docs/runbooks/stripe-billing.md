@@ -66,6 +66,8 @@ pnpm --filter @sokar/database backfill:restaurant-accounts
 
 La commande reste en dry-run par défaut ; ajouter `-- --apply` uniquement après vérification du rapport et de la sauvegarde de release.
 
+La vérification du webhook signé a ensuite utilisé un événement test `customer.subscription.updated` récupéré depuis Stripe : le payload signé a été envoyé deux fois à `POST /webhooks/stripe` et les deux appels ont répondu HTTP 200 avec `received=true` et sans erreur. Le même payload avec une signature `v1` invalide a répondu HTTP 400 `Webhook signature verification failed`. Aucun Checkout, paiement ou débit supplémentaire n'a été créé pendant ce test. Cette preuve valide la vérification HMAC et l'acquittement idempotent observables au niveau HTTP ; elle ne remplace pas encore la qualification des règles annuel, taxes, prorata, période de grâce et dépassement de quota.
+
 ## Test sans paiement
 
 En local, utiliser des clés `sk_test_...` et les huit prix de test. Les tests automatisés couvrent la validation du parcours, la création de Checkout et les quatre transitions webhook. Ne jamais mettre une clé live ou un prix live dans le dépôt.
