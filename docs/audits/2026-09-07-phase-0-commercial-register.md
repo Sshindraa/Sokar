@@ -13,7 +13,7 @@ Ce registre fixe ce qui peut être annoncé dès le premier lancement, qui porte
 | API, auth, isolation, Prisma, Billing     | Codex                      | Revue produit sur les changements de contrat                        |
 | Dashboard, Connect et parcours navigateur | Codex                      | Validation UX et démonstration par Hamza                            |
 | Voix, Telnyx, SMS et transfert humain     | Codex                      | Accès fournisseurs, appels réels et décision d’activation par Hamza |
-| Infra, CI, sauvegardes et rollback        | Codex                      | Accès VPS, canaux d’alerte et exercice de restauration              |
+| Infra, CI, sauvegardes et rollback        | Codex                      | Accès VPS, canal d’alerte externe et mesure RPO/RTO                 |
 | RGPD, CGV, DPA et SLA                     | Hamza + conseil juridique  | Identité légale, sous-traitants et texte contractuel signé          |
 | Support des dix premiers restaurants      | Hamza                      | Canal, horaires et délai d’escalade à confirmer                     |
 
@@ -34,6 +34,7 @@ Ce registre fixe ce qui peut être annoncé dès le premier lancement, qui porte
 
 - [ ] Profil Telnyx, numéro émetteur, callbacks de livraison et procédure d’incident ;
 - [ ] Projet Sentry, uptime extérieur, destinataires et test d’alerte ;
+- [x] Exercice de restauration vierge R2/PostgreSQL réussi sur le dernier dump (32 tables, 73 contraintes, 117 index, base temporaire supprimée) ;
 - [x] Billing Portal sandbox ouvert depuis le site secondaire et quatre prix annuels Stripe actifs en live et test ; [ ] TVA/HT-TTC et procédure d’annulation ;
 - [ ] Identité légale, DPA, rétention audio/transcription et contact RGPD ;
 - [ ] Comptes développeur et secrets de test ChatGPT/Claude ;
@@ -53,4 +54,4 @@ Les noms, contacts, prix pilote, créneaux d’onboarding et ordre des vagues re
 
 ## Règle de release
 
-Chaque activation doit référencer le commit, les variables attendues, les migrations, les smoke tests, la sauvegarde et la commande de rollback. La projection Stripe multi-site et le modèle account/site restent additifs. La migration et le backfill sont validés sur staging (10/10 restaurants historiques), le rejeu webhook signé est validé (double réponse 200, signature invalide en 400), le troisième site est créé et le quatrième est refusé hors quota ; les quatre prix annuels Stripe sont actifs en live et test et le Checkout annuel sélectionne le bon prix et la cadence dans un test dédié ; la release `main@ba771559` est déployée en staging et en production avec smoke tests verts. Les preuves d'isolation réelle avec deux identités, de droits membre, de facture annuelle, taxes, prorata, période de grâce et de cohorte pilote restent nécessaires avant l'activation commerciale autonome.
+Chaque activation doit référencer le commit, les variables attendues, les migrations, les smoke tests, la sauvegarde et la commande de rollback. La projection Stripe multi-site et le modèle account/site restent additifs. La migration et le backfill sont validés sur staging (10/10 restaurants historiques), le rejeu webhook signé est validé (double réponse 200, signature invalide en 400), le troisième site est créé et le quatrième est refusé hors quota ; les quatre prix annuels Stripe sont actifs en live et test et le Checkout annuel sélectionne le bon prix et la cadence dans un test dédié ; la release `main@05722a1` est déployée en staging (`34153394326`) et en production (`34153509452`) avec smoke tests verts. Le restore vierge R2 est validé sur `20260907T020001Z.dump` ; le canal d'alerte externe, la mesure RPO/RTO, les preuves d'isolation réelle avec deux identités, les droits membre, la facture annuelle, taxes, prorata, période de grâce et la cohorte pilote restent nécessaires avant l'activation commerciale autonome.
