@@ -54,18 +54,18 @@ Les risques et preuves de départ sont dans l’[audit détaillé](/Users/hamza/
 
 ## Feuille de route
 
-| Phase | But                                                        |        Durée indicative | Statut                                                                                                                       |
-| ----- | ---------------------------------------------------------- | ----------------------: | ---------------------------------------------------------------------------------------------------------------------------- |
-| 0     | Cadrage de l’offre, périmètre et préparation de la release |              0,5–1 jour | **EN COURS**                                                                                                                 |
-| 1     | Isolation des tenants et autorisations serveur             |               2–4 jours | À faire                                                                                                                      |
-| 2     | Parcours réservation, voix, SMS et support                 |               3–5 jours | À faire                                                                                                                      |
-| 2B    | Modules commerciaux proposés dès le lancement              |               5–8 jours | En cours — multi-site account/site, droits, quota et sélecteur dashboard avancés ; staging et autres modules restent ouverts |
-| 3     | Stripe, droits et cycle d’abonnement                       |               2–3 jours | En cours — Checkout/portail propriétaire, idempotence, ledger et projection compte codés ; cycle signé staging à valider     |
-| 4     | Observabilité, files, sauvegardes et reprise               |               2–3 jours | À faire                                                                                                                      |
-| 5     | RGPD, contrats et surface commerciale                      | 2–4 jours, en parallèle | À faire                                                                                                                      |
-| 6     | Qualification, CI et release candidate                     |               2–3 jours | À faire                                                                                                                      |
-| 7     | Dogfood interne puis deux restaurants pilotes              |  7–10 jours calendaires | À faire                                                                                                                      |
-| 8     | Déploiement par vagues jusqu’à dix restaurants             |  7–14 jours calendaires | À faire                                                                                                                      |
+| Phase | But                                                        |        Durée indicative | Statut                                                                                                                      |
+| ----- | ---------------------------------------------------------- | ----------------------: | --------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Cadrage de l’offre, périmètre et préparation de la release |              0,5–1 jour | **EN COURS**                                                                                                                |
+| 1     | Isolation des tenants et autorisations serveur             |               2–4 jours | À faire                                                                                                                     |
+| 2     | Parcours réservation, voix, SMS et support                 |               3–5 jours | À faire                                                                                                                     |
+| 2B    | Modules commerciaux proposés dès le lancement              |               5–8 jours | En cours — multi-site créé et validé en staging avec sélecteur/portail ; membres, quota et autres modules restent ouverts   |
+| 3     | Stripe, droits et cycle d’abonnement                       |               2–3 jours | En cours — portail sandbox validé depuis un secondaire ; Checkout/webhook signé, annuel, taxes et période de grâce à fermer |
+| 4     | Observabilité, files, sauvegardes et reprise               |               2–3 jours | À faire                                                                                                                     |
+| 5     | RGPD, contrats et surface commerciale                      | 2–4 jours, en parallèle | À faire                                                                                                                     |
+| 6     | Qualification, CI et release candidate                     |               2–3 jours | À faire                                                                                                                     |
+| 7     | Dogfood interne puis deux restaurants pilotes              |  7–10 jours calendaires | À faire                                                                                                                     |
+| 8     | Déploiement par vagues jusqu’à dix restaurants             |  7–14 jours calendaires | À faire                                                                                                                     |
 
 L’estimation ajustée représente environ 25 à 40 jours de développement, auxquels s’ajoutent les dépendances fournisseurs, la validation juridique et la période pilote. En travaillant seul, compter environ six à huit semaines ; avec deux personnes disponibles, réduire surtout les temps d’attente et de support.
 
@@ -79,7 +79,7 @@ L’estimation ajustée représente environ 25 à 40 jours de développement, au
 - [x] critères de sortie et séquencement interne → deux pilotes → dix restaurants définis ;
 - [x] tickets LAUNCH-P0-01 et LAUNCH-P0-02 créés et premier correctif codé dans le worktree de lancement ;
 - [x] lots LAUNCH-P1-03 et LAUNCH-P1-04 implémentés localement : plan protégé par Billing, Checkout idempotent et ledger Stripe ordonné ;
-- [x] modifications locales conservées, sans changement de branche ni déploiement.
+- [x] release `main@d53916c` déployée après CI, smoke, rollback/restauration et E2E staging verts ; preuves multi-site et portail consignées.
 
 ### Actions restantes
 
@@ -87,7 +87,7 @@ L’estimation ajustée représente environ 25 à 40 jours de développement, au
 - [x] convertir chaque risque P0/P1 en ticket avec propriétaire, date cible, preuve attendue et niveau de rollback (backlog phase 0 créé ; dates et pilotes restent à renseigner) ;
 - [x] attribuer à chaque module commercial un propriétaire, un prix, une porte d’activation et une preuve de démonstration ([registre commercial](/Users/hamza/Projects/Sokar/docs/audits/2026-09-07-phase-0-commercial-register.md)) ; les dépendances externes et la cohorte restent ouvertes ;
 - [ ] nommer les responsables produit, API, dashboard, voix/SMS, infra, juridique et support (une personne peut cumuler plusieurs rôles) ;
-- [ ] confirmer les dépendances externes : profil de messagerie Telnyx et numéro émetteur, Sentry et canal d’alerte, accès Stripe Billing Portal, identité légale et DPA, comptes Google nécessaires ;
+- [ ] confirmer les dépendances externes : profil de messagerie Telnyx et numéro émetteur, Sentry et canal d’alerte, prix annuels/taxes, identité légale et DPA, comptes Google nécessaires ; le Billing Portal sandbox est validé ;
 - [ ] choisir les dix restaurants, leur ordre de cohorte, la date de l’appel d’onboarding et le canal de support ;
 - [ ] publier une fiche de release avec commit, variables attendues, migrations, smoke tests, rollback et décisionnaire GO/NO-GO.
 

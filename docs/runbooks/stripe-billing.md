@@ -50,6 +50,22 @@ Le champ `Restaurant.plan` est une projection des événements Billing. Les rout
 
 Une signature absente ou invalide renvoie `400`. Une erreur après vérification de signature renvoie `500` afin que Stripe réessaie. Les événements inconnus sont acquittés après journalisation.
 
+## Preuve staging du 7 septembre 2026
+
+La release `main@d53916c` a été publiée après CI, smoke tests, rollback/restauration et E2E staging verts. Le dashboard staging a créé le site secondaire `Sokar Lyon Test`, conservé ce site dans le sélecteur et chargé ses paramètres après changement de contexte. Le portail Stripe sandbox ouvert depuis le secondaire a affiché la souscription Multi-site avec deux suppléments d'établissement (447 €/mois), la facture payée du 27 août et la carte de test `4242`. Aucun paiement ni résiliation n'a été déclenché pendant cette vérification.
+
+Le backfill account/site staging a été exécuté après un dry-run : 10 candidats détectés, 10 restaurants migrés. Le script doit recevoir `DATABASE_URL` depuis `apps/api/.env` sur le VPS, car `packages/database/.env` n'y est pas présent :
+
+```bash
+cd /opt/sokar-staging
+set -a
+. apps/api/.env
+set +a
+pnpm --filter @sokar/database backfill:restaurant-accounts
+```
+
+La commande reste en dry-run par défaut ; ajouter `-- --apply` uniquement après vérification du rapport et de la sauvegarde de release.
+
 ## Test sans paiement
 
 En local, utiliser des clés `sk_test_...` et les huit prix de test. Les tests automatisés couvrent la validation du parcours, la création de Checkout et les quatre transitions webhook. Ne jamais mettre une clé live ou un prix live dans le dépôt.
