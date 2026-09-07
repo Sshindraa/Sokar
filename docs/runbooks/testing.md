@@ -29,6 +29,12 @@ réservation et l'achat de carte cadeau restent des campagnes contrôlées, car
 ils écrivent des données métier ou nécessitent l'activation commerciale du
 restaurant de démo.
 
+Le smoke du widget attend le DOM et les éléments métier plutôt que `networkidle` :
+la page charge des images distantes qui peuvent rester en vol sur un runner CI.
+Cette règle évite un faux timeout sans masquer une erreur de chargement, puisque
+les données restaurant, l'état de disponibilité et le changement de date restent
+assertés.
+
 ## Visual regression
 
 `pnpm test:visual` captures screenshots of 6 critical pages (`/dashboard`, `/dashboard/reservations`, `/dashboard/calls`, `/dashboard/gift-cards`, `/`, `/pricing`) on 3 viewports (iPhone 14, iPad Mini, desktop 1440px) and compares them to the baseline in `apps/dashboard/e2e/__snapshots__/`. Tolerance threshold: 0.2% pixel diff.

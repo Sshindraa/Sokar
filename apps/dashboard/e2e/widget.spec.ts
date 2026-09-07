@@ -50,7 +50,10 @@ async function mockDemoApi(page: Page): Promise<void> {
 test.describe('Widget réservation public', () => {
   test('charge le widget et ses disponibilités sans erreur', async ({ page }) => {
     await mockDemoApi(page);
-    await page.goto(`/widget/${RESTAURANT_SLUG}`, { waitUntil: 'networkidle' });
+    // Le widget charge des visuels distants ; attendre `networkidle` rend le
+    // smoke flaky sur le runner CI lorsque ces images restent en vol. Les
+    // assertions ci-dessous attendent les données et l'interface utile.
+    await page.goto(`/widget/${RESTAURANT_SLUG}`, { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByText('Chez Sokar').first()).toBeVisible();
     await expect(page.getByText('Nombre de personnes')).toBeVisible();
