@@ -13,6 +13,9 @@ const originalEnv = {
 describe('billing.routes - POST /billing/checkout-session', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(db.restaurant.findFirst).mockReset();
+    vi.mocked(db.restaurantAccountBilling.findUnique).mockReset();
+    vi.mocked(db.restaurantBilling.findUnique).mockReset();
     process.env.STRIPE_SECRET_KEY = 'sk_test_unit';
     delete process.env.STRIPE_PRICE_PRO_MONTHLY;
     delete process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY;
@@ -75,6 +78,79 @@ describe('billing.routes - POST /billing/checkout-session', () => {
     });
   });
 
+  it('réserve la facturation du compte au propriétaire', async () => {
+    process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/billing/checkout-session',
+      headers: { authorization: 'Bearer test', 'x-test-site-role': 'STAFF' },
+      payload: { plan: 'pro', billing: 'monthly' },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({
+      error: 'BILLING_OWNER_REQUIRED',
+      message: 'Seul le propriétaire du compte peut gérer la facturation.',
+    });
+  });
+
+  it('ouvre le portail Stripe pour le propriétaire', async () => {
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-1',
+      accountId: 'test-account-1',
+      name: 'Bistrot du Coin',
+      managerEmail: 'manager@example.com',
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurantAccountBilling.findUnique).mockResolvedValue({
+      accountId: 'test-account-1',
+      stripeCustomerId: 'cus_account',
+    } as unknown as Awaited<ReturnType<typeof db.restaurantAccountBilling.findUnique>>);
+    vi.mocked(db.restaurant.findFirst).mockResolvedValue(null);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/billing/portal-session',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ url: 'https://billing.stripe.test/portal' });
+    const portalCreate = (
+      globalThis as unknown as {
+        __sokarStripeBillingPortalSessionCreate: { mock: { calls: unknown[][] } };
+      }
+    ).__sokarStripeBillingPortalSessionCreate;
+    expect(portalCreate.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ customer: 'cus_account' }),
+    );
+  });
+
+  it('refuse le portail quand aucun client Stripe n’est lié', async () => {
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-1',
+      accountId: null,
+      name: 'Bistrot du Coin',
+      managerEmail: 'manager@example.com',
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/billing/portal-session',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      error: 'BILLING_CUSTOMER_NOT_FOUND',
+      message: 'Aucune souscription Stripe active pour ce compte.',
+    });
+  });
+
   it('crée une session Checkout hébergée pour le restaurant authentifié', async () => {
     process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
@@ -104,6 +180,54 @@ describe('billing.routes - POST /billing/checkout-session', () => {
     });
   });
 
+  it('ancre le Checkout secondaire sur le compte et le site principal', async () => {
+    process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'secondary-site',
+      accountId: 'account-1',
+      name: 'Site secondaire',
+      managerEmail: 'secondary@example.com',
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurant.findFirst).mockResolvedValue({
+      id: 'primary-site',
+      accountId: 'account-1',
+      name: 'Site principal',
+      managerEmail: 'owner@example.com',
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findFirst>>);
+    vi.mocked(db.restaurantAccountBilling.findUnique).mockResolvedValue({
+      accountId: 'account-1',
+      stripeCustomerId: 'cus_account',
+      stripeSubscriptionId: null,
+      subscriptionStatus: null,
+    } as unknown as Awaited<ReturnType<typeof db.restaurantAccountBilling.findUnique>>);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/billing/checkout-session',
+      headers: { authorization: 'Bearer test' },
+      payload: { plan: 'pro', billing: 'monthly' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(db.restaurantBilling.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { restaurantId: 'primary-site' } }),
+    );
+    const checkoutCreate = (
+      globalThis as unknown as {
+        __sokarStripeCheckoutSessionCreate: { mock: { calls: unknown[][] } };
+      }
+    ).__sokarStripeCheckoutSessionCreate;
+    expect(checkoutCreate.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        customer: 'cus_account',
+        client_reference_id: 'secondary-site',
+        metadata: expect.objectContaining({ accountId: 'account-1' }),
+      }),
+    );
+  });
+
   it('réutilise la session Checkout lors d’un retry avec la même clé d’idempotence', async () => {
     process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
@@ -118,6 +242,7 @@ describe('billing.routes - POST /billing/checkout-session', () => {
         stripeCustomerId: 'cus_test',
         checkoutIdempotencyKey: buildCheckoutIdempotencyKey({
           restaurantId: 'test-rest-1',
+          scopeId: 'test-account-1',
           plan: 'pro',
           billing: 'monthly',
           siteCount: 1,

@@ -11,8 +11,12 @@ import { forwardedHeaders } from '../app/api/proxy/forwarded-headers';
  * partagées entre tous les utilisateurs → 429 en boucle). Le fix : forwarder
  * X-Forwarded-For + activer trustProxy côté API.
  */
-function mockReq(headers: Record<string, string>) {
+function mockReq(
+  headers: Record<string, string>,
+  url = 'https://dashboard.test/api/proxy/restaurants/sites',
+) {
   return {
+    nextUrl: new URL(url),
     headers: {
       get: (name: string) => headers[name.toLowerCase()] ?? null,
     },
@@ -28,6 +32,18 @@ describe('forwardedHeaders — proxy Next.js', () => {
   it('forward X-Request-ID pour le tracing end-to-end', () => {
     const headers = forwardedHeaders(mockReq({ 'x-request-id': 'req-abc-123' }));
     expect(headers['X-Request-ID']).toBe('req-abc-123');
+  });
+
+  it('forward le site actif vers le resolver API', () => {
+    const headers = forwardedHeaders(mockReq({ 'x-sokar-site-id': 'site_123' }));
+    expect(headers['X-Sokar-Site-ID']).toBe('site_123');
+  });
+
+  it('forward le site actif passé par un lecteur audio sans header custom', () => {
+    const headers = forwardedHeaders(
+      mockReq({}, 'https://dashboard.test/api/proxy/calls/c1/recording?siteId=site_123'),
+    );
+    expect(headers['X-Sokar-Site-ID']).toBe('site_123');
   });
 
   it("forward le cookie Clerk pour l'authentification", () => {
@@ -50,12 +66,14 @@ describe('forwardedHeaders — proxy Next.js', () => {
       mockReq({
         'x-forwarded-for': '203.0.113.7, 10.0.0.1',
         'x-request-id': 'req-xyz',
+        'x-sokar-site-id': 'site_123',
         cookie: '__session=tok',
       }),
     );
     expect(headers).toEqual({
       'X-Forwarded-For': '203.0.113.7, 10.0.0.1',
       'X-Request-ID': 'req-xyz',
+      'X-Sokar-Site-ID': 'site_123',
       Cookie: '__session=tok',
     });
   });

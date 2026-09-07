@@ -4,9 +4,11 @@ Date : 7 septembre 2026
 Statut : **EN COURS**
 Référence de départ : `b7d14da15777e8aab074859b519387bffdc32687`
 Worktree de travail : `/Users/hamza/Projects/Sokar/.worktrees/sokar-billing-10`
-Branche : `codex/launch-10-restaurants`
+Branche actuelle : `codex/phase-0-ops`
 
 Ce backlog transforme l’[audit de lancement](/Users/hamza/Projects/Sokar/docs/audits/2026-09-06-launch-readiness.md) et le [plan phase par phase](/Users/hamza/Projects/Sokar/docs/audits/2026-09-06-launch-plan.md) en unités de travail vérifiables. Les responsables indiqués sont les rôles de réalisation ; Hamza reste décisionnaire GO/NO-GO et valide les changements qui touchent le produit ou le contrat.
+
+Registre commercial associé : [propriétaires, prix et portes d’activation](/Users/hamza/Projects/Sokar/docs/audits/2026-09-07-phase-0-commercial-register.md).
 
 ## Tickets prioritaires
 
@@ -26,15 +28,15 @@ Ce backlog transforme l’[audit de lancement](/Users/hamza/Projects/Sokar/docs/
 
 Ces tickets sont dans l’offre commerciale dès le jour 1. Leur niveau contractuel doit être explicite : disponible, déploiement accompagné ou pilote. Aucun module ne doit contourner l’isolation, les droits Stripe ou la capacité de rollback.
 
-| ID            | Module                             | Responsable                       | Critère minimal avant activation                                                         |
-| ------------- | ---------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------- |
-| LAUNCH-MOD-01 | Multi-site                         | Codex — modèle/API/dashboard      | deux établissements d’un compte, droits par site, facture et vue consolidée vérifiés     |
-| LAUNCH-MOD-02 | ChatGPT/Claude                     | Codex — agentic/API               | réservation de bout en bout depuis chaque canal, consentement, rejeu et transfert humain |
-| LAUNCH-MOD-03 | Domaine personnalisé               | Codex — Connect/infra             | DNS, TLS, renouvellement, suppression et fallback testés                                 |
-| LAUNCH-MOD-04 | Cartes cadeaux                     | Codex — gift cards/billing        | émission, utilisation partielle, expiration, remboursement et concurrence vérifiés       |
-| LAUNCH-MOD-05 | Prédictif avancé                   | Codex — data/product, revue Hamza | données minimales, explicabilité, seuil de confiance et fallback manuel mesurés          |
-| LAUNCH-MOD-06 | Facturation annuelle               | Codex — billing                   | prix total, prorata, renouvellement, annulation, facture et webhooks testés              |
-| LAUNCH-MOD-07 | « Sans limite » / « taux garanti » | Hamza + conseil juridique         | politique d’usage ou SLA avec métriques, exclusions, compensation et coût maximal        |
+| ID            | Module                             | Responsable                       | Critère minimal avant activation                                                                                                                                                                                      |
+| ------------- | ---------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LAUNCH-MOD-01 | Multi-site                         | Codex — modèle/API/dashboard      | Fondations compte/résolveur, création/suspension, membres, sélecteur dashboard et Checkout propriétaire ancré au compte implémentés dans le worktree ; entitlement Stripe, facture et preuve staging restent à fermer |
+| LAUNCH-MOD-02 | ChatGPT/Claude                     | Codex — agentic/API               | réservation de bout en bout depuis chaque canal, consentement, rejeu et transfert humain                                                                                                                              |
+| LAUNCH-MOD-03 | Domaine personnalisé               | Codex — Connect/infra             | DNS, TLS, renouvellement, suppression et fallback testés                                                                                                                                                              |
+| LAUNCH-MOD-04 | Cartes cadeaux                     | Codex — gift cards/billing        | émission, utilisation partielle, expiration, remboursement et concurrence vérifiés                                                                                                                                    |
+| LAUNCH-MOD-05 | Prédictif avancé                   | Codex — data/product, revue Hamza | données minimales, explicabilité, seuil de confiance et fallback manuel mesurés                                                                                                                                       |
+| LAUNCH-MOD-06 | Facturation annuelle               | Codex — billing                   | prix total, prorata, renouvellement, annulation, facture et webhooks testés                                                                                                                                           |
+| LAUNCH-MOD-07 | « Sans limite » / « taux garanti » | Hamza + conseil juridique         | politique d’usage ou SLA avec métriques, exclusions, compensation et coût maximal                                                                                                                                     |
 
 ## Dépendances externes à confirmer
 

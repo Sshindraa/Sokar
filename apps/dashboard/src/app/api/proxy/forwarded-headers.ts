@@ -12,12 +12,17 @@ export function forwardedHeaders(req: NextRequest) {
   const cookie = req.headers.get('cookie') || '';
   const forwardedFor = req.headers.get('x-forwarded-for') || '';
   const requestId = req.headers.get('x-request-id') || '';
+  // Audio elements cannot attach custom headers, so the calls page may pass
+  // the already validated site selection as a query parameter. The API still
+  // resolves membership and account ownership server-side.
+  const siteId = req.headers.get('x-sokar-site-id') || req.nextUrl.searchParams.get('siteId') || '';
   const range = req.headers.get('range') || '';
 
   const headers: Record<string, string> = {};
   if (cookie) headers.Cookie = cookie;
   if (forwardedFor) headers['X-Forwarded-For'] = forwardedFor;
   if (requestId) headers['X-Request-ID'] = requestId;
+  if (siteId) headers['X-Sokar-Site-ID'] = siteId;
   if (range) headers.Range = range;
   return headers;
 }

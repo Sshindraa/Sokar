@@ -51,6 +51,9 @@ function makeRestaurant(
 ): MinimalRestaurant {
   return {
     id: overrides.id,
+    accountId: overrides.accountId ?? null,
+    isPrimary: overrides.isPrimary ?? false,
+    siteStatus: overrides.siteStatus ?? 'ACTIVE',
     name: overrides.name ?? 'Resto',
     plan: overrides.plan ?? 'STARTER',
     managerPhone: overrides.managerPhone ?? '+33100000000',

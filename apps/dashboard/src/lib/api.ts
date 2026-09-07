@@ -2,6 +2,7 @@
 
 import { useAuth, useOrganization } from '@clerk/nextjs';
 import { useCallback } from 'react';
+import { useSiteSelection } from '@/features/sites/site-context';
 
 const PROXY = '/api/proxy';
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
@@ -16,10 +17,11 @@ interface ApiResult<T> {
 /**
  * Hook API client pour le dashboard.
  * - Proxy via Next.js (même origine → cookie Clerk forwardé)
- * - orgId automatique depuis Clerk
+ * - orgId/siteId automatiques depuis Clerk et le sélecteur multi-site
  * - Gestion d'erreur centralisée
  */
 export function useApi() {
+  const { activeSiteId } = useSiteSelection();
   // The environment flag is stable for the whole client bundle. Without Clerk
   // keys we expose a no-op API client so local UI previews can render.
   // En staging demo mode (NEXT_PUBLIC_DEMO_RESTAURANT_ID défini), on force le
@@ -33,7 +35,12 @@ export function useApi() {
           organization: null as ReturnType<typeof useOrganization>['organization'],
         };
   const { isSignedIn, organization } = clerk;
-  const orgId = organization?.id ?? demoOrgId ?? undefined;
+  const organizationId = organization?.id ?? demoOrgId ?? undefined;
+  // Les routes historiques attendent un ID d'établissement dans leurs
+  // paramètres. Une fois le compte multi-site chargé, orgId pointe donc vers
+  // le site actif, tout en conservant organizationId pour les opérations au
+  // niveau du compte (facturation, sélecteur, etc.).
+  const orgId = activeSiteId ?? organizationId;
 
   const apiFetch = useCallback(
     async <T = unknown>(
@@ -44,9 +51,13 @@ export function useApi() {
     ): Promise<T> => {
       const url = `${PROXY}/${path.replace(/^\//, '')}`;
 
+      const headers: Record<string, string> = {};
+      if (body) headers['Content-Type'] = 'application/json';
+      if (activeSiteId) headers['X-Sokar-Site-ID'] = activeSiteId;
+
       const res = await fetch(url, {
         method,
-        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
         body: body ? JSON.stringify(body) : undefined,
         signal: options?.signal,
       });
@@ -72,7 +83,7 @@ export function useApi() {
 
       return data as T;
     },
-    [],
+    [activeSiteId],
   );
 
   const get = useCallback(
@@ -96,6 +107,8 @@ export function useApi() {
 
   return {
     orgId,
+    organizationId,
+    siteId: activeSiteId ?? organizationId,
     isSignedIn,
     get,
     post,

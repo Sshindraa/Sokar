@@ -71,7 +71,7 @@ function IntentLabel({ intent }: { intent: string | null }) {
   }
 }
 
-function RecordingPlayer({ call }: { call: CallItem }) {
+function RecordingPlayer({ call, siteId }: { call: CallItem; siteId?: string }) {
   if (call.recordingStatus === 'PENDING') {
     return <span className="text-xs text-muted-foreground">Traitement…</span>;
   }
@@ -91,7 +91,7 @@ function RecordingPlayer({ call }: { call: CallItem }) {
       preload="none"
       aria-label={`Réécouter l'appel du ${formatDate(call.createdAt, 'fr-FR')}`}
       className="h-9 w-full min-w-[220px] max-w-[300px]"
-      src={`/api/proxy/calls/${call.id}/recording`}
+      src={`/api/proxy/calls/${call.id}/recording${siteId ? `?siteId=${encodeURIComponent(siteId)}` : ''}`}
     >
       Votre navigateur ne permet pas la lecture audio.
     </audio>
@@ -99,7 +99,7 @@ function RecordingPlayer({ call }: { call: CallItem }) {
 }
 
 export default function CallsPage() {
-  const { get, orgId } = useApi();
+  const { get, orgId, siteId } = useApi();
   const isMobile = useIsMobile();
 
   const [calls, setCalls] = useState<CallItem[]>([]);
@@ -205,7 +205,7 @@ export default function CallsPage() {
               />
               {call.recordingStatus !== 'NOT_REQUESTED' ? (
                 <div className="px-1">
-                  <RecordingPlayer call={call} />
+                  <RecordingPlayer call={call} siteId={siteId} />
                 </div>
               ) : null}
             </div>
@@ -253,7 +253,7 @@ export default function CallsPage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">{call.carrier || '—'}</TableCell>
                     <TableCell>
-                      <RecordingPlayer call={call} />
+                      <RecordingPlayer call={call} siteId={siteId} />
                     </TableCell>
                     <TableCell className="max-w-xs">
                       {call.transcript ? (

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Globe, CheckCircle2, AlertCircle, Loader2, Copy, X } from 'lucide-react';
+import { useApi } from '@/lib/api';
 
 type CustomDomainStatus =
   | 'pending'
@@ -28,11 +29,8 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   failed: { label: 'Échec — vérifiez la configuration', color: 'text-destructive' },
 };
 
-export function CustomDomainCard({
-  restaurantId,
-  customDomain,
-  customDomainStatus,
-}: Props) {
+export function CustomDomainCard({ restaurantId, customDomain, customDomainStatus }: Props) {
+  const { siteId } = useApi();
   const [domain, setDomain] = useState(customDomain ?? '');
   const [saving, setSaving] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -52,7 +50,10 @@ export function CustomDomainCard({
     try {
       const res = await fetch(`/api/proxy/restaurants/${restaurantId}/connect`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(siteId ? { 'X-Sokar-Site-ID': siteId } : {}),
+        },
         body: JSON.stringify({ customDomain: domain || null }),
       });
       if (!res.ok) {
@@ -73,10 +74,10 @@ export function CustomDomainCard({
     setError(null);
     setVerifyResult(null);
     try {
-      const res = await fetch(
-        `/api/proxy/restaurants/${restaurantId}/connect/verify-dns`,
-        { method: 'POST' },
-      );
+      const res = await fetch(`/api/proxy/restaurants/${restaurantId}/connect/verify-dns`, {
+        method: 'POST',
+        headers: siteId ? { 'X-Sokar-Site-ID': siteId } : undefined,
+      });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error ?? 'Erreur lors de la vérification');
@@ -101,7 +102,10 @@ export function CustomDomainCard({
     try {
       const res = await fetch(`/api/proxy/restaurants/${restaurantId}/connect`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(siteId ? { 'X-Sokar-Site-ID': siteId } : {}),
+        },
         body: JSON.stringify({ customDomain: null }),
       });
       if (!res.ok) {
@@ -136,8 +140,8 @@ export function CustomDomainCard({
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Utilisez votre propre domaine (ex: reserve.votrerestaurant.fr) pour votre page
-          de réservation. Vos clients ne verront jamais &quot;sokar.tech&quot;.
+          Utilisez votre propre domaine (ex: reserve.votrerestaurant.fr) pour votre page de
+          réservation. Vos clients ne verront jamais &quot;sokar.tech&quot;.
         </p>
 
         {customDomain && status && (
@@ -238,9 +242,7 @@ export function CustomDomainCard({
         {verifyResult && (
           <div
             className={`flex items-start gap-2 rounded-lg p-3 text-sm ${
-              verifyResult.cnameValid
-                ? 'bg-success/10 text-success'
-                : 'bg-warning/10 text-warning'
+              verifyResult.cnameValid ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'
             }`}
           >
             {verifyResult.cnameValid ? (
