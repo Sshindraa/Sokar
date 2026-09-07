@@ -20,6 +20,15 @@ et lance `pnpm --filter @sokar/api test:int`. Ce job ne contacte aucun provider
 réel ; son objectif est de rendre la preuve transactionnelle reproductible à
 chaque livraison.
 
+Après une livraison sur `main`, le workflow staging exécute en outre les smoke
+tests Playwright contre les URLs publiques : le Dashboard vérifie
+`/widget/chez-sokar-demo` et ses disponibilités, et Connect vérifie
+`/restaurant/chez-sokar-demo`. Tout échec de ces parcours bloque la conclusion
+du workflow staging et donc la promotion production. La confirmation de
+réservation et l'achat de carte cadeau restent des campagnes contrôlées, car
+ils écrivent des données métier ou nécessitent l'activation commerciale du
+restaurant de démo.
+
 ## Visual regression
 
 `pnpm test:visual` captures screenshots of 6 critical pages (`/dashboard`, `/dashboard/reservations`, `/dashboard/calls`, `/dashboard/gift-cards`, `/`, `/pricing`) on 3 viewports (iPhone 14, iPad Mini, desktop 1440px) and compares them to the baseline in `apps/dashboard/e2e/__snapshots__/`. Tolerance threshold: 0.2% pixel diff.

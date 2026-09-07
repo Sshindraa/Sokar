@@ -223,7 +223,7 @@ Empêcher qu’une livraison verte masque un parcours critique absent, ignoré o
 ### Travaux
 
 - activer les tests d’intégration PostgreSQL dans un service CI reproductible, ou publier une justification et une vérification équivalente bloquante ;
-- retirer les `|| true` des E2E staging et inclure le job Connect ; faire échouer la release sur migration, smoke, health, typecheck, lint et build ;
+- retirer les `|| true` des E2E staging et inclure le smoke Connect ; faire échouer la release sur migration, smoke, health, typecheck, lint et build ;
 - ajouter les tests d’autorisation, idempotence, Stripe, SMS et restauration dans la suite requise ;
 - traiter ou accepter explicitement les alertes Dependabot avant la release ; conserver CodeQL et les secrets hors dépôt ;
 - générer une release candidate immuable avec changelog, variables, migrations, checksums et plan de rollback.
