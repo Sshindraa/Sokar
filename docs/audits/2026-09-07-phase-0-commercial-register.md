@@ -33,7 +33,7 @@ Ce registre fixe ce qui peut être annoncé dès le premier lancement, qui porte
 ## Dépendances à fermer
 
 - [ ] Profil Telnyx, numéro émetteur, callbacks de livraison et procédure d’incident ;
-- [ ] Projet Sentry, uptime extérieur, destinataires et test d’alerte ;
+- [ ] Projet Sentry, uptime extérieur, destinataires et test d’alerte ; restore vierge mesuré (RPO observable 20 h 05, restauration/contrôles 4 s), RTO production complet encore à mesurer ;
 - [x] Exercice de restauration vierge R2/PostgreSQL réussi sur le dernier dump (32 tables, 73 contraintes, 117 index, base temporaire supprimée) ;
 - [x] Billing Portal sandbox ouvert depuis le site secondaire et quatre prix annuels Stripe actifs en live et test ; [ ] TVA/HT-TTC et procédure d’annulation ;
 - [ ] Identité légale, DPA, rétention audio/transcription et contact RGPD ;

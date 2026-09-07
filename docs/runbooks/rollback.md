@@ -37,3 +37,14 @@ bash scripts/deploy.sh --env prod --confirm-production rollback --with-db-rollba
 
 > Sans `--with-db-rollback`, un rollback applicatif ne restaure pas la base de données.
 > Planifier le rollback DB séparément si des migrations ont été appliquées.
+
+## Mesure du restore vierge
+
+Le test reproductible se lance depuis le VPS et crée puis supprime une base temporaire :
+
+```zsh
+cd /opt/sokar
+/usr/bin/time -p bash scripts/database/test-restore-vierge.sh
+```
+
+La répétition du 7 septembre 2026 à 22:04 UTC a restauré `20260907T020001Z.dump` (130 148 octets) dans `sokar_restore_test_20260907220422`, vérifié 32 tables, 73 contraintes, 117 index et les deux index critiques `agentic_holds`, puis supprimé la base. Le dump avait 20 h 05 d’âge ; le temps total mesuré était de 4,00 s. Ces chiffres décrivent le RPO observable et le RTO d’une restauration vierge. Le RTO production complet doit inclure arrêt/reprise API, bascule de base et smoke métier ; il n’est pas encore validé.
