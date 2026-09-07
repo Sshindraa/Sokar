@@ -13,6 +13,7 @@ const originalEnv = {
   clerkPublishableKey: process.env.CLERK_PUBLISHABLE_KEY,
   clerkSecretKey: process.env.CLERK_SECRET_KEY,
   demoRestaurantId: process.env.DEMO_RESTAURANT_ID,
+  demoStaging: process.env.DEMO_STAGING,
   demoUserId: process.env.DEMO_USER_ID,
   operatorIds: process.env.SOKAR_OPERATOR_USER_IDS,
 };
@@ -52,6 +53,7 @@ describe('requireSokarOperator', () => {
     process.env.CLERK_PUBLISHABLE_KEY = originalEnv.clerkPublishableKey;
     process.env.CLERK_SECRET_KEY = originalEnv.clerkSecretKey;
     process.env.DEMO_RESTAURANT_ID = originalEnv.demoRestaurantId;
+    process.env.DEMO_STAGING = originalEnv.demoStaging;
     process.env.DEMO_USER_ID = originalEnv.demoUserId;
     process.env.SOKAR_OPERATOR_USER_IDS = originalEnv.operatorIds;
   });
@@ -127,5 +129,28 @@ describe('requireSokarOperator', () => {
       error: 'READ_ONLY_ACCESS',
       message: 'Ce membre dispose d’un accès en lecture seule.',
     });
+  });
+
+  it('injecte le compte du restaurant démo pour les parcours multi-site staging', async () => {
+    process.env.DEMO_RESTAURANT_ID = 'demo-restaurant';
+    process.env.DEMO_STAGING = '1';
+    process.env.DEMO_USER_ID = 'demo-user';
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      accountId: 'demo-account',
+      siteStatus: 'ACTIVE',
+    } as never);
+
+    const request = makeRequest();
+    const reply = makeReply();
+
+    await requireOrg()(request, reply);
+
+    expect(reply.status).not.toHaveBeenCalled();
+    expect(request.restaurantId).toBe('demo-restaurant');
+    expect(request.siteId).toBe('demo-restaurant');
+    expect(request.accountId).toBe('demo-account');
+    expect(request.clerkOrganizationId).toBe('demo-restaurant');
+    expect(request.userId).toBe('demo-user');
+    expect(request.siteRole).toBe('OWNER');
   });
 });
