@@ -6,6 +6,7 @@ import { buildCheckoutIdempotencyKey } from '../billing.service';
 const originalEnv = {
   secret: process.env.STRIPE_SECRET_KEY,
   price: process.env.STRIPE_PRICE_PRO_MONTHLY,
+  annualPrice: process.env.STRIPE_PRICE_PRO_ANNUAL,
   multiSitePrice: process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY,
   multiSiteAddonPrice: process.env.STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,
 };
@@ -18,6 +19,7 @@ describe('billing.routes - POST /billing/checkout-session', () => {
     vi.mocked(db.restaurantBilling.findUnique).mockReset();
     process.env.STRIPE_SECRET_KEY = 'sk_test_unit';
     delete process.env.STRIPE_PRICE_PRO_MONTHLY;
+    delete process.env.STRIPE_PRICE_PRO_ANNUAL;
     delete process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY;
     delete process.env.STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY;
   });
@@ -27,6 +29,8 @@ describe('billing.routes - POST /billing/checkout-session', () => {
     else process.env.STRIPE_SECRET_KEY = originalEnv.secret;
     if (originalEnv.price === undefined) delete process.env.STRIPE_PRICE_PRO_MONTHLY;
     else process.env.STRIPE_PRICE_PRO_MONTHLY = originalEnv.price;
+    if (originalEnv.annualPrice === undefined) delete process.env.STRIPE_PRICE_PRO_ANNUAL;
+    else process.env.STRIPE_PRICE_PRO_ANNUAL = originalEnv.annualPrice;
     if (originalEnv.multiSitePrice === undefined)
       delete process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY;
     else process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY = originalEnv.multiSitePrice;
@@ -178,6 +182,40 @@ describe('billing.routes - POST /billing/checkout-session', () => {
       create: { restaurantId: 'test-rest-1', stripeCustomerId: 'cus_test' },
       update: { stripeCustomerId: 'cus_test' },
     });
+  });
+
+  it('sélectionne le prix annuel et transmet la cadence à Stripe', async () => {
+    process.env.STRIPE_PRICE_PRO_ANNUAL = 'price_pro_annual_test';
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-annual',
+      name: 'Bistrot Annuel',
+      managerEmail: 'annual@example.com',
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(null);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/billing/checkout-session',
+      headers: { authorization: 'Bearer test' },
+      payload: { plan: 'pro', billing: 'annual' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const checkoutCreate = (
+      globalThis as unknown as {
+        __sokarStripeCheckoutSessionCreate: { mock: { calls: unknown[][] } };
+      }
+    ).__sokarStripeCheckoutSessionCreate;
+    expect(checkoutCreate.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        line_items: [{ price: 'price_pro_annual_test', quantity: 1 }],
+        metadata: expect.objectContaining({ billing: 'annual' }),
+        subscription_data: {
+          metadata: expect.objectContaining({ billing: 'annual' }),
+        },
+      }),
+    );
   });
 
   it('ancre le Checkout secondaire sur le compte et le site principal', async () => {

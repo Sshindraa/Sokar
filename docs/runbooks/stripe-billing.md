@@ -68,6 +68,8 @@ La commande reste en dry-run par défaut ; ajouter `-- --apply` uniquement aprè
 
 La vérification du webhook signé a ensuite utilisé un événement test `customer.subscription.updated` récupéré depuis Stripe : le payload signé a été envoyé deux fois à `POST /webhooks/stripe` et les deux appels ont répondu HTTP 200 avec `received=true` et sans erreur. Le même payload avec une signature `v1` invalide a répondu HTTP 400 `Webhook signature verification failed`. Aucun Checkout, paiement ou débit supplémentaire n'a été créé pendant ce test. Cette preuve valide la vérification HMAC et l'acquittement idempotent observables au niveau HTTP ; elle ne remplace pas encore la qualification des règles annuel, taxes, prorata, période de grâce et dépassement de quota.
 
+Une lecture Stripe en mode read-only du 7 septembre 2026 confirme que les quatre prix annuels sont actifs en production (mode live) et staging (mode test), récurrents en EUR avec `interval=year` : Essential 1 430,40 €/an, Pro 2 390,40 €/an, Multi-site 2 390,40 €/an et add-on Multi-site 950,40 €/an par établissement supplémentaire. Le test API dédié vérifie que `billing=annual` sélectionne le bon prix et transmet la cadence aux métadonnées Checkout. Cette preuve ne remplace pas encore la qualification de la facture annuelle, des taxes, du prorata, de la période de grâce et du renouvellement.
+
 ## Test sans paiement
 
 En local, utiliser des clés `sk_test_...` et les huit prix de test. Les tests automatisés couvrent la validation du parcours, la création de Checkout et les quatre transitions webhook. Ne jamais mettre une clé live ou un prix live dans le dépôt.
