@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeApp, getApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
+import { buildCheckoutIdempotencyKey } from '../billing.service';
 
 const originalEnv = {
   secret: process.env.STRIPE_SECRET_KEY,
@@ -96,9 +97,64 @@ describe('billing.routes - POST /billing/checkout-session', () => {
       id: 'cs_test',
       url: 'https://checkout.stripe.test/cs_test',
     });
-    expect(db.restaurantBilling.create).toHaveBeenCalledWith({
-      data: { restaurantId: 'test-rest-1', stripeCustomerId: 'cus_test' },
+    expect(db.restaurantBilling.upsert).toHaveBeenCalledWith({
+      where: { restaurantId: 'test-rest-1' },
+      create: { restaurantId: 'test-rest-1', stripeCustomerId: 'cus_test' },
+      update: { stripeCustomerId: 'cus_test' },
     });
+  });
+
+  it('réutilise la session Checkout lors d’un retry avec la même clé d’idempotence', async () => {
+    process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-1',
+      name: 'Bistrot du Coin',
+      managerEmail: 'manager@example.com',
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurantBilling.findUnique)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        restaurantId: 'test-rest-1',
+        stripeCustomerId: 'cus_test',
+        checkoutIdempotencyKey: buildCheckoutIdempotencyKey({
+          restaurantId: 'test-rest-1',
+          plan: 'pro',
+          billing: 'monthly',
+          siteCount: 1,
+          idempotencyKey: 'checkout-retry-1',
+        }),
+        checkoutSessionId: 'cs_test',
+        checkoutSessionUrl: 'https://checkout.stripe.test/cs_test',
+      } as unknown as Awaited<ReturnType<typeof db.restaurantBilling.findUnique>>);
+
+    const checkoutCreate = (
+      globalThis as unknown as {
+        __sokarStripeCheckoutSessionCreate: { mock: { calls: unknown[][] } };
+      }
+    ).__sokarStripeCheckoutSessionCreate;
+
+    const app = await getApp();
+    const headers = {
+      authorization: 'Bearer test',
+      'idempotency-key': 'checkout-retry-1',
+    };
+    const first = await app.inject({
+      method: 'POST',
+      url: '/billing/checkout-session',
+      headers,
+      payload: { plan: 'pro', billing: 'monthly' },
+    });
+    const second = await app.inject({
+      method: 'POST',
+      url: '/billing/checkout-session',
+      headers,
+      payload: { plan: 'pro', billing: 'monthly' },
+    });
+
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toEqual(first.json());
+    expect(checkoutCreate.mock.calls).toHaveLength(1);
   });
 
   it('bloque une seconde souscription qui pourrait facturer deux fois', async () => {

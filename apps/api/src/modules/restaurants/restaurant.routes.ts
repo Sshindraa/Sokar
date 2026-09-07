@@ -43,7 +43,10 @@ const ONBOARDING_EVENT_BY_ACTION: Partial<
   first_call: 'onboarding_first_call',
 };
 
-const CreateRestaurantSchema = z.object({
+// Le plan est une projection de Billing et ne peut pas être fourni par le
+// restaurateur, ni à la création ni à la mise à jour. La base applique STARTER
+// par défaut ; Stripe ou un opérateur Sokar fait évoluer cette projection.
+const RestaurantProfileSchema = z.object({
   name: z.string().min(2).max(100),
   managerPhone: z.string().regex(/^\+?[0-9]{10,15}$/),
   managerEmail: z.string().email(),
@@ -52,11 +55,12 @@ const CreateRestaurantSchema = z.object({
     z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']),
     z.union([z.object({ open: z.string(), close: z.string() }), z.null()]),
   ),
-  plan: z.enum(['STARTER', 'PRO', 'PREMIUM']).default('STARTER'),
   googleCalendarId: z.string().nullable().optional(),
   giftCardMinimumAmount: z.number().int().min(0).optional(),
   giftCardEnabled: z.boolean().optional(),
 });
+
+const CreateRestaurantSchema = RestaurantProfileSchema;
 
 const UpdatePersonalitySchema = z.object({
   profileType: z.enum(['BISTROT_BRASSERIE', 'GASTRONOMIQUE', 'SEMI_GASTRO']).optional(),
@@ -84,7 +88,7 @@ const CapacitySpecialsSchema = z
   })
   .passthrough();
 
-const UpdateRestaurantSchema = CreateRestaurantSchema.extend({
+const UpdateRestaurantSchema = RestaurantProfileSchema.extend({
   capacitySpecials: CapacitySpecialsSchema.optional(),
 }).partial();
 

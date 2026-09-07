@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { requireOrg } from '../../plugins/clerk';
+import { requireSokarOperator } from '../../plugins/clerk';
 import { db } from '../../shared/db/client';
 import { ProvisioningService } from './provisioning.service';
 
@@ -25,7 +25,7 @@ export async function provisioningRoutes(app: FastifyInstance) {
   // Liste des numéros Telnyx disponibles dans l'inventaire
   app.get(
     '/admin/provisioning/available-numbers',
-    { preHandler: requireOrg() },
+    { preHandler: requireSokarOperator() },
     async (_req: FastifyRequest, reply: FastifyReply) => {
       try {
         const numbers = await ProvisioningService.listAvailableNumbers();
@@ -42,7 +42,7 @@ export async function provisioningRoutes(app: FastifyInstance) {
   // Liste globale de tous les restaurants avec leur statut de provisioning
   app.get(
     '/admin/provisioning/restaurants',
-    { preHandler: requireOrg() },
+    { preHandler: requireSokarOperator() },
     async (_req: FastifyRequest, reply: FastifyReply) => {
       try {
         const restaurants = await db.restaurant.findMany({
@@ -78,7 +78,7 @@ export async function provisioningRoutes(app: FastifyInstance) {
   // Obtenir le statut détaillé d'un restaurant spécifique
   app.get<{ Params: { restaurantId: string } }>(
     '/admin/provisioning/:restaurantId',
-    { preHandler: requireOrg() },
+    { preHandler: requireSokarOperator() },
     async (req, reply) => {
       const { restaurantId } = req.params;
       try {
@@ -94,7 +94,7 @@ export async function provisioningRoutes(app: FastifyInstance) {
   // 1. Attribution d'un numéro Telnyx à un restaurant
   app.post<{ Params: { restaurantId: string } }>(
     '/admin/provisioning/:restaurantId/assign-phone',
-    { preHandler: requireOrg(), config: { rateLimit: provisioningMutationRateLimit } },
+    { preHandler: requireSokarOperator(), config: { rateLimit: provisioningMutationRateLimit } },
     async (req, reply) => {
       const { restaurantId } = req.params;
       const body = AssignPhoneSchema.parse(req.body ?? {});
@@ -121,7 +121,7 @@ export async function provisioningRoutes(app: FastifyInstance) {
   // 2. Vérification du Webhook & activation du renvoi
   app.post<{ Params: { restaurantId: string } }>(
     '/admin/provisioning/:restaurantId/verify-webhook',
-    { preHandler: requireOrg(), config: { rateLimit: provisioningMutationRateLimit } },
+    { preHandler: requireSokarOperator(), config: { rateLimit: provisioningMutationRateLimit } },
     async (req, reply) => {
       const { restaurantId } = req.params;
 
@@ -143,7 +143,7 @@ export async function provisioningRoutes(app: FastifyInstance) {
   // 3. Déclenchement de l'appel test & validation
   app.post<{ Params: { restaurantId: string } }>(
     '/admin/provisioning/:restaurantId/test-call',
-    { preHandler: requireOrg(), config: { rateLimit: provisioningMutationRateLimit } },
+    { preHandler: requireSokarOperator(), config: { rateLimit: provisioningMutationRateLimit } },
     async (req, reply) => {
       const { restaurantId } = req.params;
       const body = TestCallSchema.parse(req.body ?? {});
@@ -180,7 +180,7 @@ export async function provisioningRoutes(app: FastifyInstance) {
   // 4. Finaliser et marquer le pilote comme 100% actif
   app.post<{ Params: { restaurantId: string } }>(
     '/admin/provisioning/:restaurantId/complete',
-    { preHandler: requireOrg(), config: { rateLimit: provisioningMutationRateLimit } },
+    { preHandler: requireSokarOperator(), config: { rateLimit: provisioningMutationRateLimit } },
     async (req, reply) => {
       const { restaurantId } = req.params;
 

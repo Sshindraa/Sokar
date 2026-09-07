@@ -1,0 +1,86 @@
+{
+  "api-tests": {
+    "numTotalTests": 1823,
+    "numPassedTests": 1790,
+    "numFailedTests": 11,
+    "numPendingTests": 22,
+    "success": false,
+    "files": 166
+  },
+  "websocket-tests": {
+    "numTotalTests": 12,
+    "numPassedTests": 12,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true,
+    "files": 1
+  },
+  "dashboard-tests": {
+    "numTotalTests": 157,
+    "numPassedTests": 157,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true,
+    "files": 19
+  },
+  "connect-tests": {
+    "numTotalTests": 104,
+    "numPassedTests": 104,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true,
+    "files": 11
+  },
+  "widget-tests": {
+    "numTotalTests": 20,
+    "numPassedTests": 20,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true,
+    "files": 1
+  },
+  "reproductions": {
+    "numTotalTests": 6,
+    "numPassedTests": 6,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true,
+    "files": 1,
+    "cases": [
+      {
+        "name": "Launch audit — reproductions on production source with synthetic data tenant A can assign a phone to tenant B through admin route",
+        "status": "passed"
+      },
+      {
+        "name": "Launch audit — reproductions on production source with synthetic data tenant A can mark tenant B fully active without verifying a call",
+        "status": "passed"
+      },
+      {
+        "name": "Launch audit — reproductions on production source with synthetic data ordinary tenant can set its own paid plan to PREMIUM without Stripe",
+        "status": "passed"
+      },
+      {
+        "name": "Launch audit — reproductions on production source with synthetic data unauthenticated reservation replay returns another tenant reservation with known callId",
+        "status": "passed"
+      },
+      {
+        "name": "Launch audit — reproductions on production source with synthetic data an older active subscription event restores PRO after cancellation",
+        "status": "passed"
+      },
+      {
+        "name": "Launch audit — reproductions on production source with synthetic data two checkout attempts create two sessions without idempotency options",
+        "status": "passed"
+      }
+    ]
+  },
+  "interpretation": {
+    "production_commit": "b7d14da15777e8aab074859b519387bffdc32687",
+    "local_lockfile_matches_production": true,
+    "api_initial_failures": "11 WebSocket tests blocked by listen EPERM; separate rerun passed all 12 tests in the file",
+    "api_unique_passed_after_rerun": 1801,
+    "api_skipped": "22 PostgreSQL integration tests in concurrency.test.ts; AGENTIC_INT_TESTS not enabled",
+    "total_existing_unique_tests_passed": 2082,
+    "reproductions_are_positive_demonstrations_of_defects": true,
+    "test_environment": "Temporary archive of production commit; installed local dependencies; Prisma/Redis/providers mocked per repository setup. No exploit against live tenant data."
+  }
+}

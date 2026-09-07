@@ -3,7 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import { db } from '../../../shared/db/client';
 import { queues } from '../../../shared/queue/queues';
-import { ReservationService } from '../reservation.service';
+import { ReservationService, RESERVATION_REPLAY_SCOPE_MISMATCH } from '../reservation.service';
 import { GoogleCalendarClient } from '../../../shared/google-calendar/client';
 
 vi.mock('../../../shared/db/client', () => {
@@ -140,6 +140,29 @@ describe('ReservationService.create - replay-safe (idempotent on callId)', () =>
 
     expect(result).toBe(existing);
     expect(db.reservation.findUnique).toHaveBeenCalledWith({ where: { callId: 'leg-1' } });
+    expect(db.$transaction).not.toHaveBeenCalled();
+    expect(queues.smsClient.add).not.toHaveBeenCalled();
+  });
+
+  it('create : refuse un callId existant appartenant à un autre restaurant', async () => {
+    const existing = {
+      id: 'res-other-restaurant',
+      restaurantId: 'rest-other',
+      callId: 'leg-cross-tenant',
+      reservedAt: new Date('2099-06-05T19:00:00'),
+      partySize: 4,
+      customerName: 'Alice',
+      customerPhone: '+33612345678',
+      status: 'CONFIRMED',
+    };
+
+    vi.mocked(db.reservation.findUnique).mockResolvedValue(
+      existing as unknown as Awaited<ReturnType<typeof db.reservation.findUnique>>,
+    );
+
+    await expect(
+      ReservationService.create(makeInput({ callId: 'leg-cross-tenant' })),
+    ).rejects.toThrow(RESERVATION_REPLAY_SCOPE_MISMATCH);
     expect(db.$transaction).not.toHaveBeenCalled();
     expect(queues.smsClient.add).not.toHaveBeenCalled();
   });

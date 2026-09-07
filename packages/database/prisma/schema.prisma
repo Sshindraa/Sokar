@@ -110,11 +110,36 @@ model RestaurantBilling {
   subscriptionPriceId          String?    @map("subscription_price_id")
   subscriptionCurrentPeriodEnd DateTime?  @map("subscription_current_period_end")
   subscriptionCancelAtPeriodEnd Boolean   @default(false) @map("subscription_cancel_at_period_end")
+  checkoutIdempotencyKey       String?    @unique @map("checkout_idempotency_key")
+  checkoutSessionId            String?    @unique @map("checkout_session_id")
+  checkoutSessionUrl           String?    @map("checkout_session_url")
+  checkoutPlan                 String?    @map("checkout_plan")
+  checkoutBillingInterval      String?    @map("checkout_billing_interval")
+  checkoutSiteCount            Int?       @map("checkout_site_count")
+  checkoutCreatedAt            DateTime?  @map("checkout_created_at")
+  lastStripeEventCreated       Int?       @map("last_stripe_event_created")
+  lastStripeEventId            String?    @map("last_stripe_event_id")
   createdAt                     DateTime   @default(now()) @map("created_at")
   updatedAt                     DateTime   @updatedAt @map("updated_at")
   restaurant                    Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
   @@map("restaurant_billing")
+}
+
+model StripeWebhookEvent {
+  eventId        String    @id @map("event_id")
+  eventType      String    @map("event_type")
+  eventCreated   Int       @map("event_created")
+  status         String    @default("processing")
+  attempts       Int       @default(0)
+  lastAttemptAt  DateTime? @map("last_attempt_at")
+  processedAt    DateTime? @map("processed_at")
+  error          String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, eventCreated])
+  @@map("stripe_webhook_events")
 }
 
 model RestaurantImage {

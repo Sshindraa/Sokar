@@ -5,8 +5,9 @@
 1. Le visiteur choisit une formule dans `/pricing`.
 2. Clerk crée le compte et l'organisation restaurant.
 3. Le dashboard appelle `POST /billing/checkout-session` avec `plan` (`essential`, `pro`, `multi-site`) et `billing` (`monthly`, `annual`).
-4. L'API crée (ou réutilise) le client Stripe et renvoie l'URL Checkout hébergée.
+4. L'API crée (ou réutilise) le client Stripe et renvoie l'URL Checkout hébergée. Une clé `Idempotency-Key` client est acceptée ; à défaut, Sokar en génère une par restaurant/formule/cadence sur une fenêtre de 24 heures.
 5. `checkout.session.completed` puis `customer.subscription.*` mettent à jour le plan et `RestaurantBilling`.
+6. Les événements Stripe sont inscrits dans `StripeWebhookEvent` avant mutation ; un doublon traité est ignoré, un événement ancien est ignoré et un traitement concurrent provoque un retry Stripe.
 
 La carte bancaire n'est jamais collectée par le dashboard Sokar. Les URLs de retour sont dérivées de `DASHBOARD_URL`.
 
@@ -37,6 +38,16 @@ Le secret `STRIPE_WEBHOOK_SECRET` existant doit rester configuré sur le même e
 - `customer.subscription.created`
 - `customer.subscription.updated`
 - `customer.subscription.deleted`
+
+La migration additive `20260907110000_harden_stripe_billing` ajoute les tentatives Checkout, les checkpoints de séquencement et le ledger des événements. Elle doit être appliquée avant de publier l'API qui utilise ces colonnes :
+
+```bash
+pnpm --filter @sokar/database migrate:deploy
+```
+
+Le champ `Restaurant.plan` est une projection des événements Billing. Les routes restaurant ne l'acceptent plus en mutation ; un changement de formule doit venir de Stripe ou d'une opération Sokar explicitement autorisée.
+
+Une signature absente ou invalide renvoie `400`. Une erreur après vérification de signature renvoie `500` afin que Stripe réessaie. Les événements inconnus sont acquittés après journalisation.
 
 ## Test sans paiement
 

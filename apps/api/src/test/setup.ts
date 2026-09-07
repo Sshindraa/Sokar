@@ -17,6 +17,11 @@ vi.mock('@prisma/client', async (importOriginal) => {
       update: vi.fn(),
       upsert: vi.fn(),
     };
+    stripeWebhookEvent = {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
     giftCard = {
       create: vi.fn(),
       findUnique: vi.fn(),

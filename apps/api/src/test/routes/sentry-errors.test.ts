@@ -22,6 +22,9 @@ vi.mock('../../../src/plugins/clerk', () => ({
   requireOrg: () => async (_req: unknown, _reply: unknown, done: () => void) => {
     done();
   },
+  requireSokarOperator: () => async (_req: unknown, _reply: unknown, done: () => void) => {
+    done();
+  },
   requireAuth: () => async (_req: unknown, _reply: unknown, done: () => void) => {
     done();
   },

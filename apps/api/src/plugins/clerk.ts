@@ -84,3 +84,32 @@ export function requireAuth() {
     req.log = req.log.child({ user_id: userId });
   };
 }
+
+/**
+ * Middleware for Sokar-wide operator actions.
+ *
+ * Organization membership is intentionally not enough here: provisioning and
+ * restaurant-health routes can address any tenant. The allowlist is kept in
+ * the server environment so a restaurant member can never grant themselves
+ * operator access through a request body or a Clerk organization role.
+ */
+export function requireSokarOperator() {
+  const authenticate = requireAuth();
+
+  return async (req: FastifyRequest, reply: FastifyReply) => {
+    await authenticate(req, reply);
+    if (reply.sent) return;
+
+    const operatorIds = new Set(
+      (process.env.SOKAR_OPERATOR_USER_IDS ?? '')
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
+
+    if (!req.userId || !operatorIds.has(req.userId)) {
+      req.log.warn({ user_id: req.userId ?? null }, 'Sokar operator access denied');
+      return reply.status(403).send({ error: 'Sokar operator access required' });
+    }
+  };
+}

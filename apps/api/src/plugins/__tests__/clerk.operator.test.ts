@@ -1,0 +1,95 @@
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { getAuth } from '@clerk/fastify';
+import { requireSokarOperator } from '../clerk';
+
+vi.mock('@clerk/fastify', () => ({
+  clerkPlugin: vi.fn(),
+  getAuth: vi.fn(),
+}));
+
+const originalEnv = {
+  clerkPublishableKey: process.env.CLERK_PUBLISHABLE_KEY,
+  clerkSecretKey: process.env.CLERK_SECRET_KEY,
+  demoRestaurantId: process.env.DEMO_RESTAURANT_ID,
+  demoUserId: process.env.DEMO_USER_ID,
+  operatorIds: process.env.SOKAR_OPERATOR_USER_IDS,
+};
+
+function makeRequest() {
+  const log = {
+    child: vi.fn(() => log),
+    warn: vi.fn(),
+  };
+  return {
+    headers: { authorization: 'Bearer test' },
+    log,
+  } as unknown as FastifyRequest;
+}
+
+function makeReply() {
+  const reply = {
+    sent: false,
+    status: vi.fn(),
+    send: vi.fn(),
+  } as unknown as FastifyReply & { sent: boolean };
+  vi.mocked(reply.status).mockImplementation(() => reply);
+  vi.mocked(reply.send).mockImplementation(() => {
+    reply.sent = true;
+    return reply;
+  });
+  return reply;
+}
+
+describe('requireSokarOperator', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    process.env.CLERK_PUBLISHABLE_KEY = originalEnv.clerkPublishableKey;
+    process.env.CLERK_SECRET_KEY = originalEnv.clerkSecretKey;
+    process.env.DEMO_RESTAURANT_ID = originalEnv.demoRestaurantId;
+    process.env.DEMO_USER_ID = originalEnv.demoUserId;
+    process.env.SOKAR_OPERATOR_USER_IDS = originalEnv.operatorIds;
+  });
+
+  function configure(userId: string | null, operatorIds = 'user-operator') {
+    process.env.CLERK_PUBLISHABLE_KEY = 'pk_test';
+    process.env.CLERK_SECRET_KEY = 'sk_test';
+    delete process.env.DEMO_RESTAURANT_ID;
+    delete process.env.DEMO_USER_ID;
+    process.env.SOKAR_OPERATOR_USER_IDS = operatorIds;
+    vi.mocked(getAuth).mockReturnValue({ userId } as never);
+  }
+
+  it('refuse une requête sans session', async () => {
+    configure(null);
+    const request = makeRequest();
+    const reply = makeReply();
+
+    await requireSokarOperator()(request, reply);
+
+    expect(reply.status).toHaveBeenCalledWith(401);
+    expect(reply.send).toHaveBeenCalledWith({ error: 'Authentication required' });
+  });
+
+  it('refuse un membre de restaurant qui ne figure pas dans la liste opérateur', async () => {
+    configure('user-restaurant');
+    const request = makeRequest();
+    const reply = makeReply();
+
+    await requireSokarOperator()(request, reply);
+
+    expect(reply.status).toHaveBeenCalledWith(403);
+    expect(reply.send).toHaveBeenCalledWith({ error: 'Sokar operator access required' });
+  });
+
+  it('autorise uniquement un identifiant présent dans SOKAR_OPERATOR_USER_IDS', async () => {
+    configure('user-operator', 'user-other,user-operator');
+    const request = makeRequest();
+    const reply = makeReply();
+
+    await requireSokarOperator()(request, reply);
+
+    expect(reply.status).not.toHaveBeenCalled();
+    expect(request.userId).toBe('user-operator');
+  });
+});

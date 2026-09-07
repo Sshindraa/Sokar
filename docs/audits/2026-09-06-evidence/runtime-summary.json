@@ -1,0 +1,95 @@
+{
+  "observed_at_local": "2026-09-06 23:16 Europe/Paris",
+  "production_commit": "b7d14da15777e8aab074859b519387bffdc32687",
+  "health": {
+    "public_http_status": 200,
+    "db": "ok",
+    "redis": "ok",
+    "queues": "ok",
+    "telnyx": "ok",
+    "deepgram": "ok",
+    "cartesia": "ok",
+    "note": "Provider reachability; not a completed call or delivered SMS"
+  },
+  "server": {
+    "ram_mb": 7751,
+    "available_ram_mb": 6023,
+    "disk_used_percent": 30,
+    "single_vps_for_staging_and_prod": true
+  },
+  "backups": {
+    "local_dump_utc": "2026-09-06T01:20:01Z",
+    "restored_test_tables": 32,
+    "r2_verified_utc": "2026-09-06T02:00:03Z",
+    "daily_cadence": true
+  },
+  "alerts": {
+    "effective_sentry_dsn": false,
+    "effective_alert_email_to": false,
+    "effective_alert_webhook_url": false,
+    "effective_alert_sms_to": false,
+    "watchdog_config_file_exists": false,
+    "watchdog_cron_exists": true,
+    "external_monitor_not_proven": true
+  },
+  "restaurants_initial": {
+    "total": 14,
+    "provisioning_pending": 12,
+    "phone_assigned": 2,
+    "active": 0,
+    "onboarding_done": 0,
+    "test_call_validated": 0,
+    "published": 10,
+    "with_active_default_floor_plan_tables": 12
+  },
+  "calls_7d": {
+    "total": 10,
+    "restaurants": 2,
+    "with_transcript": 10,
+    "with_reservation": 4,
+    "outcome_null": 10,
+    "intent_null": 10,
+    "last_call_created_at_utc": "2026-09-04T13:28:03.810Z",
+    "post_latest_deploy_call_observed": false,
+    "not_a_conversion_rate": true
+  },
+  "sms": {
+    "configured_sender_in_telnyx_inventory": true,
+    "messaging_detail_http_status": 200,
+    "messaging_profile_assigned": false,
+    "sms_feature": null,
+    "mms_feature": null,
+    "sms_client_failed": 4,
+    "confirmation_sms_failed": 1,
+    "dead_letter_waiting": 5,
+    "note": "Queue counts may refer to the same incidents; no SMS sent by audit"
+  },
+  "billing": {
+    "stripe_live": true,
+    "eight_price_ids_present": true,
+    "subscription_webhook_events_enabled": true,
+    "stripe_subscriptions_count": 0,
+    "billing_rows_before_navigation": 0,
+    "billing_rows_after_navigation": 1,
+    "billing_with_subscription_after_navigation": 0,
+    "checkout_session_created_by_ui": true,
+    "payment_submitted": false,
+    "displayed_pro_annual_monthly_eur": 199,
+    "stripe_pro_annual_monthly_eur": 199.2,
+    "stripe_pro_annual_total_eur": 2390.4
+  },
+  "privacy": {
+    "public_privacy_http_status": 200,
+    "public_privacy_served_by": "Connect",
+    "audio_purge_scheduler_present": true,
+    "rgpd_anonymization_scheduler_found": false
+  },
+  "security_alerts": {
+    "dependabot_open": 7,
+    "high": 2,
+    "medium": 4,
+    "low": 1,
+    "codeql_open": 0
+  },
+  "sensitive_data": "No credentials, customer records, phone numbers, payment identifiers or recordings retained in this summary."
+}

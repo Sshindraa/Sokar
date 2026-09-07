@@ -1,0 +1,56 @@
+import { describe, it, expect, afterAll, beforeEach, vi } from 'vitest';
+import { getApp, closeApp } from './helpers';
+import { db } from '../shared/db/client';
+import { ProvisioningService } from '../modules/admin/provisioning.service';
+import { handleBillingWebhook, createCheckoutSession } from '../modules/billing/billing.service';
+const AUTH={authorization:'Bearer test-tenant-a'};
+afterAll(closeApp);
+beforeEach(()=>vi.clearAllMocks());
+describe('Launch audit — reproductions on production source with synthetic data',()=>{
+ it('tenant A can assign a phone to tenant B through admin route',async()=>{
+  const assign=vi.spyOn(ProvisioningService,'assignPhoneNumber').mockResolvedValue({restaurantId:'tenant-b'} as never);
+  const app=await getApp();
+  const res=await app.inject({method:'POST',url:'/admin/provisioning/tenant-b/assign-phone',headers:AUTH,payload:{phoneNumber:'+33100000000'}});
+  expect(res.statusCode).toBe(200);
+  expect(assign).toHaveBeenCalledWith('tenant-b','+33100000000',undefined);
+  assign.mockRestore();
+ });
+ it('tenant A can mark tenant B fully active without verifying a call',async()=>{
+  const status=vi.spyOn(ProvisioningService,'getProvisioningStatus').mockResolvedValue({restaurantId:'tenant-b'} as never);
+  vi.mocked(db.restaurant.update).mockResolvedValue({id:'tenant-b'} as never);
+  const res=await (await getApp()).inject({method:'POST',url:'/admin/provisioning/tenant-b/complete',headers:AUTH});
+  expect(res.statusCode).toBe(200);
+  expect(db.restaurant.update).toHaveBeenCalledWith(expect.objectContaining({where:{id:'tenant-b'},data:expect.objectContaining({provisioningStatus:'ACTIVE',testCallValidatedAt:expect.any(Date)})}));
+  status.mockRestore();
+ });
+ it('ordinary tenant can set its own paid plan to PREMIUM without Stripe',async()=>{
+  vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({id:'test-rest-1',phoneNumber:'+33100000000'} as never);
+  vi.mocked(db.restaurant.update).mockResolvedValue({id:'test-rest-1',phoneNumber:'+33100000000',plan:'PREMIUM'} as never);
+  const res=await (await getApp()).inject({method:'PATCH',url:'/restaurants/test-rest-1',headers:AUTH,payload:{plan:'PREMIUM'}});
+  expect(res.statusCode).toBe(200);
+  expect(db.restaurant.update).toHaveBeenCalledWith({where:{id:'test-rest-1'},data:{plan:'PREMIUM'}});
+ });
+ it('unauthenticated reservation replay returns another tenant reservation with known callId',async()=>{
+  vi.mocked(db.reservation.findUnique).mockResolvedValue({id:'reservation-b',restaurantId:'tenant-b',callId:'call-b',partySize:2,reservedAt:new Date('2099-06-05T18:00:00Z'),customerName:'Synthetic victim',customerPhone:'+33100000001',status:'CONFIRMED',state:'CONFIRMED'} as never);
+  const res=await (await getApp()).inject({method:'POST',url:'/reservations',payload:{restaurantId:'tenant-a',callId:'call-b',partySize:2,reservedAt:'2099-06-05T18:00:00Z',customerName:'Synthetic caller'}});
+  expect(res.statusCode).toBe(201);
+  expect(res.json()).toMatchObject({restaurantId:'tenant-b',customerName:'Synthetic victim',customerPhone:'+33100000001'});
+ });
+ it('an older active subscription event restores PRO after cancellation',async()=>{
+  const subscription={id:'sub_synthetic',customer:'cus_synthetic',metadata:{restaurantId:'tenant-a',plan:'pro'},status:'active',cancel_at_period_end:false,current_period_end:4102444800,items:{data:[{price:{id:'price_synthetic'}}]}};
+  await handleBillingWebhook({id:'evt_new',created:200,type:'customer.subscription.deleted',data:{object:{...subscription,status:'canceled'}}} as never);
+  await handleBillingWebhook({id:'evt_old',created:100,type:'customer.subscription.updated',data:{object:subscription}} as never);
+  expect(db.restaurant.update).toHaveBeenLastCalledWith({where:{id:'tenant-a'},data:{plan:'PRO'}});
+  expect(db.restaurantBilling.upsert).toHaveBeenLastCalledWith(expect.objectContaining({update:expect.objectContaining({subscriptionStatus:'active'})}));
+ });
+ it('two checkout attempts create two sessions without idempotency options',async()=>{
+  process.env.STRIPE_PRICE_PRO_MONTHLY='price_synthetic';
+  vi.mocked(db.restaurant.findUnique).mockResolvedValue({id:'tenant-a',name:'Synthetic restaurant'} as never);
+  vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue({restaurantId:'tenant-a',stripeCustomerId:'cus_synthetic'} as never);
+  const create=(globalThis as any).__sokarStripeCheckoutSessionCreate;
+  create.mockClear();
+  await Promise.all([createCheckoutSession({restaurantId:'tenant-a',plan:'pro',billing:'monthly'}),createCheckoutSession({restaurantId:'tenant-a',plan:'pro',billing:'monthly'})]);
+  expect(create).toHaveBeenCalledTimes(2);
+  expect(create.mock.calls.every((args:any[])=>args.length===1)).toBe(true);
+ });
+});

@@ -71,10 +71,15 @@ describe('Cache invalidation — PATCH /restaurants/:id', () => {
       payload: {
         name: 'Chez Test Modifié',
         managerEmail: 'new@test.fr',
+        plan: 'PREMIUM',
       },
     });
 
     expect(res.statusCode).toBe(200);
+    expect(db.restaurant.update).toHaveBeenCalledWith({
+      where: { id: 'test-rest-1' },
+      data: expect.not.objectContaining({ plan: expect.anything() }),
+    });
     expect(redisCache.del).toHaveBeenCalledWith('phone:pn-test');
   });
 });
