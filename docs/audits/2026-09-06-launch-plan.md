@@ -54,18 +54,18 @@ Les risques et preuves de départ sont dans l’[audit détaillé](/Users/hamza/
 
 ## Feuille de route
 
-| Phase | But                                                        |        Durée indicative | Statut                                                                                                                                                               |
-| ----- | ---------------------------------------------------------- | ----------------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | Cadrage de l’offre, périmètre et préparation de la release |              0,5–1 jour | **EN COURS**                                                                                                                                                         |
-| 1     | Isolation des tenants et autorisations serveur             |               2–4 jours | En cours — garde Clerk ajoutée sur l’administration des membres ; deux identités réelles et le parcours négatif inter-site restent à rejouer                         |
-| 2     | Parcours réservation, voix, SMS et support                 |               3–5 jours | À faire                                                                                                                                                              |
-| 2B    | Modules commerciaux proposés dès le lancement              |               5–8 jours | En cours — multi-site créé, quota, suspension/réactivation, sélecteur et garde de principal codés ; membre réel, transfert staging et autres modules restent ouverts |
-| 3     | Stripe, droits et cycle d’abonnement                       |               2–3 jours | En cours — portail sandbox, rejeu webhook signé et quota validés depuis staging ; annuel, taxes, prorata et période de grâce à fermer                                |
-| 4     | Observabilité, files, sauvegardes et reprise               |               2–3 jours | À faire                                                                                                                                                              |
-| 5     | RGPD, contrats et surface commerciale                      | 2–4 jours, en parallèle | À faire                                                                                                                                                              |
-| 6     | Qualification, CI et release candidate                     |               2–3 jours | À faire                                                                                                                                                              |
-| 7     | Dogfood interne puis deux restaurants pilotes              |  7–10 jours calendaires | À faire                                                                                                                                                              |
-| 8     | Déploiement par vagues jusqu’à dix restaurants             |  7–14 jours calendaires | À faire                                                                                                                                                              |
+| Phase | But                                                        |        Durée indicative | Statut                                                                                                                                                                                                    |
+| ----- | ---------------------------------------------------------- | ----------------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Cadrage de l’offre, périmètre et préparation de la release |              0,5–1 jour | **EN COURS**                                                                                                                                                                                              |
+| 1     | Isolation des tenants et autorisations serveur             |               2–4 jours | En cours — garde Clerk ajoutée sur l’administration des membres ; deux identités réelles et le parcours négatif inter-site restent à rejouer                                                              |
+| 2     | Parcours réservation, voix, SMS et support                 |               3–5 jours | À faire                                                                                                                                                                                                   |
+| 2B    | Modules commerciaux proposés dès le lancement              |               5–8 jours | En cours — multi-site créé, quota, suspension/réactivation, sélecteur et garde de principal codés ; membre réel, transfert staging et autres modules restent ouverts                                      |
+| 3     | Stripe, droits et cycle d’abonnement                       |               2–3 jours | En cours — portail sandbox, rejeu webhook signé et quota validés depuis staging ; quatre prix annuels actifs en live/test et Checkout annuel testé ; facture, taxes, prorata et période de grâce à fermer |
+| 4     | Observabilité, files, sauvegardes et reprise               |               2–3 jours | À faire                                                                                                                                                                                                   |
+| 5     | RGPD, contrats et surface commerciale                      | 2–4 jours, en parallèle | À faire                                                                                                                                                                                                   |
+| 6     | Qualification, CI et release candidate                     |               2–3 jours | À faire                                                                                                                                                                                                   |
+| 7     | Dogfood interne puis deux restaurants pilotes              |  7–10 jours calendaires | À faire                                                                                                                                                                                                   |
+| 8     | Déploiement par vagues jusqu’à dix restaurants             |  7–14 jours calendaires | À faire                                                                                                                                                                                                   |
 
 L’estimation ajustée représente environ 25 à 40 jours de développement, auxquels s’ajoutent les dépendances fournisseurs, la validation juridique et la période pilote. En travaillant seul, compter environ six à huit semaines ; avec deux personnes disponibles, réduire surtout les temps d’attente et de support.
 
@@ -82,6 +82,7 @@ L’estimation ajustée représente environ 25 à 40 jours de développement, au
 - [x] release `main@d53916c` déployée après CI, smoke, rollback/restauration et E2E staging verts ; preuves multi-site et portail consignées.
 - [x] administration membre durcie : l’identité cible doit appartenir à l’organisation Clerk avant toute écriture locale ; tests d’acceptation, refus sans écriture et indisponibilité du fournisseur ajoutés.
 - [x] statut du site principal durci : suspension/archivage transfère `isPrimary` au plus ancien site actif dans une transaction ; le dernier principal reste refusé ; tests ajoutés.
+- [x] quatre prix Stripe annuels actifs en live et en test ; le parcours Checkout annuel est couvert par un test de cadence et de prix.
 
 ### Actions restantes
 
@@ -89,7 +90,7 @@ L’estimation ajustée représente environ 25 à 40 jours de développement, au
 - [x] convertir chaque risque P0/P1 en ticket avec propriétaire, date cible, preuve attendue et niveau de rollback (backlog phase 0 créé ; dates et pilotes restent à renseigner) ;
 - [x] attribuer à chaque module commercial un propriétaire, un prix, une porte d’activation et une preuve de démonstration ([registre commercial](/Users/hamza/Projects/Sokar/docs/audits/2026-09-07-phase-0-commercial-register.md)) ; les dépendances externes et la cohorte restent ouvertes ;
 - [ ] nommer les responsables produit, API, dashboard, voix/SMS, infra, juridique et support (une personne peut cumuler plusieurs rôles) ;
-- [ ] confirmer les dépendances externes : profil de messagerie Telnyx et numéro émetteur, Sentry et canal d’alerte, prix annuels/taxes, identité légale et DPA, comptes Google nécessaires ; le Billing Portal sandbox est validé ;
+- [ ] confirmer les dépendances externes : profil de messagerie Telnyx et numéro émetteur, Sentry et canal d’alerte, taxes/TVA, identité légale et DPA, comptes Google nécessaires ; les prix annuels et le Billing Portal sandbox sont validés ;
 - [ ] choisir les dix restaurants, leur ordre de cohorte, la date de l’appel d’onboarding et le canal de support ;
 - [ ] publier une fiche de release avec commit, variables attendues, migrations, smoke tests, rollback et décisionnaire GO/NO-GO.
 
@@ -149,7 +150,7 @@ Transformer chaque promesse commerciale en parcours produit testable, observable
 - **Domaine personnalisé :** automatiser la vérification DNS, le certificat TLS, le renouvellement, la suppression et le fallback vers le domaine Sokar ; mesurer le délai de mise en service et les erreurs de configuration.
 - **Cartes cadeaux :** finaliser le ledger immuable, les états émis/partiellement utilisés/épuisés/expirés, le paiement, le remboursement, les emails/SMS et le rapprochement comptable ; interdire les doubles utilisations concurrentes.
 - **Prédictif avancé :** définir les sorties réellement utiles (prévision de no-show, charge ou créneau), les données minimales, le consentement, l’explication et le seuil de confiance ; garder une décision manuelle lorsque le modèle est incertain.
-- **Facturation annuelle :** créer les prix Stripe, afficher le total et les conditions, gérer prorata, renouvellement, annulation, facture, échec de paiement et webhooks dans le même modèle idempotent que le mensuel.
+- **Facturation annuelle :** les quatre prix Stripe sont actifs en live et en test et Checkout sélectionne le prix annuel avec la bonne cadence ; il reste à rejouer le cycle complet avec facture, taxes, prorata, renouvellement, annulation, échec de paiement et webhooks dans le même modèle idempotent que le mensuel.
 - **« Sans limite » / « taux garanti » :** remplacer le slogan générique par une politique d’usage équitable ou un SLA mesuré, instrumenté et compensable ; le texte commercial et le contrat doivent employer exactement les mêmes seuils.
 
 ### Livrables et sortie
@@ -169,6 +170,8 @@ Faire correspondre sans ambiguïté le paiement, l’abonnement et les droits ap
 - calculer les droits côté serveur à partir de l’état Stripe, sans accepter un plan dans un PATCH restaurant ;
 - brancher le portail client, l’annulation, la période de grâce, l’échec de paiement et la révocation des droits ;
 - tester en mode Stripe test puis en live contrôlé : activation, renouvellement, annulation, événement hors ordre et reprise après panne. Le staging a validé le rejeu signé d’un événement `customer.subscription.updated` deux fois (200 à chaque fois), ainsi que le rejet d’une signature invalide (400), sans paiement supplémentaire.
+
+Les quatre prix annuels configurés sur le VPS sont actifs en production (mode live) et staging (mode test), et le test API dédié vérifie que `billing=annual` sélectionne le bon prix et transmet la cadence Checkout. La facture annuelle, les taxes, le prorata, le renouvellement et la période de grâce restent à rejouer.
 
 ### Livrables et sortie
 
