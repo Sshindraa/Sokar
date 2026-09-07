@@ -35,12 +35,25 @@ log()  { echo "[$(date -u '+%H:%M:%SZ')] $*"; }
 ok()   { echo "  ✅ $*"; }
 fail() { echo "  ❌ $*" >&2; exit 1; }
 
+# Le compte deploy n'est pas membre du groupe docker sur le VPS. Le wrapper
+# sudo autorise toutefois Docker pour les opérations d'exploitation prévues.
+# En local, on conserve le chemin direct si Docker est déjà accessible.
+DOCKER=(docker)
+if ! docker ps >/dev/null 2>&1; then
+  if sudo -n docker ps >/dev/null 2>&1; then
+    DOCKER=(sudo -n docker)
+  else
+    fail "Docker inaccessible (ni docker direct ni sudo -n docker)"
+  fi
+fi
+docker_exec() { "${DOCKER[@]}" exec "$@"; }
+
 cleanup() {
   if [ "$KEEP_DB" = "1" ]; then
     log "KEEP_DB=1 — base de test conservée: ${TARGET_DB}"
   else
     log "→ Nettoyage base de test ${TARGET_DB}"
-    docker exec "${CONTAINER}" dropdb --if-exists --force \
+    docker_exec "${CONTAINER}" dropdb --if-exists --force \
       -U "${DB_USER}" "${TARGET_DB}" >/dev/null 2>&1 || true
   fi
   rm -f "${DUMP_LOCAL}"
@@ -67,15 +80,15 @@ ok "Dump téléchargé (${SIZE} octets)"
 
 # ── 2. Créer une base vierge ─────────────────────────────────
 log "→ Création base vierge ${TARGET_DB}"
-docker exec "${CONTAINER}" dropdb --if-exists --force \
+docker_exec "${CONTAINER}" dropdb --if-exists --force \
   -U "${DB_USER}" "${TARGET_DB}" >/dev/null 2>&1 || true
-docker exec "${CONTAINER}" createdb -U "${DB_USER}" "${TARGET_DB}" \
+docker_exec "${CONTAINER}" createdb -U "${DB_USER}" "${TARGET_DB}" \
   || fail "createdb échoué"
 ok "Base vierge créée"
 
 # ── 3. Restore ───────────────────────────────────────────────
 log "→ pg_restore dans ${TARGET_DB}"
-docker exec -i "${CONTAINER}" pg_restore \
+"${DOCKER[@]}" exec -i "${CONTAINER}" pg_restore \
   --exit-on-error \
   --no-owner \
   --no-acl \
@@ -88,19 +101,19 @@ ok "Restore terminé sans erreur"
 log "→ Vérifications d'intégrité"
 
 # 4a. Nombre de tables
-TABLES=$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
+TABLES=$(docker_exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
   "SELECT count(*) FROM pg_tables WHERE schemaname = 'public';")
 log "  Tables public: ${TABLES}"
 [ "${TABLES}" -gt 0 ] || fail "Aucune table restaurée"
 
 # 4b. Contraintes d'intégrité (clés étrangères, uniques)
-CONSTRAINTS=$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
+CONSTRAINTS=$(docker_exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
   "SELECT count(*) FROM pg_constraint WHERE connamespace = 'public'::regnamespace;")
 log "  Contraintes: ${CONSTRAINTS}"
 [ "${CONSTRAINTS}" -gt 0 ] || fail "Aucune contrainte restaurée"
 
 # 4c. Index (incl. partial unique index one_active_hold_per_slot)
-INDEXES=$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
+INDEXES=$(docker_exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
   "SELECT count(*) FROM pg_indexes WHERE schemaname = 'public';")
 log "  Index: ${INDEXES}"
 [ "${INDEXES}" -gt 0 ] || fail "Aucun index restauré"
@@ -108,12 +121,12 @@ log "  Index: ${INDEXES}"
 # 4d. Vérifie la présence des index critiques sur agentic_holds
 # - agentic_holds_restaurant_id_slot_start_idx : index de recherche (présent)
 # - one_active_hold_per_slot : partial unique index anti-double-booking (devrait être présent)
-SEARCH_INDEX=$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
+SEARCH_INDEX=$(docker_exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
   "SELECT count(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'agentic_holds_restaurant_id_slot_start_idx';")
 log "  Index agentic_holds_restaurant_id_slot_start_idx: ${SEARCH_INDEX}"
 [ "${SEARCH_INDEX}" = "1" ] || log "  ⚠️  Index de recherche agentic_holds absent"
 
-HOLD_INDEX=$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
+HOLD_INDEX=$(docker_exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
   "SELECT count(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'one_active_hold_per_slot';")
 log "  Index one_active_hold_per_slot (partial unique): ${HOLD_INDEX}"
 if [ "${HOLD_INDEX}" != "1" ]; then
@@ -123,10 +136,10 @@ fi
 
 # 4e. Comptage de lignes sur quelques tables clés
 for t in restaurants agentic_holds calls reservations customers; do
-  EXISTS=$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
+  EXISTS=$(docker_exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
     "SELECT to_regclass('public.${t}') IS NOT NULL;")
   if [ "${EXISTS}" = "t" ]; then
-    ROWS=$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
+    ROWS=$(docker_exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
       "SELECT count(*) FROM public.${t};")
     log "  ${t}: ${ROWS} lignes"
   else
@@ -136,7 +149,7 @@ done
 
 # 4f. Vérifie que la base accepte une query complexe (jointure)
 log "→ Test query complexe (jointure restaurants ↔ agentic_holds)"
-docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
+docker_exec "${CONTAINER}" psql -U "${DB_USER}" -d "${TARGET_DB}" -Atc \
   "SELECT r.slug, count(h.id) FROM restaurants r LEFT JOIN agentic_holds h ON h.restaurant_id = r.id GROUP BY r.slug LIMIT 1;" \
   >/dev/null 2>&1 || log "  ⚠️  Jointure échouée (peut être normal si tables vides)"
 
