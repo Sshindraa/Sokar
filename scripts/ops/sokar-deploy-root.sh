@@ -11,7 +11,7 @@ PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
 SUDOERS_DST="/etc/sudoers.d/deploy"
 
 usage() {
-    echo "Usage: $0 {check-cert|clean-next|install-nginx|restore-nginx|reload-nginx|install-runtime|self-update|check-prod-vhost|start-localstack|stop-localstack|backup-db} {prod|staging} [dashboard|connect]" >&2
+    echo "Usage: $0 {check-cert|clean-next|install-nginx|restore-nginx|reload-nginx|install-runtime|configure-watchdog|self-update|check-prod-vhost|start-localstack|stop-localstack|backup-db} {prod|staging} [dashboard|connect]" >&2
     exit 2
 }
 
@@ -97,6 +97,61 @@ install_runtime() {
     fi
 }
 
+configure_watchdog() {
+    [ "$ENVIRONMENT" = "prod" ] || usage
+    # Le déploiement transmet les valeurs par stdin sous la forme
+    # KEY<TAB>VALUE. Cela évite de placer les secrets dans la ligne de
+    # commande ou dans les logs SSH. Seules les deux variables watchdog
+    # documentées sont acceptées.
+    local env_dir="/etc/sokar"
+    local env_file="$env_dir/watchdog.env"
+    local tmp_file
+    local key value extra
+    local count=0
+
+    install -d -m 0750 -o root -g root "$env_dir"
+    tmp_file=$(mktemp "$env_dir/.watchdog.env.XXXXXX")
+    cleanup_watchdog_tmp() {
+        rm -f "$tmp_file"
+    }
+    trap cleanup_watchdog_tmp RETURN
+    chmod 0600 "$tmp_file"
+    chown root:root "$tmp_file"
+
+    while IFS=$'\t' read -r key value extra; do
+        [ -n "$key" ] || continue
+        [ -z "${extra:-}" ] || {
+            echo "Entrée watchdog invalide (trop de colonnes)." >&2
+            return 1
+        }
+        case "$key" in
+            ALERT_WEBHOOK|HEALTHCHECKS_PING_URL) ;;
+            *)
+                echo "Variable watchdog non autorisée: $key" >&2
+                return 1
+                ;;
+        esac
+        case "$value" in
+            *$'\n'*|*$'\r'*)
+                echo "Valeur watchdog invalide (retour à la ligne)." >&2
+                return 1
+                ;;
+        esac
+        # %q produit une affectation shell sûre pour le fichier sourcé par
+        # sokar-watchdog.sh, y compris si l'URL contient des caractères spéciaux.
+        printf '%s=%q\n' "$key" "$value" >> "$tmp_file"
+        count=$((count + 1))
+    done
+
+    [ "$count" -gt 0 ] || {
+        echo "Aucune configuration watchdog reçue." >&2
+        return 1
+    }
+    bash -n "$tmp_file"
+    install -o root -g root -m 0600 "$tmp_file" "$env_file"
+    echo "Configuration watchdog installée."
+}
+
 self_update() {
     [ "$ENVIRONMENT" = "prod" ] || [ "$ENVIRONMENT" = "staging" ] || usage
     local wrapper_src="$ROOT/scripts/ops/sokar-deploy-root.sh"
@@ -153,6 +208,10 @@ case "$ACTION" in
     install-runtime)
         [ "$#" -eq 2 ] || usage
         install_runtime
+        ;;
+    configure-watchdog)
+        [ "$#" -eq 2 ] || usage
+        configure_watchdog
         ;;
     backup-db)
         [ "$#" -eq 2 ] || usage

@@ -32,6 +32,11 @@ jobs:
         uses: appleboy/ssh-action@v1
         env:
           ALERT_WEBHOOK: ${{ secrets.ALERT_WEBHOOK }}
+          HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          ALERT_SMS_TO: ${{ secrets.ALERT_SMS_TO }}
           STRIPE_PRICE_ESSENTIAL_MONTHLY: ${{ vars.STRIPE_PRODUCTION_ESSENTIAL_MONTHLY }}
           STRIPE_PRICE_ESSENTIAL_ANNUAL: ${{ vars.STRIPE_PRODUCTION_ESSENTIAL_ANNUAL }}
           STRIPE_PRICE_PRO_MONTHLY: ${{ vars.STRIPE_PRODUCTION_PRO_MONTHLY }}
@@ -47,7 +52,7 @@ jobs:
           username: deploy
           key: ${{ secrets.STAGING_SSH_KEY }}
           command_timeout: 18m
-          envs: ALERT_WEBHOOK,STRIPE_PRICE_ESSENTIAL_MONTHLY,STRIPE_PRICE_ESSENTIAL_ANNUAL,STRIPE_PRICE_PRO_MONTHLY,STRIPE_PRICE_PRO_ANNUAL,STRIPE_PRICE_MULTI_SITE_MONTHLY,STRIPE_PRICE_MULTI_SITE_ANNUAL,STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL
+          envs: ALERT_WEBHOOK,HEALTHCHECKS_PING_URL,SENTRY_DSN,ALERT_EMAIL_TO,ALERT_WEBHOOK_URL,ALERT_SMS_TO,STRIPE_PRICE_ESSENTIAL_MONTHLY,STRIPE_PRICE_ESSENTIAL_ANNUAL,STRIPE_PRICE_PRO_MONTHLY,STRIPE_PRICE_PRO_ANNUAL,STRIPE_PRICE_MULTI_SITE_MONTHLY,STRIPE_PRICE_MULTI_SITE_ANNUAL,STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL
           script: |
             set -euo pipefail
             cd /opt/sokar
@@ -58,6 +63,16 @@ jobs:
             if [ ! -x /usr/local/sbin/sokar-deploy-root ]; then
               sudo install -o root -g root -m 0755 \
                 scripts/ops/sokar-deploy-root.sh /usr/local/sbin/sokar-deploy-root
+            fi
+            sudo /usr/local/sbin/sokar-deploy-root self-update prod
+            if [ -n "${SENTRY_DSN:-}${ALERT_EMAIL_TO:-}${ALERT_WEBHOOK_URL:-}${ALERT_SMS_TO:-}" ]; then
+              bash scripts/ops/sync-alerting-config.sh prod
+            fi
+            if [ -n "${ALERT_WEBHOOK:-}${HEALTHCHECKS_PING_URL:-}" ]; then
+              {
+                printf 'ALERT_WEBHOOK\t%s\n' "${ALERT_WEBHOOK:-}"
+                printf 'HEALTHCHECKS_PING_URL\t%s\n' "${HEALTHCHECKS_PING_URL:-}"
+              } | sudo /usr/local/sbin/sokar-deploy-root configure-watchdog prod
             fi
             bash scripts/ops/sync-stripe-prices.sh prod
             bash scripts/deploy.sh --env prod --confirm-production
