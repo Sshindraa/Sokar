@@ -9,6 +9,9 @@ import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+const isDemoMode = Boolean(
+  process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID && process.env.NEXT_PUBLIC_DEMO_STAGING,
+);
 
 /**
  * AccountMenu — avatar du profil + menu déroulant (Réglages, Déconnexion).
@@ -24,7 +27,7 @@ export function AccountMenu() {
   // Sans clé Clerk, on ne rend rien (dev preview / CI sans auth).
   // On ne peut pas appeler useUser()/useClerk() sans ClerkProvider
   // monté — donc on court-circuite avant tout hook Clerk.
-  if (!hasClerkKey) return null;
+  if (!hasClerkKey || isDemoMode) return null;
   return <AccountMenuInner />;
 }
 

@@ -7,6 +7,9 @@ import Image from 'next/image';
 import { ArrowRight, ChefHat, Loader2, AlertCircle } from 'lucide-react';
 
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+const isDemoMode = Boolean(
+  process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID && process.env.NEXT_PUBLIC_DEMO_STAGING,
+);
 
 /**
  * CreateRestaurantGate — si l'utilisateur est connecté sans organisation
@@ -33,7 +36,7 @@ export function CreateRestaurantGate({ children }: { children: React.ReactNode }
   // Sans clé Clerk, on rend le dashboard directement (mode démo locale).
   // On ne peut pas appeler useAuth()/useOrganization() sans ClerkProvider
   // monté — donc on court-circuite avant tout hook Clerk.
-  if (!hasClerkKey) return <>{children}</>;
+  if (!hasClerkKey || isDemoMode) return <>{children}</>;
 
   return <CreateRestaurantGateInner>{children}</CreateRestaurantGateInner>;
 }
