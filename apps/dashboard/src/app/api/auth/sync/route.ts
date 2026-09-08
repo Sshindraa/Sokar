@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server';
+import { authenticatedHeaders } from '../../proxy/forwarded-headers';
 
 export async function POST(req: NextRequest) {
   const API_URL = process.env.API_URL || 'http://127.0.0.1:4000';
@@ -7,8 +8,7 @@ export async function POST(req: NextRequest) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      // Forward the Clerk session cookie
-      Cookie: req.headers.get('cookie') || '',
+      ...(await authenticatedHeaders(req)),
     },
   });
 

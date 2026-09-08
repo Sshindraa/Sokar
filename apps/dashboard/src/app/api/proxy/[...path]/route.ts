@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server';
-import { forwardedHeaders } from '../forwarded-headers';
+import { authenticatedHeaders } from '../forwarded-headers';
 
 const API_ORIGIN = process.env.API_URL || 'http://127.0.0.1:4000';
 const API_UNAVAILABLE_MESSAGE =
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     const url = `${API_ORIGIN}/${path.join('/')}${search}`;
 
     const res = await fetch(url, {
-      headers: forwardedHeaders(req),
+      headers: await authenticatedHeaders(req),
     });
 
     if (res.headers.get('content-type')?.startsWith('audio/')) {
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pat
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...forwardedHeaders(req),
+        ...(await authenticatedHeaders(req)),
       },
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -102,7 +102,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pa
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        ...forwardedHeaders(req),
+        ...(await authenticatedHeaders(req)),
       },
       body: JSON.stringify(body),
     });
@@ -124,7 +124,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ path
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        ...forwardedHeaders(req),
+        ...(await authenticatedHeaders(req)),
       },
       body: JSON.stringify(body),
     });
@@ -145,7 +145,7 @@ export async function DELETE(
 
     const res = await fetch(url, {
       method: 'DELETE',
-      headers: forwardedHeaders(req),
+      headers: await authenticatedHeaders(req),
     });
 
     const data = await parseResponse(res);

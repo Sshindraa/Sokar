@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest';
-import { forwardedHeaders } from '../app/api/proxy/forwarded-headers';
+import { describe, it, expect, vi } from 'vitest';
+import { auth } from '@clerk/nextjs/server';
+import { authenticatedHeaders, forwardedHeaders } from '../app/api/proxy/forwarded-headers';
+
+vi.mock('@clerk/nextjs/server', () => ({
+  auth: vi.fn(),
+}));
 
 /**
  * Garde-fou non-régression : le proxy Next.js /api/proxy/* doit forwarder
@@ -49,6 +54,22 @@ describe('forwardedHeaders — proxy Next.js', () => {
   it("forward le cookie Clerk pour l'authentification", () => {
     const headers = forwardedHeaders(mockReq({ cookie: '__session=clerk-session-token' }));
     expect(headers.Cookie).toBe('__session=clerk-session-token');
+  });
+
+  it('forwarde une autorisation déjà fournie par un appelant', () => {
+    const headers = forwardedHeaders(mockReq({ authorization: 'Bearer clerk-session-token' }));
+    expect(headers.Authorization).toBe('Bearer clerk-session-token');
+  });
+
+  it('privilégie le Bearer Clerk et retire le cookie de handshake', async () => {
+    const getToken = vi.fn().mockResolvedValue('server-session-token');
+    vi.mocked(auth).mockResolvedValue({ getToken } as never);
+
+    const headers = await authenticatedHeaders(mockReq({ cookie: '__clerk_handshake=truncated' }));
+
+    expect(headers.Authorization).toBe('Bearer server-session-token');
+    expect(headers.Cookie).toBeUndefined();
+    expect(getToken).toHaveBeenCalledOnce();
   });
 
   it('forward Range pour permettre la lecture et la navigation audio', () => {
