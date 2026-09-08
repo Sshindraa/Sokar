@@ -104,7 +104,10 @@ function SidebarNavItem({
   );
 }
 
-const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+const isDemoMode = Boolean(
+  process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID && process.env.NEXT_PUBLIC_DEMO_STAGING,
+);
+const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) && !isDemoMode;
 
 function ThemeToggle() {
   const { theme, toggleTheme } = useDashboardTheme();

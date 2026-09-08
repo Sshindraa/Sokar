@@ -33,24 +33,25 @@ function rewriteBookToWidget(req: NextRequest): NextResponse | null {
   return NextResponse.rewrite(url);
 }
 
-const middleware = hasClerkKey
-  ? clerkMiddleware(async (auth, req) => {
-      const rewrite = rewriteBookToWidget(req);
-      if (rewrite) return rewrite;
+const middleware =
+  hasClerkKey && !isDemoMode
+    ? clerkMiddleware(async (auth, req) => {
+        const rewrite = rewriteBookToWidget(req);
+        if (rewrite) return rewrite;
 
-      if (isProtectedRoute(req) && !isDemoMode) {
-        const { userId } = await auth();
-        if (!userId) {
-          const signInUrl = new URL('/login', req.url);
-          return NextResponse.redirect(signInUrl);
+        if (isProtectedRoute(req) && !isDemoMode) {
+          const { userId } = await auth();
+          if (!userId) {
+            const signInUrl = new URL('/login', req.url);
+            return NextResponse.redirect(signInUrl);
+          }
         }
-      }
-    })
-  : function localPreviewMiddleware(req: NextRequest) {
-      const rewrite = rewriteBookToWidget(req);
-      if (rewrite) return rewrite;
-      return NextResponse.next();
-    };
+      })
+    : function localPreviewMiddleware(req: NextRequest) {
+        const rewrite = rewriteBookToWidget(req);
+        if (rewrite) return rewrite;
+        return NextResponse.next();
+      };
 
 export default middleware;
 

@@ -7,6 +7,9 @@ import { ReactNode } from 'react';
 export default function Providers({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const isDemoMode = Boolean(
+    process.env.NEXT_PUBLIC_DEMO_RESTAURANT_ID && process.env.NEXT_PUBLIC_DEMO_STAGING,
+  );
 
   const needsClerk =
     pathname?.startsWith('/login') ||
@@ -16,7 +19,7 @@ export default function Providers({ children }: { children: ReactNode }) {
 
   // Public marketing pages must not depend on Clerk. Auth is mounted only
   // where the route actually needs login/session state.
-  if (!needsClerk || !publishableKey) {
+  if (!needsClerk || !publishableKey || isDemoMode) {
     return <>{children}</>;
   }
 
