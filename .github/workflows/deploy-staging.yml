@@ -41,6 +41,7 @@ jobs:
           ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
           ALERT_SMS_TO: ${{ secrets.ALERT_SMS_TO }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           STRIPE_PRICE_ESSENTIAL_MONTHLY: ${{ vars.STRIPE_STAGING_ESSENTIAL_MONTHLY }}
           STRIPE_PRICE_ESSENTIAL_ANNUAL: ${{ vars.STRIPE_STAGING_ESSENTIAL_ANNUAL }}
           STRIPE_PRICE_PRO_MONTHLY: ${{ vars.STRIPE_STAGING_PRO_MONTHLY }}
@@ -56,7 +57,7 @@ jobs:
           username: deploy
           key: ${{ secrets.STAGING_SSH_KEY }}
           command_timeout: 18m
-          envs: ALERT_WEBHOOK,SENTRY_DSN,ALERT_EMAIL_TO,ALERT_WEBHOOK_URL,ALERT_SMS_TO,STRIPE_PRICE_ESSENTIAL_MONTHLY,STRIPE_PRICE_ESSENTIAL_ANNUAL,STRIPE_PRICE_PRO_MONTHLY,STRIPE_PRICE_PRO_ANNUAL,STRIPE_PRICE_MULTI_SITE_MONTHLY,STRIPE_PRICE_MULTI_SITE_ANNUAL,STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL,NEXT_PUBLIC_DEMO_RESTAURANT_ID,NEXT_PUBLIC_DEMO_STAGING
+          envs: ALERT_WEBHOOK,SENTRY_DSN,ALERT_EMAIL_TO,ALERT_WEBHOOK_URL,ALERT_SMS_TO,CLERK_SECRET_KEY,STRIPE_PRICE_ESSENTIAL_MONTHLY,STRIPE_PRICE_ESSENTIAL_ANNUAL,STRIPE_PRICE_PRO_MONTHLY,STRIPE_PRICE_PRO_ANNUAL,STRIPE_PRICE_MULTI_SITE_MONTHLY,STRIPE_PRICE_MULTI_SITE_ANNUAL,STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL,NEXT_PUBLIC_DEMO_RESTAURANT_ID,NEXT_PUBLIC_DEMO_STAGING
           script: |
             set -euo pipefail
             cd /opt/sokar-staging
@@ -97,6 +98,11 @@ jobs:
             fi
             if [ -n "${SENTRY_DSN:-}${ALERT_EMAIL_TO:-}${ALERT_WEBHOOK_URL:-}${ALERT_SMS_TO:-}" ]; then
               bash scripts/ops/sync-alerting-config.sh staging
+            fi
+            if [ -n "${CLERK_SECRET_KEY:-}" ]; then
+              bash scripts/ops/sync-clerk-secret.sh staging
+            else
+              echo "CLERK_SECRET_KEY absent ; secrets Clerk staging existants conservés"
             fi
             bash scripts/ops/sync-stripe-prices.sh staging
             SOKAR_SKIP_GIT_PULL=1 bash scripts/deploy.sh --env staging
