@@ -29,9 +29,11 @@
 ### Clé Clerk staging
 
 La clé Development est stockée dans le secret GitHub Actions `CLERK_SECRET_KEY`
-(préfixe `sk_test_`). Le workflow `Deploy Staging` appelle
-`scripts/ops/sync-clerk-secret.sh staging` et met à jour atomiquement les deux
-fichiers privés du VPS : `/opt/sokar-staging/apps/api/.env` et
+(préfixe `sk_test_`). Le workflow `Deploy Staging` valide le préfixe, transfère
+temporairement le secret vers le VPS avec des permissions strictes, puis appelle
+`scripts/ops/sync-clerk-secret.sh`, qui met à jour atomiquement les deux fichiers
+privés du VPS et supprime le fichier de transport :
+`/opt/sokar-staging/apps/api/.env` et
 `/opt/sokar-staging/apps/dashboard/.env`. Ces fichiers ne sont pas suivis par
 Git et ne doivent jamais être créés dans le dépôt ou copiés dans le navigateur.
 La production utilise un secret live séparé ; le workflow de production ne
