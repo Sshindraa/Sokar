@@ -160,7 +160,74 @@ describe('reservation.routes', () => {
     });
   });
 
-  describe('POST /reservations (public — pipeline vocal Telnyx)', () => {
+  describe('POST /reservations (service interne legacy)', () => {
+    const serviceToken = ['test', 'reservation', 'service', 'token', 'fixture'].join('-');
+    const serviceHeaders = {
+      'x-sokar-reservation-token': serviceToken,
+    };
+
+    it('rejette une requête sans jeton de service', async () => {
+      const app = await getApp();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/reservations',
+        payload: {
+          restaurantId: 'rest-123',
+          reservedAt: '2099-06-05T19:00:00.000Z',
+          partySize: 2,
+          customerName: 'Alice',
+        },
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('rejette un jeton de service invalide', async () => {
+      const app = await getApp();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/reservations',
+        headers: {
+          'x-sokar-reservation-token': ['wrong', 'reservation', 'token', 'fixture'].join('-'),
+        },
+        payload: {
+          restaurantId: 'rest-123',
+          reservedAt: '2099-06-05T19:00:00.000Z',
+          partySize: 2,
+          customerName: 'Alice',
+        },
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('ne redevient pas publique si le secret est absent', async () => {
+      const app = await getApp();
+      const previous = process.env.RESERVATION_SERVICE_TOKEN;
+      delete process.env.RESERVATION_SERVICE_TOKEN;
+
+      try {
+        const res = await app.inject({
+          method: 'POST',
+          url: '/reservations',
+          headers: serviceHeaders,
+          payload: {
+            restaurantId: 'rest-123',
+            reservedAt: '2099-06-05T19:00:00.000Z',
+            partySize: 2,
+            customerName: 'Alice',
+          },
+        });
+
+        expect(res.statusCode).toBe(503);
+      } finally {
+        if (previous === undefined) delete process.env.RESERVATION_SERVICE_TOKEN;
+        else process.env.RESERVATION_SERVICE_TOKEN = previous;
+      }
+    });
+
     it('crée une réservation et retourne 201', async () => {
       const app = await getApp();
       const created = {
@@ -179,6 +246,7 @@ describe('reservation.routes', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/reservations',
+        headers: serviceHeaders,
         payload: {
           restaurantId: 'rest-123',
           callId: 'call-abc',
@@ -187,7 +255,6 @@ describe('reservation.routes', () => {
           customerName: 'Alice',
           customerPhone: '+33612345678',
         },
-        // Pas d'Authorization → public, appelé par le pipeline vocal
       });
 
       expect(res.statusCode).toBe(201);
@@ -208,6 +275,7 @@ describe('reservation.routes', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/reservations',
+        headers: serviceHeaders,
         payload: {
           restaurantId: 'rest-123',
           reservedAt: '2099-06-05T19:00:00.000Z',
@@ -226,6 +294,7 @@ describe('reservation.routes', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/reservations',
+        headers: serviceHeaders,
         payload: {
           restaurantId: 'rest-123',
           reservedAt: '2099-06-05T19:00:00.000Z',
@@ -244,6 +313,7 @@ describe('reservation.routes', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/reservations',
+        headers: serviceHeaders,
         payload: {
           restaurantId: 'rest-123',
           reservedAt: '2099-06-05T19:00:00.000Z',
@@ -262,6 +332,7 @@ describe('reservation.routes', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/reservations',
+        headers: serviceHeaders,
         payload: {
           restaurantId: 'rest-123',
           reservedAt: '2099-06-05T19:00:00.000Z',
@@ -286,6 +357,7 @@ describe('reservation.routes', () => {
       const res = await app.inject({
         method: 'POST',
         url: '/reservations',
+        headers: serviceHeaders,
         payload: {
           restaurantId: 'rest-123',
           callId: 'call-cross-tenant',

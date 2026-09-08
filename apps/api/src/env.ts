@@ -132,6 +132,9 @@ const EnvSchema = z
     // de provisioning et de santé. CSV, obligatoire dans l'environnement de
     // déploiement avant d'ouvrir l'administration multi-restaurant.
     SOKAR_OPERATOR_USER_IDS: z.string().optional(),
+    // Jeton du endpoint legacy POST /reservations. Le pipeline vocal appelle
+    // le service directement ; cette clé ne doit jamais être exposée au client.
+    RESERVATION_SERVICE_TOKEN: z.string().min(32).optional(),
     // Auth MCP dev (SEC-007). ENABLE_DEV_AUTH doit être explicitement true pour activer AGENT_DEV_KEY.
     // En production, rester false. AGENT_DEV_KEY doit faire ≥32 caractères si défini.
     ENABLE_DEV_AUTH: z.enum(['true', 'false']).default('false'),

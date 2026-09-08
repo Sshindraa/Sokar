@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireOrg } from '../../plugins/clerk';
 import { ReservationService, RESERVATION_REPLAY_SCOPE_MISMATCH } from './reservation.service';
+import { requireReservationService } from './reservation-auth';
 import {
   AvailabilityQuerySchema,
   CreateReservationSchema,
@@ -11,7 +12,9 @@ import { ERROR_CODE_MESSAGES, RESERVATION_STATUS_VALUES } from '@sokar/shared';
 
 // --- auth/public split ---
 // Les routes GET/PATCH/DELETE nécessitent une organisation (dashboard manager).
-// POST /reservations est publique (appelée par le pipeline vocal Telnyx).
+// POST /reservations reste disponible pour les intégrations legacy, mais elle
+// est interne : le pipeline vocal appelle ReservationService directement et
+// les réservations Connect passent par les routes hold/confirm signées.
 
 const UpdateReservationSchema = z.object({
   status: z.enum(RESERVATION_STATUS_VALUES).optional(),
@@ -39,7 +42,7 @@ export async function reservationRoutes(app: FastifyInstance) {
     return reply.send(availability);
   });
 
-  app.post('/reservations', async (req, reply) => {
+  app.post('/reservations', { preHandler: requireReservationService }, async (req, reply) => {
     const body = CreateReservationSchema.parse(req.body);
     try {
       const reservation = await ReservationService.create({

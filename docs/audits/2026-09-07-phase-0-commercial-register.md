@@ -39,6 +39,7 @@ Ce registre fixe ce qui peut être annoncé dès le premier lancement, qui porte
 - [ ] Identité légale, DPA, rétention audio/transcription et contact RGPD ;
 - [ ] Comptes développeur et secrets de test ChatGPT/Claude ;
 - [ ] Mode staging sans démo protégé contre la promotion, clé Clerk Development valide et profils navigateur frais pour prouver l’isolation inter-tenant ;
+- [ ] Injecter `RESERVATION_SERVICE_TOKEN` (≥32 caractères) dans l’API staging et production avant d'utiliser l'intégration legacy `POST /reservations` ; la route est désormais refusée sans ce secret ;
 - [ ] Texte contractuel de la politique d’usage/SLA ;
 - [ ] Canal support, horaires d’astreinte et délai cible.
 
