@@ -61,7 +61,11 @@ Liste les réservations d'un restaurant, filtrées par date.
 
 ### POST /reservations
 
-Crée une réservation (canal legacy `phone`).
+Crée une réservation pour une intégration legacy `phone`. Cette route est
+interne et exige `X-Sokar-Reservation-Token`, correspondant à
+`RESERVATION_SERVICE_TOKEN` côté API. Le pipeline vocal appelle directement le
+service ; les réservations publiques utilisent les routes Connect
+`/public/r/:slug/hold` puis `/public/r/:slug/confirm`.
 
 ### PATCH /reservations/:id / DELETE /reservations/:id
 
