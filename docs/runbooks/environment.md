@@ -26,6 +26,17 @@
 | `apps/dashboard/.env` (prod) | Clerk keys, `API_URL`, Sentry                                     |
 | `apps/connect/.env` (prod)   | `SITE_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`, `DASHBOARD_URL`     |
 
+### Clé Clerk staging
+
+La clé Development est stockée dans le secret GitHub Actions `CLERK_SECRET_KEY`
+(préfixe `sk_test_`). Le workflow `Deploy Staging` appelle
+`scripts/ops/sync-clerk-secret.sh staging` et met à jour atomiquement les deux
+fichiers privés du VPS : `/opt/sokar-staging/apps/api/.env` et
+`/opt/sokar-staging/apps/dashboard/.env`. Ces fichiers ne sont pas suivis par
+Git et ne doivent jamais être créés dans le dépôt ou copiés dans le navigateur.
+La production utilise un secret live séparé ; le workflow de production ne
+réutilise pas la clé staging.
+
 ### Alerting de production
 
 Les secrets GitHub de l’environnement `production` (et, si souhaité, `staging`)
