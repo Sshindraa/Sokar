@@ -46,8 +46,8 @@ jobs:
               ;;
           esac
           umask 077
-          printf '%s' "$CLERK_SECRET_KEY" > "${RUNNER_TEMP}/sokar-clerk-secret"
-          chmod 0600 "${RUNNER_TEMP}/sokar-clerk-secret"
+          printf '%s' "$CLERK_SECRET_KEY" > sokar-clerk-secret
+          chmod 0600 sokar-clerk-secret
 
       - name: Copy Clerk secret to staging host
         uses: appleboy/scp-action@v1
@@ -55,7 +55,7 @@ jobs:
           host: ${{ secrets.STAGING_HOST }}
           username: deploy
           key: ${{ secrets.STAGING_SSH_KEY }}
-          source: ${{ runner.temp }}/sokar-clerk-secret
+          source: sokar-clerk-secret
           target: /tmp/
           overwrite: true
 
@@ -136,6 +136,22 @@ jobs:
             bash scripts/ops/sync-clerk-secret.sh staging
             bash scripts/ops/sync-stripe-prices.sh staging
             SOKAR_SKIP_GIT_PULL=1 bash scripts/deploy.sh --env staging
+
+      - name: Remove remote Clerk secret transport file
+        if: always()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: deploy
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          command_timeout: 2m
+          script: |
+            set -euo pipefail
+            rm -f /tmp/sokar-clerk-secret
+
+      - name: Remove runner Clerk secret transport file
+        if: always()
+        run: rm -f sokar-clerk-secret
 
   smoke-tests:
     name: Smoke tests against staging
