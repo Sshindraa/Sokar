@@ -8,6 +8,7 @@ import {
   type Restaurant,
   type AgentPersonality,
   type CapacitySpecials,
+  type BillingStatus,
 } from '@/types/api';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -65,6 +66,7 @@ export default function SettingsPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [billingNotice, setBillingNotice] = useState<string | null>(null);
+  const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null);
   const [openingBillingPortal, setOpeningBillingPortal] = useState(false);
 
   // Personality
@@ -122,11 +124,13 @@ export default function SettingsPage() {
     if (!orgId) return;
     (async () => {
       try {
-        const [data, pers] = await Promise.all([
+        const [data, pers, billing] = await Promise.all([
           get<Restaurant>(`restaurants/${orgId}`),
           get<AgentPersonality>(`restaurants/${orgId}/personality`),
+          get<BillingStatus>('billing/status').catch(() => null),
         ]);
         setRestaurant(data);
+        setBillingStatus(billing);
         setName(data.name || '');
         setManagerPhone(data.managerPhone || '');
         setManagerEmail(data.managerEmail || '');
@@ -332,6 +336,23 @@ export default function SettingsPage() {
   const plan = restaurant?.plan ?? 'STARTER';
   const planInfo = PLAN_FEATURES[plan] ?? PLAN_FEATURES.STARTER;
   const canManageBilling = !accountId || activeSite?.role === 'OWNER';
+  const billingStatusLabel =
+    billingStatus?.subscriptionStatus === 'past_due'
+      ? 'Paiement en attente'
+      : billingStatus?.subscriptionStatus === 'active'
+        ? 'Abonnement actif'
+        : billingStatus?.subscriptionStatus === 'trialing'
+          ? 'Période d’essai'
+          : billingStatus?.subscriptionStatus === 'canceled'
+            ? 'Abonnement terminé'
+            : 'Aucun abonnement synchronisé';
+  const billingPeriodEnd = billingStatus?.currentPeriodEnd
+    ? new Date(billingStatus.currentPeriodEnd).toLocaleDateString('fr-FR', {
+        dateStyle: 'long',
+      })
+    : null;
+  const billingIntervalLabel =
+    billingStatus?.billingInterval === 'annual' ? 'Facturation annuelle' : 'Facturation mensuelle';
 
   return (
     <div className="space-y-8">
@@ -433,6 +454,47 @@ export default function SettingsPage() {
               <p className="mt-1 text-sm text-muted-foreground">
                 {planInfo.calls} · Pas de commission · Support email
               </p>
+              {billingStatus && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                  <span
+                    className={
+                      billingStatus.subscriptionStatus === 'past_due'
+                        ? 'rounded-full border border-warning/30 bg-warning/10 px-2.5 py-1 font-medium text-warning'
+                        : billingStatus.subscriptionStatus === 'active' ||
+                            billingStatus.subscriptionStatus === 'trialing'
+                          ? 'rounded-full border border-success/30 bg-success/10 px-2.5 py-1 font-medium text-success'
+                          : 'rounded-full border border-border bg-background px-2.5 py-1 font-medium text-muted-foreground'
+                    }
+                  >
+                    {billingStatusLabel}
+                  </span>
+                  {billingStatus.subscriptionStatus && billingStatus.billingInterval && (
+                    <span className="text-muted-foreground">{billingIntervalLabel}</span>
+                  )}
+                </div>
+              )}
+              {billingStatus?.subscriptionStatus === 'past_due' && (
+                <p role="alert" className="mt-3 max-w-xl text-sm text-warning">
+                  Le dernier paiement n’a pas abouti.{' '}
+                  {canManageBilling
+                    ? 'Ouvrez la gestion de l’abonnement pour mettre à jour votre moyen de paiement.'
+                    : 'Le propriétaire du compte doit mettre à jour le moyen de paiement.'}
+                </p>
+              )}
+              {billingStatus?.cancelAtPeriodEnd && billingPeriodEnd && (
+                <p className="mt-3 max-w-xl text-sm text-muted-foreground">
+                  Résiliation programmée le {billingPeriodEnd}. L’accès reste actif jusqu’à cette
+                  date.
+                </p>
+              )}
+              {billingStatus?.subscriptionStatus &&
+                billingStatus.subscriptionStatus !== 'canceled' &&
+                !billingStatus.cancelAtPeriodEnd &&
+                billingPeriodEnd && (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Prochaine échéance : {billingPeriodEnd}
+                  </p>
+                )}
             </div>
             <div className="flex flex-wrap gap-2">
               {canManageBilling && (

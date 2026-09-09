@@ -11,7 +11,7 @@ const originalEnv = {
   multiSiteAddonPrice: process.env.STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,
 };
 
-describe('billing.routes - POST /billing/checkout-session', () => {
+describe('billing.routes - checkout, portail et statut', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(db.restaurant.findFirst).mockReset();
@@ -52,6 +52,48 @@ describe('billing.routes - POST /billing/checkout-session', () => {
     });
 
     expect(response.statusCode).toBe(401);
+  });
+
+  it('expose le statut d’abonnement sans divulguer les identifiants Stripe', async () => {
+    process.env.STRIPE_PRICE_PRO_MONTHLY = 'price_pro_monthly_test';
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+      id: 'test-rest-1',
+      plan: 'PRO',
+      accountId: 'test-account-1',
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.restaurant.findFirst).mockResolvedValue({
+      id: 'test-rest-1',
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findFirst>>);
+    vi.mocked(db.restaurantAccountBilling.findUnique).mockResolvedValue({
+      accountId: 'test-account-1',
+      stripeCustomerId: 'cus_private',
+      stripeSubscriptionId: 'sub_private',
+      subscriptionStatus: 'past_due',
+      subscriptionPriceId: 'price_pro_monthly_test',
+      entitledSiteCount: 1,
+      subscriptionCurrentPeriodEnd: new Date('2026-10-01T00:00:00.000Z'),
+      subscriptionCancelAtPeriodEnd: true,
+    } as unknown as Awaited<ReturnType<typeof db.restaurantAccountBilling.findUnique>>);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/billing/status',
+      headers: { authorization: 'Bearer test' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      plan: 'pro',
+      subscriptionStatus: 'past_due',
+      billingInterval: 'monthly',
+      currentPeriodEnd: '2026-10-01T00:00:00.000Z',
+      cancelAtPeriodEnd: true,
+      entitledSiteCount: 1,
+      accountScoped: true,
+    });
+    expect(JSON.stringify(response.json())).not.toContain('cus_private');
+    expect(JSON.stringify(response.json())).not.toContain('sub_private');
   });
 
   it('valide strictement le plan et la cadence', async () => {

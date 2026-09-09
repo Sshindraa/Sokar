@@ -12,6 +12,7 @@ import {
   PUBLIC_BILLING_PLANS,
   createBillingPortalSession,
   createCheckoutSession,
+  getBillingStatus,
 } from './billing.service';
 
 const CheckoutSchema = z.object({
@@ -21,6 +22,32 @@ const CheckoutSchema = z.object({
 });
 
 export async function billingRoutes(app: FastifyInstance) {
+  app.get('/billing/status', { preHandler: requireOrg() }, async (req, reply) => {
+    try {
+      return reply.send(
+        await getBillingStatus({
+          restaurantId: req.restaurantId!,
+          accountId: req.accountId,
+        }),
+      );
+    } catch (error) {
+      if (error instanceof BillingRestaurantNotFoundError) {
+        return reply
+          .status(404)
+          .send({ error: 'RESTAURANT_NOT_FOUND', message: 'Restaurant introuvable.' });
+      }
+
+      req.log.error(
+        { err: error instanceof Error ? error.message : String(error) },
+        '[billing] Unexpected status error',
+      );
+      return reply.status(500).send({
+        error: 'BILLING_STATUS_FAILED',
+        message: 'Impossible de charger le statut de la facturation.',
+      });
+    }
+  });
+
   app.post('/billing/checkout-session', { preHandler: requireOrg() }, async (req, reply) => {
     if (req.accountId && req.siteRole !== 'OWNER') {
       return reply.status(403).send({
