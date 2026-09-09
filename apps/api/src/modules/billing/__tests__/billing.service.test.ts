@@ -6,6 +6,9 @@ describe('billing.service - Stripe subscription webhooks', () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.mocked(db.restaurant.findUnique).mockReset();
+    vi.mocked(db.restaurantBilling.findUnique).mockReset();
+    vi.mocked(db.restaurantBilling.upsert).mockReset();
+    vi.mocked(db.restaurantAccountBilling.findUnique).mockReset();
     vi.mocked(db.restaurantAccountBilling.upsert).mockReset();
     delete process.env.STRIPE_PRICE_PRO_MONTHLY;
     delete process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY;
@@ -189,5 +192,122 @@ describe('billing.service - Stripe subscription webhooks', () => {
     expect(handled).toBe(true);
     expect(db.restaurant.update).not.toHaveBeenCalled();
     expect(db.restaurantBilling.upsert).not.toHaveBeenCalled();
+  });
+
+  it('passe en période de grâce après un échec de paiement sans retirer le plan', async () => {
+    const billing = {
+      restaurantId: 'test-rest-1',
+      stripeCustomerId: 'cus_test',
+      stripeSubscriptionId: 'sub_test',
+      subscriptionStatus: 'active',
+      subscriptionPriceId: 'price_pro_monthly_test',
+      subscriptionCurrentPeriodEnd: new Date('2026-10-01T00:00:00.000Z'),
+      subscriptionCancelAtPeriodEnd: true,
+      lastStripeEventCreated: null,
+      lastStripeEventId: null,
+    };
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(billing as never);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({ accountId: 'account_1' } as never);
+    vi.mocked(db.restaurantAccountBilling.findUnique).mockResolvedValue({
+      accountId: 'account_1',
+      entitledSiteCount: 3,
+    } as never);
+
+    const handled = await handleBillingWebhook({
+      type: 'invoice.payment_failed',
+      id: 'evt_invoice_failed_1',
+      created: 400,
+      data: {
+        object: {
+          customer: 'cus_test',
+          subscription: 'sub_test',
+          metadata: {},
+          period_end: 1_790_000_000,
+          lines: { data: [] },
+        },
+      },
+    } as never);
+
+    expect(handled).toBe(true);
+    expect(db.restaurant.update).not.toHaveBeenCalled();
+    expect(db.restaurantAccountBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { accountId: 'account_1' },
+        create: expect.objectContaining({
+          subscriptionStatus: 'past_due',
+          entitledSiteCount: 3,
+          subscriptionCancelAtPeriodEnd: true,
+        }),
+        update: expect.objectContaining({
+          subscriptionStatus: 'past_due',
+          entitledSiteCount: 3,
+          subscriptionCancelAtPeriodEnd: true,
+        }),
+      }),
+    );
+    expect(db.restaurantBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { restaurantId: 'test-rest-1' },
+        update: expect.objectContaining({
+          subscriptionStatus: 'past_due',
+          subscriptionCancelAtPeriodEnd: true,
+        }),
+      }),
+    );
+  });
+
+  it('réactive l’abonnement et conserve le quota après invoice.paid', async () => {
+    process.env.STRIPE_PRICE_MULTI_SITE_MONTHLY = 'price_multi_site_monthly_test';
+    const billing = {
+      restaurantId: 'test-rest-1',
+      stripeCustomerId: 'cus_test',
+      stripeSubscriptionId: 'sub_multi_test',
+      subscriptionStatus: 'past_due',
+      subscriptionPriceId: 'price_multi_site_monthly_test',
+      subscriptionCurrentPeriodEnd: new Date('2026-10-01T00:00:00.000Z'),
+      subscriptionCancelAtPeriodEnd: false,
+      lastStripeEventCreated: null,
+      lastStripeEventId: null,
+    };
+    vi.mocked(db.stripeWebhookEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.restaurantBilling.findUnique).mockResolvedValue(billing as never);
+    vi.mocked(db.restaurant.findUnique).mockResolvedValue({ accountId: 'account_1' } as never);
+    vi.mocked(db.restaurantAccountBilling.findUnique).mockResolvedValue({
+      accountId: 'account_1',
+      entitledSiteCount: 4,
+    } as never);
+
+    const handled = await handleBillingWebhook({
+      type: 'invoice.paid',
+      id: 'evt_invoice_paid_1',
+      created: 500,
+      data: {
+        object: {
+          customer: 'cus_test',
+          subscription: 'sub_multi_test',
+          metadata: { plan: 'multi-site', billing: 'monthly', siteCount: '4' },
+          period_end: 1_793_000_000,
+          lines: { data: [{ price: { id: 'price_multi_site_monthly_test' } }] },
+        },
+      },
+    } as never);
+
+    expect(handled).toBe(true);
+    expect(db.restaurant.update).toHaveBeenCalledWith({
+      where: { id: 'test-rest-1' },
+      data: { plan: 'PREMIUM' },
+    });
+    expect(db.restaurantAccountBilling.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { accountId: 'account_1' },
+        create: expect.objectContaining({
+          subscriptionStatus: 'active',
+          entitledSiteCount: 4,
+          subscriptionPriceId: 'price_multi_site_monthly_test',
+        }),
+        update: expect.objectContaining({ subscriptionStatus: 'active', entitledSiteCount: 4 }),
+      }),
+    );
   });
 });
