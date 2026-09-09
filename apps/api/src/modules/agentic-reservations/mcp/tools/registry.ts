@@ -42,6 +42,7 @@ import {
   type GetReservationStatusInput,
   type SearchRestaurantsInput,
 } from './schemas';
+import { DEFAULT_MCP_TIMEZONE, parseMcpDateRange } from './date-time';
 
 export type ToolContext = {
   clientId: string;
@@ -201,8 +202,14 @@ export class McpToolRegistry {
     if (!rl.allowed) return toolError('Rate limit exceeded', 'RATE_LIMITED');
 
     try {
-      const slotStart = new Date(input.slotStart);
-      const slotEnd = new Date(input.slotEnd);
+      const range = parseMcpDateRange({
+        start: input.slotStart,
+        end: input.slotEnd,
+        timezone: input.timezone,
+        defaultTimezone: DEFAULT_MCP_TIMEZONE,
+      });
+      if (!range.ok) return toolError(range.error, range.code);
+      const { start: slotStart, end: slotEnd } = range;
       const results = await this.availabilityService.searchAvailableRestaurants({
         city: input.city,
         partySize: input.partySize,
@@ -315,8 +322,14 @@ export class McpToolRegistry {
       const exposure = await this.getMcpExposure(input.restaurantId, ctx);
       if (!exposure.ok) return exposure.error;
 
-      const slotStart = new Date(input.slotStart);
-      const slotEnd = new Date(input.slotEnd);
+      const range = parseMcpDateRange({
+        start: input.slotStart,
+        end: input.slotEnd,
+        timezone: input.timezone,
+        defaultTimezone: exposure.settings.timezone,
+      });
+      if (!range.ok) return toolError(range.error, range.code);
+      const { start: slotStart, end: slotEnd } = range;
       const violation = this.validateExposureConstraints(exposure.settings, {
         partySize: input.partySize,
         startsAt: slotStart,
@@ -357,8 +370,14 @@ export class McpToolRegistry {
       const exposure = await this.getMcpExposure(input.restaurantId, ctx);
       if (!exposure.ok) return exposure.error;
 
-      const startsAt = new Date(input.startsAt);
-      const endsAt = new Date(input.endsAt);
+      const range = parseMcpDateRange({
+        start: input.startsAt,
+        end: input.endsAt,
+        timezone: input.timezone,
+        defaultTimezone: exposure.settings.timezone,
+      });
+      if (!range.ok) return toolError(range.error, range.code);
+      const { start: startsAt, end: endsAt } = range;
       const violation = this.validateExposureConstraints(exposure.settings, {
         partySize: input.partySize,
         startsAt,
