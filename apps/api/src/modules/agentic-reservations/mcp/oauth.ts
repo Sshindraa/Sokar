@@ -50,6 +50,30 @@ function base64url(buf: Buffer): string {
   return buf.toString('base64url');
 }
 
+/** URL publique canonique utilisée par les pages OAuth Sokar. */
+function getPublicSiteUrl(): string {
+  const configuredSiteUrl = process.env.SITE_URL?.trim();
+
+  if (configuredSiteUrl) {
+    try {
+      const siteUrl = new URL(configuredSiteUrl);
+      if (!['localhost', '127.0.0.1', '::1'].includes(siteUrl.hostname)) {
+        return siteUrl.origin;
+      }
+    } catch {
+      // Utiliser l'URL canonique si SITE_URL est absent ou mal formé.
+    }
+  }
+
+  return 'https://sokar.tech';
+}
+
+/** URL de l'icône officielle utilisée par Sokar Connect. */
+function getBrandIconUrl(): string {
+  const siteUrl = getPublicSiteUrl();
+  return siteUrl.endsWith('/icon.svg') ? siteUrl : `${siteUrl}/icon.svg`;
+}
+
 /**
  * Vérifie un code_verifier PKCE contre le code_challenge stocké.
  */
@@ -310,14 +334,15 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
           .send(renderError('Type non supporté', 'Seul response_type=code est supporté.'));
       }
 
+      const knownClientName = matchKnownRedirect(query.redirect_uri);
+
       // Valider le client
       const client = await getJson<RegisteredClient>(`sokar:oauth:client:${query.client_id}`);
       let clientName = query.client_id || 'Unknown';
 
       if (!client) {
-        const knownName = matchKnownRedirect(query.redirect_uri);
-        if (knownName) {
-          clientName = knownName;
+        if (knownClientName) {
+          clientName = knownClientName;
         } else {
           return reply
             .status(400)
@@ -342,6 +367,21 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
               ),
             );
         }
+      }
+
+      // Claude et ChatGPT exigent `state` à leur callback pour corréler la
+      // réponse OAuth avec la demande initiale. Sans ce champ, leur page de
+      // callback affiche une erreur après le clic sur « Autoriser ».
+      if (knownClientName && !query.state) {
+        return reply
+          .status(400)
+          .type('text/html')
+          .send(
+            renderError(
+              'Paramètre state manquant',
+              `Relancez la connexion depuis ${knownClientName} afin de générer un state valide.`,
+            ),
+          );
       }
 
       // Vérifier qu'au moins un restaurant a MCP activé — sinon le connector
@@ -463,6 +503,19 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         if (!body.redirect_uri || !postClient.redirectUris.includes(body.redirect_uri)) {
           return reply.status(400).type('text/html').send(renderError('Redirect URI invalide', ''));
         }
+      }
+
+      const knownPostClientName = body.redirect_uri ? matchKnownRedirect(body.redirect_uri) : null;
+      if (knownPostClientName && !body.state) {
+        return reply
+          .status(400)
+          .type('text/html')
+          .send(
+            renderError(
+              'Paramètre state manquant',
+              `Relancez la connexion depuis ${knownPostClientName} afin de générer un state valide.`,
+            ),
+          );
       }
 
       // Si l'utilisateur a refusé
@@ -718,6 +771,15 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
 
 // ─── HTML helpers ──────────────────────────────────────
 
+/**
+ * Typographies officielles de Sokar Connect.
+ *
+ * Les pages OAuth sont rendues directement par l'API, en dehors du bundle
+ * Next.js qui charge normalement ces polices via `next/font`. On reprend donc
+ * les mêmes familles ici, avec des fallbacks système si le CDN est bloqué.
+ */
+const SOKAR_FONT_HEAD = `<link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>`;
+
 function renderConsentPage(params: {
   clientName: string;
   clientId: string;
@@ -745,60 +807,169 @@ function renderConsentPage(params: {
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Sokar — Connexion MCP</title>
+  ${SOKAR_FONT_HEAD}
   <style>
+    :root { color-scheme: dark; --sokar-ink: #0f172a; --sokar-blue: #0284c7; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    button, input { font: inherit; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0a0a0a;
+      font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--sokar-ink);
+      background-image: radial-gradient(circle at 15% 10%, rgba(2, 132, 199, 0.15), transparent 34%), radial-gradient(circle at 85% 90%, rgba(2, 132, 199, 0.08), transparent 36%);
       color: #fafafa;
       display: flex;
-      align-items: center;
       justify-content: center;
       min-height: 100vh;
+      padding: 28px 18px;
     }
     .card {
-      background: #141414;
-      border: 1px solid #262626;
-      border-radius: 16px;
-      padding: 40px;
-      max-width: 440px;
+      position: relative;
+      overflow: hidden;
+      background: rgba(20, 20, 20, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: 24px;
+      padding: 36px;
+      max-width: 560px;
       width: 100%;
+      margin: auto;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 12%;
+      right: 12%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--sokar-blue), transparent);
     }
     .logo {
-      font-size: 28px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 28px;
+    }
+    .logo img {
+      display: block;
+      width: 34px;
+      height: 34px;
+      object-fit: contain;
+      mix-blend-mode: screen;
+    }
+    .logo span {
+      color: #fafafa;
+      font-size: 22px;
+      font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif;
       font-weight: 700;
-      margin-bottom: 24px;
-      letter-spacing: -0.5px;
+      letter-spacing: -0.04em;
     }
-    .logo span { color: #f97316; }
-    h1 {
-      font-size: 20px;
-      font-weight: 600;
-      margin-bottom: 8px;
-    }
-    p {
+    .eyebrow {
       color: #a3a3a3;
-      font-size: 14px;
-      line-height: 1.6;
-      margin-bottom: 16px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      margin-bottom: 14px;
+      text-transform: uppercase;
     }
-    .scopes {
-      margin-bottom: 24px;
+    .provider {
+      align-items: center;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: 999px;
+      color: #e5e5e5;
+      display: inline-flex;
+      font-size: 13px;
+      gap: 8px;
+      margin-bottom: 18px;
+      max-width: 100%;
+      padding: 7px 11px;
+    }
+    .provider span:last-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .provider-dot {
+      background: var(--sokar-blue);
+      border-radius: 50%;
+      box-shadow: 0 0 0 4px rgba(2, 132, 199, 0.12);
+      flex: 0 0 auto;
+      height: 6px;
+      width: 6px;
+    }
+    h1 {
+      font-size: clamp(24px, 4vw, 30px);
+      font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+      font-weight: 650;
+      letter-spacing: -0.035em;
+      line-height: 1.12;
+      margin-bottom: 12px;
+    }
+    .lead {
+      color: #a3a3a3;
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 26px;
+    }
+    .lead strong {
+      color: #f5f5f5;
+      font-weight: 600;
+    }
+    .permissions {
+      background: rgba(0, 0, 0, 0.18);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 16px;
+      margin-bottom: 18px;
+      padding: 8px 16px;
+    }
+    .permissions-title {
+      color: #d4d4d4;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 10px 0 4px;
+      text-transform: uppercase;
     }
     .scope-item {
-      display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 8px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+      color: #e5e5e5;
+      display: flex;
       font-size: 14px;
-      color: #d4d4d4;
+      gap: 11px;
+      padding: 13px 0;
     }
-    .scope-dot {
-      width: 6px;
-      height: 6px;
+    .scope-item:last-child { border-bottom: 0; }
+    .scope-icon {
+      align-items: center;
+      background: rgba(2, 132, 199, 0.14);
+      border: 1px solid rgba(2, 132, 199, 0.28);
+      border-radius: 8px;
+      color: var(--sokar-blue);
+      display: inline-flex;
+      flex: 0 0 auto;
+      font-size: 13px;
+      font-weight: 800;
+      height: 24px;
+      justify-content: center;
+      width: 24px;
+    }
+    .security {
+      align-items: center;
+      color: #8f8f8f;
+      display: flex;
+      font-size: 12px;
+      gap: 8px;
+      line-height: 1.4;
+      margin-bottom: 24px;
+    }
+    .security-dot {
+      background: #4ade80;
       border-radius: 50%;
-      background: #f97316;
-      flex-shrink: 0;
+      box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.10);
+      flex: 0 0 auto;
+      height: 6px;
+      width: 6px;
     }
     .actions {
       display: flex;
@@ -812,13 +983,14 @@ function renderConsentPage(params: {
       font-size: 15px;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: transform 0.2s, background 0.2s, border-color 0.2s;
     }
+    button:hover { transform: translateY(-1px); }
     .btn-approve {
-      background: #f97316;
+      background: var(--sokar-blue);
       color: #fff;
     }
-    .btn-approve:hover { background: #ea580c; }
+    .btn-approve:hover { opacity: 0.9; }
     .btn-deny {
       flex: 0 0 auto;
       background: transparent;
@@ -827,20 +999,30 @@ function renderConsentPage(params: {
       padding: 12px 20px;
     }
     .btn-deny:hover { border-color: #555; color: #fafafa; }
+    @media (max-width: 520px) {
+      .card { padding: 28px 22px; border-radius: 20px; }
+      .actions { flex-direction: column-reverse; }
+      .btn-deny { flex: 1; }
+    }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="logo">Sokar<span>.</span></div>
-    <h1>Connexion à ${escapeHtml(clientName)}</h1>
-    <p>${escapeHtml(clientName)} demande l'acc&egrave;s &agrave; Sokar pour rechercher des restaurants et g&eacute;rer des r&eacute;servations.</p>
+    <div class="logo"><img src="${escapeAttr(getBrandIconUrl())}" alt="" /><span>Sokar</span></div>
+    <div class="eyebrow">Connexion sécurisée</div>
+    <div class="provider"><span class="provider-dot"></span><span>${escapeHtml(clientName)}</span></div>
+    <h1>Autoriser l’accès à Sokar&nbsp;?</h1>
+    <p class="lead"><strong>${escapeHtml(clientName)}</strong> demande l’accès à Sokar pour rechercher des restaurants et gérer vos réservations.</p>
 
-    <div class="scopes">
-      <div class="scope-item"><span class="scope-dot"></span> Rechercher des restaurants</div>
-      <div class="scope-item"><span class="scope-dot"></span> V&eacute;rifier les disponibilit&eacute;s</div>
-      <div class="scope-item"><span class="scope-dot"></span> Cr&eacute;er des r&eacute;servations</div>
-      <div class="scope-item"><span class="scope-dot"></span> Annuler des r&eacute;servations</div>
+    <div class="permissions">
+      <div class="permissions-title">Cette connexion permettra de</div>
+      <div class="scope-item"><span class="scope-icon">✓</span><span>Rechercher des restaurants</span></div>
+      <div class="scope-item"><span class="scope-icon">✓</span><span>Vérifier les disponibilités</span></div>
+      <div class="scope-item"><span class="scope-icon">✓</span><span>Créer des réservations</span></div>
+      <div class="scope-item"><span class="scope-icon">✓</span><span>Annuler des réservations</span></div>
     </div>
+
+    <div class="security"><span class="security-dot"></span><span>Connexion protégée par OAuth 2.0 et PKCE.</span></div>
 
     <form method="POST" action="/oauth/authorize">
       <input type="hidden" name="action" value="approve"/>
@@ -852,7 +1034,7 @@ function renderConsentPage(params: {
       <input type="hidden" name="code_challenge_method" value="${escapeAttr(codeChallengeMethod)}"/>
       <input type="hidden" name="csrf_token" value="${escapeAttr(csrfToken)}"/>
       <div class="actions">
-        <button type="submit" class="btn-approve">Autoriser</button>
+        <button type="submit" class="btn-approve">Autoriser l’accès</button>
         <button type="submit" name="action" value="deny" class="btn-deny">Refuser</button>
       </div>
     </form>
@@ -868,40 +1050,127 @@ function renderError(title: string, message: string): string {
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Sokar — Erreur</title>
+  ${SOKAR_FONT_HEAD}
   <style>
+    :root { color-scheme: dark; --sokar-ink: #0f172a; --sokar-blue: #0284c7; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    button, input { font: inherit; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0a0a0a;
+      font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--sokar-ink);
+      background-image: radial-gradient(circle at 15% 10%, rgba(2, 132, 199, 0.15), transparent 34%), radial-gradient(circle at 85% 90%, rgba(2, 132, 199, 0.08), transparent 36%);
       color: #fafafa;
       display: flex;
-      align-items: center;
       justify-content: center;
       min-height: 100vh;
+      padding: 28px 18px;
     }
     .card {
-      background: #141414;
-      border: 1px solid #262626;
-      border-radius: 16px;
-      padding: 40px;
-      max-width: 440px;
+      position: relative;
+      overflow: hidden;
+      background: rgba(20, 20, 20, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: 24px;
+      padding: 36px;
+      max-width: 520px;
       width: 100%;
+      margin: auto;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 12%;
+      right: 12%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--sokar-blue), transparent);
     }
     .logo {
-      font-size: 28px;
-      font-weight: 700;
-      margin-bottom: 24px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 28px;
     }
-    .logo span { color: #f97316; }
-    h1 { font-size: 18px; color: #ef4444; margin-bottom: 12px; }
-    p { color: #a3a3a3; font-size: 14px; line-height: 1.6; }
+    .logo img {
+      display: block;
+      width: 34px;
+      height: 34px;
+      object-fit: contain;
+      mix-blend-mode: screen;
+    }
+    .logo span {
+      color: #fafafa;
+      font-size: 22px;
+      font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+    }
+    .eyebrow {
+      color: #a3a3a3;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+    }
+    .status {
+      align-items: center;
+      background: rgba(248, 113, 113, 0.10);
+      border: 1px solid rgba(248, 113, 113, 0.18);
+      border-radius: 14px;
+      color: #fb7185;
+      display: inline-flex;
+      font-size: 20px;
+      font-weight: 800;
+      height: 44px;
+      justify-content: center;
+      margin-bottom: 20px;
+      width: 44px;
+    }
+    h1 {
+      color: #f8fafc;
+      font-size: clamp(24px, 4vw, 30px);
+      font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+      font-weight: 650;
+      letter-spacing: -0.035em;
+      line-height: 1.12;
+      margin-bottom: 12px;
+    }
+    p { color: #a3a3a3; font-size: 15px; line-height: 1.6; margin-bottom: 26px; }
+    .actions { display: flex; gap: 12px; }
+    .btn {
+      align-items: center;
+      background: var(--sokar-blue);
+      border: 0;
+      border-radius: 10px;
+      color: #fff;
+      display: inline-flex;
+      font-size: 14px;
+      font-weight: 650;
+      justify-content: center;
+      padding: 12px 18px;
+      text-decoration: none;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+    .hint { color: #737373; font-size: 12px; line-height: 1.5; margin-top: 18px; }
+    @media (max-width: 520px) {
+      .card { padding: 28px 22px; border-radius: 20px; }
+      .actions { flex-direction: column; }
+      .btn { width: 100%; }
+    }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="logo">Sokar<span>.</span></div>
+    <div class="logo"><img src="${escapeAttr(getBrandIconUrl())}" alt="" /><span>Sokar</span></div>
+    <div class="eyebrow">Sokar / Connexion</div>
+    <div class="status" aria-hidden="true">!</div>
     <h1>${escapeHtml(title)}</h1>
     <p>${escapeHtml(message)}</p>
+    <div class="actions"><a class="btn" href="${escapeAttr(getPublicSiteUrl())}">Retourner sur Sokar</a></div>
+    <div class="hint">Si vous êtes arrivé depuis un assistant, relancez la connexion depuis celui-ci.</div>
   </div>
 </body>
 </html>`;

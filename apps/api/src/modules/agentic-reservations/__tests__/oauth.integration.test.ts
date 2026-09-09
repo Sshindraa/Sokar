@@ -93,6 +93,14 @@ describe('OAuth MCP integration flow', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toContain('text/html');
     expect(res.body).toContain('Autoriser');
+    expect(res.body).toContain('/icon.svg');
+    expect(res.body).toContain('<span>Sokar</span>');
+    expect(res.body).toContain('Plus+Jakarta+Sans');
+    expect(res.body).toContain("font-family: 'Outfit'");
+    expect(res.body).toContain('--sokar-blue: #0284c7');
+    expect(res.body).not.toContain('#f97316');
+    expect(res.body).not.toContain('#0369a1');
+    expect(res.body).not.toContain('#38bdf8');
     expect(res.body).not.toContain('Restaurant connect'); // no restaurant block
 
     // Extract CSRF token from the hidden input
@@ -232,11 +240,36 @@ describe('OAuth MCP integration flow', () => {
     const app = await getApp();
     const res = await app.inject({
       method: 'GET',
-      url: `/oauth/authorize?response_type=code&client_id=nonexistent&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}`,
+      url: `/oauth/authorize?response_type=code&client_id=nonexistent&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}&state=known-state`,
     });
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('Autoriser');
+    expect(res.body).toContain('/icon.svg');
+    expect(res.body).toContain('<span>Sokar</span>');
+    expect(res.body).toContain('Plus+Jakarta+Sans');
+    expect(res.body).toContain("font-family: 'Outfit'");
+    expect(res.body).toContain('--sokar-blue: #0284c7');
+    expect(res.body).not.toContain('#f97316');
+    expect(res.body).not.toContain('#0369a1');
+    expect(res.body).not.toContain('#38bdf8');
+  });
+
+  it('GET /oauth/authorize explains missing state for a known MCP callback', async () => {
+    vi.mocked(db.restaurantExposureSettings.findFirst).mockResolvedValue({
+      restaurantId: 'test-resto-1',
+      mcpEnabled: true,
+    } as unknown as Awaited<ReturnType<typeof db.restaurantExposureSettings.findFirst>>);
+
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/oauth/authorize?response_type=code&client_id=nonexistent&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}`,
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toContain('Paramètre state manquant');
+    expect(res.body).toContain('Relancez la connexion depuis Claude');
   });
 
   // ── 10. Public consent in production (no Clerk required) ──
@@ -252,7 +285,7 @@ describe('OAuth MCP integration flow', () => {
     const app = await getApp();
     const res = await app.inject({
       method: 'GET',
-      url: `/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}`,
+      url: `/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}&state=production-state`,
     });
 
     // No redirect to login — consent page shows directly
