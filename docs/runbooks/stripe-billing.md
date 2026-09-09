@@ -21,6 +21,16 @@ de grâce configurée dans Stripe ; un paiement ultérieur repasse le compte en
 remboursement automatique n'est déclenché pour une annulation en milieu de
 période.
 
+Les événements `invoice.payment_failed`, `invoice.paid` et
+`invoice.payment_succeeded` synchronisent aussi le statut d'abonnement. Un
+échec passe le compte en `past_due` et conserve ses droits pendant la période
+de grâce configurée dans Stripe ; un paiement ultérieur repasse le compte en
+`active`. Une annulation demandée depuis le portail conserve
+`cancel_at_period_end` et le plan jusqu'à la fin de la période : seul
+`customer.subscription.deleted` rétrograde le compte vers Essential. Aucun
+remboursement automatique n'est déclenché pour une annulation en milieu de
+période.
+
 La carte bancaire n'est jamais collectée par le dashboard Sokar. Les URLs de retour sont dérivées de `DASHBOARD_URL`.
 
 ## Configuration
