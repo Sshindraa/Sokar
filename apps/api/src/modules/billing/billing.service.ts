@@ -152,6 +152,96 @@ export function getPublicPlanFromPriceId(priceId: string): PublicBillingPlan | n
   return null;
 }
 
+function getBillingIntervalFromPriceId(priceId: string): BillingInterval | null {
+  for (const plan of PUBLIC_BILLING_PLANS) {
+    for (const interval of BILLING_INTERVALS) {
+      if (resolvePriceId(plan, interval) === priceId) return interval;
+    }
+  }
+  return null;
+}
+
+function getPublicPlanFromDatabasePlan(plan: Plan | null | undefined): PublicBillingPlan | null {
+  if (plan === 'PRO') return 'pro';
+  if (plan === 'PREMIUM') return 'multi-site';
+  if (plan === 'STARTER') return 'essential';
+  return null;
+}
+
+export interface BillingStatus {
+  /** Public offer name; Stripe identifiers are intentionally never returned. */
+  plan: PublicBillingPlan | null;
+  subscriptionStatus: string | null;
+  billingInterval: BillingInterval | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  entitledSiteCount: number;
+  accountScoped: boolean;
+}
+
+type BillingStatusProjection = {
+  subscriptionStatus?: string | null;
+  subscriptionPriceId?: string | null;
+  subscriptionCurrentPeriodEnd?: Date | null;
+  subscriptionCancelAtPeriodEnd?: boolean | null;
+  entitledSiteCount?: number | null;
+};
+
+/**
+ * Returns the billing projection visible to an authenticated restaurant.
+ * Account-scoped billing is preferred for multi-site accounts; legacy
+ * single-site rows remain supported during the additive migration.
+ */
+export async function getBillingStatus(input: {
+  restaurantId: string;
+  accountId?: string;
+}): Promise<BillingStatus> {
+  const restaurant = await db.restaurant.findUnique({
+    where: { id: input.restaurantId },
+    select: { plan: true, accountId: true },
+  });
+  if (!restaurant) throw new BillingRestaurantNotFoundError();
+
+  const accountId = restaurant.accountId ?? input.accountId;
+  const accountBilling = accountId
+    ? ((await db.restaurantAccountBilling.findUnique({
+        where: { accountId },
+      })) as BillingStatusProjection | null)
+    : null;
+
+  let billingAnchorId = input.restaurantId;
+  if (accountId) {
+    const primary = await db.restaurant.findFirst({
+      where: { accountId, isPrimary: true, siteStatus: { not: 'ARCHIVED' } },
+      select: { id: true },
+    });
+    billingAnchorId = primary?.id ?? input.restaurantId;
+  }
+
+  const siteBilling = (await db.restaurantBilling.findUnique({
+    where: { restaurantId: billingAnchorId },
+  })) as BillingStatusProjection | null;
+  const projection = accountBilling ?? siteBilling;
+  const priceId = projection?.subscriptionPriceId ?? null;
+  const plan =
+    (priceId ? getPublicPlanFromPriceId(priceId) : null) ??
+    getPublicPlanFromDatabasePlan(restaurant.plan);
+  const periodEnd = projection?.subscriptionCurrentPeriodEnd;
+
+  return {
+    plan,
+    subscriptionStatus: projection?.subscriptionStatus ?? null,
+    billingInterval: priceId ? getBillingIntervalFromPriceId(priceId) : null,
+    currentPeriodEnd: periodEnd instanceof Date ? periodEnd.toISOString() : null,
+    cancelAtPeriodEnd: projection?.subscriptionCancelAtPeriodEnd === true,
+    entitledSiteCount:
+      typeof projection?.entitledSiteCount === 'number' && projection.entitledSiteCount > 0
+        ? projection.entitledSiteCount
+        : 1,
+    accountScoped: Boolean(accountId && accountBilling),
+  };
+}
+
 function stripeObjectId(value: string | { id: string } | null | undefined): string | null {
   return typeof value === 'string' ? value : (value?.id ?? null);
 }

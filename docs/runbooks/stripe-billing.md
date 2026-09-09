@@ -8,7 +8,18 @@
 4. L'API crée (ou réutilise) le client Stripe au niveau du compte et renvoie l'URL Checkout hébergée. Une clé `Idempotency-Key` client est acceptée ; à défaut, Sokar en génère une au niveau du compte/formule/cadence sur une fenêtre de 24 heures. Les tentatives sont conservées sur le site principal.
 5. `checkout.session.completed` puis `customer.subscription.*` mettent à jour le plan, `RestaurantBilling` et la projection `RestaurantAccountBilling` (`siteCount`).
 6. Le propriétaire peut appeler `POST /billing/portal-session` pour ouvrir le portail Stripe hébergé et gérer la formule, les factures ou la résiliation.
-7. Les événements Stripe sont inscrits dans `StripeWebhookEvent` avant mutation ; un doublon traité est ignoré, un événement ancien est ignoré et un traitement concurrent provoque un retry Stripe.
+7. Le dashboard appelle `GET /billing/status` pour afficher l'état de l'abonnement, la cadence, la prochaine échéance et une éventuelle période de grâce ou résiliation programmée. La réponse ne contient aucun identifiant Stripe.
+8. Les événements Stripe sont inscrits dans `StripeWebhookEvent` avant mutation ; un doublon traité est ignoré, un événement ancien est ignoré et un traitement concurrent provoque un retry Stripe.
+
+Les événements `invoice.payment_failed`, `invoice.paid` et
+`invoice.payment_succeeded` synchronisent aussi le statut d'abonnement. Un
+échec passe le compte en `past_due` et conserve ses droits pendant la période
+de grâce configurée dans Stripe ; un paiement ultérieur repasse le compte en
+`active`. Une annulation demandée depuis le portail conserve
+`cancel_at_period_end` et le plan jusqu'à la fin de la période : seul
+`customer.subscription.deleted` rétrograde le compte vers Essential. Aucun
+remboursement automatique n'est déclenché pour une annulation en milieu de
+période.
 
 Les événements `invoice.payment_failed`, `invoice.paid` et
 `invoice.payment_succeeded` synchronisent aussi le statut d'abonnement. Un

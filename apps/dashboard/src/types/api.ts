@@ -11,6 +11,19 @@
 
 export type Plan = 'STARTER' | 'PRO' | 'PREMIUM';
 
+export type BillingPlan = 'essential' | 'pro' | 'multi-site';
+export type BillingInterval = 'monthly' | 'annual';
+
+export interface BillingStatus {
+  plan: BillingPlan | null;
+  subscriptionStatus: string | null;
+  billingInterval: BillingInterval | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  entitledSiteCount: number;
+  accountScoped: boolean;
+}
+
 export type OpeningHours = {
   open: string;
   close: string;
