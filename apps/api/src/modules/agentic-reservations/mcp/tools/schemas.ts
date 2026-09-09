@@ -6,14 +6,32 @@
  */
 
 import { z } from 'zod';
+import { MCP_DATE_TIME_PATTERN } from './date-time';
+
+const McpDateTimeSchema = z
+  .string()
+  .regex(
+    MCP_DATE_TIME_PATTERN,
+    'ISO 8601 date-time expected, with an offset (Z/+02:00) or a local time plus timezone',
+  )
+  .describe(
+    'ISO 8601 date-time. Use Z or an offset when possible; a local value such as 2026-09-10T20:00:00 is accepted with timezone.',
+  );
+
+const McpTimezoneSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .describe('Optional IANA timezone for local date-times, for example Europe/Paris.');
 
 // ─── search_restaurants ─────────────────────────────────────────
 
 export const SearchRestaurantsInputSchema = z.object({
   city: z.string().min(1).max(100),
   partySize: z.number().int().min(1).max(50),
-  slotStart: z.string().datetime({ offset: true }),
-  slotEnd: z.string().datetime({ offset: true }),
+  slotStart: McpDateTimeSchema,
+  slotEnd: McpDateTimeSchema,
+  timezone: McpTimezoneSchema.optional(),
   cuisineType: z.array(z.string()).max(10).optional(),
   maxResults: z.number().int().min(1).max(20).default(5),
   cursor: z.string().optional(),
@@ -32,8 +50,9 @@ export type GetRestaurantDetailsInput = z.infer<typeof GetRestaurantDetailsInput
 export const CheckAvailabilityInputSchema = z.object({
   restaurantId: z.string().uuid(),
   partySize: z.number().int().min(1).max(50),
-  slotStart: z.string().datetime({ offset: true }),
-  slotEnd: z.string().datetime({ offset: true }),
+  slotStart: McpDateTimeSchema,
+  slotEnd: McpDateTimeSchema,
+  timezone: McpTimezoneSchema.optional(),
 });
 export type CheckAvailabilityInput = z.infer<typeof CheckAvailabilityInputSchema>;
 
@@ -42,8 +61,9 @@ export type CheckAvailabilityInput = z.infer<typeof CheckAvailabilityInputSchema
 export const CreateReservationInputSchema = z.object({
   restaurantId: z.string().uuid(),
   partySize: z.number().int().min(1).max(50),
-  startsAt: z.string().datetime({ offset: true }),
-  endsAt: z.string().datetime({ offset: true }),
+  startsAt: McpDateTimeSchema,
+  endsAt: McpDateTimeSchema,
+  timezone: McpTimezoneSchema.optional(),
   customerName: z.string().min(1).max(100),
   customerPhone: z.string().regex(/^\+[1-9]\d{9,14}$/, 'E.164 phone required'),
   specialRequests: z.string().max(500).optional(),

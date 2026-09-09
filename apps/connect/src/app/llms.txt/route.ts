@@ -52,16 +52,17 @@ sans page web. L'authentification se fait par API key (contact@sokar.tech).
 
 Tools disponibles :
 
-1. search_restaurants(city, partySize, slotStart, slotEnd, cuisineType?)
+1. search_restaurants(city, partySize, slotStart, slotEnd, timezone?, cuisineType?)
    → Recherche des restaurants disponibles par ville, taille de groupe et créneau.
+   → slotStart/slotEnd acceptent un ISO 8601 avec fuseau (Z ou +02:00) ou une heure locale ISO (2026-09-10T20:00:00) avec timezone (IANA, par ex. Europe/Paris). Sans fuseau, Europe/Paris est utilisé.
 
 2. get_restaurant_details(restaurantId)
    → Récupère les détails d'un restaurant (nom, adresse, cuisine, horaires).
 
-3. check_availability(restaurantId, partySize, slotStart, slotEnd)
-   → Vérifie les créneaux disponibles pour un restaurant.
+3. check_availability(restaurantId, partySize, slotStart, slotEnd, timezone?)
+   → Vérifie les créneaux disponibles pour un restaurant. Sans fuseau, celui du restaurant est utilisé.
 
-4. create_reservation(restaurantId, partySize, startsAt, endsAt, customerName, customerPhone, idempotencyKey, consents)
+4. create_reservation(restaurantId, partySize, startsAt, endsAt, timezone?, customerName, customerPhone, idempotencyKey, consents)
    → Crée une réservation. Le consentement de l'utilisateur est obligatoire.
    → Le téléphone doit être au format E.164 (+33...).
 

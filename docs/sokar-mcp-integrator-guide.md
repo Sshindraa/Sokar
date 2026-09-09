@@ -192,6 +192,9 @@ Erreur métier:
 }
 ```
 
+Les dates invalides ou les plages inversées renvoient le code métier
+`INVALID_DATETIME` avec un message indiquant le format attendu.
+
 Erreurs JSON-RPC transport:
 
 - `-32700`: body vide ou parse error
@@ -220,6 +223,7 @@ Arguments:
   "partySize": 2,
   "slotStart": "2026-06-23T17:00:00.000Z",
   "slotEnd": "2026-06-23T19:00:00.000Z",
+  "timezone": "Europe/Paris",
   "cuisineType": ["Française"],
   "maxResults": 5
 }
@@ -229,7 +233,8 @@ Contraintes:
 
 - `city`: string, 1 à 100 caractères
 - `partySize`: entier, 1 à 50
-- `slotStart`, `slotEnd`: date-time ISO avec offset
+- `slotStart`, `slotEnd`: date-time ISO avec `Z`/offset, ou date/heure locale ISO sans offset
+- `timezone`: optionnel pour les valeurs locales (fuseau IANA, par ex. `Europe/Paris`) ; Europe/Paris est utilisé par défaut
 - `cuisineType`: optionnel, maximum 10 valeurs
 - `maxResults`: optionnel, entier 1 à 20, défaut 5
 
@@ -293,7 +298,8 @@ Arguments:
   "restaurantId": "ba5be41b-eb72-4e05-bb9c-b576e39e33ba",
   "partySize": 2,
   "slotStart": "2026-06-23T17:30:00.000Z",
-  "slotEnd": "2026-06-23T19:30:00.000Z"
+  "slotEnd": "2026-06-23T19:30:00.000Z",
+  "timezone": "Europe/Paris"
 }
 ```
 
@@ -318,6 +324,7 @@ Arguments:
   "partySize": 2,
   "startsAt": "2026-06-23T17:30:00.000Z",
   "endsAt": "2026-06-23T19:30:00.000Z",
+  "timezone": "Europe/Paris",
   "customerName": "Claude Test",
   "customerPhone": "+33612345678",
   "specialRequests": "Table en terrasse si possible",
@@ -339,6 +346,8 @@ Contraintes:
 - `idempotencyKey`: obligatoire, stable pour la tentative de création
 - `specialRequests`: optionnel, maximum 500 caractères, filtré anti-injection
 - `holdToken`: optionnel en phase pilote
+- `startsAt`, `endsAt`: date-time ISO avec `Z`/offset, ou date/heure locale ISO sans offset
+- `timezone`: optionnel pour les valeurs locales ; sans offset ni timezone, le fuseau du restaurant est utilisé
 
 Réponse:
 

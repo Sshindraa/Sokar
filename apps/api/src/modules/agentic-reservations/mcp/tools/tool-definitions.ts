@@ -36,7 +36,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'search_restaurants',
     title: 'Search Restaurants',
     description:
-      'Search restaurants available for a given party size, time, and city. Returns matching restaurants with basic info.',
+      'Search restaurants available for a given party size, time, and city. slotStart and slotEnd accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, Europe/Paris is used. Returns matching restaurants with basic info.',
     schema: SearchRestaurantsInputSchema,
     annotations: { readOnlyHint: true },
   },
@@ -52,7 +52,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'check_availability',
     title: 'Check Availability',
     description:
-      'Check if a specific restaurant has availability for a party size and time slot. Returns available time slots.',
+      'Check if a specific restaurant has availability for a party size and time slot. slotStart and slotEnd accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, the restaurant timezone is used. Returns available time slots.',
     schema: CheckAvailabilityInputSchema,
     annotations: { readOnlyHint: true },
   },
@@ -60,7 +60,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'create_reservation',
     title: 'Create Reservation',
     description:
-      'Create a reservation at a restaurant. Requires explicit user consent for data processing. Returns reservation confirmation with ID.',
+      'Create a reservation at a restaurant. startsAt and endsAt accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, the restaurant timezone is used. Requires explicit user consent for data processing. Returns reservation confirmation with ID.',
     schema: CreateReservationInputSchema,
     annotations: { destructiveHint: true },
   },
