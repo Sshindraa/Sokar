@@ -1,5 +1,7 @@
 # Contexte Sokar
 
+2026-09-09 — [production, mcp, oauth, chatgpt, e2e] **Parcours ChatGPT production validé** — Après le déploiement `main@552757a6`, le connecteur ChatGPT a accepté le callback actuel `/connector/oauth/<id>`, a affiché le consentement Sokar et s'est reconnecté. Une recherche réelle pour 2 personnes le jeudi 10 septembre 2026 à 20 h a vérifié la disponibilité de Chez Sokar (créneau 20 h–22 h) et confirmé « Aucune réservation effectuée ». Aucun appel de réservation n'a été exécuté.
+
 2026-09-09 — [mcp, oauth, chatgpt, compatibility] **Callback ChatGPT actuel ajouté** — Le test réel ChatGPT a révélé que le connecteur utilise `https://chatgpt.com/connector/oauth/<id>` (et non seulement l'ancien `/backend-api/mcp/<id>/callback`). Le serveur refusait donc le `client_id` ChatGPT avant consentement. Le pattern strict `/connector/oauth/[a-zA-Z0-9_-]+` est maintenant couvert par un test d'intégration ; CI et déploiement restent à passer.
 
 2026-09-09 — [staging, mcp, oauth, reservations, e2e] **Cycle MCP staging complet validé** — Depuis un consentement OAuth staging affiché dans le navigateur, un token avec `mcp:read mcp:reserve mcp:cancel` a permis de rechercher `Chez Sokar`, vérifier le créneau local `2026-09-10T20:00:00`–`21:30:00` en `Europe/Paris`, créer une réservation fictive (`CONFIRMED`), rejouer exactement la même requête (`reused=true`, même `reservationId`), lire son statut, puis l'annuler (`CANCELLED`). Test effectué uniquement sur staging avec notifications transactionnelles désactivées ; aucune écriture production.
