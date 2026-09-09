@@ -1,5 +1,7 @@
 # Contexte Sokar
 
+2026-09-09 — [production, mcp, claude, e2e] **Parcours Claude production validé** — Le connecteur Sokar déjà configuré dans Claude a demandé puis obtenu les autorisations ponctuelles `Search Restaurants` et `Check Availability`. Une recherche réelle pour 2 personnes à Lyon le jeudi 10 septembre 2026 à 20 h a retourné Chez Sokar disponible ; Claude a confirmé qu'aucune réservation n'avait été créée. Aucun appel `create_reservation` n'a été exécuté.
+
 2026-09-09 — [production, mcp, oauth, chatgpt, e2e] **Parcours ChatGPT production validé** — Après le déploiement `main@552757a6`, le connecteur ChatGPT a accepté le callback actuel `/connector/oauth/<id>`, a affiché le consentement Sokar et s'est reconnecté. Une recherche réelle pour 2 personnes le jeudi 10 septembre 2026 à 20 h a vérifié la disponibilité de Chez Sokar (créneau 20 h–22 h) et confirmé « Aucune réservation effectuée ». Aucun appel de réservation n'a été exécuté.
 
 2026-09-09 — [mcp, oauth, chatgpt, compatibility] **Callback ChatGPT actuel ajouté** — Le test réel ChatGPT a révélé que le connecteur utilise `https://chatgpt.com/connector/oauth/<id>` (et non seulement l'ancien `/backend-api/mcp/<id>/callback`). Le serveur refusait donc le `client_id` ChatGPT avant consentement. Le pattern strict `/connector/oauth/[a-zA-Z0-9_-]+` est maintenant couvert par un test d'intégration ; CI et déploiement restent à passer.
