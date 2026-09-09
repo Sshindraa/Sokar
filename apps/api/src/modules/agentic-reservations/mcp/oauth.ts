@@ -161,6 +161,11 @@ const KNOWN_REDIRECT_PATTERNS: { pattern: RegExp; name: string }[] = [
     pattern: /^https:\/\/chatgpt\.com\/backend-api\/mcp\/[a-zA-Z0-9_-]+\/callback$/,
     name: 'ChatGPT',
   },
+  {
+    // ChatGPT's current custom-connector flow uses this callback shape.
+    pattern: /^https:\/\/chatgpt\.com\/connector\/oauth\/[a-zA-Z0-9_-]+$/,
+    name: 'ChatGPT',
+  },
   { pattern: /^https:\/\/chat\.mistral\.ai\/[a-zA-Z0-9_-]+\/callback$/, name: 'Mistral' },
   { pattern: /^http:\/\/localhost:\d+\/callback$/, name: 'Claude Code' },
   { pattern: /^http:\/\/127\.0\.0\.1:\d+\/callback$/, name: 'Claude Code' },

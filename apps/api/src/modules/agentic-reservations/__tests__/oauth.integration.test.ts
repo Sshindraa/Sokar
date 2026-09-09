@@ -22,6 +22,7 @@ import { redisCache } from '../../../shared/redis/client';
 import { db } from '../../../shared/db/client';
 
 const REDIRECT_URI = 'https://claude.ai/api/mcp/auth_callback';
+const CHATGPT_REDIRECT_URI = 'https://chatgpt.com/connector/oauth/koTiD-YLRKbF';
 const SCOPES = 'mcp:read mcp:reserve mcp:cancel';
 
 describe('OAuth MCP integration flow', () => {
@@ -270,6 +271,23 @@ describe('OAuth MCP integration flow', () => {
     expect(res.statusCode).toBe(400);
     expect(res.body).toContain('Paramètre state manquant');
     expect(res.body).toContain('Relancez la connexion depuis Claude');
+  });
+
+  it('GET /oauth/authorize accepts ChatGPT connector callback without DCR', async () => {
+    vi.mocked(db.restaurantExposureSettings.findFirst).mockResolvedValue({
+      restaurantId: 'test-resto-1',
+      mcpEnabled: true,
+    } as unknown as Awaited<ReturnType<typeof db.restaurantExposureSettings.findFirst>>);
+
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/oauth/authorize?response_type=code&client_id=chatgpt-client&redirect_uri=${encodeURIComponent(CHATGPT_REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}&state=chatgpt-state`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('Autoriser');
+    expect(res.body).toContain('ChatGPT');
   });
 
   // ── 10. Public consent in production (no Clerk required) ──
