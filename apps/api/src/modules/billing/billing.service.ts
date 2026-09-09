@@ -409,7 +409,10 @@ type SupportedBillingEvent =
   | 'checkout.session.completed'
   | 'customer.subscription.created'
   | 'customer.subscription.updated'
-  | 'customer.subscription.deleted';
+  | 'customer.subscription.deleted'
+  | 'invoice.paid'
+  | 'invoice.payment_failed'
+  | 'invoice.payment_succeeded';
 
 type StripeEventClaim = 'claimed' | 'processed' | 'in-flight';
 
@@ -561,6 +564,16 @@ function metadataSiteCount(metadata: Record<string, string>): number {
     parsed <= MAX_MULTI_SITE_COUNT
     ? parsed
     : 1;
+}
+
+function metadataSiteCountOrUndefined(metadata: Record<string, string>): number | undefined {
+  if (!metadata.siteCount) return undefined;
+  const parsed = Number(metadata.siteCount);
+  return Number.isInteger(parsed) &&
+    parsed >= MIN_MULTI_SITE_COUNT &&
+    parsed <= MAX_MULTI_SITE_COUNT
+    ? parsed
+    : undefined;
 }
 
 /**
@@ -736,6 +749,148 @@ async function handleSubscriptionEvent(
   return true;
 }
 
+type InvoiceObject = Stripe.Invoice & {
+  metadata?: Record<string, string> | null;
+};
+
+type InvoiceBillingRecord = {
+  restaurantId: string;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  subscriptionStatus?: string | null;
+  subscriptionPriceId?: string | null;
+  subscriptionCurrentPeriodEnd?: Date | null;
+  subscriptionCancelAtPeriodEnd?: boolean;
+};
+
+function invoicePriceId(invoice: InvoiceObject): string | undefined {
+  const line = invoice.lines?.data?.[0] as { price?: string | { id: string } | null } | undefined;
+  return stripeObjectId(line?.price) ?? undefined;
+}
+
+function invoicePeriodEnd(invoice: InvoiceObject): Date | undefined {
+  return Number.isInteger(invoice.period_end) && invoice.period_end > 0
+    ? new Date(invoice.period_end * 1000)
+    : undefined;
+}
+
+async function findBillingForInvoice(
+  invoice: InvoiceObject,
+): Promise<{ billing: InvoiceBillingRecord | null; restaurantId: string } | null> {
+  const subscriptionId = stripeObjectId(invoice.subscription);
+  const customerId = stripeObjectId(invoice.customer);
+  let billing = subscriptionId
+    ? ((await db.restaurantBilling.findUnique({
+        where: { stripeSubscriptionId: subscriptionId },
+      })) as InvoiceBillingRecord | null)
+    : null;
+
+  if (!billing && customerId) {
+    billing = (await db.restaurantBilling.findUnique({
+      where: { stripeCustomerId: customerId },
+    })) as InvoiceBillingRecord | null;
+  }
+
+  const metadata = (invoice.metadata ?? {}) as Record<string, string>;
+  const restaurantId = billing?.restaurantId ?? metadata.restaurantId;
+  if (!restaurantId) return null;
+  return { billing, restaurantId };
+}
+
+async function findAccountBillingForRestaurant(restaurantId: string) {
+  const restaurant = await db.restaurant.findUnique({
+    where: { id: restaurantId },
+    select: { accountId: true },
+  });
+  if (!restaurant?.accountId) return null;
+  return db.restaurantAccountBilling.findUnique({ where: { accountId: restaurant.accountId } });
+}
+
+/**
+ * Stripe's Billing Portal owns proration and cancellation scheduling. These
+ * invoice events keep Sokar's entitlement projection in sync with the
+ * provider: a failed attempt enters the configured Stripe grace window as
+ * `past_due`, a later `invoice.paid` reactivates it, and only
+ * `customer.subscription.deleted` removes the plan.
+ */
+async function handleInvoiceEvent(
+  event: Stripe.Event,
+  eventType: 'invoice.paid' | 'invoice.payment_failed' | 'invoice.payment_succeeded',
+): Promise<boolean> {
+  const invoice = event.data.object as unknown as InvoiceObject;
+  const resolved = await findBillingForInvoice(invoice);
+  if (!resolved) return false;
+
+  const { billing, restaurantId } = resolved;
+  if (await isStaleStripeEvent(restaurantId, event)) return true;
+
+  const metadata = (invoice.metadata ?? {}) as Record<string, string>;
+  const customerId = stripeObjectId(invoice.customer) ?? billing?.stripeCustomerId ?? null;
+  const subscriptionId =
+    stripeObjectId(invoice.subscription) ?? billing?.stripeSubscriptionId ?? null;
+  const priceId = invoicePriceId(invoice) ?? billing?.subscriptionPriceId ?? null;
+  const planFromMetadata =
+    metadata.plan && isPublicBillingPlan(metadata.plan) ? metadata.plan : null;
+  const plan = planFromMetadata ?? (priceId ? getPublicPlanFromPriceId(priceId) : null);
+  const accountBilling = await findAccountBillingForRestaurant(restaurantId);
+  const siteCount =
+    metadataSiteCountOrUndefined(metadata) ?? accountBilling?.entitledSiteCount ?? 1;
+  const paid = eventType !== 'invoice.payment_failed';
+  const status = paid ? 'active' : 'past_due';
+  const periodEnd = invoicePeriodEnd(invoice) ?? billing?.subscriptionCurrentPeriodEnd ?? null;
+  const cancelAtPeriodEnd = billing?.subscriptionCancelAtPeriodEnd ?? false;
+
+  // A successful first or renewal invoice can carry the plan snapshot. A
+  // failed attempt must leave the existing entitlement untouched during the
+  // provider's grace window.
+  if (paid && plan) {
+    await db.restaurant.update({
+      where: { id: restaurantId },
+      data: { plan: PLAN_TO_DATABASE[plan] },
+    });
+  }
+
+  await projectAccountBilling(restaurantId, {
+    stripeCustomerId: customerId,
+    stripeSubscriptionId: subscriptionId,
+    subscriptionStatus: status,
+    subscriptionPriceId: priceId,
+    plan: paid && plan ? PLAN_TO_DATABASE[plan] : undefined,
+    entitledSiteCount: siteCount,
+    subscriptionCurrentPeriodEnd: periodEnd,
+    subscriptionCancelAtPeriodEnd: cancelAtPeriodEnd,
+    lastStripeEventCreated: eventCreated(event),
+    lastStripeEventId: eventId(event),
+  });
+
+  await db.restaurantBilling.upsert({
+    where: { restaurantId },
+    create: {
+      restaurantId,
+      stripeCustomerId: customerId,
+      stripeSubscriptionId: subscriptionId,
+      subscriptionStatus: status,
+      subscriptionPriceId: priceId,
+      subscriptionCurrentPeriodEnd: periodEnd,
+      subscriptionCancelAtPeriodEnd: cancelAtPeriodEnd,
+      ...eventCheckpoint(event),
+      ...clearCheckoutAttempt(),
+    },
+    update: {
+      stripeCustomerId: customerId ?? undefined,
+      stripeSubscriptionId: subscriptionId ?? undefined,
+      subscriptionStatus: status,
+      subscriptionPriceId: priceId ?? undefined,
+      subscriptionCurrentPeriodEnd: periodEnd ?? undefined,
+      subscriptionCancelAtPeriodEnd: cancelAtPeriodEnd,
+      ...eventCheckpoint(event),
+      ...clearCheckoutAttempt(),
+    },
+  });
+
+  return true;
+}
+
 /**
  * Applies only subscription events. Gift-card events remain handled by the
  * existing payment service. Returning false lets the webhook route log an
@@ -747,6 +902,9 @@ export async function handleBillingWebhook(event: Stripe.Event): Promise<boolean
     'customer.subscription.created',
     'customer.subscription.updated',
     'customer.subscription.deleted',
+    'invoice.paid',
+    'invoice.payment_failed',
+    'invoice.payment_succeeded',
   ]);
   if (!supported.has(event.type as SupportedBillingEvent)) return false;
 
@@ -758,11 +916,21 @@ export async function handleBillingWebhook(event: Stripe.Event): Promise<boolean
     const handled =
       event.type === 'checkout.session.completed'
         ? await handleCheckoutCompleted(event)
-        : await handleSubscriptionEvent(
-            event,
-            event.type as Exclude<SupportedBillingEvent, 'checkout.session.completed'>,
-            event.data.object as unknown as SubscriptionObject,
-          );
+        : event.type === 'invoice.paid' ||
+            event.type === 'invoice.payment_failed' ||
+            event.type === 'invoice.payment_succeeded'
+          ? await handleInvoiceEvent(event, event.type)
+          : await handleSubscriptionEvent(
+              event,
+              event.type as Exclude<
+                SupportedBillingEvent,
+                | 'checkout.session.completed'
+                | 'invoice.paid'
+                | 'invoice.payment_failed'
+                | 'invoice.payment_succeeded'
+              >,
+              event.data.object as unknown as SubscriptionObject,
+            );
     await markStripeEventProcessed(event);
     return handled;
   } catch (error) {

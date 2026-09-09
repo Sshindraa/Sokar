@@ -10,6 +10,16 @@
 6. Le propriétaire peut appeler `POST /billing/portal-session` pour ouvrir le portail Stripe hébergé et gérer la formule, les factures ou la résiliation.
 7. Les événements Stripe sont inscrits dans `StripeWebhookEvent` avant mutation ; un doublon traité est ignoré, un événement ancien est ignoré et un traitement concurrent provoque un retry Stripe.
 
+Les événements `invoice.payment_failed`, `invoice.paid` et
+`invoice.payment_succeeded` synchronisent aussi le statut d'abonnement. Un
+échec passe le compte en `past_due` et conserve ses droits pendant la période
+de grâce configurée dans Stripe ; un paiement ultérieur repasse le compte en
+`active`. Une annulation demandée depuis le portail conserve
+`cancel_at_period_end` et le plan jusqu'à la fin de la période : seul
+`customer.subscription.deleted` rétrograde le compte vers Essential. Aucun
+remboursement automatique n'est déclenché pour une annulation en milieu de
+période.
+
 La carte bancaire n'est jamais collectée par le dashboard Sokar. Les URLs de retour sont dérivées de `DASHBOARD_URL`.
 
 ## Configuration
@@ -39,6 +49,9 @@ Le secret `STRIPE_WEBHOOK_SECRET` existant doit rester configuré sur le même e
 - `customer.subscription.created`
 - `customer.subscription.updated`
 - `customer.subscription.deleted`
+- `invoice.paid`
+- `invoice.payment_failed`
+- `invoice.payment_succeeded` (compatibilité avec les anciennes versions de l'API Stripe)
 
 La migration additive `20260907110000_harden_stripe_billing` ajoute les tentatives Checkout, les checkpoints de séquencement et le ledger des événements. Elle doit être appliquée avant de publier l'API qui utilise ces colonnes :
 
@@ -72,4 +85,4 @@ Une lecture Stripe en mode read-only du 7 septembre 2026 confirme que les quatre
 
 ## Test sans paiement
 
-En local, utiliser des clés `sk_test_...` et les huit prix de test. Les tests automatisés couvrent la validation du parcours, la création de Checkout et les quatre transitions webhook. Ne jamais mettre une clé live ou un prix live dans le dépôt.
+En local, utiliser des clés `sk_test_...` et les huit prix de test. Les tests automatisés couvrent la validation du parcours, la création de Checkout, les transitions d'abonnement et la reprise après échec de paiement. Ne jamais mettre une clé live ou un prix live dans le dépôt.
