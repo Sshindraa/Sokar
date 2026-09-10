@@ -8,6 +8,7 @@ import { detectOutcome, hadReservationIntent } from './outcome';
 import { CallSessionManager } from './stream/manager';
 import { acknowledgeCallEnding } from './stream/call-ending';
 import { getVoiceLlmProvider } from './llm-provider';
+import { CARTESIA_MODEL } from '@sokar/config';
 
 import {
   buildSmsJobId,
@@ -223,6 +224,21 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           telnyxWs: null as unknown as import('ws').WebSocket, // Sera attaché dans le WebSocket start event
           callLegId: payload.call_leg_id,
           codec: 'PCMA',
+          personality: ctx.personality
+            ? {
+                fillerStyle: (['CASUAL', 'FORMAL', 'WARM'] as const).includes(
+                  ctx.personality.fillerStyle as 'CASUAL' | 'FORMAL' | 'WARM',
+                )
+                  ? (ctx.personality.fillerStyle as 'CASUAL' | 'FORMAL' | 'WARM')
+                  : 'CASUAL',
+                systemPromptExtra: ctx.personality.systemPromptExtra,
+                speakingRate: Number(ctx.personality.speakingRate ?? 1),
+                volume: Number(ctx.personality.volume ?? 1),
+                emotion: ctx.personality.emotion,
+                voiceIdCa: ctx.personality.voiceIdCa,
+                pronunciationDictId: ctx.personality.pronunciationDictId,
+              }
+            : null,
         });
         app.log.info(
           { callId: payload.call_control_id },
@@ -459,7 +475,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         outcome,
         sttProvider: stt_provider ?? 'elevenlabs-scribe-v2-realtime',
         llmProvider: llm_provider ?? getVoiceLlmProvider(),
-        ttsProvider: tts_provider ?? 'cartesia-sonic3.5',
+        ttsProvider: tts_provider ?? `cartesia-${CARTESIA_MODEL}`,
         carrier: 'telnyx',
       },
       create: {
@@ -474,7 +490,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         outcome,
         sttProvider: stt_provider ?? 'elevenlabs-scribe-v2-realtime',
         llmProvider: llm_provider ?? getVoiceLlmProvider(),
-        ttsProvider: tts_provider ?? 'cartesia-sonic3.5',
+        ttsProvider: tts_provider ?? `cartesia-${CARTESIA_MODEL}`,
         carrier: 'telnyx',
       },
     });

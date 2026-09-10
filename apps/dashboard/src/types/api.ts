@@ -56,9 +56,12 @@ export interface AgentPersonality {
   restaurantId: string;
   profileType: ProfileType;
   speakingRate: number;
+  volume?: number;
   fillerStyle: FillerStyle;
   systemPromptExtra: string | null;
   voiceIdCa: string | null;
+  pronunciationDictId?: string | null;
+  emotion?: string | null;
 }
 
 // ─── Reservation ────────────────────────────────────────────────────────

@@ -35,10 +35,12 @@ POST /voice/telnyx  ← call.initiated webhook
 | ------------------- | -------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
 | **STT**             | Telnyx ai_config / Scribe Media Stream | `scribe_v2_realtime` en Media Stream                         | La route Media Stream envoie PCMU en `ulaw_8000` et convertit PCMA en `pcm_8000`        |
 | **LLM**             | OpenRouter                             | `deepseek/deepseek-v4-flash` (default) ou PRO si VIP         | System prompt + conversation turns                                                      |
-| **TTS**             | Cartesia                               | `sonic-3.5` + Katie (`f786b574-daa5-4673-aa0c-cbe3e8534c02`) | Chunk on `.`, `!`, `?`, min_chunk_length 4. Voice ID depuis `ctx.personality.voiceIdCa` |
+| **TTS**             | Cartesia                               | `sonic-3.6` + Katie (`f786b574-daa5-4673-aa0c-cbe3e8534c02`) | Chunk on `.`, `!`, `?`, min_chunk_length 4. Voice ID depuis `ctx.personality.voiceIdCa` |
 | **First utterance** | —                                      | —                                                            | `"Bonjour, ${ctx.name}..."`                                                             |
 
-> ⚠️ **Limitation sonic-3.5** : les contrôles de `speed` et `volume` sont désactivés temporairement sur sonic-3.5 (depuis avril 2026, cf doc Cartesia). Le champ `speakingRate` dans `AgentPersonality` n'a pas d'effet tant que cette limitation est en place. Pour utiliser speed/volume, il faudrait revenir à `sonic-3` (snapshotté) ou attendre la réactivation par Cartesia.
+> **Version TTS** : le pipeline suit l'alias stable continu `sonic-3.6` afin de recevoir les snapshots stables les plus récents. Si un comportement strictement reproductible devient nécessaire, revenir à un snapshot daté et mettre à jour les clés de cache et les tests dans la même release.
+
+Le code de langue détecté par Scribe est transmis au LLM ; Cartesia reçoit la locale BCP-47 correspondante (`fr-FR`, `en-US`, etc.), `normalization=auto`, les contrôles de génération de la personnalité et, si configuré, `pronunciation_dict_id`. Le cache TTS est isolé par modèle, voix, locale, codec et réglages ; le fallback Telnyx utilise `fr-FR` ou `en-US`.
 
 ---
 
@@ -49,7 +51,7 @@ POST /voice/telnyx  ← call.initiated webhook
       │
       ▼
 ┌─────────────────┐
-│   ElevenLabs Scribe │  ← scribe_v2_realtime, français, VAD
+│   ElevenLabs Scribe │  ← scribe_v2_realtime, détection multilingue ciblée, VAD
 │   (transcription)│
 └────────┬────────┘
          │ utterances textuelles
@@ -61,7 +63,7 @@ POST /voice/telnyx  ← call.initiated webhook
          │ réponse textuelle
          ▼
 ┌─────────────────┐
-│  Cartesia Sonic 3.5 TTS  │  ← synthèse vocale
+│  Cartesia Sonic 3.6 TTS  │  ← synthèse vocale
 │   (audio stream) │
 └────────┬────────┘
          │ audio chunks

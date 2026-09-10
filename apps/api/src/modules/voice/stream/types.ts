@@ -1,4 +1,5 @@
 import type { WebSocket } from 'ws';
+import type { VoiceLanguageCode } from './voice-language';
 
 /** États possibles de la conversation */
 export type CallState = 'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING' | 'CLOSING';
@@ -114,6 +115,8 @@ export type SttEvent =
       type: 'UtteranceEnd';
       transcript: string;
       words?: SttWord[];
+      /** Code ISO détecté par Scribe sur le segment final, si disponible. */
+      languageCode?: string;
     }
   | { type: 'SpeechResumed' }
   | {
@@ -194,14 +197,28 @@ export interface CallSession {
   onSttEvent: ((event: SttEvent) => void) | null;
   /** Modèle STT actif. */
   sttModel?: string;
+  /** Dernière langue détectée par Scribe sur un segment final. */
+  sttLanguageCode?: string;
+  /** Langue de dialogue active pour le LLM et le TTS. */
+  voiceLanguageCode?: VoiceLanguageCode;
+  /** Indique si le premier paquet audio de la socket Scribe a déjà été envoyé. */
+  sttFirstAudioChunkSent?: boolean;
   /** Profil EOT courant ; conservé même quand le WebSocket est reconnecté. */
   sttTurnConfig?: SttTurnConfigState;
+  /** Commit simple en attente de son éventuel événement horodaté associé. */
+  sttPendingCommit?: {
+    transcript: string;
+    words?: SttWord[];
+    languageCode?: string;
+    timer: ReturnType<typeof setTimeout>;
+  } | null;
   /** Timer de grâce pour une fin de tour reçue pendant une épellation. */
   sttEndOfTurnTimer?: ReturnType<typeof setTimeout> | null;
   /** Fin de tour mise en attente pendant cette courte grâce. */
   pendingSttEndOfTurn?: {
     transcript: string;
     words?: SttWord[];
+    languageCode?: string;
   } | null;
 
   // Gestion audio
@@ -261,6 +278,11 @@ export interface CallSession {
   personality: {
     fillerStyle: 'CASUAL' | 'FORMAL' | 'WARM';
     systemPromptExtra?: string | null;
+    speakingRate?: number | null;
+    voiceIdCa?: string | null;
+    pronunciationDictId?: string | null;
+    volume?: number | null;
+    emotion?: string | null;
   } | null;
   conversation: ConversationState;
 }

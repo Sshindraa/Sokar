@@ -40,7 +40,7 @@ Les quatre qualités à optimiser ensemble sont :
 
 ## 2. Diagnostic factuel des appels observés
 
-Pipeline actuel : Telnyx Media Stream → ElevenLabs Scribe Realtime → OpenRouter/Mistral → Cartesia Sonic 3.5 → Telnyx.
+Pipeline actuel : Telnyx Media Stream → ElevenLabs Scribe Realtime → OpenRouter/Mistral → Cartesia Sonic 3.6 (`sonic-3.6`) → Telnyx.
 
 ### Points déjà corrigés en production
 
@@ -296,7 +296,19 @@ Rollback immédiat si l’un des événements suivants apparaît :
 - erreurs fournisseur ou fallback > 2 % ;
 - coût moyen par appel dépassant le budget défini.
 
-## 10. Ordre d’exécution recommandé pour l’agent suivant
+## 10. Passe Cartesia/Scribe livrée localement le 10 septembre 2026
+
+- l'alias continu `sonic-3.6` est utilisé sur tous les chemins TTS ;
+- Cartesia reçoit désormais `locale` (`fr-FR`, `en-US`, région Scribe si disponible), `normalization=auto` et `generation_config` pour vitesse, volume et émotion explicitement configurée ;
+- la voix et le dictionnaire de prononciation peuvent être définis par restaurant (`AgentPersonality`) avec un fallback global `CARTESIA_PRONUNCIATION_DICT_ID` ;
+- les caches incluent modèle, voix, locale, codec, réglages et dictionnaire ;
+- Context V2 reste un canary à double verrou (`VOICE_TTS_CONTEXT_V2_ENABLED` puis ciblage ConfigCat) ;
+- les 44 langues Sonic 3.6 sont disponibles via `ELEVENLABS_STT_ALL_LANGUAGES=true`, sans modifier le ciblage fiable par défaut ; les langues autres que français/anglais repassent au LLM pour les réponses conversationnelles au lieu d'utiliser une phrase déterministe française ;
+- `tools/diagnostics/benchmark-cartesia-voices.mjs` génère un corpus FR/EN pour comparer les voix dès qu'une clé Cartesia valide est disponible.
+
+Validation locale : 86 tests voix ciblés, typecheck API, build API, lint API (0 erreur, 8 avertissements préexistants), validation Prisma et formatage verts. La suite API complète conserve 1 849 tests passants ; 11 tests WebSocket restent limités par `listen ::1` dans le sandbox.
+
+## 11. Ordre d’exécution recommandé pour l’agent suivant
 
 1. Partir de `origin/main` à `9ee05f7` ou plus récent dans un worktree propre.
 2. Lire ce plan, `docs/obsidian/Context.md`, les trois dernières entrées du Journal et `docs/architecture/voice.md`.
@@ -309,7 +321,7 @@ Rollback immédiat si l’un des événements suivants apparaît :
 9. Présenter au propriétaire : résultats, extraits audio, coût, risques et plan de rollback.
 10. Ne pousser ni déployer en production sans confirmation explicite.
 
-## 11. Prototype local existant
+## 12. Prototype local existant
 
 Le worktree `/private/tmp/sokar-liveness-deploy` contient actuellement une expérimentation non committée incluant :
 

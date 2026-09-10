@@ -24,7 +24,7 @@ const CA_KEY = process.env.CARTESIA_API_KEY || '';
 const OR_KEY = process.env.OPENROUTER_API_KEY || '';
 const CA_VOICE = process.env.CARTESIA_VOICE_ID || 'f786b574-daa5-4673-aa0c-cbe3e8534c02';
 const EL_MODEL = process.env.ELEVENLABS_STT_MODEL || 'scribe_v2_realtime';
-const CA_MODEL = process.env.CARTESIA_MODEL || 'sonic-3.5';
+const CA_MODEL = process.env.CARTESIA_MODEL || 'sonic-3.6';
 const OR_MODEL = process.env.OPENROUTER_MODEL || 'mistralai/ministral-3b-2512';
 
 function keyOk(k) {
@@ -91,6 +91,8 @@ async function testCartesia() {
         model_id: CA_MODEL,
         transcript: 'Test de synthèse vocale Cartesia.',
         voice: { mode: 'id', id: CA_VOICE },
+        locale: 'fr-FR',
+        normalization: 'auto',
         output_format: { container: 'raw', encoding: 'pcm_mulaw', sample_rate: 8000 },
       }),
     });
@@ -170,7 +172,7 @@ async function testOpenrouter() {
 async function main() {
   console.log('═'.repeat(60));
   console.log('  🔍 Diagnostic Pipeline Vocal');
-  console.log('  TTS : Cartesia sonic-3.5 | STT : ElevenLabs Scribe | LLM : OpenRouter');
+  console.log('  TTS : Cartesia sonic-3.6 | STT : ElevenLabs Scribe | LLM : OpenRouter');
   console.log('═'.repeat(60));
   console.log('');
   console.log('  État des clés API dans .env.local :');

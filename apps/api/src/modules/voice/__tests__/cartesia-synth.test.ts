@@ -81,7 +81,7 @@ describe('cartesia-synth', () => {
     const { synthesizeText } = await import('../cartesia-synth');
     await synthesizeText({ text: 'Bonjour' });
 
-    const callBody: { voice: { id: string }; speed?: number } = JSON.parse(
+    const callBody: { voice: { id: string }; generation_config?: { speed?: number } } = JSON.parse(
       (vi.mocked(global.fetch).mock.calls[0][1] as RequestInit).body as string,
     );
     expect(callBody.voice.id).toBe('f786b574-daa5-4673-aa0c-cbe3e8534c02');
@@ -100,30 +100,30 @@ describe('cartesia-synth', () => {
     expect(callBody.voice.id).toBe('custom-voice');
   });
 
-  it('inclut speed dans le body quand != 1.0', async () => {
+  it('inclut speed dans generation_config quand != 1.0', async () => {
     process.env.CARTESIA_API_KEY = 'test';
     mockFetchOk();
 
     const { synthesizeText } = await import('../cartesia-synth');
     await synthesizeText({ text: 'Bonjour', speed: 1.3 });
 
-    const callBody: { voice: { id: string }; speed?: number } = JSON.parse(
+    const callBody: { voice: { id: string }; generation_config?: { speed?: number } } = JSON.parse(
       (vi.mocked(global.fetch).mock.calls[0][1] as RequestInit).body as string,
     );
-    expect(callBody.speed).toBe(1.3);
+    expect(callBody.generation_config?.speed).toBe(1.3);
   });
 
-  it('omet speed du body quand = 1.0 (default Cartesia)', async () => {
+  it('omet generation_config quand speed = 1.0 (default Cartesia)', async () => {
     process.env.CARTESIA_API_KEY = 'test';
     mockFetchOk();
 
     const { synthesizeText } = await import('../cartesia-synth');
     await synthesizeText({ text: 'Bonjour', speed: 1.0 });
 
-    const callBody: { voice: { id: string }; speed?: number } = JSON.parse(
+    const callBody: { voice: { id: string }; generation_config?: { speed?: number } } = JSON.parse(
       (vi.mocked(global.fetch).mock.calls[0][1] as RequestInit).body as string,
     );
-    expect(callBody.speed).toBeUndefined();
+    expect(callBody.generation_config).toBeUndefined();
   });
 
   it('throw une Error explicite quand Cartesia retourne une erreur HTTP', async () => {

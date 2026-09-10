@@ -9,10 +9,20 @@ import * as Sentry from '@sentry/node';
 import { isSpeculativeLlmEnabled } from './speculation';
 import { redactPii } from './pii-redact';
 import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
+import { CARTESIA_LANGUAGE_CODES } from './voice-language';
 
 const DEFAULT_STT_MODEL = 'scribe_v2_realtime';
 const STT_REALTIME_PATH = '/v1/speech-to-text/realtime';
 const STT_PROVIDER_LABEL = 'elevenlabs_stt';
+
+/**
+ * Langues touristiques activées par défaut pour les appels de restaurant.
+ * Scribe accepte plus de 90 langues, mais limiter la détection à ce périmètre
+ * améliore l'identification sur un appel court et évite de promettre une
+ * couverture que le restaurant n'a pas validée.
+ */
+export const DEFAULT_STT_LANGUAGES = ['fr', 'en', 'es', 'it', 'de', 'pt', 'nl'] as const;
+const STT_LANGUAGE_CODE_PATTERN = /^[a-z]{2,3}$/u;
 
 export const DEFAULT_STT_TURN_CONFIG: SttTurnConfig = {
   vadSilenceThresholdSecs: 0.85,
@@ -33,6 +43,7 @@ export const STT_SPELLING_EOT_GRACE_MS = 650;
 export const STT_AUDIO_BUFFER_MAX = 400;
 
 const RESERVATION_KEYTERMS = [
+  // Français
   'réservation',
   'réserver',
   'personnes',
@@ -54,7 +65,108 @@ const RESERVATION_KEYTERMS = [
   'huit',
   'neuf',
   'dix',
+  // Anglais
+  'reservation',
+  'reserve',
+  'table',
+  'people',
+  'tonight',
+  'tomorrow',
+  'booking',
+  'dinner',
+  'lunch',
+  // Espagnol
+  'reserva',
+  'reservar',
+  'mesa',
+  'personas',
+  // Italien
+  'prenotazione',
+  'prenotare',
+  'tavolo',
+  'persone',
+  'domani',
+  // Allemand
+  'reservierung',
+  'reservieren',
+  'tisch',
+  'morgen',
+  // Portugais
+  'pessoas',
+  'amanhã',
+  // Néerlandais
+  'reservering',
+  'reserveren',
+  'tafel',
 ];
+const MAX_STT_KEYTERMS = 50;
+const MAX_STT_KEYTERM_LENGTH = 20;
+const MAX_STT_PREVIOUS_TEXT_LENGTH = 50;
+/** Délai de repli si Scribe n'envoie pas le commit horodaté attendu. */
+export const STT_TIMESTAMPED_COMMIT_GRACE_MS = 250;
+
+/**
+ * Lit la liste CSV des langues Scribe autorisées. Les codes ISO-639-1 et
+ * ISO-639-3 sont acceptés par ElevenLabs ; les valeurs invalides sont
+ * ignorées afin de conserver une poignée de main valide.
+ */
+export function getSttLanguageCodes(): string[] {
+  if (process.env.ELEVENLABS_STT_ALL_LANGUAGES === 'true') {
+    return [...CARTESIA_LANGUAGE_CODES];
+  }
+  const configured = process.env.ELEVENLABS_STT_LANGUAGES;
+  const candidates = configured
+    ? configured.split(',').map((value) => value.trim().toLowerCase())
+    : [...DEFAULT_STT_LANGUAGES];
+  const languages = candidates.filter((value) => STT_LANGUAGE_CODE_PATTERN.test(value));
+  return [...new Set(languages.length ? languages : DEFAULT_STT_LANGUAGES)];
+}
+
+/**
+ * Construit les termes Scribe pour un restaurant donné. Les termes Realtime
+ * sont limités à 20 caractères et 50 valeurs ; les valeurs invalides sont
+ * ignorées afin de ne jamais rendre la poignée de main provider invalide.
+ */
+export function buildSttKeyterms(
+  restaurantName?: string,
+  additionalKeyterms: readonly string[] = [],
+): string[] {
+  // Les termes propres au restaurant sont prioritaires ; les 50 slots Scribe
+  // ne doivent pas être consommés par le vocabulaire générique multilingue.
+  const candidates = [restaurantName ?? '', ...additionalKeyterms, ...RESERVATION_KEYTERMS];
+  const keyterms: string[] = [];
+  const seen = new Set<string>();
+
+  for (const candidate of candidates) {
+    const normalized = candidate.trim().replace(/\s+/gu, ' ');
+    if (!normalized) continue;
+
+    // Un nom long est plus utile sous forme de mots que tronqué au milieu.
+    const values =
+      normalized.length <= MAX_STT_KEYTERM_LENGTH
+        ? [normalized]
+        : normalized.split(' ').filter((word) => word.length <= MAX_STT_KEYTERM_LENGTH);
+
+    for (const value of values) {
+      const dedupeKey = value.toLocaleLowerCase('fr-FR');
+      if (!value || seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      keyterms.push(value);
+      if (keyterms.length >= MAX_STT_KEYTERMS) return keyterms;
+    }
+  }
+
+  return keyterms;
+}
+
+/** Contexte court envoyé à Scribe uniquement avec le premier paquet audio. */
+export function buildSttPreviousText(restaurantName?: string): string {
+  const name = restaurantName?.trim().replace(/\s+/gu, ' ');
+  const context = name
+    ? `Réservation / restaurant booking ${name}`
+    : 'Réservation / restaurant booking';
+  return Array.from(context).slice(0, MAX_STT_PREVIOUS_TEXT_LENGTH).join('');
+}
 
 function writeDebugLog(msg: string, err?: unknown): void {
   const e = err instanceof Error ? err : err ? new Error(String(err)) : undefined;
@@ -133,20 +245,30 @@ export function buildSttUrl(
   model: string = DEFAULT_STT_MODEL,
   codec: 'PCMA' | 'PCMU' = 'PCMU',
   turnConfig: SttTurnConfig = getBaseSttTurnConfig(),
+  options: {
+    restaurantName?: string;
+    keyterms?: readonly string[];
+    languages?: readonly string[];
+  } = {},
 ): string {
   const params = new URLSearchParams({
     model_id: model,
     audio_format: codec === 'PCMU' ? 'ulaw_8000' : 'pcm_8000',
-    language_code: 'fr',
     commit_strategy: 'vad',
     vad_silence_threshold_secs: String(turnConfig.vadSilenceThresholdSecs),
     vad_threshold: '0.4',
     min_speech_duration_ms: String(turnConfig.minSpeechDurationMs),
     min_silence_duration_ms: String(turnConfig.minSilenceDurationMs),
     include_timestamps: 'true',
+    include_language_detection: 'true',
   });
 
-  for (const keyterm of RESERVATION_KEYTERMS) params.append('keyterms', keyterm);
+  for (const language of options.languages ?? getSttLanguageCodes()) {
+    if (STT_LANGUAGE_CODE_PATTERN.test(language)) params.append('secondary_languages', language);
+  }
+  for (const keyterm of buildSttKeyterms(options.restaurantName, options.keyterms)) {
+    params.append('keyterms', keyterm);
+  }
   return 'wss://' + getSttHost() + STT_REALTIME_PATH + '?' + params.toString();
 }
 
@@ -204,17 +326,28 @@ function mergeSttTranscripts(previous: string, next: string): string {
   return [...previousWords, ...nextWords].join(' ');
 }
 
-function dispatchUtteranceEnd(session: CallSession, transcript: string, words?: SttWord[]): void {
+function dispatchUtteranceEnd(
+  session: CallSession,
+  transcript: string,
+  words?: SttWord[],
+  languageCode?: string,
+): void {
   const cleanTranscript = transcript.trim();
   if (!cleanTranscript) return;
+  if (languageCode) session.sttLanguageCode = languageCode;
   logger.info(
-    { callId: session.callControlId, transcript: redactPii(cleanTranscript.slice(0, 100)) },
+    {
+      callId: session.callControlId,
+      transcript: redactPii(cleanTranscript.slice(0, 100)),
+      ...(languageCode ? { languageCode } : {}),
+    },
     '[stt] End of turn',
   );
   session.onSttEvent?.({
     type: 'UtteranceEnd',
     transcript: cleanTranscript,
     ...(words ? { words } : {}),
+    ...(languageCode ? { languageCode } : {}),
   });
 }
 
@@ -224,7 +357,8 @@ function schedulePendingSttEndOfTurn(session: CallSession): void {
     const pending = session.pendingSttEndOfTurn;
     session.pendingSttEndOfTurn = null;
     session.sttEndOfTurnTimer = null;
-    if (pending) dispatchUtteranceEnd(session, pending.transcript, pending.words);
+    if (pending)
+      dispatchUtteranceEnd(session, pending.transcript, pending.words, pending.languageCode);
   }, STT_SPELLING_EOT_GRACE_MS);
 }
 
@@ -236,7 +370,7 @@ function flushPendingSttEndOfTurn(session: CallSession): void {
     session.sttEndOfTurnTimer = null;
   }
   session.pendingSttEndOfTurn = null;
-  dispatchUtteranceEnd(session, pending.transcript, pending.words);
+  dispatchUtteranceEnd(session, pending.transcript, pending.words, pending.languageCode);
 }
 
 function toPcm16FromAlaw(input: Buffer): Buffer {
@@ -257,13 +391,25 @@ function toSttAudio(codec: CallSession['codec'], input: Buffer): Buffer {
   return codec === 'PCMA' ? toPcm16FromAlaw(input) : input;
 }
 
-function sendAudioChunk(ws: WebSocket, audio: Buffer): void {
+function sendAudioChunk(ws: WebSocket, audio: Buffer, previousText?: string): void {
   ws.send(
     JSON.stringify({
       message_type: 'input_audio_chunk',
       audio_base_64: audio.toString('base64'),
+      ...(previousText ? { previous_text: previousText } : {}),
     }),
   );
+}
+
+function sendSessionAudioChunk(session: CallSession, audio: Buffer): void {
+  if (!session.sttWs) return;
+  const isFirstChunk = !session.sttFirstAudioChunkSent;
+  sendAudioChunk(
+    session.sttWs,
+    audio,
+    isFirstChunk ? buildSttPreviousText(session.restaurantName) : undefined,
+  );
+  session.sttFirstAudioChunkSent = true;
 }
 
 export interface ElevenLabsSttMessage {
@@ -271,6 +417,14 @@ export interface ElevenLabsSttMessage {
   text?: string;
   error?: string;
   message?: string;
+  warning?: string;
+  language_code?: string;
+  entities?: Array<{
+    text?: string;
+    type?: string;
+    start?: number;
+    end?: number;
+  }>;
   words?: Array<{
     word?: string;
     text?: string;
@@ -281,8 +435,48 @@ export interface ElevenLabsSttMessage {
   }>;
 }
 
+const STT_PROVIDER_ERROR_TYPES = new Set([
+  'auth_error',
+  'quota_exceeded',
+  'transcriber_error',
+  'input_error',
+  'invalid_request',
+  'error',
+  'commit_throttled',
+  'unaccepted_terms',
+  'rate_limited',
+  'queue_overflow',
+  'resource_exhausted',
+  'session_time_limit_exceeded',
+  'chunk_size_exceeded',
+  'insufficient_audio_activity',
+  'scribe_error',
+]);
+
+function isSttProviderError(messageType: string | undefined): boolean {
+  if (!messageType) return false;
+  return STT_PROVIDER_ERROR_TYPES.has(messageType) || /error$/iu.test(messageType);
+}
+
+function sttErrorMetricType(messageType: string | undefined): string {
+  if (!messageType) return 'provider_error';
+  if (/auth/iu.test(messageType)) return 'auth';
+  if (/quota/iu.test(messageType)) return 'quota';
+  if (/rate|throttl/iu.test(messageType)) return 'rate_limited';
+  if (/queue|resource/iu.test(messageType)) return 'capacity';
+  if (/session_time/iu.test(messageType)) return 'session_limit';
+  if (/input|chunk/iu.test(messageType)) return 'input';
+  if (/invalid/iu.test(messageType)) return 'invalid_request';
+  return 'provider_error';
+}
+
 function getMessageText(msg: ElevenLabsSttMessage): string {
   return typeof msg.text === 'string' ? msg.text.trim() : '';
+}
+
+function getMessageLanguageCode(msg: ElevenLabsSttMessage): string | undefined {
+  const languageCode = msg.language_code?.trim().toLowerCase();
+  return languageCode && STT_LANGUAGE_CODE_PATTERN.test(languageCode) ? languageCode : undefined;
 }
 
 function getMessageWords(msg: ElevenLabsSttMessage): SttWord[] | undefined {
@@ -300,6 +494,81 @@ function getMessageWords(msg: ElevenLabsSttMessage): SttWord[] | undefined {
     })
     .filter((word): word is SttWord => word !== null);
   return words.length ? words : undefined;
+}
+
+function clearPendingSttCommit(session: CallSession): CallSession['sttPendingCommit'] {
+  const pending = session.sttPendingCommit;
+  if (pending?.timer) clearTimeout(pending.timer);
+  session.sttPendingCommit = null;
+  return pending;
+}
+
+function sameTranscript(left: string, right: string): boolean {
+  return left.trim().toLocaleLowerCase('fr-FR') === right.trim().toLocaleLowerCase('fr-FR');
+}
+
+/**
+ * L'API peut envoyer un commit stable puis son événement horodaté. On attend
+ * brièvement le second pour ne pas déclencher deux tours LLM pour une seule
+ * phrase, tout en gardant un repli si l'événement horodaté manque.
+ */
+function queuePlainCommittedTranscript(
+  session: CallSession,
+  transcript: string,
+  words?: SttWord[],
+  languageCode?: string,
+): void {
+  const cleanTranscript = transcript.trim();
+  if (!cleanTranscript) return;
+
+  const previous = clearPendingSttCommit(session);
+  if (previous)
+    dispatchCommittedTranscript(
+      session,
+      previous.transcript,
+      previous.words,
+      previous.languageCode,
+    );
+  // Le commit clôt ce segment même si l'événement horodaté arrive quelques
+  // millisecondes plus tard ; un nouveau partial doit démarrer un tour neuf.
+  session.turnTranscript = '';
+
+  const timer = setTimeout(() => {
+    const pending = session.sttPendingCommit;
+    if (!pending) return;
+    session.sttPendingCommit = null;
+    dispatchCommittedTranscript(session, pending.transcript, pending.words, pending.languageCode);
+  }, STT_TIMESTAMPED_COMMIT_GRACE_MS);
+  session.sttPendingCommit = {
+    transcript: cleanTranscript,
+    ...(words ? { words } : {}),
+    ...(languageCode ? { languageCode } : {}),
+    timer,
+  };
+}
+
+function dispatchTimestampedCommittedTranscript(
+  session: CallSession,
+  transcript: string,
+  words?: SttWord[],
+  languageCode?: string,
+): void {
+  const pending = session.sttPendingCommit;
+  if (pending && (!transcript.trim() || sameTranscript(pending.transcript, transcript))) {
+    clearPendingSttCommit(session);
+    dispatchCommittedTranscript(
+      session,
+      transcript.trim() || pending.transcript,
+      words ?? pending.words,
+      languageCode ?? pending.languageCode,
+    );
+    return;
+  }
+  if (pending) {
+    clearPendingSttCommit(session);
+    dispatchCommittedTranscript(session, pending.transcript, pending.words, pending.languageCode);
+  }
+  dispatchCommittedTranscript(session, transcript, words, languageCode);
 }
 
 function handleBargeInFromTranscript(
@@ -352,6 +621,7 @@ function dispatchCommittedTranscript(
   session: CallSession,
   transcript: string,
   words?: SttWord[],
+  languageCode?: string,
 ): void {
   const cleanTranscript = transcript.trim() || session.turnTranscript.trim();
   session.turnTranscript = '';
@@ -365,11 +635,15 @@ function dispatchCommittedTranscript(
   const spellingProfileActive =
     isNameCollectionBlocking(session) || session.conversation.pendingQuestion === 'customerName';
   if (spellingProfileActive) {
-    session.pendingSttEndOfTurn = { transcript: cleanTranscript, ...(words ? { words } : {}) };
+    session.pendingSttEndOfTurn = {
+      transcript: cleanTranscript,
+      ...(words ? { words } : {}),
+      ...(languageCode ? { languageCode } : {}),
+    };
     schedulePendingSttEndOfTurn(session);
     return;
   }
-  dispatchUtteranceEnd(session, cleanTranscript, words);
+  dispatchUtteranceEnd(session, cleanTranscript, words, languageCode);
 }
 
 export function handleSttMessage(session: CallSession, msg: ElevenLabsSttMessage): void {
@@ -381,22 +655,53 @@ export function handleSttMessage(session: CallSession, msg: ElevenLabsSttMessage
       emitPartialTranscript(session, getMessageText(msg));
       return;
     case 'committed_transcript':
+      queuePlainCommittedTranscript(
+        session,
+        getMessageText(msg),
+        getMessageWords(msg),
+        getMessageLanguageCode(msg),
+      );
+      return;
     case 'committed_transcript_with_timestamps':
-      dispatchCommittedTranscript(session, getMessageText(msg), getMessageWords(msg));
+      dispatchTimestampedCommittedTranscript(
+        session,
+        getMessageText(msg),
+        getMessageWords(msg),
+        getMessageLanguageCode(msg),
+      );
       return;
-    case 'auth_error':
-    case 'quota_exceeded':
-    case 'rate_limited':
-    case 'scribe_error':
-    case 'error': {
-      const message = msg.error ?? msg.message ?? 'ElevenLabs STT error';
-      logger.error({ callId: session.callControlId, message }, '[stt] Provider error');
-      voiceProviderErrorsTotal.inc({ provider: STT_PROVIDER_LABEL, type: 'provider_error' });
-      session.onSttEvent?.({ type: 'Error', message });
+    case 'warning':
+      logger.warn(
+        {
+          callId: session.callControlId,
+          warning: msg.warning ?? msg.message ?? 'ElevenLabs STT warning',
+        },
+        '[stt] Provider warning',
+      );
       return;
-    }
+    case 'committed_transcript_entities':
+      // Les entités ne sont pas activées par défaut (surcoût provider). Si
+      // elles le sont ultérieurement, ne jamais écrire leur contenu en clair.
+      logger.debug(
+        { callId: session.callControlId, entityCount: msg.entities?.length ?? 0 },
+        '[stt] Provider entities received',
+      );
+      return;
     default:
-      return;
+      if (!isSttProviderError(msg.message_type)) return;
+      {
+        const message = msg.error ?? msg.message ?? 'ElevenLabs STT error';
+        logger.error(
+          { callId: session.callControlId, message, type: msg.message_type },
+          '[stt] Provider error',
+        );
+        voiceProviderErrorsTotal.inc({
+          provider: STT_PROVIDER_LABEL,
+          type: sttErrorMetricType(msg.message_type),
+        });
+        session.onSttEvent?.({ type: 'Error', message });
+        return;
+      }
   }
 }
 
@@ -417,9 +722,14 @@ export function connectStt(
   session.sttModel = model;
   const turnConfig = ensureSttTurnConfig(session);
   const ready = new Promise<void>((resolve, reject) => {
-    const ws = new WebSocket(buildSttUrl(model, session.codec, turnConfig.desired), {
-      headers: { 'xi-api-key': apiKey },
-    });
+    const ws = new WebSocket(
+      buildSttUrl(model, session.codec, turnConfig.desired, {
+        restaurantName: session.restaurantName,
+      }),
+      {
+        headers: { 'xi-api-key': apiKey },
+      },
+    );
     session.sttWs = ws;
 
     ws.on('open', () => {
@@ -431,7 +741,8 @@ export function connectStt(
           ' buffered chunks',
       );
       logger.info({ callId: session.callControlId }, '[stt] ElevenLabs Scribe connected');
-      for (const chunk of session.audioBuffer) sendAudioChunk(ws, chunk);
+      session.sttFirstAudioChunkSent = false;
+      for (const chunk of session.audioBuffer) sendSessionAudioChunk(session, chunk);
       session.audioBuffer = [];
       turnConfig.applied = { ...turnConfig.desired };
       resolve();
@@ -488,7 +799,7 @@ export function sendAudioToStt(session: CallSession, audioPayload: string): void
   }
 
   if (session.sttWs?.readyState === WebSocket.OPEN) {
-    sendAudioChunk(session.sttWs, input);
+    sendSessionAudioChunk(session, input);
     return;
   }
 
@@ -498,6 +809,7 @@ export function sendAudioToStt(session: CallSession, audioPayload: string): void
 
 export function closeStt(session: CallSession): void {
   clearPendingSttEndOfTurn(session);
+  clearPendingSttCommit(session);
   const ws = session.sttWs;
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   try {

@@ -7,7 +7,20 @@
  */
 
 import { WebSocket } from 'ws';
+import { CARTESIA_MODEL } from '@sokar/config';
 import type { CallSession } from './types';
+import {
+  effectiveVoiceLanguage,
+  effectiveVoiceLocale,
+  type VoiceLanguageCode,
+} from './voice-language';
+import {
+  buildCartesiaCacheVariant,
+  CARTESIA_NORMALIZATION,
+  getCartesiaGenerationConfig,
+  getCartesiaPronunciationDictId,
+  getCartesiaVoiceId,
+} from './cartesia-config';
 import { getTtsCached, setTtsCached } from '../tts-cache';
 import { logger } from '../../../shared/logger/pino';
 import { telnyxFetch } from '../../../shared/telnyx/http-agent';
@@ -78,7 +91,7 @@ async function sendPacedAudioFrames(
 
 /**
  * Ajoute des pauses naturelles dans le texte en forçant la ponctuation.
- * Cartesia sonic-3.5 marque une pause sur les virgules et points.
+ * Cartesia Sonic marque une pause sur les virgules et points.
  */
 export function addNaturalPauses(text: string): string {
   let result = text
@@ -98,7 +111,7 @@ export function getInterSentencePauseMs(previousSentence: string): number {
   return 100;
 }
 
-export function cleanTextForTts(text: string): string {
+export function cleanTextForTts(text: string, language: VoiceLanguageCode = 'fr'): string {
   let cleaned = text;
 
   // 1. Remove emojis
@@ -115,12 +128,14 @@ export function cleanTextForTts(text: string): string {
 
   // 3. Développe les symboles et abréviations qui sonnent artificiellement
   // lorsqu'ils sont lus littéralement par un moteur TTS.
-  cleaned = cleaned
-    .replace(/&/g, ' et ')
-    .replace(/€/g, ' euros')
-    .replace(/%/g, ' pour cent')
-    .replace(/\bMme\.?\s/gi, 'Madame ')
-    .replace(/\bM\.\s/g, 'Monsieur ');
+  if (language === 'fr') {
+    cleaned = cleaned
+      .replace(/&/g, ' et ')
+      .replace(/€/g, ' euros')
+      .replace(/%/g, ' pour cent')
+      .replace(/\bMme\.?\s/gi, 'Madame ')
+      .replace(/\bM\.\s/g, 'Monsieur ');
+  }
 
   // 4. Rend un numéro français lisible en groupes. Les virgules laissent une
   // micro-pause sans transformer le numéro en une suite de chiffres isolés.
@@ -130,8 +145,10 @@ export function cleanTextForTts(text: string): string {
   );
 
   // 5. Normalise les heures pour une prononciation téléphonique fluide.
-  cleaned = cleaned.replace(/\b([01]?\d|2[0-3])\s*(?:h|:)\s*([0-5]\d)\b/gi, '$1 heures $2');
-  cleaned = cleaned.replace(/\b(\d+)\s*h\b/g, '$1 heures');
+  if (language === 'fr') {
+    cleaned = cleaned.replace(/\b([01]?\d|2[0-3])\s*(?:h|:)\s*([0-5]\d)\b/gi, '$1 heures $2');
+    cleaned = cleaned.replace(/\b(\d+)\s*h\b/g, '$1 heures');
+  }
 
   // 6. Space out alphanumeric codes (e.g. BB344719 -> B. B. 3. 4. 4. 7. 1. 9.)
   cleaned = cleaned.replace(/\b([A-Z0-9]{5,})\b/g, (match) => {
@@ -151,6 +168,8 @@ export async function speakTelnyxNative(session: CallSession, text: string): Pro
   if (session.ending?.nativePlayback) return;
   if (session.ending) session.ending.nativePlayback = true;
   try {
+    const language = effectiveVoiceLanguage(session);
+    const nativeLanguage = effectiveVoiceLocale(session);
     const res = await telnyxFetch(`/v2/calls/${session.callControlId}/actions/speak`, {
       method: 'POST',
       headers: {
@@ -158,9 +177,13 @@ export async function speakTelnyxNative(session: CallSession, text: string): Pro
         Authorization: `Bearer ${process.env.TELNYX_API_KEY}`,
       },
       body: JSON.stringify({
-        payload: session.ending ? 'Au revoir, bonne journée.' : text,
+        payload: session.ending
+          ? language === 'en'
+            ? 'Goodbye, have a great day.'
+            : 'Au revoir, bonne journée.'
+          : text,
         voice: 'female',
-        language: 'fr-FR',
+        language: nativeLanguage,
         payload_type: 'text',
         ...(session.ending
           ? { client_state: Buffer.from(session.ending.markName).toString('base64') }
@@ -214,7 +237,8 @@ async function speakTtsFragment(
   text: string,
   generation: number,
 ): Promise<void> {
-  const cleanedText = cleanTextForTts(text);
+  const language = effectiveVoiceLanguage(session);
+  const cleanedText = cleanTextForTts(text, language);
   if (!cleanedText) return;
   if (!isSessionActiveForTts(session, generation)) {
     writeDebugLog(
@@ -234,11 +258,13 @@ async function speakTtsFragment(
   writeDebugLog(`[speakTtsStreamed] Split into ${sentences.length} sentences`);
 
   const apiKey = process.env.CARTESIA_API_KEY;
-  const voiceId = process.env.CARTESIA_VOICE_ID;
+  const voiceId = getCartesiaVoiceId(session);
   if (!apiKey || !voiceId) {
     await speakTelnyxNative(
       session,
-      'Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?',
+      language === 'en'
+        ? 'Sorry, I am having a technical issue. Could you please repeat that?'
+        : 'Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?',
     );
     return;
   }
@@ -246,7 +272,18 @@ async function speakTtsFragment(
   // Clé de cache distincte par codec Telnyx (PCMA vs PCMU) — un buffer 24k pcm
   // n'est PAS réutilisable en 8k alaw. Inclure le format garantit l'invalidation
   // des anciens caches après migration 24k→8k.
-  const cacheVoiceId = `${voiceId}|sonic-3.5|${isAlaw ? 'alaw8k' : 'mulaw8k'}`;
+  // Le modèle fait partie de la clé : l'alias continu invalide les buffers
+  // quand Cartesia publie un nouveau snapshot stable.
+  const locale = effectiveVoiceLocale(session);
+  const generationConfig = getCartesiaGenerationConfig(session);
+  const pronunciationDictId = getCartesiaPronunciationDictId(session);
+  const cacheVoiceId = buildCartesiaCacheVariant({
+    voiceId,
+    locale,
+    codec: isAlaw ? 'alaw8k' : 'mulaw8k',
+    generationConfig,
+    pronunciationDictId,
+  });
 
   // ─── Traitement séquentiel avec pause inter-phrase ──────────────────
   for (let i = 0; i < sentences.length; i++) {
@@ -300,9 +337,13 @@ async function speakTtsFragment(
       // (G.711 alaw/mulaw 8kHz) → supprime le downsampling applicatif 24k→8k
       // et économise ~30% CPU sur le VPS.
       const cartesiaBody = JSON.stringify({
-        model_id: 'sonic-3.5',
+        model_id: CARTESIA_MODEL,
         transcript: trimmed,
         voice: { mode: 'id', id: voiceId },
+        locale,
+        normalization: CARTESIA_NORMALIZATION,
+        ...(generationConfig ? { generation_config: generationConfig } : {}),
+        ...(pronunciationDictId ? { pronunciation_dict_id: pronunciationDictId } : {}),
         output_format: {
           container: 'raw',
           encoding: isAlaw ? 'pcm_alaw' : 'pcm_mulaw',
@@ -351,7 +392,9 @@ async function speakTtsFragment(
         if (!isSessionActiveForTts(session, generation)) return;
         await speakTelnyxNative(
           session,
-          'Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?',
+          language === 'en'
+            ? 'Sorry, I am having a technical issue. Could you please repeat that?'
+            : 'Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?',
         );
         continue;
       }
@@ -490,7 +533,9 @@ async function speakTtsFragment(
       if (!isSessionActiveForTts(session, generation)) return;
       await speakTelnyxNative(
         session,
-        'Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?',
+        language === 'en'
+          ? 'Sorry, I am having a technical issue. Could you please repeat that?'
+          : 'Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?',
       );
     }
   }

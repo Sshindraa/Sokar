@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
+import { CARTESIA_MODEL } from '@sokar/config';
 import type { CallSession } from '../stream/types';
 
 vi.mock('../tts-cache', () => ({
@@ -131,5 +132,27 @@ describe('prosodie TTS', () => {
   it('marque plus la transition après une question ou une exclamation', () => {
     expect(getInterSentencePauseMs('Quel est votre nom ?')).toBe(140);
     expect(getInterSentencePauseMs('Très bien.')).toBe(100);
+  });
+
+  it('sends the detected language to Cartesia and isolates the TTS cache by language', async () => {
+    const originalFetch = globalThis.fetch;
+    const response = new Response(Buffer.alloc(TTS_FRAME_BYTES, 0x55), { status: 200 });
+    globalThis.fetch = vi.fn().mockResolvedValue(response);
+    vi.mocked(getTtsCached).mockResolvedValue(null);
+    const session = makeSession();
+    session.voiceLanguageCode = 'en';
+
+    await speakTtsStreamed(session, 'Your table is confirmed.');
+
+    const [request] = vi.mocked(globalThis.fetch).mock.calls;
+    const body = JSON.parse(String(request?.[1]?.body));
+    expect(body.model_id).toBe(CARTESIA_MODEL);
+    expect(body.locale).toBe('en-US');
+    expect(body.normalization).toBe('auto');
+    expect(body.language).toBeUndefined();
+    expect(String(vi.mocked(getTtsCached).mock.calls[0]?.[1])).toContain(
+      `|${CARTESIA_MODEL}|en-US|`,
+    );
+    globalThis.fetch = originalFetch;
   });
 });

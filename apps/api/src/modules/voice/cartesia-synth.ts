@@ -12,6 +12,13 @@
  */
 import { DEFAULT_CARTESIA_VOICE_ID, CARTESIA_MODEL } from '@sokar/config';
 import { logger } from '../../shared/logger/pino';
+import {
+  CARTESIA_NORMALIZATION,
+  clampCartesiaSpeed,
+  clampCartesiaVolume,
+  type CartesiaGenerationConfig,
+} from './stream/cartesia-config';
+import { normalizeVoiceLocale } from './stream/voice-language';
 
 export type CartesiaFormat = {
   container: 'mp3' | 'wav' | 'raw';
@@ -31,6 +38,12 @@ export type SynthesizeOptions = {
   format?: CartesiaFormat;
   /** Vitesse de parole (0.5–2.0). Defaults to 1.0 (Cartesia native). */
   speed?: number;
+  /** Locale BCP-47 Cartesia (ex. fr-FR, en-US). */
+  locale?: string;
+  normalization?: 'auto' | 'off' | string;
+  volume?: number;
+  emotion?: string;
+  pronunciationDictId?: string;
 };
 
 export function isCartesiaConfigured(): boolean {
@@ -38,7 +51,7 @@ export function isCartesiaConfigured(): boolean {
 }
 
 /**
- * Synthétise un texte en audio via Cartesia Sonic 3.5.
+ * Synthétise un texte en audio via le modèle Cartesia configuré.
  *
  * @returns Buffer audio (MP3 par défaut) ou null si Cartesia n'est pas
  *          configurée (CARTESIA_API_KEY absente). Le caller doit gérer le
@@ -53,6 +66,21 @@ export async function synthesizeText(opts: SynthesizeOptions): Promise<Buffer | 
 
   const voiceId = opts.voiceId ?? process.env.CARTESIA_VOICE_ID ?? DEFAULT_CARTESIA_VOICE_ID;
   const format = opts.format ?? DEFAULT_WEB_FORMAT;
+  const speed = clampCartesiaSpeed(opts.speed);
+  const volume = clampCartesiaVolume(opts.volume);
+  const generationConfig: CartesiaGenerationConfig | undefined =
+    speed === undefined && volume === undefined && !opts.emotion?.trim()
+      ? undefined
+      : {
+          ...(speed === undefined ? {} : { speed }),
+          ...(volume === undefined ? {} : { volume }),
+          ...(opts.emotion?.trim() ? { emotion: opts.emotion.trim() } : {}),
+        };
+  const locale = normalizeVoiceLocale(opts.locale ?? 'fr-FR') ?? 'fr-FR';
+  const pronunciationDictId =
+    opts.pronunciationDictId?.trim() ||
+    process.env.CARTESIA_PRONUNCIATION_DICT_ID?.trim() ||
+    undefined;
 
   const response = await fetch('https://api.cartesia.ai/tts/bytes', {
     method: 'POST',
@@ -65,12 +93,15 @@ export async function synthesizeText(opts: SynthesizeOptions): Promise<Buffer | 
       model_id: CARTESIA_MODEL,
       transcript: opts.text,
       voice: { mode: 'id', id: voiceId },
+      locale,
+      normalization: opts.normalization ?? CARTESIA_NORMALIZATION,
+      ...(generationConfig ? { generation_config: generationConfig } : {}),
+      ...(pronunciationDictId ? { pronunciation_dict_id: pronunciationDictId } : {}),
       output_format: {
         container: format.container,
         encoding: format.encoding,
         sample_rate: format.sampleRate,
       },
-      ...(opts.speed && opts.speed !== 1.0 ? { speed: opts.speed } : {}),
     }),
   });
 

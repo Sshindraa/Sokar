@@ -21,6 +21,7 @@ import { zonedTimeToUtc } from '../../floor-plan/availability-capacity-aware.ser
 import { createConversationState, isNameCollectionBlocking } from './conversation-controller';
 import { recordVoiceTurnEvent } from './turn-telemetry';
 import { getVoiceLlmProvider } from '../llm-provider';
+import { buildLlmMessagesWithLanguage, effectiveVoiceLanguage } from './voice-language';
 import {
   voiceLlmFallbackTotal,
   voiceProviderErrorsTotal,
@@ -335,6 +336,11 @@ export class CallSessionManager {
     personality?: {
       fillerStyle: 'CASUAL' | 'FORMAL' | 'WARM';
       systemPromptExtra?: string | null;
+      speakingRate?: number | null;
+      voiceIdCa?: string | null;
+      pronunciationDictId?: string | null;
+      volume?: number | null;
+      emotion?: string | null;
     } | null;
   }): CallSession {
     const restaurantName = opts.restaurantName;
@@ -366,6 +372,10 @@ export class CallSessionManager {
       sttWs: null,
       sttReady: null,
       onSttEvent: null,
+      sttLanguageCode: undefined,
+      voiceLanguageCode: 'fr',
+      sttFirstAudioChunkSent: false,
+      sttPendingCommit: null,
       audioBuffer: [],
       isSpeaking: false,
       ttsPlayback: Promise.resolve(),
@@ -418,6 +428,10 @@ export class CallSessionManager {
     if (session.sttEndOfTurnTimer) {
       clearTimeout(session.sttEndOfTurnTimer);
       session.sttEndOfTurnTimer = null;
+    }
+    if (session.sttPendingCommit?.timer) {
+      clearTimeout(session.sttPendingCommit.timer);
+      session.sttPendingCommit = null;
     }
     session.pendingSttEndOfTurn = null;
     if (session.abortController) {
@@ -653,7 +667,10 @@ export class CallSessionManager {
       t.includes('réservation') ||
       t.includes('réserver') ||
       t.includes('table') ||
-      t.includes('place');
+      t.includes('place') ||
+      t.includes('reservation') ||
+      t.includes('book') ||
+      t.includes('reserve');
 
     if (wantsReservation) {
       // Simuler un appel d'outil créeReservation
@@ -668,13 +685,18 @@ export class CallSessionManager {
         customerPhone: session.from,
       });
       const toolResult = await this.executeTool(session, 'createReservation', args);
-      const reply = `Parfait, je note ça. ${toolResult}`;
+      const reply =
+        effectiveVoiceLanguage(session) === 'en'
+          ? `Perfect, I'll note that. ${toolResult}`
+          : `Parfait, je note ça. ${toolResult}`;
       session.history.push({ role: 'assistant', content: reply });
       return reply;
     }
 
     const reply =
-      'Bonjour, bienvenue au restaurant. Je peux vous aider à réserver une table. Pour combien de personnes et à quelle heure ?';
+      effectiveVoiceLanguage(session) === 'en'
+        ? 'Hello, welcome to the restaurant. I can help you book a table. How many people and what time?'
+        : 'Bonjour, bienvenue au restaurant. Je peux vous aider à réserver une table. Pour combien de personnes et à quelle heure ?';
     session.history.push({ role: 'assistant', content: reply });
     return reply;
   }
@@ -696,7 +718,7 @@ export class CallSessionManager {
 
     const includeTools = options.includeTools !== false;
     const tools = includeTools ? getRestaurantTools(session.restaurantId) : undefined;
-    const messages = [...session.history];
+    const messages = buildLlmMessagesWithLanguage(session.history, effectiveVoiceLanguage(session));
 
     for (let round = 0; round < 3; round++) {
       const response = await this.fetchLlmCompletion(messages, {
@@ -748,7 +770,10 @@ export class CallSessionManager {
       return msg.content ?? '';
     }
 
-    const defaultErrorMsg = "Désolé, je n'ai pas pu traiter votre demande.";
+    const defaultErrorMsg =
+      effectiveVoiceLanguage(session) === 'en'
+        ? "I'm sorry, I couldn't process your request."
+        : "Désolé, je n'ai pas pu traiter votre demande.";
     session.history.push({ role: 'assistant', content: defaultErrorMsg });
     return defaultErrorMsg;
   }
@@ -1462,7 +1487,7 @@ export class CallSessionManager {
   ): Promise<string> {
     const includeTools = options.includeTools !== false;
     const tools = includeTools ? getRestaurantTools(session.restaurantId) : undefined;
-    const messages = [...session.history];
+    const messages = buildLlmMessagesWithLanguage(session.history, effectiveVoiceLanguage(session));
 
     for (let round = 0; round < 3; round++) {
       const { response, provider: providerUsed } = await this.fetchLlmStreaming(messages, {
@@ -1783,7 +1808,10 @@ export class CallSessionManager {
       return fullText.trim();
     }
 
-    const defaultErrorMsg = "Désolé, je n'ai pas pu traiter votre demande.";
+    const defaultErrorMsg =
+      effectiveVoiceLanguage(session) === 'en'
+        ? "I'm sorry, I couldn't process your request."
+        : "Désolé, je n'ai pas pu traiter votre demande.";
     session.history.push({ role: 'assistant', content: defaultErrorMsg });
     await onPhrase(defaultErrorMsg);
     return defaultErrorMsg;

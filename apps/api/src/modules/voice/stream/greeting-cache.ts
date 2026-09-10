@@ -24,7 +24,9 @@ import { db } from '../../../shared/db/client';
 import { logger } from '../../../shared/logger/pino';
 import { getTtsCached, setTtsCached } from '../tts-cache';
 import { cleanTextForTts, addNaturalPauses } from './tts-handler';
-import { DEFAULT_CARTESIA_VOICE_ID } from '@sokar/config';
+import { CARTESIA_MODEL, DEFAULT_CARTESIA_VOICE_ID } from '@sokar/config';
+import { buildCartesiaCacheVariant, CARTESIA_NORMALIZATION } from './cartesia-config';
+import { normalizeVoiceLocale } from './voice-language';
 
 /**
  * Construit le texte du greeting pour un restaurant.
@@ -52,9 +54,11 @@ async function generateSentenceAudio(text: string, voiceId: string): Promise<Buf
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model_id: 'sonic-3.5',
+        model_id: CARTESIA_MODEL,
         transcript: text,
         voice: { mode: 'id', id: voiceId },
+        locale: normalizeVoiceLocale('fr-FR') ?? 'fr-FR',
+        normalization: CARTESIA_NORMALIZATION,
         output_format: {
           container: 'raw',
           encoding: 'pcm_alaw',
@@ -95,8 +99,13 @@ export async function initGreetingCache(restaurantNames?: string[]): Promise<voi
 
   const voiceId = process.env.CARTESIA_VOICE_ID ?? DEFAULT_CARTESIA_VOICE_ID;
   // Clé de cache identique à celle utilisée par speakTtsStreamed :
-  // `${voiceId}|sonic-3.5|alaw8k` pour PCMA
-  const cacheVoiceId = `${voiceId}|sonic-3.5|alaw8k`;
+  // Le modèle fait partie de la clé pour invalider les greetings lorsqu'un
+  // nouveau snapshot stable est servi par l'alias continu.
+  const cacheVoiceId = buildCartesiaCacheVariant({
+    voiceId,
+    locale: normalizeVoiceLocale('fr-FR') ?? 'fr-FR',
+    codec: 'alaw8k',
+  });
 
   // Charger les noms de restaurants depuis la DB (si non fournis)
   let names = restaurantNames;

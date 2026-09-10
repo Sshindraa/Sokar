@@ -35,6 +35,12 @@ import { isSpeculativeLlmEnabled } from './speculation';
 import { isNameCollectionBlocking } from './conversation-controller';
 import { setSttSpellingProfile } from './stt-bridge';
 import {
+  effectiveVoiceLanguage,
+  normalizeVoiceLanguage,
+  supportsDeterministicVoiceLanguage,
+  type VoiceLanguageCode,
+} from './voice-language';
+import {
   buildAvailabilityErrorReply,
   buildAvailabilityReply,
   buildDeterministicTurnResponse,
@@ -58,7 +64,15 @@ function syncSpellingProfile(session: CallSession): void {
   );
 }
 
-function formatReservationTimeForSpeech(time: string): string {
+function formatReservationTimeForSpeech(time: string, language: VoiceLanguageCode = 'fr'): string {
+  if (language === 'en') {
+    const [hourValue, minuteValue] = time.split(':').map(Number);
+    const suffix = hourValue >= 12 ? 'PM' : 'AM';
+    const hour = hourValue % 12 || 12;
+    return minuteValue === 0
+      ? `${hour} ${suffix}`
+      : `${hour}:${String(minuteValue).padStart(2, '0')} ${suffix}`;
+  }
   if (time === '12:00') return 'midi';
   if (time === '00:00') return 'minuit';
   const [hours, minutes] = time.split(':').map(Number);
@@ -68,14 +82,22 @@ function formatReservationTimeForSpeech(time: string): string {
 
 function buildReservationConfirmationResponse(session: CallSession, customerName: string): string {
   const { date, time, partySize } = session.conversation.slots;
-  if (!date || !time || !partySize) return `C'est réservé au nom de ${customerName}.`;
+  const language = effectiveVoiceLanguage(session);
+  if (!date || !time || !partySize) {
+    return language === 'en'
+      ? `Your reservation is confirmed under the name ${customerName}.`
+      : `C'est réservé au nom de ${customerName}.`;
+  }
 
-  const formattedDate = new Intl.DateTimeFormat('fr-FR', {
+  const formattedDate = new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'fr-FR', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     timeZone: 'UTC',
   }).format(new Date(`${date}T12:00:00.000Z`));
+  if (language === 'en') {
+    return `Your reservation is confirmed under the name ${customerName}, ${formattedDate} at ${formatReservationTimeForSpeech(time, language)}, for ${partySize} ${partySize === 1 ? 'person' : 'people'}. I will send you a confirmation text message.`;
+  }
   return `C'est réservé au nom de ${customerName}, ${formattedDate} à ${formatReservationTimeForSpeech(time)}, pour ${partySize} personne${partySize > 1 ? 's' : ''}. Je vous envoie un SMS de confirmation.`;
 }
 
@@ -146,9 +168,10 @@ export function buildLivenessResponse(session: CallSession, transcript: string):
     .replace(/[^\p{L}\s]/gu, '')
     .replace(/\s+/g, ' ')
     .trim();
-  const isLivenessCheck = /^(?:allo+|vous etes(?: toujours)? la|vous m entendez|ca a coupe)$/u.test(
-    normalized,
-  );
+  const isLivenessCheck =
+    /^(?:allo+|vous etes(?: toujours)? la|vous m entendez|ca a coupe|hello|hi|are you(?: still)? there|can you hear me|did we get disconnected)$/u.test(
+      normalized,
+    );
   if (!isLivenessCheck) return null;
 
   const lastAssistantMessage = [...session.history]
@@ -157,7 +180,13 @@ export function buildLivenessResponse(session: CallSession, transcript: string):
   if (!lastAssistantMessage) return null;
 
   const lastQuestion = lastAssistantMessage.match(/(?:^|[.!]\s*)([^.?!]+\?)\s*$/u)?.[1]?.trim();
-  return lastQuestion ? `Oui, je suis là. ${lastQuestion}` : 'Oui, je suis là. Je vous écoute.';
+  return effectiveVoiceLanguage(session) === 'en'
+    ? lastQuestion
+      ? `Yes, I'm here. ${lastQuestion}`
+      : "Yes, I'm here. I'm listening."
+    : lastQuestion
+      ? `Oui, je suis là. ${lastQuestion}`
+      : 'Oui, je suis là. Je vous écoute.';
 }
 
 /**
@@ -297,6 +326,29 @@ export function handleSttEvent(
     }
 
     case 'UtteranceEnd': {
+      const detectedLanguage = normalizeVoiceLanguage(event.languageCode);
+      if (detectedLanguage) {
+        const previousLanguage = effectiveVoiceLanguage(session);
+        session.voiceLanguageCode = detectedLanguage;
+        if (previousLanguage !== detectedLanguage) {
+          // Une spéculation lancée avant le commit Scribe peut avoir utilisé
+          // l'ancienne langue (notamment sur un premier « yes »). Elle ne doit
+          // jamais être réutilisée après un changement de langue détecté.
+          session.abortController?.abort();
+          session.abortController = null;
+          session.speculativeLlm = null;
+          session.speculativeResult = null;
+          session.speculativeTranscript = '';
+          logger.info(
+            {
+              callId: session.callControlId,
+              previousLanguage,
+              language: detectedLanguage,
+            },
+            '[voice-language] Updated dialogue language from Scribe',
+          );
+        }
+      }
       // Cumuler le transcript pour persistance
       session.transcript += (session.transcript ? ' ' : '') + event.transcript;
       startVoiceTurn(session, event.transcript);
@@ -410,12 +462,16 @@ export function handleSttEvent(
         tags: { service: 'handler', event: 'stt-error' },
         extra: { callId: session.callControlId },
       });
-      speakTtsStreamed(session, "Désolé, je n'ai pas bien compris. Pouvez-vous répéter ?").catch(
-        (err) =>
-          logger.error(
-            { err, callId: session.callControlId },
-            '[stt] speakTtsStreamed fallback failed',
-          ),
+      speakTtsStreamed(
+        session,
+        effectiveVoiceLanguage(session) === 'en'
+          ? "Sorry, I didn't understand. Could you repeat that, please?"
+          : "Désolé, je n'ai pas bien compris. Pouvez-vous répéter ?",
+      ).catch((err) =>
+        logger.error(
+          { err, callId: session.callControlId },
+          '[stt] speakTtsStreamed fallback failed',
+        ),
       );
       mgr.transition(session, 'LISTENING');
       break;
@@ -525,12 +581,16 @@ export async function processTranscriptStreaming(
   }
 
   const responseGeneration = ++session.responseGeneration;
+  const language = effectiveVoiceLanguage(session);
+  const deterministicLanguage = supportsDeterministicVoiceLanguage(language);
   const isCurrentResponse = () =>
     !session.ended && session.responseGeneration === responseGeneration;
   if (session.state === 'IDLE') mgr.transition(session, 'LISTENING');
   if (session.state === 'LISTENING') mgr.transition(session, 'PROCESSING');
 
-  const livenessResponse = buildLivenessResponse(session, transcript);
+  const livenessResponse = deterministicLanguage
+    ? buildLivenessResponse(session, transcript)
+    : null;
   const classifiedAct = classifyVoiceSpeechAct(transcript);
   const explicitEnd = isExplicitCallEnd(transcript);
   const speechAct = classifiedAct === 'closing' && !explicitEnd ? 'backchannel' : classifiedAct;
@@ -546,7 +606,7 @@ export async function processTranscriptStreaming(
     '[voice-turn] Classified final user turn',
   );
   if (explicitEnd) {
-    const goodbye = selectRandomGoodbyeText(session.personality?.fillerStyle ?? 'CASUAL');
+    const goodbye = selectRandomGoodbyeText(session.personality?.fillerStyle ?? 'CASUAL', language);
     session.turnCount++;
     session.history.push(
       { role: 'user', content: transcript },
@@ -557,9 +617,16 @@ export async function processTranscriptStreaming(
     return;
   }
 
-  if (/^merci[.! ]*$/i.test(transcript)) {
+  if (deterministicLanguage && /^(?:merci|thanks?|thank you)[.! ]*$/i.test(transcript)) {
     const question = session.conversation.lastAssistantQuestion;
-    const response = question ? `Je vous en prie. ${question}` : 'Je vous en prie.';
+    const response =
+      language === 'en'
+        ? question
+          ? `You're welcome. ${question}`
+          : "You're welcome."
+        : question
+          ? `Je vous en prie. ${question}`
+          : 'Je vous en prie.';
     session.history.push(
       { role: 'user', content: transcript },
       { role: 'assistant', content: response },
@@ -576,12 +643,20 @@ export async function processTranscriptStreaming(
   const previousReply =
     session.history.filter((message) => message.role === 'assistant').at(-1)?.content ?? '';
   if (
+    deterministicLanguage &&
     speechAct === 'content' &&
-    /au revoir|à demain/i.test(previousReply) &&
+    /au revoir|à demain|goodbye|see you|have a (?:good|great) (?:day|evening)/i.test(
+      previousReply,
+    ) &&
     transcript.trim().split(/\s+/).length <= 3 &&
-    !/attendez|ajout|annul|modif|reserv|personne|heure/i.test(transcript)
+    !/attendez|ajout|annul|modif|reserv|personne|heure|wait|add|cancel|change|book|people|time/i.test(
+      transcript,
+    )
   ) {
-    const response = "Pardon, je n'ai pas bien compris. Vous souhaitiez ajouter quelque chose ?";
+    const response =
+      language === 'en'
+        ? "Sorry, I didn't quite understand. Did you want to add something?"
+        : "Pardon, je n'ai pas bien compris. Vous souhaitiez ajouter quelque chose ?";
     session.history.push(
       { role: 'user', content: transcript },
       { role: 'assistant', content: response },
@@ -612,7 +687,9 @@ export async function processTranscriptStreaming(
   // Le STT reste Scribe pour la conversation générale. Pour une suite de
   // lettres, on évite toutefois que le LLM la transforme en mot plausible
   // (ex. « K I F » → « Kif ») et on exige une confirmation explicite.
-  const customerNameTurn = handleCustomerNameTurn(session, transcript);
+  const customerNameTurn = deterministicLanguage
+    ? handleCustomerNameTurn(session, transcript)
+    : { response: null, escalate: false, confirmedName: null };
   if (customerNameTurn.response) {
     // Un nouveau tour peut avoir invalidé cette réponse pendant la lecture
     // TTS précédente (barge-in). Une réponse périmée ne doit jamais remettre
@@ -675,9 +752,10 @@ export async function processTranscriptStreaming(
         .join(' ')}`
     : transcript;
 
-  const deterministicResponse =
-    buildDeterministicTurnResponse(session, speechAct, transcript) ??
-    buildReservationProgressResponse(session, transcript);
+  const deterministicResponse = deterministicLanguage
+    ? (buildDeterministicTurnResponse(session, speechAct, transcript) ??
+      buildReservationProgressResponse(session, transcript))
+    : null;
   if (deterministicResponse) {
     if (!isCurrentResponse()) return;
     writeDebugLog(
@@ -753,7 +831,7 @@ export async function processTranscriptStreaming(
         durationMs: Date.now() - availabilityStartedAt,
         slotCount: result.slots.length,
       });
-      const response = buildAvailabilityReply(availabilityRequest, result.slots);
+      const response = buildAvailabilityReply(availabilityRequest, result.slots, language);
       session.conversation.lastAvailabilityCheck = availabilityRequest.key;
       session.conversation.lastAvailabilityResult = {
         key: availabilityRequest.key,
@@ -782,7 +860,7 @@ export async function processTranscriptStreaming(
         '[voice-turn] Direct availability lookup failed; using a safe deterministic fallback',
       );
       if (isCurrentResponse()) {
-        const response = buildAvailabilityErrorReply();
+        const response = buildAvailabilityErrorReply(language);
         session.turnCount++;
         session.history.push(
           { role: 'user', content: transcript },
@@ -863,7 +941,7 @@ export async function processTranscriptStreaming(
         contextTtsRef.current ??= createCartesiaContextTurn(session, useCartesiaContext);
         if (contextTtsRef.current) {
           session.ttsContext = contextTtsRef.current;
-          contextTtsRef.current.push(cleanTextForTts(cleanPhrase));
+          contextTtsRef.current.push(cleanTextForTts(cleanPhrase, effectiveVoiceLanguage(session)));
           return;
         }
 

@@ -46,12 +46,15 @@ interface CachedRestaurantContext {
     readonly restaurantId: string;
     readonly profileType: string;
     readonly speakingRate: unknown;
+    readonly volume: unknown;
     readonly pitchShift: unknown;
     readonly fillerStyle: string;
     readonly microphoneThreshold: number;
     readonly targetLatencyMs: number;
     readonly systemPromptExtra: string | null;
     readonly voiceIdCa: string | null;
+    readonly pronunciationDictId: string | null;
+    readonly emotion: string | null;
     readonly updatedAt: Date;
   } | null;
   readonly providerConfig: SafeProviderConfig;
@@ -155,12 +158,15 @@ export class RestaurantService {
             restaurantId: true,
             profileType: true,
             speakingRate: true,
+            volume: true,
             pitchShift: true,
             fillerStyle: true,
             microphoneThreshold: true,
             targetLatencyMs: true,
             systemPromptExtra: true,
             voiceIdCa: true,
+            pronunciationDictId: true,
+            emotion: true,
             updatedAt: true,
           },
         },
