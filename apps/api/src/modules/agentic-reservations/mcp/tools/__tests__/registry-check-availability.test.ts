@@ -74,36 +74,41 @@ describe('McpToolRegistry.checkAvailability metrics', () => {
   });
 
   it('convertit un horaire local MCP dans le fuseau du restaurant', async () => {
-    const prisma = makePrisma();
-    const registry = new McpToolRegistry(prisma, makeRateLimiter());
-    const checkAvailability = vi.fn().mockResolvedValue({ available: true });
-    (registry as unknown as Record<string, unknown>).availabilityService = {
-      checkAvailability,
-    };
+    vi.useFakeTimers({ now: new Date('2026-01-01T12:00:00.000Z') });
+    try {
+      const prisma = makePrisma();
+      const registry = new McpToolRegistry(prisma, makeRateLimiter());
+      const checkAvailability = vi.fn().mockResolvedValue({ available: true });
+      (registry as unknown as Record<string, unknown>).availabilityService = {
+        checkAvailability,
+      };
 
-    const result = await registry.checkAvailability(
-      {
+      const result = await registry.checkAvailability(
+        {
+          restaurantId: '550e8400-e29b-41d4-a716-446655440000',
+          partySize: 2,
+          slotStart: '2026-09-10T20:00:00',
+          slotEnd: '2026-09-10T22:00:00',
+        },
+        {
+          clientId: 'c1',
+          clientName: 'test',
+          restaurantId: null,
+          scopes: ['mcp:read'],
+          actor: 'test',
+        },
+      );
+
+      expect(result).toEqual({ ok: true, data: { available: true } });
+      expect(checkAvailability).toHaveBeenCalledWith({
         restaurantId: '550e8400-e29b-41d4-a716-446655440000',
         partySize: 2,
-        slotStart: '2026-09-10T20:00:00',
-        slotEnd: '2026-09-10T22:00:00',
-      },
-      {
-        clientId: 'c1',
-        clientName: 'test',
-        restaurantId: null,
-        scopes: ['mcp:read'],
-        actor: 'test',
-      },
-    );
-
-    expect(result).toEqual({ ok: true, data: { available: true } });
-    expect(checkAvailability).toHaveBeenCalledWith({
-      restaurantId: '550e8400-e29b-41d4-a716-446655440000',
-      partySize: 2,
-      slotStart: new Date('2026-09-10T18:00:00.000Z'),
-      slotEnd: new Date('2026-09-10T20:00:00.000Z'),
-    });
+        slotStart: new Date('2026-09-10T18:00:00.000Z'),
+        slotEnd: new Date('2026-09-10T20:00:00.000Z'),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('retourne une erreur explicite pour un horaire local inexistant', async () => {

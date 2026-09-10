@@ -1,5 +1,7 @@
 # Contexte Sokar
 
+2026-09-10 — [ci, tests, mcp] **Test de fuseau rendu déterministe** — Le test `registry-check-availability` fige l’horloge pendant la conversion d’un horaire local afin que la règle de délai minimal ne dépende plus de l’heure réelle du CI. Validation ciblée : 3/3.
+
 2026-09-10 — [voice, stt, secrets, rotation, staging, production] **Clé ElevenLabs tournée** — Une nouvelle clé utilisateur `Sokar Voice STT` limitée aux droits Transcription et Utilisateur a été créée dans ElevenLabs. Elle remplace la précédente dans `apps/api/.env`, `/opt/sokar-staging/apps/api/.env` et `/opt/sokar/apps/api/.env`; chaque fichier reste en permissions `0600`. Les vérifications `GET /v1/user` et l'ouverture Scribe Realtime répondent HTTP 200 / `session_started` sans audio. L'ancienne clé `Sokar` est désactivée dans ElevenLabs. Aucun redémarrage, déploiement, commit ou push n'a été effectué.
 
 2026-09-10 — [voice, stt, secrets, staging, production] **Clé ElevenLabs synchronisée** — `ELEVENLABS_API_KEY` est maintenant présente dans les fichiers privés `/opt/sokar-staging/apps/api/.env` et `/opt/sokar/apps/api/.env`, avec `ELEVENLABS_STT_MODEL=scribe_v2_realtime` et permissions `0600`. La vérification distante a contrôlé uniquement la présence et le modèle, sans afficher la valeur. Aucun redémarrage ni déploiement n'a été déclenché : le code Scribe reste local jusqu'à la prochaine release ; `DEEPGRAM_API_KEY` est conservée temporairement sur les VPS pour permettre le rollback de la version actuellement déployée.
