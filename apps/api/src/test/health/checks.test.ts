@@ -164,7 +164,7 @@ describe('checkHealth — voice provider failure (degraded, core ok)', () => {
 
   it('returns degraded when elevenlabs_stt returns non-ok', async () => {
     globalThis.fetch = vi.fn().mockImplementation(async (url: unknown) => {
-      if (typeof url === 'string' && url.includes('api.elevenlabs.io')) {
+      if (url === 'https://api.elevenlabs.io/v1/user') {
         return { ok: false, status: 401, statusText: 'Unauthorized' } as Response;
       }
       return { ok: true, status: 200, statusText: 'OK' } as Response;
