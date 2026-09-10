@@ -53,7 +53,7 @@ def detect_module_from_task(task_text: str) -> str:
         (r"agent/", "agent"),
         (r"docs/", "docs"),
         # Mots-cles specifiques (voice avant api car telnyx est surtout voix)
-        (r"\b(?:voice|call|stt|tts|deepgram|elevenlabs|cartesia|telnyx)\b", "voice"),
+        (r"\b(?:voice|call|stt|tts|elevenlabs|cartesia|telnyx)\b", "voice"),
         (r"\b(?:api|route|endpoint|fastify|webhook)\b", "api"),
         (r"\b(?:dashboard|ui|component|next\.?js|tailwind|page)\b", "dashboard"),
         (r"\b(?:prisma|schema|model|migration|db|database|pgvector)\b", "database"),

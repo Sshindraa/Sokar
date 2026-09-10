@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildLivenessResponse,
   extractRestaurantName,
-  handleFluxEvent,
+  handleSttEvent,
   LLM_FILLER_DELAY_MS,
   stripRepeatedGreeting,
 } from '../stream/llm-handler';
@@ -95,7 +95,7 @@ describe('buildLivenessResponse', () => {
   });
 });
 
-describe('handleFluxEvent — interruption pendant le traitement', () => {
+describe('handleSttEvent — interruption pendant le traitement', () => {
   it.each(['UtteranceStart', 'SpeechResumed'] as const)(
     '%s invalide définitivement la réponse en préparation',
     (eventType) => {
@@ -117,7 +117,7 @@ describe('handleFluxEvent — interruption pendant le traitement', () => {
         }),
       } as unknown as CallSessionManager;
 
-      handleFluxEvent({ type: eventType }, interruptedSession, mgr);
+      handleSttEvent({ type: eventType }, interruptedSession, mgr);
 
       expect(abortSpy).toHaveBeenCalledOnce();
       expect(interruptedSession.responseGeneration).toBe(5);
@@ -130,7 +130,7 @@ describe('handleFluxEvent — interruption pendant le traitement', () => {
   );
 });
 
-describe('handleFluxEvent — pré-réflexion LLM', () => {
+describe('handleSttEvent — pré-réflexion LLM', () => {
   it('prépare une réponse sans changer l’état ni l’historique avant la fin confirmée', () => {
     const previous = process.env.SPECULATIVE_LLM_ENABLED;
     process.env.SPECULATIVE_LLM_ENABLED = 'true';
@@ -147,7 +147,7 @@ describe('handleFluxEvent — pré-réflexion LLM', () => {
       prepareSpeculativeReply: vi.fn().mockResolvedValue('Avec plaisir, bonne soirée !'),
     } as unknown as CallSessionManager;
 
-    handleFluxEvent(
+    handleSttEvent(
       { type: 'InterimHighConfidence', transcript: 'Non non merci au revoir' },
       speculativeSession,
       mgr,

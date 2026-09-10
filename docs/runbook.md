@@ -33,7 +33,7 @@
 | -------------------------------------------------- | ------- | ------------------------------------------- |
 | `sokar_agentic_double_booking_attempts_total`      | = 0     | Investigate immédiat (cf. §Double booking)  |
 | `sokar_agentic_pii_leaks_total`                    | = 0     | Investigate immédiat (cf. §PII leak)        |
-| `sokar_agentic_check_availability_duration_ms` p95 | < 800ms | Check Telnyx, Deepgram, Prisma, Redis       |
+| `sokar_agentic_check_availability_duration_ms` p95 | < 800ms | Check Telnyx, ElevenLabs, Prisma, Redis     |
 | 5xx rate                                           | < 1%    | Check providers externes + dernière release |
 
 Source : `GET /metrics` (scrape Prometheus) ou endpoint interne
@@ -111,12 +111,12 @@ Source : `GET /metrics` (scrape Prometheus) ou endpoint interne
 1. Identifier le type d'erreur (500 vs 502 vs 504)
 2. 502/504 : check load balancer, VPS, réseau
 3. 500 : check Sentry pour stack trace
-4. Vérifier Telnyx / Deepgram / Cartesia / OpenAI status pages
+4. Vérifier Telnyx / ElevenLabs / Cartesia / OpenAI status pages
 
 **Action** :
 
-1. Si provider externe : bascule vers backup (ex: Cartesia → ElevenLabs)
-   ou pause des résas agentic
+1. Si un provider externe est indisponible : appliquer le fallback documenté
+   ou mettre en pause les réservations agentic
 2. Si interne : rollback dernière release
 3. Communication status (status page à créer — placeholder)
 

@@ -31,12 +31,12 @@ POST /voice/telnyx  ← call.initiated webhook
 
 ### ai_config retourné à Telnyx
 
-| Étape               | Provider   | Modèle                                                       | Détail                                                                                  |
-| ------------------- | ---------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| **STT**             | Deepgram   | `nova-3`                                                     | Langue `fr`, endpointing 300ms, utterance_end_ms 1000ms                                 |
-| **LLM**             | OpenRouter | `deepseek/deepseek-v4-flash` (default) ou PRO si VIP         | System prompt + conversation turns                                                      |
-| **TTS**             | Cartesia   | `sonic-3.5` + Katie (`f786b574-daa5-4673-aa0c-cbe3e8534c02`) | Chunk on `.`, `!`, `?`, min_chunk_length 4. Voice ID depuis `ctx.personality.voiceIdCa` |
-| **First utterance** | —          | —                                                            | `"Bonjour, ${ctx.name}..."`                                                             |
+| Étape               | Provider                               | Modèle                                                       | Détail                                                                                  |
+| ------------------- | -------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| **STT**             | Telnyx ai_config / Scribe Media Stream | `scribe_v2_realtime` en Media Stream                         | La route Media Stream envoie PCMU en `ulaw_8000` et convertit PCMA en `pcm_8000`        |
+| **LLM**             | OpenRouter                             | `deepseek/deepseek-v4-flash` (default) ou PRO si VIP         | System prompt + conversation turns                                                      |
+| **TTS**             | Cartesia                               | `sonic-3.5` + Katie (`f786b574-daa5-4673-aa0c-cbe3e8534c02`) | Chunk on `.`, `!`, `?`, min_chunk_length 4. Voice ID depuis `ctx.personality.voiceIdCa` |
+| **First utterance** | —                                      | —                                                            | `"Bonjour, ${ctx.name}..."`                                                             |
 
 > ⚠️ **Limitation sonic-3.5** : les contrôles de `speed` et `volume` sont désactivés temporairement sur sonic-3.5 (depuis avril 2026, cf doc Cartesia). Le champ `speakingRate` dans `AgentPersonality` n'a pas d'effet tant que cette limitation est en place. Pour utiliser speed/volume, il faudrait revenir à `sonic-3` (snapshotté) ou attendre la réactivation par Cartesia.
 
@@ -49,7 +49,7 @@ POST /voice/telnyx  ← call.initiated webhook
       │
       ▼
 ┌─────────────────┐
-│   Deepgram STT   │  ← nova-3, français, endpointing 300ms
+│   ElevenLabs Scribe │  ← scribe_v2_realtime, français, VAD
 │   (transcription)│
 └────────┬────────┘
          │ utterances textuelles
@@ -200,5 +200,5 @@ apps/api/src/modules/voice/
 
 Voir aussi : [[Architecture]] (section Voice Pipeline)
 
-2026-09-04 14:08 — [voice, confirmation, closing] **Corrections de dialogue préparées pour test téléphonique** — Branche isolée `codex/voice-confirmation-closing` depuis `origin/main@28f5bfa`, intégrant les améliorations locales d’épellation/Flux. La première question termine la réponse LLM (stream primaire, fallback et non-streaming) avant toute suite ou outil du même tour. Une clôture explicite du client passe en `CLOSING`, annule génération/spéculation, ignore les nouveaux transcripts, attend le mark Telnyx (ou le webhook TTS natif) avant hangup idempotent ; timeout borné et retry réseau. Un simple merci garde l’appel ouvert ; un court transcript ambigu après le départ demande clarification. Disponibilité annoncée explicitement. Vérification : suite vocale 429/429, typecheck et lint sans erreur ; test audio réel et déploiement encore à effectuer. Aucun changement de voix, de modèle ou de schéma.
-2026-09-04 14:55 — [voice, analysis, name-spelling] **Régression d’épellation identifiée après test Henri** — Le dernier appel a confirmé l’alternative 12h30, mais une transcription Flux bruitée a permis au LLM de confirmer « A D K I F » malgré « Non ». Le parseur reconnaît maintenant « en nombre de actifs », les corrections « non, … » et « A deux K I F » ; les keyterms Flux incluent `deux k` et `double k`. Tests ciblés : 171/171 ; typecheck API et formatage OK. Déploiement contrôlé à réaliser.
+2026-09-04 14:08 — [voice, confirmation, closing] **Corrections de dialogue préparées pour test téléphonique** — Branche isolée `codex/voice-confirmation-closing` depuis `origin/main@28f5bfa`, intégrant les améliorations locales d’épellation/STT. La première question termine la réponse LLM (stream primaire, fallback et non-streaming) avant toute suite ou outil du même tour. Une clôture explicite du client passe en `CLOSING`, annule génération/spéculation, ignore les nouveaux transcripts, attend le mark Telnyx (ou le webhook TTS natif) avant hangup idempotent ; timeout borné et retry réseau. Un simple merci garde l’appel ouvert ; un court transcript ambigu après le départ demande clarification. Disponibilité annoncée explicitement. Vérification : suite vocale 429/429, typecheck et lint sans erreur ; test audio réel et déploiement encore à effectuer. Aucun changement de voix, de modèle ou de schéma.
+2026-09-04 14:55 — [voice, analysis, name-spelling] **Régression d’épellation identifiée après test Henri** — Le dernier appel a confirmé l’alternative 12h30, mais une transcription STT bruitée a permis au LLM de confirmer « A D K I F » malgré « Non ». Le parseur reconnaît maintenant « en nombre de actifs », les corrections « non, … » et « A deux K I F » ; les keyterms STT incluent `deux k` et `double k`. Tests ciblés : 171/171 ; typecheck API et formatage OK. Déploiement contrôlé à réaliser.

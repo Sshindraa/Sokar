@@ -7,7 +7,7 @@
     "redis": "ok",
     "queues": "ok",
     "telnyx": "ok",
-    "deepgram": "ok",
+    "stt_provider": "ok",
     "cartesia": "ok",
     "note": "Provider reachability; not a completed call or delivered SMS"
   },

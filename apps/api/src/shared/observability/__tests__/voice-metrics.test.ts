@@ -52,7 +52,7 @@ describe('Voice Prometheus metrics', () => {
   });
 
   it('incrémente voice_provider_errors_total avec labels provider et type', async () => {
-    voiceProviderErrorsTotal.inc({ provider: 'deepgram', type: 'ws_error' });
+    voiceProviderErrorsTotal.inc({ provider: 'elevenlabs_stt', type: 'ws_error' });
     voiceProviderErrorsTotal.inc({ provider: 'cartesia', type: '5xx' });
     voiceProviderErrorsTotal.inc({ provider: 'cerebras', type: 'timeout' });
     voiceProviderErrorsTotal.inc({ provider: 'cerebras', type: '429' });
@@ -61,7 +61,7 @@ describe('Voice Prometheus metrics', () => {
     const payload = await renderMetrics();
     expect(payload).toContain('voice_provider_errors_total');
     expect(payload).toMatch(
-      /voice_provider_errors_total\{[^}]*provider="deepgram"[^}]*type="ws_error"[^}]*\} 1/,
+      /voice_provider_errors_total\{[^}]*provider="elevenlabs_stt"[^}]*type="ws_error"[^}]*\} 1/,
     );
     expect(payload).toMatch(
       /voice_provider_errors_total\{[^}]*provider="cartesia"[^}]*type="5xx"[^}]*\} 1/,

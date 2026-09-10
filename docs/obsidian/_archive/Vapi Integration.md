@@ -15,14 +15,14 @@ Appel entrant (numéro Vapi ou transfert Telnyx)
 
 ## Comparaison Vapi vs Telnyx
 
-| | Vapi | Telnyx (actuel) |
-|---|---|---|
-| **STT** | Deepgram (inclus) | Deepgram (manuel) |
-| **LLM** | GPT-4o / Claude (inclus) | OpenRouter (manuel) |
-| **TTS** | Cartesia Sonic 3.5 | Cartesia Sonic 3.5 |
-| **Coût** | ~$0.05/min (crédits) | ~$0.004/min Telnyx + coûts AI séparés |
-| **Code** | Minimal (webhooks uniquement) | Pipeline complet custom |
-| **Contrôle** | Limité (dashboard Vapi) | Total |
+|              | Vapi                            | Telnyx (actuel)                       |
+| ------------ | ------------------------------- | ------------------------------------- |
+| **STT**      | ancien fournisseur STT (inclus) | ancien fournisseur STT (manuel)       |
+| **LLM**      | GPT-4o / Claude (inclus)        | OpenRouter (manuel)                   |
+| **TTS**      | Cartesia Sonic 3.5              | Cartesia Sonic 3.5                    |
+| **Coût**     | ~$0.05/min (crédits)            | ~$0.004/min Telnyx + coûts AI séparés |
+| **Code**     | Minimal (webhooks uniquement)   | Pipeline complet custom               |
+| **Contrôle** | Limité (dashboard Vapi)         | Total                                 |
 
 ## Configuration
 
@@ -51,19 +51,19 @@ PUBLIC_URL="https://api.sokar.fr"
 
 ### 3. Fonctions configurées (dans le code)
 
-| Fonction | Description | Status |
-|----------|-------------|--------|
-| `createReservation` | Créer une réservation | Stub (TODO connecter DB) |
-| `checkAvailability` | Vérifier disponibilité | Stub (TODO connecter DB) |
-| `getRestaurantInfo` | Infos restaurant | Mock (retourne horaires fixes) |
-| `cancelReservation` | Annuler une réservation | Stub (TODO connecter DB) |
+| Fonction            | Description             | Status                         |
+| ------------------- | ----------------------- | ------------------------------ |
+| `createReservation` | Créer une réservation   | Stub (TODO connecter DB)       |
+| `checkAvailability` | Vérifier disponibilité  | Stub (TODO connecter DB)       |
+| `getRestaurantInfo` | Infos restaurant        | Mock (retourne horaires fixes) |
+| `cancelReservation` | Annuler une réservation | Stub (TODO connecter DB)       |
 
 ## Endpoints
 
-| Route | Méthode | Description |
-|-------|---------|-------------|
-| `/webhooks/vapi` | POST | Point d'entrée webhooks Vapi |
-| `/health/vapi` | GET | Vérifier la config |
+| Route            | Méthode | Description                  |
+| ---------------- | ------- | ---------------------------- |
+| `/webhooks/vapi` | POST    | Point d'entrée webhooks Vapi |
+| `/health/vapi`   | GET     | Vérifier la config           |
 
 ## Tester en local
 
@@ -83,26 +83,27 @@ ngrok http 3000
 
 ## Coûts avec 10 crédits
 
-| Scénario | Durée estimée | Crédits consommés |
-|----------|---------------|-------------------|
-| Test rapide (1 appel) | ~2 min | ~$0.10 |
-| Session de test complète | ~30 min | ~$1.50 |
-| 10 appels tests | ~20 min total | ~$1.00 |
+| Scénario                 | Durée estimée | Crédits consommés |
+| ------------------------ | ------------- | ----------------- |
+| Test rapide (1 appel)    | ~2 min        | ~$0.10            |
+| Session de test complète | ~30 min       | ~$1.50            |
+| 10 appels tests          | ~20 min total | ~$1.00            |
 
 **Avec 10 crédits, tu peux faire environ 200 minutes d'appel.**
 
 ## Migration progressive
 
-| Phase | Action | Sprint |
-|-------|--------|--------|
-| 1 | Tester Vapi avec stubs (pas de DB) | Sprint 1 |
-| 2 | Connecter les fonctions à la DB Prisma | Sprint 1 |
-| 3 | Comparer performances Vapi vs Telnyx | Sprint 2 |
-| 4 | Choisir le provider principal ou hybride | Sprint 2 |
+| Phase | Action                                   | Sprint   |
+| ----- | ---------------------------------------- | -------- |
+| 1     | Tester Vapi avec stubs (pas de DB)       | Sprint 1 |
+| 2     | Connecter les fonctions à la DB Prisma   | Sprint 1 |
+| 3     | Comparer performances Vapi vs Telnyx     | Sprint 2 |
+| 4     | Choisir le provider principal ou hybride | Sprint 2 |
 
 ## Fallback
 
 Si Vapi ne répond pas ou les crédits sont épuisés :
+
 - Telnyx reste le pipeline principal
 - Aucune dépendance critique à Vapi
 - Switch instantané dans la config

@@ -10,7 +10,7 @@
  *  - State machine : transitions invalides rejetées
  *  - executeTool() via callLlm avec fetch mocké (tous les outils)
  *  - processUtteranceStreaming (SSE parsing basique)
- *  - cleanup ferme le WS Deepgram s'il est OPEN
+ *  - cleanup ferme le WS ElevenLabs s'il est OPEN
  */
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { WebSocket } from 'ws';
@@ -1706,28 +1706,28 @@ describe('CallSessionManager — cleanup avancé', () => {
       new CallSessionManager();
   });
 
-  it("ferme le WS Deepgram s'il est OPEN", () => {
+  it("ferme le WS ElevenLabs s'il est OPEN", () => {
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
-    const deepgramWs = { readyState: WebSocket.OPEN, close: vi.fn() } as unknown as WebSocket;
-    session.deepgramWs = deepgramWs;
+    const sttWs = { readyState: WebSocket.OPEN, close: vi.fn() } as unknown as WebSocket;
+    session.sttWs = sttWs;
 
     mgr.cleanup(session);
 
-    expect(deepgramWs.close).toHaveBeenCalled();
-    expect(session.deepgramWs).toBeNull();
+    expect(sttWs.close).toHaveBeenCalled();
+    expect(session.sttWs).toBeNull();
   });
 
-  it("ne ferme pas le WS Deepgram s'il n'est pas OPEN", () => {
+  it("ne ferme pas le WS ElevenLabs s'il n'est pas OPEN", () => {
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
-    const deepgramWs = { readyState: WebSocket.CLOSED, close: vi.fn() } as unknown as WebSocket;
-    session.deepgramWs = deepgramWs;
+    const sttWs = { readyState: WebSocket.CLOSED, close: vi.fn() } as unknown as WebSocket;
+    session.sttWs = sttWs;
 
     mgr.cleanup(session);
 
-    expect(deepgramWs.close).not.toHaveBeenCalled();
-    expect(session.deepgramWs).toBeNull();
+    expect(sttWs.close).not.toHaveBeenCalled();
+    expect(session.sttWs).toBeNull();
   });
 
   it("vide l'audioBuffer", () => {

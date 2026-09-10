@@ -92,7 +92,7 @@ if [ "${ENV_READY}" = false ]; then
   echo "   Règles :"
   echo "     - Clerk : pk_test / sk_test (jamais de clés prod)."
   echo "     - Stripe : pk_test / sk_test."
-  echo "     - Telnyx / Deepgram / Cartesia : LAISSER VIDE (voice désactivée)."
+  echo "     - Telnyx / ElevenLabs / Cartesia : LAISSER VIDE (voice désactivée)."
   echo "     - DATABASE_URL doit pointer sur ${DB_NAME}."
   echo "     - REDIS_URL doit utiliser db=3 (isolé de prod db=0/1/2)."
   echo ""

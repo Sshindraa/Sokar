@@ -40,7 +40,7 @@ Les quatre qualités à optimiser ensemble sont :
 
 ## 2. Diagnostic factuel des appels observés
 
-Pipeline actuel : Telnyx Media Stream → Deepgram Flux → OpenRouter/Mistral → Cartesia Sonic 3.5 → Telnyx.
+Pipeline actuel : Telnyx Media Stream → ElevenLabs Scribe Realtime → OpenRouter/Mistral → Cartesia Sonic 3.5 → Telnyx.
 
 ### Points déjà corrigés en production
 
@@ -153,7 +153,7 @@ Un prototype de ces changements existe dans le worktree local `/private/tmp/soka
 ### Chantier B — Tour de parole humain, priorité P0/P1
 
 1. Remplacer le timer « ponctuation = 400 ms » par une politique fondée sur :
-   - `speech_final` Deepgram ;
+   - `committed_transcript` et VAD Scribe ;
    - durée de silence ;
    - complétude sémantique ;
    - présence d’un slot critique incomplet.

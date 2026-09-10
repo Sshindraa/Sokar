@@ -18,7 +18,7 @@
 ## Security / isolation
 
 - Clerk staging keys (`pk_test` / `sk_test`) — **never** prod keys.
-- Voice disabled: `VOICE_DISABLED=true` is required. `TELNYX_API_KEY`, `DEEPGRAM_API_KEY`, `CARTESIA_API_KEY` are empty → no outbound calls, Telnyx webhooks get 403.
+- Voice disabled: `VOICE_DISABLED=true` is required. `TELNYX_API_KEY`, `ELEVENLABS_API_KEY`, `CARTESIA_API_KEY` are empty → no outbound calls, Telnyx webhooks get 403.
 - `CORS_ORIGINS` must be explicit in production.
 - Stripe public key is prod, secret empty unless `sk_test_*` is provided.
 - `X-Robots-Tag: noindex, nofollow` on all staging vhosts.

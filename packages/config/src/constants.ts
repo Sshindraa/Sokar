@@ -75,7 +75,7 @@ export const VOICE_LLM_FALLBACK_MODEL_DEFAULT = 'meta-llama/llama-3.3-70b-instru
 export const CEREBRAS_BASE_URL = 'https://api.cerebras.ai/v1';
 export const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 
-export const TTS_PROVIDERS = ['cartesia', 'deepgram-aura'] as const;
+export const TTS_PROVIDERS = ['cartesia'] as const;
 export type TtsProvider = (typeof TTS_PROVIDERS)[number];
 
 // ─── Phase 2 — Carrier ────────────────────────────────────────────────────

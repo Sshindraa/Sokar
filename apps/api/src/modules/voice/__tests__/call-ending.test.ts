@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { acknowledgeCallEnding, finishCall, isExplicitCallEnd } from '../stream/call-ending';
-import { handleFluxEvent, processTranscriptStreaming } from '../stream/llm-handler';
+import { handleSttEvent, processTranscriptStreaming } from '../stream/llm-handler';
 import { createConversationState } from '../stream/conversation-controller';
 import type { CallSession } from '../stream/types';
 import type { CallSessionManager } from '../stream/manager';
@@ -87,7 +87,7 @@ describe('farewell playback and hangup', () => {
     const done = finishCall(session, mgr, 'Au revoir.');
     expect(session.state).toBe('CLOSING');
     expect(telnyxFetch).not.toHaveBeenCalled();
-    handleFluxEvent({ type: 'UtteranceEnd', transcript: 'Nova' }, session, mgr);
+    handleSttEvent({ type: 'UtteranceEnd', transcript: 'Nova' }, session, mgr);
     await processTranscriptStreaming(session, 'Nova', mgr);
     expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
     resolveTts();

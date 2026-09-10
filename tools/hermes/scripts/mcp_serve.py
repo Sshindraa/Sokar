@@ -64,7 +64,7 @@ def classify_task(task: str) -> dict:
          "modify_schema", "Database Schema.md", "major"),
 
         # Voice pipeline
-        (r"(?:voice|call|stt|tts|deepgram|elevenlabs|cartesia|telnyx|pipeline|agent.state|filler|outcome)",
+        (r"(?:voice|call|stt|tts|elevenlabs|cartesia|telnyx|pipeline|agent.state|filler|outcome)",
          "voice_pipeline", "Voice Pipeline.md", "update"),
 
         # Dashboard / UI

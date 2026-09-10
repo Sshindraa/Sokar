@@ -32,7 +32,7 @@ Le levier marketing principal est le **0€ de commission par couvert**, calcul�
 
 | Avantage                             | Preuve dans le code                                                |
 | ------------------------------------ | ------------------------------------------------------------------ |
-| Agent vocal IA 24/7                  | `modules/voice/` — Telnyx + Deepgram + Cartesia                    |
+| Agent vocal IA 24/7                  | `modules/voice/` — Telnyx + ElevenLabs + Cartesia                  |
 | Réservable par les IA du marché      | `modules/agentic-reservations/mcp/` — OAuth, rate-limit, redaction |
 | OpenAI Reserve intégré               | `modules/agentic-reservations/openai-reserve/`                     |
 | Reconnaissance client + VIP          | `modules/customers/` + seed "Chez Sokar" VIP                       |

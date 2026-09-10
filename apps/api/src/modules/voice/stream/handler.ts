@@ -1,37 +1,37 @@
 /**
  * Handler WebSocket Telnyx Media Stream — orchestrator.
  *
- * Reçoit l'audio en temps réel de Telnyx, le forwarde à Deepgram Flux,
+ * Reçoit l'audio en temps réel de Telnyx, le forwarde à ElevenLabs Scribe,
  * reçoit les transcripts, les envoie au LLM, génère du TTS Cartesia,
  * et renvoie l'audio à Telnyx via le stream bidirectionnel.
  *
- * Barge-in : quand le caller parle pendant le TTS, Flux détecte
+ * Barge-in : quand le caller parle pendant le TTS, Scribe détecte
  * UtteranceStart → on clear le buffer Telnyx → on réécoute.
  *
  * Architecture :
  *   - debug-log.ts       → writeDebugLog (utilitaire partagé)
- *   - session-persistence.ts → persistFluxCall, persistLatencyTrace (DB)
+ *   - session-persistence.ts → persistSttCall, persistLatencyTrace (DB)
  *   - tts-handler.ts     → speakTtsStreamed, cleanTextForTts, etc. (Cartesia)
- *   - llm-handler.ts     → handleFluxEvent, processTranscriptStreaming, etc. (Deepgram Flux)
+ *   - llm-handler.ts     → handleSttEvent, processTranscriptStreaming, etc. (ElevenLabs Scribe)
  *   - handler.ts (this)  → registerMediaStreamRoutes, handleTelnyxMessage (orchestrator)
  *
  * NOTE: audio-buffer.ts n'a pas été créé car la gestion du buffer audio
- * (session.audioBuffer) se fait dans deepgram-bridge.ts, pas dans ce
+ * (session.audioBuffer) se fait dans stt-bridge.ts, pas dans ce
  * handler. Il n'y a pas de logique de buffer à extraire ici.
  */
 
 import type { FastifyInstance } from 'fastify';
 import '@fastify/websocket';
 import { WebSocket } from 'ws';
-import type { TelnyxStreamMessage, FluxEvent, CallSession } from './types';
+import type { TelnyxStreamMessage, SttEvent, CallSession } from './types';
 import { CallSessionManager } from './manager';
-import { sendAudioToDeepgram, closeDeepgram, connectDeepgramFlux } from './deepgram-bridge';
+import { sendAudioToStt, closeStt, connectStt } from './stt-bridge';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
-import { persistFluxCall, persistLatencyTrace } from './session-persistence';
+import { persistSttCall, persistLatencyTrace } from './session-persistence';
 import { speakTtsStreamed } from './tts-handler';
-import { handleFluxEvent, extractRestaurantName } from './llm-handler';
+import { handleSttEvent, extractRestaurantName } from './llm-handler';
 import { redactPii } from './pii-redact';
 import { acknowledgeCallEnding } from './call-ending';
 import { startTestCallRecording } from '../call-recording.service';
@@ -81,10 +81,10 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
         persistLatencyTrace(session).catch((err) =>
           log.error({ err }, '[stream] persistLatencyTrace failed'),
         );
-        persistFluxCall(session).catch((err) =>
-          log.error({ err }, '[stream] persistFluxCall failed'),
+        persistSttCall(session).catch((err) =>
+          log.error({ err }, '[stream] persistSttCall failed'),
         );
-        closeDeepgram(session);
+        closeStt(session);
         mgr.delete(session.callControlId);
       }
     });
@@ -102,10 +102,10 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
         persistLatencyTrace(session).catch((err) =>
           log.error({ err }, '[stream] persistLatencyTrace failed (error path)'),
         );
-        persistFluxCall(session).catch((err) =>
-          log.error({ err }, '[stream] persistFluxCall failed (error path)'),
+        persistSttCall(session).catch((err) =>
+          log.error({ err }, '[stream] persistSttCall failed (error path)'),
         );
-        closeDeepgram(session);
+        closeStt(session);
         mgr.delete(session.callControlId);
       }
     });
@@ -145,26 +145,26 @@ function handleTelnyxMessage(
       // Assigner le WebSocket Telnyx à la session (manquant — cause du silence)
       session.telnyxWs = socket;
 
-      // Connecter et démarrer Deepgram Flux STT pour la session
-      session.onDeepgramEvent = (event: FluxEvent) => handleFluxEvent(event, session, mgr);
-      connectDeepgramFlux(session)
+      // Connecter et démarrer ElevenLabs Scribe STT pour la session
+      session.onSttEvent = (event: SttEvent) => handleSttEvent(event, session, mgr);
+      connectStt(session)
         .then(() => {
-          writeDebugLog(`[stream] Deepgram ready for ${start.call_control_id}`);
-          logger.info({ callId: start.call_control_id }, '[stream] Deepgram ready');
+          writeDebugLog(`[stream] ElevenLabs ready for ${start.call_control_id}`);
+          logger.info({ callId: start.call_control_id }, '[stream] ElevenLabs ready');
         })
         .catch((err) => {
-          writeDebugLog(`[stream] Deepgram failed to connect`, err);
+          writeDebugLog(`[stream] ElevenLabs failed to connect`, err);
           logger.error(
             { err, callId: start.call_control_id },
-            `[stream] Deepgram failed to connect: ${(err as Error).message}`,
+            `[stream] ElevenLabs failed to connect: ${(err as Error).message}`,
           );
           captureException(err as Error, {
-            tags: { service: 'handler', action: 'deepgram-ready' },
+            tags: { service: 'handler', action: 'elevenlabs-ready' },
             extra: { callId: start.call_control_id },
           });
         });
 
-      // Jouer le message d'accueil immédiatement (ne dépend pas de Deepgram)
+      // Jouer le message d'accueil immédiatement (ne dépend pas de ElevenLabs)
       const restaurantName = extractRestaurantName(session.systemPrompt);
 
       const greeting = buildInitialGreeting(restaurantName);
@@ -217,8 +217,8 @@ function handleTelnyxMessage(
       const session = mgr.get(callId);
       if (!session || session.ended || session.ending) return session;
 
-      // Forwarder l'audio à Deepgram
-      sendAudioToDeepgram(session, payload);
+      // Forwarder l'audio à ElevenLabs
+      sendAudioToStt(session, payload);
 
       return session;
     }
@@ -233,10 +233,10 @@ function handleTelnyxMessage(
         persistLatencyTrace(session).catch((err) =>
           logger.error({ err, callId }, '[stream] persistLatencyTrace failed'),
         );
-        persistFluxCall(session).catch((err) =>
-          logger.error({ err, callId }, '[stream] persistFluxCall failed'),
+        persistSttCall(session).catch((err) =>
+          logger.error({ err, callId }, '[stream] persistSttCall failed'),
         );
-        closeDeepgram(session);
+        closeStt(session);
         mgr.delete(session.callControlId);
       }
       return;

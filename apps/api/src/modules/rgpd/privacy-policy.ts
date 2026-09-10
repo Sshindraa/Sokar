@@ -57,7 +57,7 @@ Sokar SAS, contact DPO : dpo@sokar.tech
 - Brevo (email, France) : DPA à formaliser
 - Postmark (email transactionnel, USA) : DPA à formaliser, SCC 2021/914 à valider
 - Telnyx (téléphonie, USA + EU) : DPA à formaliser, SCC 2021/914 à valider
-- Deepgram (STT, USA) : DPA à formaliser, SCC 2021/914 à valider
+- ElevenLabs (STT, USA) : DPA à formaliser, SCC 2021/914 à valider
 - Cartesia (TTS, USA) : DPA à formaliser, SCC 2021/914 à valider
 
 ## Sécurité

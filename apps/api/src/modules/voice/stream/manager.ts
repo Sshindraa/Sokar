@@ -363,9 +363,9 @@ export class CallSessionManager {
         { role: 'system', content: opts.systemPrompt },
         { role: 'assistant', content: greeting },
       ],
-      deepgramWs: null,
-      deepgramReady: null,
-      onDeepgramEvent: null,
+      sttWs: null,
+      sttReady: null,
+      onSttEvent: null,
       audioBuffer: [],
       isSpeaking: false,
       ttsPlayback: Promise.resolve(),
@@ -415,23 +415,23 @@ export class CallSessionManager {
       clearTimeout(session.speechFinalTimer);
       session.speechFinalTimer = null;
     }
-    if (session.deepgramEndOfTurnTimer) {
-      clearTimeout(session.deepgramEndOfTurnTimer);
-      session.deepgramEndOfTurnTimer = null;
+    if (session.sttEndOfTurnTimer) {
+      clearTimeout(session.sttEndOfTurnTimer);
+      session.sttEndOfTurnTimer = null;
     }
-    session.pendingDeepgramEndOfTurn = null;
+    session.pendingSttEndOfTurn = null;
     if (session.abortController) {
       session.abortController.abort();
       session.abortController = null;
     }
-    if (session.deepgramWs && session.deepgramWs.readyState === WebSocket.OPEN) {
+    if (session.sttWs && session.sttWs.readyState === WebSocket.OPEN) {
       try {
-        session.deepgramWs.close();
+        session.sttWs.close();
       } catch {
         /* ignore */
       }
     }
-    session.deepgramWs = null;
+    session.sttWs = null;
     session.audioBuffer = [];
   }
 
@@ -626,7 +626,7 @@ export class CallSessionManager {
 
   /**
    * Prépare une réponse LLM sans muter l'historique ni exécuter d'outil.
-   * Elle ne peut être réutilisée que si Deepgram confirme ensuite exactement
+   * Elle ne peut être réutilisée que si ElevenLabs confirme ensuite exactement
    * le même énoncé final : aucun effet métier ne peut donc partir trop tôt.
    */
   async prepareSpeculativeReply(
@@ -2277,7 +2277,7 @@ export class CallSessionManager {
   }
 
   /**
-   * Simulation locale : traite un transcript texte comme si Deepgram l'avait
+   * Simulation locale : traite un transcript texte comme si ElevenLabs l'avait
    * reconnu, sans audio ni TTS. Retourne la réponse texte de l'assistant.
    * Utile pour tester les prompts et les outils en local sans clés providers.
    */

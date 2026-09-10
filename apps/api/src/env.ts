@@ -170,9 +170,10 @@ const EnvSchema = z
       .min(1_000_000)
       .max(200_000_000)
       .default(50_000_000),
-    DEEPGRAM_API_KEY: z.string().optional(),
-    // Host Deepgram — défaut US, set à api.eu.deepgram.com pour Frankfurt.
-    DEEPGRAM_API_HOST: z.string().default('api.deepgram.com'),
+    ELEVENLABS_API_KEY: z.string().optional(),
+    // Endpoint STT temps réel ElevenLabs — surchargeable pour les tests.
+    ELEVENLABS_STT_HOST: z.string().default('api.elevenlabs.io'),
+    ELEVENLABS_STT_MODEL: z.string().default('scribe_v2_realtime'),
     CARTESIA_API_KEY: z.string().optional(),
     // Canary TTS : contexte WebSocket par réponse LLM. Désactivé par défaut,
     // le chemin /tts/bytes reste la référence tant que la mesure audio manque.
@@ -297,12 +298,12 @@ const EnvSchema = z
       if (data.NODE_ENV !== 'production') return true;
       const voiceDisabled = process.env.VOICE_DISABLED === 'true';
       if (voiceDisabled) return true;
-      return !!data.DEEPGRAM_API_KEY && data.DEEPGRAM_API_KEY.length >= 20;
+      return !!data.ELEVENLABS_API_KEY && data.ELEVENLABS_API_KEY.length >= 20;
     },
     {
       message:
-        'En production, DEEPGRAM_API_KEY doit être définie (≥20 chars). Pour désactiver la voice (staging), set VOICE_DISABLED=true.',
-      path: ['DEEPGRAM_API_KEY'],
+        'En production, ELEVENLABS_API_KEY doit être définie (≥20 chars). Pour désactiver la voice (staging), set VOICE_DISABLED=true.',
+      path: ['ELEVENLABS_API_KEY'],
     },
   )
   .refine(

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Sokar voice pipeline healthcheck — Telnyx, Deepgram, Cartesia.
+Sokar voice pipeline healthcheck — Telnyx, ElevenLabs STT, Cartesia.
 
 Runs every 30 min. Exits 0 if all OK, 1 if any provider degraded.
 Stdout empty = silent (no user noise). Non-zero = alert message.
@@ -83,16 +83,16 @@ def check_telnyx(env):
     return "DEGRADED", f"Telnyx HTTP {code}: {body[:80]}"
 
 
-def check_deepgram(env):
+def check_elevenlabs_stt(env):
     code, body = http_check(
-        "https://api.deepgram.com/v1/projects",
-        {"Authorization": f"Token {env.get('DEEPGRAM_API_KEY', '')}"},
+        "https://api.elevenlabs.io/v1/user",
+        {"xi-api-key": env.get('ELEVENLABS_API_KEY', '')},
     )
     if code == 200:
-        return "OK", f"Deepgram auth valid (HTTP {code})"
+        return "OK", f"ElevenLabs STT auth valid (HTTP {code})"
     if code in (401, 403):
-        return "FAIL", f"Deepgram auth rejected: HTTP {code}"
-    return "DEGRADED", f"Deepgram HTTP {code}: {body[:80]}"
+        return "FAIL", f"ElevenLabs STT auth rejected: HTTP {code}"
+    return "DEGRADED", f"ElevenLabs STT HTTP {code}: {body[:80]}"
 
 
 def check_cartesia(env):
@@ -267,7 +267,7 @@ def main():
     env = _load_env()
     checks = [
         ("Telnyx", check_telnyx(env)),
-        ("Deepgram", check_deepgram(env)),
+        ("ElevenLabs STT", check_elevenlabs_stt(env)),
         ("Cartesia", check_cartesia(env)),
         ("Cartesia quota", check_cartesia_quota(env)),
     ]

@@ -91,7 +91,7 @@ groups:
           team: sokar
         annotations:
           summary: '{{ $value }} appel(s) sans transcription ou sans outcome sur 24h'
-          description: 'Pipeline voix potentiellement cassé (Deepgram STT, stream WebSocket, webhook /voice/telnyx/end). Vérifier les logs API et passer un appel test.'
+          description: 'Pipeline voix potentiellement cassé (ElevenLabs STT, stream WebSocket, webhook /voice/telnyx/end). Vérifier les logs API et passer un appel test.'
 
       # Réservations créées sans SMS de confirmation tracé.
       - alert: ReservationsMissingConfirmationSms

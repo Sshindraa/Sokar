@@ -22,7 +22,7 @@
 | `.env.local` (root)          | `DATABASE_URL`, `REDIS_URL`, `POSTGRES_PASSWORD`                  |
 | `packages/database/.env`     | `DATABASE_URL` for Prisma CLI (`db:push`, `db:seed`, `db:studio`) |
 | `apps/connect/.env`          | Connect dev vars (`SITE_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`)   |
-| `apps/api/.env` (prod)       | All API vars (Telnyx, Deepgram, Cartesia, DB, Redis, etc.)        |
+| `apps/api/.env` (prod)       | All API vars (Telnyx, ElevenLabs, Cartesia, DB, Redis, etc.)      |
 | `apps/dashboard/.env` (prod) | Clerk keys, `API_URL`, Sentry                                     |
 | `apps/connect/.env` (prod)   | `SITE_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`, `DASHBOARD_URL`     |
 

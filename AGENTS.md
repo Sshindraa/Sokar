@@ -14,7 +14,7 @@ Keep this file short. Detailed docs are in `docs/runbooks/` and `docs/architectu
 - Dashboard: `apps/dashboard` — Next.js 15 App Router, React 19, Tailwind 3, Shadcn UI, Lucide.
 - Connect / Widget: `apps/connect` + `apps/widget` — Next.js, standalone/export.
 - Packages: `packages/database`, `packages/config`, `packages/shared`.
-- Voice: Telnyx Media Stream, Deepgram Flux, Cartesia TTS.
+- Voice: Telnyx Media Stream, ElevenLabs Scribe Realtime STT, Cartesia TTS.
 
 ## Structure
 
