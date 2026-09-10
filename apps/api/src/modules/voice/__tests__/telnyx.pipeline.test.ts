@@ -54,8 +54,9 @@ vi.mock('../../../shared/configcat', () => ({
 
 // Mock telnyxFetch (used for direct answer call instead of BullMQ queue)
 vi.mock('../../../shared/telnyx/http-agent', () => ({
-  telnyxFetch: vi.fn(async () =>
-    new Response('{"data":{}}', { status: 200, headers: { 'Content-Type': 'application/json' } }),
+  telnyxFetch: vi.fn(
+    async () =>
+      new Response('{"data":{}}', { status: 200, headers: { 'Content-Type': 'application/json' } }),
   ),
   warmupTelnyxConnection: vi.fn(async () => undefined),
 }));
@@ -223,6 +224,60 @@ describe('POST /voice/telnyx — call.initiated', () => {
         body: expect.stringContaining('wss://'),
       }),
     );
+  });
+
+  it('rejoue la réponse via la queue quand Telnyx renvoie une erreur HTTP', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
+    mockCheckMarginHealth.mockResolvedValue(true);
+    mockIsVoicePipelineEnabled.mockResolvedValue(true);
+    mockBuildVipPromptExtra.mockReturnValue('');
+    mockTelnyxFetch.mockResolvedValueOnce(
+      new Response('{"error":"provider down"}', { status: 503 }),
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeInitiatedPayload(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    await vi.waitFor(() => {
+      expect(queues.telnyxWebhooks.add).toHaveBeenCalledWith(
+        'answer-call',
+        expect.objectContaining({
+          callControlId: 'cc-1',
+          callLegId: 'leg-1',
+          codec: 'PCMA',
+          streamUrl: expect.stringContaining('wss://'),
+          idempotencyKey: expect.any(String),
+        }),
+        expect.objectContaining({ jobId: expect.any(String) }),
+      );
+    });
+  });
+
+  it('rejoue la réponse via la queue après une erreur réseau Telnyx', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
+    mockCheckMarginHealth.mockResolvedValue(true);
+    mockIsVoicePipelineEnabled.mockResolvedValue(true);
+    mockBuildVipPromptExtra.mockReturnValue('');
+    mockTelnyxFetch.mockRejectedValueOnce(new Error('connect ETIMEDOUT'));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeInitiatedPayload(),
+    });
+
+    expect(res.statusCode).toBe(200);
+    await vi.waitFor(() => {
+      expect(queues.telnyxWebhooks.add).toHaveBeenCalledWith(
+        'answer-call',
+        expect.objectContaining({ callControlId: 'cc-1', callLegId: 'leg-1' }),
+        expect.objectContaining({ jobId: expect.any(String) }),
+      );
+    });
   });
 
   it('returns 200 and does nothing when loadContext throws (unknown phone number)', async () => {

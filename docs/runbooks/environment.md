@@ -50,9 +50,10 @@ Si aucun secret n’est défini, le déploiement conserve la configuration exist
 
 `RESERVATION_SERVICE_TOKEN` protège la route legacy `POST /reservations`. Il
 doit être généré et injecté uniquement par le secret manager (au moins 32
-caractères), jamais dans le dépôt, le navigateur ou les payloads Connect. Le
-pipeline vocal n'en a pas besoin : il appelle `ReservationService` dans le
-processus API.
+caractères), jamais dans le dépôt, le navigateur ou les payloads Connect. Les
+workflows staging et production le synchronisent vers `apps/api/.env` via
+`scripts/ops/sync-reservation-token.sh`. Le pipeline vocal n'en a pas besoin :
+il appelle `ReservationService` dans le processus API.
 
 Pour la télémétrie Service Copilot, définir `SERVICE_COPILOT_TELEMETRY_SECRET` dans l’environnement
 de l’API (valeur aléatoire d’au moins 32 caractères). Elle signe les jetons de recommandation ; ne pas

@@ -137,6 +137,23 @@ describe('conversation state', () => {
     expect(session.conversation.slots.customerName).toBeUndefined();
   });
 
+  it("récupère une épellation fiable après un mot parasite de l'ASR", () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
+
+    expect(handleCustomerNameTurn(session, 'Un nom de bruit a deux k i f')).toMatchObject({
+      response:
+        "Je n'ai pas bien saisi l'orthographe. Pouvez-vous me redonner le nom lettre par lettre, s'il vous plaît ?",
+      confirmedName: null,
+    });
+
+    expect(handleCustomerNameTurn(session, 'Attif, a b k i f')).toEqual({
+      response: "A-B-K-I-F, c'est bien cela ?",
+      confirmedName: null,
+    });
+    expect(session.conversation.nameCollection.state).toBe('confirming');
+  });
+
   it('garde la correction « non, A D K I F » dans le flux déterministe', () => {
     const session = makeSession();
     recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
@@ -598,6 +615,28 @@ describe('conversation state', () => {
     ).toMatchObject({
       time: '19:30',
       partySize: 2,
+    });
+  });
+
+  it('reconnaît une heure transcrite en toutes lettres (« vingt heures »)', () => {
+    expect(
+      extractConversationSlots(
+        'Demain soir, vers vingt heures, pour quatre personnes',
+        'Europe/Paris',
+      ),
+    ).toMatchObject({ time: '20:00', partySize: 4 });
+  });
+
+  it('reconnaît les minutes et les heures composées en toutes lettres', () => {
+    expect(
+      extractConversationSlots('Vendredi à vingt et une heures trente', 'Europe/Paris'),
+    ).toMatchObject({
+      time: '21:30',
+    });
+    expect(
+      extractConversationSlots('Samedi à dix-neuf heures et quart', 'Europe/Paris'),
+    ).toMatchObject({
+      time: '19:15',
     });
   });
 

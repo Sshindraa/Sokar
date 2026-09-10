@@ -67,6 +67,7 @@ jobs:
           ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
           ALERT_SMS_TO: ${{ secrets.ALERT_SMS_TO }}
+          RESERVATION_SERVICE_TOKEN: ${{ secrets.RESERVATION_SERVICE_TOKEN }}
           STRIPE_PRICE_ESSENTIAL_MONTHLY: ${{ vars.STRIPE_STAGING_ESSENTIAL_MONTHLY }}
           STRIPE_PRICE_ESSENTIAL_ANNUAL: ${{ vars.STRIPE_STAGING_ESSENTIAL_ANNUAL }}
           STRIPE_PRICE_PRO_MONTHLY: ${{ vars.STRIPE_STAGING_PRO_MONTHLY }}
@@ -82,7 +83,7 @@ jobs:
           username: deploy
           key: ${{ secrets.STAGING_SSH_KEY }}
           command_timeout: 18m
-          envs: ALERT_WEBHOOK,SENTRY_DSN,ALERT_EMAIL_TO,ALERT_WEBHOOK_URL,ALERT_SMS_TO,STRIPE_PRICE_ESSENTIAL_MONTHLY,STRIPE_PRICE_ESSENTIAL_ANNUAL,STRIPE_PRICE_PRO_MONTHLY,STRIPE_PRICE_PRO_ANNUAL,STRIPE_PRICE_MULTI_SITE_MONTHLY,STRIPE_PRICE_MULTI_SITE_ANNUAL,STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL,NEXT_PUBLIC_DEMO_RESTAURANT_ID,NEXT_PUBLIC_DEMO_STAGING
+          envs: ALERT_WEBHOOK,SENTRY_DSN,ALERT_EMAIL_TO,ALERT_WEBHOOK_URL,ALERT_SMS_TO,RESERVATION_SERVICE_TOKEN,STRIPE_PRICE_ESSENTIAL_MONTHLY,STRIPE_PRICE_ESSENTIAL_ANNUAL,STRIPE_PRICE_PRO_MONTHLY,STRIPE_PRICE_PRO_ANNUAL,STRIPE_PRICE_MULTI_SITE_MONTHLY,STRIPE_PRICE_MULTI_SITE_ANNUAL,STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL,NEXT_PUBLIC_DEMO_RESTAURANT_ID,NEXT_PUBLIC_DEMO_STAGING
           script: |
             set -euo pipefail
             cd /opt/sokar-staging
@@ -128,6 +129,9 @@ jobs:
             fi
             if [ -n "${SENTRY_DSN:-}${ALERT_EMAIL_TO:-}${ALERT_WEBHOOK_URL:-}${ALERT_SMS_TO:-}" ]; then
               bash scripts/ops/sync-alerting-config.sh staging
+            fi
+            if [ -n "${RESERVATION_SERVICE_TOKEN:-}" ]; then
+              bash scripts/ops/sync-reservation-token.sh staging
             fi
             test -s "$CLERK_SECRET_FILE"
             chmod 0600 "$CLERK_SECRET_FILE"
@@ -181,6 +185,14 @@ jobs:
             --max-time 10 "$API_STAGING_URL/livez" || echo "FAIL")
           echo "api-staging.sokar.tech/livez → $LIVEZ_STATUS"
           [ "$LIVEZ_STATUS" = "200" ] || exit 1
+
+          # La route legacy doit rester protégée et refuser avant toute
+          # validation ou écriture lorsqu'aucun jeton de service n'est fourni.
+          LEGACY_RESERVATION_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 10 -X POST -H "content-type: application/json" -d '{}' \
+            "$API_STAGING_URL/reservations" || echo "FAIL")
+          echo "api-staging.sokar.tech/reservations sans jeton → $LEGACY_RESERVATION_STATUS"
+          [ "$LEGACY_RESERVATION_STATUS" = "401" ] || exit 1
 
           # /dashboard — peut rediriger vers Clerk (302) ou répondre 200.
           # On accepte 200 et 302 comme valides.
