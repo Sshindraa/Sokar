@@ -87,6 +87,31 @@ describe('restaurant routes — sites accessibles', () => {
     });
   });
 
+  it('refuse les opérations de gestion à un membre STAFF', async () => {
+    const app = await getApp();
+
+    const createSite = await app.inject({
+      method: 'POST',
+      url: '/restaurants/sites',
+      headers: { authorization: 'Bearer test', 'x-test-site-role': 'STAFF' },
+      payload: { name: 'Site interdit', phoneNumber: '+33111111111' },
+    });
+    expect(createSite.statusCode).toBe(403);
+    expect(createSite.json()).toEqual({ error: 'SITE_ADMIN_REQUIRED' });
+
+    const manageMember = await app.inject({
+      method: 'POST',
+      url: '/restaurants/sites/site_two/members',
+      headers: { authorization: 'Bearer test', 'x-test-site-role': 'STAFF' },
+      payload: { clerkUserId: 'user_2', role: 'STAFF' },
+    });
+    expect(manageMember.statusCode).toBe(403);
+    expect(manageMember.json()).toEqual({ error: 'SITE_ADMIN_REQUIRED' });
+    expect(clerkClient.organizations.getOrganizationMembershipList).not.toHaveBeenCalled();
+    expect(db.restaurant.create).not.toHaveBeenCalled();
+    expect(db.restaurantAccountMembership.create).not.toHaveBeenCalled();
+  });
+
   it('ajoute un établissement pour le propriétaire dans le quota facturé', async () => {
     const app = await getApp();
     vi.mocked(db.restaurantAccount.findUnique).mockResolvedValue({

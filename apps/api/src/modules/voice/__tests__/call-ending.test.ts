@@ -184,6 +184,40 @@ describe('farewell playback and hangup', () => {
     expect(session.conversation.pendingQuestion).toBe('customerName');
   });
 
+  it("enchaîne l'heure en toutes lettres puis une épellation bruitée", async () => {
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots = {
+      date: '2026-09-05',
+      partySize: 4,
+    };
+    vi.mocked(mgr.getAvailability).mockResolvedValue({
+      slots: ['20:00'],
+    } as unknown as Awaited<ReturnType<CallSessionManager['getAvailability']>>);
+    vi.mocked(mgr.createReservationFromConversation).mockResolvedValue(
+      'Réservation confirmée pour ABKIF.',
+    );
+
+    await processTranscriptStreaming(
+      session,
+      'Alors ça serait bien vers vingt heures, est-ce que vous avez la disponibilité',
+      mgr,
+    );
+    expect(mgr.getAvailability).toHaveBeenCalledWith(session, '2026-09-05', 4);
+    expect(session.conversation.pendingQuestion).toBe('customerName');
+
+    await processTranscriptStreaming(session, 'Un nom de bruit a deux k i f', mgr);
+    await processTranscriptStreaming(session, 'Attif, a b k i f', mgr);
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(session, "A-B-K-I-F, c'est bien cela ?");
+
+    await processTranscriptStreaming(session, 'Oui', mgr);
+    expect(mgr.createReservationFromConversation).toHaveBeenCalledWith(session);
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      "C'est réservé au nom de ABKIF, samedi 5 septembre à 20 heures, pour 4 personnes. Je vous envoie un SMS de confirmation.",
+    );
+  });
+
   it("ne prétend pas qu'un créneau est disponible si la vérification échoue", async () => {
     const { session, mgr } = fixture();
     session.conversation.intent = 'reservation';

@@ -479,7 +479,10 @@ export function parseSpelledNameTranscript(transcript: string): SpelledNameCandi
  * collecte de nom, on essaie donc uniquement les suffixes qui forment une
  * épellation complète et sans ambiguïté.
  */
-function parseTrailingSpellingTranscript(transcript: string): DetailedSpelledNameCandidate | null {
+function parseTrailingSpellingTranscript(
+  transcript: string,
+  allowAsrNoisePrefix = false,
+): DetailedSpelledNameCandidate | null {
   const normalized = normalizeTranscript(transcript);
   const words = normalized.split(/\s+/u).filter(Boolean);
   if (words.length < 3) return null;
@@ -492,12 +495,22 @@ function parseTrailingSpellingTranscript(transcript: string): DetailedSpelledNam
     // Un suffixe est accepté seulement si le préfixe ressemble à une reprise
     // ou à une correction. Cela évite de lire « à la carte » comme « A-K ».
     const prefix = words.slice(0, start).join(' ');
-    if (
-      prefix &&
-      !/\b(?:non|pardon|excusez|attends?|attendez|reprends?|recommence|redonne|en fait|je voulais dire|j ai dit|lettres?|epelle)/u.test(
+    const prefixWords = prefix.split(/\s+/u).filter(Boolean);
+    const isKnownRestartPrefix =
+      !prefix ||
+      /\b(?:non|pardon|excusez|attends?|attendez|reprends?|recommence|redonne|en fait|je voulais dire|j ai dit|lettres?|epelle)/u.test(
         prefix,
-      )
-    ) {
+      );
+    // Après une première clarification, Flux peut laisser un seul mot
+    // parasite devant la reprise (« Attif, A B K I F »). On ne l'ignore que
+    // dans ce contexte dédié, avec au moins trois lettres fiables, afin de ne
+    // pas transformer une phrase ordinaire en épellation.
+    const isShortAsrNoisePrefix =
+      allowAsrNoisePrefix &&
+      prefixWords.length === 1 &&
+      parsed.value.length >= 3 &&
+      !/^(?:je|vous|pour|nom|mon|le|la|un|une|de|au|est|suis|c est)$/u.test(prefix);
+    if (prefix && !isKnownRestartPrefix && !isShortAsrNoisePrefix) {
       continue;
     }
     return parsed;
@@ -1007,11 +1020,21 @@ export function handleCustomerNameTurn(
   const targeted = applyTargetedCorrection(session, transcript);
   if (targeted) return targeted;
 
+  const directParsed = parseSpelledNameTranscriptDetailed(transcript);
+  const nameContext = nameQuestionContext(session) || isNameCollectionActive(session);
+  const trailingParsed = nameContext
+    ? parseTrailingSpellingTranscript(
+        transcript,
+        collection.state === 'clarifying' && !directParsed?.confident,
+      )
+    : null;
+  // Une seconde tentative peut contenir un mot parasite au début ; une
+  // épellation fiable sur son suffixe doit alors remplacer le premier
+  // candidat ambigu, sans élargir ce comportement au premier tour.
   const parsed =
-    parseSpelledNameTranscriptDetailed(transcript) ??
-    (nameQuestionContext(session) || isNameCollectionActive(session)
-      ? parseTrailingSpellingTranscript(transcript)
-      : null);
+    trailingParsed?.confident && collection.state === 'clarifying'
+      ? trailingParsed
+      : (directParsed ?? trailingParsed);
   // Même si Flux a perdu la question « quel nom ? », un « non, A D K I F »
   // est une correction explicite. Le traiter comme une épellation garde le
   // verrou métier actif et empêche le LLM de confirmer une valeur devinée.
@@ -1328,6 +1351,113 @@ function nextWeekday(date: string, targetDay: number): string {
   return addDays(date, (targetDay - currentDay + 7) % 7);
 }
 
+const FRENCH_NUMBER_UNITS: Record<string, number> = {
+  zero: 0,
+  un: 1,
+  une: 1,
+  deux: 2,
+  trois: 3,
+  quatre: 4,
+  cinq: 5,
+  six: 6,
+  sept: 7,
+  huit: 8,
+  neuf: 9,
+  dix: 10,
+  onze: 11,
+  douze: 12,
+  treize: 13,
+  quatorze: 14,
+  quinze: 15,
+  seize: 16,
+};
+
+const FRENCH_NUMBER_TENS: Record<string, number> = {
+  vingt: 20,
+  trente: 30,
+  quarante: 40,
+  cinquante: 50,
+};
+
+function parseFrenchNumberWords(value: string): number | null {
+  const tokens = normalizeTranscript(value).replace(/-/gu, ' ').split(/\s+/u).filter(Boolean);
+  if (!tokens.length) return null;
+
+  if (tokens.length === 1)
+    return FRENCH_NUMBER_UNITS[tokens[0]] ?? FRENCH_NUMBER_TENS[tokens[0]] ?? null;
+
+  const tens = FRENCH_NUMBER_TENS[tokens[0]];
+  if (tens === undefined) {
+    if (tokens.length === 2 && tokens[0] === 'dix') {
+      const unit = FRENCH_NUMBER_UNITS[tokens[1]];
+      return unit !== undefined && unit >= 1 && unit <= 9 ? 10 + unit : null;
+    }
+    return null;
+  }
+
+  if (tokens.length === 2) {
+    const unit = FRENCH_NUMBER_UNITS[tokens[1]];
+    if (unit !== undefined && unit >= 1 && unit <= 9) return tens + unit;
+  }
+  if (tokens.length === 3 && tokens[1] === 'et' && (tokens[2] === 'un' || tokens[2] === 'une')) {
+    return tens + 1;
+  }
+  return null;
+}
+
+/**
+ * Deepgram restitue parfois les heures en toutes lettres (« vers vingt
+ * heures »). Cette forme doit être traitée comme une heure numérique avant de
+ * demander une nouvelle fois le créneau au client.
+ */
+function extractSpokenClockTime(normalized: string): string | null {
+  const tokens = normalized.replace(/-/gu, ' ').split(/\s+/u).filter(Boolean);
+
+  for (let hourIndex = 0; hourIndex < tokens.length; hourIndex++) {
+    if (!['h', 'heure', 'heures'].includes(tokens[hourIndex])) continue;
+
+    let hour: number | null = null;
+    for (let length = 3; length >= 1; length--) {
+      const start = hourIndex - length;
+      if (start < 0) continue;
+      const candidate = parseFrenchNumberWords(tokens.slice(start, hourIndex).join(' '));
+      if (candidate !== null && candidate >= 0 && candidate <= 23) {
+        hour = candidate;
+        break;
+      }
+    }
+    if (hour === null) continue;
+
+    let minute = 0;
+    if (tokens[hourIndex + 1] === 'et' && ['demi', 'demie'].includes(tokens[hourIndex + 2] ?? '')) {
+      minute = 30;
+    } else if (tokens[hourIndex + 1] === 'et' && tokens[hourIndex + 2] === 'quart') {
+      minute = 15;
+    } else if (
+      tokens[hourIndex + 1] === 'moins' &&
+      tokens[hourIndex + 2] === 'le' &&
+      tokens[hourIndex + 3] === 'quart'
+    ) {
+      hour = (hour + 23) % 24;
+      minute = 45;
+    } else {
+      for (let length = 1; length <= 3; length++) {
+        const candidate = parseFrenchNumberWords(
+          tokens.slice(hourIndex + 1, hourIndex + 1 + length).join(' '),
+        );
+        if (candidate !== null && candidate >= 0 && candidate <= 59) {
+          minute = candidate;
+          break;
+        }
+      }
+    }
+
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+
+  return null;
+}
+
 export function extractConversationSlots(
   transcript: string,
   timezone: string,
@@ -1372,12 +1502,17 @@ export function extractConversationSlots(
     const hour = Number(timeMatch[1]);
     const minute = Number(timeMatch[2] ?? timeMatch[3] ?? '0');
     slots.time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-  } else if (/\b(?:a|vers)?\s*midi\b/.test(normalized)) {
-    // « à midi » est la formulation la plus courante au téléphone ; elle
-    // doit déclencher la même vérification qu'une heure numérique.
-    slots.time = '12:00';
-  } else if (/\b(?:a|vers)?\s*minuit\b/.test(normalized)) {
-    slots.time = '00:00';
+  } else {
+    const spokenClockTime = extractSpokenClockTime(normalized);
+    if (spokenClockTime) {
+      slots.time = spokenClockTime;
+    } else if (/\b(?:a|vers)?\s*midi\b/.test(normalized)) {
+      // « à midi » est la formulation la plus courante au téléphone ; elle
+      // doit déclencher la même vérification qu'une heure numérique.
+      slots.time = '12:00';
+    } else if (/\b(?:a|vers)?\s*minuit\b/.test(normalized)) {
+      slots.time = '00:00';
+    }
   }
 
   const partyMatch = normalized.match(
