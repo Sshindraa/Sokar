@@ -58,12 +58,18 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it.each(['Au revoir', 'Merci, au revoir', 'C’est tout, merci', 'Je raccroche', 'À demain'])(
-  'termine sur %s',
-  (text) => {
-    expect(isExplicitCallEnd(text)).toBe(true);
-  },
-);
+it.each([
+  'Au revoir',
+  'Merci, au revoir',
+  'C’est tout, merci',
+  'Je raccroche',
+  'À demain',
+  'Thanks, goodbye',
+  'That’s all, thank you',
+  'Have a great evening',
+])('termine sur %s', (text) => {
+  expect(isExplicitCallEnd(text)).toBe(true);
+});
 it.each([
   'Merci',
   'Non merci',

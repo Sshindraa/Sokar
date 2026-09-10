@@ -123,7 +123,7 @@ packages/
 - Carrier : Telnyx.
 - Pipeline : `apps/api/src/modules/voice/telnyx.pipeline.ts`.
 - WebSocket media stream : `modules/voice/stream/` (handler, session manager, LLM, TTS, fillers cache).
-- TTS : Cartesia Sonic 3.5 (`voice/cartesia-synth.ts`, `fillers-cache.ts`).
+- TTS : Cartesia Sonic 3.6 continu (`sonic-3.6`) avec locale, normalisation, `generation_config`, dictionnaire de prononciation et empreinte de cache (`voice/cartesia-synth.ts`, `stream/cartesia-config.ts`, `fillers-cache.ts`).
 - STT : ElevenLabs.
 - Voir `docs/architecture/voice.md` et `docs/obsidian/Telnyx Pipeline.md`.
 

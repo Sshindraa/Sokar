@@ -26,6 +26,14 @@ import {
   isCloudflareSaaSEnabled,
 } from '../connect/cloudflare-saas.service';
 import { synthesizeText, isCartesiaConfigured } from '../voice/cartesia-synth';
+import {
+  CARTESIA_NORMALIZATION,
+  buildCartesiaCacheVariant,
+  getCartesiaGenerationConfig,
+  getCartesiaVoiceId,
+} from '../voice/stream/cartesia-config';
+import { normalizeVoiceLocale } from '../voice/stream/voice-language';
+import { CARTESIA_MODEL } from '@sokar/config';
 import { redisCache } from '../../shared/redis/client';
 import { listAccessibleRestaurantSites, RestaurantContextError } from './site-context';
 import {
@@ -99,10 +107,13 @@ const UpdatePersonalitySchema = z.object({
   profileType: z.enum(['BISTROT_BRASSERIE', 'GASTRONOMIQUE', 'SEMI_GASTRO']).optional(),
   fillerStyle: z.enum(['CASUAL', 'FORMAL', 'WARM']).optional(),
   speakingRate: z.number().min(0.5).max(2.0).optional(),
+  volume: z.number().min(0.5).max(2.0).optional(),
+  emotion: z.string().trim().max(64).optional(),
   pitchShift: z.number().min(0.5).max(2.0).optional(),
   microphoneThreshold: z.number().int().min(-80).max(0).optional(),
   targetLatencyMs: z.number().int().min(40).max(500).optional(),
   voiceIdCa: z.string().optional(),
+  pronunciationDictId: z.string().trim().max(128).optional(),
   systemPromptExtra: z.string().max(2000).optional(),
 });
 
@@ -907,7 +918,26 @@ export async function restaurantRoutes(app: FastifyInstance) {
     const speed = restaurant.personality?.speakingRate
       ? Number(restaurant.personality.speakingRate)
       : undefined;
-    const cacheKey = `demo-call:${restaurantId}:${body.scriptId}:${speed ?? 'default'}`;
+    const locale = normalizeVoiceLocale('fr-FR') ?? 'fr-FR';
+    const voiceId = getCartesiaVoiceId({ personality: restaurant.personality });
+    const generationConfig = getCartesiaGenerationConfig({
+      personality: restaurant.personality
+        ? {
+            fillerStyle: restaurant.personality.fillerStyle,
+            speakingRate: speed,
+            volume: restaurant.personality.volume ? Number(restaurant.personality.volume) : 1,
+            emotion: restaurant.personality.emotion,
+          }
+        : null,
+    });
+    const cacheVariant = buildCartesiaCacheVariant({
+      voiceId,
+      locale,
+      codec: 'mp3-24k',
+      generationConfig,
+      pronunciationDictId: restaurant.personality?.pronunciationDictId ?? undefined,
+    });
+    const cacheKey = `demo-call:${restaurantId}:${body.scriptId}:${CARTESIA_MODEL}:${CARTESIA_NORMALIZATION}:${cacheVariant}`;
     const cached = await redisCache.getBuffer(cacheKey);
     if (cached) {
       // Hit cache : on track l'event quand même (l'utilisateur a écouté)
@@ -924,7 +954,14 @@ export async function restaurantRoutes(app: FastifyInstance) {
     }
 
     try {
-      const audio = await synthesizeText({ text: transcript, speed });
+      const audio = await synthesizeText({
+        text: transcript,
+        speed,
+        voiceId,
+        locale,
+        normalization: CARTESIA_NORMALIZATION,
+        pronunciationDictId: restaurant.personality?.pronunciationDictId ?? undefined,
+      });
 
       if (!audio) {
         return reply.send({ audio: null, transcript, scriptId: body.scriptId, fallback: true });

@@ -174,7 +174,13 @@ const EnvSchema = z
     // Endpoint STT temps réel ElevenLabs — surchargeable pour les tests.
     ELEVENLABS_STT_HOST: z.string().default('api.elevenlabs.io'),
     ELEVENLABS_STT_MODEL: z.string().default('scribe_v2_realtime'),
+    // Langues Scribe autorisées pour la détection automatique (CSV ISO-639-1/3).
+    ELEVENLABS_STT_LANGUAGES: z.string().default('fr,en,es,it,de,pt,nl'),
+    ELEVENLABS_STT_ALL_LANGUAGES: z.enum(['true', 'false']).default('false'),
     CARTESIA_API_KEY: z.string().optional(),
+    // Dictionnaire Cartesia global de secours ; une personnalité peut en
+    // définir un différent pour un restaurant donné.
+    CARTESIA_PRONUNCIATION_DICT_ID: z.string().optional(),
     // Canary TTS : contexte WebSocket par réponse LLM. Désactivé par défaut,
     // le chemin /tts/bytes reste la référence tant que la mesure audio manque.
     VOICE_TTS_CONTEXT_V2_ENABLED: z.enum(['true', 'false']).default('false'),

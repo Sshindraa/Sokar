@@ -74,7 +74,10 @@ export default function SettingsPage() {
   const [profileType, setProfileType] = useState('BISTROT_BRASSERIE');
   const [fillerStyle, setFillerStyle] = useState('CASUAL');
   const [speakingRate, setSpeakingRate] = useState(1.0);
+  const [volume, setVolume] = useState(1.0);
   const [voiceIdCa, setVoiceIdCa] = useState('');
+  const [pronunciationDictId, setPronunciationDictId] = useState('');
+  const [emotion, setEmotion] = useState('');
   const [systemPromptExtra, setSystemPromptExtra] = useState('');
   const [savingPersonality, setSavingPersonality] = useState(false);
   const [savedPersonality, setSavedPersonality] = useState(false);
@@ -141,7 +144,10 @@ export default function SettingsPage() {
           setProfileType(pers.profileType || 'BISTROT_BRASSERIE');
           setFillerStyle(pers.fillerStyle || 'CASUAL');
           setSpeakingRate(Number(pers.speakingRate) || 1.0);
+          setVolume(Number(pers.volume) || 1.0);
           setVoiceIdCa(pers.voiceIdCa || '');
+          setPronunciationDictId(pers.pronunciationDictId || '');
+          setEmotion(pers.emotion || '');
           setSystemPromptExtra(pers.systemPromptExtra || '');
         }
         const specials = (data.exposureSettings?.capacitySpecials ?? {}) as CapacitySpecials;
@@ -206,7 +212,10 @@ export default function SettingsPage() {
         profileType,
         fillerStyle,
         speakingRate,
+        volume,
         voiceIdCa: voiceIdCa || undefined,
+        pronunciationDictId: pronunciationDictId || undefined,
+        emotion: emotion || undefined,
         systemPromptExtra: systemPromptExtra || undefined,
       });
       setSavedPersonality(true);
@@ -387,6 +396,7 @@ export default function SettingsPage() {
               <label className="text-sm font-medium">Nom du restaurant</label>
               <Input value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Téléphone du gérant</label>
               <Input
@@ -395,6 +405,7 @@ export default function SettingsPage() {
                 onChange={(e) => setManagerPhone(e.target.value)}
               />
             </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Email du gérant</label>
               <Input
@@ -771,6 +782,24 @@ export default function SettingsPage() {
             </div>
 
             <div className="space-y-2">
+              <label className="text-sm font-medium">Volume : {volume.toFixed(2)}x</label>
+              <input
+                type="range"
+                min="0.5"
+                max="2.0"
+                step="0.05"
+                value={volume}
+                onChange={(e) => setVolume(Number(e.target.value))}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Doux (0.5x)</span>
+                <span>Normal (1.0x)</span>
+                <span>Fort (2.0x)</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <label className="text-sm font-medium">
                 ID voix Cartesia
                 <span className="ml-1 text-xs text-muted-foreground">
@@ -782,6 +811,33 @@ export default function SettingsPage() {
                 onChange={(e) => setVoiceIdCa(e.target.value)}
                 placeholder="f786b574-daa5-4673-aa0c-cbe3e8534c02"
                 className="font-mono"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Dictionnaire de prononciation Cartesia
+                <span className="ml-1 text-xs text-muted-foreground">(optionnel)</span>
+              </label>
+              <Input
+                value={pronunciationDictId}
+                onChange={(e) => setPronunciationDictId(e.target.value)}
+                placeholder="dict_..."
+                className="font-mono"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Émotion Cartesia
+                <span className="ml-1 text-xs text-muted-foreground">
+                  (optionnelle, surtout validée en anglais)
+                </span>
+              </label>
+              <Input
+                value={emotion}
+                onChange={(e) => setEmotion(e.target.value)}
+                placeholder="positivity"
               />
             </div>
 

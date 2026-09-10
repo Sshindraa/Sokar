@@ -1,6 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { WebSocket, type RawData } from 'ws';
+import { CARTESIA_MODEL } from '@sokar/config';
 import type { CallSession } from './types';
+import { effectiveVoiceLocale, type VoiceLocaleCode } from './voice-language';
+import {
+  CARTESIA_NORMALIZATION,
+  getCartesiaGenerationConfig,
+  getCartesiaPronunciationDictId,
+  getCartesiaVoiceId,
+} from './cartesia-config';
 import {
   TTS_FRAME_BYTES,
   TTS_INITIAL_BUFFER_FRAMES,
@@ -16,10 +24,13 @@ const CARTESIA_VERSION = '2026-03-01';
 const CARTESIA_CONTEXT_OPEN_TIMEOUT_MS = 3_000;
 
 export interface CartesiaContextRequest {
-  model_id: 'sonic-3.5';
+  model_id: typeof CARTESIA_MODEL;
   transcript: string;
   voice: { mode: 'id'; id: string };
-  language: 'fr';
+  locale: VoiceLocaleCode;
+  normalization: typeof CARTESIA_NORMALIZATION;
+  generation_config?: ReturnType<typeof getCartesiaGenerationConfig>;
+  pronunciation_dict_id?: string;
   context_id: string;
   output_format: {
     container: 'raw';
@@ -54,11 +65,16 @@ export function buildCartesiaContextRequest(
   transcript: string,
   shouldContinue: boolean,
 ): CartesiaContextRequest {
+  const generationConfig = getCartesiaGenerationConfig(session);
+  const pronunciationDictId = getCartesiaPronunciationDictId(session);
   return {
-    model_id: 'sonic-3.5',
+    model_id: CARTESIA_MODEL,
     transcript,
     voice: { mode: 'id', id: voiceId },
-    language: 'fr',
+    locale: effectiveVoiceLocale(session),
+    normalization: CARTESIA_NORMALIZATION,
+    ...(generationConfig ? { generation_config: generationConfig } : {}),
+    ...(pronunciationDictId ? { pronunciation_dict_id: pronunciationDictId } : {}),
     context_id: contextId,
     output_format: {
       container: 'raw',
@@ -332,7 +348,7 @@ export function createCartesiaContextTurn(
 ): CartesiaContextTurn | null {
   if (!canaryEnabled) return null;
   const apiKey = process.env.CARTESIA_API_KEY;
-  const voiceId = process.env.CARTESIA_VOICE_ID;
-  if (!apiKey || !voiceId) return null;
+  const voiceId = getCartesiaVoiceId(session);
+  if (!apiKey) return null;
   return new CartesiaContextTurn(session, session.ttsGeneration, apiKey, voiceId);
 }

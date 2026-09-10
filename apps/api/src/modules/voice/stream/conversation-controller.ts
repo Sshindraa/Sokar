@@ -5,6 +5,7 @@ import type {
   SpellingToken,
   VoiceSpeechAct,
 } from './types';
+import { effectiveVoiceLanguage, type VoiceLanguageCode } from './voice-language';
 
 export function createNameCollection(): NameCollection {
   return {
@@ -114,6 +115,36 @@ const SPOKEN_LETTER_TOKENS: Record<string, string> = {
   y: 'Y',
   zede: 'Z',
   z: 'Z',
+  // Prononciations anglaises fréquemment produites par Scribe.
+  ay: 'A',
+  bee: 'B',
+  see: 'C',
+  dee: 'D',
+  ee: 'E',
+  gee: 'G',
+  aitch: 'H',
+  eye: 'I',
+  jay: 'J',
+  kay: 'K',
+  ell: 'L',
+  el: 'L',
+  em: 'M',
+  en: 'N',
+  oh: 'O',
+  owe: 'O',
+  pee: 'P',
+  cue: 'Q',
+  ar: 'R',
+  are: 'R',
+  ess: 'S',
+  tee: 'T',
+  you: 'U',
+  vee: 'V',
+  doubleyou: 'W',
+  ex: 'X',
+  why: 'Y',
+  zee: 'Z',
+  zed: 'Z',
 };
 
 const SPELLING_FILLER_TOKENS = new Set([
@@ -126,22 +157,29 @@ const SPELLING_FILLER_TOKENS = new Set([
   'euh',
   'heu',
   'comme',
+  'and',
+  'then',
+  'next',
+  'please',
+  'uh',
+  'um',
 ]);
 
 const NAME_INTRODUCTION_PATTERN =
-  /\b(?:au nom de|un nom de|(?:en|un) nombre de actifs?|nom de|mon nom est|mon nom|je m appelle|je suis)\b/u;
+  /\b(?:au nom de|un nom de|(?:en|un) nombre de actifs?|nom de|mon nom est|mon nom|je m appelle|je suis|my name is|the name is|under the name of|this is)\b/u;
 const SPELLING_INTRODUCTION_PATTERN =
-  /\b(?:epel(?:er|e|ez|ant)?|epell(?:er|e|ez|ant)?|lettres?(?: par lettre)?|alphabet)\b/u;
+  /\b(?:epel(?:er|e|ez|ant)?|epell(?:er|e|ez|ant)?|lettres?(?: par lettre)?|alphabet|spell(?:ing|ed)?|letter by letter)\b/u;
 const FULL_RESTART_MARKER_PATTERN =
-  /\b(?:je recommence|je reprends|je vous redonne|je vais vous redonner)\b/u;
-const CONTINUATION_MARKER_PATTERN = /\b(?:la suite|le reste|continue(?:r|z)?)\b/u;
+  /\b(?:je recommence|je reprends|je vous redonne|je vais vous redonner|let me start again|i will spell it again|my name is|under the name of)\b/u;
+const CONTINUATION_MARKER_PATTERN =
+  /\b(?:la suite|le reste|continue(?:r|z)?|the rest|continuing|next)\b/u;
 /**
  * Scribe peut placer « non » ou « pardon » devant une nouvelle épellation.
  * Retirer uniquement ce préfixe permet de reconnaître la correction sans
  * transformer une phrase ordinaire contenant « non » en suite de lettres.
  */
 const SPELLING_CORRECTION_PREFIX_PATTERN =
-  /^(?:non|pardon|excusez|en fait|je me suis trompe|je voulais dire|j ai dit)\s+/u;
+  /^(?:non|pardon|excusez|en fait|je me suis trompe|je voulais dire|j ai dit|no|sorry|actually|i meant|i said)\s+/u;
 
 export interface SpelledNameCandidate {
   /** Lettres normalisées, par exemple `KIF` ou `DUPONT`. */
@@ -641,7 +679,16 @@ function formatCandidateForSpeech(value: string): string {
     .join('-');
 }
 
-function ordinalLabel(position: number): string {
+function ordinalLabel(position: number, language: VoiceLanguageCode = 'fr'): string {
+  if (language === 'en') {
+    if (position === 0) return 'first';
+    if (position === 1) return 'second';
+    if (position === 2) return 'third';
+    if (position === 3) return 'fourth';
+    if (position === 4) return 'fifth';
+    if (position === 5) return 'sixth';
+    return `${position + 1}th`;
+  }
   if (position === 0) return 'première';
   if (position === 1) return 'deuxième';
   if (position === 2) return 'troisième';
@@ -649,14 +696,19 @@ function ordinalLabel(position: number): string {
   return position + 1 + 'e';
 }
 
-function ambiguityQuestion(collection: NameCollection): string {
+function ambiguityQuestion(collection: NameCollection, language: VoiceLanguageCode = 'fr'): string {
   const position = collection.ambiguousPositions[0] ?? 0;
   const partial = formatCandidateForSpeech(collection.partialCandidate);
   // Ne jamais vocaliser un « ? » ou une suite de lettres fabriquée à partir
   // d'un mot ASR inconnu (« Aikif »). Demander une reprise claire est plus
   // naturel et évite d'orienter l'appelant vers une fausse orthographe.
   if (collection.partialCandidate.includes('?')) {
-    return "Je n'ai pas bien saisi l'orthographe. Pouvez-vous me redonner le nom lettre par lettre, s'il vous plaît ?";
+    return language === 'en'
+      ? "I didn't quite catch the spelling. Could you spell the name again, please?"
+      : "Je n'ai pas bien saisi l'orthographe. Pouvez-vous me redonner le nom lettre par lettre, s'il vous plaît ?";
+  }
+  if (language === 'en') {
+    return `I heard ${partial}. What is the ${ordinalLabel(position, language)} letter, please?`;
   }
   return (
     "J'ai compris " +
@@ -667,11 +719,21 @@ function ambiguityQuestion(collection: NameCollection): string {
   );
 }
 
-function completeCandidateResponse(collection: NameCollection): string {
-  return formatCandidateForSpeech(knownCandidate(collection)) + ", c'est bien cela ?";
+function completeCandidateResponse(
+  collection: NameCollection,
+  language: VoiceLanguageCode = 'fr',
+): string {
+  const candidate = formatCandidateForSpeech(knownCandidate(collection));
+  return language === 'en' ? `${candidate}, is that correct?` : `${candidate}, c'est bien cela ?`;
 }
 
-function partialCandidateResponse(collection: NameCollection): string {
+function partialCandidateResponse(
+  collection: NameCollection,
+  language: VoiceLanguageCode = 'fr',
+): string {
+  if (language === 'en') {
+    return `I have ${formatCandidateForSpeech(collection.partialCandidate)} so far. You can continue, or tell me if that is the full name.`;
+  }
   return (
     "J'ai noté " +
     formatCandidateForSpeech(collection.partialCandidate) +
@@ -681,28 +743,28 @@ function partialCandidateResponse(collection: NameCollection): string {
 
 function isNameConfirmation(transcript: string): boolean {
   const normalized = normalizeForDecision(transcript);
-  return /^(?:oui|ouais|ok(?:ay)?|d accord|bien sur|exactement|tout a fait|c est ca|c est bien ca|voila)(?: (?:c est ca|c est bien ca|exactement|voila))?$/u.test(
+  return /^(?:oui|ouais|ok(?:ay)?|d accord|bien sur|exactement|tout a fait|c est ca|c est bien ca|voila|yes|yeah|yep|that is correct|that s right|correct|right)(?: (?:c est ca|c est bien ca|exactement|voila|that s right))?$/u.test(
     normalized,
   );
 }
 
 function isNameRejection(transcript: string): boolean {
   const normalized = normalizeForDecision(transcript);
-  return /^(?:non|pas du tout|ce n est pas ca|ce n est pas le bon nom|j ai dit non)$/u.test(
+  return /^(?:non|pas du tout|ce n est pas ca|ce n est pas le bon nom|j ai dit non|no|not at all|that s not right|that is not correct|wrong)$/u.test(
     normalized,
   );
 }
 
 function hasFullRestartCue(transcript: string): boolean {
   const normalized = normalizeForDecision(transcript);
-  return /\b(?:je recommence|je vous redonne|je vais vous redonner|je reprends|mon nom est|au nom de|je m appelle|j ai dit)\b/u.test(
+  return /\b(?:je recommence|je vous redonne|je vais vous redonner|je reprends|mon nom est|au nom de|je m appelle|j ai dit|let me start again|i will spell it again|my name is|under the name of|i said)\b/u.test(
     normalized,
   );
 }
 
 function hasContinuationCue(transcript: string): boolean {
   const normalized = normalizeForDecision(transcript);
-  return /\b(?:puis|ensuite|la suite|et apres|continue|continuer|le reste|apres)\b/u.test(
+  return /\b(?:puis|ensuite|la suite|et apres|continue|continuer|le reste|apres|the rest|continuing|next|then)\b/u.test(
     normalized,
   );
 }
@@ -718,7 +780,7 @@ function correctionOrdinal(transcript: string): number | null {
     [/\b(?:sixieme|6e|6eme)\b/u, 5],
   ];
   const match = ordinals.find(([pattern]) => pattern.test(normalized));
-  if (!match || !/\blettre\b/u.test(normalized)) return null;
+  if (!match || !/\b(?:lettre|letter)\b/u.test(normalized)) return null;
   return match[1];
 }
 
@@ -740,6 +802,10 @@ function extractSingleSpokenLetter(transcript: string): string | null {
     'correcte',
     'correct',
     'sera',
+    'the',
+    'is',
+    'correct',
+    'right',
   ]);
   const values: string[] = [];
   for (let index = 0; index < tokens.length; index++) {
@@ -784,6 +850,10 @@ function isStandaloneSpokenLetter(transcript: string): boolean {
     'correcte',
     'correct',
     'sera',
+    'the',
+    'is',
+    'correct',
+    'right',
   ]);
   const meaningful = tokens.filter((token) => !token.punctuation && !ignored.has(token.text));
   if (meaningful.length === 1) {
@@ -845,45 +915,58 @@ function mergeSpellingTokens(left: SpellingToken[], right: SpellingToken[]): Spe
   ];
 }
 
-function clarificationEscalation(): CustomerNameTurnResult {
+function clarificationEscalation(language: VoiceLanguageCode = 'fr'): CustomerNameTurnResult {
   return {
-    response: 'Je vais vous mettre en relation avec le gérant pour vous aider.',
+    response:
+      language === 'en'
+        ? "I'll put you through to the manager to help you."
+        : 'Je vais vous mettre en relation avec le gérant pour vous aider.',
     confirmedName: null,
     escalate: true,
   };
 }
 
-const NAME_CORRECTION_CLARIFICATION =
-  "Je n'ai pas compris la correction. Quelle lettre souhaitez-vous modifier, s'il vous plaît ?";
-
-function correctionClarification(collection: NameCollection): CustomerNameTurnResult {
+function correctionClarification(
+  collection: NameCollection,
+  language: VoiceLanguageCode = 'fr',
+): CustomerNameTurnResult {
   collection.clarificationCount++;
-  if (collection.clarificationCount >= 2) return clarificationEscalation();
-  return { response: NAME_CORRECTION_CLARIFICATION, confirmedName: null };
+  if (collection.clarificationCount >= 2) return clarificationEscalation(language);
+  return {
+    response:
+      language === 'en'
+        ? "I didn't understand the correction. Which letter would you like to change, please?"
+        : "Je n'ai pas compris la correction. Quelle lettre souhaitez-vous modifier, s'il vous plaît ?",
+    confirmedName: null,
+  };
 }
 
 function hasUnrecognizedNameCorrectionCue(transcript: string): boolean {
   const normalized = normalizeForDecision(transcript);
   return (
-    /^(?:non\b|pardon\b|excusez\b|en fait\b|je me suis trompe\b|j ai fait une erreur\b|je voulais dire\b)/u.test(
+    /^(?:non\b|pardon\b|excusez\b|en fait\b|je me suis trompe\b|j ai fait une erreur\b|je voulais dire\b|no\b|sorry\b|actually\b|i meant\b|i made a mistake\b)/u.test(
       normalized,
     ) ||
-    /\b(?:lettre|epellation|orthographe|corriger|corrige|correction|rectifier|rectification)\b/u.test(
+    /\b(?:lettre|epellation|orthographe|corriger|corrige|correction|rectifier|rectification|letter|spelling|spell|correct)\b/u.test(
       normalized,
     )
   );
 }
 
-function failedClarification(collection: NameCollection): CustomerNameTurnResult {
+function failedClarification(
+  collection: NameCollection,
+  language: VoiceLanguageCode = 'fr',
+): CustomerNameTurnResult {
   collection.clarificationCount++;
-  if (collection.clarificationCount >= 2) return clarificationEscalation();
-  return { response: ambiguityQuestion(collection), confirmedName: null };
+  if (collection.clarificationCount >= 2) return clarificationEscalation(language);
+  return { response: ambiguityQuestion(collection, language), confirmedName: null };
 }
 
 function fillFirstAmbiguousPosition(
   session: CallSession,
   collection: NameCollection,
   letter: string,
+  language: VoiceLanguageCode = 'fr',
 ): CustomerNameTurnResult {
   const token = collection.tokens.find((candidate) => candidate.kind === 'ambiguous');
   if (!token) return { response: null, confirmedName: null };
@@ -899,19 +982,20 @@ function fillFirstAmbiguousPosition(
     collection.state = 'clarifying';
     collection.presentedCandidate = null;
     syncLegacySpellingCandidate(session);
-    return { response: ambiguityQuestion(collection), confirmedName: null };
+    return { response: ambiguityQuestion(collection, language), confirmedName: null };
   }
 
   collection.state = 'confirming';
   collection.presentedCandidate = knownCandidate(collection);
   syncLegacySpellingCandidate(session);
-  return { response: completeCandidateResponse(collection), confirmedName: null };
+  return { response: completeCandidateResponse(collection, language), confirmedName: null };
 }
 
 function appendIsolatedNameLetter(
   session: CallSession,
   collection: NameCollection,
   letter: string,
+  language: VoiceLanguageCode = 'fr',
 ): CustomerNameTurnResult {
   const tokens = collection.tokens.length
     ? collection.tokens.map((token) => ({ ...token }))
@@ -929,12 +1013,13 @@ function appendIsolatedNameLetter(
   collection.state = 'confirming';
   collection.presentedCandidate = knownCandidate(collection);
   syncLegacySpellingCandidate(session);
-  return { response: completeCandidateResponse(collection), confirmedName: null };
+  return { response: completeCandidateResponse(collection, language), confirmedName: null };
 }
 
 function applyTargetedCorrection(
   session: CallSession,
   transcript: string,
+  language: VoiceLanguageCode = 'fr',
 ): CustomerNameTurnResult | null {
   const ordinal = correctionOrdinal(transcript);
   if (ordinal === null) return null;
@@ -979,13 +1064,13 @@ function applyTargetedCorrection(
     rebuilt.state = 'clarifying';
     rebuilt.presentedCandidate = null;
     syncLegacySpellingCandidate(session);
-    return { response: ambiguityQuestion(rebuilt), confirmedName: null };
+    return { response: ambiguityQuestion(rebuilt, language), confirmedName: null };
   }
 
   rebuilt.state = 'confirming';
   rebuilt.presentedCandidate = knownCandidate(rebuilt);
   syncLegacySpellingCandidate(session);
-  return { response: completeCandidateResponse(rebuilt), confirmedName: null };
+  return { response: completeCandidateResponse(rebuilt, language), confirmedName: null };
 }
 
 export interface CustomerNameTurnResult {
@@ -1005,6 +1090,7 @@ export function handleCustomerNameTurn(
   session: CallSession,
   transcript: string,
 ): CustomerNameTurnResult {
+  const language = effectiveVoiceLanguage(session);
   const collection = ensureNameCollection(session);
   const normalizedDecision = normalizeForDecision(transcript);
   if (!normalizedDecision) return { response: null, confirmedName: null };
@@ -1017,7 +1103,7 @@ export function handleCustomerNameTurn(
     return { response: null, confirmedName: null };
   }
 
-  const targeted = applyTargetedCorrection(session, transcript);
+  const targeted = applyTargetedCorrection(session, transcript, language);
   if (targeted) return targeted;
 
   const directParsed = parseSpelledNameTranscriptDetailed(transcript);
@@ -1068,7 +1154,10 @@ export function handleCustomerNameTurn(
     collection.fallbackRecorded = false;
     session.conversation.spellingCandidate = null;
     return {
-      response: "D'accord. Pouvez-vous me redonner votre nom, lettre par lettre, lentement ?",
+      response:
+        language === 'en'
+          ? 'All right. Could you spell your name again, slowly, please?'
+          : "D'accord. Pouvez-vous me redonner votre nom, lettre par lettre, lentement ?",
       confirmedName: null,
     };
   }
@@ -1107,7 +1196,10 @@ export function handleCustomerNameTurn(
     collection.awaitingCorrection = false;
     session.conversation.spellingCandidate = null;
     return {
-      response: "D'accord. Pouvez-vous me redonner votre nom, lettre par lettre, lentement ?",
+      response:
+        language === 'en'
+          ? 'All right. Could you spell your name again, slowly, please?'
+          : "D'accord. Pouvez-vous me redonner votre nom, lettre par lettre, lentement ?",
       confirmedName: null,
     };
   }
@@ -1117,7 +1209,8 @@ export function handleCustomerNameTurn(
   // elle remplit uniquement la première position encore ambiguë.
   if (collection.state === 'clarifying' && parsedBelongsToName && !hasFullRestartCue(transcript)) {
     const singleLetter = extractSingleSpokenLetter(transcript);
-    if (singleLetter) return fillFirstAmbiguousPosition(session, collection, singleLetter);
+    if (singleLetter)
+      return fillFirstAmbiguousPosition(session, collection, singleLetter, language);
   }
 
   if (parsed && parsedBelongsToName) {
@@ -1159,56 +1252,62 @@ export function handleCustomerNameTurn(
       collection.state = 'clarifying';
       syncLegacySpellingCandidate(session);
       if (collection.clarificationCount >= 2) {
-        return clarificationEscalation();
+        return clarificationEscalation(language);
       }
-      return { response: ambiguityQuestion(collection), confirmedName: null };
+      return { response: ambiguityQuestion(collection, language), confirmedName: null };
     }
 
     collection.clarificationCount = 0;
     if (parsed.isFragment && nextTokens.length <= 2 && !parsed.hasExplicitSpellingCue) {
       collection.state = 'collecting';
       syncLegacySpellingCandidate(session);
-      return { response: partialCandidateResponse(collection), confirmedName: null };
+      return { response: partialCandidateResponse(collection, language), confirmedName: null };
     }
 
     collection.state = 'confirming';
     collection.presentedCandidate = knownCandidate(collection);
     syncLegacySpellingCandidate(session);
-    return { response: completeCandidateResponse(collection), confirmedName: null };
+    return { response: completeCandidateResponse(collection, language), confirmedName: null };
   }
 
   if (collection.state === 'clarifying') {
     const singleLetter = extractSingleSpokenLetter(transcript);
-    if (singleLetter) return fillFirstAmbiguousPosition(session, collection, singleLetter);
-    return failedClarification(collection);
+    if (singleLetter)
+      return fillFirstAmbiguousPosition(session, collection, singleLetter, language);
+    return failedClarification(collection, language);
   }
 
   if (collection.state === 'collecting') {
     if (collection.awaitingCorrection) {
-      return correctionClarification(collection);
+      return correctionClarification(collection, language);
     }
     if (hasUnrecognizedNameCorrectionCue(transcript)) {
       collection.awaitingCorrection = true;
       collection.clarificationCount = 0;
       collection.fallbackRecorded = false;
-      return correctionClarification(collection);
+      return correctionClarification(collection, language);
     }
     const isolatedLetter = isStandaloneSpokenLetter(transcript)
       ? extractSingleSpokenLetter(transcript)
       : null;
     if (isolatedLetter) {
-      return appendIsolatedNameLetter(session, collection, isolatedLetter);
+      return appendIsolatedNameLetter(session, collection, isolatedLetter, language);
     }
     if (isNameConfirmation(transcript)) {
       return {
         response:
-          "Je n'ai pas encore un nom complet à confirmer. Vous pouvez continuer à épeler, s'il vous plaît ?",
+          language === 'en'
+            ? "I don't have a complete name to confirm yet. Please continue spelling it."
+            : "Je n'ai pas encore un nom complet à confirmer. Vous pouvez continuer à épeler, s'il vous plaît ?",
         confirmedName: null,
       };
     }
     if (hasContinuationCue(transcript)) {
       return {
-        response: "Vous pouvez continuer à épeler votre nom, s'il vous plaît.",
+        response:
+          language === 'en'
+            ? 'Please continue spelling your name.'
+            : "Vous pouvez continuer à épeler votre nom, s'il vous plaît.",
         confirmedName: null,
       };
     }
@@ -1235,14 +1334,14 @@ export function handleCustomerNameTurn(
       collection.clarificationCount = 0;
       collection.fallbackRecorded = false;
       syncLegacySpellingCandidate(session);
-      return correctionClarification(collection);
+      return correctionClarification(collection, language);
     }
 
     const isolatedLetter = isStandaloneSpokenLetter(transcript)
       ? extractSingleSpokenLetter(transcript)
       : null;
     if (isolatedLetter) {
-      return appendIsolatedNameLetter(session, collection, isolatedLetter);
+      return appendIsolatedNameLetter(session, collection, isolatedLetter, language);
     }
 
     // Sujet différent : invalider le candidat présenté avant de laisser le
@@ -1269,7 +1368,7 @@ export function handleCustomerNameTurn(
       collection.clarificationCount = 0;
       collection.fallbackRecorded = false;
       syncLegacySpellingCandidate(session);
-      return correctionClarification(collection);
+      return correctionClarification(collection, language);
     }
     return { response: null, confirmedName: null };
   }
@@ -1280,14 +1379,22 @@ export function handleCustomerNameTurn(
 export function classifyVoiceSpeechAct(transcript: string): VoiceSpeechAct {
   const normalized = normalizeTranscript(transcript);
 
-  if (/^(?:allo+|vous etes(?: toujours)? la|vous m entendez|ca a coupe)$/.test(normalized)) {
+  if (
+    /^(?:allo+|vous etes(?: toujours)? la|vous m entendez|ca a coupe|hello|hi|are you(?: still)? there|can you hear me|did we get disconnected)$/.test(
+      normalized,
+    )
+  ) {
     return 'liveness';
   }
-  if (/^(?:oui|ouais|ok|okay|d accord|dac|hum hum|mh|mhm|bien sur)$/.test(normalized)) {
+  if (
+    /^(?:oui|ouais|ok|okay|d accord|dac|hum hum|mh|mhm|bien sur|yes|yeah|yep|sure|right|correct|alright)$/.test(
+      normalized,
+    )
+  ) {
     return 'backchannel';
   }
   if (
-    /^(?:(?:non\s+){1,2})?(?:merci(?:\s+(?:c est tout|au revoir))?|c est tout(?:\s+merci)?|au revoir|bonne (?:journee|soiree)|a bientot)$/.test(
+    /^(?:(?:non\s+){1,2})?(?:merci(?:\s+(?:c est tout|au revoir))?|c est tout(?:\s+merci)?|au revoir|bonne (?:journee|soiree)|a bientot|thanks?(?:\s+(?:that s all|goodbye))?|thank you(?:\s+(?:that s all|goodbye))?|that s all|goodbye|bye|have a (?:good|great) (?:day|evening)|see you soon)$/.test(
       normalized,
     )
   ) {
@@ -1296,7 +1403,7 @@ export function classifyVoiceSpeechAct(transcript: string): VoiceSpeechAct {
   // Decline / fin de conversation : "non ça ira", "c'est bon", "ça va aller",
   // "pas besoin", "non merci", "c'est parfait merci", "non c'est bon merci"
   if (
-    /^(?:non\s+)?(?:c est bon(?:\s+merci)?|ca ira(?:\s+merci)?|ca va aller|pas (?:besoin|la peine)|c est parfait(?:\s+merci)?|non merci|c est tout bon|laissez tomber|non c est bon)$/.test(
+    /^(?:non\s+)?(?:c est bon(?:\s+merci)?|ca ira(?:\s+merci)?|ca va aller|pas (?:besoin|la peine)|c est parfait(?:\s+merci)?|non merci|c est tout bon|laissez tomber|non c est bon|no thanks?|never mind|forget it|no need|that s fine)$/.test(
       normalized,
     )
   ) {
@@ -1305,14 +1412,20 @@ export function classifyVoiceSpeechAct(transcript: string): VoiceSpeechAct {
   // Phrases contenant un pattern de clôture + texte supplémentaire :
   // "C'est bon, allez on arrête", "ça ira laissez tomber", "non c'est bon je raccroche"
   if (
-    /\b(?:c est bon|ca ira|ca va aller|laissez tomber|on arrete|je raccroche|pas la peine|pas besoin)\b/.test(
+    /\b(?:c est bon|ca ira|ca va aller|laissez tomber|on arrete|je raccroche|pas la peine|pas besoin|never mind|forget it|hang up|no need)\b/.test(
       normalized,
     ) &&
-    !/\b(?:reserv|table|heure|personne|demain|aujourd|soir|midi|annul)\b/.test(normalized)
+    !/\b(?:reserv|table|heure|personne|demain|aujourd|soir|midi|annul|book|reservation|table|people|tomorrow|today|tonight|cancel)\b/.test(
+      normalized,
+    )
   ) {
     return 'closing';
   }
-  if (/^(?:non\b|plutot\b|en fait\b|j ai dit\b|je voulais dire\b)/.test(normalized)) {
+  if (
+    /^(?:non\b|plutot\b|en fait\b|j ai dit\b|je voulais dire\b|no\b|rather\b|actually\b|i said\b|i meant\b)/.test(
+      normalized,
+    )
+  ) {
     return 'correction';
   }
   return 'content';
@@ -1320,12 +1433,17 @@ export function classifyVoiceSpeechAct(transcript: string): VoiceSpeechAct {
 
 function inferIntent(transcript: string): ConversationState['intent'] {
   const normalized = normalizeTranscript(transcript);
-  if (/\b(?:annul|supprim)/.test(normalized)) return 'cancel';
+  if (/\b(?:annul|supprim|cancel|cancellation)/.test(normalized)) return 'cancel';
   if (/\b(?:retard|en retard)/.test(normalized)) return 'delay';
-  if (/\b(?:carte cadeau|bon cadeau)/.test(normalized)) return 'gift_card';
-  if (/\b(?:message|rappeler|reclamation)/.test(normalized)) return 'message';
-  if (/\b(?:reserv|table|place)/.test(normalized)) return 'reservation';
-  if (/\b(?:disponib|possible|creneau)/.test(normalized)) return 'availability';
+  if (/\b(?:carte cadeau|bon cadeau|gift card|gift voucher)/.test(normalized)) return 'gift_card';
+  if (/\b(?:message|rappeler|reclamation|call me back|speak to the manager)/.test(normalized))
+    return 'message';
+  if (/\b(?:reserv|table|place|book|booking|reserve|reservation)/.test(normalized))
+    return 'reservation';
+  if (
+    /\b(?:disponib|possible|creneau|available|availability|opening|openings|slot)/.test(normalized)
+  )
+    return 'availability';
   return null;
 }
 
@@ -1377,6 +1495,26 @@ const FRENCH_NUMBER_TENS: Record<string, number> = {
   trente: 30,
   quarante: 40,
   cinquante: 50,
+};
+
+const ENGLISH_NUMBER_WORDS: Record<string, number> = {
+  zero: 0,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
 };
 
 function parseFrenchNumberWords(value: string): number | null {
@@ -1469,13 +1607,13 @@ export function extractConversationSlots(
   const isoDate = normalized.match(/\b(20\d{2}-\d{2}-\d{2})\b/)?.[1];
   if (isoDate) {
     slots.date = isoDate;
-  } else if (/\b(?:aujourd hui|ce jour|ce soir)\b/.test(normalized)) {
+  } else if (/\b(?:aujourd hui|ce jour|ce soir|today|tonight)\b/.test(normalized)) {
     slots.date = localDate(now, timezone);
-  } else if (/\bdemain\b/.test(normalized)) {
+  } else if (/\b(?:demain|tomorrow)\b/.test(normalized)) {
     slots.date = addDays(localDate(now, timezone), 1);
   } else {
     const weekday = normalized.match(
-      /\b(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b/,
+      /\b(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/,
     )?.[1];
     const weekdayIndex: Record<string, number> = {
       dimanche: 0,
@@ -1485,6 +1623,13 @@ export function extractConversationSlots(
       jeudi: 4,
       vendredi: 5,
       samedi: 6,
+      sunday: 0,
+      monday: 1,
+      tuesday: 2,
+      wednesday: 3,
+      thursday: 4,
+      friday: 5,
+      saturday: 6,
     };
     if (weekday) {
       slots.date = nextWeekday(localDate(now, timezone), weekdayIndex[weekday]);
@@ -1495,9 +1640,22 @@ export function extractConversationSlots(
   // forme en plus de « 19:30 », « 19h30 » et « 19 heures 30 », tout en
   // conservant l'heure seule uniquement lorsqu'elle est explicitement suivie
   // de h/heures (pour ne pas confondre « 2 personnes » avec une heure).
-  const timeMatch = normalized.match(
-    /\b(?:a|vers)?\s*([01]?\d|2[0-3])(?:(?:\s*(?::|h(?:eures?)?)\s*)([0-5]\d)?|\s+([0-5]\d))\b/,
+  const englishAmPmMatch = normalized.match(
+    /\b(?:at|around)?\s*(\d{1,2})(?::([0-5]\d))?\s*(am|pm)\b/,
   );
+  if (englishAmPmMatch) {
+    let hour = Number(englishAmPmMatch[1]);
+    const minute = Number(englishAmPmMatch[2] ?? '0');
+    if (englishAmPmMatch[3] === 'pm' && hour < 12) hour += 12;
+    if (englishAmPmMatch[3] === 'am' && hour === 12) hour = 0;
+    slots.time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+
+  const timeMatch = slots.time
+    ? null
+    : normalized.match(
+        /\b(?:a|vers|at|around)?\s*([01]?\d|2[0-3])(?:(?:\s*(?::|h(?:eures?)?)\s*)([0-5]\d)?|\s+([0-5]\d))\b/,
+      );
   if (timeMatch) {
     const hour = Number(timeMatch[1]);
     const minute = Number(timeMatch[2] ?? timeMatch[3] ?? '0');
@@ -1516,7 +1674,7 @@ export function extractConversationSlots(
   }
 
   const partyMatch = normalized.match(
-    /\b(?:pour|de)?\s*(\d+|un|une|deux|trois|quatre|cinq|six|sept)\s+personnes?\b/,
+    /\b(?:pour|de|for|party of|table for)?\s*(\d+|un|une|deux|trois|quatre|cinq|six|sept|one|two|three|four|five|six|seven)\s+(?:personnes?|people|guests?)\b/,
   );
   if (partyMatch) {
     const words: Record<string, number> = {
@@ -1529,7 +1687,8 @@ export function extractConversationSlots(
       six: 6,
       sept: 7,
     };
-    const partySize = words[partyMatch[1]] ?? Number(partyMatch[1]);
+    const partySize =
+      words[partyMatch[1]] ?? ENGLISH_NUMBER_WORDS[partyMatch[1]] ?? Number(partyMatch[1]);
     if (partySize >= 1 && partySize <= 7) slots.partySize = partySize;
   }
 
@@ -1554,8 +1713,21 @@ export function getReadyAvailabilityRequest(session: CallSession): {
 export function buildAvailabilityReply(
   request: { date: string; time: string; partySize: number },
   availableSlots: string[],
+  language: VoiceLanguageCode = 'fr',
 ): string {
-  const time = request.time.replace(/^0/, '').replace(':00', ' h').replace(':', ' h ');
+  const time = formatAvailabilitySlot(request.time, language);
+  if (language === 'en') {
+    if (availableSlots.length === 0) {
+      return `Unfortunately, we're fully booked that day for ${request.partySize} ${request.partySize === 1 ? 'person' : 'people'}. Would you like me to check another day?`;
+    }
+    if (availableSlots.includes(request.time)) {
+      return `Yes, we have a table for ${request.partySize} ${request.partySize === 1 ? 'person' : 'people'} at ${time}. What name should I book it under?`;
+    }
+    const alternatives = selectClosestAvailabilitySlots(request.time, availableSlots)
+      .map((slot) => formatAvailabilitySlot(slot, language))
+      .join(' or ');
+    return `That time, ${time}, is full, but I have ${alternatives} available. Would either work for you?`;
+  }
   if (availableSlots.length === 0) {
     return `Ah, malheureusement on est complets ce jour-là pour ${request.partySize} personne${request.partySize > 1 ? 's' : ''}. Vous voulez que je regarde un autre jour ?`;
   }
@@ -1573,8 +1745,10 @@ export function buildAvailabilityReply(
  * confirme jamais le créneau et ne demande pas le nom avant une vérification
  * réussie.
  */
-export function buildAvailabilityErrorReply(): string {
-  return "Je n'arrive pas à vérifier ce créneau pour le moment. Voulez-vous que je vous passe le gérant ?";
+export function buildAvailabilityErrorReply(language: VoiceLanguageCode = 'fr'): string {
+  return language === 'en'
+    ? "I can't check that time right now. Would you like me to put you through to the manager?"
+    : "Je n'arrive pas à vérifier ce créneau pour le moment. Voulez-vous que je vous passe le gérant ?";
 }
 
 export function recordUserTurn(
@@ -1605,12 +1779,20 @@ export function recordUserTurn(
 
 function asksForAvailabilityAlternative(transcript: string): boolean {
   const normalized = normalizeTranscript(transcript);
-  return /\b(?:que|qu est ce que) (?:vous|tu) propose(?:z)?(?: quoi)?\b|\b(?:vous|tu) propose(?:z)? quoi\b|\b(?:je|on) (?:lui )?propose quoi\b|\bquelles? (?:sont les )?alternatives?\b|\bautres? (?:heure|horaire|creneau)\b|\b(?:sinon|une autre heure)\b/.test(
+  return /\b(?:que|qu est ce que) (?:vous|tu) propose(?:z)?(?: quoi)?\b|\b(?:vous|tu) propose(?:z)? quoi\b|\b(?:je|on) (?:lui )?propose quoi\b|\bquelles? (?:sont les )?alternatives?\b|\bautres? (?:heure|horaire|creneau)\b|\b(?:sinon|une autre heure)\b|\bwhat else do you have\b|\bany other (?:time|slot)\b|\bwhat alternatives\b|\bwhat do you suggest\b/.test(
     normalized,
   );
 }
 
-function formatAvailabilitySlot(slot: string): string {
+function formatAvailabilitySlot(slot: string, language: VoiceLanguageCode = 'fr'): string {
+  if (language === 'en') {
+    const [hourValue, minuteValue] = slot.split(':').map(Number);
+    const suffix = hourValue >= 12 ? 'PM' : 'AM';
+    const hour = hourValue % 12 || 12;
+    return minuteValue === 0
+      ? `${hour} ${suffix}`
+      : `${hour}:${String(minuteValue).padStart(2, '0')} ${suffix}`;
+  }
   return slot.replace(/^0/, '').replace(':00', ' h').replace(':', ' h ');
 }
 
@@ -1642,15 +1824,20 @@ export function buildAvailabilityFollowupResponse(
   if (!asksForAvailabilityAlternative(transcript)) return null;
   const result = session.conversation.lastAvailabilityResult;
   if (!result) return null;
+  const language = effectiveVoiceLanguage(session);
 
   if (result.slots.length === 0) {
-    return "Je n'ai aucun autre créneau vérifié ce jour-là. Je peux vous passer le gérant ou prendre un message.";
+    return language === 'en'
+      ? "I don't have another verified time that day. I can put you through to the manager or take a message."
+      : "Je n'ai aucun autre créneau vérifié ce jour-là. Je peux vous passer le gérant ou prendre un message.";
   }
 
   const alternatives = selectClosestAvailabilitySlots(result.time, result.slots)
-    .map(formatAvailabilitySlot)
-    .join(' ou ');
-  return `Je peux vous proposer ${alternatives}. Lequel vous convient ?`;
+    .map((slot) => formatAvailabilitySlot(slot, language))
+    .join(language === 'en' ? ' or ' : ' ou ');
+  return language === 'en'
+    ? `I can offer ${alternatives}. Which one works for you?`
+    : `Je peux vous proposer ${alternatives}. Lequel vous convient ?`;
 }
 
 export function buildReservationProgressResponse(
@@ -1667,7 +1854,7 @@ export function buildReservationProgressResponse(
     const normalized = normalizeTranscript(transcript);
     // Mots qui indiquent que l'utilisateur ne répond pas à la question en attente
     if (
-      /\b(?:pourquoi|comment|arrete|raccroche|laissez tomber|c est bon|allez|genant|bizarre|probleme|marche pas|entends pas|comprends pas)\b/.test(
+      /\b(?:pourquoi|comment|arrete|raccroche|laissez tomber|c est bon|allez|genant|bizarre|probleme|marche pas|entends pas|comprends pas|why|how|stop|hang up|never mind|problem|not working|can t hear|don t understand)\b/.test(
         normalized,
       )
     ) {
@@ -1682,9 +1869,15 @@ export function buildReservationProgressResponse(
     }
   }
 
-  if (!slots.date) return 'Pour quel jour ?';
-  if (!slots.partySize) return 'Vous serez combien ?';
-  if (!slots.time) return 'Vous voulez venir vers quelle heure ?';
+  const language = effectiveVoiceLanguage(session);
+  if (!slots.date)
+    return language === 'en' ? 'What day would you like to come?' : 'Pour quel jour ?';
+  if (!slots.partySize)
+    return language === 'en' ? 'How many people will there be?' : 'Vous serez combien ?';
+  if (!slots.time)
+    return language === 'en'
+      ? 'What time would you like to come?'
+      : 'Vous voulez venir vers quelle heure ?';
   return null;
 }
 
@@ -1694,23 +1887,30 @@ function isAmbiguousPartySizeReply(session: CallSession, transcript: string): bo
     return false;
 
   const normalized = normalizeTranscript(transcript);
-  return /\b(?:personne|personnes|on sera|nous serons|combien)\b/.test(normalized);
+  return /\b(?:personne|personnes|on sera|nous serons|combien|people|guests|party|how many)\b/.test(
+    normalized,
+  );
 }
 
 function pendingQuestionFrom(question: string): ConversationState['pendingQuestion'] {
   const normalized = normalizeTranscript(question);
-  if (/\b(?:quelle date|quel jour|quand)/.test(normalized)) return 'date';
-  if (/\b(?:quelle heure|a quelle heure|vers quelle heure)/.test(normalized)) return 'time';
+  if (/\b(?:quelle date|quel jour|quand|what day|which day|what date|when)/.test(normalized))
+    return 'date';
+  if (/\b(?:quelle heure|a quelle heure|vers quelle heure|what time|which time)/.test(normalized))
+    return 'time';
   if (/\b(?:combien de personnes|pour combien|vous serez combien)/.test(normalized)) {
     return 'partySize';
   }
+  if (/\b(?:how many people|how many guests|how many of you|party size)/.test(normalized))
+    return 'partySize';
   if (
-    /\b(?:votre nom|quel est votre nom|au nom de qui|a quel nom|quel nom|nom pour la reservation|quelle est la (?:premiere|deuxieme|troisieme|quatrieme|cinquieme|sixieme) lettre|lettre par lettre|epeler|epellez?)\b/.test(
+    /\b(?:votre nom|quel est votre nom|au nom de qui|a quel nom|quel nom|nom pour la reservation|quelle est la (?:premiere|deuxieme|troisieme|quatrieme|cinquieme|sixieme) lettre|lettre par lettre|epeler|epellez?|what is your name|what name|under what name|spell your name|spelling)\b/.test(
       normalized,
     )
   )
     return 'customerName';
-  if (/\b(?:telephone|numero)/.test(normalized)) return 'customerPhone';
+  if (/\b(?:telephone|numero|phone|telephone number|mobile)/.test(normalized))
+    return 'customerPhone';
   return null;
 }
 
@@ -1727,7 +1927,11 @@ export function recordAssistantReply(session: CallSession, reply: string): void 
     session.conversation.pendingQuestion = null;
   }
 
-  if (/je n'ai pas (?:bien )?compris|pouvez-vous repeter/i.test(reply)) {
+  if (
+    /je n'ai pas (?:bien )?compris|pouvez-vous repeter|i (?:didn't|did not) understand|could you repeat|please repeat/i.test(
+      reply,
+    )
+  ) {
     session.conversation.misunderstandingCount++;
   } else {
     // Une réponse métier cohérente confirme que le tour courant a été
@@ -1754,16 +1958,22 @@ export function buildDeterministicTurnResponse(
   // Deux incompréhensions consécutives constituent un échec de dialogue,
   // pas une invitation à poser une troisième fois la même question.
   if (speechAct === 'content' && session.conversation.misunderstandingCount >= 2) {
-    return 'Je vais vous passer le gérant pour vous aider.';
+    return effectiveVoiceLanguage(session) === 'en'
+      ? "I'll put you through to the manager to help you."
+      : 'Je vais vous passer le gérant pour vous aider.';
   }
 
   if (speechAct === 'backchannel' && session.conversation.lastAssistantQuestion) {
-    return `D'accord. ${session.conversation.lastAssistantQuestion}`;
+    return effectiveVoiceLanguage(session) === 'en'
+      ? `All right. ${session.conversation.lastAssistantQuestion}`
+      : `D'accord. ${session.conversation.lastAssistantQuestion}`;
   }
 
   if (speechAct === 'content' || speechAct === 'correction') {
     if (isAmbiguousPartySizeReply(session, transcript)) {
-      return "Je n'ai pas bien compris le nombre de personnes. Vous serez combien ?";
+      return effectiveVoiceLanguage(session) === 'en'
+        ? "I didn't catch the number of people. How many will there be?"
+        : "Je n'ai pas bien compris le nombre de personnes. Vous serez combien ?";
     }
     // Followup de disponibilité : alternatives proposées par l'outil
     // (ces réponses dépendent du résultat de checkAvailability, pas du LLM)

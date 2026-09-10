@@ -312,7 +312,7 @@ async function start() {
   }
 
   // Warm-up Cartesia TTS au boot : pré-génère les fillers ET chauffe le modèle
-  // vocal Sonic 3.5 (évite le cold start de ~600ms sur le premier appel vocal).
+  // vocal Sonic 3.6 (évite le cold start de ~600ms sur le premier appel vocal).
   // Fire-and-forget : on n'attend pas la fin avant d'écouter les requêtes HTTP.
   setImmediate(() => {
     initFillerCache().catch((err) => {

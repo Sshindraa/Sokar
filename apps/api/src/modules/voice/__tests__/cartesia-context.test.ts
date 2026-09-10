@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CARTESIA_MODEL } from '@sokar/config';
 import type { CallSession } from '../stream/types';
 import {
   buildCartesiaContextRequest,
@@ -27,10 +28,11 @@ describe('Cartesia context TTS', () => {
         true,
       ),
     ).toEqual({
-      model_id: 'sonic-3.5',
+      model_id: CARTESIA_MODEL,
       transcript: 'Très bien. ',
       voice: { mode: 'id', id: 'voice-fr' },
-      language: 'fr',
+      locale: 'fr-FR',
+      normalization: 'auto',
       context_id: 'context-1',
       output_format: { container: 'raw', encoding: 'pcm_alaw', sample_rate: 8000 },
       continue: true,
@@ -47,6 +49,32 @@ describe('Cartesia context TTS', () => {
     );
     expect(request.output_format.encoding).toBe('pcm_mulaw');
     expect(request.continue).toBe(false);
+  });
+
+  it('passes the active dialogue language to Cartesia context requests', () => {
+    const session = makeSession('PCMA');
+    session.voiceLanguageCode = 'en';
+    expect(
+      buildCartesiaContextRequest(session, 'voice-en', 'context-en', 'Your table is ready.', true),
+    ).toMatchObject({ locale: 'en-US', normalization: 'auto' });
+  });
+
+  it('passes the restaurant generation controls and pronunciation dictionary', () => {
+    const session = makeSession('PCMA');
+    session.personality = {
+      fillerStyle: 'WARM',
+      speakingRate: 1.2,
+      volume: 1.1,
+      emotion: 'positivity',
+      pronunciationDictId: 'dict-restaurant',
+      voiceIdCa: 'voice-restaurant',
+    };
+    expect(
+      buildCartesiaContextRequest(session, 'voice-restaurant', 'context-1', 'Bienvenue.', true),
+    ).toMatchObject({
+      generation_config: { speed: 1.2, volume: 1.1, emotion: 'positivity' },
+      pronunciation_dict_id: 'dict-restaurant',
+    });
   });
 
   it('stays disabled unless the canary flag is exactly true', () => {

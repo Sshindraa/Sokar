@@ -51,8 +51,11 @@ export type OnboardingRestaurant = {
     profileType?: string;
     fillerStyle?: string;
     speakingRate?: string | number;
+    volume?: string | number;
     systemPromptExtra?: string | null;
     voiceIdCa?: string | null;
+    pronunciationDictId?: string | null;
+    emotion?: string | null;
   } | null;
   // Sokar Connect fields
   slug?: string;

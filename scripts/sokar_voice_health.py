@@ -216,7 +216,7 @@ def check_cartesia_quota(env):
             pass
 
     payload = {
-        "model_id": "sonic-3.5",
+        "model_id": "sonic-3.6",
         "transcript": "a",
         "voice": {"mode": "id", "id": _CARTESIA_VOICE_ID},
         "output_format": {"container": "raw", "encoding": "pcm_s16le",

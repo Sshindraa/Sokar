@@ -7,7 +7,7 @@
  * - Redis: persistant, TTL 30j — survit aux restarts
  *
  * Warm-up au boot (`initFillerCache`) :
- * 1. Charge les 13 fillers du pool (CASUAL/WARM/FORMAL)
+ * 1. Charge les fillers français et anglais du pool (CASUAL/WARM/FORMAL)
  * 2. Check Redis pour chaque filler — hit → ajoute en RAM, 0 appel Cartesia
  * 3. Miss → ajoute à la liste "à générer"
  * 4. Génère en background (concurrence 4 pour éviter 429 Cartesia) et
@@ -19,18 +19,28 @@
  * - Total miss → log warn, fallback `speakTelnyxNative` (voix Telnyx native)
  *
  * Impact économique :
- * - Avant : 4 restarts pm2/jour × 13 fillers × 22 crédits = 1144 crédits/jour
- * - Après : 1 génération tous les 30 jours = 286 crédits/mois (réduction ~95%)
+ * - Avant : les redémarrages régénéraient les phrases des deux langues
+ * - Après : une génération par langue tous les 30 jours, puis lecture RAM/Redis
  */
 import { WebSocket } from 'ws';
 import crypto from 'node:crypto';
 import type { CallSession } from './types';
+import {
+  effectiveVoiceLanguage,
+  normalizeVoiceLocale,
+  type VoiceLanguageCode,
+} from './voice-language';
 import { writeDebugLog } from './debug-log';
 import { splitTelnyxAudioFrames } from './audio-frames';
 import { TTS_FRAME_DURATION_MS } from './constants';
 import { logger } from '../../../shared/logger/pino';
-import { DEFAULT_CARTESIA_VOICE_ID, FILLER_CACHE_TTL_SECONDS } from '@sokar/config';
+import { CARTESIA_MODEL, FILLER_CACHE_TTL_SECONDS } from '@sokar/config';
 import { redisCache } from '../../../shared/redis/client';
+import {
+  buildCartesiaCacheVariant,
+  CARTESIA_NORMALIZATION,
+  getCartesiaVoiceId,
+} from './cartesia-config';
 
 interface FillerSet {
   casual: string[];
@@ -62,6 +72,21 @@ const FILLERS: FillerSet = {
   ],
 };
 
+const ENGLISH_FILLERS: FillerSet = {
+  casual: ['Let me check that…', 'One moment…', 'Let me see…', 'I’ll check that for you…'],
+  warm: [
+    'Of course, let me check that…',
+    'I’ll take care of that, one moment…',
+    'Let me look into that for you…',
+  ],
+  formal: [
+    'Please hold for a moment…',
+    'I’m checking our availability…',
+    'One moment, please…',
+    'Let me check that for you…',
+  ],
+};
+
 const GOODBYE_FILLERS: Record<keyof FillerSet, string[]> = {
   casual: [
     "D'accord, bonne soirée, au revoir.",
@@ -83,6 +108,27 @@ const GOODBYE_FILLERS: Record<keyof FillerSet, string[]> = {
   ],
 };
 
+const ENGLISH_GOODBYE_FILLERS: Record<keyof FillerSet, string[]> = {
+  casual: [
+    'All right, have a great evening. Goodbye.',
+    'Thanks for calling, goodbye.',
+    'No problem, goodbye and see you soon.',
+    'Take care, goodbye.',
+  ],
+  warm: [
+    'My pleasure. Have a wonderful evening, goodbye.',
+    'Thank you for calling. Goodbye, and see you soon.',
+    'All set. Have a lovely evening, goodbye.',
+    'It was a pleasure, goodbye.',
+  ],
+  formal: [
+    'Thank you for calling. Goodbye.',
+    'I wish you a very pleasant evening. Goodbye.',
+    'Thank you and goodbye.',
+    'Understood. Have a pleasant evening.',
+  ],
+};
+
 const FILLER_BY_PURPOSE: Record<FillerPurpose, Record<keyof FillerSet, string>> = {
   availability: {
     casual: 'Je regarde ça…',
@@ -101,18 +147,42 @@ const FILLER_BY_PURPOSE: Record<FillerPurpose, Record<keyof FillerSet, string>> 
   },
 };
 
+const ENGLISH_FILLER_BY_PURPOSE: Record<FillerPurpose, Record<keyof FillerSet, string>> = {
+  availability: {
+    casual: 'Let me check that…',
+    warm: 'Of course, let me check that…',
+    formal: 'I’m checking our availability…',
+  },
+  generic: {
+    casual: 'One moment…',
+    warm: 'I’ll take care of that, one moment…',
+    formal: 'Please hold for a moment…',
+  },
+  goodbye: {
+    casual: 'All right, have a great evening. Goodbye.',
+    warm: 'Thank you for calling. Goodbye, and see you soon.',
+    formal: 'Thank you for calling. Goodbye.',
+  },
+};
+
 export function selectFillerText(
   style: 'CASUAL' | 'FORMAL' | 'WARM',
   purpose: FillerPurpose,
+  language: VoiceLanguageCode = 'fr',
 ): string {
-  return FILLER_BY_PURPOSE[purpose][style.toLowerCase() as keyof FillerSet];
+  const fillers = language === 'en' ? ENGLISH_FILLER_BY_PURPOSE : FILLER_BY_PURPOSE;
+  return fillers[purpose][style.toLowerCase() as keyof FillerSet];
 }
 
 /**
  * Sélectionne un goodbye filler aléatoire (variation pour éviter la répétition).
  */
-export function selectRandomGoodbyeText(style: 'CASUAL' | 'FORMAL' | 'WARM'): string {
-  const pool = GOODBYE_FILLERS[style.toLowerCase() as keyof FillerSet];
+export function selectRandomGoodbyeText(
+  style: 'CASUAL' | 'FORMAL' | 'WARM',
+  language: VoiceLanguageCode = 'fr',
+): string {
+  const pools = language === 'en' ? ENGLISH_GOODBYE_FILLERS : GOODBYE_FILLERS;
+  const pool = pools[style.toLowerCase() as keyof FillerSet];
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -144,13 +214,23 @@ export function __resetFillerCacheForTests(): void {
  * `filler:<sha256-prefix>` — on n'inclut pas le texte en clair dans la clé
  * pour éviter de stocker du français dans Redis (debug-only).
  */
-function redisKey(text: string, voiceId: string, codec: 'pcm_alaw' | 'pcm_mulaw'): string {
+function redisKey(
+  text: string,
+  voiceId: string,
+  codec: 'pcm_alaw' | 'pcm_mulaw',
+  language: VoiceLanguageCode = 'fr',
+): string {
+  const locale = normalizeVoiceLocale(language) ?? `${language}-US`;
   const hash = crypto
     .createHash('sha256')
-    .update(`${text}|${voiceId}|${codec}`)
+    .update(buildCartesiaCacheVariant({ voiceId, locale, codec }) + `|${text}`)
     .digest('hex')
     .slice(0, 16);
   return `filler:${hash}`;
+}
+
+function memoryKey(text: string, voiceId: string, language: VoiceLanguageCode): string {
+  return `${voiceId}|${normalizeVoiceLocale(language) ?? `${language}-US`}|${text}`;
 }
 
 /**
@@ -161,13 +241,23 @@ function redisKey(text: string, voiceId: string, codec: 'pcm_alaw' | 'pcm_mulaw'
 export async function initFillerCache(): Promise<void> {
   if (initialized) return;
 
-  const allFillers = [
-    ...FILLERS.casual,
-    ...FILLERS.warm,
-    ...FILLERS.formal,
-    ...GOODBYE_FILLERS.casual,
-    ...GOODBYE_FILLERS.warm,
-    ...GOODBYE_FILLERS.formal,
+  const allFillers: Array<{ text: string; language: VoiceLanguageCode }> = [
+    ...[
+      ...FILLERS.casual,
+      ...FILLERS.warm,
+      ...FILLERS.formal,
+      ...GOODBYE_FILLERS.casual,
+      ...GOODBYE_FILLERS.warm,
+      ...GOODBYE_FILLERS.formal,
+    ].map((text) => ({ text, language: 'fr' as const })),
+    ...[
+      ...ENGLISH_FILLERS.casual,
+      ...ENGLISH_FILLERS.warm,
+      ...ENGLISH_FILLERS.formal,
+      ...ENGLISH_GOODBYE_FILLERS.casual,
+      ...ENGLISH_GOODBYE_FILLERS.warm,
+      ...ENGLISH_GOODBYE_FILLERS.formal,
+    ].map((text) => ({ text, language: 'en' as const })),
   ];
 
   const apiKey = process.env.CARTESIA_API_KEY;
@@ -177,19 +267,20 @@ export async function initFillerCache(): Promise<void> {
     return;
   }
 
-  const voiceId = process.env.CARTESIA_VOICE_ID ?? DEFAULT_CARTESIA_VOICE_ID;
+  const voiceId = getCartesiaVoiceId();
 
   // ── Étape 1 : précharger depuis Redis (0 appel Cartesia si tout est chaud)
   let redisHits = 0;
-  const toGenerate: string[] = [];
-  for (const text of allFillers) {
-    const key = redisKey(text, voiceId, fillerEncoding);
+  const toGenerate: Array<{ text: string; language: VoiceLanguageCode }> = [];
+  for (const filler of allFillers) {
+    const { text, language } = filler;
+    const key = redisKey(text, voiceId, fillerEncoding, language);
     try {
       const cached = await redisCache.get(key);
       if (cached) {
         const chunks = JSON.parse(cached) as string[];
         if (Array.isArray(chunks) && chunks.length > 0) {
-          fillerCache.set(text, chunks);
+          fillerCache.set(memoryKey(text, voiceId, language), chunks);
           redisHits++;
           continue;
         }
@@ -197,7 +288,7 @@ export async function initFillerCache(): Promise<void> {
     } catch (err) {
       logger.warn({ err, text }, '[fillers] Redis read failed (continuing)');
     }
-    toGenerate.push(text);
+    toGenerate.push(filler);
   }
 
   logger.info(
@@ -216,14 +307,14 @@ export async function initFillerCache(): Promise<void> {
   for (let i = 0; i < toGenerate.length; i += CONCURRENCY) {
     const batch = toGenerate.slice(i, i + CONCURRENCY);
     const results = await Promise.allSettled(
-      batch.map(async (text) => {
+      batch.map(async ({ text, language }) => {
         try {
-          const chunks = await generateFillerAudio(text);
+          const chunks = await generateFillerAudio(text, language);
           if (chunks.length > 0) {
             // RAM d'abord (lookup O(1) au runtime)
-            fillerCache.set(text, chunks);
+            fillerCache.set(memoryKey(text, voiceId, language), chunks);
             // Redis ensuite (persistance cross-restart)
-            const key = redisKey(text, voiceId, fillerEncoding);
+            const key = redisKey(text, voiceId, fillerEncoding, language);
             await redisCache.set(
               key,
               JSON.stringify(chunks),
@@ -266,22 +357,23 @@ export async function playFiller(
 
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-  const text = selectFillerText(style, purpose);
+  const language = session ? effectiveVoiceLanguage(session) : 'fr';
+  const voiceId = session ? getCartesiaVoiceId(session) : getCartesiaVoiceId();
+  const text = selectFillerText(style, purpose, language);
 
   // 1. RAM
-  let chunks = fillerCache.get(text);
+  let chunks = fillerCache.get(memoryKey(text, voiceId, language));
 
   // 2. Redis fallback
   if (!chunks) {
     try {
-      const voiceId = process.env.CARTESIA_VOICE_ID ?? DEFAULT_CARTESIA_VOICE_ID;
-      const key = redisKey(text, voiceId, fillerEncoding);
+      const key = redisKey(text, voiceId, fillerEncoding, language);
       const cached = await redisCache.get(key);
       if (cached) {
         chunks = JSON.parse(cached) as string[];
         if (Array.isArray(chunks) && chunks.length > 0) {
           // Promotion en RAM pour le prochain appel
-          fillerCache.set(text, chunks);
+          fillerCache.set(memoryKey(text, voiceId, language), chunks);
         }
       }
     } catch (err) {
@@ -309,7 +401,10 @@ export async function playFiller(
   }
 }
 
-async function generateFillerAudio(text: string): Promise<string[]> {
+async function generateFillerAudio(
+  text: string,
+  language: VoiceLanguageCode = 'fr',
+): Promise<string[]> {
   const maxRetries = 3;
   let response: Response | null = null;
 
@@ -322,11 +417,13 @@ async function generateFillerAudio(text: string): Promise<string[]> {
         'X-API-Key': process.env.CARTESIA_API_KEY ?? '',
       },
       body: JSON.stringify({
-        model_id: 'sonic-3.5',
+        model_id: CARTESIA_MODEL,
         transcript: text,
+        locale: normalizeVoiceLocale(language) ?? `${language}-US`,
+        normalization: CARTESIA_NORMALIZATION,
         voice: {
           mode: 'id',
-          id: process.env.CARTESIA_VOICE_ID ?? DEFAULT_CARTESIA_VOICE_ID,
+          id: getCartesiaVoiceId(),
         },
         output_format: {
           container: 'raw',

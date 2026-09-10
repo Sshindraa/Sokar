@@ -3,7 +3,7 @@
 **Statut** : ⚡ Actif en prod
 **Composant** : `apps/api/src/modules/voice/stream/fillers-cache.ts`
 **Constante** : `FILLER_CACHE_TTL_SECONDS = 86_400 * 30` (30 jours)
-**Modèle TTS** : Cartesia Sonic 3.5, format G.711 alaw/mulaw 8 kHz
+**Modèle TTS** : Cartesia Sonic 3.6 continu (`sonic-3.6`), format G.711 alaw/mulaw 8 kHz
 
 ---
 
@@ -137,7 +137,7 @@ au pire.
 - **Multi-IDE git hang** : Kilo + Codex + Antigravity ouvrent des handles
   sur `.git/refs/*` qui laissent des `.lock` orphelins. Voir
   `git-housekeeping` skill.
-- **Cold start Sonic 3.5** : le premier appel après (re)démarrage prend
+- **Cold start Sonic 3.6** : le premier appel après (re)démarrage prend
   ~2× plus longtemps que les suivants (chargement du modèle vocal). Le
   warm-up sert précisément à mitiger ça.
 

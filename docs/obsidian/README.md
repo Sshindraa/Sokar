@@ -20,7 +20,7 @@ réservations de restaurants avec assistant vocal IA.
 - **Dashboard** : Next.js 15 (App Router) + React 19 + Tailwind 3 — privé, Clerk auth
 - **Widget B2B** : Next.js 15, port 4001, `output: 'export'`, Cloudflare CDN
 - **Sokar Connect** : Next.js 15, port 4002, `output: 'standalone'`, VPS + Nginx + Cloudflare
-- **Voice Pipeline** : Telnyx (carrier), minimax-m3 via opencode-go (LLM), Cartesia Sonic 3.5 (TTS)
+- **Voice Pipeline** : Telnyx (carrier), minimax-m3 via opencode-go (LLM), Cartesia Sonic 3.6 continu `sonic-3.6` (TTS)
 - **Jobs Queue** : BullMQ (evening report, SMS confirmation, outbound confirm)
 - **Agent IA** : Hermes CLI sur `minimax-m3` via `opencode-go` (depuis 2026-06-23)
 

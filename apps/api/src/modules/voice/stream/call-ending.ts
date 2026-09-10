@@ -15,7 +15,7 @@ export function isExplicitCallEnd(transcript: string): boolean {
     .replace(/[^a-z\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  return /^(?:(?:oui|non|merci|ok|d accord|tres bien|allez)\s+)*(?:au revoir|bonne journee|bonne soiree|a bientot|a demain|c est tout|je raccroche|on arrete|laissez tomber)(?:\s+(?:merci|au revoir|bonne journee|bonne soiree|a demain))*$/.test(
+  return /^(?:(?:oui|non|merci|ok|d accord|tres bien|allez|thanks?|thank you|yes|no|okay)\s+)*(?:au revoir|bonne journee|bonne soiree|a bientot|a demain|c est tout|je raccroche|on arrete|laissez tomber|goodbye|bye|see you|that s all|hang up|have a good day|have a great day|have a good evening|have a great evening)(?:\s+(?:merci|au revoir|bonne journee|bonne soiree|a demain|thanks?|thank you))*$/.test(
     normalized,
   );
 }

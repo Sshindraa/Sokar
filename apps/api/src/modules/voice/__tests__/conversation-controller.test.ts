@@ -668,4 +668,33 @@ describe('conversation state', () => {
       ),
     ).toMatchObject({ date: '2026-07-24', time: '19:00' });
   });
+
+  it('routes an English caller through English intent, slot prompts and availability copy', () => {
+    const session = makeSession();
+    session.voiceLanguageCode = 'en';
+    recordUserTurn(session, 'I would like to book a table', 'content');
+
+    expect(session.conversation.intent).toBe('reservation');
+    expect(session.conversation.slots).toEqual({});
+    expect(buildReservationProgressResponse(session)).toBe('What day would you like to come?');
+
+    session.conversation.slots.date = '2026-09-11';
+    session.conversation.slots.partySize = 2;
+    session.conversation.slots.time = '20:00';
+    expect(buildReservationProgressResponse(session)).toBeNull();
+    expect(
+      buildAvailabilityReply({ date: '2026-09-11', time: '20:00', partySize: 2 }, ['20:00'], 'en'),
+    ).toContain('What name should I book it under?');
+  });
+
+  it('recognizes English speech acts and English spelled names', () => {
+    expect(classifyVoiceSpeechAct('Are you still there?')).toBe('liveness');
+    expect(classifyVoiceSpeechAct('Thank you, goodbye')).toBe('closing');
+    const session = makeSession();
+    session.voiceLanguageCode = 'en';
+    recordUserTurn(session, 'I want a reservation for two tomorrow at 7 pm', 'content');
+    recordAssistantReply(session, 'What name should I book it under?');
+    const name = handleCustomerNameTurn(session, 'My name is A bee K I F');
+    expect(name.response).toContain('is that correct?');
+  });
 });

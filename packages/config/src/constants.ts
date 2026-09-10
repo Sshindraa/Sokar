@@ -22,7 +22,9 @@ export const CIRCUIT_BREAKER_HOURLY_LIMIT = 200;
 export const REDIS_CTX_TTL_SECONDS = 300;
 export const SMS_RATE_LIMIT_SECONDS = 900;
 
-export const CARTESIA_MODEL = 'sonic-3.5';
+// Follow Cartesia's latest stable Sonic 3.6 snapshot automatically.
+// Change this deliberately if reproducible voice behavior becomes a release gate.
+export const CARTESIA_MODEL = 'sonic-3.6';
 export const DEFAULT_CARTESIA_VOICE_ID = 'f786b574-daa5-4673-aa0c-cbe3e8534c02';
 
 // ─── Phase 2 — TTS Cache ─────────────────────────────────────────────────
