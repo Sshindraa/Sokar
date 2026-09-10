@@ -123,7 +123,7 @@ describe('RestaurantService.loadContext', () => {
     );
     expect(result.id).toBe('rest-1');
     expect(result.name).toBe('Chez Sokar');
-    expect(result.providerConfig.sttProvider).toBe('deepgram');
+    expect(result.providerConfig.sttProvider).toBe('elevenlabs');
     expect(result.providerConfig.ttsProvider).toBe('cartesia');
   });
 

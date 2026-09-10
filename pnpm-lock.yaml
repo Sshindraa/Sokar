@@ -67,9 +67,6 @@ importers:
       '@clerk/fastify':
         specifier: ^3.1.29
         version: 3.1.29(fastify@5.8.5)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@deepgram/sdk':
-        specifier: ^3.13.0
-        version: 3.13.0
       '@fastify/cors':
         specifier: ^11.0.0
         version: 11.2.0
@@ -1249,20 +1246,6 @@ packages:
     engines: { node: '>=18' }
     peerDependencies:
       postcss-selector-parser: ^7.0.0
-
-  '@deepgram/captions@1.2.0':
-    resolution:
-      {
-        integrity: sha512-8B1C/oTxTxyHlSFubAhNRgCbQ2SQ5wwvtlByn8sDYZvdDtdn/VE2yEPZ4BvUnrKWmsbTQY6/ooLV+9Ka2qmDSQ==,
-      }
-    engines: { node: '>=18.0.0' }
-
-  '@deepgram/sdk@3.13.0':
-    resolution:
-      {
-        integrity: sha512-VFN4gbyIDl5Bj0ApERq4QJHzO2AK4YOoL5Lfoy//q9531+UIzaKCNie4NkBM2Kn/UndHH7tIR335SH14e2r+Ag==,
-      }
-    engines: { node: '>=18.0.0' }
 
   '@dnd-kit/accessibility@3.1.1':
     resolution:
@@ -11241,23 +11224,6 @@ snapshots:
   '@csstools/selector-specificity@5.0.0(postcss-selector-parser@7.1.4)':
     dependencies:
       postcss-selector-parser: 7.1.4
-
-  '@deepgram/captions@1.2.0':
-    dependencies:
-      dayjs: 1.11.20
-
-  '@deepgram/sdk@3.13.0':
-    dependencies:
-      '@deepgram/captions': 1.2.0
-      '@types/node': 18.19.130
-      cross-fetch: 3.2.0
-      deepmerge: 4.3.1
-      events: 3.3.0
-      ws: 8.21.0
-    transitivePeerDependencies:
-      - bufferutil
-      - encoding
-      - utf-8-validate
 
   '@dnd-kit/accessibility@3.1.1(react@19.2.7)':
     dependencies:

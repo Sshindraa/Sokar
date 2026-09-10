@@ -11,11 +11,11 @@
 
 Quand un client appelle et pose une question, voici la chaîne :
 
-| Étape | Latence typique |
-|---|---|
-| STT (Deepgram capte la question) | ~300 ms |
-| LLM (OpenRouter réfléchit) | 500-2000 ms |
-| TTS (Cartesia synthétise) | 150-300 ms |
+| Étape                              | Latence typique |
+| ---------------------------------- | --------------- |
+| STT (ElevenLabs capte la question) | ~300 ms         |
+| LLM (OpenRouter réfléchit)         | 500-2000 ms     |
+| TTS (Cartesia synthétise)          | 150-300 ms      |
 
 Le silence entre l'étape 1 et 3 = **500 ms à 2 secondes de blanc**. Si le client
 n'entend rien, il croit que ça a coupé, recommence à parler (barge-in), et
@@ -26,15 +26,15 @@ l'UX devient catastrophique.
 Dès qu'on détecte que le LLM met >400 ms à répondre, on **joue immédiatement
 un filler audio du cache** pour signaler "je vous écoute, je réfléchis" :
 
-| Style | Exemples |
-|---|---|
-| **CASUAL** (défaut) | "Je regarde ça…", "Voyons voir…", "Un instant…" |
-| **WARM** | "Pas de souci, je regarde ça !", "Je m'en occupe, une seconde…" |
-| **FORMAL** | "Veuillez patienter un instant…", "Je consulte nos disponibilités…" |
+| Style               | Exemples                                                            |
+| ------------------- | ------------------------------------------------------------------- |
+| **CASUAL** (défaut) | "Je regarde ça…", "Voyons voir…", "Un instant…"                     |
+| **WARM**            | "Pas de souci, je regarde ça !", "Je m'en occupe, une seconde…"     |
+| **FORMAL**          | "Veuillez patienter un instant…", "Je consulte nos disponibilités…" |
 
 Le client entend une voix humaine immédiate → il sait que ça marche → il attend.
 Quand la vraie réponse LLM arrive, **le filler s'arrête net** (barge-in
-applicatif sur detection UtteranceStart Deepgram).
+applicatif sur detection UtteranceStart ElevenLabs).
 
 ## Code de déclenchement
 
@@ -61,10 +61,10 @@ const fillerTimer = setTimeout(() => {
 └─────────────────────────────────────────────┘
 ```
 
-| Niveau | Type | Survit au restart pm2 | Latence lookup |
-|---|---|---|---|
-| RAM | `Map<string, string[]>` | ❌ | 0 ms |
-| Redis | `filler:<sha256-16>` db/1 | ✅ (TTL 30 j) | ~2 ms |
+| Niveau | Type                      | Survit au restart pm2 | Latence lookup |
+| ------ | ------------------------- | --------------------- | -------------- |
+| RAM    | `Map<string, string[]>`   | ❌                    | 0 ms           |
+| Redis  | `filler:<sha256-16>` db/1 | ✅ (TTL 30 j)         | ~2 ms          |
 
 **Clé Redis** : SHA-256 tronqué à 16 chars de `(text|voiceId|codec)` → le format
 audio est inclus dans la clé, donc si on change de voice ou de codec, pas de
@@ -98,13 +98,13 @@ avant la fin du warm-up, fallback `speakTelnyxNative` (voix Telnyx native,
 
 ## Économie Cartesia
 
-| Métrique | Avant | Après |
-|---|---|---|
-| Crédits warm-up / restart | 13 × 22 = 286 | **0** (Redis hit) |
-| Restarts pm2 / jour (moyen) | 4 | 4 |
-| Crédits warm-up / mois | ~34 320 | **~286** (1 régénération / 30 j) |
-| Crédits warm-up / an | ~411 840 | **~3 432** |
-| **Réduction** | — | **~99 %** |
+| Métrique                    | Avant         | Après                            |
+| --------------------------- | ------------- | -------------------------------- |
+| Crédits warm-up / restart   | 13 × 22 = 286 | **0** (Redis hit)                |
+| Restarts pm2 / jour (moyen) | 4             | 4                                |
+| Crédits warm-up / mois      | ~34 320       | **~286** (1 régénération / 30 j) |
+| Crédits warm-up / an        | ~411 840      | **~3 432**                       |
+| **Réduction**               | —             | **~99 %**                        |
 
 Espace Redis : 112 KB (13 fillers × ~8 KB). Négligeable.
 

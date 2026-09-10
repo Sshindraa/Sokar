@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Test pipeline vocal — STT (Deepgram) ↔ TTS (Cartesia) ↔ LLM (OpenRouter)
+ * Test pipeline vocal — STT (ElevenLabs Scribe) ↔ TTS (Cartesia) ↔ LLM (OpenRouter)
  *
  * Usage : pnpm test:diagnostic  (ou node --env-file=.env.local tools/diagnostics/test-stt-tts.mjs)
  *
@@ -9,7 +9,7 @@
 
 // ─── Vérifier que .env.local est chargé (via --env-file) ─────────────────────
 if (
-  !process.env.DEEPGRAM_API_KEY &&
+  !process.env.ELEVENLABS_API_KEY &&
   !process.env.CARTESIA_API_KEY &&
   !process.env.OPENROUTER_API_KEY
 ) {
@@ -19,11 +19,11 @@ if (
   process.exit(1);
 }
 
-const DG_KEY = process.env.DEEPGRAM_API_KEY || '';
+const EL_KEY = process.env.ELEVENLABS_API_KEY || '';
 const CA_KEY = process.env.CARTESIA_API_KEY || '';
 const OR_KEY = process.env.OPENROUTER_API_KEY || '';
 const CA_VOICE = process.env.CARTESIA_VOICE_ID || 'f786b574-daa5-4673-aa0c-cbe3e8534c02';
-const DG_MODEL = process.env.DEEPGRAM_MODEL || 'nova-3';
+const EL_MODEL = process.env.ELEVENLABS_STT_MODEL || 'scribe_v2_realtime';
 const CA_MODEL = process.env.CARTESIA_MODEL || 'sonic-3.5';
 const OR_MODEL = process.env.OPENROUTER_MODEL || 'mistralai/ministral-3b-2512';
 
@@ -48,54 +48,22 @@ function skip(label, reason) {
   skipped++;
 }
 
-// ─── 1. Deepgram STT ────────────────────────────────────────────────────────────
-async function testDeepgram() {
-  console.log('\n━━━ 1. Deepgram STT ━━━');
-  if (!keyOk(DG_KEY)) return skip('Deepgram API', 'clé API manquante ou invalide dans .env.local');
-
-  // Générer un fichier WAV 16-bit PCM 8kHz avec un signal test
-  const sr = 8000,
-    dur = 0.5;
-  const header = Buffer.alloc(44);
-  header.write('RIFF', 0);
-  header.writeUInt32LE(36 + dur * sr * 2, 4);
-  header.write('WAVE', 8);
-  header.write('fmt ', 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20);
-  header.writeUInt16LE(1, 22);
-  header.writeUInt32LE(sr, 24);
-  header.writeUInt32LE(sr * 2, 28);
-  header.writeUInt16LE(2, 32);
-  header.writeUInt16LE(16, 34);
-  header.write('data', 36);
-  header.writeUInt32LE(dur * sr * 2, 40);
-
-  const audio = Buffer.alloc(dur * sr * 2);
-  for (let i = 0; i < dur * sr; i++) {
-    const s = Math.sin((2 * Math.PI * 440 * i) / sr) * 0.3;
-    audio.writeInt16LE(Math.floor(s * 32767), i * 2);
-  }
-  const wav = Buffer.concat([header, audio]);
+// ─── 1. ElevenLabs Scribe STT ───────────────────────────────────────────────
+async function testElevenLabsStt() {
+  console.log('\n━━━ 1. ElevenLabs Scribe STT ━━━');
+  if (!keyOk(EL_KEY))
+    return skip('ElevenLabs STT', 'clé API manquante ou invalide dans .env.local');
 
   try {
-    const res = await fetch(
-      `https://api.deepgram.com/v1/listen?model=${DG_MODEL}&language=fr&punctuate=true`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Token ${DG_KEY}`, 'Content-Type': 'audio/wav' },
-        body: wav,
-      },
-    );
+    const res = await fetch('https://api.elevenlabs.io/v1/user', {
+      method: 'GET',
+      headers: { 'xi-api-key': EL_KEY },
+    });
     const txt = await res.text();
     if (res.ok) {
-      const data = JSON.parse(txt);
-      const transcript = data?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? '';
-      ok(
-        `HTTP ${res.status} — "${transcript.slice(0, 60)}" (${res.headers.get('x-ratelimit-remaining') || '?'} req restantes)`,
-      );
+      ok('Auth ElevenLabs validée (modèle ' + EL_MODEL + ', HTTP ' + res.status + ')');
     } else {
-      no(`HTTP ${res.status}`, txt.slice(0, 200));
+      no('HTTP ' + res.status, txt.slice(0, 200));
     }
   } catch (e) {
     no('Exception', e.message);
@@ -202,16 +170,16 @@ async function testOpenrouter() {
 async function main() {
   console.log('═'.repeat(60));
   console.log('  🔍 Diagnostic Pipeline Vocal');
-  console.log('  TTS : Cartesia sonic-3.5 | STT : Deepgram nova-3 | LLM : OpenRouter');
+  console.log('  TTS : Cartesia sonic-3.5 | STT : ElevenLabs Scribe | LLM : OpenRouter');
   console.log('═'.repeat(60));
   console.log('');
   console.log('  État des clés API dans .env.local :');
-  console.log(`  • DEEPGRAM_API_KEY  : ${keyOk(DG_KEY) ? '✓' : '✗'}`);
+  console.log(`  • ELEVENLABS_API_KEY  : ${keyOk(EL_KEY) ? '✓' : '✗'}`);
   console.log(`  • CARTESIA_API_KEY  : ${keyOk(CA_KEY) ? '✓' : '✗ (placeholder)'}`);
   console.log(`  • OPENROUTER_API_KEY: ${keyOk(OR_KEY) ? '✓' : '✗'}`);
   console.log('');
 
-  await testDeepgram();
+  await testElevenLabsStt();
   await testCartesia();
   await testOpenrouter();
 
@@ -221,15 +189,15 @@ async function main() {
   console.log('═'.repeat(60));
 
   // Recommandations
-  if (!keyOk(DG_KEY) || !keyOk(CA_KEY)) {
+  if (!keyOk(EL_KEY) || !keyOk(CA_KEY)) {
     console.log('\n📋 Clés API nécessaires :');
-    if (!keyOk(DG_KEY))
-      console.log('  • Deepgram : https://console.deepgram.com → générer une clé API');
+    if (!keyOk(EL_KEY))
+      console.log('  • ElevenLabs : https://elevenlabs.io → API Keys → générer une clé');
     if (!keyOk(CA_KEY))
       console.log('  • Cartesia : https://cartesia.ai → API Keys → créer une clé');
     console.log('');
     console.log('  Ajoutez-les dans .env :');
-    console.log('    DEEPGRAM_API_KEY="cle"');
+    console.log('    ELEVENLABS_API_KEY="cle"');
     console.log('    CARTESIA_API_KEY="cle"');
     console.log('    CARTESIA_VOICE_ID="f786b574-daa5-4673-aa0c-cbe3e8534c02"');
     console.log('');

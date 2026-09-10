@@ -1,5 +1,5 @@
 /**
- * Logique LLM (Deepgram Flux) — gestion des événements Flux, traitement
+ * Logique LLM (ElevenLabs Scribe) — gestion des événements Scribe, traitement
  * des transcripts, spéculation LLM, et orchestration TTS.
  *
  * Extrait de handler.ts. Ces fonctions prennent une CallSession et un
@@ -10,7 +10,7 @@
  */
 
 import { WebSocket } from 'ws';
-import type { FluxEvent, CallSession } from './types';
+import type { SttEvent, CallSession } from './types';
 import type { CallSessionManager } from './manager';
 import { finishCall, isExplicitCallEnd } from './call-ending';
 import { playFiller, selectRandomGoodbyeText } from './fillers-cache';
@@ -33,7 +33,7 @@ import { isVoiceTtsContextV2Enabled } from '../../../shared/configcat';
 import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts.js';
 import { isSpeculativeLlmEnabled } from './speculation';
 import { isNameCollectionBlocking } from './conversation-controller';
-import { setDeepgramSpellingProfile } from './deepgram-bridge';
+import { setSttSpellingProfile } from './stt-bridge';
 import {
   buildAvailabilityErrorReply,
   buildAvailabilityReply,
@@ -51,8 +51,8 @@ import {
 const recentTranscripts = new WeakMap<CallSession, { normalized: string; at: number }>();
 export const LLM_FILLER_DELAY_MS = 1_000;
 
-function syncSpellingFluxProfile(session: CallSession): void {
-  setDeepgramSpellingProfile(
+function syncSpellingProfile(session: CallSession): void {
+  setSttSpellingProfile(
     session,
     isNameCollectionBlocking(session) || session.conversation.pendingQuestion === 'customerName',
   );
@@ -192,7 +192,7 @@ export function transcriptsMatch(a: string, b: string): boolean {
 /**
  * Une pré-réponse devient audible si le STT a stabilisé une phrase
  * suffisamment proche de la phrase spéculative. On utilise un fuzzy match
- * (80% de mots communs dans l'ordre) au lieu d'un match exact, car Deepgram
+ * (80% de mots communs dans l'ordre) au lieu d'un match exact, car ElevenLabs
  * peut légèrement modifier le transcript entre l'interim et le final
  * (ponctuation, corrections de dernier mot).
  */
@@ -206,10 +206,10 @@ function speculativeTranscriptMatches(a: string, b: string): boolean {
 }
 
 /**
- * Gère les événements provenant de Deepgram Flux.
+ * Gère les événements provenant de ElevenLabs Scribe.
  */
-export function handleFluxEvent(
-  event: FluxEvent,
+export function handleSttEvent(
+  event: SttEvent,
   session: CallSession,
   mgr: CallSessionManager,
 ): void {
@@ -270,7 +270,7 @@ export function handleFluxEvent(
         break;
       if (session.state !== 'LISTENING' && session.state !== 'IDLE') break;
 
-      // Ne change pas l'état de l'appel ni son historique : tant que Flux n'a
+      // Ne change pas l'état de l'appel ni son historique : tant que Scribe n'a
       // pas confirmé le tour, l'appelant peut encore poursuivre sa phrase.
       const abortController = new AbortController();
       session.abortController = abortController;
@@ -308,7 +308,7 @@ export function handleFluxEvent(
         processTranscriptStreaming(session, event.transcript, mgr).catch((err) =>
           logger.error(
             { err, callId: session.callControlId },
-            '[flux] processTranscriptStreaming failed',
+            '[stt] processTranscriptStreaming failed',
           ),
         );
       };
@@ -400,25 +400,21 @@ export function handleFluxEvent(
       break;
     }
 
-    case 'FinalTranscript': {
-      break;
-    }
-
     case 'Error': {
       logger.error(
         { callId: session.callControlId, errorMsg: event.message },
-        `[flux] Error: ${event.message}`,
+        `[stt] Error: ${event.message}`,
       );
-      const err = new Error(`Flux error: ${event.message}`);
+      const err = new Error(`Scribe error: ${event.message}`);
       captureException(err, {
-        tags: { service: 'handler', event: 'flux-error' },
+        tags: { service: 'handler', event: 'stt-error' },
         extra: { callId: session.callControlId },
       });
       speakTtsStreamed(session, "Désolé, je n'ai pas bien compris. Pouvez-vous répéter ?").catch(
         (err) =>
           logger.error(
             { err, callId: session.callControlId },
-            '[flux] speakTtsStreamed fallback failed',
+            '[stt] speakTtsStreamed fallback failed',
           ),
       );
       mgr.transition(session, 'LISTENING');
@@ -606,14 +602,14 @@ export async function processTranscriptStreaming(
       { role: 'assistant', content: livenessResponse },
     );
     recordAssistantReply(session, livenessResponse);
-    syncSpellingFluxProfile(session);
+    syncSpellingProfile(session);
     mgr.transition(session, 'SPEAKING');
     await speakTtsStreamed(session, livenessResponse);
     if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
     return;
   }
 
-  // Le STT reste Flux pour la conversation générale. Pour une suite de
+  // Le STT reste Scribe pour la conversation générale. Pour une suite de
   // lettres, on évite toutefois que le LLM la transforme en mot plausible
   // (ex. « K I F » → « Kif ») et on exige une confirmation explicite.
   const customerNameTurn = handleCustomerNameTurn(session, transcript);
@@ -636,7 +632,7 @@ export async function processTranscriptStreaming(
       { role: 'assistant', content: response },
     );
     recordAssistantReply(session, response);
-    syncSpellingFluxProfile(session);
+    syncSpellingProfile(session);
     if (!isCurrentResponse()) return;
     mgr.transition(session, 'SPEAKING');
     await speakTtsStreamed(session, response);
@@ -644,10 +640,10 @@ export async function processTranscriptStreaming(
     return;
   }
 
-  // La confirmation libère le profil Flux avant de repasser au LLM. Le texte
+  // La confirmation libère le profil Scribe avant de repasser au LLM. Le texte
   // confirmé est injecté explicitement ; le LLM ne peut pas le « corriger ».
   if (!isCurrentResponse()) return;
-  syncSpellingFluxProfile(session);
+  syncSpellingProfile(session);
 
   // Si le créneau a déjà été vérifié et que le client vient de confirmer le
   // nom, finaliser directement. Cela évite de perdre un « oui » dans un appel
@@ -665,7 +661,7 @@ export async function processTranscriptStreaming(
         { role: 'assistant', content: response },
       );
       recordAssistantReply(session, response);
-      syncSpellingFluxProfile(session);
+      syncSpellingProfile(session);
       mgr.transition(session, 'SPEAKING');
       await speakTtsStreamed(session, response);
       if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
@@ -693,7 +689,7 @@ export async function processTranscriptStreaming(
       { role: 'assistant', content: deterministicResponse },
     );
     recordAssistantReply(session, deterministicResponse);
-    syncSpellingFluxProfile(session);
+    syncSpellingProfile(session);
     if (!isCurrentResponse()) return;
     mgr.transition(session, 'SPEAKING');
     await speakTtsStreamed(session, deterministicResponse);
@@ -772,7 +768,7 @@ export async function processTranscriptStreaming(
         { role: 'assistant', content: response },
       );
       recordAssistantReply(session, response);
-      syncSpellingFluxProfile(session);
+      syncSpellingProfile(session);
       mgr.transition(session, 'SPEAKING');
       await speakTtsStreamed(session, response);
       if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
@@ -793,7 +789,7 @@ export async function processTranscriptStreaming(
           { role: 'assistant', content: response },
         );
         recordAssistantReply(session, response);
-        syncSpellingFluxProfile(session);
+        syncSpellingProfile(session);
         mgr.transition(session, 'SPEAKING');
         await speakTtsStreamed(session, response);
         if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
@@ -881,7 +877,7 @@ export async function processTranscriptStreaming(
     );
     if (!isCurrentResponse() || abortController.signal.aborted) return;
     recordAssistantReply(session, fullResponse);
-    syncSpellingFluxProfile(session);
+    syncSpellingProfile(session);
 
     writeDebugLog(`[processTranscriptStreaming] LLM stream ended, waiting for TTS...`);
     const contextTts = contextTtsRef.current;

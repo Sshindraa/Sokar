@@ -8,7 +8,7 @@ Sokar est un SaaS français de gestion de réservations et d'appels pour restaur
 
 - **Dashboard** : espace privé restaurateur (Next.js + Clerk).
 - **Sokar Connect** : site public et widget de réservation (Next.js).
-- **Voice** : agent téléphonique (Telnyx + Deepgram + Cartesia TTS).
+- **Voice** : agent téléphonique (Telnyx + ElevenLabs + Cartesia TTS).
 - **MCP / OpenAI Reserve** : couche agentic pour ChatGPT, Claude, etc.
 
 ## Layout du monorepo
@@ -92,7 +92,7 @@ packages/
 
 ### Legacy (téléphone / web dashboard)
 
-- Appel entrant → Telnyx → `voice/telnyx.pipeline.ts` → LLM/Deepgram → `reservations`.
+- Appel entrant → Telnyx → `voice/telnyx.pipeline.ts` → LLM/Scribe → `reservations`.
 - Dashboard → `reservations/reservation.routes.ts` → `reservation.service.ts`.
 
 ### Agentic / MCP
@@ -124,7 +124,7 @@ packages/
 - Pipeline : `apps/api/src/modules/voice/telnyx.pipeline.ts`.
 - WebSocket media stream : `modules/voice/stream/` (handler, session manager, LLM, TTS, fillers cache).
 - TTS : Cartesia Sonic 3.5 (`voice/cartesia-synth.ts`, `fillers-cache.ts`).
-- STT : Deepgram.
+- STT : ElevenLabs.
 - Voir `docs/architecture/voice.md` et `docs/obsidian/Telnyx Pipeline.md`.
 
 ## Authentification

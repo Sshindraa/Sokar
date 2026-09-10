@@ -62,7 +62,7 @@ trivial, install de deps.
 
 1. **Mettre à jour la note ciblée** (la plus pertinente pour le
    changement). Exemples :
-   - Voice → [[Telnyx Pipeline]] ou [[Flux Pipeline Media Stream]]
+   - Voice → [[Telnyx Pipeline]] ou [[Scribe Pipeline Media Stream]]
    - Schema → [[Architecture]] (vue d'ensemble) ou note dédiée
    - Route → [[API Endpoints]]
    - Spec nouvelle → nouvelle note dans le vault + lien depuis [[Context]]
@@ -108,7 +108,7 @@ Configuration type (optionnelle) :
 | [[Architecture]]                    | Stack globale, monorepo                      |
 | [[API Endpoints]]                   | Routes Fastify exhaustives                   |
 | [[Telnyx Pipeline]]                 | ai_config, machine à états, webhooks         |
-| [[Flux Pipeline Media Stream]]      | Pipeline Flux + barge-in                     |
+| [[Scribe Pipeline Media Stream]]    | Pipeline Scribe + barge-in                   |
 | [[Fillers Audio]]                   | Cache fillers LLM                            |
 | [[Sokar Connect P0]]                | Spec phase 0 + tickets T1-T10                |
 | [[Session Telnyx Debug 2026-06-10]] | Post-mortem Telnyx                           |

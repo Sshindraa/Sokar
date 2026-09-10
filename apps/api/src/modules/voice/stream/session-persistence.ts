@@ -11,8 +11,8 @@ import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
 import { MS_TO_SECONDS } from '../../../shared/constants/time.js';
 
-/** Crée ou met à jour un enregistrement Call en base pour un appel Flux */
-export async function persistFluxCall(session: CallSession): Promise<void> {
+/** Crée ou met à jour un enregistrement Call en base pour un appel Scribe */
+export async function persistSttCall(session: CallSession): Promise<void> {
   try {
     const { db } = await import('../../../shared/db/client');
     const durationSec = session.createdAt
@@ -35,9 +35,9 @@ export async function persistFluxCall(session: CallSession): Promise<void> {
       },
     });
   } catch (err) {
-    logger.error({ err, callId: session.callLegId }, '[flux] Failed to persist call');
+    logger.error({ err, callId: session.callLegId }, '[stt] Failed to persist call');
     captureException(err, {
-      tags: { service: 'handler', action: 'persistFluxCall' },
+      tags: { service: 'handler', action: 'persistSttCall' },
       extra: { callId: session.callLegId },
     });
   }

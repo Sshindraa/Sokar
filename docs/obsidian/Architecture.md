@@ -1,7 +1,7 @@
 # Architecture Sokar
 
 **Dernière mise à jour** : 2026-06-24
-**Stack** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx / Next.js 15 + React 19 + Tailwind 3 / Cartesia Sonic 3.5 + Deepgram Flux v2 (pipeline vocal : STT Deepgram, LLM OpenRouter deepseek, TTS Cartesia). Agent CLI Hermes : `minimax-m3` via `opencode-go`.
+**Stack** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx / Next.js 15 + React 19 + Tailwind 3 / ElevenLabs Scribe Realtime STT + Cartesia Sonic 3.5 (pipeline vocal : STT ElevenLabs, LLM OpenRouter, TTS Cartesia). Agent CLI Hermes : `minimax-m3` via `opencode-go`.
 **Carrier** : Telnyx (production) — Vapi legacy purgé
 **TTS** : Cartesia Sonic 3.5 (depuis 2026-05-20)
 **Model switch** : Hermes sur `minimax-m3` via `opencode-go` (depuis 2026-06-23)
@@ -72,17 +72,17 @@ sokar/
 Appel entrant → Telnyx → Webhook → Agent State Machine
                                          │
                                     ┌────┴────┐
-                                    │  STT    │  Deepgram
+                                    │  STT    │  ElevenLabs
                                     ├─────────┤
                                     │  LLM    │  OpenRouter (deepseek)
                                     ├─────────┤
-                                    │  TTS    │  ElevenLabs / Cartesia
+                                    │  TTS    │  Cartesia
                                     └─────────┘
                                          │
                                     Actions (outbound call, create reservation, etc.)
 ```
 
-Voir [[Telnyx Pipeline]] et [[Flux Pipeline Media Stream]] pour le détail.
+Voir [[Telnyx Pipeline]] et [[Scribe Pipeline Media Stream]] pour le détail.
 
 ---
 
@@ -148,7 +148,7 @@ Voir [[Hermes Obsidian Integration]] pour la configuration.
 - [[Journal]] — Log chronologique des tâches
 - [[API Endpoints]] — Documentation des routes Fastify
 - [[Telnyx Pipeline]] — ai_config, machine à états, webhooks
-- [[Flux Pipeline Media Stream]] — Pipeline Flux + barge-in
+- [[Scribe Pipeline Media Stream]] — Pipeline Scribe + barge-in
 - [[Fillers Audio]] — Cache fillers LLM
 - [[Sokar Connect P0]] — Spec phase 0 + tickets T1-T10
 - [[Phone Number Strategy]] — Stratégie numéros Telnyx

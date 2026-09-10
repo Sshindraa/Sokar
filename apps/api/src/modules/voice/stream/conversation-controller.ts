@@ -60,7 +60,7 @@ function tokenizeSpellingTranscript(value: string): LexicalToken[] {
 }
 
 /**
- * Tokens que Flux peut produire quand l'appelant épelle un nom en français.
+ * Tokens que Scribe peut produire quand l'appelant épelle un nom en français.
  * Les mots phonétiques ne sont interprétés comme des lettres que dans un
  * contexte qui ressemble réellement à une épellation.
  */
@@ -136,7 +136,7 @@ const FULL_RESTART_MARKER_PATTERN =
   /\b(?:je recommence|je reprends|je vous redonne|je vais vous redonner)\b/u;
 const CONTINUATION_MARKER_PATTERN = /\b(?:la suite|le reste|continue(?:r|z)?)\b/u;
 /**
- * Flux peut placer « non » ou « pardon » devant une nouvelle épellation.
+ * Scribe peut placer « non » ou « pardon » devant une nouvelle épellation.
  * Retirer uniquement ce préfixe permet de reconnaître la correction sans
  * transformer une phrase ordinaire contenant « non » en suite de lettres.
  */
@@ -473,7 +473,7 @@ export function parseSpelledNameTranscript(transcript: string): SpelledNameCandi
 }
 
 /**
- * Flux peut conserver des mots de reprise avant la vraie épellation :
+ * Scribe peut conserver des mots de reprise avant la vraie épellation :
  * « Non, non, attendez… A deux K I F ». Le parseur principal reste strict
  * pour ne pas transformer une phrase ordinaire en nom ; dans un contexte de
  * collecte de nom, on essaie donc uniquement les suffixes qui forment une
@@ -501,7 +501,7 @@ function parseTrailingSpellingTranscript(
       /\b(?:non|pardon|excusez|attends?|attendez|reprends?|recommence|redonne|en fait|je voulais dire|j ai dit|lettres?|epelle)/u.test(
         prefix,
       );
-    // Après une première clarification, Flux peut laisser un seul mot
+    // Après une première clarification, Scribe peut laisser un seul mot
     // parasite devant la reprise (« Attif, A B K I F »). On ne l'ignore que
     // dans ce contexte dédié, avec au moins trois lettres fiables, afin de ne
     // pas transformer une phrase ordinaire en épellation.
@@ -1035,7 +1035,7 @@ export function handleCustomerNameTurn(
     trailingParsed?.confident && collection.state === 'clarifying'
       ? trailingParsed
       : (directParsed ?? trailingParsed);
-  // Même si Flux a perdu la question « quel nom ? », un « non, A D K I F »
+  // Même si Scribe a perdu la question « quel nom ? », un « non, A D K I F »
   // est une correction explicite. Le traiter comme une épellation garde le
   // verrou métier actif et empêche le LLM de confirmer une valeur devinée.
   const explicitNameCorrection =
@@ -1406,7 +1406,7 @@ function parseFrenchNumberWords(value: string): number | null {
 }
 
 /**
- * Deepgram restitue parfois les heures en toutes lettres (« vers vingt
+ * ElevenLabs restitue parfois les heures en toutes lettres (« vers vingt
  * heures »). Cette forme doit être traitée comme une heure numérique avant de
  * demander une nouvelle fois le créneau au client.
  */
@@ -1491,7 +1491,7 @@ export function extractConversationSlots(
     }
   }
 
-  // Deepgram transcrit parfois « 19 30 » sans séparateur. On accepte cette
+  // ElevenLabs transcrit parfois « 19 30 » sans séparateur. On accepte cette
   // forme en plus de « 19:30 », « 19h30 » et « 19 heures 30 », tout en
   // conservant l'heure seule uniquement lorsqu'elle est explicitement suivie
   // de h/heures (pour ne pas confondre « 2 personnes » avec une heure).
@@ -1738,7 +1738,7 @@ export function recordAssistantReply(session: CallSession, reply: string): void 
 
 /** Réponses courtes qui ne nécessitent ni interprétation ni appel LLM.
  *
- * Volontairement minimal : on laisse le LLM gérer le flux conversationnel
+ * Volontairement minimal : on laisse le LLM gérer le stt conversationnel
  * (demander date/heure/nombre, répondre aux questions, gérer les corrections)
  * pour des réponses naturelles et variées. Le déterministe ne garde que :
  * - handoff après 2 incompréhensions (sécurité)

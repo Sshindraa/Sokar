@@ -10,7 +10,7 @@ export type NameCollectionState = 'idle' | 'collecting' | 'clarifying' | 'confir
 
 export type SpellingTokenKind = 'letter' | 'separator' | 'ambiguous';
 
-/** Token conservé pendant une épellation, y compris quand Flux n'est pas sûr. */
+/** Token conservé pendant une épellation, y compris quand le STT n'est pas sûr. */
 export interface SpellingToken {
   /** Position logique dans le nom (les séparateurs ne consomment pas d'ordinal). */
   position: number;
@@ -37,8 +37,8 @@ export interface NameCollection {
   fallbackRecorded: boolean;
 }
 
-/** Mot Flux et ses métadonnées STT. La confiance du mot n'est pas la confiance EOT. */
-export interface FluxWord {
+/** Mot reconnu et ses métadonnées STT. */
+export interface SttWord {
   word: string;
   punctuatedWord?: string;
   confidence?: number;
@@ -46,20 +46,20 @@ export interface FluxWord {
   end?: number;
 }
 
-/** Seuils de détection de fin de tour configurables via le message Flux Configure. */
-export interface FluxTurnConfig {
-  eotThreshold: number;
-  eotTimeoutMs: number;
-  eagerEotThreshold?: number;
+/** Paramètres de détection de fin de tour appliqués à la session STT. */
+export interface SttTurnConfig {
+  vadSilenceThresholdSecs: number;
+  minSpeechDurationMs: number;
+  minSilenceDurationMs: number;
 }
 
-export interface DeepgramTurnConfigState {
-  base: FluxTurnConfig;
-  desired: FluxTurnConfig;
-  applied: FluxTurnConfig | null;
+export interface SttTurnConfigState {
+  base: SttTurnConfig;
+  desired: SttTurnConfig;
+  applied: SttTurnConfig | null;
   spellingActive: boolean;
   /** Profil réellement actif avant l'entrée dans le mode épellation. */
-  previous?: FluxTurnConfig | null;
+  previous?: SttTurnConfig | null;
 }
 
 /**
@@ -107,36 +107,20 @@ export interface VoiceTurnTelemetry {
   transcriptFingerprint: string;
 }
 
-/** Événements Deepgram Flux */
-export type FluxEvent =
+/** Événements normalisés produits par le fournisseur STT. */
+export type SttEvent =
   | { type: 'UtteranceStart' }
   | {
       type: 'UtteranceEnd';
       transcript: string;
-      words?: FluxWord[];
-      endOfTurnConfidence?: number;
-      trigger?: string;
+      words?: SttWord[];
     }
   | { type: 'SpeechResumed' }
   | {
-      type: 'EagerEndOfTurn';
-      transcript: string;
-      words?: FluxWord[];
-      endOfTurnConfidence?: number;
-      trigger?: string;
-    }
-  | {
-      type: 'FinalTranscript';
-      transcript: string;
-      words?: FluxWord[];
-    }
-  | {
       type: 'InterimHighConfidence';
       transcript: string;
-      words?: FluxWord[];
+      words?: SttWord[];
     }
-  | { type: 'ConfigureSuccess'; config: FluxTurnConfig }
-  | { type: 'ConfigureFailure'; message: string }
   | { type: 'Error'; message: string };
 
 /** Message entrant de Telnyx Media Stream WebSocket */
@@ -203,23 +187,21 @@ export interface CallSession {
 
   // WebSockets
   telnyxWs: WebSocket;
-  deepgramWs: WebSocket | null;
-  /** Promise résolue quand Deepgram est connecté (pre-warm) */
-  deepgramReady: Promise<void> | null;
-  /** Callback mutable pour les événements Deepgram (remplacé par le handler WS) */
-  onDeepgramEvent: ((event: FluxEvent) => void) | null;
-  /** Model actif ; permet de garder la logique v1 Nova séparée du protocole Flux v2. */
-  deepgramModel?: string;
+  sttWs: WebSocket | null;
+  /** Promise résolue quand le fournisseur STT est connecté (pre-warm) */
+  sttReady: Promise<void> | null;
+  /** Callback mutable pour les événements STT (remplacé par le handler WS) */
+  onSttEvent: ((event: SttEvent) => void) | null;
+  /** Modèle STT actif. */
+  sttModel?: string;
   /** Profil EOT courant ; conservé même quand le WebSocket est reconnecté. */
-  deepgramTurnConfig?: DeepgramTurnConfigState;
-  /** Timer de grâce pour un EndOfTurn Flux reçu pendant une épellation. */
-  deepgramEndOfTurnTimer?: ReturnType<typeof setTimeout> | null;
-  /** EndOfTurn Flux mis en attente pendant cette courte grâce. */
-  pendingDeepgramEndOfTurn?: {
+  sttTurnConfig?: SttTurnConfigState;
+  /** Timer de grâce pour une fin de tour reçue pendant une épellation. */
+  sttEndOfTurnTimer?: ReturnType<typeof setTimeout> | null;
+  /** Fin de tour mise en attente pendant cette courte grâce. */
+  pendingSttEndOfTurn?: {
     transcript: string;
-    words?: FluxWord[];
-    endOfTurnConfidence?: number;
-    trigger?: string;
+    words?: SttWord[];
   } | null;
 
   // Gestion audio
@@ -237,7 +219,7 @@ export interface CallSession {
   responseGeneration: number;
   /** Contexte Cartesia optionnel pour la réponse LLM streamée en cours. */
   ttsContext: ActiveTtsContext | null;
-  /** Tour utilisateur courant, créé à la finalisation Deepgram. */
+  /** Tour utilisateur courant, créé à la finalisation STT. */
   currentTurn: VoiceTurnTelemetry | null;
 
   // Barge-in debounce
@@ -261,7 +243,7 @@ export interface CallSession {
   transcript: string;
   /** Buffer pour accumuler les segments d'un tour de parole */
   turnTranscript: string;
-  /** Timer de fallback : force UtteranceEnd si speech_final tarde trop */
+  /** Timer de fallback conservé pour une fin de tour STT tardive */
   speechFinalTimer: ReturnType<typeof setTimeout> | null;
 
   // Timeouts

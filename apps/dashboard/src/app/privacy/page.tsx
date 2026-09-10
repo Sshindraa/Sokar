@@ -51,7 +51,7 @@ const SUBPROCESSORS = [
     status: 'DPA à formaliser',
   },
   {
-    name: 'Deepgram',
+    name: 'ElevenLabs (Scribe STT)',
     purpose: 'Transcription vocale (speech-to-text) des appels.',
     location: 'États-Unis.',
     status: 'DPA à formaliser',

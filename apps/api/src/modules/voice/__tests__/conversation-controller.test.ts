@@ -62,14 +62,14 @@ describe('conversation state', () => {
     });
   });
 
-  it('refuse de deviner quand Flux ajoute du bruit dans une épellation', () => {
+  it('refuse de deviner quand Scribe ajoute du bruit dans une épellation', () => {
     expect(parseSpelledNameTranscript('Un nom de actif a de k i f')).toEqual({
       value: 'ADKIF',
       confident: false,
     });
   });
 
-  it('reconnaît la variante Flux « en nombre de actifs » dans une question de nom', () => {
+  it('reconnaît la variante Scribe « en nombre de actifs » dans une question de nom', () => {
     expect(parseSpelledNameTranscript('En nombre de actifs, a de k i f')).toEqual({
       value: 'ADKIF',
       confident: true,
@@ -154,7 +154,7 @@ describe('conversation state', () => {
     expect(session.conversation.nameCollection.state).toBe('confirming');
   });
 
-  it('garde la correction « non, A D K I F » dans le flux déterministe', () => {
+  it('garde la correction « non, A D K I F » dans le stt déterministe', () => {
     const session = makeSession();
     recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
 

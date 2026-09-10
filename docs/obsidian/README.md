@@ -38,7 +38,7 @@ L'API Fastify expose **~30 routes** réparties dans :
 | Customers            | `modules/customers/`            | Profil clients, VIP, loyalty                                  |
 | Dashboard            | `modules/dashboard/`            | Métriques temps réel (KPIs)                                   |
 | Analytics            | `modules/analytics/`            | ROI, KPIs agrégés                                             |
-| Voice                | `modules/voice/`                | Webhooks Telnyx, Flux Pipeline, Fillers cache                 |
+| Voice                | `modules/voice/`                | Webhooks Telnyx, Scribe Pipeline, Fillers cache               |
 | Agentic Reservations | `modules/agentic-reservations/` | Core (hold/reservation/policies/audit) + MCP + OpenAI Reserve |
 | Auth                 | `modules/auth/`                 | Sync Clerk                                                    |
 | RGPD                 | `modules/rgpd/`                 | Identity verification, erase, export                          |
@@ -75,7 +75,7 @@ Prisma 6 + PostgreSQL. Modèles actifs (cf. `packages/database/prisma/schema.pri
 | [[Journal]]                         | Log chronologique des tâches Hermes                 |
 | [[Architecture]]                    | Stack globale, monorepo                             |
 | [[Telnyx Pipeline]]                 | ai_config, machine à états, webhooks                |
-| [[Flux Pipeline Media Stream]]      | Pipeline Flux custom + barge-in                     |
+| [[Scribe Pipeline Media Stream]]    | Pipeline Scribe custom + barge-in                   |
 | [[Fillers Audio]]                   | Cache RAM + Redis pour silences LLM                 |
 | [[Sokar Connect P0]]                | Spec phase 0 + tickets T1-T10                       |
 | [[API Endpoints]]                   | Routes Fastify exhaustives                          |

@@ -127,7 +127,7 @@ Prouver le parcours complet d’un appel jusqu’à une réservation exacte et u
 ### Travaux
 
 - écrire le scénario de référence : appel entrant → date/heure/nombre de couverts → nom épelé et confirmé → disponibilité vérifiée → réservation idempotente → SMS ou alternative humaine ;
-- valider Telnyx, Deepgram Flux, LLM, Cartesia et les timeouts sur staging puis par appels réels ; suivre la latence par tour, les abandons et les erreurs de provider ;
+- valider Telnyx, ancien STT temps réel, LLM, Cartesia et les timeouts sur staging puis par appels réels ; suivre la latence par tour, les abandons et les erreurs de provider ;
 - activer un profil messagerie Telnyx conforme, vérifier le numéro `from`, les statuts de livraison, les retries bornés et la dead-letter queue ; prévoir une confirmation vocale ou une tâche support si le SMS échoue ;
 - contrôler fuseau horaire, horaires parlés, corrections, barge-in, double appel, annulation, no-show et transfert ;
 - tester les écritures concurrentes et les rejoués webhook/outils ;

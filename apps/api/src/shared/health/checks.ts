@@ -1,7 +1,7 @@
 /**
  * Health checks for Sokar API.
  *
- * Six independent checks: db, redis, queues, telnyx, deepgram, cartesia.
+ * Six independent checks: db, redis, queues, telnyx, ElevenLabs STT, cartesia.
  * Each check has its own timeout and returns a uniform `CheckResult` shape.
  * The orchestrator runs them in parallel and never lets one slow check
  * block another. Core dependencies have a slightly longer timeout to avoid
@@ -27,10 +27,10 @@
  *
  * 5. **Provider checks are read-only**:
  *    - Telnyx:   `balance.retrieve()` — GET, no cost, no side effect
- *    - Deepgram: `GET /v1/projects`   — list user's projects, no STT run
+ *    - ElevenLabs STT: `GET /v1/user` — validate the API key without a transcription
  *    - Cartesia: `GET /voices`        — list voices, no TTS generation
  *
- * 6. **Soft-fail for voice providers**: if Telnyx/Deepgram/Cartesia are
+ * 6. **Soft-fail for voice providers**: if Telnyx/ElevenLabs/Cartesia are
  *    down but DB/Redis/queues are ok, the API can still answer
  *    non-voice requests (read dashboard, list reservations, etc.).
  *    So voice provider failure is a warning, not a 503.
@@ -153,26 +153,22 @@ async function checkTelnyx(): Promise<CheckResult> {
   );
 }
 
-async function checkDeepgram(): Promise<CheckResult> {
-  // Direct GET to /v1/projects — no SDK needed, just a bearer-style token.
-  // We use fetch (Node 20+ global) instead of pulling in @deepgram/sdk
-  // for a single health check.
+async function checkElevenLabsStt(): Promise<CheckResult> {
+  // The user endpoint validates the ElevenLabs key without consuming STT audio.
   return withTimeout(
-    'deepgram',
+    'elevenlabs_stt',
     (async () => {
-      if (!process.env.DEEPGRAM_API_KEY) {
-        throw new Error('DEEPGRAM_API_KEY not configured');
+      if (!process.env.ELEVENLABS_API_KEY) {
+        throw new Error('ELEVENLABS_API_KEY not configured');
       }
-      // /v1/projects is a management endpoint only available on the US API.
-      // Voice endpoints (STT/TTS) use DEEPGRAM_API_HOST for EU routing.
-      const res = await fetch('https://api.deepgram.com/v1/projects', {
+      const res = await fetch('https://api.elevenlabs.io/v1/user', {
         method: 'GET',
         headers: {
-          Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
+          'xi-api-key': process.env.ELEVENLABS_API_KEY,
         },
       });
       if (!res.ok) {
-        throw new Error(`Deepgram API ${res.status}: ${res.statusText}`);
+        throw new Error(`ElevenLabs STT API ${res.status}: ${res.statusText}`);
       }
     })(),
     VOICE_TIMEOUT_MS,
@@ -205,16 +201,16 @@ async function checkCartesia(): Promise<CheckResult> {
 // ─── Orchestrator ─────────────────────────────────────────────────────────
 
 const CORE_CHECKS = ['db', 'redis', 'queues'] as const;
-const VOICE_CHECKS = ['telnyx', 'deepgram', 'cartesia'] as const;
+const VOICE_CHECKS = ['telnyx', 'elevenlabs_stt', 'cartesia'] as const;
 const ALL_CHECKS = [...CORE_CHECKS, ...VOICE_CHECKS] as const;
 
 export async function checkHealth(): Promise<HealthReport> {
-  const [db, redis, queues, telnyx, deepgram, cartesia] = await Promise.all([
+  const [db, redis, queues, telnyx, elevenlabs_stt, cartesia] = await Promise.all([
     checkDb(),
     checkRedis(),
     checkQueues(),
     checkTelnyx(),
-    checkDeepgram(),
+    checkElevenLabsStt(),
     checkCartesia(),
   ]);
 
@@ -223,7 +219,7 @@ export async function checkHealth(): Promise<HealthReport> {
     redis,
     queues,
     telnyx,
-    deepgram,
+    elevenlabs_stt,
     cartesia,
   };
 

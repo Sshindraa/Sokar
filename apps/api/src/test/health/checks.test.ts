@@ -1,7 +1,7 @@
 /**
  * Tests for the health check module.
  *
- * Strategy: each check (db, redis, queues, telnyx, deepgram, cartesia) is
+ * Strategy: each check (db, redis, queues, telnyx, elevenlabs_stt, cartesia) is
  * mocked at the module boundary so we can drive success/failure/timeout
  * scenarios deterministically. We don't hit real providers in unit tests.
  */
@@ -48,7 +48,7 @@ vi.mock('../../../src/shared/telnyx/client', () => ({
 const originalFetch = globalThis.fetch;
 const originalEnv = {
   TELNYX_API_KEY: process.env.TELNYX_API_KEY,
-  DEEPGRAM_API_KEY: process.env.DEEPGRAM_API_KEY,
+  ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY,
   CARTESIA_API_KEY: process.env.CARTESIA_API_KEY,
 };
 
@@ -56,7 +56,7 @@ beforeAll(() => {
   // Make sure the voice provider env vars are set for all tests except
   // the "env not configured" suite (which unsets them explicitly).
   process.env.TELNYX_API_KEY = process.env.TELNYX_API_KEY ?? 'test-telnyx-key';
-  process.env.DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY ?? 'test-deepgram-key';
+  process.env.ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY ?? 'test-elevenlabs-stt-key';
   process.env.CARTESIA_API_KEY = process.env.CARTESIA_API_KEY ?? 'test-cartesia-key';
 });
 
@@ -89,7 +89,7 @@ beforeEach(() => {
   }
   mockTelnyxBalance.retrieve.mockResolvedValue({ balance: '100.00' });
 
-  // Default fetch mock: 200 OK for both Deepgram and Cartesia.
+  // Default fetch mock: 200 OK for both ElevenLabs STT and Cartesia.
   globalThis.fetch = vi.fn().mockResolvedValue({
     ok: true,
     status: 200,
@@ -101,7 +101,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   // Defensive: if a test unset env vars, restore them now.
   process.env.TELNYX_API_KEY = originalEnv.TELNYX_API_KEY;
-  process.env.DEEPGRAM_API_KEY = originalEnv.DEEPGRAM_API_KEY;
+  process.env.ELEVENLABS_API_KEY = originalEnv.ELEVENLABS_API_KEY;
   process.env.CARTESIA_API_KEY = originalEnv.CARTESIA_API_KEY;
 });
 
@@ -111,7 +111,7 @@ describe('checkHealth — happy path', () => {
     expect(result.status).toBe('ok');
     expect(result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(Object.keys(result.checks)).toEqual(
-      expect.arrayContaining(['db', 'redis', 'queues', 'telnyx', 'deepgram', 'cartesia']),
+      expect.arrayContaining(['db', 'redis', 'queues', 'telnyx', 'elevenlabs_stt', 'cartesia']),
     );
     for (const name of Object.keys(result.checks)) {
       expect(result.checks[name].status).toBe('ok');
@@ -162,16 +162,16 @@ describe('checkHealth — voice provider failure (degraded, core ok)', () => {
     expect(result.checks.queues.status).toBe('ok');
   });
 
-  it('returns degraded when deepgram returns non-ok', async () => {
+  it('returns degraded when elevenlabs_stt returns non-ok', async () => {
     globalThis.fetch = vi.fn().mockImplementation(async (url: unknown) => {
-      if (typeof url === 'string' && url.includes('deepgram')) {
+      if (url === 'https://api.elevenlabs.io/v1/user') {
         return { ok: false, status: 401, statusText: 'Unauthorized' } as Response;
       }
       return { ok: true, status: 200, statusText: 'OK' } as Response;
     });
     const result = await checkHealth();
-    expect(result.checks.deepgram.status).toBe('error');
-    expect(result.checks.deepgram.error).toMatch(/401/);
+    expect(result.checks.elevenlabs_stt.status).toBe('error');
+    expect(result.checks.elevenlabs_stt.error).toMatch(/401/);
   });
 
   it('returns degraded when cartesia returns non-ok', async () => {
@@ -189,7 +189,7 @@ describe('checkHealth — voice provider failure (degraded, core ok)', () => {
 
 describe('checkHealth — timeout', () => {
   it('times out a voice provider check that hangs longer than 2s', async () => {
-    // Make deepgram hang forever — the timeout in checks.ts should fire.
+    // Make elevenlabs_stt hang forever — the timeout in checks.ts should fire.
     globalThis.fetch = vi.fn().mockImplementation(
       () =>
         new Promise<Response>(() => {
@@ -198,8 +198,8 @@ describe('checkHealth — timeout', () => {
     );
     const result = await checkHealth();
     // The test takes ~2s because voice providers keep the short timeout.
-    expect(result.checks.deepgram.status).toBe('error');
-    expect(result.checks.deepgram.error).toMatch(/timeout/);
+    expect(result.checks.elevenlabs_stt.status).toBe('error');
+    expect(result.checks.elevenlabs_stt.error).toMatch(/timeout/);
   }, 5000);
 
   it('allows a slow cold core DB check under 10s', async () => {
@@ -216,14 +216,14 @@ describe('checkHealth — timeout', () => {
 describe('checkHealth — env not configured', () => {
   it('reports error for voice provider when env var is missing', async () => {
     delete process.env.TELNYX_API_KEY;
-    delete process.env.DEEPGRAM_API_KEY;
+    delete process.env.ELEVENLABS_API_KEY;
     delete process.env.CARTESIA_API_KEY;
 
     const result = await checkHealth();
     expect(result.checks.telnyx.status).toBe('error');
     expect(result.checks.telnyx.error).toMatch(/TELNYX_API_KEY/);
-    expect(result.checks.deepgram.status).toBe('error');
-    expect(result.checks.deepgram.error).toMatch(/DEEPGRAM_API_KEY/);
+    expect(result.checks.elevenlabs_stt.status).toBe('error');
+    expect(result.checks.elevenlabs_stt.error).toMatch(/ELEVENLABS_API_KEY/);
     expect(result.checks.cartesia.status).toBe('error');
     expect(result.checks.cartesia.error).toMatch(/CARTESIA_API_KEY/);
   });

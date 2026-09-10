@@ -260,10 +260,10 @@ export const voiceLlmFallbackTotal = new Counter({
 });
 
 /**
- * Erreurs par provider voice (Deepgram, Cartesia, Cerebras, Groq, OpenRouter).
+ * Erreurs par provider voice (ElevenLabs STT, Cartesia, Cerebras, Groq, OpenRouter).
  * Permet de corréler les fallbacks avec les erreurs sous-jacentes et de
  * mesurer la fiabilité de chaque provider LLM indépendamment.
- * Labels : provider (deepgram | cartesia | cerebras | groq | openrouter) × type (429 | 4xx | 5xx | timeout | session_abort | ws_error).
+ * Labels : provider (elevenlabs_stt | cartesia | cerebras | groq | openrouter) × type (429 | 4xx | 5xx | timeout | session_abort | ws_error).
  */
 export const voiceProviderErrorsTotal = new Counter({
   name: 'voice_provider_errors_total',

@@ -10,7 +10,7 @@
  *  4. Mock LLM: createReservation tool path when user mentions réservation/table
  *  5. Barge-in during SPEAKING: clears Telnyx buffer, transitions to LISTENING
  *  6. Transcript accumulation across multiple utterances
- *  7. Cleanup clears timers, aborts in-flight requests, closes deepgram WS
+ *  7. Cleanup clears timers, aborts in-flight requests, closes elevenlabs WS
  *  8. handleBargeIn is a no-op when not SPEAKING
  */
 
@@ -235,16 +235,16 @@ describe('CallSessionManager — integration', () => {
       expect(session.abortController).toBeNull();
     });
 
-    it('closes deepgramWs if open', () => {
+    it('closes sttWs if open', () => {
       const mgr = CallSessionManager.getInstance();
       const session = makeSession();
       const dgClose = vi.fn();
-      session.deepgramWs = { readyState: WebSocket.OPEN, close: dgClose } as unknown as WebSocket;
+      session.sttWs = { readyState: WebSocket.OPEN, close: dgClose } as unknown as WebSocket;
 
       mgr.cleanup(session);
 
       expect(dgClose).toHaveBeenCalled();
-      expect(session.deepgramWs).toBeNull();
+      expect(session.sttWs).toBeNull();
     });
 
     it('delete() removes the session from the manager', () => {

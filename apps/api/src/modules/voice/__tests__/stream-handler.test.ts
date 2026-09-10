@@ -3,7 +3,7 @@
  *
  * Le handler enregistre une route WS sur /voice/stream/:callId.
  * On crée une app Fastify minimale avec @fastify/websocket, on mock toutes
- * les dépendances (CallSessionManager, deepgram-bridge, tts-cache, etc.),
+ * les dépendances (CallSessionManager, stt-bridge, tts-cache, etc.),
  * on démarre le serveur sur un port aléatoire, et on connecte un vrai client WS.
  *
  * Scénarios testés :
@@ -11,8 +11,8 @@
  *  - Événement `connected` : no-op
  *  - Événement `start` avec session connue : assigne telnyxWs, transition SPEAKING
  *  - Événement `start` sans session : no-op (pas de crash)
- *  - Événement `media` : forward à sendAudioToDeepgram
- *  - Événement `stop` : cleanup, closeDeepgram, mgr.delete
+ *  - Événement `media` : forward à sendAudioToStt
+ *  - Événement `stop` : cleanup, closeStt, mgr.delete
  *  - Événement `dtmf` : no-op
  *  - Fermeture WS : cleanup de la session
  */
@@ -41,10 +41,10 @@ vi.mock('../stream/manager', () => ({
   },
 }));
 
-vi.mock('../stream/deepgram-bridge', () => ({
-  sendAudioToDeepgram: vi.fn(),
-  closeDeepgram: vi.fn(),
-  connectDeepgramFlux: vi.fn().mockResolvedValue(undefined),
+vi.mock('../stream/stt-bridge', () => ({
+  sendAudioToStt: vi.fn(),
+  closeStt: vi.fn(),
+  connectStt: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../stream/fillers-cache', () => ({
@@ -88,7 +88,7 @@ vi.mock('../../../shared/db/client', () => ({
 // ── Imports under test ─────────────────────────────────────────────────────
 
 import { buildInitialGreeting, registerMediaStreamRoutes } from '../stream/handler';
-import { sendAudioToDeepgram, closeDeepgram } from '../stream/deepgram-bridge';
+import { sendAudioToStt, closeStt } from '../stream/stt-bridge';
 
 describe('buildInitialGreeting', () => {
   it('accueille naturellement sans identité virtuelle ni notice d’enregistrement', () => {
@@ -115,9 +115,9 @@ function makeMockSession(): CallSession {
     codec: 'PCMA',
     history: [],
     telnyxWs: null,
-    deepgramWs: null,
-    deepgramReady: Promise.resolve(),
-    onDeepgramEvent: null,
+    sttWs: null,
+    sttReady: Promise.resolve(),
+    onSttEvent: null,
     audioBuffer: [],
     isSpeaking: false,
     bargeInChunks: 0,
@@ -251,7 +251,7 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
     ws.close();
   });
 
-  it('événement `media` : forward le payload à sendAudioToDeepgram', async () => {
+  it('événement `media` : forward le payload à sendAudioToStt', async () => {
     const session = makeMockSession();
     mockMgr.get.mockReturnValue(session);
 
@@ -269,7 +269,7 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
     });
     await delay(50);
 
-    vi.mocked(sendAudioToDeepgram).mockClear();
+    vi.mocked(sendAudioToStt).mockClear();
     mockMgr.get.mockReturnValue(session);
 
     await sendAndWait(ws, {
@@ -283,14 +283,14 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
     });
     await delay(50);
 
-    expect(sendAudioToDeepgram).toHaveBeenCalledWith(
+    expect(sendAudioToStt).toHaveBeenCalledWith(
       session,
       Buffer.from('audio-chunk').toString('base64'),
     );
     ws.close();
   });
 
-  it("événement `media` sans payload : n'appelle pas sendAudioToDeepgram", async () => {
+  it("événement `media` sans payload : n'appelle pas sendAudioToStt", async () => {
     const session = makeMockSession();
     mockMgr.get.mockReturnValue(session);
 
@@ -298,11 +298,11 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
     await sendAndWait(ws, { event: 'media', media: {} });
     await delay(50);
 
-    expect(sendAudioToDeepgram).not.toHaveBeenCalled();
+    expect(sendAudioToStt).not.toHaveBeenCalled();
     ws.close();
   });
 
-  it('événement `stop` : cleanup la session, closeDeepgram et mgr.delete', async () => {
+  it('événement `stop` : cleanup la session, closeStt et mgr.delete', async () => {
     const session = makeMockSession();
     mockMgr.get.mockReturnValue(session);
 
@@ -323,7 +323,7 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
     await delay(100);
 
     expect(session.ended).toBe(true);
-    expect(closeDeepgram).toHaveBeenCalledWith(session);
+    expect(closeStt).toHaveBeenCalledWith(session);
     expect(mockMgr.delete).toHaveBeenCalledWith('cc-ws-1');
     ws.close();
   });

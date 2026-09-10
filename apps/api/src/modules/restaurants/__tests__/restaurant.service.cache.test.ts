@@ -50,7 +50,7 @@ describe('RestaurantService context cache', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     delete process.env.CARTESIA_API_KEY;
-    process.env.DEEPGRAM_MODEL = 'nova-3';
+    process.env.ELEVENLABS_STT_MODEL = 'scribe_v2_realtime';
   });
 
   it('lit le contexte restaurant depuis Redis sans toucher Prisma en cache hit', async () => {
@@ -98,7 +98,7 @@ describe('RestaurantService context cache', () => {
     expect(cachedPayload).toContain('voice-from-personality');
     expect(cachedPayload).toContain(VOICE_LLM_MODEL_DEFAULT);
     expect(cachedPayload).toContain('cartesia');
-    expect(cachedPayload).toContain('nova-3');
+    expect(cachedPayload).toContain('scribe_v2_realtime');
     expect(cachedPayload).not.toContain('secret-refresh-token-never-cache');
     expect(cachedPayload).not.toContain('CARTESIA_API_KEY');
     expect(cachedPayload).not.toContain('test-cartesia-key');

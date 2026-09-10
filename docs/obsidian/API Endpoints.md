@@ -371,7 +371,7 @@ Modules : `apps/api/src/shared/observability/`
 
 ### GET /health
 
-Health check agrégé (db, redis, queues, telnyx, deepgram, cartesia).
+Health check agrégé (db, redis, queues, telnyx, elevenlabs, cartesia).
 Pattern multi-check parallèle avec timeout individuel (cf. `sokar-fastify-testing` §health).
 
 ### GET /metrics

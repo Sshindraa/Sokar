@@ -223,7 +223,7 @@ export interface CallMissingTranscript {
 
 /**
  * Appels Telnyx des dernières 24h (hors grâce de 15 min) sans transcription
- * ou sans outcome — symptôme d'un pipeline voix cassé (STT Deepgram down,
+ * ou sans outcome — symptôme d'un pipeline voix cassé (STT ElevenLabs down,
  * webhook /voice/telnyx/end jamais reçu, stream WebSocket interrompu).
  */
 export async function findCallsWithoutTranscript(
@@ -272,7 +272,7 @@ export function evaluateCallsWithoutTranscript(
     detail: [
       `${calls.length} appel(s) Telnyx n'ont ni transcription ni outcome après 15 min :`,
       samples,
-      'Le pipeline voix est peut-être cassé (Deepgram STT, stream WebSocket, webhook /voice/telnyx/end).',
+      'Le pipeline voix est peut-être cassé (ElevenLabs STT, stream WebSocket, webhook /voice/telnyx/end).',
       'Vérifier les logs API (grep "voice/stream") et relancer un appel test.',
     ].join('\n'),
   };
