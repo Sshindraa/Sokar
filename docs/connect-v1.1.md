@@ -1,10 +1,18 @@
 # Sokar Connect — Agent-Ready Pages (Spec d'implémentation v1.1)
 
+> **Statut : LIVRÉ / DOCUMENT DE RÉFÉRENCE — vérifié le 12 septembre 2026.**
+> L'app Connect, les routes publiques, la réservation hold/confirm idempotente, les pages
+> restaurant et ville, JSON-LD, sitemap, robots, `llms.txt`, widget et domaines personnalisés
+> existent dans le dépôt. Les cases `[ ]` de la section « Tickets dev » sont les critères écrits
+> avant l'implémentation ; elles ne constituent plus le backlog. Restent la preuve d'un pilote sur
+> de vrais restaurants et les optimisations SEO/conversion. Voir
+> [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
+
 > Spec d'implémentation stricte, pas un brief stratégique. Anti-hype,
 > audit-first, transports séparés du métier.
 
 - Auteur: Hermes (review Hamza)
-- Cible Sokar: monorepo Fastify 5 + Prisma 6 + Next.js 14
+- Cible Sokar: monorepo Fastify 5 + Prisma 6 + Next.js 15 (Next.js 14 à la rédaction)
 - Domaine public: `sokar.tech` (corrigé depuis `sokar.app` du brief)
 - v1 → v1.1 corrections: cf. §15 (changelog)
 - Décisions v1.1: `apps/connect` Next standalone · `agentic_reuse` · `sokar.tech` · `phase_1_seed_puis_attendre` · `redis_prometheus` · `optin_double_volet` corrigé · VPS + Nginx + Cloudflare proxy cache
@@ -913,7 +921,10 @@ ses données contacte `dpo@sokar.tech`.
 
 ---
 
-## 10. Tickets dev (Phase 0)
+## 10. Tickets dev d'origine (Phase 0 livré)
+
+> Les cases ci-dessous ont été écrites comme critères d'acceptation avant implémentation. Elles
+> n'ont pas été rétro-cochées et ne doivent pas être importées dans un outil de suivi.
 
 10 tickets. Phasage en §11.
 
@@ -1402,8 +1413,7 @@ Première rédaction. v1 reste comme trace d'itération.
 
 ---
 
-**Status**: v1.1, prêt pour GO Phase 0. Spec d'implémentation,
-pas brief. Numérotation des versions dans le titre pour traçabilité.
+**Statut actuel** : socle v1.1 livré. La spec reste numérotée pour la traçabilité.
 
-**Prochaine étape** : GO Hamza → Phase 0 strict (Tickets 1+2+3+4 dans
-l'ordre, avec STOP revue entre chaque).
+**Étape actuelle** : exécuter et documenter le pilote réel, puis prioriser les écarts observés. Le
+GO Phase 0 et l'ordre des tickets ci-dessus appartiennent à l'historique de réalisation.

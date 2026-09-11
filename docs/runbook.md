@@ -4,10 +4,11 @@
 > Sokar Connect, voice). Pas un document "pilote Lyon" : c'est le runbook
 > de prod, applicable à tout ce qui tourne sur Sokar.
 >
-> **Statut** : squopé en juin 2026 pour retirer la fiction (24/7,
-> daily async, weekly retro, status page inexistante). Le pilote
-> terrain n'est pas lancé, mais les procédures d'incident restent
-> valides et applicables à n'importe quel incident en dev/staging/prod.
+> **Statut : RUNBOOK ACTIF — audité le 12 septembre 2026.** Les procédures restent applicables en
+> dev, staging et production. L'état des campagnes terrain est suivi dans leurs runbooks dédiés ;
+> ne pas déduire leur avancement de ce document transversal. Pour déployer, restaurer ou tester,
+> préférer les procédures spécialisées dans `docs/runbooks/`. Voir
+> [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
 
 ## Contacts
 

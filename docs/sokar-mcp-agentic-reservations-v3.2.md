@@ -1,11 +1,18 @@
-# Sokar Agentic Reservations Layer — Spec v3.2 (GO Phase 0 pending)
+# Sokar Agentic Reservations Layer — Spec v3.2
+
+> **Statut : LIVRÉ / DOCUMENT DE RÉFÉRENCE — vérifié le 12 septembre 2026.**
+> Le serveur MCP Streamable HTTP, OAuth, les outils de disponibilité/hold/confirmation/annulation,
+> l'idempotence, la gestion capacitaire et OpenAI Reserve sont implémentés. Des parcours E2E réels
+> ont été exécutés avec ChatGPT et Claude. Les mentions « GO », « avant code » ou « P0 à lancer »
+> ci-dessous appartiennent au plan d'origine et ne décrivent plus l'état du produit. Voir
+> [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
 
 > **Positionnement**: infrastructure qui rend les restaurants indépendants
 > réservables par ChatGPT, Claude et les futurs agents, avec disponibilité
 > réelle, politiques maîtrisées, et zéro lock-in marketplace.
 >
-> **Statut**: spec d'implémentation v3.2 — 3 micro-corrections intégrées.
-> **Pas de code SQL avant GO final de Hamza.**
+> **Statut d'origine** : spec d'implémentation v3.2 — 3 micro-corrections intégrées.
+> La contrainte « pas de code SQL avant GO » est conservée comme trace de la phase de conception.
 
 ---
 
@@ -455,9 +462,10 @@ FOR EACH ROW EXECUTE FUNCTION disallow_audit_modification();
 
 ---
 
-## 5. Décision finale
+## 5. Décision finale d'origine
 
 Toutes les décisions produit sont validées. Les 3 micro-corrections sont
 intégrées.
 
-**GO final demandé** pour écrire le SQL et lancer Phase 0.
+**Clôture au 12 septembre 2026** : le GO a été donné, les migrations et le code ont été livrés. La
+formulation initiale est conservée dans les sections précédentes pour expliquer les choix de phase.

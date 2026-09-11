@@ -1,7 +1,9 @@
 # Guide intégrateur MCP Sokar
 
-> Statut: endpoint pilote local pour agents tiers.
-> Transport actuel: JSON-RPC 2.0 stateless sur HTTP `POST /mcp`.
+> **Statut : ACTIF / PRODUCTION — vérifié le 12 septembre 2026.**
+> Des parcours OAuth et réservation E2E ont été exécutés avec ChatGPT et Claude. Le transport
+> actuel est JSON-RPC 2.0 stateless sur HTTP `POST /mcp`. Voir
+> [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
 
 Sokar expose les restaurants opt-in via un serveur MCP générique. Un agent peut
 découvrir un restaurant, vérifier une disponibilité, créer une réservation avec
@@ -21,10 +23,13 @@ Origin: https://claude.ai
 Production:
 
 ```http
-POST https://api.sokar.fr/mcp
+POST https://api.sokar.tech/mcp
 Content-Type: application/json
 Authorization: Bearer sk_sokar_agent_xxx
 ```
+
+Staging : `POST https://api-staging.sokar.tech/mcp`. Ne pas mélanger les clients, tokens ni
+redirect URIs entre staging et production.
 
 Le body est un message JSON-RPC 2.0:
 
@@ -44,7 +49,7 @@ Les batchs JSON-RPC sont acceptés en envoyant un tableau de messages.
 
 ## Authentification
 
-Sokar accepte une API key Bearer:
+Sokar accepte un token OAuth 2.0 ou une API key dans le même header Bearer :
 
 ```http
 Authorization: Bearer sk_sokar_agent_xxx
@@ -60,9 +65,9 @@ La clé est vérifiée via la table `AgentClient`:
 - `revokedAt`: révocation immédiate
 - `lastUsedAt`: mis à jour à chaque appel réussi
 
-En développement uniquement, `AGENT_DEV_KEY` reste accepté comme fallback si
-aucun client `AgentClient` n'existe en base. Le seed local crée aussi un client
-`AgentClient` hashé pour la clé de démo.
+Le fallback `AGENT_DEV_KEY` n'est accepté que lorsque `ENABLE_DEV_AUTH=true` et que la clé respecte
+les contraintes de format et de longueur. Il doit rester désactivé sur les environnements partagés.
+Le seed local peut créer un client `AgentClient` hashé pour la démo.
 
 Le dashboard admin expose une page `Intégrations MCP` pour créer et révoquer les
 clés en self-service. La clé complète est affichée une seule fois au moment de la
@@ -75,6 +80,8 @@ les scopes granulaires.
 Les `Origin` browser acceptés aujourd'hui:
 
 - `https://claude.ai`
+- `https://chatgpt.com`
+- `https://chat.mistral.ai`
 - `https://cursor.sh`
 - `http://localhost:3000`
 - `http://localhost:4000`

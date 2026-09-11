@@ -1,5 +1,10 @@
 # Pilote — Service Copilot retard et liste d’attente
 
+> **Statut : MODÈLE DE RUNBOOK / PREUVE TERRAIN OUVERTE — audité le 12 septembre 2026.** Le code,
+> l'idempotence, la télémétrie et le rollback existent. Une campagne complète en conditions de
+> service n'est pas documentée comme signée. Les étapes ci-dessous sont des contrôles d'exécution,
+> pas un backlog d'implémentation. Voir [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
+
 Ce runbook couvre le smoke test métier en production, le retour arrière manuel du MVP et le
 shadow mode. Il ne doit être exécuté que sur un restaurant de démonstration ou avec l’accord
 explicite du responsable du restaurant.

@@ -1,5 +1,10 @@
 # Onboarding Pilote P1 Sokar Connect
 
+> **Statut : MODÈLE DE RUNBOOK — audité le 12 septembre 2026.** Les prérequis techniques sont
+> livrés. Les cases vides ci-dessous doivent être copiées et remplies pour chaque restaurant ; elles
+> ne décrivent pas des fonctions manquantes dans Sokar. La campagne de 10 restaurants n'est pas
+> documentée comme terminée. Voir [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
+
 ## Objectif
 
 10 restaurants réels onboardés sur Sokar Connect pour valider les 4 critères go/no-go P1.

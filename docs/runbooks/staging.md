@@ -1,5 +1,11 @@
 # Runbook — Staging
 
+> **Statut : ACTIF — audité le 12 septembre 2026.**
+> La dernière preuve documentée confirme ElevenLabs et Cartesia fonctionnels en staging ; Telnyx
+> reste absent et bloque un appel réel. Toujours contrôler `/health/dependencies` et les variables
+> présentes sans afficher leur valeur avant un test voice. Voir
+> [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
+
 ## URLs
 
 - Dashboard: `https://staging.sokar.tech`
@@ -18,16 +24,19 @@
 ## Security / isolation
 
 - Clerk staging keys (`pk_test` / `sk_test`) — **never** prod keys.
-- Voice disabled: `VOICE_DISABLED=true` is required. `TELNYX_API_KEY`, `ELEVENLABS_API_KEY`, `CARTESIA_API_KEY` are empty → no outbound calls, Telnyx webhooks get 403.
+- La configuration voice est évolutive : `VOICE_DISABLED` doit refléter le but de la campagne.
+  ElevenLabs et Cartesia peuvent être activés pour les tests de transcription/synthèse. Sans
+  `TELNYX_API_KEY` et configuration Telnyx complète, aucun appel réel ne doit être tenté.
 - `CORS_ORIGINS` must be explicit in production.
-- Stripe public key is prod, secret empty unless `sk_test_*` is provided.
+- Stripe staging utilise exclusivement des clés et Price IDs de test.
 - `X-Robots-Tag: noindex, nofollow` on all staging vhosts.
 
 ## Initial setup
 
 - Script: `scripts/ops/setup-staging.sh` — idempotent, prepares directory, clones repo, creates `sokar_staging` DB, copies `.env.staging.example` to `.env`, installs Nginx vhost and validates config.
 - Prerequisites: DNS `staging.sokar.tech` + `api-staging.sokar.tech` pointing to VPS, swap configured (`scripts/ops/setup-swap.sh` if needed).
-- After setup: fill `.env` with staging keys (Clerk test, Stripe test, no voice keys), then run the first manual deploy.
+- After setup: fill `.env` with staging keys. N'activer que les providers voice nécessaires à la
+  campagne prévue, puis vérifier leur health check avant le premier déploiement.
 
 ## Manual commands
 

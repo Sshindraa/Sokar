@@ -1,5 +1,9 @@
 # Runbook — Deployment
 
+> **Statut : ACTIF — audité le 12 septembre 2026.** Staging, promotion production, snapshots,
+> health checks et rollback correspondent aux workflows du dépôt. Voir
+> [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
+
 ## Policy
 
 - **Staging:** deploys automatically after a green CI and its smoke tests.

@@ -1,13 +1,18 @@
 # Spec — Cartes cadeaux dans Sokar
 
-> Statut : spec technique P1.  
+> **Statut : LIVRÉ / DOCUMENT DE RÉFÉRENCE — vérifié le 12 septembre 2026.**
+> Packs, montant libre, cagnotte, widget, dashboard, codes courts, Stripe, remboursements et
+> protections transactionnelles existent. Les mentions « mode test P1 » et « Stripe futur »
+> appartiennent au plan initial. Restent l'unicité DB stricte du PaymentIntent après audit des
+> doublons et la qualification du cycle financier complet en environnement réel. Voir
+> [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
 > But : permettre aux restaurateurs Sokar de vendre des cartes cadeaux digitales, intégrées nativement au parcours de réservation, avec packs expérience, option "réserver maintenant" et cagnotte collective.
 
 ---
 
 ## 1. Contexte et objectifs
 
-### État actuel
+### État au moment de la rédaction (historique)
 
 - Sokar gère les réservations via `hold` / `confirm` (Connect, widget, voice, MCP).
 - Le CRM `Customer` existe avec historique, VIP, consentements.
