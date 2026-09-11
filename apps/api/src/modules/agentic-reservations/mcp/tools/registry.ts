@@ -15,7 +15,11 @@ import type { PrismaClient } from '@prisma/client';
 import { logger } from '../../../../shared/logger/pino';
 import { type ReservationChannel } from '../../core/state-machine';
 import { AuditLogService } from '../../core/audit-log.service';
-import { AvailabilityService } from '../../core/availability.service';
+import {
+  AvailabilityService,
+  resolveEffectiveMaxPartySize,
+  type CapacityLimitHint,
+} from '../../core/availability.service';
 import { HoldService } from '../../core/hold.service';
 import { IdempotencyService } from '../../core/idempotency.service';
 import { PrismaIdempotencyStore } from '../../core/prisma-store';
@@ -219,7 +223,7 @@ export class McpToolRegistry {
         maxResults: input.maxResults,
       });
 
-      const exposedResults = [];
+      const exposedResults: Array<(typeof results)[number] & { maxOnlinePartySize: number }> = [];
       for (const result of results) {
         const exposure = await this.getMcpExposure(result.restaurantId, ctx);
         if (!exposure.ok) continue;
@@ -228,7 +232,30 @@ export class McpToolRegistry {
           startsAt: slotStart,
           endsAt: slotEnd,
         });
-        if (!violation) exposedResults.push(result);
+        if (!violation) {
+          exposedResults.push({
+            ...result,
+            maxOnlinePartySize: exposure.settings.maxPartySize,
+          });
+        }
+      }
+
+      // Keep a named restaurant discoverable when the requested group is too
+      // large. An empty restaurants array alone makes assistants report a
+      // misleading "restaurant not found" message.
+      const capacityLimits =
+        exposedResults.length === 0
+          ? await this.availabilityService.findCapacityLimits({
+              city: input.city,
+              partySize: input.partySize,
+              cuisineType: input.cuisineType,
+              maxResults: input.maxResults,
+            })
+          : [];
+      const exposedCapacityLimits: CapacityLimitHint[] = [];
+      for (const hint of capacityLimits) {
+        const exposure = await this.getMcpExposure(hint.restaurantId, ctx);
+        if (exposure.ok) exposedCapacityLimits.push(hint);
       }
 
       await this.audit.record({
@@ -239,6 +266,7 @@ export class McpToolRegistry {
           city: input.city,
           partySize: input.partySize,
           count: exposedResults.length,
+          capacityLimitCount: exposedCapacityLimits.length,
         },
       });
 
@@ -257,6 +285,13 @@ export class McpToolRegistry {
           id: r.restaurantId,
           name: r.name,
           slug: r.slug,
+          maxOnlinePartySize: r.maxOnlinePartySize,
+        })),
+        capacityLimits: exposedCapacityLimits.map((hint) => ({
+          id: hint.restaurantId,
+          name: hint.name,
+          slug: hint.slug,
+          maxOnlinePartySize: hint.maxOnlinePartySize,
         })),
         nextCursor,
       });
@@ -299,7 +334,7 @@ export class McpToolRegistry {
       });
       if (!r) return toolError('Restaurant not found', 'NOT_FOUND');
 
-      return ok(r);
+      return ok({ ...r, maxOnlinePartySize: exposure.settings.maxPartySize });
     } catch (err: unknown) {
       logger.error({ err, clientId: ctx.clientId }, 'get_restaurant_details failed');
       return toolError('Internal error', 'INTERNAL');
@@ -556,6 +591,15 @@ export class McpToolRegistry {
             exposedCreneaux: true,
           },
         },
+        floorPlans: {
+          where: { isActive: true },
+          select: {
+            tables: {
+              where: { isActive: true },
+              select: { capacity: true },
+            },
+          },
+        },
       },
     });
 
@@ -563,11 +607,17 @@ export class McpToolRegistry {
       return { ok: false, error: toolError('Restaurant not found', 'NOT_FOUND') };
     }
 
+    const maxOnlinePartySize =
+      resolveEffectiveMaxPartySize({
+        policyMaxPartySize: restaurant.exposureSettings.maxPartySize,
+        floorPlans: restaurant.floorPlans,
+      }) ?? restaurant.exposureSettings.maxPartySize;
+
     return {
       ok: true,
       settings: {
         timezone: restaurant.timezone,
-        maxPartySize: restaurant.exposureSettings.maxPartySize,
+        maxPartySize: maxOnlinePartySize,
         minLeadTimeMinutes: restaurant.exposureSettings.minLeadTimeMinutes,
         exposedCreneaux: restaurant.exposureSettings.exposedCreneaux,
       },
@@ -585,7 +635,7 @@ export class McpToolRegistry {
   ): ToolResult | null {
     if (request.partySize > settings.maxPartySize) {
       return toolError(
-        `partySize ${request.partySize} dépasse maxPartySize ${settings.maxPartySize}`,
+        `partySize ${request.partySize} dépasse maxPartySize ${settings.maxPartySize} (capacité maximale en ligne)`,
         'POLICY_VIOLATION',
       );
     }

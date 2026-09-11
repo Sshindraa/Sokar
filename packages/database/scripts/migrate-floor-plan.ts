@@ -37,7 +37,12 @@ function extractTotalSeats(capacitySpecials: unknown, maxPartySize: number): num
 
 function generateTables(
   totalSeats: number,
+  maxPartySize: number,
 ): Array<{ name: string; capacity: number; minCapacity: number }> {
+  // Keep the generated default floor plan capable of serving the configured
+  // online maximum. Restaurants can still reduce this value during onboarding.
+  const largeTableCapacity = Math.max(6, maxPartySize);
+
   if (totalSeats <= 20) {
     return [
       { name: 'Table 1', capacity: 2, minCapacity: 1 },
@@ -46,7 +51,7 @@ function generateTables(
       { name: 'Table 4', capacity: 2, minCapacity: 1 },
       { name: 'Table 5', capacity: 4, minCapacity: 2 },
       { name: 'Table 6', capacity: 4, minCapacity: 2 },
-      { name: 'Table 7', capacity: 6, minCapacity: 4 },
+      { name: 'Table 7', capacity: largeTableCapacity, minCapacity: 4 },
     ];
   }
 
@@ -64,7 +69,7 @@ function generateTables(
     tables.push({ name: `Table ${index++}`, capacity: 4, minCapacity: 2 });
   }
   for (let i = 0; i < largeTables; i++) {
-    tables.push({ name: `Table ${index++}`, capacity: 6, minCapacity: 4 });
+    tables.push({ name: `Table ${index++}`, capacity: largeTableCapacity, minCapacity: 4 });
   }
   return tables;
 }
@@ -84,9 +89,9 @@ async function migrateRestaurant(restaurantId: string) {
     where: { restaurantId },
   });
 
-  const maxPartySize = settings?.maxPartySize ?? 12;
+  const maxPartySize = settings?.maxPartySize ?? 8;
   const totalSeats = extractTotalSeats(settings?.capacitySpecials, maxPartySize);
-  const tables = generateTables(totalSeats);
+  const tables = generateTables(totalSeats, maxPartySize);
 
   let floorPlan = existing;
   if (!floorPlan) {

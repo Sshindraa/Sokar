@@ -182,6 +182,35 @@ describe('AvailabilityService', () => {
       const call = findMany.mock.calls[0][0];
       expect(call.where.cuisineType).toBeUndefined();
     });
+
+    it('expose la limite en ligne quand un groupe dépasse la capacité', async () => {
+      const findMany = vi.fn().mockResolvedValue([
+        {
+          id: 'r-lyon',
+          name: 'Chez Lyon',
+          slug: 'chez-lyon',
+          formattedAddress: '12 Rue de la République, 69001 Lyon',
+          exposureSettings: { maxPartySize: 12 },
+          floorPlans: [{ tables: [{ capacity: 2 }, { capacity: 6 }] }],
+        },
+      ]);
+      const service = new AvailabilityService(makeFakePrisma({ findMany }));
+
+      const result = await service.findCapacityLimits({
+        city: 'Lyon',
+        partySize: 20,
+        maxResults: 5,
+      });
+
+      expect(result).toEqual([
+        {
+          restaurantId: 'r-lyon',
+          name: 'Chez Lyon',
+          slug: 'chez-lyon',
+          maxOnlinePartySize: 6,
+        },
+      ]);
+    });
   });
 
   describe('checkAvailability', () => {
@@ -215,6 +244,52 @@ describe('AvailabilityService', () => {
       const result = await service.checkAvailability({
         restaurantId: RESTAURANT_ID,
         partySize: PARTY_SIZE,
+        slotStart: new Date('2026-09-01T19:00:00Z'),
+        slotEnd: new Date('2026-09-01T20:30:00Z'),
+      });
+
+      expect(result.available).toBe(true);
+    });
+
+    it('retourne la limite exacte si le groupe dépasse la capacité en ligne', async () => {
+      const findUnique = vi.fn().mockResolvedValue({
+        timezone: 'Europe/Paris',
+        exposureSettings: { maxPartySize: 12 },
+        floorPlans: [{ tables: [{ capacity: 6 }] }],
+      });
+      const service = new AvailabilityService(makeFakePrisma({ findUnique }));
+
+      const result = await service.checkAvailability({
+        restaurantId: RESTAURANT_ID,
+        partySize: 7,
+        slotStart: new Date('2026-09-01T19:00:00Z'),
+        slotEnd: new Date('2026-09-01T20:30:00Z'),
+      });
+
+      expect(result).toEqual({
+        available: false,
+        reason: 'party_size_exceeds_capacity',
+        maxOnlinePartySize: 6,
+      });
+    });
+
+    it('accepte 8 personnes avec le plafond standard et une table de 8', async () => {
+      const findUnique = vi.fn().mockResolvedValue({
+        timezone: 'Europe/Paris',
+        exposureSettings: { maxPartySize: 8 },
+        floorPlans: [{ tables: [{ capacity: 8 }] }],
+      });
+      vi.spyOn(CapacityAwareAvailabilityService.prototype, 'getAvailability').mockResolvedValue({
+        restaurantId: RESTAURANT_ID,
+        date: '2026-09-01',
+        partySize: 8,
+        slots: [{ time: '17:00', available: true }],
+      } as never);
+
+      const service = new AvailabilityService(makeFakePrisma({ findUnique }));
+      const result = await service.checkAvailability({
+        restaurantId: RESTAURANT_ID,
+        partySize: 8,
         slotStart: new Date('2026-09-01T19:00:00Z'),
         slotEnd: new Date('2026-09-01T20:30:00Z'),
       });
