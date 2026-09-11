@@ -15,11 +15,17 @@ import * as Sentry from '@sentry/node';
 import { GiftCardService } from '../../gift-cards/gift-card.service';
 import { recommendGiftCardAmount } from '../../gift-cards/gift-card-recommender';
 import { sendSms } from '../../../shared/telnyx/client';
+import { telnyxFetch } from '../../../shared/telnyx/http-agent';
 import { trackGiftCardEvent } from '../../analytics/events.service';
 import { AuditLogService } from '../../agentic-reservations/core/audit-log.service';
 import { zonedTimeToUtc } from '../../floor-plan/availability-capacity-aware.service';
-import { createConversationState, isNameCollectionBlocking } from './conversation-controller';
-import { recordVoiceTurnEvent } from './turn-telemetry';
+import {
+  createConversationState,
+  getReservationConfirmationKey,
+  isNameCollectionBlocking,
+} from './conversation-controller';
+import { markVoiceTurnLlmFirstToken, recordVoiceTurnEvent } from './turn-telemetry';
+import { cancelScheduledFiller } from './filler-scheduler';
 import { getVoiceLlmProvider } from '../llm-provider';
 import { buildLlmMessagesWithLanguage, effectiveVoiceLanguage } from './voice-language';
 import {
@@ -57,6 +63,13 @@ function recordLlmException(
   });
 }
 
+function appendEphemeralContext(messages: ChatMessage[], context?: string): void {
+  if (!context?.trim()) return;
+  const firstNonSystem = messages.findIndex((message) => message.role !== 'system');
+  const insertionIndex = firstNonSystem < 0 ? messages.length : firstNonSystem;
+  messages.splice(insertionIndex, 0, { role: 'system', content: context.trim() });
+}
+
 /**
  * Détecte une annulation de session (barge-in, raccroché) — pas un timeout.
  * Dans ce cas, on ne doit PAS enregistrer une failure provider ni lancer de
@@ -79,6 +92,10 @@ interface LlmRequestOptions {
   temperature?: number;
   /** Une pré-réponse ne doit jamais modifier l'historique de l'appel. */
   persistHistory?: boolean;
+  /** Contexte métier éphémère, ajouté au prompt sans persister dans l'historique. */
+  context?: string;
+  /** Identifiant du tour auquel rattacher les jalons de génération. */
+  telemetryTurnId?: string;
 }
 
 /**
@@ -325,6 +342,7 @@ export class CallSessionManager {
     to: string;
     restaurantId: string;
     restaurantName: string;
+    managerPhone?: string | null;
     timezone?: string;
     /** Montant minimum carte cadeau — défaut 10€ */
     giftCardMinimumAmount?: number;
@@ -356,6 +374,7 @@ export class CallSessionManager {
       to: opts.to,
       restaurantId: opts.restaurantId,
       restaurantName,
+      managerPhone: opts.managerPhone ?? null,
       timezone: opts.timezone ?? 'Europe/Paris',
       giftCardMinimumAmount,
       systemPrompt: opts.systemPrompt,
@@ -415,6 +434,7 @@ export class CallSessionManager {
 
   cleanup(session: CallSession): void {
     session.ended = true;
+    cancelScheduledFiller(session);
     if (session.ending?.timer) clearTimeout(session.ending.timer);
     session.ending?.complete?.();
     session.state = 'IDLE';
@@ -475,6 +495,7 @@ export class CallSessionManager {
 
   handleBargeIn(session: CallSession): void {
     if (session.state !== 'SPEAKING') return;
+    cancelScheduledFiller(session);
     session.responseGeneration++;
     session.ttsGeneration++;
     session.ttsContext?.cancel();
@@ -483,6 +504,10 @@ export class CallSessionManager {
     this.transition(session, 'LISTENING');
     session.isSpeaking = false;
     recordVoiceTurnEvent(session, 'barge_in');
+    recordVoiceTurnEvent(session, 'tts_interrupted', {
+      reason: 'barge_in',
+      ttsPath: 'http_stream',
+    });
     logger.info({ callId: session.callControlId }, '[barge-in] Call interrupted');
   }
 
@@ -517,6 +542,14 @@ export class CallSessionManager {
       return null;
     }
 
+    const confirmationKey = getReservationConfirmationKey(session);
+    if (!confirmationKey || session.conversation.confirmedReservationKey !== confirmationKey) {
+      return null;
+    }
+    // Consommer l'accord avant l'appel réseau : un double événement STT ou un
+    // retry ne doit jamais déclencher deux créations pour le même « oui ».
+    session.conversation.confirmedReservationKey = null;
+
     return this.executeTool(
       session,
       'createReservation',
@@ -527,6 +560,7 @@ export class CallSessionManager {
         customerName,
         customerPhone: session.from,
       }),
+      confirmationKey,
     );
   }
 
@@ -720,6 +754,7 @@ export class CallSessionManager {
     const includeTools = options.includeTools !== false;
     const tools = includeTools ? getRestaurantTools(session.restaurantId) : undefined;
     const messages = buildLlmMessagesWithLanguage(session.history, effectiveVoiceLanguage(session));
+    appendEphemeralContext(messages, options.context);
 
     for (let round = 0; round < 3; round++) {
       const response = await this.fetchLlmCompletion(messages, {
@@ -1489,6 +1524,7 @@ export class CallSessionManager {
     const includeTools = options.includeTools !== false;
     const tools = includeTools ? getRestaurantTools(session.restaurantId) : undefined;
     const messages = buildLlmMessagesWithLanguage(session.history, effectiveVoiceLanguage(session));
+    appendEphemeralContext(messages, options.context);
 
     for (let round = 0; round < 3; round++) {
       const { response, provider: providerUsed } = await this.fetchLlmStreaming(messages, {
@@ -1596,6 +1632,8 @@ export class CallSessionManager {
               const token = delta.content ?? '';
               if (!token) continue;
 
+              markVoiceTurnLlmFirstToken(session, options.telemetryTurnId);
+
               sentenceBuffer += token;
               fullText += token;
 
@@ -1697,6 +1735,7 @@ export class CallSessionManager {
                     }
                     const token = delta.content ?? '';
                     if (!token) continue;
+                    markVoiceTurnLlmFirstToken(session, options.telemetryTurnId);
                     sentenceBuffer += token;
                     fullText += token;
                     emitCompletePhrases();
@@ -1821,7 +1860,12 @@ export class CallSessionManager {
   /**
    * Exécute un appel d'outil et retourne le résultat texte.
    */
-  private async executeTool(session: CallSession, name: string, argsJson: string): Promise<string> {
+  private async executeTool(
+    session: CallSession,
+    name: string,
+    argsJson: string,
+    reservationConfirmationKey?: string,
+  ): Promise<string> {
     if (session.ending || session.ended) return 'Appel terminé.';
     try {
       const validated = validateToolArgs(name, argsJson);
@@ -1846,6 +1890,24 @@ export class CallSessionManager {
           ) {
             return "Je dois d'abord confirmer l'orthographe de votre nom. Pouvez-vous me redonner les lettres, s'il vous plaît ?";
           }
+
+          const draftKey = getReservationConfirmationKey(session);
+          const authorizedKey =
+            reservationConfirmationKey ?? session.conversation.confirmedReservationKey;
+          const draftMatchesArgs =
+            Boolean(draftKey) &&
+            session.conversation.slots.date === date &&
+            session.conversation.slots.time === time &&
+            session.conversation.slots.partySize === partySize &&
+            session.conversation.lastAvailabilityResult?.key === `${date}:${time}:${partySize}` &&
+            Boolean(session.conversation.lastAvailabilityResult?.slots.includes(time));
+          if (!draftKey || authorizedKey !== draftKey || !draftMatchesArgs) {
+            return 'Je dois d’abord vous relire la réservation et recueillir votre accord explicite avant de la créer.';
+          }
+          // Consommer l'accord juste avant l'effet métier. Le chemin
+          // createReservationFromConversation transmet sa clé privée pour
+          // éviter qu'un second événement STT ne réutilise le même « oui ».
+          session.conversation.confirmedReservationKey = null;
 
           // Le nom confirmé par notre garde déterministe est la source de
           // vérité ; il ne peut pas être réécrit en mot plausible par le LLM.
@@ -2169,7 +2231,45 @@ export class CallSessionManager {
         }
 
         case 'handoffToManager':
-          return 'Je vous transfère au gérant. Merci de patienter.';
+          if (!session.managerPhone?.trim()) {
+            session.handoffConclusion = 'manager_unconfigured';
+            return "Je n'ai pas de ligne directe configurée pour le gérant. Je peux prendre un message à transmettre immédiatement.";
+          }
+          try {
+            cancelScheduledFiller(session);
+            const transferResponse = await telnyxFetch(
+              `/v2/calls/${session.callControlId}/actions/transfer`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${process.env.TELNYX_API_KEY}`,
+                },
+                body: JSON.stringify({ to: session.managerPhone.trim() }),
+                signal: AbortSignal.timeout(5_000),
+              },
+            );
+            if (!transferResponse.ok) {
+              const responseBody = await transferResponse.text().catch(() => '');
+              session.handoffConclusion = 'manager_transfer_rejected';
+              logger.warn(
+                {
+                  callId: session.callControlId,
+                  status: transferResponse.status,
+                  body: responseBody.slice(0, 200),
+                },
+                '[tool] Manager transfer rejected',
+              );
+              return "Je n'ai pas réussi à joindre le gérant. Je peux prendre un message à lui transmettre.";
+            }
+            session.handoffInProgress = true;
+            session.handoffConclusion = 'manager_transfer_accepted';
+            return 'Le gérant a accepté le transfert. Je vous mets en relation, un instant.';
+          } catch (err) {
+            session.handoffConclusion = 'manager_transfer_failed';
+            logger.warn({ err, callId: session.callControlId }, '[tool] Manager transfer failed');
+            return "Le transfert vers le gérant n'a pas abouti. Je peux prendre un message à lui transmettre.";
+          }
 
         case 'recommendGiftCardAmount': {
           const { occasion, partySize, budget } = args;

@@ -237,6 +237,14 @@ export const voiceLlmFirstTokenMs = new Histogram({
   registers: [getRegistry()],
 });
 
+/** Temps jusqu'à la première phrase complète livrée au pipeline TTS. */
+export const voiceLlmFirstPhraseMs = new Histogram({
+  name: 'voice_llm_first_phrase_ms',
+  help: "Temps jusqu'à la première phrase LLM complète (ms)",
+  buckets: [100, 200, 500, 1000, 2000, 5000, 10000],
+  registers: [getRegistry()],
+});
+
 /**
  * Temps jusqu'au premier audio TTS (Cartesia). Cible < 500ms.
  */
@@ -313,6 +321,7 @@ export function __resetMetrics(): void {
   reservationsMissingSmsGauge.reset();
   voiceTurnDurationMs.reset();
   voiceLlmFirstTokenMs.reset();
+  voiceLlmFirstPhraseMs.reset();
   voiceTtsFirstAudioMs.reset();
   voiceLlmFallbackTotal.reset();
   voiceProviderErrorsTotal.reset();

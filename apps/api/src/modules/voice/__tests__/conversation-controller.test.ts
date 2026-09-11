@@ -2,12 +2,18 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDeterministicTurnResponse,
   buildAvailabilityFollowupResponse,
+  buildAvailabilityLlmContext,
   buildAvailabilityReply,
   classifyVoiceSpeechAct,
+  classifyVoiceSpeechActInContext,
   createConversationState,
   extractConversationSlots,
   getReadyAvailabilityRequest,
   buildReservationProgressResponse,
+  buildPendingQuestionResponse,
+  confirmReservationDraft,
+  extractPlainCustomerName,
+  getReservationConfirmationKey,
   handleCustomerNameTurn,
   isNameCollectionBlocking,
   parseSpelledNameTranscript,
@@ -15,6 +21,7 @@ import {
   recordAssistantReply,
   recordUserTurn,
   resetNameCollectionAfterFallback,
+  pendingQuestionFrom,
 } from '../stream/conversation-controller';
 import type { CallSession } from '../stream/types';
 
@@ -29,9 +36,28 @@ describe('classifyVoiceSpeechAct', () => {
     ['Merci, c’est tout.', 'closing'],
     ['Non non merci au revoir.', 'closing'],
     ['Non, plutôt 20 h 30.', 'correction'],
+    ['À 19 h 30, non plutôt 20 h 30.', 'correction'],
     ['Je voudrais réserver demain.', 'content'],
   ] as const)('classifie « %s » comme %s', (transcript, expected) => {
     expect(classifyVoiceSpeechAct(transcript)).toBe(expected);
+  });
+
+  it('garde le sens de « c’est bon » quand une confirmation est attendue', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'J’ai une table pour quatre personnes. Vous me confirmez ?');
+
+    expect(session.conversation.pendingQuestion).toBe('confirmation');
+    expect(classifyVoiceSpeechAct('C’est bon')).toBe('closing');
+    expect(classifyVoiceSpeechActInContext(session, 'C’est bon')).toBe('content');
+  });
+
+  it('reconnaît les attentes de confirmation, de créneau et de téléphone', () => {
+    expect(pendingQuestionFrom('Vous me confirmez ?')).toBe('confirmation');
+    expect(pendingQuestionFrom('Ça vous va pour samedi ?')).toBe('confirmation');
+    expect(pendingQuestionFrom('Je peux la réserver ?')).toBe('confirmation');
+    expect(pendingQuestionFrom('Quel horaire vous conviendrait ?')).toBe('timeChoice');
+    expect(pendingQuestionFrom('Quel créneau préférez-vous ?')).toBe('timeChoice');
+    expect(pendingQuestionFrom('Quel numéro puis-je utiliser ?')).toBe('customerPhone');
   });
 });
 
@@ -53,6 +79,59 @@ describe('conversation state', () => {
     recordAssistantReply(session, 'Parfait. À quel nom je réserve ?');
 
     expect(session.conversation.pendingQuestion).toBe('customerName');
+  });
+
+  it('retient un nom simple déjà donné pour le transmettre au prochain tour', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'À quel nom je réserve ?');
+    recordUserTurn(session, 'Akif', 'content');
+
+    expect(session.conversation.slots.customerName).toBe('Akif');
+    expect(extractPlainCustomerName('Au nom de Akif')).toBe('Akif');
+    expect(extractPlainCustomerName('A K I F', true)).toBeNull();
+  });
+
+  it('ne répète pas mécaniquement la question de nom après un acquiescement', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Parfait. À quel nom je réserve ?');
+
+    expect(buildPendingQuestionResponse(session, 'Oui')).toBe(
+      'Quel nom dois-je inscrire pour la réservation ?',
+    );
+  });
+
+  it('ne transforme pas un oui de confirmation en répétition de la question', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'J’ai une table pour quatre personnes. Vous me confirmez ?');
+
+    expect(buildDeterministicTurnResponse(session, 'content', 'Oui')).toBeNull();
+  });
+
+  it('lie l’accord au dernier récapitulatif et l’annule dès qu’un créneau change', () => {
+    const session = makeSession();
+    session.conversation.slots = {
+      date: '2026-09-12',
+      time: '19:30',
+      partySize: 4,
+      customerName: 'Akif',
+    };
+
+    recordAssistantReply(
+      session,
+      'J’ai une table pour quatre personnes samedi 12 septembre à 19 h 30, au nom d’Akif. Vous me confirmez ?',
+    );
+    const key = getReservationConfirmationKey(session);
+    expect(key).toBe('2026-09-12:19:30:4:akif');
+    expect(session.conversation.pendingReservationConfirmationKey).toBe(key);
+    expect(confirmReservationDraft(session)).toBe(true);
+    expect(session.conversation.confirmedReservationKey).toBe(key);
+
+    recordUserTurn(session, 'Non, plutôt 20 h 30', 'correction');
+
+    expect(session.conversation.slots.time).toBe('20:30');
+    expect(session.conversation.pendingReservationConfirmationKey).toBeNull();
+    expect(session.conversation.confirmedReservationKey).toBeNull();
+    expect(session.conversation.pendingQuestion).toBeNull();
   });
 
   it('conserve les lettres d’une épellation claire avec le STT courant', () => {
@@ -214,6 +293,16 @@ describe('conversation state', () => {
     });
     expect(session.conversation.slots.customerName).toBe('KIF');
     expect(session.conversation.spellingCandidate).toBeNull();
+  });
+
+  it('conserve le contexte nom pour la confirmation de l’épellation', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Quel est votre nom pour la réservation ?');
+    const spelling = handleCustomerNameTurn(session, 'A K I F');
+    recordAssistantReply(session, spelling.response!);
+
+    expect(session.conversation.pendingQuestion).toBe('customerName');
+    expect(buildPendingQuestionResponse(session, 'Oui')).toBeNull();
   });
 
   it('conserve le doublon explicite « A deux K I F »', () => {
@@ -534,6 +623,31 @@ describe('conversation state', () => {
     });
   });
 
+  it('transmet au LLM le créneau vérifié et n’invite pas à redemander un nom connu', () => {
+    const context = buildAvailabilityLlmContext({
+      request: { date: '2026-09-12', time: '19:30', partySize: 4 },
+      availableSlots: ['19:30', '20:00'],
+      knownCustomerName: 'Akif',
+    });
+
+    expect(context).toContain('date exacte 2026-09-12');
+    expect(context).toContain('samedi 12 septembre 2026');
+    expect(context).toContain('créneau demandé disponible');
+    expect(context).toContain('Le nom « Akif » est déjà connu : ne le redemande pas');
+    expect(context).toContain('confirmation explicite');
+  });
+
+  it('borne les alternatives du LLM aux créneaux renvoyés par la disponibilité', () => {
+    const context = buildAvailabilityLlmContext({
+      request: { date: '2026-09-12', time: '19:30', partySize: 4 },
+      availableSlots: ['18:30', '20:00'],
+    });
+
+    expect(context).toContain('créneau demandé indisponible');
+    expect(context).toContain('20 h ou 18 h 30');
+    expect(context).toContain('Ne confirme pas et ne crée pas de réservation');
+  });
+
   it('garde la collecte de réservation sur une seule question à la fois', () => {
     const session = makeSession();
     session.timezone = 'Europe/Paris';
@@ -600,6 +714,48 @@ describe('conversation state', () => {
         new Date('2026-07-22T22:30:00Z'),
       ),
     ).toMatchObject({ date: '2026-07-24', time: '20:00' });
+  });
+
+  it('calcule après-demain comme deux jours après la date locale', () => {
+    expect(
+      extractConversationSlots(
+        'Après-demain à 20 heures',
+        'Europe/Paris',
+        new Date('2026-07-22T10:00:00Z'),
+      ),
+    ).toMatchObject({ date: '2026-07-24', time: '20:00' });
+  });
+
+  it('conserve uniquement la nouvelle valeur après une correction', () => {
+    expect(extractConversationSlots('À 19 h 30, non plutôt 20 h 30', 'Europe/Paris')).toMatchObject(
+      {
+        time: '20:30',
+      },
+    );
+  });
+
+  it('invalide la disponibilité précédente quand le brouillon est corrigé', () => {
+    const session = makeSession();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots = {
+      date: '2026-07-23',
+      time: '19:30',
+      partySize: 4,
+    };
+    session.conversation.lastAvailabilityCheck = '2026-07-23:19:30:4';
+    session.conversation.lastAvailabilityResult = {
+      key: '2026-07-23:19:30:4',
+      date: '2026-07-23',
+      time: '19:30',
+      partySize: 4,
+      slots: ['19:30'],
+    };
+
+    recordUserTurn(session, 'À 19 h 30, non plutôt 20 h 30', 'correction');
+
+    expect(session.conversation.slots.time).toBe('20:30');
+    expect(session.conversation.lastAvailabilityCheck).toBeNull();
+    expect(session.conversation.lastAvailabilityResult).toBeNull();
   });
 
   it('conserve une date ISO explicite', () => {

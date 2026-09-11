@@ -37,7 +37,11 @@ import {
   TTS_PACE_PAUSE_MS,
 } from './constants';
 import { splitTelnyxAudioFrames } from './audio-frames';
-import { recordVoiceTurnEvent } from './turn-telemetry';
+import {
+  markVoiceTurnAudioSent,
+  markVoiceTurnTtsSynthesisFirstByte,
+  recordVoiceTurnEventIfCurrent,
+} from './turn-telemetry';
 import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
 
 export function isSessionActiveForTts(session: CallSession, generation?: number): boolean {
@@ -49,14 +53,10 @@ export function isSessionActiveForTts(session: CallSession, generation?: number)
   );
 }
 
-function persistFirstAudioFrame(session: CallSession): void {
-  if (!session.latencyTrace || session.latencyTrace.totalE2eMs) return;
+function persistFirstAudioFrame(session: CallSession, turnId?: string): void {
+  if (!session.latencyTrace || session.latencyTrace.totalE2eMs !== undefined) return;
 
-  session.latencyTrace.totalE2eMs = Date.now() - session.latencyTrace.startTime;
-  recordVoiceTurnEvent(session, 'tts_first_audio', {
-    ttsFirstByteMs: session.latencyTrace.ttsFirstByteMs ?? null,
-    totalE2eMs: session.latencyTrace.totalE2eMs,
-  });
+  markVoiceTurnAudioSent(session, { ttsPath: 'http_stream' }, turnId);
   persistLatencyTrace(session).catch((err) =>
     logger.error(
       { err, callId: session.callControlId },
@@ -69,6 +69,7 @@ async function sendPacedAudioFrames(
   session: CallSession,
   audio: Buffer,
   generation?: number,
+  turnId?: string,
 ): Promise<number> {
   const frames = splitTelnyxAudioFrames(audio, session.codec);
   let framesSent = 0;
@@ -82,7 +83,7 @@ async function sendPacedAudioFrames(
       }),
     );
     framesSent++;
-    persistFirstAudioFrame(session);
+    persistFirstAudioFrame(session, turnId);
     await new Promise((resolve) => setTimeout(resolve, TTS_PACE_PAUSE_MS));
   }
 
@@ -216,6 +217,7 @@ export async function speakTelnyxNative(session: CallSession, text: string): Pro
 export async function speakTtsStreamed(session: CallSession, text: string): Promise<void> {
   const previousPlayback = session.ttsPlayback ?? Promise.resolve();
   const generation = session.ttsGeneration ?? 0;
+  const turnId = session.currentTurn?.id;
   const playback = previousPlayback
     .catch((err: unknown) => {
       logger.warn(
@@ -223,7 +225,7 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
         '[speakTtsStreamed] Previous queued TTS playback failed',
       );
     })
-    .then(() => speakTtsFragment(session, text, generation));
+    .then(() => speakTtsFragment(session, text, generation, turnId));
 
   // Conserver une chaîne résiliente : une erreur d'un fragment ne doit pas
   // empêcher les suivants d'être prononcés.
@@ -239,6 +241,7 @@ async function speakTtsFragment(
   session: CallSession,
   text: string,
   generation: number,
+  turnId?: string,
 ): Promise<void> {
   const language = effectiveVoiceLanguage(session);
   const cleanedText = cleanTextForTts(text, language);
@@ -253,6 +256,11 @@ async function speakTtsFragment(
   writeDebugLog(
     `[speakTtsStreamed] Starting synthesis for text: "${redactPii(cleanedText)}" (original: "${redactPii(text)}")`,
   );
+  const synthesisStartedAt = Date.now();
+  recordVoiceTurnEventIfCurrent(session, turnId, 'tts_synthesis_started', {
+    source: 'http_stream',
+    characterCount: cleanedText.length,
+  });
 
   const isAlaw = session.codec === 'PCMA';
   // Synthétiser la réponse complète conserve l'intonation entre les phrases.
@@ -271,6 +279,14 @@ async function speakTtsFragment(
         ? 'Sorry, I am having a technical issue. Could you please repeat that?'
         : 'Désolé, je rencontre une petite difficulté technique. Pouvez-vous répéter ?',
     );
+    recordVoiceTurnEventIfCurrent(session, turnId, 'tts_synthesis_completed', {
+      source: 'native_fallback',
+      durationMs: Date.now() - synthesisStartedAt,
+    });
+    recordVoiceTurnEventIfCurrent(session, turnId, 'tts_completed', {
+      source: 'native_fallback',
+      durationMs: Date.now() - synthesisStartedAt,
+    });
     return;
   }
 
@@ -310,14 +326,20 @@ async function speakTtsFragment(
 
     if (cachedBuffer) {
       writeDebugLog(`[speakTtsStreamed] Cache HIT for sentence: "${redactPii(trimmed)}"`);
-      if (session.latencyTrace && !session.latencyTrace.ttsFirstByteMs) {
-        session.latencyTrace.ttsFirstByteMs = Date.now() - session.latencyTrace.startTime;
-      }
+      markVoiceTurnTtsSynthesisFirstByte(session, 'cache', turnId);
 
-      const framesSent = await sendPacedAudioFrames(session, cachedBuffer, generation);
+      const framesSent = await sendPacedAudioFrames(session, cachedBuffer, generation, turnId);
       writeDebugLog(
         `[speakTtsStreamed] Sent ${framesSent} cached audio frames to Telnyx for sentence ${i}`,
       );
+      recordVoiceTurnEventIfCurrent(session, turnId, 'tts_synthesis_completed', {
+        source: 'cache',
+        durationMs: Date.now() - synthesisStartedAt,
+      });
+      recordVoiceTurnEventIfCurrent(session, turnId, 'tts_completed', {
+        source: 'cache',
+        durationMs: Date.now() - synthesisStartedAt,
+      });
       continue;
     }
 
@@ -439,7 +461,7 @@ async function speakTtsFragment(
             }),
           );
           framesSent++;
-          persistFirstAudioFrame(session);
+          persistFirstAudioFrame(session, turnId);
 
           await new Promise((r) => setTimeout(r, TTS_PACE_PAUSE_MS));
         }
@@ -463,9 +485,7 @@ async function speakTtsFragment(
         if (!firstByteReceived) {
           firstByteReceived = true;
           writeDebugLog(`[speakTtsStreamed] First Cartesia byte received for sentence ${i}`);
-          if (session.latencyTrace && !session.latencyTrace.ttsFirstByteMs) {
-            session.latencyTrace.ttsFirstByteMs = Date.now() - session.latencyTrace.startTime;
-          }
+          markVoiceTurnTtsSynthesisFirstByte(session, 'cartesia_http', turnId);
         }
 
         const rawChunk = Buffer.from(value);
@@ -500,6 +520,14 @@ async function speakTtsFragment(
 
       streamFinished = true;
       await playPromise; // Attendre la fin de la lecture progressive
+      recordVoiceTurnEventIfCurrent(session, turnId, 'tts_synthesis_completed', {
+        source: 'cartesia_http',
+        durationMs: Date.now() - synthesisStartedAt,
+      });
+      recordVoiceTurnEventIfCurrent(session, turnId, 'tts_completed', {
+        source: 'cartesia_http',
+        durationMs: Date.now() - synthesisStartedAt,
+      });
 
       // 3. Mettre en cache Redis le buffer G.711 8kHz complet
       const codec8kFull = Buffer.concat(accumulatedChunks);
@@ -521,6 +549,10 @@ async function speakTtsFragment(
       captureException(err, {
         tags: { service: 'handler', action: 'speakTtsStreamed', type: 'exception' },
         extra: { callId: session.callControlId, sentence: redactPii(trimmed) },
+      });
+      recordVoiceTurnEventIfCurrent(session, turnId, 'tts_interrupted', {
+        reason: isSessionActiveForTts(session, generation) ? 'error' : 'barge_in',
+        ttsPath: 'http_stream',
       });
       if (!isSessionActiveForTts(session, generation)) return;
       await speakTelnyxNative(

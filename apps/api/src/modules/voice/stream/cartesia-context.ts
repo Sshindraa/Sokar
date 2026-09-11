@@ -17,7 +17,11 @@ import {
 } from './constants';
 import { logger } from '../../../shared/logger/pino';
 import { persistLatencyTrace } from './session-persistence';
-import { recordVoiceTurnEvent } from './turn-telemetry';
+import {
+  markVoiceTurnAudioSent,
+  markVoiceTurnTtsSynthesisFirstByte,
+  recordVoiceTurnEventIfCurrent,
+} from './turn-telemetry';
 
 const CARTESIA_WEBSOCKET_URL = 'wss://api.cartesia.ai/tts/websocket';
 const CARTESIA_VERSION = '2026-03-01';
@@ -127,6 +131,8 @@ export class CartesiaContextTurn {
     this.resolveCompletion = resolve;
     this.rejectCompletion = reject;
   });
+  private readonly turnId: string | undefined;
+  private readonly synthesisStartedAt = Date.now();
 
   constructor(
     private readonly session: CallSession,
@@ -134,6 +140,10 @@ export class CartesiaContextTurn {
     private readonly apiKey: string,
     private readonly voiceId: string,
   ) {
+    this.turnId = session.currentTurn?.id;
+    recordVoiceTurnEventIfCurrent(this.session, this.turnId, 'tts_synthesis_started', {
+      source: 'cartesia_context',
+    });
     this.connect();
   }
 
@@ -169,6 +179,10 @@ export class CartesiaContextTurn {
     this.finishedOutput = true;
     this.audioFrames.length = 0;
     this.remainder = Buffer.alloc(0);
+    recordVoiceTurnEventIfCurrent(this.session, this.turnId, 'tts_interrupted', {
+      reason: 'barge_in',
+      ttsPath: 'cartesia_context',
+    });
     if (this.openTimeout) clearTimeout(this.openTimeout);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
@@ -268,9 +282,7 @@ export class CartesiaContextTurn {
     if (this.cancelled || !chunk.length) return;
     if (!this.firstAudioOutput) {
       this.firstAudioOutput = true;
-      if (this.session.latencyTrace && !this.session.latencyTrace.ttsFirstByteMs) {
-        this.session.latencyTrace.ttsFirstByteMs = Date.now() - this.session.latencyTrace.startTime;
-      }
+      markVoiceTurnTtsSynthesisFirstByte(this.session, 'cartesia_context', this.turnId);
     }
     const bytes = Buffer.concat([this.remainder, chunk]);
     let offset = 0;
@@ -303,12 +315,9 @@ export class CartesiaContextTurn {
       this.session.telnyxWs.send(
         JSON.stringify({ event: 'media', media: { payload: frame.toString('base64') } }),
       );
-      if (this.session.latencyTrace && !this.session.latencyTrace.totalE2eMs) {
-        this.session.latencyTrace.totalE2eMs = Date.now() - this.session.latencyTrace.startTime;
-        recordVoiceTurnEvent(this.session, 'tts_first_audio', {
-          ttsFirstByteMs: this.session.latencyTrace.ttsFirstByteMs ?? null,
-          totalE2eMs: this.session.latencyTrace.totalE2eMs,
-        });
+      const hadAudioSent = this.session.latencyTrace?.totalE2eMs !== undefined;
+      markVoiceTurnAudioSent(this.session, { ttsPath: 'cartesia_context' }, this.turnId);
+      if (!hadAudioSent && this.session.latencyTrace?.totalE2eMs !== undefined) {
         persistLatencyTrace(this.session).catch((err) =>
           logger.error(
             { err, callId: this.session.callControlId },
@@ -334,6 +343,14 @@ export class CartesiaContextTurn {
     if (!this.playbackPromise && this.audioFrames.length > 0)
       this.playbackPromise = this.playAudio();
     await this.playbackPromise;
+    recordVoiceTurnEventIfCurrent(this.session, this.turnId, 'tts_synthesis_completed', {
+      source: 'cartesia_context',
+      durationMs: Date.now() - this.synthesisStartedAt,
+    });
+    recordVoiceTurnEventIfCurrent(this.session, this.turnId, 'tts_completed', {
+      source: 'cartesia_context',
+      durationMs: Date.now() - this.synthesisStartedAt,
+    });
     this.resolveCompletion();
     this.ws?.close();
   }
@@ -344,6 +361,10 @@ export class CartesiaContextTurn {
     if (this.openTimeout) clearTimeout(this.openTimeout);
     this.audioFrames.length = 0;
     this.ws?.close();
+    recordVoiceTurnEventIfCurrent(this.session, this.turnId, 'tts_interrupted', {
+      reason: 'error',
+      ttsPath: 'cartesia_context',
+    });
     this.rejectCompletion(error);
   }
 }

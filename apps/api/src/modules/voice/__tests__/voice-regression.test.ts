@@ -19,6 +19,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { WebSocket } from 'ws';
 import { CallSessionManager, _resetCircuitBreakersForTesting } from '../stream/manager';
+import { getReservationConfirmationKey } from '../stream/conversation-controller';
 import type { CallSession } from '../stream/types';
 
 // ── Module mocks (identiques à stream-manager.test.ts) ─────────────────────
@@ -118,6 +119,7 @@ function makeSession(overrides: Partial<CallSession> = {}): CallSession {
     to: '+33****0000',
     restaurantId: 'rest-1',
     restaurantName: 'Test Resto',
+    managerPhone: overrides.managerPhone,
     systemPrompt: "Tu es l'assistant vocal de Test Resto.",
     isVip: false,
     telnyxWs: overrides.telnyxWs ?? makeTelnyxWs(),
@@ -126,6 +128,28 @@ function makeSession(overrides: Partial<CallSession> = {}): CallSession {
     giftCardMinimumAmount: overrides.giftCardMinimumAmount,
     personality: overrides.personality,
   });
+}
+
+function authorizeReservation(
+  session: CallSession,
+  date: string,
+  time: string,
+  partySize: number,
+  customerName: string,
+): void {
+  session.conversation.intent = 'reservation';
+  session.conversation.slots = { date, time, partySize, customerName };
+  session.conversation.nameCollection.state = 'confirmed';
+  session.conversation.nameCollection.confirmedName = customerName;
+  session.conversation.lastAvailabilityResult = {
+    key: `${date}:${time}:${partySize}`,
+    date,
+    time,
+    partySize,
+    slots: [time],
+  };
+  session.conversation.pendingReservationConfirmationKey = getReservationConfirmationKey(session);
+  session.conversation.confirmedReservationKey = getReservationConfirmationKey(session);
 }
 
 interface LlmRound {
@@ -198,6 +222,10 @@ describe('voice regression harness', () => {
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
       timezone: 'Europe/Paris',
     } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+    vi.mocked(db.call.findUnique).mockResolvedValue({
+      id: 'call-record-1',
+      restaurantId: 'rest-1',
+    } as unknown as Awaited<ReturnType<typeof db.call.findUnique>>);
     _resetCircuitBreakersForTesting();
   });
 
@@ -229,6 +257,7 @@ describe('voice regression harness', () => {
 
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
+    authorizeReservation(session, '2026-07-25', '19:30', 2, 'Jean Dupont');
     const reply = await mgr.processUtterance(
       session,
       'Je voudrais réserver une table pour 2 demain à 19h30',
@@ -543,6 +572,7 @@ describe('voice regression harness', () => {
 
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
+    authorizeReservation(session, '2026-07-25', '19:30', 2, 'Jean Dupont');
     await mgr.processUtterance(session, 'Réserver pour 2');
 
     // Le service create a bien été appelé (par executeTool), mais en interne

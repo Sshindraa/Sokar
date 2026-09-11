@@ -22,6 +22,7 @@ import {
 import { voiceConfig, type VoiceConfig } from '../../../env';
 import type { CallSession, ChatMessage } from '../stream/types';
 import type { getRestaurantTools } from '../tools';
+import { getReservationConfirmationKey } from '../stream/conversation-controller';
 
 // ── Module mocks ───────────────────────────────────────────────────────────
 
@@ -58,6 +59,12 @@ vi.mock('../../../shared/db/client', () => ({
 const { mockGiftCardCreate } = vi.hoisted(() => ({
   mockGiftCardCreate: vi.fn().mockResolvedValue({ id: 'gc-1', code: 'SKR-ABC123' }),
 }));
+
+const { mockTelnyxFetch } = vi.hoisted(() => ({
+  mockTelnyxFetch: vi.fn().mockResolvedValue({ ok: true }),
+}));
+
+vi.mock('../../../shared/telnyx/http-agent', () => ({ telnyxFetch: mockTelnyxFetch }));
 
 vi.mock('../../gift-cards/gift-card.service', () => ({
   GiftCardService: vi.fn().mockImplementation(function (
@@ -100,6 +107,7 @@ import { GiftCardService } from '../../gift-cards/gift-card.service';
 import { recommendGiftCardAmount } from '../../gift-cards/gift-card-recommender';
 import { sendSms } from '../../../shared/telnyx/client';
 import { trackGiftCardEvent } from '../../analytics/events.service';
+import { telnyxFetch } from '../../../shared/telnyx/http-agent';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -125,6 +133,7 @@ function makeSession(overrides: Partial<CallSession> = {}): CallSession {
     to: '+33****0000',
     restaurantId: 'rest-1',
     restaurantName: 'Test Resto',
+    managerPhone: overrides.managerPhone,
     systemPrompt: "Tu es l'assistant vocal de Test Resto.",
     isVip: false,
     telnyxWs: overrides.telnyxWs ?? makeTelnyxWs(),
@@ -133,6 +142,28 @@ function makeSession(overrides: Partial<CallSession> = {}): CallSession {
     giftCardMinimumAmount: overrides.giftCardMinimumAmount,
     personality: overrides.personality,
   });
+}
+
+function authorizeReservation(
+  session: CallSession,
+  date: string,
+  time: string,
+  partySize: number,
+  customerName: string,
+): void {
+  session.conversation.intent = 'reservation';
+  session.conversation.slots = { date, time, partySize, customerName };
+  session.conversation.nameCollection.state = 'confirmed';
+  session.conversation.nameCollection.confirmedName = customerName;
+  session.conversation.lastAvailabilityResult = {
+    key: `${date}:${time}:${partySize}`,
+    date,
+    time,
+    partySize,
+    slots: [time],
+  };
+  session.conversation.pendingReservationConfirmationKey = getReservationConfirmationKey(session);
+  session.conversation.confirmedReservationKey = getReservationConfirmationKey(session);
 }
 
 type VoiceConfigSnapshot = Pick<
@@ -349,6 +380,12 @@ describe('CallSessionManager — tool execution', () => {
     vi.clearAllMocks();
     // Re-set the mock implementation after clearAllMocks
     mockGiftCardCreate.mockResolvedValue({ id: 'gc-1', code: 'SKR-ABC123' });
+    vi.mocked(db.call.findUnique).mockReset();
+    mockTelnyxFetch.mockResolvedValue({ ok: true });
+    vi.mocked(db.call.findUnique).mockResolvedValue({
+      id: 'call-record-1',
+      restaurantId: 'rest-1',
+    } as unknown as Awaited<ReturnType<typeof db.call.findUnique>>);
   });
 
   afterEach(() => {
@@ -373,6 +410,7 @@ describe('CallSessionManager — tool execution', () => {
 
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
+    authorizeReservation(session, '2026-07-16', '19:30', 2, 'Jean');
     const reply = await mgr.processUtterance(session, 'Je voudrais réserver');
 
     expect(ReservationService.create).toHaveBeenCalledWith(
@@ -407,6 +445,7 @@ describe('CallSessionManager — tool execution', () => {
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
     session.conversation.slots.customerName = 'KIF';
+    authorizeReservation(session, '2026-07-16', '19:30', 2, 'KIF');
     const reply = await mgr.processUtterance(session, 'Oui, c’est bien ça');
 
     expect(ReservationService.create).toHaveBeenCalledWith(
@@ -502,6 +541,7 @@ describe('CallSessionManager — tool execution', () => {
     const session = makeSession();
     session.conversation.nameCollection.state = 'confirmed';
     session.conversation.nameCollection.confirmedName = 'A-K-I-F';
+    authorizeReservation(session, '2026-07-16', '19:30', 2, 'A-K-I-F');
 
     await mgr.processUtterance(session, 'Réserver');
 
@@ -545,6 +585,7 @@ describe('CallSessionManager — tool execution', () => {
 
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
+    authorizeReservation(session, '2026-07-16', '12:00', 4, 'Marie');
     const reply = await mgr.processUtterance(session, 'Réserver pour 4');
 
     // Le tool result contient le message de créneau indisponible,
@@ -625,6 +666,8 @@ describe('CallSessionManager — tool execution', () => {
       partySize: 4,
       slots: ['12:00', '12:30'],
     };
+    session.conversation.pendingReservationConfirmationKey = getReservationConfirmationKey(session);
+    session.conversation.confirmedReservationKey = getReservationConfirmationKey(session);
 
     const reply = await mgr.createReservationFromConversation(session);
 
@@ -1049,12 +1092,19 @@ describe('CallSessionManager — tool execution', () => {
     expect(isSafeVoiceNameMatch('Martin Durand', 'Martin Test Copilot')).toBe(false);
   });
 
-  it('handoffToManager : retourne le message de transfert', async () => {
+  it('handoffToManager : déclenche le transfert Telnyx quand le numéro du gérant est connu', async () => {
     mockFetchToolCall('handoffToManager', {}, 'Je vous transfère.');
     const mgr = CallSessionManager.getInstance();
-    const session = makeSession();
+    const session = makeSession({ managerPhone: '+33612345678' });
     await mgr.processUtterance(session, 'Parler au gérant');
-    // handoffToManager retourne un texte fixe, pas d'effet de bord à vérifier
+    expect(telnyxFetch).toHaveBeenCalledWith(
+      `/v2/calls/${session.callControlId}/actions/transfer`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ to: '+33612345678' }),
+      }),
+    );
+    expect(session.handoffInProgress).toBe(true);
     expect(session.history.length).toBeGreaterThan(2);
   });
 
@@ -1370,6 +1420,7 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
 
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
+    authorizeReservation(session, '2026-07-16', '19:30', 2, 'Jean Dupont');
     const phrases: string[] = [];
 
     const fullText = await mgr.processUtteranceStreaming(

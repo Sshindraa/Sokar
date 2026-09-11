@@ -9,6 +9,17 @@ export type VoiceSpeechAct = 'liveness' | 'backchannel' | 'closing' | 'correctio
 
 export type NameCollectionState = 'idle' | 'collecting' | 'clarifying' | 'confirming' | 'confirmed';
 
+/** Réponse métier attendue après la dernière question de l'agent. */
+export type PendingQuestion =
+  | 'date'
+  | 'time'
+  | 'timeChoice'
+  | 'partySize'
+  | 'customerName'
+  | 'customerPhone'
+  | 'confirmation'
+  | null;
+
 export type SpellingTokenKind = 'letter' | 'separator' | 'ambiguous';
 
 /** Token conservé pendant une épellation, y compris quand le STT n'est pas sûr. */
@@ -86,8 +97,13 @@ export interface ConversationState {
     partySize: number;
     slots: string[];
   } | null;
-  pendingQuestion: 'date' | 'time' | 'partySize' | 'customerName' | 'customerPhone' | null;
+  /** Contexte explicite utilisé pour interpréter les réponses courtes. */
+  pendingQuestion: PendingQuestion;
   lastAssistantQuestion: string | null;
+  /** Clé du dernier récapitulatif de réservation qui attend un accord explicite. */
+  pendingReservationConfirmationKey: string | null;
+  /** Clé du brouillon accepté explicitement, consommée à la création. */
+  confirmedReservationKey: string | null;
   /** Nom épelé détecté, en attente de confirmation explicite par l'appelant. */
   spellingCandidate: string | null;
   nameCollection: NameCollection;
@@ -106,6 +122,8 @@ export interface VoiceTurnTelemetry {
   startedAt: number;
   transcriptLength: number;
   transcriptFingerprint: string;
+  /** Numéro monotone des événements structurés de ce tour. */
+  eventSequence?: number;
 }
 
 /** Événements normalisés produits par le fournisseur STT. */
@@ -168,12 +186,18 @@ export interface CallSession {
   to: string;
   restaurantId: string;
   restaurantName: string;
+  /** Numéro E.164 du gérant pour le transfert humain, si configuré. */
+  managerPhone?: string | null;
   timezone: string;
   /** Montant minimum d'une carte cadeau — stocké à la création de session */
   giftCardMinimumAmount: number;
   systemPrompt: string;
   state: CallState;
   ended: boolean;
+  /** Vrai après l'acceptation Telnyx d'un transfert vers le gérant. */
+  handoffInProgress?: boolean;
+  /** Conclusion du dernier transfert tenté, consommée par l'orchestrateur LLM. */
+  handoffConclusion?: string;
   ending?: {
     markName: string;
     nativePlayback: boolean;
@@ -279,9 +303,18 @@ export interface CallSession {
   // Latence
   latencyTrace?: {
     startTime: number;
+    /** Horodatages/durées ajoutés pour la chronologie de diagnostic. */
+    speechStartedAt?: number;
+    sttFinalAt?: number;
     sttFinalMs?: number;
     llmFirstTokenMs?: number;
+    llmFirstPhraseMs?: number;
+    llmCompletedMs?: number;
+    ttsSynthesisStartedAt?: number;
     ttsFirstByteMs?: number;
+    audioSentAt?: number;
+    ttsCompletedMs?: number;
+    interruptedAt?: number;
     totalE2eMs?: number;
   };
   personality: {
