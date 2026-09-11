@@ -1,9 +1,9 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import Image from 'next/image';
 import Link from 'next/link';
 import { ReactNode, useEffect, useState } from 'react';
+import { SokarLogo } from '@/components/SokarLogo';
 import { useTranslations } from 'next-intl';
 import { usePathname, useSearchParams } from 'next/navigation';
 import {
@@ -202,14 +202,7 @@ function DashboardSidebar({ pathname, salleView }: { pathname: string; salleView
         title="Sokar"
         className="mb-2 flex h-11 w-11 flex-none items-center justify-center rounded-2xl border border-border bg-background/60 transition-all duration-200 hover:border-foreground/20 hover:bg-accent"
       >
-        <Image
-          src="/logo-nav.png"
-          alt="Sokar"
-          width={34}
-          height={34}
-          className="h-8 w-8"
-          priority
-        />
+        <SokarLogo className="h-8 w-8 text-foreground" />
       </Link>
 
       <div className="mb-2 h-px w-7 flex-none bg-border" />
