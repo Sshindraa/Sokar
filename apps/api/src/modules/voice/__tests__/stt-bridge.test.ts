@@ -18,6 +18,7 @@ import {
   SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS,
   isLikelyIncompleteTranscript,
   isLikelyRepeatedNoiseTranscript,
+  isPunctuationOnlyTranscript,
 } from '../stream/stt-bridge';
 
 function makeWsMock(): WebSocket {
@@ -212,6 +213,30 @@ describe('handleSttMessage', () => {
     expect(isLikelyIncompleteTranscript('Euh, on se...')).toBe(true);
     expect(onEvent).not.toHaveBeenCalled();
     expect(session.sttLanguageCode).toBeUndefined();
+  });
+
+  it('ignore un transcript composé uniquement de ponctuation', () => {
+    expect(isPunctuationOnlyTranscript('.')).toBe(true);
+    expect(isPunctuationOnlyTranscript('…')).toBe(true);
+    expect(isPunctuationOnlyTranscript('bonjour.')).toBe(false);
+
+    const session = makeSession();
+    const mgr = CallSessionManager.getInstance();
+    mgr.transition(session, 'SPEAKING');
+    session.isSpeaking = true;
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+
+    handleSttMessage(session, { message_type: 'partial_transcript', text: '.' });
+    handleSttMessage(session, {
+      message_type: 'committed_transcript_with_timestamps',
+      text: '.',
+      language_code: 'fr',
+    });
+
+    expect(session.state).toBe('SPEAKING');
+    expect(session.isSpeaking).toBe(true);
+    expect(onEvent).not.toHaveBeenCalled();
   });
 
   it('ignore une répétition de bruit et ne coupe pas la réponse TTS', () => {
