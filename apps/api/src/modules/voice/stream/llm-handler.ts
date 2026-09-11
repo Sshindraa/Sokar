@@ -928,7 +928,13 @@ export async function processTranscriptStreaming(
     isCartesiaContextV2Enabled() && (await isVoiceTtsContextV2Enabled(session.restaurantId));
   if (!isCurrentResponse()) return;
   const ttsPromises: Promise<void>[] = [];
-  const contextTtsRef: { current: CartesiaContextTurn | null } = { current: null };
+  // Ouvrir le socket pendant la génération LLM masque sa poignée de main
+  // réseau. Le contexte reste canary-gaté ; le fallback HTTP est inchangé
+  // pour les restaurants non ciblés.
+  const contextTtsRef: { current: CartesiaContextTurn | null } = {
+    current: useCartesiaContext ? createCartesiaContextTurn(session, true) : null,
+  };
+  if (contextTtsRef.current) session.ttsContext = contextTtsRef.current;
   const abortController = new AbortController();
 
   try {
@@ -958,9 +964,9 @@ export async function processTranscriptStreaming(
           return;
         }
 
-        // Canary prosodique : les fragments d'une même réponse LLM partagent
-        // un contexte Cartesia. Le fallback HTTP reste inchangé sans flag.
-        contextTtsRef.current ??= createCartesiaContextTurn(session, useCartesiaContext);
+        // Les fragments d'une même réponse LLM partagent le contexte ouvert
+        // avant le premier token. Le fallback HTTP reste disponible si le
+        // contexte échoue avant le premier audio.
         if (contextTtsRef.current) {
           session.ttsContext = contextTtsRef.current;
           contextTtsRef.current.push(cleanTextForTts(cleanPhrase, effectiveVoiceLanguage(session)));

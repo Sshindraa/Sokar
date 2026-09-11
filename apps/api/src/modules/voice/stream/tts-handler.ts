@@ -105,10 +105,13 @@ export function addNaturalPauses(text: string): string {
   return result;
 }
 
-/** Pause ajoutée entre deux synthèses déjà ponctuées par Cartesia. */
-export function getInterSentencePauseMs(previousSentence: string): number {
-  if (/[!?…]\s*$/.test(previousSentence)) return 140;
-  return 100;
+/**
+ * Pause de secours pour d'anciens consommateurs qui synthétisent plusieurs
+ * segments. Le chemin live envoie un segment prosodique complet à Cartesia et
+ * laisse Sonic déduire la pause depuis la ponctuation.
+ */
+export function getInterSentencePauseMs(_previousSentence: string): number {
+  return 0;
 }
 
 export function cleanTextForTts(text: string, language: VoiceLanguageCode = 'fr'): string {
@@ -252,10 +255,12 @@ async function speakTtsFragment(
   );
 
   const isAlaw = session.codec === 'PCMA';
-  const textWithPauses = addNaturalPauses(cleanedText);
-  const sentences = textWithPauses.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 0);
+  // Synthétiser la réponse complète conserve l'intonation entre les phrases.
+  // Le contexte WebSocket applique la même continuité aux fragments LLM ; ce
+  // chemin HTTP reste un fallback sans reset de prosodie local.
+  const sentences = [addNaturalPauses(cleanedText)];
 
-  writeDebugLog(`[speakTtsStreamed] Split into ${sentences.length} sentences`);
+  writeDebugLog('[speakTtsStreamed] Synthesizing one prosodic segment');
 
   const apiKey = process.env.CARTESIA_API_KEY;
   const voiceId = getCartesiaVoiceId(session);
@@ -285,7 +290,7 @@ async function speakTtsFragment(
     pronunciationDictId,
   });
 
-  // ─── Traitement séquentiel avec pause inter-phrase ──────────────────
+  // ─── Traitement séquentiel d'un segment prosodique ──────────────────
   for (let i = 0; i < sentences.length; i++) {
     const sentence = sentences[i];
     const trimmed = sentence.trim();
@@ -293,18 +298,6 @@ async function speakTtsFragment(
     if (!isSessionActiveForTts(session, generation)) {
       writeDebugLog(`[speakTtsStreamed] Session inactive before sentence ${i}, stopping`);
       break;
-    }
-
-    // Pause inter-phrase (sauf pour la première), complémentaire à la prosodie
-    // déjà produite par Cartesia : question/exclamation légèrement plus marquée.
-    if (i > 0) {
-      const pauseMs = getInterSentencePauseMs(sentences[i - 1]);
-      writeDebugLog(`[speakTtsStreamed] Inter-sentence pause of ${pauseMs}ms...`);
-      await new Promise((r) => setTimeout(r, pauseMs));
-      if (!isSessionActiveForTts(session, generation)) {
-        writeDebugLog(`[speakTtsStreamed] Session inactive after pause, breaking loop`);
-        break;
-      }
     }
 
     // 1. Tenter le cache
@@ -409,9 +402,8 @@ async function speakTtsFragment(
       let streamFinished = false;
       let firstByteReceived = false;
 
-      // Background playback loop (Consumer). It waits for a 200 ms jitter
-      // buffer, then sends 100 ms G.711 frames at real time. This protects the
-      // call from short Cartesia/network bursts without creating a long queue.
+      // Background playback loop (Consumer). It waits for a 100 ms jitter
+      // buffer, then sends 100 ms G.711 frames at real time.
       const playPromise = (async () => {
         let framesSent = 0;
         let playbackStarted = false;

@@ -21,7 +21,9 @@ import { recordVoiceTurnEvent } from './turn-telemetry';
 
 const CARTESIA_WEBSOCKET_URL = 'wss://api.cartesia.ai/tts/websocket';
 const CARTESIA_VERSION = '2026-03-01';
-const CARTESIA_CONTEXT_OPEN_TIMEOUT_MS = 3_000;
+// Une panne de connexion ne doit pas immobiliser la réponse complète avant le
+// fallback HTTP. Cartesia ouvre normalement ce socket bien avant ce délai.
+const CARTESIA_CONTEXT_OPEN_TIMEOUT_MS = 1_500;
 
 export interface CartesiaContextRequest {
   model_id: typeof CARTESIA_MODEL;
@@ -42,6 +44,7 @@ export interface CartesiaContextRequest {
 
 interface CartesiaContextMessage {
   type?: 'chunk' | 'done' | 'error';
+  done?: boolean;
   context_id?: string;
   data?: string;
   message?: string;
@@ -250,7 +253,10 @@ export class CartesiaContextTurn {
       this.enqueueAudio(Buffer.from(message.data, 'base64'));
       return;
     }
-    if (message.type === 'done') {
+    // Les versions du protocole signalent la fin par `type: "done"` et/ou
+    // `done: true`. Accepter les deux évite de laisser le contexte ouvert et
+    // de retarder le tour suivant.
+    if (message.type === 'done' || message.done === true) {
       this.finishedOutput = true;
       this.completeAfterPlayback().catch((err: unknown) =>
         this.fail(err instanceof Error ? err : new Error(String(err))),

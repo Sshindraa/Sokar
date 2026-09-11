@@ -21,8 +21,8 @@ export const CARTESIA_TTS_MAX_ATTEMPTS = 2;
 export const TTS_FRAME_DURATION_MS = 100;
 export const TTS_FRAME_BYTES = 800;
 
-/** Deux trames (200 ms) absorbent les variations d'arrivée du flux Cartesia. */
-export const TTS_INITIAL_BUFFER_FRAMES = 2;
+/** Une trame (100 ms) absorbe le premier burst sans retarder la parole. */
+export const TTS_INITIAL_BUFFER_FRAMES = 1;
 
 /** Pause quand le buffer de playback est sous-alimenté (ms) */
 export const TTS_UNDERFEED_PAUSE_MS = 10;
