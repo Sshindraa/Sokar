@@ -46,6 +46,13 @@ export class GiftCardPaymentError extends Error {
   }
 }
 
+export class GiftCardPaymentConflictError extends GiftCardPaymentError {
+  constructor(message = 'Ce paiement a déjà été utilisé pour une carte cadeau') {
+    super(message);
+    this.name = 'GiftCardPaymentConflictError';
+  }
+}
+
 export class GiftCardPaymentService {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -60,9 +67,39 @@ export class GiftCardPaymentService {
       throw new GiftCardPaymentError(`Le paiement n'est pas confirmé (statut: ${pi.status}).`);
     }
 
+    const existing = await this.prisma.giftCard.findFirst({
+      where: { stripePaymentIntentId: input.paymentIntentId },
+    });
+    if (existing) {
+      throw new GiftCardPaymentConflictError();
+    }
+
+    const restaurantId = pi.metadata.restaurantId;
+    if (!restaurantId) {
+      throw new GiftCardPaymentError('Les informations du paiement sont incomplètes.');
+    }
+    if (input.restaurantId !== restaurantId) {
+      throw new GiftCardPaymentError('Le restaurant ne correspond pas au paiement.');
+    }
+
+    const packId = pi.metadata.packId || undefined;
+    const metadataAmount = pi.metadata.amount ? Number(pi.metadata.amount) : undefined;
+    if (
+      !packId &&
+      (metadataAmount === undefined || !Number.isFinite(metadataAmount) || metadataAmount <= 0)
+    ) {
+      throw new GiftCardPaymentError('Les informations du montant sont incomplètes.');
+    }
+    if (input.packId !== undefined && input.packId !== packId) {
+      throw new GiftCardPaymentError('Le pack ne correspond pas au paiement.');
+    }
+    if (input.amount !== undefined && input.amount !== metadataAmount) {
+      throw new GiftCardPaymentError('Le montant ne correspond pas au paiement.');
+    }
+
     // 2. Charger le restaurant pour le taux de commission et les infos
     const restaurant = await this.prisma.restaurant.findUnique({
-      where: { id: input.restaurantId },
+      where: { id: restaurantId },
       select: {
         name: true,
         giftCardCommissionRate: true,
@@ -78,9 +115,9 @@ export class GiftCardPaymentService {
 
     // 3. Déterminer le montant
     let amount: number;
-    if (input.packId) {
+    if (packId) {
       const pack = await this.prisma.giftCardPack.findFirst({
-        where: { id: input.packId, restaurantId: input.restaurantId },
+        where: { id: packId, restaurantId },
         select: { amount: true },
       });
       if (!pack) {
@@ -88,10 +125,15 @@ export class GiftCardPaymentService {
       }
       amount = pack.amount.toNumber();
     } else {
-      if (input.amount == null || input.amount <= 0) {
-        throw new GiftCardPaymentError('Le montant est requis et doit être positif');
-      }
-      amount = input.amount;
+      amount = metadataAmount!;
+    }
+
+    if (pi.currency.toLowerCase() !== 'eur') {
+      throw new GiftCardPaymentError('La devise du paiement n’est pas acceptée.');
+    }
+    const expectedAmountInCents = Math.round(amount * 100);
+    if (pi.amount !== expectedAmountInCents || pi.amountReceived !== expectedAmountInCents) {
+      throw new GiftCardPaymentError('Le montant du paiement ne correspond pas à la commande.');
     }
 
     // Vérifier le montant minimum
@@ -109,9 +151,9 @@ export class GiftCardPaymentService {
     // 5. Créer la carte cadeau
     const service = new GiftCardService(this.prisma);
     const card = await service.create({
-      restaurantId: input.restaurantId,
+      restaurantId,
       amount,
-      packId: input.packId,
+      packId,
       occasion: input.occasion,
       senderName: input.senderName,
       senderEmail: input.senderEmail,

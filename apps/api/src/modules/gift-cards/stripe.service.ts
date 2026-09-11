@@ -53,12 +53,24 @@ export async function createPaymentIntent(input: CreatePaymentIntentInput): Prom
 /**
  * Récupère le statut d'un PaymentIntent.
  */
-export async function retrievePaymentIntent(
-  paymentIntentId: string,
-): Promise<{ id: string; status: string }> {
+export async function retrievePaymentIntent(paymentIntentId: string): Promise<{
+  id: string;
+  status: string;
+  amount: number;
+  amountReceived: number;
+  currency: string;
+  metadata: Record<string, string>;
+}> {
   const stripe = getStripe();
   const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
-  return { id: intent.id, status: intent.status };
+  return {
+    id: intent.id,
+    status: intent.status,
+    amount: intent.amount,
+    amountReceived: intent.amount_received,
+    currency: intent.currency,
+    metadata: intent.metadata,
+  };
 }
 
 export type CreateRefundInput = {

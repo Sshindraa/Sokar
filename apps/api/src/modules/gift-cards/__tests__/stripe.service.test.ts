@@ -18,7 +18,14 @@ vi.mock('stripe', () => {
   class Stripe {
     paymentIntents = {
       create: vi.fn().mockResolvedValue({ id: 'pi_test', client_secret: 'pi_t_s' }),
-      retrieve: vi.fn().mockResolvedValue({ id: 'pi_test', status: 'succeeded' }),
+      retrieve: vi.fn().mockResolvedValue({
+        id: 'pi_test',
+        status: 'succeeded',
+        amount: 10000,
+        amount_received: 10000,
+        currency: 'eur',
+        metadata: { restaurantId: 'rest-1', amount: '100' },
+      }),
     };
     webhooks = {
       constructEvent: vi.fn().mockImplementation(() => {
@@ -88,6 +95,10 @@ describe('stripe.service', () => {
 
       expect(result.id).toBe('pi_test');
       expect(result.status).toBe('succeeded');
+      expect(result.amount).toBe(10000);
+      expect(result.amountReceived).toBe(10000);
+      expect(result.currency).toBe('eur');
+      expect(result.metadata.restaurantId).toBe('rest-1');
     });
   });
 

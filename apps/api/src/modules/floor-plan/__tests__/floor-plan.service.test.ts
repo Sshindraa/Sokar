@@ -15,7 +15,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Prisma } from '@prisma/client';
-import { FloorPlanService } from '../floor-plan.service';
+import { FloorPlanNotFoundError, FloorPlanService } from '../floor-plan.service';
 import { TableAllocationService, TableAllocationError } from '../table-allocation.service.js';
 
 function makePrismaMock() {
@@ -67,6 +67,19 @@ describe('FloorPlanService', () => {
     vi.spyOn(TableAllocationService.prototype, 'assertTableAvailableForSeating').mockResolvedValue(
       undefined,
     );
+  });
+
+  describe('isolation multi-tenant des floor plans', () => {
+    it('refuse la mise à jour avant toute écriture pour un autre restaurant', async () => {
+      mocks.floorPlan.findFirst.mockResolvedValue(null);
+
+      await expect(
+        svc.updateFloorPlanById('restaurant-a', 'floor-plan-b', { name: 'Intrusif' }),
+      ).rejects.toBeInstanceOf(FloorPlanNotFoundError);
+
+      expect(mocks.floorPlan.updateMany).not.toHaveBeenCalled();
+      expect(mocks.floorPlan.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('getPlanning — Phase 3 (seatedAt dérivé de l audit log)', () => {
