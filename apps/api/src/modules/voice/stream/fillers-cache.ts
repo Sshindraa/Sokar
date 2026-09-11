@@ -174,6 +174,19 @@ export function selectFillerText(
   return fillers[purpose][style.toLowerCase() as keyof FillerSet];
 }
 
+/** Sélectionne une formule courte dans le pool de la personnalité. */
+export function selectRandomFillerText(style: 'CASUAL' | 'FORMAL' | 'WARM'): string {
+  const pool = FILLERS[style.toLowerCase() as keyof FillerSet];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+export interface FillerPlaybackOptions {
+  /** Annule le filler dès qu'une réponse ou une reprise de parole arrive. */
+  signal?: AbortSignal;
+  /** Autorise la variation du pool pour un filler générique. */
+  randomize?: boolean;
+}
+
 /**
  * Sélectionne un goodbye filler aléatoire (variation pour éviter la répétition).
  */
@@ -350,16 +363,20 @@ export async function playFiller(
   target: CallSession | WebSocket,
   style: 'CASUAL' | 'FORMAL' | 'WARM',
   purpose: FillerPurpose = 'generic',
+  options: FillerPlaybackOptions = {},
 ): Promise<void> {
   const isSession = typeof target === 'object' && target !== null && 'callControlId' in target;
   const session = isSession ? (target as CallSession) : undefined;
   const ws = isSession ? (target as CallSession).telnyxWs : (target as WebSocket);
 
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN || options.signal?.aborted) return;
 
   const language = session ? effectiveVoiceLanguage(session) : 'fr';
   const voiceId = session ? getCartesiaVoiceId(session) : getCartesiaVoiceId();
-  const text = selectFillerText(style, purpose, language);
+  const text =
+    purpose === 'generic' && options.randomize
+      ? selectRandomFillerText(style)
+      : selectFillerText(style, purpose, language);
 
   // 1. RAM
   let chunks = fillerCache.get(memoryKey(text, voiceId, language));
@@ -369,6 +386,7 @@ export async function playFiller(
     try {
       const key = redisKey(text, voiceId, fillerEncoding, language);
       const cached = await redisCache.get(key);
+      if (options.signal?.aborted) return;
       if (cached) {
         chunks = JSON.parse(cached) as string[];
         if (Array.isArray(chunks) && chunks.length > 0) {
@@ -386,15 +404,19 @@ export async function playFiller(
     const frames = splitTelnyxAudioFrames(audio, fillerEncoding === 'pcm_alaw' ? 'PCMA' : 'PCMU');
     writeDebugLog(`[fillers] Playing filler: "${text}" (${frames.length} frames, 100ms paced)`);
     for (const frame of frames) {
-      if (session && (session.ended || session.state !== 'PROCESSING')) {
+      if (
+        options.signal?.aborted ||
+        (session && (session.ended || session.state !== 'PROCESSING'))
+      ) {
         writeDebugLog(
-          `[fillers] Interrupted filler playback due to state change (state=${session.state})`,
+          `[fillers] Interrupted filler playback due to cancellation or state change (state=${session?.state ?? 'unknown'})`,
         );
         break;
       }
       if (ws.readyState !== WebSocket.OPEN) break;
       ws.send(JSON.stringify({ event: 'media', media: { payload: frame.toString('base64') } }));
       await new Promise((r) => setTimeout(r, TTS_FRAME_DURATION_MS));
+      if (options.signal?.aborted) break;
     }
   } else {
     logger.warn({ text }, '[fillers] No cached audio for filler (warm-up incomplete?)');

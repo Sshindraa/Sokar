@@ -3,6 +3,7 @@ import { WebSocket } from 'ws';
 import type { CallSession } from './types';
 import type { CallSessionManager } from './manager';
 import { speakTtsStreamed } from './tts-handler';
+import { cancelScheduledFiller } from './filler-scheduler';
 import { telnyxFetch } from '../../../shared/telnyx/http-agent';
 import { logger } from '../../../shared/logger/pino';
 
@@ -49,6 +50,7 @@ export async function finishCall(
   session.speculativeTranscript = '';
   session.responseGeneration++;
   session.ttsGeneration++;
+  cancelScheduledFiller(session);
   session.ttsContext?.cancel();
   session.ttsContext = null;
   // Flush stale audio before installing our own mark; clear also acknowledges old marks.

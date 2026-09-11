@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { acknowledgeCallEnding, finishCall, isExplicitCallEnd } from '../stream/call-ending';
 import { handleSttEvent, processTranscriptStreaming } from '../stream/llm-handler';
-import { createConversationState } from '../stream/conversation-controller';
+import { createConversationState, recordAssistantReply } from '../stream/conversation-controller';
 import type { CallSession } from '../stream/types';
 import type { CallSessionManager } from '../stream/manager';
 import { speakTtsStreamed } from '../stream/tts-handler';
@@ -10,6 +10,8 @@ import { telnyxFetch } from '../../../shared/telnyx/http-agent';
 
 vi.mock('../stream/tts-handler', () => ({
   speakTtsStreamed: vi.fn().mockResolvedValue(undefined),
+  isSessionActiveForTts: vi.fn().mockReturnValue(true),
+  cleanTextForTts: (text: string) => text,
 }));
 vi.mock('../../../shared/telnyx/http-agent', () => ({
   telnyxFetch: vi.fn().mockResolvedValue({ ok: true }),
@@ -25,6 +27,7 @@ vi.mock('../../../shared/logger/pino', () => ({
 function fixture() {
   const session = {
     callControlId: 'cc-ending',
+    systemPrompt: "Tu es l'assistant vocal de Test Resto.",
     state: 'LISTENING',
     ended: false,
     responseGeneration: 0,
@@ -178,14 +181,30 @@ describe('farewell playback and hangup', () => {
     vi.mocked(mgr.getAvailability).mockResolvedValue({
       slots: ['12:00'],
     } as unknown as Awaited<ReturnType<CallSessionManager['getAvailability']>>);
+    vi.mocked(mgr.processUtteranceStreaming).mockImplementation(
+      async (_session, _transcript, onPhrase) => {
+        const reply =
+          'Oui, nous avons de la place samedi 5 septembre à midi pour 4 personnes. À quel nom je réserve ?';
+        await onPhrase?.(reply);
+        return reply;
+      },
+    );
 
     await processTranscriptStreaming(session, "Est-ce que c'est possible à midi ?", mgr);
 
     expect(mgr.getAvailability).toHaveBeenCalledWith(session, '2026-09-05', 4);
-    expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
+    expect(mgr.processUtteranceStreaming).toHaveBeenCalledWith(
+      session,
+      "Est-ce que c'est possible à midi ?",
+      expect.any(Function),
+      expect.objectContaining({
+        includeTools: false,
+        context: expect.stringContaining('date exacte 2026-09-05'),
+      }),
+    );
     expect(speakTtsStreamed).toHaveBeenCalledWith(
       session,
-      'Oui, nous avons de la place pour 4 personnes à 12 h. À quel nom je réserve ?',
+      'Oui, nous avons de la place samedi 5 septembre à midi pour 4 personnes. À quel nom je réserve ?',
     );
     expect(session.conversation.pendingQuestion).toBe('customerName');
   });
@@ -200,6 +219,18 @@ describe('farewell playback and hangup', () => {
     vi.mocked(mgr.getAvailability).mockResolvedValue({
       slots: ['20:00'],
     } as unknown as Awaited<ReturnType<CallSessionManager['getAvailability']>>);
+    let llmCall = 0;
+    vi.mocked(mgr.processUtteranceStreaming).mockImplementation(
+      async (_session, _transcript, onPhrase) => {
+        llmCall++;
+        const reply =
+          llmCall === 1
+            ? 'Oui, j’ai une table pour 4 personnes samedi 5 septembre à 20 heures. À quel nom je réserve ?'
+            : 'J’ai une table pour quatre personnes samedi 5 septembre à 20 heures, au nom de ABKIF. Vous me confirmez ?';
+        await onPhrase?.(reply);
+        return reply;
+      },
+    );
     vi.mocked(mgr.createReservationFromConversation).mockResolvedValue(
       'Réservation confirmée pour ABKIF.',
     );
@@ -215,6 +246,10 @@ describe('farewell playback and hangup', () => {
     await processTranscriptStreaming(session, 'Un nom de bruit a deux k i f', mgr);
     await processTranscriptStreaming(session, 'Attif, a b k i f', mgr);
     expect(speakTtsStreamed).toHaveBeenLastCalledWith(session, "A-B-K-I-F, c'est bien cela ?");
+
+    await processTranscriptStreaming(session, 'Oui', mgr);
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+    expect(session.conversation.pendingQuestion).toBe('confirmation');
 
     await processTranscriptStreaming(session, 'Oui', mgr);
     expect(mgr.createReservationFromConversation).toHaveBeenCalledWith(session);
@@ -242,14 +277,17 @@ describe('farewell playback and hangup', () => {
     );
   });
 
-  it('réserve directement après la confirmation explicite du nom', async () => {
+  it('réserve uniquement après la confirmation explicite du récapitulatif', async () => {
     const { session, mgr } = fixture();
     session.conversation.intent = 'reservation';
     session.conversation.slots = {
       date: '2026-09-05',
       time: '12:00',
       partySize: 4,
+      customerName: 'AKKIF',
     };
+    session.conversation.nameCollection.state = 'confirmed';
+    session.conversation.nameCollection.confirmedName = 'AKKIF';
     session.conversation.lastAvailabilityResult = {
       key: '2026-09-05:12:00:4',
       date: '2026-09-05',
@@ -259,11 +297,14 @@ describe('farewell playback and hangup', () => {
     };
     session.conversation.pendingQuestion = 'customerName';
     session.conversation.lastAssistantQuestion = 'À quel nom je réserve ?';
+    recordAssistantReply(
+      session,
+      'J’ai une table pour quatre personnes samedi 5 septembre à midi, au nom d’AKKIF. Vous me confirmez ?',
+    );
     vi.mocked(mgr.createReservationFromConversation).mockResolvedValue(
       'Réservation confirmée pour AKKIF.',
     );
 
-    await processTranscriptStreaming(session, 'Au nom de A deux k i f', mgr);
     await processTranscriptStreaming(session, 'Oui', mgr);
 
     expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();

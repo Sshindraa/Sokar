@@ -62,7 +62,9 @@ export async function persistLatencyTrace(session: CallSession): Promise<void> {
     await db.latencyTrace.upsert({
       where: { callId: callRecord.id },
       update: {
-        vadEndMs: 0,
+        // Le commit final est notre proxy de fin VAD ; il est mesuré depuis
+        // UtteranceStart et inclut le silence perçu par l'appelant.
+        vadEndMs: trace.sttFinalMs ?? null,
         sttFinalMs: trace.sttFinalMs ?? 0,
         llmFirstToken: trace.llmFirstTokenMs ?? null,
         ttsFirstByte: trace.ttsFirstByteMs ?? null,
@@ -71,7 +73,7 @@ export async function persistLatencyTrace(session: CallSession): Promise<void> {
       },
       create: {
         callId: callRecord.id,
-        vadEndMs: 0,
+        vadEndMs: trace.sttFinalMs ?? null,
         sttFinalMs: trace.sttFinalMs ?? 0,
         llmFirstToken: trace.llmFirstTokenMs ?? null,
         ttsFirstByte: trace.ttsFirstByteMs ?? null,

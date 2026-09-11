@@ -14,6 +14,7 @@ import type { SttEvent, CallSession } from './types';
 import type { CallSessionManager } from './manager';
 import { finishCall, isExplicitCallEnd } from './call-ending';
 import { playFiller, selectRandomGoodbyeText } from './fillers-cache';
+import { cancelScheduledFiller, scheduleThinkingFiller } from './filler-scheduler';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
@@ -27,6 +28,8 @@ import {
 import {
   recordVoiceTurnClassification,
   recordVoiceTurnEvent,
+  recordVoiceTurnEventIfCurrent,
+  completeVoiceTurnInput,
   startVoiceTurn,
 } from './turn-telemetry';
 import { isVoiceTtsContextV2Enabled } from '../../../shared/configcat';
@@ -44,19 +47,27 @@ import {
 } from './voice-language';
 import {
   buildAvailabilityErrorReply,
+  buildAvailabilityLlmContext,
   buildAvailabilityReply,
   buildDeterministicTurnResponse,
   buildReservationProgressResponse,
-  classifyVoiceSpeechAct,
+  classifyVoiceSpeechActInContext,
+  confirmReservationDraft,
+  clearReservationConfirmation,
   getReadyAvailabilityRequest,
   handleCustomerNameTurn,
   parseSpelledNameTranscriptDetailed,
+  isAffirmativeShortResponse,
+  isNegativeShortResponse,
   recordAssistantReply,
   recordUserTurn,
   resetNameCollectionAfterFallback,
 } from './conversation-controller';
 
-const recentTranscripts = new WeakMap<CallSession, { normalized: string; at: number }>();
+const recentTranscripts = new WeakMap<
+  CallSession,
+  { normalized: string; at: number; dialogueContext: string }
+>();
 export const LLM_FILLER_DELAY_MS = 1_000;
 
 function syncSpellingProfile(session: CallSession): void {
@@ -115,17 +126,23 @@ export function shouldSkipDuplicateTranscript(session: CallSession, transcript: 
   const normalized = normalizeTranscriptForDedupe(transcript);
   if (!normalized) return true;
 
+  // Le même mot peut être une réponse légitime à deux questions successives
+  // (« oui » pour valider le nom, puis « oui » pour valider le récapitulatif).
+  // Le contexte métier distingue ces tours tout en filtrant les doublons STT
+  // qui répètent exactement le même événement.
+  const dialogueContext = `${session.conversation?.pendingQuestion ?? ''}|${session.conversation?.lastAssistantQuestion ?? ''}`;
   const previous = recentTranscripts.get(session);
   const now = Date.now();
   if (
     previous &&
     previous.normalized === normalized &&
+    previous.dialogueContext === dialogueContext &&
     now - previous.at < TRANSCRIPT_DEDUPE_WINDOW_MS
   ) {
     return true;
   }
 
-  recentTranscripts.set(session, { normalized, at: now });
+  recentTranscripts.set(session, { normalized, at: now, dialogueContext });
   return false;
 }
 
@@ -244,9 +261,15 @@ export function handleSttEvent(
   session: CallSession,
   mgr: CallSessionManager,
 ): void {
-  if (session.ended || session.ending) return;
+  if (session.ended || session.ending || session.handoffInProgress) return;
   switch (event.type) {
     case 'UtteranceStart': {
+      cancelScheduledFiller(session);
+      if (session.currentTurn && session.state === 'PROCESSING') {
+        recordVoiceTurnEvent(session, 'llm_interrupted', { reason: 'speech_resumed' });
+      }
+      // Démarrer le chronomètre avant le commit final afin d'inclure le silence VAD.
+      startVoiceTurn(session);
       // Annuler toute requête LLM en cours (le caller continue de parler)
       if (session.abortController) {
         session.abortController.abort();
@@ -268,6 +291,9 @@ export function handleSttEvent(
     }
 
     case 'SpeechResumed': {
+      cancelScheduledFiller(session);
+      if (!session.currentTurn) startVoiceTurn(session);
+      else recordVoiceTurnEvent(session, 'speech_resumed');
       if (session.abortController) {
         session.abortController.abort();
         session.abortController = null;
@@ -304,14 +330,29 @@ export function handleSttEvent(
       // Ne change pas l'état de l'appel ni son historique : tant que Scribe n'a
       // pas confirmé le tour, l'appelant peut encore poursuivre sa phrase.
       const abortController = new AbortController();
+      const speculativeTurnId = session.currentTurn?.id;
+      const speculativeStartedAt = Date.now();
+      recordVoiceTurnEventIfCurrent(session, speculativeTurnId, 'llm_started', {
+        mode: 'speculative',
+      });
       session.abortController = abortController;
       session.speculativeLlm = mgr
         .prepareSpeculativeReply(session, event.transcript, abortController.signal)
         .then((response) => {
           session.speculativeResult = response;
+          recordVoiceTurnEventIfCurrent(session, speculativeTurnId, 'llm_completed', {
+            mode: 'speculative',
+            durationMs: Date.now() - speculativeStartedAt,
+            characterCount: response.length,
+          });
           return response;
         })
         .catch((err) => {
+          recordVoiceTurnEventIfCurrent(session, speculativeTurnId, 'llm_interrupted', {
+            mode: 'speculative',
+            reason: abortController.signal.aborted ? 'aborted' : 'error',
+            durationMs: Date.now() - speculativeStartedAt,
+          });
           logger.error(
             { err, callId: session.callControlId },
             `[speculative] LLM failed: ${err.message}`,
@@ -371,13 +412,14 @@ export function handleSttEvent(
           );
         }
       }
-      // Cumuler le transcript pour persistance
+      // Cumuler le transcript pour persistance et rattacher la fin au tour
+      // commencé par UtteranceStart.
       session.transcript += (session.transcript ? ' ' : '') + event.transcript;
-      startVoiceTurn(session, event.transcript);
+      completeVoiceTurnInput(session, event.transcript);
 
       const isSpeculativeEnabled = isSpeculativeLlmEnabled(session);
       const speculativeTranscript = session.speculativeTranscript;
-      const speechAct = classifyVoiceSpeechAct(event.transcript);
+      const speechAct = classifyVoiceSpeechActInContext(session, event.transcript);
       const startFinalStreaming = () => {
         processTranscriptStreaming(session, event.transcript, mgr).catch((err) =>
           logger.error(
@@ -435,7 +477,10 @@ export function handleSttEvent(
             recordAssistantReply(session, cleanResponse);
             session.latencyTrace!.llmFirstTokenMs = Date.now() - session.latencyTrace!.startTime;
             recordVoiceTurnEvent(session, 'speculation_hit', {
-              llmFirstTokenMs: session.latencyTrace!.llmFirstTokenMs,
+              mode: 'speculative',
+              llmResponseMs: session.latencyTrace
+                ? Date.now() - session.latencyTrace.startTime
+                : null,
             });
             mgr.transition(session, 'SPEAKING');
             await speakTtsStreamed(session, cleanResponse);
@@ -605,6 +650,7 @@ export async function processTranscriptStreaming(
   const responseGeneration = ++session.responseGeneration;
   const language = effectiveVoiceLanguage(session);
   const deterministicLanguage = supportsDeterministicVoiceLanguage(language);
+  const pendingQuestionBeforeTurn = session.conversation.pendingQuestion;
   const isCurrentResponse = () =>
     !session.ended && session.responseGeneration === responseGeneration;
   if (session.state === 'IDLE') mgr.transition(session, 'LISTENING');
@@ -613,7 +659,7 @@ export async function processTranscriptStreaming(
   const livenessResponse = deterministicLanguage
     ? buildLivenessResponse(session, transcript)
     : null;
-  const classifiedAct = classifyVoiceSpeechAct(transcript);
+  const classifiedAct = classifyVoiceSpeechActInContext(session, transcript);
   const explicitEnd = isExplicitCallEnd(transcript);
   const speechAct = classifiedAct === 'closing' && !explicitEnd ? 'backchannel' : classifiedAct;
   recordUserTurn(session, transcript, speechAct);
@@ -638,6 +684,11 @@ export async function processTranscriptStreaming(
     await finishCall(session, mgr, goodbye);
     return;
   }
+
+  const confirmationTurn = pendingQuestionBeforeTurn === 'confirmation';
+  const affirmativeConfirmation = confirmationTurn && isAffirmativeShortResponse(transcript);
+  const negativeConfirmation = confirmationTurn && isNegativeShortResponse(transcript);
+  if (negativeConfirmation) clearReservationConfirmation(session);
 
   if (deterministicLanguage && /^(?:merci|thanks?|thank you)[.! ]*$/i.test(transcript)) {
     const question = session.conversation.lastAssistantQuestion;
@@ -744,15 +795,35 @@ export async function processTranscriptStreaming(
   if (!isCurrentResponse()) return;
   syncSpellingProfile(session);
 
-  // Si le créneau a déjà été vérifié et que le client vient de confirmer le
-  // nom, finaliser directement. Cela évite de perdre un « oui » dans un appel
-  // LLM indisponible et garantit que le nom épelé reste la source de vérité.
-  if (customerNameTurn.confirmedName) {
+  // Seul un « oui » au dernier récapitulatif ouvre le verrou de création. La
+  // confirmation de l'orthographe du nom ne suffit pas : le client doit encore
+  // valider la date, l'heure et le nombre de personnes.
+  if (affirmativeConfirmation) {
+    if (!confirmReservationDraft(session)) {
+      const response =
+        language === 'en'
+          ? "I couldn't record that confirmation. Let me repeat the booking details first."
+          : "Je n'ai pas pu enregistrer cette confirmation. Je vous relis d'abord les détails de la réservation.";
+      session.turnCount++;
+      session.history.push(
+        { role: 'user', content: transcript },
+        { role: 'assistant', content: response },
+      );
+      recordAssistantReply(session, response);
+      mgr.transition(session, 'SPEAKING');
+      await speakTtsStreamed(session, response);
+      if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+      return;
+    }
     const reservationResult = await mgr.createReservationFromConversation(session);
     if (!isCurrentResponse()) return;
     if (reservationResult) {
+      const confirmedCustomerName =
+        session.conversation.nameCollection.confirmedName ??
+        session.conversation.slots.customerName ??
+        'Client';
       const response = reservationResult.startsWith('Réservation confirmée')
-        ? buildReservationConfirmationResponse(session, customerNameTurn.confirmedName)
+        ? buildReservationConfirmationResponse(session, confirmedCustomerName)
         : reservationResult;
       session.turnCount++;
       session.history.push(
@@ -766,6 +837,9 @@ export async function processTranscriptStreaming(
       if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
       return;
     }
+    // L'accord a été consommé avant l'appel métier. En cas de résultat vide ou
+    // d'invalidation concurrente, on reste silencieux côté création et on
+    // laisse le LLM demander une nouvelle validation contextualisée.
   }
 
   const transcriptForLlm = customerNameTurn.confirmedName
@@ -797,6 +871,7 @@ export async function processTranscriptStreaming(
     return;
   }
 
+  let availabilityContext: string | undefined;
   const availabilityRequest = getReadyAvailabilityRequest(session);
   if (availabilityRequest) {
     session.conversation.toolInFlight = 'checkAvailability';
@@ -853,7 +928,6 @@ export async function processTranscriptStreaming(
         durationMs: Date.now() - availabilityStartedAt,
         slotCount: result.slots.length,
       });
-      const response = buildAvailabilityReply(availabilityRequest, result.slots, language);
       session.conversation.lastAvailabilityCheck = availabilityRequest.key;
       session.conversation.lastAvailabilityResult = {
         key: availabilityRequest.key,
@@ -862,17 +936,14 @@ export async function processTranscriptStreaming(
         partySize: availabilityRequest.partySize,
         slots: [...result.slots],
       };
-      session.turnCount++;
-      session.history.push(
-        { role: 'user', content: transcript },
-        { role: 'assistant', content: response },
-      );
-      recordAssistantReply(session, response);
-      syncSpellingProfile(session);
-      mgr.transition(session, 'SPEAKING');
-      await speakTtsStreamed(session, response);
-      if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
-      return;
+      availabilityContext = buildAvailabilityLlmContext({
+        request: availabilityRequest,
+        availableSlots: result.slots,
+        knownCustomerName:
+          session.conversation.nameCollection.confirmedName ??
+          session.conversation.slots.customerName ??
+          null,
+      });
     } catch (err) {
       recordVoiceTurnEvent(session, 'availability_failed', {
         durationMs: Date.now() - availabilityStartedAt,
@@ -900,26 +971,37 @@ export async function processTranscriptStreaming(
     }
   }
 
+  // Après une confirmation d'orthographe, le prochain tour doit être un
+  // récapitulatif contextualisé. Réutiliser le dernier résultat vérifié évite
+  // de redemander le nom et empêche le LLM de déclencher un outil trop tôt.
+  if (customerNameTurn.confirmedName && !availabilityContext) {
+    const { date, time, partySize } = session.conversation.slots;
+    const lastAvailability = session.conversation.lastAvailabilityResult;
+    if (date && time && partySize && lastAvailability?.key === `${date}:${time}:${partySize}`) {
+      availabilityContext = buildAvailabilityLlmContext({
+        request: { date, time, partySize },
+        availableSlots: lastAvailability.slots,
+        knownCustomerName: customerNameTurn.confirmedName,
+      });
+    }
+  }
+
   writeDebugLog(`[processTranscriptStreaming] Starting LLM stream for: "${redactPii(transcript)}"`);
   // Une clôture ne peut ni créer ni modifier une réservation : on conserve la
   // formulation libre du LLM mais on omet le schéma d'outils et on borne la
   // réponse, ce qui réduit le prompt et le temps de génération.
-  const llmOptions = undefined;
+  const telemetryTurnId = session.currentTurn?.id;
+  const llmOptions = {
+    ...(availabilityContext ? { context: availabilityContext, includeTools: false } : {}),
+    ...(confirmationTurn ? { includeTools: false } : {}),
+    telemetryTurnId,
+  };
 
-  // ── Thinking filler : combler le silence pendant que le LLM génère.
-  // Joue un filler court ("Alors…", "Voyons voir…") immédiatement après la
-  // phrase de l'utilisateur, avant que le LLM ne réponde. Cela élimine le
-  // "vide" de 700ms qui donne l'impression d'une IA qui réfléchit.
-  // Le filler est joué en parallèle du LLM : si le LLM répond avant la fin
-  // du filler, le filler est coupé par le barge-in naturel du TTS.
+  // ── Thinking filler : combler ponctuellement le silence pendant que le LLM génère.
+  // Le délai et la probabilité sont gérés par le scheduler ; une phrase rapide
+  // ou une reprise de parole annule le filler avant tout audio.
   if (isCurrentResponse()) {
-    recordVoiceTurnEvent(session, 'filler_started', { purpose: 'thinking' });
-    playFiller(session, session.personality?.fillerStyle ?? 'CASUAL', 'generic').catch((err) => {
-      logger.warn(
-        { err, callId: session.callControlId },
-        '[thinking-filler] failed (non-blocking)',
-      );
-    });
+    scheduleThinkingFiller(session, session.personality?.fillerStyle ?? 'CASUAL');
   }
 
   // Double verrou : l'environnement garde le kill switch global fermé et
@@ -936,21 +1018,29 @@ export async function processTranscriptStreaming(
   };
   if (contextTtsRef.current) session.ttsContext = contextTtsRef.current;
   const abortController = new AbortController();
+  const llmStartedAt = Date.now();
+  recordVoiceTurnEventIfCurrent(session, telemetryTurnId, 'llm_started', {
+    mode: availabilityContext ? 'availability_context' : 'live',
+  });
 
   try {
     session.abortController = abortController;
-    const fullResponse = await mgr.processUtteranceStreaming(
+    const generatedResponse = await mgr.processUtteranceStreaming(
       session,
       transcriptForLlm,
       (phrase: string) => {
         if (!isCurrentResponse() || abortController.signal.aborted) return;
+        cancelScheduledFiller(session);
         writeDebugLog(`[processTranscriptStreaming] Phrase received: "${redactPii(phrase)}"`);
-        if (session.latencyTrace && !session.latencyTrace.llmFirstTokenMs) {
-          session.latencyTrace.llmFirstTokenMs = Date.now() - session.latencyTrace.startTime;
+        if (session.latencyTrace && session.latencyTrace.llmFirstPhraseMs === undefined) {
+          session.latencyTrace.llmFirstPhraseMs = Date.now() - session.latencyTrace.startTime;
           recordVoiceTurnEvent(session, 'llm_first_phrase', {
-            llmFirstTokenMs: session.latencyTrace.llmFirstTokenMs,
+            llmFirstPhraseMs: session.latencyTrace.llmFirstPhraseMs,
           });
         }
+        recordVoiceTurnEvent(session, 'llm_phrase_generated', {
+          characterCount: phrase.length,
+        });
 
         const cleanPhrase = stripRepeatedGreeting(phrase, session);
         if (!cleanPhrase) return;
@@ -981,7 +1071,32 @@ export async function processTranscriptStreaming(
       },
       llmOptions,
     );
+    const fullResponse = typeof generatedResponse === 'string' ? generatedResponse : '';
     if (!isCurrentResponse() || abortController.signal.aborted) return;
+    recordVoiceTurnEventIfCurrent(session, telemetryTurnId, 'llm_completed', {
+      mode: availabilityContext ? 'availability_context' : 'live',
+      durationMs: Date.now() - llmStartedAt,
+      characterCount: fullResponse.length,
+    });
+    if (!fullResponse.trim() && availabilityContext) {
+      // Le LLM reste responsable de la formulation ; ce repli ne sert qu'en
+      // cas de réponse vide du transport et reprend les faits vérifiés.
+      const fallbackResponse = buildAvailabilityReply(
+        availabilityRequest ?? {
+          date: session.conversation.slots.date!,
+          time: session.conversation.slots.time!,
+          partySize: session.conversation.slots.partySize!,
+        },
+        session.conversation.lastAvailabilityResult?.slots ?? [],
+        language,
+      );
+      session.history.push({ role: 'assistant', content: fallbackResponse });
+      recordAssistantReply(session, fallbackResponse);
+      mgr.transition(session, 'SPEAKING');
+      await speakTtsStreamed(session, fallbackResponse);
+      if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+      return;
+    }
     recordAssistantReply(session, fullResponse);
     syncSpellingProfile(session);
 
@@ -1011,6 +1126,11 @@ export async function processTranscriptStreaming(
       writeDebugLog(`[processTranscriptStreaming] Transitioned back to LISTENING`);
     }
   } catch (err: unknown) {
+    recordVoiceTurnEventIfCurrent(session, telemetryTurnId, 'llm_interrupted', {
+      mode: availabilityContext ? 'availability_context' : 'live',
+      reason: abortController.signal.aborted ? 'aborted' : 'error',
+      durationMs: Date.now() - llmStartedAt,
+    });
     if (
       !isCurrentResponse() ||
       abortController.signal.aborted ||
@@ -1030,6 +1150,7 @@ export async function processTranscriptStreaming(
     });
     mgr.transition(session, 'LISTENING');
   } finally {
+    cancelScheduledFiller(session);
     if (session.ttsContext === contextTtsRef.current) session.ttsContext = null;
     if (session.abortController === abortController) session.abortController = null;
   }

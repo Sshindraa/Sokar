@@ -2,6 +2,7 @@ import type {
   CallSession,
   ConversationState,
   NameCollection,
+  PendingQuestion,
   SpellingToken,
   VoiceSpeechAct,
 } from './types';
@@ -30,6 +31,8 @@ export function createConversationState(): ConversationState {
     lastAvailabilityResult: null,
     pendingQuestion: null,
     lastAssistantQuestion: null,
+    pendingReservationConfirmationKey: null,
+    confirmedReservationKey: null,
     spellingCandidate: null,
     nameCollection: createNameCollection(),
     misunderstandingCount: 0,
@@ -46,6 +49,71 @@ function normalizeTranscript(value: string): string {
     .replace(/[^\p{L}\p{N}:\s-]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Identifiant stable du brouillon de réservation actuellement en mémoire.
+ * L'accord de l'appelant est lié à toutes les valeurs du récapitulatif,
+ * y compris le nom : une correction rend donc automatiquement l'accord
+ * précédent inutilisable.
+ */
+export function getReservationConfirmationKey(
+  session: Pick<CallSession, 'conversation'>,
+): string | null {
+  const { slots, nameCollection } = session.conversation;
+  const customerName = nameCollection?.confirmedName ?? slots.customerName;
+  if (!slots.date || !slots.time || !slots.partySize || !customerName) return null;
+
+  const normalizedName = normalizeTranscript(customerName);
+  if (!normalizedName) return null;
+  return `${slots.date}:${slots.time}:${slots.partySize}:${normalizedName}`;
+}
+
+/** Invalide l'accord de réservation dès que le brouillon n'est plus identique. */
+export function clearReservationConfirmation(session: Pick<CallSession, 'conversation'>): void {
+  session.conversation.pendingReservationConfirmationKey = null;
+  session.conversation.confirmedReservationKey = null;
+  if (session.conversation.pendingQuestion === 'confirmation') {
+    session.conversation.pendingQuestion = null;
+    session.conversation.lastAssistantQuestion = null;
+  }
+}
+
+/**
+ * Transforme un « oui » donné au dernier récapitulatif en autorisation
+ * consommable par le manager. Aucun autre « oui » ne peut créer la réservation.
+ */
+export function confirmReservationDraft(session: Pick<CallSession, 'conversation'>): boolean {
+  const currentKey = getReservationConfirmationKey(session);
+  if (!currentKey || session.conversation.pendingReservationConfirmationKey !== currentKey) {
+    clearReservationConfirmation(session);
+    return false;
+  }
+
+  session.conversation.confirmedReservationKey = currentKey;
+  session.conversation.pendingReservationConfirmationKey = null;
+  return true;
+}
+
+/**
+ * Marqueurs utilisés par l'appelant pour remplacer une valeur déjà énoncée.
+ * Le dernier marqueur gagne : « 19 h 30, non plutôt 20 h 30 » doit donc être
+ * analysé à partir de « 20 h 30 », jamais à partir de la première heure.
+ */
+const CORRECTION_MARKER_PATTERN =
+  /\b(?:non(?:\s+plutot)?|plutot|en fait|je voulais dire|je prefere|finalement)\b/gu;
+
+function extractCorrectionTail(normalized: string): string {
+  let lastMatch: RegExpMatchArray | null = null;
+  for (const match of normalized.matchAll(CORRECTION_MARKER_PATTERN)) lastMatch = match;
+  if (!lastMatch || lastMatch.index === undefined) return normalized;
+
+  const tail = normalized.slice(lastMatch.index + lastMatch[0].length).trim();
+  return tail || normalized;
+}
+
+function containsCorrectionMarker(normalized: string): boolean {
+  return extractCorrectionTail(normalized) !== normalized;
 }
 
 interface LexicalToken {
@@ -1421,6 +1489,10 @@ export function classifyVoiceSpeechAct(transcript: string): VoiceSpeechAct {
   ) {
     return 'closing';
   }
+  // La correction peut arriver au milieu d'une phrase (« 19 h 30, non
+  // plutôt 20 h 30 »). Elle doit être classée avant toute vérification afin
+  // que le brouillon et la disponibilité utilisent la nouvelle valeur.
+  if (containsCorrectionMarker(normalized)) return 'correction';
   if (
     /^(?:non\b|plutot\b|en fait\b|j ai dit\b|je voulais dire\b|no\b|rather\b|actually\b|i said\b|i meant\b)/.test(
       normalized,
@@ -1429,6 +1501,31 @@ export function classifyVoiceSpeechAct(transcript: string): VoiceSpeechAct {
     return 'correction';
   }
   return 'content';
+}
+
+/** Réponses courtes dont le sens dépend de la question encore ouverte. */
+export function isAffirmativeShortResponse(transcript: string): boolean {
+  const normalized = normalizeTranscript(transcript);
+  return /^(?:oui|ouais|ok(?:ay)?|d accord|dac|bien sur|exactement|tout a fait|ca marche|c est bon|c est bien ca|c est ca|ca me va|parfait|je confirme|oui (?:c est ca|c est bon|bien sur|exactement))$/.test(
+    normalized,
+  );
+}
+
+export function isNegativeShortResponse(transcript: string): boolean {
+  const normalized = normalizeTranscript(transcript);
+  return /^(?:non|pas du tout|ce n est pas ca|c est pas ca|je refuse|annulez?)$/.test(normalized);
+}
+
+/** Classifie une réponse courte avec la question actuellement attendue. */
+export function classifyVoiceSpeechActInContext(
+  session: CallSession,
+  transcript: string,
+): VoiceSpeechAct {
+  const pending = session.conversation.pendingQuestion;
+  if (pending && (isAffirmativeShortResponse(transcript) || isNegativeShortResponse(transcript))) {
+    return isNegativeShortResponse(transcript) ? 'correction' : 'content';
+  }
+  return classifyVoiceSpeechAct(transcript);
 }
 
 function inferIntent(transcript: string): ConversationState['intent'] {
@@ -1602,17 +1699,20 @@ export function extractConversationSlots(
   now = new Date(),
 ): ConversationState['slots'] {
   const normalized = normalizeTranscript(transcript);
+  const correctedTranscript = extractCorrectionTail(normalized);
   const slots: ConversationState['slots'] = {};
 
-  const isoDate = normalized.match(/\b(20\d{2}-\d{2}-\d{2})\b/)?.[1];
+  const isoDate = correctedTranscript.match(/\b(20\d{2}-\d{2}-\d{2})\b/)?.[1];
   if (isoDate) {
     slots.date = isoDate;
-  } else if (/\b(?:aujourd hui|ce jour|ce soir|today|tonight)\b/.test(normalized)) {
+  } else if (/\b(?:aujourd hui|ce jour|ce soir|today|tonight)\b/.test(correctedTranscript)) {
     slots.date = localDate(now, timezone);
-  } else if (/\b(?:demain|tomorrow)\b/.test(normalized)) {
+  } else if (/\bapres(?:- |-)demain\b|\bapres demain\b/.test(correctedTranscript)) {
+    slots.date = addDays(localDate(now, timezone), 2);
+  } else if (/\b(?:demain|tomorrow)\b/.test(correctedTranscript)) {
     slots.date = addDays(localDate(now, timezone), 1);
   } else {
-    const weekday = normalized.match(
+    const weekday = correctedTranscript.match(
       /\b(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/,
     )?.[1];
     const weekdayIndex: Record<string, number> = {
@@ -1640,7 +1740,7 @@ export function extractConversationSlots(
   // forme en plus de « 19:30 », « 19h30 » et « 19 heures 30 », tout en
   // conservant l'heure seule uniquement lorsqu'elle est explicitement suivie
   // de h/heures (pour ne pas confondre « 2 personnes » avec une heure).
-  const englishAmPmMatch = normalized.match(
+  const englishAmPmMatch = correctedTranscript.match(
     /\b(?:at|around)?\s*(\d{1,2})(?::([0-5]\d))?\s*(am|pm)\b/,
   );
   if (englishAmPmMatch) {
@@ -1653,7 +1753,7 @@ export function extractConversationSlots(
 
   const timeMatch = slots.time
     ? null
-    : normalized.match(
+    : correctedTranscript.match(
         /\b(?:a|vers|at|around)?\s*([01]?\d|2[0-3])(?:(?:\s*(?::|h(?:eures?)?)\s*)([0-5]\d)?|\s+([0-5]\d))\b/,
       );
   if (timeMatch) {
@@ -1661,19 +1761,19 @@ export function extractConversationSlots(
     const minute = Number(timeMatch[2] ?? timeMatch[3] ?? '0');
     slots.time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
   } else {
-    const spokenClockTime = extractSpokenClockTime(normalized);
+    const spokenClockTime = extractSpokenClockTime(correctedTranscript);
     if (spokenClockTime) {
       slots.time = spokenClockTime;
-    } else if (/\b(?:a|vers)?\s*midi\b/.test(normalized)) {
+    } else if (/\b(?:a|vers)?\s*midi\b/.test(correctedTranscript)) {
       // « à midi » est la formulation la plus courante au téléphone ; elle
       // doit déclencher la même vérification qu'une heure numérique.
       slots.time = '12:00';
-    } else if (/\b(?:a|vers)?\s*minuit\b/.test(normalized)) {
+    } else if (/\b(?:a|vers)?\s*minuit\b/.test(correctedTranscript)) {
       slots.time = '00:00';
     }
   }
 
-  const partyMatch = normalized.match(
+  const partyMatch = correctedTranscript.match(
     /\b(?:pour|de|for|party of|table for)?\s*(\d+|un|une|deux|trois|quatre|cinq|six|sept|one|two|three|four|five|six|seven)\s+(?:personnes?|people|guests?)\b/,
   );
   if (partyMatch) {
@@ -1740,6 +1840,60 @@ export function buildAvailabilityReply(
   return `Alors ${time} c'est complet, par contre j'ai ${alternatives}. Ça vous irait ?`;
 }
 
+export interface AvailabilityLlmContextInput {
+  request: { date: string; time: string; partySize: number };
+  availableSlots: string[];
+  knownCustomerName?: string | null;
+}
+
+function formatExactReservationDate(date: string): string {
+  return new Intl.DateTimeFormat('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(`${date}T12:00:00.000Z`));
+}
+
+/**
+ * Contexte éphémère transmis au LLM après la vérification de disponibilité.
+ * Les faits et les garde-fous restent déterministes ; seule la formulation
+ * vocale est confiée au modèle.
+ */
+export function buildAvailabilityLlmContext({
+  request,
+  availableSlots,
+  knownCustomerName,
+}: AvailabilityLlmContextInput): string {
+  const requestedSlotAvailable = availableSlots.includes(request.time);
+  const allowedSlots = availableSlots.map((slot) => formatAvailabilitySlot(slot));
+  const closestAlternatives = selectClosestAvailabilitySlots(request.time, availableSlots).map(
+    (slot) => formatAvailabilitySlot(slot),
+  );
+
+  let nextObjective: string;
+  if (availableSlots.length === 0) {
+    nextObjective =
+      "Le jour est complet d'après l'outil. Explique-le simplement et propose de regarder un autre jour ou de passer le gérant. N'invente aucun horaire.";
+  } else if (requestedSlotAvailable) {
+    nextObjective = knownCustomerName
+      ? `Le nom « ${knownCustomerName} » est déjà connu : ne le redemande pas. Récapitule naturellement la date exacte, l'heure, le nombre de personnes et le nom, puis demande une confirmation explicite avant tout appel à createReservation.`
+      : 'Le créneau est disponible. Demande uniquement le nom manquant. Après le nom, récapitule les informations et demande une confirmation explicite avant tout appel à createReservation.';
+  } else {
+    nextObjective = `Le créneau demandé est complet. Propose uniquement les alternatives vérifiées les plus proches (${closestAlternatives.join(' ou ') || 'aucune'}), puis demande laquelle convient. Ne confirme pas et ne crée pas de réservation tant qu'un créneau n'est pas choisi.`;
+  }
+
+  return [
+    'CONTEXTE MÉTIER INTERNE — vérification de disponibilité terminée.',
+    `Demande vérifiée : date exacte ${request.date} (${formatExactReservationDate(request.date)}), heure ${request.time}, ${request.partySize} personne${request.partySize > 1 ? 's' : ''}.`,
+    `Résultat de l'outil : créneau demandé ${requestedSlotAvailable ? 'disponible' : 'indisponible'} ; créneaux renvoyés : ${allowedSlots.join(', ') || 'aucun'}.`,
+    `Nom déjà connu : ${knownCustomerName || 'non'}.`,
+    `Objectif du prochain tour : ${nextObjective}`,
+    'Réponds en français, avec une formulation chaleureuse et une seule question utile. Dans le récapitulatif, prononce la date complète (jour, numéro et mois) plutôt que « demain » ou « demain soir » seul. Les créneaux annoncés doivent provenir exclusivement de cette vérification.',
+  ].join('\n');
+}
+
 /**
  * Réponse de repli quand le moteur de disponibilité est indisponible. Elle ne
  * confirme jamais le créneau et ne demande pas le nom avant une vérification
@@ -1751,6 +1905,72 @@ export function buildAvailabilityErrorReply(language: VoiceLanguageCode = 'fr'):
     : "Je n'arrive pas à vérifier ce créneau pour le moment. Voulez-vous que je vous passe le gérant ?";
 }
 
+const CUSTOMER_NAME_STOP_WORDS = new Set([
+  'a',
+  'au',
+  'avec',
+  'bon',
+  'ca',
+  'c est',
+  'd accord',
+  'de',
+  'demain',
+  'des',
+  'est',
+  'heure',
+  'je',
+  'la',
+  'le',
+  'les',
+  'midi',
+  'mon',
+  'nom',
+  'oui',
+  'parfait',
+  'personne',
+  'personnes',
+  'pour',
+  'reserver',
+  'reservation',
+  'table',
+  'une',
+  'vers',
+  'vous',
+]);
+
+/**
+ * Retient un nom parlé naturellement quand le client répond par exemple
+ * « Akif » ou « au nom de Akif ». Les épellations restent entièrement
+ * contrôlées par handleCustomerNameTurn.
+ */
+export function extractPlainCustomerName(transcript: string, expectName = false): string | null {
+  const normalized = normalizeTranscript(transcript);
+  if (
+    !normalized ||
+    isAffirmativeShortResponse(transcript) ||
+    isNegativeShortResponse(transcript)
+  ) {
+    return null;
+  }
+
+  const spelled = parseSpelledNameTranscriptDetailed(transcript);
+  if (spelled?.confident || spelled?.isFragment) return null;
+
+  const explicitMatch = transcript.match(
+    /(?:au nom de|mon nom est|je m'appelle|je m’appelle|je suis|my name is|under the name of)\s+([^,.!?]+)/iu,
+  );
+  const rawCandidate = explicitMatch?.[1]?.trim() ?? (expectName ? transcript.trim() : '');
+  const candidate = rawCandidate.replace(/[.!?,]+$/gu, '').trim();
+  if (!candidate || candidate.length > 60 || /\d/u.test(candidate)) return null;
+
+  const candidateWords = normalizeTranscript(candidate).split(/\s+/u).filter(Boolean);
+  if (candidateWords.length === 0 || candidateWords.length > 4) return null;
+  if (candidateWords.some((word) => CUSTOMER_NAME_STOP_WORDS.has(word))) return null;
+  if (!candidateWords.every((word) => /^[\p{L}'’-]+$/u.test(word))) return null;
+
+  return candidate;
+}
+
 export function recordUserTurn(
   session: CallSession,
   transcript: string,
@@ -1759,21 +1979,35 @@ export function recordUserTurn(
 ): void {
   if (speechAct === 'closing') {
     session.conversation.closing = true;
+    clearReservationConfirmation(session);
     return;
   }
 
   if (speechAct === 'content' || speechAct === 'correction') {
     session.conversation.closing = false;
+    if (speechAct === 'correction') clearReservationConfirmation(session);
     session.conversation.intent = inferIntent(transcript) ?? session.conversation.intent;
     const extracted = extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris', now);
     const current = session.conversation.slots;
-    if (
-      (extracted.date && extracted.date !== current.date) ||
-      (extracted.partySize && extracted.partySize !== current.partySize)
-    ) {
+    const plainCustomerName = extractPlainCustomerName(
+      transcript,
+      session.conversation.pendingQuestion === 'customerName' && !isNameCollectionBlocking(session),
+    );
+    const slotChanged = (['date', 'time', 'partySize'] as const).some(
+      (slot) => extracted[slot] !== undefined && extracted[slot] !== current[slot],
+    );
+    const customerNameChanged =
+      plainCustomerName !== null &&
+      normalizeTranscript(plainCustomerName) !== normalizeTranscript(current.customerName ?? '');
+    if (slotChanged || customerNameChanged) {
+      clearReservationConfirmation(session);
+    }
+    if (slotChanged) {
       session.conversation.lastAvailabilityResult = null;
+      session.conversation.lastAvailabilityCheck = null;
     }
     Object.assign(current, extracted);
+    if (plainCustomerName) current.customerName = plainCustomerName;
   }
 }
 
@@ -1892,11 +2126,21 @@ function isAmbiguousPartySizeReply(session: CallSession, transcript: string): bo
   );
 }
 
-function pendingQuestionFrom(question: string): ConversationState['pendingQuestion'] {
+export function pendingQuestionFrom(question: string): PendingQuestion {
   const normalized = normalizeTranscript(question);
   if (/\b(?:quelle date|quel jour|quand|what day|which day|what date|when)/.test(normalized))
     return 'date';
-  if (/\b(?:quelle heure|a quelle heure|vers quelle heure|what time|which time)/.test(normalized))
+  if (
+    /\b(?:ca vous irait|cela vous irait|quel(?:le)? horaire (?:choisissez|preferez|souhaitez)[ -]vous|quel(?:le)? creneau (?:choisissez|preferez|souhaitez)[ -]vous|quel horaire vous conviendrait|quel creneau vous conviendrait|quel horaire vous convient|quel creneau vous convient|entre .* horaires?|parmi .* horaires?|would either work|which one works|what time works)/.test(
+      normalized,
+    )
+  )
+    return 'timeChoice';
+  if (
+    /\b(?:quelle heure|a quelle heure|vers quelle heure|quel horaire|quel creneau|what time|which time)/.test(
+      normalized,
+    )
+  )
     return 'time';
   if (/\b(?:combien de personnes|pour combien|vous serez combien)/.test(normalized)) {
     return 'partySize';
@@ -1911,20 +2155,43 @@ function pendingQuestionFrom(question: string): ConversationState['pendingQuesti
     return 'customerName';
   if (/\b(?:telephone|numero|phone|telephone number|mobile)/.test(normalized))
     return 'customerPhone';
+  if (
+    /\b(?:vous me confirmez|confirmez[- ]vous|est[- ]ce correct|c est bien ca|c est bien cela|ca vous convient|cela vous convient|ca vous va|cela vous va|ca vous irait|cela vous irait|ca marche|c est bon pour vous|on part la dessus|on valide|vous validez|je peux confirmer|je peux la reserver|je la reserve|je note|je valide|voulez[- ]vous que je reserve|souhaitez[- ]vous que je reserve|je lance la reservation|je cree la reservation|shall i book|may i confirm|should i book|is that correct|does that work)\b/.test(
+      normalized,
+    )
+  )
+    return 'confirmation';
   return null;
 }
 
 export function recordAssistantReply(session: CallSession, reply: string): void {
-  const lastQuestion = reply.match(/(?:^|[.!]\s*)([^.?!]+\?)\s*$/u)?.[1]?.trim() ?? null;
+  const lastQuestion = reply.match(/([^.!?\n]+\?)\s*$/u)?.[1]?.trim() ?? null;
   session.conversation.lastAssistantQuestion = lastQuestion;
+  let pendingQuestion: PendingQuestion = null;
   if (lastQuestion) {
-    session.conversation.pendingQuestion = pendingQuestionFrom(lastQuestion);
+    // Une confirmation d'épellation (« A-K-I-F, c'est bien cela ? ») porte
+    // sur le nom présenté, pas sur le récapitulatif de réservation. Le
+    // contexte de collecte reste prioritaire sur le motif générique
+    // « c'est bien cela ».
+    pendingQuestion =
+      isNameCollectionBlocking(session) &&
+      session.conversation.nameCollection.state === 'confirming'
+        ? 'customerName'
+        : pendingQuestionFrom(lastQuestion);
   } else if (isNameCollectionBlocking(session)) {
     // L'état de collecte ne doit pas disparaître parce qu'une réponse
     // intermédiaire n'a pas de point d'interrogation exploitable.
-    session.conversation.pendingQuestion = 'customerName';
+    pendingQuestion = 'customerName';
+  }
+  session.conversation.pendingQuestion = pendingQuestion;
+
+  if (pendingQuestion === 'confirmation') {
+    // Chaque nouveau récapitulatif remplace l'ancien. L'accord doit porter
+    // sur exactement ce brouillon, jamais sur une confirmation plus ancienne.
+    session.conversation.pendingReservationConfirmationKey = getReservationConfirmationKey(session);
+    session.conversation.confirmedReservationKey = null;
   } else {
-    session.conversation.pendingQuestion = null;
+    clearReservationConfirmation(session);
   }
 
   if (
@@ -1955,6 +2222,9 @@ export function buildDeterministicTurnResponse(
   speechAct: VoiceSpeechAct,
   transcript = '',
 ): string | null {
+  const pendingShortResponse = buildPendingQuestionResponse(session, transcript);
+  if (pendingShortResponse) return pendingShortResponse;
+
   // Deux incompréhensions consécutives constituent un échec de dialogue,
   // pas une invitation à poser une troisième fois la même question.
   if (speechAct === 'content' && session.conversation.misunderstandingCount >= 2) {
@@ -1963,7 +2233,11 @@ export function buildDeterministicTurnResponse(
       : 'Je vais vous passer le gérant pour vous aider.';
   }
 
-  if (speechAct === 'backchannel' && session.conversation.lastAssistantQuestion) {
+  if (
+    speechAct === 'backchannel' &&
+    session.conversation.pendingQuestion !== 'confirmation' &&
+    session.conversation.lastAssistantQuestion
+  ) {
     return effectiveVoiceLanguage(session) === 'en'
       ? `All right. ${session.conversation.lastAssistantQuestion}`
       : `D'accord. ${session.conversation.lastAssistantQuestion}`;
@@ -1981,4 +2255,51 @@ export function buildDeterministicTurnResponse(
   }
 
   return null;
+}
+
+/**
+ * Garde-fou pour une réponse courte donnée à une question métier. Un « oui »
+ * à « À quel nom je réserve ? » n'est pas un acquiescement à répéter : il
+ * manque encore la valeur attendue.
+ */
+export function buildPendingQuestionResponse(
+  session: CallSession,
+  transcript: string,
+): string | null {
+  if (!isAffirmativeShortResponse(transcript)) return null;
+
+  switch (session.conversation.pendingQuestion) {
+    case 'date':
+      return effectiveVoiceLanguage(session) === 'en'
+        ? 'Which day would you like to book?'
+        : 'Pour quel jour souhaitez-vous réserver ?';
+    case 'time':
+      return effectiveVoiceLanguage(session) === 'en'
+        ? 'What time would you like to come?'
+        : 'Vers quelle heure souhaitez-vous venir ?';
+    case 'timeChoice':
+      return effectiveVoiceLanguage(session) === 'en'
+        ? 'Which time would work for you?'
+        : 'Quel horaire vous conviendrait ?';
+    case 'partySize':
+      return effectiveVoiceLanguage(session) === 'en'
+        ? 'How many people should I book for?'
+        : 'Pour combien de personnes dois-je réserver ?';
+    case 'customerName':
+      if (
+        session.conversation.nameCollection.state === 'confirming' &&
+        session.conversation.nameCollection.presentedCandidate
+      )
+        return null;
+      return effectiveVoiceLanguage(session) === 'en'
+        ? 'What name should I put the reservation under?'
+        : 'Quel nom dois-je inscrire pour la réservation ?';
+    case 'customerPhone':
+      return effectiveVoiceLanguage(session) === 'en'
+        ? 'Which phone number may I use for the confirmation?'
+        : 'Quel numéro de téléphone puis-je utiliser pour la confirmation ?';
+    case 'confirmation':
+    case null:
+      return null;
+  }
 }
