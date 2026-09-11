@@ -36,7 +36,9 @@ import { isNameCollectionBlocking } from './conversation-controller';
 import { setSttSpellingProfile } from './stt-bridge';
 import {
   effectiveVoiceLanguage,
+  hasReliableLanguageEvidence,
   normalizeVoiceLanguage,
+  resolveVoiceLanguage,
   supportsDeterministicVoiceLanguage,
   type VoiceLanguageCode,
 } from './voice-language';
@@ -329,8 +331,28 @@ export function handleSttEvent(
       const detectedLanguage = normalizeVoiceLanguage(event.languageCode);
       if (detectedLanguage) {
         const previousLanguage = effectiveVoiceLanguage(session);
-        session.voiceLanguageCode = detectedLanguage;
-        if (previousLanguage !== detectedLanguage) {
+        const languageDecision = resolveVoiceLanguage(
+          previousLanguage,
+          detectedLanguage,
+          event.transcript,
+          session.turnCount,
+          session.voiceLanguageCandidate,
+        );
+        session.voiceLanguageCandidate = languageDecision.candidate;
+        if (languageDecision.accepted) {
+          session.voiceLanguageCode = languageDecision.language;
+        } else {
+          logger.info(
+            {
+              callId: session.callControlId,
+              previousLanguage,
+              detectedLanguage,
+              evidence: hasReliableLanguageEvidence(event.transcript),
+            },
+            '[voice-language] Ignoring unstable language detection',
+          );
+        }
+        if (languageDecision.changed) {
           // Une spéculation lancée avant le commit Scribe peut avoir utilisé
           // l'ancienne langue (notamment sur un premier « yes »). Elle ne doit
           // jamais être réutilisée après un changement de langue détecté.
@@ -343,7 +365,7 @@ export function handleSttEvent(
             {
               callId: session.callControlId,
               previousLanguage,
-              language: detectedLanguage,
+              language: languageDecision.language,
             },
             '[voice-language] Updated dialogue language from Scribe',
           );

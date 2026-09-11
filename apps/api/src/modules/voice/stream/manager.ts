@@ -374,6 +374,7 @@ export class CallSessionManager {
       onSttEvent: null,
       sttLanguageCode: undefined,
       voiceLanguageCode: 'fr',
+      voiceLanguageCandidate: null,
       sttFirstAudioChunkSent: false,
       sttPendingCommit: null,
       audioBuffer: [],

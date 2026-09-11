@@ -16,6 +16,8 @@ import {
   STT_TIMESTAMPED_COMMIT_GRACE_MS,
   getSmartEndpointDelay,
   SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS,
+  isLikelyIncompleteTranscript,
+  isLikelyRepeatedNoiseTranscript,
 } from '../stream/stt-bridge';
 
 function makeWsMock(): WebSocket {
@@ -194,6 +196,47 @@ describe('handleSttMessage', () => {
     handleSttMessage(session, { message_type: 'partial_transcript', text: 'Attendez' });
     expect(session.state).toBe('LISTENING');
     expect(session.isSpeaking).toBe(false);
+  });
+
+  it('ignore un fragment VAD incomplet au lieu de relancer la même question', () => {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+
+    handleSttMessage(session, {
+      message_type: 'committed_transcript_with_timestamps',
+      text: 'Euh, on se...',
+      language_code: 'sl',
+    });
+
+    expect(isLikelyIncompleteTranscript('Euh, on se...')).toBe(true);
+    expect(onEvent).not.toHaveBeenCalled();
+    expect(session.sttLanguageCode).toBeUndefined();
+  });
+
+  it('ignore une répétition de bruit et ne coupe pas la réponse TTS', () => {
+    const session = makeSession();
+    const mgr = CallSessionManager.getInstance();
+    mgr.transition(session, 'SPEAKING');
+    session.isSpeaking = true;
+
+    handleSttMessage(session, {
+      message_type: 'partial_transcript',
+      text: 'Waouh, waouh, waouh, waouh, qu',
+    });
+    handleSttMessage(session, {
+      message_type: 'committed_transcript_with_timestamps',
+      text: 'Waouh, waouh, waouh, waouh, calme-toi.',
+      language_code: 'it',
+    });
+
+    expect(isLikelyRepeatedNoiseTranscript('Waouh, waouh, waouh, waouh, calme-toi.')).toBe(true);
+    expect(session.state).toBe('SPEAKING');
+    expect(session.isSpeaking).toBe(true);
+  });
+
+  it('laisse passer une confirmation répétée qui contient un signal métier', () => {
+    expect(isLikelyRepeatedNoiseTranscript('Oui oui oui, je confirme.')).toBe(false);
   });
 
   it('attend la courte grâce pendant une collecte de nom', () => {

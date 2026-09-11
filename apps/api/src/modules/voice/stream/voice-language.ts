@@ -255,6 +255,87 @@ export function effectiveVoiceLocale(
   );
 }
 
+/**
+ * Vérifie qu'un segment final contient suffisamment de signal pour influencer
+ * la langue du dialogue. La détection Scribe est très utile sur une phrase
+ * complète, mais un fragment VAD, un écho ou une répétition peut recevoir une
+ * langue arbitraire. Ces segments ne doivent jamais faire basculer le LLM et
+ * Cartesia au milieu d'un appel.
+ */
+export function hasReliableLanguageEvidence(transcript: string): boolean {
+  const normalized = transcript
+    .toLocaleLowerCase('fr-FR')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  if (!normalized || /(?:\.\.\.|…)\s*$/u.test(transcript.trim())) return false;
+
+  const words = normalized.split(' ').filter(Boolean);
+  if (words.length < 3) return false;
+
+  const counts = new Map<string, number>();
+  for (const word of words) counts.set(word, (counts.get(word) ?? 0) + 1);
+  const highestCount = Math.max(...counts.values());
+  // « waouh waouh waouh calme-toi » is a classic acoustic echo/noise shape;
+  // do not use it as evidence that the caller switched language.
+  if (highestCount >= 3 && highestCount / words.length >= 0.6) return false;
+  return true;
+}
+
+export interface VoiceLanguageCandidate {
+  code: VoiceLanguageCode;
+  count: number;
+}
+
+export interface VoiceLanguageDecision {
+  language: VoiceLanguageCode;
+  candidate: VoiceLanguageCandidate | null;
+  accepted: boolean;
+  changed: boolean;
+}
+
+/**
+ * Stabilise une détection de langue avant de la transmettre au LLM/TTS.
+ *
+ * Le premier tour fiable peut choisir la langue de l'appel. Une fois le
+ * dialogue commencé, une nouvelle langue doit être détectée deux fois de
+ * suite ; cela évite qu'un seul segment mal classé (« it » sur une phrase
+ * française) change la voix Cartesia.
+ */
+export function resolveVoiceLanguage(
+  current: VoiceLanguageCode,
+  detected: VoiceLanguageCode,
+  transcript: string,
+  turnCount: number,
+  candidate: VoiceLanguageCandidate | null | undefined,
+): VoiceLanguageDecision {
+  if (detected === current) {
+    return { language: current, candidate: null, accepted: true, changed: false };
+  }
+
+  const evidence = hasReliableLanguageEvidence(transcript);
+  if (!evidence) {
+    return { language: current, candidate: null, accepted: false, changed: false };
+  }
+
+  if (turnCount === 0) {
+    return { language: detected, candidate: null, accepted: true, changed: true };
+  }
+
+  if (candidate?.code === detected) {
+    return { language: detected, candidate: null, accepted: true, changed: true };
+  }
+
+  return {
+    language: current,
+    candidate: { code: detected, count: 1 },
+    accepted: false,
+    changed: false,
+  };
+}
+
 export function languageName(language: VoiceLanguageCode): string {
   try {
     return new Intl.DisplayNames(['en'], { type: 'language' }).of(language) ?? language;

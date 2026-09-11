@@ -290,6 +290,26 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
     ws.close();
   });
 
+  it('ignore une piste sortante pour ne pas renvoyer la voix TTS à Scribe', async () => {
+    const session = makeMockSession();
+    mockMgr.get.mockReturnValue(session);
+
+    const ws = await connectWs(port, 'cc-ws-1');
+    await sendAndWait(ws, {
+      event: 'media',
+      media: {
+        track: 'outbound',
+        chunk: '1',
+        timestamp: '0',
+        payload: Buffer.from('tts-audio').toString('base64'),
+      },
+    });
+    await delay(50);
+
+    expect(sendAudioToStt).not.toHaveBeenCalled();
+    ws.close();
+  });
+
   it("événement `media` sans payload : n'appelle pas sendAudioToStt", async () => {
     const session = makeMockSession();
     mockMgr.get.mockReturnValue(session);
