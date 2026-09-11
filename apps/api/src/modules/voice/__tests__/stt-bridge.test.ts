@@ -75,8 +75,22 @@ describe('buildSttUrl', () => {
     vi.stubEnv('ELEVENLABS_STT_ALL_LANGUAGES', 'true');
     const languages = getSttLanguageCodes();
     expect(languages).toHaveLength(44);
-    expect(languages).toEqual(expect.arrayContaining(['fr', 'en', 'or', 'ur']));
+    expect(languages).toEqual(expect.arrayContaining(['fra', 'eng', 'ori', 'urd']));
+    expect(languages).toContain('fil');
+    expect(languages).not.toContain('tl');
     vi.stubEnv('ELEVENLABS_STT_ALL_LANGUAGES', 'false');
+  });
+
+  it('normalise les alias Cartesia invalides pour Scribe', () => {
+    vi.stubEnv('ELEVENLABS_STT_LANGUAGES', 'fr,tl,zh,ja,ko');
+    expect(getSttLanguageCodes()).toEqual(['fr', 'fil', 'zho', 'jpn', 'kor']);
+
+    const url = new URL(
+      buildSttUrl('scribe_v2_realtime', 'PCMU', undefined, {
+        languages: ['tl'],
+      }),
+    );
+    expect(url.searchParams.getAll('secondary_languages')).toEqual(['fil']);
   });
 
   it('ajoute le nom du restaurant aux termes de contexte sans dépasser les limites Scribe', () => {

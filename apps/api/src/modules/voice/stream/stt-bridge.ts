@@ -9,7 +9,6 @@ import * as Sentry from '@sentry/node';
 import { isSpeculativeLlmEnabled } from './speculation';
 import { redactPii } from './pii-redact';
 import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
-import { CARTESIA_LANGUAGE_CODES } from './voice-language';
 
 const DEFAULT_STT_MODEL = 'scribe_v2_realtime';
 const STT_REALTIME_PATH = '/v1/speech-to-text/realtime';
@@ -23,6 +22,75 @@ const STT_PROVIDER_LABEL = 'elevenlabs_stt';
  */
 export const DEFAULT_STT_LANGUAGES = ['fr', 'en', 'es', 'it', 'de', 'pt', 'nl'] as const;
 const STT_LANGUAGE_CODE_PATTERN = /^[a-z]{2,3}$/u;
+
+/**
+ * Codes accepted by ElevenLabs Scribe for the 44-language opt-in.
+ *
+ * Cartesia uses short internal codes (for example `tl` for Tagalog), while
+ * Scribe validates this list against its supported ISO codes (`fil` for
+ * Filipino/Tagalog, `jpn` for Japanese, ...). Keeping this list separate is
+ * important: the result is normalized back to Cartesia's short code later in
+ * the voice pipeline.
+ */
+export const ALL_STT_LANGUAGES = [
+  'eng',
+  'fra',
+  'deu',
+  'spa',
+  'por',
+  'zho',
+  'jpn',
+  'hin',
+  'ita',
+  'kor',
+  'nld',
+  'pol',
+  'rus',
+  'swe',
+  'tur',
+  'fil',
+  'bul',
+  'ron',
+  'ara',
+  'ces',
+  'ell',
+  'fin',
+  'hrv',
+  'msa',
+  'slk',
+  'dan',
+  'tam',
+  'ukr',
+  'hun',
+  'nor',
+  'vie',
+  'ben',
+  'tha',
+  'heb',
+  'kat',
+  'ind',
+  'tel',
+  'guj',
+  'kan',
+  'mal',
+  'mar',
+  'pan',
+  'ori',
+  'urd',
+] as const;
+
+/** Aliases accepted in local configuration, normalized to Scribe's codes. */
+const STT_LANGUAGE_ALIASES: Record<string, string> = {
+  tl: 'fil',
+  zh: 'zho',
+  ja: 'jpn',
+  ko: 'kor',
+};
+
+function normalizeSttLanguageCode(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  return STT_LANGUAGE_ALIASES[normalized] ?? normalized;
+}
 
 export const DEFAULT_STT_TURN_CONFIG: SttTurnConfig = {
   vadSilenceThresholdSecs: 0.85,
@@ -112,11 +180,11 @@ export const STT_TIMESTAMPED_COMMIT_GRACE_MS = 250;
  */
 export function getSttLanguageCodes(): string[] {
   if (process.env.ELEVENLABS_STT_ALL_LANGUAGES === 'true') {
-    return [...CARTESIA_LANGUAGE_CODES];
+    return [...ALL_STT_LANGUAGES];
   }
   const configured = process.env.ELEVENLABS_STT_LANGUAGES;
   const candidates = configured
-    ? configured.split(',').map((value) => value.trim().toLowerCase())
+    ? configured.split(',').map(normalizeSttLanguageCode)
     : [...DEFAULT_STT_LANGUAGES];
   const languages = candidates.filter((value) => STT_LANGUAGE_CODE_PATTERN.test(value));
   return [...new Set(languages.length ? languages : DEFAULT_STT_LANGUAGES)];
@@ -264,7 +332,10 @@ export function buildSttUrl(
   });
 
   for (const language of options.languages ?? getSttLanguageCodes()) {
-    if (STT_LANGUAGE_CODE_PATTERN.test(language)) params.append('secondary_languages', language);
+    const normalized = normalizeSttLanguageCode(language);
+    if (STT_LANGUAGE_CODE_PATTERN.test(normalized)) {
+      params.append('secondary_languages', normalized);
+    }
   }
   for (const keyterm of buildSttKeyterms(options.restaurantName, options.keyterms)) {
     params.append('keyterms', keyterm);
