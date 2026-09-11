@@ -117,6 +117,12 @@ describe('speakTtsStreamed — Telnyx RTP framing', () => {
 });
 
 describe('prosodie TTS', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setEnv('CARTESIA_API_KEY', ['test', 'key'].join('-'));
+    setEnv('CARTESIA_VOICE_ID', ['test', 'voice'].join('-'));
+  });
+
   it('normalise les heures courantes avant synthèse', () => {
     expect(cleanTextForTts('Rendez-vous à 19:30, ou 20h30.')).toBe(
       'Rendez-vous à 19 heures 30, ou 20 heures 30.',
@@ -129,22 +135,37 @@ describe('prosodie TTS', () => {
     );
   });
 
-  it('marque plus la transition après une question ou une exclamation', () => {
-    expect(getInterSentencePauseMs('Quel est votre nom ?')).toBe(140);
-    expect(getInterSentencePauseMs('Très bien.')).toBe(100);
+  it('laisse Cartesia piloter la pause selon la ponctuation', () => {
+    expect(getInterSentencePauseMs('Quel est votre nom ?')).toBe(0);
+    expect(getInterSentencePauseMs('Très bien.')).toBe(0);
+  });
+
+  it('synthétise plusieurs phrases dans un seul segment pour garder la prosodie', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(Buffer.alloc(TTS_FRAME_BYTES, 0x55), { status: 200 }));
+    vi.mocked(getTtsCached).mockResolvedValue(null);
+
+    await speakTtsStreamed(makeSession(), 'Très bien. Je vérifie votre créneau.');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(String(init?.body)).transcript).toBe(
+      'Très bien. Je vérifie votre créneau.',
+    );
+    fetchMock.mockRestore();
   });
 
   it('sends the detected language to Cartesia and isolates the TTS cache by language', async () => {
-    const originalFetch = globalThis.fetch;
     const response = new Response(Buffer.alloc(TTS_FRAME_BYTES, 0x55), { status: 200 });
-    globalThis.fetch = vi.fn().mockResolvedValue(response);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response);
     vi.mocked(getTtsCached).mockResolvedValue(null);
     const session = makeSession();
     session.voiceLanguageCode = 'en';
 
     await speakTtsStreamed(session, 'Your table is confirmed.');
 
-    const [request] = vi.mocked(globalThis.fetch).mock.calls;
+    const [request] = fetchMock.mock.calls;
     const body = JSON.parse(String(request?.[1]?.body));
     expect(body.model_id).toBe(CARTESIA_MODEL);
     expect(body.locale).toBe('en-US');
@@ -153,6 +174,6 @@ describe('prosodie TTS', () => {
     expect(String(vi.mocked(getTtsCached).mock.calls[0]?.[1])).toContain(
       `|${CARTESIA_MODEL}|en-US|`,
     );
-    globalThis.fetch = originalFetch;
+    fetchMock.mockRestore();
   });
 });

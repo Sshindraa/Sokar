@@ -310,6 +310,14 @@ Validation locale : 86 tests voix ciblés, typecheck API, build API, lint API (0
 
 ## 11. Ordre d’exécution recommandé pour l’agent suivant
 
+### Passe du 11 septembre 2026 — correctif prosodie/latence
+
+- le fallback HTTP synthétise une réponse complète dans une seule requête ; les pauses fixes inter-phrases de Sokar sont supprimées afin que Sonic 3.6 applique sa ponctuation contextuelle ;
+- le contexte WebSocket canary est ouvert pendant la génération LLM, avant le premier fragment, et accepte les deux formes de signal de fin Cartesia (`type=done` et `done=true`) ;
+- le timeout d'ouverture du contexte est limité à 1,5 seconde pour revenir rapidement au chemin HTTP en cas d'incident ;
+- le prébuffer Telnyx passe de deux trames à une trame de 100 ms, ce qui retire un silence fixe sans modifier le format G.711 ni le pacing réseau ;
+- la suite TTS/Context/audio passe 17/17, le lint ciblé et le typecheck API passent ; le double verrou canary reste inchangé.
+
 1. Partir de `origin/main` à `9ee05f7` ou plus récent dans un worktree propre.
 2. Lire ce plan, `docs/obsidian/Context.md`, les trois dernières entrées du Journal et `docs/architecture/voice.md`.
 3. Inspecter le prototype `/private/tmp/sokar-liveness-deploy` avec `git diff`, sans le déployer directement.
