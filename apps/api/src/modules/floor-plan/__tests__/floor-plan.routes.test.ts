@@ -15,7 +15,7 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
-import { FloorPlanService } from '../floor-plan.service';
+import { FloorPlanNotFoundError, FloorPlanService } from '../floor-plan.service';
 import { ReservationService } from '../../agentic-reservations/core/reservation.service';
 import { WaitingListService } from '../../agentic-reservations/core/waiting-list.service';
 import { CapacityAwareAvailabilityService } from '../availability-capacity-aware.service';
@@ -594,7 +594,7 @@ describe('floorPlanRoutes', () => {
       });
 
       expect(res.statusCode).toBe(200);
-      expect(getSpy).toHaveBeenCalledWith('fp-1');
+      expect(getSpy).toHaveBeenCalledWith('test-rest-1', 'fp-1');
     });
 
     it('PATCH /:floorPlanId retourne 200 et met à jour le floor plan', async () => {
@@ -611,7 +611,10 @@ describe('floorPlanRoutes', () => {
       });
 
       expect(res.statusCode).toBe(200);
-      expect(updateSpy).toHaveBeenCalledWith('fp-1', { name: 'Salle principale', isDefault: true });
+      expect(updateSpy).toHaveBeenCalledWith('test-rest-1', 'fp-1', {
+        name: 'Salle principale',
+        isDefault: true,
+      });
     });
 
     it('DELETE /:floorPlanId retourne 204', async () => {
@@ -625,7 +628,56 @@ describe('floorPlanRoutes', () => {
       });
 
       expect(res.statusCode).toBe(204);
-      expect(deleteSpy).toHaveBeenCalledWith('fp-1');
+      expect(deleteSpy).toHaveBeenCalledWith('test-rest-1', 'fp-1');
+    });
+
+    it('GET /:floorPlanId retourne 404 pour un floor plan d’un autre restaurant', async () => {
+      const app = await getApp();
+      vi.spyOn(FloorPlanService.prototype, 'getFloorPlanById').mockRejectedValue(
+        new FloorPlanNotFoundError('Floor plan introuvable'),
+      );
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/restaurants/test-rest-1/floor-plans/fp-other',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('PATCH /:floorPlanId vérifie le tenant avant toute mutation', async () => {
+      const app = await getApp();
+      const updateSpy = vi
+        .spyOn(FloorPlanService.prototype, 'updateFloorPlanById')
+        .mockRejectedValue(new FloorPlanNotFoundError('Floor plan introuvable'));
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/restaurants/test-rest-1/floor-plans/fp-other',
+        headers: { authorization: 'Bearer test' },
+        payload: { name: 'Ne doit pas changer' },
+      });
+
+      expect(res.statusCode).toBe(404);
+      expect(updateSpy).toHaveBeenCalledWith('test-rest-1', 'fp-other', {
+        name: 'Ne doit pas changer',
+      });
+    });
+
+    it('DELETE /:floorPlanId retourne 404 pour un floor plan d’un autre restaurant', async () => {
+      const app = await getApp();
+      vi.spyOn(FloorPlanService.prototype, 'deleteFloorPlan').mockRejectedValue(
+        new FloorPlanNotFoundError('Floor plan introuvable'),
+      );
+
+      const res = await app.inject({
+        method: 'DELETE',
+        url: '/restaurants/test-rest-1/floor-plans/fp-other',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(res.statusCode).toBe(404);
     });
   });
 

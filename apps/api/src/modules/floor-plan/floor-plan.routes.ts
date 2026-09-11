@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { db } from '../../shared/db/client';
 import { requireOrg } from '../../plugins/clerk';
-import { FloorPlanService, FloorPlanValidationError } from './floor-plan.service';
+import {
+  FloorPlanNotFoundError,
+  FloorPlanService,
+  FloorPlanValidationError,
+} from './floor-plan.service';
 import { TableAllocationService, TableAllocationError } from './table-allocation.service';
 import { CapacityAwareAvailabilityService } from './availability-capacity-aware.service';
 import { ServiceCopilotService } from './service-copilot.service';
@@ -241,7 +245,9 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
     const body = LegacyCreateFloorPlanSchema.parse(req.body);
     const floorPlan = await service.getOrCreateFloorPlan(restaurantId);
     if (body.name) {
-      const updated = await service.updateFloorPlanById(floorPlan.id, { name: body.name });
+      const updated = await service.updateFloorPlanById(restaurantId, floorPlan.id, {
+        name: body.name,
+      });
       return reply.status(200).send(updated);
     }
     return reply.status(201).send(floorPlan);
@@ -290,11 +296,15 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(403).send({ error: 'Accès refusé' });
       }
 
-      const floorPlan = await service.getFloorPlanById(floorPlanId);
-      if (floorPlan.restaurantId !== id) {
-        return reply.status(403).send({ error: 'Accès refusé' });
+      try {
+        const floorPlan = await service.getFloorPlanById(id, floorPlanId);
+        return reply.send(floorPlan);
+      } catch (err: unknown) {
+        if (err instanceof FloorPlanNotFoundError) {
+          return reply.status(404).send({ error: err.message });
+        }
+        throw err;
       }
-      return reply.send(floorPlan);
     },
   );
 
@@ -308,11 +318,15 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const body = UpdateFloorPlanSchema.parse(req.body);
-      const floorPlan = await service.updateFloorPlanById(floorPlanId, body);
-      if (floorPlan.restaurantId !== id) {
-        return reply.status(403).send({ error: 'Accès refusé' });
+      try {
+        const floorPlan = await service.updateFloorPlanById(id, floorPlanId, body);
+        return reply.send(floorPlan);
+      } catch (err: unknown) {
+        if (err instanceof FloorPlanNotFoundError) {
+          return reply.status(404).send({ error: err.message });
+        }
+        throw err;
       }
-      return reply.send(floorPlan);
     },
   );
 
@@ -325,8 +339,15 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(403).send({ error: 'Accès refusé' });
       }
 
-      await service.deleteFloorPlan(floorPlanId);
-      return reply.status(204).send();
+      try {
+        await service.deleteFloorPlan(id, floorPlanId);
+        return reply.status(204).send();
+      } catch (err: unknown) {
+        if (err instanceof FloorPlanNotFoundError) {
+          return reply.status(404).send({ error: err.message });
+        }
+        throw err;
+      }
     },
   );
 

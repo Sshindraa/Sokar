@@ -180,9 +180,12 @@ export class FloorPlanService {
     }));
   }
 
-  async getFloorPlanById(floorPlanId: string): Promise<FloorPlanWithSections> {
-    const floorPlan = await this.prisma.floorPlan.findUnique({
-      where: { id: floorPlanId },
+  async getFloorPlanById(
+    restaurantId: string,
+    floorPlanId: string,
+  ): Promise<FloorPlanWithSections> {
+    const floorPlan = await this.prisma.floorPlan.findFirst({
+      where: { id: floorPlanId, restaurantId },
       include: FLOOR_PLAN_INCLUDE,
     });
 
@@ -224,15 +227,18 @@ export class FloorPlanService {
   }
 
   async updateFloorPlanById(
+    restaurantId: string,
     floorPlanId: string,
     input: UpdateFloorPlanInput,
   ): Promise<FloorPlanWithSections> {
-    const existing = await this.prisma.floorPlan.findUnique({ where: { id: floorPlanId } });
-    if (!existing) {
-      throw new FloorPlanNotFoundError('Floor plan introuvable');
-    }
-
     const updated = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.floorPlan.findFirst({
+        where: { id: floorPlanId, restaurantId },
+      });
+      if (!existing) {
+        throw new FloorPlanNotFoundError('Floor plan introuvable');
+      }
+
       if (input.isDefault) {
         await tx.floorPlan.updateMany({
           where: { restaurantId: existing.restaurantId, isDefault: true, id: { not: floorPlanId } },
@@ -261,16 +267,18 @@ export class FloorPlanService {
     input: UpdateFloorPlanInput,
   ): Promise<FloorPlanWithSections> {
     const floorPlan = await this.getDefaultFloorPlan(restaurantId);
-    return this.updateFloorPlanById(floorPlan.id, input);
+    return this.updateFloorPlanById(restaurantId, floorPlan.id, input);
   }
 
-  async deleteFloorPlan(floorPlanId: string): Promise<void> {
-    const floorPlan = await this.prisma.floorPlan.findUnique({ where: { id: floorPlanId } });
-    if (!floorPlan) {
-      throw new FloorPlanNotFoundError('Floor plan introuvable');
-    }
-
+  async deleteFloorPlan(restaurantId: string, floorPlanId: string): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
+      const floorPlan = await tx.floorPlan.findFirst({
+        where: { id: floorPlanId, restaurantId },
+      });
+      if (!floorPlan) {
+        throw new FloorPlanNotFoundError('Floor plan introuvable');
+      }
+
       if (floorPlan.isDefault) {
         const replacement = await tx.floorPlan.findFirst({
           where: { restaurantId: floorPlan.restaurantId, id: { not: floorPlanId }, isActive: true },
