@@ -587,6 +587,15 @@ export function isLikelyIncompleteTranscript(transcript: string): boolean {
 }
 
 /**
+ * Les marqueurs de ponctuation isolés sont parfois émis par le VAD au début
+ * d'un appel. Ils ne peuvent pas constituer une prise de parole exploitable.
+ */
+export function isPunctuationOnlyTranscript(transcript: string): boolean {
+  const normalized = transcript.trim();
+  return Boolean(normalized) && !/[\p{L}\p{N}]/u.test(normalized);
+}
+
+/**
  * Détecte les répétitions qui proviennent souvent d'un écho acoustique ou
  * d'un bruit téléphonique. Les mots d'interruption (« non », « stop », ...)
  * restent autorisés afin de préserver le barge-in volontaire.
@@ -615,7 +624,10 @@ export function isLikelyRepeatedNoiseTranscript(transcript: string): boolean {
   );
 }
 
-function lowSignalTranscriptReason(transcript: string): 'incomplete' | 'repetition' | null {
+function lowSignalTranscriptReason(
+  transcript: string,
+): 'incomplete' | 'repetition' | 'punctuation' | null {
+  if (isPunctuationOnlyTranscript(transcript)) return 'punctuation';
   if (isLikelyIncompleteTranscript(transcript)) return 'incomplete';
   if (isLikelyRepeatedNoiseTranscript(transcript)) return 'repetition';
   return null;
