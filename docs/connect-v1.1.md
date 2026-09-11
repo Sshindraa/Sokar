@@ -370,7 +370,7 @@ model RestaurantExposureSettings {
   mcpEnabled              Boolean  @default(false) @map("mcp_enabled")
   openaiReserveEnabled    Boolean  @default(false) @map("openai_reserve_enabled")
   exposedCreneaux         Json     @default("[]") @map("exposed_creneaux")
-  maxPartySize            Int      @default(12) @map("max_party_size")
+  maxPartySize            Int      @default(8) @map("max_party_size")
   minLeadTimeMinutes      Int      @default(30) @map("min_lead_time_minutes")
   // NOUVEAU Sokar Connect (v1.1)
   connectPublished         Boolean  @default(false) @map("connect_published")

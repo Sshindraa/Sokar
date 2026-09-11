@@ -254,7 +254,7 @@ describe('agentic admin service', () => {
   describe('getExposureSettings', () => {
     it('retourne les défauts si pas de settings en DB', async () => {
       const s = await fakes.service.getExposureSettings('r-1');
-      expect(s.maxPartySize).toBe(12);
+      expect(s.maxPartySize).toBe(8);
       expect(s.quoteTtlSeconds).toBe(300);
       expect(s.holdTtlSeconds).toBe(420);
     });

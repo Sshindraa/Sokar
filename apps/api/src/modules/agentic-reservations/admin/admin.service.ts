@@ -16,7 +16,11 @@ import type { PrismaClient, Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { logger } from '../../../shared/logger/pino';
 import { hashApiKey } from '../../../shared/crypto/api-key-hash';
-import { PolicyValidationError, validateExposureSettings } from '../core/policies.service.js';
+import {
+  DEFAULT_MAX_PARTY_SIZE,
+  PolicyValidationError,
+  validateExposureSettings,
+} from '../core/policies.service.js';
 import { AuditLogService } from '../core/audit-log.service.js';
 import {
   type AgentClientCreateInput,
@@ -157,7 +161,7 @@ export class AgenticAdminService {
     if (!s) {
       // Retourne les défauts sans créer de ligne en DB
       return {
-        maxPartySize: 12,
+        maxPartySize: DEFAULT_MAX_PARTY_SIZE,
         minLeadTimeMinutes: 30,
         requireManualValidation: false,
         quoteTtlSeconds: 300,
@@ -191,7 +195,7 @@ export class AgenticAdminService {
     });
 
     const mergedSettings = {
-      maxPartySize: args.input.maxPartySize ?? before?.maxPartySize ?? 12,
+      maxPartySize: args.input.maxPartySize ?? before?.maxPartySize ?? DEFAULT_MAX_PARTY_SIZE,
       minLeadTimeMinutes: args.input.minLeadTimeMinutes ?? before?.minLeadTimeMinutes ?? 30,
       requireManualValidation:
         args.input.requireManualValidation ?? before?.requireManualValidation ?? false,
@@ -258,7 +262,7 @@ export class AgenticAdminService {
         where: { restaurantId: args.restaurantId },
         create: {
           restaurant: { connect: { id: args.restaurantId } },
-          maxPartySize: args.input.maxPartySize ?? 12,
+          maxPartySize: args.input.maxPartySize ?? DEFAULT_MAX_PARTY_SIZE,
           minLeadTimeMinutes: args.input.minLeadTimeMinutes ?? 30,
           requireManualValidation: args.input.requireManualValidation ?? false,
           quoteTtlSeconds: args.input.quoteTtlSeconds ?? 300,

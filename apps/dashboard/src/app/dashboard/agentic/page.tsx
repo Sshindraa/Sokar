@@ -84,7 +84,7 @@ export default function AgenticSettingsPage() {
   const [mcpClients, setMcpClients] = useState<McpClient[]>([]);
 
   // Form local
-  const [maxPartySize, setMaxPartySize] = useState(12);
+  const [maxPartySize, setMaxPartySize] = useState(8);
   const [minLeadTimeMinutes, setMinLeadTimeMinutes] = useState(30);
   const [quoteTtlSeconds, setQuoteTtlSeconds] = useState(300);
   const [holdTtlSeconds, setHoldTtlSeconds] = useState(420);

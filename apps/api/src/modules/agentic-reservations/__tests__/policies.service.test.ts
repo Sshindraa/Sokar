@@ -100,6 +100,7 @@ describe('policies.service', () => {
         notificationChannels: [],
         capacitySpecials: null,
       });
+      expect(DEFAULT_MAX_PARTY_SIZE).toBe(8);
       expect(snap.maxPartySize).toBe(DEFAULT_MAX_PARTY_SIZE);
       expect(snap.minLeadTimeMinutes).toBe(DEFAULT_MIN_LEAD_TIME_MINUTES);
       expect(snap.quoteTtlSeconds).toBe(DEFAULT_QUOTE_TTL_SECONDS);

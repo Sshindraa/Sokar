@@ -345,7 +345,7 @@ model RestaurantExposureSettings {
 
   exposedCreneaux         Json     @default("[]") @map("exposed_creneaux")
 
-  maxPartySize            Int      @default(12) @map("max_party_size")
+  maxPartySize            Int      @default(8) @map("max_party_size")
   minLeadTimeMinutes      Int      @default(30) @map("min_lead_time_minutes")
   requireManualValidation Boolean  @default(false) @map("require_manual_validation")
 

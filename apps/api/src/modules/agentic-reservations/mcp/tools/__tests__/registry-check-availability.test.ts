@@ -14,6 +14,7 @@ const makePrisma = () =>
           minLeadTimeMinutes: 0,
           exposedCreneaux: [],
         },
+        floorPlans: [{ tables: [{ capacity: 6 }] }],
       } as unknown as Awaited<ReturnType<PrismaClient['restaurant']['findFirst']>>),
     },
     reservation: { count: vi.fn() },
@@ -137,5 +138,32 @@ describe('McpToolRegistry.checkAvailability metrics', () => {
 
     expect(result).toMatchObject({ ok: false, code: 'INVALID_DATETIME' });
     expect(checkAvailability).not.toHaveBeenCalled();
+  });
+
+  it('refuse un groupe supérieur à la capacité physique avec la limite exacte', async () => {
+    const prisma = makePrisma();
+    const registry = new McpToolRegistry(prisma, makeRateLimiter());
+
+    const result = await registry.checkAvailability(
+      {
+        restaurantId: '550e8400-e29b-41d4-a716-446655440000',
+        partySize: 7,
+        slotStart: '2026-12-01T19:00:00Z',
+        slotEnd: '2026-12-01T21:00:00Z',
+      },
+      {
+        clientId: 'c1',
+        clientName: 'test',
+        restaurantId: null,
+        scopes: ['mcp:read'],
+        actor: 'test',
+      },
+    );
+
+    expect(result).toMatchObject({ ok: false, code: 'POLICY_VIOLATION' });
+    if (!result.ok) {
+      expect(result.error).toContain('maxPartySize 6');
+      expect(result.error).toContain('capacité maximale en ligne');
+    }
   });
 });

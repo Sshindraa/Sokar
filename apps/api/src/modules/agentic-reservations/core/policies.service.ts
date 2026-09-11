@@ -13,7 +13,8 @@ import { HOURS_PER_DAY, HOURS_TO_MINUTES, HOUR_SECONDS } from '../../../shared/c
 
 export const DEFAULT_QUOTE_TTL_SECONDS = 300; // 5 min
 export const DEFAULT_HOLD_TTL_SECONDS = 420; // 7 min
-export const DEFAULT_MAX_PARTY_SIZE = 12;
+/** Default online group size used when a restaurant has not configured one. */
+export const DEFAULT_MAX_PARTY_SIZE = 8;
 export const DEFAULT_MIN_LEAD_TIME_MINUTES = 30;
 
 /** Limite dure pour maxPartySize (validation des settings restaurant) */

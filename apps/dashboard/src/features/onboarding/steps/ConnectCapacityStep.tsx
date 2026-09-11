@@ -16,7 +16,7 @@ export function ConnectCapacityStep({ onComplete }: StepProps) {
   const specials = (exposure?.capacitySpecials as Record<string, any>) || {};
 
   const [totalCapacity, setTotalCapacity] = useState<number>(specials.totalCapacity || 40);
-  const [maxPartySize, setMaxPartySize] = useState<number>(exposure?.maxPartySize || 12);
+  const [maxPartySize, setMaxPartySize] = useState<number>(exposure?.maxPartySize || 8);
   const [serviceDuration, setServiceDuration] = useState<number>(specials.serviceDuration || 90);
   const [cancellationPolicy, setCancellationPolicy] = useState<string>(
     specials.cancellationPolicy || "Annulation gratuite jusqu'à 2 heures avant le service.",

@@ -36,7 +36,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'search_restaurants',
     title: 'Search Restaurants',
     description:
-      'Search restaurants available for a given party size, time, and city. slotStart and slotEnd accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, Europe/Paris is used. Returns matching restaurants with basic info.',
+      'Search restaurants available for a given party size, time, and city. slotStart and slotEnd accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, Europe/Paris is used. Returns matching restaurants with basic info and maxOnlinePartySize. If restaurants is empty, check capacityLimits before saying that a named restaurant does not exist: each entry gives the authoritative maxOnlinePartySize for online bookings. Never infer a maximum by trying several party sizes.',
     schema: SearchRestaurantsInputSchema,
     annotations: { readOnlyHint: true },
   },
@@ -44,7 +44,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'get_restaurant_details',
     title: 'Get Restaurant Details',
     description:
-      'Get details of a specific restaurant by ID, including name, address, cuisine, price range, and opening hours.',
+      'Get details of a specific restaurant by ID, including name, address, cuisine, price range, opening hours, and maxOnlinePartySize.',
     schema: GetRestaurantDetailsInputSchema,
     annotations: { readOnlyHint: true },
   },
@@ -52,7 +52,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     name: 'check_availability',
     title: 'Check Availability',
     description:
-      'Check if a specific restaurant has availability for a party size and time slot. slotStart and slotEnd accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, the restaurant timezone is used. Returns available time slots.',
+      'Check if a specific restaurant has availability for a party size and time slot. slotStart and slotEnd accept ISO 8601 with Z/offset, or a local ISO time such as 2026-09-10T20:00:00 with the optional IANA timezone field. Without an offset or timezone, the restaurant timezone is used. Returns availability; if the group exceeds the online capacity, the response states the exact maxOnlinePartySize instead of returning an ambiguous unavailable result.',
     schema: CheckAvailabilityInputSchema,
     annotations: { readOnlyHint: true },
   },

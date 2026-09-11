@@ -34,8 +34,45 @@ export type AvailabilityResult = {
   available: boolean;
   conflictingHoldId?: string;
   conflictingReservationId?: string;
-  reason?: 'hold_active' | 'reservation_confirmed' | 'unknown';
+  reason?: 'hold_active' | 'reservation_confirmed' | 'party_size_exceeds_capacity' | 'unknown';
+  /** Maximum party size that can be booked online for this restaurant. */
+  maxOnlinePartySize?: number;
 };
+
+export type CapacityLimitHint = {
+  restaurantId: string;
+  name: string;
+  slug: string | null;
+  maxOnlinePartySize: number;
+};
+
+type FloorPlanCapacitySnapshot = {
+  tables?: Array<{ capacity: number }>;
+};
+
+/**
+ * The online limit is the most restrictive of the restaurant policy and the
+ * largest active physical table. Keeping this calculation in one place avoids
+ * exposing a policy limit that the floor plan cannot actually fulfil.
+ */
+export function resolveEffectiveMaxPartySize(args: {
+  policyMaxPartySize?: number | null;
+  floorPlans?: FloorPlanCapacitySnapshot[] | null;
+}): number | null {
+  const policyMax =
+    typeof args.policyMaxPartySize === 'number' && args.policyMaxPartySize > 0
+      ? args.policyMaxPartySize
+      : null;
+  const tableCapacities = (args.floorPlans ?? [])
+    .flatMap((floorPlan) => floorPlan.tables ?? [])
+    .map((table) => table.capacity)
+    .filter((capacity) => Number.isFinite(capacity) && capacity > 0);
+  const physicalMax = tableCapacities.length > 0 ? Math.max(...tableCapacities) : null;
+
+  if (policyMax === null) return physicalMax;
+  if (physicalMax === null) return policyMax;
+  return Math.min(policyMax, physicalMax);
+}
 
 export class AvailabilityService {
   private readonly capacityAware: CapacityAwareAvailabilityService;
@@ -71,7 +108,6 @@ export class AvailabilityService {
         exposureSettings: {
           is: {
             mcpEnabled: true,
-            maxPartySize: { gte: args.partySize },
           },
         },
         ...(args.cuisineType && args.cuisineType.length > 0
@@ -121,6 +157,67 @@ export class AvailabilityService {
   }
 
   /**
+   * Explains why a requested group is too large without pretending the
+   * restaurant does not exist. This is intentionally separate from the
+   * availability search so the normal result contract stays unchanged.
+   */
+  async findCapacityLimits(args: {
+    city: string;
+    partySize: number;
+    cuisineType?: string[];
+    maxResults: number;
+  }): Promise<CapacityLimitHint[]> {
+    const candidates = await this.prisma.restaurant.findMany({
+      where: {
+        agenticOptIn: true,
+        exposureSettings: { is: { mcpEnabled: true } },
+        ...(args.cuisineType && args.cuisineType.length > 0
+          ? { cuisineType: { hasSome: args.cuisineType } }
+          : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        formattedAddress: true,
+        exposureSettings: { select: { maxPartySize: true } },
+        floorPlans: {
+          where: { isActive: true },
+          select: {
+            tables: {
+              where: { isActive: true },
+              select: { capacity: true },
+            },
+          },
+        },
+      },
+      take: SEARCH_CANDIDATES_MAX,
+    });
+
+    const lowerCity = args.city.toLowerCase();
+    return candidates
+      .filter((restaurant) => {
+        const address = restaurant.formattedAddress?.toLowerCase() ?? '';
+        return lowerCity.length === 0 || address.includes(lowerCity);
+      })
+      .map((restaurant) => {
+        const maxOnlinePartySize = resolveEffectiveMaxPartySize({
+          policyMaxPartySize: restaurant.exposureSettings?.maxPartySize,
+          floorPlans: restaurant.floorPlans,
+        });
+        if (maxOnlinePartySize === null || args.partySize <= maxOnlinePartySize) return null;
+        return {
+          restaurantId: restaurant.id,
+          name: restaurant.name,
+          slug: restaurant.slug,
+          maxOnlinePartySize,
+        } satisfies CapacityLimitHint;
+      })
+      .filter((hint): hint is CapacityLimitHint => hint !== null)
+      .slice(0, args.maxResults);
+  }
+
+  /**
    * Precise check : est-ce que le slot est libre pour ce resto + party size ?
    * Renvoie un objet AvailabilityResult avec la raison du conflit.
    *
@@ -129,10 +226,34 @@ export class AvailabilityService {
   async checkAvailability(query: AvailabilityQuery): Promise<AvailabilityResult> {
     const restaurant = await this.prisma.restaurant.findUnique({
       where: { id: query.restaurantId },
-      select: { timezone: true },
+      select: {
+        timezone: true,
+        exposureSettings: { select: { maxPartySize: true } },
+        floorPlans: {
+          where: { isActive: true },
+          select: {
+            tables: {
+              where: { isActive: true },
+              select: { capacity: true },
+            },
+          },
+        },
+      },
     });
     if (!restaurant) {
       return { available: false, reason: 'unknown' };
+    }
+
+    const maxOnlinePartySize = resolveEffectiveMaxPartySize({
+      policyMaxPartySize: restaurant.exposureSettings?.maxPartySize,
+      floorPlans: restaurant.floorPlans,
+    });
+    if (maxOnlinePartySize !== null && query.partySize > maxOnlinePartySize) {
+      return {
+        available: false,
+        reason: 'party_size_exceeds_capacity',
+        maxOnlinePartySize,
+      };
     }
 
     const timeZone = restaurant.timezone ?? 'Europe/Paris';
