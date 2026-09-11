@@ -214,6 +214,14 @@ function handleTelnyxMessage(
       const payload = msg.media?.payload;
       if (!payload) return;
 
+      // Le flux demandé à Telnyx est inbound_track. Cette garde évite qu'une
+      // future modification du stream ne renvoie l'audio TTS sortant à Scribe
+      // et ne crée des faux transcripts/interruptions par écho.
+      const track = msg.media?.track;
+      if (track && track !== 'inbound' && track !== 'inbound_track') {
+        return;
+      }
+
       const session = mgr.get(callId);
       if (!session || session.ended || session.ending) return session;
 

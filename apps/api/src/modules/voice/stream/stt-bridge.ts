@@ -93,9 +93,12 @@ function normalizeSttLanguageCode(value: string): string {
 }
 
 export const DEFAULT_STT_TURN_CONFIG: SttTurnConfig = {
-  vadSilenceThresholdSecs: 0.85,
+  // 120 ms séparait trop souvent une phrase sur une micro-pause naturelle.
+  // Une pause téléphonique de 220 ms reste réactive tout en laissant Scribe
+  // stabiliser « on sera quatre personnes » en un seul segment.
+  vadSilenceThresholdSecs: 0.95,
   minSpeechDurationMs: 80,
-  minSilenceDurationMs: 120,
+  minSilenceDurationMs: 220,
 };
 
 /**
@@ -578,6 +581,46 @@ function sameTranscript(left: string, right: string): boolean {
   return left.trim().toLocaleLowerCase('fr-FR') === right.trim().toLocaleLowerCase('fr-FR');
 }
 
+/** Un commit terminé par une ellipse est un fragment, pas un tour exploitable. */
+export function isLikelyIncompleteTranscript(transcript: string): boolean {
+  return /(?:\.\.\.|…)\s*$/u.test(transcript.trim());
+}
+
+/**
+ * Détecte les répétitions qui proviennent souvent d'un écho acoustique ou
+ * d'un bruit téléphonique. Les mots d'interruption (« non », « stop », ...)
+ * restent autorisés afin de préserver le barge-in volontaire.
+ */
+export function isLikelyRepeatedNoiseTranscript(transcript: string): boolean {
+  const words = transcript
+    .toLocaleLowerCase('fr-FR')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/u)
+    .filter(Boolean);
+  if (words.length < 3) return false;
+
+  const interruptionWords = new Set(['non', 'no', 'stop', 'attends', 'attendez', 'wait']);
+  const noiseWords = new Set(['ah', 'euh', 'heu', 'hum', 'hmm', 'oh', 'waouh', 'wow']);
+  const counts = new Map<string, number>();
+  for (const word of words) counts.set(word, (counts.get(word) ?? 0) + 1);
+  const [topWord, topCount] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0] ?? [];
+  return Boolean(
+    topWord &&
+    topCount >= 3 &&
+    topCount / words.length >= 0.6 &&
+    noiseWords.has(topWord) &&
+    !interruptionWords.has(topWord),
+  );
+}
+
+function lowSignalTranscriptReason(transcript: string): 'incomplete' | 'repetition' | null {
+  if (isLikelyIncompleteTranscript(transcript)) return 'incomplete';
+  if (isLikelyRepeatedNoiseTranscript(transcript)) return 'repetition';
+  return null;
+}
+
 /**
  * L'API peut envoyer un commit stable puis son événement horodaté. On attend
  * brièvement le second pour ne pas déclencher deux tours LLM pour une seule
@@ -648,6 +691,18 @@ function handleBargeInFromTranscript(
   transcript: string,
 ): void {
   if (session.state !== 'SPEAKING' || !transcript.trim()) return;
+  const lowSignalReason = lowSignalTranscriptReason(transcript);
+  if (lowSignalReason) {
+    logger.debug(
+      {
+        callId: session.callControlId,
+        reason: lowSignalReason,
+        transcriptLength: transcript.trim().length,
+      },
+      '[barge-in] Ignoring low-signal transcript',
+    );
+    return;
+  }
   logger.info(
     { callId: session.callControlId, transcript: redactPii(transcript.trim()) },
     '[barge-in] User spoke while assistant was speaking. Interrupting.',
@@ -660,6 +715,16 @@ function handleBargeInFromTranscript(
 function emitPartialTranscript(session: CallSession, transcript: string): void {
   const cleanTranscript = transcript.trim();
   if (!cleanTranscript) return;
+
+  const lowSignalReason = lowSignalTranscriptReason(cleanTranscript);
+  if (lowSignalReason) {
+    // Conserver le texte pour que le commit stable suivant puisse le remplacer,
+    // sans déclencher d'interruption ou de LLM spéculatif sur le fragment.
+    if (lowSignalReason === 'incomplete') {
+      session.turnTranscript = mergeSttTranscripts(session.turnTranscript, cleanTranscript);
+    }
+    return;
+  }
 
   const mgr = CallSessionManager.getInstance();
   handleBargeInFromTranscript(session, mgr, cleanTranscript);
@@ -697,6 +762,19 @@ function dispatchCommittedTranscript(
   const cleanTranscript = transcript.trim() || session.turnTranscript.trim();
   session.turnTranscript = '';
   if (!cleanTranscript) return;
+
+  const lowSignalReason = lowSignalTranscriptReason(cleanTranscript);
+  if (lowSignalReason) {
+    logger.info(
+      {
+        callId: session.callControlId,
+        reason: lowSignalReason,
+        transcriptLength: cleanTranscript.length,
+      },
+      '[stt] Ignoring low-signal committed transcript',
+    );
+    return;
+  }
 
   // Le partial est normalement le premier signal de barge-in, mais Scribe
   // peut engager un transcript sans partial observable sur une connexion

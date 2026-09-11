@@ -471,7 +471,10 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             ? (new Date(ended_at).getTime() - new Date(started_at).getTime()) / MS_TO_SECONDS
             : 0,
         ),
-        transcript: transcript ?? null,
+        // Le webhook Telnyx ne porte pas toujours la transcription Scribe.
+        // La session Media Stream l'a déjà persistée ; ne pas l'effacer avec
+        // un `null` arrivé plus tard lors du hangup.
+        ...(transcript?.trim() ? { transcript } : {}),
         outcome,
         sttProvider: stt_provider ?? 'elevenlabs-scribe-v2-realtime',
         llmProvider: llm_provider ?? getVoiceLlmProvider(),
@@ -486,7 +489,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             ? (new Date(ended_at).getTime() - new Date(started_at).getTime()) / MS_TO_SECONDS
             : 0,
         ),
-        transcript: transcript ?? null,
+        transcript: transcript?.trim() ? transcript : null,
         outcome,
         sttProvider: stt_provider ?? 'elevenlabs-scribe-v2-realtime',
         llmProvider: llm_provider ?? getVoiceLlmProvider(),

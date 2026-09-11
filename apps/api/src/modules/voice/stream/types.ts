@@ -201,6 +201,15 @@ export interface CallSession {
   sttLanguageCode?: string;
   /** Langue de dialogue active pour le LLM et le TTS. */
   voiceLanguageCode?: VoiceLanguageCode;
+  /**
+   * Candidat de changement de langue en attente d'un second segment fiable.
+   * Scribe peut attribuer une langue différente à un fragment bruité ; on
+   * ne change donc pas la langue de dialogue sur une seule détection fragile.
+   */
+  voiceLanguageCandidate?: {
+    code: VoiceLanguageCode;
+    count: number;
+  } | null;
   /** Indique si le premier paquet audio de la socket Scribe a déjà été envoyé. */
   sttFirstAudioChunkSent?: boolean;
   /** Profil EOT courant ; conservé même quand le WebSocket est reconnecté. */
