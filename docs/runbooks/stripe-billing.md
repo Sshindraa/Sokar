@@ -1,5 +1,11 @@
 # Runbook — Stripe Billing (abonnements Sokar)
 
+> **Statut : ACTIF — audité le 12 septembre 2026.**
+> Les prix actuellement affichés et configurés sont Essential 149 €/mois, Pro 249 €/mois et
+> Multi-site 249 €/mois + 99 €/site supplémentaire. Essential 199 € et Pro 299 € sont des prix
+> cibles : ne pas les annoncer comme actifs avant migration coordonnée de l'UI, de Stripe et des
+> entitlements. Voir [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
+
 ## Parcours
 
 1. Le visiteur choisit une formule dans `/pricing`.
@@ -10,16 +16,6 @@
 6. Le propriétaire peut appeler `POST /billing/portal-session` pour ouvrir le portail Stripe hébergé et gérer la formule, les factures ou la résiliation.
 7. Le dashboard appelle `GET /billing/status` pour afficher l'état de l'abonnement, la cadence, la prochaine échéance et une éventuelle période de grâce ou résiliation programmée. La réponse ne contient aucun identifiant Stripe.
 8. Les événements Stripe sont inscrits dans `StripeWebhookEvent` avant mutation ; un doublon traité est ignoré, un événement ancien est ignoré et un traitement concurrent provoque un retry Stripe.
-
-Les événements `invoice.payment_failed`, `invoice.paid` et
-`invoice.payment_succeeded` synchronisent aussi le statut d'abonnement. Un
-échec passe le compte en `past_due` et conserve ses droits pendant la période
-de grâce configurée dans Stripe ; un paiement ultérieur repasse le compte en
-`active`. Une annulation demandée depuis le portail conserve
-`cancel_at_period_end` et le plan jusqu'à la fin de la période : seul
-`customer.subscription.deleted` rétrograde le compte vers Essential. Aucun
-remboursement automatique n'est déclenché pour une annulation en milieu de
-période.
 
 Les événements `invoice.payment_failed`, `invoice.paid` et
 `invoice.payment_succeeded` synchronisent aussi le statut d'abonnement. Un

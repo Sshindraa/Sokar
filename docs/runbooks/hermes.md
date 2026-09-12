@@ -1,5 +1,9 @@
 # Runbook — Hermes / Model Notes
 
-- Live model/provider state is not documented here. Check `/model` or `~/.hermes/config.yaml` when it matters.
-- Current preferred direction: use a strong model briefly for architecture/context optimization, then run daily work on MiniMax M3 via OpenCode Go when configured.
-- Old IDE-orchestration/provider notes are historical only; do not resurrect them unless the user asks.
+> **Statut : ACTIF — audité le 12 septembre 2026.**
+
+- L'état live du modèle/provider n'est volontairement pas figé ici. Vérifier `/model` ou
+  `~/.hermes/config.yaml` au moment où il compte.
+- Noter toute décision durable dans `docs/obsidian/Context.md`; une sélection temporaire de modèle
+  ne constitue pas une décision d'architecture Sokar.
+- Les anciennes notes d'orchestration IDE/provider sont historiques.

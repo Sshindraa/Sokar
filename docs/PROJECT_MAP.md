@@ -2,6 +2,10 @@
 
 Carte d'orientation haut niveau. Ce n'est pas une source de vérité absolue. Pour le détail, voir `docs/runbooks/` et `docs/architecture/`.
 
+> **Statut : ACTIF — vérifié le 12 septembre 2026.**
+> Le statut de chaque document produit et opérationnel est centralisé dans
+> [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
+
 ## Ce qu'est Sokar
 
 Sokar est un SaaS français de gestion de réservations et d'appels pour restaurants, avec une IA vocale.
@@ -164,6 +168,11 @@ Définitions de queues : `apps/api/src/shared/queue/queues.ts`. Workers : `apps/
 - `smsManager` / `smsClient` — envoi SMS.
 - `googlePlacesSync` — sync Google Places.
 - `alertEvaluation` — évaluation d'alertes Prometheus (toutes les 5 min).
+- `systemHealth` — contrôles périodiques de santé des dépendances.
+- `idempotencyPurge` — purge des enregistrements d'idempotence expirés.
+- `holdCleanup` — nettoyage des holds et devis expirés.
+- `waitingListCleanup` / `waitingListPromote` — expiration et promotion de liste d'attente.
+- `giftCardReminder` — rappels liés aux cartes cadeaux.
 
 ## Tests
 
@@ -183,7 +192,8 @@ pnpm test:visual # régression visuelle
 
 - GitHub Actions : `.github/workflows/`.
 - Staging : auto-deploy sur `main` + smoke tests.
-- Production : confirmation explicite requise. Voir `docs/runbooks/deployment.md` et `docs/runbooks/rollback.md`.
+- Production : promotion automatique après CI et staging verts, avec snapshot, health checks et
+  rollback obligatoires. Voir `docs/runbooks/deployment.md` et `docs/runbooks/rollback.md`.
 
 ## Points sensibles / contraintes
 

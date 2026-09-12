@@ -1,11 +1,16 @@
 # Runbook — Environment
 
+> **Statut : ACTIF — audité le 12 septembre 2026.** Les versions locales sont indicatives ; lancer
+> `node --version`, `pnpm --version` et `pnpm node:check` avant un diagnostic d'environnement. Voir
+> [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
+
 ## Node version
 
 - Repo constraint: `>=20.0.0 <23.0.0` (root `package.json` engines).
 - `.nvmrc` = `22`.
 - `.npmrc` has `engine-strict=true` — `pnpm` refuses to run under Node 26+.
-- Local Mac (post-migration 2026-07-01): Node 22.23.1 is the default at `~/.local/bin/node` (symlink to `~/.hermes/node/bin/node`). No PATH prefix needed for `pnpm`.
+- Local Mac vérifié le 12 septembre 2026 : Node 22.23.2 est le défaut à `~/.local/bin/node`
+  (symlink vers `~/.hermes/node/bin/node`). Aucun préfixe PATH n'est nécessaire pour `pnpm`.
 - pnpm 10.33.3 installed via `npm i -g pnpm@10.33.3`, symlinked at `~/.local/bin/pnpm`.
 
 ## Convention

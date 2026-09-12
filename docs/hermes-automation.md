@@ -1,5 +1,11 @@
 # Hermes automation for Sokar
 
+> **Status: PARTIALLY VERIFIED — repository layer checked on 12 September 2026.**
+> Husky hooks, review scripts and `verify:*` commands exist in the repository. Webhook
+> subscriptions, the Cloudflare tunnel and cron jobs live outside the repository and must be
+> checked with the verification commands below before claiming they are active. See
+> [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
+
 This repo is wired for three automation layers: local quality gates, event-driven Hermes webhooks, and weekly dogfood QA.
 
 ## 1. Local quality gates

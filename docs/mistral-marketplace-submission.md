@@ -1,6 +1,11 @@
 # Dossier de soumission — Connector Mistral Marketplace (Sokar)
 
-> **Ne pas commiter le client secret.** Le secret est affiche dans la console du script.
+> **Statut : DRAFT EXTERNE / NON VÉRIFIÉ — audité le 12 septembre 2026.**
+> Le serveur MCP/OAuth existe, mais ce dossier n'est pas une preuve de soumission ni
+> d'acceptation Marketplace. Créer ou revalider le client, les redirect URIs, l'icône, le contact
+> et les exigences Mistral juste avant la soumission. Ne jamais réutiliser aveuglément un
+> `client_id` de staging. **Ne pas committer le client secret.** Voir
+> [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
 
 ## 1. Informations generales
 

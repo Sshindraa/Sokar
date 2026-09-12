@@ -77,7 +77,11 @@ async function main() {
   const templateLines = [
     '# Dossier de soumission — Connector Mistral Marketplace (Sokar)',
     '',
-    '> **Ne pas commiter le client secret.** Le secret est affiche dans la console du script.',
+    '> **Statut : DRAFT EXTERNE / NON VÉRIFIÉ.** Le serveur MCP/OAuth existe, mais ce dossier',
+    "> n'est pas une preuve de soumission ni d'acceptation Marketplace. Revalider le client, les",
+    "> redirect URIs, l'icône, le contact et les exigences Mistral juste avant la soumission.",
+    '> **Ne pas committer le client secret.** Voir',
+    '> [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).',
     '',
     '## 1. Informations generales',
     '',

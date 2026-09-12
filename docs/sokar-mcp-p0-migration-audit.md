@@ -1,5 +1,10 @@
 # Sokar Agentic Reservations — Audit Prisma exact + Migration P0
 
+> **Statut : HISTORIQUE / CLÔTURÉ — vérifié le 12 septembre 2026.**
+> Ce document a précédé l'implémentation. Les migrations P0 et la couche agentic ont depuis été
+> livrées. Les injonctions « pas de code avant GO » et les listes de champs à créer ne sont pas un
+> backlog actif. Voir [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md) pour l'état courant.
+
 > **Statut** : audit réel du schéma + proposition de migration P0 additive.
 > **Pas de code MCP tant que cette migration n'est pas appliquée + testée.**
 > **Décisions cadrées par Hamza le 2026-06-20.**
@@ -368,7 +373,7 @@ enum HoldType {
 
 ---
 
-## 5. Ordre d'exécution S1 (rappel du cadrage)
+## 5. Ordre d'exécution S1 (historique, désormais exécuté)
 
 1. ✅ Audit schéma réel + inventaire exact (ce document)
 2. ⏳ Attente **GO explicite Hamza** sur ce cadrage
@@ -398,9 +403,9 @@ tant que S1 n'est pas validé.
 
 ---
 
-## 7. Décision finale
+## 7. Décision finale d'origine
 
-J'attends ton GO sur :
+Le GO portait sur :
 
 1. **Inventaire corrigé à 27 changements P0** (au lieu de 13)
 2. **Stratégie enum : ajouter `ReservationState`, garder `ReservationStatus` legacy**
@@ -408,5 +413,5 @@ J'attends ton GO sur :
 4. **4 migrations additives** (pas une seule grosse migration)
 5. **STOP obligatoire après S1**, revue avant S2
 
-Si tu valides les 5 points, je crée les migrations et le code state
-machine + policies, puis je m'arrête pour ta revue.
+**Clôture au 12 septembre 2026** : ces décisions ont été validées et la couche MCP correspondante
+a été livrée. Cette liste n'est plus une demande d'approbation ni un plan de travail actif.

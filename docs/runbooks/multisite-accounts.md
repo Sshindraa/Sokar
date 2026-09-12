@@ -1,5 +1,10 @@
 # Runbook — backfill des comptes multi-site
 
+> **Statut : PARTIEL — audité le 12 septembre 2026.** Modèle compte/site, backfill, sélecteur,
+> provisioning et quotas Stripe sont présents. La preuve d'isolation avec deux sessions Clerk et
+> un membre limité à un site reste ouverte. Voir
+> [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
+
 Ce runbook prépare les restaurants historiques à la relation compte → établissement après application de la migration `20260907140000_add_restaurant_accounts`.
 
 Le script ne modifie rien par défaut. Il utilise l'identifiant historique du restaurant comme `clerkOrganizationId`, conserve l'ID du restaurant et marque ce restaurant comme établissement principal.

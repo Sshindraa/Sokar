@@ -1,5 +1,9 @@
 # Runbook — Testing
 
+> **Statut : ACTIF — audité le 12 septembre 2026.** La matrice locale/CI/staging correspond au
+> dépôt. Les validations qui contactent un fournisseur ou modifient une donnée métier doivent
+> conserver une preuve datée. Voir [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
+
 ## Unit / integration
 
 ```zsh

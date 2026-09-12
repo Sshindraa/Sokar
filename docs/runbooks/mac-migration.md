@@ -1,5 +1,9 @@
 # Runbook — Mac Migration
 
+> **Statut : HISTORIQUE / PONCTUEL — audité le 12 septembre 2026.** Ce fichier n'est pas une tâche
+> active. Il ne s'utilise qu'avec un bundle daté réellement présent sous
+> `docs/archive/operations/`. Voir [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
+
 One-off procedure to clone the Sokar environment from one Mac to another (Hermes config + profiles, SSH keys, `.env` Sokar, `.zshrc` aliases). Not for daily use.
 
 ## Source Mac

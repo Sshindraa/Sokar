@@ -1,13 +1,18 @@
 # Spec — Gestion de salle (Floor Plan) dans Sokar
 
-> Statut : spec technique MVP (P1). Pas de code à produire dans ce ticket.  
+> **Statut : LIVRÉ / DOCUMENT DE RÉFÉRENCE — vérifié le 12 septembre 2026.**
+> Les modèles salle/section/table, l'allocation atomique, la disponibilité capacitaire, le
+> dashboard, le planning, la liste d'attente et Service Copilot existent. Le texte au futur décrit
+> la conception d'origine et ne forme plus un backlog. Restent la preuve terrain multi-services et
+> les raffinements UX/multi-plan éventuellement priorisés. Voir
+> [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
 > But : passer d’un moteur de réservation capacité-naïf (1 résa = 1 slot pris) à un moteur capacité-aware basé sur des tables physiques, sans casser Voice, Connect, Widget, MCP ni les réservations existantes.
 
 ---
 
 ## 1. Contexte et objectifs
 
-### État actuel
+### État au moment de la rédaction (historique)
 
 - `Reservation` stocke `startsAt`, `endsAt`, `partySize`, `status`, `state`.
 - Deux moteurs de disponibilité coexistent :
@@ -723,7 +728,7 @@ Réassignation manuelle → PATCH /reservations/:id (tableId)
 ### Docs
 
 - `docs/floor-plan-spec.md` (ce document).
-- Mise à jour de `docs/positioning-vs-zenchef.md` si pertinent (pas nécessaire ici).
+- Le positionnement produit est désormais consolidé dans `docs/roadmap-produit-crm-marketing-199-299.md`.
 
 ---
 

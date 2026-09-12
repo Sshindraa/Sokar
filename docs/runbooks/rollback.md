@@ -1,5 +1,10 @@
 # Runbook — Rollback
 
+> **Statut : ACTIF — audité le 12 septembre 2026.** Le rollback applicatif et l'option de
+> restauration DB sont implémentés ; une restauration vierge a été exercée. Le RTO complet d'un
+> rollback production avec reprise métier reste à mesurer. Voir
+> [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
+
 ## Staging
 
 ```zsh

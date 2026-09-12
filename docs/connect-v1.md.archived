@@ -1,5 +1,8 @@
 # Sokar Connect — Agent-Ready Pages (Spec d'implémentation v1)
 
+> **Statut : HISTORIQUE.** Cette version est remplacée par `connect-v1.1.md`. Ne pas créer de
+> tickets depuis ce fichier ; il est conservé uniquement pour retracer les décisions initiales.
+
 > Spec d'implémentation stricte, pas un brief stratégique. Anti-hype,
 > audit-first, transports séparés du métier.
 

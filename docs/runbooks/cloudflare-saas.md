@@ -1,5 +1,10 @@
 # Runbook — Cloudflare for SaaS (Premium Subdomain P2)
 
+> **Statut : RUNBOOK ACTIF — audité le 12 septembre 2026.** Le provisioning et le mode dégradé
+> staging sont implémentés. Vérifier les tarifs, quotas et options dans la documentation Cloudflare
+> au moment d'une décision commerciale. Voir
+> [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
+
 ## Objectif
 
 Permet aux restaurants d'utiliser leur propre domaine (ex: `reserve.chezmario.fr`)
@@ -44,6 +49,7 @@ bash scripts/ops/setup-cloudflare-saas.sh --env prod --token "cf-token-xxx" --zo
 ```
 
 Le script :
+
 - Backup le `.env` (timestamp automatique)
 - Ajoute ou met à jour les 3 vars `CLOUDFLARE_*` (idempotent — ne redémarre pas si rien à changer)
 - Redémarre `sokar-api` via PM2
@@ -156,7 +162,7 @@ En cas de problème, on peut désactiver Cloudflare for SaaS :
 Cloudflare for SaaS : **$0.10 par custom hostname par mois** (au-delà du free tier de 100).
 Voir https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/pricing/
 
-## Subdomain gratuit *.sokar.tech (zero config)
+## Subdomain gratuit \*.sokar.tech (zero config)
 
 Chaque restaurant qui active Sokar Connect obtient automatiquement un subdomain gratuit
 `chezmario.sokar.tech` (basé sur le slug). Zero configuration, instantané.
@@ -168,14 +174,18 @@ le flux custom domain, évitant tout lookup DB sur les sous-domaines Sokar.
 ### Configuration one-time (Cloudflare)
 
 #### 1. Wildcard DNS record
+
 Dans le dashboard Cloudflare → sokar.tech → DNS :
+
 - Type : A
 - Name : `*`
 - IPv4 address : [IP du VPS]
 - Proxy status : Proxied (orange cloud)
 
 #### 2. Certificat Origin CA wildcard
+
 Dans le dashboard Cloudflare → sokar.tech → SSL/TLS → Origin Server → Create Certificate :
+
 - Private key type : RSA (2048)
 - Hostnames : `*.sokar.tech, sokar.tech`
 - Certificate Validity : 15 years
@@ -185,6 +195,7 @@ Dans le dashboard Cloudflare → sokar.tech → SSL/TLS → Origin Server → Cr
 - Reload nginx : `sudo systemctl reload nginx`
 
 #### 3. Vérification
+
 ```zsh
 curl -s -o /dev/null -w '%{http_code}' -H 'Host: chez-sokar-demo.sokar.tech' http://127.0.0.1/
 # Doit retourner 200

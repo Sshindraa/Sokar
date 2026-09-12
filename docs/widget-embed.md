@@ -1,5 +1,9 @@
 # Widget embarqué Sokar
 
+> **Statut : ACTIF / LIVRÉ — vérifié le 12 septembre 2026.**
+> `/embed.js`, l'iframe, la personnalisation, le redimensionnement et le contrôle de l'origine des
+> messages sont en place. Voir [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
+
 Le widget de réservation Sokar peut être intégré sur n'importe quel site web
 via un simple snippet JavaScript. Il s'affiche dans un iframe auto-redimensionné
 et reprend le flow hold/confirm/idempotency déjà utilisé sur Sokar Connect.
@@ -39,9 +43,10 @@ local ou sur un autre environnement, ajoutez `data-host` :
 
 ## Fonctionnement
 
-`/embed.js` injecte un iframe pointant vers `/widget/:slug?embedded=1`. Le widget
-envoie sa hauteur au parent via `postMessage` (type `sokar-widget-resize`) ; le
-script ajuste alors la hauteur de l'iframe automatiquement. Le middleware Connect
+`/embed.js` injecte un iframe pointant vers `/widget/:slug?embedded=1`. Le script transmet
+l'origine du parent au widget ; le widget envoie sa hauteur via `postMessage` (type
+`sokar-widget-resize`) et le script n'accepte que les messages de l'origine attendue et de l'iframe
+qu'il a créée. Le middleware Connect
 autorise explicitement le framing de `/widget/*` depuis n'importe quel domaine via
 la directive CSP `frame-ancestors *`.
 

@@ -1,9 +1,13 @@
 # Plan de bataille Sokar — offres 199/299 € et trajectoire CRM/marketing
 
 Date de référence : 12 septembre 2026
-Statut : plan directeur à exécuter par lots validables
+Statut : plan directeur et blueprint technique à exécuter par lots validables
 Horizon indicatif : 6 à 9 mois pour une suite solide destinée aux indépendants ; 12 à 18 mois pour approcher la largeur fonctionnelle de SevenRooms
 Hypothèse de capacité : un développeur principal à temps plein, Hamza disponible pour les décisions produit, les pilotes et les validations terrain
+
+> Les prix 199/299 € sont une cible, pas les prix actuellement affichés ou facturés. Le statut
+> consolidé de la documentation se trouve dans
+> [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
 
 ## 1. Décision produit
 
@@ -954,3 +958,1443 @@ Le premier jalon démontrable est : **un appel réel crée une réservation corr
 - [CRM SevenRooms](https://sevenrooms.com/platform/crm/)
 - [Réservations et liste d'attente SevenRooms](https://sevenrooms.com/platform/reservations-waitlist/)
 - [Tarifs Zenchef](https://www.zenchef.com/fr/formules)
+
+---
+
+# Partie II — Blueprint technique d'implémentation
+
+Cette partie traduit la roadmap en changements de code concrets. Les modèles Prisma sont des contrats cibles à valider dans des ADR avant migration. Ils utilisent des ajouts compatibles avec le schéma actuel ; aucun champ existant n'est supprimé pendant les phases 0 à 4.
+
+## 25. Architecture cible dans le monorepo
+
+### 25.1 Modules API à créer
+
+```text
+apps/api/src/modules/
+├── entitlements/
+│   ├── entitlement.constants.ts
+│   ├── entitlement.service.ts
+│   ├── entitlement.routes.ts
+│   ├── entitlement.types.ts
+│   └── __tests__/
+├── usage/
+│   ├── usage-recorder.service.ts
+│   ├── usage-rollup.service.ts
+│   ├── usage-cost.service.ts
+│   ├── usage.routes.ts
+│   ├── internal-margin.routes.ts
+│   ├── workers/usage-rollup.worker.ts
+│   └── __tests__/
+├── crm/
+│   ├── customer-profile.service.ts
+│   ├── customer-identity.service.ts
+│   ├── customer-merge.service.ts
+│   ├── customer-timeline.service.ts
+│   ├── customer-preference.service.ts
+│   ├── customer-tag.service.ts
+│   ├── customer-metrics.service.ts
+│   ├── crm.schema.ts
+│   ├── crm.routes.ts
+│   ├── workers/customer-projection.worker.ts
+│   └── __tests__/
+├── segments/
+│   ├── segment-ast.schema.ts
+│   ├── segment-compiler.service.ts
+│   ├── segment-preview.service.ts
+│   ├── segment.routes.ts
+│   └── __tests__/
+├── marketing/
+│   ├── campaign.service.ts
+│   ├── audience.service.ts
+│   ├── template-renderer.service.ts
+│   ├── marketing-permission.service.ts
+│   ├── frequency-cap.service.ts
+│   ├── attribution.service.ts
+│   ├── marketing.schema.ts
+│   ├── marketing.routes.ts
+│   ├── workers/campaign-orchestrator.worker.ts
+│   ├── workers/marketing-send.worker.ts
+│   ├── workers/marketing-reconcile.worker.ts
+│   └── __tests__/
+├── reservation-payments/
+│   ├── payment-policy.service.ts
+│   ├── reservation-payment.service.ts
+│   ├── stripe-connect.service.ts
+│   ├── reservation-payment.routes.ts
+│   ├── reservation-payment-webhook.routes.ts
+│   ├── workers/payment-reconciliation.worker.ts
+│   └── __tests__/
+├── pos/
+│   ├── pos-connector.ts
+│   ├── pos-connection.service.ts
+│   ├── pos-sync.service.ts
+│   ├── reservation-check-matcher.service.ts
+│   ├── adapters/<provider>/
+│   ├── pos.routes.ts
+│   ├── workers/pos-sync.worker.ts
+│   └── __tests__/
+└── reputation/
+    ├── feedback.service.ts
+    ├── recovery-task.service.ts
+    ├── reputation.routes.ts
+    ├── workers/feedback-request.worker.ts
+    └── __tests__/
+```
+
+### 25.2 Infrastructure partagée à créer
+
+```text
+apps/api/src/shared/
+├── outbox/
+│   ├── outbox.service.ts
+│   ├── outbox-dispatcher.worker.ts
+│   ├── outbox.schemas.ts
+│   └── __tests__/
+├── authorization/
+│   ├── capabilities.ts
+│   ├── require-capability.ts
+│   └── __tests__/
+└── providers/
+    ├── email-provider.ts
+    ├── sms-provider.ts
+    └── provider-result.ts
+```
+
+Le code marketing ne doit pas appeler directement Telnyx ou Resend. Il utilise une interface fournisseur retournant un résultat normalisé `accepted`, `refused` ou `unknown`, puis un worker de rapprochement traite les réponses ambiguës. Le mécanisme existant de notification idempotente sert de référence, mais les campagnes doivent conserver leur état durable dans Postgres plutôt que seulement dans Redis.
+
+### 25.3 Pages dashboard cibles
+
+```text
+apps/dashboard/src/app/dashboard/
+├── usage/page.tsx
+├── crm/page.tsx
+├── crm/[customerId]/page.tsx
+├── crm/duplicates/page.tsx
+├── marketing/page.tsx
+├── marketing/segments/page.tsx
+├── marketing/segments/[segmentId]/page.tsx
+├── marketing/campaigns/new/page.tsx
+├── marketing/campaigns/[campaignId]/page.tsx
+├── marketing/automations/page.tsx
+├── payments/page.tsx
+├── reputation/page.tsx
+└── settings/integrations/pos/page.tsx
+```
+
+Chaque page doit avoir les états loading, empty, error et data, fonctionner à largeur iPad et utiliser les composants `@/components/ui/*` et les tokens Tailwind existants.
+
+## 26. Flux d'événements fiable : transactional outbox
+
+### 26.1 Problème
+
+Un appel peut créer une réservation dans Postgres puis échouer avant l'ajout du job BullMQ. À l'inverse, un job peut être rejoué. Pour le CRM, l'usage, le marketing, le POS et le paiement, un simple `db.write()` suivi de `queue.add()` n'offre pas de garantie atomique.
+
+### 26.2 Modèle proposé
+
+```prisma
+enum OutboxStatus {
+  PENDING
+  DISPATCHING
+  DISPATCHED
+  FAILED
+}
+
+model OutboxEvent {
+  id             String       @id @default(uuid())
+  topic          String
+  aggregateType  String       @map("aggregate_type")
+  aggregateId    String       @map("aggregate_id")
+  eventType      String       @map("event_type")
+  schemaVersion  Int          @default(1) @map("schema_version")
+  payload        Json
+  idempotencyKey String       @unique @map("idempotency_key")
+  status         OutboxStatus @default(PENDING)
+  attempts       Int          @default(0)
+  availableAt    DateTime     @default(now()) @map("available_at")
+  lockedAt       DateTime?    @map("locked_at")
+  dispatchedAt   DateTime?    @map("dispatched_at")
+  lastErrorCode  String?      @map("last_error_code")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@index([status, availableAt, createdAt])
+  @@index([aggregateType, aggregateId, createdAt])
+  @@map("outbox_events")
+}
+```
+
+### 26.3 Contrat d'émission
+
+Toute mutation source et son événement outbox sont écrits dans la même transaction Prisma :
+
+```ts
+await db.$transaction(async (tx) => {
+  const reservation = await tx.reservation.update({
+    /* ... */
+  });
+  await OutboxService.enqueue(tx, {
+    topic: 'crm-projection',
+    aggregateType: 'reservation',
+    aggregateId: reservation.id,
+    eventType: 'reservation.honored',
+    schemaVersion: 1,
+    idempotencyKey: `reservation.honored:${reservation.id}:${reservation.updatedAt.toISOString()}`,
+    payload: { reservationId: reservation.id, restaurantId: reservation.restaurantId },
+  });
+});
+```
+
+Le payload ne contient pas de téléphone, email, nom ni texte libre. Le consommateur recharge les données autorisées depuis Postgres avec `restaurantId`.
+
+### 26.4 Dispatcher
+
+Le dispatcher :
+
+1. sélectionne au plus 100 événements `PENDING` avec `FOR UPDATE SKIP LOCKED` ;
+2. prend un lease de 5 minutes ;
+3. ajoute un job BullMQ avec `jobId = outbox_<event.id>` ;
+4. marque `DISPATCHED` après acceptation par Redis ;
+5. rend à nouveau disponible un lease expiré ;
+6. place en `FAILED` après un nombre borné d'essais et crée une alerte ;
+7. conserve l'événement au moins 30 jours avant purge.
+
+Le consommateur utilise lui aussi une clé métier unique. La garantie visée est **at-least-once + traitement idempotent**, pas exactly-once.
+
+## 27. Entitlements et feature flags
+
+### 27.1 Deux systèmes séparés
+
+- **Entitlement** : droit contractuel lié au plan. Une fonction Pro ne doit jamais être ouverte à Essential uniquement parce qu'un flag de déploiement est actif.
+- **Feature flag ConfigCat** : contrôle de rollout, cohorte pilote et kill switch. Un client disposant du droit peut rester désactivé pendant un canary.
+
+La décision finale suit :
+
+```ts
+allowed =
+  entitlementService.has(restaurant, capability) &&
+  featureFlagService.isEnabled(capability, restaurant);
+```
+
+### 27.2 Contrat TypeScript proposé
+
+```ts
+export const CAPABILITIES = [
+  'voice.basic',
+  'voice.returning_customer',
+  'reservations.core',
+  'floor_plan.live',
+  'crm.profile',
+  'crm.profile.write',
+  'crm.advanced',
+  'crm.merge',
+  'marketing.segments',
+  'marketing.campaigns',
+  'marketing.automations',
+  'marketing.attribution',
+  'reservation.card_guarantee',
+  'integrations.pos',
+  'group.crm',
+] as const;
+
+export type Capability = (typeof CAPABILITIES)[number];
+
+export interface PlanEntitlements {
+  capabilities: ReadonlySet<Capability>;
+  includedVoiceSeconds: number;
+  includedSmsSegments: number;
+  retentionDays: number;
+  supportTier: 'standard' | 'priority';
+}
+```
+
+Les plans par défaut restent versionnés dans `packages/config`. Une table additive `RestaurantEntitlementOverride` gère seulement les contrats particuliers, avec auteur, motif et expiration.
+
+### 27.3 Enforcement
+
+- Vérification serveur au début de chaque route et chaque worker.
+- Les jobs stockent le plan observé, mais le worker relit le droit courant avant un effet externe.
+- Un downgrade bloque les nouvelles campagnes et conserve la lecture de l'historique.
+- Une campagne planifiée par un client devenu inéligible passe en `PAUSED` avec `pauseReason=ENTITLEMENT_MISSING`.
+- Les réponses API utilisent `403 FEATURE_NOT_INCLUDED` avec `capability` et plan requis, sans détails Stripe.
+
+## 28. Modèle technique de mesure des usages
+
+### 28.1 Schéma proposé
+
+```prisma
+enum UsageCategory {
+  TELEPHONY_SECONDS
+  STT_SECONDS
+  TTS_CHARACTERS
+  LLM_INPUT_TOKENS
+  LLM_OUTPUT_TOKENS
+  SMS_SEGMENTS
+  WHATSAPP_MESSAGES
+  EMAIL_MESSAGES
+  RECORDING_BYTE_DAYS
+}
+
+model UsageEvent {
+  id             String        @id @default(uuid())
+  restaurantId   String        @map("restaurant_id")
+  accountId      String?       @map("account_id")
+  category       UsageCategory
+  provider       String
+  quantity       Decimal       @db.Decimal(18, 6)
+  unit           String
+  estimatedCost  Decimal       @map("estimated_cost") @db.Decimal(18, 6)
+  currency       String        @default("EUR")
+  sourceType     String        @map("source_type")
+  sourceId       String        @map("source_id")
+  sourceEventKey String        @unique @map("source_event_key")
+  occurredAt     DateTime      @map("occurred_at")
+  metadata       Json          @default("{}")
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, occurredAt])
+  @@index([restaurantId, category, occurredAt])
+  @@index([accountId, occurredAt])
+  @@map("usage_events")
+}
+
+model UsageMonthlyRollup {
+  restaurantId  String        @map("restaurant_id")
+  monthKey      String        @map("month_key")
+  category      UsageCategory
+  quantity      Decimal       @db.Decimal(18, 6)
+  estimatedCost Decimal       @map("estimated_cost") @db.Decimal(18, 6)
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  @@id([restaurantId, monthKey, category])
+  @@index([monthKey, category])
+  @@map("usage_monthly_rollups")
+}
+```
+
+### 28.2 Source des événements
+
+| Source         | Moment d'écriture                           | Clé unique                          |
+| -------------- | ------------------------------------------- | ----------------------------------- |
+| Telnyx appel   | webhook final ou réconciliation             | `telnyx:call:<callControlId>:final` |
+| ElevenLabs STT | clôture de session                          | `elevenlabs:stt:<callId>:final`     |
+| Cartesia TTS   | réponse fournisseur agrégée                 | `cartesia:tts:<callId>:<turnId>`    |
+| LLM            | réponse de chaque tour                      | `<provider>:llm:<callId>:<turnId>`  |
+| SMS            | acceptation fournisseur, quantité segmentée | `telnyx:sms:<providerMessageId>`    |
+| Email          | acceptation fournisseur                     | `resend:email:<providerMessageId>`  |
+
+Si la facture fournisseur n'expose pas le coût immédiatement, `estimatedCost` est calculé avec une table tarifaire versionnée. Un job mensuel rapproche estimation et facture ; il ne modifie pas les événements bruts, mais écrit un ajustement distinct.
+
+### 28.3 Endpoints
+
+| Méthode | Route                       | Capacité      | Réponse                              |
+| ------- | --------------------------- | ------------- | ------------------------------------ |
+| GET     | `/usage/current`            | tout plan     | consommation, inclus, reste, période |
+| GET     | `/usage/history?from=&to=`  | tout plan     | agrégats mensuels                    |
+| GET     | `/internal/margins?month=`  | admin interne | MRR, coûts et marge par site         |
+| POST    | `/internal/usage/reconcile` | admin interne | déclenche un rapprochement borné     |
+
+Les coûts internes ne sont jamais retournés par `/usage/*`.
+
+## 29. Modèle CRM détaillé
+
+### 29.1 Extensions compatibles de `Customer`
+
+Ajouter d'abord des champs optionnels :
+
+```prisma
+model Customer {
+  // Champs existants conservés.
+  emailNormalized  String?   @map("email_normalized")
+  birthMonth       Int?      @map("birth_month")
+  birthDay         Int?      @map("birth_day")
+  preferredLocale  String?   @map("preferred_locale")
+  mergedIntoId     String?   @map("merged_into_id")
+  archivedAt       DateTime? @map("archived_at")
+
+  identities       CustomerIdentity[]
+  timelineEvents   CustomerTimelineEvent[]
+  preferences      CustomerPreference[]
+  tagAssignments   CustomerTagAssignment[]
+  metrics          CustomerMetricSnapshot?
+
+  @@index([restaurantId, emailNormalized])
+  @@index([restaurantId, archivedAt])
+}
+```
+
+Le champ `phone` et la contrainte `(restaurantId, phone)` restent en place pendant la transition. Le service actuel `CustomerService.lookupOrCreate()` est adapté pour normaliser le téléphone avant lookup, écrire `CustomerIdentity` en dual-write et conserver la clé cache actuelle jusqu'au basculement.
+
+### 29.2 Identités
+
+```prisma
+enum CustomerIdentityType {
+  PHONE
+  EMAIL
+  POS_CUSTOMER_ID
+}
+
+model CustomerIdentity {
+  id              String               @id @default(uuid())
+  restaurantId    String               @map("restaurant_id")
+  customerId      String               @map("customer_id")
+  type            CustomerIdentityType
+  value           String
+  normalizedValue String               @map("normalized_value")
+  verifiedAt      DateTime?            @map("verified_at")
+  source          String
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+
+  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, type, normalizedValue])
+  @@index([customerId, type])
+  @@map("customer_identities")
+}
+```
+
+L'unicité empêche deux profils actifs de posséder la même identité dans un établissement. Une collision pendant import crée un candidat de fusion au lieu d'écraser le profil existant.
+
+### 29.3 Chronologie durable
+
+```prisma
+model CustomerTimelineEvent {
+  id             String   @id @default(uuid())
+  restaurantId   String   @map("restaurant_id")
+  customerId     String   @map("customer_id")
+  eventType      String   @map("event_type")
+  sourceType     String   @map("source_type")
+  sourceId       String?  @map("source_id")
+  dedupeKey      String   @unique @map("dedupe_key")
+  occurredAt     DateTime @map("occurred_at")
+  summaryCode    String   @map("summary_code")
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, occurredAt(sort: Desc)])
+  @@index([customerId, occurredAt(sort: Desc)])
+  @@index([eventType, occurredAt])
+  @@map("customer_timeline_events")
+}
+```
+
+`summaryCode` est traduit côté dashboard. Le texte libre n'est pas recopié dans `metadata`. Une note de gérant reste une entité séparée avec auteur et permissions.
+
+### 29.4 Préférences et tags
+
+```prisma
+enum CustomerDataSource {
+  MANUAL
+  RESERVATION
+  VOICE_SUGGESTION
+  POS
+  IMPORT
+}
+
+model CustomerPreference {
+  id           String             @id @default(uuid())
+  customerId   String             @map("customer_id")
+  restaurantId String             @map("restaurant_id")
+  key          String
+  value        Json
+  source       CustomerDataSource
+  confidence   Decimal?           @db.Decimal(4, 3)
+  confirmedAt  DateTime?          @map("confirmed_at")
+  expiresAt    DateTime?          @map("expires_at")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, key])
+  @@index([restaurantId, key])
+  @@map("customer_preferences")
+}
+
+model CustomerTag {
+  id           String   @id @default(uuid())
+  restaurantId String   @map("restaurant_id")
+  key          String
+  label        String
+  colorToken   String?  @map("color_token")
+  isSystem     Boolean  @default(false) @map("is_system")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  assignments CustomerTagAssignment[]
+
+  @@unique([restaurantId, key])
+  @@map("customer_tags")
+}
+
+model CustomerTagAssignment {
+  customerId String             @map("customer_id")
+  tagId      String             @map("tag_id")
+  source     CustomerDataSource
+  ruleId     String?            @map("rule_id")
+  ruleVersion Int?              @map("rule_version")
+  assignedAt DateTime           @default(now()) @map("assigned_at")
+
+  customer Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tag      CustomerTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([customerId, tagId])
+  @@index([tagId, assignedAt])
+  @@map("customer_tag_assignments")
+}
+```
+
+### 29.5 Projection métrique
+
+```prisma
+model CustomerMetricSnapshot {
+  customerId             String   @id @map("customer_id")
+  restaurantId           String   @map("restaurant_id")
+  lastHonoredAt          DateTime? @map("last_honored_at")
+  nextReservationAt      DateTime? @map("next_reservation_at")
+  honored30d             Int      @default(0) @map("honored_30d")
+  honored90d             Int      @default(0) @map("honored_90d")
+  honored365d            Int      @default(0) @map("honored_365d")
+  cancelled365d          Int      @default(0) @map("cancelled_365d")
+  noShow365d             Int      @default(0) @map("no_show_365d")
+  covers365d             Int      @default(0) @map("covers_365d")
+  estimatedSpend365d     Decimal  @default(0) @map("estimated_spend_365d") @db.Decimal(12, 2)
+  actualSpend365d        Decimal? @map("actual_spend_365d") @db.Decimal(12, 2)
+  actualLifetimeSpend    Decimal? @map("actual_lifetime_spend") @db.Decimal(12, 2)
+  projectionVersion      Int      @map("projection_version")
+  calculatedAt           DateTime @map("calculated_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, lastHonoredAt])
+  @@index([restaurantId, honored365d])
+  @@index([restaurantId, actualLifetimeSpend])
+  @@map("customer_metric_snapshots")
+}
+```
+
+La projection est mise à jour à chaque événement pertinent, avec un recalcul nocturne complet des profils modifiés depuis 48 heures. Une commande administrative bornée permet de reconstruire un restaurant entier.
+
+## 30. Fusion de profils : transaction et invariants
+
+### 30.1 Endpoint
+
+```http
+POST /crm/customers/:targetId/merge-preview
+Content-Type: application/json
+
+{ "sourceCustomerIds": ["uuid"] }
+```
+
+Le preview retourne conflits d'identité, préférences, consentements, réservations, cartes cadeaux et note libre. La mutation utilise ensuite une clé d'idempotence :
+
+```http
+POST /crm/customers/:targetId/merge
+Idempotency-Key: <uuid>
+
+{
+  "sourceCustomerIds": ["uuid"],
+  "preferenceResolution": { "preferred_section": "target" }
+}
+```
+
+### 30.2 Transaction
+
+Dans une transaction `Serializable` avec retry borné :
+
+1. verrouiller cible et sources dans un ordre stable ;
+2. vérifier même `restaurantId`, profils actifs et capability ;
+3. déplacer réservations, cartes cadeaux et événements ;
+4. consolider identités et préférences selon la résolution du preview ;
+5. conserver le consentement le plus restrictif par canal ;
+6. recalculer tags et métriques ;
+7. marquer les sources `mergedIntoId` et `archivedAt` ;
+8. écrire `CustomerMergeAudit` et un événement outbox ;
+9. invalider les clés cache après commit.
+
+Une source fusionnée ne peut plus recevoir de mutation normale. Les URLs anciennes redirigent vers la cible. Aucun profil n'est supprimé physiquement par cette opération.
+
+## 31. Moteur de segments
+
+### 31.1 AST acceptée
+
+Le dashboard produit un JSON validé par Zod :
+
+```json
+{
+  "version": 1,
+  "operator": "AND",
+  "conditions": [
+    { "field": "lastHonoredAt", "op": "BEFORE_DAYS_AGO", "value": 60 },
+    { "field": "honored365d", "op": "GTE", "value": 2 },
+    { "field": "nextReservationAt", "op": "IS_NULL" }
+  ]
+}
+```
+
+Champs autorisés v1 : métriques de `CustomerMetricSnapshot`, anniversaire, VIP, tags et préférences non sensibles. Profondeur maximale : deux groupes. Nombre maximal de conditions : 20. Valeurs bornées et enums fermés.
+
+### 31.2 Compilation SQL
+
+`SegmentCompilerService` traduit l'AST vers `Prisma.CustomerWhereInput` lorsque possible. Les calculs relatifs complexes utilisent du SQL paramétré dans un repository dédié. Il est interdit d'insérer un nom de colonne ou un opérateur venant directement du client.
+
+Chaque champ possède un descripteur serveur :
+
+```ts
+interface SegmentFieldDescriptor<T> {
+  key: string;
+  type: 'number' | 'date' | 'boolean' | 'enum' | 'tag';
+  allowedOperators: readonly SegmentOperator[];
+  compile(condition: ValidatedCondition, now: Date): Prisma.CustomerWhereInput;
+}
+```
+
+Le même compilateur sert au preview et au snapshot de campagne. Les exclusions de consentement et de fréquence sont ajoutées côté serveur après compilation ; elles ne peuvent pas être supprimées par l'utilisateur.
+
+### 31.3 Schéma
+
+```prisma
+model CustomerSegment {
+  id                String   @id @default(uuid())
+  restaurantId      String   @map("restaurant_id")
+  name              String
+  definition        Json
+  definitionVersion Int      @default(1) @map("definition_version")
+  isSystem          Boolean  @default(false) @map("is_system")
+  lastCount         Int?     @map("last_count")
+  lastEvaluatedAt   DateTime? @map("last_evaluated_at")
+  createdByHash     String   @map("created_by_hash")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([restaurantId, updatedAt(sort: Desc)])
+  @@map("customer_segments")
+}
+```
+
+## 32. Consentement marketing par canal
+
+Le booléen actuel `CustomerConsent.marketingOptIn` reste lisible pendant la migration, mais ne suffit pas pour email/SMS séparés.
+
+### 32.1 Projection courante et journal
+
+```prisma
+enum MarketingChannel {
+  SMS
+  EMAIL
+  WHATSAPP
+}
+
+enum MarketingPermissionStatus {
+  OPTED_IN
+  OPTED_OUT
+  UNKNOWN
+}
+
+model MarketingPermission {
+  customerId    String                    @map("customer_id")
+  restaurantId  String                    @map("restaurant_id")
+  channel       MarketingChannel
+  status        MarketingPermissionStatus
+  source        String
+  policyVersion String                    @map("policy_version")
+  changedAt     DateTime                  @map("changed_at")
+  proofEventId  String                    @map("proof_event_id")
+
+  @@id([customerId, channel])
+  @@index([restaurantId, channel, status])
+  @@map("marketing_permissions")
+}
+
+model MarketingConsentEvent {
+  id            String                    @id @default(uuid())
+  customerId    String                    @map("customer_id")
+  restaurantId  String                    @map("restaurant_id")
+  channel       MarketingChannel
+  status        MarketingPermissionStatus
+  source        String
+  context       String
+  policyVersion String                    @map("policy_version")
+  actorHash     String?                   @map("actor_hash")
+  occurredAt    DateTime                  @default(now()) @map("occurred_at")
+
+  @@index([customerId, channel, occurredAt(sort: Desc)])
+  @@index([restaurantId, occurredAt])
+  @@map("marketing_consent_events")
+}
+```
+
+La projection `MarketingPermission` et l'événement sont écrits dans la même transaction. `proofEventId` pointe vers le dernier événement appliqué. Tout opt-out gagne sur un opt-in concurrent ou plus ancien.
+
+### 32.2 Compatibilité
+
+1. backfill `marketingOptIn=true` vers le canal dont la preuve explicite existe ;
+2. absence de canal prouvé → `UNKNOWN`, jamais `OPTED_IN` par défaut ;
+3. dual-write pendant un cycle ;
+4. shadow comparison ;
+5. bascule des campagnes sur `MarketingPermission` ;
+6. conservation du champ historique jusqu'à une migration ultérieure explicitement approuvée.
+
+## 33. Campagnes et automatisations
+
+### 33.1 Modèles principaux
+
+```prisma
+enum MarketingCampaignStatus {
+  DRAFT
+  READY
+  SCHEDULED
+  SENDING
+  SENT
+  PAUSED
+  CANCELLED
+  FAILED
+}
+
+enum MarketingMessageStatus {
+  PENDING
+  CLAIMED
+  ACCEPTED
+  DELIVERED
+  FAILED
+  UNKNOWN
+  SUPPRESSED
+}
+
+model MarketingCampaign {
+  id                 String                  @id @default(uuid())
+  restaurantId       String                  @map("restaurant_id")
+  segmentId          String?                 @map("segment_id")
+  name               String
+  objective          String
+  channel            MarketingChannel
+  status             MarketingCampaignStatus @default(DRAFT)
+  templateVersion    Int                     @map("template_version")
+  subjectTemplate    String?                 @map("subject_template")
+  bodyTemplate       String                  @map("body_template")
+  scheduledAt        DateTime?               @map("scheduled_at")
+  startedAt          DateTime?               @map("started_at")
+  completedAt        DateTime?               @map("completed_at")
+  pauseReason        String?                 @map("pause_reason")
+  attributionDays    Int                     @default(14) @map("attribution_days")
+  createdByHash      String                  @map("created_by_hash")
+  createdAt          DateTime                @default(now()) @map("created_at")
+  updatedAt          DateTime                @updatedAt @map("updated_at")
+
+  audience CampaignAudienceMember[]
+  messages MarketingCampaignMessage[]
+
+  @@index([restaurantId, status, scheduledAt])
+  @@map("marketing_campaigns")
+}
+
+model CampaignAudienceMember {
+  campaignId      String   @map("campaign_id")
+  customerId      String   @map("customer_id")
+  inclusionReason Json     @map("inclusion_reason")
+  permissionEventId String @map("permission_event_id")
+  status          String
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  campaign MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, customerId])
+  @@index([customerId, createdAt])
+  @@map("campaign_audience_members")
+}
+
+model MarketingCampaignMessage {
+  id                String                 @id @default(uuid())
+  campaignId        String                 @map("campaign_id")
+  customerId        String                 @map("customer_id")
+  channel           MarketingChannel
+  status            MarketingMessageStatus @default(PENDING)
+  renderedBodyHash  String                 @map("rendered_body_hash")
+  provider          String?
+  providerMessageId String?                @unique @map("provider_message_id")
+  idempotencyKey    String                 @unique @map("idempotency_key")
+  attemptedAt       DateTime?              @map("attempted_at")
+  deliveredAt       DateTime?              @map("delivered_at")
+  failureCode       String?                @map("failure_code")
+  cost              Decimal?               @db.Decimal(12, 6)
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+
+  campaign MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, customerId, channel])
+  @@index([campaignId, status])
+  @@index([customerId, createdAt])
+  @@map("marketing_campaign_messages")
+}
+```
+
+Le corps rendu peut être stocké chiffré avec une rétention courte si le support doit pouvoir le consulter. À défaut, stocker uniquement son hash et les variables non sensibles utilisées.
+
+### 33.2 Automatisations
+
+```prisma
+model MarketingAutomation {
+  id                   String   @id @default(uuid())
+  restaurantId         String   @map("restaurant_id")
+  type                 String
+  config               Json
+  version              Int      @default(1)
+  enabled              Boolean  @default(false)
+  lastEvaluatedAt      DateTime? @map("last_evaluated_at")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@unique([restaurantId, type])
+  @@index([enabled, type])
+  @@map("marketing_automations")
+}
+```
+
+Configurations Zod distinctes par `type`. Aucun JSON arbitraire n'atteint directement une requête ou un template.
+
+### 33.3 Exécution d'une campagne
+
+```mermaid
+sequenceDiagram
+  participant UI as Dashboard
+  participant API as Marketing API
+  participant DB as PostgreSQL
+  participant O as Outbox Dispatcher
+  participant Q as BullMQ
+  participant W as Marketing Worker
+  participant P as SMS/Email Provider
+
+  UI->>API: POST /marketing/campaigns/:id/schedule
+  API->>DB: transaction: status=SCHEDULED + audience snapshot + outbox
+  O->>DB: claim outbox event
+  O->>Q: jobId=campaign_start_<id>
+  W->>DB: reload campaign + entitlement
+  W->>DB: recheck permission + frequency for each member
+  W->>DB: claim unique message row
+  W->>P: send with provider idempotency key
+  P-->>W: accepted/refused/unknown
+  W->>DB: persist result + usage + audit
+  P-->>API: delivery webhook
+  API->>DB: idempotent delivery update
+```
+
+### 33.4 Job contracts
+
+```ts
+type CampaignStartJob = {
+  kind: 'campaign.start';
+  campaignId: string;
+  outboxEventId: string;
+};
+
+type MarketingSendJob = {
+  kind: 'marketing.send';
+  campaignId: string;
+  messageId: string;
+};
+
+type MarketingReconcileJob = {
+  kind: 'marketing.reconcile';
+  messageId: string;
+  provider: 'telnyx' | 'resend';
+  providerMessageId?: string;
+};
+```
+
+Job IDs :
+
+- `campaign_start_<campaignId>_<version>` ;
+- `marketing_send_<messageId>` ;
+- `marketing_reconcile_<messageId>_<attempt>`.
+
+La ligne `MarketingCampaignMessage.idempotencyKey` constitue l'autorité durable. Redis évite le travail concurrent, mais sa perte ne permet pas un second envoi.
+
+## 34. Attribution et conversion
+
+### 34.1 Modèle
+
+```prisma
+enum CampaignConversionType {
+  RESERVATION_CREATED
+  RESERVATION_HONORED
+  REVENUE_ESTIMATED
+  REVENUE_CAPTURED
+  RESERVATION_CANCELLED
+}
+
+model CampaignTouch {
+  id             String   @id @default(uuid())
+  campaignId     String   @map("campaign_id")
+  customerId     String   @map("customer_id")
+  tokenHash      String   @unique @map("token_hash")
+  firstOpenedAt  DateTime? @map("first_opened_at")
+  expiresAt      DateTime @map("expires_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([customerId, createdAt])
+  @@map("campaign_touches")
+}
+
+model CampaignConversion {
+  id             String                 @id @default(uuid())
+  campaignId     String                 @map("campaign_id")
+  customerId     String                 @map("customer_id")
+  reservationId  String?                @map("reservation_id")
+  posCheckId     String?                @map("pos_check_id")
+  type           CampaignConversionType
+  amount         Decimal?               @db.Decimal(12, 2)
+  currency       String                 @default("EUR")
+  attribution    String
+  dedupeKey      String                 @unique @map("dedupe_key")
+  occurredAt     DateTime               @map("occurred_at")
+  createdAt      DateTime               @default(now()) @map("created_at")
+
+  @@index([campaignId, type, occurredAt])
+  @@index([reservationId])
+  @@map("campaign_conversions")
+}
+```
+
+### 34.2 Règle v1
+
+- last eligible campaign touch avant création de réservation ;
+- même client et même restaurant ;
+- fenêtre par campagne, 14 jours par défaut ;
+- source directe sans campagne conserve l'attribution précédente uniquement si le token a été utilisé ;
+- une annulation écrit une conversion compensatrice, sans supprimer l'événement initial ;
+- `HONORED` produit une conversion visite ;
+- `REVENUE_CAPTURED` exige un PaymentIntent encaissé ou un ticket POS rapproché.
+
+La requête de rapport somme les événements par type ; elle ne mute pas les anciennes conversions.
+
+## 35. API Fastify proposée
+
+Toutes les routes dashboard utilisent `requireOrg()` puis une capability. Le `restaurantId` vient exclusivement du contexte serveur ; il n'est jamais accepté dans query/body pour déterminer le tenant.
+
+### 35.1 CRM
+
+| Méthode | Route                              | Capability          | Notes                                         |
+| ------- | ---------------------------------- | ------------------- | --------------------------------------------- |
+| GET     | `/crm/customers`                   | `crm.profile`       | curseur, recherche normalisée, filtres bornés |
+| GET     | `/crm/customers/:id`               | `crm.profile`       | profil, métriques et chronologie paginée      |
+| PATCH   | `/crm/customers/:id`               | `crm.profile.write` | Zod, audit, invalidation cache                |
+| GET     | `/crm/customers/:id/timeline`      | `crm.profile`       | `cursor`, `limit<=100`                        |
+| POST    | `/crm/customers/:id/tags`          | `crm.advanced`      | assignation manuelle idempotente              |
+| DELETE  | `/crm/customers/:id/tags/:tagId`   | `crm.advanced`      | retire seulement le tag manuel                |
+| POST    | `/crm/customers/:id/merge-preview` | `crm.merge`         | lecture sans mutation                         |
+| POST    | `/crm/customers/:id/merge`         | `crm.merge`         | `Idempotency-Key` obligatoire                 |
+| GET     | `/crm/duplicates`                  | `crm.merge`         | candidats avec score explicable               |
+
+### 35.2 Segments
+
+| Méthode | Route                         | Notes                                          |
+| ------- | ----------------------------- | ---------------------------------------------- |
+| POST    | `/marketing/segments/preview` | valide AST, retourne count + échantillon borné |
+| POST    | `/marketing/segments`         | crée définition versionnée                     |
+| GET     | `/marketing/segments`         | liste, count, dernière évaluation              |
+| GET     | `/marketing/segments/:id`     | définition et métadonnées                      |
+| PATCH   | `/marketing/segments/:id`     | incrémente `definitionVersion`                 |
+| DELETE  | `/marketing/segments/:id`     | refus si campagne planifiée dépendante         |
+
+### 35.3 Campagnes
+
+| Méthode | Route                               | Transition                                     |
+| ------- | ----------------------------------- | ---------------------------------------------- |
+| POST    | `/marketing/campaigns`              | crée `DRAFT`                                   |
+| PATCH   | `/marketing/campaigns/:id`          | modifie seulement `DRAFT`/`READY`              |
+| POST    | `/marketing/campaigns/:id/preview`  | rendu + audience + coût estimé                 |
+| POST    | `/marketing/campaigns/:id/test`     | envoi au gérant, quota test séparé             |
+| POST    | `/marketing/campaigns/:id/schedule` | `READY → SCHEDULED`                            |
+| POST    | `/marketing/campaigns/:id/pause`    | `SCHEDULED/SENDING → PAUSED`                   |
+| POST    | `/marketing/campaigns/:id/cancel`   | état terminal, messages non réclamés supprimés |
+| GET     | `/marketing/campaigns/:id/report`   | agrégats et conversions                        |
+| GET     | `/marketing/suppressions`           | lecture des opt-out/bounces                    |
+| POST    | `/marketing/unsubscribe/:token`     | route publique signée et limitée               |
+
+### 35.4 Erreurs stables
+
+```json
+{
+  "error": {
+    "code": "MARKETING_PERMISSION_REQUIRED",
+    "message": "Ce client ne peut pas recevoir ce message.",
+    "requestId": "..."
+  }
+}
+```
+
+Codes minimum : `FEATURE_NOT_INCLUDED`, `INVALID_SEGMENT`, `CAMPAIGN_NOT_EDITABLE`, `MARKETING_PERMISSION_REQUIRED`, `FREQUENCY_CAP_REACHED`, `IDEMPOTENCY_CONFLICT`, `PROVIDER_OUTCOME_UNKNOWN`, `CUSTOMER_MERGE_CONFLICT`, `POS_CONNECTION_UNHEALTHY`, `PAYMENT_REQUIRED`.
+
+## 36. Protection bancaire : architecture technique
+
+### 36.1 Schéma
+
+```prisma
+enum ReservationPaymentType {
+  CARD_GUARANTEE
+  DEPOSIT
+  PREPAYMENT
+}
+
+enum ReservationPaymentStatus {
+  REQUIRES_PAYMENT_METHOD
+  REQUIRES_ACTION
+  AUTHORIZED
+  CAPTURED
+  PARTIALLY_REFUNDED
+  REFUNDED
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+model ReservationPaymentPolicy {
+  id                 String   @id @default(uuid())
+  restaurantId       String   @map("restaurant_id")
+  version            Int
+  type               ReservationPaymentType
+  amountMode         String   @map("amount_mode")
+  amount             Decimal  @db.Decimal(10, 2)
+  minPartySize       Int?     @map("min_party_size")
+  cancellationHours  Int      @map("cancellation_hours")
+  rules              Json
+  activeFrom         DateTime @map("active_from")
+  activeUntil        DateTime? @map("active_until")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@unique([restaurantId, version])
+  @@index([restaurantId, activeFrom, activeUntil])
+  @@map("reservation_payment_policies")
+}
+
+model ReservationPayment {
+  id                    String                   @id @default(uuid())
+  restaurantId          String                   @map("restaurant_id")
+  reservationId         String                   @map("reservation_id")
+  policyId              String                   @map("policy_id")
+  status                ReservationPaymentStatus
+  amount                Decimal                  @db.Decimal(10, 2)
+  currency              String                   @default("EUR")
+  stripeAccountId       String                   @map("stripe_account_id")
+  stripeSetupIntentId   String?                  @unique @map("stripe_setup_intent_id")
+  stripePaymentIntentId String?                  @unique @map("stripe_payment_intent_id")
+  idempotencyKey        String                   @unique @map("idempotency_key")
+  policySnapshot        Json                     @map("policy_snapshot")
+  expiresAt             DateTime?                @map("expires_at")
+  createdAt             DateTime                 @default(now()) @map("created_at")
+  updatedAt             DateTime                 @updatedAt @map("updated_at")
+
+  @@index([restaurantId, status, createdAt])
+  @@index([reservationId])
+  @@map("reservation_payments")
+}
+```
+
+### 36.2 Invariant principal
+
+Une réservation soumise à dépôt/prépaiement reste `PENDING` et sa capacité est protégée par un hold expirant. Elle ne passe `CONFIRMED` qu'après webhook Stripe signé et traité. Le retour navigateur ne confirme jamais le paiement.
+
+### 36.3 Webhooks
+
+Réutiliser le registre `StripeWebhookEvent` pour idempotence, mais séparer les handlers Billing et Reservation Payments. Vérifier `account` Connect, devise, montant, metadata `restaurantId/reservationId/paymentId` et transition autorisée avant toute écriture.
+
+## 37. Intégration POS : architecture technique
+
+### 37.1 Schéma minimal
+
+```prisma
+enum PosConnectionStatus {
+  PENDING
+  ACTIVE
+  DEGRADED
+  REAUTH_REQUIRED
+  DISCONNECTED
+}
+
+model PosConnection {
+  id                   String              @id @default(uuid())
+  restaurantId         String              @map("restaurant_id")
+  provider             String
+  externalLocationId   String              @map("external_location_id")
+  credentialReference  String              @map("credential_reference")
+  status               PosConnectionStatus @default(PENDING)
+  cursor               String?
+  lastSuccessAt        DateTime?           @map("last_success_at")
+  lastAttemptAt        DateTime?           @map("last_attempt_at")
+  lastErrorCode        String?             @map("last_error_code")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+
+  @@unique([restaurantId, provider])
+  @@index([status, lastSuccessAt])
+  @@map("pos_connections")
+}
+
+model PosCheck {
+  id                  String   @id @default(uuid())
+  restaurantId        String   @map("restaurant_id")
+  connectionId        String   @map("connection_id")
+  externalId          String   @map("external_id")
+  externalRevision    String?  @map("external_revision")
+  openedAt            DateTime @map("opened_at")
+  closedAt            DateTime? @map("closed_at")
+  tableReference      String?  @map("table_reference")
+  subtotal            Decimal  @db.Decimal(12, 2)
+  tax                 Decimal  @db.Decimal(12, 2)
+  tip                 Decimal  @default(0) @db.Decimal(12, 2)
+  discount            Decimal  @default(0) @db.Decimal(12, 2)
+  total               Decimal  @db.Decimal(12, 2)
+  refundedAmount      Decimal  @default(0) @map("refunded_amount") @db.Decimal(12, 2)
+  currency            String
+  rawPayloadHash      String   @map("raw_payload_hash")
+  importedAt          DateTime @default(now()) @map("imported_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@unique([connectionId, externalId])
+  @@index([restaurantId, closedAt])
+  @@map("pos_checks")
+}
+
+model ReservationCheckMatch {
+  reservationId String   @map("reservation_id")
+  posCheckId    String   @map("pos_check_id")
+  method        String
+  confidence    Decimal  @db.Decimal(4, 3)
+  status        String
+  reviewedByHash String? @map("reviewed_by_hash")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@id([reservationId, posCheckId])
+  @@index([status, confidence])
+  @@map("reservation_check_matches")
+}
+```
+
+`credentialReference` pointe vers un secret stocké hors base ou chiffré avec une clé de chiffrement séparée. Aucun token fournisseur n'apparaît dans Prisma logs, Sentry, API ou dashboard.
+
+### 37.2 Synchronisation
+
+- Webhook signé si disponible, polling incrémental sinon.
+- Curseur avancé seulement après commit de la page complète.
+- Upsert par `(connectionId, externalId)` et révision.
+- Fenêtre de recouvrement de 48 h pour corrections tardives.
+- Full reconcile nocturne borné aux 7 derniers jours.
+- `DEGRADED` après trois échecs consécutifs ; `REAUTH_REQUIRED` sur 401/403 stable.
+- Alerte si `lastSuccessAt` dépasse deux cycles normaux.
+
+### 37.3 Algorithme de matching v1
+
+Score explicable sur 100 :
+
+- ID de réservation transmis au POS : 100 ;
+- même table : +35 ;
+- ouverture dans une fenêtre de ±45 minutes : +30 ;
+- nombre de couverts compatible : +20 ;
+- même téléphone/token fournisseur vérifié : +40 ;
+- conflit avec une autre réservation confirmée : −50.
+
+`>=80` : rapprochement automatique ; `50–79` : proposition manuelle ; `<50` : non rapproché. Les seuils sont versionnés et observés en shadow mode avant automatisation.
+
+## 38. Autorisation et isolation
+
+### 38.1 Capabilities utilisateur
+
+Proposition initiale :
+
+| Rôle      | CRM                     | Notes sensibles     | Campagnes     | Paiements       | POS      | Groupe             |
+| --------- | ----------------------- | ------------------- | ------------- | --------------- | -------- | ------------------ |
+| OWNER     | lecture/écriture/fusion | oui                 | tout          | tout            | tout     | tout               |
+| MANAGER   | lecture/écriture        | oui                 | créer/envoyer | opérationnel    | lecture  | sites autorisés    |
+| MARKETING | lecture segmentable     | non par défaut      | créer/envoyer | non             | agrégats | segments autorisés |
+| STAFF     | lecture service limitée | oui pendant service | non           | état uniquement | non      | site courant       |
+
+Les rôles actuels étant des chaînes, commencer par un mapping de capabilities en TypeScript. Une migration vers des enums ou permissions configurables viendra seulement après observation.
+
+### 38.2 Règles de requête
+
+- Toute requête Prisma inclut `restaurantId` ou un `accountId` résolu par le serveur.
+- Toute mutation relit la ligne avec son tenant avant update/delete.
+- Les identifiants dans body ne définissent jamais le scope.
+- Les exports et campagnes ont une limite de volume et un audit.
+- Les endpoints publics utilisent tokens signés, hashés en base, expirants et à usage borné.
+- Les tests utilisent deux organisations, deux sites et trois rôles réels ou des sessions cryptographiquement valides de staging.
+
+## 39. Stratégie de migrations et déploiement
+
+Chaque grand domaine suit six étapes :
+
+1. **Expand** : créer tables, enums et colonnes optionnelles ; générer Prisma ; aucun nouveau chemin actif.
+2. **Dual-write** : écrire ancien et nouveau modèles sous flag ; comparer compteurs et erreurs.
+3. **Backfill** : traiter par lots, checkpoint durable, dry-run, reprise et rapport.
+4. **Shadow-read** : calculer l'ancienne et la nouvelle réponse, journaliser seulement les divergences agrégées.
+5. **Switch** : activer lecture/worker sur un canary, puis 10 %, 50 %, 100 %.
+6. **Contract différé** : supprimer l'ancien chemin seulement après au moins un cycle de rétention et une décision explicite.
+
+### 39.1 Ordre des migrations proposées
+
+| Migration | Contenu                                           | Backfill                                 |
+| --------- | ------------------------------------------------- | ---------------------------------------- |
+| M01       | outbox + usage events/rollups                     | aucun                                    |
+| M02       | entitlement overrides                             | plans existants restent source           |
+| M03       | identités, timeline, préférences, tags, métriques | téléphone + événements réservation/appel |
+| M04       | segments                                          | segments système seedés                  |
+| M05       | permissions marketing par canal                   | uniquement preuves explicites            |
+| M06       | campagnes, audience, messages                     | campagne legacy conservée                |
+| M07       | touches et conversions                            | sources récentes si traçables            |
+| M08       | politiques et paiements réservation               | aucun                                    |
+| M09       | connexions et tickets POS                         | aucun                                    |
+| M10       | identité groupe                                   | après validation juridique/produit       |
+| M11       | feedback, recovery et perks                       | aucun                                    |
+
+Chaque migration contient une requête de préflight, un plan de rollback applicatif et une validation post-migration. Les migrations financières n'ont pas de rollback destructeur automatique.
+
+## 40. Plan de tests technique
+
+### 40.1 Pyramide minimale par module
+
+| Niveau                     | Ce qui est testé                                                            |
+| -------------------------- | --------------------------------------------------------------------------- |
+| Unit                       | validation Zod, transitions, compilation segment, calcul coût, matching POS |
+| Service avec mocks stricts | erreurs fournisseur, permission, entitlement, idempotence                   |
+| PostgreSQL réel            | contraintes uniques, transactions, locks, concurrence, backfill             |
+| Queue                      | jobId stable, retry, dead-letter, lease expiré, replay                      |
+| Contract provider          | payload et signature webhook sur fixtures officielles                       |
+| API inject                 | auth, tenant, status HTTP, pagination, rate limit                           |
+| Dashboard                  | loading/empty/error/data, permissions, formulaires                          |
+| Playwright                 | création campagne, désinscription, paiement, changement de site             |
+| Staging                    | envoi réel borné, Stripe test, POS sandbox, rollback                        |
+
+### 40.2 Cas de concurrence obligatoires
+
+- deux webhooks identiques ;
+- deux workers réclament le même message ;
+- opt-out pendant l'envoi ;
+- annulation de campagne pendant le claim ;
+- downgrade avant exécution ;
+- fusion client pendant création de réservation ;
+- ticket POS corrigé pendant agrégation ;
+- paiement reçu après expiration du hold ;
+- remboursement et rapprochement exécutés simultanément ;
+- deux backfills lancés accidentellement.
+
+### 40.3 Invariants testés en base
+
+- un seul `UsageEvent` par `sourceEventKey` ;
+- une seule identité normalisée par restaurant/type ;
+- un seul message par campagne/client/canal ;
+- un seul provider message ID ;
+- un opt-out actif exclut toujours l'envoi ;
+- une conversion a un `dedupeKey` unique ;
+- un PaymentIntent ne finance qu'un `ReservationPayment` ;
+- un ticket POS externe possède une seule projection locale par connexion ;
+- toute ligne mutable est accessible seulement depuis son tenant.
+
+## 41. Découpage technique des 12 sprints
+
+### Sprint 1 — Outbox et usage voix
+
+**Fichiers :** migration M01, module `shared/outbox`, module `usage`, hooks dans `telnyx.pipeline.ts`, `stt-bridge.ts`, `tts-handler.ts` et `llm-handler.ts`.
+
+**Livrables :**
+
+- `OutboxEvent`, dispatcher et purge ;
+- `UsageEvent`, recorder idempotent et rollup ;
+- collecte téléphonie/STT/TTS/LLM ;
+- route interne de comparaison avec un appel ;
+- tests Postgres de rejeu et dispatcher concurrent.
+
+**Done :** un appel réel est ventilé sans doublon et son coût estimé est rapprochable.
+
+### Sprint 2 — Entitlements et usage dashboard
+
+**Fichiers :** `packages/config/src/entitlements.ts`, module `entitlements`, routes usage, page dashboard usage, ConfigCat wrappers.
+
+**Livrables :**
+
+- matrice de capabilities ;
+- enforcement serveur ;
+- limites voix/SMS ;
+- alertes 70/90/100 % ;
+- marge interne ;
+- tests downgrade et job planifié.
+
+**Done :** Essential et Pro ont des droits observables et les coûts ne fuient pas au client.
+
+### Sprint 3 — Qualification voix/réservation
+
+**Fichiers :** harness voix existant, tests réservation/floor-plan, fixtures appels.
+
+**Livrables :** matrice des scénarios, corrections bloquantes, corrélation call/reservation/audit, rapport par scénario.
+
+**Done :** aucun scénario critique ne crée une réservation différente du récapitulatif confirmé.
+
+### Sprint 4 — Notifications durables
+
+**Fichiers :** adapter du système `notification-idempotency`, modèle durable de résultat, callbacks Telnyx/Resend, dashboard erreurs.
+
+**Livrables :** états, provider IDs, réconciliation, retry et renvoi manuel.
+
+**Done :** chaque notification obligatoire a un résultat explicite ou une action support.
+
+### Sprint 5 — Onboarding et activation
+
+**Fichiers :** onboarding API/dashboard existant, provisioning, health, runbooks.
+
+**Livrables :** readiness score, blockers, test call, failover, checklist signée.
+
+**Done :** un nouveau restaurant peut être activé sans intervention technique improvisée.
+
+### Sprint 6 — Prix et pilotes Essential
+
+**Fichiers :** constantes prix, page pricing, billing service/tests, docs contractuelles.
+
+**Livrables :** prix 199/299, prix annuels, Stripe sandbox, upgrade/downgrade, deux pilotes.
+
+**Done :** première facture Essential cohérente avec l'entitlement et la marge.
+
+### Sprint 7 — Noyau CRM
+
+**Fichiers :** migration M03, module CRM, dual-write dans `CustomerService`, projection depuis outbox.
+
+**Livrables :** identité, timeline, métriques, backfill avec checkpoint.
+
+**Done :** données historiques et nouvelles produisent le même profil attendu.
+
+### Sprint 8 — Préférences, tags et fusion
+
+**Fichiers :** services CRM, routes merge, pages CRM détail/doublons, extensions RGPD.
+
+**Livrables :** tags, préférences, preview/merge et audit.
+
+**Done :** fusion concurrente testée sans perte ni croisement de tenant.
+
+### Sprint 9 — Segments
+
+**Fichiers :** migration M04, AST Zod, compiler, preview, pages segments.
+
+**Livrables :** huit segments système, constructeur borné, explication inclusion.
+
+**Done :** preview et snapshot retournent le même ensemble à version identique.
+
+### Sprint 10 — Campagnes
+
+**Fichiers :** M05/M06, marketing services/routes/workers, interfaces providers, éditeur dashboard.
+
+**Livrables :** campagne SMS, preview, test, schedule, pause, états durables.
+
+**Done :** un rejeu complet n'envoie aucun doublon.
+
+### Sprint 11 — Automatisations et conformité
+
+**Fichiers :** automation worker, permission service, unsubscribe public route, worker de fréquence.
+
+**Livrables :** première visite, dormant, anniversaire, opt-out immédiat, bounce suppression.
+
+**Done :** opt-out concurrent bloque l'effet externe ou crée une alerte explicite si le fournisseur avait déjà accepté.
+
+### Sprint 12 — Attribution et pilote Pro
+
+**Fichiers :** M07, tracking link, attribution worker, report API/dashboard.
+
+**Livrables :** touches, conversions, rapport estimé/encaissé, export CSV, pilote Pro.
+
+**Done :** une campagne pilote relie audience → livraison → réservation → visite avec chiffres reproductibles.
+
+## 42. Gates CI et rollout
+
+### 42.1 Checks requis par PR
+
+- `pnpm node:check` ;
+- typecheck du package/app modifié ;
+- tests unitaires ciblés ;
+- tests API avec PostgreSQL pour toute migration ou transaction ;
+- lint et format ;
+- build du dashboard pour toute nouvelle page ;
+- `pnpm lint:css` pour les changements UI ;
+- tests de contrat si un provider change ;
+- scan secret sur fixtures et logs.
+
+### 42.2 Flags proposés
+
+- `usageLedgerV1` ;
+- `planEntitlementsV1` ;
+- `crmProjectionV1` ;
+- `crmAdvancedV1` ;
+- `marketingCampaignsV1` ;
+- `marketingAutomationsV1` ;
+- `campaignAttributionV1` ;
+- `reservationPaymentsV1` ;
+- `posIntegrationV1` ;
+- `groupCrmV1`.
+
+Chaque flag possède un défaut sûr, un owner, une date de revue et une métrique d'activation. Les kill switches ne doivent pas invalider des écritures financières déjà acceptées ; ils arrêtent les nouvelles opérations et laissent la réconciliation active.
+
+### 42.3 Progression
+
+```text
+local/tests → staging shadow → restaurant interne → 1 pilote
+→ 2 pilotes → 10 % → 50 % → 100 %
+```
+
+Passage au niveau suivant seulement si :
+
+- zéro violation d'invariant ;
+- aucune fuite tenant ;
+- taux d'erreur sous le seuil du module ;
+- métriques et alertes reçues ;
+- rollback applicatif testé ;
+- file de réconciliation vide ou expliquée.
+
+## 43. Ordre des ADR à écrire avant codage
+
+1. `adr-usage-ledger-and-costing.md` : unités, arrondis, source tarifaire et rapprochement.
+2. `adr-entitlements-vs-feature-flags.md` : autorité du plan, overrides et downgrade.
+3. `adr-transactional-outbox.md` : lease, dispatcher, rétention et recovery.
+4. `adr-customer-identity-and-merge.md` : identifiants, conflits et règles RGPD.
+5. `adr-crm-projections.md` : événements sources, reconstruction et versioning.
+6. `adr-segment-ast.md` : opérateurs, compilation, limites et explication.
+7. `adr-marketing-consent.md` : preuve par canal et compatibilité legacy.
+8. `adr-campaign-delivery.md` : idempotence, états provider et reconciliation.
+9. `adr-campaign-attribution.md` : fenêtre et hiérarchie des revenus.
+10. `adr-reservation-payment-merchant-model.md` : Stripe Connect et responsabilité financière.
+11. `adr-pos-connector-contract.md` : normalisation, secrets, sync et matching.
+12. `adr-group-customer-identity.md` : partage inter-sites et consentement.
+
+## 44. Première unité de travail prête à ouvrir
+
+### Epic : `USAGE-001 — Ledger d'usage et coût complet d'un appel`
+
+**Sous-tâches :**
+
+1. écrire ADR usage + outbox ;
+2. créer M01 avec `OutboxEvent`, `UsageEvent`, `UsageMonthlyRollup` ;
+3. implémenter `OutboxService.enqueue(tx, event)` ;
+4. implémenter le dispatcher avec `SKIP LOCKED` ;
+5. implémenter `UsageRecorder.record()` avec `sourceEventKey` ;
+6. brancher le webhook Telnyx final ;
+7. brancher clôtures STT/TTS et réponses LLM ;
+8. ajouter table tarifaire versionnée ;
+9. créer rollup mensuel recalculable ;
+10. exposer `/usage/current` ;
+11. ajouter tests de rejeu, concurrence et panne Redis ;
+12. déployer en shadow sur staging ;
+13. effectuer un appel réel et rapprocher le résultat ;
+14. activer sur le restaurant interne ;
+15. documenter l'écart estimation/facture.
+
+**Critères techniques de clôture :**
+
+- aucune mutation métier ne dépend de Redis pour être durable ;
+- une panne Redis laisse des outbox events `PENDING` qui repartent ensuite ;
+- deux dispatchers concurrents ne perdent aucun événement ;
+- un même webhook crée une seule consommation ;
+- les quantités conservent leur précision avant arrondi d'affichage ;
+- un recalcul produit exactement les mêmes rollups ;
+- les payloads et métriques ne contiennent aucune PII ;
+- la suppression d'un appel selon la politique RGPD n'efface pas les agrégats financiers anonymisés nécessaires, selon la règle juridique validée.
