@@ -141,7 +141,7 @@ export async function isVoiceTtsContextV2Enabled(restaurantId: string): Promise<
 /**
  * Reads the `restaurant_plan` flag (string). If set, the flag value
  * overrides the `plan` column from the DB. Allowed values:
- * `STARTER | PRO | PREMIUM`. Any other string is ignored and the DB plan
+ * `ESSENTIAL | STARTER | PRO | PREMIUM`. Any other string is ignored and the DB plan
  * is preserved (don't crash on a misconfigured dashboard).
  */
 export async function getRestaurantPlanOverride(
@@ -155,7 +155,7 @@ export async function getRestaurantPlanOverride(
   return dbPlan;
 }
 
-const VALID_PLANS = new Set(['STARTER', 'PRO', 'PREMIUM']);
+const VALID_PLANS = new Set(['ESSENTIAL', 'STARTER', 'PRO', 'PREMIUM']);
 function isValidPlan(value: string): boolean {
   return VALID_PLANS.has(value);
 }

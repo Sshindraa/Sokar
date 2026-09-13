@@ -14,11 +14,16 @@ import { queues } from '../../../shared/queue/queues';
 const AUTH = { authorization: 'Bearer fake-token' };
 const RESTAURANT_ID = 'test-rest-1';
 
+function mockProPlan() {
+  vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'PRO' } as never);
+}
+
 describe('GET /dashboard/reactivation', () => {
   let app: FastifyInstance;
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockProPlan();
     app = await getApp();
   });
 
@@ -29,6 +34,23 @@ describe('GET /dashboard/reactivation', () => {
   it('retourne 401 sans auth', async () => {
     const res = await app.inject({ method: 'GET', url: '/dashboard/reactivation' });
     expect(res.statusCode).toBe(401);
+  });
+
+  it('retourne 403 pour Essential avant de lire les campagnes', async () => {
+    vi.mocked(db.restaurant.findUnique).mockResolvedValueOnce({ plan: 'STARTER' } as never);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/dashboard/reactivation',
+      headers: AUTH,
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({
+      error: 'CAPABILITY_NOT_INCLUDED',
+      capability: 'reactivation.manage',
+      plan: 'essential',
+    });
+    expect(db.reactivationCampaign.findMany).not.toHaveBeenCalled();
   });
 
   it('liste les campaigns avec customerCount + customers pour PENDING', async () => {
@@ -112,6 +134,7 @@ describe('POST /dashboard/reactivation/:id/send', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockProPlan();
     app = await getApp();
   });
 
@@ -177,6 +200,7 @@ describe('POST /dashboard/reactivation/:id/dismiss', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockProPlan();
     app = await getApp();
   });
 
