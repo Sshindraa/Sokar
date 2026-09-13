@@ -19,15 +19,9 @@ vi.mock('@sentry/node', () => ({
 
 vi.mock('../../../src/plugins/clerk', () => ({
   registerClerk: vi.fn().mockResolvedValue(undefined),
-  requireOrg: () => async (_req: unknown, _reply: unknown, done: () => void) => {
-    done();
-  },
-  requireSokarOperator: () => async (_req: unknown, _reply: unknown, done: () => void) => {
-    done();
-  },
-  requireAuth: () => async (_req: unknown, _reply: unknown, done: () => void) => {
-    done();
-  },
+  requireOrg: () => async () => undefined,
+  requireSokarOperator: () => async () => undefined,
+  requireAuth: () => async () => undefined,
 }));
 
 import { buildApp } from '../../../src/main';

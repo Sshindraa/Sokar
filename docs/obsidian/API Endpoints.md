@@ -1,11 +1,12 @@
 # API Endpoints
 
-> **Dernière mise à jour** : 2026-07-21
+> **Dernière mise à jour** : 2026-09-13
 > **Base URL dev** : `http://localhost:3001` (port configuré dans `apps/api/src/main.ts`)
 > **Auth globale** : Clerk (sauf routes explicitement publiques — MCP, voice webhook, public Sokar Connect, RGPD `request-verification`, `confirm-link`, `privacy-policy`)
 > **Génération** : inventaire auto depuis les fichiers `*.routes.ts` / `*.pipeline.ts`
 
-Documentation exhaustive des **~57 routes** exposées par Fastify.
+Inventaire de référence des routes Fastify. Le code et les tests de route restent l'autorité lorsque
+ce document n'indique pas encore un module récent.
 
 ---
 
@@ -318,6 +319,21 @@ Callback OAuth.
 ### POST /integrations/google-calendar/disconnect
 
 Déconnecte le calendrier Google du restaurant.
+
+---
+
+## Entitlements
+
+Module : `apps/api/src/modules/entitlements/entitlement.routes.ts`
+
+### GET /entitlements
+
+Retourne le plan commercial effectif, ses capabilities et ses limites pour le restaurant Clerk
+courant. Les coûts fournisseurs et la marge interne ne sont jamais exposés. La décision combine le
+plan Postgres et un éventuel override ConfigCat valide.
+
+Une route métier protégée par `requireCapability` répond `403 CAPABILITY_NOT_INCLUDED` lorsque le
+plan ne couvre pas la fonction. La réactivation utilise déjà ce garde.
 
 ---
 

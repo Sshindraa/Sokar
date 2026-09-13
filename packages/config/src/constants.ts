@@ -83,3 +83,5 @@ export type TtsProvider = (typeof TTS_PROVIDERS)[number];
 // ─── Phase 2 — Carrier ────────────────────────────────────────────────────
 export const CARRIER_PROVIDERS = ['telnyx'] as const;
 export type CarrierProvider = (typeof CARRIER_PROVIDERS)[number];
+
+export * from './entitlements';

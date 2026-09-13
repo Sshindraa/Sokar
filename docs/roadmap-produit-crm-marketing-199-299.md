@@ -2213,6 +2213,12 @@ Chaque migration contient une requête de préflight, un plan de rollback applic
 
 ### Sprint 2 — Entitlements et usage dashboard
 
+**Avancement au 13 septembre 2026 : PARTIEL.** La matrice canonique, la normalisation des plans,
+`GET /entitlements`, le garde serveur et l'enforcement de `reactivation.manage` sont implémentés.
+Restent le ledger d'usage, les quotas chiffrés, les seuils 70/90/100 %, la marge interne et le
+dashboard usage. Décision d'architecture :
+[`architecture/adr-entitlements-vs-feature-flags.md`](./architecture/adr-entitlements-vs-feature-flags.md).
+
 **Fichiers :** `packages/config/src/entitlements.ts`, module `entitlements`, routes usage, page dashboard usage, ConfigCat wrappers.
 
 **Livrables :**
