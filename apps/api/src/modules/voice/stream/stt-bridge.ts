@@ -9,6 +9,7 @@ import * as Sentry from '@sentry/node';
 import { isSpeculativeLlmEnabled } from './speculation';
 import { redactPii } from './pii-redact';
 import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
+import { addSttAudioSamples, sttSamplesForBuffer } from '../../usage/voice-usage.service';
 
 const DEFAULT_STT_MODEL = 'scribe_v2_realtime';
 const STT_REALTIME_PATH = '/v1/speech-to-text/realtime';
@@ -483,6 +484,7 @@ function sendSessionAudioChunk(session: CallSession, audio: Buffer): void {
     audio,
     isFirstChunk ? buildSttPreviousText(session.restaurantName) : undefined,
   );
+  addSttAudioSamples(session, sttSamplesForBuffer(session, audio.length));
   session.sttFirstAudioChunkSent = true;
 }
 

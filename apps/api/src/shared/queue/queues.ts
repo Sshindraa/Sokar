@@ -3,6 +3,18 @@ import { redisQueue } from '../redis/client';
 import { defaultReliableJobOptions, highPriorityWebhookJobOptions } from './job-options';
 
 export const queues = {
+  outboxDispatcher: new Queue('outbox-dispatcher', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
+  outboxDelivery: new Queue('outbox-delivery', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
+  usageRollup: new Queue('usage-rollup', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
   analytics: new Queue('analytics', {
     connection: redisQueue,
     defaultJobOptions: defaultReliableJobOptions,

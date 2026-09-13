@@ -43,6 +43,7 @@ import {
   recordVoiceTurnEventIfCurrent,
 } from './turn-telemetry';
 import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
+import { addCartesiaTtsCharacters } from '../../usage/voice-usage.service';
 
 export function isSessionActiveForTts(session: CallSession, generation?: number): boolean {
   return (
@@ -413,6 +414,11 @@ async function speakTtsFragment(
         );
         continue;
       }
+
+      // Un cache hit ne déclenche aucun appel fournisseur. Ici, la réponse
+      // Cartesia a été acceptée : ses caractères deviennent facturables même
+      // si le body de streaming est ensuite vide ou interrompu.
+      addCartesiaTtsCharacters(session, trimmed.length);
 
       if (!response.body) {
         writeDebugLog(`[speakTtsStreamed] Cartesia stream body is null`);

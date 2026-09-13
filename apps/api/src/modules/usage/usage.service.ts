@@ -134,6 +134,11 @@ export function currentMonthKey(now = new Date()): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
+export function previousMonthKey(now = new Date()): string {
+  const previous = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  return currentMonthKey(previous);
+}
+
 export async function getCurrentUsage(
   restaurantId: string,
   monthKey = currentMonthKey(),

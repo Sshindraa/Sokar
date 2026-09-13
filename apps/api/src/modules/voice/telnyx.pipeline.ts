@@ -18,7 +18,7 @@ import {
 import { isVoicePipelineEnabled } from '../../shared/configcat';
 import { telnyxFetch } from '../../shared/telnyx/http-agent';
 import { MS_TO_SECONDS } from '../../shared/constants/time.js';
-import { recordUsageEvent } from '../usage/usage.service';
+import { recordPricedUsageEvent } from '../usage/usage-tariff.service';
 
 function buildRecoveryJobId(callLegId: string): string {
   return sanitizeJobId(`recovery_${callLegId}`);
@@ -370,14 +370,13 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
 
         if (durationSec !== null && callRecord?.id && callRecord.restaurantId) {
           try {
-            await recordUsageEvent({
+            await recordPricedUsageEvent({
               restaurantId: callRecord.restaurantId,
               accountId: callRecord.restaurant?.accountId,
               category: 'TELEPHONY_SECONDS',
               provider: 'telnyx',
               quantity: durationSec,
               unit: 'seconds',
-              estimatedCostEur: 0,
               sourceType: 'call',
               sourceId: callRecord.id,
               sourceEventKey: `telnyx:call:${payload.call_leg_id}:final`,

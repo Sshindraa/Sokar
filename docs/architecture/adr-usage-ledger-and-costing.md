@@ -2,7 +2,7 @@
 
 > **Statut** : accepté, implémentation partielle
 > **Date** : 2026-09-13
-> **Périmètre livré** : schéma, recorder idempotent, projection mensuelle recalculable, routes de lecture et première collecte Telnyx
+> **Périmètre livré** : schéma, recorder idempotent, projection mensuelle recalculable, routes de lecture, collecte Telnyx, compteurs STT/TTS/LLM, outbox et résolution tarifaire versionnée
 
 ## Contexte
 
@@ -51,15 +51,34 @@ Le webhook Telnyx `call.hangup` enregistre `TELEPHONY_SECONDS` après la mise à
 clé utilise `call_leg_id`, déjà stable dans le pipeline. Une panne du ledger est journalisée mais
 ne fait pas échouer l'acquittement du webhook Telnyx.
 
+## Mesure des providers voix
+
+Le flux Media Stream compte les échantillons réellement envoyés à ElevenLabs après conversion de
+codec, puis convertit ces échantillons en secondes à 8 kHz. Cartesia compte les caractères d'une
+requête acceptée après un cache miss ; les réponses natives Telnyx et les hits de cache ne sont pas
+facturés comme Cartesia. Le LLM conserve des compteurs par provider et par tour. Les providers qui
+supportent `stream_options.include_usage` renvoient leurs tokens dans le dernier chunk ; les
+providers qui exposent déjà `usage` dans ce chunk sont lus directement. Dans les deux cas, Sokar
+applique sinon une estimation documentée d'environ quatre caractères par token et marque
+`countMethod = estimated_chars`.
+
+À la fermeture d'une session, ces mesures sont sérialisées en intentions outbox idempotentes. Le
+worker de livraison les tarifera et les écrira dans `UsageEvent`. Une clôture Telnyx finale continue
+d'écrire directement le ledger, avec le même résolveur tarifaire, car son webhook est déjà une
+source finale et autonome.
+
+`UsageTariff` contient le prix par unité, sa fenêtre d'effet, sa version et sa source. Tant qu'une
+ligne fournisseur/unité n'est pas renseignée, le coût reste `0` avec `UNPRICED` ; aucune valeur de
+catalogue n'est inventée dans le code.
+
 ## Travail restant avant quotas commerciaux
 
-- produire les événements ElevenLabs STT, Cartesia TTS, LLM, SMS et email ;
-- définir une table de tarifs versionnée et les règles d'arrondi fournisseur ;
+- produire les événements SMS et email ;
+- charger les premières lignes de tarifs validées par facture et documenter les règles d'arrondi fournisseur ;
 - écrire le coût téléphonie réel au lieu de `UNPRICED` ;
-- déclencher les collecteurs via une outbox transactionnelle quand l'événement dépend d'une
-  écriture métier ;
-- planifier le recalcul des rollups et ajouter un rapprochement borné ;
-- ajouter les tests Postgres de concurrence et la comparaison d'un appel réel de bout en bout ;
+- brancher l'outbox aux mutations métier CRM/réservation qui doivent être atomiques ;
+- ajouter un rapprochement borné sur les rollups déjà recalculés par le scheduler ;
+- ajouter les tests Postgres de concurrence, panne Redis et comparaison d'un appel réel de bout en bout ;
 - calculer les p50/p90/p99 avant de fixer les minutes et SMS inclus dans les offres.
 
 Tant que ces points restent ouverts, les limites de plan restent `null` et ne sont pas appliquées.

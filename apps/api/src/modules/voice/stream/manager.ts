@@ -29,6 +29,11 @@ import { cancelScheduledFiller } from './filler-scheduler';
 import { getVoiceLlmProvider } from '../llm-provider';
 import { buildLlmMessagesWithLanguage, effectiveVoiceLanguage } from './voice-language';
 import {
+  addLlmUsage,
+  estimateMessagesTokens,
+  estimateTokenCount,
+} from '../../usage/voice-usage.service';
+import {
   voiceLlmFallbackTotal,
   voiceProviderErrorsTotal,
 } from '../../../shared/observability/metrics';
@@ -82,6 +87,17 @@ function isSessionAbortError(err: unknown, sessionSignal?: AbortSignal): boolean
 
 interface LlmResponse {
   choices?: Array<{ message: ChatMessage }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+  };
+}
+
+const completionProviderByResponse = new WeakMap<Response, LlmProvider>();
+
+function tagCompletionProvider(response: Response, provider: LlmProvider): Response {
+  completionProviderByResponse.set(response, provider);
+  return response;
 }
 
 interface LlmRequestOptions {
@@ -768,11 +784,28 @@ export class CallSessionManager {
         throw new Error(`LLM ${response.status}: ${await response.text()}`);
       }
 
+      const provider = completionProviderByResponse.get(response) ?? getVoiceLlmProvider();
       const data = (await response.json()) as LlmResponse;
       signal?.throwIfAborted();
       const msg = data.choices?.[0]?.message;
 
       if (!msg) throw new Error('Empty LLM response');
+
+      const toolCalls = msg.tool_calls;
+      const estimatedOutputTokens =
+        estimateTokenCount(msg.content ?? '') +
+        (toolCalls?.reduce(
+          (total, toolCall) => total + estimateTokenCount(toolCall.function.arguments),
+          0,
+        ) ?? 0);
+      addLlmUsage(
+        session,
+        provider,
+        options.telemetryTurnId ?? `turn-${session.turnCount}`,
+        data.usage?.prompt_tokens ?? estimateMessagesTokens(messages),
+        data.usage?.completion_tokens ?? estimatedOutputTokens,
+        !data.usage,
+      );
 
       // Si le LLM répond en texte → terminé
       if (msg.content?.trim()) {
@@ -783,7 +816,6 @@ export class CallSessionManager {
       }
 
       // Si le LLM appelle un outil
-      const toolCalls = msg.tool_calls;
       if (toolCalls && toolCalls.length > 0) {
         // Une pré-réponse ne déclenche jamais une opération métier. Le tour
         // final reprendra alors le chemin LLM normal et ses outils.
@@ -827,7 +859,7 @@ export class CallSessionManager {
    *   1. OpenRouter (primaire : Llama 3.3 70B sur Groq, TTFT ~150ms)
    *   2. Cerebras direct (fallback : Gemma 4 31B) sur 429/5xx
    *
-   * @returns Response object (non-streaming)
+   * @returns Response object (the actual provider is tagged internally)
    */
   private async fetchLlmCompletion(
     messages: ChatMessage[],
@@ -845,7 +877,7 @@ export class CallSessionManager {
           const response = await this.fetchGroqCompletion(messages, opts, getVoiceLlmModel());
           if (response.ok) {
             recordProviderSuccess('groq');
-            return response;
+            return tagCompletionProvider(response, 'groq');
           }
           recordProviderFailure('groq');
           recordLlmHttpError('groq', response.status);
@@ -855,7 +887,7 @@ export class CallSessionManager {
               'LLM primary (Groq) failed, falling back to OpenRouter',
             );
             await response.text().catch(() => {});
-            return this.fetchWithFallback(
+            const fallbackResponse = await this.fetchWithFallback(
               'openrouter',
               messages,
               opts,
@@ -863,8 +895,9 @@ export class CallSessionManager {
               false,
               'groq',
             );
+            return tagCompletionProvider(fallbackResponse, 'openrouter');
           }
-          return response;
+          return tagCompletionProvider(response, 'groq');
         } catch (err) {
           // Session abort (barge-in, raccroché) — pas de failure ni fallback.
           if (isSessionAbortError(err, opts.signal)) {
@@ -878,7 +911,7 @@ export class CallSessionManager {
               { err: err instanceof Error ? err.message : String(err) },
               'LLM primary (Groq) network error, falling back to OpenRouter',
             );
-            return this.fetchWithFallback(
+            const fallbackResponse = await this.fetchWithFallback(
               'openrouter',
               messages,
               opts,
@@ -886,13 +919,14 @@ export class CallSessionManager {
               false,
               'groq',
             );
+            return tagCompletionProvider(fallbackResponse, 'openrouter');
           }
           throw err;
         }
       }
       // Circuit breaker open → skip directly to OpenRouter
       logger.warn({ provider: 'groq' }, '[circuit-breaker] Groq skipped (open), using OpenRouter');
-      return this.fetchWithFallback(
+      const fallbackResponse = await this.fetchWithFallback(
         'openrouter',
         messages,
         opts,
@@ -900,6 +934,7 @@ export class CallSessionManager {
         false,
         'groq',
       );
+      return tagCompletionProvider(fallbackResponse, 'openrouter');
     }
 
     const useCerebrasPrimary = getVoiceLlmProvider() === 'cerebras';
@@ -911,7 +946,7 @@ export class CallSessionManager {
           const response = await this.fetchCerebrasCompletion(messages, opts, getVoiceLlmModel());
           if (response.ok) {
             recordProviderSuccess('cerebras');
-            return response;
+            return tagCompletionProvider(response, 'cerebras');
           }
           // HTTP error — record failure, check fallback eligibility
           recordProviderFailure('cerebras');
@@ -922,15 +957,16 @@ export class CallSessionManager {
               'LLM primary (Cerebras) failed, falling back to OpenRouter',
             );
             await response.text().catch(() => {});
-            return this.fetchWithFallback(
+            const fallbackResponse = await this.fetchWithFallback(
               'openrouter',
               messages,
               opts,
               getVoiceLlmFallbackModel(),
               false,
             );
+            return tagCompletionProvider(fallbackResponse, 'openrouter');
           }
-          return response;
+          return tagCompletionProvider(response, 'cerebras');
         } catch (err) {
           // Session abort (barge-in, raccroché) — pas de failure ni fallback.
           if (isSessionAbortError(err, opts.signal)) {
@@ -945,13 +981,14 @@ export class CallSessionManager {
               { err: err instanceof Error ? err.message : String(err) },
               'LLM primary (Cerebras) network error, falling back to OpenRouter',
             );
-            return this.fetchWithFallback(
+            const fallbackResponse = await this.fetchWithFallback(
               'openrouter',
               messages,
               opts,
               getVoiceLlmFallbackModel(),
               false,
             );
+            return tagCompletionProvider(fallbackResponse, 'openrouter');
           }
           throw err;
         }
@@ -961,13 +998,14 @@ export class CallSessionManager {
         { provider: 'cerebras' },
         '[circuit-breaker] Cerebras skipped (open), using OpenRouter',
       );
-      return this.fetchWithFallback(
+      const fallbackResponse = await this.fetchWithFallback(
         'openrouter',
         messages,
         opts,
         getVoiceLlmFallbackModel(),
         false,
       );
+      return tagCompletionProvider(fallbackResponse, 'openrouter');
     }
 
     // OpenRouter primary, Cerebras fallback
@@ -976,7 +1014,7 @@ export class CallSessionManager {
         const response = await this.fetchOpenRouterCompletion(messages, opts, getVoiceLlmModel());
         if (response.ok) {
           recordProviderSuccess('openrouter');
-          return response;
+          return tagCompletionProvider(response, 'openrouter');
         }
         recordProviderFailure('openrouter');
         recordLlmHttpError('openrouter', response.status);
@@ -986,15 +1024,16 @@ export class CallSessionManager {
             'LLM primary (OpenRouter) failed, falling back to Cerebras',
           );
           await response.text().catch(() => {});
-          return this.fetchWithFallback(
+          const fallbackResponse = await this.fetchWithFallback(
             'cerebras',
             messages,
             opts,
             getVoiceLlmFallbackModel(),
             false,
           );
+          return tagCompletionProvider(fallbackResponse, 'cerebras');
         }
-        return response;
+        return tagCompletionProvider(response, 'openrouter');
       } catch (err) {
         // Session abort (barge-in, raccroché) — pas de failure ni fallback.
         if (isSessionAbortError(err, opts.signal)) {
@@ -1008,13 +1047,14 @@ export class CallSessionManager {
             { err: err instanceof Error ? err.message : String(err) },
             'LLM primary (OpenRouter) network error, falling back to Cerebras',
           );
-          return this.fetchWithFallback(
+          const fallbackResponse = await this.fetchWithFallback(
             'cerebras',
             messages,
             opts,
             getVoiceLlmFallbackModel(),
             false,
           );
+          return tagCompletionProvider(fallbackResponse, 'cerebras');
         }
         throw err;
       }
@@ -1023,7 +1063,14 @@ export class CallSessionManager {
       { provider: 'openrouter' },
       '[circuit-breaker] OpenRouter skipped (open), using Cerebras',
     );
-    return this.fetchWithFallback('cerebras', messages, opts, getVoiceLlmFallbackModel(), false);
+    const fallbackResponse = await this.fetchWithFallback(
+      'cerebras',
+      messages,
+      opts,
+      getVoiceLlmFallbackModel(),
+      false,
+    );
+    return tagCompletionProvider(fallbackResponse, 'cerebras');
   }
 
   /**
@@ -1461,6 +1508,7 @@ export class CallSessionManager {
       reasoning_effort: 'none',
       ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
       stream: true,
+      stream_options: { include_usage: true },
     };
 
     return fetch(`${getGroqBaseUrl()}/chat/completions`, {
@@ -1494,6 +1542,7 @@ export class CallSessionManager {
       temperature: opts.temperature,
       ...(opts.tools ? { tools: opts.tools, tool_choice: 'auto' } : {}),
       stream: true,
+      stream_options: { include_usage: true },
       ...(getProviderRouting(model) ?? {}),
     };
 
@@ -1551,6 +1600,10 @@ export class CallSessionManager {
       let phrasesYielded = false;
       let midStreamTimedOut = false;
       let questionReached = false;
+      let reportedInputTokens: number | undefined;
+      let reportedOutputTokens: number | undefined;
+      let usageReported = false;
+      let usageProvider: LlmProvider = providerUsed;
       const emitCompletePhrases = () => {
         let match: RegExpMatchArray | null;
         while ((match = sentenceBuffer.match(/^([\s\S]+?(?:\?|[.!](?=\s|$)))\s*/))) {
@@ -1597,6 +1650,24 @@ export class CallSessionManager {
 
             try {
               const chunk = JSON.parse(data);
+              const usage = chunk.usage as
+                | { prompt_tokens?: number; completion_tokens?: number }
+                | undefined;
+              if (
+                usage &&
+                (typeof usage.prompt_tokens === 'number' ||
+                  typeof usage.completion_tokens === 'number')
+              ) {
+                if (typeof usage.prompt_tokens === 'number') {
+                  reportedInputTokens = usage.prompt_tokens;
+                }
+                if (typeof usage.completion_tokens === 'number') {
+                  reportedOutputTokens = usage.completion_tokens;
+                }
+                usageReported =
+                  typeof reportedInputTokens === 'number' &&
+                  typeof reportedOutputTokens === 'number';
+              }
               const delta = chunk.choices?.[0]?.delta;
 
               if (!delta) continue;
@@ -1695,6 +1766,12 @@ export class CallSessionManager {
 
             // Lire le stream de retry avec le même parser
             const retryReader = retryResponse.body.getReader();
+            usageProvider = fallbackProvider;
+            // Any partial usage chunk from the timed-out provider must not be
+            // attributed to the fallback request.
+            reportedInputTokens = undefined;
+            reportedOutputTokens = undefined;
+            usageReported = false;
             try {
               while (true) {
                 const { done: retryDone, value: retryValue } = await retryReader.read();
@@ -1709,6 +1786,24 @@ export class CallSessionManager {
                   if (data === '[DONE]') break;
                   try {
                     const chunk = JSON.parse(data);
+                    const usage = chunk.usage as
+                      | { prompt_tokens?: number; completion_tokens?: number }
+                      | undefined;
+                    if (
+                      usage &&
+                      (typeof usage.prompt_tokens === 'number' ||
+                        typeof usage.completion_tokens === 'number')
+                    ) {
+                      if (typeof usage.prompt_tokens === 'number') {
+                        reportedInputTokens = usage.prompt_tokens;
+                      }
+                      if (typeof usage.completion_tokens === 'number') {
+                        reportedOutputTokens = usage.completion_tokens;
+                      }
+                      usageReported =
+                        typeof reportedInputTokens === 'number' &&
+                        typeof reportedOutputTokens === 'number';
+                    }
                     const delta = chunk.choices?.[0]?.delta;
                     if (!delta) continue;
                     if (delta.tool_calls) {
@@ -1772,6 +1867,21 @@ export class CallSessionManager {
       } finally {
         reader.releaseLock();
       }
+
+      const estimatedStreamOutputTokens =
+        estimateTokenCount(fullText) +
+        toolCallAccumulator.reduce(
+          (total, toolCall) => total + estimateTokenCount(toolCall.function.arguments),
+          0,
+        );
+      addLlmUsage(
+        session,
+        usageProvider,
+        options.telemetryTurnId ?? `turn-${session.turnCount}`,
+        reportedInputTokens ?? estimateMessagesTokens(messages),
+        reportedOutputTokens ?? estimatedStreamOutputTokens,
+        !usageReported,
+      );
 
       if (questionReached) {
         signal?.throwIfAborted();

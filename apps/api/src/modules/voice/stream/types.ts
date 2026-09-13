@@ -116,6 +116,20 @@ export interface ActiveTtsContext {
   cancel(): void;
 }
 
+/** Compteurs internes de consommation des providers d'un appel. */
+export interface VoiceUsageLlmCounter {
+  inputTokens: number;
+  outputTokens: number;
+  estimated: boolean;
+}
+
+export interface VoiceUsageCounters {
+  sttAudioSamples: number;
+  cartesiaTtsCharacters: number;
+  llmByProvider: Record<string, Record<string, VoiceUsageLlmCounter>>;
+  finalization?: Promise<void>;
+}
+
 /** Identité minimisée du tour courant pour les logs d'observabilité. */
 export interface VoiceTurnTelemetry {
   id: string;
@@ -271,6 +285,8 @@ export interface CallSession {
   ttsContext: ActiveTtsContext | null;
   /** Tour utilisateur courant, créé à la finalisation STT. */
   currentTurn: VoiceTurnTelemetry | null;
+  /** Compteurs de coût providers, gardés en mémoire puis persistés à la fin. */
+  voiceUsage?: VoiceUsageCounters;
 
   // Barge-in debounce
   /** Nombre de chunks inbound consécutifs reçus pendant SPEAKING */
