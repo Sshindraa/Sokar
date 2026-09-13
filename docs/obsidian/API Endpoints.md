@@ -337,6 +337,26 @@ plan ne couvre pas la fonction. La réactivation utilise déjà ce garde.
 
 ---
 
+## Usage
+
+Module : `apps/api/src/modules/usage/usage.routes.ts`
+
+### GET /usage/current
+
+Retourne les quantités du mois UTC courant, regroupées par catégorie, ainsi que les minutes voix et
+segments SMS inclus dans le plan effectif. Les limites sont actuellement `null` et
+`limitsEnforced=false` tant que les quotas 199/299 € ne sont pas fondés sur les coûts observés.
+
+### GET /usage/history?from=YYYY-MM&to=YYYY-MM
+
+Retourne les projections mensuelles du restaurant Clerk courant sur une fenêtre maximale de 24
+mois. Les coûts, marges et fournisseurs restent internes. La projection est recalculable depuis le
+ledger brut ; sa planification automatique reste à livrer.
+
+Décision : `docs/architecture/adr-usage-ledger-and-costing.md`.
+
+---
+
 ## Admin / Flags
 
 Module : `apps/api/src/modules/admin/flags.routes.ts`

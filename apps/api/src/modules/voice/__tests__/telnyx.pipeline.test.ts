@@ -481,6 +481,34 @@ describe('POST /voice/telnyx — call.hangup', () => {
     });
   });
 
+  it('records final telephony usage once the call can be attributed', async () => {
+    vi.mocked(db.call.findUnique).mockResolvedValue({
+      id: 'call-1',
+      restaurantId: 'rest-1',
+      restaurant: { accountId: 'account-1' },
+      reservation: null,
+    } as never);
+    vi.mocked(db.usageEvent.findUnique).mockResolvedValue(null);
+    vi.mocked(db.usageEvent.create).mockResolvedValue({ id: 'usage-1' } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeHangupPayload({ duration_sec: 42.7 }),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(db.usageEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        restaurantId: 'rest-1',
+        accountId: 'account-1',
+        category: 'TELEPHONY_SECONDS',
+        provider: 'telnyx',
+        sourceEventKey: 'telnyx:call:leg-1:final',
+      }),
+    });
+  });
+
   it('enqueues recording recovery when a test recording remains pending at hangup', async () => {
     process.env.CALL_RECORDING_ENABLED = 'true';
     vi.mocked(db.call.findUnique).mockResolvedValue({

@@ -303,6 +303,17 @@ vi.mock('../shared/db/client', () => {
       upsert: vi.fn(),
       findUnique: vi.fn(),
     },
+    usageEvent: {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      groupBy: vi.fn().mockResolvedValue([]),
+    },
+    usageMonthlyRollup: {
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      deleteMany: vi.fn(),
+    },
     $queryRaw: vi.fn().mockResolvedValue([]),
     $transaction: vi.fn(async (fn: unknown) => {
       if (Array.isArray(fn)) {
