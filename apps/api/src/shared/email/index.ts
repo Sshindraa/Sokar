@@ -4,6 +4,10 @@ import {
   type NotificationProviderResult,
   type NotificationSendResult,
 } from '../queue/notification-idempotency';
+import {
+  recordAcceptedMessagingUsage,
+  type MessagingUsageContext,
+} from '../../modules/usage/messaging-usage.service';
 
 // Resend HTTP API (port 443) — l'envoi ne dépend plus des ports SMTP sortants du VPS.
 // L'API HTTP de Resend utilise le port 443 (HTTPS).
@@ -29,6 +33,7 @@ export interface SendEmailOptions {
   to: string;
   subject: string;
   html: string;
+  usage?: MessagingUsageContext;
 }
 
 export function normalizeResendSendResponse(response: unknown): NotificationSendResult {
@@ -62,7 +67,16 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void | Notifica
     subject: opts.subject,
     html: opts.html,
   });
-  return normalizeResendSendResponse(response);
+  const result = normalizeResendSendResponse(response);
+  if (opts.usage) {
+    await recordAcceptedMessagingUsage({
+      channel: 'email',
+      provider: 'resend',
+      providerMessageId: result.providerMessageId,
+      context: opts.usage,
+    });
+  }
+  return result;
 }
 
 type ResendEmailEvent =

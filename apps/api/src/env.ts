@@ -212,6 +212,8 @@ const EnvSchema = z
     ALERT_EMAIL_TO: z.string().optional(),
     ALERT_WEBHOOK_URL: z.string().url().optional(),
     ALERT_SMS_TO: z.string().optional(),
+    // Jeton séparé pour le feed interne de marge (jamais exposé au dashboard client).
+    SOKAR_INTERNAL_USAGE_TOKEN: z.string().optional(),
   })
   .merge(VoiceConfigSchema)
   .refine((data) => data.CALL_RECORDING_ENABLED !== 'true' || !!data.CALL_RECORDINGS_BUCKET, {

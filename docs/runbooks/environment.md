@@ -53,6 +53,12 @@ afficher. `ALERT_WEBHOOK` et `HEALTHCHECKS_PING_URL` alimentent le watchdog VPS
 dans `/etc/sokar/watchdog.env`, fichier root lisible uniquement par le cron.
 Si aucun secret n’est défini, le déploiement conserve la configuration existante.
 
+Le feed interne de coûts `/api/internal/usage/margin` exige un secret séparé
+`SOKAR_INTERNAL_USAGE_TOKEN`. Il est injecté uniquement dans l'environnement
+de l'API opérateur et envoyé dans l'en-tête `x-sokar-internal-usage-token`.
+Sans ce secret, la route répond `503`; elle ne doit jamais être ajoutée à un
+écran ou une intégration client.
+
 `RESERVATION_SERVICE_TOKEN` protège la route legacy `POST /reservations`. Il
 doit être généré et injecté uniquement par le secret manager (au moins 32
 caractères), jamais dans le dépôt, le navigateur ou les payloads Connect. Les

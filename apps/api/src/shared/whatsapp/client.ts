@@ -27,6 +27,10 @@ import {
   type NotificationSendResult,
 } from '../queue/notification-idempotency';
 import { lookupTelnyxMessage } from '../telnyx/client';
+import {
+  recordAcceptedMessagingUsage,
+  type MessagingUsageContext,
+} from '../../modules/usage/messaging-usage.service';
 
 interface TelnyxWhatsappTemplateMessage {
   from: string;
@@ -83,6 +87,7 @@ export async function sendWhatsAppTemplate(
   templateName: string,
   languageCode: string,
   params: string[],
+  usage?: MessagingUsageContext,
 ): Promise<void | NotificationSendResult> {
   const t = getTelnyx();
   const from = process.env.TELNYX_FROM_NUMBER!;
@@ -108,12 +113,21 @@ export async function sendWhatsAppTemplate(
     },
   });
   const providerMessageId = extractProviderMessageId(response);
-  return {
+  const result: NotificationSendResult = {
     outcome: 'success',
     provider: 'telnyx',
     channel: 'whatsapp',
     ...(providerMessageId ? { providerMessageId } : {}),
   };
+  if (usage) {
+    await recordAcceptedMessagingUsage({
+      channel: 'whatsapp',
+      provider: 'telnyx',
+      providerMessageId: result.providerMessageId,
+      context: usage,
+    });
+  }
+  return result;
 }
 
 /** Telnyx exposes the same message status endpoint for SMS and WhatsApp. */

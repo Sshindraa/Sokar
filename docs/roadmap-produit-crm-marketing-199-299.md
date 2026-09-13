@@ -2205,7 +2205,9 @@ Chaque migration contient une requête de préflight, un plan de rollback applic
 `UsageTariff` et les compteurs STT/TTS/LLM sont implémentés. `call.hangup` et les clôtures de
 session écrivent des intentions idempotentes ; les tarifs sans ligne restent `UNPRICED`. Le
 dispatcher outbox tourne chaque minute et les rollups courant/précédent sont recalculés chaque
-heure. Restent le chargement des prix validés par facture, les collecteurs SMS/email, le
+heure. Les adaptateurs Telnyx/Resend collectent désormais les SMS segmentés (GSM-7/UCS-2), les
+messages WhatsApp et les emails dès l'acceptation fournisseur, avec contexte métier sans PII et
+clé d'idempotence commune à l'outbox. Restent le chargement des prix validés par facture, le
 rapprochement et le test Postgres concurrent.
 Décisions d'architecture : [`architecture/adr-usage-ledger-and-costing.md`](./architecture/adr-usage-ledger-and-costing.md) et [`architecture/adr-transactional-outbox.md`](./architecture/adr-transactional-outbox.md).
 
@@ -2215,7 +2217,7 @@ Décisions d'architecture : [`architecture/adr-usage-ledger-and-costing.md`](./a
 
 - `OutboxEvent`, dispatcher et récupération de lease ;
 - `UsageEvent`, recorder idempotent et rollup ;
-- collecte téléphonie/STT/TTS/LLM avec estimation explicite si le provider ne renvoie pas ses tokens ;
+- collecte téléphonie/STT/TTS/LLM et messagerie avec estimation explicite si le provider ne renvoie pas ses tokens ;
 - route interne de comparaison avec un appel ;
 - tests Postgres de rejeu et dispatcher concurrent.
 
@@ -2225,8 +2227,11 @@ Décisions d'architecture : [`architecture/adr-usage-ledger-and-costing.md`](./a
 
 **Avancement au 13 septembre 2026 : PARTIEL.** La matrice canonique, la normalisation des plans,
 `GET /entitlements`, le garde serveur et l'enforcement de `reactivation.manage` sont implémentés.
-Le ledger, ses lectures API et la première collecte Telnyx sont disponibles ; restent le dashboard,
-les quotas chiffrés, les seuils 70/90/100 %, la marge interne et les collecteurs complets. Décision d'architecture :
+Le ledger, ses lectures API, les collecteurs de messagerie et la projection `quotas` de
+`GET /usage/current` sont disponibles. Un feed strictement interne
+`GET /api/internal/usage/margin` protégé par `SOKAR_INTERNAL_USAGE_TOKEN` agrège quantité, coût et
+statut `PRICED/UNPRICED/MIXED`. Restent les valeurs de quotas validées par les pilotes, les seuils
+70/90/100 %, l'interface dashboard de marge et les alertes planifiées. Décision d'architecture :
 [`architecture/adr-entitlements-vs-feature-flags.md`](./architecture/adr-entitlements-vs-feature-flags.md).
 
 **Fichiers :** `packages/config/src/entitlements.ts`, module `entitlements`, routes usage, page dashboard usage, ConfigCat wrappers.

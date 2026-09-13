@@ -142,6 +142,12 @@ export async function handleReply(
       await sendSms(
         reservation.restaurant.managerPhone,
         `✅ Table libérée : ${reservation.customerName} a annulé sa résa de ${dateStr} ${timeStr} (${reservation.partySize} pers.) via ${channel === 'whatsapp' ? 'WhatsApp' : 'SMS'}.`,
+        {
+          restaurantId: reservation.restaurant.id,
+          sourceType: 'reservation_cancelled_reply',
+          sourceId: reservation.id,
+          metadata: { messageType: 'reservation_cancelled_reply', inboundChannel: channel },
+        },
       );
     }
 

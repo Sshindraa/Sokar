@@ -2442,7 +2442,12 @@ export class CallSessionManager {
             const smsText = `Votre carte cadeau chez ${session.restaurantName} : ${code}. Montant : ${amount}€. À utiliser sur le site de réservation.`;
 
             try {
-              await sendSms(normalizedPhone, smsText);
+              await sendSms(normalizedPhone, smsText, {
+                restaurantId: session.restaurantId,
+                sourceType: 'gift_card_voice_delivery',
+                sourceId: card.id,
+                metadata: { messageType: 'gift_card_voice_delivery' },
+              });
             } catch (smsErr: unknown) {
               logger.error(
                 {

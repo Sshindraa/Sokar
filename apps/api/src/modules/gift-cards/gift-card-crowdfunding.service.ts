@@ -145,6 +145,8 @@ export class GiftCardCrowdfundingService {
     await Promise.allSettled([
       // Email au contributeur
       sendContributionConfirmation({
+        restaurantId: card.restaurantId,
+        giftCardId: card.id,
         to: input.contributorEmail ?? '',
         contributorName: input.contributorName,
         amount: input.amount,
@@ -155,6 +157,8 @@ export class GiftCardCrowdfundingService {
       }),
       // Email au créateur
       sendCrowdfundingContributionNotification({
+        restaurantId: card.restaurantId,
+        giftCardId: card.id,
         to: card.senderEmail ?? '',
         creatorName: card.senderName ?? '',
         contributorName: input.isPublicName ? input.contributorName : 'Anonyme',
@@ -248,6 +252,8 @@ export class GiftCardCrowdfundingService {
 
     await Promise.allSettled([
       sendCrowdfundingClosed({
+        restaurantId: card.restaurantId,
+        giftCardId: card.id,
         to: card.recipientEmail ?? '',
         recipientName: card.recipientName ?? '',
         title: card.occasion ?? 'Cagnotte',
@@ -260,6 +266,8 @@ export class GiftCardCrowdfundingService {
         pdfUrl,
       }),
       sendRecipientWhatsApp({
+        restaurantId: card.restaurantId,
+        giftCardId: card.id,
         to: card.recipientPhone ?? '',
         code: updated.shortCode ?? updated.code,
         amount: finalAmount,

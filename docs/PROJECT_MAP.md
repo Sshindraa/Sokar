@@ -176,7 +176,7 @@ Définitions de queues : `apps/api/src/shared/queue/queues.ts`. Workers : `apps/
 - `waitingListCleanup` / `waitingListPromote` — expiration et promotion de liste d'attente.
 - `giftCardReminder` — rappels liés aux cartes cadeaux.
 - `outboxDispatcher` — revendication `SKIP LOCKED`, leases et publication des événements durables.
-- `outboxDelivery` — consommation idempotente des topics outbox (usage voix actuellement).
+- `outboxDelivery` — consommation idempotente des topics outbox (usage voix et messagerie).
 - `usageRollup` — reconstruction horaire des projections mensuelles depuis le ledger append-only.
 
 ## Tests

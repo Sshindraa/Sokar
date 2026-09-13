@@ -18,6 +18,7 @@ import {
 import { sendRecipientWhatsApp } from './gift-card-whatsapp.service';
 import { sendSms } from '../../shared/telnyx/client';
 import { logger } from '../../shared/logger/pino';
+import { recordAcceptedMessagingUsage } from '../usage/messaging-usage.service';
 
 export type PurchaseWithPaymentInput = {
   restaurantId: string;
@@ -181,6 +182,7 @@ export class GiftCardPaymentService {
     await Promise.allSettled([
       sendSenderReceipt({
         giftCardId: card.id,
+        restaurantId,
         code: card.code,
         shortCode: card.shortCode,
         amount,
@@ -195,6 +197,7 @@ export class GiftCardPaymentService {
       }),
       sendRecipientGiftCard({
         giftCardId: card.id,
+        restaurantId,
         code: card.code,
         shortCode: card.shortCode,
         amount,
@@ -208,6 +211,7 @@ export class GiftCardPaymentService {
         pdfUrl,
       }),
       sendRestaurantSaleNotification({
+        restaurantId,
         restaurantName: restaurant.name,
         restaurantEmail: restaurant.managerEmail,
         amount,
@@ -217,6 +221,8 @@ export class GiftCardPaymentService {
         giftCardId: card.id,
       }),
       sendRecipientWhatsApp({
+        restaurantId,
+        giftCardId: card.id,
         to: input.recipientPhone ?? '',
         code: card.code,
         amount,
@@ -227,10 +233,25 @@ export class GiftCardPaymentService {
     // Notification SMS au restaurateur (optionnel)
     if (restaurant.managerPhone) {
       try {
-        await sendSms(
+        const result = await sendSms(
           restaurant.managerPhone,
           `Nouvelle vente carte cadeau ${amount}€ chez ${restaurant.name}. Commission: ${sokarCommissionAmount}€.`,
         );
+        await recordAcceptedMessagingUsage({
+          channel: 'sms',
+          provider: 'telnyx',
+          text: `Nouvelle vente carte cadeau ${amount}€ chez ${restaurant.name}. Commission: ${sokarCommissionAmount}€.`,
+          providerMessageId:
+            result && 'providerMessageId' in result && typeof result.providerMessageId === 'string'
+              ? result.providerMessageId
+              : undefined,
+          context: {
+            restaurantId,
+            sourceType: 'gift_card_sale_manager_sms',
+            sourceId: card.id,
+            metadata: { messageType: 'gift_card_sale_manager_sms' },
+          },
+        });
       } catch (smsErr) {
         logger.warn(
           { err: smsErr instanceof Error ? smsErr.message : String(smsErr) },

@@ -8,6 +8,7 @@
 
 - **Staging:** deploys automatically after a green CI and its smoke tests.
 - **Production:** deploys automatically once CI and staging are green (`.github/workflows/deploy-prod.yml` triggered on `Deploy Staging` success). The release snapshot, health checks and rollback path remain mandatory; DB migration, payment, auth, voice and critical configuration changes are flagged in the deployment report.
+- **Roadmap hold (2026-09-13):** for the 199/299 € product chantier, do not merge or promote a release that triggers production until the roadmap gates are all closed (usage/pricing, Essential reliability, CRM, marketing, attribution and pilot evidence). Intermediate work stays on a branch or staging and must not call the production workflow.
 - Application rollback does not restore the database. See `docs/runbooks/rollback.md`.
 
 ## Unified deploy script

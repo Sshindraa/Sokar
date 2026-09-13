@@ -122,6 +122,12 @@ export const reactivationWorker = new Worker(
             campaign.restaurant.name,
             customer.name || 'cher client',
             campaign.restaurant.phoneNumber,
+            {
+              restaurantId: campaign.restaurantId,
+              sourceType: 'reactivation_campaign',
+              sourceId: `${campaign.id}:${customer.id}`,
+              metadata: { messageType: 'reactivation' },
+            },
           );
           if (result.success) sent++;
         } catch (err) {

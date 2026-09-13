@@ -3,6 +3,7 @@ import { redisQueue } from '../../redis/client';
 import { db } from '../../db/client';
 import { sendEmail } from '../../email';
 import { setupWorkerListeners, jobLogger } from './helper';
+import type { MessagingUsageContext } from '../../../modules/usage/messaging-usage.service';
 
 export interface ReengagementJobData {
   restaurantId: string;
@@ -95,10 +96,18 @@ export const reengagementWorker = new Worker(
         ? buildStalledEmail(restaurant.name, await getCompletedCount(restaurant.id))
         : buildInactiveEmail(restaurant.name);
 
+    const usageContext: MessagingUsageContext = {
+      restaurantId: data.restaurantId,
+      sourceType: 'onboarding_reengagement',
+      sourceId: `${data.restaurantId}:${data.type}:${job.id ?? 'manual'}`,
+      metadata: { messageType: 'onboarding_reengagement', reengagementType: data.type },
+    };
+
     await sendEmail({
       to: restaurant.managerEmail,
       subject: email.subject,
       html: email.html,
+      usage: usageContext,
     });
     log.info({ type: data.type }, 'reengagement email sent');
   },

@@ -67,13 +67,27 @@ worker de livraison les tarifera et les écrira dans `UsageEvent`. Une clôture 
 d'écrire directement le ledger, avec le même résolveur tarifaire, car son webhook est déjà une
 source finale et autonome.
 
+## Mesure de la messagerie
+
+Les adaptateurs d'envoi acceptent un contexte métier optionnel contenant uniquement le restaurant,
+le type et l'identifiant de la source. Après une réponse fournisseur acceptée, ils appellent le
+collecteur `messaging-usage.service.ts`, qui crée une intention outbox `usage.messaging.accepted`.
+Les SMS sont comptés en segments GSM-7 ou UCS-2 (160/153 et 70/67 unités), WhatsApp et email en
+messages acceptés. La clé `messaging:<canal>:<sourceType>:<sourceId>:accepted` est partagée par
+l'outbox et le ledger afin qu'un retry du worker ne double pas la consommation. Le corps du message,
+le téléphone et l'adresse email ne quittent jamais le processus d'envoi.
+
+`GET /api/internal/usage/margin` expose aux opérations, derrière le secret
+`SOKAR_INTERNAL_USAGE_TOKEN`, les quantités et coûts par restaurant et catégorie ainsi que le statut
+`PRICED`, `UNPRICED` ou `MIXED`. Les routes client ne reçoivent que la projection de quota et les
+quantités.
+
 `UsageTariff` contient le prix par unité, sa fenêtre d'effet, sa version et sa source. Tant qu'une
 ligne fournisseur/unité n'est pas renseignée, le coût reste `0` avec `UNPRICED` ; aucune valeur de
 catalogue n'est inventée dans le code.
 
 ## Travail restant avant quotas commerciaux
 
-- produire les événements SMS et email ;
 - charger les premières lignes de tarifs validées par facture et documenter les règles d'arrondi fournisseur ;
 - écrire le coût téléphonie réel au lieu de `UNPRICED` ;
 - brancher l'outbox aux mutations métier CRM/réservation qui doivent être atomiques ;
