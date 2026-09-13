@@ -87,6 +87,8 @@ model Restaurant {
   billing              RestaurantBilling?
   account              RestaurantAccount?            @relation(fields: [accountId], references: [id], onDelete: SetNull)
   siteMemberships      RestaurantAccountMembership[]
+  usageEvents          UsageEvent[]
+  usageMonthlyRollups  UsageMonthlyRollup[]
 
   // Sokar Connect (P0) — données publiques structurées, pas de flags de gating ici
   description   String?   @map("description")
@@ -441,6 +443,44 @@ model CallQuota {
   @@map("call_quotas")
 }
 
+model UsageEvent {
+  id             String        @id @default(uuid())
+  restaurantId   String        @map("restaurant_id")
+  accountId      String?       @map("account_id")
+  category       UsageCategory
+  provider       String
+  quantity       Decimal       @db.Decimal(18, 6)
+  unit           String
+  estimatedCost  Decimal       @map("estimated_cost") @db.Decimal(18, 6)
+  currency       String        @default("EUR")
+  sourceType     String        @map("source_type")
+  sourceId       String        @map("source_id")
+  sourceEventKey String        @unique @map("source_event_key")
+  occurredAt     DateTime      @map("occurred_at")
+  metadata       Json          @default("{}")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  restaurant     Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, occurredAt], map: "usage_events_restaurant_occurred_at_idx")
+  @@index([restaurantId, category, occurredAt], map: "usage_events_restaurant_category_occurred_at_idx")
+  @@index([accountId, occurredAt], map: "usage_events_account_occurred_at_idx")
+  @@map("usage_events")
+}
+
+model UsageMonthlyRollup {
+  restaurantId  String        @map("restaurant_id")
+  monthKey      String        @map("month_key")
+  category      UsageCategory
+  quantity      Decimal       @db.Decimal(18, 6)
+  estimatedCost Decimal       @map("estimated_cost") @db.Decimal(18, 6)
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  restaurant    Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@id([restaurantId, monthKey, category])
+  @@index([monthKey, category], map: "usage_monthly_rollups_month_category_idx")
+  @@map("usage_monthly_rollups")
+}
+
 model Customer {
   id               String        @id @default(uuid())
   restaurantId     String        @map("restaurant_id")
@@ -518,6 +558,18 @@ enum Plan {
   STARTER
   PRO
   PREMIUM
+}
+
+enum UsageCategory {
+  TELEPHONY_SECONDS
+  STT_SECONDS
+  TTS_CHARACTERS
+  LLM_INPUT_TOKENS
+  LLM_OUTPUT_TOKENS
+  SMS_SEGMENTS
+  WHATSAPP_MESSAGES
+  EMAIL_MESSAGES
+  RECORDING_BYTE_DAYS
 }
 
 enum CallIntent {

@@ -18,6 +18,7 @@ import {
 import { isVoicePipelineEnabled } from '../../shared/configcat';
 import { telnyxFetch } from '../../shared/telnyx/http-agent';
 import { MS_TO_SECONDS } from '../../shared/constants/time.js';
+import { recordUsageEvent } from '../usage/usage.service';
 
 function buildRecoveryJobId(callLegId: string): string {
   return sanitizeJobId(`recovery_${callLegId}`);
@@ -348,7 +349,8 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
       }
 
       case 'call.hangup': {
-        const durationSec = payload.duration_sec ? Math.round(payload.duration_sec) : null;
+        const durationSec =
+          typeof payload.duration_sec === 'number' ? Math.round(payload.duration_sec) : null;
 
         if (durationSec !== null) {
           try {
@@ -363,8 +365,35 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
 
         const callRecord = await app.db.call.findUnique({
           where: { callSid: payload.call_leg_id },
-          include: { reservation: true },
+          include: { reservation: true, restaurant: { select: { accountId: true } } },
         });
+
+        if (durationSec !== null && callRecord?.id && callRecord.restaurantId) {
+          try {
+            await recordUsageEvent({
+              restaurantId: callRecord.restaurantId,
+              accountId: callRecord.restaurant?.accountId,
+              category: 'TELEPHONY_SECONDS',
+              provider: 'telnyx',
+              quantity: durationSec,
+              unit: 'seconds',
+              estimatedCostEur: 0,
+              sourceType: 'call',
+              sourceId: callRecord.id,
+              sourceEventKey: `telnyx:call:${payload.call_leg_id}:final`,
+              occurredAt: new Date(),
+              metadata: { costStatus: 'UNPRICED', carrier: 'telnyx' },
+            });
+          } catch (error) {
+            app.log.error(
+              {
+                err: error instanceof Error ? error.message : String(error),
+                callSid: payload.call_leg_id,
+              },
+              'Failed to record telephony usage',
+            );
+          }
+        }
 
         // Telnyx peut omettre ou retarder `call.recording.saved`. Un appel de
         // test déjà marqué PENDING est donc réconcilié depuis son API après la

@@ -2199,6 +2199,14 @@ Chaque migration contient une requête de préflight, un plan de rollback applic
 
 ### Sprint 1 — Outbox et usage voix
 
+**Avancement au 13 septembre 2026 : PARTIEL.** Le schéma additif `UsageEvent` /
+`UsageMonthlyRollup`, le recorder idempotent résistant à une collision `P2002`, le recalcul mensuel,
+`GET /usage/current`, `GET /usage/history` et le premier événement `TELEPHONY_SECONDS` sur
+`call.hangup` sont implémentés. Le coût Telnyx reste explicitement `UNPRICED`. Restent l'outbox, la
+planification des rollups, les collecteurs STT/TTS/LLM, les tarifs versionnés, le rapprochement et
+le test Postgres concurrent. Décision d'architecture :
+[`architecture/adr-usage-ledger-and-costing.md`](./architecture/adr-usage-ledger-and-costing.md).
+
 **Fichiers :** migration M01, module `shared/outbox`, module `usage`, hooks dans `telnyx.pipeline.ts`, `stt-bridge.ts`, `tts-handler.ts` et `llm-handler.ts`.
 
 **Livrables :**
@@ -2215,8 +2223,8 @@ Chaque migration contient une requête de préflight, un plan de rollback applic
 
 **Avancement au 13 septembre 2026 : PARTIEL.** La matrice canonique, la normalisation des plans,
 `GET /entitlements`, le garde serveur et l'enforcement de `reactivation.manage` sont implémentés.
-Restent le ledger d'usage, les quotas chiffrés, les seuils 70/90/100 %, la marge interne et le
-dashboard usage. Décision d'architecture :
+Le ledger, ses lectures API et la première collecte Telnyx sont disponibles ; restent le dashboard,
+les quotas chiffrés, les seuils 70/90/100 %, la marge interne et les collecteurs complets. Décision d'architecture :
 [`architecture/adr-entitlements-vs-feature-flags.md`](./architecture/adr-entitlements-vs-feature-flags.md).
 
 **Fichiers :** `packages/config/src/entitlements.ts`, module `entitlements`, routes usage, page dashboard usage, ConfigCat wrappers.
