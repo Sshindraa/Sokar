@@ -89,6 +89,7 @@ model Restaurant {
   siteMemberships      RestaurantAccountMembership[]
   usageEvents          UsageEvent[]
   usageMonthlyRollups  UsageMonthlyRollup[]
+  outboxEvents          OutboxEvent[]
 
   // Sokar Connect (P0) — données publiques structurées, pas de flags de gating ici
   description   String?   @map("description")
@@ -481,6 +482,54 @@ model UsageMonthlyRollup {
   @@map("usage_monthly_rollups")
 }
 
+/// Durable event intent used to bridge Postgres mutations and BullMQ delivery.
+/// Events are at-least-once and consumers must remain idempotent.
+model OutboxEvent {
+  id             String       @id @default(uuid())
+  restaurantId   String?      @map("restaurant_id")
+  topic          String
+  aggregateType  String       @map("aggregate_type")
+  aggregateId    String       @map("aggregate_id")
+  eventType      String       @map("event_type")
+  schemaVersion  Int          @default(1) @map("schema_version")
+  payload        Json
+  idempotencyKey String       @unique @map("idempotency_key")
+  status         OutboxStatus @default(PENDING)
+  attempts       Int          @default(0)
+  availableAt    DateTime     @default(now()) @map("available_at")
+  lockedAt       DateTime?    @map("locked_at")
+  dispatchedAt   DateTime?    @map("dispatched_at")
+  lastErrorCode  String?      @map("last_error_code")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  restaurant     Restaurant?  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([status, availableAt, createdAt], map: "outbox_events_dispatch_idx")
+  @@index([aggregateType, aggregateId, createdAt], map: "outbox_events_aggregate_idx")
+  @@index([restaurantId, createdAt], map: "outbox_events_restaurant_created_idx")
+  @@map("outbox_events")
+}
+
+/// Versioned internal cost catalog. Empty rows mean the provider is explicitly
+/// unpriced; callers must never invent a vendor rate in application code.
+model UsageTariff {
+  id            String        @id @default(uuid())
+  category      UsageCategory
+  provider      String
+  unit          String
+  pricePerUnit  Decimal       @map("price_per_unit") @db.Decimal(18, 9)
+  currency      String        @default("EUR")
+  effectiveFrom DateTime      @map("effective_from")
+  effectiveTo   DateTime?     @map("effective_to")
+  version       Int           @default(1)
+  source        String
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  @@unique([category, provider, unit, version], map: "usage_tariffs_dimension_version_key")
+  @@index([category, provider, unit, effectiveFrom], map: "usage_tariffs_lookup_idx")
+  @@map("usage_tariffs")
+}
+
 model Customer {
   id               String        @id @default(uuid())
   restaurantId     String        @map("restaurant_id")
@@ -570,6 +619,13 @@ enum UsageCategory {
   WHATSAPP_MESSAGES
   EMAIL_MESSAGES
   RECORDING_BYTE_DAYS
+}
+
+enum OutboxStatus {
+  PENDING
+  DISPATCHING
+  DISPATCHED
+  FAILED
 }
 
 enum CallIntent {

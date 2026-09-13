@@ -142,17 +142,19 @@ packages/
 
 Modèles clés (`packages/database/prisma/schema.prisma`) :
 
-| Modèle                                                                   | Rôle                               |
-| ------------------------------------------------------------------------ | ---------------------------------- |
-| `Restaurant`, `RestaurantImage`, `RestaurantExposureSettings`            | Core resto et publication Connect. |
-| `Call`, `Reservation`, `AgentPersonality`, `CallQuota`                   | Appels et réservations.            |
-| `Customer`, `Message`, `CustomerConsent`, `ReactivationCampaign`         | CRM et marketing.                  |
-| `FloorPlan`, `Section`, `Table`                                          | Plan de salle.                     |
-| `AgenticHold`, `ReservationAuditLog`, `IdempotencyRecord`, `AgentClient` | Agentic layer.                     |
-| `GiftCard`, `GiftCardPack`, `GiftCardRedemption`, `GiftCardContribution` | Paiements (cartes cadeaux).        |
-| `IdentityVerificationOtp`, `SignedTokenUsage`                            | RGPD — vérification identité.      |
-| `OnboardingEvent`                                                        | Analytics onboarding.              |
-| `LatencyTrace`                                                           | Latence voice.                     |
+| Modèle                                                                   | Rôle                                                  |
+| ------------------------------------------------------------------------ | ----------------------------------------------------- |
+| `Restaurant`, `RestaurantImage`, `RestaurantExposureSettings`            | Core resto et publication Connect.                    |
+| `Call`, `Reservation`, `AgentPersonality`, `CallQuota`                   | Appels et réservations.                               |
+| `Customer`, `Message`, `CustomerConsent`, `ReactivationCampaign`         | CRM et marketing.                                     |
+| `FloorPlan`, `Section`, `Table`                                          | Plan de salle.                                        |
+| `AgenticHold`, `ReservationAuditLog`, `IdempotencyRecord`, `AgentClient` | Agentic layer.                                        |
+| `GiftCard`, `GiftCardPack`, `GiftCardRedemption`, `GiftCardContribution` | Paiements (cartes cadeaux).                           |
+| `IdentityVerificationOtp`, `SignedTokenUsage`                            | RGPD — vérification identité.                         |
+| `OnboardingEvent`                                                        | Analytics onboarding.                                 |
+| `LatencyTrace`                                                           | Latence voice.                                        |
+| `UsageEvent`, `UsageMonthlyRollup`, `UsageTariff`                        | Ledger d'usage, rollups et coûts internes versionnés. |
+| `OutboxEvent`                                                            | Intentions Postgres durables avant livraison BullMQ.  |
 
 ## Jobs & queues (BullMQ)
 
@@ -173,6 +175,9 @@ Définitions de queues : `apps/api/src/shared/queue/queues.ts`. Workers : `apps/
 - `holdCleanup` — nettoyage des holds et devis expirés.
 - `waitingListCleanup` / `waitingListPromote` — expiration et promotion de liste d'attente.
 - `giftCardReminder` — rappels liés aux cartes cadeaux.
+- `outboxDispatcher` — revendication `SKIP LOCKED`, leases et publication des événements durables.
+- `outboxDelivery` — consommation idempotente des topics outbox (usage voix actuellement).
+- `usageRollup` — reconstruction horaire des projections mensuelles depuis le ledger append-only.
 
 ## Tests
 

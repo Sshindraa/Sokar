@@ -2201,19 +2201,21 @@ Chaque migration contient une requête de préflight, un plan de rollback applic
 
 **Avancement au 13 septembre 2026 : PARTIEL.** Le schéma additif `UsageEvent` /
 `UsageMonthlyRollup`, le recorder idempotent résistant à une collision `P2002`, le recalcul mensuel,
-`GET /usage/current`, `GET /usage/history` et le premier événement `TELEPHONY_SECONDS` sur
-`call.hangup` sont implémentés. Le coût Telnyx reste explicitement `UNPRICED`. Restent l'outbox, la
-planification des rollups, les collecteurs STT/TTS/LLM, les tarifs versionnés, le rapprochement et
-le test Postgres concurrent. Décision d'architecture :
-[`architecture/adr-usage-ledger-and-costing.md`](./architecture/adr-usage-ledger-and-costing.md).
+`GET /usage/current`, `GET /usage/history`, l'outbox `PENDING → DISPATCHED`, le catalogue
+`UsageTariff` et les compteurs STT/TTS/LLM sont implémentés. `call.hangup` et les clôtures de
+session écrivent des intentions idempotentes ; les tarifs sans ligne restent `UNPRICED`. Le
+dispatcher outbox tourne chaque minute et les rollups courant/précédent sont recalculés chaque
+heure. Restent le chargement des prix validés par facture, les collecteurs SMS/email, le
+rapprochement et le test Postgres concurrent.
+Décisions d'architecture : [`architecture/adr-usage-ledger-and-costing.md`](./architecture/adr-usage-ledger-and-costing.md) et [`architecture/adr-transactional-outbox.md`](./architecture/adr-transactional-outbox.md).
 
 **Fichiers :** migration M01, module `shared/outbox`, module `usage`, hooks dans `telnyx.pipeline.ts`, `stt-bridge.ts`, `tts-handler.ts` et `llm-handler.ts`.
 
 **Livrables :**
 
-- `OutboxEvent`, dispatcher et purge ;
+- `OutboxEvent`, dispatcher et récupération de lease ;
 - `UsageEvent`, recorder idempotent et rollup ;
-- collecte téléphonie/STT/TTS/LLM ;
+- collecte téléphonie/STT/TTS/LLM avec estimation explicite si le provider ne renvoie pas ses tokens ;
 - route interne de comparaison avec un appel ;
 - tests Postgres de rejeu et dispatcher concurrent.
 

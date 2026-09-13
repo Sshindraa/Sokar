@@ -97,6 +97,17 @@ vi.mock('@prisma/client', async (importOriginal) => {
       create: vi.fn(),
       deleteMany: vi.fn(),
     };
+    usageTariff = {
+      findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+    };
+    outboxEvent = {
+      findUnique: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    };
     $queryRaw = vi.fn().mockResolvedValue([{ '1': 1 }]);
     $transaction = vi.fn(async (callback: (tx: PrismaClient) => unknown) => callback(this));
     $disconnect = vi.fn();

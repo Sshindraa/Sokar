@@ -22,6 +22,7 @@ import {
   markVoiceTurnTtsSynthesisFirstByte,
   recordVoiceTurnEventIfCurrent,
 } from './turn-telemetry';
+import { addCartesiaTtsCharacters } from '../../usage/voice-usage.service';
 
 const CARTESIA_WEBSOCKET_URL = 'wss://api.cartesia.ai/tts/websocket';
 const CARTESIA_VERSION = '2026-03-01';
@@ -240,6 +241,7 @@ export class CartesiaContextTurn {
       shouldContinue,
     );
     this.ws.send(JSON.stringify(request));
+    if (transcript) addCartesiaTtsCharacters(this.session, transcript.length);
   }
 
   private handleMessage(raw: RawData): void {

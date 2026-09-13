@@ -54,6 +54,9 @@ import './shared/queue/workers/evening-report.worker';
 import './shared/queue/workers/sms-confirmation.worker';
 import './shared/queue/workers/outbound-confirm.worker';
 import './shared/queue/workers/analytics.worker';
+import './shared/queue/workers/outbox-dispatcher.worker';
+import './shared/queue/workers/outbox-delivery.worker';
+import './shared/queue/workers/usage-rollup.worker';
 import './shared/queue/workers/reengagement.worker';
 import './shared/queue/workers/reconciliation.worker';
 import './shared/queue/workers/telnyx-webhook.worker';
@@ -472,6 +475,26 @@ async function start() {
           'daily-idempotency-purge',
           { pattern: '0 4 * * *', tz: 'Europe/Paris' },
           { name: 'purge-expired', data: {} },
+        ),
+      );
+
+      // Publication des événements Postgres vers BullMQ. Le dispatcher est
+      // relançable : les événements restent PENDING si Redis est indisponible.
+      await register('outbox-dispatcher/minute', () =>
+        queues.outboxDispatcher.upsertJobScheduler(
+          'outbox-dispatch-minute',
+          { pattern: '* * * * *', tz: 'Europe/Paris' },
+          { name: 'dispatch', data: { limit: 100 } },
+        ),
+      );
+
+      // Projection reconstructible du ledger : une panne ou une correction
+      // de tarif peut être rejouée sans muter les événements bruts.
+      await register('usage-rollup/hourly', () =>
+        queues.usageRollup.upsertJobScheduler(
+          'usage-rollup-hourly',
+          { pattern: '15 * * * *', tz: 'Europe/Paris' },
+          { name: 'rebuild-current-month', data: {} },
         ),
       );
     })().catch((err) => logger.error({ err }, 'Startup scheduler IIFE failed'));

@@ -314,6 +314,17 @@ vi.mock('../shared/db/client', () => {
       create: vi.fn(),
       deleteMany: vi.fn(),
     },
+    usageTariff: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+    },
+    outboxEvent: {
+      findUnique: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
     $queryRaw: vi.fn().mockResolvedValue([]),
     $transaction: vi.fn(async (fn: unknown) => {
       if (Array.isArray(fn)) {

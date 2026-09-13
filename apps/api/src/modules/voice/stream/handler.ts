@@ -35,6 +35,7 @@ import { handleSttEvent, extractRestaurantName } from './llm-handler';
 import { redactPii } from './pii-redact';
 import { acknowledgeCallEnding } from './call-ending';
 import { startTestCallRecording } from '../call-recording.service';
+import { finalizeVoiceUsage } from '../../usage/voice-usage.service';
 
 export function buildInitialGreeting(restaurantName: string): string {
   return `Bonjour, ici ${restaurantName}. Je vous écoute.`;
@@ -84,6 +85,9 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
         persistSttCall(session).catch((err) =>
           log.error({ err }, '[stream] persistSttCall failed'),
         );
+        finalizeVoiceUsage(session).catch((err) =>
+          log.error({ err }, '[stream] finalizeVoiceUsage failed'),
+        );
         closeStt(session);
         mgr.delete(session.callControlId);
       }
@@ -104,6 +108,9 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
         );
         persistSttCall(session).catch((err) =>
           log.error({ err }, '[stream] persistSttCall failed (error path)'),
+        );
+        finalizeVoiceUsage(session).catch((err) =>
+          log.error({ err }, '[stream] finalizeVoiceUsage failed (error path)'),
         );
         closeStt(session);
         mgr.delete(session.callControlId);
@@ -243,6 +250,9 @@ function handleTelnyxMessage(
         );
         persistSttCall(session).catch((err) =>
           logger.error({ err, callId }, '[stream] persistSttCall failed'),
+        );
+        finalizeVoiceUsage(session).catch((err) =>
+          logger.error({ err, callId }, '[stream] finalizeVoiceUsage failed'),
         );
         closeStt(session);
         mgr.delete(session.callControlId);
