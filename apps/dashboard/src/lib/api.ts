@@ -66,6 +66,10 @@ export function useApi() {
         headers: Object.keys(headers).length > 0 ? headers : undefined,
         body: body ? JSON.stringify(body) : undefined,
         signal: options?.signal,
+        // Dashboard responses are tenant- and session-scoped. Prevent a
+        // successful operator capability probe from being reused after a
+        // restaurant user signs in on the same browser.
+        cache: 'no-store',
       });
 
       let data: Record<string, unknown> = {};

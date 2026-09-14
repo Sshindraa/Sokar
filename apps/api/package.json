@@ -14,6 +14,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "seed": "tsx seed.ts",
+    "usage:telnyx:fetch": "node --import tsx scripts/fetch-telnyx-usage-invoice.ts",
+    "usage:accounting:package": "node --import tsx scripts/build-usage-accounting-package.ts",
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {

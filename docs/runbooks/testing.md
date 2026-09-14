@@ -66,6 +66,101 @@ commande échoue sur un écart. Le script ne réécrit pas les événements ni l
 sortie contient `reportHash`, un SHA-256 des bornes, tolérances, compteurs et lignes ; il peut être
 repris comme référence immuable lors de la création d'un ajustement.
 
+### Lecture Telnyx — export d'une facture sans accès à la base fournisseur
+
+Le connecteur `scripts/fetch-telnyx-usage-invoice.ts` utilise uniquement des requêtes `GET` vers
+Telnyx ([Usage Reports API](https://developers.telnyx.com/docs/reporting/usage-reports),
+[List invoices](https://developers.telnyx.com/api-reference/list-invoices) et
+[Get invoice by ID](https://developers.telnyx.com/api-reference/get-invoice-by-id)). Il suit la pagination de
+`/v2/usage_reports`, demande la dimension `currency` par défaut,
+agrège les métriques `cost` et `parts` pour la messagerie (ou `cost` et `billed_sec` pour la voix),
+puis écrit exactement le format attendu par `reconcile-usage-invoice.ts`. Il ne crée ni prix, ni
+événement, ni abonnement et ne persiste jamais le `download_url` signé de la facture. Avec
+`--invoice-file`, il peut toutefois télécharger une fois le fichier depuis l'hôte HTTPS Telnyx
+autorisé, le borner à 50 MiB et conserver uniquement le fichier local et son SHA-256 dans le
+manifeste. L'action `action=link` est utilisée pour obtenir ce lien éphémère ; selon le compte,
+Telnyx peut retourner un hôte `*.telnyxstorage.com` ou un hôte S3 régional
+`s3.us-east-<n>.amazonaws.com`.
+
+La clé est injectée par le gestionnaire de secrets au moment de l'exécution ; elle ne doit pas être
+passée en argument de ligne de commande ni écrite dans un fichier de preuve.
+
+```zsh
+# Le mode liste ne récupère que les métadonnées non signées des factures du mois.
+TELNYX_API_KEY="<key>" pnpm --filter @sokar/api usage:telnyx:fetch \
+  --month 2026-09 \
+  --list-invoices \
+  --output ./private/telnyx-invoices-2026-09.json
+
+# Après avoir choisi l'invoice_id dans cette liste, récupérer l'usage et les métadonnées.
+TELNYX_API_KEY="<key>" pnpm --filter @sokar/api usage:telnyx:fetch \
+  --month 2026-09 \
+  --product messaging \
+  --product sip-trunking \
+  --invoice-id <invoice-uuid> \
+  --invoice-file ./private/telnyx-invoice-2026-09.pdf \
+  --output ./private/telnyx-usage-2026-09.json
+
+# Si Telnyx retourne zéro ligne pour un produit, l'opt-in explicite conserve
+# une ligne quantité/coût à zéro afin de pouvoir rapprocher cette absence.
+TELNYX_API_KEY="<key>" pnpm --filter @sokar/api usage:telnyx:fetch \
+  --month 2026-09 \
+  --product messaging \
+  --allow-empty \
+  --output ./private/telnyx-usage-2026-09.json
+
+# Rapprocher ensuite l'export avec le ledger local.
+pnpm --filter @sokar/api exec node --import tsx scripts/reconcile-usage-invoice.ts \
+  --file ./private/telnyx-usage-2026-09.json \
+  --cost-tolerance 0.01 \
+  --output ./private/reports/telnyx-usage-2026-09.json
+```
+
+Le fichier `<export>.manifest.json` est généré automatiquement. Il contient le hash du snapshot,
+la période, la métrique, la devise et les métadonnées de facture ; le lien signé de téléchargement
+est explicitement marqué comme non stocké. Si `--invoice-file` est utilisé, le manifeste ajoute le
+chemin local, la taille, le type MIME et le SHA-256 du fichier, jamais son URL signée. La commande
+exige EUR, car le ledger Sokar refuse les
+montants non convertis. Si Telnyx renvoie USD ou plusieurs devises, l'export échoue et aucune ligne
+ne doit être rapprochée sans une conversion documentée par la comptabilité. Pour couvrir une facture
+qui contient à la fois messagerie et voix, répéter `--product` (chaque produit est appelé séparément
+car l'API Telnyx ne permet pas une requête multi-produit) ; utiliser `--product sip-trunking` ou
+`--product call-control` pour la voix. Le champ `billed_sec` doit alors être comparé aux secondes
+enregistrées par le ledger, avec une tolérance justifiée si Telnyx arrondit. `--quantity-field` est
+volontairement réservé à une commande mono-produit afin d'éviter d'appliquer `parts` à la voix ou
+`billed_sec` aux SMS.
+
+Les tests du connecteur utilisent des réponses simulées et ne contactent aucun fournisseur :
+
+```zsh
+pnpm --filter @sokar/api exec vitest run \
+  src/modules/usage/__tests__/telnyx-billing.service.test.ts
+```
+
+Un export de zéro usage est valide uniquement avec `--allow-empty`, et le rapprochement classe alors
+la ligne `MATCH` seulement si la quantité et le coût sont tous les deux nuls. Cette étape externe
+ne rend aucune information de coût visible dans le dashboard restaurateur. Pour préparer l'import
+aval, le constructeur de paquet conserve séparément l'usage EUR et les lignes de facture fournisseur
+dans leur devise d'origine (MRC Telnyx en USD) :
+
+```zsh
+pnpm --filter @sokar/api usage:accounting:package -- \
+  --month 2026-08 \
+  --usage-csv ./private/sokar-usage-accounting-2026-08.csv \
+  --invoice ./private/telnyx-invoice-2026-08.json \
+  --invoice-pdf ./private/telnyx-invoice-2026-08.pdf \
+  --reconciliation ./private/telnyx-reconciliation-2026-08.json \
+  --mrc-amount 1.00 --mrc-currency USD \
+  --output-dir ./private/accounting/2026-08
+```
+
+Le paquet est une destination fichier contrôlée et porte `READY_FOR_IMPORT` tant qu'aucun outil
+comptable n'est choisi. Il reste conservé comme artefact interne : son import est différé et ne
+bloque pas le cockpit admin. La preuve réelle Telnyx d'août, le paquet et le contrôle non nul de mai
+sont consignés dans `docs/release/evidence/p0-usage-production-2026-09-14.md`,
+`docs/release/evidence/p0-usage-accounting-package-2026-08.md` et
+`docs/release/evidence/p0-usage-nonzero-2026-05.md`.
+
 Après revue, un opérateur peut conserver un delta dans `UsageReconciliationAdjustment` via
 `POST /admin/usage/reconciliation-adjustments`, puis le valider ou le refuser via
 `POST /admin/usage/reconciliation-adjustments/:id/decision`. La création est idempotente par hash
@@ -104,6 +199,10 @@ jamais lus comme un quota client.
 ```zsh
 pnpm test:e2e   # Playwright dashboard
 ```
+
+Le groupe `Espace administration Sokar` de `apps/dashboard/e2e/dashboard.spec.ts` vérifie aussi
+les trois formats (`iphone-14`, `ipad-mini`, `desktop-1440`) : ouverture de `/admin`, redirection
+des anciennes URLs `/dashboard/admin/*` et renvoi d'un compte non opérateur vers `/dashboard`.
 
 La CI exécute également le job `api-integration` sur Postgres 16 et Redis 7
 éphémères. Il applique les migrations versionnées, active `AGENTIC_INT_TESTS=1`

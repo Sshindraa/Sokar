@@ -17,9 +17,9 @@ Hypothèse de capacité : un développeur principal à temps plein, Hamza dispon
 
 ### Registre d'exécution local — 14 septembre 2026
 
-| Lot                   | État local      | Preuve actuelle                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Reste bloquant avant clôture                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Lot                   | État local      | Preuve actuelle                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Suite / reste avant clôture                                                                                                                                                                                                                                                                                                                                                                                                           |
 | --------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P0 usage/outbox       | `PARTIEL LIVRÉ` | ledger, tarifs versionnés, import CSV/JSON dry-run avec détection de conflits/chevauchements, rapprochement facture read-only avec `reportHash`, ajustements `OPEN/APPROVED/REJECTED` idempotents, marge ajustée par corrections approuvées, export comptable CSV borné avec corrections globales `UNALLOCATED`, dispatcher, collecteurs messagerie, suivi interne optionnel 70/90/100 % et test PostgreSQL de concurrence prêt à exécuter                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | fournir les lignes de facture, rattacher les rapports aux restaurants, brancher l'export à la comptabilité aval et exécuter la preuve PostgreSQL ; le suivi interne n'impose aucun quota et ne bloque pas la clôture client                                                                                                                                                                                                           |
+| P0 usage/outbox       | `LIVRÉ LOCAL`   | ledger, tarifs versionnés, import CSV/JSON dry-run avec détection de conflits/chevauchements, rapprochement facture read-only avec `reportHash`, ajustements `OPEN/APPROVED/REJECTED` idempotents, marge ajustée par corrections approuvées, export comptable CSV borné avec corrections globales `UNALLOCATED`, paquet comptable fichier séparant l'usage EUR des factures fournisseur, dispatcher, collecteurs messagerie, suivi interne optionnel 70/90/100 % et test PostgreSQL de concurrence exécuté (2/2 sur base dédiée)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | preuve Telnyx d'août et paquet MRC USD conservés ; le cockpit admin affiche le suivi par établissement, les coûts et la marge ; le raccordement comptable et l'écart Telnyx de mai sont différés comme suivis internes ; aucun quota ni donnée de coût n'est exposé au restaurateur                                                                                                                                                   |
 | P1 Essential          | `PARTIEL`       | entitlements, compteurs et protections existants, catalogue local 199 € sur constantes/UI/ROI                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | gates terrain, catalogue Stripe 199 €, checkout rejoué                                                                                                                                                                                                                                                                                                                                                                                |
 | P2 CRM                | `PARTIEL LIVRÉ` | identités, timeline, RFM, préférences/tags, backfill, dual-write, API + UI CRM, export RGPD vérifié, réparation de projection, audit de fusion et masquage des notes/métadonnées par rôle, avec surcharge configurable par établissement                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | preuve PostgreSQL ; fournisseur POS métier et dépense réelle restent dans P6                                                                                                                                                                                                                                                                                                                                                          |
 | P3-01 segments        | `LIVRÉ LOCAL`   | AST borné, compiler, preview/CRUD/refresh, constructeur Pro, explication UI et huit segments système seedés à la demande                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | preuve PostgreSQL concurrente du seed et campagne pilote                                                                                                                                                                                                                                                                                                                                                                              |
@@ -1255,6 +1255,7 @@ apps/api/src/modules/
 │   ├── usage-alerts.service.ts
 │   ├── usage-internal-margin.service.ts
 │   ├── usage-accounting-export.service.ts
+│   ├── usage-accounting-package.service.ts
 │   ├── usage.routes.ts
 │   ├── usage.types.ts
 │   └── __tests__/
@@ -1353,8 +1354,8 @@ persistés dans une inbox sans PII, réessayés par un worker dédié et clôtur
 
 ### 25.3 Pages dashboard cibles
 
-Les pages suivantes sont déjà présentes localement : `/dashboard/usage`,
-`/dashboard/admin/margin`, `/dashboard/customers`, `/dashboard/customers/crm/[id]`,
+Les pages suivantes sont déjà présentes localement : `/admin`, `/admin/margin`, `/admin/health`,
+`/admin/provisioning`, `/dashboard/customers`, `/dashboard/customers/crm/[id]`,
 `/dashboard/customers/crm/duplicates`, `/dashboard/marketing`,
 `/dashboard/marketing/segments`, `/dashboard/marketing/campaigns/new`, `/dashboard/reputation`,
 `/dashboard/loyalty`, `/dashboard/experiences`, `/dashboard/reactivation`, `/dashboard/reservations` et `/dashboard/settings`.
@@ -1364,24 +1365,29 @@ l'écran réputation et la fidélité existent localement mais restent verrouill
 `REPUTATION_ENABLED=false`, `LOYALTY_ENABLED=false` et `EXPERIENCES_ENABLED=false`.
 
 ```text
-apps/dashboard/src/app/dashboard/
-├── usage/page.tsx
-├── admin/margin/page.tsx
-├── customers/page.tsx
-├── customers/crm/page.tsx
-├── customers/crm/[id]/page.tsx
-├── customers/crm/duplicates/page.tsx
-├── marketing/page.tsx
-├── marketing/segments/page.tsx
-├── marketing/campaigns/new/page.tsx
-├── reputation/page.tsx
-├── loyalty/page.tsx
-├── experiences/page.tsx
-├── reservations/page.tsx
-├── reactivation/page.tsx
-├── settings/page.tsx
-├── floor-plan/page.tsx
-└── (payments et POS : écrans d'administration à construire)
+apps/dashboard/src/app/
+├── admin/
+│   ├── page.tsx
+│   ├── margin/page.tsx
+│   ├── health/page.tsx
+│   └── provisioning/page.tsx
+└── dashboard/
+    ├── usage/page.tsx (alias opérateur historique)
+    ├── customers/page.tsx
+    ├── customers/crm/page.tsx
+    ├── customers/crm/[id]/page.tsx
+    ├── customers/crm/duplicates/page.tsx
+    ├── marketing/page.tsx
+    ├── marketing/segments/page.tsx
+    ├── marketing/campaigns/new/page.tsx
+    ├── reputation/page.tsx
+    ├── loyalty/page.tsx
+    ├── experiences/page.tsx
+    ├── reservations/page.tsx
+    ├── reactivation/page.tsx
+    ├── settings/page.tsx
+    ├── floor-plan/page.tsx
+    └── (payments et POS : écrans d'administration à construire)
 ```
 
 Chaque page livrée doit avoir les états loading, empty, error et data, fonctionner à largeur iPad et
@@ -2634,9 +2640,10 @@ interne optionnel et réclament chaque jalon une seule fois avec Redis ; le flag
 défaut. Un feed strictement interne
 `GET /api/internal/usage/margin` protégé par `SOKAR_INTERNAL_USAGE_TOKEN` agrège quantité, coût et
 statut `PRICED/UNPRICED/MIXED`. La projection de marge applique maintenant les corrections
-`APPROVED` bornées à un établissement tout en conservant le coût source ; le cockpit permet aussi
-de télécharger un export comptable CSV des usages et corrections approuvées. Restent les factures
-réelles, le branchement comptable aval et les tests de concurrence PostgreSQL. Décision
+`APPROVED` bornées à un établissement tout en conservant le coût source ; le cockpit permet de télécharger le suivi interne des usages et corrections approuvées. La facture
+Telnyx d'août, le paquet fichier et le contrôle non nul de mai sont consignés ; le raccordement
+comptable et le rattachement/conversion du trafic non nul sont différés et suivis séparément. La
+preuve d'un parcours non nul de bout en bout reste liée aux validations terrain. Décision
 d'architecture :
 [`architecture/adr-entitlements-vs-feature-flags.md`](./architecture/adr-entitlements-vs-feature-flags.md).
 

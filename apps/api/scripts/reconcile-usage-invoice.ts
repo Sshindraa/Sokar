@@ -10,10 +10,8 @@
  * --cost-tolerance; it is never hidden in a default.
  */
 
-/* eslint-disable no-console */
-
-import { readFile, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import {
   hashUsageReconciliationReport,
@@ -159,6 +157,7 @@ async function main(): Promise<void> {
     log(`[REPORT_HASH] ${reportHash}`);
     if (args.output) {
       const outputPath = resolve(process.cwd(), args.output);
+      await mkdir(dirname(outputPath), { recursive: true });
       await writeFile(
         outputPath,
         `${JSON.stringify(

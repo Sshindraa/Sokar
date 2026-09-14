@@ -153,14 +153,15 @@ export default function AdminMarginPage() {
           <h1 className="mt-2 text-3xl font-black tracking-tight">Coût opérationnel</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
             Vue réservée aux opérateurs : coûts observés par établissement, corrections de facture
-            et marge calculable à partir du catalogue local.
+            et marge calculable à partir du catalogue local. Les données restent dans Sokar pour le
+            pilotage interne ; le raccordement comptable sera traité séparément.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
             <a href={`/api/proxy/admin/usage/accounting-export.csv?month=${month}`}>
               <Download aria-hidden="true" />
-              Export comptable CSV
+              Télécharger le suivi interne
             </a>
           </Button>
           <Button variant="outline" onClick={() => void load()} disabled={loading}>

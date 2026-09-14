@@ -92,6 +92,20 @@ describe('usage invoice reconciliation', () => {
     expect(report.rows[0]?.status).toBe('UNPRICED_USAGE');
   });
 
+  it('matches an explicit zero-usage invoice row when the ledger has no events', () => {
+    const report = reconcileUsageInvoice({
+      invoiceRows: [invoice({ billedQuantity: '0', billedCostEur: '0' })],
+      usageEvents: [],
+    });
+    expect(report.counts).toMatchObject({ MATCH: 1, INVOICE_ONLY: 0 });
+    expect(report.rows[0]).toMatchObject({
+      status: 'MATCH',
+      observedQuantity: '0.000000',
+      observedCostEur: '0.000000',
+      eventCount: 0,
+    });
+  });
+
   it('reports invoice-only and usage-only dimensions without mutating input', () => {
     const report = reconcileUsageInvoice({
       invoiceRows: [invoice({ category: 'STT_SECONDS', provider: 'elevenlabs', unit: 'seconds' })],

@@ -147,6 +147,21 @@ describe('usage routes', () => {
     });
   });
 
+  it('expose uniquement un probe d accès sans information sensible', async () => {
+    const app = await getApp();
+
+    const unauthorized = await app.inject({ method: 'GET', url: '/admin/access' });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const authorized = await app.inject({
+      method: 'GET',
+      url: '/admin/access',
+      headers: AUTH,
+    });
+    expect(authorized.statusCode).toBe(200);
+    expect(authorized.json()).toEqual({ allowed: true });
+  });
+
   it('expose un export comptable CSV réservé à un opérateur', async () => {
     vi.mocked(db.usageEvent.findMany).mockResolvedValue([
       {

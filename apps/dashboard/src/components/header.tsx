@@ -15,6 +15,7 @@ export default function Header() {
     '/login',
     '/register',
     '/dashboard',
+    '/admin',
     '/onboarding',
     '/widget',
     '/book',

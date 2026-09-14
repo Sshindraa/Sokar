@@ -56,9 +56,24 @@ Si aucun secret n’est défini, le déploiement conserve la configuration exist
 Ces canaux servent au monitoring interne de Sokar. Ils ne constituent pas une
 notification client et ne peuvent pas limiter la consommation d'un restaurant.
 La promesse Essential/Pro reste sans quota ; le suivi visuel par établissement
-se fait dans `/dashboard/admin/margin`. Les variables optionnelles
+se fait dans l'espace opérateur séparé `/admin/margin` (l'ancienne URL
+`/dashboard/admin/margin` redirige les opérateurs vers cette surface). Les variables optionnelles
 `USAGE_ALERT_VOICE_BUDGET_MINUTES` et `USAGE_ALERT_SMS_BUDGET_SEGMENTS` ne
 définissent que des budgets de cost-watch opérateur.
+
+### Espace opérateur Sokar
+
+Le dashboard restaurant et l'espace opérateur ont des URLs et des layouts distincts :
+
+- `https://sokar.tech/dashboard` pour un établissement ;
+- `https://sokar.tech/admin` pour l'équipe Sokar.
+
+Les pages `/admin/*` et les routes API `/admin/*` exigent un identifiant Clerk présent dans
+`SOKAR_OPERATOR_USER_IDS`, une liste CSV injectée uniquement dans l'environnement de l'API par
+`scripts/ops/sync-operator-allowlist.sh` depuis la variable GitHub Actions de l'environnement.
+En développement local, `apps/api/.env` autorise explicitement l'utilisateur de démonstration
+`dev-user`; cette valeur ne doit jamais être utilisée en production. Un membre de restaurant qui
+ouvre une ancienne URL `/dashboard/admin/*` est renvoyé vers son dashboard.
 
 Le feed interne de coûts `/api/internal/usage/margin` exige un secret séparé
 `SOKAR_INTERNAL_USAGE_TOKEN`. Il est injecté uniquement dans l'environnement

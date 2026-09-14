@@ -15,6 +15,7 @@ export default function Providers({ children }: { children: ReactNode }) {
     pathname?.startsWith('/login') ||
     pathname?.startsWith('/register') ||
     pathname?.startsWith('/dashboard') ||
+    pathname?.startsWith('/admin') ||
     pathname?.startsWith('/onboarding');
 
   // Public marketing pages must not depend on Clerk. Auth is mounted only

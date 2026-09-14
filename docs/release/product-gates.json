@@ -6,19 +6,28 @@
     {
       "id": "P0_USAGE",
       "label": "Usage, outbox et marge",
-      "status": "LOCAL_ONLY",
-      "evidence": ["docs/architecture/adr-usage-ledger-and-costing.md"],
-      "blockers": [
-        "fournir les lignes de facture fournisseur et rapprocher un mois réel",
-        "exécuter la preuve PostgreSQL de concurrence",
-        "brancher l'export comptable aval"
+      "status": "CLOSED",
+      "evidence": [
+        "docs/architecture/adr-usage-ledger-and-costing.md",
+        "docs/release/evidence/p0-usage-local-validation-2026-09-14.md",
+        "docs/release/evidence/p0-usage-production-2026-09-14.md",
+        "docs/release/evidence/p0-usage-accounting-package-2026-08.md",
+        "docs/release/evidence/p0-usage-nonzero-2026-05.md",
+        "docs/release/evidence/local-validation-matrix-2026-09-14.md"
+      ],
+      "followUps": [
+        "raccorder ultérieurement le suivi interne à l'outil comptable retenu par Sokar",
+        "rattacher le trafic Telnyx non nul de mai 2026 aux événements Sokar et documenter la conversion USD/EUR"
       ]
     },
     {
       "id": "P1_ESSENTIAL",
       "label": "Essential 199 euros",
       "status": "OPEN",
-      "evidence": ["docs/roadmap-produit-crm-marketing-199-299.md"],
+      "evidence": [
+        "docs/roadmap-produit-crm-marketing-199-299.md",
+        "docs/release/evidence/local-validation-matrix-2026-09-14.md"
+      ],
       "blockers": [
         "créer et synchroniser les prix Stripe Essential 199 euros",
         "rejouer Checkout, webhook, facture et portail en sandbox",
@@ -29,7 +38,10 @@
       "id": "P2_CRM",
       "label": "CRM Pro",
       "status": "LOCAL_ONLY",
-      "evidence": ["docs/architecture/adr-crm-marketing-control-plane.md"],
+      "evidence": [
+        "docs/architecture/adr-crm-marketing-control-plane.md",
+        "docs/release/evidence/local-validation-matrix-2026-09-14.md"
+      ],
       "blockers": [
         "exécuter les tests PostgreSQL concurrents de fusion, segmentation et projection",
         "valider l'export/effacement avec deux identités Clerk réelles"
@@ -39,7 +51,10 @@
       "id": "P3_MARKETING",
       "label": "Segments, campagnes et conformité",
       "status": "LOCAL_ONLY",
-      "evidence": ["docs/architecture/adr-crm-marketing-control-plane.md"],
+      "evidence": [
+        "docs/architecture/adr-crm-marketing-control-plane.md",
+        "docs/release/evidence/local-validation-matrix-2026-09-14.md"
+      ],
       "blockers": [
         "configurer Telnyx, Resend et les templates/callbacks du pilote",
         "rapprocher les identifiants et coûts réellement délivrés",
@@ -50,7 +65,10 @@
       "id": "P4_ATTRIBUTION",
       "label": "Attribution et ROI",
       "status": "LOCAL_ONLY",
-      "evidence": ["docs/roadmap-produit-crm-marketing-199-299.md"],
+      "evidence": [
+        "docs/roadmap-produit-crm-marketing-199-299.md",
+        "docs/release/evidence/local-validation-matrix-2026-09-14.md"
+      ],
       "blockers": [
         "observer un parcours campagne → réservation → visite honorée sur pilote",
         "comparer une période de référence et le revenu encaissé sans prétendre à la causalité"
@@ -60,7 +78,10 @@
       "id": "P5_PAYMENTS",
       "label": "Protection bancaire, acomptes et remboursements",
       "status": "LOCAL_ONLY",
-      "evidence": ["docs/architecture/adr-reservation-payments-foundation.md"],
+      "evidence": [
+        "docs/architecture/adr-reservation-payments-foundation.md",
+        "docs/release/evidence/local-validation-matrix-2026-09-14.md"
+      ],
       "blockers": [
         "choisir le modèle marchand et le DPA",
         "raccorder Stripe Connect, intents, holds/captures et remboursements en sandbox",
@@ -71,7 +92,10 @@
       "id": "P6_POS",
       "label": "Caisse, rapprochement et dépense réelle",
       "status": "LOCAL_ONLY",
-      "evidence": ["docs/roadmap-produit-crm-marketing-199-299.md"],
+      "evidence": [
+        "docs/roadmap-produit-crm-marketing-199-299.md",
+        "docs/release/evidence/local-validation-matrix-2026-09-14.md"
+      ],
       "blockers": [
         "choisir un fournisseur POS et son contrat de données",
         "implémenter secret manager, adaptateur, sandbox et webhooks",
@@ -82,7 +106,10 @@
       "id": "P7_CUSTOMER_GROUP",
       "label": "CRM groupe et isolation multi-site",
       "status": "LOCAL_ONLY",
-      "evidence": ["docs/architecture/adr-customer-groups-foundation.md"],
+      "evidence": [
+        "docs/architecture/adr-customer-groups-foundation.md",
+        "docs/release/evidence/local-validation-matrix-2026-09-14.md"
+      ],
       "blockers": [
         "prouver l'isolation avec deux sessions Clerk et des rôles site réels",
         "valider export/effacement multi-sites et rapprochement assisté",
@@ -93,7 +120,10 @@
       "id": "P8_REPUTATION",
       "label": "Feedback, récupération et fidélité",
       "status": "LOCAL_ONLY",
-      "evidence": ["docs/architecture/adr-reputation-feedback-foundation.md"],
+      "evidence": [
+        "docs/architecture/adr-reputation-feedback-foundation.md",
+        "docs/release/evidence/local-validation-matrix-2026-09-14.md"
+      ],
       "blockers": [
         "choisir les plateformes d'avis et le canal d'envoi",
         "qualifier les avantages fidélité, fréquence et coûts POS",
@@ -108,7 +138,8 @@
         "docs/architecture/adr-experiences-foundation.md",
         "docs/architecture/adr-events-foundation.md",
         "docs/architecture/adr-distribution-foundation.md",
-        "docs/roadmap-produit-crm-marketing-199-299.md"
+        "docs/roadmap-produit-crm-marketing-199-299.md",
+        "docs/release/evidence/local-validation-matrix-2026-09-14.md"
       ],
       "blockers": [
         "qualifier paiement, facture fiscale, notifications et reporting encaissé",

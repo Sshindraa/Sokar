@@ -424,7 +424,9 @@ function reportRowForInvoice(
   const costDelta = observedCost.sub(invoice.billedCostDecimal);
   const status: UsageReconciliationStatus =
     events.length === 0
-      ? 'INVOICE_ONLY'
+      ? invoice.billedQuantityDecimal.isZero() && invoice.billedCostDecimal.isZero()
+        ? 'MATCH'
+        : 'INVOICE_ONLY'
       : unpricedEvents > 0
         ? 'UNPRICED_USAGE'
         : withinTolerance(quantityDelta, quantityTolerance) &&

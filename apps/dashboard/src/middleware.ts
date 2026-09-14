@@ -1,8 +1,21 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const isProtectedRoute = createRouteMatcher(['/dashboard(.*)', '/onboarding(.*)']);
+const isProtectedRoute = createRouteMatcher(['/dashboard(.*)', '/admin(.*)', '/onboarding(.*)']);
 const hasClerkKey = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+
+const legacyOperatorDestinations: Record<string, string> = {
+  '/dashboard/usage': '/admin/margin',
+  '/dashboard/admin': '/admin',
+  '/dashboard/admin/margin': '/admin/margin',
+  '/dashboard/admin/health': '/admin/health',
+  '/dashboard/admin/provisioning': '/admin/provisioning',
+};
+
+function getLegacyOperatorDestination(pathname: string): string | null {
+  const normalizedPath = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  return legacyOperatorDestinations[normalizedPath] ?? null;
+}
 
 // Staging demo mode : si NEXT_PUBLIC_DEMO_RESTAURANT_ID + NEXT_PUBLIC_DEMO_STAGING
 // sont définis, on ne force pas la connexion sur /dashboard. La prod n'a jamais
@@ -45,11 +58,22 @@ const middleware =
             const signInUrl = new URL('/login', req.url);
             return NextResponse.redirect(signInUrl);
           }
+
+          const legacyDestination = getLegacyOperatorDestination(req.nextUrl.pathname);
+          if (legacyDestination) {
+            return NextResponse.redirect(new URL(legacyDestination, req.url));
+          }
         }
       })
     : function localPreviewMiddleware(req: NextRequest) {
         const rewrite = rewriteBookToWidget(req);
         if (rewrite) return rewrite;
+
+        const legacyDestination = getLegacyOperatorDestination(req.nextUrl.pathname);
+        if (legacyDestination) {
+          return NextResponse.redirect(new URL(legacyDestination, req.url));
+        }
+
         return NextResponse.next();
       };
 

@@ -15,6 +15,7 @@ const originalEnv = {
   demoRestaurantId: process.env.DEMO_RESTAURANT_ID,
   demoStaging: process.env.DEMO_STAGING,
   demoUserId: process.env.DEMO_USER_ID,
+  nodeEnv: process.env.NODE_ENV,
   operatorIds: process.env.SOKAR_OPERATOR_USER_IDS,
 };
 
@@ -55,6 +56,7 @@ describe('requireSokarOperator', () => {
     process.env.DEMO_RESTAURANT_ID = originalEnv.demoRestaurantId;
     process.env.DEMO_STAGING = originalEnv.demoStaging;
     process.env.DEMO_USER_ID = originalEnv.demoUserId;
+    process.env.NODE_ENV = originalEnv.nodeEnv;
     process.env.SOKAR_OPERATOR_USER_IDS = originalEnv.operatorIds;
   });
 
@@ -98,6 +100,22 @@ describe('requireSokarOperator', () => {
 
     expect(reply.status).not.toHaveBeenCalled();
     expect(request.userId).toBe('user-operator');
+  });
+
+  it('autorise uniquement le compte démo local explicitement configuré', async () => {
+    process.env.NODE_ENV = 'development';
+    process.env.DEMO_RESTAURANT_ID = 'demo-restaurant';
+    process.env.DEMO_USER_ID = 'demo-user';
+    delete process.env.DEMO_STAGING;
+    delete process.env.SOKAR_OPERATOR_USER_IDS;
+
+    const request = makeRequest();
+    request.userId = 'demo-user';
+    const reply = makeReply();
+
+    await requireSokarOperator()(request, reply);
+
+    expect(reply.status).not.toHaveBeenCalled();
   });
 
   it('bloque les mutations d’un membre READ_ONLY après résolution du site', async () => {

@@ -192,6 +192,17 @@ export async function usageRoutes(app: FastifyInstance) {
     },
   );
 
+  /**
+   * Lightweight capability probe for the dashboard shell. It deliberately
+   * returns no role, user or tenant information: a successful response only
+   * means that the authenticated session belongs to the Sokar operator
+   * allowlist. Non-operators are rejected by the same guard as every other
+   * internal route.
+   */
+  app.get('/admin/access', { preHandler: requireSokarOperator() }, async (_request, reply) => {
+    return reply.send({ allowed: true });
+  });
+
   /** Operator dashboard projection. Never exposed through the org-scoped client route. */
   app.get('/admin/usage/margin', { preHandler: requireSokarOperator() }, async (request, reply) => {
     const query = InternalUsageQuerySchema.parse(request.query);

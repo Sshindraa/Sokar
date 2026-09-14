@@ -607,6 +607,13 @@ distincte par correction `APPROVED`. Les corrections globales sont conservées a
 effectué. Le fichier est borné au mois UTC et ne contient ni téléphone, ni email, ni corps de
 message. Le catalogue prix et l'état Stripe ne sont pas ajoutés à ce flux comptable.
 
+Le script `apps/api/scripts/build-usage-accounting-package.ts` constitue
+l'étape aval fichier : il copie ce CSV, le rapport de rapprochement et la
+pièce jointe Telnyx dans un paquet hashé, puis produit un CSV fournisseur
+séparé pour les lignes MRC dans leur devise d'origine. Le manifeste porte
+`READY_FOR_IMPORT` jusqu'à ce qu'un outil comptable soit choisi et qu'un reçu
+d'import soit conservé.
+
 Décision : `docs/architecture/adr-usage-ledger-and-costing.md`.
 
 ---

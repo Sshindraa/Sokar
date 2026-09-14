@@ -2,7 +2,7 @@
 
 > **Statut** : accepté, implémentation partielle
 > **Date** : 2026-09-13 (mise à jour le 14 septembre 2026)
-> **Périmètre livré** : schéma, recorder idempotent, projection mensuelle recalculable, routes de lecture, collecte Telnyx, compteurs STT/TTS/LLM, outbox, résolution tarifaire versionnée, import contrôlé de tarifs, rapprochement de facture, ajustements soumis à décision opérateur et export comptable CSV borné
+> **Périmètre livré** : schéma, recorder idempotent, projection mensuelle recalculable, routes de lecture, collecte Telnyx, compteurs STT/TTS/LLM, outbox, résolution tarifaire versionnée, import contrôlé de tarifs, rapprochement de facture, ajustements soumis à décision opérateur, export comptable CSV borné et paquet fichier séparant l'usage EUR des factures fournisseur
 
 ## Contexte
 
@@ -159,8 +159,9 @@ et unité ; il ajoute ensuite une ligne séparée pour chaque correction `APPROV
 corrections doivent être entièrement contenues dans le mois demandé, comme pour la projection de
 marge. Une correction `global` est exportée avec `cost_status=UNALLOCATED` afin d'imposer une
 affectation explicite en aval. Le CSV a un ordre de colonnes versionné, échappe les cellules et
-n'inclut aucune donnée de contact ou de contenu de message. Le bouton « Export comptable CSV » du
-cockpit `/dashboard/admin/margin` passe par le proxy authentifié ; il ne déclenche aucune écriture.
+n'inclut aucune donnée de contact ou de contenu de message. L'action « Télécharger le suivi interne »
+du cockpit opérateur `/admin/margin` passe par le proxy authentifié ; elle ne déclenche aucune
+écriture et pourra être reprise par la comptabilité lorsque cette intégration sera décidée.
 
 ## Seuils de suivi interne
 
@@ -187,12 +188,18 @@ reste la seule surface nécessaire.
 - fournir au script les premières lignes de tarifs validées par facture et documenter les règles d'arrondi fournisseur ;
 - écrire le coût téléphonie réel au lieu de `UNPRICED` ;
 - brancher l'outbox aux mutations métier CRM/réservation qui doivent être atomiques ;
-- fournir les premières lignes de facture réelles et brancher ce CSV à l'export comptable aval ;
+- conserver la preuve Telnyx réelle d'août et son rapprochement zéro usage ; le constructeur de
+  paquet fichier sépare maintenant le CSV d'usage EUR et les lignes fournisseur (MRC USD). Le
+  raccordement à un outil comptable est différé et ne bloque pas le cockpit opérateur ;
+- rattacher ultérieurement le trafic Telnyx non nul de mai 2026 aux événements Sokar et documenter
+  la conversion USD/EUR avant toute utilisation comptable ; cet écart reste un suivi interne ;
 - affecter explicitement les corrections `global` avant de les inclure dans une marge par établissement ;
-- ajouter les tests Postgres de concurrence, panne Redis et comparaison d'un appel réel de bout en bout ;
+- les tests Postgres de concurrence des ajustements sont exécutés ; restent la panne Redis et la
+  comparaison d'un appel réel non nul de bout en bout ;
 - si nécessaire, définir un budget interne de pilotage séparé des entitlements clients ; il ne devra
   jamais devenir une limite ou une facturation automatique pour le restaurant.
 
 L'évaluateur et le worker de seuil sont livrés localement et couverts par des tests unitaires. Leur
 activation est facultative et ne constitue pas une gate commerciale. La projection de marge
-opérateur `/dashboard/admin/margin` est la surface de référence pour suivre le coût par restaurant.
+opérateur `/admin/margin` est la surface de référence pour suivre le coût par restaurant. L'ancienne
+URL `/dashboard/admin/margin` reste un alias de transition et redirige l'opérateur vers cet espace.

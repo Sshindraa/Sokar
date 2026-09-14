@@ -133,9 +133,10 @@ reste à `true` ; un rollback reste possible.
 - `/login`, `/register` — Clerk auth.
 - `/onboarding/[step]` — onboarding restaurateur.
 - `/dashboard` — métriques, graphiques, sync org.
-- `/dashboard/usage` — volumes voix/SMS courants et historique six mois, sans quota ni coûts internes.
-- `/dashboard/admin/provisioning` — cockpit opérateur : numéro, webhook, renvoi et appel test avec confirmation avant activation.
-- `/dashboard/admin/margin` — cockpit opérateur du coût par établissement, du catalogue local, de la marge calculable, de la file des corrections et de l'export comptable CSV.
+- `/dashboard/usage` — ancienne surface opérateur conservée comme alias vers `/admin/margin` ; aucun coût interne n'est exposé au restaurant.
+- `/admin` — espace opérateur Sokar séparé du dashboard restaurant ; vue générale, coûts opérationnels, santé et provisioning.
+- `/admin/provisioning` — cockpit opérateur : numéro, webhook, renvoi et appel test avec confirmation avant activation. L'ancienne URL `/dashboard/admin/provisioning` redirige vers cet espace.
+- `/admin/margin` — cockpit opérateur du coût par établissement, du catalogue local, de la marge calculable, de la file des corrections et du téléchargement du suivi interne. Le script `usage:accounting:package` emballe ensuite cet export pour une éventuelle étape comptable, en séparant les devises.
 - `/dashboard/reservations` — liste réservations.
 - `/dashboard/calls` — appels.
 - `/dashboard/customers` — CRM.
@@ -401,7 +402,7 @@ que `apps/api/scripts/reconcile-usage-invoice.ts` compare une facture au ledger 
 peut conserver un rapport JSON avec `--output`. Les routes opérateur de
 `usage.routes.ts` enregistrent ensuite les écarts dans `UsageReconciliationAdjustment` et
 permettent une décision `APPROVED`/`REJECTED` depuis l'état `OPEN`, sans réécriture du ledger. La
-route `GET /admin/usage/accounting-export.csv` et le bouton du cockpit agrègent les usages par
+route `GET /admin/usage/accounting-export.csv` et l'action de téléchargement du cockpit agrègent les usages par
 dimension et ajoutent les corrections approuvées comme lignes distinctes ; les corrections globales
 restent `UNALLOCATED` tant qu'elles ne sont pas réparties explicitement.
 Les deux scripts sont dry-run/stricts par défaut et ne contiennent aucun taux réel. Le preview de

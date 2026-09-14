@@ -38,7 +38,7 @@ describe('AdminMarginPage', () => {
     expect(screen.getByText('Tarifé')).toBeInTheDocument();
     expect(screen.getByText(/286,50/)).toBeInTheDocument();
     expect(screen.getByText(/Stripe non rapproché/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Export comptable CSV/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Télécharger le suivi interne/ })).toHaveAttribute(
       'href',
       expect.stringMatching(
         /^\/api\/proxy\/admin\/usage\/accounting-export\.csv\?month=\d{4}-\d{2}$/,
