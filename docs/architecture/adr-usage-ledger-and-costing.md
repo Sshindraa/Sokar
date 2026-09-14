@@ -1,15 +1,16 @@
 # ADR — Ledger d'usage et calcul des coûts
 
 > **Statut** : accepté, implémentation partielle
-> **Date** : 2026-09-13
-> **Périmètre livré** : schéma, recorder idempotent, projection mensuelle recalculable, routes de lecture, collecte Telnyx, compteurs STT/TTS/LLM, outbox et résolution tarifaire versionnée
+> **Date** : 2026-09-13 (mise à jour le 14 septembre 2026)
+> **Périmètre livré** : schéma, recorder idempotent, projection mensuelle recalculable, routes de lecture, collecte Telnyx, compteurs STT/TTS/LLM, outbox, résolution tarifaire versionnée, import contrôlé de tarifs, rapprochement de facture, ajustements soumis à décision opérateur et export comptable CSV borné
 
 ## Contexte
 
-Sokar doit mesurer les ressources variables avant d'engager les quotas des offres Essential 199 €
-et Pro 299 €. Les webhooks fournisseurs et les jobs BullMQ peuvent être rejoués, arriver dans le
-désordre ou manquer temporairement. Un compteur mutable mis à jour directement depuis ces sources
-rendrait les doublons et les corrections difficiles à auditer.
+Sokar promet une consommation sans quota client dans les offres Essential 199 € et Pro 299 €. Le
+ledger sert à mesurer la qualité de service et le coût opérationnel réel par restaurant afin que
+l'équipe Sokar puisse piloter sa marge. Les webhooks fournisseurs et les jobs BullMQ peuvent être
+rejoués, arriver dans le désordre ou manquer temporairement. Un compteur mutable mis à jour
+directement depuis ces sources rendrait les doublons et les corrections difficiles à auditer.
 
 ## Décision
 
@@ -37,7 +38,10 @@ inchangé.
 ## Frontière de données
 
 Les routes client `GET /usage/current` et `GET /usage/history` retournent uniquement les quantités
-et les limites commerciales. Elles n'exposent jamais le fournisseur, le coût estimé ni la marge.
+observées. Elles n'exposent jamais le fournisseur, le coût estimé ni la marge. `GET /usage/current`
+annonce explicitement `customerUsagePolicy=UNLIMITED` ; les champs historiques `included`,
+`limitsEnforced` et `quotas` restent présents pour compatibilité, avec des limites nulles et aucune
+application de seuil.
 La période d'historique est limitée à 24 mois et toutes les lectures utilisent le `restaurantId`
 résolu par Clerk côté serveur.
 
@@ -79,20 +83,116 @@ le téléphone et l'adresse email ne quittent jamais le processus d'envoi.
 
 `GET /api/internal/usage/margin` expose aux opérations, derrière le secret
 `SOKAR_INTERNAL_USAGE_TOKEN`, les quantités et coûts par restaurant et catégorie ainsi que le statut
-`PRICED`, `UNPRICED` ou `MIXED`. Les routes client ne reçoivent que la projection de quota et les
-quantités.
+`PRICED`, `UNPRICED` ou `MIXED`. La projection opérateur `/admin/usage/margin` applique les
+corrections `APPROVED` ayant une portée `restaurant:<id>` et dont la période est entièrement comprise dans le mois :
+`estimatedCostEur` reste le coût issu des événements, `adjustedCostEur` ajoute le delta approuvé,
+et la marge est calculée sur ce coût ajusté uniquement lorsque les événements de base sont tous
+tarifés. Une correction `global` n'est jamais répartie implicitement entre les établissements ;
+elle reste dans la file opérateur jusqu'à l'enregistrement d'une portée explicite. Les routes client
+ne reçoivent que les quantités et la politique `UNLIMITED` ; les coûts et marges restent internes.
 
 `UsageTariff` contient le prix par unité, sa fenêtre d'effet, sa version et sa source. Tant qu'une
 ligne fournisseur/unité n'est pas renseignée, le coût reste `0` avec `UNPRICED` ; aucune valeur de
 catalogue n'est inventée dans le code.
 
-## Travail restant avant quotas commerciaux
+### Import des tarifs validés
 
-- charger les premières lignes de tarifs validées par facture et documenter les règles d'arrondi fournisseur ;
+Les premières lignes de facture sont chargées par
+`apps/api/scripts/import-usage-tariffs.ts`, en CSV ou JSON. Le contrat d'entrée est volontairement
+étroit : `category`, `provider`, `unit`, `pricePerUnit`, `currency`, `effectiveFrom`, `effectiveTo`,
+`version` et `source`. Les dimensions sont normalisées en minuscules, les prix sont conservés avec
+neuf décimales maximum et seule la devise EUR est acceptée. Une date doit être ISO (`YYYY-MM-DD` ou
+UTC explicite) et la fenêtre doit être strictement positive.
+
+Le script est en dry-run par défaut. Il relit le catalogue avant d'écrire, ignore une ligne
+strictement identique déjà présente, et bloque l'import si une version existante diverge, si une
+ligne apparaît deux fois ou si deux fenêtres d'effet se chevauchent. L'écriture `--apply` se fait
+dans une transaction unique ; une course `P2002` fait échouer l'import afin qu'il soit relancé avec
+un catalogue à jour. `source` doit pointer vers une facture ou un relevé conservé dans le coffre
+opérations ; aucun tarif ne doit être déduit d'une page publique ou d'une estimation.
+
+Exemple de contrôle (sans taux réel dans le dépôt) :
+
+```zsh
+pnpm --filter @sokar/api exec tsx apps/api/scripts/import-usage-tariffs.ts \
+  --file ./private/provider-tariffs-2026-09.csv --dry-run
+pnpm --filter @sokar/api exec tsx apps/api/scripts/import-usage-tariffs.ts \
+  --file ./private/provider-tariffs-2026-09.csv --apply
+```
+
+Le contrôle de chevauchement est intentionnellement bloquant : pour changer un tarif à une date
+future, la fenêtre précédente doit être clôturée dans le lot de données validé avant de relancer
+l'import. Cette étape évite que `resolveUsageTariff()` choisisse silencieusement une ligne
+ambiguë.
+
+### Rapprochement de facture
+
+`apps/api/scripts/reconcile-usage-invoice.ts` compare un export de facture aux événements du ledger
+sur une fenêtre bornée. Le fichier suit le contrat
+`category`, `provider`, `unit`, `periodStart`, `periodEnd` (borne exclusive), `billedQuantity`,
+`billedCostEur`, `currency` et `source`. Les lignes de même dimension, période et facture sont
+agrégées avant comparaison. L'observation est faite par quantité et coût ; une tolérance doit être
+passée explicitement lorsque le fournisseur arrondit (`--quantity-tolerance` ou
+`--cost-tolerance`).
+
+Le rapport distingue `MATCH`, `MISMATCH`, `INVOICE_ONLY`, `USAGE_ONLY` et `UNPRICED_USAGE`, et le
+script sort en erreur dès qu'une ligne n'est pas `MATCH`. Avec `--output`, le rapport complet est
+conservé en JSON (hash déterministe, bornes, tolérances, compteurs et lignes) avant l'évaluation du code de sortie.
+Il ne modifie ni `UsageEvent` ni `UsageMonthlyRollup` et ne crée pas de correction comptable
+implicite. Les fenêtres qui se chevauchent pour une même dimension sont bloquées, y compris si la
+source déclarée diffère ; des lignes découpées sur une même période sont agrégées.
+
+Les écarts validés peuvent être conservés dans `UsageReconciliationAdjustment`, une table additive
+qui porte le hash du rapport, la référence de preuve, la portée (`global` ou
+`restaurant:<id>`), la dimension, la période, les deltas signés et les hashes d'acteurs. La clé
+d'idempotence est dérivée du rapport, de la portée, de la dimension et de la période. Les routes
+opérateur `GET/POST /admin/usage/reconciliation-adjustments` et
+`POST /admin/usage/reconciliation-adjustments/:id/decision` permettent de créer une correction
+`OPEN`, puis de l'`APPROVED` ou de la `REJECTED` avec un prédicat SQL `status = OPEN`. Une course ne
+peut donc pas remplacer une décision déjà prise, et aucune de ces transitions ne réécrit le ledger.
+
+### Export comptable
+
+`GET /admin/usage/accounting-export.csv` construit un flux mensuel destiné à la comptabilité ou à
+un rapprochement manuel. Le service agrège `UsageEvent` par établissement, catégorie, fournisseur
+et unité ; il ajoute ensuite une ligne séparée pour chaque correction `APPROVED`. Les fenêtres des
+corrections doivent être entièrement contenues dans le mois demandé, comme pour la projection de
+marge. Une correction `global` est exportée avec `cost_status=UNALLOCATED` afin d'imposer une
+affectation explicite en aval. Le CSV a un ordre de colonnes versionné, échappe les cellules et
+n'inclut aucune donnée de contact ou de contenu de message. Le bouton « Export comptable CSV » du
+cockpit `/dashboard/admin/margin` passe par le proxy authentifié ; il ne déclenche aucune écriture.
+
+## Seuils de suivi interne
+
+`evaluateUsageThresholds()` convertit les secondes téléphoniques en minutes, conserve la précision
+du ledger et peut retourner les seuils 70 %, 90 % et 100 % pour un budget interne explicitement
+configuré. Une limite `null` reste silencieuse : les plans clients sont sans quota. Le worker
+horaire `usage-alerts` parcourt les établissements, réclame chaque couple
+`mois UTC/restaurant/métrique/seuil` avec `SET NX` pendant 45 jours, puis passe l'alerte au
+dispatcher ops. Ces messages servent au suivi des coûts de Sokar ; ils ne bloquent jamais un appel,
+un SMS ou une réservation et ne sont pas envoyés au restaurateur.
+
+Le flag `USAGE_ALERTS_ENABLED` est `false` par défaut dans tous les exemples d'environnement. Le
+worker et son scheduler peuvent donc être déployés en shadow sans contacter un canal d'alerte ; la
+claim Redis empêche les doublons lorsque plusieurs processus exécutent le même tick. En cas de
+panne Redis, le worker ne dispatch pas le milestone afin d'éviter un spam répété.
+
+Les budgets de ce cost-watch sont lus séparément via `USAGE_ALERT_VOICE_BUDGET_MINUTES` et
+`USAGE_ALERT_SMS_BUDGET_SEGMENTS`. Ils sont optionnels, globaux au suivi opérateur et ne sont pas
+les limites d'une formule ; en leur absence, le système reste silencieux et le cockpit de marge
+reste la seule surface nécessaire.
+
+## Travail restant pour le suivi opérationnel
+
+- fournir au script les premières lignes de tarifs validées par facture et documenter les règles d'arrondi fournisseur ;
 - écrire le coût téléphonie réel au lieu de `UNPRICED` ;
 - brancher l'outbox aux mutations métier CRM/réservation qui doivent être atomiques ;
-- ajouter un rapprochement borné sur les rollups déjà recalculés par le scheduler ;
+- fournir les premières lignes de facture réelles et brancher ce CSV à l'export comptable aval ;
+- affecter explicitement les corrections `global` avant de les inclure dans une marge par établissement ;
 - ajouter les tests Postgres de concurrence, panne Redis et comparaison d'un appel réel de bout en bout ;
-- calculer les p50/p90/p99 avant de fixer les minutes et SMS inclus dans les offres.
+- si nécessaire, définir un budget interne de pilotage séparé des entitlements clients ; il ne devra
+  jamais devenir une limite ou une facturation automatique pour le restaurant.
 
-Tant que ces points restent ouverts, les limites de plan restent `null` et ne sont pas appliquées.
+L'évaluateur et le worker de seuil sont livrés localement et couverts par des tests unitaires. Leur
+activation est facultative et ne constitue pas une gate commerciale. La projection de marge
+opérateur `/dashboard/admin/margin` est la surface de référence pour suivre le coût par restaurant.

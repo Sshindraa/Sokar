@@ -17,10 +17,16 @@ export function PhoneStep({ onComplete }: StepProps) {
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+  const [testCallControlId, setTestCallControlId] = useState<string | null>(null);
 
   const phoneNumber = state?.restaurant.phoneNumber ?? '';
   const hasAssignedPhone = Boolean(state?.restaurant.phoneAssigned);
   const managerPhone = state?.restaurant.managerPhone ?? '';
+  const persistedTestCallControlId = state?.steps.find((step) => step.key === 'phone')?.state
+    .metadata?.testCallControlId;
+  const pendingTestCallControlId =
+    testCallControlId ??
+    (typeof persistedTestCallControlId === 'string' ? persistedTestCallControlId : null);
 
   async function handleTestCall() {
     if (!managerPhone) {
@@ -31,16 +37,14 @@ export function PhoneStep({ onComplete }: StepProps) {
     setTestError(null);
     setTestResult(null);
     try {
-      const res = await post<{ ok: boolean; message: string }>('restaurant/onboarding/test-call', {
-        phoneNumber: managerPhone,
-      });
-      await updateTask('first_call', 'phone');
-      await updateTask('complete', 'phone');
-      await updateTask('activate');
-      setTestResult(
-        'Assistant vocal configuré. Votre IA répond maintenant au téléphone. Passons à la mise en ligne de votre fiche réservable…',
+      const res = await post<{ ok: boolean; message: string; callControlId: string }>(
+        'restaurant/onboarding/test-call',
+        { phoneNumber: managerPhone },
       );
-      window.setTimeout(() => onComplete('connect-identity'), ONBOARDING_STEP_DELAY_MS);
+      setTestCallControlId(res.callControlId);
+      setTestResult(
+        'Appel déclenché. Vérifiez que vous avez bien reçu l’appel et entendu l’assistant, puis confirmez ci-dessous.',
+      );
     } catch (err: unknown) {
       // L'API renvoie un code structuré pour différencier les causes d'échec.
       // NO_PHONE_ASSIGNED : action Sokar (pas un retry utilisateur)
@@ -64,6 +68,29 @@ export function PhoneStep({ onComplete }: StepProps) {
       } else {
         setTestError(apiMessage ?? "L'appel test a échoué. Réessayez ou contactez le support.");
       }
+    } finally {
+      setCalling(false);
+    }
+  }
+
+  async function handleConfirmTestCall() {
+    if (!pendingTestCallControlId) return;
+    setCalling(true);
+    setTestError(null);
+    try {
+      const validated = await updateTask('first_call', 'phone', {
+        metadata: { testCallControlId: pendingTestCallControlId },
+      });
+      if (!validated) {
+        setTestError("La confirmation n'a pas été enregistrée. Actualisez la page puis réessayez.");
+        return;
+      }
+      await updateTask('complete', 'phone');
+      await updateTask('activate');
+      setTestResult(
+        'Assistant vocal validé. Votre IA répond maintenant au téléphone. Passons à la mise en ligne de votre fiche réservable…',
+      );
+      window.setTimeout(() => onComplete('connect-identity'), ONBOARDING_STEP_DELAY_MS);
     } finally {
       setCalling(false);
     }
@@ -187,16 +214,41 @@ export function PhoneStep({ onComplete }: StepProps) {
         )}
 
         <div className="flex flex-col gap-2 sm:flex-row">
-          <Button
-            type="button"
-            onClick={handleTestCall}
-            disabled={calling || !hasAssignedPhone || !managerPhone}
-            className="transition-colors duration-200"
-          >
-            {calling && <Loader2 className="animate-spin" size={16} />}
-            {calling ? 'Appel en cours…' : 'Lancer un appel test'}
-            <PhoneForwarded size={16} />
-          </Button>
+          {pendingTestCallControlId ? (
+            <>
+              <Button
+                type="button"
+                onClick={handleConfirmTestCall}
+                disabled={calling}
+                className="transition-colors duration-200"
+              >
+                {calling && <Loader2 className="animate-spin" size={16} />}
+                {calling ? 'Confirmation en cours…' : "J'ai reçu l'appel"}
+                <ShieldCheck size={16} />
+              </Button>
+              <Button
+                type="button"
+                onClick={handleTestCall}
+                disabled={calling || !hasAssignedPhone || !managerPhone}
+                variant="outline"
+                className="transition-colors duration-200"
+              >
+                Relancer l&apos;appel test
+                <PhoneForwarded size={16} />
+              </Button>
+            </>
+          ) : (
+            <Button
+              type="button"
+              onClick={handleTestCall}
+              disabled={calling || !hasAssignedPhone || !managerPhone}
+              className="transition-colors duration-200"
+            >
+              {calling && <Loader2 className="animate-spin" size={16} />}
+              {calling ? 'Appel en cours…' : 'Lancer un appel test'}
+              <PhoneForwarded size={16} />
+            </Button>
+          )}
           <Button onClick={handleSkip} variant="ghost" className="transition-colors duration-200">
             Plus tard
           </Button>

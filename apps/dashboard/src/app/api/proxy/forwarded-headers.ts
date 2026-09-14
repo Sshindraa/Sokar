@@ -14,6 +14,7 @@ export function forwardedHeaders(req: NextRequest) {
   const authorization = req.headers.get('authorization') || '';
   const forwardedFor = req.headers.get('x-forwarded-for') || '';
   const requestId = req.headers.get('x-request-id') || '';
+  const idempotencyKey = req.headers.get('idempotency-key') || '';
   // Audio elements cannot attach custom headers, so the calls page may pass
   // the already validated site selection as a query parameter. The API still
   // resolves membership and account ownership server-side.
@@ -25,6 +26,7 @@ export function forwardedHeaders(req: NextRequest) {
   if (authorization) headers.Authorization = authorization;
   if (forwardedFor) headers['X-Forwarded-For'] = forwardedFor;
   if (requestId) headers['X-Request-ID'] = requestId;
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   if (siteId) headers['X-Sokar-Site-ID'] = siteId;
   if (range) headers.Range = range;
   return headers;

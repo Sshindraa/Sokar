@@ -121,6 +121,28 @@ describe('FloorPlanPage — switch desktop', () => {
     );
   });
 
+  it('permet de réessayer après une panne sans laisser le skeleton affiché', async () => {
+    apiMocks.get
+      .mockRejectedValueOnce(new Error('Impossible de joindre le serveur API'))
+      .mockResolvedValueOnce(floorPlansFixture);
+
+    render(<FloorPlanPage />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Impossible de joindre le serveur API');
+    expect(screen.queryByTestId('floor-plan-selector')).not.toBeInTheDocument();
+
+    apiMocks.get.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('floor-plan-selector')).toBeInTheDocument();
+    });
+    expect(
+      apiMocks.get.mock.calls.filter((call) => call[0] === 'restaurants/org_test/floor-plans'),
+    ).toHaveLength(1);
+  });
+
   it('transmet le signalement vocal puis nettoie son URL après application', async () => {
     mocks.setSearchParams(
       'reservationId=res-1&delayMinutes=25&delayReportId=report-1&serviceDate=2026-07-21&foo=bar',

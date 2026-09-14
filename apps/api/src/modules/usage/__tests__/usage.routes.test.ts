@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, UsageAdjustmentStatus } from '@prisma/client';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeApp, getApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
@@ -6,11 +6,15 @@ import { db } from '../../../shared/db/client';
 const AUTH = { authorization: 'Bearer fake-token' };
 
 describe('usage routes', () => {
-  afterAll(closeApp);
+  afterAll(async () => {
+    vi.unstubAllEnvs();
+    await closeApp();
+  });
 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'STARTER' } as never);
+    vi.mocked(db.restaurant.findMany).mockResolvedValue([]);
     vi.mocked(db.usageEvent.groupBy).mockResolvedValue([]);
     vi.mocked(db.usageMonthlyRollup.findMany).mockResolvedValue([]);
   });
@@ -21,7 +25,7 @@ describe('usage routes', () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it('returns quantities and plan limits without cost data', async () => {
+  it('returns observed quantities with an explicit unlimited customer policy', async () => {
     vi.mocked(db.usageEvent.groupBy).mockResolvedValue([
       { category: 'TELEPHONY_SECONDS', _sum: { quantity: new Prisma.Decimal(125) } },
     ] as never);
@@ -32,6 +36,7 @@ describe('usage routes', () => {
 
     expect(response.statusCode).toBe(200);
     expect(body.usage).toEqual([{ category: 'TELEPHONY_SECONDS', quantity: '125.000000' }]);
+    expect(body.customerUsagePolicy).toBe('UNLIMITED');
     expect(body.included).toEqual({ voiceMinutes: null, smsSegments: null });
     expect(body.limitsEnforced).toEqual({ voiceMinutes: false, smsSegments: false });
     expect(JSON.stringify(body)).not.toMatch(/cost|margin|provider/i);
@@ -88,5 +93,206 @@ describe('usage routes', () => {
       headers: AUTH,
     });
     expect(tooWide.statusCode).toBe(400);
+  });
+
+  it('protects the internal margin feed with a dedicated token', async () => {
+    vi.stubEnv('SOKAR_INTERNAL_USAGE_TOKEN', 'usage-secret');
+    vi.mocked(db.usageEvent.findMany).mockResolvedValue([]);
+
+    const app = await getApp();
+    const unauthorized = await app.inject({
+      method: 'GET',
+      url: '/api/internal/usage/margin?month=2026-09',
+      headers: { 'x-sokar-internal-usage-token': 'wrong' },
+    });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const authorized = await app.inject({
+      method: 'GET',
+      url: '/api/internal/usage/margin?month=2026-09',
+      headers: { 'x-sokar-internal-usage-token': 'usage-secret' },
+    });
+    expect(authorized.statusCode).toBe(200);
+    expect(authorized.json()).toEqual({ month: '2026-09', rows: [] });
+  });
+
+  it('does not expose the internal feed when its token is absent', async () => {
+    vi.stubEnv('SOKAR_INTERNAL_USAGE_TOKEN', '');
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/internal/usage/margin',
+    });
+    expect(response.statusCode).toBe(503);
+  });
+
+  it('expose la projection de marge uniquement à un opérateur Sokar', async () => {
+    vi.mocked(db.usageEvent.findMany).mockResolvedValue([]);
+    const app = await getApp();
+
+    const unauthorized = await app.inject({ method: 'GET', url: '/admin/usage/margin' });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const authorized = await app.inject({
+      method: 'GET',
+      url: '/admin/usage/margin?month=2026-09',
+      headers: AUTH,
+    });
+    expect(authorized.statusCode).toBe(200);
+    expect(authorized.json()).toEqual({
+      month: '2026-09',
+      priceSource: 'LOCAL_CATALOG',
+      revenueStatus: 'NOT_STRIPE_RECONCILED',
+      rows: [],
+    });
+  });
+
+  it('expose un export comptable CSV réservé à un opérateur', async () => {
+    vi.mocked(db.usageEvent.findMany).mockResolvedValue([
+      {
+        restaurantId: 'rest-1',
+        category: 'SMS_SEGMENTS',
+        provider: 'telnyx',
+        unit: 'segments',
+        quantity: new Prisma.Decimal('2'),
+        estimatedCost: new Prisma.Decimal('0.015'),
+        metadata: { costStatus: 'PRICED' },
+      },
+    ] as never);
+    vi.mocked(db.usageReconciliationAdjustment.findMany).mockResolvedValue([]);
+    vi.mocked(db.restaurant.findMany).mockResolvedValue([
+      { id: 'rest-1', name: 'Chez Sokar', plan: 'PRO' },
+    ] as never);
+
+    const app = await getApp();
+    const unauthorized = await app.inject({
+      method: 'GET',
+      url: '/admin/usage/accounting-export.csv?month=2026-09',
+    });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/admin/usage/accounting-export.csv?month=2026-09',
+      headers: AUTH,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toContain('text/csv');
+    expect(response.headers['content-disposition']).toContain('sokar-usage-accounting-2026-09.csv');
+    expect(response.body).toContain('"row_type"');
+    expect(response.body).toContain('"USAGE"');
+    expect(response.body).toContain('"Chez Sokar"');
+  });
+
+  it('enregistre une correction de rapprochement sans exposer l identité opérateur', async () => {
+    const adjustment = {
+      id: 'adjustment-1',
+      idempotencyKey: 'b'.repeat(64),
+      reportHash: 'a'.repeat(64),
+      evidenceRef: 'vault://invoices/telnyx-2026-09.json',
+      scopeKey: 'restaurant:rest-1',
+      restaurantId: 'rest-1',
+      category: 'SMS_SEGMENTS',
+      provider: 'telnyx',
+      unit: 'segments',
+      periodStart: new Date('2026-09-01T00:00:00.000Z'),
+      periodEnd: new Date('2026-10-01T00:00:00.000Z'),
+      quantityDelta: new Prisma.Decimal('-2'),
+      costDeltaEur: new Prisma.Decimal('0.015'),
+      status: UsageAdjustmentStatus.OPEN,
+      reason: 'Provider invoice includes two rejected segments.',
+      decisionReason: null,
+      createdByHash: 'c'.repeat(64),
+      decidedByHash: null,
+      decidedAt: null,
+      createdAt: new Date('2026-09-14T12:00:00.000Z'),
+      updatedAt: new Date('2026-09-14T12:00:00.000Z'),
+    };
+    vi.mocked(db.usageReconciliationAdjustment.findUnique).mockResolvedValueOnce(null);
+    vi.mocked(db.usageReconciliationAdjustment.create).mockResolvedValue(adjustment as never);
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/admin/usage/reconciliation-adjustments',
+      headers: AUTH,
+      payload: {
+        reportHash: 'a'.repeat(64),
+        evidenceRef: 'vault://invoices/telnyx-2026-09.json',
+        scopeKey: 'restaurant:rest-1',
+        restaurantId: 'rest-1',
+        category: 'SMS_SEGMENTS',
+        provider: 'Telnyx',
+        unit: 'Segments',
+        periodStart: '2026-09-01T00:00:00.000Z',
+        periodEnd: '2026-10-01T00:00:00.000Z',
+        quantityDelta: '-2',
+        costDeltaEur: '0.015',
+        reason: 'Provider invoice includes two rejected segments.',
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json().data).toMatchObject({
+      id: 'adjustment-1',
+      status: 'OPEN',
+      quantityDelta: '-2.000000',
+    });
+    expect(response.json().data.createdByHash).toBeUndefined();
+    expect(db.usageReconciliationAdjustment.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ createdByHash: expect.stringMatching(/^[a-f0-9]{64}$/) }),
+    });
+  });
+
+  it('décide une correction avec une transition atomique', async () => {
+    const open = {
+      id: 'adjustment-1',
+      idempotencyKey: 'b'.repeat(64),
+      reportHash: 'a'.repeat(64),
+      evidenceRef: 'vault://invoices/telnyx-2026-09.json',
+      scopeKey: 'restaurant:rest-1',
+      restaurantId: 'rest-1',
+      category: 'SMS_SEGMENTS',
+      provider: 'telnyx',
+      unit: 'segments',
+      periodStart: new Date('2026-09-01T00:00:00.000Z'),
+      periodEnd: new Date('2026-10-01T00:00:00.000Z'),
+      quantityDelta: new Prisma.Decimal('-2'),
+      costDeltaEur: new Prisma.Decimal('0.015'),
+      status: UsageAdjustmentStatus.OPEN,
+      reason: 'Provider invoice includes two rejected segments.',
+      decisionReason: null,
+      createdByHash: 'c'.repeat(64),
+      decidedByHash: null,
+      decidedAt: null,
+      createdAt: new Date('2026-09-14T12:00:00.000Z'),
+      updatedAt: new Date('2026-09-14T12:00:00.000Z'),
+    };
+    const approved = {
+      ...open,
+      status: UsageAdjustmentStatus.APPROVED,
+      decisionReason: 'Validated against provider invoice.',
+      decidedByHash: 'd'.repeat(64),
+      decidedAt: new Date('2026-09-14T12:05:00.000Z'),
+    };
+    vi.mocked(db.usageReconciliationAdjustment.findUnique)
+      .mockResolvedValueOnce(open as never)
+      .mockResolvedValueOnce(approved as never);
+    vi.mocked(db.usageReconciliationAdjustment.updateMany).mockResolvedValue({ count: 1 });
+
+    const app = await getApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/admin/usage/reconciliation-adjustments/adjustment-1/decision',
+      headers: AUTH,
+      payload: { status: 'APPROVED', reason: 'Validated against provider invoice.' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.status).toBe('APPROVED');
+    expect(db.usageReconciliationAdjustment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'adjustment-1', status: UsageAdjustmentStatus.OPEN },
+      data: expect.objectContaining({ status: UsageAdjustmentStatus.APPROVED }),
+    });
   });
 });

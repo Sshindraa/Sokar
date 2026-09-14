@@ -13,6 +13,50 @@ vi.mock('@prisma/client', async (importOriginal) => {
       update: vi.fn(),
       updateMany: vi.fn(),
     };
+    posConnection = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    posCheck = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      upsert: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
+    reservationCheckMatch = {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      upsert: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
+    reservationPaymentPolicy = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
+    reservationPayment = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    reservationPaymentEvent = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+    };
     restaurantAccount = {
       findUnique: vi.fn(),
       findMany: vi.fn(),
@@ -74,9 +118,338 @@ vi.mock('@prisma/client', async (importOriginal) => {
       update: vi.fn(),
       updateMany: vi.fn(),
     };
-    reservation = {
+    customer = {
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      count: vi.fn(),
+      upsert: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      delete: vi.fn(),
+    };
+    customerGroupProfile = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    };
+    customerGroupMembership = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
+    };
+    reputationFeedbackRequest = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    reputationFeedback = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+    };
+    reputationRecoveryTask = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    loyaltyBenefit = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
+    loyaltyGrant = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    experience = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
+    experienceSession = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    experienceReservation = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    event = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
+    eventSession = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    eventTicketType = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
+    eventOrder = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      aggregate: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    eventTicket = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    eventWaitlistEntry = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    distributionConnection = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
+    distributionSyncRun = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
+    distributionAvailabilitySnapshot = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      upsert: vi.fn(),
+    };
+    distributionReservationLink = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+    };
+    distributionWebhookEvent = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    };
+    customerIdentity = {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    };
+    customerTimelineEvent = {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    customerMetricSnapshot = {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      upsert: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    };
+    customerPreference = {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      upsert: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    customerTag = {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      upsert: vi.fn(),
+    };
+    customerTagAssignment = {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    customerMergeAudit = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+    };
+    customerSegment = {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      deleteMany: vi.fn(),
+    };
+    customerConsent = {
+      create: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      updateMany: vi.fn(),
+    };
+    marketingPermission = {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      upsert: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    };
+    marketingPermissionEvent = {
+      create: vi.fn(),
+      findMany: vi.fn(),
+      updateMany: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    };
+    marketingSuppression = {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      delete: vi.fn(),
+    };
+    marketingCampaign = {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
+    };
+    marketingAutomation = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      upsert: vi.fn(),
+    };
+    marketingAutomationDispatch = {
+      findMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    };
+    campaignAudienceMember = {
+      findMany: vi.fn(),
+      createMany: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      deleteMany: vi.fn(),
+    };
+    campaignMessage = {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      create: vi.fn(),
+      createMany: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      delete: vi.fn(),
+    };
+    marketingConversion = {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      updateMany: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    };
+    marketingFrequencyWindow = {
+      findMany: vi.fn(),
+      create: vi.fn(),
+      updateMany: vi.fn(),
+      upsert: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      update: vi.fn(),
+      delete: vi.fn(),
+    };
+    marketingAttributionLink = {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      upsert: vi.fn(),
+      update: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      delete: vi.fn(),
+    };
+    reservation = {
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
     };
     reservationAuditLog = {
       findFirst: vi.fn(),
@@ -102,12 +475,19 @@ vi.mock('@prisma/client', async (importOriginal) => {
       findMany: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
     };
+    usageReconciliationAdjustment = {
+      findUnique: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn(),
+      updateMany: vi.fn(),
+    };
     outboxEvent = {
       findUnique: vi.fn(),
       findMany: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     };
+    $executeRaw = vi.fn().mockResolvedValue(0);
     $queryRaw = vi.fn().mockResolvedValue([{ '1': 1 }]);
     $transaction = vi.fn(async (callback: (tx: PrismaClient) => unknown) => callback(this));
     $disconnect = vi.fn();

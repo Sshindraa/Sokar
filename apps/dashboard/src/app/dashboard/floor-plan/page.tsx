@@ -22,6 +22,7 @@ import { FloorPlanCanvas } from './_components/FloorPlanCanvas';
 import { FloorPlanCrud } from './_components/FloorPlanCrud';
 import { FloorPlanSelector } from './_components/FloorPlanSelector';
 import { ServiceCopilotSimulator } from './_components/ServiceCopilotSimulator';
+import { DataFetchError } from '@/components/DataFetchError';
 
 function getDefaultFloorPlan(floorPlans: FloorPlanSummary[]): FloorPlanSummary | null {
   return (
@@ -178,29 +179,29 @@ export default function FloorPlanPage() {
         </div>
       </div>
 
-      {listError ? (
-        <div className="sokar-error">
-          <p className="text-sm">{listError}</p>
-        </div>
-      ) : null}
+      {listError && (
+        <DataFetchError message={listError} onRetry={loadFloorPlans} retrying={listLoading} />
+      )}
 
-      {listLoading || floorPlans === null ? (
+      {listLoading || (floorPlans === null && !listError) ? (
         <div className="flex items-center gap-4">
           <Skeleton className="h-10 w-64 rounded-lg" />
           <Skeleton className="h-10 w-24 rounded-lg" />
         </div>
-      ) : floorPlans.length === 0 ? (
-        <div className="sokar-empty">
-          <p className="text-sm">Aucun plan de salle</p>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => setCreateDialogOpen(true)}
-            className="mt-4"
-          >
-            Créer un plan
-          </Button>
-        </div>
+      ) : floorPlans === null ? null : floorPlans.length === 0 ? (
+        listError ? null : (
+          <div className="sokar-empty">
+            <p className="text-sm">Aucun plan de salle</p>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setCreateDialogOpen(true)}
+              className="mt-4"
+            >
+              Créer un plan
+            </Button>
+          </div>
+        )
       ) : (
         <FloorPlanSelector
           floorPlans={floorPlans}

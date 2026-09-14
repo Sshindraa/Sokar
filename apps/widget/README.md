@@ -1,39 +1,47 @@
 # @sokar/widget — OpenAI Reserve Widget
 
-## ⚠️ PROTOTYPE NON FONCTIONNEL — NE PAS DÉPLOYER
+## État au 13 septembre 2026
 
-Cette app est un prototype expérimental (OpenAI Apps SDK). Elle **ne doit pas
-être déployée** tant que les 3 points suivants ne sont pas résolus :
+Le widget est **fonctionnel en local** et reste gelé avant toute mise en
+production. Le composant `src/components/reservation-widget.tsx` appelle le
+parcours API réel :
 
-1. **Accès partenaire OpenAI Reserve non obtenu** — l'intégration business feed
-   - tool `restaurant_reservation` nécessite un accès partenaire OpenAI qui n'a
-     pas encore été accordé. Le endpoint `/v1/businesses` et le tool MCP sont
-     implémentés côté API (`apps/api/src/modules/agentic-reservations/openai-reserve/`),
-     mais OpenAI ne les consomme pas encore.
+1. `GET /public/r/:slug/availability` ;
+2. `POST /public/r/:slug/hold` ;
+3. `POST /public/r/:slug/confirm`.
 
-2. **`reservation-widget.tsx` simule la réservation** — le composant
-   (`src/components/reservation-widget.tsx` lignes 87-94) utilise un
-   `setTimeout(2000)` + `setSuccess('Réservation confirmée !')` au lieu
-   d'appeler l'API réelle (`window.openai.callTool` ou fetch vers
-   `/public/hold` + `/public/confirm`). Aucune réservation n'est créée.
+Les tokens d’attribution marketing sont conservés dans l’URL
+`marketingAttributionToken`, enregistrent le clic et sont transmis à la
+création de la réservation. Le composant n’utilise pas de `setTimeout` pour
+simuler une confirmation.
 
-3. **Aucun pipeline de déploiement CDN configuré** — la constante
-   `WIDGET_PUBLIC_URL` dans `apps/api/src/modules/agentic-reservations/openai-reserve/constants.ts`
-   pointe vers `https://widget.sokar.tech/`, mais ce sous-domaine n'a aucun
-   DNS/CDN configuré derrière lui aujourd'hui. Aucun déploiement
-   Cloudflare/CDN n'est configuré pour servir le build statique (`next export`).
+Deux conditions restent ouvertes avant une activation commerciale :
 
-## Que faire pour rendre ce widget fonctionnel ?
+1. **Accès partenaire OpenAI Reserve.** L’API expose le feed et le tool sous
+   `apps/api/src/modules/agentic-reservations/openai-reserve/`, mais l’accès
+   partenaire externe n’est pas encore accordé.
+2. **Publication CDN vérifiée.** `next.config.js` produit un export statique
+   dans `out/` et `WIDGET_PUBLIC_URL` pointe vers `widget.sokar.tech`, mais le
+   DNS/CDN et un smoke test public doivent encore être validés sur un
+   environnement de staging.
 
-1. Obtenir l'accès partenaire OpenAI Reserve (démarche externe, bloquée).
-2. Remplacer le mock `setTimeout` par un vrai appel API
-   (`/public/hold` → `/public/confirm`, ou `window.openai.callTool`).
-3. Configurer le déploiement CDN (Cloudflare Pages ou similaire) sur un
-   sous-domaine réel (ex. `widget.sokar.tech`), et mettre à jour
-   `WIDGET_PUBLIC_URL` + `OPENAI_WIDGET_PUBLIC_URL`.
+## Développement
+
+Définir `NEXT_PUBLIC_API_URL` au moment du build (par exemple
+`http://localhost:3001` en local), puis lancer :
+
+```bash
+pnpm --filter @sokar/widget dev
+pnpm --filter @sokar/widget test
+pnpm --filter @sokar/widget typecheck
+```
+
+Le fallback standalone accepte `?slug=...`. Dans ChatGPT, le slug est lu
+depuis `window.openai.toolInput`.
 
 ## Stack
 
-- Next.js (export statique, `next export`).
-- Tailwind CSS.
-- OpenAI Apps SDK (`window.openai` injecté par l'iframe ChatGPT).
+- Next.js 15 avec `output: export` ;
+- Tailwind CSS ;
+- OpenAI Apps SDK (`window.openai` pour l’état du widget) ;
+- API Sokar pour les disponibilités, holds et confirmations.

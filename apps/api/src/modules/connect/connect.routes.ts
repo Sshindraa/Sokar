@@ -756,6 +756,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
             holdToken: bodyParse.data.holdToken,
             specialRequests: bodyParse.data.specialRequests,
             tableId: table.id,
+            marketingAttributionToken: bodyParse.data.marketingAttributionToken,
             giftCardCode: bodyParse.data.giftCardCode,
             giftCardReservationAmount: Number(restaurant.priceRange ?? 2) * 25 * hold.partySize,
             consents: {

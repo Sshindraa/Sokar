@@ -61,6 +61,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       return new Response(res.body, { status: res.status, headers });
     }
 
+    const contentType = res.headers.get('content-type') ?? '';
+    if (contentType.startsWith('text/csv') || contentType.startsWith('application/octet-stream')) {
+      const headers = new Headers();
+      for (const name of [
+        'content-type',
+        'content-disposition',
+        'content-length',
+        'cache-control',
+      ]) {
+        const value = res.headers.get(name);
+        if (value) headers.set(name, value);
+      }
+      return new Response(res.body, { status: res.status, headers });
+    }
+
     const data = await parseResponse(res);
     return proxyResponse(data, res.status);
   });

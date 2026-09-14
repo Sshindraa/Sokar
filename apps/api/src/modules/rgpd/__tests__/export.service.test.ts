@@ -148,4 +148,239 @@ describe('ExportService.exportSubject', () => {
     expect(result.exportedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(result.privacyPolicyVersion).toMatch(/.+/);
   });
+
+  it('inclut les permissions par canal et les messages marketing du profil CRM', async () => {
+    const crmPrisma = {
+      reservation: { findMany: vi.fn().mockResolvedValue([]) },
+      customerConsent: { findMany: vi.fn().mockResolvedValue([]) },
+      customer: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'customer-1',
+            restaurantId: 'rest-1',
+            phone: '+33601020304',
+            emailNormalized: 'alice@example.test',
+            birthMonth: 4,
+            birthDay: 12,
+            preferredLocale: 'fr-FR',
+            identities: [],
+            preferences: [],
+            tagAssignments: [],
+            createdAt: new Date('2026-01-01'),
+          },
+        ]),
+      },
+      marketingPermission: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'permission-1',
+            restaurantId: 'rest-1',
+            customerId: 'customer-1',
+            channel: 'EMAIL',
+            status: 'OPTED_IN',
+            source: 'WEB_FORM',
+            proofVersion: 'privacy-2026-09',
+            proofHash: 'a'.repeat(64),
+            consentedAt: new Date('2026-02-01'),
+            withdrawnAt: null,
+            updatedAt: new Date('2026-02-01'),
+          },
+        ]),
+      },
+      campaignMessage: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'message-1',
+            campaignId: 'campaign-1',
+            channel: 'EMAIL',
+            status: 'DELIVERED',
+            provider: 'resend',
+            providerMessageId: 'provider-1',
+            renderedBody: 'Bonjour Alice',
+            acceptedAt: new Date('2026-02-02'),
+            sentAt: new Date('2026-02-02'),
+            deliveredAt: new Date('2026-02-02'),
+            createdAt: new Date('2026-02-02'),
+          },
+        ]),
+      },
+      marketingAutomationDispatch: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'dispatch-1',
+            automationId: 'automation-1',
+            restaurantId: 'rest-1',
+            customerId: 'customer-1',
+            triggerKey: 'first-honored:reservation-1',
+            campaignId: 'campaign-1',
+            status: 'QUEUED',
+            reasonCode: null,
+            occurredAt: new Date('2026-02-01'),
+            createdAt: new Date('2026-02-01'),
+          },
+        ]),
+      },
+      customerMergeAudit: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'merge-audit-1',
+            restaurantId: 'rest-1',
+            targetCustomerId: 'customer-1',
+            sourceCustomerIds: ['customer-2'],
+            preferenceResolution: { preferred_language: 'target' },
+            summary: { sourceCount: 1, reservationsMoved: 2 },
+            createdAt: new Date('2026-02-03'),
+          },
+        ]),
+      },
+    } as unknown as PrismaClient;
+
+    const result = await new ExportService(crmPrisma).exportSubject({ subject: '+33601020304' });
+
+    expect(result.marketingPermissions).toEqual([
+      expect.objectContaining({ id: 'permission-1', channel: 'EMAIL', status: 'OPTED_IN' }),
+    ]);
+    expect(result.marketingMessages).toEqual([
+      expect.objectContaining({
+        id: 'message-1',
+        status: 'DELIVERED',
+        renderedBody: 'Bonjour Alice',
+      }),
+    ]);
+    expect(result.marketingAutomationDispatches).toEqual([
+      expect.objectContaining({
+        id: 'dispatch-1',
+        triggerKey: 'first-honored:reservation-1',
+        status: 'QUEUED',
+      }),
+    ]);
+    expect(result.crmMergeAudits).toEqual([
+      expect.objectContaining({
+        id: 'merge-audit-1',
+        targetCustomerId: 'customer-1',
+        sourceCustomerIds: ['customer-2'],
+      }),
+    ]);
+  });
+
+  it('exporte les réservations d expériences rattachées au sujet', async () => {
+    const experienceReservations = {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          id: 'experience-reservation-1',
+          restaurantId: 'rest-1',
+          experienceId: 'experience-1',
+          sessionId: 'session-1',
+          quantity: 2,
+          unitPriceCents: 4500,
+          totalPriceCents: 9000,
+          currency: 'EUR',
+          status: 'CONFIRMED',
+          createdAt: new Date('2026-09-14T10:00:00Z'),
+          session: {
+            startsAt: new Date('2026-09-20T18:00:00Z'),
+            endsAt: new Date('2026-09-20T19:30:00Z'),
+          },
+        },
+      ]),
+    };
+    const experiencePrisma = {
+      reservation: { findMany: vi.fn().mockResolvedValue([]) },
+      customerConsent: { findMany: vi.fn().mockResolvedValue([]) },
+      experienceReservation: experienceReservations,
+    };
+
+    const result = await new ExportService(
+      experiencePrisma as unknown as PrismaClient,
+    ).exportSubject({
+      subject: '+33601020304',
+    });
+
+    expect(result.experienceReservations).toMatchObject([
+      {
+        id: 'experience-reservation-1',
+        quantity: 2,
+        totalPriceCents: 9000,
+        startsAt: '2026-09-20T18:00:00.000Z',
+      },
+    ]);
+    expect(experienceReservations.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ OR: expect.any(Array) }) }),
+    );
+  });
+
+  it('exporte les commandes événement et la liste d attente du profil CRM', async () => {
+    const eventOrder = {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          id: 'event-order-1',
+          restaurantId: 'rest-1',
+          eventId: 'event-1',
+          sessionId: 'session-1',
+          ticketTypeId: 'ticket-type-1',
+          customerId: 'customer-1',
+          reservationId: null,
+          quantity: 2,
+          unitPriceCents: 2500,
+          totalPriceCents: 5000,
+          currency: 'EUR',
+          status: 'CONFIRMED',
+          invoiceNumber: 'SOKAR-EVT-1',
+          invoicedAt: new Date('2026-09-14T11:00:00Z'),
+          refundedAt: null,
+          cancelledAt: null,
+          createdAt: new Date('2026-09-14T10:00:00Z'),
+        },
+      ]),
+    };
+    const eventWaitlistEntry = {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          id: 'event-wait-1',
+          restaurantId: 'rest-1',
+          eventId: 'event-1',
+          sessionId: 'session-1',
+          customerId: 'customer-1',
+          quantity: 1,
+          status: 'WAITING',
+          promotedAt: null,
+          createdAt: new Date('2026-09-14T10:00:00Z'),
+        },
+      ]),
+    };
+    const eventPrisma = {
+      reservation: { findMany: vi.fn().mockResolvedValue([]) },
+      customerConsent: { findMany: vi.fn().mockResolvedValue([]) },
+      customer: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'customer-1',
+            restaurantId: 'rest-1',
+            phone: '+33601020304',
+            emailNormalized: null,
+            birthMonth: null,
+            birthDay: null,
+            preferredLocale: 'fr-FR',
+            identities: [],
+            preferences: [],
+            tagAssignments: [],
+            createdAt: new Date('2026-01-01'),
+          },
+        ]),
+      },
+      eventOrder,
+      eventWaitlistEntry,
+    };
+
+    const result = await new ExportService(eventPrisma as unknown as PrismaClient).exportSubject({
+      subject: '+33601020304',
+    });
+
+    expect(result.eventOrders).toMatchObject([
+      { id: 'event-order-1', quantity: 2, invoiceNumber: 'SOKAR-EVT-1' },
+    ]);
+    expect(result.eventWaitlistEntries).toMatchObject([
+      { id: 'event-wait-1', status: 'WAITING', quantity: 1 },
+    ]);
+  });
 });

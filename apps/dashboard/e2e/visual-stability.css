@@ -36,3 +36,9 @@ textarea,
   animation: none !important;
   opacity: 1 !important;
 }
+
+/* Le badge de diagnostic Next.js n'existe qu'en serveur dev et ne fait pas
+   partie de l'interface livrée au restaurateur. */
+nextjs-portal {
+  display: none !important;
+}

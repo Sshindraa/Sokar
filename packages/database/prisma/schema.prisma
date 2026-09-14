@@ -14,82 +14,128 @@ datasource db {
 // Pour les dropper : DROP TABLE IF EXISTS users, sessions, accounts, verifications CASCADE;
 
 model Restaurant {
-  id                    String                 @id @default(uuid())
+  id                     String                 @id @default(uuid())
   /// Compte commercial auquel appartient cet établissement.
   /// Nullable pendant le backfill initial pour préserver les restaurants existants.
-  accountId             String?                @map("account_id")
-  isPrimary             Boolean                @default(false) @map("is_primary")
-  siteStatus            String                 @default("ACTIVE") @map("site_status")
-  name                  String
-  plan                  Plan                   @default(STARTER)
-  managerPhone          String                 @map("manager_phone")
-  managerEmail          String                 @map("manager_email")
-  phoneNumber           String                 @unique @map("phone_number")
-  openingHours          Json                   @map("opening_hours")
-  carrier               String                 @default("vapi") // "vapi" | "telnyx" — rollback feature flag
-  smsConfirmEnabled     Boolean                @default(true) @map("sms_confirm_enabled")
-  theforkSavings        Decimal                @default(0) @map("thefork_savings") @db.Decimal(10, 2)
-  googleCalendarId      String?                @map("google_calendar_id")
-  googleRefreshToken    String?                @map("google_refresh_token")
-  onboardingTasks       Json                   @default("{}") @map("onboarding_tasks")
-  onboardingDone        Boolean                @default(false) @map("onboarding_done")
-  onboardingCompletedAt DateTime?              @map("onboarding_completed_at")
-  onboardingActivatedAt DateTime?              @map("onboarding_activated_at")
-  onboardingLastSeenAt  DateTime?              @map("onboarding_last_seen_at")
-  firstCallAt           DateTime?              @map("first_call_at")
+  accountId              String?                @map("account_id")
+  isPrimary              Boolean                @default(false) @map("is_primary")
+  siteStatus             String                 @default("ACTIVE") @map("site_status")
+  name                   String
+  plan                   Plan                   @default(STARTER)
+  managerPhone           String                 @map("manager_phone")
+  managerEmail           String                 @map("manager_email")
+  phoneNumber            String                 @unique @map("phone_number")
+  openingHours           Json                   @map("opening_hours")
+  carrier                String                 @default("vapi") // "vapi" | "telnyx" — rollback feature flag
+  smsConfirmEnabled      Boolean                @default(true) @map("sms_confirm_enabled")
+  theforkSavings         Decimal                @default(0) @map("thefork_savings") @db.Decimal(10, 2)
+  googleCalendarId       String?                @map("google_calendar_id")
+  googleRefreshToken     String?                @map("google_refresh_token")
+  onboardingTasks        Json                   @default("{}") @map("onboarding_tasks")
+  onboardingDone         Boolean                @default(false) @map("onboarding_done")
+  onboardingCompletedAt  DateTime?              @map("onboarding_completed_at")
+  onboardingActivatedAt  DateTime?              @map("onboarding_activated_at")
+  onboardingLastSeenAt   DateTime?              @map("onboarding_last_seen_at")
+  firstCallAt            DateTime?              @map("first_call_at")
   // Provisioning fields
   provisioningStatus     String                 @default("PENDING") @map("provisioning_status")
   telnyxPhoneNumberId    String?                @map("telnyx_phone_number_id")
   forwardingConfiguredAt DateTime?              @map("forwarding_configured_at")
   testCallValidatedAt    DateTime?              @map("test_call_validated_at")
-  createdAt             DateTime               @default(now()) @map("created_at")
-  updatedAt             DateTime               @default(now()) @updatedAt @map("updated_at")
-  calls                 Call[]
-  reservations          Reservation[]
-  customers             Customer[]
-  messages              Message[]
-  reactivationCampaigns ReactivationCampaign[]
-  personality           AgentPersonality?
-  callQuotas            CallQuota[]
-  agenticHolds          AgenticHold[]
-  floorPlans            FloorPlan[]
-  giftCards             GiftCard[]
-  giftCardPacks         GiftCardPack[]
-  waitingListEntries    WaitingListEntry[]
-  giftCardMinimumAmount Int?                      @map("gift_card_minimum_amount")
-  giftCardCommissionRate Decimal  @default(0.05) @map("gift_card_commission_rate") @db.Decimal(5, 4)
-  giftCardEnabled        Boolean                 @default(false) @map("gift_card_enabled")
+  createdAt              DateTime               @default(now()) @map("created_at")
+  updatedAt              DateTime               @default(now()) @updatedAt @map("updated_at")
+  calls                  Call[]
+  reservations           Reservation[]
+  customers              Customer[]
+  messages               Message[]
+  reactivationCampaigns  ReactivationCampaign[]
+  personality            AgentPersonality?
+  callQuotas             CallQuota[]
+  agenticHolds           AgenticHold[]
+  floorPlans             FloorPlan[]
+  giftCards              GiftCard[]
+  giftCardPacks          GiftCardPack[]
+  waitingListEntries     WaitingListEntry[]
+  giftCardMinimumAmount  Int?                   @map("gift_card_minimum_amount")
+  giftCardCommissionRate Decimal                @default(0.05) @map("gift_card_commission_rate") @db.Decimal(5, 4)
+  giftCardEnabled        Boolean                @default(false) @map("gift_card_enabled")
+  /// CSV de rôles autorisés à lire les notes CRM et les métadonnées de chronologie.
+  /// Null signifie « utiliser CRM_SENSITIVE_NOTE_ROLES » au niveau de l'API.
+  crmSensitiveNoteRoles  String?                @map("crm_sensitive_note_roles")
 
   // Agentic reservations (P0)
-  slug                 String?                     @unique @map("slug")
-  canonicalUrl         String?                     @map("canonical_url")
-  websiteUrl           String?                     @map("website_url")
-  platformUrl          String?                     @map("platform_url")
-  lat                  Decimal?                    @map("lat") @db.Decimal(9, 6)
-  lng                  Decimal?                    @map("lng") @db.Decimal(9, 6)
-  formattedAddress     String?                     @map("formatted_address")
-  timezone             String                      @default("Europe/Paris") @map("timezone")
-  phoneE164            String?                     @map("phone_e164")
-  cuisineType          String[]                    @default([]) @map("cuisine_type")
-  priceRange           Int?                        @map("price_range")
-  ambiance             String[]                    @default([])
-  noiseLevel           NoiseLevel?                 @map("noise_level")
-  dietary              String[]                    @default([])
-  attributeConfidence  Json                        @default("{}") @map("attribute_confidence")
-  agenticOptIn         Boolean                     @default(false) @map("agentic_opt_in")
-  openaiReserveEnabled Boolean                     @default(false) @map("openai_reserve_enabled")
-  policyVersion        String                      @default("2026-06-20") @map("policy_version")
-  exposureSettings     RestaurantExposureSettings?
-  agentClients         AgentClient[]
-  images               RestaurantImage[]
-  onboardingEvents     OnboardingEvent[]
-  copilotOccurrences   CopilotOccurrence[]
-  billing              RestaurantBilling?
-  account              RestaurantAccount?            @relation(fields: [accountId], references: [id], onDelete: SetNull)
-  siteMemberships      RestaurantAccountMembership[]
-  usageEvents          UsageEvent[]
-  usageMonthlyRollups  UsageMonthlyRollup[]
-  outboxEvents          OutboxEvent[]
+  slug                              String?                            @unique @map("slug")
+  canonicalUrl                      String?                            @map("canonical_url")
+  websiteUrl                        String?                            @map("website_url")
+  platformUrl                       String?                            @map("platform_url")
+  lat                               Decimal?                           @map("lat") @db.Decimal(9, 6)
+  lng                               Decimal?                           @map("lng") @db.Decimal(9, 6)
+  formattedAddress                  String?                            @map("formatted_address")
+  timezone                          String                             @default("Europe/Paris") @map("timezone")
+  phoneE164                         String?                            @map("phone_e164")
+  cuisineType                       String[]                           @default([]) @map("cuisine_type")
+  priceRange                        Int?                               @map("price_range")
+  ambiance                          String[]                           @default([])
+  noiseLevel                        NoiseLevel?                        @map("noise_level")
+  dietary                           String[]                           @default([])
+  attributeConfidence               Json                               @default("{}") @map("attribute_confidence")
+  agenticOptIn                      Boolean                            @default(false) @map("agentic_opt_in")
+  openaiReserveEnabled              Boolean                            @default(false) @map("openai_reserve_enabled")
+  policyVersion                     String                             @default("2026-06-20") @map("policy_version")
+  exposureSettings                  RestaurantExposureSettings?
+  agentClients                      AgentClient[]
+  images                            RestaurantImage[]
+  onboardingEvents                  OnboardingEvent[]
+  copilotOccurrences                CopilotOccurrence[]
+  billing                           RestaurantBilling?
+  account                           RestaurantAccount?                 @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  siteMemberships                   RestaurantAccountMembership[]
+  usageEvents                       UsageEvent[]
+  usageMonthlyRollups               UsageMonthlyRollup[]
+  usageReconciliationAdjustments    UsageReconciliationAdjustment[]
+  outboxEvents                      OutboxEvent[]
+  customerIdentities                CustomerIdentity[]
+  customerTimelineEvents            CustomerTimelineEvent[]
+  customerMetricSnapshots           CustomerMetricSnapshot[]
+  customerPreferences               CustomerPreference[]
+  customerTags                      CustomerTag[]
+  customerSegments                  CustomerSegment[]
+  marketingPermissions              MarketingPermission[]
+  marketingPermissionEvents         MarketingPermissionEvent[]
+  marketingSuppressions             MarketingSuppression[]
+  marketingCampaigns                MarketingCampaign[]
+  marketingAutomations              MarketingAutomation[]
+  marketingAutomationDispatches     MarketingAutomationDispatch[]
+  marketingFrequencyWindows         MarketingFrequencyWindow[]
+  marketingAttributionLinks         MarketingAttributionLink[]
+  marketingProviderReconciliations  MarketingProviderReconciliation[]
+  customerMergeAudits               CustomerMergeAudit[]               @relation("CustomerMergeAuditRestaurant")
+  posConnections                    PosConnection[]
+  posChecks                         PosCheck[]
+  reservationCheckMatches           ReservationCheckMatch[]
+  reservationPaymentPolicies        ReservationPaymentPolicy[]
+  reservationPayments               ReservationPayment[]
+  reservationPaymentEvents          ReservationPaymentEvent[]
+  customerGroupMemberships          CustomerGroupMembership[]
+  reputationFeedbackRequests        ReputationFeedbackRequest[]
+  reputationFeedbacks               ReputationFeedback[]
+  reputationRecoveryTasks           ReputationRecoveryTask[]
+  loyaltyBenefits                   LoyaltyBenefit[]
+  loyaltyGrants                     LoyaltyGrant[]
+  experiences                       Experience[]
+  experienceSessions                ExperienceSession[]
+  experienceReservations            ExperienceReservation[]
+  events                            Event[]
+  eventSessions                     EventSession[]
+  eventTicketTypes                  EventTicketType[]
+  eventOrders                       EventOrder[]
+  eventTickets                      EventTicket[]
+  eventWaitlistEntries              EventWaitlistEntry[]
+  distributionConnections           DistributionConnection[]
+  distributionSyncRuns              DistributionSyncRun[]
+  distributionReservationLinks      DistributionReservationLink[]
+  distributionAvailabilitySnapshots DistributionAvailabilitySnapshot[]
+  distributionWebhookEvents         DistributionWebhookEvent[]
 
   // Sokar Connect (P0) — données publiques structurées, pas de flags de gating ici
   description   String?   @map("description")
@@ -116,15 +162,17 @@ model Restaurant {
 /// l'organisation ; cette table permet de rattacher plusieurs établissements
 /// sans changer les IDs historiques.
 model RestaurantAccount {
-  id                  String                        @id @default(uuid())
-  clerkOrganizationId String                        @unique @map("clerk_organization_id")
-  name                String
-  status              String                        @default("ACTIVE")
-  createdAt           DateTime                      @default(now()) @map("created_at")
-  updatedAt           DateTime                      @updatedAt @map("updated_at")
-  restaurants         Restaurant[]
-  memberships         RestaurantAccountMembership[]
-  billing             RestaurantAccountBilling?
+  id                       String                        @id @default(uuid())
+  clerkOrganizationId      String                        @unique @map("clerk_organization_id")
+  name                     String
+  status                   String                        @default("ACTIVE")
+  createdAt                DateTime                      @default(now()) @map("created_at")
+  updatedAt                DateTime                      @updatedAt @map("updated_at")
+  restaurants              Restaurant[]
+  memberships              RestaurantAccountMembership[]
+  billing                  RestaurantAccountBilling?
+  customerGroups           CustomerGroupProfile[]
+  customerGroupMemberships CustomerGroupMembership[]
 
   @@map("restaurant_accounts")
 }
@@ -175,21 +223,21 @@ model RestaurantAccountBilling {
 model RestaurantBilling {
   id                            String     @id @default(uuid())
   restaurantId                  String     @unique @map("restaurant_id")
-  stripeCustomerId             String?    @unique @map("stripe_customer_id")
-  stripeSubscriptionId         String?    @unique @map("stripe_subscription_id")
-  subscriptionStatus           String?    @map("subscription_status")
-  subscriptionPriceId          String?    @map("subscription_price_id")
-  subscriptionCurrentPeriodEnd DateTime?  @map("subscription_current_period_end")
-  subscriptionCancelAtPeriodEnd Boolean   @default(false) @map("subscription_cancel_at_period_end")
-  checkoutIdempotencyKey       String?    @unique @map("checkout_idempotency_key")
-  checkoutSessionId            String?    @unique @map("checkout_session_id")
-  checkoutSessionUrl           String?    @map("checkout_session_url")
-  checkoutPlan                 String?    @map("checkout_plan")
-  checkoutBillingInterval      String?    @map("checkout_billing_interval")
-  checkoutSiteCount            Int?       @map("checkout_site_count")
-  checkoutCreatedAt            DateTime?  @map("checkout_created_at")
-  lastStripeEventCreated       Int?       @map("last_stripe_event_created")
-  lastStripeEventId            String?    @map("last_stripe_event_id")
+  stripeCustomerId              String?    @unique @map("stripe_customer_id")
+  stripeSubscriptionId          String?    @unique @map("stripe_subscription_id")
+  subscriptionStatus            String?    @map("subscription_status")
+  subscriptionPriceId           String?    @map("subscription_price_id")
+  subscriptionCurrentPeriodEnd  DateTime?  @map("subscription_current_period_end")
+  subscriptionCancelAtPeriodEnd Boolean    @default(false) @map("subscription_cancel_at_period_end")
+  checkoutIdempotencyKey        String?    @unique @map("checkout_idempotency_key")
+  checkoutSessionId             String?    @unique @map("checkout_session_id")
+  checkoutSessionUrl            String?    @map("checkout_session_url")
+  checkoutPlan                  String?    @map("checkout_plan")
+  checkoutBillingInterval       String?    @map("checkout_billing_interval")
+  checkoutSiteCount             Int?       @map("checkout_site_count")
+  checkoutCreatedAt             DateTime?  @map("checkout_created_at")
+  lastStripeEventCreated        Int?       @map("last_stripe_event_created")
+  lastStripeEventId             String?    @map("last_stripe_event_id")
   createdAt                     DateTime   @default(now()) @map("created_at")
   updatedAt                     DateTime   @updatedAt @map("updated_at")
   restaurant                    Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
@@ -198,16 +246,16 @@ model RestaurantBilling {
 }
 
 model StripeWebhookEvent {
-  eventId        String    @id @map("event_id")
-  eventType      String    @map("event_type")
-  eventCreated   Int       @map("event_created")
-  status         String    @default("processing")
-  attempts       Int       @default(0)
-  lastAttemptAt  DateTime? @map("last_attempt_at")
-  processedAt    DateTime? @map("processed_at")
-  error          String?
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  eventId       String    @id @map("event_id")
+  eventType     String    @map("event_type")
+  eventCreated  Int       @map("event_created")
+  status        String    @default("processing")
+  attempts      Int       @default(0)
+  lastAttemptAt DateTime? @map("last_attempt_at")
+  processedAt   DateTime? @map("processed_at")
+  error         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   @@index([status, eventCreated])
   @@map("stripe_webhook_events")
@@ -267,41 +315,41 @@ model Wall {
 }
 
 model Section {
-  id          String    @id @default(uuid())
-  floorPlanId String    @map("floor_plan_id")
-  name        String
-  position    Int       @default(0)
-  floorPlan   FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
-  tables      Table[]
+  id                 String             @id @default(uuid())
+  floorPlanId        String             @map("floor_plan_id")
+  name               String
+  position           Int                @default(0)
+  floorPlan          FloorPlan          @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  tables             Table[]
   waitingListEntries WaitingListEntry[]
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
 
   @@index([floorPlanId, position])
   @@map("floor_plan_sections")
 }
 
 model Table {
-  id           String        @id @default(uuid())
-  floorPlanId  String        @map("floor_plan_id")
-  sectionId    String?       @map("section_id")
-  name         String
-  capacity     Int
-  minCapacity  Int           @default(1) @map("min_capacity")
-  positionX    Int?          @map("position_x")
-  positionY    Int?          @map("position_y")
-  width        Int?          @map("width")
-  height       Int?          @map("height")
-  rotation     Int           @default(0) @map("rotation")
-  shape        String        @default("rect")
-  assignedServer String?     @map("assigned_server")
-  isActive     Boolean       @default(true) @map("is_active")
-  floorPlan    FloorPlan     @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
-  section      Section?      @relation(fields: [sectionId], references: [id], onDelete: SetNull)
-  reservations Reservation[]
-  holds        AgenticHold[]
-  createdAt    DateTime      @default(now()) @map("created_at")
-  updatedAt    DateTime      @updatedAt @map("updated_at")
+  id             String        @id @default(uuid())
+  floorPlanId    String        @map("floor_plan_id")
+  sectionId      String?       @map("section_id")
+  name           String
+  capacity       Int
+  minCapacity    Int           @default(1) @map("min_capacity")
+  positionX      Int?          @map("position_x")
+  positionY      Int?          @map("position_y")
+  width          Int?          @map("width")
+  height         Int?          @map("height")
+  rotation       Int           @default(0) @map("rotation")
+  shape          String        @default("rect")
+  assignedServer String?       @map("assigned_server")
+  isActive       Boolean       @default(true) @map("is_active")
+  floorPlan      FloorPlan     @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  section        Section?      @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  reservations   Reservation[]
+  holds          AgenticHold[]
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
 
   @@index([floorPlanId, isActive])
   @@index([floorPlanId, isActive, capacity])
@@ -345,23 +393,33 @@ model Call {
 }
 
 model Reservation {
-  id               String            @id @default(uuid())
-  restaurantId     String            @map("restaurant_id")
-  callId           String?           @unique @map("call_id")
-  customerId       String?           @map("customer_id")
-  reservedAt       DateTime          @map("reserved_at")
-  partySize        Int               @map("party_size")
-  customerName     String            @map("customer_name")
-  customerPhone    String?           @map("customer_phone")
-  customerEmail    String?           @map("customer_email")
-  status           ReservationStatus @default(CONFIRMED)
-  estimatedRevenue Decimal?          @map("estimated_revenue") @db.Decimal(10, 2)
-  confirmedRevenue Decimal?          @map("confirmed_revenue") @db.Decimal(10, 2)
-  googleEventId    String?           @map("google_event_id")
-  createdAt        DateTime          @default(now()) @map("created_at")
-  restaurant       Restaurant        @relation(fields: [restaurantId], references: [id])
-  call             Call?             @relation(fields: [callId], references: [id])
-  customer         Customer?         @relation(fields: [customerId], references: [id])
+  id                           String                        @id @default(uuid())
+  restaurantId                 String                        @map("restaurant_id")
+  callId                       String?                       @unique @map("call_id")
+  customerId                   String?                       @map("customer_id")
+  reservedAt                   DateTime                      @map("reserved_at")
+  partySize                    Int                           @map("party_size")
+  customerName                 String                        @map("customer_name")
+  customerPhone                String?                       @map("customer_phone")
+  customerEmail                String?                       @map("customer_email")
+  status                       ReservationStatus             @default(CONFIRMED)
+  estimatedRevenue             Decimal?                      @map("estimated_revenue") @db.Decimal(10, 2)
+  confirmedRevenue             Decimal?                      @map("confirmed_revenue") @db.Decimal(10, 2)
+  googleEventId                String?                       @map("google_event_id")
+  createdAt                    DateTime                      @default(now()) @map("created_at")
+  restaurant                   Restaurant                    @relation(fields: [restaurantId], references: [id])
+  call                         Call?                         @relation(fields: [callId], references: [id])
+  customer                     Customer?                     @relation(fields: [customerId], references: [id])
+  marketingConversions         MarketingConversion[]
+  reservationCheckMatches      ReservationCheckMatch[]
+  reservationPayments          ReservationPayment[]
+  reputationFeedbackRequest    ReputationFeedbackRequest?
+  reputationFeedbacks          ReputationFeedback[]
+  reputationRecoveryTasks      ReputationRecoveryTask[]
+  loyaltyGrants                LoyaltyGrant[]
+  experienceReservations       ExperienceReservation[]
+  eventOrders                  EventOrder[]
+  distributionReservationLinks DistributionReservationLink[]
 
   // Agentic reservations (P0)
   channel                ReservationChannel @default(PHONE) @map("channel")
@@ -398,9 +456,9 @@ model Reservation {
   promotedFromWaitingList WaitingListEntry?
 
   // Gift cards (P1)
-  giftCardRedemptions GiftCardRedemption[]
-  giftCardRedemptionSnap Json? @map("gift_card_redemption_snap")
-  giftCardComplementAmount Decimal? @map("gift_card_complement_amount") @db.Decimal(10, 2)
+  giftCardRedemptions      GiftCardRedemption[]
+  giftCardRedemptionSnap   Json?                @map("gift_card_redemption_snap")
+  giftCardComplementAmount Decimal?             @map("gift_card_complement_amount") @db.Decimal(10, 2)
 
   @@index([restaurantId, createdAt(sort: Desc)])
   @@index([restaurantId, status, createdAt(sort: Desc)])
@@ -530,30 +588,1537 @@ model UsageTariff {
   @@map("usage_tariffs")
 }
 
+enum UsageAdjustmentStatus {
+  OPEN
+  APPROVED
+  REJECTED
+}
+
+enum PosConnectionStatus {
+  PENDING
+  ACTIVE
+  DEGRADED
+  REAUTH_REQUIRED
+  DISCONNECTED
+}
+
+enum ReservationPaymentType {
+  CARD_GUARANTEE
+  DEPOSIT
+  PREPAYMENT
+}
+
+enum ReservationPaymentStatus {
+  REQUIRES_PAYMENT_METHOD
+  REQUIRES_ACTION
+  AUTHORIZED
+  CAPTURED
+  PARTIALLY_REFUNDED
+  REFUNDED
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+/// Versioned rules for protecting a reservation. A policy is immutable once
+/// used; a new version must be created for a changed commercial rule.
+model ReservationPaymentPolicy {
+  id                String                 @id @default(uuid())
+  restaurantId      String                 @map("restaurant_id")
+  version           Int
+  type              ReservationPaymentType
+  amountMode        String                 @map("amount_mode")
+  amount            Decimal                @db.Decimal(10, 2)
+  minPartySize      Int?                   @map("min_party_size")
+  cancellationHours Int                    @default(24) @map("cancellation_hours")
+  rules             Json                   @default("{}")
+  activeFrom        DateTime               @default(now()) @map("active_from")
+  activeUntil       DateTime?              @map("active_until")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+  restaurant        Restaurant             @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  payments          ReservationPayment[]
+
+  @@unique([restaurantId, version], map: "reservation_payment_policies_restaurant_version_key")
+  @@index([restaurantId, activeFrom, activeUntil], map: "reservation_payment_policies_active_idx")
+  @@map("reservation_payment_policies")
+}
+
+/// One payment protection attempt for one reservation. Provider identifiers
+/// are optional until a qualified merchant/Stripe account is configured.
+model ReservationPayment {
+  id                    String                    @id @default(uuid())
+  restaurantId          String                    @map("restaurant_id")
+  reservationId         String                    @map("reservation_id")
+  policyId              String                    @map("policy_id")
+  status                ReservationPaymentStatus  @default(REQUIRES_PAYMENT_METHOD)
+  amount                Decimal                   @db.Decimal(10, 2)
+  currency              String                    @default("EUR")
+  stripeAccountId       String?                   @map("stripe_account_id")
+  stripeSetupIntentId   String?                   @unique @map("stripe_setup_intent_id")
+  stripePaymentIntentId String?                   @unique @map("stripe_payment_intent_id")
+  idempotencyKey        String                    @unique @map("idempotency_key")
+  policySnapshot        Json                      @map("policy_snapshot")
+  expiresAt             DateTime?                 @map("expires_at")
+  failureCode           String?                   @map("failure_code")
+  lastProviderEventAt   DateTime?                 @map("last_provider_event_at")
+  createdAt             DateTime                  @default(now()) @map("created_at")
+  updatedAt             DateTime                  @updatedAt @map("updated_at")
+  restaurant            Restaurant                @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  reservation           Reservation               @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  policy                ReservationPaymentPolicy  @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  events                ReservationPaymentEvent[]
+
+  @@index([restaurantId, status, createdAt], map: "reservation_payments_restaurant_status_created_idx")
+  @@index([reservationId, createdAt], map: "reservation_payments_reservation_created_idx")
+  @@map("reservation_payments")
+}
+
+/// Minimal immutable provider event record. Payloads are hashed and never
+/// persisted, so replay/debugging cannot leak card or customer data.
+model ReservationPaymentEvent {
+  id              String                    @id @default(uuid())
+  restaurantId    String                    @map("restaurant_id")
+  paymentId       String                    @map("payment_id")
+  providerEventId String                    @unique @map("provider_event_id")
+  eventType       String                    @map("event_type")
+  resultingStatus ReservationPaymentStatus? @map("resulting_status")
+  payloadHash     String                    @map("payload_hash")
+  occurredAt      DateTime                  @map("occurred_at")
+  createdAt       DateTime                  @default(now()) @map("created_at")
+  restaurant      Restaurant                @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  payment         ReservationPayment        @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@unique([paymentId, providerEventId], map: "reservation_payment_events_payment_provider_key")
+  @@index([restaurantId, occurredAt], map: "reservation_payment_events_restaurant_occurred_idx")
+  @@map("reservation_payment_events")
+}
+
+/// Explicit operator decision for a provider/ledger difference. Adjustments
+/// never rewrite immutable UsageEvent rows or monthly rollups.
+model UsageReconciliationAdjustment {
+  id             String                @id @default(uuid())
+  idempotencyKey String                @unique @map("idempotency_key")
+  reportHash     String                @map("report_hash")
+  evidenceRef    String                @map("evidence_ref")
+  scopeKey       String                @map("scope_key")
+  restaurantId   String?               @map("restaurant_id")
+  category       UsageCategory
+  provider       String
+  unit           String
+  periodStart    DateTime              @map("period_start")
+  periodEnd      DateTime              @map("period_end")
+  quantityDelta  Decimal               @map("quantity_delta") @db.Decimal(18, 6)
+  costDeltaEur   Decimal               @map("cost_delta_eur") @db.Decimal(18, 6)
+  status         UsageAdjustmentStatus @default(OPEN)
+  reason         String
+  decisionReason String?               @map("decision_reason")
+  createdByHash  String                @map("created_by_hash")
+  decidedByHash  String?               @map("decided_by_hash")
+  decidedAt      DateTime?             @map("decided_at")
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+
+  restaurant Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
+
+  @@unique([reportHash, scopeKey, category, provider, unit, periodStart, periodEnd], map: "usage_adjustments_report_dimension_period_key")
+  @@index([status, createdAt], map: "usage_adjustments_status_created_idx")
+  @@index([restaurantId, periodStart, periodEnd], map: "usage_adjustments_restaurant_period_idx")
+  @@map("usage_reconciliation_adjustments")
+}
+
+/// Provider-neutral connection metadata. Credentials remain in an external
+/// secret manager; `credentialReference` is only an opaque lookup reference.
+model PosConnection {
+  id                  String              @id @default(uuid())
+  restaurantId        String              @map("restaurant_id")
+  provider            String
+  externalLocationId  String              @map("external_location_id")
+  credentialReference String              @map("credential_reference")
+  status              PosConnectionStatus @default(PENDING)
+  cursor              String?
+  lastSuccessAt       DateTime?           @map("last_success_at")
+  lastAttemptAt       DateTime?           @map("last_attempt_at")
+  lastErrorCode       String?             @map("last_error_code")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+  restaurant          Restaurant          @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  checks              PosCheck[]
+
+  @@unique([restaurantId, provider], map: "pos_connections_restaurant_provider_key")
+  @@index([status, lastSuccessAt], map: "pos_connections_status_last_success_idx")
+  @@map("pos_connections")
+}
+
+/// Normalized ticket projection. Raw provider payloads are hashed at ingest
+/// and are deliberately not persisted in this model.
+model PosCheck {
+  id               String                  @id @default(uuid())
+  restaurantId     String                  @map("restaurant_id")
+  connectionId     String                  @map("connection_id")
+  externalId       String                  @map("external_id")
+  externalRevision String?                 @map("external_revision")
+  openedAt         DateTime                @map("opened_at")
+  closedAt         DateTime?               @map("closed_at")
+  tableReference   String?                 @map("table_reference")
+  subtotal         Decimal                 @db.Decimal(12, 2)
+  tax              Decimal                 @db.Decimal(12, 2)
+  tip              Decimal                 @default(0) @db.Decimal(12, 2)
+  discount         Decimal                 @default(0) @db.Decimal(12, 2)
+  total            Decimal                 @db.Decimal(12, 2)
+  refundedAmount   Decimal                 @default(0) @map("refunded_amount") @db.Decimal(12, 2)
+  currency         String
+  rawPayloadHash   String                  @map("raw_payload_hash")
+  importedAt       DateTime                @default(now()) @map("imported_at")
+  updatedAt        DateTime                @updatedAt @map("updated_at")
+  restaurant       Restaurant              @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  connection       PosConnection           @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  matches          ReservationCheckMatch[]
+
+  @@unique([connectionId, externalId], map: "pos_checks_connection_external_key")
+  @@index([restaurantId, closedAt], map: "pos_checks_restaurant_closed_idx")
+  @@map("pos_checks")
+}
+
+/// Explainable, reviewable link between a reservation and one normalized POS
+/// ticket. The restaurant FK makes tenant-scoped queries explicit.
+model ReservationCheckMatch {
+  restaurantId   String      @map("restaurant_id")
+  reservationId  String      @map("reservation_id")
+  posCheckId     String      @map("pos_check_id")
+  method         String
+  confidence     Decimal     @db.Decimal(4, 3)
+  status         String
+  reviewedByHash String?     @map("reviewed_by_hash")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+  restaurant     Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  reservation    Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  posCheck       PosCheck    @relation(fields: [posCheckId], references: [id], onDelete: Cascade)
+
+  @@id([reservationId, posCheckId])
+  @@index([status, confidence], map: "reservation_check_matches_status_confidence_idx")
+  @@index([restaurantId, status], map: "reservation_check_matches_restaurant_status_idx")
+  @@map("reservation_check_matches")
+}
+
 model Customer {
-  id               String        @id @default(uuid())
-  restaurantId     String        @map("restaurant_id")
-  phone            String
-  name             String?
-  visitCount       Int           @default(0) @map("visit_count")
-  loyaltyScore     Decimal       @default(0) @map("loyalty_score") @db.Decimal(5, 2)
-  isVip            Boolean       @default(false) @map("is_vip")
-  notes            String?
-  specialOccasion  String?       @map("special_occasion")
-  lastSeenAt       DateTime?     @map("last_seen_at")
-  lastCallAt       DateTime?     @map("last_call_at")
-  partySizeTypical Decimal?      @map("party_size_typical") @db.Decimal(5, 2)
-  createdAt        DateTime      @default(now()) @map("created_at")
-  updatedAt        DateTime      @updatedAt @map("updated_at")
-  restaurant       Restaurant    @relation(fields: [restaurantId], references: [id])
-  reservations     Reservation[]
-  giftCards        GiftCard[]
+  id                            String                        @id @default(uuid())
+  restaurantId                  String                        @map("restaurant_id")
+  phone                         String
+  emailNormalized               String?                       @map("email_normalized")
+  birthMonth                    Int?                          @map("birth_month")
+  birthDay                      Int?                          @map("birth_day")
+  preferredLocale               String?                       @map("preferred_locale")
+  mergedIntoId                  String?                       @map("merged_into_id")
+  archivedAt                    DateTime?                     @map("archived_at")
+  name                          String?
+  visitCount                    Int                           @default(0) @map("visit_count")
+  loyaltyScore                  Decimal                       @default(0) @map("loyalty_score") @db.Decimal(5, 2)
+  isVip                         Boolean                       @default(false) @map("is_vip")
+  notes                         String?
+  specialOccasion               String?                       @map("special_occasion")
+  lastSeenAt                    DateTime?                     @map("last_seen_at")
+  lastCallAt                    DateTime?                     @map("last_call_at")
+  partySizeTypical              Decimal?                      @map("party_size_typical") @db.Decimal(5, 2)
+  createdAt                     DateTime                      @default(now()) @map("created_at")
+  updatedAt                     DateTime                      @updatedAt @map("updated_at")
+  restaurant                    Restaurant                    @relation(fields: [restaurantId], references: [id])
+  reservations                  Reservation[]
+  giftCards                     GiftCard[]
+  mergedInto                    Customer?                     @relation("CustomerMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedSources                 Customer[]                    @relation("CustomerMerge")
+  identities                    CustomerIdentity[]
+  timelineEvents                CustomerTimelineEvent[]
+  metricSnapshot                CustomerMetricSnapshot?
+  preferences                   CustomerPreference[]
+  tagAssignments                CustomerTagAssignment[]
+  marketingPermissions          MarketingPermission[]
+  marketingPermissionEvents     MarketingPermissionEvent[]
+  campaignAudienceMembers       CampaignAudienceMember[]
+  campaignMessages              CampaignMessage[]
+  marketingConversions          MarketingConversion[]
+  marketingAutomationDispatches MarketingAutomationDispatch[]
+  marketingFrequencyWindows     MarketingFrequencyWindow[]
+  marketingSuppressions         MarketingSuppression[]
+  marketingAttributionLinks     MarketingAttributionLink[]
+  customerMergeAudits           CustomerMergeAudit[]          @relation("CustomerMergeAuditTarget")
+  groupMemberships              CustomerGroupMembership[]
+  reputationFeedbackRequests    ReputationFeedbackRequest[]
+  reputationFeedbacks           ReputationFeedback[]
+  reputationRecoveryTasks       ReputationRecoveryTask[]
+  loyaltyGrants                 LoyaltyGrant[]
+  experienceReservations        ExperienceReservation[]
+  eventOrders                   EventOrder[]
+  eventWaitlistEntries          EventWaitlistEntry[]
 
   @@unique([restaurantId, phone])
   @@index([restaurantId, isVip])
   @@index([restaurantId, visitCount(sort: Desc)], map: "customers_restaurant_visit_count_idx")
   @@index([restaurantId, lastCallAt(sort: Desc)], map: "customers_restaurant_last_call_at_idx")
+  @@index([restaurantId, emailNormalized], map: "customers_restaurant_email_normalized_idx")
+  @@index([restaurantId, archivedAt], map: "customers_restaurant_archived_at_idx")
   @@map("customers")
+}
+
+enum CustomerGroupConsentStatus {
+  UNKNOWN
+  OPTED_IN
+  OPTED_OUT
+}
+
+/// Shared identity for a multi-site account. Membership is explicit and
+/// consent-gated; the existing per-restaurant Customer rows remain intact.
+model CustomerGroupProfile {
+  id             String                     @id @default(uuid())
+  accountId      String                     @map("account_id")
+  idempotencyKey String?                    @unique @map("idempotency_key")
+  name           String
+  consentStatus  CustomerGroupConsentStatus @default(UNKNOWN) @map("consent_status")
+  consentedAt    DateTime?                  @map("consented_at")
+  createdByHash  String                     @map("created_by_hash")
+  createdAt      DateTime                   @default(now()) @map("created_at")
+  updatedAt      DateTime                   @updatedAt @map("updated_at")
+  account        RestaurantAccount          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  memberships    CustomerGroupMembership[]
+
+  @@index([accountId, updatedAt(sort: Desc)], map: "customer_group_profiles_account_updated_idx")
+  @@map("customer_group_profiles")
+}
+
+/// Explicit link between one site's customer projection and an account-level
+/// group. A customer can belong to at most one group per account.
+model CustomerGroupMembership {
+  accountId      String               @map("account_id")
+  groupProfileId String               @map("group_profile_id")
+  restaurantId   String               @map("restaurant_id")
+  customerId     String               @map("customer_id")
+  source         String
+  confidence     Decimal              @default(1) @db.Decimal(4, 3)
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+  account        RestaurantAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  groupProfile   CustomerGroupProfile @relation(fields: [groupProfileId], references: [id], onDelete: Cascade)
+  restaurant     Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  customer       Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@id([groupProfileId, restaurantId, customerId])
+  @@unique([accountId, customerId], map: "customer_group_memberships_account_customer_key")
+  @@index([accountId, restaurantId], map: "customer_group_memberships_account_restaurant_idx")
+  @@map("customer_group_memberships")
+}
+
+enum ReputationFeedbackChannel {
+  SMS
+  EMAIL
+  WHATSAPP
+}
+
+enum ReputationFeedbackRequestStatus {
+  PENDING
+  SENT
+  SUBMITTED
+  EXPIRED
+  CANCELLED
+}
+
+enum ReputationRecoveryTaskStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  DISMISSED
+}
+
+enum ReputationRecoveryPriority {
+  HIGH
+  NORMAL
+}
+
+/// One opaque, expiring invitation to collect feedback after an honoured visit.
+/// The raw token is returned only at creation time; only its SHA-256 hash is
+/// persisted so a database read cannot be used to submit feedback.
+model ReputationFeedbackRequest {
+  id            String                          @id @default(uuid())
+  restaurantId  String                          @map("restaurant_id")
+  reservationId String                          @unique @map("reservation_id")
+  customerId    String                          @map("customer_id")
+  channel       ReputationFeedbackChannel
+  status        ReputationFeedbackRequestStatus @default(PENDING)
+  tokenHash     String                          @unique @map("token_hash")
+  expiresAt     DateTime                        @map("expires_at")
+  requestedAt   DateTime                        @default(now()) @map("requested_at")
+  sentAt        DateTime?                       @map("sent_at")
+  submittedAt   DateTime?                       @map("submitted_at")
+  createdAt     DateTime                        @default(now()) @map("created_at")
+  updatedAt     DateTime                        @updatedAt @map("updated_at")
+
+  restaurant  Restaurant          @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  reservation Reservation         @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  customer    Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  feedback    ReputationFeedback?
+
+  @@index([restaurantId, status, expiresAt], map: "reputation_feedback_requests_status_expiry_idx")
+  @@index([restaurantId, requestedAt], map: "reputation_feedback_requests_restaurant_requested_idx")
+  @@index([customerId, requestedAt], map: "reputation_feedback_requests_customer_requested_idx")
+  @@map("reputation_feedback_requests")
+}
+
+/// The customer's score and optional comment. Scores are bounded to 1..5 by
+/// the API and database check; negative feedback creates one recovery task in
+/// the same transaction as the response.
+model ReputationFeedback {
+  id            String   @id @default(uuid())
+  requestId     String   @unique @map("request_id")
+  restaurantId  String   @map("restaurant_id")
+  reservationId String   @map("reservation_id")
+  customerId    String   @map("customer_id")
+  score         Int
+  comment       String?
+  submittedAt   DateTime @map("submitted_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  request      ReputationFeedbackRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  restaurant   Restaurant                @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  reservation  Reservation               @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  customer     Customer                  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  recoveryTask ReputationRecoveryTask?
+
+  @@index([restaurantId, submittedAt], map: "reputation_feedback_restaurant_submitted_idx")
+  @@index([restaurantId, score, submittedAt], map: "reputation_feedback_restaurant_score_idx")
+  @@index([customerId, submittedAt], map: "reputation_feedback_customer_submitted_idx")
+  @@map("reputation_feedback")
+}
+
+/// Operator task generated for a low score. It deliberately references the
+/// feedback and site explicitly so a support user cannot cross tenants while
+/// assigning or closing a recovery action.
+model ReputationRecoveryTask {
+  id             String                       @id @default(uuid())
+  feedbackId     String                       @unique @map("feedback_id")
+  restaurantId   String                       @map("restaurant_id")
+  reservationId  String                       @map("reservation_id")
+  customerId     String                       @map("customer_id")
+  status         ReputationRecoveryTaskStatus @default(OPEN)
+  priority       ReputationRecoveryPriority   @default(NORMAL)
+  assignedToHash String?                      @map("assigned_to_hash")
+  resolutionCode String?                      @map("resolution_code")
+  resolutionNote String?                      @map("resolution_note")
+  resolvedAt     DateTime?                    @map("resolved_at")
+  createdAt      DateTime                     @default(now()) @map("created_at")
+  updatedAt      DateTime                     @updatedAt @map("updated_at")
+
+  feedback    ReputationFeedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  restaurant  Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  reservation Reservation        @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  customer    Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, status, priority, createdAt], map: "reputation_recovery_tasks_queue_idx")
+  @@index([restaurantId, updatedAt], map: "reputation_recovery_tasks_restaurant_updated_idx")
+  @@map("reputation_recovery_tasks")
+}
+
+enum LoyaltyBenefitRule {
+  ANY
+  VIP
+  MIN_VISITS
+  BIRTHDAY_MONTH
+  MIN_ESTIMATED_SPEND
+}
+
+enum LoyaltyBenefitStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum LoyaltyGrantStatus {
+  ISSUED
+  REDEEMED
+  VOID
+  EXPIRED
+}
+
+/// Small, explainable operational benefits. This is intentionally not a
+/// points wallet: each benefit has one rule, one estimated cost and a bounded
+/// validity window that the restaurant can execute during service.
+model LoyaltyBenefit {
+  id                 String               @id @default(uuid())
+  restaurantId       String               @map("restaurant_id")
+  key                String
+  name               String
+  description        String?
+  rule               LoyaltyBenefitRule   @default(ANY)
+  ruleValue          Int?                 @map("rule_value")
+  costCents          Int?                 @map("cost_cents")
+  currency           String               @default("EUR")
+  validityDays       Int                  @default(30) @map("validity_days")
+  maxUsesPerCustomer Int                  @default(1) @map("max_uses_per_customer")
+  status             LoyaltyBenefitStatus @default(ACTIVE)
+  createdByHash      String               @map("created_by_hash")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+  restaurant         Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  grants             LoyaltyGrant[]
+
+  @@unique([restaurantId, key], map: "loyalty_benefits_restaurant_key_key")
+  @@index([restaurantId, status, updatedAt], map: "loyalty_benefits_restaurant_status_updated_idx")
+  @@map("loyalty_benefits")
+}
+
+/// One auditable issuance of a benefit. The redemption code is returned only
+/// once and stored as a hash; redemption is an atomic state transition.
+model LoyaltyGrant {
+  id             String             @id @default(uuid())
+  restaurantId   String             @map("restaurant_id")
+  benefitId      String             @map("benefit_id")
+  customerId     String             @map("customer_id")
+  reservationId  String?            @map("reservation_id")
+  idempotencyKey String?            @unique @map("idempotency_key")
+  codeHash       String             @unique @map("code_hash")
+  status         LoyaltyGrantStatus @default(ISSUED)
+  issuedAt       DateTime           @default(now()) @map("issued_at")
+  expiresAt      DateTime           @map("expires_at")
+  redeemedAt     DateTime?          @map("redeemed_at")
+  voidedAt       DateTime?          @map("voided_at")
+  issuedByHash   String             @map("issued_by_hash")
+  redeemedByHash String?            @map("redeemed_by_hash")
+  redemptionNote String?            @map("redemption_note")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+  restaurant     Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  benefit        LoyaltyBenefit     @relation(fields: [benefitId], references: [id], onDelete: Cascade)
+  customer       Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  reservation    Reservation?       @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+
+  @@index([restaurantId, status, expiresAt], map: "loyalty_grants_restaurant_status_expiry_idx")
+  @@index([restaurantId, customerId, benefitId, status], map: "loyalty_grants_customer_benefit_status_idx")
+  @@index([restaurantId, reservationId], map: "loyalty_grants_reservation_idx")
+  @@map("loyalty_grants")
+}
+
+enum ExperienceStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum ExperienceSessionStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum ExperienceReservationStatus {
+  CONFIRMED
+  CANCELLED
+}
+
+/// Provider-neutral catalogue entry for a paid or complimentary restaurant
+/// experience. The local foundation stores the price/capacity snapshot but
+/// deliberately does not create a payment or external channel listing.
+model Experience {
+  id              String                  @id @default(uuid())
+  restaurantId    String                  @map("restaurant_id")
+  key             String
+  name            String
+  description     String?
+  durationMinutes Int                     @map("duration_minutes")
+  priceCents      Int                     @map("price_cents")
+  currency        String                  @default("EUR")
+  capacity        Int
+  status          ExperienceStatus        @default(DRAFT)
+  createdByHash   String                  @map("created_by_hash")
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+  restaurant      Restaurant              @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  sessions        ExperienceSession[]
+  reservations    ExperienceReservation[]
+
+  @@unique([restaurantId, key], map: "experiences_restaurant_key_key")
+  @@index([restaurantId, status, updatedAt], map: "experiences_restaurant_status_updated_idx")
+  @@map("experiences")
+}
+
+/// One scheduled occurrence of an experience. Capacity can be overridden for
+/// a specific session without rewriting the catalogue entry.
+model ExperienceSession {
+  id               String                  @id @default(uuid())
+  restaurantId     String                  @map("restaurant_id")
+  experienceId     String                  @map("experience_id")
+  startsAt         DateTime                @map("starts_at")
+  endsAt           DateTime                @map("ends_at")
+  capacityOverride Int?                    @map("capacity_override")
+  status           ExperienceSessionStatus @default(OPEN)
+  createdAt        DateTime                @default(now()) @map("created_at")
+  updatedAt        DateTime                @updatedAt @map("updated_at")
+  restaurant       Restaurant              @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  experience       Experience              @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  reservations     ExperienceReservation[]
+
+  @@unique([experienceId, startsAt], map: "experience_sessions_experience_starts_key")
+  @@index([restaurantId, status, startsAt], map: "experience_sessions_restaurant_status_starts_idx")
+  @@map("experience_sessions")
+}
+
+/// Capacity-controlled booking with an immutable price snapshot. It can be
+/// attached to a Sokar customer and reservation, but no payment is implied.
+model ExperienceReservation {
+  id              String                      @id @default(uuid())
+  restaurantId    String                      @map("restaurant_id")
+  experienceId    String                      @map("experience_id")
+  sessionId       String                      @map("session_id")
+  customerId      String?                     @map("customer_id")
+  reservationId   String?                     @map("reservation_id")
+  idempotencyKey  String?                     @unique @map("idempotency_key")
+  quantity        Int                         @default(1)
+  unitPriceCents  Int                         @map("unit_price_cents")
+  totalPriceCents Int                         @map("total_price_cents")
+  currency        String                      @default("EUR")
+  status          ExperienceReservationStatus @default(CONFIRMED)
+  createdByHash   String                      @map("created_by_hash")
+  cancelledByHash String?                     @map("cancelled_by_hash")
+  cancelledAt     DateTime?                   @map("cancelled_at")
+  createdAt       DateTime                    @default(now()) @map("created_at")
+  updatedAt       DateTime                    @updatedAt @map("updated_at")
+  restaurant      Restaurant                  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  experience      Experience                  @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+  session         ExperienceSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  customer        Customer?                   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  reservation     Reservation?                @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+
+  @@index([restaurantId, status, createdAt], map: "experience_reservations_restaurant_status_created_idx")
+  @@index([sessionId, status], map: "experience_reservations_session_status_idx")
+  @@index([restaurantId, customerId, createdAt], map: "experience_reservations_customer_created_idx")
+  @@map("experience_reservations")
+}
+
+enum EventStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum EventSessionStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum EventTicketTypeStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum EventOrderStatus {
+  CONFIRMED
+  CANCELLED
+  REFUND_PENDING
+  REFUNDED
+}
+
+enum EventTicketStatus {
+  ISSUED
+  CHECKED_IN
+  CANCELLED
+  REFUNDED
+}
+
+enum EventWaitlistStatus {
+  WAITING
+  PROMOTED
+  CANCELLED
+  EXPIRED
+}
+
+/// Provider-neutral event catalogue. Ticket orders and check-in are local
+/// operational records; no payment provider or distribution channel is
+/// contacted by this foundation.
+model Event {
+  id              String               @id @default(uuid())
+  restaurantId    String               @map("restaurant_id")
+  key             String
+  name            String
+  description     String?
+  timezone        String               @default("Europe/Paris")
+  status          EventStatus          @default(DRAFT)
+  createdByHash   String               @map("created_by_hash")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+  restaurant      Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  sessions        EventSession[]
+  ticketTypes     EventTicketType[]
+  orders          EventOrder[]
+  tickets         EventTicket[]
+  waitlistEntries EventWaitlistEntry[]
+  campaigns       MarketingCampaign[]
+
+  @@unique([restaurantId, key], map: "events_restaurant_key_key")
+  @@index([restaurantId, status, updatedAt], map: "events_restaurant_status_updated_idx")
+  @@map("events")
+}
+
+/// One scheduled event occurrence. All ticket types share this capacity and
+/// are protected by an advisory lock when an order is created.
+model EventSession {
+  id              String               @id @default(uuid())
+  restaurantId    String               @map("restaurant_id")
+  eventId         String               @map("event_id")
+  startsAt        DateTime             @map("starts_at")
+  endsAt          DateTime             @map("ends_at")
+  capacity        Int
+  status          EventSessionStatus   @default(OPEN)
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+  restaurant      Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  event           Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  orders          EventOrder[]
+  tickets         EventTicket[]
+  waitlistEntries EventWaitlistEntry[]
+
+  @@unique([eventId, startsAt], map: "event_sessions_event_starts_key")
+  @@index([restaurantId, status, startsAt], map: "event_sessions_restaurant_status_starts_idx")
+  @@map("event_sessions")
+}
+
+/// A sellable ticket tariff. Inventory is shared with the parent session so
+/// changing a tariff cannot overbook the event.
+model EventTicketType {
+  id           String                @id @default(uuid())
+  restaurantId String                @map("restaurant_id")
+  eventId      String                @map("event_id")
+  key          String
+  name         String
+  priceCents   Int                   @map("price_cents")
+  currency     String                @default("EUR")
+  maxPerOrder  Int                   @default(10) @map("max_per_order")
+  status       EventTicketTypeStatus @default(ACTIVE)
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+  restaurant   Restaurant            @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  event        Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  orders       EventOrder[]
+  tickets      EventTicket[]
+
+  @@unique([eventId, key], map: "event_ticket_types_event_key_key")
+  @@index([restaurantId, eventId, status], map: "event_ticket_types_restaurant_event_status_idx")
+  @@map("event_ticket_types")
+}
+
+/// A capacity reservation for one tariff and one session. A customer link is
+/// optional for walk-up sales; when present it enriches the CRM timeline.
+model EventOrder {
+  id                   String           @id @default(uuid())
+  restaurantId         String           @map("restaurant_id")
+  eventId              String           @map("event_id")
+  sessionId            String           @map("session_id")
+  ticketTypeId         String           @map("ticket_type_id")
+  customerId           String?          @map("customer_id")
+  reservationId        String?          @map("reservation_id")
+  idempotencyKey       String?          @unique @map("idempotency_key")
+  quantity             Int              @default(1)
+  unitPriceCents       Int              @map("unit_price_cents")
+  totalPriceCents      Int              @map("total_price_cents")
+  currency             String           @default("EUR")
+  status               EventOrderStatus @default(CONFIRMED)
+  invoiceNumber        String?          @unique @map("invoice_number")
+  invoicedAt           DateTime?        @map("invoiced_at")
+  refundIdempotencyKey String?          @unique @map("refund_idempotency_key")
+  refundReason         String?          @map("refund_reason")
+  refundedAt           DateTime?        @map("refunded_at")
+  cancelledAt          DateTime?        @map("cancelled_at")
+  createdByHash        String           @map("created_by_hash")
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
+  restaurant           Restaurant       @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  event                Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  session              EventSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  ticketType           EventTicketType  @relation(fields: [ticketTypeId], references: [id], onDelete: Restrict)
+  customer             Customer?        @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  reservation          Reservation?     @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  tickets              EventTicket[]
+
+  @@index([restaurantId, status, createdAt], map: "event_orders_restaurant_status_created_idx")
+  @@index([sessionId, status], map: "event_orders_session_status_idx")
+  @@index([restaurantId, customerId, createdAt], map: "event_orders_customer_created_idx")
+  @@map("event_orders")
+}
+
+/// One opaque admission code. The raw code is returned only when the ticket
+/// is issued; subsequent reads expose its final four characters only.
+model EventTicket {
+  id              String            @id @default(uuid())
+  restaurantId    String            @map("restaurant_id")
+  eventId         String            @map("event_id")
+  sessionId       String            @map("session_id")
+  orderId         String            @map("order_id")
+  ticketTypeId    String            @map("ticket_type_id")
+  codeHash        String            @unique @map("code_hash")
+  codeLast4       String            @map("code_last4")
+  status          EventTicketStatus @default(ISSUED)
+  checkedInAt     DateTime?         @map("checked_in_at")
+  checkedInByHash String?           @map("checked_in_by_hash")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  restaurant      Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  event           Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  session         EventSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  order           EventOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  ticketType      EventTicketType   @relation(fields: [ticketTypeId], references: [id], onDelete: Restrict)
+
+  @@index([restaurantId, sessionId, status], map: "event_tickets_restaurant_session_status_idx")
+  @@index([orderId], map: "event_tickets_order_idx")
+  @@map("event_tickets")
+}
+
+/// Local waiting list entry. Promotion creates a normal idempotent order; the
+/// entry is then marked PROMOTED in a separate, auditable transition.
+model EventWaitlistEntry {
+  id             String              @id @default(uuid())
+  restaurantId   String              @map("restaurant_id")
+  eventId        String              @map("event_id")
+  sessionId      String              @map("session_id")
+  customerId     String?             @map("customer_id")
+  quantity       Int                 @default(1)
+  idempotencyKey String?             @unique @map("idempotency_key")
+  status         EventWaitlistStatus @default(WAITING)
+  promotedAt     DateTime?           @map("promoted_at")
+  createdByHash  String              @map("created_by_hash")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+  restaurant     Restaurant          @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  event          Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  session        EventSession        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  customer       Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([restaurantId, sessionId, status, createdAt], map: "event_waitlist_session_status_created_idx")
+  @@index([restaurantId, customerId, createdAt], map: "event_waitlist_customer_created_idx")
+  @@map("event_waitlist_entries")
+}
+
+enum DistributionProvider {
+  GOOGLE_RESERVE
+  META_RESERVE
+  PUBLIC_API
+}
+
+enum DistributionConnectionStatus {
+  DISCONNECTED
+  PENDING
+  ACTIVE
+  PAUSED
+  ERROR
+}
+
+enum DistributionSyncDirection {
+  PUSH
+  PULL
+  BIDIRECTIONAL
+}
+
+enum DistributionSyncRunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  NEEDS_REVIEW
+}
+
+enum DistributionReservationLinkStatus {
+  ACTIVE
+  CANCELLED
+  NEEDS_REVIEW
+}
+
+enum DistributionWebhookStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
+/// Provider-neutral distribution connection. Credentials stay in a secret
+/// manager; this model only keeps hashes/references and operational state.
+model DistributionConnection {
+  id                   String                             @id @default(uuid())
+  restaurantId         String                             @map("restaurant_id")
+  provider             DistributionProvider
+  externalAccountHash  String?                            @map("external_account_hash")
+  externalAccountLast4 String?                            @map("external_account_last4")
+  credentialRef        String?                            @map("credential_ref")
+  configHash           String                             @map("config_hash")
+  status               DistributionConnectionStatus       @default(PENDING)
+  cursor               String?
+  lastSyncAt           DateTime?                          @map("last_sync_at")
+  lastErrorCode        String?                            @map("last_error_code")
+  connectedAt          DateTime?                          @map("connected_at")
+  disconnectedAt       DateTime?                          @map("disconnected_at")
+  createdAt            DateTime                           @default(now()) @map("created_at")
+  updatedAt            DateTime                           @updatedAt @map("updated_at")
+  restaurant           Restaurant                         @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  syncRuns             DistributionSyncRun[]
+  availability         DistributionAvailabilitySnapshot[]
+  reservationLinks     DistributionReservationLink[]
+  webhookEvents        DistributionWebhookEvent[]
+
+  @@unique([restaurantId, provider], map: "distribution_connections_restaurant_provider_key")
+  @@index([restaurantId, status, updatedAt], map: "distribution_connections_restaurant_status_updated_idx")
+  @@map("distribution_connections")
+}
+
+/// A bounded, replayable sync attempt. A run never contains provider secrets
+/// or a raw webhook payload.
+model DistributionSyncRun {
+  id             String                    @id @default(uuid())
+  restaurantId   String                    @map("restaurant_id")
+  connectionId   String                    @map("connection_id")
+  direction      DistributionSyncDirection
+  status         DistributionSyncRunStatus @default(QUEUED)
+  idempotencyKey String                    @unique @map("idempotency_key")
+  actorHash      String?                   @map("actor_hash")
+  windowStart    DateTime?                 @map("window_start")
+  windowEnd      DateTime?                 @map("window_end")
+  sourceCursor   String?                   @map("source_cursor")
+  targetCursor   String?                   @map("target_cursor")
+  pushedCount    Int                       @default(0) @map("pushed_count")
+  pulledCount    Int                       @default(0) @map("pulled_count")
+  failedCount    Int                       @default(0) @map("failed_count")
+  payloadHash    String?                   @map("payload_hash")
+  errorCode      String?                   @map("error_code")
+  startedAt      DateTime?                 @map("started_at")
+  finishedAt     DateTime?                 @map("finished_at")
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @updatedAt @map("updated_at")
+  restaurant     Restaurant                @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  connection     DistributionConnection    @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, createdAt(sort: Desc)], map: "distribution_sync_runs_restaurant_created_idx")
+  @@index([connectionId, status, createdAt(sort: Desc)], map: "distribution_sync_runs_connection_status_created_idx")
+  @@map("distribution_sync_runs")
+}
+
+/// Last known availability sent to or received from a partner. The snapshot
+/// is not authoritative: reservation capacity remains in Sokar.
+model DistributionAvailabilitySnapshot {
+  id             String                 @id @default(uuid())
+  restaurantId   String                 @map("restaurant_id")
+  connectionId   String                 @map("connection_id")
+  slotKey        String                 @map("slot_key")
+  serviceDate    DateTime               @map("service_date") @db.Date
+  startsAt       DateTime               @map("starts_at")
+  endsAt         DateTime               @map("ends_at")
+  partySize      Int                    @map("party_size")
+  available      Int
+  capacity       Int
+  sourceRevision String?                @map("source_revision")
+  payloadHash    String                 @map("payload_hash")
+  observedAt     DateTime               @default(now()) @map("observed_at")
+  createdAt      DateTime               @default(now()) @map("created_at")
+  updatedAt      DateTime               @updatedAt @map("updated_at")
+  restaurant     Restaurant             @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  connection     DistributionConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, slotKey], map: "distribution_availability_connection_slot_key")
+  @@index([restaurantId, serviceDate, startsAt], map: "distribution_availability_restaurant_date_starts_idx")
+  @@index([connectionId, observedAt], map: "distribution_availability_connection_observed_idx")
+  @@map("distribution_availability_snapshots")
+}
+
+/// Explicit link between a partner booking and an existing Sokar reservation.
+/// Automatic reservation creation is intentionally outside this foundation.
+model DistributionReservationLink {
+  id              String                            @id @default(uuid())
+  restaurantId    String                            @map("restaurant_id")
+  connectionId    String                            @map("connection_id")
+  reservationId   String                            @map("reservation_id")
+  externalIdHash  String                            @map("external_id_hash")
+  externalIdLast4 String                            @map("external_id_last4")
+  status          DistributionReservationLinkStatus @default(ACTIVE)
+  source          String
+  linkedAt        DateTime                          @default(now()) @map("linked_at")
+  unlinkedAt      DateTime?                         @map("unlinked_at")
+  createdAt       DateTime                          @default(now()) @map("created_at")
+  updatedAt       DateTime                          @updatedAt @map("updated_at")
+  restaurant      Restaurant                        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  connection      DistributionConnection            @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  reservation     Reservation                       @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, externalIdHash], map: "distribution_reservation_links_connection_external_key")
+  @@unique([connectionId, reservationId], map: "distribution_reservation_links_connection_reservation_key")
+  @@index([restaurantId, status, updatedAt], map: "distribution_reservation_links_restaurant_status_updated_idx")
+  @@map("distribution_reservation_links")
+}
+
+/// Webhook envelope for a future provider adapter. Only hashes and bounded
+/// metadata are retained until a signed provider contract is qualified.
+model DistributionWebhookEvent {
+  id                String                    @id @default(uuid())
+  restaurantId      String                    @map("restaurant_id")
+  connectionId      String?                   @map("connection_id")
+  provider          DistributionProvider
+  externalEventHash String                    @map("external_event_hash")
+  eventType         String                    @map("event_type")
+  payloadHash       String                    @map("payload_hash")
+  status            DistributionWebhookStatus @default(RECEIVED)
+  errorCode         String?                   @map("error_code")
+  receivedAt        DateTime                  @default(now()) @map("received_at")
+  processedAt       DateTime?                 @map("processed_at")
+  createdAt         DateTime                  @default(now()) @map("created_at")
+  restaurant        Restaurant                @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  connection        DistributionConnection?   @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+
+  @@unique([restaurantId, provider, externalEventHash], map: "distribution_webhooks_restaurant_provider_external_key")
+  @@index([restaurantId, status, receivedAt], map: "distribution_webhooks_restaurant_status_received_idx")
+  @@map("distribution_webhook_events")
+}
+
+/// Append-only proof of a customer profile merge. The payload contains only
+/// internal identifiers, hashes and aggregate counters; source profiles stay
+/// archived with `merged_into_id` so the operation can be audited or repaired.
+model CustomerMergeAudit {
+  id                   String   @id @default(uuid())
+  restaurantId         String   @map("restaurant_id")
+  targetCustomerId     String   @map("target_customer_id")
+  sourceCustomerIds    String[] @map("source_customer_ids")
+  idempotencyKey       String   @unique @map("idempotency_key")
+  payloadHash          String   @map("payload_hash")
+  actorHash            String   @map("actor_hash")
+  preferenceResolution Json     @default("{}") @map("preference_resolution")
+  summary              Json     @default("{}")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  restaurant     Restaurant @relation("CustomerMergeAuditRestaurant", fields: [restaurantId], references: [id], onDelete: Cascade)
+  targetCustomer Customer   @relation("CustomerMergeAuditTarget", fields: [targetCustomerId], references: [id], onDelete: Restrict)
+
+  @@index([restaurantId, createdAt(sort: Desc)], map: "customer_merge_audits_restaurant_created_idx")
+  @@index([restaurantId, targetCustomerId, createdAt(sort: Desc)], map: "customer_merge_audits_target_created_idx")
+  @@map("customer_merge_audits")
+}
+
+enum CustomerIdentityType {
+  PHONE
+  EMAIL
+  POS_CUSTOMER_ID
+}
+
+model CustomerIdentity {
+  id              String               @id @default(uuid())
+  restaurantId    String               @map("restaurant_id")
+  customerId      String               @map("customer_id")
+  type            CustomerIdentityType
+  value           String
+  normalizedValue String               @map("normalized_value")
+  verifiedAt      DateTime?            @map("verified_at")
+  source          String
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+
+  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([restaurantId, type, normalizedValue], map: "customer_identities_restaurant_type_value_key")
+  @@index([customerId, type], map: "customer_identities_customer_type_idx")
+  @@map("customer_identities")
+}
+
+model CustomerTimelineEvent {
+  id           String   @id @default(uuid())
+  restaurantId String   @map("restaurant_id")
+  customerId   String   @map("customer_id")
+  eventType    String   @map("event_type")
+  sourceType   String   @map("source_type")
+  sourceId     String?  @map("source_id")
+  dedupeKey    String   @unique @map("dedupe_key")
+  occurredAt   DateTime @map("occurred_at")
+  summaryCode  String   @map("summary_code")
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, occurredAt(sort: Desc)], map: "customer_timeline_restaurant_occurred_idx")
+  @@index([customerId, occurredAt(sort: Desc)], map: "customer_timeline_customer_occurred_idx")
+  @@index([eventType, occurredAt], map: "customer_timeline_event_type_occurred_idx")
+  @@map("customer_timeline_events")
+}
+
+model CustomerMetricSnapshot {
+  customerId          String    @id @map("customer_id")
+  restaurantId        String    @map("restaurant_id")
+  lastHonoredAt       DateTime? @map("last_honored_at")
+  nextReservationAt   DateTime? @map("next_reservation_at")
+  honored30d          Int       @default(0) @map("honored_30d")
+  honored90d          Int       @default(0) @map("honored_90d")
+  honored365d         Int       @default(0) @map("honored_365d")
+  cancelled365d       Int       @default(0) @map("cancelled_365d")
+  noShow365d          Int       @default(0) @map("no_show_365d")
+  covers365d          Int       @default(0) @map("covers_365d")
+  estimatedSpend365d  Decimal   @default(0) @map("estimated_spend_365d") @db.Decimal(12, 2)
+  actualSpend365d     Decimal?  @map("actual_spend_365d") @db.Decimal(12, 2)
+  actualLifetimeSpend Decimal?  @map("actual_lifetime_spend") @db.Decimal(12, 2)
+  projectionVersion   Int       @default(1) @map("projection_version")
+  calculatedAt        DateTime  @map("calculated_at")
+
+  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@index([restaurantId, lastHonoredAt], map: "customer_metrics_restaurant_last_honored_idx")
+  @@index([restaurantId, honored365d], map: "customer_metrics_restaurant_honored_idx")
+  @@index([restaurantId, actualLifetimeSpend], map: "customer_metrics_restaurant_lifetime_spend_idx")
+  @@map("customer_metric_snapshots")
+}
+
+enum CustomerDataSource {
+  MANUAL
+  RESERVATION
+  VOICE_SUGGESTION
+  POS
+  IMPORT
+}
+
+model CustomerPreference {
+  id           String             @id @default(uuid())
+  customerId   String             @map("customer_id")
+  restaurantId String             @map("restaurant_id")
+  key          String
+  value        Json
+  source       CustomerDataSource
+  confidence   Decimal?           @db.Decimal(4, 3)
+  confirmedAt  DateTime?          @map("confirmed_at")
+  expiresAt    DateTime?          @map("expires_at")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, key], map: "customer_preferences_customer_key_key")
+  @@index([restaurantId, key], map: "customer_preferences_restaurant_key_idx")
+  @@index([customerId, expiresAt], map: "customer_preferences_customer_expires_idx")
+  @@map("customer_preferences")
+}
+
+model CustomerTag {
+  id           String   @id @default(uuid())
+  restaurantId String   @map("restaurant_id")
+  key          String
+  label        String
+  colorToken   String?  @map("color_token")
+  isSystem     Boolean  @default(false) @map("is_system")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  restaurant  Restaurant              @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  assignments CustomerTagAssignment[]
+
+  @@unique([restaurantId, key], map: "customer_tags_restaurant_key_key")
+  @@index([restaurantId, updatedAt(sort: Desc)], map: "customer_tags_restaurant_updated_idx")
+  @@map("customer_tags")
+}
+
+model CustomerTagAssignment {
+  customerId  String             @map("customer_id")
+  tagId       String             @map("tag_id")
+  source      CustomerDataSource
+  ruleId      String?            @map("rule_id")
+  ruleVersion Int?               @map("rule_version")
+  assignedAt  DateTime           @default(now()) @map("assigned_at")
+
+  customer Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tag      CustomerTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([customerId, tagId])
+  @@index([tagId, assignedAt], map: "customer_tag_assignments_tag_assigned_idx")
+  @@index([customerId, assignedAt], map: "customer_tag_assignments_customer_assigned_idx")
+  @@map("customer_tag_assignments")
+}
+
+model CustomerSegment {
+  id                String    @id @default(uuid())
+  restaurantId      String    @map("restaurant_id")
+  name              String
+  definition        Json
+  definitionVersion Int       @default(1) @map("definition_version")
+  isSystem          Boolean   @default(false) @map("is_system")
+  systemKey         String?   @map("system_key")
+  lastCount         Int?      @map("last_count")
+  lastEvaluatedAt   DateTime? @map("last_evaluated_at")
+  createdByHash     String    @map("created_by_hash")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  restaurant Restaurant          @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  campaigns  MarketingCampaign[]
+
+  @@unique([restaurantId, systemKey], map: "customer_segments_restaurant_system_key_key")
+  @@index([restaurantId, updatedAt(sort: Desc)], map: "customer_segments_restaurant_updated_idx")
+  @@map("customer_segments")
+}
+
+enum MarketingChannel {
+  SMS
+  EMAIL
+  WHATSAPP
+}
+
+enum MarketingPermissionStatus {
+  OPTED_IN
+  OPTED_OUT
+  UNKNOWN
+}
+
+enum MarketingCampaignStatus {
+  DRAFT
+  READY
+  SCHEDULED
+  SENDING
+  SENT
+  PAUSED
+  CANCELLED
+  FAILED
+}
+
+enum MarketingMessageStatus {
+  PENDING
+  SENDING
+  ACCEPTED
+  SENT
+  DELIVERED
+  FAILED
+  BOUNCED
+  COMPLAINED
+  CANCELLED
+}
+
+enum MarketingProviderReconciliationStatus {
+  OPEN
+  RESOLVED
+  IGNORED
+}
+
+enum MarketingConversionType {
+  RESERVATION_CREATED
+  RESERVATION_HONORED
+}
+
+/// Current per-channel marketing permission. The legacy CustomerConsent
+/// remains readable during migration; this projection is the authority for
+/// campaign sends once a channel-specific proof has been collected.
+model MarketingPermission {
+  id           String                    @id @default(uuid())
+  restaurantId String                    @map("restaurant_id")
+  customerId   String                    @map("customer_id")
+  channel      MarketingChannel
+  status       MarketingPermissionStatus @default(UNKNOWN)
+  source       String
+  proofVersion String?                   @map("proof_version")
+  proofHash    String?                   @map("proof_hash")
+  consentedAt  DateTime?                 @map("consented_at")
+  withdrawnAt  DateTime?                 @map("withdrawn_at")
+  createdAt    DateTime                  @default(now()) @map("created_at")
+  updatedAt    DateTime                  @updatedAt @map("updated_at")
+
+  restaurant Restaurant                 @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  customer   Customer                   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  events     MarketingPermissionEvent[]
+
+  @@unique([customerId, channel], map: "marketing_permissions_customer_channel_key")
+  @@index([restaurantId, channel, status], map: "marketing_permissions_restaurant_channel_status_idx")
+  @@index([customerId, updatedAt], map: "marketing_permissions_customer_updated_idx")
+  @@map("marketing_permissions")
+}
+
+/// Append-only proof/audit trail for every permission change.
+model MarketingPermissionEvent {
+  id           String                    @id @default(uuid())
+  restaurantId String                    @map("restaurant_id")
+  customerId   String                    @map("customer_id")
+  permissionId String?                   @map("permission_id")
+  channel      MarketingChannel
+  status       MarketingPermissionStatus
+  source       String
+  proofVersion String?                   @map("proof_version")
+  proofHash    String?                   @map("proof_hash")
+  occurredAt   DateTime                  @map("occurred_at")
+  createdAt    DateTime                  @default(now()) @map("created_at")
+
+  restaurant Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  customer   Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  permission MarketingPermission? @relation(fields: [permissionId], references: [id], onDelete: SetNull)
+
+  @@index([restaurantId, channel, occurredAt], map: "marketing_permission_events_restaurant_channel_idx")
+  @@index([customerId, channel, occurredAt], map: "marketing_permission_events_customer_channel_idx")
+  @@map("marketing_permission_events")
+}
+
+/// Explicit operator/provider suppression. A suppression always wins over an
+/// opt-in and is checked again immediately before a provider call.
+model MarketingSuppression {
+  id           String            @id @default(uuid())
+  restaurantId String            @map("restaurant_id")
+  customerId   String            @map("customer_id")
+  channel      MarketingChannel?
+  reason       String
+  source       String
+  expiresAt    DateTime?         @map("expires_at")
+  createdAt    DateTime          @default(now()) @map("created_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, channel, reason], map: "marketing_suppressions_customer_channel_reason_key")
+  @@index([restaurantId, customerId, expiresAt], map: "marketing_suppressions_lookup_idx")
+  @@map("marketing_suppressions")
+}
+
+model MarketingCampaign {
+  id              String                  @id @default(uuid())
+  restaurantId    String                  @map("restaurant_id")
+  eventId         String?                 @map("event_id")
+  name            String
+  objective       String
+  channel         MarketingChannel
+  segmentId       String?                 @map("segment_id")
+  status          MarketingCampaignStatus @default(DRAFT)
+  subject         String?
+  bodyTemplate    String                  @map("body_template")
+  scheduledAt     DateTime?               @map("scheduled_at")
+  timezone        String                  @default("Europe/Paris")
+  audienceVersion Int                     @default(1) @map("audience_version")
+  audienceCount   Int                     @default(0) @map("audience_count")
+  acceptedCount   Int                     @default(0) @map("accepted_count")
+  deliveredCount  Int                     @default(0) @map("delivered_count")
+  failedCount     Int                     @default(0) @map("failed_count")
+  conversionCount Int                     @default(0) @map("conversion_count")
+  startedAt       DateTime?               @map("started_at")
+  completedAt     DateTime?               @map("completed_at")
+  lastErrorCode   String?                 @map("last_error_code")
+  createdByHash   String                  @map("created_by_hash")
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+
+  restaurant           Restaurant                    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  event                Event?                        @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  segment              CustomerSegment?              @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  audienceMembers      CampaignAudienceMember[]
+  messages             CampaignMessage[]
+  conversions          MarketingConversion[]
+  attributionLinks     MarketingAttributionLink[]
+  automationDispatches MarketingAutomationDispatch[]
+  legacyReactivation   ReactivationCampaign?
+
+  @@index([restaurantId, status, updatedAt(sort: Desc)], map: "marketing_campaigns_restaurant_status_updated_idx")
+  @@index([segmentId], map: "marketing_campaigns_segment_idx")
+  @@index([eventId], map: "marketing_campaigns_event_idx")
+  @@map("marketing_campaigns")
+}
+
+enum MarketingAutomationType {
+  AFTER_FIRST_HONORED
+  DORMANT
+  BIRTHDAY
+}
+
+enum MarketingAutomationDispatchStatus {
+  QUEUED
+  SENT
+  SKIPPED
+  FAILED
+}
+
+/// Configuration for the three bounded Pro automations. The service validates
+/// the JSON by type before it can be enabled; no client supplied JSON is ever
+/// compiled directly into a query or provider payload.
+model MarketingAutomation {
+  id              String                  @id @default(uuid())
+  restaurantId    String                  @map("restaurant_id")
+  type            MarketingAutomationType
+  channel         MarketingChannel
+  config          Json
+  version         Int                     @default(1)
+  enabled         Boolean                 @default(false)
+  lastEvaluatedAt DateTime?               @map("last_evaluated_at")
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+
+  restaurant Restaurant                    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  dispatches MarketingAutomationDispatch[]
+
+  @@unique([restaurantId, type], map: "marketing_automations_restaurant_type_key")
+  @@index([enabled, type], map: "marketing_automations_enabled_type_idx")
+  @@index([restaurantId, enabled], map: "marketing_automations_restaurant_enabled_idx")
+  @@map("marketing_automations")
+}
+
+/// One durable claim per automation/customer/trigger. It prevents a scheduler
+/// replay or a concurrent API instance from producing a second campaign
+/// message, even when Redis is unavailable.
+model MarketingAutomationDispatch {
+  id           String                            @id @default(uuid())
+  automationId String                            @map("automation_id")
+  restaurantId String                            @map("restaurant_id")
+  customerId   String                            @map("customer_id")
+  triggerKey   String                            @map("trigger_key")
+  campaignId   String?                           @map("campaign_id")
+  status       MarketingAutomationDispatchStatus @default(QUEUED)
+  reasonCode   String?                           @map("reason_code")
+  occurredAt   DateTime                          @map("occurred_at")
+  createdAt    DateTime                          @default(now()) @map("created_at")
+  updatedAt    DateTime                          @updatedAt @map("updated_at")
+
+  automation MarketingAutomation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  restaurant Restaurant          @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  customer   Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  campaign   MarketingCampaign?  @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@unique([automationId, customerId, triggerKey], map: "marketing_automation_dispatches_dedupe_key")
+  @@index([restaurantId, status, createdAt], map: "marketing_automation_dispatches_restaurant_status_idx")
+  @@index([campaignId], map: "marketing_automation_dispatches_campaign_idx")
+  @@map("marketing_automation_dispatches")
+}
+
+model CampaignAudienceMember {
+  id              String   @id @default(uuid())
+  campaignId      String   @map("campaign_id")
+  customerId      String   @map("customer_id")
+  audienceVersion Int      @map("audience_version")
+  inclusionReason String   @map("inclusion_reason")
+  snapshot        Json     @default("{}")
+  capturedAt      DateTime @map("captured_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  campaign MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customer Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  message  CampaignMessage?
+
+  @@unique([campaignId, customerId], map: "campaign_audience_members_campaign_customer_key")
+  @@index([campaignId, audienceVersion], map: "campaign_audience_members_campaign_version_idx")
+  @@map("campaign_audience_members")
+}
+
+model CampaignMessage {
+  id                String                 @id @default(uuid())
+  campaignId        String                 @map("campaign_id")
+  audienceMemberId  String                 @unique @map("audience_member_id")
+  customerId        String                 @map("customer_id")
+  channel           MarketingChannel
+  status            MarketingMessageStatus @default(PENDING)
+  provider          String?
+  providerMessageId String?                @map("provider_message_id")
+  renderedBody      String?                @map("rendered_body")
+  idempotencyKey    String                 @unique @map("idempotency_key")
+  errorCode         String?                @map("error_code")
+  acceptedAt        DateTime?              @map("accepted_at")
+  sentAt            DateTime?              @map("sent_at")
+  deliveredAt       DateTime?              @map("delivered_at")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+
+  campaign                MarketingCampaign                 @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  audienceMember          CampaignAudienceMember            @relation(fields: [audienceMemberId], references: [id], onDelete: Cascade)
+  customer                Customer                          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  providerReconciliations MarketingProviderReconciliation[]
+
+  @@index([campaignId, status], map: "campaign_messages_campaign_status_idx")
+  @@index([customerId, channel, createdAt], map: "campaign_messages_customer_channel_idx")
+  @@map("campaign_messages")
+}
+
+/// Durable inbox for a signed provider callback whose message id could not be
+/// matched at receipt time. It contains only provider metadata, never a
+/// contact address or message body. The reconciliation job can attach the row
+/// to a CampaignMessage once the send transaction becomes visible.
+model MarketingProviderReconciliation {
+  id                String                                @id @default(uuid())
+  eventKey          String                                @unique @map("event_key")
+  provider          String
+  providerMessageId String                                @map("provider_message_id")
+  eventType         String                                @map("event_type")
+  providerStatus    String?                               @map("provider_status")
+  errorCode         String?                               @map("error_code")
+  payloadHash       String?                               @map("payload_hash")
+  occurredAt        DateTime                              @map("occurred_at")
+  status            MarketingProviderReconciliationStatus @default(OPEN)
+  restaurantId      String?                               @map("restaurant_id")
+  campaignMessageId String?                               @map("campaign_message_id")
+  attempts          Int                                   @default(1)
+  firstSeenAt       DateTime                              @default(now()) @map("first_seen_at")
+  lastSeenAt        DateTime                              @default(now()) @map("last_seen_at")
+  resolvedAt        DateTime?                             @map("resolved_at")
+  resolutionCode    String?                               @map("resolution_code")
+  createdAt         DateTime                              @default(now()) @map("created_at")
+  updatedAt         DateTime                              @updatedAt @map("updated_at")
+
+  restaurant      Restaurant?      @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
+  campaignMessage CampaignMessage? @relation(fields: [campaignMessageId], references: [id], onDelete: SetNull)
+
+  @@index([status, lastSeenAt], map: "marketing_provider_reconciliation_status_seen_idx")
+  @@index([provider, providerMessageId], map: "marketing_provider_reconciliation_provider_message_idx")
+  @@index([restaurantId, status, lastSeenAt], map: "marketing_provider_reconciliation_restaurant_status_idx")
+  @@map("marketing_provider_reconciliations")
+}
+
+model MarketingConversion {
+  id             String                  @id @default(uuid())
+  campaignId     String                  @map("campaign_id")
+  customerId     String                  @map("customer_id")
+  reservationId  String?                 @map("reservation_id")
+  conversionType MarketingConversionType @map("conversion_type")
+  conversionKey  String                  @unique @map("conversion_key")
+  attributedAt   DateTime                @map("attributed_at")
+  windowEndsAt   DateTime?               @map("window_ends_at")
+  active         Boolean                 @default(true)
+  createdAt      DateTime                @default(now()) @map("created_at")
+  updatedAt      DateTime                @updatedAt @map("updated_at")
+
+  campaign    MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customer    Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  reservation Reservation?      @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId, conversionType, attributedAt], map: "marketing_conversions_campaign_type_idx")
+  @@index([reservationId, conversionType], map: "marketing_conversions_reservation_type_idx")
+  @@map("marketing_conversions")
+}
+
+/// Signed, expiring campaign link. Only a hash of the token is persisted;
+/// the customer id is never placed in a URL in clear text.
+model MarketingAttributionLink {
+  id           String    @id @default(uuid())
+  restaurantId String    @map("restaurant_id")
+  campaignId   String    @map("campaign_id")
+  customerId   String    @map("customer_id")
+  tokenHash    String    @unique @map("token_hash")
+  issuedAt     DateTime  @map("issued_at")
+  expiresAt    DateTime  @map("expires_at")
+  clickedAt    DateTime? @map("clicked_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  restaurant Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  campaign   MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customer   Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, customerId], map: "marketing_attribution_links_campaign_customer_key")
+  @@index([restaurantId, expiresAt], map: "marketing_attribution_links_restaurant_expiry_idx")
+  @@index([campaignId, clickedAt], map: "marketing_attribution_links_campaign_clicked_idx")
+  @@map("marketing_attribution_links")
+}
+
+model MarketingFrequencyWindow {
+  id           String           @id @default(uuid())
+  restaurantId String           @map("restaurant_id")
+  customerId   String           @map("customer_id")
+  channel      MarketingChannel
+  windowStart  DateTime         @map("window_start")
+  windowEnd    DateTime         @map("window_end")
+  sendCount    Int              @default(0) @map("send_count")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, channel, windowStart], map: "marketing_frequency_windows_customer_channel_start_key")
+  @@index([restaurantId, channel, windowEnd], map: "marketing_frequency_windows_lookup_idx")
+  @@map("marketing_frequency_windows")
 }
 
 model Message {
@@ -574,14 +2139,16 @@ model Message {
 }
 
 model ReactivationCampaign {
-  id           String     @id @default(uuid())
-  restaurantId String     @map("restaurant_id")
-  status       String     @default("PENDING") // PENDING | SENT | DISMISSED
-  customerIds  String[]   @map("customer_ids") // snapshot des VIPs dormants
-  sentAt       DateTime?  @map("sent_at")
-  sentCount    Int        @default(0) @map("sent_count")
-  createdAt    DateTime   @default(now()) @map("created_at")
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  id                  String             @id @default(uuid())
+  restaurantId        String             @map("restaurant_id")
+  status              String             @default("PENDING") // PENDING | MIGRATED | SENT | DISMISSED
+  customerIds         String[]           @map("customer_ids") // snapshot des VIPs dormants
+  marketingCampaignId String?            @unique @map("marketing_campaign_id")
+  sentAt              DateTime?          @map("sent_at")
+  sentCount           Int                @default(0) @map("sent_count")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  restaurant          Restaurant         @relation(fields: [restaurantId], references: [id])
+  marketingCampaign   MarketingCampaign? @relation(fields: [marketingCampaignId], references: [id], onDelete: SetNull)
 
   @@index([restaurantId, status, createdAt(sort: Desc)], map: "reactivation_campaigns_restaurant_status_created_at_idx")
   @@map("reactivation_campaigns")
@@ -780,9 +2347,9 @@ model WaitingListEntry {
   createdAt               DateTime          @default(now()) @map("created_at")
   updatedAt               DateTime          @updatedAt @map("updated_at")
 
-  restaurant              Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  preferredSection        Section?          @relation(fields: [preferredSectionId], references: [id], onDelete: SetNull)
-  promotedReservation     Reservation?      @relation(fields: [promotedReservationId], references: [id], onDelete: SetNull)
+  restaurant          Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  preferredSection    Section?     @relation(fields: [preferredSectionId], references: [id], onDelete: SetNull)
+  promotedReservation Reservation? @relation(fields: [promotedReservationId], references: [id], onDelete: SetNull)
 
   @@index([restaurantId, status, slotStart, createdAt])
   @@index([restaurantId, customerPhoneNormalized])
@@ -960,7 +2527,7 @@ model RestaurantExposureSettings {
   connectPublishedAt      DateTime?  @map("connect_published_at")
   connectDescription      String?    @map("connect_description")
   // Sokar Connect (P2) — premium subdomain via Cloudflare for SaaS
-  customDomain            String?    @map("custom_domain") @unique
+  customDomain            String?    @unique @map("custom_domain")
   customDomainStatus      String?    @map("custom_domain_status") // pending|dns_validated|ssl_provisioning|active|failed
   customDomainValidatedAt DateTime?  @map("custom_domain_validated_at")
   customDomainCfId        String?    @map("custom_domain_cf_id") // Cloudflare Custom Hostname ID
@@ -1010,21 +2577,21 @@ model OnboardingEvent {
 // ─── Gift cards (P1) ───────────────────────────────────────────────
 
 model GiftCard {
-  id                String   @id @default(uuid())
-  restaurantId      String   @map("restaurant_id")
-  code              String   @unique @default(uuid())
-  amount            Decimal  @db.Decimal(10, 2)
-  remainingAmount   Decimal  @db.Decimal(10, 2) @map("remaining_amount")
-  currency          String   @default("EUR")
-  status            String   @default("ACTIVE") // ACTIVE, REDEEMED, EXPIRED, CANCELLED
-  purchasedAt       DateTime @default(now()) @map("purchased_at")
-  expiresAt         DateTime? @map("expires_at")
-  reminderSentAt    DateTime? @map("reminder_sent_at")
-  validityMonths    Int      @default(12) @map("validity_months")
+  id              String    @id @default(uuid())
+  restaurantId    String    @map("restaurant_id")
+  code            String    @unique @default(uuid())
+  amount          Decimal   @db.Decimal(10, 2)
+  remainingAmount Decimal   @map("remaining_amount") @db.Decimal(10, 2)
+  currency        String    @default("EUR")
+  status          String    @default("ACTIVE") // ACTIVE, REDEEMED, EXPIRED, CANCELLED
+  purchasedAt     DateTime  @default(now()) @map("purchased_at")
+  expiresAt       DateTime? @map("expires_at")
+  reminderSentAt  DateTime? @map("reminder_sent_at")
+  validityMonths  Int       @default(12) @map("validity_months")
 
   // Montant libre ou pack expérience
-  packId            String?   @map("pack_id")
-  pack              GiftCardPack? @relation(fields: [packId], references: [id], onDelete: SetNull)
+  packId String?       @map("pack_id")
+  pack   GiftCardPack? @relation(fields: [packId], references: [id], onDelete: SetNull)
 
   // Option "réserver maintenant"
   preferredDate      DateTime? @map("preferred_date")
@@ -1040,24 +2607,24 @@ model GiftCard {
   message           String?
   occasion          String?
   customerId        String? @map("customer_id")
-  createdBy         String   @default("CLIENT") @map("created_by") // CLIENT, DASHBOARD, VOICE
+  createdBy         String  @default("CLIENT") @map("created_by") // CLIENT, DASHBOARD, VOICE
   purchaseReference String? @map("purchase_reference") // stripePaymentIntentId, manual, etc.
 
   // P2 — Stripe + personnalisation + commission
-  stripePaymentIntentId String?  @map("stripe_payment_intent_id")
-  stripePaymentStatus   String?  @default("pending") @map("stripe_payment_status")
-  templateId            String?  @map("template_id")
-  customImageUrl        String?  @map("custom_image_url")
-  sokarCommissionAmount Decimal  @map("sokar_commission_amount") @db.Decimal(10, 2)
+  stripePaymentIntentId String? @map("stripe_payment_intent_id")
+  stripePaymentStatus   String? @default("pending") @map("stripe_payment_status")
+  templateId            String? @map("template_id")
+  customImageUrl        String? @map("custom_image_url")
+  sokarCommissionAmount Decimal @map("sokar_commission_amount") @db.Decimal(10, 2)
 
   // P3 — Crowdfunding
-  type              String    @default("SINGLE") @map("type") // SINGLE, CROWDFUNDED
-  targetAmount      Decimal?  @map("target_amount") @db.Decimal(10, 2)
-  crowdfundedUntil  DateTime? @map("crowdfunded_until") // deadline
-  closedAt          DateTime? @map("closed_at") // date de clôture manuelle
+  type             String    @default("SINGLE") @map("type") // SINGLE, CROWDFUNDED
+  targetAmount     Decimal?  @map("target_amount") @db.Decimal(10, 2)
+  crowdfundedUntil DateTime? @map("crowdfunded_until") // deadline
+  closedAt         DateTime? @map("closed_at") // date de clôture manuelle
 
   // P2 — Code court mnémonique (alias public lisible, le code UUID reste l'identifiant technique)
-  shortCode         String?   @unique @map("short_code")
+  shortCode String? @unique @map("short_code")
 
   restaurant    Restaurant             @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   customer      Customer?              @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -1071,11 +2638,11 @@ model GiftCard {
 }
 
 model GiftCardRedemption {
-  id            String    @id @default(uuid())
-  giftCardId    String    @map("gift_card_id")
-  reservationId String?   @map("reservation_id")
-  amount        Decimal   @db.Decimal(10, 2)
-  redeemedAt    DateTime  @default(now()) @map("redeemed_at")
+  id            String   @id @default(uuid())
+  giftCardId    String   @map("gift_card_id")
+  reservationId String?  @map("reservation_id")
+  amount        Decimal  @db.Decimal(10, 2)
+  redeemedAt    DateTime @default(now()) @map("redeemed_at")
 
   giftCard    GiftCard     @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
   reservation Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
@@ -1102,17 +2669,17 @@ model GiftCardContribution {
 }
 
 model GiftCardPack {
-  id            String   @id @default(uuid())
-  restaurantId  String   @map("restaurant_id")
-  name          String
-  description   String?
-  amount        Decimal  @db.Decimal(10, 2)
-  minPartySize  Int      @default(1) @map("min_party_size")
-  maxPartySize  Int      @default(2) @map("max_party_size")
-  isActive      Boolean  @default(true) @map("is_active")
-  deletedAt     DateTime? @map("deleted_at")
-  restaurant    Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  giftCards     GiftCard[]
+  id           String     @id @default(uuid())
+  restaurantId String     @map("restaurant_id")
+  name         String
+  description  String?
+  amount       Decimal    @db.Decimal(10, 2)
+  minPartySize Int        @default(1) @map("min_party_size")
+  maxPartySize Int        @default(2) @map("max_party_size")
+  isActive     Boolean    @default(true) @map("is_active")
+  deletedAt    DateTime?  @map("deleted_at")
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  giftCards    GiftCard[]
 
   @@index([restaurantId, isActive, deletedAt])
   @@map("gift_card_packs")

@@ -2,7 +2,11 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { requireSokarOperator } from '../../plugins/clerk';
 import { db } from '../../shared/db/client';
-import { ProvisioningService } from './provisioning.service';
+import {
+  ProvisioningNotReadyError,
+  ProvisioningService,
+  ProvisioningTestCallNotPendingError,
+} from './provisioning.service';
 
 const AssignPhoneSchema = z.object({
   phoneNumber: z.string().regex(/^\+[1-9]\d{9,14}$/, 'Numéro E.164 requis (ex: +33612345678)'),
@@ -14,6 +18,10 @@ const TestCallSchema = z.object({
     .string()
     .regex(/^\+[1-9]\d{9,14}$/, 'Numéro E.164 requis (ex: +33612345678)')
     .optional(),
+});
+
+const ValidateTestCallSchema = z.object({
+  callControlId: z.string().trim().min(1).max(128),
 });
 
 const provisioningMutationRateLimit = {
@@ -118,7 +126,7 @@ export async function provisioningRoutes(app: FastifyInstance) {
     },
   );
 
-  // 2. Vérification du Webhook & activation du renvoi
+  // 2. Vérification du Webhook
   app.post<{ Params: { restaurantId: string } }>(
     '/admin/provisioning/:restaurantId/verify-webhook',
     { preHandler: requireSokarOperator(), config: { rateLimit: provisioningMutationRateLimit } },
@@ -129,7 +137,7 @@ export async function provisioningRoutes(app: FastifyInstance) {
         const status = await ProvisioningService.verifyWebhook(restaurantId);
         return reply.send({
           ok: true,
-          message: "Webhook vérifié et renvoi d'appel configuré avec succès.",
+          message: 'Webhook vérifié avec succès.',
           status,
         });
       } catch (err: unknown) {
@@ -140,7 +148,29 @@ export async function provisioningRoutes(app: FastifyInstance) {
     },
   );
 
-  // 3. Déclenchement de l'appel test & validation
+  // 3. Attestation du renvoi d'appel par l'opérateur du restaurant
+  app.post<{ Params: { restaurantId: string } }>(
+    '/admin/provisioning/:restaurantId/mark-forwarding',
+    { preHandler: requireSokarOperator(), config: { rateLimit: provisioningMutationRateLimit } },
+    async (req, reply) => {
+      const { restaurantId } = req.params;
+
+      try {
+        const status = await ProvisioningService.markForwardingConfigured(restaurantId);
+        return reply.send({
+          ok: true,
+          message: "Renvoi d'appel marqué comme configuré.",
+          status,
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        app.log.error({ err, restaurantId }, 'Failed to mark call forwarding');
+        return reply.status(400).send({ error: message });
+      }
+    },
+  );
+
+  // 4. Déclenchement de l'appel test (la validation est une action distincte)
   app.post<{ Params: { restaurantId: string } }>(
     '/admin/provisioning/:restaurantId/test-call',
     { preHandler: requireSokarOperator(), config: { rateLimit: provisioningMutationRateLimit } },
@@ -177,7 +207,34 @@ export async function provisioningRoutes(app: FastifyInstance) {
     },
   );
 
-  // 4. Finaliser et marquer le pilote comme 100% actif
+  // 5. Confirmation manuelle de l'appel reçu et entendu
+  app.post<{ Params: { restaurantId: string } }>(
+    '/admin/provisioning/:restaurantId/validate-test-call',
+    { preHandler: requireSokarOperator(), config: { rateLimit: provisioningMutationRateLimit } },
+    async (req, reply) => {
+      const { restaurantId } = req.params;
+      const body = ValidateTestCallSchema.parse(req.body ?? {});
+
+      try {
+        const status = await ProvisioningService.validateTestCall(restaurantId, body.callControlId);
+        return reply.send({
+          ok: true,
+          message: 'Appel test confirmé comme reçu et entendu.',
+          status,
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (err instanceof ProvisioningTestCallNotPendingError) {
+          app.log.warn({ restaurantId }, 'Test call validation rejected');
+          return reply.status(409).send({ error: message, code: err.code });
+        }
+        app.log.error({ err, restaurantId }, 'Failed to validate test call');
+        return reply.status(400).send({ error: message });
+      }
+    },
+  );
+
+  // 6. Finaliser et marquer le pilote comme 100% actif
   app.post<{ Params: { restaurantId: string } }>(
     '/admin/provisioning/:restaurantId/complete',
     { preHandler: requireSokarOperator(), config: { rateLimit: provisioningMutationRateLimit } },
@@ -185,18 +242,7 @@ export async function provisioningRoutes(app: FastifyInstance) {
       const { restaurantId } = req.params;
 
       try {
-        const now = new Date();
-        await db.restaurant.update({
-          where: { id: restaurantId },
-          data: {
-            provisioningStatus: 'ACTIVE',
-            forwardingConfiguredAt: now,
-            testCallValidatedAt: now,
-            onboardingActivatedAt: now,
-          },
-        });
-
-        const status = await ProvisioningService.getProvisioningStatus(restaurantId);
+        const status = await ProvisioningService.completeProvisioning(restaurantId);
         return reply.send({
           ok: true,
           message: 'Pilote restaurant finalisé et activé avec succès.',
@@ -204,6 +250,10 @@ export async function provisioningRoutes(app: FastifyInstance) {
         });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
+        if (err instanceof ProvisioningNotReadyError) {
+          app.log.warn({ restaurantId, missing: err.missing }, 'Provisioning is not ready');
+          return reply.status(409).send({ error: message, code: err.code, missing: err.missing });
+        }
         app.log.error({ err, restaurantId }, 'Failed to complete provisioning');
         return reply.status(400).send({ error: message });
       }

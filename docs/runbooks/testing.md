@@ -1,6 +1,6 @@
 # Runbook — Testing
 
-> **Statut : ACTIF — audité le 12 septembre 2026.** La matrice locale/CI/staging correspond au
+> **Statut : ACTIF — audité le 14 septembre 2026.** La matrice locale/CI/staging correspond au
 > dépôt. Les validations qui contactent un fournisseur ou modifient une donnée métier doivent
 > conserver une preuve datée. Voir [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
 
@@ -11,6 +11,93 @@ pnpm test       # Vitest
 pnpm lint       # turbo lint + stylelint
 pnpm typecheck  # per-app tsc --noEmit
 ```
+
+## Catalogue prix et usage — contrôles locaux
+
+Ces suites vérifient que la grille Essential 199 € / Pro 299 € reste cohérente entre la
+configuration, le calcul de marge et les surfaces publiques. Elles ne créent ni prix Stripe ni
+abonnement. Le test ROI charge le `dist` de `@sokar/config` dans le workspace actuel ; reconstruire
+ce package avant la suite si le dossier a été nettoyé.
+
+```zsh
+pnpm --filter @sokar/config run build
+pnpm --filter @sokar/shared exec vitest run src/__tests__/plan.test.ts
+pnpm --filter @sokar/api exec vitest run \
+  src/modules/analytics/__tests__/roi.service.test.ts \
+  src/modules/billing/__tests__/billing.routes.test.ts \
+  src/modules/billing/__tests__/billing.service.test.ts
+pnpm --filter @sokar/dashboard exec vitest run src/app/PricingSection.test.tsx
+```
+
+La promesse client Essential/Pro est sans quota. `/usage/current` affiche donc uniquement la
+quantité observée et annonce `customerUsagePolicy=UNLIMITED`, sans coût ni marge. Le feed de coût et
+de marge reste réservé aux opérations via `SOKAR_INTERNAL_USAGE_TOKEN`.
+
+L'import du catalogue fournisseur est vérifiable sans provider ni écriture en base en exécutant la
+suite dédiée :
+
+```zsh
+pnpm --filter @sokar/api exec vitest run \
+  src/modules/usage/__tests__/usage-tariff-import.service.test.ts
+```
+
+Le script `apps/api/scripts/import-usage-tariffs.ts` reste en dry-run par défaut. Il refuse les
+devises autres qu'EUR, les prix au-delà de `DECIMAL(18,9)`, les fenêtres invalides, les conflits de
+version et les chevauchements. Pour appliquer un fichier fourni par les opérations, lancer d'abord
+le dry-run et conserver sa sortie avec la facture, puis ajouter `--apply` dans une base locale ou
+un environnement contrôlé. Aucun fichier de facture ou taux réel ne doit être ajouté au dépôt.
+
+Le rapprochement d'un export de facture avec le ledger est également local et en lecture seule :
+
+```zsh
+pnpm --filter @sokar/api exec vitest run \
+  src/modules/usage/__tests__/usage-reconciliation.service.test.ts
+pnpm --filter @sokar/api exec tsx apps/api/scripts/reconcile-usage-invoice.ts \
+  --file ./private/provider-invoice-2026-09.csv \
+  --cost-tolerance 0.01 \
+  --output ./private/reports/provider-invoice-2026-09.json
+```
+
+Les périodes de facture sont en UTC avec une borne de fin exclusive. La commande retourne un statut
+par dimension et échoue si une ligne est `MISMATCH`, `INVOICE_ONLY`, `USAGE_ONLY` ou
+`UNPRICED_USAGE`. Les tolérances ne sont jamais implicites ; leur justification doit rester avec la
+facture. Avec `--output`, le rapport JSON est écrit avant le code de sortie, y compris lorsque la
+commande échoue sur un écart. Le script ne réécrit pas les événements ni les rollups. Le fichier de
+sortie contient `reportHash`, un SHA-256 des bornes, tolérances, compteurs et lignes ; il peut être
+repris comme référence immuable lors de la création d'un ajustement.
+
+Après revue, un opérateur peut conserver un delta dans `UsageReconciliationAdjustment` via
+`POST /admin/usage/reconciliation-adjustments`, puis le valider ou le refuser via
+`POST /admin/usage/reconciliation-adjustments/:id/decision`. La création est idempotente par hash
+du rapport, portée, dimension et période ; la décision utilise la condition `status = OPEN` et ne
+réécrit jamais le ledger. La file se consulte avec `GET /admin/usage/reconciliation-adjustments`.
+
+La concurrence réelle se vérifie dans une base PostgreSQL jetable après application des migrations :
+
+```zsh
+AGENTIC_INT_TESTS=1 pnpm --filter @sokar/api exec vitest run \
+  src/modules/usage/__tests__/usage-adjustment.concurrency.integration.test.ts
+```
+
+Le test crée une fixture isolée, vérifie l'unicité d'insertion et la décision atomique, puis la
+supprime. Il reste ignoré dans la suite unitaire.
+
+L'évaluateur local des seuils de suivi interne est vérifiable sans provider :
+
+```zsh
+pnpm --filter @sokar/api exec vitest run \
+  src/modules/usage/__tests__/usage-alerts.service.test.ts \
+  src/modules/usage/__tests__/usage-alert-budget.service.test.ts \
+  src/shared/queue/workers/__tests__/usage-alerts.worker.test.ts
+```
+
+Le worker ne contacte aucun canal tant que `USAGE_ALERTS_ENABLED=false` (valeur par défaut). Une
+claim Redis `SET NX` est posée par mois, restaurant, métrique et seuil avant dispatch afin qu'un
+rejeu horaire ou deux processus concurrents ne renvoient pas le même jalon. Ces seuils sont
+strictement internes, facultatifs et sans effet sur le service du restaurant ; le suivi visuel de
+référence reste `/dashboard/admin/margin`. Pour un test contrôlé, définir en plus
+`USAGE_ALERT_VOICE_BUDGET_MINUTES` et/ou `USAGE_ALERT_SMS_BUDGET_SEGMENTS` ; ces budgets ne sont
+jamais lus comme un quota client.
 
 ## E2E
 
@@ -156,6 +243,52 @@ Les fixtures Telnyx/Resend testent les normaliseurs d'adapter : identifiant
 provider, acceptation, refus certain et résultat inconnu. Elles ne valident pas
 les réponses d'un compte staging. `success` signifie acceptation de la requête,
 pas livraison au destinataire.
+
+Le contrôle marketing ajoute les suites ciblées suivantes :
+
+```zsh
+pnpm --filter @sokar/api exec vitest run \
+  src/modules/marketing/__tests__/marketing-provider.service.test.ts \
+  src/modules/marketing/__tests__/marketing-provider.routes.test.ts \
+  src/modules/marketing/__tests__/marketing-provider-reconciliation.worker.test.ts
+```
+
+Un callback signé dont l'identifiant n'est pas encore connu crée une ligne
+`MarketingProviderReconciliation` idempotente. Le worker planifié
+`marketing-provider-reconciliation/5min` la rattache dès que la
+`CampaignMessage` existe ; le feed opérateur peut lister ou ignorer une ligne
+avec `SOKAR_INTERNAL_MARKETING_TOKEN`. Aucun de ces contrôles n'envoie un
+message et le flag `MARKETING_SENDS_ENABLED` n'est pas requis.
+
+Les fondations POS, paiement de réservation et CRM groupe se vérifient de la même façon sans
+contacter de fournisseur :
+
+```zsh
+pnpm --filter @sokar/api exec vitest run \
+  src/modules/pos/__tests__ \
+  src/modules/reservation-payments/__tests__ \
+  src/modules/customer-groups/__tests__
+```
+
+Ces suites vérifient notamment le dry-run et l'absence d'appel externe, l'idempotence des écritures,
+les transitions et signatures, l'isolation compte/site, le consentement inter-sites et le masquage
+des téléphones. Les flags `POS_CONNECTORS_ENABLED`, `RESERVATION_PAYMENTS_ENABLED` et
+`CUSTOMER_GROUPS_ENABLED` restent `false` pendant les tests de promotion ; l'ouverture d'un pilote
+nécessite ensuite une preuve sandbox séparée.
+
+La fondation réputation se vérifie sans provider ni Redis réel :
+
+```zsh
+pnpm --filter @sokar/api exec vitest run \
+  src/modules/reputation/__tests__/reputation.service.test.ts \
+  src/modules/reputation/__tests__/reputation.routes.test.ts \
+  src/modules/reputation/__tests__/reputation-feedback-expiry.worker.test.ts
+```
+
+Ces tests couvrent l'exigence `HONORED`, le token haché et expirant, le rejeu public, la transaction
+score faible → tâche de récupération, l'isolation tenant et les transitions de résolution. Le flag
+`REPUTATION_ENABLED` reste `false` ; aucun SMS, email, WhatsApp ou appel de plateforme d'avis n'est
+effectué.
 
 La récupération quotidienne réutilise le job existant `reconciliation/sms` :
 une claim `in_progress` âgée de 15 minutes devient `unknown` par CAS Redis et

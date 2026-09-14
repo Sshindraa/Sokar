@@ -53,9 +53,11 @@ function quota(
 }
 
 /**
- * Convert the immutable usage quantities into the customer-facing quota
- * contract. A null limit is intentionally reported as NOT_CONFIGURED until
- * pilot data defines the included volume and overage policy.
+ * Convert immutable usage quantities into the legacy customer-facing shape.
+ * A null limit means that Sokar applies no customer quota. The API keeps the
+ * `NOT_CONFIGURED` wire state for compatibility with existing consumers, but
+ * the public route also exposes `customerUsagePolicy=UNLIMITED` and never
+ * enforces a cap from this projection.
  */
 export function buildUsageQuotaSnapshot(
   usage: UsageQuantity[],

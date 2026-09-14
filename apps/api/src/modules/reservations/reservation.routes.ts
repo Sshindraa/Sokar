@@ -52,6 +52,7 @@ export async function reservationRoutes(app: FastifyInstance) {
         partySize: body.partySize,
         customerName: body.customerName,
         customerPhone: body.customerPhone,
+        marketingAttributionToken: body.marketingAttributionToken,
       });
       return reply.status(201).send(reservation);
     } catch (err) {

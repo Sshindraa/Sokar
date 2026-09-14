@@ -1,14 +1,18 @@
+import { createHash } from 'node:crypto';
 import { FastifyInstance } from 'fastify';
 import { telnyxWebhookGuard } from '../voice/telnyx.guard';
 import { handleReply } from '../sms/reply-handler';
+import { applyMarketingProviderEvent } from '../marketing/marketing-provider.service';
 
 interface TelnyxFromObject {
   phone_number?: string;
 }
 
 interface TelnyxMessagePayload {
+  id?: string;
   from?: string | TelnyxFromObject;
   text?: string;
+  to?: Array<{ status?: string }>;
 }
 
 interface TelnyxWebhookBody {
@@ -39,10 +43,26 @@ export async function whatsappWebhookRoutes(app: FastifyInstance) {
     const eventType = body?.data?.event_type;
     const payload = body?.data?.payload;
 
-    if (eventType !== 'message.received' || !payload) {
-      // Notification de statut (sent, delivered, etc.) — on ignore
+    if (eventType !== 'message.received') {
+      if (payload?.id) {
+        await applyMarketingProviderEvent({
+          provider: 'telnyx',
+          providerMessageId: payload.id,
+          eventType: eventType ?? '',
+          providerStatus: payload.to?.[0]?.status,
+          errorCode: eventType,
+          payloadHash:
+            typeof req.rawBody === 'string'
+              ? createHash('sha256').update(req.rawBody).digest('hex')
+              : undefined,
+        });
+      }
+      // Notification de statut (sent, delivered, etc.) — on accuse réception
+      // après avoir réconcilié une éventuelle CampaignMessage.
       return reply.send({ result: 'ok' });
     }
+
+    if (!payload) return reply.send({ result: 'ok' });
 
     // Telnyx WhatsApp: from est une string (E.164)
     const fromObj = payload.from;

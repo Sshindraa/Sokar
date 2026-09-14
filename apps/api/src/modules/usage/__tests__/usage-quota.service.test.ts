@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildUsageQuotaSnapshot } from '../usage-quota.service';
 
-describe('usage quota projection', () => {
+describe('usage projection compatibility shape', () => {
   it('converts telephony seconds to minutes and preserves configured limits', () => {
     const snapshot = buildUsageQuotaSnapshot(
       [
@@ -27,7 +27,7 @@ describe('usage quota projection', () => {
     });
   });
 
-  it('does not present an unconfigured quota as an unlimited promise', () => {
+  it('keeps the legacy null-limit shape for the unlimited customer promise', () => {
     const snapshot = buildUsageQuotaSnapshot([{ category: 'TELEPHONY_SECONDS', quantity: '120' }], {
       voiceMinutesMonthly: null,
       smsMonthly: null,

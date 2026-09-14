@@ -108,6 +108,7 @@ function makeRestaurant(
     giftCardMinimumAmount: overrides.giftCardMinimumAmount ?? null,
     giftCardCommissionRate: (overrides.giftCardCommissionRate ?? 0.05) as unknown as Prisma.Decimal,
     giftCardEnabled: overrides.giftCardEnabled ?? false,
+    crmSensitiveNoteRoles: overrides.crmSensitiveNoteRoles ?? null,
     exposureSettings: overrides.exposureSettings ?? null,
   };
 }

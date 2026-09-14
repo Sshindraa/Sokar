@@ -20,7 +20,7 @@ describe('computeRoi', () => {
     const roi = await computeRoi('r1', '2026-05');
     expect(roi.totalCouverts).toBe(5);
     expect(roi.theforkSavings).toBe(15);
-    expect(roi.sokarMonthlyCost).toBe(149);
+    expect(roi.sokarMonthlyCost).toBe(199);
     expect(roi.roiMultiplier).toBe(0.1);
     expect(roi.estimatedRevenue).toBe(175);
   });

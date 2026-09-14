@@ -1,6 +1,6 @@
 # Runbook — Deployment
 
-> **Statut : ACTIF — audité le 12 septembre 2026.** Staging, promotion production, snapshots,
+> **Statut : ACTIF — audité le 14 septembre 2026.** Staging, promotion production, snapshots,
 > health checks et rollback correspondent aux workflows du dépôt. Voir
 > [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
 
@@ -9,6 +9,7 @@
 - **Staging:** deploys automatically after a green CI and its smoke tests.
 - **Production:** deploys automatically once CI and staging are green (`.github/workflows/deploy-prod.yml` triggered on `Deploy Staging` success). The release snapshot, health checks and rollback path remain mandatory; DB migration, payment, auth, voice and critical configuration changes are flagged in the deployment report.
 - **Roadmap hold (2026-09-13):** for the 199/299 € product chantier, do not merge or promote a release that triggers production until the roadmap gates are all closed (usage/pricing, Essential reliability, CRM, marketing, attribution and pilot evidence). Intermediate work stays on a branch or staging and must not call the production workflow.
+- **Hard gate:** `scripts/deploy.sh --env prod` runs `pnpm verify:product-gates` (via `node scripts/verify-product-gates.mjs`) before any build, migration or restart. The manifest is [`docs/release/product-gates.json`](../release/product-gates.json); `LOCAL_ONLY` entries are already delivered locally but still print their external blockers, and rollback remains available while the freeze is active.
 - Application rollback does not restore the database. See `docs/runbooks/rollback.md`.
 
 ## Unified deploy script

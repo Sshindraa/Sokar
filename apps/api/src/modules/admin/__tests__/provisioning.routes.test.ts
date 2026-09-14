@@ -137,7 +137,7 @@ describe('admin provisioning routes', () => {
     const updated = {
       ...mockRestaurant,
       provisioningStatus: 'WEBHOOK_READY',
-      forwardingConfiguredAt: new Date(),
+      forwardingConfiguredAt: null,
     };
 
     vi.mocked(db.restaurant.findUniqueOrThrow)
@@ -163,6 +163,60 @@ describe('admin provisioning routes', () => {
     const body = res.json();
     expect(body.ok).toBe(true);
     expect(body.status.steps.webhook.completed).toBe(true);
+    expect(body.status.steps.forwarding.completed).toBe(false);
+    expect(db.restaurant.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.not.objectContaining({ forwardingConfiguredAt: expect.anything() }),
+      }),
+    );
+  });
+
+  it('POST /admin/provisioning/:restaurantId/mark-forwarding enregistre l’attestation opérateur', async () => {
+    const mockRestaurant = {
+      id: 'test-rest-1',
+      name: 'Chez Sokar Test',
+      phoneNumber: '+33451221528',
+      provisioningStatus: 'WEBHOOK_READY',
+      telnyxPhoneNumberId: 'tnx-999',
+      forwardingConfiguredAt: null,
+      testCallValidatedAt: null,
+      firstCallAt: null,
+      onboardingTasks: {},
+    };
+
+    const updated = {
+      ...mockRestaurant,
+      forwardingConfiguredAt: new Date('2026-07-22T10:05:00Z'),
+    };
+
+    vi.mocked(db.restaurant.findUniqueOrThrow)
+      .mockResolvedValueOnce(
+        mockRestaurant as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+      )
+      .mockResolvedValueOnce(
+        updated as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+      );
+    vi.mocked(db.restaurant.update).mockResolvedValueOnce(
+      updated as unknown as Awaited<ReturnType<typeof db.restaurant.update>>,
+    );
+
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/provisioning/test-rest-1/mark-forwarding',
+      headers: AUTH,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      ok: true,
+      status: { steps: { forwarding: { completed: true } } },
+    });
+    expect(db.restaurant.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { forwardingConfiguredAt: expect.any(Date) },
+      }),
+    );
   });
 
   it('POST /admin/provisioning/:restaurantId/test-call déclenche un appel test', async () => {
@@ -185,9 +239,15 @@ describe('admin provisioning routes', () => {
 
     const updated = {
       ...mockRestaurant,
-      provisioningStatus: 'ACTIVE',
-      testCallValidatedAt: new Date(),
-      firstCallAt: new Date(),
+      provisioningStatus: 'TEST_CALL_PENDING',
+      testCallValidatedAt: null,
+      firstCallAt: null,
+      onboardingTasks: {
+        phone: {
+          status: 'completed',
+          metadata: { testCallControlId: 'test-call-control-123' },
+        },
+      },
     };
 
     vi.mocked(db.restaurant.findUniqueOrThrow)
@@ -217,5 +277,177 @@ describe('admin provisioning routes', () => {
     expect(body.ok).toBe(true);
     expect(body.callControlId).toBe('test-call-control-123');
     expect(body.message).toContain('+33612345678');
+    expect(body.status.provisioningStatus).toBe('TEST_CALL_PENDING');
+    expect(body.status.steps.testCall.completed).toBe(false);
+  });
+
+  it('POST /admin/provisioning/:restaurantId/validate-test-call confirme uniquement le dernier appel', async () => {
+    const requested = {
+      id: 'test-rest-1',
+      name: 'Chez Sokar Test',
+      phoneNumber: '+33451221528',
+      provisioningStatus: 'TEST_CALL_PENDING',
+      telnyxPhoneNumberId: 'tnx-999',
+      forwardingConfiguredAt: new Date('2026-07-22T10:00:00Z'),
+      testCallValidatedAt: null,
+      firstCallAt: null,
+      onboardingTasks: {
+        phone: {
+          status: 'completed',
+          metadata: { testCallControlId: 'test-call-control-123' },
+        },
+      },
+    };
+    const validated = {
+      ...requested,
+      provisioningStatus: 'TEST_CALL_COMPLETED',
+      testCallValidatedAt: new Date('2026-07-22T10:10:00Z'),
+      firstCallAt: new Date('2026-07-22T10:10:00Z'),
+    };
+
+    vi.mocked(db.restaurant.findUniqueOrThrow)
+      .mockResolvedValueOnce(
+        requested as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+      )
+      .mockResolvedValueOnce(
+        validated as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+      );
+    vi.mocked(db.restaurant.update).mockResolvedValueOnce(
+      validated as unknown as Awaited<ReturnType<typeof db.restaurant.update>>,
+    );
+
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/provisioning/test-rest-1/validate-test-call',
+      headers: AUTH,
+      payload: { callControlId: 'test-call-control-123' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      ok: true,
+      status: {
+        provisioningStatus: 'TEST_CALL_COMPLETED',
+        steps: { testCall: { completed: true } },
+      },
+    });
+    expect(db.restaurant.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          testCallValidatedAt: expect.any(Date),
+          provisioningStatus: 'TEST_CALL_COMPLETED',
+        }),
+      }),
+    );
+  });
+
+  it('refuse de confirmer un appel test dont l’identifiant ne correspond pas', async () => {
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValueOnce({
+      id: 'test-rest-1',
+      name: 'Chez Sokar Test',
+      phoneNumber: '+33451221528',
+      provisioningStatus: 'TEST_CALL_PENDING',
+      telnyxPhoneNumberId: 'tnx-999',
+      forwardingConfiguredAt: new Date(),
+      testCallValidatedAt: null,
+      firstCallAt: null,
+      onboardingTasks: {
+        phone: { status: 'completed', metadata: { testCallControlId: 'expected-call' } },
+      },
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>);
+
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/provisioning/test-rest-1/validate-test-call',
+      headers: AUTH,
+      payload: { callControlId: 'other-call' },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ code: 'TEST_CALL_NOT_PENDING' });
+    expect(db.restaurant.update).not.toHaveBeenCalled();
+  });
+
+  it('refuse de finaliser un provisioning sans preuve d’appel test', async () => {
+    const incomplete = {
+      id: 'test-rest-1',
+      name: 'Chez Sokar Test',
+      phoneNumber: '+33451221528',
+      provisioningStatus: 'WEBHOOK_READY',
+      telnyxPhoneNumberId: 'tnx-999',
+      forwardingConfiguredAt: new Date('2026-07-22T10:00:00Z'),
+      testCallValidatedAt: null,
+      firstCallAt: null,
+      onboardingActivatedAt: null,
+      onboardingTasks: {},
+    };
+
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValueOnce(
+      incomplete as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
+
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/provisioning/test-rest-1/complete',
+      headers: AUTH,
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({
+      code: 'PROVISIONING_NOT_READY',
+      missing: ['test_call'],
+    });
+    expect(db.restaurant.update).not.toHaveBeenCalled();
+  });
+
+  it('finalise un provisioning dont les preuves sont présentes sans les fabriquer', async () => {
+    const ready = {
+      id: 'test-rest-1',
+      name: 'Chez Sokar Test',
+      phoneNumber: '+33451221528',
+      provisioningStatus: 'ACTIVE',
+      telnyxPhoneNumberId: 'tnx-999',
+      forwardingConfiguredAt: new Date('2026-07-22T10:00:00Z'),
+      testCallValidatedAt: new Date('2026-07-22T10:05:00Z'),
+      firstCallAt: new Date('2026-07-22T10:05:00Z'),
+      onboardingActivatedAt: null,
+      onboardingTasks: {},
+    };
+    const updated = { ...ready, onboardingActivatedAt: new Date('2026-07-22T10:10:00Z') };
+
+    vi.mocked(db.restaurant.findUniqueOrThrow)
+      .mockResolvedValueOnce(
+        ready as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+      )
+      .mockResolvedValueOnce(
+        updated as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+      );
+    vi.mocked(db.restaurant.update).mockResolvedValueOnce(
+      updated as unknown as Awaited<ReturnType<typeof db.restaurant.update>>,
+    );
+
+    const app = await getApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/provisioning/test-rest-1/complete',
+      headers: AUTH,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+    expect(db.restaurant.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ provisioningStatus: 'ACTIVE' }),
+      }),
+    );
+    const updateData = vi.mocked(db.restaurant.update).mock.calls.at(-1)?.[0].data as Record<
+      string,
+      unknown
+    >;
+    expect(updateData.forwardingConfiguredAt).toBeUndefined();
+    expect(updateData.testCallValidatedAt).toBeUndefined();
   });
 });

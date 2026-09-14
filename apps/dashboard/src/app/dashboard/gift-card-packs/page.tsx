@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, Package, Pencil, Plus, Power, Trash2 } from 'lucide-react';
+import { Package, Pencil, Plus, Power, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -12,6 +12,7 @@ import { formatEuro } from '@sokar/shared';
 import type { GiftCardPack } from '@/lib/api/gift-cards';
 import GiftCardPackForm from '@/components/gift-cards/gift-card-pack-form';
 import { GiftCardSectionNav } from '@/components/gift-cards/GiftCardSectionNav';
+import { DataFetchError } from '@/components/DataFetchError';
 
 export default function GiftCardPacksPage() {
   const { listGiftCardPacks, toggleGiftCardPack, deleteGiftCardPack, orgId } = useGiftCardApi();
@@ -37,7 +38,7 @@ export default function GiftCardPacksPage() {
   }, [orgId, listGiftCardPacks]);
 
   useEffect(() => {
-    fetchPacks();
+    void fetchPacks();
   }, [fetchPacks]);
 
   async function handleToggle(pack: GiftCardPack) {
@@ -101,21 +102,18 @@ export default function GiftCardPacksPage() {
 
       <GiftCardSectionNav />
 
-      {error && (
-        <div className="sokar-error">
-          <AlertCircle size={18} />
-          {error}
-        </div>
-      )}
+      {error && <DataFetchError message={error} onRetry={fetchPacks} retrying={loading} />}
 
       {packs.length === 0 ? (
-        <div className="sokar-empty">
-          <Package size={40} className="opacity-30" />
-          <p className="text-sm">Aucun pack expérience pour le moment</p>
-          <p className="text-xs opacity-60">
-            Créez votre premier pack pour proposer des expériences clés en main à vos clients.
-          </p>
-        </div>
+        error ? null : (
+          <div className="sokar-empty">
+            <Package size={40} className="opacity-30" />
+            <p className="text-sm">Aucun pack expérience pour le moment</p>
+            <p className="text-xs opacity-60">
+              Créez votre premier pack pour proposer des expériences clés en main à vos clients.
+            </p>
+          </div>
+        )
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {packs.map((pack) => (

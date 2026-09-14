@@ -66,6 +66,33 @@ describe('customer.routes', () => {
       });
     });
 
+    it('masque les notes pour un rôle non autorisé selon la politique du site', async () => {
+      const app = await getApp();
+      vi.mocked(db.customer.findMany).mockResolvedValue([
+        {
+          id: 'c1',
+          restaurantId: 'test-rest-1',
+          name: 'Alice',
+          notes: 'Table calme',
+        },
+      ] as never);
+      vi.mocked(db.customer.count).mockResolvedValue(1);
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        crmSensitiveNoteRoles: 'OWNER,MANAGER',
+      } as never);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/customers',
+        headers: { authorization: 'Bearer test', 'x-test-site-role': 'STAFF' },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data).toEqual([
+        { id: 'c1', restaurantId: 'test-rest-1', name: 'Alice', notes: null },
+      ]);
+    });
+
     it('rejette un phone invalide (regex E.164) avec 400', async () => {
       const app = await getApp();
 
@@ -103,6 +130,37 @@ describe('customer.routes', () => {
   });
 
   describe('POST /customers (upsert)', () => {
+    it('interdit à STAFF de créer ou modifier une note client', async () => {
+      const app = await getApp();
+
+      const create = await app.inject({
+        method: 'POST',
+        url: '/customers',
+        headers: { authorization: 'Bearer test', 'x-test-site-role': 'STAFF' },
+        payload: {
+          restaurantId: 'ignored-by-auth',
+          phone: '+33612345678',
+          name: 'Alice',
+          notes: 'Note privée',
+        },
+      });
+      expect(create.statusCode).toBe(403);
+      expect(create.json()).toEqual({
+        error: 'CUSTOMER_NOTES_WRITE_ROLE_REQUIRED',
+        message: 'La modification des notes client est réservée aux responsables.',
+      });
+      expect(db.customer.upsert).not.toHaveBeenCalled();
+
+      const update = await app.inject({
+        method: 'PATCH',
+        url: '/customers/00000000-0000-0000-0000-000000000001',
+        headers: { authorization: 'Bearer test', 'x-test-site-role': 'STAFF' },
+        payload: { notes: 'Note privée' },
+      });
+      expect(update.statusCode).toBe(403);
+      expect(db.customer.update).not.toHaveBeenCalled();
+    });
+
     it("crée un client (201) avec le restaurantId issu de l'auth, pas du payload", async () => {
       const app = await getApp();
       const created = {

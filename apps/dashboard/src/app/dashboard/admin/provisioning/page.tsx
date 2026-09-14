@@ -37,6 +37,7 @@ interface ProvisioningStatusView {
   forwardingConfiguredAt: string | null;
   testCallValidatedAt: string | null;
   firstCallAt: string | null;
+  testCallControlId: string | null;
   forwardingCode: string | null;
   steps: {
     assignment: {
@@ -107,6 +108,31 @@ export default function AdminProvisioningPage() {
   }, [fetchRestaurants]);
 
   const selectedStatus = restaurants.find((r) => r.restaurantId === selectedId);
+  const completionRequirements = selectedStatus
+    ? [
+        {
+          key: 'phone',
+          label: 'numéro attribué',
+          ready: selectedStatus.steps.assignment.completed,
+        },
+        { key: 'webhook', label: 'webhook vérifié', ready: selectedStatus.steps.webhook.completed },
+        {
+          key: 'forwarding',
+          label: 'renvoi opérateur confirmé',
+          ready: selectedStatus.steps.forwarding.completed,
+        },
+        {
+          key: 'test-call',
+          label: 'appel test confirmé',
+          ready: selectedStatus.steps.testCall.completed,
+        },
+      ]
+    : [];
+  const missingCompletionRequirements = completionRequirements
+    .filter((requirement) => !requirement.ready)
+    .map((requirement) => requirement.label);
+  const canComplete =
+    completionRequirements.length > 0 && missingCompletionRequirements.length === 0;
 
   const handleSelectRestaurant = (id: string) => {
     setSelectedId(id);
@@ -188,9 +214,9 @@ export default function AdminProvisioningPage() {
 
     try {
       const res = await post<{ ok: boolean; message: string; status: ProvisioningStatusView }>(
-        `admin/provisioning/${selectedId}/verify-webhook`,
+        `admin/provisioning/${selectedId}/mark-forwarding`,
       );
-      setActionSuccess('Renvoi d’appel marqué comme configuré.');
+      setActionSuccess(res.message);
       setRestaurants((prev) =>
         prev.map((item) => (item.restaurantId === selectedId ? res.status : item)),
       );
@@ -225,6 +251,29 @@ export default function AdminProvisioningPage() {
       );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Échec du déclenchement de l'appel test";
+      setActionError(msg);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleValidateTestCall = async () => {
+    if (!selectedId || !selectedStatus?.testCallControlId) return;
+    setActionLoading('validate-testcall');
+    setActionSuccess(null);
+    setActionError(null);
+
+    try {
+      const res = await post<{ ok: boolean; message: string; status: ProvisioningStatusView }>(
+        `admin/provisioning/${selectedId}/validate-test-call`,
+        { callControlId: selectedStatus.testCallControlId },
+      );
+      setActionSuccess(res.message);
+      setRestaurants((prev) =>
+        prev.map((item) => (item.restaurantId === selectedId ? res.status : item)),
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Impossible de confirmer l'appel test";
       setActionError(msg);
     } finally {
       setActionLoading(null);
@@ -406,7 +455,8 @@ export default function AdminProvisioningPage() {
 
                 <Button
                   onClick={handleCompletePilot}
-                  disabled={actionLoading === 'complete' || !selectedStatus.hasAssignedPhone}
+                  disabled={actionLoading === 'complete' || !canComplete}
+                  aria-describedby="provisioning-completion-requirements"
                   className="bg-success text-success-foreground hover:bg-success/90 gap-2 transition-all duration-200"
                 >
                   {actionLoading === 'complete' ? (
@@ -417,6 +467,14 @@ export default function AdminProvisioningPage() {
                   Finaliser le pilote
                 </Button>
               </div>
+              {!canComplete && (
+                <p
+                  id="provisioning-completion-requirements"
+                  className="text-xs text-muted-foreground md:ml-auto md:max-w-sm md:text-right"
+                >
+                  Finalisation disponible après : {missingCompletionRequirements.join(', ')}.
+                </p>
+              )}
             </div>
 
             {/* Grille des 4 étapes */}
@@ -644,18 +702,53 @@ export default function AdminProvisioningPage() {
                   </div>
                 </div>
 
-                <Button
-                  onClick={handleTestCall}
-                  disabled={actionLoading === 'testcall' || !selectedStatus.hasAssignedPhone}
-                  className="w-full gap-2 mt-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-200"
-                >
-                  {actionLoading === 'testcall' ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-4 w-4" />
-                  )}
-                  Lancer l&apos;appel test IA
-                </Button>
+                {selectedStatus.testCallControlId && !selectedStatus.steps.testCall.completed ? (
+                  <div className="space-y-2 mt-4">
+                    <p className="text-xs text-muted-foreground">
+                      L&apos;appel a été déclenché. Confirmez sa réception après avoir entendu la
+                      réponse de l&apos;assistant.
+                    </p>
+                    <Button
+                      onClick={handleValidateTestCall}
+                      disabled={actionLoading === 'validate-testcall'}
+                      className="w-full gap-2 bg-success text-success-foreground hover:bg-success/90 transition-all duration-200"
+                    >
+                      {actionLoading === 'validate-testcall' ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4" />
+                      )}
+                      Confirmer l&apos;appel reçu
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleTestCall}
+                      disabled={actionLoading === 'testcall'}
+                      className="w-full gap-2 transition-all duration-200"
+                    >
+                      {actionLoading === 'testcall' && <Loader2 className="h-4 w-4 animate-spin" />}
+                      Relancer l&apos;appel test
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    onClick={handleTestCall}
+                    disabled={
+                      actionLoading === 'testcall' ||
+                      !selectedStatus.hasAssignedPhone ||
+                      !selectedStatus.steps.webhook.completed ||
+                      !selectedStatus.steps.forwarding.completed
+                    }
+                    className="w-full gap-2 mt-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-200"
+                  >
+                    {actionLoading === 'testcall' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4" />
+                    )}
+                    Lancer l&apos;appel test IA
+                  </Button>
+                )}
               </div>
             </div>
           </div>

@@ -14,6 +14,11 @@ interface ApiResult<T> {
   loading: boolean;
 }
 
+type ApiRequestOptions = {
+  signal?: AbortSignal;
+  headers?: Record<string, string>;
+};
+
 /**
  * Hook API client pour le dashboard.
  * - Proxy via Next.js (même origine → cookie Clerk forwardé)
@@ -47,13 +52,14 @@ export function useApi() {
       method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
       path: string,
       body?: unknown,
-      options?: { signal?: AbortSignal },
+      options?: ApiRequestOptions,
     ): Promise<T> => {
       const url = `${PROXY}/${path.replace(/^\//, '')}`;
 
       const headers: Record<string, string> = {};
       if (body) headers['Content-Type'] = 'application/json';
       if (activeSiteId) headers['X-Sokar-Site-ID'] = activeSiteId;
+      if (options?.headers) Object.assign(headers, options.headers);
 
       const res = await fetch(url, {
         method,
@@ -92,15 +98,18 @@ export function useApi() {
     [apiFetch],
   );
   const post = useCallback(
-    <T = unknown>(path: string, body?: unknown) => apiFetch<T>('POST', path, body),
+    <T = unknown>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+      apiFetch<T>('POST', path, body, options),
     [apiFetch],
   );
   const put = useCallback(
-    <T = unknown>(path: string, body?: unknown) => apiFetch<T>('PUT', path, body),
+    <T = unknown>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+      apiFetch<T>('PUT', path, body, options),
     [apiFetch],
   );
   const patch = useCallback(
-    <T = unknown>(path: string, body?: unknown) => apiFetch<T>('PATCH', path, body),
+    <T = unknown>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+      apiFetch<T>('PATCH', path, body, options),
     [apiFetch],
   );
   const del = useCallback(<T = unknown>(path: string) => apiFetch<T>('DELETE', path), [apiFetch]);

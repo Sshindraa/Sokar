@@ -93,6 +93,7 @@ export async function sendWhatsApp(
   if (!from) {
     throw new Error('TELNYX_WHATSAPP_FROM or TELNYX_FROM_NUMBER is required for WhatsApp');
   }
+  const messagingProfileId = process.env.TELNYX_MESSAGING_PROFILE_ID;
   const response = await t.messages.create({
     from,
     to,
@@ -100,6 +101,7 @@ export async function sendWhatsApp(
     // Le SDK Telnyx ne type pas `type` pour messages.create, mais l'API REST
     // accepte type: 'whatsapp' pour router via WhatsApp Business.
     ...({ type: 'whatsapp' } as Record<string, string>),
+    ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
   });
   const result = normalizeTelnyxSendResponse(response, 'whatsapp');
   if (usage) {

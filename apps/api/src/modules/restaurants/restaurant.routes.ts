@@ -11,6 +11,7 @@ import {
   computeOnboardingState,
   DEFAULT_HOURS,
   hasUsablePhone,
+  normalizeTasks,
   ONBOARDING_STEPS,
   type OnboardingTask,
   type OnboardingTaskState,
@@ -232,6 +233,7 @@ export async function restaurantRoutes(app: FastifyInstance) {
       where: { id: restaurantId },
       include: { personality: true, exposureSettings: true, images: true },
     });
+
     const state = computeOnboardingState(restaurant);
     const completedAt =
       state.onboardingDone && !restaurant.onboardingCompletedAt
@@ -260,6 +262,23 @@ export async function restaurantRoutes(app: FastifyInstance) {
       include: { personality: true, exposureSettings: true, images: true },
     });
 
+    if (body.action === 'first_call') {
+      const phoneMetadata = normalizeTasks(restaurant.onboardingTasks).phone.metadata ?? {};
+      const pendingCallControlId = phoneMetadata.testCallControlId;
+      const providedCallControlId = body.metadata?.testCallControlId;
+      if (
+        typeof pendingCallControlId !== 'string' ||
+        typeof providedCallControlId !== 'string' ||
+        pendingCallControlId !== providedCallControlId
+      ) {
+        return reply.status(409).send({
+          code: 'TEST_CALL_NOT_CONFIRMED',
+          error:
+            "Confirmez la réception du dernier appel test avant de valider cette étape d'onboarding.",
+        });
+      }
+    }
+
     if (
       body.action === 'complete' &&
       body.task === 'phone' &&
@@ -286,8 +305,19 @@ export async function restaurantRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: err instanceof Error ? err.message : String(err) });
     }
 
-    const nextState = computeOnboardingState({ ...restaurant, onboardingTasks: tasks });
     const now = new Date();
+    if (body.action === 'first_call') {
+      tasks.phone = {
+        ...tasks.phone,
+        status: 'completed',
+        completedAt: tasks.phone.completedAt ?? now.toISOString(),
+        metadata: {
+          ...(tasks.phone.metadata ?? {}),
+          testCallValidatedAt: now.toISOString(),
+        },
+      };
+    }
+    const nextState = computeOnboardingState({ ...restaurant, onboardingTasks: tasks });
     const updated = await app.db.restaurant.update({
       where: { id: restaurantId },
       data: {
@@ -303,6 +333,10 @@ export async function restaurantRoutes(app: FastifyInstance) {
             : restaurant.onboardingActivatedAt,
         firstCallAt:
           body.action === 'first_call' && !restaurant.firstCallAt ? now : restaurant.firstCallAt,
+        testCallValidatedAt:
+          body.action === 'first_call' && !restaurant.testCallValidatedAt
+            ? now
+            : restaurant.testCallValidatedAt,
         onboardingLastSeenAt: now,
       },
       include: { personality: true, exposureSettings: true, images: true },
@@ -792,8 +826,8 @@ export async function restaurantRoutes(app: FastifyInstance) {
   });
 
   // ─── Appel test onboarding : le gérant entend l'IA sur SON propre numéro ──
-  // Démontre concrètement que l'assistant vocal fonctionne et marque
-  // l'activation (première mise en service audible).
+  // Le déclenchement est journalisé comme appel en attente ; la validation
+  // intervient uniquement après confirmation explicite du gérant.
 
   const TestCallSchema = z.object({
     phoneNumber: z.string().regex(/^\+[1-9]\d{9,14}$/, 'Numéro E.164 requis (ex: +33612345678)'),
@@ -830,31 +864,27 @@ export async function restaurantRoutes(app: FastifyInstance) {
       });
 
       const now = new Date();
-      const updated = await app.db.restaurant.update({
+      const tasks = normalizeTasks(restaurant.onboardingTasks);
+      tasks.phone = {
+        ...tasks.phone,
+        metadata: {
+          ...(tasks.phone.metadata ?? {}),
+          testCallControlId: callControlId,
+          testCallRequestedAt: now.toISOString(),
+        },
+      };
+      await app.db.restaurant.update({
         where: { id: restaurantId },
         data: {
-          firstCallAt: restaurant.firstCallAt ?? now,
+          onboardingTasks: tasks as unknown as Prisma.InputJsonValue,
           onboardingLastSeenAt: now,
         },
-        include: { personality: true },
       });
-
-      trackOnboardingEvent({
-        event: 'onboarding_first_call',
-        restaurantId,
-        userId: req.userId,
-        task: 'phone',
-        metadata: {
-          callControlId,
-          phoneNumber: body.phoneNumber,
-          progress: computeOnboardingState(updated).progress,
-        },
-      }).catch((err) => app.log.error({ err, restaurantId }, 'trackOnboardingEvent failed'));
 
       return reply.send({
         ok: true,
         callControlId,
-        message: 'Appel test déclenché. Vous allez recevoir un appel sous quelques secondes.',
+        message: 'Appel test déclenché. Confirmez sa réception après avoir entendu l’assistant.',
       });
     } catch (err: unknown) {
       logger.error(

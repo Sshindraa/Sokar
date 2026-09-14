@@ -1,6 +1,6 @@
 # API Endpoints
 
-> **Dernière mise à jour** : 2026-09-13
+> **Dernière mise à jour** : 2026-09-14
 > **Base URL dev** : `http://localhost:3001` (port configuré dans `apps/api/src/main.ts`)
 > **Auth globale** : Clerk (sauf routes explicitement publiques — MCP, voice webhook, public Sokar Connect, RGPD `request-verification`, `confirm-link`, `privacy-policy`)
 > **Génération** : inventaire auto depuis les fichiers `*.routes.ts` / `*.pipeline.ts`
@@ -41,11 +41,12 @@ Configuration de la personnalité vocale (AgentPersonality).
 
 ### Onboarding
 
-| Méthode | Route                                                                        | Description        |
-| ------- | ---------------------------------------------------------------------------- | ------------------ |
-| GET     | `/restaurant/onboarding` ou `/api/restaurant/onboarding`                     | État d'onboarding  |
-| PATCH   | `/restaurant/onboarding` ou `/api/restaurant/onboarding`                     | Mise à jour état   |
-| POST    | `/restaurant/onboarding/test-call` ou `/api/restaurant/onboarding/test-call` | Test outbound call |
+| Méthode | Route                                                                        | Description                                                            |
+| ------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| GET     | `/restaurant/onboarding` ou `/api/restaurant/onboarding`                     | État d'onboarding                                                      |
+| PATCH   | `/restaurant/onboarding` ou `/api/restaurant/onboarding`                     | Mise à jour état                                                       |
+| POST    | `/restaurant/onboarding/test-call` ou `/api/restaurant/onboarding/test-call` | Déclenche un appel outbound et conserve son `callControlId` en attente |
+| PATCH   | `/restaurant/onboarding` ou `/api/restaurant/onboarding`                     | `action=first_call` avec le `callControlId` confirme l'appel reçu      |
 
 Les routes existent en double préfixe (`/restaurant` et `/api/restaurant`)
 probablement pour des raisons de compat historique.
@@ -76,6 +77,25 @@ Mise à jour / suppression.
 > en query param alors que `req.restaurantId` est injecté par `requireOrg`.
 > Voir `apps/api/src/modules/reservations/__tests__/reservation.routes.test.ts`
 > (TODO cleanup-call-and-reservation-routes).
+
+### Protection bancaire (fondation locale)
+
+Module : `apps/api/src/modules/reservation-payments/reservation-payment.routes.ts`
+
+| Méthode | Route                                       | Garde / comportement                                                   |
+| ------- | ------------------------------------------- | ---------------------------------------------------------------------- |
+| GET     | `/reservation-payment-policies`             | Pro/Multi-site, lecture tenant-scoped ; policies versionnées           |
+| POST    | `/reservation-payment-policies`             | Owner/Manager + flag `RESERVATION_PAYMENTS_ENABLED`                    |
+| GET     | `/reservations/:id/payment`                 | État de la dernière tentative, sans identifiant secret                 |
+| POST    | `/reservations/:id/payment/prepare`         | Préparation idempotente ; `dryRun=true` par défaut, aucun appel Stripe |
+| POST    | `/reservations/:id/payment/expire`          | Expiration manuelle d'une tentative, Owner/Manager                     |
+| POST    | `/api/internal/reservation-payments/expire` | Opérateur Sokar, nettoyage borné des échéances                         |
+| POST    | `/webhooks/stripe/reservation-payments`     | Signature Stripe et hash du payload ; transitions atomiques            |
+
+Le webhook exige les métadonnées `restaurantId` et `reservationPaymentId`, vérifie montant/devise,
+ignore les événements inconnus en les conservant sous forme de hash et ne stocke aucune carte ni
+payload brut. Les intents Stripe réels, le modèle marchand Connect, le hold de capacité, les
+captures et les remboursements restent désactivés tant que le pilote n'est pas qualifié.
 
 ---
 
@@ -150,15 +170,206 @@ Module : `apps/api/src/modules/customers/customer.routes.ts`
 
 ### GET /customers / POST /customers
 
-Liste et création.
+Liste et upsert tenant-scoped. La liste masque `notes` pour les rôles absents de la politique CRM
+effective du site. L'upsert conserve les champs opérationnels pour l'équipe, mais la modification
+de `notes` est réservée à Owner/Manager (`CUSTOMER_NOTES_WRITE_ROLE_REQUIRED`).
 
 ### PATCH /customers/:id / DELETE /customers/:id
 
-Mise à jour / suppression.
+Mise à jour / suppression. Comme pour l'upsert, une modification de `notes` exige Owner/Manager ;
+les autres champs restent soumis à l'authentification du site.
 
 ### POST /customers/:id/vip
 
 Passe un client en VIP (notification gérée côté worker BullMQ).
+
+### CRM avancé
+
+Module : `apps/api/src/modules/customers/customer-crm.routes.ts`
+
+| Méthode     | Route                                                                                  | Description                                                             |
+| ----------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| GET         | `/crm/customers`                                                                       | Liste CRM Pro tenant-scoped avec recherche, VIP, récence et pagination. |
+| GET         | `/crm/customers/:id`                                                                   | Profil, métriques, préférences, tags et 50 événements récents.          |
+| GET         | `/crm/customers/:id/timeline`                                                          | Chronologie cursor-paginée.                                             |
+| GET         | `/crm/tags`                                                                            | Tags du site courant.                                                   |
+| POST/DELETE | `/crm/customers/:id/tags[/:tagId]`                                                     | Ajout ou retrait idempotent d'un tag (Owner/Manager).                   |
+| PUT/DELETE  | `/crm/customers/:id/preferences/:key`                                                  | Préférence structurée allow-listée (Owner/Manager).                     |
+| GET         | `/crm/duplicates`, `/crm/merges`                                                       | Détection et audit des fusions (Owner/Manager).                         |
+| POST        | `/crm/customers/:id/merge-preview`                                                     | Preview d'une fusion sans mutation (Owner/Manager).                     |
+| POST        | `/crm/customers/:id/merge`                                                             | Fusion auditée et idempotente (Owner uniquement).                       |
+| GET/POST    | `/crm/customers/:id/projection-repair-preview`, `/crm/customers/:id/projection-repair` | Vérification puis réparation de projection (Owner pour la mutation).    |
+
+| GET | `/crm/privacy` | Politique effective de visibilité des notes du site (Owner). |
+| PATCH | `/crm/privacy` | Définit `sensitiveNoteRoles` pour le site ou `null` pour revenir au fallback environnement (Owner). |
+
+Les deux routes de lecture du profil et de la chronologie masquent `notes` et `metadata` pour les
+rôles absents de la politique effective du site. Sans surcharge, `CRM_SENSITIVE_NOTE_ROLES` est
+utilisé ; la valeur par défaut est `OWNER,MANAGER`. Le masquage est fait dans la réponse et ne
+modifie pas les données persistées.
+
+## POS / caisse (fondation locale)
+
+Module : `apps/api/src/modules/pos/`
+
+Toutes les routes exigent `requireOrg`, la capability Pro `pos.connect`, un rôle Owner/Manager et
+`POS_CONNECTORS_ENABLED=true`. Le flag vaut `false` dans les environnements suivis ; un fournisseur
+réel n'est pas encore appelé.
+
+| Méthode | Route                                | Description                                                                                                        |
+| ------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| GET     | `/pos/connections`                   | Liste tenant-scoped des connexions et de leur état sans référence de secret.                                       |
+| POST    | `/pos/connections`                   | Crée ou réinitialise une connexion à partir d'un provider, d'une localisation et d'une référence opaque de secret. |
+| GET     | `/pos/connections/:id/health`        | Santé redacted de la connexion.                                                                                    |
+| POST    | `/pos/connections/:id/disconnect`    | Déconnexion logique (`DISCONNECTED`) tenant-scoped.                                                                |
+| POST    | `/pos/connections/:id/checks/import` | Import normalisé ; dry-run par défaut, upsert idempotent et rapprochement optionnel si `reservationId` est fourni. |
+
+Les tickets sont persistés dans `PosCheck` sans payload brut ni contact ; le matcher calcule un score
+explicable et ne crée une association CRM qu'au-dessus d'une donnée de réservation explicitement
+fournie.
+
+## CRM groupe / identité multi-site (fondation locale)
+
+Le capability `customers.group` est réservé au plan Multi-site. Toutes les routes utilisent le
+compte et l'établissement actifs injectés par `requireOrg`; aucun identifiant de compte ou de site
+fourni par le client n'est accepté. `CUSTOMER_GROUPS_ENABLED=false` dans les environnements suivis,
+et les écritures restent donc fermées jusqu'à la qualification du pilote.
+
+| Méthode | Route                                           | Description                                                                                                                       |
+| ------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| GET     | `/customer-groups`                              | Liste les groupes du compte actif avec le nombre de membres.                                                                      |
+| POST    | `/customer-groups`                              | Crée un groupe ; `consentStatus` peut être `UNKNOWN`, `OPTED_IN` ou `OPTED_OUT`.                                                  |
+| GET     | `/customer-groups/:groupId`                     | Détail tenant-scoped ; les membres retournent le nom et les quatre derniers chiffres du téléphone.                                |
+| PATCH   | `/customer-groups/:groupId/consent`             | Owner uniquement ; un retrait supprime les liens inter-sites dans la même transaction.                                            |
+| POST    | `/customer-groups/:groupId/members`             | Owner/Manager ; rattachement explicite d'un `customerId`, source et confiance bornées ; idempotent sur `(accountId, customerId)`. |
+| DELETE  | `/customer-groups/:groupId/members/:customerId` | Dé-rattachement limité au site actif.                                                                                             |
+
+Le rapprochement automatique entre identités, l'export/effacement consolidé, les campagnes groupe et
+les sessions Clerk multi-sites réelles restent à prouver. Le service ne stocke aucune copie de
+téléphone au niveau groupe.
+
+## Fidélité opérationnelle (fondation locale)
+
+Module : `apps/api/src/modules/loyalty/`
+
+La capability `reputation.loyalty` est incluse dans Pro/Multi-site et refusée par Essential. Toutes
+les routes utilisent l'établissement actif de `requireOrg`, les rôles Owner/Manager/Staff selon
+l'opération et `LOYALTY_ENABLED=false` dans les environnements suivis. Aucun provider, point,
+paiement ou POS n'est appelé.
+
+| Méthode | Route                                 | Description                                                                                  |
+| ------- | ------------------------------------- | -------------------------------------------------------------------------------------------- |
+| GET     | `/loyalty/benefits`                   | Liste le catalogue tenant-scoped et le nombre d'émissions.                                   |
+| POST    | `/loyalty/benefits`                   | Crée un avantage EUR avec une règle bornée (`ANY`, `VIP`, visites, anniversaire ou dépense). |
+| PATCH   | `/loyalty/benefits/:id`               | Active/désactive un avantage ; les grants existants restent auditables.                      |
+| GET     | `/loyalty/grants`                     | Liste les émissions avec téléphone limité aux quatre derniers chiffres.                      |
+| POST    | `/loyalty/grants`                     | Émet un grant éligible ; la réponse initiale contient le code brut, jamais la liste.         |
+| POST    | `/loyalty/grants/:id/redeem`          | Vérifie le code et effectue `ISSUED → REDEEMED` de façon atomique/idempotente.               |
+| POST    | `/loyalty/grants/:id/void`            | Annule un grant `ISSUED` avec une note d'audit bornée (Owner/Manager).                       |
+| POST    | `/api/internal/loyalty/grants/expire` | Expire les grants échus dans une limite fournie par le scheduler opérateur.                  |
+
+Le code à usage unique est haché avec SHA-256 en base ; la limite d'utilisation par client est
+protégée par un advisory lock PostgreSQL. La page correspondante est `/dashboard/loyalty` et reste
+verrouillée tant que la procédure en salle, les canaux éventuels et le pilote ne sont pas qualifiés.
+
+## Expériences et sessions (fondation locale)
+
+Module : `apps/api/src/modules/experiences/`
+
+La capability `experiences.manage` est incluse dans Pro/Multi-site et refusée par Essential.
+Les routes utilisent l'établissement actif de `requireOrg`, les rôles Owner/Manager/Staff selon
+l'opération et `EXPERIENCES_ENABLED=false` dans les environnements suivis. Le catalogue, les
+sessions et les réservations restent provider-neutral : aucun paiement, widget, téléphone ou canal
+d'événement externe n'est appelé.
+
+| Méthode | Route                                               | Description                                                                                                    |
+| ------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| GET     | `/experiences`                                      | Liste le catalogue tenant-scoped, avec statut et compteurs de sessions/réservations.                           |
+| POST    | `/experiences`                                      | Crée une fiche bornée (clé, durée, prix EUR et capacité), par défaut en brouillon.                             |
+| PATCH   | `/experiences/:id`                                  | Modifie les attributs ou active/archive la fiche.                                                              |
+| GET     | `/experiences/:id/sessions`                         | Liste les occurrences datées, filtrables par statut et intervalle.                                             |
+| POST    | `/experiences/:id/sessions`                         | Ouvre une session avec capacité optionnelle et unicité par début.                                              |
+| PATCH   | `/experiences/:id/sessions/:sessionId`              | Ferme, annule ou ajuste une session du catalogue ciblé.                                                        |
+| GET     | `/experience-reservations`                          | Liste les réservations, sans exposer le téléphone complet.                                                     |
+| POST    | `/experiences/:id/sessions/:sessionId/reservations` | Réserve des places avec snapshot de prix, clé `Idempotency-Key` hachée et contrôle de capacité transactionnel. |
+| POST    | `/experience-reservations/:id/cancel`               | Annule une réservation confirmée de façon idempotente et libère ses places.                                    |
+| POST    | `/api/internal/experiences/sessions/expire`         | Opérateur Sokar ; ferme les sessions terminées dans une limite bornée.                                         |
+
+La transaction de réservation prend un advisory lock PostgreSQL par session, relit le statut et la
+capacité, puis additionne les quantités `CONFIRMED`. Les fiches non `ACTIVE`, sessions passées ou
+fermées et réutilisations incompatibles de clé renvoient une erreur stable. La page correspondante
+est `/dashboard/experiences` et reste verrouillée tant que paiement, distribution et pilote ne sont
+pas qualifiés.
+
+## Événements et billetterie locale
+
+Module : `apps/api/src/modules/events/`
+
+La capability `events.manage` est incluse dans Pro/Multi-site et refusée par Essential. Les routes
+utilisent l'établissement actif de `requireOrg`, les rôles Owner/Manager/Staff selon l'opération et
+`EVENTS_ENABLED=false` dans les environnements suivis. La fondation ne contacte aucun paiement,
+messagerie, widget, voix ou canal de distribution.
+
+| Méthode    | Route                                      | Description                                                                                 |
+| ---------- | ------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| GET / POST | `/events`                                  | Liste ou crée le catalogue tenant-scoped (`DRAFT/ACTIVE/ARCHIVED`).                         |
+| PATCH      | `/events/:id`                              | Modifie les attributs ou active/archive un événement.                                       |
+| GET / POST | `/events/:id/sessions`                     | Liste ou crée les sessions datées avec jauge.                                               |
+| PATCH      | `/events/:id/sessions/:sessionId`          | Ajuste, ferme ou annule une session dans le double scope.                                   |
+| GET / POST | `/events/:id/ticket-types`                 | Liste ou crée les tarifs EUR bornés.                                                        |
+| PATCH      | `/events/:id/ticket-types/:ticketTypeId`   | Modifie ou désactive un tarif dans le double scope.                                         |
+| GET        | `/event-orders`                            | Liste les commandes avec filtres événement/session/client/statut.                           |
+| POST       | `/events/:id/sessions/:sessionId/orders`   | Émet une commande idempotente, réserve la jauge et retourne les codes bruts une seule fois. |
+| POST       | `/event-orders/:id/cancel`                 | Annule la commande et ses billets de façon idempotente.                                     |
+| POST       | `/event-orders/:id/invoice`                | Ajoute une référence de facture locale ; aucun document fiscal n'est généré.                |
+| POST       | `/event-orders/:id/refund`                 | Pose une trace de remboursement dry-run avec clé obligatoire ; aucun provider n'est appelé. |
+| GET        | `/event-tickets`                           | Liste les billets sans code brut.                                                           |
+| POST       | `/event-tickets/check-in`                  | Contrôle par code seul pour le dashboard et le service.                                     |
+| POST       | `/event-tickets/:id/check-in`              | Contrôle le code avec contrainte supplémentaire sur l'identifiant du billet.                |
+| GET        | `/event-waitlist`                          | Liste les entrées ordonnées et filtrables.                                                  |
+| POST       | `/events/:id/sessions/:sessionId/waitlist` | Ajoute une entrée idempotente.                                                              |
+| POST       | `/event-waitlist/:id/cancel`               | Annule une entrée `WAITING`.                                                                |
+| POST       | `/event-waitlist/:id/promote`              | Promeut une entrée via une commande contrôlée par la capacité.                              |
+| POST       | `/api/internal/events/sessions/expire`     | Opérateur Sokar ; ferme les sessions et expire la liste d'attente.                          |
+
+La commande prend `pg_advisory_xact_lock` par restaurant/session, additionne les quantités
+`CONFIRMED` et fige `unitPriceCents`, `totalPriceCents` et `currency`. Chaque billet conserve un
+hash SHA-256 du code et ses quatre derniers caractères ; les lectures masquent le téléphone. Le
+worker `event-session-expiry` est programmé toutes les 15 minutes. Les commandes, billets et
+entrées sont inclus dans l'export/effacement RGPD ; paiement, facture fiscale, notifications,
+distribution et reporting encaissé restent à qualifier.
+
+## Canaux partenaires et distribution locale
+
+Module : `apps/api/src/modules/distribution/`
+
+La capability `distribution.manage` est incluse dans Pro/Multi-site et refusée par Essential.
+Les routes utilisent `requireOrg`, les rôles Owner/Manager/Staff selon l'opération et
+`DISTRIBUTION_ENABLED=false` dans les environnements suivis. La fondation ne contacte aucun
+fournisseur : les identifiants sont hachés, les secrets sont des références opaques, les
+snapshots sont non autoritaires, les runs incluent le curseur source dans leur empreinte de rejeu
+et les webhooks sont rejouables avec une unicité restaurant/fournisseur.
+
+| Méthode    | Route                                                  | Description                                                                                                      |
+| ---------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| GET        | `/distribution/connections`                            | Liste les connexions tenant-scoped et masquées.                                                                  |
+| POST       | `/distribution/connections`                            | Crée ou met à jour une connexion locale ; Owner/Manager, aucun OAuth.                                            |
+| GET        | `/distribution/connections/:id`                        | Lit une connexion et sa santé locale sans secret.                                                                |
+| POST       | `/distribution/connections/:id/disconnect`             | Déconnecte localement et conserve l'historique.                                                                  |
+| GET / POST | `/distribution/connections/:id/availability`           | Lit ou upsert des snapshots bornés par slot ; la capacité Sokar reste la source de vérité.                       |
+| GET        | `/distribution/sync-runs`                              | Liste les runs filtrables par connexion et état.                                                                 |
+| POST       | `/distribution/connections/:id/sync-runs`              | Met un run `QUEUED` en file locale avec `Idempotency-Key` obligatoire ; aucun worker fournisseur ne le consomme. |
+| GET        | `/distribution/reservation-links`                      | Liste les liens externes masqués.                                                                                |
+| POST       | `/distribution/connections/:id/reservation-links`      | Lie explicitement un identifiant externe à une réservation existante.                                            |
+| GET        | `/distribution/webhooks`                               | Liste l'inbox des enveloppes hachées.                                                                            |
+| POST       | `/api/internal/distribution/webhook-events`            | Opérateur/fixture ; ingère une enveloppe sans payload brut.                                                      |
+| POST       | `/api/internal/distribution/webhook-events/:id/finish` | Opérateur ; termine un webhook de façon monotone.                                                                |
+| POST       | `/api/internal/distribution/sync-runs/:id/finish`      | Opérateur/adaptateur futur ; termine un run avec compteurs bornés.                                               |
+
+Les erreurs d'entrée sont en 400, les ressources hors tenant en 404 et les conflits d'idempotence
+ou d'état en 409. Les routes internes demandent `restaurantId` dans le corps car le guard opérateur
+ne fournit pas de site. Aucun webhook public, compte marchand ou adaptateur Google/Meta n'est
+enregistré avant la clôture de `P9_ECOSYSTEM` et `PILOTS`.
 
 ---
 
@@ -328,9 +539,9 @@ Module : `apps/api/src/modules/entitlements/entitlement.routes.ts`
 
 ### GET /entitlements
 
-Retourne le plan commercial effectif, ses capabilities et ses limites pour le restaurant Clerk
-courant. Les coûts fournisseurs et la marge interne ne sont jamais exposés. La décision combine le
-plan Postgres et un éventuel override ConfigCat valide.
+Retourne le plan commercial effectif et ses capabilities pour le restaurant Clerk courant. La
+consommation voix/SMS reste sans quota client ; les coûts fournisseurs et la marge interne ne sont
+jamais exposés. La décision combine le plan Postgres et un éventuel override ConfigCat valide.
 
 Une route métier protégée par `requireCapability` répond `403 CAPABILITY_NOT_INCLUDED` lorsque le
 plan ne couvre pas la fonction. La réactivation utilise déjà ce garde.
@@ -343,15 +554,58 @@ Module : `apps/api/src/modules/usage/usage.routes.ts`
 
 ### GET /usage/current
 
-Retourne les quantités du mois UTC courant, regroupées par catégorie, ainsi que les minutes voix et
-segments SMS inclus dans le plan effectif. Les limites sont actuellement `null` et
-`limitsEnforced=false` tant que les quotas 199/299 € ne sont pas fondés sur les coûts observés.
+Retourne les quantités du mois UTC courant, regroupées par catégorie. La réponse annonce
+`customerUsagePolicy=UNLIMITED` : aucune limite de minutes ou de SMS n'est appliquée au restaurant.
+Les champs historiques `included`, `limitsEnforced` et `quotas` restent renvoyés avec des limites
+nulles pour compatibilité ; ils ne doivent pas être utilisés pour bloquer un parcours.
 
 ### GET /usage/history?from=YYYY-MM&to=YYYY-MM
 
 Retourne les projections mensuelles du restaurant Clerk courant sur une fenêtre maximale de 24
 mois. Les coûts, marges et fournisseurs restent internes. La projection est recalculable depuis le
 ledger brut ; sa planification automatique reste à livrer.
+
+### GET /api/internal/usage/margin?month=YYYY-MM
+
+Route opérateur protégée par l'en-tête `x-sokar-internal-usage-token`. Retourne les volumes, coûts
+estimés et statuts `PRICED`/`UNPRICED`/`MIXED` par restaurant et catégorie ; elle n'est jamais
+exposée au dashboard restaurateur.
+
+### GET /admin/usage/margin?month=YYYY-MM
+
+Route opérateur Clerk consommée par `/dashboard/admin/margin`. Elle agrège les mêmes événements et
+retourne le prix du catalogue local, la marge uniquement lorsque tous les coûts sont tarifés, et
+les marqueurs `LOCAL_CATALOG` / `NOT_STRIPE_RECONCILED` pour empêcher toute confusion avec une
+facture réelle. Les lignes incluent `estimatedCostEur` (source), `adjustedCostEur`,
+`approvedAdjustmentCostEur` et `approvedAdjustmentCount` ; seuls les ajustements `APPROVED` avec
+une portée `restaurant:<id>` et une période entièrement comprise dans le mois sont appliqués. Les corrections
+`global` restent hors calcul jusqu'à leur affectation explicite.
+
+Le catalogue fournisseur n'est pas modifiable par une route HTTP. Les lignes validées par facture
+sont importées localement avec `apps/api/scripts/import-usage-tariffs.ts` (CSV/JSON, dry-run par
+défaut), qui bloque les conflits de version et les fenêtres d'effet qui se chevauchent avant toute
+écriture `--apply`.
+
+Le rapprochement facture/ledger commence par une opération interne en lecture seule :
+`apps/api/scripts/reconcile-usage-invoice.ts` compare les quantités et coûts par fournisseur,
+unité et période UTC et échoue si une ligne n'est pas `MATCH`. L'option `--output` permet de
+conserver le rapport JSON avant le code de sortie, y compris en cas d'écart. Le JSON contient aussi
+`reportHash`, calculé sur les bornes, tolérances, compteurs et lignes sans l'horodatage local.
+
+Les routes opérateur `GET/POST /admin/usage/reconciliation-adjustments` et
+`POST /admin/usage/reconciliation-adjustments/:id/decision` conservent ensuite une correction
+séparée dans `UsageReconciliationAdjustment`. La création est idempotente par hash du rapport,
+portée, dimension et période ; la décision `APPROVED` ou `REJECTED` n'est possible que depuis
+`OPEN` et ne modifie jamais `UsageEvent` ou `UsageMonthlyRollup`.
+
+### GET /admin/usage/accounting-export.csv?month=YYYY-MM[&restaurantId=<id>]
+
+Route opérateur Clerk, consommée par le bouton d'export du cockpit de marge. Elle renvoie un CSV
+UTF-8 à schéma stable avec une ligne agrégée par établissement et dimension d'usage, puis une ligne
+distincte par correction `APPROVED`. Les corrections globales sont conservées avec
+`cost_status=UNALLOCATED` et un `restaurant_id` vide : aucun rattachement comptable implicite n'est
+effectué. Le fichier est borné au mois UTC et ne contient ni téléphone, ni email, ni corps de
+message. Le catalogue prix et l'état Stripe ne sont pas ajoutés à ce flux comptable.
 
 Décision : `docs/architecture/adr-usage-ledger-and-costing.md`.
 
@@ -461,4 +715,8 @@ Voir [[Sokar Connect P0]] et `docs/connect-v1.1.md` pour le détail.
 | `/health`, `/metrics`               | 3               | Public                         | shared         |
 | `/public/r/:slug/*` (Sokar Connect) | 4               | **Public**                     | connect (T2)   |
 
-Total : **~57 routes** actives + 4 à venir.
+Le décompte historique « ~57 routes + 4 à venir » n'est plus à jour depuis les modules CRM,
+marketing, paiements, POS, groupes, réputation, fidélité et expériences. Au 14 septembre 2026,
+`rg "app\\.(get|post|patch|put|delete)\\(" apps/api/src -g'*.routes.ts'` retourne 281 déclarations
+(aliases, routes internes et routes de test compris) ; les tableaux ci-dessus restent la référence
+par famille et par contrat.

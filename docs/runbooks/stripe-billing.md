@@ -1,10 +1,11 @@
 # Runbook — Stripe Billing (abonnements Sokar)
 
-> **Statut : ACTIF — audité le 12 septembre 2026.**
-> Les prix actuellement affichés et configurés sont Essential 149 €/mois, Pro 249 €/mois et
-> Multi-site 249 €/mois + 99 €/site supplémentaire. Essential 199 € et Pro 299 € sont des prix
-> cibles : ne pas les annoncer comme actifs avant migration coordonnée de l'UI, de Stripe et des
-> entitlements. Voir [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
+> **Statut : ACTIF — audité le 14 septembre 2026.**
+> Le catalogue applicatif et les pages publiques affichent Essential 199 €/mois et Pro 299 €/mois.
+> Multi-site reste à 249 €/mois + 99 €/site supplémentaire. Les prix et `priceId` Stripe actifs
+> restent l'ancien catalogue 149/249 € jusqu'à la migration externe et sa validation ; ne pas
+> annoncer ou facturer les nouveaux montants avant cette porte. Voir
+> [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
 
 ## Parcours
 
@@ -44,7 +45,22 @@ STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY=price_...
 STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL=price_...
 ```
 
-Les valeurs doivent être des identifiants Stripe `price_...`. Les prix `MULTI_SITE` couvrent la base (249€/mois) ; les prix `MULTI_SITE_ADDON` couvrent chaque établissement supplémentaire (99€/mois). Le checkout reçoit `siteCount` (2 par défaut, maximum 100) et ajoute une ligne Stripe par établissement supplémentaire. Tant qu'une valeur manque, l'API renvoie `503 BILLING_NOT_CONFIGURED` et aucune session n'est créée.
+Les valeurs doivent être des identifiants Stripe `price_...`. Pour la migration cible, les montants
+attendus sont :
+
+| Prix                             | Mensuel HT | Annuel HT (-20 %) |
+| -------------------------------- | ---------: | ----------------: |
+| Essential                        |   199,00 € |        1 910,40 € |
+| Pro                              |   299,00 € |        2 870,40 € |
+| Multi-site (base)                |   249,00 € |        2 390,40 € |
+| Multi-site (site supplémentaire) |    99,00 € |          950,40 € |
+
+Les prix `MULTI_SITE` couvrent la base ; les prix `MULTI_SITE_ADDON` couvrent chaque établissement
+supplémentaire. Le checkout reçoit `siteCount` (2 par défaut, maximum 100) et ajoute une ligne
+Stripe par établissement supplémentaire. Tant qu'une valeur manque, l'API renvoie
+`503 BILLING_NOT_CONFIGURED` et aucune session n'est créée. La commande
+`scripts/ops/sync-stripe-prices.sh` ne crée pas ces prix et ne valide pas leur montant : elle ne
+recopie que des `priceId` déjà créés et vérifiés dans Stripe.
 
 Les identifiants de prix sont conservés comme variables GitHub Actions non secrètes (`STRIPE_STAGING_*` et `STRIPE_PRODUCTION_*`). Chaque déploiement les synchronise dans le fichier `.env` du VPS avant le build ; une variable manquante ou invalide bloque le déploiement au lieu de publier une API partiellement configurée. La clé Stripe (`STRIPE_SECRET_KEY`) reste, elle, un secret géré séparément.
 
@@ -88,7 +104,12 @@ La commande reste en dry-run par défaut ; ajouter `-- --apply` uniquement aprè
 
 La vérification du webhook signé a ensuite utilisé un événement test `customer.subscription.updated` récupéré depuis Stripe : le payload signé a été envoyé deux fois à `POST /webhooks/stripe` et les deux appels ont répondu HTTP 200 avec `received=true` et sans erreur. Le même payload avec une signature `v1` invalide a répondu HTTP 400 `Webhook signature verification failed`. Aucun Checkout, paiement ou débit supplémentaire n'a été créé pendant ce test. Cette preuve valide la vérification HMAC et l'acquittement idempotent observables au niveau HTTP ; elle ne remplace pas encore la qualification des règles annuel, taxes, prorata, période de grâce et dépassement de quota.
 
-Une lecture Stripe en mode read-only du 7 septembre 2026 confirme que les quatre prix annuels sont actifs en production (mode live) et staging (mode test), récurrents en EUR avec `interval=year` : Essential 1 430,40 €/an, Pro 2 390,40 €/an, Multi-site 2 390,40 €/an et add-on Multi-site 950,40 €/an par établissement supplémentaire. Le test API dédié vérifie que `billing=annual` sélectionne le bon prix et transmet la cadence aux métadonnées Checkout. Cette preuve ne remplace pas encore la qualification de la facture annuelle, des taxes, du prorata, de la période de grâce et du renouvellement.
+Une lecture Stripe en mode read-only du 7 septembre 2026 confirme que les quatre prix annuels alors
+actifs en production (mode live) et staging (mode test) restent ceux de l'ancien catalogue :
+Essential 1 430,40 €/an, Pro 2 390,40 €/an, Multi-site 2 390,40 €/an et add-on Multi-site
+950,40 €/an par établissement supplémentaire. Cette preuve historique ne valide pas la nouvelle
+grille 199/299 ; elle doit être remplacée après création des nouveaux prix, synchronisation des
+`priceId`, Checkout, facture, taxes, prorata, période de grâce et renouvellement en sandbox.
 
 ## Test sans paiement
 

@@ -426,7 +426,10 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
 
         if (callRecord?.reservation && payload.from) {
           const ctx = await RestaurantService.loadContext(payload.to);
-          await CustomerService.incrementVisit(ctx.id, payload.from);
+          await CustomerService.incrementVisit(ctx.id, payload.from, {
+            reservationId: callRecord.reservation.id,
+            occurredAt: new Date(),
+          });
         }
 
         // Record call activity on every hangup (with or without reservation)
@@ -435,7 +438,10 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           try {
             const ctx = await RestaurantService.loadContext(payload.to);
             const partySize = callRecord?.reservation?.partySize ?? null;
-            await CustomerService.recordCallActivity(ctx.id, payload.from, partySize);
+            await CustomerService.recordCallActivity(ctx.id, payload.from, partySize, {
+              callId: callRecord?.id,
+              occurredAt: new Date(),
+            });
           } catch (err: unknown) {
             app.log.warn(
               { err: err instanceof Error ? err.message : String(err) },

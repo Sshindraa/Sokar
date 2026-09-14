@@ -2,7 +2,7 @@
 
 Carte d'orientation haut niveau. Ce n'est pas une source de vérité absolue. Pour le détail, voir `docs/runbooks/` et `docs/architecture/`.
 
-> **Statut : ACTIF — vérifié le 12 septembre 2026.**
+> **Statut : ACTIF — vérifié le 14 septembre 2026.**
 > Le statut de chaque document produit et opérationnel est centralisé dans
 > [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
 
@@ -31,27 +31,34 @@ packages/
 
 ## Modules API (`apps/api/src/modules/`)
 
-| Module                 | Rôle                                                                                |
-| ---------------------- | ----------------------------------------------------------------------------------- |
-| `restaurants`          | CRUD resto, onboarding, personnalité, images, score Connect, slug.                  |
-| `reservations`         | CRUD réservations legacy.                                                           |
-| `agentic-reservations` | MCP server, OAuth, OpenAI Reserve, holds, devis, state-machine, audit log, workers. |
-| `calls`                | Historique et transcripts d'appels.                                                 |
-| `customers`            | CRM, VIP, consentements.                                                            |
-| `floor-plan`           | Plan de salle, sections, tables, disponibilité capacitaire.                         |
-| `gift-cards`           | Cartes cadeaux, packs, redeem, contributions, Stripe.                               |
-| `billing`              | Abonnements SaaS Stripe Checkout, synchronisation webhook et état de formule.       |
-| `connect`              | API publique Connect, disponibilités, Google Places, JSON-LD.                       |
-| `dashboard`            | Métriques dashboard, réactivation.                                                  |
-| `analytics`            | Événements, ROI, rapports.                                                          |
-| `voice`                | Pipeline Telnyx, media stream, session manager, LLM, TTS, fillers.                  |
-| `sms` / `whatsapp`     | Webhooks entrants SMS / WhatsApp.                                                   |
-| `auth`                 | Sync Clerk / provisionnement org.                                                   |
-| `rgpd`                 | Effacement et export des données.                                                   |
-| `admin`                | Feature flags et onboarding funnel.                                                 |
-| `integrations`         | Routes Google.                                                                      |
-| `pilot`                | Gestion des pilotes.                                                                |
-| `test`                 | Helpers dev-only (non chargés en prod).                                             |
+| Module                 | Rôle                                                                                                                                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `restaurants`          | CRUD resto, onboarding, personnalité, images, score Connect, slug.                                                                                                                               |
+| `reservations`         | CRUD réservations legacy.                                                                                                                                                                        |
+| `agentic-reservations` | MCP server, OAuth, OpenAI Reserve, holds, devis, state-machine, audit log, workers.                                                                                                              |
+| `calls`                | Historique et transcripts d'appels.                                                                                                                                                              |
+| `customers`            | CRM avancé local : identité, timeline, RFM, préférences, tags et segments bornés.                                                                                                                |
+| `pos`                  | Fondation caisse provider-neutral : connexions, tickets normalisés, import idempotent et matcher réservation-ticket.                                                                             |
+| `marketing`            | Permissions par canal, audiences, campagnes, automations bornées, worker, désinscription et attribution locale.                                                                                  |
+| `reputation`           | Feedback post-visite tokenisé, scores bornés, tâches de récupération et expiration périodique ; providers désactivés.                                                                            |
+| `loyalty`              | Catalogue d'avantages Pro, règles explicables, grants à code hashé, consommation atomique et expiration ; providers désactivés.                                                                  |
+| `experiences`          | Catalogue d'expériences Pro, sessions datées, capacité atomique, snapshot prix, réservations/annulations idempotentes et expiration ; paiement/canaux externes désactivés.                       |
+| `events`               | Catalogue événementiel Pro, sessions/tarifs, jauge atomique, commandes et billets hashés, check-in, liste d'attente et traces locales ; paiement/distribution désactivés.                        |
+| `distribution`         | Fondation provider-neutral : connexions hachées, snapshots de disponibilité, runs idempotents, liens explicites, inbox webhook et dashboard de qualification ; fournisseurs externes désactivés. |
+| `floor-plan`           | Plan de salle, sections, tables, disponibilité capacitaire.                                                                                                                                      |
+| `gift-cards`           | Cartes cadeaux, packs, redeem, contributions, Stripe.                                                                                                                                            |
+| `billing`              | Abonnements SaaS Stripe Checkout, synchronisation webhook et état de formule.                                                                                                                    |
+| `connect`              | API publique Connect, disponibilités, Google Places, JSON-LD.                                                                                                                                    |
+| `dashboard`            | Métriques dashboard, réactivation.                                                                                                                                                               |
+| `analytics`            | Événements, ROI, rapports.                                                                                                                                                                       |
+| `voice`                | Pipeline Telnyx, media stream, session manager, LLM, TTS, fillers.                                                                                                                               |
+| `sms` / `whatsapp`     | Webhooks entrants SMS / WhatsApp.                                                                                                                                                                |
+| `auth`                 | Sync Clerk / provisionnement org.                                                                                                                                                                |
+| `rgpd`                 | Effacement et export des données.                                                                                                                                                                |
+| `admin`                | Feature flags, onboarding funnel, provisioning Telnyx et garde de readiness pilote.                                                                                                              |
+| `integrations`         | Routes Google.                                                                                                                                                                                   |
+| `pilot`                | Gestion des pilotes.                                                                                                                                                                             |
+| `test`                 | Helpers dev-only (non chargés en prod).                                                                                                                                                          |
 
 ## Points d'entrée publics
 
@@ -61,21 +68,108 @@ packages/
 - **API** : `https://api.sokar.tech`.
 - **Versioning API public** : `main.ts` réécrit `/public/v1/*` vers `/public/*` (transition progressive). Les routes publiques sont dans `connect.routes.ts`.
 
+Les routes CRM et marketing sont authentifiées par organisation via `requireOrg` et les capabilities
+Pro. Les routes de désinscription et de clic d'attribution sont publiques, mais n'acceptent que des
+tokens HMAC expirants dont le hash est conservé en base.
+
+La fondation POS est authentifiée par organisation via `requireOrg`, la capability `pos.connect` et
+un rôle Owner/Manager. `POS_CONNECTORS_ENABLED=false` bloque toutes les routes tant qu'un fournisseur
+et son sandbox ne sont pas qualifiés ; aucune donnée de secret ou payload brut n'est stockée.
+
+Le CRM groupe est authentifié par organisation via `requireOrg`, la capability `customers.group`
+(Multi-site uniquement) et un rôle Owner/Manager. `CUSTOMER_GROUPS_ENABLED=false` bloque les routes
+tant que les identités Clerk, le consentement inter-sites et l'effacement consolidé ne sont pas
+qualifiés. Les projections `Customer` restent attachées à leur établissement ; un
+`CustomerGroupMembership` explicite et unique par compte/client fait le lien, et les réponses ne
+retournent que les quatre derniers chiffres du téléphone.
+
+La fondation réputation est authentifiée par organisation via `requireOrg`, la capability
+`reputation.feedback`, un rôle Owner/Manager et `REPUTATION_ENABLED=false` par défaut. Une demande
+ne peut viser qu'une réservation `HONORED` avec un client actif. Le endpoint public reçoit un token
+opaque expirant dont seul le hash est conservé ; une note ≤ 2 crée une tâche de récupération dans
+la même transaction. Aucun SMS, email, WhatsApp ou fournisseur d'avis n'est appelé par cette
+fondation.
+
+La fidélité opérationnelle est authentifiée par organisation via `requireOrg`, la capability
+`reputation.loyalty`, un rôle Owner/Manager/Staff selon l'opération et `LOYALTY_ENABLED=false` par
+défaut. Les avantages sont limités à une règle, un coût estimé en EUR et une validité ; un grant
+conserve uniquement le hash d'un code à usage unique. Le redeem est atomique et le worker
+`loyalty-grant-expiry` expire les grants toutes les 15 minutes. Aucun point, canal d'envoi, POS ou
+débit n'est appelé.
+
+La fondation expériences est authentifiée par organisation via `requireOrg`, la capability
+`experiences.manage` (Pro/Multi-site) et un rôle Owner/Manager/Staff selon l'opération, avec
+`EXPERIENCES_ENABLED=false` par défaut. Les fiches restent en brouillon jusqu'à activation ; une
+réservation d'une session active acquiert un advisory lock PostgreSQL, vérifie la capacité et fige
+le prix. Le worker `experience-session-expiry` ferme les sessions terminées toutes les 15 minutes.
+Les paiements, le widget, la voix et les canaux d'événements externes ne sont pas appelés.
+
+La fondation événements est authentifiée par organisation via `requireOrg`, la capability
+`events.manage` (Pro/Multi-site) et un rôle Owner/Manager/Staff selon l'opération, avec
+`EVENTS_ENABLED=false` par défaut. Les sessions partagent une jauge transactionnelle protégée par
+un advisory lock ; chaque commande fige le tarif et émet des codes billet dont seul le hash est
+conservé. Le check-in est atomique et idempotent, la liste d'attente est ordonnée et le worker
+`event-session-expiry` ferme les sessions échues toutes les 15 minutes. Les champs de facture et
+de remboursement sont des traces locales : aucun paiement, notification ou canal partenaire n'est
+appelé.
+
+La fondation distribution est authentifiée par organisation via `requireOrg`, la capability
+`distribution.manage` (Pro/Multi-site) et un rôle Owner/Manager/Staff selon l'opération, avec
+`DISTRIBUTION_ENABLED=false` par défaut. Les connexions ne conservent que des hashes, quatre
+derniers caractères et une référence opaque de secret ; les snapshots sont informatifs, les
+runs et webhooks sont idempotents et les liens de réservation doivent être explicites. Aucun
+adaptateur Google/Meta, OAuth, webhook public ou appel fournisseur n'est activé.
+
+Le gel de production des offres 199/299 est contrôlé par [`docs/release/product-gates.json`](./release/product-gates.json)
+et `scripts/verify-product-gates.mjs`. Le manifest doit contenir toutes les portes P0 à P9 et le
+pilote, avec un tableau `blockers` pour chaque porte non fermée ; `LOCAL_ONLY` signifie que le lot
+est livré et testé localement, mais que la preuve externe manque. `scripts/deploy.sh` refuse une
+promotion production tant que le manifest n'est pas entièrement `CLOSED` et que `productionFreeze`
+reste à `true` ; un rollback reste possible.
+
 ## Pages Dashboard (`apps/dashboard/src/app/`)
 
 - `/` — landing/marketing.
 - `/login`, `/register` — Clerk auth.
 - `/onboarding/[step]` — onboarding restaurateur.
 - `/dashboard` — métriques, graphiques, sync org.
+- `/dashboard/usage` — volumes voix/SMS courants et historique six mois, sans quota ni coûts internes.
+- `/dashboard/admin/provisioning` — cockpit opérateur : numéro, webhook, renvoi et appel test avec confirmation avant activation.
+- `/dashboard/admin/margin` — cockpit opérateur du coût par établissement, du catalogue local, de la marge calculable, de la file des corrections et de l'export comptable CSV.
 - `/dashboard/reservations` — liste réservations.
 - `/dashboard/calls` — appels.
 - `/dashboard/customers` — CRM.
+- `/dashboard/marketing` — configuration des automations Pro, campagnes snapshot et rapports.
+- `/dashboard/marketing/segments` — constructeur Pro borné, preview, CRUD et refresh des segments.
+- `/dashboard/reputation` — score moyen, retours récents et boîte de récupération Owner/Manager.
+- `/dashboard/loyalty` — catalogue d'avantages Pro, émissions à code unique et consommation auditée.
+- `/dashboard/experiences` — catalogue Pro, sessions à capacité contrôlée et réservations annulables.
+- `/dashboard/events` — catalogue Pro, sessions/tarifs, commandes, billets et contrôle d'accès ; paiement et distribution verrouillés.
+- `/dashboard/distribution` — connexions provider-neutral, snapshots, runs, liens de réservations et inbox webhook pour la qualification ; fournisseurs externes verrouillés.
 - `/dashboard/floor-plan` — plan de salle.
 - `/dashboard/gift-cards`, `/dashboard/gift-card-packs` — cartes cadeaux.
 - `/dashboard/connect` — publication Connect.
 - `/dashboard/agentic` — agentic reservations.
 - `/dashboard/reactivation` — campagnes VIP.
 - `/dashboard/settings` — paramètres.
+- Les connexions POS sont pour l'instant opérées par l'API (`/pos/connections*`) ; aucune page
+  dashboard ne les présente avant la qualification d'un fournisseur.
+- Les groupes client sont pour l'instant opérés par l'API (`/customer-groups*`) ; aucune page
+  dashboard ne les présente avant la qualification d'un fournisseur d'identité et d'un pilote
+  multi-site.
+- La page réputation (`/dashboard/reputation`) lit les retours et les tâches via l'API et permet les
+  transitions `OPEN → IN_PROGRESS → RESOLVED`. Elle reste verrouillée par `REPUTATION_ENABLED=false`
+  tant que les providers d'envoi, les sources d'avis et le pilote ne sont pas qualifiés.
+- La page fidélité (`/dashboard/loyalty`) lit les avantages et grants via l'API et expose les
+  transitions d'émission/consommation. Elle reste verrouillée par `LOYALTY_ENABLED=false` tant que
+  les règles, les canaux, le POS éventuel et le pilote ne sont pas qualifiés.
+- La page expériences (`/dashboard/experiences`) lit le catalogue, ouvre des sessions et annule les
+  réservations via l'API. Elle reste verrouillée par `EXPERIENCES_ENABLED=false` tant que paiement,
+  widget/téléphone, événements et pilote ne sont pas qualifiés.
+- La page distribution (`/dashboard/distribution`) lit les connexions et traces de qualification,
+  permet de créer une référence opaque et de mettre un run local en file. Elle reste verrouillée
+  par `DISTRIBUTION_ENABLED=false` tant que le fournisseur, la signature, le worker et le pilote ne
+  sont pas qualifiés.
 - `/dashboard/widget` — widget embarqué.
 - `/mcp` — page MCP OAuth.
 - `/api/auth/sync` — sync Clerk.
@@ -114,12 +208,113 @@ packages/
 - Widget : `apps/connect/src/components/booking-widget.tsx` et `apps/widget/src/app/restaurant-reservation/`.
 - Cartes cadeaux : `widget/[slug]/gift-card/` et `gift-card-*` components.
 
+### CRM / marketing
+
+- CRM : `customer-crm.routes.ts`, `customer-segment.routes.ts`, `customer-merge.service.ts`,
+  dual-write dans les services de réservation/appel et backfill
+  `apps/api/scripts/backfill-customer-crm.ts`. Les routes `/crm/duplicates`,
+  `/crm/customers/:id/merge-preview`, `/crm/customers/:id/merge` et `/crm/merges` sont tenant-scoped ;
+  la mutation exige `Idempotency-Key` et le rôle Owner. La fiche CRM lance l'export RGPD par code
+  SMS et télécharge un JSON sans exposer le token de vérification. Les profils et timelines
+  masquent `notes` et `metadata` aux rôles absents de la politique du site ; `GET/PATCH
+/crm/privacy` la consulte et la configure pour Owner, avec fallback sur
+  `CRM_SENSITIVE_NOTE_ROLES` (Owner/Manager par défaut). La route historique `/customers` applique
+  le même masquage et réserve l'écriture des notes à Owner/Manager. La lecture est faite dans la
+  réponse et n'écrit jamais les notes en clair.
+- Marketing : `marketing.routes.ts`, `marketing-provider.routes.ts`, `marketing-campaign.service.ts`,
+  `marketing-automation.service.ts`, `marketing-provider.service.ts`, workers BullMQ
+  `marketing-campaign.worker.ts`, `marketing-automation.worker.ts` et
+  `marketing-provider-reconciliation.worker.ts`, permissions par canal, liens
+  d'attribution, rapport et export CSV agrégé. Les pages `/dashboard/marketing`, `/dashboard/marketing/segments` et
+  `/dashboard/marketing/campaigns/new` exposent les réglages bornés, le constructeur de segments,
+  l'éditeur de brouillon, le preview serveur, le report CSV et l'état de readiness sans secrets
+  (avec les noms des variables manquantes)
+  sans ouvrir les envois fournisseurs. Les callbacks non rattachés sont stockés dans
+  `MarketingProviderReconciliation` et réconciliés par le feed interne protégé par token.
+- Les campagnes restent désactivées tant que `MARKETING_SENDS_ENABLED` n'est pas explicitement
+  activé dans un environnement de test validé.
+
+### POS / caisse
+
+- `apps/api/src/modules/pos/pos.routes.ts` expose les connexions, la santé, la déconnexion et
+  l'import manuel dry-run/commit sous `pos.connect`.
+- `pos-connector.ts` est le contrat à implémenter après le choix fournisseur ;
+  `pos-connection.service.ts` ne conserve qu'une référence opaque vers le gestionnaire de secrets.
+- `pos-sync.service.ts` normalise les montants en `DECIMAL(12,2)`, hash le payload, avance le curseur
+  après la transaction et peut enregistrer un `ReservationCheckMatch` explicable.
+
+### Protection bancaire des réservations
+
+- `apps/api/src/modules/reservation-payments/reservation-payment.routes.ts` expose les policies
+  versionnées, la préparation dry-run/commit, l'état d'une tentative, l'expiration et le webhook
+  Stripe signé sous le capability Pro `reservations.payments`.
+- `reservation-payment.service.ts` calcule les montants fixes/par personne, applique une machine
+  d'états idempotente, vérifie devise/montant, hash les événements et confirme une réservation
+  `PENDING` dans la transaction. Aucun numéro de carte, payload brut ou secret n'est stocké.
+- Le modèle marchand, Stripe Connect, le hold de capacité et les captures/remboursements restent
+  non qualifiés ; `RESERVATION_PAYMENTS_ENABLED=false` par défaut.
+
+### CRM groupe / identité multi-site
+
+- `apps/api/src/modules/customer-groups/customer-group.routes.ts` expose la liste, la création, le
+  détail, le consentement, le rattachement et le dé-rattachement sous `customers.group`.
+- `customer-group.service.ts` valide le compte et le site actif, exige `OPTED_IN` avant tout lien,
+  normalise la source et la confiance, gère l'idempotence sur `(accountId, customerId)` et supprime
+  les liens dans la transaction de retrait de consentement.
+- Les modèles `CustomerGroupProfile` et `CustomerGroupMembership` ne déplacent jamais
+  `Customer.restaurantId` ; les téléphones sont masqués dans les vues de groupe.
+- Le rapprochement automatique, les identités Clerk réelles, l'export/effacement multi-sites et les
+  campagnes consolidées restent hors activation ; `CUSTOMER_GROUPS_ENABLED=false` par défaut.
+
+### Réputation et récupération
+
+- `apps/api/src/modules/reputation/reputation.routes.ts` expose la création/liste des demandes,
+  les feedbacks, les tâches de récupération et la soumission publique par token.
+- `reputation.service.ts` vérifie `HONORED`, hache les tokens, borne score/commentaire, rend la
+  soumission idempotente et crée une tâche pour les scores faibles dans la même transaction.
+- `reputation-feedback-expiry.worker.ts` expire les demandes `PENDING`/`SENT` toutes les 15 minutes.
+  `REPUTATION_ENABLED=false` bloque les routes tant que l'envoi, les sources d'avis et le pilote
+  n'ont pas été qualifiés.
+
+### Fidélité opérationnelle
+
+- `apps/api/src/modules/loyalty/loyalty.routes.ts` expose le catalogue, l'émission, le redeem, le
+  void et l'expiration interne sous `reputation.loyalty`.
+- `loyalty.service.ts` borne les règles et les montants, vérifie l'éligibilité CRM, hache le code,
+  protège la limite d'utilisation par advisory lock et rend le redeem idempotent.
+- `loyalty-grant-expiry.worker.ts` traite la queue `loyalty-grant-expiry` toutes les 15 minutes.
+  `LOYALTY_ENABLED=false` reste le défaut ; points, envoi et POS sont hors périmètre.
+
+### Expériences et sessions
+
+- `apps/api/src/modules/experiences/experience.routes.ts` expose le catalogue, les sessions, les
+  réservations, l'annulation et l'expiration interne sous `experiences.manage`.
+- `experience.service.ts` borne les dates, montants et capacités, refuse les fiches inactives,
+  hache les clés d'idempotence, verrouille la session et conserve le snapshot de prix.
+- `experience-session-expiry.worker.ts` traite la queue `experience-session-expiry` toutes les
+  15 minutes. `EXPERIENCES_ENABLED=false` reste le défaut ; paiement et distribution sont hors
+  périmètre.
+
+### Événements et billetterie locale
+
+- `apps/api/src/modules/events/event.routes.ts` expose le catalogue, les sessions, les tarifs, les
+  commandes, les billets, le check-in, la liste d'attente et l'expiration interne sous
+  `events.manage`.
+- `event.service.ts` borne les prix EUR et les quantités, hache les clés d'idempotence et les codes,
+  prend un advisory lock par session, émet un billet par unité et applique les transitions
+  `CONFIRMED → CANCELLED/REFUNDED` et `ISSUED → CHECKED_IN` de façon conditionnelle.
+- `event-session-expiry.worker.ts` traite la queue `event-session-expiry` toutes les 15 minutes.
+  `EVENTS_ENABLED=false` reste le défaut ; facture fiscale, paiements, notifications et canaux
+  partenaires sont hors périmètre.
+
 ## Paiements
 
 - Les abonnements SaaS passent par Stripe Checkout (`POST /billing/checkout-session`) ; les six prix récurrents sont configurés par `STRIPE_PRICE_*`.
 - Le webhook partagé `/webhooks/stripe` synchronise les abonnements et conserve l'état dans `RestaurantBilling`.
 - Module `gift-cards/` : cartes cadeaux, packs, redeem, contributions et paiements Stripe.
 - Modèles : `GiftCard`, `GiftCardPack`, `GiftCardRedemption`, `GiftCardContribution`.
+- Protection réservation (fondation locale) : `ReservationPaymentPolicy`, `ReservationPayment`,
+  `ReservationPaymentEvent`. Les intents Stripe sont optionnels jusqu'à la qualification du marchand.
 - Spec : `docs/gift-cards-spec.md`.
 
 ## Voice
@@ -142,19 +337,27 @@ packages/
 
 Modèles clés (`packages/database/prisma/schema.prisma`) :
 
-| Modèle                                                                   | Rôle                                                  |
-| ------------------------------------------------------------------------ | ----------------------------------------------------- |
-| `Restaurant`, `RestaurantImage`, `RestaurantExposureSettings`            | Core resto et publication Connect.                    |
-| `Call`, `Reservation`, `AgentPersonality`, `CallQuota`                   | Appels et réservations.                               |
-| `Customer`, `Message`, `CustomerConsent`, `ReactivationCampaign`         | CRM et marketing.                                     |
-| `FloorPlan`, `Section`, `Table`                                          | Plan de salle.                                        |
-| `AgenticHold`, `ReservationAuditLog`, `IdempotencyRecord`, `AgentClient` | Agentic layer.                                        |
-| `GiftCard`, `GiftCardPack`, `GiftCardRedemption`, `GiftCardContribution` | Paiements (cartes cadeaux).                           |
-| `IdentityVerificationOtp`, `SignedTokenUsage`                            | RGPD — vérification identité.                         |
-| `OnboardingEvent`                                                        | Analytics onboarding.                                 |
-| `LatencyTrace`                                                           | Latence voice.                                        |
-| `UsageEvent`, `UsageMonthlyRollup`, `UsageTariff`                        | Ledger d'usage, rollups et coûts internes versionnés. |
-| `OutboxEvent`                                                            | Intentions Postgres durables avant livraison BullMQ.  |
+| Modèle                                                                                                                                              | Rôle                                                                                           |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `Restaurant`, `RestaurantImage`, `RestaurantExposureSettings`                                                                                       | Core resto et publication Connect.                                                             |
+| `Call`, `Reservation`, `AgentPersonality`, `CallQuota`                                                                                              | Appels et réservations.                                                                        |
+| `Customer`, `CustomerIdentity`, `CustomerTimelineEvent`, `CustomerMetricSnapshot`, `CustomerMergeAudit`                                             | Projection CRM, RFM et audit des fusions.                                                      |
+| `CustomerPreference`, `CustomerTag`, `CustomerTagAssignment`, `CustomerSegment`                                                                     | Préférences, tags et segments bornés.                                                          |
+| `MarketingPermission*`, `MarketingSuppression`, `MarketingCampaign`, `CampaignAudienceMember`, `CampaignMessage`, `MarketingProviderReconciliation` | Contrôle marketing et réconciliation provider.                                                 |
+| `MarketingAutomation`, `MarketingAutomationDispatch`                                                                                                | Déclencheurs bornés et claims dédupliquées.                                                    |
+| `MarketingConversion`, `MarketingAttributionLink`, `MarketingFrequencyWindow`                                                                       | Attribution et pression marketing.                                                             |
+| `Message`, `CustomerConsent`, `ReactivationCampaign`                                                                                                | Compatibilité legacy ; la réactivation validée est liée à `MarketingCampaign`.                 |
+| `FloorPlan`, `Section`, `Table`                                                                                                                     | Plan de salle.                                                                                 |
+| `AgenticHold`, `ReservationAuditLog`, `IdempotencyRecord`, `AgentClient`                                                                            | Agentic layer.                                                                                 |
+| `GiftCard`, `GiftCardPack`, `GiftCardRedemption`, `GiftCardContribution`                                                                            | Paiements (cartes cadeaux).                                                                    |
+| `ReservationPaymentPolicy`, `ReservationPayment`, `ReservationPaymentEvent`                                                                         | Protection bancaire versionnée des réservations ; provider désactivé par défaut.               |
+| `CustomerGroupProfile`, `CustomerGroupMembership`                                                                                                   | Identité client groupe et liens inter-sites consentis ; flag désactivé par défaut.             |
+| `ReputationFeedbackRequest`, `ReputationFeedback`, `ReputationRecoveryTask`                                                                         | Retour post-visite tokenisé, récupération opérateur et expiration ; flag désactivé par défaut. |
+| `IdentityVerificationOtp`, `SignedTokenUsage`                                                                                                       | RGPD — vérification identité.                                                                  |
+| `OnboardingEvent`                                                                                                                                   | Analytics onboarding.                                                                          |
+| `LatencyTrace`                                                                                                                                      | Latence voice.                                                                                 |
+| `UsageEvent`, `UsageMonthlyRollup`, `UsageTariff`, `UsageReconciliationAdjustment`                                                                  | Ledger d'usage, rollups, coûts internes versionnés et corrections comptables séparées.         |
+| `OutboxEvent`                                                                                                                                       | Intentions Postgres durables avant livraison BullMQ.                                           |
 
 ## Jobs & queues (BullMQ)
 
@@ -163,13 +366,14 @@ Définitions de queues : `apps/api/src/shared/queue/queues.ts`. Workers : `apps/
 - `eveningReport` — rapport nocturne par restaurant.
 - `confirmationSms` — SMS de rappel J-1 à 17h.
 - `reconciliation` — reconciliation appels/SMS journalière.
-- `reactivation` — réactivation VIP hebdomadaire.
+- `reactivation` — scan VIP hebdomadaire ; la validation migre vers la queue marketing gouvernée.
 - `analytics` / `connectAnalytics` — événements analytics.
 - `telnyxWebhooks` — webhooks Telnyx entrants.
 - `callRecovery` — recovery d'appels.
 - `smsManager` / `smsClient` — envoi SMS.
 - `googlePlacesSync` — sync Google Places.
 - `alertEvaluation` — évaluation d'alertes Prometheus (toutes les 5 min).
+- `usageAlerts` — seuils de consommation 70/90/100 % avec claims Redis (horaire, désactivé par défaut).
 - `systemHealth` — contrôles périodiques de santé des dépendances.
 - `idempotencyPurge` — purge des enregistrements d'idempotence expirés.
 - `holdCleanup` — nettoyage des holds et devis expirés.
@@ -178,6 +382,31 @@ Définitions de queues : `apps/api/src/shared/queue/queues.ts`. Workers : `apps/
 - `outboxDispatcher` — revendication `SKIP LOCKED`, leases et publication des événements durables.
 - `outboxDelivery` — consommation idempotente des topics outbox (usage voix et messagerie).
 - `usageRollup` — reconstruction horaire des projections mensuelles depuis le ledger append-only.
+- `marketingCampaign` — exécution bornée des messages de campagne, recontrôle de consentement et
+  états durables en Postgres.
+- `marketingAutomation` — scan horaire des déclencheurs Pro, création de campagnes snapshot et
+  ré-enqueue des campagnes `READY` après une panne Redis (aucun envoi quand le flag est désactivé).
+- `marketingProviderReconciliation` — rattachement périodique des callbacks provider reçus avant
+  leur `CampaignMessage`, sans appel externe et avec clôture idempotente.
+- `reputationFeedbackExpiry` — expiration bornée des demandes de feedback post-visite toutes les
+  15 minutes ; aucune action fournisseur.
+- `loyaltyGrantExpiry` — expiration bornée des grants fidélité `ISSUED` toutes les 15 minutes ;
+  aucun canal ou provider.
+- `experienceSessionExpiry` — fermeture bornée des sessions d'expérience `OPEN` terminées toutes
+  les 15 minutes ; aucun paiement ou canal externe.
+
+Les opérations de coûts sont volontairement hors route tenant :
+`apps/api/scripts/import-usage-tariffs.ts` valide et charge les tarifs issus d'une facture, tandis
+que `apps/api/scripts/reconcile-usage-invoice.ts` compare une facture au ledger en lecture seule et
+peut conserver un rapport JSON avec `--output`. Les routes opérateur de
+`usage.routes.ts` enregistrent ensuite les écarts dans `UsageReconciliationAdjustment` et
+permettent une décision `APPROVED`/`REJECTED` depuis l'état `OPEN`, sans réécriture du ledger. La
+route `GET /admin/usage/accounting-export.csv` et le bouton du cockpit agrègent les usages par
+dimension et ajoutent les corrections approuvées comme lignes distinctes ; les corrections globales
+restent `UNALLOCATED` tant qu'elles ne sont pas réparties explicitement.
+Les deux scripts sont dry-run/stricts par défaut et ne contiennent aucun taux réel. Le preview de
+campagne résout ce même catalogue pour afficher un coût estimé lorsque la date et la dimension du
+canal sont couvertes ; il reste `NOT_AVAILABLE` sans tarif validé.
 
 ## Tests
 
@@ -217,6 +446,7 @@ pnpm test:visual # régression visuelle
 - `AGENTS.md` — contexte court pour agents.
 - `docs/runbooks/` — ops, déploiement, environnement, tests.
 - `docs/architecture/` — dashboard, voice.
+- `docs/architecture/adr-crm-marketing-control-plane.md` — décisions et limites du lot CRM/marketing.
 - `docs/obsidian/` — specs, pipelines, contexte produit.
 - `docs/gift-cards-spec.md` — cartes cadeaux.
 - `docs/sokar-mcp-agentic-reservations-v3.2.md` — agentic reservations.

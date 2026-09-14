@@ -562,7 +562,10 @@ describe('POST /voice/telnyx — call.hangup', () => {
 
     expect(res.statusCode).toBe(200);
     expect(mockLoadContext).toHaveBeenCalledWith('+33****0000');
-    expect(mockIncrementVisit).toHaveBeenCalledWith('rest-1', '+33****0001');
+    expect(mockIncrementVisit).toHaveBeenCalledWith('rest-1', '+33****0001', {
+      reservationId: 'res-1',
+      occurredAt: expect.any(Date),
+    });
   });
 
   it('does NOT increment visits when the call had no reservation', async () => {

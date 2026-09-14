@@ -10,6 +10,7 @@ export const CreateReservationSchema = z.object({
     .string()
     .regex(/^\+?[0-9]{10,15}$/)
     .optional(),
+  marketingAttributionToken: z.string().trim().min(20).max(4096).optional(),
 });
 
 export const ReservationQuerySchema = z.object({

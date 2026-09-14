@@ -1,7 +1,6 @@
 import { Worker } from 'bullmq';
 import { redisQueue } from '../../redis/client';
 import { db } from '../../db/client';
-import { sendReactivation } from '../../messaging/sender';
 import { setupWorkerListeners, jobLogger } from './helper';
 
 /**
@@ -12,8 +11,10 @@ import { setupWorkerListeners, jobLogger } from './helper';
  * Jobs :
  * 1. { kind: 'scan' } — Cron hebdo (lundi 10h). Pour chaque restaurant, scanne
  *    les VIPs avec lastSeenAt entre 90 et 180 jours, crée une campaign PENDING.
- * 2. { kind: 'send', campaignId } — Envoyé quand le gérant valide sur le dashboard.
- *    Envoie un SMS personnalisé à chaque VIP de la campaign.
+ * 2. { kind: 'send', campaignId } — legacy payload conservé pour drainer les
+ *    jobs déjà présents. Il ne contacte plus le provider : la route dashboard
+ *    migre d'abord vers MarketingCampaign, puis la file marketing gouvernée
+ *    applique consentement, suppression, fréquence et désinscription.
  */
 
 interface ReactivationJobData {
@@ -41,6 +42,14 @@ export const reactivationWorker = new Worker(
         select: { id: true },
         where: { onboardingDone: true },
       });
+      const automatedRestaurants = new Set(
+        (
+          (await db.marketingAutomation.findMany({
+            where: { enabled: true, type: 'DORMANT' },
+            select: { restaurantId: true },
+          })) ?? []
+        ).map((automation) => automation.restaurantId),
+      );
 
       // Une seule query pour tous les VIPs dormants (évite un N+1 : un findMany par restaurant).
       const allDormantVips = await db.customer.findMany({
@@ -64,6 +73,10 @@ export const reactivationWorker = new Worker(
       let campaignsCreated = 0;
 
       for (const restaurant of restaurants) {
+        // Once the governed DORMANT automation is enabled, it owns dormant
+        // customer selection. Keeping the legacy scan idle avoids creating a
+        // second snapshot for the same restaurant during the transition.
+        if (automatedRestaurants.has(restaurant.id)) continue;
         const dormantVips = vipsByRestaurant.get(restaurant.id) ?? [];
 
         if (dormantVips.length === 0) continue;
@@ -97,59 +110,25 @@ export const reactivationWorker = new Worker(
     if (data.kind === 'send' && data.campaignId) {
       const campaign = await db.reactivationCampaign.findUniqueOrThrow({
         where: { id: data.campaignId },
-        include: { restaurant: { select: { name: true, phoneNumber: true } } },
-      });
-
-      if (campaign.status !== 'PENDING') {
-        log.warn(
-          { campaignId: campaign.id, status: campaign.status },
-          'campaign not PENDING, skipping',
-        );
-        return;
-      }
-
-      const customers = await db.customer.findMany({
-        where: { id: { in: campaign.customerIds } },
-        select: { id: true, name: true, phone: true },
-      });
-
-      let sent = 0;
-      for (const customer of customers) {
-        if (!customer.phone) continue;
-        try {
-          const result = await sendReactivation(
-            customer.phone,
-            campaign.restaurant.name,
-            customer.name || 'cher client',
-            campaign.restaurant.phoneNumber,
-            {
-              restaurantId: campaign.restaurantId,
-              sourceType: 'reactivation_campaign',
-              sourceId: `${campaign.id}:${customer.id}`,
-              metadata: { messageType: 'reactivation' },
-            },
-          );
-          if (result.success) sent++;
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          log.error({ err: message, customerId: customer.id }, 'failed to send reactivation SMS');
-        }
-      }
-
-      await db.reactivationCampaign.update({
-        where: { id: campaign.id },
-        data: {
-          status: 'SENT',
-          sentAt: new Date(),
-          sentCount: sent,
+        select: {
+          id: true,
+          status: true,
+          marketingCampaignId: true,
         },
       });
 
-      log.info(
-        { campaignId: campaign.id, sent, total: customers.length },
-        'reactivation campaign sent',
+      if (campaign.marketingCampaignId) {
+        log.warn(
+          { campaignId: campaign.id, marketingCampaignId: campaign.marketingCampaignId },
+          'legacy reactivation job already migrated; governed campaign owns delivery',
+        );
+        return { migrated: true, marketingCampaignId: campaign.marketingCampaignId };
+      }
+      log.error(
+        { campaignId: campaign.id, status: campaign.status },
+        'legacy reactivation send blocked: migration required before provider access',
       );
-      return { sent, total: customers.length };
+      return { migrated: false, blocked: 'MIGRATION_REQUIRED' };
     }
   },
   { connection: redisQueue, concurrency: 3 },

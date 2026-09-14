@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowUpRight, Check } from 'lucide-react';
+import { PLAN_PRICES_EUR } from '@sokar/shared';
 import MobileNav from '@/components/MobileNav';
 import { cn, triggerHaptic } from '@/lib/utils';
 import { getPlanSignupHref, type PublicPlan } from '@/app/pricing-links';
@@ -21,7 +22,7 @@ const plans: Array<{
 }> = [
   {
     label: 'Essential',
-    price: '149',
+    price: String(PLAN_PRICES_EUR.ESSENTIAL),
     period: '€/mois',
     description: 'Pour automatiser vos premiers appels et réservations.',
     features: [
@@ -34,7 +35,7 @@ const plans: Array<{
   },
   {
     label: 'Pro',
-    price: '249',
+    price: String(PLAN_PRICES_EUR.PRO),
     period: '€/mois',
     description: 'Pour les restaurants qui veulent maximiser chaque service.',
     features: [
@@ -49,7 +50,7 @@ const plans: Array<{
   },
   {
     label: 'Multi-site',
-    price: '249',
+    price: String(PLAN_PRICES_EUR.PREMIUM),
     sitePrice: '99',
     period: '€/mois + 99€/site',
     description: 'Pour piloter plusieurs établissements avec une seule équipe.',

@@ -64,21 +64,22 @@ const PAGES: VisualPage[] = [
   {
     name: 'dashboard-reservations',
     url: '/dashboard/reservations',
-    // Sans Clerk, la page reste en skeleton (loading=true). Le skeleton est
-    // un état stable et déterministe.
-    waitFor: '.animate-pulse',
+    // Le serveur API peut être indisponible en local : on attend le titre,
+    // puis l'état vide ou l'état d'erreur actionnable, jamais un skeleton
+    // dont la durée dépend du réseau.
+    waitFor: 'h1:has-text("Réservations")',
     settleMs: 500,
   },
   {
     name: 'dashboard-calls',
     url: '/dashboard/calls',
-    waitFor: '.animate-pulse',
+    waitFor: 'h1:has-text("Appels")',
     settleMs: 500,
   },
   {
     name: 'dashboard-gift-cards',
     url: '/dashboard/gift-cards',
-    waitFor: '.animate-pulse',
+    waitFor: 'h1:has-text("Cartes cadeaux")',
     settleMs: 500,
   },
   {
@@ -101,6 +102,13 @@ const PAGES: VisualPage[] = [
 test.describe('Régression visuelle — pages critiques', () => {
   for (const page of PAGES) {
     test(`${page.name} correspond au baseline`, async ({ page: pwPage }: { page: Page }) => {
+      // L'invite d'installation PWA est un onboarding interactif, pas le
+      // contenu testé. La neutraliser rend les captures comparables sans
+      // imposer une écriture de localStorage au restaurateur.
+      await pwPage.addInitScript(() => {
+        window.localStorage.setItem('sokar_pwa_dismissed', 'true');
+      });
+
       // 1. Naviguer vers la page et attendre que le réseau soit inactif.
       await pwPage.goto(page.url, { waitUntil: 'networkidle' });
 

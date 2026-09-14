@@ -8,7 +8,13 @@ vi.mock('../../../shared/db/client', () => ({
     customer: {
       findUnique: vi.fn(),
       updateMany: vi.fn(),
+      upsert: vi.fn(),
+      update: vi.fn(),
     },
+    customerIdentity: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+    customerTimelineEvent: { findUnique: vi.fn(), create: vi.fn() },
+    customerMetricSnapshot: { upsert: vi.fn() },
+    reservation: { findMany: vi.fn() },
   },
 }));
 

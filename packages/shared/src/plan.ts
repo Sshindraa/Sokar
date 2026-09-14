@@ -30,12 +30,13 @@ export const PLAN_LABELS: Record<Plan, string> = {
 /**
  * Public monthly price in EUR (HT). `null` = "sur devis" / enterprise.
  * Use this for pricing pages, upgrade CTAs, invoices.
+ * Keep these values aligned with `packages/config/src/constants.ts`.
  */
 export const PLAN_PRICES_EUR: Record<Plan, number | null> = {
-  ESSENTIAL: 149,
-  STARTER: 149,
-  PRO: 249,
-  PREMIUM: 249,
+  ESSENTIAL: 199,
+  STARTER: 199,
+  PRO: 299,
+  PREMIUM: 249, // Multi-site base remains 249€ + 99€/site.
 };
 
 /**

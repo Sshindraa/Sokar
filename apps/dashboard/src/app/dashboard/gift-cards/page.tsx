@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, ChevronLeft, ChevronRight, Gift, Plus, Save, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Gift, Plus, Save, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,6 +24,7 @@ import type { GiftCardListItem, GiftCardPack, GiftCardStats } from '@/lib/api/gi
 import GiftCardList from '@/components/gift-cards/gift-card-list';
 import GiftCardForm from '@/components/gift-cards/gift-card-form';
 import { GiftCardSectionNav } from '@/components/gift-cards/GiftCardSectionNav';
+import { DataFetchError } from '@/components/DataFetchError';
 import { SAVED_NOTIFICATION_RESET_MS } from '@/constants/ui';
 
 const PAGE_SIZE = 20;
@@ -229,12 +230,7 @@ export default function GiftCardsPage() {
 
       <GiftCardSectionNav />
 
-      {error && (
-        <div className="sokar-error">
-          <AlertCircle size={18} />
-          {error}
-        </div>
-      )}
+      {error && <DataFetchError message={error} onRetry={fetchAll} retrying={loading} />}
 
       {/* Configuration du montant minimum + commission */}
       <Card>
@@ -393,7 +389,7 @@ export default function GiftCardsPage() {
             <Skeleton key={i} className="h-12 w-full rounded-xl" />
           ))}
         </div>
-      ) : (
+      ) : error && cards.length === 0 ? null : (
         <GiftCardList
           items={cards}
           onView={setDetailCard}

@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  PLAN_VALUES,
-  PLAN_LABELS,
-  PLAN_PRICES_EUR,
-  PLAN_LEGACY,
-  type Plan,
-} from '../plan';
+import { PLAN_VALUES, PLAN_LABELS, PLAN_PRICES_EUR, PLAN_LEGACY, type Plan } from '../plan';
 
 describe('plan', () => {
   it('every Plan type is in PLAN_VALUES', () => {
@@ -26,5 +20,12 @@ describe('plan', () => {
     expect(PLAN_LEGACY.STARTER).toBe(true);
     expect(PLAN_LEGACY.ESSENTIAL).toBe(false);
     expect(PLAN_LABELS.STARTER).toBe(PLAN_LABELS.ESSENTIAL);
+  });
+
+  it('exposes the local 199/299 catalogue and keeps the multi-site base distinct', () => {
+    expect(PLAN_PRICES_EUR.ESSENTIAL).toBe(199);
+    expect(PLAN_PRICES_EUR.STARTER).toBe(199);
+    expect(PLAN_PRICES_EUR.PRO).toBe(299);
+    expect(PLAN_PRICES_EUR.PREMIUM).toBe(249);
   });
 });

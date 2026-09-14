@@ -120,6 +120,7 @@ export const ConfirmInputSchema = z.object({
   }),
   specialRequests: z.string().max(500).optional(),
   idempotencyKey: z.string().uuid().optional(),
+  marketingAttributionToken: z.string().trim().min(20).max(4096).optional(),
   source: SourceEnum.optional().default('web'),
   giftCardCode: z.string().optional(),
   // Honeypot anti-bot : doit être vide. Si rempli → bot.

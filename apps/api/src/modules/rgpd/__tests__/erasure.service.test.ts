@@ -172,4 +172,82 @@ describe('ErasureService.eraseSubject', () => {
     expect(result.subjectHash).toHaveLength(64);
     expect(result.erasedAt).toBeInstanceOf(Date);
   });
+
+  it('efface les projections CRM et marketing rattachées au sujet', async () => {
+    const crmPrisma = {
+      reservation: {
+        findFirst: vi.fn().mockResolvedValue({ id: 'res-1' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
+      },
+      customerConsent: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        count: vi.fn().mockResolvedValue(0),
+      },
+      customer: {
+        findMany: vi.fn().mockResolvedValue([{ id: 'customer-1', phone: '+33601020304' }]),
+        update: vi.fn(),
+      },
+      customerIdentity: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      customerPreference: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      customerTagAssignment: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      marketingPermission: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      marketingPermissionEvent: { deleteMany: vi.fn().mockResolvedValue({ count: 2 }) },
+      marketingSuppression: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      campaignAudienceMember: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      campaignMessage: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      marketingConversion: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      marketingFrequencyWindow: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      marketingAttributionLink: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      marketingAutomationDispatch: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      experienceReservation: { updateMany: vi.fn().mockResolvedValue({ count: 2 }) },
+      eventOrder: { updateMany: vi.fn().mockResolvedValue({ count: 3 }) },
+      eventWaitlistEntry: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      message: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      reservationAuditLog: { create: vi.fn().mockResolvedValue({}) },
+      $transaction: vi.fn(),
+    } as unknown as PrismaClient;
+    (crmPrisma.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (fn: (tx: typeof crmPrisma) => unknown) => fn(crmPrisma),
+    );
+
+    const result = await new ErasureService(crmPrisma).eraseSubject({
+      subject: '+33601020304',
+      reason: 'Article 17',
+      actor: 'admin:hamza',
+    });
+
+    expect(result).toMatchObject({
+      crmProfilesAnonymized: 1,
+      crmIdentitiesRemoved: 1,
+      crmPreferencesRemoved: 1,
+      crmTagsRemoved: 1,
+      marketingPermissionsRemoved: 1,
+      marketingPermissionEventsRemoved: 2,
+      campaignAudienceMembersRemoved: 1,
+      campaignMessagesRemoved: 1,
+      marketingConversionsRemoved: 1,
+      marketingFrequencyWindowsRemoved: 1,
+      marketingAttributionLinksRemoved: 1,
+      marketingAutomationDispatchesRemoved: 1,
+      experienceReservationsDetached: 2,
+      eventOrdersDetached: 3,
+      eventWaitlistEntriesDetached: 1,
+    });
+    expect(crmPrisma.customer.update).toHaveBeenCalledWith({
+      where: { id: 'customer-1' },
+      data: expect.objectContaining({ name: 'ANON', archivedAt: expect.any(Date) }),
+    });
+    expect(crmPrisma.experienceReservation.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ OR: expect.any(Array) }),
+      data: { customerId: null, reservationId: null },
+    });
+    expect(crmPrisma.eventOrder.updateMany).toHaveBeenCalledWith({
+      where: { customerId: { in: ['customer-1'] } },
+      data: { customerId: null },
+    });
+    expect(crmPrisma.eventWaitlistEntry.updateMany).toHaveBeenCalledWith({
+      where: { customerId: { in: ['customer-1'] } },
+      data: { customerId: null },
+    });
+  });
 });

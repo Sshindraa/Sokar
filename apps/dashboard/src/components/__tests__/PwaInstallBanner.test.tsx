@@ -2,9 +2,11 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, act, fireEvent } from '@testing-library/react';
 import PwaInstallBanner from '../PwaInstallBanner';
 
+const pathnameState = vi.hoisted(() => ({ value: '/dashboard' }));
+
 // Mock next/navigation
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/dashboard',
+  usePathname: () => pathnameState.value,
 }));
 
 // Mock triggerHaptic (évite d'appeler navigator.vibrate)
@@ -16,6 +18,7 @@ vi.mock('@/lib/utils', () => ({
 describe('PwaInstallBanner', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    pathnameState.value = '/dashboard';
     localStorage.clear();
     // Default: desktop userAgent, pas standalone
     Object.defineProperty(window.navigator, 'userAgent', {
@@ -82,6 +85,21 @@ describe('PwaInstallBanner', () => {
     act(() => {
       vi.advanceTimersByTime(2000);
     });
+    expect(screen.queryByText('Installer Sokar AI')).not.toBeInTheDocument();
+  });
+
+  it('ne recouvre pas les écrans opérationnels secondaires', () => {
+    pathnameState.value = '/dashboard/reservations';
+    Object.defineProperty(window.navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
+      configurable: true,
+    });
+
+    render(<PwaInstallBanner />);
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
     expect(screen.queryByText('Installer Sokar AI')).not.toBeInTheDocument();
   });
 

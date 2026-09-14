@@ -59,6 +59,7 @@ type HoldDto = {
 type Props = {
   slug: string;
   initialSource?: string;
+  marketingAttributionToken?: string;
   initialPartySize?: number;
   initialDate?: string;
   initialTime?: string;
@@ -78,6 +79,7 @@ function isValidDate(s: string): boolean {
 export function BookingWidget({
   slug,
   initialSource,
+  marketingAttributionToken,
   initialPartySize,
   initialDate,
   initialTime,
@@ -114,6 +116,17 @@ export function BookingWidget({
   const [waitingListCancelled, setWaitingListCancelled] = useState(false);
   // Idempotency key générée une fois par tentative de réservation (pas à chaque submit)
   const [idempotencyKey, setIdempotencyKey] = useState<string>('');
+
+  // Record a campaign click when the public booking widget opens. This is
+  // best-effort and intentionally does not block or reveal attribution data.
+  useEffect(() => {
+    if (!marketingAttributionToken || marketingAttributionToken.length < 20) return;
+    void fetchWithTimeout(`${API_URL}/marketing/attribution/click`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: marketingAttributionToken }),
+    }).catch(() => undefined);
+  }, [marketingAttributionToken]);
 
   // Load restaurant info once
   useEffect(() => {
@@ -270,6 +283,7 @@ export function BookingWidget({
             ...(email.trim() ? { email: email.trim() } : {}),
           },
           specialRequests: specialRequests.trim() || undefined,
+          ...(marketingAttributionToken ? { marketingAttributionToken } : {}),
         }),
       });
       if (!confirmRes.ok) {

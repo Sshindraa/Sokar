@@ -61,7 +61,14 @@ describe('restaurant.routes - onboarding', () => {
     );
     vi.mocked(db.restaurant.update).mockResolvedValue({
       ...baseRestaurant,
-      firstCallAt: new Date('2099-06-19T12:00:00.000Z'),
+      onboardingTasks: {
+        phone: {
+          status: 'completed',
+          metadata: {
+            testCallControlId: 'call-control-1',
+          },
+        },
+      },
     } as unknown as Awaited<ReturnType<typeof db.restaurant.update>>);
     vi.mocked(placeOutboundCall).mockResolvedValue({ callControlId: 'call-control-1' });
 
@@ -76,7 +83,7 @@ describe('restaurant.routes - onboarding', () => {
     expect(res.json()).toEqual({
       ok: true,
       callControlId: 'call-control-1',
-      message: 'Appel test déclenché. Vous allez recevoir un appel sous quelques secondes.',
+      message: 'Appel test déclenché. Confirmez sa réception après avoir entendu l’assistant.',
     });
     expect(placeOutboundCall).toHaveBeenCalledWith(
       '+33611112222',
@@ -93,7 +100,14 @@ describe('restaurant.routes - onboarding', () => {
     expect(db.restaurant.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'test-rest-1' },
-        data: expect.objectContaining({ firstCallAt: expect.any(Date) }),
+        data: expect.objectContaining({
+          onboardingTasks: expect.objectContaining({
+            phone: expect.objectContaining({
+              metadata: expect.objectContaining({ testCallControlId: 'call-control-1' }),
+            }),
+          }),
+          onboardingLastSeenAt: expect.any(Date),
+        }),
       }),
     );
   });
@@ -116,6 +130,73 @@ describe('restaurant.routes - onboarding', () => {
     expect(res.json().code).toBe('TELNYX_FAILED');
     expect(res.json().error).toMatch(/appel test/i);
     expect(db.restaurant.update).not.toHaveBeenCalled();
+  });
+
+  it('refuse de valider first_call sans confirmation du dernier appel', async () => {
+    const app = await getApp();
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+      ...baseRestaurant,
+      onboardingTasks: {
+        phone: { status: 'completed', metadata: { testCallControlId: 'expected-call' } },
+      },
+    } as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/restaurant/onboarding',
+      headers: { authorization: 'Bearer test' },
+      payload: {
+        action: 'first_call',
+        task: 'phone',
+        metadata: { testCallControlId: 'other-call' },
+      },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ code: 'TEST_CALL_NOT_CONFIRMED' });
+    expect(db.restaurant.update).not.toHaveBeenCalled();
+  });
+
+  it('valide first_call après confirmation du dernier appel déclenché', async () => {
+    const app = await getApp();
+    const pending = {
+      ...baseRestaurant,
+      onboardingTasks: {
+        phone: { status: 'completed', metadata: { testCallControlId: 'expected-call' } },
+      },
+    };
+    const validated = {
+      ...pending,
+      firstCallAt: new Date('2099-06-19T12:00:00.000Z'),
+      testCallValidatedAt: new Date('2099-06-19T12:00:00.000Z'),
+    };
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValueOnce(
+      pending as unknown as Awaited<ReturnType<typeof db.restaurant.findUniqueOrThrow>>,
+    );
+    vi.mocked(db.restaurant.update).mockResolvedValueOnce(
+      validated as unknown as Awaited<ReturnType<typeof db.restaurant.update>>,
+    );
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/restaurant/onboarding',
+      headers: { authorization: 'Bearer test' },
+      payload: {
+        action: 'first_call',
+        task: 'phone',
+        metadata: { testCallControlId: 'expected-call' },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(db.restaurant.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          firstCallAt: expect.any(Date),
+          testCallValidatedAt: expect.any(Date),
+        }),
+      }),
+    );
   });
 
   it('renvoie 409 + code NO_PHONE_ASSIGNED quand test-call est appelé sans numéro Sokar', async () => {

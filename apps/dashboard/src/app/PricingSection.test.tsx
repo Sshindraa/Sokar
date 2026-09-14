@@ -15,6 +15,10 @@ describe('PricingSection', () => {
   it('affiche un CTA pour chaque formule avec la cadence annuelle sélectionnée', () => {
     render(<PricingSection />);
 
+    expect(screen.getByText('159')).toBeInTheDocument();
+    expect(screen.getByText('239')).toBeInTheDocument();
+    expect(screen.getByText('199')).toBeInTheDocument();
+
     expect(screen.getByRole('link', { name: 'Souscrire Essential' })).toHaveAttribute(
       'href',
       '/register?plan=essential&billing=annual',

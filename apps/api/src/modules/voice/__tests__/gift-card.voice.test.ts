@@ -209,6 +209,11 @@ describe('CallSessionManager — gift card tools', () => {
       expect(sendSms).toHaveBeenCalledWith(
         '+33612345678',
         expect.stringContaining('SOKAR-1234-5678-9012'),
+        expect.objectContaining({
+          restaurantId: 'rest-gift-1',
+          sourceId: 'gift-card-1',
+          sourceType: 'gift_card_voice_delivery',
+        }),
       );
       expect(result).toContain('Carte cadeau');
       expect(result).toContain('SMS');

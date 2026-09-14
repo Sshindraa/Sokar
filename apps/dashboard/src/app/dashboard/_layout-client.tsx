@@ -22,6 +22,12 @@ import {
   Radio,
   PencilRuler,
   Activity,
+  Gauge,
+  Megaphone,
+  Star,
+  Award,
+  Ticket,
+  Share2,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -55,19 +61,34 @@ type NavKey =
   | 'calls'
   | 'reservations'
   | 'customers'
+  | 'marketing'
+  | 'reputation'
+  | 'loyalty'
+  | 'experiences'
+  | 'events'
+  | 'distribution'
   | 'reactivation'
   | 'giftCards'
   | 'agentic'
   | 'connect'
   | 'widget'
   | 'provisioning'
-  | 'health';
+  | 'health'
+  | 'usage'
+  | 'margin';
 
 const navConfig: { href: string; key: NavKey; icon: LucideIcon }[] = [
   { href: '/dashboard', key: 'overview', icon: BarChart3 },
   { href: '/dashboard/calls', key: 'calls', icon: PhoneCall },
   { href: '/dashboard/reservations', key: 'reservations', icon: CalendarCheck },
   { href: '/dashboard/customers', key: 'customers', icon: Users },
+  { href: '/dashboard/marketing', key: 'marketing', icon: Megaphone },
+  { href: '/dashboard/reputation', key: 'reputation', icon: Star },
+  { href: '/dashboard/loyalty', key: 'loyalty', icon: Award },
+  { href: '/dashboard/experiences', key: 'experiences', icon: CalendarCheck },
+  { href: '/dashboard/events', key: 'events', icon: Ticket },
+  { href: '/dashboard/distribution', key: 'distribution', icon: Share2 },
+  { href: '/dashboard/usage', key: 'usage', icon: Gauge },
   { href: '/dashboard/reactivation', key: 'reactivation', icon: HeartHandshake },
   { href: '/dashboard/gift-cards', key: 'giftCards', icon: Gift },
   { href: '/dashboard/agentic', key: 'agentic', icon: Sparkles },
@@ -75,6 +96,7 @@ const navConfig: { href: string; key: NavKey; icon: LucideIcon }[] = [
   { href: '/dashboard/widget', key: 'widget', icon: Code },
   { href: '/dashboard/admin/provisioning', key: 'provisioning', icon: Radio },
   { href: '/dashboard/admin/health', key: 'health', icon: Activity },
+  { href: '/dashboard/admin/margin', key: 'margin', icon: BarChart3 },
 ];
 
 function SidebarNavItem({
@@ -149,7 +171,19 @@ function SettingsButton({ active = false }: { active?: boolean }) {
 function isNavItemActive(pathname: string, item: (typeof navConfig)[number]) {
   return item.key === 'giftCards'
     ? pathname.startsWith('/dashboard/gift-card')
-    : pathname === item.href;
+    : item.key === 'customers'
+      ? pathname.startsWith('/dashboard/customers')
+      : item.key === 'marketing'
+        ? pathname.startsWith('/dashboard/marketing')
+        : item.key === 'loyalty'
+          ? pathname.startsWith('/dashboard/loyalty')
+          : item.key === 'experiences'
+            ? pathname.startsWith('/dashboard/experiences')
+            : item.key === 'events'
+              ? pathname.startsWith('/dashboard/events')
+              : item.key === 'distribution'
+                ? pathname.startsWith('/dashboard/distribution')
+                : pathname === item.href;
 }
 
 function DashboardModeSwitcher({ salleMode }: { salleMode: boolean }) {

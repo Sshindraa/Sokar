@@ -1,6 +1,7 @@
 'use client';
 
 import { useApi } from '../api';
+import { useCallback } from 'react';
 
 export type GiftCardListItem = {
   id: string;
@@ -88,71 +89,94 @@ export type UpdateGiftCardPackInput = {
 export function useGiftCardApi() {
   const { get, post, patch, del, orgId } = useApi();
 
-  async function listGiftCards(params?: {
-    status?: string;
-    type?: string;
-    search?: string;
-    limit?: number;
-    offset?: number;
-  }): Promise<GiftCardListResponse> {
-    if (!orgId) throw new Error('Organisation non chargée');
-    const qs = new URLSearchParams();
-    if (params?.status) qs.set('status', params.status);
-    if (params?.type) qs.set('type', params.type);
-    if (params?.search) qs.set('search', params.search);
-    if (params?.limit) qs.set('limit', String(params.limit));
-    if (params?.offset) qs.set('offset', String(params.offset));
-    const query = qs.toString();
-    return get<GiftCardListResponse>(`restaurants/${orgId}/gift-cards${query ? `?${query}` : ''}`);
-  }
+  const listGiftCards = useCallback(
+    async (params?: {
+      status?: string;
+      type?: string;
+      search?: string;
+      limit?: number;
+      offset?: number;
+    }): Promise<GiftCardListResponse> => {
+      if (!orgId) throw new Error('Organisation non chargée');
+      const qs = new URLSearchParams();
+      if (params?.status) qs.set('status', params.status);
+      if (params?.type) qs.set('type', params.type);
+      if (params?.search) qs.set('search', params.search);
+      if (params?.limit) qs.set('limit', String(params.limit));
+      if (params?.offset) qs.set('offset', String(params.offset));
+      const query = qs.toString();
+      return get<GiftCardListResponse>(
+        `restaurants/${orgId}/gift-cards${query ? `?${query}` : ''}`,
+      );
+    },
+    [get, orgId],
+  );
 
-  async function createGiftCard(input: CreateGiftCardInput): Promise<GiftCardListItem> {
-    if (!orgId) throw new Error('Organisation non chargée');
-    return post<GiftCardListItem>(`restaurants/${orgId}/gift-cards`, input);
-  }
+  const createGiftCard = useCallback(
+    async (input: CreateGiftCardInput): Promise<GiftCardListItem> => {
+      if (!orgId) throw new Error('Organisation non chargée');
+      return post<GiftCardListItem>(`restaurants/${orgId}/gift-cards`, input);
+    },
+    [orgId, post],
+  );
 
-  async function cancelGiftCard(giftCardId: string): Promise<GiftCardListItem> {
-    if (!orgId) throw new Error('Organisation non chargée');
-    return post<GiftCardListItem>(`restaurants/${orgId}/gift-cards/${giftCardId}/cancel`);
-  }
+  const cancelGiftCard = useCallback(
+    async (giftCardId: string): Promise<GiftCardListItem> => {
+      if (!orgId) throw new Error('Organisation non chargée');
+      return post<GiftCardListItem>(`restaurants/${orgId}/gift-cards/${giftCardId}/cancel`);
+    },
+    [orgId, post],
+  );
 
-  async function getGiftCardStats(): Promise<GiftCardStats> {
+  const getGiftCardStats = useCallback(async (): Promise<GiftCardStats> => {
     if (!orgId) throw new Error('Organisation non chargée');
     return get<GiftCardStats>(`restaurants/${orgId}/gift-cards/stats`);
-  }
+  }, [get, orgId]);
 
-  async function listGiftCardPacks(): Promise<GiftCardPack[]> {
+  const listGiftCardPacks = useCallback(async (): Promise<GiftCardPack[]> => {
     if (!orgId) throw new Error('Organisation non chargée');
     return get<GiftCardPack[]>(`restaurants/${orgId}/gift-card-packs`);
-  }
+  }, [get, orgId]);
 
-  async function createGiftCardPack(input: CreateGiftCardPackInput): Promise<GiftCardPack> {
-    if (!orgId) throw new Error('Organisation non chargée');
-    return post<GiftCardPack>(`restaurants/${orgId}/gift-card-packs`, input);
-  }
+  const createGiftCardPack = useCallback(
+    async (input: CreateGiftCardPackInput): Promise<GiftCardPack> => {
+      if (!orgId) throw new Error('Organisation non chargée');
+      return post<GiftCardPack>(`restaurants/${orgId}/gift-card-packs`, input);
+    },
+    [orgId, post],
+  );
 
-  async function updateGiftCardPack(
-    packId: string,
-    input: UpdateGiftCardPackInput,
-  ): Promise<GiftCardPack> {
-    if (!orgId) throw new Error('Organisation non chargée');
-    return patch<GiftCardPack>(`restaurants/${orgId}/gift-card-packs/${packId}`, input);
-  }
+  const updateGiftCardPack = useCallback(
+    async (packId: string, input: UpdateGiftCardPackInput): Promise<GiftCardPack> => {
+      if (!orgId) throw new Error('Organisation non chargée');
+      return patch<GiftCardPack>(`restaurants/${orgId}/gift-card-packs/${packId}`, input);
+    },
+    [orgId, patch],
+  );
 
-  async function toggleGiftCardPack(packId: string): Promise<GiftCardPack> {
-    if (!orgId) throw new Error('Organisation non chargée');
-    return post<GiftCardPack>(`restaurants/${orgId}/gift-card-packs/${packId}/toggle`);
-  }
+  const toggleGiftCardPack = useCallback(
+    async (packId: string): Promise<GiftCardPack> => {
+      if (!orgId) throw new Error('Organisation non chargée');
+      return post<GiftCardPack>(`restaurants/${orgId}/gift-card-packs/${packId}/toggle`);
+    },
+    [orgId, post],
+  );
 
-  async function deleteGiftCardPack(packId: string): Promise<GiftCardPack> {
-    if (!orgId) throw new Error('Organisation non chargée');
-    return del<GiftCardPack>(`restaurants/${orgId}/gift-card-packs/${packId}`);
-  }
+  const deleteGiftCardPack = useCallback(
+    async (packId: string): Promise<GiftCardPack> => {
+      if (!orgId) throw new Error('Organisation non chargée');
+      return del<GiftCardPack>(`restaurants/${orgId}/gift-card-packs/${packId}`);
+    },
+    [del, orgId],
+  );
 
-  async function closeCrowdfunding(giftCardId: string): Promise<GiftCardListItem> {
-    if (!orgId) throw new Error('Organisation non chargée');
-    return post<GiftCardListItem>(`api/gift-cards/${giftCardId}/close?restaurantId=${orgId}`, {});
-  }
+  const closeCrowdfunding = useCallback(
+    async (giftCardId: string): Promise<GiftCardListItem> => {
+      if (!orgId) throw new Error('Organisation non chargée');
+      return post<GiftCardListItem>(`api/gift-cards/${giftCardId}/close?restaurantId=${orgId}`, {});
+    },
+    [orgId, post],
+  );
 
   return {
     orgId,

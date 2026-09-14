@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useApi } from '../../../lib/api';
 import { getErrorMessage, type Call, type CallListResponse } from '@/types/api';
 import { useIsMobile } from '@/lib/useMediaQuery';
@@ -15,8 +15,9 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AlertCircle, PhoneCall, Clock, MessageSquare } from 'lucide-react';
+import { PhoneCall, Clock, MessageSquare } from 'lucide-react';
 import { formatDate } from '@sokar/shared';
+import { DataFetchError } from '@/components/DataFetchError';
 
 interface CallItem extends Call {}
 
@@ -107,23 +108,24 @@ export default function CallsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const fetchCalls = useCallback(async () => {
     if (!orgId) return;
-
-    async function fetchCalls() {
-      try {
-        const data = await get<CallListResponse>(`calls?restaurantId=${orgId}&limit=100`);
-        setCalls(Array.isArray(data?.data) ? data.data : []);
-        setTotal(typeof data?.total === 'number' ? data.total : 0);
-      } catch (err: unknown) {
-        setError(getErrorMessage(err, 'Impossible de charger les appels'));
-      } finally {
-        setLoading(false);
-      }
+    setLoading(true);
+    setError('');
+    try {
+      const data = await get<CallListResponse>(`calls?restaurantId=${orgId}&limit=100`);
+      setCalls(Array.isArray(data?.data) ? data.data : []);
+      setTotal(typeof data?.total === 'number' ? data.total : 0);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de charger les appels'));
+    } finally {
+      setLoading(false);
     }
+  }, [get, orgId]);
 
-    fetchCalls();
-  }, [orgId, get]);
+  useEffect(() => {
+    void fetchCalls();
+  }, [fetchCalls]);
 
   if (loading) {
     return (
@@ -150,19 +152,17 @@ export default function CallsPage() {
         </span>
       </div>
 
-      {error ? (
-        <div className="sokar-error">
-          <AlertCircle size={18} />
-          {error}
-        </div>
-      ) : calls.length === 0 ? (
-        <div className="sokar-empty">
-          <PhoneCall size={40} className="opacity-30" />
-          <p className="text-sm">Aucun appel enregistré</p>
-          <p className="text-xs opacity-60">
-            Les appels traités par votre assistant apparaîtront ici.
-          </p>
-        </div>
+      {error && <DataFetchError message={error} onRetry={fetchCalls} retrying={loading} />}
+      {calls.length === 0 ? (
+        error ? null : (
+          <div className="sokar-empty">
+            <PhoneCall size={40} className="opacity-30" />
+            <p className="text-sm">Aucun appel enregistré</p>
+            <p className="text-xs opacity-60">
+              Les appels traités par votre assistant apparaîtront ici.
+            </p>
+          </div>
+        )
       ) : isMobile ? (
         /* ========== MOBILE: Card List ========== */
         <div className="space-y-2.5">

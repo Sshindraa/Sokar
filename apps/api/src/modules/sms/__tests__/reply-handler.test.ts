@@ -173,6 +173,11 @@ describe('handleReply', () => {
     expect(mockSendSms).toHaveBeenCalledWith(
       '+336****9999',
       expect.stringContaining('Table libérée'),
+      expect.objectContaining({
+        restaurantId: 'rest-1',
+        sourceId: 'res-1',
+        sourceType: 'reservation_cancelled_reply',
+      }),
     );
   });
 
@@ -183,7 +188,15 @@ describe('handleReply', () => {
 
     await handleReply('+336****0001', 'NON', 'whatsapp');
 
-    expect(mockSendSms).toHaveBeenCalledWith('+336****9999', expect.stringContaining('WhatsApp'));
+    expect(mockSendSms).toHaveBeenCalledWith(
+      '+336****9999',
+      expect.stringContaining('WhatsApp'),
+      expect.objectContaining({
+        restaurantId: 'rest-1',
+        sourceId: 'res-1',
+        sourceType: 'reservation_cancelled_reply',
+      }),
+    );
   });
 
   it("n'envoie pas de SMS au gérant si managerPhone est null", async () => {
