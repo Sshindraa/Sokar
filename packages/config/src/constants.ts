@@ -1,6 +1,6 @@
 export const PLANS = {
-  ESSENTIAL: { label: 'Essential', price: 149 },
-  PRO: { label: 'Pro', price: 249 },
+  ESSENTIAL: { label: 'Essential', price: 199 },
+  PRO: { label: 'Pro', price: 299 },
   MULTI_SITE: { label: 'Multi-site', price: 249 },
 } as const;
 
@@ -12,9 +12,10 @@ export const PLAN_LABEL_MAP: Record<string, string> = {
 };
 
 export const PLAN_PRICE_MAP: Record<string, number> = {
-  STARTER: 149,
-  PRO: 249,
-  PREMIUM: 249, // Multi-site base price
+  ESSENTIAL: 199,
+  STARTER: 199,
+  PRO: 299,
+  PREMIUM: 249, // Multi-site base price remains 249€ + 99€/site
 };
 
 export const INTERNAL_CALL_ALERT_THRESHOLD = 3000;

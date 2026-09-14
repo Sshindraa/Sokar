@@ -1,6 +1,6 @@
 import { Worker } from 'bullmq';
 import { redisQueue, redisSession } from '../../redis/client';
-import telnyx from '../../telnyx/client';
+import { sendSms } from '../../telnyx/client';
 import { setupWorkerListeners, jobLogger } from './helper';
 
 // Vérifier le rate-limit Redis par restaurant avant d'envoyer
@@ -36,13 +36,11 @@ export const smsManagerWorker = new Worker(
       to = r.managerPhone;
     }
 
-    await telnyx.messages.create({
-      from: process.env.TELNYX_FROM_NUMBER!,
-      to,
-      text: message,
-      ...(process.env.TELNYX_MESSAGING_PROFILE_ID
-        ? { messaging_profile_id: process.env.TELNYX_MESSAGING_PROFILE_ID }
-        : {}),
+    await sendSms(to, message, {
+      restaurantId,
+      sourceType: 'manager_alert',
+      sourceId: `${restaurantId}:${job.id ?? 'manual'}`,
+      metadata: { messageType: 'manager_alert' },
     });
     log.info('[SMS] Manager alert sent');
   },

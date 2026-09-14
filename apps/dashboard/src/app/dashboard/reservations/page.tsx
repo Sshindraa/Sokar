@@ -27,7 +27,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  AlertCircle,
   CalendarCheck,
   CalendarDays,
   Check,
@@ -44,6 +43,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { DataFetchError } from '@/components/DataFetchError';
 
 const reservationState = (reservation: Reservation): ReservationState =>
   reservation.state ?? reservation.status;
@@ -90,20 +90,23 @@ export default function ReservationsPage() {
   const [entryErrors, setEntryErrors] = useState<Record<string, string>>({});
   const [promotedEntryId, setPromotedEntryId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchReservations = useCallback(async () => {
     if (!orgId) return;
-
-    async function fetchReservations() {
-      try {
-        const data = await get<Reservation[]>(`reservations?restaurantId=${orgId}&limit=100`);
-        setReservations(Array.isArray(data) ? data : []);
-      } catch (err: unknown) {
-        setError(getErrorMessage(err, 'Impossible de charger les réservations'));
-      }
+    setLoading(true);
+    setError('');
+    try {
+      const data = await get<Reservation[]>(`reservations?restaurantId=${orgId}&limit=100`);
+      setReservations(Array.isArray(data) ? data : []);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Impossible de charger les réservations'));
+    } finally {
       setLoading(false);
     }
-    fetchReservations();
-  }, [orgId, get]);
+  }, [get, orgId]);
+
+  useEffect(() => {
+    void fetchReservations();
+  }, [fetchReservations]);
 
   const loadWaitingList = useCallback(async () => {
     if (!orgId) return;
@@ -237,7 +240,10 @@ export default function ReservationsPage() {
         <div className="flex items-center gap-3">
           <div className="inline-flex rounded-xl border border-border bg-secondary p-1">
             <button
-              onClick={() => setActiveTab('reservations')}
+              onClick={() => {
+                setActiveTab('reservations');
+                setError('');
+              }}
               className={cn(
                 'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200',
                 activeTab === 'reservations'
@@ -249,7 +255,10 @@ export default function ReservationsPage() {
               Réservations
             </button>
             <button
-              onClick={() => setActiveTab('waiting-list')}
+              onClick={() => {
+                setActiveTab('waiting-list');
+                setError('');
+              }}
               className={cn(
                 'inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200',
                 activeTab === 'waiting-list'
@@ -270,22 +279,25 @@ export default function ReservationsPage() {
       </div>
 
       {error && (
-        <div className="sokar-error">
-          <AlertCircle size={18} />
-          {error}
-        </div>
+        <DataFetchError
+          message={error}
+          onRetry={activeTab === 'waiting-list' ? loadWaitingList : fetchReservations}
+          retrying={activeTab === 'waiting-list' ? waitingListLoading : loading}
+        />
       )}
 
       {activeTab === 'reservations' && (
         <>
           {reservations.length === 0 ? (
-            <div className="sokar-empty">
-              <CalendarCheck size={40} className="opacity-30" />
-              <p className="text-sm">Aucune réservation pour le moment</p>
-              <p className="text-xs opacity-60">
-                Les réservations prises par votre assistant apparaîtront ici.
-              </p>
-            </div>
+            error ? null : (
+              <div className="sokar-empty">
+                <CalendarCheck size={40} className="opacity-30" />
+                <p className="text-sm">Aucune réservation pour le moment</p>
+                <p className="text-xs opacity-60">
+                  Les réservations prises par votre assistant apparaîtront ici.
+                </p>
+              </div>
+            )
           ) : isMobile ? (
             /* ========== MOBILE: Reservation Card List ========== */
             <div className="space-y-2.5">
@@ -497,13 +509,15 @@ export default function ReservationsPage() {
               ))}
             </div>
           ) : waitingList.length === 0 ? (
-            <div className="sokar-empty">
-              <ListOrdered size={40} className="opacity-30" />
-              <p className="text-sm">Aucune entrée en file d&apos;attente pour cette date</p>
-              <p className="text-xs opacity-60">
-                Les demandes en attente apparaîtront ici dès qu&apos;un créneau est plein.
-              </p>
-            </div>
+            error ? null : (
+              <div className="sokar-empty">
+                <ListOrdered size={40} className="opacity-30" />
+                <p className="text-sm">Aucune entrée en file d&apos;attente pour cette date</p>
+                <p className="text-xs opacity-60">
+                  Les demandes en attente apparaîtront ici dès qu&apos;un créneau est plein.
+                </p>
+              </div>
+            )
           ) : (
             <div className="sokar-card overflow-hidden">
               <div className="mobile-table-wrapper">

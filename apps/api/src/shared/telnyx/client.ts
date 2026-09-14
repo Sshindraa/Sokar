@@ -5,6 +5,10 @@ import {
   type NotificationProviderResult,
   type NotificationSendResult,
 } from '../queue/notification-idempotency';
+import {
+  recordAcceptedMessagingUsage,
+  type MessagingUsageContext,
+} from '../../modules/usage/messaging-usage.service';
 
 // Agent keep-alive persistant pour le SDK Telnyx (balance, SMS, WhatsApp, outbound calls).
 // Évite le handshake TLS (~113ms) à chaque appel en réutilisant la connexion.
@@ -41,7 +45,11 @@ const telnyx = new Proxy({} as TelnyxClient, {
 
 export default telnyx;
 
-export async function sendSms(to: string, text: string): Promise<void | NotificationSendResult> {
+export async function sendSms(
+  to: string,
+  text: string,
+  usage?: MessagingUsageContext,
+): Promise<void | NotificationSendResult> {
   const t = getTelnyx();
   const messagingProfileId = process.env.TELNYX_MESSAGING_PROFILE_ID;
   const response = await t.messages.create({
@@ -50,7 +58,17 @@ export async function sendSms(to: string, text: string): Promise<void | Notifica
     text,
     ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
   });
-  return normalizeTelnyxSendResponse(response, 'sms');
+  const result = normalizeTelnyxSendResponse(response, 'sms');
+  if (usage) {
+    await recordAcceptedMessagingUsage({
+      channel: 'sms',
+      provider: 'telnyx',
+      text,
+      providerMessageId: result.providerMessageId,
+      context: usage,
+    });
+  }
+  return result;
 }
 
 /**
@@ -68,12 +86,14 @@ export async function sendSms(to: string, text: string): Promise<void | Notifica
 export async function sendWhatsApp(
   to: string,
   text: string,
+  usage?: MessagingUsageContext,
 ): Promise<void | NotificationSendResult> {
   const t = getTelnyx();
   const from = process.env.TELNYX_WHATSAPP_FROM ?? process.env.TELNYX_FROM_NUMBER;
   if (!from) {
     throw new Error('TELNYX_WHATSAPP_FROM or TELNYX_FROM_NUMBER is required for WhatsApp');
   }
+  const messagingProfileId = process.env.TELNYX_MESSAGING_PROFILE_ID;
   const response = await t.messages.create({
     from,
     to,
@@ -81,8 +101,19 @@ export async function sendWhatsApp(
     // Le SDK Telnyx ne type pas `type` pour messages.create, mais l'API REST
     // accepte type: 'whatsapp' pour router via WhatsApp Business.
     ...({ type: 'whatsapp' } as Record<string, string>),
+    ...(messagingProfileId ? { messaging_profile_id: messagingProfileId } : {}),
   });
-  return normalizeTelnyxSendResponse(response, 'whatsapp');
+  const result = normalizeTelnyxSendResponse(response, 'whatsapp');
+  if (usage) {
+    await recordAcceptedMessagingUsage({
+      channel: 'whatsapp',
+      provider: 'telnyx',
+      text,
+      providerMessageId: result.providerMessageId,
+      context: usage,
+    });
+  }
+  return result;
 }
 
 type TelnyxMessageDeliveryStatus =

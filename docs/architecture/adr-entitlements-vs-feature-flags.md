@@ -31,18 +31,33 @@ plan DB → override ConfigCat → plan commercial → entitlement → flag/runt
 - `requireCapability(capability)` renvoie `403 CAPABILITY_NOT_INCLUDED` avant tout accès métier.
 - `reactivation.manage` protège désormais la lecture, l'envoi et le rejet des campagnes de
   réactivation.
+- Les fondations `pos.connect`, `reservations.payments`, `customers.group`, `reputation.feedback`,
+  `reputation.loyalty`, `experiences.manage`, `events.manage` et `distribution.manage` sont maintenant
+  dans la matrice. Elles restent refusées par les flags runtime tant que le fournisseur, le
+  marchand et les preuves de pilote ne sont pas qualifiés ; `customers.group` est réservé au plan
+  `multi-site`.
 - Une capability absente ou fausse est refusée ; aucune règle commerciale ne doit être dupliquée
   dans une page du dashboard.
 
-## Limites actuelles
+## Politique de consommation client
 
-Les quotas voix et SMS restent `null`, ce qui signifie « aucune limite commerciale encore
-appliquée ». Les inventer avant le ledger d'usage créerait un contrat impossible à justifier. Ils
-seront chiffrés après la collecte des coûts réels et leur activation demandera des tests de seuil,
-de période et de dépassement.
+Les champs de minutes voix et de SMS restent `null` parce que la promesse Essential/Pro est sans
+quota client. Ils ne bloquent ni appel, ni message, ni réservation. Le ledger et le cockpit
+`/dashboard/admin/margin` mesurent séparément le coût opérationnel par restaurant pour l'équipe
+Sokar. Un éventuel budget interne ou seuil d'alerte doit vivre dans ce périmètre opérateur et ne
+doit jamais devenir un entitlement client.
 
-Les capabilities CRM avancé, campagnes et attribution seront ajoutées avec les fonctions
-correspondantes. La matrice ne doit pas annoncer comme disponible un module qui n'existe pas.
+Les capabilities CRM avancé, campagnes, attribution et réputation sont maintenant présentes dans la
+matrice et protègent les routes correspondantes. Les capacités POS, paiement de réservation, groupe,
+réputation, fidélité, expériences et distribution suivent
+la même séparation entitlement/flag. Elles restent toutefois soumises aux flags/runtime health :
+les campagnes d'envoi sont bloquées par défaut (`MARKETING_SENDS_ENABLED`), comme les connecteurs
+POS (`POS_CONNECTORS_ENABLED`), la protection bancaire (`RESERVATION_PAYMENTS_ENABLED`), le
+groupe CRM (`CUSTOMER_GROUPS_ENABLED`), la réputation (`REPUTATION_ENABLED`), les avantages
+fidélité (`LOYALTY_ENABLED`), les expériences (`EXPERIENCES_ENABLED`), les événements
+(`EVENTS_ENABLED`) et la distribution (`DISTRIBUTION_ENABLED`). Le code local peut
+donc être testé sans ouvrir un effet
+externe ni modifier le contrat commercial par inadvertance.
 
 ## Règle de migration
 

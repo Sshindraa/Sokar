@@ -139,7 +139,10 @@ async function startApp() {
   const app = Fastify();
   await app.register(fastifyWebsocket);
   registerMediaStreamRoutes(app);
-  await app.listen({ port: 0 });
+  // Le sandbox de test ne permet pas l'écoute IPv6 `::1`. Forcer IPv4
+  // garde le test fidèle au parcours WebSocket sans dépendre de la résolution
+  // de `localhost` de la machine qui exécute Vitest.
+  await app.listen({ port: 0, host: '127.0.0.1' });
   const address = app.server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
   return { app, port };
@@ -147,7 +150,7 @@ async function startApp() {
 
 function connectWs(port: number, callId: string): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://localhost:${port}/voice/stream/${callId}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/voice/stream/${callId}`);
     ws.on('open', () => resolve(ws));
     ws.on('error', reject);
   });

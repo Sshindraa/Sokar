@@ -33,6 +33,7 @@
     "node:check": "node -e \"const v=process.versions.node.split('.').map(Number); if (v[0]<20 || v[0]>=23) { console.error('Node '+process.versions.node+' not supported. Use Node >=20 <23.'); process.exit(1); } console.log('Node '+process.versions.node+' OK');\"",
     "verify:precommit": "scripts/precommit-review.sh",
     "verify:prepush": "scripts/prepush-quality-gate.sh",
+    "verify:product-gates": "node scripts/verify-product-gates.mjs",
     "verify:ai": "scripts/agent/hermes-diff-review.sh head",
     "pr:submit": "scripts/agent/submit-pr.sh",
     "dogfood:sokar": "tools/diagnostics/dogfood-sokar.sh",

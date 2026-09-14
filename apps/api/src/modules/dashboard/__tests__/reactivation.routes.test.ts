@@ -123,8 +123,7 @@ describe('GET /dashboard/reactivation', () => {
 
     expect(res.statusCode).toBe(200);
     const body = res.json() as Array<Record<string, unknown>>;
-    // La route ne définit pas customerCount quand customerIds est vide
-    // (court-circuit avant la 2ème passe), mais customers est bien [].
+    expect(body[0].customerCount).toBe(0);
     expect(body[0].customers).toEqual([]);
   });
 });
@@ -135,10 +134,12 @@ describe('POST /dashboard/reactivation/:id/send', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     mockProPlan();
+    process.env.MARKETING_SENDS_ENABLED = 'true';
     app = await getApp();
   });
 
   afterAll(async () => {
+    delete process.env.MARKETING_SENDS_ENABLED;
     await closeApp();
   });
 
@@ -171,7 +172,7 @@ describe('POST /dashboard/reactivation/:id/send', () => {
     expect(queues.reactivation.add).not.toHaveBeenCalled();
   });
 
-  it('enqueue le job reactivation.send avec le campaignId pour une campaign PENDING', async () => {
+  it('migre puis enqueue la campagne marketing gouvernée pour une campaign PENDING', async () => {
     vi.mocked(db.reactivationCampaign.findFirst).mockResolvedValue({
       id: 'camp-1',
       restaurantId: RESTAURANT_ID,
@@ -181,17 +182,84 @@ describe('POST /dashboard/reactivation/:id/send', () => {
       sentAt: null,
       createdAt: new Date(),
     } as never);
+    vi.mocked(db.customer.findMany).mockResolvedValue([{ id: 'cust-1', isVip: true }] as never);
+    vi.mocked(db.marketingCampaign.create).mockResolvedValue({
+      id: 'legacy-marketing-camp-1',
+      status: 'READY',
+      audienceCount: 1,
+    } as never);
+    vi.mocked(db.reactivationCampaign.updateMany).mockResolvedValue({ count: 1 } as never);
     const res = await app.inject({
       method: 'POST',
       url: '/dashboard/reactivation/camp-1/send',
       headers: AUTH,
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ ok: true, message: 'Envoi en cours' });
-    expect(queues.reactivation.add).toHaveBeenCalledWith('send-campaign', {
-      kind: 'send',
-      campaignId: 'camp-1',
+    expect(res.json()).toMatchObject({
+      ok: true,
+      campaignId: 'legacy-marketing-camp-1',
+      migrated: true,
+      audienceCount: 1,
     });
+    expect(queues.reactivation.add).not.toHaveBeenCalled();
+    expect(queues.marketingCampaign.add).toHaveBeenCalledWith(
+      'send-campaign',
+      { campaignId: 'legacy-marketing-camp-1', restaurantId: RESTAURANT_ID },
+      { jobId: 'marketing-campaign:legacy-marketing-camp-1' },
+    );
+  });
+
+  it('bloque toute migration lorsque les envois marketing sont gelés', async () => {
+    process.env.MARKETING_SENDS_ENABLED = 'false';
+    vi.mocked(db.reactivationCampaign.findFirst).mockResolvedValue({
+      id: 'camp-frozen',
+      restaurantId: RESTAURANT_ID,
+      status: 'PENDING',
+      marketingCampaignId: null,
+    } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/dashboard/reactivation/camp-frozen/send',
+      headers: AUTH,
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({ error: 'MARKETING_SENDS_DISABLED' });
+    expect(db.marketingCampaign.create).not.toHaveBeenCalled();
+    expect(queues.marketingCampaign.add).not.toHaveBeenCalled();
+  });
+
+  it('refuse le snapshot legacy si l automation DORMANT gouverne déjà le site', async () => {
+    vi.mocked(db.reactivationCampaign.findFirst).mockResolvedValue({
+      id: 'camp-automated',
+      restaurantId: RESTAURANT_ID,
+      status: 'PENDING',
+      marketingCampaignId: null,
+    } as never);
+    vi.mocked(db.marketingAutomation.findFirst).mockResolvedValue({ id: 'automation-1' } as never);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/dashboard/reactivation/camp-automated/send',
+      headers: AUTH,
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'REACTIVATION_AUTOMATION_ACTIVE' });
+    expect(db.marketingCampaign.create).not.toHaveBeenCalled();
+    expect(queues.marketingCampaign.add).not.toHaveBeenCalled();
+  });
+
+  it('refuse une validation de réactivation par un membre STAFF', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/dashboard/reactivation/camp-1/send',
+      headers: { ...AUTH, 'x-test-site-role': 'STAFF' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: 'REACTIVATION_WRITE_ROLE_REQUIRED' });
   });
 });
 

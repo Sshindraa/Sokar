@@ -17,6 +17,7 @@ import {
   type NotificationReconciliationQueue,
 } from '../notification-idempotency';
 import { recordNotificationProviderResult } from '../../observability/metrics';
+import type { MessagingUsageContext } from '../../../modules/usage/messaging-usage.service';
 
 export interface CallRecoveryJobData {
   callId: string;
@@ -112,8 +113,14 @@ export async function processCallRecoveryJob(
   }
 
   try {
+    const usageContext: MessagingUsageContext = {
+      restaurantId: data.restaurantId,
+      sourceType: 'call_recovery',
+      sourceId: data.callId,
+      metadata: { messageType: 'call_recovery', reason: data.reason },
+    };
     const result = normalizeNotificationSendResult(
-      await deps.sendSms(data.customerPhone, message),
+      await deps.sendSms(data.customerPhone, message, usageContext),
       'telnyx',
       'sms',
     );

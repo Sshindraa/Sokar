@@ -17,6 +17,13 @@ import {
   type ReservationNotificationObservation,
 } from '../../shared/observability/reservation-contract';
 import { buildReservationNotificationJobId } from '../../shared/queue/job-options';
+import { CustomerService } from '../customers/customer.service';
+import {
+  deactivateMarketingConversions,
+  recordMarketingAttributionClick,
+  recordMarketingConversion,
+  recordMarketingHonoredConversions,
+} from '../marketing/marketing-attribution.service';
 
 const availability = new CapacityAwareAvailabilityService(db);
 const tableAllocation = new TableAllocationService(db);
@@ -28,6 +35,7 @@ export interface CreateReservationInput {
   partySize: number;
   customerName: string;
   customerPhone?: string;
+  marketingAttributionToken?: string;
 }
 
 interface AvailabilitySlot {
@@ -66,6 +74,21 @@ const STATUS_TO_STATE: Record<ReservationStatus, ReservationState> = {
   SEATED: 'SEATED',
   NO_SHOW: 'NO_SHOW',
 };
+
+function reservationLifecycleEvent(
+  state: ReservationState | null | undefined,
+): 'RESERVATION_CANCELLED' | 'RESERVATION_HONORED' | 'RESERVATION_NO_SHOW' | null {
+  switch (state) {
+    case 'CANCELLED':
+      return 'RESERVATION_CANCELLED';
+    case 'HONORED':
+      return 'RESERVATION_HONORED';
+    case 'NO_SHOW':
+      return 'RESERVATION_NO_SHOW';
+    default:
+      return null;
+  }
+}
 
 function getLegacyStatus(
   status: Prisma.ReservationUpdateInput['status'],
@@ -169,6 +192,27 @@ export class ReservationService {
       throw new Error('SLOT_NOT_AVAILABLE');
     }
 
+    let customerId: string | null = null;
+    if (input.customerPhone) {
+      try {
+        customerId = (
+          await CustomerService.lookupOrCreate(
+            input.restaurantId,
+            input.customerPhone,
+            input.customerName,
+          )
+        ).id;
+      } catch (error) {
+        logger.warn(
+          {
+            err: error instanceof Error ? error.message : String(error),
+            restaurantId: input.restaurantId,
+          },
+          '[ReservationService] Customer CRM dual-write unavailable',
+        );
+      }
+    }
+
     // 2. Allouer et créer la réservation dans une transaction pour éviter
     //    l'allocation concurrente de la même table.
     const reservation = await db.$transaction(async (tx) => {
@@ -230,6 +274,7 @@ export class ReservationService {
             partySize: input.partySize,
             customerName: input.customerName,
             customerPhone: input.customerPhone,
+            ...(customerId ? { customerId } : {}),
             status: 'CONFIRMED',
             tableId: table.id,
             estimatedRevenue: input.partySize * 35,
@@ -287,6 +332,58 @@ export class ReservationService {
         logger.error(
           { err: err instanceof Error ? err.message : String(err), reservationId: reservation.id },
           '[ReservationService] Failed to sync to Google Calendar',
+        );
+      }
+    }
+
+    if (reservation.customerPhone) {
+      try {
+        await CustomerService.recordReservationEvent({
+          restaurantId: input.restaurantId,
+          customerId,
+          phone: reservation.customerPhone,
+          name: reservation.customerName,
+          reservationId: reservation.id,
+          eventType: 'RESERVATION_CREATED',
+          occurredAt: reservation.createdAt,
+        });
+      } catch (error) {
+        logger.warn(
+          {
+            err: error instanceof Error ? error.message : String(error),
+            reservationId: reservation.id,
+          },
+          '[ReservationService] Customer timeline projection unavailable',
+        );
+      }
+    }
+
+    // Campaign links are optional and best-effort: a malformed or expired
+    // token must never block a valid reservation. The signed token is resolved
+    // to a tenant/customer pair before recording a conversion.
+    if (input.marketingAttributionToken && customerId) {
+      try {
+        const link = await recordMarketingAttributionClick({
+          token: input.marketingAttributionToken,
+        });
+        if (link && link.restaurantId === input.restaurantId && link.customerId === customerId) {
+          await recordMarketingConversion({
+            restaurantId: input.restaurantId,
+            campaignId: link.campaignId,
+            customerId,
+            reservationId: reservation.id,
+            conversionType: 'RESERVATION_CREATED',
+            attributedAt: new Date(),
+            windowEndsAt: link.expiresAt,
+          });
+        }
+      } catch (error) {
+        logger.warn(
+          {
+            err: error instanceof Error ? error.message : String(error),
+            reservationId: reservation.id,
+          },
+          '[ReservationService] Marketing attribution projection unavailable',
         );
       }
     }
@@ -379,6 +476,64 @@ export class ReservationService {
 
       return result;
     });
+
+    const lifecycleEvent = reservationLifecycleEvent(updated.state);
+    if (
+      lifecycleEvent &&
+      reservation.state !== updated.state &&
+      (reservation.customerPhone || reservation.customerId)
+    ) {
+      try {
+        await CustomerService.recordReservationEvent({
+          restaurantId,
+          customerId: reservation.customerId,
+          phone: reservation.customerPhone,
+          name: reservation.customerName,
+          reservationId: updated.id,
+          eventType: lifecycleEvent,
+          occurredAt: new Date(),
+        });
+      } catch (error) {
+        logger.warn(
+          {
+            err: error instanceof Error ? error.message : String(error),
+            reservationId: updated.id,
+          },
+          '[ReservationService] Customer lifecycle projection unavailable',
+        );
+      }
+      if (lifecycleEvent === 'RESERVATION_CANCELLED') {
+        try {
+          await deactivateMarketingConversions({ restaurantId, reservationId: updated.id });
+        } catch (error) {
+          logger.warn(
+            {
+              err: error instanceof Error ? error.message : String(error),
+              reservationId: updated.id,
+            },
+            '[ReservationService] Marketing conversion deactivation unavailable',
+          );
+        }
+      }
+      if (lifecycleEvent === 'RESERVATION_HONORED') {
+        try {
+          await recordMarketingHonoredConversions({
+            restaurantId,
+            reservationId: updated.id,
+            customerId: updated.customerId ?? reservation.customerId,
+            honoredAt: new Date(),
+          });
+        } catch (error) {
+          logger.warn(
+            {
+              err: error instanceof Error ? error.message : String(error),
+              reservationId: updated.id,
+            },
+            '[ReservationService] Marketing honored conversion unavailable',
+          );
+        }
+      }
+    }
 
     // Sync updates to Google Calendar
     if (
@@ -479,6 +634,39 @@ export class ReservationService {
 
       return result;
     });
+
+    if (needsTerminalTransition && (reservation.customerPhone || reservation.customerId)) {
+      try {
+        await CustomerService.recordReservationEvent({
+          restaurantId,
+          customerId: reservation.customerId,
+          phone: reservation.customerPhone,
+          name: reservation.customerName,
+          reservationId: updated.id,
+          eventType: 'RESERVATION_CANCELLED',
+          occurredAt: new Date(),
+        });
+      } catch (error) {
+        logger.warn(
+          {
+            err: error instanceof Error ? error.message : String(error),
+            reservationId: updated.id,
+          },
+          '[ReservationService] Customer cancellation projection unavailable',
+        );
+      }
+      try {
+        await deactivateMarketingConversions({ restaurantId, reservationId: updated.id });
+      } catch (error) {
+        logger.warn(
+          {
+            err: error instanceof Error ? error.message : String(error),
+            reservationId: updated.id,
+          },
+          '[ReservationService] Marketing conversion deactivation unavailable',
+        );
+      }
+    }
 
     let calendarCleared = false;
 

@@ -5,9 +5,13 @@
  */
 import { sendWhatsApp } from '../../shared/telnyx/client';
 import { logger } from '../../shared/logger/pino';
+import type { MessagingUsageContext } from '../usage/messaging-usage.service';
 
 type SendWhatsAppInput = {
   to: string;
+  restaurantId?: string;
+  accountId?: string | null;
+  giftCardId?: string;
   code: string;
   amount: number;
   restaurantName: string;
@@ -28,7 +32,18 @@ export async function sendRecipientWhatsApp(input: SendWhatsAppInput): Promise<v
 
   const text = `🎁 Vous avez reçu une carte cadeau de ${input.amount}€ chez ${input.restaurantName} !\n\nVotre code : ${input.code}\n\nUtilisez-le lors de votre réservation.`;
 
-  await sendWhatsApp(input.to, text);
+  const usage: MessagingUsageContext | undefined =
+    input.restaurantId && input.giftCardId
+      ? {
+          restaurantId: input.restaurantId,
+          accountId: input.accountId,
+          sourceType: 'gift_card_whatsapp_delivery',
+          sourceId: input.giftCardId,
+          metadata: { messageType: 'gift_card_whatsapp_delivery' },
+        }
+      : undefined;
+
+  await sendWhatsApp(input.to, text, usage);
 
   logger.info(
     { to: input.to, amount: input.amount },

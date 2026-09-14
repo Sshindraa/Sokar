@@ -180,9 +180,21 @@ export default function ReservationWidget() {
   const searchParams = useSearchParams();
   const restaurantId = params.restaurantId;
   const isEmbedded = searchParams.get('embedded') === '1';
+  const marketingAttributionToken = searchParams.get('marketingAttributionToken') ?? '';
   // Origine explicite du parent, passée par le snippet embed Sokar.
   // Priorité sur document.referrer (qui peut être vide avec Referrer-Policy: no-referrer).
   const explicitParentOrigin = searchParams.get('parentOrigin');
+
+  // Record the campaign click as soon as the public booking page opens. The
+  // endpoint only stores a timestamp and never exposes the customer or
+  // campaign identifiers. Invalid/expired links are ignored so attribution
+  // cannot affect the booking UX.
+  useEffect(() => {
+    if (marketingAttributionToken.length < 20 || marketingAttributionToken.length > 4096) return;
+    void publicApiFetch('POST', 'marketing/attribution/click', {
+      token: marketingAttributionToken,
+    }).catch(() => undefined);
+  }, [marketingAttributionToken]);
 
   // Restaurant public metadata
   const [restaurant, setRestaurant] = useState<RestaurantPublic | null>(null);
@@ -534,6 +546,7 @@ export default function ReservationWidget() {
           ? normalizedPhone
           : `+33${normalizedPhone.replace(/^0/, '')}`,
         customerEmail: customerEmail || undefined,
+        ...(marketingAttributionToken ? { marketingAttributionToken } : {}),
       });
 
       setConfirmedReservation(res);

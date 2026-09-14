@@ -31,6 +31,7 @@ export interface ProvisioningStatusView {
   forwardingConfiguredAt: string | null;
   testCallValidatedAt: string | null;
   firstCallAt: string | null;
+  testCallControlId: string | null;
   forwardingCode: string | null;
   steps: {
     assignment: {
@@ -51,6 +52,30 @@ export interface ProvisioningStatusView {
       validatedAt: string | null;
     };
   };
+}
+
+export class ProvisioningNotReadyError extends Error {
+  readonly code = 'PROVISIONING_NOT_READY';
+
+  constructor(readonly missing: string[]) {
+    super(`Provisioning incomplet. Prérequis manquants : ${missing.join(', ')}.`);
+    this.name = 'ProvisioningNotReadyError';
+  }
+}
+
+export class ProvisioningTestCallNotPendingError extends Error {
+  readonly code = 'TEST_CALL_NOT_PENDING';
+
+  constructor(message = 'Aucun appel test en attente de confirmation pour ce restaurant.') {
+    super(message);
+    this.name = 'ProvisioningTestCallNotPendingError';
+  }
+}
+
+function readTestCallControlId(tasks: unknown): string | null {
+  const normalized = normalizeTasks(tasks);
+  const value = normalized.phone.metadata?.testCallControlId;
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
 export class ProvisioningService {
@@ -231,7 +256,10 @@ export class ProvisioningService {
   }
 
   /**
-   * Vérifie le webhook Telnyx et marque l'étape Webhook comme validée.
+   * Vérifie le webhook Telnyx et marque uniquement l'étape Webhook comme validée.
+   *
+   * Le renvoi opérateur est une preuve distincte : il ne doit pas être marqué
+   * implicitement par un probe HTTP du webhook.
    */
   static async verifyWebhook(restaurantId: string): Promise<ProvisioningStatusView> {
     const restaurant = await db.restaurant.findUniqueOrThrow({
@@ -242,16 +270,15 @@ export class ProvisioningService {
       throw new Error("Attribution d'un numéro Telnyx requise avant la vérification du webhook.");
     }
 
-    const now = new Date();
     const updated = await db.restaurant.update({
       where: { id: restaurantId },
       data: {
         provisioningStatus:
           restaurant.provisioningStatus === 'TEST_CALL_COMPLETED' ||
+          restaurant.provisioningStatus === 'TEST_CALL_PENDING' ||
           restaurant.provisioningStatus === 'ACTIVE'
             ? restaurant.provisioningStatus
             : 'WEBHOOK_READY',
-        forwardingConfiguredAt: restaurant.forwardingConfiguredAt ?? now,
       },
     });
 
@@ -259,7 +286,39 @@ export class ProvisioningService {
   }
 
   /**
-   * Déclenche un appel test pour valider le flux vocal et le renvoi d'appel.
+   * Enregistre l'attestation opérateur du renvoi d'appel après que le code USSD
+   * a été composé sur le téléphone du restaurant.
+   */
+  static async markForwardingConfigured(restaurantId: string): Promise<ProvisioningStatusView> {
+    const restaurant = await db.restaurant.findUniqueOrThrow({
+      where: { id: restaurantId },
+    });
+
+    if (!hasUsablePhone(restaurant.phoneNumber)) {
+      throw new Error("Attribution d'un numéro Telnyx requise avant le renvoi d'appel.");
+    }
+
+    if (
+      !['WEBHOOK_READY', 'TEST_CALL_PENDING', 'TEST_CALL_COMPLETED', 'ACTIVE'].includes(
+        restaurant.provisioningStatus,
+      )
+    ) {
+      throw new Error('Le webhook doit être vérifié avant de confirmer le renvoi d’appel.');
+    }
+
+    const updated = await db.restaurant.update({
+      where: { id: restaurantId },
+      data: {
+        forwardingConfiguredAt: restaurant.forwardingConfiguredAt ?? new Date(),
+      },
+    });
+
+    return this.getProvisioningStatus(updated.id);
+  }
+
+  /**
+   * Déclenche un appel test. Le déclenchement ne vaut pas validation : un
+   * opérateur doit confirmer que l'appel a été reçu et que l'IA a répondu.
    */
   static async triggerTestCall(
     restaurantId: string,
@@ -273,6 +332,18 @@ export class ProvisioningService {
       throw new Error(
         "Aucun numéro Sokar attribué. Attribuez un numéro avant de lancer l'appel test.",
       );
+    }
+
+    if (
+      !['WEBHOOK_READY', 'TEST_CALL_PENDING', 'TEST_CALL_COMPLETED', 'ACTIVE'].includes(
+        restaurant.provisioningStatus,
+      )
+    ) {
+      throw new Error('Le webhook doit être vérifié avant de lancer l’appel test.');
+    }
+
+    if (!restaurant.forwardingConfiguredAt) {
+      throw new Error("Le renvoi d'appel doit être confirmé avant de lancer l'appel test.");
     }
 
     const formattedTarget = targetPhoneNumber.trim();
@@ -293,14 +364,74 @@ export class ProvisioningService {
       timeoutSecs: 30,
     });
 
+    const tasks = normalizeTasks(restaurant.onboardingTasks);
+    tasks.phone = {
+      ...tasks.phone,
+      metadata: {
+        ...(tasks.phone.metadata ?? {}),
+        testCallControlId: callControlId,
+        testCallRequestedAt: new Date().toISOString(),
+      },
+    };
+
+    const nextOnboardingState = computeOnboardingState({ ...restaurant, onboardingTasks: tasks });
+
+    const updated = await db.restaurant.update({
+      where: { id: restaurantId },
+      data: {
+        provisioningStatus: restaurant.testCallValidatedAt
+          ? restaurant.provisioningStatus
+          : 'TEST_CALL_PENDING',
+        onboardingTasks: tasks as unknown as Prisma.InputJsonValue,
+        onboardingDone: nextOnboardingState.onboardingDone,
+      },
+    });
+
+    const status = await this.getProvisioningStatus(updated.id);
+    return { callControlId, status };
+  }
+
+  /**
+   * Confirme explicitement qu'un appel test déclenché a été reçu et entendu.
+   * L'identifiant Telnyx est conservé dans les métadonnées d'onboarding pour
+   * empêcher la confirmation d'un appel différent ou inventé.
+   */
+  static async validateTestCall(
+    restaurantId: string,
+    callControlId: string,
+  ): Promise<ProvisioningStatusView> {
+    const restaurant = await db.restaurant.findUniqueOrThrow({
+      where: { id: restaurantId },
+    });
+
+    const normalizedCallControlId = callControlId.trim();
+    const pendingCallControlId = readTestCallControlId(restaurant.onboardingTasks);
+    if (!pendingCallControlId) throw new ProvisioningTestCallNotPendingError();
+    if (pendingCallControlId !== normalizedCallControlId) {
+      throw new ProvisioningTestCallNotPendingError(
+        'L’identifiant fourni ne correspond pas au dernier appel test déclenché.',
+      );
+    }
+    if (restaurant.testCallValidatedAt) {
+      return this.getProvisioningStatus(restaurant.id);
+    }
+    if (!hasUsablePhone(restaurant.phoneNumber)) {
+      throw new ProvisioningTestCallNotPendingError(
+        "Aucun numéro Sokar attribué pour valider l'appel test.",
+      );
+    }
+
     const now = new Date();
     const tasks = normalizeTasks(restaurant.onboardingTasks);
     tasks.phone = {
       ...tasks.phone,
       status: 'completed',
-      completedAt: now.toISOString(),
+      completedAt: tasks.phone.completedAt ?? now.toISOString(),
+      metadata: {
+        ...(tasks.phone.metadata ?? {}),
+        testCallValidatedAt: now.toISOString(),
+      },
     };
-
     const nextOnboardingState = computeOnboardingState({
       ...restaurant,
       firstCallAt: restaurant.firstCallAt ?? now,
@@ -311,15 +442,15 @@ export class ProvisioningService {
       where: { id: restaurantId },
       data: {
         firstCallAt: restaurant.firstCallAt ?? now,
-        testCallValidatedAt: now,
-        provisioningStatus: 'ACTIVE',
+        testCallValidatedAt: restaurant.testCallValidatedAt ?? now,
+        provisioningStatus:
+          restaurant.provisioningStatus === 'ACTIVE' ? 'ACTIVE' : 'TEST_CALL_COMPLETED',
         onboardingTasks: tasks as unknown as Prisma.InputJsonValue,
         onboardingDone: nextOnboardingState.onboardingDone,
         onboardingCompletedAt:
           nextOnboardingState.onboardingDone && !restaurant.onboardingCompletedAt
             ? now
             : restaurant.onboardingCompletedAt,
-        onboardingActivatedAt: restaurant.onboardingActivatedAt ?? now,
       },
     });
 
@@ -328,16 +459,50 @@ export class ProvisioningService {
       restaurantId,
       task: 'phone',
       metadata: {
-        callControlId,
-        targetPhoneNumber: formattedTarget,
-        provisioningStatus: 'ACTIVE',
+        callControlId: normalizedCallControlId,
+        provisioningStatus: updated.provisioningStatus,
       },
     }).catch((err) =>
       logger.error({ err, restaurantId }, 'Failed to track onboarding_first_call event'),
     );
 
-    const status = await this.getProvisioningStatus(updated.id);
-    return { callControlId, status };
+    return this.getProvisioningStatus(updated.id);
+  }
+
+  /**
+   * Finalise l'activation uniquement après les preuves locales du parcours.
+   * Le bouton d'administration ne doit jamais fabriquer une validation d'appel
+   * ou de renvoi en écrivant directement `ACTIVE`.
+   */
+  static async completeProvisioning(restaurantId: string): Promise<ProvisioningStatusView> {
+    const restaurant = await db.restaurant.findUniqueOrThrow({
+      where: { id: restaurantId },
+    });
+
+    const missing: string[] = [];
+    if (!hasUsablePhone(restaurant.phoneNumber)) missing.push('phone_assignment');
+    if (!restaurant.forwardingConfiguredAt) missing.push('forwarding');
+    if (
+      !['WEBHOOK_READY', 'TEST_CALL_COMPLETED', 'ACTIVE'].includes(restaurant.provisioningStatus)
+    ) {
+      missing.push('webhook');
+    }
+    if (!restaurant.testCallValidatedAt) {
+      missing.push('test_call');
+    }
+
+    if (missing.length > 0) throw new ProvisioningNotReadyError(missing);
+
+    const now = new Date();
+    const updated = await db.restaurant.update({
+      where: { id: restaurantId },
+      data: {
+        provisioningStatus: 'ACTIVE',
+        onboardingActivatedAt: restaurant.onboardingActivatedAt ?? now,
+      },
+    });
+
+    return this.getProvisioningStatus(updated.id);
   }
 
   /**
@@ -359,12 +524,10 @@ export class ProvisioningService {
       isAssigned &&
       (restaurant.provisioningStatus === 'WEBHOOK_READY' ||
         restaurant.provisioningStatus === 'TEST_CALL_COMPLETED' ||
-        restaurant.provisioningStatus === 'ACTIVE' ||
-        Boolean(restaurant.forwardingConfiguredAt));
+        restaurant.provisioningStatus === 'ACTIVE');
 
     const forwardingCompleted = Boolean(restaurant.forwardingConfiguredAt);
-    const testCallCompleted =
-      Boolean(restaurant.testCallValidatedAt) || Boolean(restaurant.firstCallAt);
+    const testCallCompleted = Boolean(restaurant.testCallValidatedAt);
 
     return {
       restaurantId: restaurant.id,
@@ -380,6 +543,7 @@ export class ProvisioningService {
         ? restaurant.testCallValidatedAt.toISOString()
         : null,
       firstCallAt: restaurant.firstCallAt ? restaurant.firstCallAt.toISOString() : null,
+      testCallControlId: readTestCallControlId(restaurant.onboardingTasks),
       forwardingCode: ussdCode,
       steps: {
         assignment: {
@@ -401,9 +565,7 @@ export class ProvisioningService {
           completed: testCallCompleted,
           validatedAt: restaurant.testCallValidatedAt
             ? restaurant.testCallValidatedAt.toISOString()
-            : restaurant.firstCallAt
-              ? restaurant.firstCallAt.toISOString()
-              : null,
+            : null,
         },
       },
     };

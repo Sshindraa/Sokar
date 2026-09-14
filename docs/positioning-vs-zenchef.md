@@ -1,6 +1,6 @@
 # Positionnement Sokar face à Zenchef
 
-> **Statut : ACTIF — audit code et marché du 12 septembre 2026.**
+> **Statut : ACTIF — audit code et marché du 14 septembre 2026.**
 > Cette comparaison distingue la capacité présente dans le dépôt, sa preuve terrain et la cible de
 > la roadmap 199/299 €. Les fonctionnalités concurrentes et tarifs peuvent évoluer ; vérifier la
 > [page officielle des formules Zenchef](https://www.zenchef.com/fr/formules) avant publication.
@@ -18,20 +18,24 @@ Le positionnement défendable est :
 > service. Le produit est conçu en France autour d'une IA vocale et de parcours agentiques natifs.
 
 Il ne faut pas vendre Sokar comme un remplacement fonctionnel total de Zenchef tant que les epics
-POS, CRM enrichi, automation marketing et paiements de réservation ne sont pas livrés.
+POS, activation fournisseur des campagnes, paiements de réservation, CRM groupe et réputation ne sont pas
+prouvés en conditions réelles. Le moteur de fusion, les automations bornées, le socle de groupes,
+les callbacks signés et l'inbox de réconciliation existent localement, mais cela ne constitue pas
+une preuve de délivrabilité, de revenu encaissé ou d'isolation multi-identité.
 
 ## Prix : actuel et cible
 
-| Offre      | Prix affiché/facturé dans Sokar | Prix cible décidé | Condition avant migration                                                                     |
-| ---------- | ------------------------------: | ----------------: | --------------------------------------------------------------------------------------------- |
-| Essential  |                      149 €/mois |        199 €/mois | Entitlements fiables, métriques d'usage, packaging stabilisé et parcours de migration Stripe. |
-| Pro        |                      249 €/mois |        299 €/mois | Segmentation, automations, marketing mesurable et fonctions Pro effectivement activées.       |
-| Multi-site |          249 €/mois + 99 €/site |       À redécider | Finir la preuve d'isolation et aligner le packaging groupes avec le CRM partagé.              |
+| Offre      | Catalogue local affiché | Catalogue Stripe actif observé | Condition avant facturation du nouveau montant                                                   |
+| ---------- | ----------------------: | -----------------------------: | ------------------------------------------------------------------------------------------------ |
+| Essential  |              199 €/mois |                     149 €/mois | Créer/synchroniser les nouveaux `priceId`, rejouer Checkout/facture et valider les entitlements. |
+| Pro        |              299 €/mois |                     249 €/mois | Même porte, avec preuve des fonctions CRM/marketing Pro et de l'activation fournisseur.          |
+| Multi-site |  249 €/mois + 99 €/site |                    même grille | Finir la preuve d'isolation et aligner le packaging groupes avec le CRM partagé.                 |
 
-Les prix actuels sont codés dans `apps/dashboard/src/app/constants.ts` et
-`apps/dashboard/src/app/pricing/page.tsx`. Le runbook Stripe utilise huit Price IDs d'environnement.
-Changer le texte marketing seul créerait une divergence entre le prix affiché, Checkout et les
-droits ; la migration doit suivre le plan de rollout de la roadmap.
+Le catalogue local est codé dans `packages/config/src/constants.ts`, `packages/shared/src/plan.ts`,
+`apps/dashboard/src/app/constants.ts` et `apps/dashboard/src/app/pricing/page.tsx`. Le runbook Stripe
+utilise huit Price IDs d'environnement qui pointent encore vers l'ancien catalogue observé. Le
+checkout doit rester fermé jusqu'à ce que les nouveaux prix soient créés, synchronisés et rejoués
+avec la facture et le portail ; changer le texte marketing seul créerait une divergence.
 
 Au 12 septembre 2026, Zenchef affiche publiquement Reserve 129 €, Manage 169 € et Grow 249 € par
 mois, avec plusieurs options payantes. Cette référence vient de la
@@ -47,30 +51,34 @@ Légende :
 - `PARTIEL` : un sous-ensemble existe ;
 - `ABSENT` : pas de parcours commercial utilisable.
 
-| Domaine                                  | Sokar au 12/09/2026          | Preuve Sokar                                                               | Position Zenchef publique                                                |
-| ---------------------------------------- | ---------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Réservation dashboard                    | `LIVRÉ`                      | module `reservations`, pages dashboard                                     | Inclus.                                                                  |
-| Widget web                               | `LIVRÉ`                      | `apps/connect`, `apps/widget`, `/embed.js`                                 | Inclus.                                                                  |
-| Appels pris par IA                       | `LIVRÉ`, qualité à suivre    | pipeline Telnyx + ElevenLabs + Cartesia                                    | AI Concierge en option selon formule.                                    |
-| Réservation par ChatGPT/Claude           | `LIVRÉ`                      | MCP Streamable HTTP, OAuth, E2E réels                                      | Pas une capacité différenciante à revendiquer sans test concurrent daté. |
-| Plan de salle                            | `LIVRÉ`                      | module `floor-plan`, canvas dashboard                                      | Inclus par Zenchef.                                                      |
-| Allocation capacitaire                   | `LIVRÉ`                      | verrouillage transactionnel et availability capacity-aware                 | Plan de salle et créneaux intelligents annoncés.                         |
-| Liste d'attente                          | `LIVRÉ`                      | service, workers de promotion/nettoyage                                    | Incluse à partir de Manage.                                              |
-| Service Copilot                          | `À PROUVER`                  | recommandations et télémétrie dans `floor-plan`                            | Aucune comparaison publique suffisamment précise.                        |
-| Rappels SMS                              | `LIVRÉ`                      | queue `confirmationSms`                                                    | Inclus ; SMS tarifés.                                                    |
-| CRM de base                              | `LIVRÉ`                      | `Customer`, consentements, VIP, historique réservation/appel               | CRM annoncé.                                                             |
-| CRM enrichi par dépenses POS             | `ABSENT`                     | aucun ledger POS normalisé                                                 | Intégrations POS annoncées.                                              |
-| Segments avancés calculés                | `ABSENT`                     | modèle cible seulement dans la roadmap                                     | Segmentation et outils clients annoncés.                                 |
-| Automations marketing génériques         | `PARTIEL`                    | réactivation VIP spécifique                                                | Suite Marketing et emails annoncés.                                      |
-| Attribution réservation + CA             | `ABSENT`                     | modèle cible seulement                                                     | Analyses et revenus par canal annoncés.                                  |
-| Empreinte bancaire / acompte réservation | `ABSENT`                     | Stripe couvre billing et gift cards, pas ce parcours                       | Empreinte, prépaiement et acompte annoncés.                              |
-| Cartes cadeaux                           | `LIVRÉ`, finance à qualifier | module `gift-cards`, widget, dashboard, Stripe                             | Chèques-cadeaux annoncés.                                                |
-| Avis et réputation                       | `PARTIEL`                    | Google Places sync ; pas de boîte de traitement complète                   | Collecte/publication/réponse annoncées.                                  |
-| Google Reserve                           | `ABSENT`                     | Connect fournit SEO et disponibilité, sans intégration Reserve with Google | Inclus.                                                                  |
-| Meta Reserve                             | `ABSENT`                     | aucun connecteur de distribution Meta                                      | Inclus/option selon formule.                                             |
-| Multi-site                               | `PARTIEL`                    | account/site, sélection, quotas et facturation                             | Base clients et fonctions groupes annoncées.                             |
-| API / agentic                            | `LIVRÉ`                      | routes API + MCP/OpenAI Reserve                                            | Accès API annoncé sur Grow.                                              |
-| Paiement à table / QR                    | `ABSENT`                     | aucun parcours d'addition à table                                          | Zenchef l'annonce dans sa plateforme.                                    |
+| Domaine                                  | Sokar au 14/09/2026          | Preuve Sokar                                                                                                                                                                                                                                            | Position Zenchef publique                                                      |
+| ---------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Réservation dashboard                    | `LIVRÉ`                      | module `reservations`, pages dashboard                                                                                                                                                                                                                  | Inclus.                                                                        |
+| Widget web                               | `LIVRÉ`                      | `apps/connect`, `apps/widget`, `/embed.js`                                                                                                                                                                                                              | Inclus.                                                                        |
+| Appels pris par IA                       | `LIVRÉ`, qualité à suivre    | pipeline Telnyx + ElevenLabs + Cartesia                                                                                                                                                                                                                 | AI Concierge en option selon formule.                                          |
+| Réservation par ChatGPT/Claude           | `LIVRÉ`                      | MCP Streamable HTTP, OAuth, E2E réels                                                                                                                                                                                                                   | Pas une capacité différenciante à revendiquer sans test concurrent daté.       |
+| Plan de salle                            | `LIVRÉ`                      | module `floor-plan`, canvas dashboard                                                                                                                                                                                                                   | Inclus par Zenchef.                                                            |
+| Allocation capacitaire                   | `LIVRÉ`                      | verrouillage transactionnel et availability capacity-aware                                                                                                                                                                                              | Plan de salle et créneaux intelligents annoncés.                               |
+| Liste d'attente                          | `LIVRÉ`                      | service, workers de promotion/nettoyage                                                                                                                                                                                                                 | Incluse à partir de Manage.                                                    |
+| Service Copilot                          | `À PROUVER`                  | recommandations et télémétrie dans `floor-plan`                                                                                                                                                                                                         | Aucune comparaison publique suffisamment précise.                              |
+| Rappels SMS                              | `LIVRÉ`                      | queue `confirmationSms`                                                                                                                                                                                                                                 | Inclus ; SMS tarifés.                                                          |
+| CRM de base                              | `LIVRÉ`                      | `Customer`, consentements, VIP, historique réservation/appel                                                                                                                                                                                            | CRM annoncé.                                                                   |
+| CRM enrichi par dépenses POS             | `PARTIEL / LOCAL`            | fondation `PosConnection`/`PosCheck`/matcher prête, mais aucun connecteur ni dépense réelle raccordé                                                                                                                                                    | Intégrations POS annoncées.                                                    |
+| Segments avancés calculés                | `PARTIEL / LOCAL`            | AST borné, compiler, preview/CRUD/refresh dans `customers`                                                                                                                                                                                              | Segmentation et outils clients annoncés.                                       |
+| Automations marketing génériques         | `PARTIEL / LOCAL`            | trois déclencheurs bornés, worker, réactivation legacy migrée et callbacks signés locaux ; activation provider ouverte                                                                                                                                  | Suite Marketing et emails annoncés.                                            |
+| Attribution réservation + CA             | `PARTIEL / LOCAL`            | liens HMAC, clic, rapport, réservation créée et visite honorée ; preuve de revenu encaissé ouverte                                                                                                                                                      | Analyses et revenus par canal annoncés.                                        |
+| Empreinte bancaire / acompte réservation | `PARTIEL / LOCAL`            | policies, préparation idempotente, transitions et webhook signé/hashé derrière `RESERVATION_PAYMENTS_ENABLED=false` ; aucun intent, hold, capture ou remboursement réel                                                                                 | Empreinte, prépaiement et acompte annoncés.                                    |
+| Cartes cadeaux                           | `LIVRÉ`, finance à qualifier | module `gift-cards`, widget, dashboard, Stripe                                                                                                                                                                                                          | Chèques-cadeaux annoncés.                                                      |
+| Avis et réputation                       | `PARTIEL / LOCAL`            | Google Places sync + fondation feedback post-visite tokenisée, scores 1–5, boîte de récupération dashboard et expiration ; providers d'envoi, publication et pilote non qualifiés                                                                       | Collecte/publication/réponse annoncées.                                        |
+| Avantages fidélité opérationnels         | `PARTIEL / LOCAL`            | Catalogue Pro, règles bornées, grants à code hashé, consommation atomique, expiration et coût estimé sur `/dashboard/loyalty` ; aucun point, envoi ou POS actif                                                                                         | Fidélisation annoncée selon formule ; vérifier le périmètre avant publication. |
+| Expériences et sessions                  | `PARTIEL / LOCAL`            | Catalogue Pro, sessions datées, capacité verrouillée, snapshot du prix, réservations/annulations idempotentes et expiration sur `/dashboard/experiences` ; paiement, billetterie et distribution absents                                                | Expériences, événements et suppléments à vérifier selon la formule.            |
+| Événements et billetterie                | `PARTIEL / LOCAL`            | Catalogue, sessions, tarifs, jauge transactionnelle, commandes/billets hashés, check-in, liste d'attente et traces locales de facture/remboursement sur `/dashboard/events` ; paiement, facture fiscale, notifications et distribution externes absents | Billetterie et événements à vérifier selon la formule.                         |
+| Distribution partenaire                  | `PARTIEL / LOCAL`            | Fondations `DistributionConnection`/snapshots/runs/liens/webhook, dashboard `/dashboard/distribution` et idempotence ; aucun adaptateur, OAuth, webhook public ou appel fournisseur                                                                     | Canaux et distribution à vérifier selon la formule.                            |
+| Google Reserve                           | `PARTIEL / LOCAL`            | Contrat de connexion et snapshots préparé ; aucun connecteur Reserve with Google, compte marchand ou appel Google actif                                                                                                                                 | Inclus.                                                                        |
+| Meta Reserve                             | `PARTIEL / LOCAL`            | Contrat provider-neutral préparé ; aucun connecteur de distribution Meta, compte marchand ou appel Meta actif                                                                                                                                           | Inclus/option selon formule.                                                   |
+| Multi-site                               | `PARTIEL / LOCAL`            | account/site, sélection, quotas et facturation ; socle `CustomerGroupProfile`/`CustomerGroupMembership` consenti, isolé et masqué derrière `CUSTOMER_GROUPS_ENABLED=false`                                                                              | Base clients et fonctions groupes annoncées.                                   |
+| API / agentic                            | `LIVRÉ`                      | routes API + MCP/OpenAI Reserve                                                                                                                                                                                                                         | Accès API annoncé sur Grow.                                                    |
+| Paiement à table / QR                    | `ABSENT`                     | aucun parcours d'addition à table                                                                                                                                                                                                                       | Zenchef l'annonce dans sa plateforme.                                          |
 
 Sources concurrentes consultées :
 
@@ -92,14 +100,14 @@ cohérente, pas seulement une liste de modules :
 7. onboarding qui conduit jusqu'au premier appel et à la première réservation réelle ;
 8. sauvegarde, observabilité et support exploitables.
 
-Les fonctionnalités 1 à 4 sont largement présentes. Les points 5 à 7 demandent surtout une preuve
+Les fonctionnalités 1 à 4 sont largement présentes. Les points 5 à 7 demandent encore une preuve
 commerciale, une instrumentation plus fiable et un packaging explicite. Les entitlements et compteurs
-d'usage de la roadmap doivent empêcher qu'un simple changement d'interface active par erreur une
-fonction Pro.
+d'usage empêchent qu'un simple changement d'interface active par erreur une fonction Pro.
 
 ## Ce qui justifie Pro à 299 €
 
-Pro doit produire un revenu mesurable ou un gain opérationnel supérieur :
+Pro doit produire un revenu mesurable ou un gain opérationnel supérieur. Le contrôle technique
+existe désormais localement, mais l'activation commerciale attend les éléments restants :
 
 1. identité client consolidée et fusion de doublons ;
 2. données de visite et de dépense importées depuis au moins un POS ;
@@ -108,7 +116,16 @@ Pro doit produire un revenu mesurable ou un gain opérationnel supérieur :
 5. automations déclenchées par événement avec retry, idempotence et journal d'exécution ;
 6. attribution d'une réservation et du chiffre d'affaires à une campagne ;
 7. rapports par segment, campagne et établissement ;
-8. fonctions multi-site partagées lorsque le client possède plusieurs restaurants.
+8. fonctions multi-site partagées lorsque le client possède plusieurs restaurants ;
+9. collecte post-visite et récupération opérateur lorsque le pilote réputation est qualifié ;
+10. avantages simples et traçables pour les clients VIP ou anniversaires, lorsque le pilote fidélité
+    et la procédure en salle sont validés.
+11. catalogue d'expériences et sessions à capacité contrôlée, lorsque le parcours de paiement,
+    l'exploitation en salle et le pilote sont validés.
+12. événements, billets et contrôle d'accès à jauge partagée, lorsque le parcours de paiement,
+    l'exploitation en salle, les notifications et le pilote sont validés.
+13. canaux partenaires préparés et traçables, lorsque l'adaptateur Google/Meta ou API publique,
+    la signature, la réconciliation et le pilote sont validés.
 
 Ces éléments correspondent aux epics décrits dans
 [`roadmap-produit-crm-marketing-199-299.md`](./roadmap-produit-crm-marketing-199-299.md). Tant que
@@ -128,6 +145,7 @@ USAGE + ENTITLEMENTS
   -> attribution reservation/revenue
   -> réservation payante et protection no-show
   -> consolidation multi-site
+  -> expériences, événements et distribution
 ```
 
 Cet ordre évite de construire un éditeur de campagnes sur des identités non dédupliquées ou de
@@ -148,6 +166,8 @@ promettre un ROI sans transactions POS rattachables.
 - réduction chiffrée du no-show sans cohorte Sokar ;
 - ROI ou gain de temps non mesuré sur de vrais restaurants ;
 - disponibilité sur Google Reserve ou Meta Reserve.
+- distribution partenaire, réservation externe ou synchronisation bidirectionnelle certifiée.
+- billetterie événementielle avec paiement, facture fiscale ou distribution partenaire.
 
 ## Règle de mise à jour
 

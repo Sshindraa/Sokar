@@ -1191,7 +1191,15 @@ describe('CallSessionManager — tool execution', () => {
         amount: 50,
       }),
     );
-    expect(sendSms).toHaveBeenCalledWith('+33612345678', expect.stringContaining('SKR-ABC123'));
+    expect(sendSms).toHaveBeenCalledWith(
+      '+33612345678',
+      expect.stringContaining('SKR-ABC123'),
+      expect.objectContaining({
+        restaurantId: 'rest-1',
+        sourceId: 'gc-1',
+        sourceType: 'gift_card_voice_delivery',
+      }),
+    );
     expect(trackGiftCardEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'gift_card_purchase_completed',

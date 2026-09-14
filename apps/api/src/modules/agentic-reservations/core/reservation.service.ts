@@ -57,6 +57,13 @@ import {
   IDEMPOTENCY_MAX_WAIT_ATTEMPTS,
 } from '../../../shared/constants/timeouts.js';
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../../shared/db/transaction-options';
+import { CustomerService } from '../../customers/customer.service';
+import {
+  deactivateMarketingConversions,
+  recordMarketingAttributionClick,
+  recordMarketingConversion,
+  recordMarketingHonoredConversions,
+} from '../../marketing/marketing-attribution.service';
 
 export class ReservationNotFoundError extends Error {
   constructor(public readonly id: string) {
@@ -115,6 +122,8 @@ export type CreateReservationInput = {
   giftCardCode?: string;
   /** Optionnel : montant estimé de la réservation pour l'application de la carte cadeau */
   giftCardReservationAmount?: number;
+  /** Optionnel : token signé d'une campagne marketing */
+  marketingAttributionToken?: string;
 };
 
 export type CreateReservationResult = {
@@ -123,6 +132,21 @@ export type CreateReservationResult = {
   reused: boolean;
   giftCardApplication?: GiftCardApplicationResult;
 };
+
+function reservationLifecycleEvent(
+  state: ReservationState,
+): 'RESERVATION_CANCELLED' | 'RESERVATION_HONORED' | 'RESERVATION_NO_SHOW' | null {
+  switch (state) {
+    case 'CANCELLED':
+      return 'RESERVATION_CANCELLED';
+    case 'HONORED':
+      return 'RESERVATION_HONORED';
+    case 'NO_SHOW':
+      return 'RESERVATION_NO_SHOW';
+    default:
+      return null;
+  }
+}
 
 export class ReservationService {
   private readonly tableAllocation: TableAllocationService;
@@ -171,6 +195,25 @@ export class ReservationService {
       }
       holdId = hold.id;
       tableId = tableId ?? hold.tableId ?? null;
+    }
+
+    let customerId: string | null = null;
+    try {
+      customerId = (
+        await CustomerService.lookupOrCreate(
+          input.restaurantId,
+          input.customerPhone,
+          input.customerName,
+        )
+      ).id;
+    } catch (error) {
+      logger.warn(
+        {
+          err: error instanceof Error ? error.message : String(error),
+          restaurantId: input.restaurantId,
+        },
+        '[AgenticReservationService] Customer CRM dual-write unavailable',
+      );
     }
 
     // 3. Réserver l'idempotence (Postgres first, Redis cache)
@@ -349,6 +392,7 @@ export class ReservationService {
         const reservation = await tx.reservation.create({
           data: {
             restaurantId: input.restaurantId,
+            ...(customerId ? { customerId } : {}),
             customerName: input.customerName,
             customerPhone: input.customerPhone,
             partySize: input.partySize,
@@ -446,6 +490,53 @@ export class ReservationService {
     });
 
     const final = await this.prisma.reservation.findUnique({ where: { id: reservationId } });
+
+    try {
+      await CustomerService.recordReservationEvent({
+        restaurantId: input.restaurantId,
+        customerId,
+        phone: input.customerPhone,
+        name: input.customerName,
+        reservationId,
+        eventType: 'RESERVATION_CREATED',
+        occurredAt: new Date(),
+      });
+    } catch (error) {
+      logger.warn(
+        { err: error instanceof Error ? error.message : String(error), reservationId },
+        '[AgenticReservationService] Customer timeline projection unavailable',
+      );
+    }
+
+    // Campaign links are optional and best-effort: a malformed or expired
+    // token must never block a valid agentic/web reservation. Resolve it to the
+    // same tenant and customer before recording the created conversion.
+    if (input.marketingAttributionToken && customerId) {
+      try {
+        const link = await recordMarketingAttributionClick({
+          token: input.marketingAttributionToken,
+        });
+        if (link && link.restaurantId === input.restaurantId && link.customerId === customerId) {
+          await recordMarketingConversion({
+            restaurantId: input.restaurantId,
+            campaignId: link.campaignId,
+            customerId,
+            reservationId,
+            conversionType: 'RESERVATION_CREATED',
+            attributedAt: new Date(),
+            windowEndsAt: link.expiresAt,
+          });
+        }
+      } catch (error) {
+        logger.warn(
+          {
+            err: error instanceof Error ? error.message : String(error),
+            reservationId,
+          },
+          '[AgenticReservationService] Marketing attribution projection unavailable',
+        );
+      }
+    }
 
     let giftCardApplication: GiftCardApplicationResult | undefined;
     let giftCardSnapshotUpdated = false;
@@ -549,11 +640,20 @@ export class ReservationService {
   }): Promise<void> {
     let fromState: ReservationState | undefined;
     let statusAfterTransition: ReservationStatus | undefined;
+    let customerForProjection:
+      | { customerId: string | null; phone: string | null; name: string }
+      | undefined;
     await this.prisma.$transaction(async (tx) => {
       const reservation = await tx.reservation.findUnique({
         where: { id: args.reservationId, restaurantId: args.restaurantId },
       });
       if (!reservation) throw new ReservationNotFoundError(args.reservationId);
+
+      customerForProjection = {
+        customerId: reservation.customerId,
+        phone: reservation.customerPhone,
+        name: reservation.customerName,
+      };
 
       fromState = reservation.state as ReservationState;
       assertCanTransition(fromState, args.toState, reservation);
@@ -622,6 +722,61 @@ export class ReservationService {
       notification: 'not_sent',
       capacity,
     });
+    if (customerForProjection && reservationLifecycleEvent(args.toState)) {
+      try {
+        await CustomerService.recordReservationEvent({
+          restaurantId: args.restaurantId,
+          customerId: customerForProjection.customerId,
+          phone: customerForProjection.phone,
+          name: customerForProjection.name,
+          reservationId: args.reservationId,
+          eventType: reservationLifecycleEvent(args.toState)!,
+          occurredAt: new Date(),
+        });
+      } catch (error) {
+        logger.warn(
+          {
+            err: error instanceof Error ? error.message : String(error),
+            reservationId: args.reservationId,
+          },
+          '[AgenticReservationService] Customer lifecycle projection unavailable',
+        );
+      }
+    }
+    if (args.toState === 'HONORED' && customerForProjection?.customerId) {
+      try {
+        await recordMarketingHonoredConversions({
+          restaurantId: args.restaurantId,
+          reservationId: args.reservationId,
+          customerId: customerForProjection.customerId,
+          honoredAt: new Date(),
+        });
+      } catch (error) {
+        logger.warn(
+          {
+            err: error instanceof Error ? error.message : String(error),
+            reservationId: args.reservationId,
+          },
+          '[AgenticReservationService] Marketing honored conversion unavailable',
+        );
+      }
+    }
+    if (args.toState === 'CANCELLED') {
+      try {
+        await deactivateMarketingConversions({
+          restaurantId: args.restaurantId,
+          reservationId: args.reservationId,
+        });
+      } catch (error) {
+        logger.warn(
+          {
+            err: error instanceof Error ? error.message : String(error),
+            reservationId: args.reservationId,
+          },
+          '[AgenticReservationService] Marketing conversion deactivation unavailable',
+        );
+      }
+    }
   }
 
   /**
@@ -678,6 +833,41 @@ export class ReservationService {
 
       return row;
     });
+
+    try {
+      await CustomerService.recordReservationEvent({
+        restaurantId: reservation.restaurantId,
+        customerId: reservation.customerId,
+        phone: reservation.customerPhone,
+        name: reservation.customerName,
+        reservationId: reservation.id,
+        eventType: 'RESERVATION_CANCELLED',
+        occurredAt: new Date(),
+      });
+    } catch (error) {
+      logger.warn(
+        {
+          err: error instanceof Error ? error.message : String(error),
+          reservationId: reservation.id,
+        },
+        '[AgenticReservationService] Customer cancellation projection unavailable',
+      );
+    }
+
+    try {
+      await deactivateMarketingConversions({
+        restaurantId: reservation.restaurantId,
+        reservationId: reservation.id,
+      });
+    } catch (error) {
+      logger.warn(
+        {
+          err: error instanceof Error ? error.message : String(error),
+          reservationId: reservation.id,
+        },
+        '[AgenticReservationService] Marketing conversion deactivation unavailable',
+      );
+    }
 
     await CapacityAwareAvailabilityService.invalidateAvailability(reservation.restaurantId);
     observeReservationMutation({

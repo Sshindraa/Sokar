@@ -5,6 +5,11 @@
 > ne décrivent pas des fonctions manquantes dans Sokar. La campagne de 10 restaurants n'est pas
 > documentée comme terminée. Voir [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
 
+La finalisation du provisioning admin est gardée côté API : `POST
+ /admin/provisioning/:restaurantId/complete` refuse un restaurant sans numéro attribué, webhook/renvoi
+vérifié ou appel test validé. Le code `PROVISIONING_NOT_READY` renvoie les prérequis manquants ; les
+dates `testCallValidatedAt` et `forwardingConfiguredAt` ne sont jamais fabriquées par ce bouton.
+
 ## Objectif
 
 10 restaurants réels onboardés sur Sokar Connect pour valider les 4 critères go/no-go P1.
@@ -62,7 +67,9 @@ Source : `apps/api/src/modules/connect/connect-kpis.service.ts` (`CONNECT_TARGET
 - [ ] Lister les numéros disponibles : `GET /api/admin/provisioning/available-numbers`
 - [ ] Attribuer un numéro : `POST /api/admin/provisioning/:restaurantId/assign-phone`
 - [ ] Vérifier le webhook : `POST /api/admin/provisioning/:restaurantId/verify-webhook`
+- [ ] Confirmer le renvoi opérateur après composition du code USSD : `POST /api/admin/provisioning/:restaurantId/mark-forwarding`
 - [ ] Tester l'appel : `POST /api/admin/provisioning/:restaurantId/test-call`
+- [ ] Confirmer que l'appel test a été reçu et entendu : `POST /api/admin/provisioning/:restaurantId/validate-test-call` avec le `callControlId` retourné
 - [ ] Finaliser le provisioning : `POST /api/admin/provisioning/:restaurantId/complete`
 
 ### 4. Validation

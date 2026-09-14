@@ -1,5 +1,13 @@
 import { db } from '../../shared/db/client';
 import { getCachedContext, setCachedContext, redisCache } from '../../shared/redis/client';
+import { logger } from '../../shared/logger/pino';
+import {
+  appendCustomerTimelineEvent,
+  buildCustomerTimelineDedupeKey,
+  normalizeCustomerPhone,
+  rebuildCustomerMetricSnapshot,
+  upsertCustomerIdentity,
+} from './customer-crm.service';
 
 export interface CustomerContext {
   id: string;
@@ -18,15 +26,61 @@ export class CustomerService {
     phone: string,
     name?: string,
   ): Promise<CustomerContext> {
-    const cacheKey = `customer:${restaurantId}:${phone}`;
+    const normalizedPhone = normalizeCustomerPhone(phone);
+    const cachePhone = normalizedPhone ?? phone;
+    const cacheKey = `customer:${restaurantId}:${cachePhone}`;
     const cached = await getCachedContext(cacheKey);
     if (cached) return cached;
 
-    const customer = await db.customer.upsert({
-      where: { restaurantId_phone: { restaurantId, phone } },
-      create: { restaurantId, phone, name: name ?? null, visitCount: 0 },
-      update: name ? { name, lastSeenAt: new Date() } : { lastSeenAt: new Date() },
-    });
+    const identityCandidate = normalizedPhone
+      ? await db.customerIdentity.findUnique({
+          where: {
+            restaurantId_type_normalizedValue: {
+              restaurantId,
+              type: 'PHONE',
+              normalizedValue: normalizedPhone,
+            },
+          },
+          include: {
+            customer: {
+              select: { id: true, restaurantId: true, archivedAt: true, mergedIntoId: true },
+            },
+          },
+        })
+      : null;
+    const identity =
+      identityCandidate &&
+      identityCandidate.customer.restaurantId === restaurantId &&
+      identityCandidate.customer.archivedAt === null &&
+      identityCandidate.customer.mergedIntoId === null
+        ? identityCandidate
+        : null;
+
+    const customer = identity
+      ? await db.customer.update({
+          where: { id: identity.customerId, restaurantId },
+          data: name ? { name, lastSeenAt: new Date() } : { lastSeenAt: new Date() },
+        })
+      : await db.customer.upsert({
+          where: { restaurantId_phone: { restaurantId, phone } },
+          create: { restaurantId, phone, name: name ?? null, visitCount: 0 },
+          update: name ? { name, lastSeenAt: new Date() } : { lastSeenAt: new Date() },
+        });
+
+    if (normalizedPhone) {
+      try {
+        await upsertCustomerIdentity({
+          restaurantId,
+          customerId: customer.id,
+          type: 'PHONE',
+          value: phone,
+          source: 'VOICE',
+        });
+      } catch {
+        // Identity dual-write is additive. A legacy lookup must remain
+        // available while a backfill or another worker repairs the identity.
+      }
+    }
 
     const ctx: CustomerContext = {
       id: customer.id,
@@ -44,12 +98,97 @@ export class CustomerService {
     return ctx;
   }
 
-  static async incrementVisit(restaurantId: string, phone: string): Promise<void> {
+  static async incrementVisit(
+    restaurantId: string,
+    phone: string,
+    options?: { reservationId?: string; occurredAt?: Date },
+  ): Promise<void> {
     await db.customer.updateMany({
       where: { restaurantId, phone },
       data: { visitCount: { increment: 1 }, lastSeenAt: new Date() },
     });
-    await redisCache.del(`customer:${restaurantId}:${phone}`);
+    const normalizedPhone = normalizeCustomerPhone(phone);
+    await redisCache.del(`customer:${restaurantId}:${normalizedPhone ?? phone}`);
+
+    if (options?.reservationId) {
+      try {
+        await CustomerService.recordReservationEvent({
+          restaurantId,
+          phone,
+          reservationId: options.reservationId,
+          eventType: 'RESERVATION_CREATED',
+          occurredAt: options.occurredAt,
+        });
+      } catch (error) {
+        // CRM projections are repairable. Never make an accepted reservation
+        // or a completed call retry because a projection write is unavailable.
+        logger.warn(
+          {
+            err: error instanceof Error ? error.message : String(error),
+            restaurantId,
+            reservationId: options.reservationId,
+          },
+          '[crm] reservation timeline projection failed',
+        );
+      }
+    }
+  }
+
+  /**
+   * Append a reservation lifecycle event and refresh the deterministic
+   * customer metrics projection. All callers treat this as best effort so a
+   * repairable CRM outage cannot change reservation semantics.
+   */
+  static async recordReservationEvent(input: {
+    restaurantId: string;
+    reservationId: string;
+    eventType:
+      | 'RESERVATION_CREATED'
+      | 'RESERVATION_CANCELLED'
+      | 'RESERVATION_HONORED'
+      | 'RESERVATION_NO_SHOW';
+    customerId?: string | null;
+    phone?: string | null;
+    name?: string | null;
+    occurredAt?: Date;
+  }): Promise<void> {
+    const normalizedPhone = input.phone ? normalizeCustomerPhone(input.phone) : null;
+    let customerId = input.customerId ?? null;
+    if (!customerId && input.phone) {
+      const existing = await findCustomerForPhone(input.restaurantId, input.phone, normalizedPhone);
+      customerId = existing?.id ?? null;
+    }
+    if (!customerId && input.phone) {
+      const created = await CustomerService.lookupOrCreate(
+        input.restaurantId,
+        input.phone,
+        input.name ?? undefined,
+      );
+      customerId = created.id;
+    }
+    if (!customerId) return;
+
+    await appendCustomerTimelineEvent({
+      restaurantId: input.restaurantId,
+      customerId,
+      eventType: input.eventType,
+      sourceType: 'reservation',
+      sourceId: input.reservationId,
+      dedupeKey: buildCustomerTimelineDedupeKey({
+        restaurantId: input.restaurantId,
+        customerId,
+        eventType: input.eventType,
+        sourceType: 'reservation',
+        sourceId: input.reservationId,
+      }),
+      occurredAt: input.occurredAt,
+      summaryCode: `reservation.${input.eventType.slice('RESERVATION_'.length).toLowerCase()}`,
+    });
+    await rebuildCustomerMetricSnapshot({
+      restaurantId: input.restaurantId,
+      customerId,
+      now: input.occurredAt,
+    });
   }
 
   /**
@@ -61,6 +200,7 @@ export class CustomerService {
     restaurantId: string,
     phone: string,
     partySize: number | null,
+    options?: { callId?: string; occurredAt?: Date },
   ): Promise<void> {
     const data: Record<string, unknown> = { lastCallAt: new Date() };
     if (partySize && partySize > 0) {
@@ -82,7 +222,44 @@ export class CustomerService {
       where: { restaurantId, phone },
       data,
     });
-    await redisCache.del(`customer:${restaurantId}:${phone}`);
+    const normalizedPhone = normalizeCustomerPhone(phone);
+    await redisCache.del(`customer:${restaurantId}:${normalizedPhone ?? phone}`);
+
+    if (options?.callId) {
+      try {
+        const customer = await findCustomerForPhone(restaurantId, phone, normalizedPhone);
+        if (customer) {
+          await appendCustomerTimelineEvent({
+            restaurantId,
+            customerId: customer.id,
+            eventType: 'CALL_RECEIVED',
+            sourceType: 'call',
+            sourceId: options.callId,
+            dedupeKey: buildCustomerTimelineDedupeKey({
+              restaurantId,
+              customerId: customer.id,
+              eventType: 'CALL_RECEIVED',
+              sourceType: 'call',
+              sourceId: options.callId,
+            }),
+            occurredAt: options.occurredAt,
+            summaryCode: 'call.received',
+            metadata: partySize && partySize > 0 ? { partySize } : undefined,
+          });
+        }
+      } catch (error) {
+        // See incrementVisit: timeline projection failures are repairable and
+        // must not make the Telnyx webhook retry.
+        logger.warn(
+          {
+            err: error instanceof Error ? error.message : String(error),
+            restaurantId,
+            callId: options.callId,
+          },
+          '[crm] call timeline projection failed',
+        );
+      }
+    }
   }
 
   static buildVipPromptExtra(customer: CustomerContext): string {
@@ -111,4 +288,44 @@ export class CustomerService {
     }
     return '';
   }
+}
+
+async function findCustomerForPhone(
+  restaurantId: string,
+  phone: string,
+  normalizedPhone: string | null,
+): Promise<{ id: string } | null> {
+  if (normalizedPhone) {
+    const identity = await db.customerIdentity.findUnique({
+      where: {
+        restaurantId_type_normalizedValue: {
+          restaurantId,
+          type: 'PHONE',
+          normalizedValue: normalizedPhone,
+        },
+      },
+      include: {
+        customer: {
+          select: { id: true, restaurantId: true, archivedAt: true, mergedIntoId: true },
+        },
+      },
+    });
+    if (
+      identity?.customer.restaurantId === restaurantId &&
+      identity.customer.archivedAt === null &&
+      identity.customer.mergedIntoId === null
+    ) {
+      return { id: identity.customer.id };
+    }
+  }
+  return db.customer
+    .findUnique({
+      where: { restaurantId_phone: { restaurantId, phone } },
+      select: { id: true, archivedAt: true, mergedIntoId: true },
+    })
+    .then((customer) =>
+      customer && customer.archivedAt === null && customer.mergedIntoId === null
+        ? { id: customer.id }
+        : null,
+    );
 }

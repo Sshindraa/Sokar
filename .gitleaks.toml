@@ -1,0 +1,19 @@
+title = "Sokar gitleaks configuration"
+
+[extend]
+useDefault = true
+
+# `regulars_365d` is a stable, public system-segment identifier.  It is not a
+# credential, but the generic-api-key rule treats the `key` field as a secret
+# assignment.  Keep the exception scoped to this exact value and source file
+# so real credentials elsewhere remain covered by the default rules.
+[allowlist]
+description = "Known non-secret customer segment identifier"
+condition = "AND"
+regexTarget = "match"
+paths = [
+  '''^apps/api/src/modules/customers/customer-segment\\.service\\.ts$''',
+]
+regexes = [
+  '''regulars_365d''',
+]

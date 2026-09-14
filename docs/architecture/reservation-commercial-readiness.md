@@ -8,6 +8,14 @@ de notification. Les décisions produit `state`, capacité hybride,
 restrictions ci-dessous sont désormais des gates d'exploitation et de parcours,
 pas des décisions encore à prendre.
 
+Depuis le 14 septembre 2026, la finalisation du provisioning admin est également gardée côté API :
+`POST /admin/provisioning/:restaurantId/complete` ne peut plus fabriquer une activation `ACTIVE`
+sans numéro, webhook, renvoi et confirmation explicite de l'appel test. Le déclenchement de l'appel
+reste `TEST_CALL_PENDING` jusqu'à la validation du `callControlId` retourné par Telnyx ; les étapes
+webhook et renvoi disposent de mutations séparées. Le code `PROVISIONING_NOT_READY` liste les
+prérequis manquants. Cette garde locale ne constitue pas la preuve d'un appel provider réel en
+staging.
+
 | Surface            | Vendable maintenant ? | Restrictions nécessaires                                                                                                                       | Couverture disponible                                                                                                                               | Intervention humaine restante                                               |
 | ------------------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | Connect/widget     | **Non**               | Afficher `PENDING` comme « en attente » ; valider le timeout provider en staging avant tout pilote client.                                     | Holds, confirm, conflits, timezone, gift card et idempotence couverts localement ; parcours métier complet encore à valider.                        | Support pour les annulations et les conflits jusqu'à validation du contrat. |

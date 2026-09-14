@@ -107,6 +107,17 @@ if [ "$DEPLOY_ENV" = "prod" ] && [ "$CONFIRM_PRODUCTION" != true ]; then
     exit 2
 fi
 
+# Le gel des chantiers 199/299 est une porte technique, pas seulement une
+# convention documentaire. Les rollbacks restent autorisés ; un déploiement
+# production ne passe que lorsque le manifest contient exclusivement des
+# portes CLOSED et que productionFreeze=false.
+if [ "$DEPLOY_ENV" = "prod" ] && [ "$COMMAND" = "deploy" ]; then
+    if ! node "$SOKAR_ROOT/scripts/verify-product-gates.mjs"; then
+        log_error "Déploiement production refusé : les portes produit 199/299 ne sont pas clôturées."
+        exit 3
+    fi
+fi
+
 # ══════════════════════════════════════════════════════════
 # Commande ROLLBACK
 # ══════════════════════════════════════════════════════════

@@ -309,6 +309,7 @@ export class GiftCardService {
         await Promise.allSettled([
           sendRefundNotificationSender({
             giftCardId: giftCard.id,
+            restaurantId: giftCard.restaurantId,
             shortCode: giftCard.shortCode,
             code: giftCard.code,
             refundAmount,
@@ -319,6 +320,7 @@ export class GiftCardService {
           }),
           sendRefundNotificationRestaurant({
             giftCardId: giftCard.id,
+            restaurantId: giftCard.restaurantId,
             shortCode: giftCard.shortCode,
             code: giftCard.code,
             refundAmount,

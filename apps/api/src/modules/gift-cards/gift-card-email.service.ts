@@ -10,9 +10,12 @@
 import { sendEmail } from '../../shared/email';
 import { logger } from '../../shared/logger/pino';
 import type { NotificationSendResult } from '../../shared/queue/notification-idempotency';
+import type { MessagingUsageContext } from '../usage/messaging-usage.service';
 
 type GiftCardEmailData = {
   giftCardId: string;
+  restaurantId?: string;
+  accountId?: string | null;
   code: string;
   shortCode: string | null;
   amount: number;
@@ -25,6 +28,22 @@ type GiftCardEmailData = {
   occasion: string | null;
   pdfUrl: string | null;
 };
+
+function giftCardEmailUsage(
+  input: { restaurantId?: string; accountId?: string | null },
+  sourceType: string,
+  sourceId: string,
+  messageType: string,
+): MessagingUsageContext | undefined {
+  if (!input.restaurantId) return undefined;
+  return {
+    restaurantId: input.restaurantId,
+    accountId: input.accountId,
+    sourceType,
+    sourceId,
+    metadata: { messageType },
+  };
+}
 
 /**
  * Reçu de paiement envoyé à l'expéditeur.
@@ -64,6 +83,7 @@ export async function sendSenderReceipt(data: GiftCardEmailData): Promise<void> 
     to: data.senderEmail,
     subject: `Reçu de votre carte cadeau — ${data.restaurantName}`,
     html,
+    usage: giftCardEmailUsage(data, 'gift_card_sender_receipt', data.giftCardId, 'gift_card_email'),
   });
 }
 
@@ -100,6 +120,12 @@ export async function sendRecipientGiftCard(data: GiftCardEmailData): Promise<vo
     to: data.recipientEmail,
     subject: `Vous avez reçu une carte cadeau de ${data.amount}€ — ${data.restaurantName}`,
     html,
+    usage: giftCardEmailUsage(
+      data,
+      'gift_card_recipient_delivery',
+      data.giftCardId,
+      'gift_card_email',
+    ),
   });
 }
 
@@ -109,6 +135,8 @@ export async function sendRecipientGiftCard(data: GiftCardEmailData): Promise<vo
 export async function sendRestaurantSaleNotification(input: {
   restaurantName: string;
   restaurantEmail: string | null;
+  restaurantId?: string;
+  accountId?: string | null;
   amount: number;
   commissionAmount: number;
   senderName: string | null;
@@ -156,6 +184,12 @@ export async function sendRestaurantSaleNotification(input: {
     to: input.restaurantEmail,
     subject: `Nouvelle vente de carte cadeau — ${input.amount}€`,
     html,
+    usage: giftCardEmailUsage(
+      input,
+      'gift_card_sale_notification',
+      input.giftCardId,
+      'gift_card_sale_notification',
+    ),
   });
 }
 
@@ -166,6 +200,9 @@ export async function sendRestaurantSaleNotification(input: {
  */
 export async function sendContributionConfirmation(input: {
   to: string;
+  restaurantId?: string;
+  accountId?: string | null;
+  giftCardId?: string;
   contributorName: string;
   amount: number;
   title: string;
@@ -194,6 +231,14 @@ export async function sendContributionConfirmation(input: {
     to: input.to,
     subject: `Confirmation de votre contribution — ${input.title}`,
     html,
+    usage: input.giftCardId
+      ? giftCardEmailUsage(
+          input,
+          'gift_card_crowdfunding_contribution',
+          input.giftCardId,
+          'gift_card_crowdfunding_contribution',
+        )
+      : undefined,
   });
 }
 
@@ -202,6 +247,9 @@ export async function sendContributionConfirmation(input: {
  */
 export async function sendCrowdfundingContributionNotification(input: {
   to: string;
+  restaurantId?: string;
+  accountId?: string | null;
+  giftCardId?: string;
   creatorName: string;
   contributorName: string;
   amount: number;
@@ -230,6 +278,14 @@ export async function sendCrowdfundingContributionNotification(input: {
     to: input.to,
     subject: `Nouvelle contribution — ${input.title} (+${input.amount}€)`,
     html,
+    usage: input.giftCardId
+      ? giftCardEmailUsage(
+          input,
+          'gift_card_crowdfunding_notification',
+          input.giftCardId,
+          'gift_card_crowdfunding_notification',
+        )
+      : undefined,
   });
 }
 
@@ -239,6 +295,9 @@ export async function sendCrowdfundingContributionNotification(input: {
  */
 export async function sendCrowdfundingClosed(input: {
   to: string;
+  restaurantId?: string;
+  accountId?: string | null;
+  giftCardId?: string;
   recipientName: string;
   title: string;
   totalCollected: number;
@@ -288,6 +347,14 @@ export async function sendCrowdfundingClosed(input: {
     to: input.to,
     subject: `Votre cagnotte est prête — ${input.finalAmount}€ chez ${input.restaurantName}`,
     html,
+    usage: input.giftCardId
+      ? giftCardEmailUsage(
+          input,
+          'gift_card_crowdfunding_closed',
+          input.giftCardId,
+          'gift_card_email',
+        )
+      : undefined,
   });
 }
 
@@ -295,6 +362,8 @@ export async function sendCrowdfundingClosed(input: {
 
 type ExpirationReminderData = {
   giftCardId: string;
+  restaurantId?: string;
+  accountId?: string | null;
   code: string;
   shortCode: string | null;
   amount: number;
@@ -361,6 +430,12 @@ export async function sendExpirationReminder(
       to: data.recipientEmail,
       subject: `Votre carte cadeau ${data.restaurantName} expire bientôt`,
       html,
+      usage: giftCardEmailUsage(
+        data,
+        'gift_card_expiration_reminder',
+        data.giftCardId,
+        'gift_card_expiration_reminder',
+      ),
     });
     logger.info(
       { giftCardId: data.giftCardId, recipientEmail: data.recipientEmail },
@@ -378,6 +453,8 @@ export async function sendExpirationReminder(
 
 type RefundEmailData = {
   giftCardId: string;
+  restaurantId?: string;
+  accountId?: string | null;
   shortCode: string | null;
   code: string;
   refundAmount: number;
@@ -424,6 +501,12 @@ export async function sendRefundNotificationSender(data: RefundEmailData): Promi
       to: data.senderEmail,
       subject: `Remboursement carte cadeau ${data.restaurantName}`,
       html,
+      usage: giftCardEmailUsage(
+        data,
+        'gift_card_refund_sender',
+        data.giftCardId,
+        'gift_card_refund',
+      ),
     });
     logger.info(
       { giftCardId: data.giftCardId },
@@ -474,6 +557,12 @@ export async function sendRefundNotificationRestaurant(data: RefundEmailData): P
       to: data.restaurantEmail,
       subject: `Carte cadeau annulée — ${data.restaurantName}`,
       html,
+      usage: giftCardEmailUsage(
+        data,
+        'gift_card_refund_restaurant',
+        data.giftCardId,
+        'gift_card_refund',
+      ),
     });
     logger.info(
       { giftCardId: data.giftCardId },

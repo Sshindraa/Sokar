@@ -15,6 +15,10 @@ export const queues = {
     connection: redisQueue,
     defaultJobOptions: defaultReliableJobOptions,
   }),
+  usageAlerts: new Queue('usage-alerts', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
   analytics: new Queue('analytics', {
     connection: redisQueue,
     defaultJobOptions: defaultReliableJobOptions,
@@ -66,6 +70,34 @@ export const queues = {
     defaultJobOptions: defaultReliableJobOptions,
   }),
   reactivation: new Queue('reactivation', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
+  marketingCampaign: new Queue('marketing-campaign', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
+  marketingAutomation: new Queue('marketing-automation', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
+  marketingProviderReconciliation: new Queue('marketing-provider-reconciliation', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
+  reputationFeedbackExpiry: new Queue('reputation-feedback-expiry', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
+  loyaltyGrantExpiry: new Queue('loyalty-grant-expiry', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
+  experienceSessionExpiry: new Queue('experience-session-expiry', {
+    connection: redisQueue,
+    defaultJobOptions: defaultReliableJobOptions,
+  }),
+  eventSessionExpiry: new Queue('event-session-expiry', {
     connection: redisQueue,
     defaultJobOptions: defaultReliableJobOptions,
   }),

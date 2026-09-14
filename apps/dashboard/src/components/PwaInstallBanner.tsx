@@ -10,7 +10,10 @@ export default function PwaInstallBanner() {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
-    if (pathname?.startsWith('/widget') || pathname?.startsWith('/book')) {
+    // L'invite est un onboarding du cockpit. Elle ne doit pas recouvrir une
+    // réservation, une fiche client ou une action de service sur les écrans
+    // secondaires ; le restaurateur peut revenir au cockpit pour l'installer.
+    if (pathname !== '/dashboard') {
       setShow(false);
       return;
     }

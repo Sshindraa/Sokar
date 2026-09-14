@@ -29,6 +29,7 @@ import {
   Gift,
   Languages,
   ListOrdered,
+  ShieldCheck,
 } from 'lucide-react';
 import { SYSTEM_PROMPT_EXTRA_MAX_LENGTH } from '@/constants/ui';
 import { SiteManagementCard } from '@/features/sites/site-management-card';
@@ -51,6 +52,29 @@ const FILLER_OPTIONS = [
   { value: 'WARM', label: 'Chaleureux', desc: 'Pas de souci, je regarde ça !' },
   { value: 'FORMAL', label: 'Formel', desc: 'Veuillez patienter un instant…' },
 ];
+
+const CRM_PRIVACY_ROLES = [
+  { value: 'OWNER', label: 'Propriétaires', description: 'Accès complet aux notes sensibles.' },
+  { value: 'MANAGER', label: 'Managers', description: 'Accès opérationnel aux notes du site.' },
+  { value: 'STAFF', label: 'Équipe de service', description: 'Accès pendant le service.' },
+  {
+    value: 'READ_ONLY',
+    label: 'Lecture seule',
+    description: 'Accès en lecture sans modification.',
+  },
+  {
+    value: 'ORG_MEMBER',
+    label: 'Membres de l’organisation',
+    description: 'Accès organisationnel générique.',
+  },
+] as const;
+
+type CrmPrivacyResponse = {
+  data?: {
+    sensitiveNoteRoles?: string[];
+    source?: 'SITE' | 'ENVIRONMENT';
+  };
+};
 
 export default function SettingsPage() {
   const { get, post, patch, orgId } = useApi();
@@ -101,6 +125,13 @@ export default function SettingsPage() {
   const [giftCardEnabled, setGiftCardEnabled] = useState(false);
   const [savingGiftCard, setSavingGiftCard] = useState(false);
   const [savedGiftCard, setSavedGiftCard] = useState(false);
+
+  // CRM privacy
+  const [crmPrivacyRoles, setCrmPrivacyRoles] = useState<string[]>(['OWNER', 'MANAGER']);
+  const [crmPrivacySource, setCrmPrivacySource] = useState<'SITE' | 'ENVIRONMENT'>('ENVIRONMENT');
+  const [loadingCrmPrivacy, setLoadingCrmPrivacy] = useState(false);
+  const [savingCrmPrivacy, setSavingCrmPrivacy] = useState(false);
+  const [savedCrmPrivacy, setSavedCrmPrivacy] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -166,6 +197,31 @@ export default function SettingsPage() {
       }
     })();
   }, [orgId, get]);
+
+  useEffect(() => {
+    const canManage = !accountId || activeSite?.role === 'OWNER';
+    if (!orgId || !canManage) return;
+    let cancelled = false;
+    setLoadingCrmPrivacy(true);
+    void get<CrmPrivacyResponse>('crm/privacy')
+      .then((response) => {
+        if (cancelled) return;
+        const roles = response.data?.sensitiveNoteRoles;
+        setCrmPrivacyRoles(
+          Array.isArray(roles) && roles.includes('OWNER') ? roles : ['OWNER', 'MANAGER'],
+        );
+        setCrmPrivacySource(response.data?.source === 'SITE' ? 'SITE' : 'ENVIRONMENT');
+      })
+      .catch(() => {
+        // La carte reste discrète si la politique n'est pas disponible pour ce compte.
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCrmPrivacy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId, activeSite?.role, get, orgId]);
 
   if (loading) {
     return (
@@ -328,6 +384,33 @@ export default function SettingsPage() {
     }
   }
 
+  function toggleCrmPrivacyRole(role: string) {
+    if (role === 'OWNER') return;
+    setSavedCrmPrivacy(false);
+    setCrmPrivacyRoles((current) =>
+      current.includes(role) ? current.filter((value) => value !== role) : [...current, role],
+    );
+  }
+
+  async function handleCrmPrivacySave() {
+    setSavingCrmPrivacy(true);
+    setSavedCrmPrivacy(false);
+    setError('');
+    try {
+      const response = await patch<CrmPrivacyResponse>('crm/privacy', {
+        sensitiveNoteRoles: crmPrivacyRoles,
+      });
+      const roles = response.data?.sensitiveNoteRoles;
+      if (Array.isArray(roles) && roles.includes('OWNER')) setCrmPrivacyRoles(roles);
+      setCrmPrivacySource('SITE');
+      setSavedCrmPrivacy(true);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Erreur lors de la sauvegarde de la visibilité CRM'));
+    } finally {
+      setSavingCrmPrivacy(false);
+    }
+  }
+
   async function handleOpenBillingPortal() {
     setOpeningBillingPortal(true);
     setError('');
@@ -345,6 +428,7 @@ export default function SettingsPage() {
   const plan = restaurant?.plan ?? 'STARTER';
   const planInfo = PLAN_FEATURES[plan] ?? PLAN_FEATURES.STARTER;
   const canManageBilling = !accountId || activeSite?.role === 'OWNER';
+  const canManageCrmPrivacy = !accountId || activeSite?.role === 'OWNER';
   const billingStatusLabel =
     billingStatus?.subscriptionStatus === 'past_due'
       ? 'Paiement en attente'
@@ -431,6 +515,73 @@ export default function SettingsPage() {
       </Card>
 
       <SiteManagementCard />
+
+      {canManageCrmPrivacy && (
+        <Card className="sokar-card transition-all duration-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <ShieldCheck size={18} />
+              Visibilité des notes CRM
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Choisissez les rôles de cet établissement qui peuvent lire les notes client et les
+              métadonnées de chronologie. Le rôle propriétaire reste toujours autorisé.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {loadingCrmPrivacy ? (
+              <Skeleton className="h-24 w-full rounded-xl" />
+            ) : (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {CRM_PRIVACY_ROLES.map((role) => (
+                    <label
+                      key={role.value}
+                      className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-secondary p-4 transition-all duration-200 hover:bg-accent"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={crmPrivacyRoles.includes(role.value)}
+                        disabled={role.value === 'OWNER' || savingCrmPrivacy}
+                        onChange={() => toggleCrmPrivacyRole(role.value)}
+                        className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                      />
+                      <span>
+                        <span className="block text-sm font-medium text-foreground">
+                          {role.label}
+                        </span>
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          {role.description}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    onClick={() => void handleCrmPrivacySave()}
+                    disabled={savingCrmPrivacy}
+                  >
+                    <Save size={16} />
+                    {savingCrmPrivacy ? 'Enregistrement...' : 'Enregistrer la visibilité'}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Source :{' '}
+                    {crmPrivacySource === 'SITE' ? 'règle de ce site' : 'règle environnement'}
+                  </span>
+                  {savedCrmPrivacy && (
+                    <span className="flex items-center gap-1 text-sm text-primary">
+                      <CheckCircle2 size={16} />
+                      Enregistré
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Préférences d'affichage */}
       <Card className="sokar-card transition-all duration-200">

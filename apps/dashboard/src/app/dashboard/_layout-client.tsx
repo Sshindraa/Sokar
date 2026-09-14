@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { ReactNode, useEffect, useState } from 'react';
 import { SokarLogo } from '@/components/SokarLogo';
 import { useTranslations } from 'next-intl';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   BarChart3,
   CalendarCheck,
@@ -21,7 +21,12 @@ import {
   Sun,
   Radio,
   PencilRuler,
-  Activity,
+  Megaphone,
+  Star,
+  Award,
+  Ticket,
+  Share2,
+  ShieldCheck,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -55,26 +60,36 @@ type NavKey =
   | 'calls'
   | 'reservations'
   | 'customers'
+  | 'marketing'
+  | 'reputation'
+  | 'loyalty'
+  | 'experiences'
+  | 'events'
+  | 'distribution'
   | 'reactivation'
   | 'giftCards'
   | 'agentic'
   | 'connect'
   | 'widget'
-  | 'provisioning'
-  | 'health';
+  | 'admin';
 
-const navConfig: { href: string; key: NavKey; icon: LucideIcon }[] = [
+const navConfig: { href: string; key: NavKey; icon: LucideIcon; operatorOnly?: boolean }[] = [
   { href: '/dashboard', key: 'overview', icon: BarChart3 },
   { href: '/dashboard/calls', key: 'calls', icon: PhoneCall },
   { href: '/dashboard/reservations', key: 'reservations', icon: CalendarCheck },
   { href: '/dashboard/customers', key: 'customers', icon: Users },
+  { href: '/dashboard/marketing', key: 'marketing', icon: Megaphone },
+  { href: '/dashboard/reputation', key: 'reputation', icon: Star },
+  { href: '/dashboard/loyalty', key: 'loyalty', icon: Award },
+  { href: '/dashboard/experiences', key: 'experiences', icon: CalendarCheck },
+  { href: '/dashboard/events', key: 'events', icon: Ticket },
+  { href: '/dashboard/distribution', key: 'distribution', icon: Share2 },
   { href: '/dashboard/reactivation', key: 'reactivation', icon: HeartHandshake },
   { href: '/dashboard/gift-cards', key: 'giftCards', icon: Gift },
   { href: '/dashboard/agentic', key: 'agentic', icon: Sparkles },
   { href: '/dashboard/connect', key: 'connect', icon: Zap },
   { href: '/dashboard/widget', key: 'widget', icon: Code },
-  { href: '/dashboard/admin/provisioning', key: 'provisioning', icon: Radio },
-  { href: '/dashboard/admin/health', key: 'health', icon: Activity },
+  { href: '/admin', key: 'admin', icon: ShieldCheck, operatorOnly: true },
 ];
 
 function SidebarNavItem({
@@ -149,7 +164,21 @@ function SettingsButton({ active = false }: { active?: boolean }) {
 function isNavItemActive(pathname: string, item: (typeof navConfig)[number]) {
   return item.key === 'giftCards'
     ? pathname.startsWith('/dashboard/gift-card')
-    : pathname === item.href;
+    : item.key === 'customers'
+      ? pathname.startsWith('/dashboard/customers')
+      : item.key === 'marketing'
+        ? pathname.startsWith('/dashboard/marketing')
+        : item.key === 'loyalty'
+          ? pathname.startsWith('/dashboard/loyalty')
+          : item.key === 'experiences'
+            ? pathname.startsWith('/dashboard/experiences')
+            : item.key === 'events'
+              ? pathname.startsWith('/dashboard/events')
+              : item.key === 'distribution'
+                ? pathname.startsWith('/dashboard/distribution')
+                : item.key === 'admin'
+                  ? pathname.startsWith('/admin')
+                  : pathname === item.href;
 }
 
 function DashboardModeSwitcher({ salleMode }: { salleMode: boolean }) {
@@ -190,7 +219,15 @@ function DashboardModeSwitcher({ salleMode }: { salleMode: boolean }) {
   );
 }
 
-function DashboardSidebar({ pathname, salleView }: { pathname: string; salleView: string }) {
+function DashboardSidebar({
+  pathname,
+  salleView,
+  isSokarOperator,
+}: {
+  pathname: string;
+  salleView: string;
+  isSokarOperator: boolean;
+}) {
   const tNav = useTranslations('nav');
   const salleMode = pathname.startsWith('/dashboard/floor-plan');
 
@@ -227,15 +264,17 @@ function DashboardSidebar({ pathname, salleView }: { pathname: string; salleView
             />
           </>
         ) : (
-          navConfig.map((item) => (
-            <SidebarNavItem
-              key={item.href}
-              href={item.href}
-              label={tNav(item.key)}
-              icon={item.icon}
-              active={isNavItemActive(pathname, item)}
-            />
-          ))
+          navConfig
+            .filter((item) => !item.operatorOnly || isSokarOperator)
+            .map((item) => (
+              <SidebarNavItem
+                key={item.href}
+                href={item.href}
+                label={tNav(item.key)}
+                icon={item.icon}
+                active={isNavItemActive(pathname, item)}
+              />
+            ))
         )}
       </nav>
 
@@ -251,9 +290,54 @@ function DashboardSidebar({ pathname, salleView }: { pathname: string; salleView
 function DashboardShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { theme } = useDashboardTheme();
-  const { orgId, get } = useApi();
+  const { orgId, get, isSignedIn } = useApi();
   const [restaurantName, setRestaurantName] = useState('Restaurant');
+  const [operatorAccess, setOperatorAccess] = useState<boolean | null>(null);
+  const isLegacyOperatorPath =
+    pathname === '/dashboard/usage' ||
+    pathname === '/dashboard/admin' ||
+    pathname.startsWith('/dashboard/admin/');
+  const legacyOperatorDestination =
+    pathname === '/dashboard/usage'
+      ? '/admin/margin'
+      : pathname.replace(/^\/dashboard\/admin(?=\/|$)/, '/admin') || '/admin';
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!isSignedIn) {
+      setOperatorAccess(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setOperatorAccess(null);
+    void get<{ allowed?: boolean }>('admin/access')
+      .then((response) => {
+        if (!cancelled) setOperatorAccess(response.allowed === true);
+      })
+      .catch(() => {
+        // Fail closed: an unavailable capability probe must never reveal an
+        // internal navigation item or page to a restaurant account.
+        if (!cancelled) setOperatorAccess(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [get, isSignedIn]);
+
+  useEffect(() => {
+    if (!isLegacyOperatorPath || operatorAccess === null) return;
+    if (operatorAccess) {
+      router.replace(legacyOperatorDestination);
+    } else {
+      router.replace('/dashboard');
+    }
+  }, [isLegacyOperatorPath, legacyOperatorDestination, operatorAccess, router]);
 
   useEffect(() => {
     if (!orgId) return;
@@ -278,7 +362,11 @@ function DashboardShell({ children }: { children: ReactNode }) {
       <DashboardOnboardingGate />
       <OnboardingModal />
       <DashboardModeSwitcher salleMode={pathname.startsWith('/dashboard/floor-plan')} />
-      <DashboardSidebar pathname={pathname} salleView={searchParams.get('view') ?? ''} />
+      <DashboardSidebar
+        pathname={pathname}
+        salleView={searchParams.get('view') ?? ''}
+        isSokarOperator={operatorAccess === true}
+      />
       <div className="fixed left-24 top-4 z-50 hidden h-12 max-w-[calc(50vw-18rem)] items-center gap-3 xl:flex">
         <span className="truncate text-lg font-black tracking-tight text-foreground font-display">
           {restaurantName} HQ
@@ -312,7 +400,18 @@ function DashboardShell({ children }: { children: ReactNode }) {
           </div>
         </div>
         <DashboardOnboardingPanel />
-        <main className="min-h-[calc(100vh-12rem)] md:min-h-[calc(100vh-14rem)]">{children}</main>
+        <main className="min-h-[calc(100vh-12rem)] md:min-h-[calc(100vh-14rem)]">
+          {isLegacyOperatorPath && operatorAccess !== true ? (
+            <div
+              className="flex min-h-[calc(100vh-16rem)] items-center justify-center text-sm text-muted-foreground"
+              aria-busy="true"
+            >
+              Vérification des accès…
+            </div>
+          ) : (
+            children
+          )}
+        </main>
       </div>
       {/* Mobile bottom tab bar */}
       <MobileBottomNav />

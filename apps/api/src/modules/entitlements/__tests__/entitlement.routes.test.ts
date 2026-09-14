@@ -33,6 +33,8 @@ describe('GET /entitlements', () => {
       capabilities: {
         'voice.inbound': true,
         'reactivation.manage': false,
+        'customers.advanced': false,
+        'marketing.segments': false,
         'account.multiSite': false,
       },
       limits: { sites: 1 },
@@ -50,7 +52,9 @@ describe('GET /entitlements', () => {
     expect(response.statusCode).toBe(200);
     expect(body.id).toBe('pro');
     expect(body.capabilities['customers.vipRecognition']).toBe(true);
+    expect(body.capabilities['customers.advanced']).toBe(true);
     expect(body.capabilities['reactivation.manage']).toBe(true);
+    expect(body.capabilities['marketing.segments']).toBe(true);
     expect(body.capabilities['account.multiSite']).toBe(false);
     expect(JSON.stringify(body)).not.toContain('cost');
     expect(Date.parse(body.evaluatedAt)).not.toBeNaN();

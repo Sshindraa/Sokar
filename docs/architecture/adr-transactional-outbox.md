@@ -49,7 +49,9 @@ objets imbriqués. Un consommateur recharge les données autorisées depuis Post
 
 - garantie visée : **at-least-once**, jamais exactly-once ;
 - Redis peut être indisponible sans perdre l'intention durable ;
-- la purge/rétention et le traitement des topics CRM/marketing seront ajoutés avec leurs ADR ;
+- la purge/rétention et le traitement des mutations CRM restent à brancher sur l'outbox ; le
+  contrôle de campagne actuel conserve ses états dans Postgres et publie directement dans la queue
+  BullMQ, avec un flag d'envoi désactivé par défaut ;
 - l'implémentation actuelle ne marque pas encore la consommation métier comme un nouvel état :
   BullMQ, les retries et les clés idempotentes restent la preuve de traitement.
 

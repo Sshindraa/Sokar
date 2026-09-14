@@ -17,6 +17,7 @@ import { isWhatsAppConfigured, sendWhatsAppTemplate } from '../whatsapp/client';
 import { trackMessagingEvent } from '../../modules/analytics/events.service';
 import { logger } from '../logger/pino';
 import { recordNotificationProviderResult } from '../observability/metrics';
+import type { MessagingUsageContext } from '../../modules/usage/messaging-usage.service';
 import {
   acquireNotificationClaim,
   buildNotificationClaimKey,
@@ -272,6 +273,15 @@ export async function sendReminder(
     params;
 
   let fellBackFromWhatsApp = false;
+  const usageContext: MessagingUsageContext | undefined =
+    restaurantId && reservationId
+      ? {
+          restaurantId,
+          sourceType: 'reservation_reminder',
+          sourceId: reservationId,
+          metadata: { messageType: 'reservation_reminder', ...(customerId ? { customerId } : {}) },
+        }
+      : undefined;
 
   // A retry must inspect both channel claims before selecting a provider. This
   // prevents a previous unknown SMS result from causing a fresh WhatsApp call.
@@ -284,12 +294,13 @@ export async function sendReminder(
 
     try {
       const providerResult = asSendResult(
-        await sendWhatsAppTemplate(to, 'reservation_reminder', 'fr', [
-          restaurantName,
-          date,
-          time,
-          String(partySize),
-        ]),
+        await sendWhatsAppTemplate(
+          to,
+          'reservation_reminder',
+          'fr',
+          [restaurantName, date, time, String(partySize)],
+          usageContext,
+        ),
         'telnyx',
         'whatsapp',
       );
@@ -348,7 +359,7 @@ export async function sendReminder(
   // SMS fallback (ou canal par défaut si WhatsApp non configuré).
   try {
     const smsText = `Rappel ${restaurantName}: votre réservation ${date} à ${time} pour ${partySize} pers. Nous avons hâte de vous accueillir.`;
-    const providerResult = asSendResult(await sendSms(to, smsText), 'telnyx', 'sms');
+    const providerResult = asSendResult(await sendSms(to, smsText, usageContext), 'telnyx', 'sms');
     await retainClaimResult(
       options.claimStore,
       options.reconciliationQueue,
@@ -397,13 +408,24 @@ export async function sendReactivation(
   restaurantName: string,
   customerName: string,
   restaurantPhone: string,
+  usageContext?: MessagingUsageContext,
 ): Promise<SendResult> {
   const firstName = customerName.split(' ')[0] || customerName;
   const text = `Bonjour ${firstName}, cela fait un moment qu'on ne vous a pas vu chez ${restaurantName}. On serait ravis de vous revoir ! Réservez au ${restaurantPhone}.`;
 
   try {
-    await sendSms(to, text);
-    return { channel: 'sms', success: true };
+    const result = normalizeNotificationSendResult(
+      await sendSms(to, text, usageContext),
+      'telnyx',
+      'sms',
+    );
+    return {
+      channel: 'sms',
+      success: result.outcome === 'success',
+      outcome: result.outcome,
+      provider: result.provider,
+      ...(result.providerMessageId ? { providerMessageId: result.providerMessageId } : {}),
+    };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return { channel: 'sms', success: false, error: message };

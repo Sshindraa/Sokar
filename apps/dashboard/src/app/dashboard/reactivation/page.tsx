@@ -35,6 +35,9 @@ interface ReactivationCampaign {
   sentAt: string | null;
   createdAt: string;
   customerCount: number;
+  marketingCampaignId?: string | null;
+  marketingCampaignStatus?: string | null;
+  lastErrorCode?: string | null;
   customers: ReactivationCustomer[];
 }
 
@@ -42,6 +45,9 @@ function StatusBadge({ status }: { status: string }) {
   if (status === 'PENDING') return <Badge className="bg-warning">En attente</Badge>;
   if (status === 'SENT') return <Badge className="bg-success">Envoyée</Badge>;
   if (status === 'DISMISSED') return <Badge className="bg-zinc-600">Ignorée</Badge>;
+  if (status === 'MIGRATED') return <Badge className="bg-muted">Envoi préparé</Badge>;
+  if (status === 'FAILED') return <Badge variant="destructive">Échec</Badge>;
+  if (status === 'CANCELLED') return <Badge className="bg-zinc-600">Annulée</Badge>;
   return <Badge>{status}</Badge>;
 }
 
@@ -82,10 +88,22 @@ export default function ReactivationPage() {
   async function sendCampaign(id: string) {
     setActionLoading(id);
     try {
-      await post(`dashboard/reactivation/${id}/send`);
+      const result = await post<{
+        campaignId: string;
+        audienceCount: number;
+        droppedCustomerCount: number;
+      }>(`dashboard/reactivation/${id}/send`);
       setCampaigns((prev) =>
         prev.map((c) =>
-          c.id === id ? { ...c, status: 'SENT', sentAt: new Date().toISOString() } : c,
+          c.id === id
+            ? {
+                ...c,
+                status: 'MIGRATED',
+                marketingCampaignId: result.campaignId,
+                marketingCampaignStatus: 'READY',
+                customerCount: result.audienceCount,
+              }
+            : c,
         ),
       );
     } catch (err: unknown) {

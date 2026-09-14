@@ -21,6 +21,7 @@ type RestaurantReservationInput = {
   restaurant_id: string;
   restaurant_name?: string;
   restaurant_slug?: string;
+  marketingAttributionToken?: string;
   restaurant_image?: string;
   restaurant_address?: {
     address: string;
@@ -92,6 +93,7 @@ function readToolInput(): RestaurantReservationInput | null {
       restaurant_id: params.get('restaurant_id') || slug,
       restaurant_name: params.get('restaurant_name') || undefined,
       restaurant_slug: slug,
+      marketingAttributionToken: params.get('marketingAttributionToken') || undefined,
     };
   }
   const restaurant_id = params.get('restaurant_id');
@@ -100,6 +102,7 @@ function readToolInput(): RestaurantReservationInput | null {
       restaurant_id,
       restaurant_name: params.get('restaurant_name') || undefined,
       restaurant_slug: params.get('restaurant_slug') || undefined,
+      marketingAttributionToken: params.get('marketingAttributionToken') || undefined,
     };
   }
   return null;
@@ -165,6 +168,16 @@ export function ReservationWidget() {
   }, []);
 
   const slug = useMemo(() => input?.restaurant_slug, [input]);
+  const marketingAttributionToken = input?.marketingAttributionToken;
+
+  useEffect(() => {
+    if (!marketingAttributionToken || marketingAttributionToken.length < 20) return;
+    void fetchWithTimeout(`${API_URL}/marketing/attribution/click`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: marketingAttributionToken }),
+    }).catch(() => undefined);
+  }, [marketingAttributionToken]);
 
   // -------------------------------------------------------------------------
   // Actions
@@ -294,6 +307,7 @@ export function ReservationWidget() {
             email: email.trim() || undefined,
           },
           specialRequests: specialRequests.trim() || undefined,
+          ...(marketingAttributionToken ? { marketingAttributionToken } : {}),
           source: 'chatgpt',
           website,
         }),

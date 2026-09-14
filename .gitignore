@@ -52,6 +52,7 @@ packages/**/*.d.ts.map
 
 # Dossiers temporaires de scratch et logs
 apps/api/scratch/
+private/
 *.log
 *.mp3
 *.cpuprofile

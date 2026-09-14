@@ -147,9 +147,13 @@ const EnvSchema = z
     SERVICE_COPILOT_TELEMETRY_SECRET: z.string().min(32).optional(),
     // Clés API critiques — validées au démarrage en production
     TELNYX_API_KEY: z.string().optional(),
+    TELNYX_PUBLIC_KEY: z.string().optional(),
+    TELNYX_FROM_NUMBER: z.string().optional(),
     // Profil Telnyx utilisé pour les SMS transactionnels et leurs webhooks.
     // Le numéro expéditeur doit aussi être affecté à ce profil côté Telnyx.
     TELNYX_MESSAGING_PROFILE_ID: z.string().optional(),
+    // Numéro WhatsApp Business affecté au profil de messagerie Telnyx.
+    TELNYX_WHATSAPP_FROM: z.string().optional(),
     // Base URL Telnyx pour les appels fetch directs — défaut US.
     // Le SDK Telnyx utilise TELNYX_API_BASE (sans https://).
     // Pour Frankfurt : TELNYX_API_URL=https://api.telnyx.eu + TELNYX_API_BASE=api.telnyx.eu
@@ -203,6 +207,9 @@ const EnvSchema = z
     // bypass SMTP block sur Frankfurt VPS). L'ancienne config SMTP_* est
     // dépréciée — RESEND_API_KEY est la seule clé nécessaire.
     RESEND_API_KEY: z.string().optional(),
+    // Secret Svix/Resend utilisé pour vérifier les callbacks de livraison.
+    // Il reste optionnel tant que les envois marketing sont gelés.
+    RESEND_WEBHOOK_SECRET: z.string().min(16).optional(),
     EMAIL_FROM: z.string().optional(),
     // Canaux d'alerte ops (monitoring pilote). Tous optionnels ; si aucun n'est
     // défini, les alertes ne partent que dans les logs + Sentry.
@@ -212,6 +219,46 @@ const EnvSchema = z
     ALERT_EMAIL_TO: z.string().optional(),
     ALERT_WEBHOOK_URL: z.string().url().optional(),
     ALERT_SMS_TO: z.string().optional(),
+    // Jeton séparé pour le feed interne de marge (jamais exposé au dashboard client).
+    SOKAR_INTERNAL_USAGE_TOKEN: z.string().optional(),
+    // Rôles autorisés à lire les notes CRM sensibles. CSV ; le défaut applique
+    // le moindre privilège (Owner + Manager), sans exposer la valeur au client.
+    CRM_SENSITIVE_NOTE_ROLES: z.string().default('OWNER,MANAGER'),
+    // Seuils de suivi opérationnel 70/90/100 %. Aucun quota client n'est
+    // appliqué ; ce worker reste optionnel et désactivé par défaut.
+    USAGE_ALERTS_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Budgets mensuels de cost-watch opérateur, jamais communiqués au client
+    // et sans effet sur l'acceptation d'un appel, SMS ou réservation.
+    USAGE_ALERT_VOICE_BUDGET_MINUTES: z.coerce.number().positive().optional(),
+    USAGE_ALERT_SMS_BUDGET_SEGMENTS: z.coerce.number().positive().optional(),
+    // Jeton séparé pour la réconciliation interne des callbacks marketing.
+    SOKAR_INTERNAL_MARKETING_TOKEN: z.string().optional(),
+    // Les envois marketing restent verrouillés par défaut, même si les clés
+    // provider sont présentes. Ces flags sont lus aussi par les workers.
+    MARKETING_SENDS_ENABLED: z.enum(['true', 'false']).default('false'),
+    MARKETING_WHATSAPP_ENABLED: z.enum(['true', 'false']).default('false'),
+    // POS connectors remain disabled until a provider sandbox and pilot are
+    // qualified. The adapter and import endpoints are still available locally
+    // when explicitly enabled in a non-production environment.
+    POS_CONNECTORS_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Reservation payment protection remains disabled until the merchant model,
+    // Stripe Connect account and legal policy are validated with a pilot.
+    RESERVATION_PAYMENTS_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Shared CRM identity is limited to qualified multi-site pilots.
+    CUSTOMER_GROUPS_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Feedback and benefits remain local-only until channels, rules and a
+    // restaurant pilot are qualified.
+    REPUTATION_ENABLED: z.enum(['true', 'false']).default('false'),
+    LOYALTY_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Experiences remain local-only until capacity, pricing and pilot
+    // procedures are validated; no payment or distribution provider is called.
+    EXPERIENCES_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Event ticketing remains local-only until payment, refund and distribution
+    // contracts are qualified with a pilot.
+    EVENTS_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Partner channels remain local-only until signed provider contracts,
+    // health checks and bidirectional sync are qualified with a pilot.
+    DISTRIBUTION_ENABLED: z.enum(['true', 'false']).default('false'),
   })
   .merge(VoiceConfigSchema)
   .refine((data) => data.CALL_RECORDING_ENABLED !== 'true' || !!data.CALL_RECORDINGS_BUCKET, {

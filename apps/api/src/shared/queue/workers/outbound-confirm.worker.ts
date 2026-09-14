@@ -19,6 +19,7 @@ import {
   type NotificationClaimStore,
 } from '../notification-idempotency';
 import { recordNotificationProviderResult } from '../../observability/metrics';
+import type { MessagingUsageContext } from '../../../modules/usage/messaging-usage.service';
 
 export interface OutboundConfirmJobData {
   reservationId: string;
@@ -68,7 +69,7 @@ export async function processOutboundConfirmJob(
   const data = job.data;
   const reservation = await deps.db.reservation.findUnique({
     where: { id: data.reservationId },
-    select: { id: true, status: true, state: true },
+    select: { id: true, restaurantId: true, status: true, state: true },
   });
 
   // Une réservation non confirmée ou terminale ne doit pas déclencher un SMS
@@ -113,8 +114,16 @@ export async function processOutboundConfirmJob(
 
   try {
     const message = `Reservation confirmee - ${data.restaurantName} ${data.date} ${data.time} ${data.partySize}pers. Annulation: appelez le restaurant.`;
+    const usageContext: MessagingUsageContext | undefined = reservation.restaurantId
+      ? {
+          restaurantId: reservation.restaurantId,
+          sourceType: 'reservation_confirmation',
+          sourceId: data.reservationId,
+          metadata: { messageType: 'reservation_confirmation' },
+        }
+      : undefined;
     const result = normalizeNotificationSendResult(
-      await deps.sendSms(data.customerPhone, message),
+      await deps.sendSms(data.customerPhone, message, usageContext),
       'telnyx',
       'sms',
     );

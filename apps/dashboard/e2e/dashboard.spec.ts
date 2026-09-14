@@ -77,3 +77,58 @@ test.describe('Dashboard /dashboard — stabilité visuelle', () => {
     await expect(page.locator('.recharts-surface').first()).toBeVisible();
   });
 });
+
+test.describe('Espace administration Sokar', () => {
+  async function mockOperatorAccess(page: Page, allowed: boolean) {
+    await page.route('**/api/proxy/admin/access', async (route) => {
+      if (allowed) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ allowed: true }),
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Sokar operator access required' }),
+      });
+    });
+  }
+
+  test('ouvre un shell séparé sans contexte restaurant', async ({ page }) => {
+    await mockOperatorAccess(page, true);
+    await page.goto('/admin', { waitUntil: 'networkidle' });
+
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(page.getByRole('heading', { name: 'Espace administration' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Piloter Sokar sans entrer dans un restaurant' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('link', { name: 'Coûts opérationnels', exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText('Chez Sokar HQ')).toHaveCount(0);
+  });
+
+  test('redirige une ancienne URL opérateur vers le nouvel espace', async ({ page }) => {
+    await mockOperatorAccess(page, true);
+    await page.goto('/dashboard/admin/margin', { waitUntil: 'networkidle' });
+
+    await expect(page).toHaveURL(/\/admin\/margin$/);
+    await expect(page.getByRole('heading', { name: 'Espace administration' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Coût opérationnel' })).toBeVisible();
+  });
+
+  test('renvoie un compte restaurant vers son dashboard', async ({ page }) => {
+    await mockOperatorAccess(page, false);
+    await page.goto('/admin', { waitUntil: 'domcontentloaded' });
+
+    await page.waitForURL('**/dashboard', { timeout: 15_000 });
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByRole('heading', { name: 'Pilotage' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Admin Sokar' })).toHaveCount(0);
+  });
+});

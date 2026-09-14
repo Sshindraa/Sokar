@@ -36,7 +36,7 @@ export async function computeRoi(restaurantId: string, period: string): Promise<
       totalCouverts: 0,
       estimatedRevenue: 0,
       theforkSavings: 0,
-      sokarMonthlyCost: PLAN_PRICES['STARTER'] ?? 149,
+      sokarMonthlyCost: PLAN_PRICES['STARTER'] ?? 199,
       roiMultiplier: 0,
     };
   }
@@ -50,7 +50,7 @@ export async function computeRoi(restaurantId: string, period: string): Promise<
   }, 0);
 
   const theforkSavings = totalCouverts * THEFORK_COMMISSION_PER_PAX;
-  const monthlyCost = PLAN_PRICES[restaurant.plan] ?? 149;
+  const monthlyCost = PLAN_PRICES[restaurant.plan] ?? 199;
 
   return {
     period,

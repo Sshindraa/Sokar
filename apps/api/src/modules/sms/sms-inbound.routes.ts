@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto';
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { telnyxWebhookGuard } from '../voice/telnyx.guard';
 import { handleReply } from './reply-handler';
 import { telnyxMessagingEventsTotal } from '../../shared/observability/metrics';
+import { applyMarketingProviderEvent } from '../marketing/marketing-provider.service';
 
 const TelnyxFromSchema = z.union([z.string(), z.object({ phone_number: z.string() })]);
 const TelnyxRecipientSchema = z.object({
@@ -84,6 +86,19 @@ export async function smsInboundRoutes(app: FastifyInstance) {
     }
 
     if (data.event_type !== 'message.received') {
+      if (data.payload.id) {
+        await applyMarketingProviderEvent({
+          provider: 'telnyx',
+          providerMessageId: data.payload.id,
+          eventType: data.event_type,
+          providerStatus: firstRecipient?.status,
+          errorCode: data.event_type,
+          payloadHash:
+            typeof req.rawBody === 'string'
+              ? createHash('sha256').update(req.rawBody).digest('hex')
+              : undefined,
+        });
+      }
       if (data.event_type === 'message.finalized' && status === 'delivery_failed') {
         req.log.warn(
           { messageId: data.payload.id, status, errorCount: data.payload.errors?.length ?? 0 },

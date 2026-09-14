@@ -77,6 +77,11 @@ describe('forwardedHeaders — proxy Next.js', () => {
     expect(headers.Range).toBe('bytes=100-499');
   });
 
+  it('forward Idempotency-Key pour les mutations rejouables', () => {
+    const headers = forwardedHeaders(mockReq({ 'idempotency-key': 'merge-123' }));
+    expect(headers['Idempotency-Key']).toBe('merge-123');
+  });
+
   it('omet les headers absents (pas de valeur vide)', () => {
     const headers = forwardedHeaders(mockReq({}));
     expect(headers).toEqual({});
@@ -88,6 +93,7 @@ describe('forwardedHeaders — proxy Next.js', () => {
         'x-forwarded-for': '203.0.113.7, 10.0.0.1',
         'x-request-id': 'req-xyz',
         'x-sokar-site-id': 'site_123',
+        'idempotency-key': 'merge-123',
         cookie: '__session=tok',
       }),
     );
@@ -95,6 +101,7 @@ describe('forwardedHeaders — proxy Next.js', () => {
       'X-Forwarded-For': '203.0.113.7, 10.0.0.1',
       'X-Request-ID': 'req-xyz',
       'X-Sokar-Site-ID': 'site_123',
+      'Idempotency-Key': 'merge-123',
       Cookie: '__session=tok',
     });
   });

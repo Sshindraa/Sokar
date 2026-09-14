@@ -24,6 +24,7 @@ type SearchParams = {
   primary?: string;
   accent?: string;
   source?: string;
+  marketingAttributionToken?: string;
   date?: string;
   time?: string;
   partySize?: string;
@@ -86,6 +87,7 @@ export default async function WidgetPage({
       <BookingWidget
         slug={restaurant.slug}
         initialSource={source}
+        marketingAttributionToken={sp.marketingAttributionToken}
         initialPartySize={partySize}
         initialDate={date}
         initialTime={time}

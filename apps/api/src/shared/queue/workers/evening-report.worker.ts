@@ -4,6 +4,7 @@ import { db } from '../../db/client';
 import { sendEmail } from '../../email';
 import { buildReportEmail } from '../../../modules/analytics/report.service';
 import { setupWorkerListeners, jobLogger } from './helper';
+import type { MessagingUsageContext } from '../../../modules/usage/messaging-usage.service';
 
 interface EveningReportJobData {
   readonly restaurantId: string;
@@ -61,6 +62,13 @@ export const eveningReportWorker = new Worker(
       .filter((reservation) => reservation.estimatedRevenue)
       .reduce((sum, reservation) => sum + Number(reservation.estimatedRevenue), 0);
 
+    const usageContext: MessagingUsageContext = {
+      restaurantId,
+      sourceType: 'evening_report',
+      sourceId: `${restaurantId}:${dayKey ?? start.toISOString().slice(0, 10)}`,
+      metadata: { messageType: 'evening_report' },
+    };
+
     await sendEmail({
       to: restaurant.managerEmail,
       subject: `📊 Résumé Sokar — ${label}`,
@@ -72,6 +80,7 @@ export const eveningReportWorker = new Worker(
         estimatedRevenue,
         totalCouverts,
       }),
+      usage: usageContext,
     });
 
     log.info({ totalCalls: calls.length, reserved, cancelled, dayKey }, 'evening report sent');

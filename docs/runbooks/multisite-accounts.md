@@ -2,7 +2,8 @@
 
 > **Statut : PARTIEL — audité le 12 septembre 2026.** Modèle compte/site, backfill, sélecteur,
 > provisioning et quotas Stripe sont présents. La preuve d'isolation avec deux sessions Clerk et
-> un membre limité à un site reste ouverte. Voir
+> un membre limité à un site reste ouverte. Le socle CRM groupe est livré localement mais reste
+> fermé par `CUSTOMER_GROUPS_ENABLED=false`. Voir
 > [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
 
 Ce runbook prépare les restaurants historiques à la relation compte → établissement après application de la migration `20260907140000_add_restaurant_accounts`.
@@ -46,6 +47,20 @@ Le script traite chaque restaurant dans une transaction et affiche uniquement le
 - Le bouton de paramètres appelle `POST /billing/portal-session` pour ouvrir le portail Stripe hébergé ; il permet de changer de formule, consulter les factures ou résilier sans exposer de données de paiement au dashboard.
 - Un ajout est refusé avec `MULTI_SITE_SUBSCRIPTION_REQUIRED` lorsque le quota `RestaurantAccountBilling.entitledSiteCount` est atteint. Les webhooks Stripe projettent le `siteCount` au niveau du compte ; staging a créé un troisième site puis refusé le quatrième hors quota.
 - Le site principal ne peut pas être suspendu ou archivé s'il est le dernier établissement actif. S'il existe un autre site actif, la route transfère `isPrimary` au plus ancien site actif dans la même transaction avant de changer le statut. Une suspension/archivage n'efface aucune donnée et les requêtes d'un site indisponible sont refusées par le resolver.
+
+## CRM groupe en qualification
+
+Le capability `customers.group` est réservé au plan Multi-site. Les routes
+`/customer-groups*` utilisent le compte et le site résolus par Clerk : elles créent une identité de
+groupe, enregistrent un consentement Owner-only et permettent à un Owner/Manager de rattacher une
+projection client du site actif. Un client ne peut appartenir qu'à un seul groupe par compte ; une
+course d'insertion est idempotente et le retrait de consentement supprime les liens dans la même
+transaction. Les réponses de détail ne renvoient que les quatre derniers chiffres du téléphone.
+
+Avant d'ouvrir le flag, exécuter deux sessions Clerk sur deux organisations, vérifier qu'un membre
+limité à un site ne lit ni n'écrit l'autre site, puis couvrir l'export et l'effacement de chaque
+projection liée. Aucun rapprochement automatique ni campagne consolidée ne doit être activé en
+parallèle.
 
 ## Contrôles après application
 

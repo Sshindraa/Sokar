@@ -24,6 +24,7 @@ import {
   type NotificationReconciliationQueue,
 } from '../../../shared/queue/notification-idempotency';
 import { recordNotificationProviderResult } from '../../../shared/observability/metrics';
+import type { MessagingUsageContext } from '../../../modules/usage/messaging-usage.service';
 
 export interface WaitingListPromoteJobData {
   entryId: string;
@@ -127,6 +128,12 @@ export async function processWaitingListPromoteJob(
     partySize: entry.partySize,
     restaurantPhone,
   };
+  const usageContext: MessagingUsageContext = {
+    restaurantId: entry.restaurantId,
+    sourceType: 'waiting_list_promotion',
+    sourceId: entry.id,
+    metadata: { messageType: 'waiting_list_promotion' },
+  };
 
   if (channel === 'sms') {
     if (!entry.customerPhone) {
@@ -159,7 +166,11 @@ export async function processWaitingListPromoteJob(
     }
     try {
       const result = normalizeNotificationSendResult(
-        await deps.sendSms(entry.customerPhone, buildWaitingListPromotionSms(templateData)),
+        await deps.sendSms(
+          entry.customerPhone,
+          buildWaitingListPromotionSms(templateData),
+          usageContext,
+        ),
         'telnyx',
         'sms',
       );
@@ -274,6 +285,7 @@ export async function processWaitingListPromoteJob(
           to: entry.customerEmail,
           subject: `Votre table chez ${entry.restaurant.name} est confirmée`,
           html: buildWaitingListPromotionEmailHtml(templateData),
+          usage: usageContext,
         }),
         'resend',
         'email',

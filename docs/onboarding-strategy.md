@@ -32,6 +32,8 @@ RestaurantStep
   -> PhoneStep
        -> écran préalable
        -> POST /api/proxy/restaurant/onboarding/test-call
+       -> confirmation explicite « J'ai reçu l'appel »
+       -> PATCH /api/proxy/restaurant/onboarding (action=first_call + callControlId)
   -> ConnectIdentityStep
   -> ConnectLocationStep
   -> ConnectCuisineStep

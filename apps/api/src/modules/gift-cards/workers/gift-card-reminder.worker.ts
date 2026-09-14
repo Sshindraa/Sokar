@@ -117,6 +117,7 @@ export async function processGiftCardReminderJob(
       const result = normalizeNotificationSendResult(
         await deps.sendExpirationReminder({
           giftCardId: card.id,
+          restaurantId: card.restaurant.id,
           code: card.code,
           shortCode: card.shortCode,
           amount: card.amount.toNumber(),

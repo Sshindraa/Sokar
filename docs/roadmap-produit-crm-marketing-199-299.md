@@ -1,13 +1,32 @@
 # Plan de bataille Sokar — offres 199/299 € et trajectoire CRM/marketing
 
-Date de référence : 12 septembre 2026
-Statut : plan directeur et blueprint technique à exécuter par lots validables
+Date de référence : 14 septembre 2026
+Statut : plan directeur, blueprint technique et registre d'exécution local
 Horizon indicatif : 6 à 9 mois pour une suite solide destinée aux indépendants ; 12 à 18 mois pour approcher la largeur fonctionnelle de SevenRooms
 Hypothèse de capacité : un développeur principal à temps plein, Hamza disponible pour les décisions produit, les pilotes et les validations terrain
 
-> Les prix 199/299 € sont une cible, pas les prix actuellement affichés ou facturés. Le statut
-> consolidé de la documentation se trouve dans
+> Le catalogue local affiche désormais Essential à 199 € et Pro à 299 €. Les identifiants et
+> montants Stripe actifs restent ceux de l'ancien catalogue jusqu'à une migration externe
+> contrôlée ; ces offres ne sont donc pas encore annoncées ou facturées comme 199/299 €. Le
+> statut consolidé de la documentation se trouve dans
 > [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
+>
+> **Gel de production :** les lots décrits ici sont développés et vérifiés en local. Aucun push,
+> staging ou déploiement production n'est autorisé avant la clôture de toutes les portes P0 à P9,
+> du pilote et du gel explicite dans [`product-gates.json`](./release/product-gates.json).
+
+### Registre d'exécution local — 14 septembre 2026
+
+| Lot                   | État local      | Preuve actuelle                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Suite / reste avant clôture                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0 usage/outbox       | `LIVRÉ LOCAL`   | ledger, tarifs versionnés, import CSV/JSON dry-run avec détection de conflits/chevauchements, rapprochement facture read-only avec `reportHash`, ajustements `OPEN/APPROVED/REJECTED` idempotents, marge ajustée par corrections approuvées, export comptable CSV borné avec corrections globales `UNALLOCATED`, paquet comptable fichier séparant l'usage EUR des factures fournisseur, dispatcher, collecteurs messagerie, suivi interne optionnel 70/90/100 % et test PostgreSQL de concurrence exécuté (2/2 sur base dédiée)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | preuve Telnyx d'août et paquet MRC USD conservés ; le cockpit admin affiche le suivi par établissement, les coûts et la marge ; le raccordement comptable et l'écart Telnyx de mai sont différés comme suivis internes ; aucun quota ni donnée de coût n'est exposé au restaurateur                                                                                                                                                   |
+| P1 Essential          | `PARTIEL`       | entitlements, compteurs et protections existants, catalogue local 199 € sur constantes/UI/ROI                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | gates terrain, catalogue Stripe 199 €, checkout rejoué                                                                                                                                                                                                                                                                                                                                                                                |
+| P2 CRM                | `PARTIEL LIVRÉ` | identités, timeline, RFM, préférences/tags, backfill, dual-write, API + UI CRM, export RGPD vérifié, réparation de projection, audit de fusion et masquage des notes/métadonnées par rôle, avec surcharge configurable par établissement                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | preuve PostgreSQL ; fournisseur POS métier et dépense réelle restent dans P6                                                                                                                                                                                                                                                                                                                                                          |
+| P3-01 segments        | `LIVRÉ LOCAL`   | AST borné, compiler, preview/CRUD/refresh, constructeur Pro, explication UI et huit segments système seedés à la demande                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | preuve PostgreSQL concurrente du seed et campagne pilote                                                                                                                                                                                                                                                                                                                                                                              |
+| P3-02/04/05 campagnes | `PARTIEL LIVRÉ` | audience snapshot, permissions, suppressions, worker, fixtures de contrat, callbacks signés Telnyx/Resend, schedule, preview, éditeur, dry-run, estimation tarifée depuis `UsageTariff` quand disponible, readiness avec diagnostic sans secrets, rapport/export CSV et inbox de réconciliation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | configuration effective provider, domaine email, templates WhatsApp, rapprochement des coûts réellement consommés                                                                                                                                                                                                                                                                                                                     |
+| P3-03 automations     | `PARTIEL LIVRÉ` | config bornée, claims PostgreSQL, campagnes snapshot, scan horaire, interface dashboard, migration de la réactivation historique, transitions callbacks et worker de réconciliation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | pilote et activation fournisseur                                                                                                                                                                                                                                                                                                                                                                                                      |
+| P4 attribution        | `PARTIEL LIVRÉ` | liens HMAC, clic, parcours `/book`, conversions créée/honorée/annulation, rapport API et export CSV agrégé                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | pilote, comparaison temporelle et preuve de revenu                                                                                                                                                                                                                                                                                                                                                                                    |
+| P5–P9                 | `PARTIEL LOCAL` | fondations paiements, POS, CRM groupe, réputation, fidélité simple, expériences, événements et distribution provider-neutral livrées derrière flags : policies versionnées et transitions idempotentes ; `PosConnection`/`PosCheck`/`ReservationCheckMatch` avec import/matcher explicables ; `CustomerGroupProfile`/`CustomerGroupMembership` avec consentement, isolation compte/site, rattachement idempotent et téléphone masqué ; demandes de retour post-visite, score, tâches de récupération ; `LoyaltyBenefit`/`LoyaltyGrant` avec règles, code hashé, consommation et expiration ; `Experience`/`ExperienceSession`/`ExperienceReservation` avec snapshot prix, verrou de capacité, annulation et expiration ; `Event`/`EventSession`/`EventTicketType`/`EventOrder`/`EventTicket`/`EventWaitlistEntry` avec jauge transactionnelle, tickets hashés, check-in et traces locales ; `DistributionConnection`/`DistributionSyncRun`/`DistributionAvailabilitySnapshot`/`DistributionReservationLink`/`DistributionWebhookEvent` avec secrets référencés, hashes, idempotence et dashboard de qualification | choisir le modèle marchand et le fournisseur, secret manager, sandbox/webhooks, réconciliation 30 jours, holds/captures/remboursements réels, POS métier, preuves multi-identité Clerk, synchronisation inter-sites et exploitation groupe, fournisseurs d'avis, envoi/points fidélité, widget/téléphone, paiement et distribution événementiels, facture fiscale, adaptateur et API partenaires, workers externes et preuves terrain |
 
 ## 1. Décision produit
 
@@ -35,28 +54,52 @@ visite → ticket de caisse → dépense client → segment de valeur → campag
 
 ### 2.1 Ce qui existe déjà
 
-| Domaine      | Socle existant                                                                                  | Source principale                                                                  |
-| ------------ | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Réservations | Réservation voix, web et agentique, disponibilité, holds, idempotence, états et audit           | `apps/api/src/modules/reservations/`, `apps/api/src/modules/agentic-reservations/` |
-| Téléphone IA | Telnyx Media Stream, STT ElevenLabs, LLM, TTS Cartesia, transfert humain, télémétrie de latence | `apps/api/src/modules/voice/`                                                      |
-| Salle        | Plan de salle, tables, allocation, walk-ins, service live et liste d'attente                    | `apps/api/src/modules/floor-plan/`                                                 |
-| Client       | Nom, téléphone, visites, VIP, notes, occasion, dernier appel, groupe habituel                   | `apps/api/src/modules/customers/` et modèle `Customer`                             |
-| Réactivation | Détection hebdomadaire des VIP inactifs 90–180 jours, validation gérant, envoi SMS              | `apps/api/src/shared/queue/workers/reactivation.worker.ts`                         |
-| Consentement | Opt-in marketing, retrait, export et effacement RGPD                                            | `apps/api/src/modules/rgpd/` et modèle `CustomerConsent`                           |
-| Analyse      | Appels, réservations, couverts, revenu estimé, latence, économie de commission estimée          | `apps/api/src/modules/analytics/`                                                  |
-| Multi-site   | Compte, établissements, rôles, sélection de site, quantité facturée                             | modèles `RestaurantAccount*` et routes associées                                   |
-| Paiement     | Stripe Billing pour Sokar et Stripe pour les cartes cadeaux                                     | `apps/api/src/modules/billing/`, `apps/api/src/modules/gift-cards/`                |
+| Domaine      | Socle existant                                                                                                       | Source principale                                                                                                           |
+| ------------ | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Réservations | Réservation voix, web et agentique, disponibilité, holds, idempotence, états et audit                                | `apps/api/src/modules/reservations/`, `apps/api/src/modules/agentic-reservations/`                                          |
+| Téléphone IA | Telnyx Media Stream, STT ElevenLabs, LLM, TTS Cartesia, transfert humain, télémétrie de latence                      | `apps/api/src/modules/voice/`                                                                                               |
+| Salle        | Plan de salle, tables, allocation, walk-ins, service live et liste d'attente                                         | `apps/api/src/modules/floor-plan/`                                                                                          |
+| Client       | Nom, téléphone, visites, VIP, notes, occasion, dernier appel, groupe habituel                                        | `apps/api/src/modules/customers/` et modèle `Customer`                                                                      |
+| Réactivation | Détection hebdomadaire des VIP inactifs 90–180 jours, validation gérant, migration vers campagne marketing gouvernée | `apps/api/src/shared/queue/workers/reactivation.worker.ts`, `apps/api/src/modules/marketing/legacy-reactivation.service.ts` |
+| Consentement | Opt-in marketing, retrait, export et effacement RGPD                                                                 | `apps/api/src/modules/rgpd/` et modèle `CustomerConsent`                                                                    |
+| Analyse      | Appels, réservations, couverts, revenu estimé, latence, économie de commission estimée                               | `apps/api/src/modules/analytics/`                                                                                           |
+| Multi-site   | Compte, établissements, rôles, sélection de site, quantité facturée                                                  | modèles `RestaurantAccount*` et routes associées                                                                            |
+| Paiement     | Stripe Billing pour Sokar et Stripe pour les cartes cadeaux                                                          | `apps/api/src/modules/billing/`, `apps/api/src/modules/gift-cards/`                                                         |
 
 ### 2.2 Limites à ne pas masquer commercialement
 
-- Le fichier client est encore centré sur le téléphone et quelques champs libres. Il n'a ni tags structurés, ni segments sauvegardés, ni historique de dépenses.
-- La réactivation est un scénario unique, réservé aux VIP et semi-automatique. Ce n'est pas encore un moteur de campagnes.
+- Le noyau CRM local possède maintenant identités, chronologie, indicateurs RFM, préférences, tags,
+  segments bornés et une interface de détection/preview/fusion. La fondation POS et le socle CRM
+  groupe sont livrés, mais aucun fournisseur métier ni dépense réelle n'est encore raccordé et
+  aucune identité inter-sites n'est encore activée.
+- La réactivation historique reste un scénario unique, réservé aux VIP et semi-automatique. Le
+  moteur local branche maintenant première visite, dormant et anniversaire avec claims
+  PostgreSQL ; la validation legacy migre désormais vers une campagne snapshot gouvernée et le
+  vieux worker ne peut plus appeler un provider directement. Les callbacks et l'activation
+  fournisseur restent ouverts. Les callbacks avec identifiant provider inconnu sont conservés dans
+  une inbox interne sans PII, réessayés toutes les cinq minutes et peuvent être ignorés avec une
+  raison opérateur bornée.
 - Le revenu affiché est souvent estimé à partir du ticket moyen. Il ne correspond pas à un encaissement observé.
 - `CallQuota` compte les appels. Il ne mesure pas la durée, les coûts STT/LLM/TTS, les SMS ni les dépassements facturables.
-- Aucun connecteur de caisse métier n'a été identifié dans le dépôt.
+- Aucun fournisseur de caisse métier n'est encore branché : la fondation POS reste provider-neutral
+  (contrat, persistance, import local et matcher), avec `POS_CONNECTORS_ENABLED=false`.
+- Les canaux partenaires ont une fondation provider-neutral (connexion, snapshots de disponibilité,
+  runs idempotents, liens de réservation et inbox webhook hashée) et une page de qualification ;
+  aucun adaptateur Google/Meta, secret manager, webhook public ou appel fournisseur n'est actif,
+  avec `DISTRIBUTION_ENABLED=false`.
+- La protection bancaire possède maintenant une fondation locale provider-neutral (policy versionnée,
+  préparation idempotente, transitions, événements hashés et webhook signé), mais aucun compte
+  marchand Stripe, SetupIntent/PaymentIntent réel, hold de capacité ou remboursement n'est actif ;
+  `RESERVATION_PAYMENTS_ENABLED=false`.
 - Stripe pour les cartes cadeaux ne constitue pas un parcours d'empreinte bancaire ou d'acompte de réservation.
-- Le multi-site a un socle technique, mais l'isolation avec plusieurs identités réelles et le CRM client partagé restent à valider.
-- Les prix codés sont encore 149/249 €. La page, les constantes, Stripe, les contrats et les calculs ROI doivent migrer ensemble.
+- Le multi-site possède désormais un socle de groupes client explicite (consentement, liens
+  idempotents, clé compte/client unique et masquage du téléphone), mais l'isolation avec plusieurs
+  identités Clerk réelles, l'effacement inter-sites et les campagnes consolidées restent à valider.
+- Le catalogue local Essential/Pro est maintenant 199/299 € sur les constantes, l'interface,
+  l'inscription, le calcul ROI et les alias historiques. Le Multi-site reste 249 € + 99 €/site
+  jusqu'à une décision de packaging groupe. Les prix Stripe actifs, les `priceId`, les contrats et
+  la preuve de checkout restent à migrer et à rejouer ensemble ; aucune synchronisation externe n'a
+  été exécutée.
 
 ## 3. Périmètre commercial cible
 
@@ -153,30 +196,35 @@ Construire une agrégation mensuelle `UsageMonthlyRollup`, recalculable depuis l
 - le coût d'un appel de test peut être rapproché des relevés fournisseurs ;
 - les métriques internes donnent coût moyen/minute et coût par réservation aboutie.
 
-### P0-02 — Entitlements et limites
+### P0-02 — Entitlements et suivi opérationnel
 
 Créer une configuration centralisée par plan :
 
 - fonctionnalités activées ;
-- minutes et messages inclus ;
-- seuil d'avertissement ;
-- politique de dépassement ;
+- promesse de consommation sans quota client ;
 - rétention des appels/transcriptions ;
 - niveau de support ;
 - nombre d'établissements et utilisateurs.
+
+Le ledger et le cockpit opérateur suivent les minutes, messages et coûts par restaurant. Un budget
+interne de pilotage peut être ajouté séparément si nécessaire ; il ne doit jamais limiter un appel,
+un SMS ou une réservation du client.
 
 Ne pas disperser ces règles dans le dashboard et l'API. L'API décide ; l'interface affiche la décision.
 
 **Décisions produit à prendre avec les données pilotes :**
 
-- nombre de minutes incluses en Essential et Pro ;
-- prix de la minute ou du pack supplémentaire ;
-- blocage, facturation ou mode dégradé après dépassement ;
-- nombre de SMS inclus ;
 - définition concrète du support prioritaire ;
-- remise annuelle et conditions d'engagement.
+- remise annuelle et conditions d'engagement ;
+- budget interne de suivi et destinataires opérationnels, si l'équipe en a besoin ;
+- règles de packaging si le coût p90 menace la marge, sans introduire de quota client implicite.
 
 ### P0-03 — Migration commerciale 199/299 €
+
+**État local au 14 septembre 2026 :** le catalogue applicatif et les surfaces publiques sont
+alignés sur Essential 199 € et Pro 299 € ; le mapping Stripe reste volontairement ouvert. Le script
+`scripts/ops/sync-stripe-prices.sh` ne crée pas de prix et ne vérifie pas leur montant : il ne fait
+que recopier des identifiants `price_...` déjà validés dans l'environnement cible.
 
 Mettre à jour dans une seule release coordonnée :
 
@@ -201,6 +249,14 @@ Créer une vue strictement interne :
 - consommation p50/p90/p99 ;
 - alertes de dérive ;
 - restaurants dépassant le budget de coût du plan.
+
+Les corrections de rapprochement ne modifient jamais `UsageEvent` ni `UsageMonthlyRollup`. Une
+correction `APPROVED` avec `restaurant:<id>` est ajoutée au champ `adjustedCostEur` du site et à sa
+marge ; le coût brut `estimatedCostEur` et le nombre de corrections restent visibles pour audit.
+Les corrections `global` sont conservées dans la file opérateur et ne sont pas réparties sans règle
+d'affectation explicite. L'endpoint opérateur `/admin/usage/accounting-export.csv` fournit un CSV
+versionné qui reprend les lignes d'usage agrégées et les corrections approuvées séparément ; une
+correction globale y est marquée `UNALLOCATED` pour empêcher une écriture comptable implicite.
 
 **Cible initiale à valider :** coût direct inférieur à 50 € pour Essential et 75 € pour Pro si l'objectif de marge brute est 75 %.
 
@@ -291,6 +347,10 @@ Produire un score de préparation et interdire l'activation si un blocant critiq
 
 ### P2-01 — Identité et déduplication
 
+> **État local : PARTIEL LIVRÉ.** La détection, le preview, la mutation Owner, l'audit idempotent,
+> l'interface doublons/fusion et la réparation Owner d'une projection métrique sont présents et
+> testés. Le POS et la preuve PostgreSQL concurrente restent ouverts.
+
 Faire évoluer le modèle sans casser la clé actuelle :
 
 - conserver le téléphone normalisé comme identifiant fort local ;
@@ -299,12 +359,15 @@ Faire évoluer le modèle sans casser la clé actuelle :
 - enregistrer la provenance et la date de vérification ;
 - détecter les doublons probables ;
 - proposer une fusion manuelle avec aperçu ;
-- conserver un journal de fusion et permettre une réparation administrative ;
+- conserver un journal de fusion et permettre une réparation administrative bornée et idempotente ;
 - définir la règle multi-site avant toute fusion entre établissements.
 
 Ne jamais fusionner automatiquement sur le nom seul.
 
 ### P2-02 — Chronologie client
+
+> **État local : PARTIEL LIVRÉ.** Les dual-writes réservation/appel et la lecture tenant-scoped
+> existent ; les événements de liste d'attente, carte cadeau et POS restent à raccorder.
 
 Créer un flux `CustomerTimelineEvent` alimenté par :
 
@@ -321,6 +384,12 @@ La chronologie doit charger par pagination, masquer les données sensibles selon
 
 ### P2-03 — Préférences et tags
 
+> **État local : PARTIEL LIVRÉ.** Les routes, l'allow-list, la confiance, l'expiration, les garde-fous
+> d'écriture Owner/Manager, l'édition depuis la fiche CRM et les tests existent. La lecture des notes
+> et des métadonnées de chronologie est bornée par la politique effective du site, configurable via
+> `GET/PATCH /crm/privacy`, avec fallback `CRM_SENSITIVE_NOTE_ROLES` (Owner + Manager par défaut).
+> La preuve PostgreSQL concurrente reste à faire.
+
 Ajouter :
 
 - `CustomerTag`, `CustomerTagAssignment` ;
@@ -333,6 +402,9 @@ Ajouter :
 L'IA peut suggérer un tag depuis une conversation, mais une information sensible ne doit pas devenir automatiquement une vérité permanente sans règle explicite.
 
 ### P2-04 — Indicateurs RFM et comportementaux
+
+> **État local : PARTIEL LIVRÉ.** La projection déterministe et le backfill dry-run existent ; la
+> dépense caisse réelle et la validation concurrente PostgreSQL restent ouvertes.
 
 Calculer de manière déterministe :
 
@@ -349,13 +421,21 @@ Le `loyaltyScore` actuel doit être documenté, recalculable et explicable, ou r
 
 ### P2-05 — Interface CRM
 
+> **État local : PARTIEL LIVRÉ.** Les pages liste, détail et doublons/fusion sont branchées sur
+> l'API Pro et le preview de fusion ; la fiche client lance l'export RGPD après code SMS et
+> télécharge le JSON contrôlé. La vérification et la réparation Owner d'une projection métrique
+> sont aussi disponibles avec une clé d'idempotence et un marqueur de chronologie agrégé. Le
+> masquage des notes et métadonnées est appliqué selon la politique du site, configurable par
+> `GET/PATCH /crm/privacy`, avec fallback `CRM_SENSITIVE_NOTE_ROLES`, et couvert par des tests ;
+> la preuve PostgreSQL reste ouverte.
+
 Écrans minimum :
 
 - liste clients avec recherche et filtres ;
 - fiche client avec identité, consentements, indicateurs, préférences, tags et chronologie ;
 - édition rapide pendant le service ;
 - fusion de doublons ;
-- export contrôlé ;
+- export contrôlé depuis la fiche CRM après vérification ;
 - journal indiquant qui a modifié quoi.
 
 ### Porte de sortie CRM
@@ -374,6 +454,11 @@ Le `loyaltyScore` actuel doit être documenté, recalculable et explicable, ou r
 **Objectif :** rendre Pro à 299 € immédiatement compréhensible et actionnable.
 
 ### P3-01 — Moteur de segments
+
+> **État local : LIVRÉ LOCAL.** L'AST Zod borné, le compilateur, le preview, le CRUD, le refresh,
+> le constructeur dashboard Pro, l'explication lisible des règles et huit segments système à clé
+> stable sont testés. Le seed est paresseux, idempotent et tenant-scoped lors de la lecture ; la
+> preuve PostgreSQL concurrente et la campagne pilote restent à exécuter.
 
 Commencer avec un constructeur borné, sans langage arbitraire :
 
@@ -399,6 +484,10 @@ Segments fournis au lancement :
 
 ### P3-02 — Modèle de campagne
 
+> **État local : PARTIEL LIVRÉ.** Les campagnes, audiences snapshot, messages idempotents, états
+> durables, worker, callbacks signés Telnyx/Resend et inbox de réconciliation sont présents ; la
+> configuration provider et les preuves terrain restent ouvertes.
+
 Créer des entités distinctes :
 
 - `MarketingCampaign` : objectif, canal, segment, créateur, planning, statut ;
@@ -412,13 +501,48 @@ Créer des entités distinctes :
 
 ### P3-03 — Trois automatisations initiales
 
+> **État local : PARTIEL LIVRÉ.** Les trois déclencheurs sont validés par type, évalués par un
+> worker horaire et matérialisés en campagnes snapshot. Chaque couple automation/client/événement
+> possède une claim unique PostgreSQL ; le flag fournisseur reste désactivé pendant le gel.
+
+Le contrat d'exécution local est volontairement borné :
+
+- `AFTER_FIRST_HONORED` sélectionne la première visite honorée après un délai configurable (0–168 h) ;
+- `DORMANT` sélectionne un client dont la dernière visite honorée dépasse 30–365 jours et qui
+  n'a pas de réservation future ;
+- `BIRTHDAY` projette une fenêtre de 0–30 jours dans le fuseau configuré et respecte une heure
+  locale minimale.
+
+Le worker recontrôle contact, permission par canal, suppression et plafond de fréquence avant de
+créer la campagne. Une campagne créée pendant une panne Redis reste `READY` et est ré-enfilée au
+scan suivant lorsque les envois sont autorisés. Les claims restent uniques même si deux scans
+concurrents créent temporairement une campagne vide, immédiatement marquée `CANCELLED`.
+
+La réactivation historique est maintenant migrée vers ce modèle au moment de la validation gérant :
+le snapshot legacy est lié à une `MarketingCampaign` par une clé unique et les messages passent par
+le worker marketing. Le vieux job `reactivation.send` est conservé uniquement pour drainer des jobs
+anciens ; il bloque toute tentative d'accès provider sans migration. Le scan legacy s'efface pour
+un établissement dès qu'une automation `DORMANT` est activée, et la route refuse un snapshot PENDING
+dans ce cas pour éviter deux campagnes concurrentes.
+
 1. **Après première visite** : remerciement envoyé après passage en `HONORED`, jamais après annulation/no-show.
 2. **Client dormant** : relance après X jours sans visite et sans réservation future.
 3. **Anniversaire** : message dans une fenêtre configurable, avec année facultative et fréquence annuelle garantie.
 
-La réactivation existante doit être migrée ou encapsulée dans ce moteur, sans double envoi pendant la transition.
+La migration est transactionnelle, rejouable avec un identifiant de campagne déterministe et
+protégée par `MARKETING_SENDS_ENABLED`. Les clients archivés, fusionnés ou d'un autre établissement
+sont exclus du snapshot matérialisé ; le worker revalide ensuite consentement, suppression, contact
+et plafond de fréquence juste avant Telnyx. La campagne legacy reste consultable dans l'ancien écran
+avec l'état de la campagne marketing liée.
 
 ### P3-04 — Éditeur et prévisualisation
+
+> **État local : PARTIEL LIVRÉ.** Le rendu allow-listé, la planification, le flag d'envoi, le
+> rapport API, le preview serveur, l'éditeur dashboard de brouillon et le test gérant en dry-run
+> sont livrés localement. Le preview utilise maintenant `UsageTariff` pour afficher un coût
+> `PRICED` lorsque le tarif couvre la date d'exécution ; sans ligne validée, il reste
+> `NOT_AVAILABLE`. L'envoi de test fournisseur, le rapprochement des consommations réelles et la
+> validation terrain restent ouverts.
 
 - modèles SMS puis email ;
 - variables autorisées et fallback si une donnée manque ;
@@ -431,6 +555,11 @@ La réactivation existante doit être migrée ou encapsulée dans ce moteur, san
 - page d'historique et détails des erreurs.
 
 ### P3-05 — Consentement et délivrabilité
+
+> **État local : PARTIEL LIVRÉ.** Les permissions par canal, preuve hashée, suppression, plafond,
+> désinscription signée, recontrôle avant provider, transitions callback bounce/complaint, la
+> route de readiness sans secret et l'inbox de réconciliation des IDs inconnus existent ; la
+> configuration effective et la synchronisation des listes restent ouvertes.
 
 - séparer opt-in email, SMS et éventuellement WhatsApp ;
 - conserver preuve, source, texte, version et horodatage ;
@@ -459,6 +588,10 @@ La réactivation existante doit être migrée ou encapsulée dans ce moteur, san
 
 ### P4-01 — Liens et codes suivis
 
+> **État local : PARTIEL LIVRÉ.** Le worker crée un lien HMAC par destinataire ; le clic est enregistré
+> à l'ouverture du widget `/book/:slug`, puis le token est résolu à la création. Les conversions
+> `RESERVATION_CREATED` et `RESERVATION_HONORED` sont idempotentes et l'annulation désactive l'actif.
+
 - créer un lien de réservation signé par campagne et destinataire ;
 - préserver `campaignId` et `customerId` pseudonymisé dans le parcours ;
 - attribuer création, modification, annulation et visite ;
@@ -479,7 +612,12 @@ Le terme « revenu généré » ne doit être utilisé que si la méthode d'attr
 
 ### P4-03 — Rapport campagne
 
-Rapport minimum : audience, délivrés, clics si disponibles, réservations, visites, désinscriptions, coût de campagne, revenu estimé et revenu encaissé. Ajouter une exportation CSV et une comparaison temporelle, sans prétendre établir une causalité expérimentale.
+> **État local : PARTIEL LIVRÉ.** Le rapport API sépare livraison, clics, conversions, revenu estimé
+> et revenu confirmé ; un export CSV agrégé tenant-scoped est disponible, avec coût `NOT_AVAILABLE`
+> tant que les événements d'usage ne sont pas rapprochés d'une facture. Le pilote et la comparaison
+> temporelle restent ouverts.
+
+Rapport minimum : audience, délivrés, clics si disponibles, réservations, visites, désinscriptions, coût de campagne, revenu estimé et revenu encaissé. L'export CSV agrégé reprend ces indicateurs sans PII ; une comparaison temporelle reste à ajouter, sans prétendre établir une causalité expérimentale.
 
 ### Porte de sortie attribution
 
@@ -489,13 +627,27 @@ Rapport minimum : audience, délivrés, clics si disponibles, réservations, vis
 - les montants estimés et encaissés ne sont jamais additionnés ;
 - les résultats sont reproductibles depuis les données sources.
 
-À ce stade, Pro à 299 € possède une proposition de valeur complète.
+À ce stade, le contrôle de campagne, le moteur des trois automatisations, leur interface, la
+migration de la réactivation historique et le cycle d'attribution réservation créée → visite
+honorée constituent le socle technique local de Pro. La mise en vente à 299 € reste bloquée par
+la configuration effective des providers, les fixtures de délivrabilité, la preuve terrain et le
+rapprochement de coût.
 
 ---
 
 ## 11. Phase 5 — Empreinte bancaire, acomptes et no-show
 
 **Objectif :** protéger les services à forte demande et les grands groupes.
+
+**État local au 14 septembre 2026 : fondation livrée, activation externe bloquée.**
+`apps/api/src/modules/reservation-payments/reservation-payment.service.ts` versionne les règles,
+calcule les montants fixes/par personne, prépare une tentative idempotente en dry-run ou commit,
+valide les transitions autorisées et confirme une réservation `PENDING` dans la même transaction
+qu'un événement provider. `reservation-payment.routes.ts` expose les policies, la préparation, la
+lecture, l'expiration et le webhook Stripe signé ; seuls le hash et les statuts sont conservés.
+Le capability Pro `reservations.payments` et `RESERVATION_PAYMENTS_ENABLED` restent fermés par défaut.
+Le modèle marchand, Stripe Connect, le hold de capacité, le 3DS réel, les captures, remboursements,
+litiges et preuves terrain restent à qualifier.
 
 ### P5-01 — Modèle marchand et responsabilités
 
@@ -577,6 +729,14 @@ Ne construire aucun connecteur avant d'avoir au moins deux prospects ou un clien
 
 ### P6-02 — Couche d'adaptation
 
+**État local au 14 septembre 2026 : fondation livrée, fournisseur externe non sélectionné.**
+`apps/api/src/modules/pos/pos-connector.ts` définit le contrat provider-neutral ;
+`pos-sync.service.ts` normalise les montants, calcule un hash SHA-256 du payload et réalise un
+upsert idempotent par `(connectionId, externalId)`. Les routes `/pos/connections*` sont protégées
+par `pos.connect` (Pro/Multi-site), par rôle Owner/Manager et par `POS_CONNECTORS_ENABLED` ; le
+flag reste désactivé dans les exemples d'environnement. Aucun appel réseau vers un POS n'est
+effectué.
+
 Créer une interface interne stable :
 
 ```ts
@@ -600,6 +760,12 @@ Normaliser dans des modèles internes :
 - curseur de synchronisation et dead-letter.
 
 ### P6-03 — Rapprochement réservation-ticket
+
+Le matcher local `scoreReservationCheckMatch()` est livré en mode explicable : identifiant externe
+(100), table (+35), fenêtre de 45 minutes (+30), couverts compatibles (+20), téléphone/token
+vérifié (+40) et conflit (-50), avec statuts `MATCHED`, `REVIEW` et `UNMATCHED`. L'import ne crée
+une ligne `ReservationCheckMatch` que lorsqu'un `reservationId` est fourni explicitement ; une
+suggestion sous 80/100 reste une revue et n'enrichit aucune projection CRM.
 
 Ordre de préférence : identifiant transmis au POS, table + fenêtre horaire, téléphone/token client, puis proposition manuelle. Un rapprochement faible ne doit pas enrichir automatiquement la valeur client.
 
@@ -641,6 +807,17 @@ Après rapprochement fiable :
 
 **Objectif :** rendre l'offre groupe sûre et utile, au-delà d'une facture multi-établissements.
 
+**État local au 14 septembre 2026 : fondation livrée, activation multi-site bloquée.**
+`apps/api/src/modules/customer-groups/` introduit `CustomerGroupProfile` (identité de groupe et
+consentement) et `CustomerGroupMembership` (rattachement explicite d'une projection `Customer` à
+un site). Les routes listent, créent, détaillent, consentent, lient et délient sous le compte/site
+résolu par `requireOrg`; aucun `accountId`, `restaurantId` ou numéro complet n'est accepté depuis
+le corps. La capability `customers.group` est réservée à Multi-site et
+`CUSTOMER_GROUPS_ENABLED=false` par défaut. Un retrait de consentement supprime les liens du groupe
+dans la même transaction ; une course d'insertion est rendue idempotente par l'index unique
+`(account_id, customer_id)`. Le fournisseur d'identité, l'export/effacement inter-sites, la
+déduplication assistée et les campagnes consolidées restent hors périmètre local.
+
 ### P7-01 — Fermer l'isolation actuelle
 
 Exécuter les portes encore ouvertes de `docs/audits/2026-09-07-multisite-gap-matrix.md` :
@@ -654,9 +831,14 @@ Exécuter les portes encore ouvertes de `docs/audits/2026-09-07-multisite-gap-ma
 
 ### P7-02 — Identité client groupe
 
-Éviter de déplacer directement `Customer.restaurantId`. Introduire une identité groupe ou un graphe de correspondance avec :
+Le modèle local évite de déplacer directement `Customer.restaurantId`. Le socle livré fournit une
+identité de groupe nommée et un graphe de correspondance explicite, mais chaque lien doit encore
+être créé par une règle ou une revue opérateur qualifiée :
 
 - consentement à l'usage inter-établissements ;
+- `CustomerGroupMembership` unique par compte/client, source et confiance bornées ;
+- retrait de consentement avec suppression transactionnelle des liens ;
+- téléphone retourné sous forme des quatre derniers chiffres ;
 - visibilité selon rôle ;
 - préférences communes et notes privées au site ;
 - statistiques groupe et locales ;
@@ -687,6 +869,23 @@ Exécuter les portes encore ouvertes de `docs/audits/2026-09-07-multisite-gap-ma
 
 **Objectif :** fermer la boucle après visite sans construire immédiatement un programme de points complexe.
 
+**État local au 14 septembre 2026 : fondation livrée, activation externe bloquée.**
+`apps/api/src/modules/reputation/` crée une demande de retour uniquement pour une réservation
+`HONORED`, génère un token opaque à durée limitée dont seul le hash est stocké, accepte une réponse
+1–5 une seule fois et ouvre automatiquement une tâche de récupération pour une note ≤ 2 dans la
+même transaction. Les listes et transitions Owner/Manager sont tenant-scoped ; le worker expire les
+liens toutes les 15 minutes. `REPUTATION_ENABLED=false` reste le défaut. Aucun SMS/email, avis
+Google ou programme de récompense n'est déclenché par cette fondation. La page
+`/dashboard/reputation` expose localement le score moyen, les retours et la boîte de récupération ;
+elle reste verrouillée par le flag.
+
+La brique P8-03 est maintenant livrée localement dans `apps/api/src/modules/loyalty/` et sur
+`/dashboard/loyalty`. Elle définit des avantages EUR bornés, des règles `ANY`, `VIP`,
+`MIN_VISITS`, `BIRTHDAY_MONTH` ou `MIN_ESTIMATED_SPEND`, émet un grant avec code à usage unique
+hashé, autorise une consommation atomique et expire les émissions toutes les 15 minutes. La
+capability `reputation.loyalty` est Pro/Multi-site ; `LOYALTY_ENABLED=false` reste le défaut.
+Cette fondation ne contacte aucun canal et ne constitue pas encore un programme de points.
+
 ### P8-01 — Retour après visite
 
 - demander un avis privé après une visite honorée ;
@@ -702,15 +901,24 @@ Ajouter les sources une par une selon accès API : Google en premier si permis, 
 
 ### P8-03 — Avantages simples
 
-Avant les points :
+**État local au 14 septembre 2026 : fondation livrée localement ; qualification et activation
+restent ouvertes.**
+
+Le socle est provider-neutral et couvre :
 
 - avantage manuel ou automatique ;
 - règle d'éligibilité explicable ;
 - validité et limites d'usage ;
-- affichage avant le service ;
-- consommation auditée ;
-- coût estimé ;
-- prévention des doublons et abus.
+- code d'émission à usage unique, conservé sous forme de hash ;
+- consommation auditée et idempotente ;
+- coût estimé en centimes EUR ;
+- prévention des doublons et abus avec verrou transactionnel ;
+- expiration planifiée et catalogue administrable.
+
+La page `/dashboard/loyalty` permet de créer/désactiver un avantage, émettre un grant et le
+marquer utilisé. Aucun SMS/email/WhatsApp, POS, paiement ou portefeuille de points n'est appelé.
+Il reste à faire relire les règles par les restaurants pilotes, choisir les canaux, définir les
+consentements et décider si une intégration POS est nécessaire.
 
 Exemples : coupe offerte pour anniversaire, priorité liste d'attente, attention VIP. Éviter toute promesse qui ne peut pas être exécutée par l'équipe en salle.
 
@@ -729,34 +937,69 @@ Cette phase rapproche Sokar de la largeur de SevenRooms, mais elle ne justifie p
 
 ### P9-01 — Expériences et suppléments
 
-- catalogue d'expériences avec capacité, dates et prix ;
-- menus prépayés et suppléments ;
-- inventaire séparé ou partagé avec les tables ;
+Le socle local est livré derrière `EXPERIENCES_ENABLED=false` et la capability Pro
+`experiences.manage`. Il couvre le catalogue (`DRAFT/ACTIVE/ARCHIVED`), les sessions datées
+(`OPEN/CLOSED/CANCELLED`), une capacité atomique protégée par advisory lock PostgreSQL, un snapshot
+du prix EUR, les réservations idempotentes, l'annulation et la fermeture automatique des sessions.
+L'API et `/dashboard/experiences` sont testés ; aucun paiement ni canal externe n'est contacté.
+
+Restent à qualifier avant d'ouvrir P9 :
+
+- menus prépayés, suppléments, inventaire partagé avec les tables ;
 - achat, remboursement et transfert ;
 - widget et téléphone capables de les proposer ;
-- reporting séparé.
+- reporting séparé et attribution du revenu encaissé ;
+- événements, billetterie, liste d'attente et distribution partenaire.
 
 ### P9-02 — Événements
 
-- sessions, billets, jauges, tarifs et codes ;
-- collecte des participants ;
-- liste d'attente ;
-- contrôle d'accès simple ;
-- facture et remboursement ;
-- campagnes liées à l'événement.
+**État local au 14 septembre 2026 : fondation livrée localement ; activation bloquée.**
+
+Le lot couvre :
+
+- catalogue `DRAFT/ACTIVE/ARCHIVED`, sessions `OPEN/CLOSED/CANCELLED` et tarifs EUR bornés ;
+- jauge partagée par session, verrouillée par `pg_advisory_xact_lock` ;
+- commandes idempotentes avec snapshot de prix et un billet opaque par unité ;
+- codes billet hexadécimaux, conservation du hash et contrôle `ISSUED → CHECKED_IN` atomique ;
+- liste d'attente ordonnée, promotion rejouable et expiration des sessions/entrées ;
+- traces locales de facture et remboursement, explicitement `dryRun` sans Stripe ;
+- rattachement facultatif au CRM, export/effacement RGPD et page `/dashboard/events` ;
+- routes REST avec rôles Owner/Manager/Staff, alias check-in par code et worker toutes les 15 minutes.
+
+Restent ouverts avant l'activation : paiement/acompte et remboursement réel, facture fiscale, widget
+et voix, notifications, QR/offline, canaux Google/Meta/partenaires, campagnes liées et reporting de
+revenu encaissé. Le détail contractuel se trouve dans
+[`adr-events-foundation.md`](./architecture/adr-events-foundation.md).
 
 ### P9-03 — Canaux et API partenaires
 
-Prioriser selon demande commerciale : Google Reserve, Instagram/Facebook, plateformes de réservation et API publique. Pour chaque canal :
+**État local au 14 septembre 2026 : fondation provider-neutral livrée ; aucun adaptateur externe
+activé.** Le module `apps/api/src/modules/distribution/` et la page
+`/dashboard/distribution` couvrent :
 
-- contrat de capacité ;
-- source et attribution ;
-- idempotence ;
-- synchronisation bidirectionnelle ;
-- gestion du retard fournisseur ;
-- health check et alerte ;
-- procédure de déconnexion ;
-- tests de concurrence.
+- `DistributionConnection` unique par fournisseur et établissement, identifiant externe haché,
+  quatre derniers caractères, référence opaque de secret et empreinte de configuration ;
+- `DistributionSyncRun` avec directions `PUSH/PULL/BIDIRECTIONAL`, états finaux monotones,
+  fenêtre bornée, curseurs, compteurs, hash d'acteur et idempotence scoped incluant le curseur
+  source ;
+- `DistributionAvailabilitySnapshot` upserté par slot, borné et explicitement non autoritaire
+  pour la capacité Sokar ;
+- `DistributionReservationLink` uniquement après fourniture explicite d'une réservation existante,
+  avec unicité du hash externe et de la réservation ;
+- `DistributionWebhookEvent` haché avec anti-rejeu tenant/fournisseur, inbox et transition finale
+  opérateur ;
+- routes tenant-scoped, garde `distribution.manage`, rôles Owner/Manager/Staff et flag
+  `DISTRIBUTION_ENABLED=false` ;
+- tests de normalisation, secrets, concurrence logique, idempotence, conflits et UI.
+
+Restent à construire pour un premier canal : choix contractuel et DPA, OAuth ou compte marchand,
+secret manager réel, adaptateur signé, mapping capacité, webhook public, worker de synchronisation,
+dead-letter, health check fournisseur, déconnexion testée, attribution, réconciliation de 30 jours
+et preuve de pilote. Tant que ces éléments ne sont pas signés, une connexion ou un run affiché dans
+le dashboard est une preuve locale de préparation, jamais une publication Google/Meta.
+
+Le détail des invariants et du contrat se trouve dans
+[`adr-distribution-foundation.md`](./architecture/adr-distribution-foundation.md).
 
 ## 16. Backlog transversal obligatoire
 
@@ -834,20 +1077,20 @@ Choisir selon les problèmes des pilotes :
 
 Hypothèse : sprints de deux semaines. Le contenu sera ajusté selon les incidents pilotes.
 
-| Sprint | Livraison principale                                    | Démonstration attendue                               |
-| ------ | ------------------------------------------------------- | ---------------------------------------------------- |
-| S1     | Ledger d'usage et coût par appel                        | Un appel test est rapproché de bout en bout          |
-| S2     | Entitlements, alertes de consommation, marge interne    | Essential et Pro ont des droits et budgets distincts |
-| S3     | Matrice E2E voix/réservation et correction P0           | Dix scénarios critiques passent                      |
-| S4     | Notifications avec callbacks, erreurs visibles et retry | Une panne SMS est visible et récupérable             |
-| S5     | Onboarding, renvoi de secours, readiness gate           | Un restaurant est activé avec checklist signée       |
-| S6     | Prix 199/299, Stripe sandbox et deux pilotes Essential  | Cycle commercial complet démontré                    |
-| S7     | Identité client, chronologie et migration               | Un profil rassemble appels, réservations et visites  |
-| S8     | Préférences, tags, déduplication et droits              | Un doublon est fusionné sans perte                   |
-| S9     | Indicateurs RFM et filtres CRM                          | Le gérant retrouve une audience utile                |
-| S10    | Modèle campagne, segments et SMS test                   | Une campagne est prévisualisée et estimée            |
-| S11    | Trois automatisations, consentement, désinscription     | Aucun message illégitime ou doublon au rejeu         |
-| S12    | Attribution, rapport, pilote Pro                        | Réservation et visite apparaissent dans le rapport   |
+| Sprint | Livraison principale                                    | État local au 14/09 | Démonstration attendue                               |
+| ------ | ------------------------------------------------------- | ------------------- | ---------------------------------------------------- |
+| S1     | Ledger d'usage et coût par appel                        | `PARTIEL LIVRÉ`     | Un appel test est rapproché de bout en bout          |
+| S2     | Entitlements, alertes de consommation, marge interne    | `PARTIEL LIVRÉ`     | Essential et Pro ont des droits et budgets distincts |
+| S3     | Matrice E2E voix/réservation et correction P0           | `À PROUVER`         | Dix scénarios critiques passent                      |
+| S4     | Notifications avec callbacks, erreurs visibles et retry | `PARTIEL LIVRÉ`     | Une panne SMS est visible et récupérable             |
+| S5     | Onboarding, renvoi de secours, readiness gate           | `PARTIEL LIVRÉ`     | Un restaurant est activé avec checklist signée       |
+| S6     | Prix 199/299, Stripe sandbox et deux pilotes Essential  | `PARTIEL LIVRÉ`     | Cycle commercial complet démontré                    |
+| S7     | Identité client, chronologie et migration               | `PARTIEL LIVRÉ`     | Un profil rassemble appels, réservations et visites  |
+| S8     | Préférences, tags, déduplication et droits              | `PARTIEL LIVRÉ`     | Un doublon est fusionné sans perte                   |
+| S9     | Indicateurs RFM et filtres CRM                          | `LIVRÉ LOCAL`       | Le gérant retrouve une audience utile                |
+| S10    | Modèle campagne, segments et SMS test                   | `PARTIEL LIVRÉ`     | Une campagne est prévisualisée et estimée            |
+| S11    | Trois automatisations, consentement, désinscription     | `PARTIEL LIVRÉ`     | Aucun message illégitime ou doublon au rejeu         |
+| S12    | Attribution, rapport, pilote Pro                        | `PARTIEL LIVRÉ`     | Réservation et visite apparaissent dans le rapport   |
 
 À la fin de S6, Essential doit pouvoir être vendu à 199 €. À la fin de S12, Pro doit pouvoir être vendu à 299 €. Ce calendrier n'est acceptable que si les portes de qualité passent ; un sprint de stabilisation remplace une nouvelle fonctionnalité dès qu'un incident P0/P1 reste ouvert.
 
@@ -884,37 +1127,37 @@ Hypothèse : sprints de deux semaines. Le contenu sera ajusté selon les inciden
 - **Corriger** si elle est utile mais génère erreurs, support ou coût excessif.
 - **Simplifier** si moins de 20 % des pilotes comprennent le parcours sans aide.
 - **Retirer ou différer** si aucun pilote ne l'utilise sur deux cycles pertinents.
-- **Augmenter les limites/prix** si le p90 de coût met en danger la marge.
+- **Revoir le packaging ou le prix** si le p90 de coût met en danger la marge ; la consommation
+  client reste sans quota.
 
 ## 20. Dépendances externes et décisions de Hamza
 
-| Décision                                      | Échéance utile | Impact si absente                             |
-| --------------------------------------------- | -------------- | --------------------------------------------- |
-| Minutes/SMS inclus par formule                | Phase 0        | Impossible de finaliser entitlements et marge |
-| Remise annuelle et maintien des anciens prix  | Phase 0        | Migration Stripe bloquée                      |
-| Engagement de support Pro                     | Phase 0        | Promesse commerciale imprécise                |
-| Deux restaurants pilotes Essential            | Phase 1        | Fiabilité terrain non prouvée                 |
-| Canal email et domaine d'envoi                | Phase 3        | Campagnes email et délivrabilité bloquées     |
-| Politique marketing et textes de consentement | Phase 3        | Automatisations non activables                |
-| Modèle marchand Stripe                        | Phase 5        | Empreinte/acompte bloqués                     |
-| Caisse prioritaire                            | Phase 6        | Connecteur POS non sélectionnable             |
-| Deux clients équipés de la même caisse        | Phase 6        | ROI du connecteur insuffisant                 |
-| Règles de partage client groupe               | Phase 7        | CRM groupe non activable                      |
+| Décision                                      | Échéance utile | Impact si absente                         |
+| --------------------------------------------- | -------------- | ----------------------------------------- |
+| Remise annuelle et maintien des anciens prix  | Phase 0        | Migration Stripe bloquée                  |
+| Engagement de support Pro                     | Phase 0        | Promesse commerciale imprécise            |
+| Deux restaurants pilotes Essential            | Phase 1        | Fiabilité terrain non prouvée             |
+| Canal email et domaine d'envoi                | Phase 3        | Campagnes email et délivrabilité bloquées |
+| Politique marketing et textes de consentement | Phase 3        | Automatisations non activables            |
+| Modèle marchand Stripe                        | Phase 5        | Empreinte/acompte bloqués                 |
+| Caisse prioritaire                            | Phase 6        | Connecteur POS non sélectionnable         |
+| Deux clients équipés de la même caisse        | Phase 6        | ROI du connecteur insuffisant             |
+| Règles de partage client groupe               | Phase 7        | CRM groupe non activable                  |
 
 ## 21. Risques majeurs et réponses
 
-| Risque                                       | Réponse                                                                          |
-| -------------------------------------------- | -------------------------------------------------------------------------------- |
-| Construire trop large avant les ventes       | Chaque phase a une porte commerciale autonome et des pilotes nommés              |
-| Coût voix incompatible avec 199/299 €        | Ledger d'usage, p90, quotas et dépassements avant promesse                       |
-| Messages marketing non conformes             | Consentement par canal, preuve, revalidation à l'envoi, suppression immédiate    |
-| Doublons client et mauvaise personnalisation | Identités vérifiées, score de rapprochement, fusion manuelle auditée             |
-| Faux ROI                                     | Séparer estimé, réservé, honoré et encaissé                                      |
-| Double envoi ou double débit                 | Idempotence Postgres et références fournisseur uniques                           |
-| Dépendance à un POS                          | Interface adaptateur, health check, sync reprenable, export des données internes |
-| Fuite multi-tenant                           | Résolution serveur du site, tests avec identités réelles, rôles minimaux         |
-| Dette créée par le legacy                    | Migrations additives, adaptateurs et plan de retrait après observation           |
-| Support ingérable                            | Onboarding bloquant, outils de diagnostic, runbooks et limites claires           |
+| Risque                                       | Réponse                                                                                         |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Construire trop large avant les ventes       | Chaque phase a une porte commerciale autonome et des pilotes nommés                             |
+| Coût voix incompatible avec 199/299 €        | Ledger d'usage, p90 et marge interne par restaurant, avec ajustement du packaging si nécessaire |
+| Messages marketing non conformes             | Consentement par canal, preuve, revalidation à l'envoi, suppression immédiate                   |
+| Doublons client et mauvaise personnalisation | Identités vérifiées, score de rapprochement, fusion manuelle auditée                            |
+| Faux ROI                                     | Séparer estimé, réservé, honoré et encaissé                                                     |
+| Double envoi ou double débit                 | Idempotence Postgres et références fournisseur uniques                                          |
+| Dépendance à un POS                          | Interface adaptateur, health check, sync reprenable, export des données internes                |
+| Fuite multi-tenant                           | Résolution serveur du site, tests avec identités réelles, rôles minimaux                        |
+| Dette créée par le legacy                    | Migrations additives, adaptateurs et plan de retrait après observation                          |
+| Support ingérable                            | Onboarding bloquant, outils de diagnostic, runbooks et limites claires                          |
 
 ## 22. Définition de “Sokar offre tout ce qui compte face à SevenRooms”
 
@@ -935,15 +1178,16 @@ Les intégrations nombreuses, la billetterie avancée et les fonctions spéciali
 
 ## 23. Prochaine action concrète
 
-Ouvrir un epic par phase et commencer par P0-01. Avant le premier changement de schéma, rédiger les ADR courts pour :
+Le registre local est l'autorité d'exécution : ne créer une nouvelle tâche que pour un écart encore
+listé dans sa colonne « Reste ». Les fondations P0 à P4, CRM/marketing local, POS provider-neutral
+et protection bancaire locale sont déjà codées et testées sur cette branche ; les prochaines actions
+à forte valeur sont les preuves PostgreSQL, les fixtures provider et les pilotes contrôlés.
 
-1. ledger d'usage et unité de coût ;
-2. entitlements 199/299 ;
-3. identité client et fusion ;
-4. événements CRM et attribution ;
-5. consentement marketing par canal.
-
-Le premier jalon démontrable est : **un appel réel crée une réservation correcte, produit son coût complet, apparaît dans le tableau d'usage et respecte les droits du plan**. Ce jalon constitue la fondation économique et technique de toute la roadmap.
+Le prochain jalon démontrable avant toute ouverture de production est : **un restaurant pilote
+exécute une réservation à risque en sandbox, reçoit un événement signé, garde sa capacité protégée,
+et retrouve le statut, le remboursement et le rapprochement sans double écriture**. Tant que ce
+jalon, les portes P0 à P9 et le pilote ne sont pas clôturés, aucun déploiement production n'est
+effectué.
 
 ## 24. Documents liés
 
@@ -955,6 +1199,7 @@ Le premier jalon démontrable est : **un appel réel crée une réservation corr
 - `docs/floor-plan-spec.md`
 - `docs/gift-cards-spec.md`
 - `docs/runbooks/stripe-billing.md`
+- `docs/architecture/adr-reservation-payments-foundation.md`
 - [CRM SevenRooms](https://sevenrooms.com/platform/crm/)
 - [Réservations et liste d'attente SevenRooms](https://sevenrooms.com/platform/reservations-waitlist/)
 - [Tarifs Zenchef](https://www.zenchef.com/fr/formules)
@@ -963,125 +1208,191 @@ Le premier jalon démontrable est : **un appel réel crée une réservation corr
 
 # Partie II — Blueprint technique d'implémentation
 
-Cette partie traduit la roadmap en changements de code concrets. Les modèles Prisma sont des contrats cibles à valider dans des ADR avant migration. Ils utilisent des ajouts compatibles avec le schéma actuel ; aucun champ existant n'est supprimé pendant les phases 0 à 4.
+Cette partie traduit la roadmap en changements de code concrets. Elle conserve le blueprint cible
+et indique désormais les lots déjà présents localement. Les migrations CRM/marketing ajoutent des
+tables et colonnes compatibles ; aucun champ existant n'est supprimé pendant les phases 0 à 4.
 
 ## 25. Architecture cible dans le monorepo
 
-### 25.1 Modules API à créer
+### 25.1 Modules API cible et état local
+
+Les répertoires livrés ne correspondent pas tous aux anciens noms du blueprint (`crm` et
+`segments` sont regroupés dans `customers`). Cette table est la référence d'état ; une entrée
+marquée `À construire` est le seul travail restant, une entrée `LOCAL` est codée et testée mais
+peut rester bloquée par une preuve externe.
+
+| Module réel            | État local au 14/09/2026     | Preuve / reste                                                                                                                                                                                                               |
+| ---------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entitlements`         | `LIVRÉ LOCAL`                | matrice Essential/Pro/Multi-site, garde serveur et tests ; consommation client explicitement sans quota                                                                                                                      |
+| `usage`                | `PARTIEL LOCAL`              | ledger, coûts, rapprochement, marge par restaurant, suivi interne optionnel et export ; factures réelles et preuve PostgreSQL restent ouvertes                                                                               |
+| `customers`            | `LIVRÉ LOCAL`                | CRM, segments, fusion, RGPD, préférences/tags et confidentialité ; preuve PostgreSQL concurrente ouverte                                                                                                                     |
+| `customer-groups`      | `LIVRÉ LOCAL`                | consentement, isolation, rattachement idempotent et masquage ; flag fermé et identités Clerk réelles à prouver                                                                                                               |
+| `marketing`            | `PARTIEL LOCAL`              | campagnes, automations, callbacks, attribution et preview ; providers et pilote restent fermés                                                                                                                               |
+| `reservation-payments` | `FONDATION LOCAL`            | policies, préparation, transitions et webhook hashé ; marchand, intents, holds/captures/remboursements à construire                                                                                                          |
+| `pos`                  | `FONDATION LOCAL`            | contrat, import, ticket et matcher ; adaptateur fournisseur, sandbox et réconciliation à construire                                                                                                                          |
+| `reputation`           | `FONDATION LOCAL + UI ADMIN` | demandes tokenisées post-visite, réponses 1–5, tâches de récupération, worker d'expiration et boîte dashboard ; fournisseurs d'avis et envoi restent à qualifier                                                             |
+| `loyalty`              | `FONDATION LOCAL + UI ADMIN` | catalogue d'avantages, règles d'éligibilité, grants à code hashé, redeem atomique, expiration et coût estimé ; points, envoi, POS et pilote restent ouverts                                                                  |
+| `experiences`          | `FONDATION LOCAL + UI ADMIN` | catalogue, sessions, capacité atomique, snapshot prix, réservation idempotente, annulation et expiration ; paiement, canaux externes et reporting restent ouverts                                                            |
+| `events`               | `FONDATION LOCAL + UI ADMIN` | catalogue, sessions, tarifs, jauge transactionnelle, commandes/billets hashés, check-in, liste d'attente, traces locales de facture/remboursement ; paiement, facture fiscale, notifications et distribution restent ouverts |
+| `distribution`         | `FONDATION LOCAL + UI ADMIN` | connexions provider-neutral, snapshots de disponibilité, runs idempotents, liens explicites, inbox webhook hachée et revue de qualification ; fournisseurs, OAuth, worker et webhooks publics restent ouverts                |
+
+L'arborescence ci-dessous reste un blueprint de destination pour les extensions, pas une liste de
+fichiers manquants à recréer. Les fichiers présents dans la table ci-dessus sont considérés comme
+faits localement.
 
 ```text
 apps/api/src/modules/
 ├── entitlements/
-│   ├── entitlement.constants.ts
 │   ├── entitlement.service.ts
 │   ├── entitlement.routes.ts
 │   ├── entitlement.types.ts
 │   └── __tests__/
 ├── usage/
-│   ├── usage-recorder.service.ts
-│   ├── usage-rollup.service.ts
-│   ├── usage-cost.service.ts
+│   ├── usage.service.ts
+│   ├── usage-tariff.service.ts
+│   ├── usage-reconciliation.service.ts
+│   ├── usage-adjustment.service.ts
+│   ├── usage-alerts.service.ts
+│   ├── usage-internal-margin.service.ts
+│   ├── usage-accounting-export.service.ts
+│   ├── usage-accounting-package.service.ts
 │   ├── usage.routes.ts
-│   ├── internal-margin.routes.ts
-│   ├── workers/usage-rollup.worker.ts
+│   ├── usage.types.ts
 │   └── __tests__/
-├── crm/
-│   ├── customer-profile.service.ts
-│   ├── customer-identity.service.ts
+├── customers/
+│   ├── customer.service.ts
+│   ├── customer-crm.service.ts
 │   ├── customer-merge.service.ts
-│   ├── customer-timeline.service.ts
-│   ├── customer-preference.service.ts
-│   ├── customer-tag.service.ts
-│   ├── customer-metrics.service.ts
-│   ├── crm.schema.ts
-│   ├── crm.routes.ts
-│   ├── workers/customer-projection.worker.ts
+│   ├── customer-segment.service.ts
+│   ├── customer-privacy.ts
+│   ├── customer.routes.ts
+│   ├── customer-crm.routes.ts
+│   ├── customer-segment.routes.ts
 │   └── __tests__/
-├── segments/
-│   ├── segment-ast.schema.ts
-│   ├── segment-compiler.service.ts
-│   ├── segment-preview.service.ts
-│   ├── segment.routes.ts
+├── customer-groups/
+│   ├── customer-group.service.ts
+│   ├── customer-group.routes.ts
 │   └── __tests__/
 ├── marketing/
-│   ├── campaign.service.ts
-│   ├── audience.service.ts
-│   ├── template-renderer.service.ts
+│   ├── marketing-campaign.service.ts
+│   ├── marketing-automation.service.ts
 │   ├── marketing-permission.service.ts
-│   ├── frequency-cap.service.ts
-│   ├── attribution.service.ts
-│   ├── marketing.schema.ts
+│   ├── marketing-attribution.service.ts
+│   ├── marketing-report.service.ts
+│   ├── marketing-provider.service.ts
+│   ├── marketing-provider-reconciliation.worker.ts
+│   ├── marketing-campaign.worker.ts
+│   ├── marketing-automation.worker.ts
 │   ├── marketing.routes.ts
-│   ├── workers/campaign-orchestrator.worker.ts
-│   ├── workers/marketing-send.worker.ts
-│   ├── workers/marketing-reconcile.worker.ts
 │   └── __tests__/
 ├── reservation-payments/
-│   ├── payment-policy.service.ts
 │   ├── reservation-payment.service.ts
-│   ├── stripe-connect.service.ts
 │   ├── reservation-payment.routes.ts
-│   ├── reservation-payment-webhook.routes.ts
-│   ├── workers/payment-reconciliation.worker.ts
 │   └── __tests__/
 ├── pos/
 │   ├── pos-connector.ts
 │   ├── pos-connection.service.ts
 │   ├── pos-sync.service.ts
 │   ├── reservation-check-matcher.service.ts
-│   ├── adapters/<provider>/
 │   ├── pos.routes.ts
-│   ├── workers/pos-sync.worker.ts
 │   └── __tests__/
-└── reputation/
-    ├── feedback.service.ts
-    ├── recovery-task.service.ts
-    ├── reputation.routes.ts
-    ├── workers/feedback-request.worker.ts
+├── reputation/
+│   ├── reputation.service.ts
+│   ├── reputation.routes.ts
+│   ├── reputation-feedback-expiry.worker.ts
+│   └── __tests__/
+├── loyalty/
+│   ├── loyalty.service.ts
+│   ├── loyalty.routes.ts
+│   ├── loyalty-grant-expiry.worker.ts
+│   └── __tests__/
+├── experiences/
+│   ├── experience.service.ts
+│   ├── experience.routes.ts
+│   ├── experience-session-expiry.worker.ts
+│   └── __tests__/
+├── events/
+    ├── event.service.ts
+    ├── event.routes.ts
+    ├── event-session-expiry.worker.ts
+    └── __tests__/
+└── distribution/
+    ├── distribution.service.ts
+    ├── distribution.routes.ts
     └── __tests__/
 ```
 
-### 25.2 Infrastructure partagée à créer
+### 25.2 Infrastructure partagée à compléter
+
+Le socle `apps/api/src/shared/outbox/outbox.service.ts` et son worker de dispatch sont déjà
+présents, tout comme les adaptateurs de messagerie dans `shared/messaging` et `shared/telnyx`.
+L'ancienne arborescence `authorization/` et `providers/` ci-dessous décrit uniquement les
+extensions encore nécessaires ; elle ne doit pas être relue comme une liste de fichiers manquants.
 
 ```text
 apps/api/src/shared/
 ├── outbox/
 │   ├── outbox.service.ts
-│   ├── outbox-dispatcher.worker.ts
-│   ├── outbox.schemas.ts
 │   └── __tests__/
-├── authorization/
-│   ├── capabilities.ts
-│   ├── require-capability.ts
+├── messaging/
+│   ├── sender.ts
 │   └── __tests__/
-└── providers/
-    ├── email-provider.ts
-    ├── sms-provider.ts
-    └── provider-result.ts
+├── queue/
+│   ├── notification-idempotency.ts
+│   ├── notification-repair.ts
+│   └── workers/outbox-dispatcher.worker.ts
+└── providers/ (extension à construire si un second fournisseur est retenu)
 ```
 
-Le code marketing ne doit pas appeler directement Telnyx ou Resend. Il utilise une interface fournisseur retournant un résultat normalisé `accepted`, `refused` ou `unknown`, puis un worker de rapprochement traite les réponses ambiguës. Le mécanisme existant de notification idempotente sert de référence, mais les campagnes doivent conserver leur état durable dans Postgres plutôt que seulement dans Redis.
+Le worker marketing appelle les adaptateurs partagés Telnyx/Resend/WhatsApp, qui retournent un
+résultat normalisé `success`, `failure_certain` ou `unknown`. Le worker conserve l'état durable dans
+Postgres, recontrôle le consentement et bloque les claims anciens en revue manuelle afin de ne pas
+réémettre aveuglément. Les routes callback Telnyx et Resend vérifient la signature puis appliquent
+des transitions monotones et idempotentes sur `CampaignMessage`; les adaptateurs, la configuration
+effective et la preuve sur pilote restent à qualifier, pas à recréer. Les IDs inconnus sont
+persistés dans une inbox sans PII, réessayés par un worker dédié et clôturables par un opérateur.
 
 ### 25.3 Pages dashboard cibles
 
+Les pages suivantes sont déjà présentes localement : `/admin`, `/admin/margin`, `/admin/health`,
+`/admin/provisioning`, `/dashboard/customers`, `/dashboard/customers/crm/[id]`,
+`/dashboard/customers/crm/duplicates`, `/dashboard/marketing`,
+`/dashboard/marketing/segments`, `/dashboard/marketing/campaigns/new`, `/dashboard/reputation`,
+`/dashboard/loyalty`, `/dashboard/experiences`, `/dashboard/reactivation`, `/dashboard/reservations` et `/dashboard/settings`.
+Les écrans
+`payments` et l'administration POS restent à construire après qualification des parcours externes ;
+l'écran réputation et la fidélité existent localement mais restent verrouillés par
+`REPUTATION_ENABLED=false`, `LOYALTY_ENABLED=false` et `EXPERIENCES_ENABLED=false`.
+
 ```text
-apps/dashboard/src/app/dashboard/
-├── usage/page.tsx
-├── crm/page.tsx
-├── crm/[customerId]/page.tsx
-├── crm/duplicates/page.tsx
-├── marketing/page.tsx
-├── marketing/segments/page.tsx
-├── marketing/segments/[segmentId]/page.tsx
-├── marketing/campaigns/new/page.tsx
-├── marketing/campaigns/[campaignId]/page.tsx
-├── marketing/automations/page.tsx
-├── payments/page.tsx
-├── reputation/page.tsx
-└── settings/integrations/pos/page.tsx
+apps/dashboard/src/app/
+├── admin/
+│   ├── page.tsx
+│   ├── margin/page.tsx
+│   ├── health/page.tsx
+│   └── provisioning/page.tsx
+└── dashboard/
+    ├── usage/page.tsx (alias opérateur historique)
+    ├── customers/page.tsx
+    ├── customers/crm/page.tsx
+    ├── customers/crm/[id]/page.tsx
+    ├── customers/crm/duplicates/page.tsx
+    ├── marketing/page.tsx
+    ├── marketing/segments/page.tsx
+    ├── marketing/campaigns/new/page.tsx
+    ├── reputation/page.tsx
+    ├── loyalty/page.tsx
+    ├── experiences/page.tsx
+    ├── reservations/page.tsx
+    ├── reactivation/page.tsx
+    ├── settings/page.tsx
+    ├── floor-plan/page.tsx
+    └── (payments et POS : écrans d'administration à construire)
 ```
 
-Chaque page doit avoir les états loading, empty, error et data, fonctionner à largeur iPad et utiliser les composants `@/components/ui/*` et les tokens Tailwind existants.
+Chaque page livrée doit avoir les états loading, empty, error et data, fonctionner à largeur iPad et
+utiliser les composants `@/components/ui/*` et les tokens Tailwind existants. Les écrans futurs
+suivront la même règle après qualification de leur parcours externe.
 
 ## 26. Flux d'événements fiable : transactional outbox
 
@@ -1089,7 +1400,13 @@ Chaque page doit avoir les états loading, empty, error et data, fonctionner à 
 
 Un appel peut créer une réservation dans Postgres puis échouer avant l'ajout du job BullMQ. À l'inverse, un job peut être rejoué. Pour le CRM, l'usage, le marketing, le POS et le paiement, un simple `db.write()` suivi de `queue.add()` n'offre pas de garantie atomique.
 
-### 26.2 Modèle proposé
+### 26.2 Modèle livré localement
+
+`OutboxEvent`, `enqueue()`, la détection de PII, le claim PostgreSQL `SKIP LOCKED`, le lease de
+cinq minutes et le dispatcher BullMQ existent dans `apps/api/src/shared/outbox/` et
+`apps/api/src/shared/queue/workers/outbox-dispatcher.worker.ts`. Le schéma ci-dessous documente le
+contrat réellement utilisé ; les tests de concurrence PostgreSQL et la rétention/purge restent les
+preuves opérationnelles à exécuter.
 
 ```prisma
 enum OutboxStatus {
@@ -1174,7 +1491,14 @@ allowed =
   featureFlagService.isEnabled(capability, restaurant);
 ```
 
-### 27.2 Contrat TypeScript proposé
+### 27.2 Contrat TypeScript livré localement
+
+La source de vérité est `packages/config/src/entitlements.ts` (`EntitlementCapability`,
+`PLAN_ENTITLEMENTS` et `hasPlanCapability`). Les capabilities ajoutées pendant cette exécution sont
+`pos.connect`, `reservations.payments`, `customers.group`, `reputation.feedback` et
+`reputation.loyalty` ; `customers.group` est vraie uniquement pour `multi-site`. Les extraits
+historiques ci-dessous servent de blueprint de migration et ne
+doivent pas être recopiés tels quels dans le code.
 
 ```ts
 export const CAPABILITIES = [
@@ -1193,6 +1517,8 @@ export const CAPABILITIES = [
   'reservation.card_guarantee',
   'integrations.pos',
   'group.crm',
+  'reputation.feedback',
+  'reputation.loyalty',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -1214,11 +1540,16 @@ Les plans par défaut restent versionnés dans `packages/config`. Une table addi
 - Les jobs stockent le plan observé, mais le worker relit le droit courant avant un effet externe.
 - Un downgrade bloque les nouvelles campagnes et conserve la lecture de l'historique.
 - Une campagne planifiée par un client devenu inéligible passe en `PAUSED` avec `pauseReason=ENTITLEMENT_MISSING`.
-- Les réponses API utilisent `403 FEATURE_NOT_INCLUDED` avec `capability` et plan requis, sans détails Stripe.
+- Les réponses API utilisent `403 CAPABILITY_NOT_INCLUDED` avec `capability` et plan normalisé, sans détails Stripe.
 
 ## 28. Modèle technique de mesure des usages
 
-### 28.1 Schéma proposé
+### 28.1 Schéma livré localement
+
+`UsageEvent`, `UsageMonthlyRollup` et `UsageTariff` existent dans Prisma, avec le recorder,
+les rollups, l'import de tarifs, le rapprochement de facture et l'export comptable. Le schéma
+ci-dessous décrit le contrat de données ; seules les lignes de facture, les tarifs validés et la
+preuve PostgreSQL concurrente restent externes.
 
 ```prisma
 enum UsageCategory {
@@ -1283,16 +1614,19 @@ model UsageMonthlyRollup {
 | SMS            | acceptation fournisseur, quantité segmentée | `telnyx:sms:<providerMessageId>`    |
 | Email          | acceptation fournisseur                     | `resend:email:<providerMessageId>`  |
 
-Si la facture fournisseur n'expose pas le coût immédiatement, `estimatedCost` est calculé avec une table tarifaire versionnée. Un job mensuel rapproche estimation et facture ; il ne modifie pas les événements bruts, mais écrit un ajustement distinct.
+Si la facture fournisseur n'expose pas le coût immédiatement, `estimatedCost` est calculé avec une table tarifaire versionnée. Un job mensuel rapproche estimation et facture ; il ne modifie pas les événements bruts, mais écrit un ajustement distinct. `UsageReconciliationAdjustment` conserve le hash du rapport, la preuve, la portée, les deltas signés et la décision opérateur `OPEN`/`APPROVED`/`REJECTED`.
 
 ### 28.3 Endpoints
 
-| Méthode | Route                       | Capacité      | Réponse                              |
-| ------- | --------------------------- | ------------- | ------------------------------------ |
-| GET     | `/usage/current`            | tout plan     | consommation, inclus, reste, période |
-| GET     | `/usage/history?from=&to=`  | tout plan     | agrégats mensuels                    |
-| GET     | `/internal/margins?month=`  | admin interne | MRR, coûts et marge par site         |
-| POST    | `/internal/usage/reconcile` | admin interne | déclenche un rapprochement borné     |
+| Méthode | Route                                                  | Capacité        | Réponse                                    |
+| ------- | ------------------------------------------------------ | --------------- | ------------------------------------------ |
+| GET     | `/usage/current`                                       | tout plan       | consommation, inclus, reste, période       |
+| GET     | `/usage/history?from=&to=`                             | tout plan       | agrégats mensuels                          |
+| GET     | `/internal/margins?month=`                             | admin interne   | MRR, coûts et marge par site               |
+| POST    | `/internal/usage/reconcile`                            | admin interne   | déclenche un rapprochement borné           |
+| GET     | `/admin/usage/reconciliation-adjustments`              | opérateur Sokar | file des corrections avec preuve et statut |
+| POST    | `/admin/usage/reconciliation-adjustments`              | opérateur Sokar | crée une correction idempotente en `OPEN`  |
+| POST    | `/admin/usage/reconciliation-adjustments/:id/decision` | opérateur Sokar | approuve ou rejette depuis `OPEN`          |
 
 Les coûts internes ne sont jamais retournés par `/usage/*`.
 
@@ -1300,7 +1634,13 @@ Les coûts internes ne sont jamais retournés par `/usage/*`.
 
 ### 29.1 Extensions compatibles de `Customer`
 
-Ajouter d'abord des champs optionnels :
+**État local au 14 septembre 2026 : LIVRÉ LOCAL.** Les colonnes optionnelles (`emailNormalized`,
+`birthMonth`, `birthDay`, `preferredLocale`, `mergedIntoId`, `archivedAt`) et les modèles CRM
+associés existent dans `packages/database/prisma/schema.prisma`. `CustomerService` effectue le
+dual-write des identités et des événements de réservation/appel ; le script
+`apps/api/scripts/backfill-customer-crm.ts` est rejouable et borné. Le bloc ci-dessous décrit le
+contrat de données et ne constitue plus une tâche de création. Restent la preuve PostgreSQL de
+concurrence et la donnée POS réelle.
 
 ```prisma
 model Customer {
@@ -1326,6 +1666,11 @@ model Customer {
 Le champ `phone` et la contrainte `(restaurantId, phone)` restent en place pendant la transition. Le service actuel `CustomerService.lookupOrCreate()` est adapté pour normaliser le téléphone avant lookup, écrire `CustomerIdentity` en dual-write et conserver la clé cache actuelle jusqu'au basculement.
 
 ### 29.2 Identités
+
+**État local : LIVRÉ LOCAL.** `CustomerIdentity`, la normalisation téléphone/email, la détection
+de collision et le retour `conflict` sont implémentés dans `customer-crm.service.ts` et couverts
+par les tests CRM. Une collision d'import ne remplace pas le profil existant ; elle doit être
+traitée par le flux de fusion Owner.
 
 ```prisma
 enum CustomerIdentityType {
@@ -1359,6 +1704,11 @@ L'unicité empêche deux profils actifs de posséder la même identité dans un 
 
 ### 29.3 Chronologie durable
 
+**État local : LIVRÉ LOCAL.** `CustomerTimelineEvent` est persisté avec une clé `dedupeKey`, les
+événements réservation/appel et les réparations de projection sont branchés. Les routes CRM
+masquent notes et métadonnées selon la politique du site. Les événements liste d'attente, carte
+cadeau et POS restent des extensions de couverture, pas des tables à recréer.
+
 ```prisma
 model CustomerTimelineEvent {
   id             String   @id @default(uuid())
@@ -1385,6 +1735,11 @@ model CustomerTimelineEvent {
 `summaryCode` est traduit côté dashboard. Le texte libre n'est pas recopié dans `metadata`. Une note de gérant reste une entité séparée avec auteur et permissions.
 
 ### 29.4 Préférences et tags
+
+**État local : LIVRÉ LOCAL.** Les préférences allow-listées, leur source/confiance/expiration et
+les tags manuels ou système sont disponibles via les routes CRM et la fiche dashboard. Les valeurs
+sont normalisées côté serveur ; les champs sensibles ne deviennent pas une vérité permanente sans
+confirmation. La preuve de concurrence PostgreSQL reste ouverte.
 
 ```prisma
 enum CustomerDataSource {
@@ -1450,6 +1805,11 @@ model CustomerTagAssignment {
 
 ### 29.5 Projection métrique
 
+**État local : LIVRÉ LOCAL.** `CustomerMetricSnapshot` est recalculé de manière déterministe depuis
+les réservations, avec backfill dry-run et réparation Owner idempotente. `actualSpend365d` et
+`actualLifetimeSpend` restent nuls tant qu'un ticket POS rapproché n'est pas disponible ; ils ne
+doivent pas être présentés comme une dépense encaissée.
+
 ```prisma
 model CustomerMetricSnapshot {
   customerId             String   @id @map("customer_id")
@@ -1480,6 +1840,13 @@ model CustomerMetricSnapshot {
 La projection est mise à jour à chaque événement pertinent, avec un recalcul nocturne complet des profils modifiés depuis 48 heures. Une commande administrative bornée permet de reconstruire un restaurant entier.
 
 ## 30. Fusion de profils : transaction et invariants
+
+**État local au 14 septembre 2026 : LIVRÉ LOCAL.** Le preview et la mutation
+`POST /crm/customers/:targetId/merge` existent, sont protégés par `crm.merge`, idempotents et
+auditables. La transaction `Serializable` déplace les relations CRM, conserve le consentement le
+plus restrictif, archive les sources et écrit un événement de timeline/outbox. Les preuves avec
+deux transactions PostgreSQL concurrentes et un jeu de données réel restent à exécuter ; le
+snippet ci-dessous documente l'invariant attendu.
 
 ### 30.1 Endpoint
 
@@ -1519,6 +1886,12 @@ Dans une transaction `Serializable` avec retry borné :
 Une source fusionnée ne peut plus recevoir de mutation normale. Les URLs anciennes redirigent vers la cible. Aucun profil n'est supprimé physiquement par cette opération.
 
 ## 31. Moteur de segments
+
+**État local au 14 septembre 2026 : LIVRÉ LOCAL.** L'AST Zod, le compilateur Prisma borné, le
+preview, le CRUD, le refresh et les huit segments système sont dans
+`apps/api/src/modules/customers/customer-segment.service.ts`. La profondeur et le nombre de
+conditions sont limités côté serveur ; le seed est idempotent. Il reste à exécuter la preuve
+PostgreSQL de seed concurrent et le pilote de campagne.
 
 ### 31.1 AST acceptée
 
@@ -1577,6 +1950,12 @@ model CustomerSegment {
 ```
 
 ## 32. Consentement marketing par canal
+
+**État local au 14 septembre 2026 : LIVRÉ LOCAL.** `MarketingPermission` et
+`MarketingPermissionEvent` sont persistés avec preuve hashée, retrait monotone et compatibilité
+avec `CustomerConsent`. Les campagnes relisent la permission et les suppressions juste avant
+l'appel fournisseur. La synchronisation des listes provider et les preuves terrain restent
+ouvertes.
 
 Le booléen actuel `CustomerConsent.marketingOptIn` reste lisible pendant la migration, mais ne suffit pas pour email/SMS séparés.
 
@@ -1640,6 +2019,13 @@ La projection `MarketingPermission` et l'événement sont écrits dans la même 
 6. conservation du champ historique jusqu'à une migration ultérieure explicitement approuvée.
 
 ## 33. Campagnes et automatisations
+
+**État local au 14 septembre 2026 : PARTIEL LIVRÉ.** Les modèles réellement utilisés sont
+`MarketingCampaign`, `CampaignAudienceMember`, `CampaignMessage`, `MarketingAutomation` et les
+tables d'attribution/fréquence. Les services, workers, callbacks signés, dry-run, preview tarifé
+et inbox de réconciliation sont codés derrière `MARKETING_SENDS_ENABLED=false`. Les extraits
+ci-dessous restent un contrat cible ; la configuration provider, les fixtures réelles et le pilote
+d'envoi sont les seuls travaux de qualification restants.
 
 ### 33.1 Modèles principaux
 
@@ -1816,6 +2202,11 @@ La ligne `MarketingCampaignMessage.idempotencyKey` constitue l'autorité durable
 
 ## 34. Attribution et conversion
 
+**État local au 14 septembre 2026 : PARTIEL LIVRÉ.** Les liens HMAC opaques, clics, conversions
+créées/honorées/annulées, rapport et export CSV sont implémentés dans
+`marketing-attribution.service.ts` et `marketing-report.service.ts`. Le revenu encaissé POS et
+la comparaison temporelle restent ouverts.
+
 ### 34.1 Modèle
 
 ```prisma
@@ -1878,17 +2269,19 @@ Toutes les routes dashboard utilisent `requireOrg()` puis une capability. Le `re
 
 ### 35.1 CRM
 
-| Méthode | Route                              | Capability          | Notes                                         |
-| ------- | ---------------------------------- | ------------------- | --------------------------------------------- |
-| GET     | `/crm/customers`                   | `crm.profile`       | curseur, recherche normalisée, filtres bornés |
-| GET     | `/crm/customers/:id`               | `crm.profile`       | profil, métriques et chronologie paginée      |
-| PATCH   | `/crm/customers/:id`               | `crm.profile.write` | Zod, audit, invalidation cache                |
-| GET     | `/crm/customers/:id/timeline`      | `crm.profile`       | `cursor`, `limit<=100`                        |
-| POST    | `/crm/customers/:id/tags`          | `crm.advanced`      | assignation manuelle idempotente              |
-| DELETE  | `/crm/customers/:id/tags/:tagId`   | `crm.advanced`      | retire seulement le tag manuel                |
-| POST    | `/crm/customers/:id/merge-preview` | `crm.merge`         | lecture sans mutation                         |
-| POST    | `/crm/customers/:id/merge`         | `crm.merge`         | `Idempotency-Key` obligatoire                 |
-| GET     | `/crm/duplicates`                  | `crm.merge`         | candidats avec score explicable               |
+| Méthode | Route                                          | Capability                   | Notes                                         |
+| ------- | ---------------------------------------------- | ---------------------------- | --------------------------------------------- |
+| GET     | `/crm/customers`                               | `crm.profile`                | curseur, recherche normalisée, filtres bornés |
+| GET     | `/crm/customers/:id`                           | `crm.profile`                | profil, métriques et chronologie paginée      |
+| PATCH   | `/crm/customers/:id`                           | `crm.profile.write`          | Zod, audit, invalidation cache                |
+| GET     | `/crm/customers/:id/timeline`                  | `crm.profile`                | `cursor`, `limit<=100`                        |
+| POST    | `/crm/customers/:id/tags`                      | `crm.advanced`               | assignation manuelle idempotente              |
+| DELETE  | `/crm/customers/:id/tags/:tagId`               | `crm.advanced`               | retire seulement le tag manuel                |
+| POST    | `/crm/customers/:id/merge-preview`             | `crm.merge`                  | lecture sans mutation                         |
+| POST    | `/crm/customers/:id/merge`                     | `crm.merge`                  | `Idempotency-Key` obligatoire                 |
+| GET     | `/crm/duplicates`                              | `crm.merge`                  | candidats avec score explicable               |
+| GET     | `/crm/customers/:id/projection-repair-preview` | `customers.advanced`         | comparaison métriques/réservations            |
+| POST    | `/crm/customers/:id/projection-repair`         | `customers.advanced` + Owner | réparation idempotente et audit agrégé        |
 
 ### 35.2 Segments
 
@@ -1903,18 +2296,20 @@ Toutes les routes dashboard utilisent `requireOrg()` puis une capability. Le `re
 
 ### 35.3 Campagnes
 
-| Méthode | Route                               | Transition                                     |
-| ------- | ----------------------------------- | ---------------------------------------------- |
-| POST    | `/marketing/campaigns`              | crée `DRAFT`                                   |
-| PATCH   | `/marketing/campaigns/:id`          | modifie seulement `DRAFT`/`READY`              |
-| POST    | `/marketing/campaigns/:id/preview`  | rendu + audience + coût estimé                 |
-| POST    | `/marketing/campaigns/:id/test`     | envoi au gérant, quota test séparé             |
-| POST    | `/marketing/campaigns/:id/schedule` | `READY → SCHEDULED`                            |
-| POST    | `/marketing/campaigns/:id/pause`    | `SCHEDULED/SENDING → PAUSED`                   |
-| POST    | `/marketing/campaigns/:id/cancel`   | état terminal, messages non réclamés supprimés |
-| GET     | `/marketing/campaigns/:id/report`   | agrégats et conversions                        |
-| GET     | `/marketing/suppressions`           | lecture des opt-out/bounces                    |
-| POST    | `/marketing/unsubscribe/:token`     | route publique signée et limitée               |
+| Méthode | Route                                 | Transition                                                        |
+| ------- | ------------------------------------- | ----------------------------------------------------------------- |
+| POST    | `/marketing/campaigns`                | crée `DRAFT`                                                      |
+| PATCH   | `/marketing/campaigns/:id`            | modifie seulement `DRAFT`/`READY`                                 |
+| POST    | `/marketing/campaigns/:id/preview`    | rendu + snapshot + unités + coût transparent                      |
+| POST    | `/marketing/campaigns/:id/test`       | dry-run gérant ; provider bloqué jusqu'au pilote                  |
+| POST    | `/marketing/campaigns/:id/schedule`   | `READY → SCHEDULED`                                               |
+| POST    | `/marketing/campaigns/:id/pause`      | `SCHEDULED/SENDING → PAUSED`                                      |
+| POST    | `/marketing/campaigns/:id/cancel`     | état terminal, messages non réclamés supprimés                    |
+| GET     | `/marketing/campaigns/:id/report`     | agrégats et conversions                                           |
+| GET     | `/marketing/campaigns/:id/report.csv` | export UTF-8 agrégé sans PII                                      |
+| GET     | `/marketing/providers/readiness`      | flags, configuration et noms de variables manquantes, sans secret |
+| GET     | `/marketing/suppressions`             | lecture des opt-out/bounces                                       |
+| POST    | `/marketing/unsubscribe/:token`       | route publique signée et limitée                                  |
 
 ### 35.4 Erreurs stables
 
@@ -2105,16 +2500,20 @@ Score explicable sur 100 :
 
 ### 38.1 Capabilities utilisateur
 
-Proposition initiale :
+Matrice locale actuelle (la colonne « Notes sensibles » est appliquée par la politique du site,
+configurable via `GET/PATCH /crm/privacy`, avec fallback `CRM_SENSITIVE_NOTE_ROLES` à
+`OWNER,MANAGER`) :
 
-| Rôle      | CRM                     | Notes sensibles     | Campagnes     | Paiements       | POS      | Groupe             |
-| --------- | ----------------------- | ------------------- | ------------- | --------------- | -------- | ------------------ |
-| OWNER     | lecture/écriture/fusion | oui                 | tout          | tout            | tout     | tout               |
-| MANAGER   | lecture/écriture        | oui                 | créer/envoyer | opérationnel    | lecture  | sites autorisés    |
-| MARKETING | lecture segmentable     | non par défaut      | créer/envoyer | non             | agrégats | segments autorisés |
-| STAFF     | lecture service limitée | oui pendant service | non           | état uniquement | non      | site courant       |
+| Rôle    | CRM                     | Notes sensibles | Campagnes     | Paiements       | POS     | Groupe          |
+| ------- | ----------------------- | --------------- | ------------- | --------------- | ------- | --------------- |
+| OWNER   | lecture/écriture/fusion | oui             | tout          | tout            | tout    | tout            |
+| MANAGER | lecture/écriture        | oui             | créer/envoyer | opérationnel    | lecture | sites autorisés |
+| STAFF   | lecture service limitée | non             | non           | état uniquement | non     | site courant    |
 
-Les rôles actuels étant des chaînes, commencer par un mapping de capabilities en TypeScript. Une migration vers des enums ou permissions configurables viendra seulement après observation.
+Les rôles actuels restent des chaînes et le mapping de capabilities est en TypeScript. La politique
+de notes est déjà surchargeable par établissement via `Restaurant.crmSensitiveNoteRoles` et les
+routes Owner `/crm/privacy`; la valeur nulle revient au fallback environnement. Une migration vers
+des enums n'est pas nécessaire pour fermer la porte Pro et reste hors périmètre courant.
 
 ### 38.2 Règles de requête
 
@@ -2138,21 +2537,28 @@ Chaque grand domaine suit six étapes :
 
 ### 39.1 Ordre des migrations proposées
 
-| Migration | Contenu                                           | Backfill                                 |
-| --------- | ------------------------------------------------- | ---------------------------------------- |
-| M01       | outbox + usage events/rollups                     | aucun                                    |
-| M02       | entitlement overrides                             | plans existants restent source           |
-| M03       | identités, timeline, préférences, tags, métriques | téléphone + événements réservation/appel |
-| M04       | segments                                          | segments système seedés                  |
-| M05       | permissions marketing par canal                   | uniquement preuves explicites            |
-| M06       | campagnes, audience, messages                     | campagne legacy conservée                |
-| M07       | touches et conversions                            | sources récentes si traçables            |
-| M08       | politiques et paiements réservation               | aucun                                    |
-| M09       | connexions et tickets POS                         | aucun                                    |
-| M10       | identité groupe                                   | après validation juridique/produit       |
-| M11       | feedback, recovery et perks                       | aucun                                    |
+| Migration | Contenu                                           | Backfill                                                                                                                 |
+| --------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| M01       | outbox + usage events/rollups                     | aucun                                                                                                                    |
+| M02       | entitlement overrides                             | plans existants restent source                                                                                           |
+| M03       | identités, timeline, préférences, tags, métriques | téléphone + événements réservation/appel                                                                                 |
+| M04       | segments                                          | segments système seedés                                                                                                  |
+| M05       | permissions marketing par canal                   | uniquement preuves explicites                                                                                            |
+| M06       | campagnes, audience, messages                     | campagne legacy conservée                                                                                                |
+| M07       | touches et conversions                            | sources récentes si traçables                                                                                            |
+| M07b      | automations bornées et claims                     | aucune donnée destructive ; réactivation à migrer                                                                        |
+| M08       | politiques et paiements réservation               | aucun                                                                                                                    |
+| M09       | connexions et tickets POS                         | aucun                                                                                                                    |
+| M10       | identité groupe                                   | après validation juridique/produit                                                                                       |
+| M11       | feedback, recovery et perks                       | fondation feedback/recovery matérialisée par `20260914170000_reputation_feedback_foundation` ; aucun backfill destructif |
 
 Chaque migration contient une requête de préflight, un plan de rollback applicatif et une validation post-migration. Les migrations financières n'ont pas de rollback destructeur automatique.
+
+Sur la branche de travail, M01/M02 et les lots CRM/marketing correspondants sont matérialisés par
+les migrations `20260913170000_outbox_and_usage_tariffs`, puis
+`20260913210000_customer_crm_core` à `20260913290000_customer_segment_system_keys`. Elles restent
+locales : le passage staging demandera les contrôles PostgreSQL, le backfill et le plan de
+rollback de chaque migration.
 
 ## 40. Plan de tests technique
 
@@ -2199,13 +2605,15 @@ Chaque migration contient une requête de préflight, un plan de rollback applic
 
 ### Sprint 1 — Outbox et usage voix
 
-**Avancement au 13 septembre 2026 : PARTIEL.** Le schéma additif `UsageEvent` /
+**Avancement au 14 septembre 2026 : PARTIEL LIVRÉ.** Le schéma additif `UsageEvent` /
 `UsageMonthlyRollup`, le recorder idempotent résistant à une collision `P2002`, le recalcul mensuel,
 `GET /usage/current`, `GET /usage/history`, l'outbox `PENDING → DISPATCHED`, le catalogue
 `UsageTariff` et les compteurs STT/TTS/LLM sont implémentés. `call.hangup` et les clôtures de
 session écrivent des intentions idempotentes ; les tarifs sans ligne restent `UNPRICED`. Le
 dispatcher outbox tourne chaque minute et les rollups courant/précédent sont recalculés chaque
-heure. Restent le chargement des prix validés par facture, les collecteurs SMS/email, le
+heure. Les adaptateurs Telnyx/Resend collectent désormais les SMS segmentés (GSM-7/UCS-2), les
+messages WhatsApp et les emails dès l'acceptation fournisseur, avec contexte métier sans PII et
+clé d'idempotence commune à l'outbox. Restent le chargement des prix validés par facture, le
 rapprochement et le test Postgres concurrent.
 Décisions d'architecture : [`architecture/adr-usage-ledger-and-costing.md`](./architecture/adr-usage-ledger-and-costing.md) et [`architecture/adr-transactional-outbox.md`](./architecture/adr-transactional-outbox.md).
 
@@ -2215,7 +2623,7 @@ Décisions d'architecture : [`architecture/adr-usage-ledger-and-costing.md`](./a
 
 - `OutboxEvent`, dispatcher et récupération de lease ;
 - `UsageEvent`, recorder idempotent et rollup ;
-- collecte téléphonie/STT/TTS/LLM avec estimation explicite si le provider ne renvoie pas ses tokens ;
+- collecte téléphonie/STT/TTS/LLM et messagerie avec estimation explicite si le provider ne renvoie pas ses tokens ;
 - route interne de comparaison avec un appel ;
 - tests Postgres de rejeu et dispatcher concurrent.
 
@@ -2223,10 +2631,20 @@ Décisions d'architecture : [`architecture/adr-usage-ledger-and-costing.md`](./a
 
 ### Sprint 2 — Entitlements et usage dashboard
 
-**Avancement au 13 septembre 2026 : PARTIEL.** La matrice canonique, la normalisation des plans,
+**Avancement au 14 septembre 2026 : PARTIEL LIVRÉ.** La matrice canonique, la normalisation des plans,
 `GET /entitlements`, le garde serveur et l'enforcement de `reactivation.manage` sont implémentés.
-Le ledger, ses lectures API et la première collecte Telnyx sont disponibles ; restent le dashboard,
-les quotas chiffrés, les seuils 70/90/100 %, la marge interne et les collecteurs complets. Décision d'architecture :
+Le ledger, ses lectures API, la page restaurateur `/dashboard/usage`, les collecteurs de messagerie
+et la projection de consommation explicitement `UNLIMITED` de `GET /usage/current` sont disponibles.
+L'évaluateur déterministe et le worker horaire de seuils 70/90/100 % servent uniquement à un suivi
+interne optionnel et réclament chaque jalon une seule fois avec Redis ; le flag reste désactivé par
+défaut. Un feed strictement interne
+`GET /api/internal/usage/margin` protégé par `SOKAR_INTERNAL_USAGE_TOKEN` agrège quantité, coût et
+statut `PRICED/UNPRICED/MIXED`. La projection de marge applique maintenant les corrections
+`APPROVED` bornées à un établissement tout en conservant le coût source ; le cockpit permet de télécharger le suivi interne des usages et corrections approuvées. La facture
+Telnyx d'août, le paquet fichier et le contrôle non nul de mai sont consignés ; le raccordement
+comptable et le rattachement/conversion du trafic non nul sont différés et suivis séparément. La
+preuve d'un parcours non nul de bout en bout reste liée aux validations terrain. Décision
+d'architecture :
 [`architecture/adr-entitlements-vs-feature-flags.md`](./architecture/adr-entitlements-vs-feature-flags.md).
 
 **Fichiers :** `packages/config/src/entitlements.ts`, module `entitlements`, routes usage, page dashboard usage, ConfigCat wrappers.
@@ -2235,8 +2653,8 @@ les quotas chiffrés, les seuils 70/90/100 %, la marge interne et les collecteur
 
 - matrice de capabilities ;
 - enforcement serveur ;
-- limites voix/SMS ;
-- alertes 70/90/100 % ;
+- suivi des volumes voix/SMS sans quota client ;
+- suivi interne optionnel 70/90/100 % ;
 - marge interne ;
 - tests downgrade et job planifié.
 
@@ -2260,6 +2678,15 @@ les quotas chiffrés, les seuils 70/90/100 %, la marge interne et les collecteur
 
 ### Sprint 5 — Onboarding et activation
 
+**Avancement au 14 septembre 2026 : PARTIEL LIVRÉ.** L'onboarding dashboard, le provisioning
+Telnyx, l'appel test et la vue santé existent. Les preuves sont maintenant séparées : le webhook,
+le renvoi opérateur et la confirmation de réception de l'appel test ont chacun leur étape et leur
+mutation. Un appel déclenché reste `TEST_CALL_PENDING` jusqu'à la confirmation du `callControlId`.
+La finalisation admin passe par `ProvisioningService.completeProvisioning` : elle refuse `ACTIVE`
+si le numéro, le webhook, le renvoi ou la preuve d'appel test manquent et retourne
+`PROVISIONING_NOT_READY` avec la liste des prérequis. Cette garde ne remplace pas un appel réel ni
+la checklist signée du pilote.
+
 **Fichiers :** onboarding API/dashboard existant, provisioning, health, runbooks.
 
 **Livrables :** readiness score, blockers, test call, failover, checklist signée.
@@ -2270,9 +2697,13 @@ les quotas chiffrés, les seuils 70/90/100 %, la marge interne et les collecteur
 
 **Fichiers :** constantes prix, page pricing, billing service/tests, docs contractuelles.
 
-**Livrables :** prix 199/299, prix annuels, Stripe sandbox, upgrade/downgrade, deux pilotes.
+**Livrables locaux :** prix 199/299, prix annuels calculés, surfaces publiques, parcours
+d'inscription, mapping Checkout et tests de facturation. Les nouveaux `priceId` Stripe, la facture
+sandbox et les deux pilotes restent externes.
 
-**Done :** première facture Essential cohérente avec l'entitlement et la marge.
+**Done local :** l'affichage, les constantes, les alias historiques, le calcul ROI et le contrat
+Checkout utilisent la même grille ; la première facture Essential à 199 € reste à valider après
+création des prix Stripe.
 
 ### Sprint 7 — Noyau CRM
 
@@ -2284,17 +2715,19 @@ les quotas chiffrés, les seuils 70/90/100 %, la marge interne et les collecteur
 
 ### Sprint 8 — Préférences, tags et fusion
 
-**Fichiers :** services CRM, routes merge, pages CRM détail/doublons, extensions RGPD.
+**Fichiers :** services CRM, `customer-merge.service.ts`, routes merge, migration d'audit,
+extensions RGPD et pages dashboard CRM liste/détail/doublons.
 
 **Livrables :** tags, préférences, preview/merge et audit.
 
-**Done :** fusion concurrente testée sans perte ni croisement de tenant.
+**Done local :** preview, mutation idempotente et réparation de projection testés sans croisement de
+tenant ; la preuve de concurrence PostgreSQL reste à exécuter.
 
 ### Sprint 9 — Segments
 
-**Fichiers :** migration M04, AST Zod, compiler, preview, pages segments.
+**Fichiers :** migration M04, AST Zod, compiler, preview, routes CRUD/refresh, page dashboard segments.
 
-**Livrables :** huit segments système, constructeur borné, explication inclusion.
+**Livrables :** huit segments système persistés, constructeur borné et explication inclusion.
 
 **Done :** preview et snapshot retournent le même ensemble à version identique.
 
@@ -2310,9 +2743,12 @@ les quotas chiffrés, les seuils 70/90/100 %, la marge interne et les collecteur
 
 **Fichiers :** automation worker, permission service, unsubscribe public route, worker de fréquence.
 
-**Livrables :** première visite, dormant, anniversaire, opt-out immédiat, bounce suppression.
+**Livrables locaux :** première visite, dormant, anniversaire, interface dashboard, opt-out immédiat,
+claims PostgreSQL dédupliqués, transitions callback bounce/complaint et inbox de réconciliation des
+IDs inconnus. La configuration provider et la suppression fournisseur restent à raccorder.
 
-**Done :** opt-out concurrent bloque l'effet externe ou crée une alerte explicite si le fournisseur avait déjà accepté.
+**Done local :** un rejeu complet ne crée aucun second dispatch pour un même client et déclencheur ;
+le worker ré-enfile les campagnes `READY` après une panne Redis quand les envois sont autorisés.
 
 ### Sprint 12 — Attribution et pilote Pro
 
@@ -2367,17 +2803,17 @@ Passage au niveau suivant seulement si :
 - rollback applicatif testé ;
 - file de réconciliation vide ou expliquée.
 
-## 43. Ordre des ADR à écrire avant codage
+## 43. Ordre des ADR à écrire ou compléter avant activation
 
-1. `adr-usage-ledger-and-costing.md` : unités, arrondis, source tarifaire et rapprochement.
-2. `adr-entitlements-vs-feature-flags.md` : autorité du plan, overrides et downgrade.
-3. `adr-transactional-outbox.md` : lease, dispatcher, rétention et recovery.
+1. `adr-usage-ledger-and-costing.md` : unités, arrondis, source tarifaire et rapprochement (compléter les tarifs facturés).
+2. `adr-entitlements-vs-feature-flags.md` : autorité du plan, overrides et downgrade (livré, tests de migration à compléter).
+3. `adr-transactional-outbox.md` : lease, dispatcher, rétention et recovery (CRM/marketing métier encore à brancher).
 4. `adr-customer-identity-and-merge.md` : identifiants, conflits et règles RGPD.
 5. `adr-crm-projections.md` : événements sources, reconstruction et versioning.
 6. `adr-segment-ast.md` : opérateurs, compilation, limites et explication.
-7. `adr-marketing-consent.md` : preuve par canal et compatibilité legacy.
-8. `adr-campaign-delivery.md` : idempotence, états provider et reconciliation.
-9. `adr-campaign-attribution.md` : fenêtre et hiérarchie des revenus.
+7. `adr-marketing-consent.md` : preuve par canal et compatibilité legacy (reprendre dans l'ADR control plane livré).
+8. `adr-campaign-delivery.md` : idempotence, états provider et reconciliation (inbox provider inconnus livrée ; fixtures et pilote ouverts).
+9. `adr-campaign-attribution.md` : fenêtre et hiérarchie des revenus (visite honorée et coût rapproché ouverts).
 10. `adr-reservation-payment-merchant-model.md` : Stripe Connect et responsabilité financière.
 11. `adr-pos-connector-contract.md` : normalisation, secrets, sync et matching.
 12. `adr-group-customer-identity.md` : partage inter-sites et consentement.

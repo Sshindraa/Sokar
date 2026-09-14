@@ -15,6 +15,10 @@ import { smsInboundRoutes } from './modules/sms/sms-inbound.routes';
 import { whatsappWebhookRoutes } from './modules/whatsapp/whatsapp-webhook.routes';
 import { restaurantRoutes } from './modules/restaurants/restaurant.routes';
 import { customerRoutes } from './modules/customers/customer.routes';
+import { customerCrmRoutes } from './modules/customers/customer-crm.routes';
+import { customerSegmentRoutes } from './modules/customers/customer-segment.routes';
+import { marketingRoutes } from './modules/marketing/marketing.routes';
+import { marketingProviderRoutes } from './modules/marketing/marketing-provider.routes';
 import { analyticsRoutes } from './modules/analytics/analytics.routes';
 import { reservationRoutes } from './modules/reservations/reservation.routes';
 import { callRoutes } from './modules/calls/call.routes';
@@ -43,6 +47,14 @@ import { flagsRoutes } from './modules/admin/flags.routes';
 import { onboardingFunnelRoutes } from './modules/admin/onboarding-funnel.routes';
 import { provisioningRoutes } from './modules/admin/provisioning.routes';
 import { restaurantHealthRoutes } from './modules/admin/restaurant-health.routes';
+import { posRoutes } from './modules/pos/pos.routes';
+import { reservationPaymentRoutes } from './modules/reservation-payments/reservation-payment.routes';
+import { customerGroupRoutes } from './modules/customer-groups/customer-group.routes';
+import { reputationRoutes } from './modules/reputation/reputation.routes';
+import { loyaltyRoutes } from './modules/loyalty/loyalty.routes';
+import { experienceRoutes } from './modules/experiences/experience.routes';
+import { eventRoutes } from './modules/events/event.routes';
+import { distributionRoutes } from './modules/distribution/distribution.routes';
 import { registerCors } from './plugins/cors';
 import { registerRateLimit } from './plugins/rate-limit';
 import { registerClerk } from './plugins/clerk';
@@ -57,6 +69,7 @@ import './shared/queue/workers/analytics.worker';
 import './shared/queue/workers/outbox-dispatcher.worker';
 import './shared/queue/workers/outbox-delivery.worker';
 import './shared/queue/workers/usage-rollup.worker';
+import './shared/queue/workers/usage-alerts.worker';
 import './shared/queue/workers/reengagement.worker';
 import './shared/queue/workers/reconciliation.worker';
 import './shared/queue/workers/telnyx-webhook.worker';
@@ -64,6 +77,13 @@ import './shared/queue/workers/call-recovery.worker';
 import './shared/queue/workers/connect-analytics.worker';
 import './shared/queue/workers/confirmation-sms.worker';
 import './shared/queue/workers/reactivation.worker';
+import './modules/marketing/marketing-campaign.worker';
+import './modules/marketing/marketing-automation.worker';
+import './modules/marketing/marketing-provider-reconciliation.worker';
+import './modules/reputation/reputation-feedback-expiry.worker';
+import './modules/loyalty/loyalty-grant-expiry.worker';
+import './modules/experiences/experience-session-expiry.worker';
+import './modules/events/event-session-expiry.worker';
 import './shared/queue/workers/google-places-sync.worker';
 import './shared/queue/workers/alert-evaluation.worker';
 import './shared/queue/workers/system-health.worker';
@@ -228,8 +248,12 @@ export async function buildApp() {
   await app.register(telnyxVoiceRoutes);
   await app.register(smsInboundRoutes);
   await app.register(whatsappWebhookRoutes);
+  await app.register(marketingProviderRoutes);
   await app.register(restaurantRoutes);
   await app.register(customerRoutes);
+  await app.register(customerCrmRoutes);
+  await app.register(customerSegmentRoutes);
+  await app.register(marketingRoutes);
   await app.register(analyticsRoutes);
   await app.register(reservationRoutes);
   await app.register(callRoutes);
@@ -256,6 +280,14 @@ export async function buildApp() {
   await app.register(onboardingFunnelRoutes);
   await app.register(provisioningRoutes);
   await app.register(restaurantHealthRoutes);
+  await app.register(posRoutes);
+  await app.register(reservationPaymentRoutes);
+  await app.register(customerGroupRoutes);
+  await app.register(reputationRoutes);
+  await app.register(loyaltyRoutes);
+  await app.register(experienceRoutes);
+  await app.register(eventRoutes);
+  await app.register(distributionRoutes);
 
   // Routes de test — uniquement si ENABLE_TEST_ROUTES=true explicitement (SEC-005)
   if (env.ENABLE_TEST_ROUTES === 'true') {
@@ -419,6 +451,69 @@ async function start() {
         ),
       );
 
+      // Automatisations marketing Pro : scan horaire à :15. Le worker
+      // crée des campagnes snapshot mais ne met aucun fournisseur en jeu
+      // tant que MARKETING_SENDS_ENABLED reste désactivé.
+      await register('marketing-automation/hourly', () =>
+        queues.marketingAutomation.upsertJobScheduler(
+          'hourly-marketing-automation-scan',
+          { pattern: '15 * * * *', tz: 'Europe/Paris' },
+          { name: 'automation-scan', data: { kind: 'scan' } },
+        ),
+      );
+
+      // Réconciliation des callbacks provider reçus avant la CampaignMessage :
+      // elle ne contacte jamais le provider et ne dépend pas du flag d'envoi.
+      await register('marketing-provider-reconciliation/5min', () =>
+        queues.marketingProviderReconciliation.upsertJobScheduler(
+          'marketing-provider-reconciliation-5min',
+          { pattern: '*/5 * * * *', tz: 'Europe/Paris' },
+          { name: 'reconcile-provider-events', data: { limit: 100 } },
+        ),
+      );
+
+      // Expiration des liens de retour client : toutes les 15 minutes. Ce
+      // nettoyage ne contacte aucun fournisseur et reste sûr pendant le gel.
+      await register('reputation-feedback-expiry/15min', () =>
+        queues.reputationFeedbackExpiry.upsertJobScheduler(
+          'reputation-feedback-expiry-15min',
+          { pattern: '*/15 * * * *', tz: 'Europe/Paris' },
+          { name: 'expire-feedback-requests', data: { limit: 500 } },
+        ),
+      );
+
+      // Expiration des avantages émis : toutes les 15 minutes. Le worker ne
+      // contacte aucun provider et ne modifie que les grants encore ISSUED.
+      await register('loyalty-grant-expiry/15min', () =>
+        queues.loyaltyGrantExpiry.upsertJobScheduler(
+          'loyalty-grant-expiry-15min',
+          { pattern: '*/15 * * * *', tz: 'Europe/Paris' },
+          { name: 'expire-loyalty-grants', data: { limit: 1_000 } },
+        ),
+      );
+
+      // Fermeture des sessions d’expérience terminées : toutes les 15 minutes.
+      // Le worker ne contacte aucun fournisseur et ne modifie que les sessions
+      // encore ouvertes dont la date de fin est passée.
+      await register('experience-session-expiry/15min', () =>
+        queues.experienceSessionExpiry.upsertJobScheduler(
+          'experience-session-expiry-15min',
+          { pattern: '*/15 * * * *', tz: 'Europe/Paris' },
+          { name: 'expire-experience-sessions', data: { limit: 1_000 } },
+        ),
+      );
+
+      // Fermeture des sessions d’événement terminées : toutes les 15 minutes.
+      // Le worker ne contacte aucun fournisseur et expire aussi la liste
+      // d’attente locale des sessions fermées.
+      await register('event-session-expiry/15min', () =>
+        queues.eventSessionExpiry.upsertJobScheduler(
+          'event-session-expiry-15min',
+          { pattern: '*/15 * * * *', tz: 'Europe/Paris' },
+          { name: 'expire-event-sessions', data: { limit: 1_000 } },
+        ),
+      );
+
       // Alert evaluation : toutes les 5 minutes. Lit les métriques Prometheus,
       // compare avec le snapshot précédent (Redis), déclenche les alertes
       // Sentry avec cooldown 30 min. Cf. alert-evaluation.worker.ts.
@@ -495,6 +590,17 @@ async function start() {
           'usage-rollup-hourly',
           { pattern: '15 * * * *', tz: 'Europe/Paris' },
           { name: 'rebuild-current-month', data: {} },
+        ),
+      );
+
+      // Seuils de suivi interne 70/90/100 %. Ce worker n'impose aucun quota
+      // client et reste désactivé par défaut ; la vue de marge opérateur est
+      // la source de suivi principale.
+      await register('usage-alerts/hourly', () =>
+        queues.usageAlerts.upsertJobScheduler(
+          'usage-alerts-hourly',
+          { pattern: '30 * * * *', tz: 'Europe/Paris' },
+          { name: 'scan', data: {} },
         ),
       );
     })().catch((err) => logger.error({ err }, 'Startup scheduler IIFE failed'));

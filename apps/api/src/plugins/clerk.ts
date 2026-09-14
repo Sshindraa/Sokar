@@ -208,7 +208,17 @@ export function requireSokarOperator() {
         .filter(Boolean),
     );
 
-    if (!req.userId || !operatorIds.has(req.userId)) {
+    // The local demo has no Clerk session and uses the explicit demo user
+    // injected by requireAuth(). Keep that preview usable without weakening
+    // staging or production: DEMO_STAGING and NODE_ENV=production still
+    // require the server-side allowlist above.
+    const localDemoOperator =
+      process.env.NODE_ENV !== 'production' &&
+      process.env.DEMO_STAGING !== '1' &&
+      Boolean(process.env.DEMO_RESTAURANT_ID) &&
+      req.userId === (process.env.DEMO_USER_ID ?? 'demo-user');
+
+    if (!req.userId || (!operatorIds.has(req.userId) && !localDemoOperator)) {
       req.log.warn({ user_id: req.userId ?? null }, 'Sokar operator access denied');
       return reply.status(403).send({ error: 'Sokar operator access required' });
     }

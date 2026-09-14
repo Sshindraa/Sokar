@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useApi } from '../../../lib/api';
 import { getErrorMessage, type Customer } from '@/types/api';
 import { useIsMobile } from '@/lib/useMediaQuery';
@@ -17,7 +18,8 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { AlertCircle, Users, Search, RotateCcw, Star, Phone } from 'lucide-react';
+import { Users, Search, RotateCcw, Star, Phone, Sparkles } from 'lucide-react';
+import { DataFetchError } from '@/components/DataFetchError';
 import {
   Dialog,
   DialogContent,
@@ -27,8 +29,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
+type CustomerListResponse = Customer[] | { data?: Customer[] };
+
 export default function CustomersPage() {
-  const { get, patch, orgId } = useApi();
+  const { get, post, orgId } = useApi();
   const isMobile = useIsMobile();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -43,8 +47,9 @@ export default function CustomersPage() {
       setError('');
       try {
         const params = phone ? `?phone=${encodeURIComponent(phone)}` : '';
-        const data = await get<Customer[]>(`customers${params}`);
-        setCustomers(Array.isArray(data) ? data : []);
+        const response = await get<CustomerListResponse>(`customers${params}`);
+        const rows = Array.isArray(response) ? response : response.data;
+        setCustomers(Array.isArray(rows) ? rows : []);
       } catch (err: unknown) {
         setError(getErrorMessage(err, 'Impossible de charger les clients'));
       }
@@ -55,12 +60,12 @@ export default function CustomersPage() {
 
   useEffect(() => {
     if (!orgId) return;
-    fetchCustomers();
+    void fetchCustomers();
   }, [orgId, fetchCustomers]);
 
   async function toggleVip(id: string, current: boolean) {
     try {
-      await patch(`customers/${id}/vip`, { isVip: !current });
+      await post(`customers/${id}/vip`, { isVip: !current });
       setCustomers((prev) => prev.map((c) => (c.id === id ? { ...c, isVip: !current } : c)));
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Impossible de modifier le statut VIP'));
@@ -90,10 +95,21 @@ export default function CustomersPage() {
   return (
     <div className="space-y-4 md:space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Clients</h1>
-        <span className="text-sm text-muted-foreground">
-          {customers.length} client{customers.length > 1 ? 's' : ''}
-        </span>
+        <div>
+          <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Clients</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Fichier client opérationnel</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href="/dashboard/customers/crm">
+              <Sparkles size={14} />
+              CRM Pro
+            </Link>
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            {customers.length} client{customers.length > 1 ? 's' : ''}
+          </span>
+        </div>
       </div>
 
       {/* Recherche */}
@@ -136,19 +152,23 @@ export default function CustomersPage() {
       </div>
 
       {/* Contenu */}
-      {error ? (
-        <div className="sokar-error">
-          <AlertCircle size={18} />
-          {error}
-        </div>
-      ) : customers.length === 0 ? (
-        <div className="sokar-empty">
-          <Users size={40} className="opacity-30" />
-          <p className="text-sm">Aucun client enregistré</p>
-          <p className="text-xs opacity-60">
-            Les clients apparaîtront quand votre assistant prendra des appels.
-          </p>
-        </div>
+      {error && (
+        <DataFetchError
+          message={error}
+          onRetry={() => fetchCustomers(searchPhone || undefined)}
+          retrying={loading}
+        />
+      )}
+      {customers.length === 0 ? (
+        error ? null : (
+          <div className="sokar-empty">
+            <Users size={40} className="opacity-30" />
+            <p className="text-sm">Aucun client enregistré</p>
+            <p className="text-xs opacity-60">
+              Les clients apparaîtront quand votre assistant prendra des appels.
+            </p>
+          </div>
+        )
       ) : isMobile ? (
         /* ========== MOBILE: Card List ========== */
         <div className="space-y-2.5">
