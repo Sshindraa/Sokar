@@ -12,6 +12,29 @@ describe('customer CRM routes', () => {
     await closeApp();
   });
 
+  it('ferme le CRM avancé en production lorsque le flag n’est pas ouvert', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousFlag = process.env.CRM_ADVANCED_ENABLED;
+    process.env.NODE_ENV = 'production';
+    delete process.env.CRM_ADVANCED_ENABLED;
+    try {
+      const app = await getApp();
+      const response = await app.inject({
+        method: 'GET',
+        url: '/crm/privacy',
+        headers: { authorization: 'Bearer test' },
+      });
+
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toMatchObject({ error: 'CRM_ADVANCED_DISABLED' });
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+      if (previousFlag === undefined) delete process.env.CRM_ADVANCED_ENABLED;
+      else process.env.CRM_ADVANCED_ENABLED = previousFlag;
+    }
+  });
+
   it('expose la politique de notes effective et la réserve au propriétaire', async () => {
     const app = await getApp();
     vi.mocked(db.restaurant.findUnique)

@@ -16,6 +16,30 @@ describe('customer segment routes', () => {
     conditions: [{ field: 'honored365d', op: 'GTE', value: 2 }],
   };
 
+  it('ferme les segments en production lorsque le flag marketing reste fermé', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousFlag = process.env.MARKETING_FEATURES_ENABLED;
+    process.env.NODE_ENV = 'production';
+    delete process.env.MARKETING_FEATURES_ENABLED;
+    try {
+      const app = await getApp();
+      const response = await app.inject({
+        method: 'POST',
+        url: '/marketing/segments/preview',
+        headers: { authorization: 'Bearer test' },
+        payload: { definition },
+      });
+
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toMatchObject({ error: 'MARKETING_FEATURES_DISABLED' });
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+      if (previousFlag === undefined) delete process.env.MARKETING_FEATURES_ENABLED;
+      else process.env.MARKETING_FEATURES_ENABLED = previousFlag;
+    }
+  });
+
   it('previews a bounded segment with a tenant filter', async () => {
     const app = await getApp();
     vi.mocked(db.customer.count).mockResolvedValue(4);
