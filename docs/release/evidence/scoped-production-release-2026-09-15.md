@@ -23,9 +23,11 @@ réversible au lieu de bloquer les corrections et les fondations prêtes.
   `P4_ATTRIBUTION`, `P5_PAYMENTS`, `P6_POS`, `P7_CUSTOMER_GROUP`,
   `P8_REPUTATION`, `P9_ECOSYSTEM`, `PILOTS`.
 - Flags forcés désactivés en production : checkout d'abonnement, CRM avancé,
-  segments/campagnes marketing et envois marketing, POS, paiements de
-  réservation, CRM groupe, réputation, fidélité, expériences, événements et
-  distribution.
+  envois marketing, POS, paiements de réservation, CRM groupe, réputation,
+  fidélité, expériences, événements et distribution. Le control plane Marketing
+  Pro (règles, segments, brouillons et previews) est ouvert pour les restaurants
+  Pro ; `MARKETING_SENDS_ENABLED` reste fermé, donc aucun fournisseur n'est
+  appelé.
 
 Le contrôle `scripts/verify-product-gates.mjs` vérifie la partition exacte des
 portes, l'existence de cette preuve et, lorsqu'il est exécuté par
@@ -38,9 +40,9 @@ Le restaurateur continue de voir son dashboard de réservation et son fichier
 client. Il ne voit jamais les coûts fournisseurs, les budgets 70/90/100 ou les
 alertes internes : ces surfaces restent protégées dans `/admin` par
 `SOKAR_OPERATOR_USER_IDS`. Les écrans Pro affichent leur état verrouillé tant
-que le pilote et la configuration externe ne sont pas clos ; les endpoints
-CRM avancés, segments et campagnes répondent également avec un état désactivé
-en production.
+que le pilote et la configuration externe ne sont pas clos. Les restaurants Pro
+peuvent préparer les segments et campagnes ; la programmation et l'envoi restent
+bloqués tant que les fournisseurs et le pilote ne sont pas qualifiés.
 
 Le checkout Stripe est également fermé par `BILLING_CHECKOUT_ENABLED=false`.
 Le script de synchronisation des prix ignore les identifiants GitHub tant que
