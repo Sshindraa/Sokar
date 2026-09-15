@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireOrg } from '../../plugins/clerk';
-import { requireCapability } from '../entitlements/entitlement.guard';
+import { requireCapability, requireRuntimeFlag } from '../entitlements/entitlement.guard';
 import { db } from '../../shared/db/client';
 import {
   createCustomerSegment,
@@ -34,7 +34,15 @@ const UpdateBodySchema = z
     message: 'name or definition is required',
   });
 
-const requireMarketingSegments = [requireOrg(), requireCapability('marketing.segments')];
+const requireMarketingSegments = [
+  requireOrg(),
+  requireCapability('marketing.segments'),
+  requireRuntimeFlag(
+    'MARKETING_FEATURES_ENABLED',
+    'Les campagnes et segments restent désactivés jusqu’à la qualification du pilote.',
+    'MARKETING_FEATURES_DISABLED',
+  ),
+];
 
 export async function customerSegmentRoutes(app: FastifyInstance) {
   app.post(

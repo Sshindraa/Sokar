@@ -45,6 +45,17 @@ const MAX_MULTI_SITE_COUNT = 100;
 const CHECKOUT_IDEMPOTENCY_BUCKET_MS = 24 * 60 * 60 * 1000;
 const STRIPE_EVENT_PROCESSING_TIMEOUT_MS = 5 * 60 * 1000;
 
+/**
+ * Checkout is deliberately opt-in in production. Local development and tests
+ * keep the historical default enabled so the billing contract remains easy to
+ * exercise without requiring a real deployment flag.
+ */
+export function isBillingCheckoutEnabled(environment: NodeJS.ProcessEnv = process.env): boolean {
+  const configured = environment.BILLING_CHECKOUT_ENABLED?.trim().toLowerCase();
+  if (configured === undefined) return environment.NODE_ENV !== 'production';
+  return configured === 'true';
+}
+
 export class BillingNotConfiguredError extends Error {
   readonly code = 'BILLING_NOT_CONFIGURED';
 
@@ -300,6 +311,9 @@ export async function createCheckoutSession(input: {
   siteCount?: number;
   idempotencyKey?: string;
 }): Promise<{ id: string; url: string }> {
+  if (!isBillingCheckoutEnabled()) {
+    throw new BillingNotConfiguredError();
+  }
   const priceId = resolvePriceId(input.plan, input.billing);
   const siteCount = normalizeSiteCount(input.plan, input.siteCount);
   const addonPriceId =

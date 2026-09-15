@@ -235,6 +235,13 @@ const EnvSchema = z
     SOKAR_INTERNAL_MARKETING_TOKEN: z.string().optional(),
     // Les envois marketing restent verrouillés par défaut, même si les clés
     // provider sont présentes. Ces flags sont lus aussi par les workers.
+    // Le checkout d'abonnement reste désactivé en production tant que les
+    // prix Stripe et le pilote Essential ne sont pas clôturés.
+    BILLING_CHECKOUT_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Les fonctions CRM avancées et le control plane marketing restent
+    // désactivés en production tant que les preuves P2/P3 ne sont pas closes.
+    CRM_ADVANCED_ENABLED: z.enum(['true', 'false']).default('false'),
+    MARKETING_FEATURES_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_SENDS_ENABLED: z.enum(['true', 'false']).default('false'),
     MARKETING_WHATSAPP_ENABLED: z.enum(['true', 'false']).default('false'),
     // POS connectors remain disabled until a provider sandbox and pilot are

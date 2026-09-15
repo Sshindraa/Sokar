@@ -121,11 +121,14 @@ runs et webhooks sont idempotents et les liens de réservation doivent être exp
 adaptateur Google/Meta, OAuth, webhook public ou appel fournisseur n'est activé.
 
 Le gel de production des offres 199/299 est contrôlé par [`docs/release/product-gates.json`](./release/product-gates.json)
-et `scripts/verify-product-gates.mjs`. Le manifest doit contenir toutes les portes P0 à P9 et le
+et `scripts/verify-product-gates.mjs`. Le manifest contient toutes les portes P0 à P9 et le
 pilote, avec un tableau `blockers` pour chaque porte non fermée ; `LOCAL_ONLY` signifie que le lot
-est livré et testé localement, mais que la preuve externe manque. `scripts/deploy.sh` refuse une
-promotion production tant que le manifest n'est pas entièrement `CLOSED` et que `productionFreeze`
-reste à `true` ; un rollback reste possible.
+est livré et testé localement, mais que la preuve externe manque. Une promotion peut utiliser le
+profil `productionRelease` uniquement pour un périmètre explicite : les portes requises doivent
+être `CLOSED`, les portes différées doivent être partitionnées exactement et leurs flags doivent
+rester désactivés dans `apps/api/.env`. Sans profil scoped, `scripts/deploy.sh` refuse la promotion
+tant que le manifest n'est pas entièrement `CLOSED` et que `productionFreeze` reste à `true` ; un
+rollback reste possible.
 
 ## Pages Dashboard (`apps/dashboard/src/app/`)
 

@@ -28,6 +28,15 @@ if [[ ! -f "$TARGET_ENV_FILE" ]]; then
   exit 1
 fi
 
+# Les prix peuvent exister dans GitHub Actions avant que le checkout soit
+# autorisé en production. Ne les écrivons que lorsque l'API a explicitement
+# ouvert le checkout ; cela évite d'activer par accident une souscription
+# pendant un profil de release scoped.
+if ! grep -Eq '^BILLING_CHECKOUT_ENABLED=[[:space:]]*"?true"?[[:space:]]*$' "$TARGET_ENV_FILE"; then
+  echo "Checkout abonnements désactivé pour $DEPLOY_ENV ; synchronisation des prix ignorée"
+  exit 0
+fi
+
 for name in "${PRICE_NAMES[@]}"; do
   value="${!name:-}"
   if [[ ! "$value" =~ ^price_[A-Za-z0-9]+$ ]]; then

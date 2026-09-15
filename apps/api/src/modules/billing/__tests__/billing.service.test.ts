@@ -1,6 +1,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../shared/db/client';
-import { BillingWebhookInProgressError, handleBillingWebhook } from '../billing.service';
+import {
+  BillingWebhookInProgressError,
+  handleBillingWebhook,
+  isBillingCheckoutEnabled,
+} from '../billing.service';
+
+describe('billing.service - release flag', () => {
+  it('ferme le checkout en production par défaut', () => {
+    expect(isBillingCheckoutEnabled({ NODE_ENV: 'production' })).toBe(false);
+    expect(
+      isBillingCheckoutEnabled({ NODE_ENV: 'production', BILLING_CHECKOUT_ENABLED: 'false' }),
+    ).toBe(false);
+    expect(
+      isBillingCheckoutEnabled({ NODE_ENV: 'production', BILLING_CHECKOUT_ENABLED: 'true' }),
+    ).toBe(true);
+    expect(isBillingCheckoutEnabled({ NODE_ENV: 'test' })).toBe(true);
+  });
+});
 
 describe('billing.service - Stripe subscription webhooks', () => {
   afterEach(() => {

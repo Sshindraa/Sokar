@@ -1,7 +1,41 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-09-14",
+  "updatedAt": "2026-09-15",
   "productionFreeze": true,
+  "productionRelease": {
+    "mode": "SCOPED",
+    "id": "core-operator-foundations",
+    "label": "Fondations opérateur et surface restaurant",
+    "requiredGateIds": ["P0_USAGE"],
+    "deferredGateIds": [
+      "P1_ESSENTIAL",
+      "P2_CRM",
+      "P3_MARKETING",
+      "P4_ATTRIBUTION",
+      "P5_PAYMENTS",
+      "P6_POS",
+      "P7_CUSTOMER_GROUP",
+      "P8_REPUTATION",
+      "P9_ECOSYSTEM",
+      "PILOTS"
+    ],
+    "disabledFeatureFlags": [
+      "BILLING_CHECKOUT_ENABLED",
+      "CRM_ADVANCED_ENABLED",
+      "MARKETING_FEATURES_ENABLED",
+      "MARKETING_SENDS_ENABLED",
+      "MARKETING_WHATSAPP_ENABLED",
+      "POS_CONNECTORS_ENABLED",
+      "RESERVATION_PAYMENTS_ENABLED",
+      "CUSTOMER_GROUPS_ENABLED",
+      "REPUTATION_ENABLED",
+      "LOYALTY_ENABLED",
+      "EXPERIENCES_ENABLED",
+      "EVENTS_ENABLED",
+      "DISTRIBUTION_ENABLED"
+    ],
+    "evidence": ["docs/release/evidence/scoped-production-release-2026-09-15.md"]
+  },
   "gates": [
     {
       "id": "P0_USAGE",

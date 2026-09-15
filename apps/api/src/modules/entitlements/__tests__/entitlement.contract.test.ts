@@ -5,6 +5,7 @@ import {
   hasPlanCapability,
   normalizeCommercialPlan,
 } from '@sokar/config';
+import { isRuntimeFlagEnabled } from '../entitlement.guard';
 
 describe('entitlement contract', () => {
   it('defines every capability for every commercial plan', () => {
@@ -30,5 +31,16 @@ describe('entitlement contract', () => {
         expect(hasPlanCapability('multi-site', capability), capability).toBe(true);
       }
     }
+  });
+
+  it('fails closed for an absent production runtime flag', () => {
+    expect(isRuntimeFlagEnabled('CRM_ADVANCED_ENABLED', { NODE_ENV: 'production' })).toBe(false);
+    expect(
+      isRuntimeFlagEnabled('CRM_ADVANCED_ENABLED', {
+        NODE_ENV: 'production',
+        CRM_ADVANCED_ENABLED: 'true',
+      }),
+    ).toBe(true);
+    expect(isRuntimeFlagEnabled('CRM_ADVANCED_ENABLED', { NODE_ENV: 'test' })).toBe(true);
   });
 });
