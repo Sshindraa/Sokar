@@ -2,15 +2,13 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
+    "rootDir": "./src",
     "module": "CommonJS",
     "moduleResolution": "node",
     "target": "ES2022",
     "strict": true,
     "skipLibCheck": true,
-    "types": ["node"],
-    "paths": {
-      "@sokar/config": ["../../packages/config/src/constants.ts"]
-    }
+    "types": ["node"]
   },
   "include": ["src/**/*", "src/types/fastify.d.ts"]
 }

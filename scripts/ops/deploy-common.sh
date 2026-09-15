@@ -504,9 +504,13 @@ detect_changed_apps() {
                 NEED_CONNECT=true
                 log_warn "Connect standalone manquant — build forcé"
             fi
-            # Staging : fallback supplémentaire sur apps/api/dist/main.js
-            if [ "$DEPLOY_ENV" = "staging" ] && [ "$NEED_API" = false ] && [ ! -f "apps/api/dist/main.js" ]; then
+            # Le build TypeScript de l'API doit produire l'entrée que PM2
+            # démarre. Cela vaut pour les deux environnements : une release
+            # restaurée ou un artefact nettoyé ne doit jamais laisser PM2
+            # redémarrer un dist/main.js absent ou obsolète.
+            if [ "$NEED_API" = false ] && [ ! -f "$SOKAR_ROOT/apps/api/dist/main.js" ]; then
                 NEED_API=true
+                log_warn "API entrypoint manquant — build forcé"
             fi
 
             log info "   📎 Apps à builder :$([ "$NEED_DASHBOARD" = true ] && echo ' dashboard')$([ "$NEED_CONNECT" = true ] && echo ' connect')$([ "$NEED_API" = true ] && echo ' api')"
@@ -530,6 +534,10 @@ build_packages_api() {
     fi
     if [ "$need_api" = true ]; then
         NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/api build
+        if [ ! -f "$SOKAR_ROOT/apps/api/dist/main.js" ]; then
+            log_error "API build terminé sans apps/api/dist/main.js (entrypoint PM2 manquant)."
+            return 1
+        fi
     fi
 }
 
