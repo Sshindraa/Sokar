@@ -189,7 +189,7 @@ export default function CopilotQualityPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 pb-10">
+    <div className="w-full space-y-6 pb-10">
       <header className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm md:flex-row md:items-start md:justify-between md:p-6">
         <div className="flex gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">

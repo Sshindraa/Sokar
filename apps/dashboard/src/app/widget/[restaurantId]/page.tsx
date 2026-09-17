@@ -36,9 +36,11 @@ const reservationTheme: CSSProperties & Record<`--${string}`, string> = {
   '--reservation-soft': '24 6% 42%',
   '--reservation-muted': '24 5% 64%',
   '--reservation-line': '28 20% 88%',
-  '--reservation-blue': '207 92% 52%',
-  '--reservation-glow': '31 92% 62%',
-  '--reservation-success': '142 70% 38%',
+  // Accents de réservation alignés sur la palette Sokar : ivoire, taupe et champagne.
+  // Les états d'erreur restent signalés par le rouge natif du composant.
+  '--reservation-accent': '38 8% 48%',
+  '--reservation-glow': '38 12% 60%',
+  '--reservation-success': '24 10% 34%',
 };
 
 const FRENCH_DAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
@@ -443,11 +445,11 @@ export default function ReservationWidget() {
   const labelClass =
     'flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--reservation-soft))] sm:text-[11px] lg:text-[10px]';
   const softPillClass =
-    'border border-white/60 bg-white/[0.52] text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl transition-all duration-200 hover:-translate-y-0.5 hover:border-white/80 hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--reservation-blue)/0.22)]';
+    'border border-white/60 bg-white/[0.52] text-[hsl(var(--reservation-soft))] shadow-sm backdrop-blur-2xl transition-all duration-200 hover:-translate-y-0.5 hover:border-white/80 hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--reservation-accent)/0.22)]';
   const selectedPillClass =
     'scale-105 border-[hsl(var(--reservation-ink))] bg-[hsl(var(--reservation-ink))] text-[hsl(var(--reservation-panel))] shadow-lg shadow-black/10 hover:bg-[hsl(var(--reservation-ink))] hover:text-[hsl(var(--reservation-panel))]';
   const fieldClass =
-    'h-[3.25rem] w-full rounded-2xl border border-white/60 bg-white/38 px-5 text-sm font-medium text-[hsl(var(--reservation-ink))] shadow-inner outline-none backdrop-blur-2xl transition-all duration-200 placeholder:text-[hsl(var(--reservation-muted))] focus:border-white/80 focus:bg-white/62 focus:ring-2 focus:ring-[hsl(var(--reservation-blue)/0.18)]';
+    'h-[3.25rem] w-full rounded-2xl border border-white/60 bg-white/38 px-5 text-sm font-medium text-[hsl(var(--reservation-ink))] shadow-inner outline-none backdrop-blur-2xl transition-all duration-200 placeholder:text-[hsl(var(--reservation-muted))] focus:border-white/80 focus:bg-white/62 focus:ring-2 focus:ring-[hsl(var(--reservation-accent)/0.18)]';
 
   const backgroundClass =
     'relative min-h-screen overflow-hidden bg-[hsl(var(--reservation-bg))] font-sans text-[hsl(var(--reservation-ink))] antialiased';
@@ -846,7 +848,7 @@ export default function ReservationWidget() {
                     </span>
                   </div>
                   <div className="min-w-0 flex-1 p-4">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--reservation-blue))]">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--reservation-accent))]">
                       Réservation
                     </p>
                     <h4 className="mt-1 truncate text-sm font-extrabold text-[hsl(var(--reservation-ink))]">
@@ -881,7 +883,7 @@ export default function ReservationWidget() {
                         onClick={() => setShowCalendarMenu(false)}
                         className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-left text-sm font-medium text-[hsl(var(--reservation-ink))] hover:bg-black/5 transition-colors"
                       >
-                        <span className="h-2 w-2 rounded-full bg-blue-500" />
+                        <span className="h-2 w-2 rounded-full bg-[hsl(var(--reservation-ink))]" />
                         Google Calendar
                       </a>
                       <a
@@ -1019,7 +1021,7 @@ export default function ReservationWidget() {
                         </span>
                       </div>
                       <div className="min-w-0 flex-1 p-4">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--reservation-blue))]">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--reservation-accent))]">
                           Résumé
                         </p>
                         <h4 className="mt-1 truncate text-sm font-extrabold text-[hsl(var(--reservation-ink))]">

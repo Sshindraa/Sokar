@@ -326,8 +326,8 @@ export default function RegisterPage() {
         <div className="self-end z-10">
           <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 backdrop-blur-xl px-4 py-2 text-xs font-semibold shadow-sm transition-all duration-200">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"></span>
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary"></span>
             </span>
             Simulation temps réel
           </div>
@@ -355,9 +355,9 @@ export default function RegisterPage() {
             <div className="rounded-2xl border border-border bg-card/60 backdrop-blur-xl p-5 shadow-lg transition-all duration-300 hover:-translate-y-0.5">
               <div className="flex items-center justify-between gap-3">
                 <span className="sokar-icon-button h-9 w-9 border-border bg-secondary/50">
-                  <TrendingUp size={15} className="text-emerald-500" />
+                  <TrendingUp size={15} className="text-foreground" />
                 </span>
-                <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-2 py-0.5 text-xs font-bold uppercase tracking-wide">
+                <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-foreground">
                   +18.4%
                 </span>
               </div>
@@ -387,7 +387,7 @@ export default function RegisterPage() {
                     Assistant Vocal Sokar
                   </h4>
                   <p className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground" />
                     En communication avec un client
                   </p>
                 </div>
@@ -452,7 +452,7 @@ export default function RegisterPage() {
                 Bistrot L’Ardoise — 2 étoiles Michelin
               </p>
             </div>
-            <div className="flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2.5 py-1 text-xs font-semibold text-emerald-400">
+            <div className="flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-foreground">
               <CheckCircle size={10} />
               Partenaire Certifié
             </div>

@@ -369,7 +369,7 @@ export default function HomePage() {
             &copy; {new Date().getFullYear()} SOKAR OS. TOUS DROITS RÉSERVÉS.
           </p>
           <div className="flex items-center gap-1.5 text-xs tracking-[0.15em] uppercase text-white/40 bg-white/5 border border-white/10 px-3 py-1 rounded-full font-bold">
-            <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+            <span className="h-1.5 w-1.5 rounded-full bg-pricing-accent" />
             Bêta Privée
           </div>
         </div>

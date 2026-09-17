@@ -2,9 +2,10 @@
 
 Carte d'orientation haut niveau. Ce n'est pas une source de vérité absolue. Pour le détail, voir `docs/runbooks/` et `docs/architecture/`.
 
-> **Statut : ACTIF — vérifié le 14 septembre 2026.**
+> **Statut : ACTIF — vérifié le 15 septembre 2026.**
 > Le statut de chaque document produit et opérationnel est centralisé dans
-> [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
+> [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md), avec la réconciliation des audits dans
+> [`audits/2026-09-15-current-state.md`](./audits/2026-09-15-current-state.md).
 
 ## Ce qu'est Sokar
 

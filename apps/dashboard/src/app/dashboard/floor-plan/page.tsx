@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useApi } from '@/lib/api';
@@ -23,6 +24,10 @@ import { FloorPlanCrud } from './_components/FloorPlanCrud';
 import { FloorPlanSelector } from './_components/FloorPlanSelector';
 import { ServiceCopilotSimulator } from './_components/ServiceCopilotSimulator';
 import { DataFetchError } from '@/components/DataFetchError';
+
+const ServiceCopilotWidget = dynamic(() => import('../ServiceCopilotWidget'), {
+  ssr: false,
+});
 
 function getDefaultFloorPlan(floorPlans: FloorPlanSummary[]): FloorPlanSummary | null {
   return (
@@ -234,6 +239,9 @@ export default function FloorPlanPage() {
         </div>
       )}
 
+      {selectedFloorPlanId && activeView === 'service-live' && (
+        <ServiceCopilotWidget showCalm={false} />
+      )}
       {selectedFloorPlanId && activeView === 'service-live' && (
         <ServiceCopilotSimulator
           key={`simulator-${selectedFloorPlanId}`}

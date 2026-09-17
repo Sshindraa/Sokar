@@ -1,9 +1,14 @@
 # Plan de lancement commercial Sokar — 10 premiers restaurants
 
-Date : 6 septembre 2026
-Statut : **Phase 0 — EN COURS**
+Date du plan initial : 6 septembre 2026
+Statut : **HISTORIQUE — réconcilié le 15 septembre 2026**
 Référence : [audit de préparation au lancement](/Users/hamza/Projects/Sokar/docs/audits/2026-09-06-launch-readiness.md)
 Backlog opérationnel : [tickets de phase 0](/Users/hamza/Projects/Sokar/docs/audits/2026-09-07-phase-0-backlog.md)
+
+> Les phases, durées, prix et références de production de ce plan sont ceux du
+> cadrage initial. Pour l'état réellement livré, le profil `core-operator-foundations`,
+> le gel commercial 199/299 et les prochaines actions, consulter la
+> [réconciliation courante des audits](./2026-09-15-current-state.md).
 
 ## Objectif et règle de décision
 
@@ -48,7 +53,7 @@ Le catalogue est affiché et présenté dès le jour 1. Pour chaque module, le c
 
 ## Référence de départ
 
-La production auditée est le commit `b7d14da15777e8aab074859b519387bffdc32687`, identique à `main` sur GitHub et au VPS au moment de l’audit. Le poste local contient des modifications non publiées et se trouve sur un autre commit ; elles sont conservées. Le worktree de lancement utilisé pour ce lot est `/Users/hamza/Projects/Sokar/.worktrees/sokar-billing-10`, sur la branche actuelle `codex/phase-0-ops`, sans changer la branche de travail principale.
+La production auditée était le commit `b7d14da15777e8aab074859b519387bffdc32687`, identique à `main` sur GitHub et au VPS au moment de l’audit. Cette phrase et le worktree `/Users/hamza/Projects/Sokar/.worktrees/sokar-billing-10` décrivent le point de départ historique. La référence actuelle, le profil scoped déjà promu et les écarts encore ouverts sont dans la [réconciliation du 15/09](./2026-09-15-current-state.md). Le checkout local conserve ses modifications non publiées et ne constitue pas une preuve de production.
 
 Les risques et preuves de départ sont dans l’[audit détaillé](/Users/hamza/Projects/Sokar/docs/audits/2026-09-06-launch-readiness.md) et ses fichiers de preuve. Ils comprennent notamment deux défauts P0 d’isolation, une attribution de plan contournable, des SMS non opérationnels, des alertes absentes, des événements Stripe non idempotents et des contrôles CI incomplets.
 

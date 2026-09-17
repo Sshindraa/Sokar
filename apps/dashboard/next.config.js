@@ -11,6 +11,10 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // Le bouton Next.js de développement recouvre la navigation tactile et
+  // n'apporte rien à l'aperçu produit. Il n'est jamais généré dans un build
+  // de production.
+  devIndicators: false,
   // Les déploiements produisent une release dans un dossier isolé puis
   // basculent `.next` atomiquement. En local/CI, le dossier historique reste
   // `.next`.

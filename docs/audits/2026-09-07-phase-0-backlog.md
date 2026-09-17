@@ -1,10 +1,16 @@
 # Backlog de lancement — phase 0
 
-Date : 7 septembre 2026
-Statut : **EN COURS**
+Date du backlog initial : 7 septembre 2026
+Statut : **RÉCONCILIÉ — intentions et preuves historiques conservées**
 Référence de départ : `b7d14da15777e8aab074859b519387bffdc32687`
 Worktree de travail : `/Users/hamza/Projects/Sokar/.worktrees/sokar-billing-10`
 Branche actuelle : `codex/phase-0-ops`
+
+> **Référence actuelle :** [réconciliation des audits au 15/09/2026](./2026-09-15-current-state.md).
+> Ce backlog décrit le découpage et les preuves attendues au moment de sa création.
+> Les phrases indiquant que la production n'était pas déployée, ainsi que les anciens
+> montants Stripe, sont historiques. Les statuts de release courants sont ceux de
+> `docs/release/product-gates.json`.
 
 Ce backlog transforme l’[audit de lancement](/Users/hamza/Projects/Sokar/docs/audits/2026-09-06-launch-readiness.md) et le [plan phase par phase](/Users/hamza/Projects/Sokar/docs/audits/2026-09-06-launch-plan.md) en unités de travail vérifiables. Les responsables indiqués sont les rôles de réalisation ; Hamza reste décisionnaire GO/NO-GO et valide les changements qui touchent le produit ou le contrat.
 
@@ -22,7 +28,7 @@ Registre commercial associé : [propriétaires, prix et portes d’activation](/
 | LAUNCH-P1-06 | Codex — infra/ops                       | Rendre les incidents visibles et récupérables                          | configurer Sentry, uptime, canaux d’alerte, watchdog et exercice restore          | alerte volontaire reçue, backup restauré, RPO/RTO mesurés                         | Restore vierge répété ; RPO observable 20 h 05 et restore/contrôles 4 s mesurés ; canal externe et RTO production à fermer |
 | LAUNCH-P1-07 | Hamza + conseil RGPD                    | Compléter effacement, conservation, contrats et identité légale        | valider la cartographie et les données à effacer                                  | export/effacement prouvés, DPA/CGV/mentions publiés                               | Externe                                                                                                                    |
 | LAUNCH-P1-08 | Codex — voice/product, validation Hamza | Qualifier le dialogue et l’onboarding sur dix restaurants              | écrire scripts d’appels, critères d’acceptation et support                        | dix appels internes puis deux pilotes sans incident critique                      | À faire                                                                                                                    |
-| LAUNCH-P1-09 | Codex — CI/release                      | Empêcher une CI verte avec des parcours critiques ignorés              | rendre intégrations/E2E bloquants et inclure Connect                              | un échec volontaire empêche la promotion ; release candidate restaurable          | Prouvé : staging échoue volontairement après rollback/restauration et E2E ; production reste non déployée                  |
+| LAUNCH-P1-09 | Codex — CI/release                      | Empêcher une CI verte avec des parcours critiques ignorés              | rendre intégrations/E2E bloquants et inclure Connect                              | un échec volontaire empêche la promotion ; release candidate restaurable          | Contrôle de promotion en place ; le profil scoped est déployé, mais le gel commercial complet reste actif                  |
 
 ## Modules proposés au premier lancement
 
@@ -58,7 +64,7 @@ Ces tickets sont dans l’offre commerciale dès le jour 1. Leur niveau contract
 4. P1-07/P1-09 RGPD, contrats et CI bloquante en parallèle.
 5. P1-08 puis dogfood interne, deux pilotes, et seulement ensuite les vagues de cinq puis trois restaurants.
 
-La phase 0 sera clôturée quand les tickets ont une date cible, que les dépendances bloquantes ont une réponse, que les deux pilotes sont nommés et que la fiche de release candidate est complète. Le code des P0 peut avancer dans le worktree dès maintenant ; aucune mise en production ne part avant les critères de sortie de la phase 1.
+La phase 0 sera clôturée quand les tickets ont une date cible, que les dépendances bloquantes ont une réponse, que les deux pilotes sont nommés et que la fiche de release candidate est complète. Le code des P0 peut avancer dans le worktree dès maintenant. Un profil scoped a depuis été promu pour les fondations déjà sûres ; aucune activation commerciale complète ne part avant les critères de sortie des portes différées et des pilotes.
 
 ## Première exécution technique
 

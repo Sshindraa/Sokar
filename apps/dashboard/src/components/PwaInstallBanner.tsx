@@ -55,7 +55,7 @@ export default function PwaInstallBanner() {
     <div className="fixed bottom-4 left-4 right-4 z-[90] md:left-auto md:right-4 md:w-[380px] animate-in slide-in-from-bottom-5 fade-in duration-300">
       <div className="rounded-2xl border border-white/10 bg-black/80 p-5 shadow-2xl backdrop-blur-xl relative overflow-hidden">
         {/* Ambient background glow */}
-        <div className="absolute -right-10 -bottom-10 h-28 w-28 rounded-full bg-cyan-500/10 blur-2xl pointer-events-none" />
+        <div className="pointer-events-none absolute -right-10 -bottom-10 h-28 w-28 rounded-full bg-pricing-accent/10 blur-2xl" />
 
         {/* Close Button */}
         <button
@@ -68,7 +68,7 @@ export default function PwaInstallBanner() {
 
         {/* Header */}
         <div className="flex items-center gap-2 pr-6">
-          <span className="h-8 w-8 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full border border-pricing-accent/20 bg-pricing-accent/10 text-pricing-accent">
             <Sparkles size={14} className="animate-pulse" />
           </span>
           <div>
@@ -82,7 +82,7 @@ export default function PwaInstallBanner() {
         {/* Steps */}
         <div className="mt-4 space-y-3 border-t border-white/5 pt-3">
           <div className="flex items-center gap-3 text-xs text-white/70">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-white/5 border border-white/10 font-bold text-[10px] text-cyan-400">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 font-bold text-[10px] text-pricing-accent">
               1
             </span>
             <p className="leading-snug">
@@ -95,7 +95,7 @@ export default function PwaInstallBanner() {
           </div>
 
           <div className="flex items-center gap-3 text-xs text-white/70">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-white/5 border border-white/10 font-bold text-[10px] text-cyan-400">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 font-bold text-[10px] text-pricing-accent">
               2
             </span>
             <p className="leading-snug">

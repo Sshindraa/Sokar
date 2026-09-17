@@ -293,7 +293,7 @@ export default function ExperiencesPage() {
     error.includes('EXPERIENCES_DISABLED') || error.includes('CAPABILITY_NOT_INCLUDED');
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="w-full space-y-6">
       <header className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
         <div>
           <div className="flex items-center gap-2">

@@ -1,7 +1,7 @@
 # ADR — Ledger d'usage et calcul des coûts
 
 > **Statut** : accepté, implémentation partielle
-> **Date** : 2026-09-13 (mise à jour le 14 septembre 2026)
+> **Date** : 2026-09-13 (réconcilié le 15 septembre 2026)
 > **Périmètre livré** : schéma, recorder idempotent, projection mensuelle recalculable, routes de lecture, collecte Telnyx, compteurs STT/TTS/LLM, outbox, résolution tarifaire versionnée, import contrôlé de tarifs, rapprochement de facture, ajustements soumis à décision opérateur, export comptable CSV borné et paquet fichier séparant l'usage EUR des factures fournisseur
 
 ## Contexte

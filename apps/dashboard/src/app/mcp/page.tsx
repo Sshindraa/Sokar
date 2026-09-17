@@ -201,7 +201,7 @@ export default function McpPage() {
                     {tool.name}
                   </code>
                   {tool.readOnly ? (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-foreground">
                       <CheckCircle2 size={10} />
                       read-only
                     </span>
@@ -325,19 +325,19 @@ export default function McpPage() {
 
           <div className="mt-10 grid gap-3 text-sm text-white/62 sm:grid-cols-2">
             <Fact
-              icon={<Check size={14} className="text-emerald-300" />}
+              icon={<Check size={14} className="text-foreground" />}
               text="PKCE S256 obligatoire, plain rejeté"
             />
             <Fact
-              icon={<Check size={14} className="text-emerald-300" />}
+              icon={<Check size={14} className="text-foreground" />}
               text="Rate limit 60 calls / 60s par client"
             />
             <Fact
-              icon={<Check size={14} className="text-emerald-300" />}
+              icon={<Check size={14} className="text-foreground" />}
               text="Données personnelles filtrées (PII redaction)"
             />
             <Fact
-              icon={<Check size={14} className="text-emerald-300" />}
+              icon={<Check size={14} className="text-foreground" />}
               text="Consent CSRF + Clerk org-scoped"
             />
             <Fact

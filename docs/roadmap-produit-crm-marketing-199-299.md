@@ -1,6 +1,6 @@
 # Plan de bataille Sokar — offres 199/299 € et trajectoire CRM/marketing
 
-Date de référence : 14 septembre 2026
+Date de référence : 15 septembre 2026
 Statut : plan directeur, blueprint technique et registre d'exécution local
 Horizon indicatif : 6 à 9 mois pour une suite solide destinée aux indépendants ; 12 à 18 mois pour approcher la largeur fonctionnelle de SevenRooms
 Hypothèse de capacité : un développeur principal à temps plein, Hamza disponible pour les décisions produit, les pilotes et les validations terrain
@@ -8,14 +8,18 @@ Hypothèse de capacité : un développeur principal à temps plein, Hamza dispon
 > Le catalogue local affiche désormais Essential à 199 € et Pro à 299 €. Les identifiants et
 > montants Stripe actifs restent ceux de l'ancien catalogue jusqu'à une migration externe
 > contrôlée ; ces offres ne sont donc pas encore annoncées ou facturées comme 199/299 €. Le
-> statut consolidé de la documentation se trouve dans
-> [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
+> profil scoped `core-operator-foundations` a toutefois été promu pour les fondations sûres ;
+> le gel de l'offre complète reste actif. La réconciliation des audits et le statut consolidé
+> de la documentation se trouvent dans [`audits/2026-09-15-current-state.md`](./audits/2026-09-15-current-state.md)
+> et [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md).
 >
-> **Gel de production :** les lots décrits ici sont développés et vérifiés en local. Aucun push,
-> staging ou déploiement production n'est autorisé avant la clôture de toutes les portes P0 à P9,
-> du pilote et du gel explicite dans [`product-gates.json`](./release/product-gates.json).
+> **Gel de production commerciale :** les lots décrits ici peuvent être développés et vérifiés
+> localement, puis promus uniquement via un profil scoped explicite. Aucune ouverture complète
+> 199/299 n'est autorisée avant la clôture de toutes les portes P0 à P9, du pilote et du gel
+> explicite dans [`product-gates.json`](./release/product-gates.json). Le profil
+> `core-operator-foundations` déjà promu ne déverrouille ni le checkout ni les fournisseurs.
 
-### Registre d'exécution local — 14 septembre 2026
+### Registre d'exécution local — 14 septembre 2026 (snapshot ; statut courant dans la réconciliation du 15/09)
 
 | Lot                   | État local      | Preuve actuelle                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Suite / reste avant clôture                                                                                                                                                                                                                                                                                                                                                                                                           |
 | --------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1178,20 +1182,23 @@ Les intégrations nombreuses, la billetterie avancée et les fonctions spéciali
 
 ## 23. Prochaine action concrète
 
-Le registre local est l'autorité d'exécution : ne créer une nouvelle tâche que pour un écart encore
-listé dans sa colonne « Reste ». Les fondations P0 à P4, CRM/marketing local, POS provider-neutral
-et protection bancaire locale sont déjà codées et testées sur cette branche ; les prochaines actions
-à forte valeur sont les preuves PostgreSQL, les fixtures provider et les pilotes contrôlés.
+Le registre de release et la réconciliation des audits sont les autorités d'exécution : ne créer une
+nouvelle tâche que pour un écart encore listé dans leur colonne « Reste ». Les fondations P0 à P4,
+CRM/marketing local, POS provider-neutral et protection bancaire locale sont codées et testées ; les
+prochaines actions à forte valeur sont les preuves externes, les fixtures provider et les pilotes
+contrôlés.
 
-Le prochain jalon démontrable avant toute ouverture de production est : **un restaurant pilote
+Le prochain jalon démontrable avant l'ouverture commerciale complète est : **un restaurant pilote
 exécute une réservation à risque en sandbox, reçoit un événement signé, garde sa capacité protégée,
-et retrouve le statut, le remboursement et le rapprochement sans double écriture**. Tant que ce
-jalon, les portes P0 à P9 et le pilote ne sont pas clôturés, aucun déploiement production n'est
+et retrouve le statut, le remboursement et le rapprochement sans double écriture**. Le profil scoped
+`core-operator-foundations` est déjà en production pour les fondations sûres ; tant que ce jalon,
+les portes différées et le pilote ne sont pas clôturés, aucun déverrouillage commercial global n'est
 effectué.
 
 ## 24. Documents liés
 
 - `docs/architecture/reservation-commercial-readiness.md`
+- `docs/audits/2026-09-15-current-state.md`
 - `docs/audits/2026-09-06-launch-readiness.md`
 - `docs/audits/2026-09-07-phase-0-commercial-register.md`
 - `docs/audits/2026-09-07-multisite-gap-matrix.md`
@@ -2605,7 +2612,7 @@ rollback de chaque migration.
 
 ### Sprint 1 — Outbox et usage voix
 
-**Avancement au 14 septembre 2026 : PARTIEL LIVRÉ.** Le schéma additif `UsageEvent` /
+**Avancement au 15 septembre 2026 : PARTIEL LIVRÉ.** Le schéma additif `UsageEvent` /
 `UsageMonthlyRollup`, le recorder idempotent résistant à une collision `P2002`, le recalcul mensuel,
 `GET /usage/current`, `GET /usage/history`, l'outbox `PENDING → DISPATCHED`, le catalogue
 `UsageTariff` et les compteurs STT/TTS/LLM sont implémentés. `call.hangup` et les clôtures de
@@ -2613,8 +2620,10 @@ session écrivent des intentions idempotentes ; les tarifs sans ligne restent `U
 dispatcher outbox tourne chaque minute et les rollups courant/précédent sont recalculés chaque
 heure. Les adaptateurs Telnyx/Resend collectent désormais les SMS segmentés (GSM-7/UCS-2), les
 messages WhatsApp et les emails dès l'acceptation fournisseur, avec contexte métier sans PII et
-clé d'idempotence commune à l'outbox. Restent le chargement des prix validés par facture, le
-rapprochement et le test Postgres concurrent.
+clé d'idempotence commune à l'outbox. La preuve PostgreSQL concurrente locale (2/2 sur une base
+dédiée) est maintenant exécutée. Restent le chargement des prix validés par facture, le
+rapprochement fournisseur et l'import comptable aval, suivis comme écarts internes dans la
+réconciliation des audits.
 Décisions d'architecture : [`architecture/adr-usage-ledger-and-costing.md`](./architecture/adr-usage-ledger-and-costing.md) et [`architecture/adr-transactional-outbox.md`](./architecture/adr-transactional-outbox.md).
 
 **Fichiers :** migration M01, module `shared/outbox`, module `usage`, hooks dans `telnyx.pipeline.ts`, `stt-bridge.ts`, `tts-handler.ts` et `llm-handler.ts`.
@@ -2633,8 +2642,9 @@ Décisions d'architecture : [`architecture/adr-usage-ledger-and-costing.md`](./a
 
 **Avancement au 14 septembre 2026 : PARTIEL LIVRÉ.** La matrice canonique, la normalisation des plans,
 `GET /entitlements`, le garde serveur et l'enforcement de `reactivation.manage` sont implémentés.
-Le ledger, ses lectures API, la page restaurateur `/dashboard/usage`, les collecteurs de messagerie
-et la projection de consommation explicitement `UNLIMITED` de `GET /usage/current` sont disponibles.
+Le ledger, ses lectures API (`/usage/current` et `/usage/history`), l'alias opérateur historique
+`/dashboard/usage` vers `/admin/margin`, les collecteurs de messagerie et la projection de
+consommation explicitement `UNLIMITED` de `GET /usage/current` sont disponibles.
 L'évaluateur déterministe et le worker horaire de seuils 70/90/100 % servent uniquement à un suivi
 interne optionnel et réclament chaque jalon une seule fois avec Redis ; le flag reste désactivé par
 défaut. Un feed strictement interne
