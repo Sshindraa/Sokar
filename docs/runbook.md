@@ -21,12 +21,12 @@
 
 ## Canaux d'alerte
 
-| Canal                   | Usage                             | Statut                                                 |
-| ----------------------- | --------------------------------- | ------------------------------------------------------ |
-| Sentry                  | Erreurs applicatives              | Configuré                                              |
-| Prometheus `/metrics`   | Scraping interne                  | Configuré                                              |
-| Discord/Slack incidents | Alertes ops temps réel            | **Pas encore créé** (voir `_archive/channel-setup.md`) |
-| Status page public      | Communication incident aux restos | **Pas encore créé**                                    |
+| Canal                   | Usage                             | Statut                                                       |
+| ----------------------- | --------------------------------- | ------------------------------------------------------------ |
+| Sentry                  | Erreurs applicatives              | Configuré                                                    |
+| Prometheus `/metrics`   | Scraping interne                  | Configuré                                                    |
+| Discord/Slack incidents | Alertes ops temps réel            | **Pas encore créé** (voir `pilot/_archive/channel-setup.md`) |
+| Status page public      | Communication incident aux restos | **Pas encore créé**                                          |
 
 ## Health SLO summary
 

@@ -173,7 +173,7 @@ function RecommendationCard({
   );
 }
 
-export default function ServiceCopilotWidget() {
+export default function ServiceCopilotWidget({ showCalm = true }: { showCalm?: boolean }) {
   const { get, orgId, post, patch } = useApi();
   const [data, setData] = useState<ServiceCopilotRecommendationsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -235,13 +235,10 @@ export default function ServiceCopilotWidget() {
 
   if (loading) {
     return (
-      <section className="rounded-2xl border border-border bg-card p-4 md:p-5">
-        <Skeleton className="mb-4 h-6 w-52" />
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-28 w-full rounded-xl" />
-          ))}
-        </div>
+      <section className="inline-flex max-w-full items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
+        <Skeleton className="h-4 w-4 rounded-full" />
+        <Skeleton className="h-4 w-36" />
+        <Skeleton className="hidden h-4 w-44 sm:block" />
       </section>
     );
   }
@@ -249,19 +246,25 @@ export default function ServiceCopilotWidget() {
   // En cas d’erreur ou de données vides, on ne bloque pas le cockpit : on affiche
   // l’état “service fluide” pour éviter un bandeau d’erreur visible en mode démo/E2E.
   if (!data || data.recommendations.length === 0) {
+    if (!showCalm) return null;
+
     return (
-      <section className="flex items-center gap-3 rounded-2xl border border-success/20 bg-success/[0.04] p-5">
-        <CheckCircle2 size={20} className="shrink-0 text-success" />
-        <div>
-          <h2 className="font-bold text-foreground">Service fluide</h2>
-          <p className="text-sm text-muted-foreground">Aucune action requise.</p>
-          <Link
-            href="/dashboard/copilot/quality"
-            className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-foreground transition-all duration-200 hover:text-primary"
-          >
-            Voir la qualité Copilot <BarChart3 size={14} />
-          </Link>
+      <section
+        aria-label="État du Copilot"
+        aria-live="polite"
+        className="inline-flex max-w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-success/20 bg-success/[0.04] px-3 py-2.5"
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <CheckCircle2 size={18} className="shrink-0 text-success" />
+          <span className="text-sm font-semibold text-foreground">Copilot opérationnel</span>
+          <span className="truncate text-sm text-muted-foreground">Aucune action à traiter</span>
         </div>
+        <Link
+          href="/dashboard/copilot/quality"
+          className="inline-flex shrink-0 items-center gap-1.5 text-xs font-bold text-foreground transition-all duration-200 hover:text-primary"
+        >
+          Qualité Copilot <BarChart3 size={14} />
+        </Link>
       </section>
     );
   }

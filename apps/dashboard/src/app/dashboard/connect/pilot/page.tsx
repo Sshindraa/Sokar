@@ -157,7 +157,7 @@ export default function ConnectPilotPage() {
   const healthStyle = kpis ? HEALTH_STYLES[kpis.health] : null;
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 pb-10">
+    <div className="w-full space-y-6 pb-10">
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <header className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm md:flex-row md:items-start md:justify-between md:p-6">
         <div className="flex gap-3">

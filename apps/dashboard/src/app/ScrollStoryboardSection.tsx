@@ -93,7 +93,7 @@ export default function ScrollStoryboardSection() {
     return (
       <section className="relative w-full overflow-hidden px-4 py-24 sm:px-6 lg:px-10">
         <div className="mx-auto max-w-6xl p-8 text-center">
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-pricing-accent">
             Experience Sokar
           </p>
           <h2 className="mx-auto mt-4 max-w-3xl text-4xl font-black tracking-tight text-white font-display">
@@ -109,7 +109,7 @@ export default function ScrollStoryboardSection() {
       <div className="sticky top-0 flex h-screen w-full items-center justify-center overflow-hidden px-4 py-16 sm:px-6 lg:px-10">
         <motion.div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.24),transparent_24rem),radial-gradient(circle_at_82%_54%,rgba(255,255,255,0.08),transparent_24rem)]"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(142,135,123,0.2),transparent_24rem),radial-gradient(circle_at_82%_54%,rgba(255,255,255,0.08),transparent_24rem)]"
           style={{ scale: screenScale }}
         />
         <motion.div
@@ -119,7 +119,7 @@ export default function ScrollStoryboardSection() {
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 top-[18%] h-[34rem] w-[34rem] -translate-x-1/2 rounded-full bg-cyan-400/10 blur-2xl"
+          className="pointer-events-none absolute left-1/2 top-[18%] h-[34rem] w-[34rem] -translate-x-1/2 rounded-full bg-pricing-accent/10 blur-2xl"
         />
         <motion.div
           data-storyboard-screen
@@ -134,7 +134,7 @@ export default function ScrollStoryboardSection() {
                 className="absolute inset-x-0"
                 style={{ opacity: textMotions[index].opacity, y: textMotions[index].y }}
               >
-                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-cyan-300">
+                <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-pricing-accent">
                   {step.kicker}
                 </p>
                 <h2 className="mx-auto mt-3 max-w-4xl text-4xl font-black leading-[0.95] tracking-tight text-white font-display sm:text-6xl lg:text-7xl">
@@ -161,7 +161,7 @@ export default function ScrollStoryboardSection() {
                 key={title}
                 className="rounded-3xl border border-white/10 bg-black/60 p-4 shadow-2xl shadow-black/30"
               >
-                <span className="flex h-10 w-10 items-center justify-center rounded-full border border-cyan-300/20 bg-cyan-300/10 text-cyan-200">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full border border-pricing-accent/20 bg-pricing-accent/10 text-pricing-accent">
                   <Icon size={17} />
                 </span>
                 <h3 className="mt-4 text-lg font-black text-white font-display">{title}</h3>
@@ -176,12 +176,12 @@ export default function ScrollStoryboardSection() {
           >
             <div className="rounded-2xl border border-white/8 bg-white/[0.035] p-5">
               <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-cyan-300/10 text-cyan-200">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-pricing-accent/10 text-pricing-accent">
                   <Bot size={18} />
                 </span>
                 <div>
                   <p className="text-sm font-bold text-white">Console temps réel</p>
-                  <p className="text-xs text-emerald-400">Assistant en communication</p>
+                  <p className="text-xs text-muted-foreground">Assistant en communication</p>
                 </div>
               </div>
               <div className="mt-5 h-24 rounded-2xl border border-white/8 bg-black/45" />

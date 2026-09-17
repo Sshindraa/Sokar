@@ -572,7 +572,7 @@ export default function LoyaltyPage() {
   const metricsUnavailable = loading || Boolean(error);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 pb-8">
+    <div className="w-full space-y-6 pb-8">
       <header className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
         <div>
           <div className="flex items-center gap-2">

@@ -20,7 +20,7 @@ vi.mock('@/lib/api', () => ({
 
 function makeDay(overrides: Record<string, unknown> = {}) {
   return {
-    date: '2026-07-01',
+    date: '2026-06-30',
     dayName: 'mar',
     isOpen: true,
     openTime: '12:00',
@@ -44,7 +44,7 @@ function makeResponse(
       totalOpenDays: days.length,
       revenueAtRisk: 0,
       avgRevenuePerReservation: 35,
-      threshold: 5,
+      threshold: 3,
       ...summaryOverrides,
     },
   };
@@ -83,32 +83,37 @@ describe('EmptySlotsWidget', () => {
 
   it('état data : affiche les jours sous-réservés (actionableDays)', async () => {
     const days = [
-      makeDay({ date: '2026-07-01', dayName: 'mar', reservationCount: 8 }),
+      makeDay({ date: '2026-06-30', dayName: 'mar', reservationCount: 8 }),
       makeDay({
-        date: '2026-07-02',
+        date: '2026-07-01',
         dayName: 'mer',
-        reservationCount: 3,
+        reservationCount: 2,
         isUnderbooked: true,
         revenueAtRisk: 120,
       }),
-      makeDay({ date: '2026-07-03', dayName: 'jeu', reservationCount: 6 }),
-      makeDay({ date: '2026-07-04', dayName: 'ven', reservationCount: 10 }),
-      makeDay({ date: '2026-07-05', dayName: 'sam', reservationCount: 12 }),
-      makeDay({ date: '2026-07-06', dayName: 'dim', isOpen: false }),
-      makeDay({ date: '2026-07-07', dayName: 'lun', reservationCount: 7 }),
+      makeDay({ date: '2026-07-02', dayName: 'jeu', reservationCount: 6 }),
+      makeDay({ date: '2026-07-03', dayName: 'ven', reservationCount: 10 }),
+      makeDay({ date: '2026-07-04', dayName: 'sam', reservationCount: 12 }),
+      makeDay({ date: '2026-07-05', dayName: 'dim', isOpen: false }),
+      makeDay({ date: '2026-07-06', dayName: 'lun', reservationCount: 7 }),
     ];
     mockGet.mockResolvedValue(makeResponse(days, { underbookedDays: 1, revenueAtRisk: 120 }));
 
     render(<EmptySlotsWidget />);
 
-    // Le titre indique le nombre de jours à remplir
+    // Le titre reste court et directement exploitable en salle
     await waitFor(() => {
-      expect(screen.getByText(/jour.*à remplir/i)).toBeInTheDocument();
+      expect(screen.getByText('Jours creux')).toBeInTheDocument();
     });
 
     // Seul le jour sous-réservé (actionable) est listé
     expect(screen.getByText('Mercredi')).toBeInTheDocument();
-    expect(screen.getByText(/120 € à récupérer/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        (_, element) => element?.textContent?.replace(/\s+/g, ' ').trim() === '2 / 3 réservations',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('CA estimé : 120 €')).toHaveLength(2);
 
     // Les jours pleins et fermés ne sont pas affichés
     expect(screen.queryByText('Mardi')).not.toBeInTheDocument();

@@ -1,8 +1,9 @@
 # Runbook — Testing
 
-> **Statut : ACTIF — audité le 14 septembre 2026.** La matrice locale/CI/staging correspond au
+> **Statut : ACTIF — réconcilié le 15 septembre 2026.** La matrice locale/CI/staging correspond au
 > dépôt. Les validations qui contactent un fournisseur ou modifient une donnée métier doivent
-> conserver une preuve datée. Voir [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
+> conserver une preuve datée. Voir [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md) et la
+> [réconciliation des audits](../audits/2026-09-15-current-state.md).
 
 ## Unit / integration
 
@@ -190,7 +191,7 @@ Le worker ne contacte aucun canal tant que `USAGE_ALERTS_ENABLED=false` (valeur 
 claim Redis `SET NX` est posée par mois, restaurant, métrique et seuil avant dispatch afin qu'un
 rejeu horaire ou deux processus concurrents ne renvoient pas le même jalon. Ces seuils sont
 strictement internes, facultatifs et sans effet sur le service du restaurant ; le suivi visuel de
-référence reste `/dashboard/admin/margin`. Pour un test contrôlé, définir en plus
+référence est `/admin/margin` (l'ancienne URL `/dashboard/admin/margin` redirige). Pour un test contrôlé, définir en plus
 `USAGE_ALERT_VOICE_BUDGET_MINUTES` et/ou `USAGE_ALERT_SMS_BUDGET_SEGMENTS` ; ces budgets ne sont
 jamais lus comme un quota client.
 

@@ -1,8 +1,9 @@
 # Runbook — Deployment
 
-> **Statut : ACTIF — audité le 14 septembre 2026.** Staging, promotion production, snapshots,
+> **Statut : ACTIF — réconcilié le 15 septembre 2026.** Staging, promotion production, snapshots,
 > health checks et rollback correspondent aux workflows du dépôt. Voir
-> [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
+> [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md) et la
+> [réconciliation des audits](../audits/2026-09-15-current-state.md).
 
 ## Policy
 

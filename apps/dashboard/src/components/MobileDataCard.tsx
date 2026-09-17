@@ -20,7 +20,7 @@ export type MobileDataCardProps = {
   details?: { label: string; value: ReactNode }[];
   /** Badge rendered top-right */
   badge?: ReactNode;
-  /** Left accent border color class, e.g. 'border-l-emerald-500' */
+  /** Left accent border color class, e.g. 'border-l-brand' */
   accentClass?: string;
   /** Click handler */
   onClick?: () => void;

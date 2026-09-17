@@ -1,11 +1,12 @@
 # Runbook — Stripe Billing (abonnements Sokar)
 
-> **Statut : ACTIF — audité le 14 septembre 2026.**
+> **Statut : ACTIF — réconcilié le 15 septembre 2026.**
 > Le catalogue applicatif et les pages publiques affichent Essential 199 €/mois et Pro 299 €/mois.
 > Multi-site reste à 249 €/mois + 99 €/site supplémentaire. Les prix et `priceId` Stripe actifs
 > restent l'ancien catalogue 149/249 € jusqu'à la migration externe et sa validation ; ne pas
 > annoncer ou facturer les nouveaux montants avant cette porte. Voir
-> [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
+> [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md) et la
+> [réconciliation des audits](../audits/2026-09-15-current-state.md).
 
 ## Parcours
 

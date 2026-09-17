@@ -1,6 +1,6 @@
 # API Endpoints
 
-> **Dernière mise à jour** : 2026-09-14
+> **Dernière mise à jour** : 2026-09-15
 > **Base URL dev** : `http://localhost:3001` (port configuré dans `apps/api/src/main.ts`)
 > **Auth globale** : Clerk (sauf routes explicitement publiques — MCP, voice webhook, public Sokar Connect, RGPD `request-verification`, `confirm-link`, `privacy-policy`)
 > **Génération** : inventaire auto depuis les fichiers `*.routes.ts` / `*.pipeline.ts`
@@ -573,7 +573,8 @@ exposée au dashboard restaurateur.
 
 ### GET /admin/usage/margin?month=YYYY-MM
 
-Route opérateur Clerk consommée par `/dashboard/admin/margin`. Elle agrège les mêmes événements et
+Route opérateur Clerk consommée par `/admin/margin` (l'ancienne URL `/dashboard/admin/margin` reste
+un alias de transition). Elle agrège les mêmes événements et
 retourne le prix du catalogue local, la marge uniquement lorsque tous les coûts sont tarifés, et
 les marqueurs `LOCAL_CATALOG` / `NOT_STRIPE_RECONCILED` pour empêcher toute confusion avec une
 facture réelle. Les lignes incluent `estimatedCostEur` (source), `adjustedCostEur`,

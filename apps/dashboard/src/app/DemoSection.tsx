@@ -24,7 +24,7 @@ function RadialDial({ value }: { value: number }) {
     <div className="relative flex items-center justify-center select-none pointer-events-none">
       <svg height={radius * 2} width={radius * 2} className="transform -rotate-90">
         <defs>
-          <linearGradient id="cyanDialGradShowcase" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient id="accentDialGradShowcase" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="hsl(var(--pricing-accent))" />
             <stop offset="100%" stopColor="hsl(var(--pricing-accent-glow))" />
           </linearGradient>
@@ -52,7 +52,7 @@ function RadialDial({ value }: { value: number }) {
           cy={radius}
         />
         <circle
-          stroke="url(#cyanDialGradShowcase)"
+          stroke="url(#accentDialGradShowcase)"
           fill="transparent"
           strokeWidth="2.5"
           strokeDasharray={innerCircumference}

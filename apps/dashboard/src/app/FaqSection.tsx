@@ -12,7 +12,10 @@ export default function FaqSection() {
   };
 
   return (
-    <section id="faq" className="relative flex min-h-screen w-full scroll-mt-24 flex-col items-center justify-center overflow-hidden px-4 py-20 sm:px-6 lg:px-10">
+    <section
+      id="faq"
+      className="relative flex min-h-screen w-full scroll-mt-24 flex-col items-center justify-center overflow-hidden px-4 py-20 sm:px-6 lg:px-10"
+    >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(255,255,255,0.08),transparent_28rem)]" />
       <div className="text-center max-w-lg mb-8 sm:mb-10 px-2">
         <h2 className="text-xl sm:text-2xl md:text-4xl font-bold tracking-tight text-white font-display">
@@ -39,14 +42,16 @@ export default function FaqSection() {
               <ChevronDown
                 size={16}
                 className={`text-white/40 transition-transform duration-300 flex-shrink-0 ${
-                  openFaqIndex === idx ? 'rotate-180 text-cyan-400' : 'rotate-0'
+                  openFaqIndex === idx ? 'rotate-180 text-pricing-accent' : 'rotate-0'
                 }`}
               />
             </button>
 
             <div
               className={`transition-all duration-300 ease-in-out overflow-hidden ${
-                openFaqIndex === idx ? 'max-h-[320px] sm:max-h-[260px] border-t border-white/5 overflow-y-auto' : 'max-h-0'
+                openFaqIndex === idx
+                  ? 'max-h-[320px] sm:max-h-[260px] border-t border-white/5 overflow-y-auto'
+                  : 'max-h-0'
               }`}
             >
               <p className="px-5 sm:px-6 py-4 sm:py-5 text-sm sm:text-sm text-white/50 leading-relaxed font-sans bg-white/[0.01]">

@@ -1,8 +1,10 @@
 # Audit de lancement Sokar — 10 premiers restaurants
 
-Date : 6 septembre 2026. Version examinée : `b7d14da15777e8aab074859b519387bffdc32687`, identique sur GitHub `main` et le VPS de production. Constats réalisés vers 23 h, heure de Paris.
+Date du snapshot : 6 septembre 2026. Version examinée : `b7d14da15777e8aab074859b519387bffdc32687`, identique sur GitHub `main` et le VPS de production à cette date. Constats réalisés vers 23 h, heure de Paris.
 
-**Verdict : NO-GO pour une ouverture commerciale payante dans l’état actuel.** Sokar dispose déjà d’un socle de SaaS : application déployée, authentification, réservations transactionnelles, files de tâches, paiement hébergé, tests et sauvegardes restaurées. Mais deux défauts d’accès aux données, une attribution de plan contournable et plusieurs lacunes opérationnelles empêchent de confier sereinement le service à dix restaurants.
+> **Document historique — ne pas utiliser comme état courant.** Ce fichier conserve le verdict, les compteurs et les reproductions observés le 06/09. La réconciliation du 15/09, qui distingue les correctifs promus, le profil scoped en production et les portes encore ouvertes, est la référence actuelle : [état courant des audits](./2026-09-15-current-state.md).
+
+**Verdict du snapshot : NO-GO pour une ouverture commerciale payante dans l’état observé le 06/09.** Sokar disposait déjà d’un socle de SaaS : application déployée, authentification, réservations transactionnelles, files de tâches, paiement hébergé, tests et sauvegardes restaurées. Les défauts et lacunes décrits ci-dessous sont ceux de cette version figée ; ils ne doivent pas être reportés automatiquement sur la release actuelle.
 
 La suite pertinente est un lancement accompagné : correction des blocages, validation complète sur un établissement de test, puis deux restaurants réels, puis dix après observation. La prospection et les démonstrations accompagnées peuvent avancer pendant ce travail ; la promesse d’un service autonome et fiable doit attendre les critères de sortie ci-dessous.
 
@@ -160,7 +162,7 @@ Sources : [CI][ci], [E2E staging non bloquant][staging-e2e], [tests de concurren
 
 ## Écarts commerciaux et risques complémentaires
 
-1. **Prix cohérents.** Le site affiche Pro annuel à 199 €/mois ; Stripe affiche 199,20 €/mois, soit 2 390,40 €/an. Le code arrondit `249 × 0,8`. Afficher le montant exact, le total débité, l’engagement et le régime HT/TTC applicable. [Source][pricing].
+1. **Prix cohérents dans le snapshot.** Le site affichait Pro annuel à 199 €/mois tandis que Stripe affichait 199,20 €/mois, soit 2 390,40 €/an ; le code du snapshot arrondissait `249 × 0,8`. Le catalogue produit courant est Essential 199 € / Pro 299 € ; les `price_id` Stripe doivent encore être migrés et le montant total, l’engagement et le régime HT/TTC doivent être validés avant facturation. [Source][pricing].
 2. **Promesses à justifier.** « 98.4 % taux de réponse garanti », témoignage « Partenaire certifié » et « 2 étoiles Michelin » sont codés en dur dans les pages d’inscription/connexion. Aucune pièce justificative n’a été examinée. Documenter les preuves ou remplacer ces éléments. Le site présente encore « BÊTA PRIVÉE » et des liens de réseaux sociaux à `#`.
 3. **Intégrations vendues.** Les clés Google Calendar ne sont pas configurées dans l’API de production inspectée alors que le site présente l’intégration comme native. Mettre en service et tester, ou qualifier la disponibilité commerciale. Le multi-site doit également être validé de bout en bout : quantité facturée, attribution des établissements, accès et facture unique. Le calcul d’add-ons Stripe seul n’en apporte pas la preuve.
 4. **Coûts.** Le code alerte après 3 000 appels/mois et coupe au-delà de 200 appels/heure, mais l’alerte passe par Sentry, absent. Le benchmark historique LLM ne chiffre pas le coût complet de la stack actuelle. Avant de promettre « sans limite », mesurer téléphonie + STT + LLM + TTS + SMS + stockage + support, par restaurant et par minute, avec une politique d’usage explicite.

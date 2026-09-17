@@ -1,9 +1,11 @@
 # Positionnement Sokar face à Zenchef
 
-> **Statut : ACTIF — audit code et marché du 14 septembre 2026.**
+> **Statut : ACTIF — audit code et marché du 15 septembre 2026.**
 > Cette comparaison distingue la capacité présente dans le dépôt, sa preuve terrain et la cible de
 > la roadmap 199/299 €. Les fonctionnalités concurrentes et tarifs peuvent évoluer ; vérifier la
-> [page officielle des formules Zenchef](https://www.zenchef.com/fr/formules) avant publication.
+> [page officielle des formules Zenchef](https://www.zenchef.com/fr/formules) avant publication. Le
+> profil de production courant et les portes ouvertes sont récapitulés dans la
+> [réconciliation des audits](./audits/2026-09-15-current-state.md).
 
 ## Lecture commerciale honnête
 
@@ -51,7 +53,7 @@ Légende :
 - `PARTIEL` : un sous-ensemble existe ;
 - `ABSENT` : pas de parcours commercial utilisable.
 
-| Domaine                                  | Sokar au 14/09/2026          | Preuve Sokar                                                                                                                                                                                                                                            | Position Zenchef publique                                                      |
+| Domaine                                  | Sokar au 15/09/2026          | Preuve Sokar                                                                                                                                                                                                                                            | Position Zenchef publique                                                      |
 | ---------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | Réservation dashboard                    | `LIVRÉ`                      | module `reservations`, pages dashboard                                                                                                                                                                                                                  | Inclus.                                                                        |
 | Widget web                               | `LIVRÉ`                      | `apps/connect`, `apps/widget`, `/embed.js`                                                                                                                                                                                                              | Inclus.                                                                        |

@@ -8,7 +8,7 @@ describe('MobileDataCard', () => {
       <MobileDataCard
         title="Dupont 6p"
         subtitle="19h30 · Terrasse"
-        accentClass="border-l-emerald-500"
+        accentClass="border-l-brand"
         badge={<span>Confirmé</span>}
         details={[
           { label: 'Capacité', value: '6' },
@@ -44,8 +44,8 @@ describe('MobileDataCard', () => {
         title="Réservation"
         onClick={vi.fn()}
         actions={[
-          { label: 'Modifier', onClick: handleEdit, colorClass: 'bg-blue-600' },
-          { label: 'Supprimer', onClick: handleDelete, colorClass: 'bg-red-600' },
+          { label: 'Modifier', onClick: handleEdit, colorClass: 'bg-brand' },
+          { label: 'Supprimer', onClick: handleDelete, colorClass: 'bg-destructive' },
         ]}
       />,
     );

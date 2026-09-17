@@ -7,12 +7,14 @@ import {
   AlertCircle,
   BarChart3,
   CalendarCheck,
+  ChevronDown,
   Euro,
   RefreshCw,
   TrendingUp,
   Users,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 import { useApi } from '../../lib/api';
 
 // recharts pèse ~387 KB — on le charge en dynamic import pour ne pas
@@ -22,13 +24,9 @@ const DashboardCharts = dynamic(() => import('./DashboardCharts'), {
   loading: () => (
     <section className="rounded-2xl border border-border bg-card p-4 shadow-sm md:p-6">
       <Skeleton className="mb-4 h-6 w-52" />
-      <Skeleton className="h-[280px] w-full rounded-xl" />
+      <Skeleton className="h-[15.5rem] w-full rounded-xl sm:h-[17.5rem]" />
     </section>
   ),
-});
-
-const ServiceCopilotWidget = dynamic(() => import('./ServiceCopilotWidget'), {
-  ssr: false,
 });
 
 const EmptySlotsWidget = dynamic(() => import('./EmptySlotsWidget'), {
@@ -206,14 +204,34 @@ export default function DashboardPage() {
   if (isLoading) return <DashboardSkeleton />;
 
   return (
-    <div className="space-y-4 select-none md:space-y-5">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-black tracking-tight text-foreground font-display md:text-3xl">
+    <div className="space-y-3 select-none md:space-y-5">
+      <header className="flex items-center justify-between gap-2">
+        <h1 className="text-xl font-black tracking-tight text-foreground font-display md:text-3xl">
           Pilotage
         </h1>
 
+        <div className="relative shrink-0 sm:hidden">
+          <select
+            value={period}
+            onChange={(event) => setPeriod(event.target.value as Period)}
+            aria-label="Période d’analyse"
+            className="h-8 appearance-none rounded-lg border border-border bg-card py-0 pl-3 pr-8 text-xs font-semibold text-foreground shadow-sm outline-none transition-all duration-200 focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {PERIOD_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            size={13}
+            aria-hidden="true"
+            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
+        </div>
+
         <div
-          className="grid shrink-0 grid-cols-3 gap-1 rounded-xl border border-border bg-card p-1 shadow-sm"
+          className="hidden shrink-0 grid-cols-3 gap-1 rounded-xl border border-border bg-card p-1 shadow-sm sm:grid"
           aria-label="Période d’analyse"
         >
           {PERIOD_OPTIONS.map((option) => (
@@ -239,21 +257,35 @@ export default function DashboardPage() {
       )}
 
       {!error && hasData && (
-        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <KpiCard label="Réservations" value={stats.totalReservations} icon={CalendarCheck} />
-          <KpiCard label="Couverts" value={stats.covers} icon={Users} />
+        <section className="grid grid-cols-2 overflow-hidden rounded-2xl border border-border bg-card shadow-sm sm:gap-3 sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent sm:shadow-none lg:grid-cols-4">
+          <KpiCard
+            label="Réservations"
+            value={stats.totalReservations}
+            icon={CalendarCheck}
+            className="border-b border-r border-border sm:border"
+          />
+          <KpiCard
+            label="Couverts"
+            value={stats.covers}
+            icon={Users}
+            className="border-b border-border sm:border"
+          />
           <KpiCard
             label="CA estimé"
             value={`${stats.estimatedRevenue.toLocaleString('fr-FR')} €`}
             icon={Euro}
+            className="border-r border-border sm:border"
           />
-          <KpiCard label="Conversion appels" value={`${stats.conversionRate}%`} icon={TrendingUp} />
+          <KpiCard
+            label="Conversion appels"
+            value={`${stats.conversionRate}%`}
+            icon={TrendingUp}
+            className="sm:border"
+          />
         </section>
       )}
 
       {!error && !hasData && <EmptyDashboardState />}
-
-      <ServiceCopilotWidget />
 
       <EmptySlotsWidget />
 
@@ -268,21 +300,25 @@ function KpiCard({
   label,
   value,
   icon: Icon,
+  className,
 }: {
   label: string;
   value: number | string;
   icon: typeof CalendarCheck;
+  className?: string;
 }) {
   return (
     <article
       aria-label={`Indicateur ${label}`}
-      className="rounded-2xl border border-border bg-card p-4 shadow-sm"
+      className={cn('min-w-0 p-3 sm:rounded-2xl sm:bg-card sm:p-4 sm:shadow-sm', className)}
     >
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Icon size={16} />
-        <p className="text-xs font-bold uppercase tracking-wider">{label}</p>
+      <div className="flex items-center gap-1.5 text-muted-foreground sm:gap-2">
+        <Icon size={14} className="shrink-0 sm:h-4 sm:w-4" />
+        <p className="truncate whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.1em] sm:text-xs sm:tracking-wider">
+          {label}
+        </p>
       </div>
-      <p className="mt-3 truncate text-2xl font-black tracking-tight text-foreground md:text-3xl">
+      <p className="mt-1.5 truncate text-[1.65rem] font-black leading-none tracking-tight text-foreground sm:mt-3 sm:text-2xl sm:leading-normal md:text-3xl">
         {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
       </p>
     </article>
@@ -344,14 +380,21 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 
 function DashboardSkeleton() {
   return (
-    <div className="space-y-6 md:space-y-8">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Skeleton className="h-9 w-32 rounded-xl" />
-        <Skeleton className="h-11 w-full rounded-xl sm:w-72" />
+    <div className="space-y-3 md:space-y-8">
+      <div className="flex items-center justify-between gap-2">
+        <Skeleton className="h-8 w-24 rounded-lg md:h-9 md:w-32 md:rounded-xl" />
+        <Skeleton className="h-9 w-52 rounded-lg sm:w-72 md:h-11 md:rounded-xl" />
       </div>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-border sm:gap-3 sm:overflow-visible sm:rounded-none sm:border-0 lg:grid-cols-4">
         {[1, 2, 3, 4].map((item) => (
-          <Skeleton key={item} className="h-32 rounded-2xl border border-border" />
+          <Skeleton
+            key={item}
+            className={cn(
+              'h-20 rounded-none border-border sm:h-32 sm:rounded-2xl sm:border',
+              item <= 2 && 'border-b',
+              item % 2 === 1 && 'border-r',
+            )}
+          />
         ))}
       </div>
       <Skeleton className="h-[360px] rounded-2xl border border-border" />

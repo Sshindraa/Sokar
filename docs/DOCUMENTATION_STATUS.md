@@ -1,6 +1,6 @@
 # État de la documentation Sokar
 
-> **Source de triage documentaire — auditée le 14 septembre 2026.**
+> **Source de triage documentaire — réconciliée le 15 septembre 2026.**
 > Ce fichier indique ce qui décrit le produit actuel, ce qui est déjà livré, ce qui reste à
 > prouver et ce qui doit seulement être conservé comme historique. Le code, le schéma Prisma,
 > les migrations et les runbooks opérationnels spécialisés restent les sources de vérité
@@ -30,6 +30,52 @@
 | Contrat API réellement chargé         | `apps/api/src/main.ts` et routes de chaque module                                                      |
 | Prix affichés actuellement            | `apps/dashboard/src/app/constants.ts` et `apps/dashboard/src/app/pricing/page.tsx`                     |
 | Gel et preuves de release             | [`release/product-gates.json`](./release/product-gates.json) et `scripts/verify-product-gates.mjs`     |
+| État courant des audits et portes     | [`audits/2026-09-15-current-state.md`](./audits/2026-09-15-current-state.md)                           |
+
+## Audit de `docs/audits/`
+
+La fiche [Réconciliation des audits — état courant](./audits/2026-09-15-current-state.md)
+est l'autorité de statut au 15 septembre. Les fichiers datés du 6 et du 7 septembre
+conservent leurs preuves originales ; leurs compteurs, prix et références de production
+ne doivent pas être utilisés comme état actuel.
+
+| Document                                           | Statut documentaire | Utilisation actuelle                                                                                              |
+| -------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `audits/2026-09-15-current-state.md`               | `ACTIF`             | Référence unique pour les portes P0–P9, le profil scoped, les prix 199/299 et les écarts ouverts.                 |
+| `audits/2026-09-06-launch-readiness.md`            | `HISTORIQUE`        | Snapshot de préparation du 06/09 ; les six reproductions et les compteurs sont conservés comme preuves d'origine. |
+| `audits/2026-09-06-launch-plan.md`                 | `HISTORIQUE`        | Plan de cadrage ; phases, durées et phrases de non-déploiement sont historiques.                                  |
+| `audits/2026-09-07-phase-0-backlog.md`             | `RÉCONCILIÉ`        | Découpage et critères de preuve ; les statuts à jour viennent du manifest de release.                             |
+| `audits/2026-09-07-phase-0-commercial-register.md` | `ACTIF`             | Catalogue local 199/299 et portes d'activation ; migration Stripe et pilotes restent ouverts.                     |
+| `audits/2026-09-07-multisite-gap-matrix.md`        | `RÉCONCILIÉ`        | Fondations multi-site livrées localement/staging ; preuves Clerk et cycle commercial restent ouverts.             |
+| `audits/2026-09-06-evidence/*`                     | `HISTORIQUE`        | Pièces immuables datées ; ajouter une nouvelle preuve pour tout contrôle rejoué.                                  |
+
+## Archives
+
+[`docs/_archive/README.md`](./_archive/README.md) décrit les quatre documents
+historiques conservés dans `docs/_archive/`. Ils ne sont pas des sources de
+vérité et ne doivent pas être utilisés pour déduire l'état actuel du schéma,
+des routes, des prix ou de la production.
+
+[`docs/archive/README.md`](./archive/README.md) décrit séparément les scripts
+opérationnels historiques de `docs/archive/`. Aucun des deux dossiers ne doit
+être utilisé comme procédure active sans revue ; les procédures actuelles sont
+référencées par les runbooks spécialisés.
+
+Les deux archives racines ne sont pas les seules zones historiques :
+
+| Emplacement                                           | Contenu                                    | Règle de lecture                                                                        |
+| ----------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------- |
+| [`_archive/`](./_archive/README.md)                   | Specs et briefs produit remplacés          | Historique de conception ; ne pas créer de ticket depuis ces fichiers.                  |
+| [`archive/`](./archive/README.md)                     | Scripts et bundles opérationnels ponctuels | Ne jamais exécuter sans revue explicite.                                                |
+| [`obsidian/_archive/`](./obsidian/_archive/README.md) | Anciennes notes du vault Obsidian          | Historique du vault ; consulter `Context.md` et `Journal.md` pour l'état courant.       |
+| [`pilot/_archive/`](./pilot/_archive/README.md)       | Artefacts du pilote initial                | Historique de lancement ; utiliser les runbooks actuels.                                |
+| `connect-v1.md.archived`                              | Première version de Sokar Connect          | Fichier historique conservé à son emplacement pour préserver les références existantes. |
+
+Cette organisation est volontaire : les archives restent séparées par domaine
+pour éviter de confondre une ancienne décision produit avec un script pouvant
+encore être exécutable. Toute documentation nouvelle doit aller dans un dossier
+actif et recevoir un statut dans ce fichier ; elle ne doit pas être ajoutée à
+une archive par défaut.
 
 ## Audit des documents visibles à la racine de `docs/`
 
@@ -89,8 +135,9 @@
 - Connect public, SEO structuré, widget embarqué et domaines personnalisés.
 - Onboarding avec appel démo et explications progressives.
 - Ledger d'usage append-only, compteurs STT/TTS/LLM, tarification versionnée sans taux inventé et dispatcher outbox durable.
-- Page restaurateur `/dashboard/usage` : volumes courants, historique six mois et état explicite
-  `UNLIMITED` et aucun blocage client ; les coûts restent réservés aux opérations.
+- API `/usage/current` et `/usage/history` : volumes courants, historique six mois et état explicite
+  `UNLIMITED` sans blocage client. L'ancienne page `/dashboard/usage` est un alias opérateur vers
+  `/admin/margin` ; les coûts restent réservés aux opérations.
 - Catalogue applicatif Essential 199 €, Pro 299 € et Multi-site 249 € + 99 €/site ; le catalogue
   Stripe actif reste l'ancien 149/249 € jusqu'à la migration externe contrôlée.
 - Socle multi-site, RGPD, observabilité, sauvegarde, rollback et quality gates.
@@ -157,7 +204,7 @@
 - État live des automations Hermes et soumission Mistral Marketplace.
 - Cycle financier complet des cartes cadeaux et facturation aux nouveaux prix.
 
-### Registre de livraison local au 14 septembre 2026
+### Registre de livraison local au 15 septembre 2026
 
 | Lot                                                             | État local      | Preuve                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Reste avant clôture                                                                                                                                                                                                                                                                                                                                                                         |
 | --------------------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
