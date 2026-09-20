@@ -298,12 +298,11 @@ export default function ExperiencesPage() {
         <div>
           <div className="flex items-center gap-2">
             <CalendarCheck className="text-primary" size={20} aria-hidden="true" />
-            <h1 className="text-2xl font-semibold tracking-tight">Expériences</h1>
+            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Expériences</h1>
             <Badge variant="secondary">Pro</Badge>
           </div>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Publiez des ateliers et des événements avec des sessions à capacité contrôlée. Le prix
-            est figé à la réservation ; les paiements et les canaux externes restent désactivés.
+            Ateliers et événements à capacité contrôlée. Paiement et canaux externes en préparation.
           </p>
         </div>
         <Button variant="outline" onClick={() => void load()} disabled={loading || busy}>
@@ -320,8 +319,7 @@ export default function ExperiencesPage() {
               <p>{error}</p>
               {locked ? (
                 <p className="text-muted-foreground">
-                  Les expériences sont réservées à Pro et restent verrouillées pendant le gel
-                  jusqu’à la qualification du paiement et du pilote.
+                  Module Pro indisponible pendant la validation du paiement et du pilote.
                 </p>
               ) : null}
               <Button variant="outline" size="sm" onClick={() => void load()}>

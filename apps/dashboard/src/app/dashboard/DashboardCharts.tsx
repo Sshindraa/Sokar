@@ -99,6 +99,10 @@ export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoi
     }),
     { reservations: 0, covers: 0 },
   );
+  const peak = analytics.reduce<AnalyticsPoint | null>(
+    (best, point) => (!best || point.covers > best.covers ? point : best),
+    null,
+  );
 
   return (
     <section>
@@ -106,6 +110,11 @@ export default function DashboardCharts({ analytics }: { analytics: AnalyticsPoi
         title="Réservations et couverts"
         header={
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+            {peak && (
+              <span className="font-semibold text-foreground">
+                Pic {peak.label} · {peak.covers} couverts
+              </span>
+            )}
             <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
               <span
                 aria-hidden="true"

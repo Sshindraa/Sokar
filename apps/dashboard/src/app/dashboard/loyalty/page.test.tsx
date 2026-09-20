@@ -239,7 +239,9 @@ describe('LoyaltyPage', () => {
     render(<LoyaltyPage />);
 
     expect(await screen.findByText('Le module est momentanément verrouillé')).toBeInTheDocument();
-    expect(screen.getByText(/reste fermé pendant la qualification du pilote/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/aucune donnée ne sera créée tant qu’il reste verrouillé/),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Enregistrer l’attention' })).toBeDisabled();
   });
 

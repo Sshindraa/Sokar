@@ -450,7 +450,33 @@ export default function SettingsPage() {
   return (
     <div className="space-y-8">
       <OnboardingLockBanner task="restaurant" />
-      <h1 className="text-2xl font-semibold tracking-tight">Paramètres</h1>
+      <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Paramètres</h1>
+
+      <nav
+        aria-label="Sections des paramètres"
+        className="sticky top-2 z-10 -mx-1 overflow-x-auto px-1 pb-1 md:max-w-fit"
+      >
+        <div className="flex min-w-max items-center gap-1.5 rounded-xl border border-border bg-background/90 p-1.5 shadow-sm backdrop-blur">
+          {[
+            ['settings-info', 'Restaurant'],
+            ['settings-crm', 'CRM'],
+            ['settings-display', 'Affichage'],
+            ['settings-plan', 'Abonnement'],
+            ['settings-integrations', 'Intégrations'],
+            ['settings-waiting-list', 'File d’attente'],
+            ['settings-gift-cards', 'Cartes cadeaux'],
+            ['settings-agent', 'Assistant'],
+          ].map(([id, label]) => (
+            <a
+              key={id}
+              href={`#${id}`}
+              className="inline-flex h-8 items-center rounded-lg border border-transparent px-2.5 text-xs font-medium text-muted-foreground transition-all duration-200 hover:border-border hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {label}
+            </a>
+          ))}
+        </div>
+      </nav>
 
       {error && (
         <div className="sokar-error">
@@ -467,7 +493,7 @@ export default function SettingsPage() {
       )}
 
       {/* Infos restaurant */}
-      <Card className="sokar-card">
+      <Card id="settings-info" className="sokar-card scroll-mt-24">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Store size={18} />
@@ -517,7 +543,7 @@ export default function SettingsPage() {
       <SiteManagementCard />
 
       {canManageCrmPrivacy && (
-        <Card className="sokar-card transition-all duration-200">
+        <Card id="settings-crm" className="sokar-card scroll-mt-24 transition-all duration-200">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <ShieldCheck size={18} />
@@ -584,7 +610,7 @@ export default function SettingsPage() {
       )}
 
       {/* Préférences d'affichage */}
-      <Card className="sokar-card transition-all duration-200">
+      <Card id="settings-display" className="sokar-card scroll-mt-24 transition-all duration-200">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Languages size={18} />
@@ -605,7 +631,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* Plan actuel */}
-      <Card className="sokar-card">
+      <Card id="settings-plan" className="sokar-card scroll-mt-24">
         <CardHeader>
           <CardTitle className="text-lg">Plan actuel</CardTitle>
         </CardHeader>
@@ -680,7 +706,10 @@ export default function SettingsPage() {
       </Card>
 
       {/* Intégrations */}
-      <Card className="sokar-card animate-fade-in transition-all duration-200">
+      <Card
+        id="settings-integrations"
+        className="sokar-card scroll-mt-24 animate-fade-in transition-all duration-200"
+      >
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg font-semibold text-foreground">
             <Calendar size={18} className="text-primary" />
@@ -782,7 +811,10 @@ export default function SettingsPage() {
       </Card>
 
       {/* File d&apos;attente */}
-      <Card className="sokar-card transition-all duration-200">
+      <Card
+        id="settings-waiting-list"
+        className="sokar-card scroll-mt-24 transition-all duration-200"
+      >
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <ListOrdered size={18} />
@@ -840,7 +872,10 @@ export default function SettingsPage() {
       </Card>
 
       {/* Cartes cadeaux */}
-      <Card className="sokar-card transition-all duration-200">
+      <Card
+        id="settings-gift-cards"
+        className="sokar-card scroll-mt-24 transition-all duration-200"
+      >
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Gift size={18} />
@@ -873,7 +908,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* Personnalité de l'agent vocal */}
-      <Card className="sokar-card">
+      <Card id="settings-agent" className="sokar-card scroll-mt-24">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
             <Bot size={18} />

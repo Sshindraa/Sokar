@@ -35,39 +35,6 @@ const crudMock = vi.hoisted(() =>
   )),
 );
 
-const selectorMock = vi.hoisted(() =>
-  vi.fn(
-    ({
-      floorPlans,
-      selectedId,
-      onSelect,
-      onCreate,
-    }: {
-      floorPlans: { id: string; name: string }[];
-      selectedId?: string;
-      onSelect: (id: string) => void;
-      onCreate: () => void;
-    }) => (
-      <div data-testid="floor-plan-selector">
-        <select
-          data-testid="floor-plan-select"
-          value={selectedId}
-          onChange={(e) => onSelect(e.target.value)}
-        >
-          {floorPlans.map((fp) => (
-            <option key={fp.id} value={fp.id}>
-              {fp.name}
-            </option>
-          ))}
-        </select>
-        <button data-testid="create-floor-plan" onClick={onCreate}>
-          Créer un plan
-        </button>
-      </div>
-    ),
-  ),
-);
-
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: mocks.replace }),
   usePathname: () => '/dashboard/floor-plan',
@@ -86,10 +53,6 @@ vi.mock('./_components/FloorPlanCrud', () => ({
   FloorPlanCrud: crudMock,
 }));
 
-vi.mock('./_components/FloorPlanSelector', () => ({
-  FloorPlanSelector: selectorMock,
-}));
-
 const floorPlansFixture = [
   { id: 'fp-1', name: 'Salle principale', isDefault: true, isActive: true, tableCount: 3 },
   { id: 'fp-2', name: 'Terrasse', isDefault: false, isActive: true, tableCount: 1 },
@@ -101,7 +64,6 @@ describe('FloorPlanPage — switch desktop', () => {
     mocks.setSearchParams('');
     canvasMock.mockClear();
     crudMock.mockClear();
-    selectorMock.mockClear();
     apiMocks.get.mockReset();
     apiMocks.post.mockReset();
     apiMocks.get.mockResolvedValue(floorPlansFixture);
@@ -115,7 +77,6 @@ describe('FloorPlanPage — switch desktop', () => {
       expect(apiMocks.get).toHaveBeenCalledWith('restaurants/org_test/floor-plans');
     });
 
-    expect(screen.getByTestId('floor-plan-selector')).toBeInTheDocument();
     expect(canvasMock.mock.lastCall?.[0]).toEqual(
       expect.objectContaining({ mode: 'service', floorPlanId: 'fp-1' }),
     );
@@ -136,7 +97,7 @@ describe('FloorPlanPage — switch desktop', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('floor-plan-selector')).toBeInTheDocument();
+      expect(screen.getByText('service')).toBeInTheDocument();
     });
     expect(
       apiMocks.get.mock.calls.filter((call) => call[0] === 'restaurants/org_test/floor-plans'),
@@ -172,14 +133,9 @@ describe('FloorPlanPage — switch desktop', () => {
     });
   });
 
-  it('passe au plan sélectionné et affiche le bon floorPlanId', async () => {
+  it('utilise le plan demandé dans la query floorPlanId', async () => {
+    mocks.setSearchParams('floorPlanId=fp-2');
     render(<FloorPlanPage />);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('floor-plan-select')).toBeInTheDocument();
-    });
-
-    fireEvent.change(screen.getByTestId('floor-plan-select'), { target: { value: 'fp-2' } });
 
     await waitFor(() => {
       expect(canvasMock.mock.lastCall?.[0]).toEqual(
@@ -188,83 +144,48 @@ describe('FloorPlanPage — switch desktop', () => {
     });
   });
 
-  it('affiche le titre Live service par défaut', async () => {
+  it('ouvre l’édition du plan courant depuis l’état vide Live', async () => {
     render(<FloorPlanPage />);
 
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Live service' })).toBeInTheDocument();
-    });
-    expect(screen.getByRole('button', { name: 'Live service' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(screen.getByRole('button', { name: 'Salle édition' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
-    expect(screen.getByText('service')).toBeInTheDocument();
-  });
+    await waitFor(() => expect(canvasMock).toHaveBeenCalled());
+    const props = canvasMock.mock.calls.at(-1)?.[0] as unknown as {
+      onRequestEdit: () => void;
+    };
 
-  it('affiche le titre Salle édition quand view=edit-plan', async () => {
-    mocks.setSearchParams('view=edit-plan');
-    render(<FloorPlanPage />);
-
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Salle édition' })).toBeInTheDocument();
-    });
-    expect(screen.getByRole('button', { name: 'Salle édition' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(screen.getByRole('button', { name: 'Live service' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
-    expect(screen.getByText('design')).toBeInTheDocument();
-  });
-
-  it('met à jour l’URL vers service-live en conservant les autres paramètres', async () => {
-    mocks.setSearchParams('view=edit-plan&date=2025-09-15');
-    render(<FloorPlanPage />);
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Live service' })).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Live service' }));
-
-    expect(mocks.replace).toHaveBeenCalledWith('/dashboard/floor-plan?date=2025-09-15', {
-      scroll: false,
-    });
-  });
-
-  it('supprime proprement le paramètre view quand il n’y a pas d’autres params', async () => {
-    mocks.setSearchParams('view=edit-plan');
-    render(<FloorPlanPage />);
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Live service' })).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Live service' }));
-
-    expect(mocks.replace).toHaveBeenCalledWith('/dashboard/floor-plan', { scroll: false });
-  });
-
-  it('met à jour l’URL vers edit-plan en conservant les autres paramètres', async () => {
-    mocks.setSearchParams('date=2025-09-15');
-    render(<FloorPlanPage />);
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Salle édition' })).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Salle édition' }));
+    props.onRequestEdit();
 
     expect(mocks.replace).toHaveBeenCalledWith(
-      '/dashboard/floor-plan?date=2025-09-15&view=edit-plan',
+      '/dashboard/floor-plan?view=edit-plan&floorPlanId=fp-1',
       { scroll: false },
     );
+  });
+
+  it('affiche la vue Live sans en-tête ni contrôles d’édition', async () => {
+    render(<FloorPlanPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('service')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('heading', { name: 'Service en salle' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Suivez le service en temps réel.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'En direct' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modifier la salle' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('create-floor-plan')).not.toBeInTheDocument();
+  });
+
+  it('affiche la vue Edition sans en-tête ni bascule redondante', async () => {
+    mocks.setSearchParams('view=edit-plan');
+    render(<FloorPlanPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('design')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('heading', { name: 'Modifier la salle' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Organisez vos plans et vos tables.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'En direct' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Modifier la salle' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Fil d’Ariane' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('create-floor-plan')).toBeInTheDocument();
   });
 
   it('affiche les onglets design en mode edit-plan avec Plan visuel actif', async () => {
@@ -272,13 +193,13 @@ describe('FloorPlanPage — switch desktop', () => {
     render(<FloorPlanPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Plan visuel' })).toHaveAttribute(
-        'aria-pressed',
+      expect(screen.getByRole('tab', { name: 'Plan visuel' })).toHaveAttribute(
+        'aria-selected',
         'true',
       );
     });
-    expect(screen.getByRole('button', { name: 'Sections & tables' })).toHaveAttribute(
-      'aria-pressed',
+    expect(screen.getByRole('tab', { name: 'Sections & tables' })).toHaveAttribute(
+      'aria-selected',
       'false',
     );
     expect(screen.getByText('design')).toBeInTheDocument();
@@ -289,10 +210,10 @@ describe('FloorPlanPage — switch desktop', () => {
     render(<FloorPlanPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Sections & tables' })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Sections & tables' })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sections & tables' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Sections & tables' }));
 
     expect(screen.getByTestId('floor-plan-crud')).toBeInTheDocument();
     expect(screen.queryByText('design')).not.toBeInTheDocument();
@@ -303,11 +224,11 @@ describe('FloorPlanPage — switch desktop', () => {
     render(<FloorPlanPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Sections & tables' })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Sections & tables' })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sections & tables' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Plan visuel' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Sections & tables' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Plan visuel' }));
 
     expect(screen.getByText('design')).toBeInTheDocument();
     expect(screen.queryByTestId('floor-plan-crud')).not.toBeInTheDocument();
@@ -321,11 +242,12 @@ describe('FloorPlanPage — switch desktop', () => {
       expect(screen.getByText('service')).toBeInTheDocument();
     });
 
-    expect(screen.queryByRole('button', { name: 'Plan visuel' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Sections & tables' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Plan visuel' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Sections & tables' })).not.toBeInTheDocument();
   });
 
   it('ouvre la boîte de dialogue de création et crée un plan', async () => {
+    mocks.setSearchParams('view=edit-plan');
     render(<FloorPlanPage />);
 
     await waitFor(() => {

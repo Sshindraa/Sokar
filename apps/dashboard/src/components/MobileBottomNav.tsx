@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   useCallback,
   useEffect,
@@ -19,6 +19,8 @@ import {
   Megaphone,
   Moon,
   MoreHorizontal,
+  PencilRuler,
+  PhoneCall,
   Radio,
   Settings,
   Share2,
@@ -34,14 +36,21 @@ import { useTranslations } from 'next-intl';
 import { useDashboardTheme } from '@/features/theme/dashboard-theme';
 import { cn, triggerHaptic } from '@/lib/utils';
 
-const navItems = [
+const copilotNavItems = [
   { href: '/dashboard', key: 'overview' as const, icon: BarChart3 },
-  { href: '/dashboard/calls', key: 'service' as const, icon: Radio },
   { href: '/dashboard/reservations', key: 'reservations' as const, icon: CalendarCheck },
   { href: '/dashboard/customers', key: 'customers' as const, icon: Users },
 ];
 
+const salleNavItems = [
+  { href: '/dashboard/floor-plan?view=service-live', key: 'live' as const, icon: Radio },
+  { href: '/dashboard/floor-plan?view=edit-plan', key: 'edition' as const, icon: PencilRuler },
+];
+
+type PrimaryNavItem = (typeof copilotNavItems)[number] | (typeof salleNavItems)[number];
+
 const moreItems = [
+  { href: '/dashboard/calls', key: 'calls', icon: PhoneCall },
   { href: '/dashboard/marketing', key: 'marketing', icon: Megaphone },
   { href: '/dashboard/reputation', key: 'reputation', icon: Star },
   { href: '/dashboard/loyalty', key: 'loyalty', icon: Award },
@@ -62,11 +71,9 @@ function isMobileNavActive(pathname: string, href: string) {
   return pathname.startsWith(href);
 }
 
-function isPrimaryNavActive(pathname: string, item: (typeof navItems)[number]) {
-  if (item.key === 'service') {
-    return ['/dashboard/calls', '/dashboard/floor-plan'].some((href) => pathname.startsWith(href));
-  }
-
+function isPrimaryNavActive(pathname: string, item: PrimaryNavItem, salleEditMode: boolean) {
+  if (item.key === 'live') return pathname.startsWith('/dashboard/floor-plan') && !salleEditMode;
+  if (item.key === 'edition') return pathname.startsWith('/dashboard/floor-plan') && salleEditMode;
   return isMobileNavActive(pathname, item.href);
 }
 
@@ -80,12 +87,19 @@ type DragState = {
   moved: boolean;
 };
 
+type NavGeometry = {
+  containerRect: DOMRect;
+  centers: number[];
+  itemWidth: number;
+};
+
 const DRAG_THRESHOLD = 6;
 const LIQUID_SETTLE_TRANSITION =
   'transform 280ms cubic-bezier(0.22, 1, 0.36, 1), width 240ms cubic-bezier(0.22, 1, 0.36, 1)';
 
 export default function MobileBottomNav() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const tNav = useTranslations('nav');
   const tDashboard = useTranslations('dashboard');
@@ -93,29 +107,39 @@ export default function MobileBottomNav() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
-  const [isNavMinimized, setIsNavMinimized] = useState(false);
   const [dragPreviewIndex, setDragPreviewIndex] = useState<number | null>(null);
+
+  const salleMode = pathname.startsWith('/dashboard/floor-plan');
+  const salleEditMode = searchParams.get('view') === 'edit-plan';
+  const activeNavItems = salleMode ? salleNavItems : copilotNavItems;
+  const hasMoreMenu = !salleMode;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const liquidRef = useRef<HTMLSpanElement>(null);
   const itemRefs = useRef<Array<HTMLElement | null>>([]);
   const dragRef = useRef<DragState | null>(null);
   const suppressClickRef = useRef(false);
+  const suppressClickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const geometryRef = useRef<NavGeometry | null>(null);
+  const settledIndexRef = useRef<number | null>(null);
 
-  const moreActive = moreOpen || moreItems.some((item) => isMobileNavActive(pathname, item.href));
+  const moreActive =
+    hasMoreMenu && (moreOpen || moreItems.some((item) => isMobileNavActive(pathname, item.href)));
   const committedIndex = moreActive
-    ? navItems.length
+    ? activeNavItems.length
     : Math.max(
         0,
-        navItems.findIndex((item) => isPrimaryNavActive(pathname, item)),
+        activeNavItems.findIndex((item) => isPrimaryNavActive(pathname, item, salleEditMode)),
       );
 
-  const getGeometry = useCallback(() => {
+  const measureGeometry = useCallback((): NavGeometry | null => {
     const container = containerRef.current;
     if (!container) return null;
 
     const containerRect = container.getBoundingClientRect();
-    const centers = itemRefs.current.map((item) => {
+    const itemCount = activeNavItems.length + (hasMoreMenu ? 1 : 0);
+    const centers = Array.from({ length: itemCount }, (_, index) => {
+      const item = itemRefs.current[index];
       if (!item) return null;
       const rect = item.getBoundingClientRect();
       return rect.left - containerRect.left + rect.width / 2;
@@ -126,12 +150,19 @@ export default function MobileBottomNav() {
     const resolvedCenters = centers as number[];
     const itemWidth = itemRefs.current[0]?.getBoundingClientRect().width ?? 64;
 
-    return {
+    const geometry = {
       containerRect,
       centers: resolvedCenters,
       itemWidth,
     };
-  }, []);
+    geometryRef.current = geometry;
+    return geometry;
+  }, [activeNavItems, hasMoreMenu]);
+
+  const getGeometry = useCallback(
+    () => geometryRef.current ?? measureGeometry(),
+    [measureGeometry],
+  );
 
   const nearestIndex = useCallback((localX: number, centers: number[]) => {
     let closestIndex = 0;
@@ -189,11 +220,19 @@ export default function MobileBottomNav() {
   }, []);
 
   const settleLiquid = useCallback(
-    (index: number, animate: boolean) => {
+    (index: number, animate: boolean, force = false) => {
+      // A route update can arrive while the settle transition is still
+      // running. If it points at the same tab, leave the in-flight transform
+      // alone instead of cancelling it with a second write.
+      if (!force && settledIndexRef.current === index) return;
+
       const geometry = getGeometry();
       if (!geometry) return;
       const center = geometry.centers[index] ?? geometry.centers[0];
-      if (center !== undefined) setLiquidPosition(center, animate);
+      if (center !== undefined) {
+        setLiquidPosition(center, animate);
+        settledIndexRef.current = index;
+      }
     },
     [getGeometry, setLiquidPosition],
   );
@@ -205,49 +244,64 @@ export default function MobileBottomNav() {
     if (!container || typeof ResizeObserver === 'undefined') return;
 
     const resizeObserver = new ResizeObserver(() => {
-      settleLiquid(committedIndex, false);
+      // The bar can change width when rotating or entering the iPad layout.
+      // Invalidate the cached measurements before settling the lens.
+      geometryRef.current = null;
+      settleLiquid(committedIndex, false, true);
     });
     resizeObserver.observe(container);
 
     return () => resizeObserver.disconnect();
-  }, [committedIndex, settleLiquid]);
+  }, [activeNavItems, committedIndex, settleLiquid]);
 
-  // Apple reduces the tab bar while the user scrolls down and restores it as
-  // soon as the user scrolls up. Keep the transition local to touch surfaces;
-  // the desktop sidebar never mounts this component visually.
+  // Warm the route cache while the user is reading the current screen. This
+  // removes the visible blank interval after a tap without changing the URL
+  // or rendering any hidden page content.
   useEffect(() => {
-    let lastScrollY = window.scrollY;
-    let ticking = false;
+    if (typeof router.prefetch !== 'function') return;
+    activeNavItems.forEach((item) => {
+      void router.prefetch(item.href);
+    });
+  }, [activeNavItems, router]);
 
-    const updateVisibility = () => {
-      const currentScrollY = window.scrollY;
-      const delta = currentScrollY - lastScrollY;
-
-      if (Math.abs(delta) >= 8) {
-        if (currentScrollY <= 8 || delta < 0 || moreOpen) {
-          setIsNavMinimized(false);
-        } else {
-          setIsNavMinimized(true);
-        }
-        lastScrollY = currentScrollY;
+  useEffect(() => {
+    return () => {
+      if (suppressClickTimeoutRef.current) {
+        clearTimeout(suppressClickTimeoutRef.current);
       }
-
-      ticking = false;
     };
+  }, []);
 
-    const handleScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      window.requestAnimationFrame(updateVisibility);
-    };
+  const armClickSuppression = useCallback(() => {
+    suppressClickRef.current = true;
+    if (suppressClickTimeoutRef.current) {
+      clearTimeout(suppressClickTimeoutRef.current);
+    }
+    // Pointer capture does not always dispatch a synthetic click on iOS. Do
+    // not let the next legitimate tap get swallowed in that case.
+    suppressClickTimeoutRef.current = setTimeout(() => {
+      suppressClickRef.current = false;
+      suppressClickTimeoutRef.current = null;
+    }, 450);
+  }, []);
 
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [moreOpen]);
+  const clearClickSuppression = useCallback(() => {
+    suppressClickRef.current = false;
+    if (suppressClickTimeoutRef.current) {
+      clearTimeout(suppressClickTimeoutRef.current);
+      suppressClickTimeoutRef.current = null;
+    }
+  }, []);
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
 
+    // A pointer gesture is the point at which cached geometry must be
+    // freshest: JSDOM, iOS viewport changes and keyboard/rotation can all
+    // move the bar between resize notifications. Measure once per gesture,
+    // then reuse that snapshot for the rest of the drag.
+    geometryRef.current = null;
+    settledIndexRef.current = null;
     const geometry = getGeometry();
     if (!geometry) return;
 
@@ -335,23 +389,30 @@ export default function MobileBottomNav() {
 
     if (!didMove) {
       resetLiquidInteraction();
-      settleLiquid(committedIndex, true);
+      // A normal tap has already previewed the item under the pointer. Keep
+      // the lens there while Next updates the route; settling back to the
+      // previous pathname first creates a visible "there and back" jump.
+      settleLiquid(cancelled ? committedIndex : targetIndex, true);
       return;
     }
 
     event.preventDefault();
-    suppressClickRef.current = true;
+    armClickSuppression();
     resetLiquidInteraction();
     settleLiquid(targetIndex, true);
 
-    if (targetIndex === navItems.length) {
-      setIsNavMinimized(false);
+    if (hasMoreMenu && targetIndex === activeNavItems.length) {
       setMoreOpen(true);
       return;
     }
 
+    // A scrub that ends on the current tab should only settle the lens. A
+    // redundant router push causes an unnecessary loading transition and was
+    // the source of the occasional blank frame in the recording.
+    if (targetIndex === committedIndex) return;
+
     setMoreOpen(false);
-    router.push(navItems[targetIndex].href);
+    router.push(activeNavItems[targetIndex].href);
   };
 
   // Le panneau « Plus » appartient au shell du dashboard et reste donc
@@ -360,7 +421,6 @@ export default function MobileBottomNav() {
   // d'une nouvelle page.
   useEffect(() => {
     setMoreOpen(false);
-    setIsNavMinimized(false);
   }, [pathname]);
 
   // Lock scroll when more menu is open
@@ -417,6 +477,7 @@ export default function MobileBottomNav() {
               {moreItems.map((item) => {
                 const Icon = item.icon;
                 const active = isMobileNavActive(pathname, item.href);
+                const spansMenu = item.key === 'settings';
 
                 return (
                   <Link
@@ -425,6 +486,7 @@ export default function MobileBottomNav() {
                     onClick={() => setMoreOpen(false)}
                     className={cn(
                       'group flex min-h-10 items-center gap-1.5 rounded-xl border border-border bg-card/35 px-2.5 py-1.5 text-left text-sm font-medium leading-tight text-muted-foreground transition-all duration-200 hover:border-foreground/20 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-2 sm:px-3',
+                      spansMenu && 'col-span-2 md:col-span-3',
                       active && 'border-primary/40 bg-primary/10 text-foreground',
                     )}
                   >
@@ -462,8 +524,8 @@ export default function MobileBottomNav() {
       )}
 
       <nav
-        aria-label="Navigation principale"
-        className={cn('dashboard-mobile-nav', isNavMinimized && !moreOpen && 'is-minimized')}
+        aria-label={salleMode ? 'Navigation Salle' : 'Navigation principale'}
+        className="dashboard-mobile-nav"
       >
         <div
           ref={containerRef}
@@ -483,16 +545,14 @@ export default function MobileBottomNav() {
             aria-hidden="true"
           />
           <div className="dashboard-mobile-nav__items">
-            {navItems.map((item) => {
+            {activeNavItems.map((item, index) => {
               const Icon = item.icon;
               // Quand « Plus » est ouvert, son indicateur devient l'onglet
               // actif. L'onglet de la page courante doit garder son icône et
               // son libellé normaux (notamment « Clients »), sans second
               // état actif visuel sous le panneau.
-              const active = !moreOpen && isPrimaryNavActive(pathname, item);
-              const visualActive = isDragging
-                ? dragPreviewIndex === navItems.indexOf(item)
-                : active;
+              const active = !moreOpen && isPrimaryNavActive(pathname, item, salleEditMode);
+              const visualActive = isDragging ? dragPreviewIndex === index : active;
 
               return (
                 <Link
@@ -501,12 +561,12 @@ export default function MobileBottomNav() {
                   aria-label={tNav(item.key)}
                   draggable={false}
                   ref={(element) => {
-                    itemRefs.current[navItems.indexOf(item)] = element;
+                    itemRefs.current[index] = element;
                   }}
                   onClick={(event) => {
                     if (suppressClickRef.current) {
                       event.preventDefault();
-                      suppressClickRef.current = false;
+                      clearClickSuppression();
                       return;
                     }
                     triggerHaptic(12);
@@ -528,41 +588,44 @@ export default function MobileBottomNav() {
               );
             })}
 
-            <button
-              type="button"
-              draggable={false}
-              ref={(element) => {
-                itemRefs.current[navItems.length] = element;
-              }}
-              aria-expanded={moreOpen}
-              aria-haspopup="dialog"
-              aria-controls="mobile-more-menu"
-              aria-label={tNav('more')}
-              aria-current={moreActive ? 'page' : undefined}
-              onClick={(event) => {
-                if (suppressClickRef.current) {
-                  event.preventDefault();
-                  suppressClickRef.current = false;
-                  return;
-                }
-                triggerHaptic(12);
-                setMoreOpen((current) => !current);
-              }}
-              className={cn(
-                'dashboard-mobile-nav__item',
-                (isDragging ? dragPreviewIndex === navItems.length : moreActive) && 'is-active',
-              )}
-            >
-              <span className="dashboard-mobile-nav__icon" aria-hidden="true">
-                <MoreHorizontal size={20} strokeWidth={1.8} />
-              </span>
-              <span className="dashboard-mobile-nav__label">
-                <span className="dashboard-mobile-nav__label-full">{tNav('more')}</span>
-                <span className="dashboard-mobile-nav__label-compact" aria-hidden="true">
-                  {tNav('more')}
+            {hasMoreMenu && (
+              <button
+                type="button"
+                draggable={false}
+                ref={(element) => {
+                  itemRefs.current[activeNavItems.length] = element;
+                }}
+                aria-expanded={moreOpen}
+                aria-haspopup="dialog"
+                aria-controls="mobile-more-menu"
+                aria-label={tNav('more')}
+                aria-current={moreActive ? 'page' : undefined}
+                onClick={(event) => {
+                  if (suppressClickRef.current) {
+                    event.preventDefault();
+                    clearClickSuppression();
+                    return;
+                  }
+                  triggerHaptic(12);
+                  setMoreOpen((current) => !current);
+                }}
+                className={cn(
+                  'dashboard-mobile-nav__item',
+                  (isDragging ? dragPreviewIndex === activeNavItems.length : moreActive) &&
+                    'is-active',
+                )}
+              >
+                <span className="dashboard-mobile-nav__icon" aria-hidden="true">
+                  <MoreHorizontal size={20} strokeWidth={1.8} />
                 </span>
-              </span>
-            </button>
+                <span className="dashboard-mobile-nav__label">
+                  <span className="dashboard-mobile-nav__label-full">{tNav('more')}</span>
+                  <span className="dashboard-mobile-nav__label-compact" aria-hidden="true">
+                    {tNav('more')}
+                  </span>
+                </span>
+              </button>
+            )}
           </div>
         </div>
       </nav>

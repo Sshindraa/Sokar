@@ -1,5 +1,12 @@
 import { Prisma } from '@prisma/client';
-import type { PrismaClient, Section, Table, Wall } from '@prisma/client';
+import type {
+  PrismaClient,
+  Section,
+  Table,
+  TableCombination,
+  Wall,
+  FloorPlanZone,
+} from '@prisma/client';
 import { zonedTimeToUtc } from './availability-capacity-aware.service.js';
 import { TableAllocationService } from './table-allocation.service.js';
 import { observeReservationMutation } from '../../shared/observability/reservation-contract';
@@ -32,6 +39,14 @@ const FLOOR_PLAN_INCLUDE = {
     orderBy: [{ positionX: 'asc' }, { positionY: 'asc' }, { name: 'asc' }],
   },
   walls: { orderBy: { createdAt: 'asc' } },
+  zones: {
+    orderBy: [{ sectionId: 'asc' }, { name: 'asc' }],
+    include: { section: { select: { id: true, name: true } } },
+  },
+  tableCombinations: {
+    orderBy: { createdAt: 'asc' },
+    include: { members: { select: { tableId: true } } },
+  },
 } satisfies Prisma.FloorPlanInclude;
 
 export type FloorPlanWithSections = {
@@ -49,6 +64,12 @@ export type FloorPlanWithSections = {
   >;
   tables: Table[];
   walls: Wall[];
+  zones: Array<FloorPlanZone & { section: { id: string; name: string } | null }>;
+  tableCombinations: Array<
+    Pick<TableCombination, 'id' | 'floorPlanId' | 'name' | 'createdAt' | 'updatedAt'> & {
+      members: Array<{ tableId: string }>;
+    }
+  >;
 };
 
 export type FloorPlanSummary = {
@@ -118,6 +139,23 @@ export type CreateWallInput = {
 };
 
 export type UpdateWallInput = Partial<CreateWallInput>;
+
+export type CreateZoneInput = {
+  name: string;
+  sectionId?: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+};
+
+export type UpdateZoneInput = Partial<CreateZoneInput>;
+
+export type CreateTableCombinationInput = {
+  tableIds: string[];
+  name?: string | null;
+};
 
 export class FloorPlanService {
   private readonly tableAllocation: TableAllocationService;
@@ -717,6 +755,176 @@ export class FloorPlanService {
     }
 
     await this.prisma.wall.delete({ where: { id: wallId } });
+  }
+
+  async createZone(
+    restaurantId: string,
+    input: CreateZoneInput,
+    floorPlanId?: string,
+  ): Promise<FloorPlanZone> {
+    const resolvedFloorPlanId = await this.resolveFloorPlanId(restaurantId, floorPlanId);
+    this.validateZone(input);
+    await this.assertSectionBelongsToFloorPlan(input.sectionId, resolvedFloorPlanId);
+
+    return this.prisma.floorPlanZone.create({
+      data: {
+        floorPlanId: resolvedFloorPlanId,
+        sectionId: input.sectionId ?? null,
+        name: input.name.trim(),
+        x: input.x,
+        y: input.y,
+        width: input.width,
+        height: input.height,
+        rotation: input.rotation ?? 0,
+      },
+    });
+  }
+
+  async updateZone(
+    restaurantId: string,
+    zoneId: string,
+    input: UpdateZoneInput,
+    floorPlanId?: string,
+  ): Promise<FloorPlanZone> {
+    const resolvedFloorPlanId = await this.resolveFloorPlanId(restaurantId, floorPlanId);
+    const zone = await this.prisma.floorPlanZone.findFirst({
+      where: { id: zoneId, floorPlanId: resolvedFloorPlanId },
+    });
+    if (!zone) throw new FloorPlanNotFoundError('Zone introuvable');
+
+    const nextZone = { ...zone, ...input };
+    this.validateZone(nextZone);
+    await this.assertSectionBelongsToFloorPlan(input.sectionId, resolvedFloorPlanId);
+
+    return this.prisma.floorPlanZone.update({
+      where: { id: zoneId },
+      data: {
+        ...(input.sectionId !== undefined && { sectionId: input.sectionId ?? null }),
+        ...(input.name !== undefined && { name: input.name.trim() }),
+        ...(input.x !== undefined && { x: input.x }),
+        ...(input.y !== undefined && { y: input.y }),
+        ...(input.width !== undefined && { width: input.width }),
+        ...(input.height !== undefined && { height: input.height }),
+        ...(input.rotation !== undefined && { rotation: input.rotation }),
+      },
+    });
+  }
+
+  async deleteZone(restaurantId: string, zoneId: string, floorPlanId?: string): Promise<void> {
+    const resolvedFloorPlanId = await this.resolveFloorPlanId(restaurantId, floorPlanId);
+    const zone = await this.prisma.floorPlanZone.findFirst({
+      where: { id: zoneId, floorPlanId: resolvedFloorPlanId },
+      select: { id: true },
+    });
+    if (!zone) throw new FloorPlanNotFoundError('Zone introuvable');
+    await this.prisma.floorPlanZone.delete({ where: { id: zoneId } });
+  }
+
+  async createTableCombination(
+    restaurantId: string,
+    input: CreateTableCombinationInput,
+    floorPlanId?: string,
+  ): Promise<{ id: string; floorPlanId: string; name: string | null; tableIds: string[] }> {
+    const resolvedFloorPlanId = await this.resolveFloorPlanId(restaurantId, floorPlanId);
+    const tableIds = [...new Set(input.tableIds)];
+    if (tableIds.length < 2) {
+      throw new FloorPlanValidationError('Sélectionnez au moins deux tables combinables');
+    }
+
+    const tables = await this.prisma.table.findMany({
+      where: { id: { in: tableIds }, floorPlanId: resolvedFloorPlanId, isActive: true },
+      select: { id: true },
+    });
+    if (tables.length !== tableIds.length) {
+      throw new FloorPlanNotFoundError('Une table sélectionnée est introuvable');
+    }
+
+    const existing = await this.prisma.tableCombination.findMany({
+      where: { floorPlanId: resolvedFloorPlanId },
+      include: { members: { select: { tableId: true } } },
+    });
+    const normalized = [...tableIds].sort().join(':');
+    const duplicate = existing.find(
+      (combination) =>
+        combination.members
+          .map((member) => member.tableId)
+          .sort()
+          .join(':') === normalized,
+    );
+    if (duplicate) {
+      return {
+        id: duplicate.id,
+        floorPlanId: duplicate.floorPlanId,
+        name: duplicate.name,
+        tableIds,
+      };
+    }
+
+    const created = await this.prisma.tableCombination.create({
+      data: {
+        floorPlanId: resolvedFloorPlanId,
+        name: input.name?.trim() || null,
+        members: { create: tableIds.map((tableId) => ({ tableId })) },
+      },
+      include: { members: { select: { tableId: true } } },
+    });
+
+    return {
+      id: created.id,
+      floorPlanId: created.floorPlanId,
+      name: created.name,
+      tableIds: created.members.map((member) => member.tableId),
+    };
+  }
+
+  async deleteTableCombination(
+    restaurantId: string,
+    combinationId: string,
+    floorPlanId?: string,
+  ): Promise<void> {
+    const resolvedFloorPlanId = await this.resolveFloorPlanId(restaurantId, floorPlanId);
+    const combination = await this.prisma.tableCombination.findFirst({
+      where: { id: combinationId, floorPlanId: resolvedFloorPlanId },
+      select: { id: true },
+    });
+    if (!combination) throw new FloorPlanNotFoundError('Combinaison introuvable');
+    await this.prisma.tableCombination.delete({ where: { id: combinationId } });
+  }
+
+  private validateZone(input: Partial<CreateZoneInput>): void {
+    if (!input.name?.trim() || input.name.trim().length > 120) {
+      throw new FloorPlanValidationError(
+        'Le nom de la zone doit contenir entre 1 et 120 caractères',
+      );
+    }
+    for (const [label, value] of [
+      ['x', input.x],
+      ['y', input.y],
+      ['largeur', input.width],
+      ['hauteur', input.height],
+    ] as const) {
+      if (!Number.isInteger(value)) {
+        throw new FloorPlanValidationError(`La ${label} de la zone doit être un entier`);
+      }
+    }
+    if ((input.width ?? 0) <= 0 || (input.height ?? 0) <= 0) {
+      throw new FloorPlanValidationError('Les dimensions de la zone doivent être positives');
+    }
+    if (input.rotation !== undefined && !Number.isInteger(input.rotation)) {
+      throw new FloorPlanValidationError('La rotation de la zone doit être un entier');
+    }
+  }
+
+  private async assertSectionBelongsToFloorPlan(
+    sectionId: string | null | undefined,
+    floorPlanId: string,
+  ): Promise<void> {
+    if (!sectionId) return;
+    const section = await this.prisma.section.findFirst({
+      where: { id: sectionId, floorPlanId },
+      select: { id: true },
+    });
+    if (!section) throw new FloorPlanNotFoundError('Section introuvable');
   }
 
   private validateTable(input: Partial<CreateTableInput>): void {

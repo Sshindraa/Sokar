@@ -14,6 +14,7 @@ import {
   Users,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useApi } from '../../lib/api';
 
@@ -31,6 +32,27 @@ const DashboardCharts = dynamic(() => import('./DashboardCharts'), {
 
 const EmptySlotsWidget = dynamic(() => import('./EmptySlotsWidget'), {
   ssr: false,
+  loading: () => (
+    <section
+      aria-label="Chargement des créneaux"
+      className="rounded-2xl border border-border bg-card p-3.5 shadow-sm sm:p-4 md:p-5"
+    >
+      <div className="mb-3 flex items-center gap-2.5">
+        <Skeleton className="h-8 w-8 rounded-lg" />
+        <Skeleton className="h-5 w-32 rounded-md" />
+      </div>
+      <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background">
+        {[1, 2, 3].map((item) => (
+          <div key={item} className="grid gap-3 px-3.5 py-3 sm:grid-cols-4 sm:items-center sm:px-4">
+            <Skeleton className="h-8 w-28" />
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-5 w-full" />
+            <Skeleton className="hidden h-5 w-24 justify-self-end sm:block" />
+          </div>
+        ))}
+      </div>
+    </section>
+  ),
 });
 
 const NoShowWidget = dynamic(() => import('./NoShowWidget'), {
@@ -200,15 +222,30 @@ export default function DashboardPage() {
       stats.estimatedRevenue > 0,
     [stats],
   );
+  const periodLabel =
+    period === 'today' ? 'Aujourd’hui' : period === '7d' ? 'Cette semaine' : 'Ce mois-ci';
+  const averagePartySize =
+    stats.totalReservations > 0
+      ? `${(stats.covers / stats.totalReservations).toLocaleString('fr-FR', {
+          maximumFractionDigits: 1,
+        })} / résa`
+      : 'attendus';
+  const averageReservationRevenue =
+    stats.totalReservations > 0
+      ? `${Math.round(stats.estimatedRevenue / stats.totalReservations).toLocaleString('fr-FR')} € / résa`
+      : 'prévisionnel';
 
   if (isLoading) return <DashboardSkeleton />;
 
   return (
-    <div className="space-y-3 select-none md:space-y-5">
-      <header className="flex items-center justify-between gap-2">
-        <h1 className="text-xl font-black tracking-tight text-foreground font-display md:text-3xl">
-          Pilotage
-        </h1>
+    <div className="space-y-4 select-none md:space-y-6">
+      <header className="flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-black tracking-tight text-foreground font-display md:text-3xl">
+            Pilotage
+          </h1>
+          <p className="mt-1 text-xs font-medium text-muted-foreground sm:text-sm">{periodLabel}</p>
+        </div>
 
         <div className="relative shrink-0 sm:hidden">
           <select
@@ -256,38 +293,36 @@ export default function DashboardPage() {
         <ErrorState message={error} onRetry={() => setRefreshNonce((nonce) => nonce + 1)} />
       )}
 
+      {!error && <EmptySlotsWidget />}
+
       {!error && hasData && (
-        <section className="grid grid-cols-2 overflow-hidden rounded-2xl border border-border bg-card shadow-sm sm:gap-3 sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent sm:shadow-none lg:grid-cols-4">
+        <section
+          aria-label="Indicateurs clés"
+          className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border shadow-sm sm:grid-cols-2 sm:gap-3 sm:overflow-visible sm:rounded-none sm:border-0 sm:bg-transparent sm:shadow-none lg:grid-cols-4"
+        >
           <KpiCard
             label="Réservations"
             value={stats.totalReservations}
             icon={CalendarCheck}
-            className="border-b border-r border-border sm:border"
+            caption="confirmées"
           />
-          <KpiCard
-            label="Couverts"
-            value={stats.covers}
-            icon={Users}
-            className="border-b border-border sm:border"
-          />
+          <KpiCard label="Couverts" value={stats.covers} icon={Users} caption={averagePartySize} />
           <KpiCard
             label="CA estimé"
             value={`${stats.estimatedRevenue.toLocaleString('fr-FR')} €`}
             icon={Euro}
-            className="border-r border-border sm:border"
+            caption={averageReservationRevenue}
           />
           <KpiCard
             label="Conversion appels"
             value={`${stats.conversionRate}%`}
             icon={TrendingUp}
-            className="sm:border"
+            caption="des appels"
           />
         </section>
       )}
 
       {!error && !hasData && <EmptyDashboardState />}
-
-      <EmptySlotsWidget />
 
       {!error && hasData && <DashboardCharts analytics={analytics} />}
 
@@ -300,27 +335,44 @@ function KpiCard({
   label,
   value,
   icon: Icon,
+  caption,
   className,
 }: {
   label: string;
   value: number | string;
   icon: typeof CalendarCheck;
+  caption: string;
   className?: string;
 }) {
   return (
     <article
       aria-label={`Indicateur ${label}`}
-      className={cn('min-w-0 p-3 sm:rounded-2xl sm:bg-card sm:p-4 sm:shadow-sm', className)}
+      className={cn(
+        'flex min-h-[6.75rem] min-w-0 flex-col justify-between bg-card p-3.5 sm:min-h-[7.75rem] sm:rounded-2xl sm:p-4 sm:shadow-sm md:p-5',
+        className,
+      )}
     >
-      <div className="flex items-center gap-1.5 text-muted-foreground sm:gap-2">
-        <Icon size={14} className="shrink-0 sm:h-4 sm:w-4" />
-        <p className="truncate whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.1em] sm:text-xs sm:tracking-wider">
-          {label}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-secondary text-foreground/75">
+            <Icon size={15} aria-hidden="true" />
+          </span>
+          <p className="truncate whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.12em] sm:text-xs sm:tracking-wider">
+            {label}
+          </p>
+        </div>
+        <span className="hidden shrink-0 text-[10px] font-semibold text-muted-foreground sm:block">
+          {caption}
+        </span>
+      </div>
+      <div className="mt-2 flex items-end justify-between gap-2 sm:mt-4">
+        <p className="truncate text-[1.8rem] font-black leading-none tracking-tight text-foreground sm:text-2xl md:text-3xl">
+          {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
         </p>
       </div>
-      <p className="mt-1.5 truncate text-[1.65rem] font-black leading-none tracking-tight text-foreground sm:mt-3 sm:text-2xl sm:leading-normal md:text-3xl">
-        {typeof value === 'number' ? value.toLocaleString('fr-FR') : value}
-      </p>
+      <span className="mt-2 text-[10px] font-semibold text-muted-foreground sm:hidden">
+        {caption}
+      </span>
     </article>
   );
 }
@@ -340,18 +392,12 @@ function EmptyDashboardState() {
         </div>
       </div>
       <div className="flex shrink-0 gap-2 pl-[52px] sm:pl-0">
-        <Link
-          href="/dashboard/calls"
-          className="rounded-xl border border-border px-3 py-2 text-xs font-bold text-foreground transition-all duration-200 hover:bg-accent"
-        >
-          Voir les appels
-        </Link>
-        <Link
-          href="/dashboard/reservations"
-          className="rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground transition-all duration-200 hover:opacity-90"
-        >
-          Réservations
-        </Link>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/dashboard/calls">Voir les appels</Link>
+        </Button>
+        <Button asChild size="sm">
+          <Link href="/dashboard/reservations">Réservations</Link>
+        </Button>
       </div>
     </section>
   );
@@ -365,14 +411,16 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
           <AlertCircle size={20} />
           <p className="text-sm font-semibold">{message}</p>
         </div>
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={onRetry}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-destructive/30 px-3 py-2 text-xs font-bold transition-all duration-200 hover:bg-destructive/10"
+          className="border-destructive/30 text-xs font-bold text-destructive hover:bg-destructive/10 hover:text-destructive"
         >
           <RefreshCw size={14} />
           Réessayer
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -380,17 +428,18 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 
 function DashboardSkeleton() {
   return (
-    <div className="space-y-3 md:space-y-8">
+    <div className="space-y-4 md:space-y-6">
       <div className="flex items-center justify-between gap-2">
         <Skeleton className="h-8 w-24 rounded-lg md:h-9 md:w-32 md:rounded-xl" />
         <Skeleton className="h-9 w-52 rounded-lg sm:w-72 md:h-11 md:rounded-xl" />
       </div>
+      <Skeleton className="h-40 rounded-2xl border border-border" />
       <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-border sm:gap-3 sm:overflow-visible sm:rounded-none sm:border-0 lg:grid-cols-4">
         {[1, 2, 3, 4].map((item) => (
           <Skeleton
             key={item}
             className={cn(
-              'h-20 rounded-none border-border sm:h-32 sm:rounded-2xl sm:border',
+              'h-24 rounded-none border-border sm:h-32 sm:rounded-2xl sm:border',
               item <= 2 && 'border-b',
               item % 2 === 1 && 'border-r',
             )}

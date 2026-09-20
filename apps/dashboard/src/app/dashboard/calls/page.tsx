@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useApi } from '../../../lib/api';
 import { getErrorMessage, type Call, type CallListResponse } from '@/types/api';
 import { useIsMobile } from '@/lib/useMediaQuery';
@@ -14,6 +15,7 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PhoneCall, Clock, MessageSquare } from 'lucide-react';
 import { formatDate } from '@sokar/shared';
@@ -158,9 +160,12 @@ export default function CallsPage() {
           <div className="sokar-empty">
             <PhoneCall size={40} className="opacity-30" />
             <p className="text-sm">Aucun appel enregistré</p>
-            <p className="text-xs opacity-60">
-              Les appels traités par votre assistant apparaîtront ici.
+            <p className="max-w-sm text-xs opacity-60">
+              Les appels de votre assistant apparaîtront ici.
             </p>
+            <Button asChild size="sm" variant="outline" className="mt-1">
+              <Link href="/dashboard/settings#settings-agent">Vérifier l&apos;assistant</Link>
+            </Button>
           </div>
         )
       ) : isMobile ? (

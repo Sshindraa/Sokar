@@ -111,9 +111,11 @@ describe('EmptySlotsWidget', () => {
     expect(
       screen.getByText(
         (_, element) => element?.textContent?.replace(/\s+/g, ' ').trim() === '2 / 3 réservations',
+        { selector: 'p' },
       ),
     ).toBeInTheDocument();
-    expect(screen.getAllByText('CA estimé : 120 €')).toHaveLength(2);
+    expect(screen.getByText('Manque à gagner estimé : 120 €')).toBeInTheDocument();
+    expect(screen.getByText('Manque à gagner : 120 €')).toBeInTheDocument();
 
     // Les jours pleins et fermés ne sont pas affichés
     expect(screen.queryByText('Mardi')).not.toBeInTheDocument();

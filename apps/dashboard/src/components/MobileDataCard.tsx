@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { cn, triggerHaptic } from '@/lib/utils';
+import { MoreHorizontal } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export type MobileDataCardAction = {
@@ -39,6 +40,7 @@ export default function MobileDataCard({
 }: MobileDataCardProps) {
   const [offsetX, setOffsetX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
 
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
@@ -50,6 +52,7 @@ export default function MobileDataCard({
   // Reset offset if actions list changes
   useEffect(() => {
     setOffsetX(0);
+    setActionsOpen(false);
   }, [actions]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -161,7 +164,25 @@ export default function MobileDataCard({
               <p className="mt-0.5 text-[11px] text-muted-foreground truncate">{subtitle}</p>
             )}
           </div>
-          {badge && <div className="flex-shrink-0">{badge}</div>}
+          <div className="flex flex-shrink-0 items-center gap-1.5">
+            {badge ? <div>{badge}</div> : null}
+            {actions && actions.length > 0 ? (
+              <button
+                type="button"
+                aria-label={actionsOpen ? 'Masquer les actions' : 'Afficher les actions'}
+                aria-expanded={actionsOpen}
+                title={actionsOpen ? 'Masquer les actions' : 'Afficher les actions'}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActionsOpen((open) => !open);
+                  setOffsetX(0);
+                }}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <MoreHorizontal size={17} aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {/* Detail grid */}
@@ -177,6 +198,34 @@ export default function MobileDataCard({
             ))}
           </div>
         )}
+
+        {actionsOpen && actions && actions.length > 0 ? (
+          <div
+            className="mt-3 grid grid-cols-2 gap-2 border-t border-border/70 pt-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {actions.map((act, idx) => (
+              <button
+                key={`inline-${idx}`}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerHaptic(15);
+                  act.onClick(e);
+                  setActionsOpen(false);
+                  setOffsetX(0);
+                }}
+                className={cn(
+                  'inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-[11px] font-semibold text-white transition-all duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  act.colorClass || 'bg-brand',
+                )}
+              >
+                {act.icon ? <span aria-hidden="true">{act.icon}</span> : null}
+                <span>{act.label}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );

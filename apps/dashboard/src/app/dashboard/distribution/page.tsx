@@ -298,13 +298,12 @@ export default function DistributionPage() {
         <div>
           <div className="flex items-center gap-2">
             <Share2 className="h-5 w-5 text-primary" />
-            <h1 className="text-2xl font-semibold tracking-tight">Canaux partenaires</h1>
+            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Canaux partenaires</h1>
             <Badge variant="secondary">Pro</Badge>
           </div>
           <p className="mt-1 max-w-4xl text-sm text-muted-foreground">
-            Préparez Google Reserve, Meta Reserve ou l’API publique avec des données tenant-scoped,
-            des snapshots d’ouverture et des runs rejouables. Les appels fournisseurs et les
-            webhooks publics restent verrouillés pendant la qualification.
+            Préparez vos canaux partenaires avec des données contrôlées. Les appels fournisseurs
+            restent désactivés.
           </p>
         </div>
         <Button variant="outline" onClick={() => void load()} disabled={loading || busy}>
@@ -336,8 +335,8 @@ export default function DistributionPage() {
             <div>
               <p className="font-medium text-foreground">Canaux partenaires verrouillés</p>
               <p className="mt-1">
-                Le flag DISTRIBUTION_ENABLED ou l’entitlement Pro doit être ouvert après la preuve
-                d’un pilote. Aucun compte externe ni secret ne sera utilisé avant cette étape.
+                Activez le module après validation du pilote. Aucun compte externe n’est utilisé en
+                attendant.
               </p>
             </div>
           </CardContent>

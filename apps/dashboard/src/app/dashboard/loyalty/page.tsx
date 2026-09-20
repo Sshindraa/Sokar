@@ -577,7 +577,7 @@ export default function LoyaltyPage() {
         <div>
           <div className="flex items-center gap-2">
             <Gift className="text-primary" size={22} aria-hidden="true" />
-            <h1 className="text-2xl font-semibold tracking-tight">Attentions clients</h1>
+            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Attentions clients</h1>
             <Badge variant="secondary">Pro</Badge>
           </div>
           <p className="mt-2 max-w-3xl text-sm text-foreground/70">
@@ -633,9 +633,9 @@ export default function LoyaltyPage() {
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {lockedByPlan
-                    ? 'La formule Essential peut consulter les clients, mais la création et le suivi des attentions sont disponibles dans Pro.'
+                    ? 'La création et le suivi des attentions sont disponibles dans Pro.'
                     : lockedByFreeze
-                      ? 'Le parcours est prêt, mais reste fermé pendant la qualification du pilote. Aucune donnée ne sera créée tant que le module est verrouillé.'
+                      ? 'Module en préparation : aucune donnée ne sera créée tant qu’il reste verrouillé.'
                       : error}
                 </p>
               </div>

@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import Image from 'next/image';
 import { ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { SokarLogo } from '@/components/SokarLogo';
 import { useTranslations } from 'next-intl';
@@ -28,9 +29,12 @@ import {
   Share2,
   ShieldCheck,
   X,
+  ChevronDown,
+  Check,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { FloorPlanSummary } from '@/types/api';
 import { SyncOrganization } from './SyncOrganization';
 import { CreateRestaurantGate } from './CreateRestaurantGate';
 import MobileBottomNav from '@/components/MobileBottomNav';
@@ -258,6 +262,25 @@ function SettingsButton({ active = false }: { active?: boolean }) {
   );
 }
 
+function DashboardBrand({ restaurantName }: { restaurantName: string }) {
+  return (
+    <Link
+      href="/dashboard"
+      aria-label={`${restaurantName} HQ`}
+      title={`${restaurantName} HQ`}
+      className="dashboard-brand-link flex shrink-0 items-center justify-center rounded-xl border border-border bg-card/70 transition-all duration-200 hover:border-foreground/20 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Image
+        src="/sokar-restaurant-mark.png"
+        alt="Sokar"
+        width={44}
+        height={44}
+        className="dashboard-brand-logo h-9 w-9 object-contain"
+      />
+    </Link>
+  );
+}
+
 function isNavItemActive(pathname: string, item: NavItem) {
   if (item.key === 'giftCards') return pathname.startsWith('/dashboard/gift-card');
   if (item.key === 'customers') return pathname.startsWith('/dashboard/customers');
@@ -277,26 +300,43 @@ function isNavGroupActive(pathname: string, group: NavGroup) {
 function DashboardModeSwitcher({
   salleMode,
   compact = false,
+  floorPlans = [],
+  selectedFloorPlanId,
+  floorPlansLoading = false,
+  onSelectFloorPlan,
 }: {
   salleMode: boolean;
   compact?: boolean;
+  floorPlans?: FloorPlanSummary[];
+  selectedFloorPlanId?: string | null;
+  floorPlansLoading?: boolean;
+  onSelectFloorPlan?: (floorPlanId: string) => void;
 }) {
   const tNav = useTranslations('nav');
   const [companionOpen, setCompanionOpen] = useState(false);
+  const [sallePlanOpen, setSallePlanOpen] = useState(false);
   const companionDialogId = useId();
+  const sallePlanMenuId = useId();
   const switcherRef = useRef<HTMLDivElement>(null);
+  const selectedFloorPlan = floorPlans.find((plan) => plan.id === selectedFloorPlanId);
+  const salleLabel = selectedFloorPlan?.name ?? 'Salle';
+  const salleHref = selectedFloorPlanId
+    ? `/dashboard/floor-plan?view=service-live&floorPlanId=${encodeURIComponent(selectedFloorPlanId)}`
+    : '/dashboard/floor-plan?view=service-live';
 
   useEffect(() => {
-    if (!companionOpen) return;
+    if (!companionOpen && !sallePlanOpen) return;
 
     const closeOnOutsideClick = (event: PointerEvent) => {
       if (!switcherRef.current?.contains(event.target as Node)) {
         setCompanionOpen(false);
+        setSallePlanOpen(false);
       }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setCompanionOpen(false);
+        setSallePlanOpen(false);
       }
     };
 
@@ -306,7 +346,12 @@ function DashboardModeSwitcher({
       document.removeEventListener('pointerdown', closeOnOutsideClick);
       document.removeEventListener('keydown', closeOnEscape);
     };
-  }, [companionOpen]);
+  }, [companionOpen, sallePlanOpen]);
+
+  const selectFloorPlan = (floorPlanId: string) => {
+    onSelectFloorPlan?.(floorPlanId);
+    setSallePlanOpen(false);
+  };
 
   const modeNav = (
     <nav
@@ -325,18 +370,91 @@ function DashboardModeSwitcher({
       >
         Copilot
       </Link>
-      <Link
-        href="/dashboard/floor-plan?view=service-live"
-        aria-current={salleMode ? 'page' : undefined}
-        className={cn(
-          'dashboard-mode-switcher__item flex min-w-0 items-center justify-center rounded-lg font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground',
-          'h-10 flex-1 rounded-full px-3 text-sm',
-          salleMode &&
-            'bg-primary text-primary-foreground shadow-sm hover:bg-primary hover:text-primary-foreground',
-        )}
-      >
-        Salle
-      </Link>
+      {salleMode ? (
+        <div
+          className={cn(
+            'dashboard-mode-switcher__item group relative flex min-w-0 items-center justify-center rounded-full font-medium transition-all duration-200',
+            'h-10 flex-1 px-1 text-sm',
+            'bg-primary text-primary-foreground shadow-sm',
+          )}
+        >
+          <Link
+            href={salleHref}
+            aria-current="page"
+            className="absolute inset-0 z-0 flex min-w-0 items-center justify-center rounded-full px-10 py-2 hover:text-primary-foreground"
+          >
+            <span className="max-w-full truncate">{salleLabel}</span>
+          </Link>
+          <button
+            type="button"
+            aria-label="Choisir un plan de salle"
+            aria-expanded={sallePlanOpen}
+            aria-controls={sallePlanMenuId}
+            onClick={() => {
+              setSallePlanOpen((open) => !open);
+              setCompanionOpen(false);
+            }}
+            className="relative z-10 ml-auto mr-1 flex h-8 w-8 flex-none items-center justify-center rounded-full text-primary-foreground/75 transition-all duration-200 hover:bg-primary-foreground/10 hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <ChevronDown
+              size={15}
+              className={cn('transition-transform duration-200', sallePlanOpen && 'rotate-180')}
+            />
+          </button>
+          {sallePlanOpen && (
+            <div
+              id={sallePlanMenuId}
+              role="listbox"
+              aria-label="Plans de salle"
+              className="absolute right-0 top-[calc(100%+0.5rem)] z-[60] w-64 rounded-2xl border border-border bg-card/95 p-2 text-left shadow-2xl shadow-background/45 backdrop-blur-xl"
+            >
+              {floorPlansLoading ? (
+                <p className="px-2 py-3 text-xs text-muted-foreground">Chargement…</p>
+              ) : floorPlans.length === 0 ? (
+                <p className="px-2 py-3 text-xs text-muted-foreground">Aucun plan disponible</p>
+              ) : (
+                <div className="space-y-1">
+                  {floorPlans.map((plan) => {
+                    const active = plan.id === selectedFloorPlanId;
+                    return (
+                      <button
+                        key={plan.id}
+                        type="button"
+                        role="option"
+                        aria-selected={active}
+                        onClick={() => selectFloorPlan(plan.id)}
+                        className={cn(
+                          'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm transition-all duration-200 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          active && 'bg-primary/10 text-foreground',
+                        )}
+                      >
+                        <span className="min-w-0 truncate">{plan.name}</span>
+                        <span className="flex flex-none items-center gap-2 text-muted-foreground">
+                          {plan.tableCount > 0 && (
+                            <span className="text-[11px]">{plan.tableCount} tables</span>
+                          )}
+                          {active && <Check size={14} className="text-foreground" />}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <Link
+          href={salleHref}
+          aria-current={undefined}
+          className={cn(
+            'dashboard-mode-switcher__item flex min-w-0 items-center justify-center rounded-lg font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground',
+            'h-10 flex-1 rounded-full px-3 text-sm',
+          )}
+        >
+          Salle
+        </Link>
+      )}
       {!compact && (
         <button
           type="button"
@@ -368,7 +486,7 @@ function DashboardModeSwitcher({
       ref={switcherRef}
       className={cn(
         compact
-          ? 'dashboard-mobile-only dashboard-mobile-mode-switcher relative z-30 w-full'
+          ? 'dashboard-mobile-only dashboard-mobile-mode-switcher dashboard-mobile-mode-switcher--inline relative z-30'
           : 'dashboard-desktop-only dashboard-mode-switcher fixed left-1/2 top-4 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2',
       )}
     >
@@ -542,7 +660,13 @@ function DashboardShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { theme } = useDashboardTheme();
   const { orgId, get, isSignedIn } = useApi();
+  const salleMode = pathname.startsWith('/dashboard/floor-plan');
+  const requestedFloorPlanId = searchParams.get('floorPlanId');
   const [restaurantName, setRestaurantName] = useState(defaultRestaurantName);
+  const [floorPlans, setFloorPlans] = useState<FloorPlanSummary[]>([]);
+  const [selectedFloorPlanId, setSelectedFloorPlanId] = useState<string | null>(null);
+  const [floorPlansLoading, setFloorPlansLoading] = useState(false);
+  const [floorPlanRefreshKey, setFloorPlanRefreshKey] = useState(0);
   const [operatorAccess, setOperatorAccess] = useState<boolean | null>(null);
   const isLegacyOperatorPath =
     pathname === '/dashboard/usage' ||
@@ -609,6 +733,76 @@ function DashboardShell({ children }: { children: ReactNode }) {
     };
   }, [get, orgId]);
 
+  useEffect(() => {
+    const refreshFloorPlans = () => setFloorPlanRefreshKey((key) => key + 1);
+    window.addEventListener('sokar:floor-plans-changed', refreshFloorPlans);
+    return () => window.removeEventListener('sokar:floor-plans-changed', refreshFloorPlans);
+  }, []);
+
+  useEffect(() => {
+    if (!salleMode || !orgId) {
+      setFloorPlansLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setFloorPlansLoading(true);
+    setFloorPlans([]);
+
+    void get<FloorPlanSummary[]>(`restaurants/${orgId}/floor-plans`)
+      .then((plans) => {
+        if (cancelled) return;
+
+        setFloorPlans(plans);
+        let persistedFloorPlanId: string | null = null;
+        try {
+          persistedFloorPlanId = window.localStorage.getItem(`sokar.floor-plan.${orgId}`);
+        } catch {
+          // Local storage may be unavailable in a private browsing context.
+        }
+        const preferred =
+          plans.find((plan) => plan.id === persistedFloorPlanId) ??
+          plans.find((plan) => plan.isDefault && plan.isActive) ??
+          plans.find((plan) => plan.isActive) ??
+          plans[0] ??
+          null;
+        setSelectedFloorPlanId(preferred?.id ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFloorPlans([]);
+          setSelectedFloorPlanId(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setFloorPlansLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [floorPlanRefreshKey, get, orgId, salleMode]);
+
+  useEffect(() => {
+    if (!salleMode || !requestedFloorPlanId) return;
+    if (floorPlans.some((plan) => plan.id === requestedFloorPlanId)) {
+      setSelectedFloorPlanId(requestedFloorPlanId);
+    }
+  }, [floorPlans, requestedFloorPlanId, salleMode]);
+
+  const handleSelectFloorPlan = (floorPlanId: string) => {
+    setSelectedFloorPlanId(floorPlanId);
+    try {
+      window.localStorage.setItem(`sokar.floor-plan.${orgId}`, floorPlanId);
+    } catch {
+      // Local storage may be unavailable in a private browsing context.
+    }
+    const params = new URLSearchParams(searchParams.toString());
+    if (!params.has('view')) params.set('view', 'service-live');
+    params.set('floorPlanId', floorPlanId);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
+
   return (
     <div className={cn(theme, 'dashboard-shell sokar-page relative min-h-screen overflow-hidden')}>
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,hsl(var(--foreground)/0.10),transparent_36%),linear-gradient(hsl(var(--border)/0.18)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--border)/0.14)_1px,transparent_1px)] bg-[auto,72px_72px,72px_72px] opacity-70" />
@@ -616,22 +810,31 @@ function DashboardShell({ children }: { children: ReactNode }) {
       <SubscribeFromPricing />
       <DashboardOnboardingGate />
       <OnboardingModal />
-      <DashboardModeSwitcher salleMode={pathname.startsWith('/dashboard/floor-plan')} />
+      <DashboardModeSwitcher
+        salleMode={salleMode}
+        floorPlans={floorPlans}
+        selectedFloorPlanId={selectedFloorPlanId}
+        floorPlansLoading={floorPlansLoading}
+        onSelectFloorPlan={handleSelectFloorPlan}
+      />
       <DashboardSidebar
         pathname={pathname}
         salleView={searchParams.get('view') ?? ''}
         isSokarOperator={operatorAccess === true}
       />
       <div className="dashboard-desktop-only fixed left-24 top-4 z-50 h-12 max-w-[calc(50vw-18rem)] items-center gap-3">
-        <span className="truncate text-lg font-black tracking-tight text-foreground font-display">
-          {restaurantName} HQ
-        </span>
+        <DashboardBrand restaurantName={restaurantName} />
         <SiteSwitcher />
       </div>
       <div className="dashboard-desktop-only fixed right-8 top-4 z-50 h-12 items-center gap-2">
         <AccountMenu />
       </div>
-      <div className="dashboard-shell-content relative z-10 w-full px-4 py-3">
+      <div
+        className={cn(
+          'dashboard-shell-content relative z-10 w-full px-4 py-3',
+          salleMode && 'dashboard-shell-content--salle',
+        )}
+      >
         {/*
           En-tête du dashboard.
           - Téléphone et iPad portrait : identité et contrôles restent sur une
@@ -639,24 +842,32 @@ function DashboardShell({ children }: { children: ReactNode }) {
           - PC et iPad paysage : ils rejoignent la barre supérieure fixe pour
             libérer l'espace vertical du contenu.
         */}
-        <div className="dashboard-flow-header mb-3 gap-3 sm:mb-4">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="max-w-32 truncate text-base font-black tracking-tight text-foreground font-display sm:max-w-none sm:text-lg">
-              {restaurantName} HQ
-            </span>
-            <SiteSwitcher className="hidden w-[11rem] max-w-[32vw] sm:flex" />
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-              <div className="hidden items-center gap-2 sm:flex md:hidden">
-                <ThemeToggle />
-                <SettingsButton active={pathname.startsWith('/dashboard/settings')} />
-              </div>
-              <AccountMenu />
-            </div>
+        <div className="dashboard-flow-header mb-3 gap-2 sm:mb-4">
+          <div className="dashboard-flow-header__brand flex min-w-0 items-center gap-2">
+            <DashboardBrand restaurantName={restaurantName} />
+            <SiteSwitcher className="hidden w-[9rem] max-w-[20vw] md:flex" />
           </div>
-          <DashboardModeSwitcher salleMode={pathname.startsWith('/dashboard/floor-plan')} compact />
+          <DashboardModeSwitcher
+            salleMode={salleMode}
+            floorPlans={floorPlans}
+            selectedFloorPlanId={selectedFloorPlanId}
+            floorPlansLoading={floorPlansLoading}
+            onSelectFloorPlan={handleSelectFloorPlan}
+            compact
+          />
+          <div className="dashboard-flow-header__actions ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <ThemeToggle />
+            <SettingsButton active={pathname.startsWith('/dashboard/settings')} />
+            <AccountMenu />
+          </div>
         </div>
         <DashboardOnboardingPanel />
-        <main className="min-h-[calc(100vh-12rem)] md:min-h-[calc(100vh-14rem)]">
+        <main
+          className={cn(
+            'min-h-[calc(100vh-12rem)] md:min-h-[calc(100vh-14rem)]',
+            salleMode && 'flex flex-1 flex-col min-h-0',
+          )}
+        >
           {isLegacyOperatorPath && operatorAccess !== true ? (
             <div
               className="flex min-h-[calc(100vh-16rem)] items-center justify-center text-sm text-muted-foreground"

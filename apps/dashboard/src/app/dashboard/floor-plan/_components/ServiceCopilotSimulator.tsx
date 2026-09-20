@@ -4,7 +4,17 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Search, MapPin, Clock, Users, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import {
+  Search,
+  MapPin,
+  Clock,
+  Users,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  ChevronDown,
+  Loader2,
+} from 'lucide-react';
 import { useApi } from '@/lib/api';
 import {
   getErrorMessage,
@@ -31,9 +41,9 @@ interface ServiceCopilotSimulatorProps {
   selectedFloorPlanId?: string;
 }
 
-function getDefaultStartsAt(): string {
+function getStartsAt(minutesAhead: number): string {
   const now = new Date();
-  const d = new Date(now.getTime() + 30 * 60 * 1000);
+  const d = new Date(now.getTime() + minutesAhead * 60 * 1000);
   const rounded = Math.ceil(d.getMinutes() / 30) * 30;
   d.setMinutes(rounded, 0, 0);
   const year = d.getFullYear();
@@ -42,6 +52,10 @@ function getDefaultStartsAt(): string {
   const hour = String(d.getHours()).padStart(2, '0');
   const minute = String(d.getMinutes()).padStart(2, '0');
   return `${year}-${month}-${day}T${hour}:${minute}`;
+}
+
+function getDefaultStartsAt(): string {
+  return getStartsAt(30);
 }
 
 function formatIso(iso: string): string {
@@ -67,8 +81,15 @@ function ScenarioCard({ scenario, isBest }: { scenario: SimulationScenario; isBe
       <CardContent className="space-y-3 p-4">
         <div className="flex items-start gap-3">
           <Icon size={20} className={cn('mt-0.5 shrink-0', iconColor)} />
-          <div className="flex-1 space-y-1">
-            <h3 className="font-semibold leading-tight text-foreground">{scenario.title}</h3>
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <h3 className="font-semibold leading-tight text-foreground">{scenario.title}</h3>
+              {isBest ? (
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                  Recommandé
+                </span>
+              ) : null}
+            </div>
             <p className="text-sm text-muted-foreground">{scenario.reason}</p>
           </div>
         </div>
@@ -90,6 +111,31 @@ function ScenarioCard({ scenario, isBest }: { scenario: SimulationScenario; isBe
             <span>Prochain créneau : {formatIso(scenario.nextAvailableAt)}</span>
           </div>
         )}
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          {scenario.metrics.estimatedWaitMinutes !== null ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Clock size={13} aria-hidden="true" />
+              {scenario.metrics.estimatedWaitMinutes === 0
+                ? 'Sans attente'
+                : `${scenario.metrics.estimatedWaitMinutes} min d’attente`}
+            </span>
+          ) : null}
+          {scenario.metrics.coversGained > 0 ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Users size={13} aria-hidden="true" />
+              {scenario.metrics.coversGained} couvert
+              {scenario.metrics.coversGained > 1 ? 's' : ''}
+            </span>
+          ) : null}
+          {scenario.metrics.conflictsCreated > 0 ? (
+            <span className="inline-flex items-center gap-1.5 text-warning">
+              <AlertCircle size={13} aria-hidden="true" />
+              {scenario.metrics.conflictsCreated} conflit
+              {scenario.metrics.conflictsCreated > 1 ? 's' : ''}
+            </span>
+          ) : null}
+        </div>
 
         <div className="flex flex-wrap gap-2 pt-1">
           {scenario.actions.map((action, idx) =>
@@ -132,6 +178,7 @@ export function ServiceCopilotSimulator({
   const [startsAt, setStartsAt] = useState<string>(getDefaultStartsAt());
   const [endsAt, setEndsAt] = useState<string>('');
   const [preferredSectionId, setPreferredSectionId] = useState<string>('');
+  const [showEndTime, setShowEndTime] = useState(false);
 
   const [sections, setSections] = useState<FloorPlan['sections']>([]);
   const [sectionsLoading, setSectionsLoading] = useState(false);
@@ -197,18 +244,26 @@ export function ServiceCopilotSimulator({
 
   return (
     <Card className="border-border bg-card">
-      <CardContent className="space-y-5 p-5">
-        <div className="flex items-center gap-2">
-          <Search size={18} className="text-primary" />
-          <h2 className="text-lg font-semibold text-foreground">Simulateur de service</h2>
+      <CardContent className="space-y-4 p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 rounded-lg bg-primary/10 p-2 text-primary">
+              <Search size={18} aria-hidden="true" />
+            </span>
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Walk-in</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Trouvez une table pour un groupe sans réservation.
+              </p>
+            </div>
+          </div>
+          <span className="w-fit rounded-full border border-border px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+            Prévisualisation
+          </span>
         </div>
-        <p className="text-sm text-muted-foreground">
-          &ldquo;Puis-je accueillir ce groupe ?&rdquo; — testez les scénarios direct, changement de
-          section et prochain créneau.
-        </p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="sim-party-size" className="flex items-center gap-1.5">
                 <Users size={14} />
@@ -222,8 +277,35 @@ export function ServiceCopilotSimulator({
                 value={partySize}
                 onChange={(e) => setPartySize(Number(e.target.value))}
                 className="bg-card"
+                inputMode="numeric"
+                disabled={loading}
                 required
               />
+              <div
+                className="flex flex-wrap items-center gap-1.5"
+                role="group"
+                aria-label="Raccourcis de groupe"
+              >
+                <span className="mr-1 text-[11px] text-muted-foreground">Raccourci</span>
+                {[2, 4, 6, 8].map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => setPartySize(size)}
+                    className={cn(
+                      'min-w-8 rounded-full border px-2 py-1 text-xs font-medium transition-all duration-200',
+                      partySize === size
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground',
+                    )}
+                    aria-pressed={partySize === size}
+                    aria-label={`${size} couvert${size > 1 ? 's' : ''}`}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -237,29 +319,33 @@ export function ServiceCopilotSimulator({
                 value={startsAt}
                 onChange={(e) => setStartsAt(e.target.value)}
                 className="bg-card"
+                disabled={loading}
                 required
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="sim-ends-at" className="flex items-center gap-1.5">
-                <Clock size={14} />
-                Départ (optionnel)
-              </Label>
-              <Input
-                id="sim-ends-at"
-                type="datetime-local"
-                value={endsAt}
-                onChange={(e) => setEndsAt(e.target.value)}
-                placeholder="Durée par défaut du restaurant"
-                className="bg-card"
-              />
+              <div
+                className="flex flex-wrap items-center gap-1.5"
+                role="group"
+                aria-label="Raccourcis d’arrivée"
+              >
+                <span className="mr-1 text-[11px] text-muted-foreground">Dans</span>
+                {[30, 60, 120].map((minutes) => (
+                  <button
+                    key={minutes}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => setStartsAt(getStartsAt(minutes))}
+                    className="rounded-full border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-all duration-200 hover:bg-accent hover:text-foreground"
+                  >
+                    {minutes < 60 ? `${minutes} min` : `${minutes / 60} h`}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="sim-section" className="flex items-center gap-1.5">
                 <MapPin size={14} />
-                Section préférée
+                Zone souhaitée
               </Label>
               {sectionsLoading ? (
                 <Skeleton className="h-10 w-full rounded-md" />
@@ -269,10 +355,10 @@ export function ServiceCopilotSimulator({
                   onValueChange={(value) => setPreferredSectionId(value === '__all__' ? '' : value)}
                 >
                   <SelectTrigger id="sim-section" className="bg-card">
-                    <SelectValue placeholder="Toutes les sections" />
+                    <SelectValue placeholder="Toutes les zones" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__all__">Toutes les sections</SelectItem>
+                    <SelectItem value="__all__">Toutes les zones</SelectItem>
                     {sections.map((section) => (
                       <SelectItem key={section.id} value={section.id}>
                         {section.name}
@@ -284,16 +370,65 @@ export function ServiceCopilotSimulator({
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <Button type="submit" disabled={loading}>
-              {loading ? 'Simulation...' : 'Simuler'}
+          <div className="space-y-3">
+            <button
+              type="button"
+              aria-expanded={showEndTime}
+              aria-controls="sim-end-time"
+              onClick={() => setShowEndTime((visible) => !visible)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-all duration-200 hover:text-foreground"
+            >
+              <ChevronDown
+                size={14}
+                aria-hidden="true"
+                className={cn('transition-transform duration-200', showEndTime && 'rotate-180')}
+              />
+              {showEndTime ? 'Masquer la fin prévue' : 'Ajouter une fin prévue'}
+            </button>
+            {showEndTime ? (
+              <div id="sim-end-time" className="max-w-sm space-y-2">
+                <Label htmlFor="sim-ends-at" className="flex items-center gap-1.5">
+                  <Clock size={14} />
+                  Fin prévue
+                </Label>
+                <Input
+                  id="sim-ends-at"
+                  type="datetime-local"
+                  value={endsAt}
+                  onChange={(e) => setEndsAt(e.target.value)}
+                  placeholder="Durée par défaut du restaurant"
+                  className="bg-card"
+                  disabled={loading}
+                />
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button type="submit" disabled={loading} className="w-full sm:w-auto">
+              {loading ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                  Analyse…
+                </>
+              ) : (
+                'Trouver une table'
+              )}
             </Button>
-            {error ? <p className="text-sm text-destructive">{error}</p> : null}
+            {error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Lecture seule · aucune réservation n’est créée.
+              </p>
+            )}
           </div>
         </form>
 
         {result ? (
-          <div className="space-y-4">
+          <div className="space-y-4" role="status" aria-live="polite">
             <div
               className={cn(
                 'rounded-xl border p-4 transition-all duration-200',
@@ -315,23 +450,29 @@ export function ServiceCopilotSimulator({
             </div>
 
             {result.scenarios.length > 0 ? (
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {result.scenarios.map((scenario) => (
-                  <ScenarioCard
-                    key={scenario.id}
-                    scenario={scenario}
-                    isBest={scenario.id === result.bestScenarioId}
-                  />
-                ))}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  Options de placement
+                </p>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {result.scenarios.map((scenario) => (
+                    <ScenarioCard
+                      key={scenario.id}
+                      scenario={scenario}
+                      isBest={scenario.id === result.bestScenarioId}
+                    />
+                  ))}
+                </div>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">Aucun scénario retourné.</p>
             )}
           </div>
         ) : (
-          <div className="sokar-empty">
+          <div className="sokar-empty min-h-0 p-3 sm:p-4">
             <p className="text-sm text-muted-foreground">
-              Remplissez les critères et cliquez sur Simuler pour obtenir une recommandation.
+              Renseignez les couverts et l&apos;heure d&apos;arrivée pour voir les tables
+              recommandées.
             </p>
           </div>
         )}

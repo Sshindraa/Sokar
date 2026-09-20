@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   orgId: 'org_test',
+  isMobile: false,
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -13,12 +14,13 @@ vi.mock('@/lib/api', () => ({
 }));
 
 vi.mock('@/lib/useMediaQuery', () => ({
-  useIsMobile: () => false,
+  useIsMobile: () => mocks.isMobile,
 }));
 
 describe('CustomersPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isMobile = false;
   });
 
   it('propose un nouvel essai sans afficher une liste vide après une panne API', async () => {
@@ -88,5 +90,31 @@ describe('CustomersPage', () => {
     await waitFor(() => {
       expect(mocks.post).toHaveBeenCalledWith('customers/customer-1/vip', { isVip: true });
     });
+  });
+
+  it('présente une carte mobile stable avec des actions explicites', async () => {
+    mocks.isMobile = true;
+    mocks.get.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'customer-1',
+          restaurantId: 'org_test',
+          phone: '+33600000000',
+          name: 'Alice Demo',
+          visitCount: 3,
+          loyaltyScore: '8.5',
+          isVip: false,
+          lastSeenAt: null,
+          notes: null,
+        },
+      ],
+    });
+
+    render(<CustomersPage />);
+
+    expect(await screen.findByText('Standard')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Marquer VIP' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Appeler' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ajouter' })).not.toBeInTheDocument();
   });
 });

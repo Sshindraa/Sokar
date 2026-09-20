@@ -77,6 +77,17 @@ describe('MobileDataCard', () => {
     expect(handleCardClick).not.toHaveBeenCalled();
   });
 
+  it('rend les actions découvrables sans geste de swipe', () => {
+    render(
+      <MobileDataCard title="Réservation" actions={[{ label: 'Modifier', onClick: vi.fn() }]} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Afficher les actions' }));
+
+    expect(screen.getByRole('button', { name: 'Masquer les actions' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Modifier' })).toHaveLength(2);
+  });
+
   it('ne rend pas de boutons actions si aucune action fournie', () => {
     render(<MobileDataCard title="Sans action" />);
     expect(screen.queryByRole('button')).not.toBeInTheDocument();

@@ -75,6 +75,6 @@ describe('ReputationPage', () => {
     render(<ReputationPage />);
 
     expect(await screen.findByText('REPUTATION_DISABLED')).toBeInTheDocument();
-    expect(screen.getByText(/reste verrouillée tant que le pilote d’envoi/)).toBeInTheDocument();
+    expect(screen.getByText(/sources d’avis et le pilote d’envoi/)).toBeInTheDocument();
   });
 });

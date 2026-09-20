@@ -152,6 +152,6 @@ describe('ExperiencesPage', () => {
     apiMocks.get.mockRejectedValue(new Error('EXPERIENCES_DISABLED'));
     render(<ExperiencesPage />);
     expect(await screen.findByText('EXPERIENCES_DISABLED')).toBeInTheDocument();
-    expect(screen.getByText(/restent verrouillées pendant le gel/)).toBeInTheDocument();
+    expect(screen.getByText(/Module Pro indisponible pendant la validation/)).toBeInTheDocument();
   });
 });

@@ -36,7 +36,7 @@ export function OnboardingGuard({
 
   if (!isBlocked) return <>{children}</>;
 
-  const defaultMessage = `Terminez l'étape « ${step?.title} » pour activer cette action`;
+  const defaultMessage = `Terminez « ${step?.title} » pour continuer.`;
   const tooltip = message || defaultMessage;
 
   return (
@@ -76,19 +76,17 @@ export function OnboardingLockBanner({ task }: { task: OnboardingTaskKey }) {
   if (!step || step.status === 'completed' || step.status === 'skipped') return null;
 
   return (
-    <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm transition-all duration-200">
-      <div className="flex items-center gap-2">
+    <div className="mb-4 flex flex-col items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm transition-all duration-200 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-center gap-2">
         <Lock className="text-warning shrink-0" size={16} />
-        <span className="text-warning">
-          Action bloquée — terminez l&apos;étape « {step.title} » pour déverrouiller cette section.
-        </span>
+        <span className="min-w-0 text-warning">Terminez « {step.title} » pour continuer.</span>
       </div>
       <button
         type="button"
         onClick={() => openStepModal(task)}
-        className="shrink-0 rounded-md border border-warning/40 px-3 py-1 text-xs font-medium text-warning transition-all duration-200 hover:bg-warning/20"
+        className="w-full rounded-md border border-warning/40 px-3 py-1 text-xs font-medium text-warning transition-all duration-200 hover:bg-warning/20 sm:w-auto"
       >
-        Configurer maintenant
+        Configurer
       </button>
     </div>
   );

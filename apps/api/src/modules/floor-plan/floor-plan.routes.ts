@@ -124,6 +124,25 @@ const UpdateWallSchema = z.object({
   floorPlanId: z.string().optional(),
 });
 
+const CreateZoneSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  sectionId: z.string().optional().nullable(),
+  x: z.coerce.number().int(),
+  y: z.coerce.number().int(),
+  width: z.coerce.number().int().min(1),
+  height: z.coerce.number().int().min(1),
+  rotation: z.coerce.number().int().optional(),
+  floorPlanId: z.string().optional(),
+});
+
+const UpdateZoneSchema = CreateZoneSchema.partial();
+
+const CreateTableCombinationSchema = z.object({
+  tableIds: z.array(z.string().min(1)).min(2).max(20),
+  name: z.string().trim().min(1).max(120).optional().nullable(),
+  floorPlanId: z.string().optional(),
+});
+
 const DateQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   floorPlanId: z.string().optional(),
@@ -872,6 +891,87 @@ export async function floorPlanRoutes(app: FastifyInstance): Promise<void> {
 
       const floorPlanId = getFloorPlanIdFromQuery(req.query);
       await service.deleteWall(id, wallId, floorPlanId);
+      return reply.status(204).send();
+    },
+  );
+
+  // ─── Zones & tables combinables ───
+
+  app.post(
+    '/restaurants/:id/floor-plan/zones',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const restaurantId = (req.params as { id: string }).id;
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+
+      const body = CreateZoneSchema.parse(req.body);
+      const zone = await service.createZone(restaurantId, body, body.floorPlanId);
+      return reply.status(201).send(zone);
+    },
+  );
+
+  app.patch(
+    '/restaurants/:id/floor-plan/zones/:zoneId',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id, zoneId } = req.params as { id: string; zoneId: string };
+      if (id !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+
+      const body = UpdateZoneSchema.parse(req.body);
+      const zone = await service.updateZone(id, zoneId, body, body.floorPlanId);
+      return reply.send(zone);
+    },
+  );
+
+  app.delete(
+    '/restaurants/:id/floor-plan/zones/:zoneId',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id, zoneId } = req.params as { id: string; zoneId: string };
+      if (id !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+
+      const floorPlanId = getFloorPlanIdFromQuery(req.query);
+      await service.deleteZone(id, zoneId, floorPlanId);
+      return reply.status(204).send();
+    },
+  );
+
+  app.post(
+    '/restaurants/:id/floor-plan/table-combinations',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const restaurantId = (req.params as { id: string }).id;
+      if (restaurantId !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+
+      const body = CreateTableCombinationSchema.parse(req.body);
+      const combination = await service.createTableCombination(
+        restaurantId,
+        body,
+        body.floorPlanId,
+      );
+      return reply.status(201).send(combination);
+    },
+  );
+
+  app.delete(
+    '/restaurants/:id/floor-plan/table-combinations/:combinationId',
+    { preHandler: requireOrg() },
+    async (req, reply) => {
+      const { id, combinationId } = req.params as { id: string; combinationId: string };
+      if (id !== req.restaurantId) {
+        return reply.status(403).send({ error: 'Accès refusé' });
+      }
+
+      const floorPlanId = getFloorPlanIdFromQuery(req.query);
+      await service.deleteTableCombination(id, combinationId, floorPlanId);
       return reply.status(204).send();
     },
   );

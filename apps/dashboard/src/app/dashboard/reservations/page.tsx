@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useApi } from '../../../lib/api';
@@ -296,6 +297,9 @@ export default function ReservationsPage() {
                 <p className="text-xs opacity-60">
                   Les réservations prises par votre assistant apparaîtront ici.
                 </p>
+                <Button asChild size="sm" variant="outline" className="mt-1">
+                  <Link href="/dashboard/widget">Ouvrir le widget</Link>
+                </Button>
               </div>
             )
           ) : isMobile ? (

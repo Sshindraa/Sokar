@@ -8,6 +8,8 @@ import {
   type FloorPlan,
   type FloorPlanTable,
   type FloorPlanWall,
+  type FloorPlanZone,
+  type FloorPlanTableCombination,
   type PlanningReservation,
   type ServiceCopilotDelayImpact,
   type ServiceCopilotDelayRecoveryHistoryItem,
@@ -35,6 +37,7 @@ import {
   isSameDay,
   differenceInMinutes,
   formatDistanceToNow,
+  addDays,
   startOfDay,
   addMinutes,
 } from 'date-fns';
@@ -43,10 +46,12 @@ import {
   AlertCircle,
   ZoomIn,
   ZoomOut,
-  RotateCcw,
+  LocateFixed,
   Grid3x3,
+  Grid2x2,
   Magnet,
   Save,
+  Settings2,
   Check,
   Maximize2,
   Move,
@@ -60,9 +65,11 @@ import {
   UserRound,
   UserX,
   Users,
+  Armchair,
   ListOrdered,
-  ListFilter,
-  BarChart3,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
   Plus,
   Trash2,
   Circle,
@@ -84,6 +91,7 @@ import {
   Phone,
   X,
   ArrowRight,
+  Link2,
   type LucideIcon,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -115,17 +123,342 @@ import {
   useDroppable,
 } from '@dnd-kit/core';
 import { useUndoHistory } from './useUndoHistory';
+import { useIsMobile, useMediaQuery } from '@/lib/useMediaQuery';
 
 const DEFAULT_CANVAS_WIDTH = 1400;
 const DEFAULT_CANVAS_HEIGHT = 900;
+
+// Onglets de la vue service. Déclarés hors composant pour garder le rendu
+// lisible et permettre une navigation clavier conforme au motif ARIA `tablist`.
+const SERVICE_TABS = [
+  { id: 'plan', label: 'Plan' },
+  { id: 'waiting-list', label: "Liste d'attente" },
+  { id: 'stats', label: 'Statistiques' },
+] as const;
+
+type ServiceTabId = (typeof SERVICE_TABS)[number]['id'];
 const GRID_SIZE = 16;
+// L’échelle physique reste un détail d’implémentation : 100 px représentent
+// 1 mètre dans le plan. Les dimensions affichées aux restaurateurs sont donc
+// toujours en mètres, tandis que l’API conserve ses coordonnées en pixels.
+const CANVAS_PIXELS_PER_METER = 100;
+const MIN_ROOM_DIMENSION_METERS = 2;
+const MAX_ROOM_DIMENSION_METERS = 100;
 const MIN_ZOOM = 0.5;
+// Sur téléphone et tablette, 50 % ne suffisent pas à cadrer une salle de 14 m :
+// l'échelle minimale descend plus bas et le plan s'ouvre ajusté à sa fenêtre.
+const MIN_ZOOM_TOUCH = 0.3;
+// Plancher du cadrage automatique : en dessous, une table devient plus petite
+// que la cible tactile de 44 px et le plan n'est plus manipulable au doigt.
+const TOUCH_FIT_FLOOR = 0.45;
 const MAX_ZOOM = 2.0;
 const ZOOM_STEP = 0.1;
+
+/** Borne une échelle de zoom entre la limite du support et le maximum produit. */
+export function clampZoom(value: number, minZoom: number = MIN_ZOOM, maxZoom = MAX_ZOOM) {
+  return Math.min(maxZoom, Math.max(minZoom, value));
+}
+
+/**
+ * Échelle qui cadre le plan dans la fenêtre visible. `floor` empêche un
+ * dézoom total sur téléphone : un plan entièrement visible mais illisible ne
+ * sert personne.
+ */
+export function computeFitZoom({
+  viewportWidth,
+  viewportHeight,
+  canvasWidth,
+  canvasHeight,
+  minZoom = MIN_ZOOM,
+  maxZoom = MAX_ZOOM,
+  floor = 1,
+}: {
+  viewportWidth: number;
+  viewportHeight: number;
+  canvasWidth: number;
+  canvasHeight: number;
+  minZoom?: number;
+  maxZoom?: number;
+  floor?: number;
+}) {
+  if (viewportWidth <= 0 || viewportHeight <= 0 || canvasWidth <= 0 || canvasHeight <= 0) {
+    return minZoom;
+  }
+  const fit = Math.min(viewportWidth / canvasWidth, viewportHeight / canvasHeight);
+  return clampZoom(Math.max(fit, floor), minZoom, maxZoom);
+}
+
+/**
+ * Défilement à appliquer pour garder immobile, pendant un changement
+ * d'échelle, le point du plan situé sous le doigt (ou le curseur).
+ */
+export function computeZoomAnchorScroll({
+  scrollLeft,
+  scrollTop,
+  offsetX,
+  offsetY,
+  zoom,
+  nextZoom,
+}: {
+  scrollLeft: number;
+  scrollTop: number;
+  offsetX: number;
+  offsetY: number;
+  zoom: number;
+  nextZoom: number;
+}) {
+  const safeZoom = zoom > 0 ? zoom : 1;
+  const worldX = (scrollLeft + offsetX) / safeZoom;
+  const worldY = (scrollTop + offsetY) / safeZoom;
+  return {
+    left: Math.max(0, worldX * nextZoom - offsetX),
+    top: Math.max(0, worldY * nextZoom - offsetY),
+  };
+}
+
+/** Défilement qui centre le plan dans la fenêtre visible. */
+export function computeCenterScroll({
+  viewportWidth,
+  viewportHeight,
+  canvasWidth,
+  canvasHeight,
+  zoom,
+}: {
+  viewportWidth: number;
+  viewportHeight: number;
+  canvasWidth: number;
+  canvasHeight: number;
+  zoom: number;
+}) {
+  return {
+    left: Math.max(0, (canvasWidth * zoom - viewportWidth) / 2),
+    top: Math.max(0, (canvasHeight * zoom - viewportHeight) / 2),
+  };
+}
+
+/** Marge (coordonnées plan) ajoutée autour des tables au cadrage d'ouverture. */
+export const CONTENT_FIT_PADDING = 48;
+// Live est une vue opérationnelle : une marge plus courte garde les tables
+// lisibles sans conserver une bande vide sous le groupe quand la zone est haute.
+export const LIVE_CONTENT_FIT_PADDING = 24;
+
+export type ContentBounds = { x: number; y: number; width: number; height: number };
+
+/**
+ * Rectangle englobant les tables posées, en coordonnées plan. Renvoie `null`
+ * quand aucune table n'est posée : le cadrage retombe alors sur le plan entier.
+ * Cadrer le canvas entier ne montre en effet que du vide quand les tables
+ * n'occupent qu'un coin de la salle.
+ */
+export function computeContentBounds(
+  tables: Array<{
+    positionX: number | null;
+    positionY: number | null;
+    width?: number | null;
+    height?: number | null;
+    shape?: TableShape | null;
+    rotation?: number | null;
+  }>,
+  canvasWidth: number,
+  canvasHeight: number,
+): ContentBounds | null {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const table of tables) {
+    if (table.positionX === null || table.positionY === null) continue;
+    const size = getTableSize(table);
+    const angle = ((table.rotation ?? 0) * Math.PI) / 180;
+    const cos = Math.abs(Math.cos(angle));
+    const sin = Math.abs(Math.sin(angle));
+    // La rotation pivote autour du centre de la carte : l'empreinte au sol est
+    // la boîte englobante du rectangle tourné.
+    const boundingWidth = size.width * cos + size.height * sin;
+    const boundingHeight = size.width * sin + size.height * cos;
+    const centerX = table.positionX + size.width / 2;
+    const centerY = table.positionY + size.height / 2;
+    minX = Math.min(minX, centerX - boundingWidth / 2);
+    minY = Math.min(minY, centerY - boundingHeight / 2);
+    maxX = Math.max(maxX, centerX + boundingWidth / 2);
+    maxY = Math.max(maxY, centerY + boundingHeight / 2);
+  }
+  if (minX === Number.POSITIVE_INFINITY || canvasWidth <= 0 || canvasHeight <= 0) return null;
+  const x = Math.max(0, minX - CONTENT_FIT_PADDING);
+  const y = Math.max(0, minY - CONTENT_FIT_PADDING);
+  return {
+    x,
+    y,
+    width: Math.max(1, Math.min(canvasWidth - x, maxX + CONTENT_FIT_PADDING - x)),
+    height: Math.max(1, Math.min(canvasHeight - y, maxY + CONTENT_FIT_PADDING - y)),
+  };
+}
+
+/**
+ * Tables réellement visibles en Live. Le mode opérationnel ne doit pas
+ * conserver la hauteur complète d'une zone d'édition : la surface défilable
+ * commence autour du groupe de tables et s'arrête peu après son contenu.
+ *
+ * Les zones restent dessinées comme repère visuel, mais elles sont volontairement
+ * écrêtées par la scène Live. Ainsi, une grande zone vide sous les tables ne
+ * force plus un long défilement ni une carte disproportionnée.
+ */
+export function computeLiveContentBounds(
+  zones: Array<Pick<FloorPlanZone, 'x' | 'y' | 'width' | 'height' | 'rotation'>>,
+  tables: Array<{
+    positionX: number | null;
+    positionY: number | null;
+    width?: number | null;
+    height?: number | null;
+    shape?: TableShape | null;
+    rotation?: number | null;
+  }>,
+  canvasWidth: number,
+  canvasHeight: number,
+): ContentBounds | null {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  const includeRotatedRectangle = (
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    rotation: number,
+  ) => {
+    const angle = (rotation * Math.PI) / 180;
+    const cos = Math.abs(Math.cos(angle));
+    const sin = Math.abs(Math.sin(angle));
+    const boundingWidth = width * cos + height * sin;
+    const boundingHeight = width * sin + height * cos;
+    const centerX = x + width / 2;
+    const centerY = y + height / 2;
+    minX = Math.min(minX, centerX - boundingWidth / 2);
+    minY = Math.min(minY, centerY - boundingHeight / 2);
+    maxX = Math.max(maxX, centerX + boundingWidth / 2);
+    maxY = Math.max(maxY, centerY + boundingHeight / 2);
+  };
+
+  const positionedTables = tables.filter(
+    (table) => table.positionX !== null && table.positionY !== null,
+  );
+  if (positionedTables.length > 0) {
+    for (const table of positionedTables) {
+      if (table.positionX === null || table.positionY === null) continue;
+      const size = getTableSize(table);
+      includeRotatedRectangle(
+        table.positionX,
+        table.positionY,
+        size.width,
+        size.height,
+        table.rotation ?? 0,
+      );
+    }
+  } else {
+    // Si un plan Live n'a pas encore de table mais possède une zone, garder
+    // cette zone comme surface de secours plutôt que de produire un cadre nul.
+    for (const zone of zones) {
+      includeRotatedRectangle(zone.x, zone.y, zone.width, zone.height, zone.rotation ?? 0);
+    }
+  }
+
+  if (minX === Number.POSITIVE_INFINITY || canvasWidth <= 0 || canvasHeight <= 0) return null;
+  const x = Math.max(0, minX - LIVE_CONTENT_FIT_PADDING);
+  const y = Math.max(0, minY - LIVE_CONTENT_FIT_PADDING);
+  return {
+    x,
+    y,
+    width: Math.max(1, Math.min(canvasWidth - x, maxX + LIVE_CONTENT_FIT_PADDING - x)),
+    height: Math.max(1, Math.min(canvasHeight - y, maxY + LIVE_CONTENT_FIT_PADDING - y)),
+  };
+}
+
+/** Centre d'une table dans une zone, en tenant compte de la rotation de la zone. */
+function isTableInsideZone(
+  table: {
+    positionX: number | null;
+    positionY: number | null;
+    width?: number | null;
+    height?: number | null;
+    shape?: TableShape | null;
+  },
+  zone: Pick<FloorPlanZone, 'x' | 'y' | 'width' | 'height' | 'rotation'>,
+) {
+  if (table.positionX === null || table.positionY === null) return false;
+  const size = getTableSize(table);
+  const tableCenterX = table.positionX + size.width / 2;
+  const tableCenterY = table.positionY + size.height / 2;
+  const zoneCenterX = zone.x + zone.width / 2;
+  const zoneCenterY = zone.y + zone.height / 2;
+  const angle = -((zone.rotation ?? 0) * Math.PI) / 180;
+  const deltaX = tableCenterX - zoneCenterX;
+  const deltaY = tableCenterY - zoneCenterY;
+  const localX = deltaX * Math.cos(angle) - deltaY * Math.sin(angle);
+  const localY = deltaX * Math.sin(angle) + deltaY * Math.cos(angle);
+  return Math.abs(localX) <= zone.width / 2 && Math.abs(localY) <= zone.height / 2;
+}
+
+/** Défilement qui centre une zone du plan (ex. les tables) dans la fenêtre. */
+export function computeFocusScroll({
+  viewportWidth,
+  viewportHeight,
+  region,
+  zoom,
+}: {
+  viewportWidth: number;
+  viewportHeight: number;
+  region: ContentBounds;
+  zoom: number;
+}) {
+  return {
+    left: Math.max(0, (region.x + region.width / 2) * zoom - viewportWidth / 2),
+    top: Math.max(0, (region.y + region.height / 2) * zoom - viewportHeight / 2),
+  };
+}
+
+/** Deux contacts rapprochés dans le temps et l'espace forment un double-tap. */
+export function isDoubleTap(
+  previous: { time: number; x: number; y: number } | null,
+  next: { time: number; x: number; y: number },
+  maxDelay = 320,
+  maxDistance = 32,
+) {
+  if (!previous) return false;
+  const elapsed = next.time - previous.time;
+  const distance = Math.hypot(next.x - previous.x, next.y - previous.y);
+  return elapsed >= 0 && elapsed <= maxDelay && distance <= maxDistance;
+}
 const WALL_SNAP_DISTANCE = 40; // pixels in canvas coordinates
 const WALL_LENGTH_MATCH_DISTANCE = 24; // pixels in canvas coordinates
 const WALL_ALIGN_GUIDE_DISTANCE = 24; // pixels in canvas coordinates
 const WALL_PERPENDICULAR_DOT_TOLERANCE = 0.08;
+
+function formatRoomMeters(pixels: number): string {
+  return (pixels / CANVAS_PIXELS_PER_METER).toLocaleString('fr-FR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatRoomCentimeters(pixels: number): string {
+  return Math.round((pixels / CANVAS_PIXELS_PER_METER) * 100).toLocaleString('fr-FR');
+}
+
+function parseRoomMeters(value: string): number | null {
+  const normalized = value.trim().replace(',', '.');
+  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) return null;
+  const meters = Number(normalized);
+  if (
+    !Number.isFinite(meters) ||
+    meters < MIN_ROOM_DIMENSION_METERS ||
+    meters > MAX_ROOM_DIMENSION_METERS
+  ) {
+    return null;
+  }
+  return meters;
+}
 
 type WaitingListApiEntry = WaitingListEntry & {
   preferredSection?: { name: string } | null;
@@ -166,6 +499,16 @@ export const TABLE_LAYOUT = {
   minimumDimension: MINIMUM_TABLE_DIMENSION,
 } as const;
 
+const ZONE_MIN_WIDTH = 128;
+const ZONE_MIN_HEIGHT = 80;
+const TABLE_CARD_MIN_WIDTH = 132;
+const TABLE_CARD_MIN_HEIGHT = 66;
+const TABLE_CARD_SEAT_HEIGHT = 32;
+// Version tactile : sur téléphone, la carte blanche masquait les tables du
+// plan. On garde un rectangle compact avec le nom et l'état, sans libellé.
+const COMPACT_TABLE_CARD_MIN_WIDTH = 104;
+const COMPACT_TABLE_CARD_MIN_HEIGHT = 52;
+
 type TableStatus = 'free' | 'reserved' | 'upcoming' | 'late' | 'occupied' | 'inactive';
 
 /** Proposition d'allocation explicable renvoyée par l'API (Phase 5). */
@@ -185,10 +528,13 @@ type TableGeometry = Pick<
 
 type WallGeometry = Pick<FloorPlanWall, 'id' | 'x1' | 'y1' | 'x2' | 'y2'>;
 
+type ZoneGeometry = Pick<FloorPlanZone, 'id' | 'x' | 'y' | 'width' | 'height' | 'rotation'>;
+
 /** Snapshot atomique d'une ou plusieurs mutations strictement géométriques. */
 type GeometrySnapshot = {
   tables: TableGeometry[];
   walls: WallGeometry[];
+  zones?: ZoneGeometry[];
 };
 
 function snapshotTableGeometry(table: FloorPlanTable): TableGeometry {
@@ -209,6 +555,17 @@ function snapshotWallGeometry(wall: FloorPlanWall): WallGeometry {
     y1: wall.y1,
     x2: wall.x2,
     y2: wall.y2,
+  };
+}
+
+function snapshotZoneGeometry(zone: FloorPlanZone): ZoneGeometry {
+  return {
+    id: zone.id,
+    x: zone.x,
+    y: zone.y,
+    width: zone.width,
+    height: zone.height,
+    rotation: zone.rotation,
   };
 }
 
@@ -286,7 +643,9 @@ type PaletteWallType = 'wall' | 'door' | 'bar';
 
 type PaletteItemData =
   | { kind: 'table'; shape: TableShape; capacity: number }
-  | { kind: 'wall'; type: PaletteWallType };
+  | { kind: 'placeTable'; table: CanvasTable }
+  | { kind: 'wall'; type: PaletteWallType }
+  | { kind: 'zone' };
 
 type ActiveDragData =
   | PaletteItemData
@@ -317,13 +676,12 @@ function getTableSize(table: {
   height: number;
   rotation: number;
 } {
-  const base = 88;
-  const capacity = table.capacity ?? 1;
-  const extra = Math.min(capacity, 12) * 12;
-  const size = Math.min(base + extra, 220);
   const shape = table.shape ?? 'rect';
-  const legacyWidth = size;
-  const legacyHeight = shape === 'round' ? size : 112;
+  // La capacité est une donnée métier, pas une approximation de l'encombrement.
+  // Une table reçoit une taille visuelle stable par défaut et peut ensuite être
+  // redimensionnée directement sur le canvas.
+  const legacyWidth = shape === 'round' ? 128 : 144;
+  const legacyHeight = shape === 'round' ? 128 : 104;
   const dimensions = getSafeTableDimensions(
     table.width ?? legacyWidth,
     table.height ?? legacyHeight,
@@ -447,8 +805,8 @@ function findNextPosition(
   maxWidth: number,
   maxHeight: number,
 ): { x: number; y: number } {
-  const startX = 400;
-  const startY = 300;
+  const startX = 32;
+  const startY = 32;
   const step = GRID_SIZE;
 
   for (let y = startY; y <= maxHeight - height; y += step) {
@@ -466,6 +824,191 @@ function findNextPosition(
   }
 
   return { x: startX, y: startY };
+}
+
+const TABLE_ALIGN_GUIDE_DISTANCE = 10;
+const TABLE_DUPLICATE_GAP = 16;
+
+export type TableAlignmentGuide = {
+  axis: 'x' | 'y';
+  /** Coordonnée de l'axe de référence, dans l'espace du plan. */
+  value: number;
+  /** Position de départ à appliquer à la table déplacée pour l'aligner. */
+  position: number;
+  distance: number;
+};
+
+export type TableAlignmentGuides = {
+  x: TableAlignmentGuide | null;
+  y: TableAlignmentGuide | null;
+};
+
+const emptyTableAlignmentGuides = (): TableAlignmentGuides => ({ x: null, y: null });
+
+/**
+ * Cherche les axes de bord et de centre les plus proches d'une table déjà
+ * placée. Les coordonnées renvoyées sont indépendantes du zoom : elles sont
+ * donc réutilisables pendant le drag et au moment de la persistance finale.
+ */
+export function getTableAlignmentGuides({
+  x,
+  y,
+  width,
+  height,
+  tables,
+  excludedTableId,
+  threshold = TABLE_ALIGN_GUIDE_DISTANCE,
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  tables: CanvasTable[];
+  excludedTableId?: string;
+  threshold?: number;
+}): TableAlignmentGuides {
+  const guides = emptyTableAlignmentGuides();
+  const movingAxes = {
+    x: [
+      { value: x, offset: 0 },
+      { value: x + width / 2, offset: width / 2 },
+      { value: x + width, offset: width },
+    ],
+    y: [
+      { value: y, offset: 0 },
+      { value: y + height / 2, offset: height / 2 },
+      { value: y + height, offset: height },
+    ],
+  };
+
+  for (const table of tables) {
+    if (table.id === excludedTableId || table.positionX === null || table.positionY === null) {
+      continue;
+    }
+    const size = getTableSize(table);
+    const referenceAxes = {
+      x: [table.positionX, table.positionX + size.width / 2, table.positionX + size.width],
+      y: [table.positionY, table.positionY + size.height / 2, table.positionY + size.height],
+    };
+
+    for (const axis of ['x', 'y'] as const) {
+      for (const movingAxis of movingAxes[axis]) {
+        for (const referenceValue of referenceAxes[axis]) {
+          const distance = Math.abs(movingAxis.value - referenceValue);
+          const current = guides[axis];
+          if (distance <= threshold && (!current || distance < current.distance)) {
+            guides[axis] = {
+              axis,
+              value: referenceValue,
+              position: referenceValue - movingAxis.offset,
+              distance,
+            };
+          }
+        }
+      }
+    }
+  }
+
+  return guides;
+}
+
+function tableOverlapsAtPosition({
+  x,
+  y,
+  width,
+  height,
+  tables,
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  tables: CanvasTable[];
+}) {
+  return tables.some((table) => {
+    if (table.positionX === null || table.positionY === null) return false;
+    const size = getTableSize(table);
+    return (
+      x < table.positionX + size.width &&
+      x + width > table.positionX &&
+      y < table.positionY + size.height &&
+      y + height > table.positionY
+    );
+  });
+}
+
+/**
+ * Place une copie au plus près de sa source, en privilégiant la droite puis
+ * les autres directions cardinales. En cas de couloir encombré, une recherche
+ * radiale sur la grille évite de masquer une table existante ou de sortir du
+ * plan. `null` signifie qu'aucune zone libre ne peut accueillir la copie.
+ */
+export function findDuplicatePosition(
+  table: CanvasTable,
+  tables: CanvasTable[],
+  canvasWidth: number,
+  canvasHeight: number,
+): { x: number; y: number } | null {
+  const { width, height } = getTableSize(table);
+  const originX = table.positionX ?? TABLE_DUPLICATE_GAP;
+  const originY = table.positionY ?? TABLE_DUPLICATE_GAP;
+  const positionedTables = tables.filter(
+    (candidate) => candidate.positionX !== null && candidate.positionY !== null,
+  );
+
+  const canPlace = (x: number, y: number) =>
+    x >= 0 &&
+    y >= 0 &&
+    x + width <= canvasWidth &&
+    y + height <= canvasHeight &&
+    !tableOverlapsAtPosition({ x, y, width, height, tables: positionedTables });
+
+  const normalise = (value: number) => Math.round(value / GRID_SIZE) * GRID_SIZE;
+  const directCandidates = [
+    { x: originX + width + TABLE_DUPLICATE_GAP, y: originY },
+    { x: originX, y: originY + height + TABLE_DUPLICATE_GAP },
+    { x: originX - width - TABLE_DUPLICATE_GAP, y: originY },
+    { x: originX, y: originY - height - TABLE_DUPLICATE_GAP },
+    { x: originX + width + TABLE_DUPLICATE_GAP, y: originY + height + TABLE_DUPLICATE_GAP },
+    { x: originX - width - TABLE_DUPLICATE_GAP, y: originY + height + TABLE_DUPLICATE_GAP },
+    { x: originX + width + TABLE_DUPLICATE_GAP, y: originY - height - TABLE_DUPLICATE_GAP },
+    { x: originX - width - TABLE_DUPLICATE_GAP, y: originY - height - TABLE_DUPLICATE_GAP },
+  ];
+
+  for (const candidate of directCandidates) {
+    const x = normalise(candidate.x);
+    const y = normalise(candidate.y);
+    if (canPlace(x, y)) return { x, y };
+  }
+
+  const maxRadius = Math.ceil(Math.max(canvasWidth, canvasHeight) / GRID_SIZE);
+  for (let radius = 1; radius <= maxRadius; radius++) {
+    const candidates: Array<{ x: number; y: number }> = [];
+    for (let delta = -radius; delta <= radius; delta++) {
+      candidates.push(
+        { x: normalise(originX + radius * GRID_SIZE), y: normalise(originY + delta * GRID_SIZE) },
+        { x: normalise(originX - radius * GRID_SIZE), y: normalise(originY + delta * GRID_SIZE) },
+      );
+    }
+    for (let delta = -radius + 1; delta < radius; delta++) {
+      candidates.push(
+        { x: normalise(originX + delta * GRID_SIZE), y: normalise(originY + radius * GRID_SIZE) },
+        { x: normalise(originX + delta * GRID_SIZE), y: normalise(originY - radius * GRID_SIZE) },
+      );
+    }
+    const valid = candidates.find((candidate) => canPlace(candidate.x, candidate.y));
+    if (valid) return valid;
+  }
+
+  return null;
+}
+
+function getNextTableName(tables: CanvasTable[]): string {
+  const highestNumber = tables.reduce((max, table) => {
+    const match = table.name.match(/^T0*(\d+)$/i);
+    return Math.max(max, match ? Number(match[1]) : 0);
+  }, 0);
+  return `T${highestNumber + 1}`;
 }
 
 type ChairPosition = {
@@ -607,112 +1150,6 @@ export function getChairPositions({
   return chairs;
 }
 
-export function FloorPlanArmchairIcon({
-  className,
-  style,
-}: {
-  className?: string;
-  style?: React.CSSProperties;
-}) {
-  return (
-    <svg
-      viewBox="0 0 100 100"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={cn(
-        'w-full h-full select-none text-foreground/80 dark:text-foreground/90',
-        className,
-      )}
-      style={style}
-    >
-      {/* Backrest & Armrest Outer Shell */}
-      <path
-        d="M 12 88 C 12 40, 22 10, 50 10 C 78 10, 88 40, 88 88 Q 50 92, 12 88 Z"
-        className="fill-background stroke-current"
-        strokeWidth="7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      {/* Inner Seat Cushion Contour */}
-      <path
-        d="M 22 88 C 22 48, 30 26, 50 26 C 70 26, 78 48, 78 88 Z"
-        className="fill-muted/60 stroke-current"
-        strokeWidth="6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      {/* Backrest Seam Lines */}
-      <line
-        x1="33"
-        y1="32"
-        x2="22"
-        y2="19"
-        className="stroke-current"
-        strokeWidth="6"
-        strokeLinecap="round"
-      />
-      <line
-        x1="67"
-        y1="32"
-        x2="78"
-        y2="19"
-        className="stroke-current"
-        strokeWidth="6"
-        strokeLinecap="round"
-      />
-      {/* Armrest Outer Side Ticks */}
-      <line
-        x1="8"
-        y1="76"
-        x2="14"
-        y2="76"
-        className="stroke-current"
-        strokeWidth="6"
-        strokeLinecap="round"
-      />
-      <line
-        x1="86"
-        y1="76"
-        x2="92"
-        y2="76"
-        className="stroke-current"
-        strokeWidth="6"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function renderChairs(table: CanvasTable): React.ReactNode[] {
-  const { width, height } = getTableSize(table);
-  const chairs = getChairPositions({
-    width,
-    height,
-    capacity: table.capacity,
-    shape: table.shape,
-  });
-  const baseStyle: React.CSSProperties = {
-    width: TABLE_LAYOUT.chairSize,
-    height: TABLE_LAYOUT.chairSize,
-    boxSizing: 'border-box',
-  };
-
-  return chairs.map(({ left, top, rotation = 0 }, index) => (
-    <div
-      key={`chair-${index}`}
-      className="absolute pointer-events-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.15)] transition-transform duration-200"
-      style={{
-        ...baseStyle,
-        left,
-        top,
-        transform: `rotate(${rotation}deg)`,
-      }}
-    >
-      <FloorPlanArmchairIcon />
-    </div>
-  ));
-}
-
 function replaceTable(floorPlan: FloorPlan, updated: FloorPlanTable): FloorPlan {
   const id = updated.id;
   const targetSectionId = updated.sectionId ?? null;
@@ -755,8 +1192,8 @@ function removeTable(floorPlan: FloorPlan, tableId: string): FloorPlan {
 function replaceTablePosition(
   floorPlan: FloorPlan,
   tableId: string,
-  positionX: number,
-  positionY: number,
+  positionX: number | null,
+  positionY: number | null,
 ): FloorPlan {
   return {
     ...floorPlan,
@@ -767,6 +1204,77 @@ function replaceTablePosition(
     tables: (floorPlan.tables ?? []).map((t) =>
       t.id === tableId ? { ...t, positionX, positionY } : t,
     ),
+  };
+}
+
+function replaceZone(floorPlan: FloorPlan, updated: FloorPlanZone): FloorPlan {
+  const previous = (floorPlan.zones ?? []).find((zone) => zone.id === updated.id);
+  const sectionChanged = previous && previous.sectionId !== updated.sectionId;
+  const linkedSection =
+    updated.section ??
+    (sectionChanged
+      ? (floorPlan.sections.find((section) => section.id === updated.sectionId) ?? null)
+      : previous?.section);
+  return {
+    ...floorPlan,
+    zones: (floorPlan.zones ?? []).map((zone) =>
+      zone.id === updated.id
+        ? {
+            ...zone,
+            ...updated,
+            section: linkedSection,
+            sectionName:
+              updated.sectionName ??
+              linkedSection?.name ??
+              (sectionChanged ? null : zone.sectionName),
+          }
+        : zone,
+    ),
+  };
+}
+
+function removeZone(floorPlan: FloorPlan, zoneId: string): FloorPlan {
+  return {
+    ...floorPlan,
+    zones: (floorPlan.zones ?? []).filter((zone) => zone.id !== zoneId),
+  };
+}
+
+function getNextZoneName(zones: FloorPlanZone[]): string {
+  const used = new Set(
+    zones
+      .map((zone) => zone.name.match(/^zone\s+(\d+)$/i)?.[1])
+      .filter((value): value is string => Boolean(value))
+      .map(Number),
+  );
+  let next = 1;
+  while (used.has(next)) next += 1;
+  return `Zone ${next}`;
+}
+
+function findNextZonePosition(
+  width: number,
+  height: number,
+  zones: FloorPlanZone[],
+  maxWidth: number,
+  maxHeight: number,
+): { x: number; y: number } {
+  const step = GRID_SIZE * 2;
+  for (let y = 32; y <= maxHeight - height; y += step) {
+    for (let x = 32; x <= maxWidth - width; x += step) {
+      const overlaps = zones.some(
+        (zone) =>
+          x < zone.x + zone.width &&
+          x + width > zone.x &&
+          y < zone.y + zone.height &&
+          y + height > zone.y,
+      );
+      if (!overlaps) return { x, y };
+    }
+  }
+  return {
+    x: Math.max(0, Math.round((maxWidth - width) / 2)),
+    y: Math.max(0, Math.round((maxHeight - height) / 2)),
   };
 }
 
@@ -886,6 +1394,10 @@ type TableCardProps = {
   className?: string;
   zoom?: number;
   draggableReservation?: boolean;
+  isCombinable?: boolean;
+  editable?: boolean;
+  /** Rendu tactile : nom et point d'état seuls, sans libellé ni client. */
+  compact?: boolean;
 };
 
 function TableCard({
@@ -903,6 +1415,9 @@ function TableCard({
   className,
   zoom = 1,
   draggableReservation,
+  isCombinable = false,
+  editable = true,
+  compact = false,
 }: TableCardProps) {
   const { width, height, rotation } = getTableSize(table);
   const displayName = table.displayName ?? table.name;
@@ -910,22 +1425,102 @@ function TableCard({
     ? formatReservationBadge(status.reservation)
     : `${displayName} · ${table.capacity} places`;
 
-  const showCapacity = zoom >= 0.6;
-  const showServiceDetails = zoom >= 0.82;
-  const showAssignment = zoom >= 0.95;
-  const reservationStart = status?.reservation ? parseISO(status.reservation.startsAt) : null;
-  const StatusIcon = status ? statusMeta[status.status].icon : null;
-  const assignment = table.sectionName || status?.reservation?.sectionName;
+  // Keep one visual language for tables in both modes. The editor and Live
+  // still provide different interactions, but the table itself should remain
+  // recognisable when moving between them.
+  const liveCustomerName = status?.reservation?.customerName?.trim() || null;
+  const liveStatusLabel = status ? statusMeta[status.status].label : null;
+  const liveRailClass =
+    status?.status === 'occupied'
+      ? 'bg-floor-table-accent'
+      : status?.status === 'late'
+        ? 'bg-destructive'
+        : status?.status === 'upcoming'
+          ? 'bg-warning'
+          : status?.status === 'reserved'
+            ? 'bg-brand'
+            : status
+              ? 'bg-floor-table-muted/45'
+              : 'bg-floor-table-accent';
+  const liveStatusTextClass =
+    status?.status === 'occupied'
+      ? 'text-floor-table-accent'
+      : status?.status === 'late'
+        ? 'text-destructive'
+        : status?.status === 'upcoming'
+          ? 'text-warning'
+          : status?.status === 'reserved'
+            ? 'text-brand'
+            : status?.status === 'free'
+              ? 'text-floor-table-text/80'
+              : 'text-floor-table-muted';
+  const liveStatusDotClass =
+    status?.status === 'occupied'
+      ? 'bg-floor-table-accent'
+      : status?.status === 'late'
+        ? 'bg-destructive'
+        : status?.status === 'upcoming'
+          ? 'bg-warning'
+          : status?.status === 'reserved'
+            ? 'bg-brand'
+            : status
+              ? 'bg-floor-table-muted/80'
+              : null;
+  const isRound = table.shape === 'round';
+  const cardMinWidth = compact ? COMPACT_TABLE_CARD_MIN_WIDTH : TABLE_CARD_MIN_WIDTH;
+  const cardMinHeight = compact ? COMPACT_TABLE_CARD_MIN_HEIGHT : TABLE_CARD_MIN_HEIGHT;
+  const rectBodyWidth = Math.max(width, cardMinWidth);
+  // Une table ronde reste un cercle même si une ancienne donnée géométrique
+  // est légèrement rectangulaire. On la centre dans son empreinte au lieu de
+  // transformer silencieusement les dimensions métier.
+  const roundDiameter = Math.max(Math.min(width, height), compact ? 64 : 72);
+  const liveBodyWidth = isRound ? roundDiameter : rectBodyWidth;
+  const liveBodyHeight = isRound
+    ? roundDiameter
+    : Math.max(cardMinHeight, Math.round(rectBodyWidth / 2));
+  const liveBodyLeft = Math.round((width - liveBodyWidth) / 2);
+  const liveChairWidth = Math.min(36, Math.max(24, Math.round(rectBodyWidth * 0.28)));
+  const liveBodyTop = isRound
+    ? Math.round((height - liveBodyHeight) / 2)
+    : Math.max(8, Math.round((height - (liveBodyHeight + TABLE_CARD_SEAT_HEIGHT)) / 2));
+  const roundChairSize = compact ? 20 : 24;
+  const roundChairPositions = isRound
+    ? Array.from({ length: Math.min(Math.max(table.capacity, 1), 8) }, (_, index) => {
+        const angle =
+          (index / Math.min(Math.max(table.capacity, 1), 8)) * Math.PI * 2 - Math.PI / 2;
+        const radiusX = liveBodyWidth / 2 + roundChairSize / 2 + 6;
+        const radiusY = liveBodyHeight / 2 + roundChairSize / 2 + 6;
+        return {
+          left: liveBodyLeft + liveBodyWidth / 2 + Math.cos(angle) * radiusX - roundChairSize / 2,
+          top: liveBodyTop + liveBodyHeight / 2 + Math.sin(angle) * radiusY - roundChairSize / 2,
+        };
+      })
+    : [];
+  const referenceStatusLabel = liveStatusLabel ?? `${table.capacity} places`;
+  // Sur téléphone, une forme courte garde l'état lisible dans la carte sans
+  // perdre le libellé métier complet (toujours exposé par aria-label/title).
+  const compactStatusLabel =
+    status?.status === 'free'
+      ? 'Libre'
+      : status?.status === 'reserved'
+        ? 'Réservée'
+        : status?.status === 'upcoming'
+          ? 'Arrivée'
+          : status?.status === 'late'
+            ? 'Retard'
+            : status?.status === 'occupied'
+              ? 'Occupée'
+              : status?.status === 'inactive'
+                ? 'Inactive'
+                : referenceStatusLabel;
+  const referenceStatusTextClass = liveStatusLabel ? liveStatusTextClass : 'text-floor-table-muted';
 
   return (
     <div
       ref={dragRef}
       className={cn(
-        'box-border flex min-w-0 min-h-0 flex-col items-center justify-center border-2 p-2 text-center transition-[opacity,background-color,border-color,box-shadow] duration-200 select-none relative shadow-sm',
-        table.shape === 'round' ? 'rounded-full aspect-square' : 'rounded-md',
-        'overflow-visible hover:ring-2 hover:ring-ring/60 hover:ring-offset-1',
-        status ? statusClasses[status.status] : 'bg-card border-border text-foreground',
-        isSelected && 'ring-2 ring-primary ring-offset-1',
+        'relative box-border min-w-0 min-h-0 select-none outline-none',
+        'overflow-visible',
         !isOverlay && 'absolute',
         className,
       )}
@@ -958,57 +1553,136 @@ function TableCard({
       title={title}
       {...dragProps}
     >
-      {renderChairs(table)}
-      {StatusIcon && status ? (
-        <span
+      <>
+        {isRound ? (
+          roundChairPositions.map((chair, index) => (
+            <span
+              key={`round-chair-${index}`}
+              className="absolute z-0 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
+              style={{
+                left: chair.left,
+                top: chair.top,
+                width: roundChairSize,
+                height: roundChairSize,
+              }}
+              aria-hidden="true"
+            />
+          ))
+        ) : (
+          <>
+            <span
+              className="absolute z-0 h-8 -translate-y-1/2 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
+              style={{
+                left: liveBodyLeft + liveBodyWidth * 0.25 - liveChairWidth / 2,
+                top: liveBodyTop,
+                width: liveChairWidth,
+              }}
+              aria-hidden="true"
+            />
+            <span
+              className="absolute z-0 h-8 -translate-y-1/2 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
+              style={{
+                left: liveBodyLeft + liveBodyWidth * 0.75 - liveChairWidth / 2,
+                top: liveBodyTop,
+                width: liveChairWidth,
+              }}
+              aria-hidden="true"
+            />
+            <span
+              className="absolute z-0 h-8 -translate-y-1/2 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
+              style={{
+                left: liveBodyLeft + liveBodyWidth * 0.25 - liveChairWidth / 2,
+                top: liveBodyTop + liveBodyHeight,
+                width: liveChairWidth,
+              }}
+              aria-hidden="true"
+            />
+            <span
+              className="absolute z-0 h-8 -translate-y-1/2 rounded-full border-2 border-floor-table-muted/35 bg-floor-table-chair shadow-sm"
+              style={{
+                left: liveBodyLeft + liveBodyWidth * 0.75 - liveChairWidth / 2,
+                top: liveBodyTop + liveBodyHeight,
+                width: liveChairWidth,
+              }}
+              aria-hidden="true"
+            />
+          </>
+        )}
+        <div
           className={cn(
-            'absolute right-1.5 top-1.5 z-20 inline-flex h-5 w-5 items-center justify-center rounded-full border bg-background/90 shadow-sm',
-            status.status === 'late' && 'border-destructive text-destructive',
-            status.status === 'upcoming' && 'border-warning/70 text-warning',
-            status.status === 'occupied' && 'border-primary text-primary',
-            status.status === 'reserved' && 'border-ring/60 text-ring',
-            status.status === 'free' && 'border-border text-muted-foreground',
-            status.status === 'inactive' && 'border-border text-muted-foreground',
+            'absolute z-10 overflow-hidden border border-floor-table-muted/15 bg-floor-table-surface shadow-sm',
+            isRound ? 'rounded-full' : 'rounded-[0.6rem]',
+            'transition-[border-color,box-shadow] duration-200',
+            isSelected &&
+              !isOverlay &&
+              'border-floor-table-accent ring-2 ring-inset ring-floor-table-accent/70',
           )}
-          title={statusMeta[status.status].label}
-          aria-label={statusMeta[status.status].label}
+          style={{
+            height: liveBodyHeight,
+            left: liveBodyLeft,
+            top: liveBodyTop,
+            width: liveBodyWidth,
+          }}
         >
-          <StatusIcon size={12} strokeWidth={2.4} />
-        </span>
-      ) : null}
-      <div className="relative z-10 flex w-full max-w-full flex-col items-center px-1">
-        <div className="flex min-w-0 w-full flex-wrap items-baseline justify-center gap-1 leading-none">
-          <p className="min-w-0 text-xs font-bold tracking-tight">{displayName}</p>
-          {showCapacity ? (
-            <p className="min-w-0 text-[9px] font-medium text-muted-foreground">
-              · {table.capacity} places
+          <span
+            className={cn('absolute inset-y-0 right-0', isRound ? 'w-2' : 'w-3', liveRailClass)}
+            aria-label={referenceStatusLabel}
+            title={referenceStatusLabel}
+          />
+          <div
+            className={cn(
+              'absolute inset-0 flex flex-col items-start justify-between text-left',
+              compact ? 'px-2 py-1.5 pr-4' : 'px-3 py-2 pr-5',
+            )}
+          >
+            <p className="max-w-full truncate text-[10px] font-semibold leading-none text-floor-table-text/80">
+              {displayName}
             </p>
+            <div className="min-w-0 max-w-full leading-tight">
+              {liveCustomerName && !compact ? (
+                <p className="truncate text-[10px] font-medium text-floor-table-text">
+                  {liveCustomerName}
+                </p>
+              ) : null}
+              <p
+                className={cn(
+                  'flex min-w-0 items-center gap-1 truncate text-[10px] font-medium',
+                  referenceStatusTextClass,
+                )}
+              >
+                {liveStatusDotClass ? (
+                  <span
+                    aria-hidden="true"
+                    className={cn('size-1.5 shrink-0 rounded-full', liveStatusDotClass)}
+                  />
+                ) : null}
+                <span className="truncate">
+                  {compact ? compactStatusLabel : referenceStatusLabel}
+                </span>
+              </p>
+            </div>
+          </div>
+          {status?.reservation && !isOverlay ? (
+            <DraggableReservation
+              reservation={status.reservation}
+              fromTableId={table.id}
+              disabled={!draggableReservation}
+            />
           ) : null}
         </div>
-        {table.assignedServer ? (
-          <div
-            className="mt-1 flex max-w-full items-center justify-center gap-1 truncate rounded border border-primary/20 bg-primary/10 px-1 py-0.5 text-[9px] font-semibold text-primary"
-            title={`Serveur : ${table.assignedServer}`}
-          >
-            <UserRound size={10} className="shrink-0" />
-            <span className="truncate">{table.assignedServer}</span>
-          </div>
-        ) : null}
-        {showServiceDetails && status?.reservation && reservationStart && !isOverlay ? (
-          <DraggableReservation
-            reservation={status.reservation}
-            fromTableId={table.id}
-            status={status.status}
-            disabled={!draggableReservation}
-          />
-        ) : null}
-        {showAssignment && assignment ? (
-          <p className="mt-1 w-full text-[9px] font-medium text-muted-foreground">{assignment}</p>
-        ) : null}
-      </div>
-      {isSelected && !isOverlay && onResizeStart ? (
+      </>
+      {isCombinable ? (
+        <span
+          className="absolute bottom-1.5 right-1.5 z-20 inline-flex size-5 items-center justify-center rounded-full border border-primary/40 bg-background/90 text-primary shadow-sm"
+          title="Tables combinables"
+          aria-label="Tables combinables"
+        >
+          <Link2 size={11} />
+        </span>
+      ) : null}
+      {isSelected && editable && !isOverlay && onResizeStart ? (
         <div
-          className="absolute -bottom-1.5 -right-1.5 z-30 h-3.5 w-3.5 cursor-nwse-resize rounded-sm border border-background bg-primary shadow-sm"
+          className="absolute -bottom-1.5 -right-1.5 z-30 size-3 cursor-nwse-resize rounded-full border-2 border-floor-table-surface bg-floor-table-accent shadow-md"
           onPointerDown={(e) => {
             e.stopPropagation();
             onResizeStart(e as unknown as React.PointerEvent);
@@ -1016,9 +1690,9 @@ function TableCard({
           title="Redimensionner"
         />
       ) : null}
-      {isSelected && !isOverlay && onRotateStart ? (
+      {isSelected && editable && !isOverlay && onRotateStart ? (
         <div
-          className="absolute -top-3 left-1/2 z-30 flex h-5 w-5 -translate-x-1/2 cursor-grab items-center justify-center rounded-full border border-background bg-primary text-background shadow-sm"
+          className="absolute -top-2.5 left-1/2 z-30 flex size-5 -translate-x-1/2 cursor-grab items-center justify-center rounded-full border-2 border-floor-table-accent bg-floor-table-surface text-floor-table-accent shadow-md"
           onPointerDown={(e) => {
             e.stopPropagation();
             onRotateStart(e as unknown as React.PointerEvent);
@@ -1035,12 +1709,10 @@ function TableCard({
 function DraggableReservation({
   reservation,
   fromTableId,
-  status,
   disabled = false,
 }: {
   reservation: PlanningReservation;
   fromTableId: string;
-  status: TableStatus;
   disabled?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -1049,7 +1721,6 @@ function DraggableReservation({
     disabled,
   });
 
-  const reservationStart = reservation.startsAt ? parseISO(reservation.startsAt) : null;
   const { onPointerDown, ...otherListeners } = listeners ?? {};
 
   return (
@@ -1057,31 +1728,94 @@ function DraggableReservation({
       ref={setNodeRef}
       {...otherListeners}
       {...attributes}
+      role="presentation"
+      tabIndex={-1}
+      aria-hidden="true"
       onPointerDown={(e) => {
         onPointerDown?.(e);
         e.stopPropagation();
       }}
       onClick={(e) => e.stopPropagation()}
       className={cn(
-        'mt-1.5 w-full space-y-1 text-[9px] leading-tight rounded-sm',
-        !disabled && 'cursor-grab active:cursor-grabbing hover:bg-background/40',
+        'absolute inset-0 z-20 cursor-grab rounded-[inherit] active:cursor-grabbing',
         isDragging && 'opacity-0',
       )}
+      aria-label={formatReservationBadge(reservation)}
     >
-      <p className="w-full font-semibold">
-        {formatCustomerName(reservation.customerName)} ·{' '}
-        {reservationStart ? format(reservationStart, 'HH:mm') : '—'}
-      </p>
-      <p
-        className={cn(
-          'flex w-full items-center justify-center gap-1 font-medium text-muted-foreground',
-          status === 'late' && 'text-destructive',
-          status === 'upcoming' && 'text-warning',
-        )}
-      >
-        <Clock3 size={10} />
-        {formatServiceTiming(reservation, status, new Date())}
-      </p>
+      <span className="sr-only">{formatReservationBadge(reservation)}</span>
+    </div>
+  );
+}
+
+function ZoneCard({
+  zone,
+  isSelected,
+  editable,
+  showLabel = true,
+  onClick,
+  onPointerDown,
+  onResizeStart,
+}: {
+  zone: FloorPlanZone;
+  isSelected?: boolean;
+  editable?: boolean;
+  showLabel?: boolean;
+  onClick: () => void;
+  onPointerDown?: (event: React.PointerEvent<HTMLDivElement>) => void;
+  onResizeStart?: (event: React.PointerEvent<HTMLDivElement>) => void;
+}) {
+  return (
+    <div
+      className={cn(
+        'absolute flex flex-col items-center justify-center rounded-xl border border-primary/25 bg-primary/5 px-3 text-center text-muted-foreground transition-[border,background,box-shadow] duration-200',
+        editable && 'cursor-move hover:border-primary/50 hover:bg-primary/10',
+        isSelected && 'border-primary bg-primary/10 ring-2 ring-primary/40 ring-offset-1',
+      )}
+      style={{
+        left: zone.x,
+        top: zone.y,
+        width: zone.width,
+        height: zone.height,
+        transform: `rotate(${zone.rotation}deg)`,
+        zIndex: 1,
+      }}
+      role="button"
+      tabIndex={0}
+      aria-label={`${zone.name}${zone.sectionName ? ` · ${zone.sectionName}` : ''}`}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        onPointerDown?.(event);
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+    >
+      {showLabel ? (
+        <>
+          <span className="text-xs font-semibold uppercase tracking-[0.14em]">{zone.name}</span>
+          {zone.sectionName ? <span className="mt-1 text-[10px]">{zone.sectionName}</span> : null}
+        </>
+      ) : null}
+      {isSelected && editable && onResizeStart ? (
+        <div
+          className="absolute -bottom-1.5 -right-1.5 z-30 h-3.5 w-3.5 cursor-nwse-resize rounded-sm border border-background bg-primary shadow-sm"
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            event.preventDefault();
+            onResizeStart(event);
+          }}
+          title="Redimensionner la zone"
+          aria-label="Redimensionner la zone"
+          role="button"
+        />
+      ) : null}
     </div>
   );
 }
@@ -1099,6 +1833,10 @@ type DraggableTableProps = {
   droppable?: boolean;
   draggableReservation?: boolean;
   zoom?: number;
+  isCombinable?: boolean;
+  editable?: boolean;
+  /** Carte tactile compacte (téléphone) : nom + point d'état seulement. */
+  compact?: boolean;
 };
 
 function DraggableTable({
@@ -1114,6 +1852,9 @@ function DraggableTable({
   droppable = false,
   draggableReservation,
   zoom = 1,
+  isCombinable = false,
+  editable = true,
+  compact = false,
 }: DraggableTableProps) {
   const {
     attributes,
@@ -1152,6 +1893,9 @@ function DraggableTable({
       dragRef={setNodeRef}
       dragProps={draggable ? { ...attributes, ...listeners } : undefined}
       draggableReservation={draggableReservation}
+      isCombinable={isCombinable}
+      editable={editable}
+      compact={compact}
       className={cn(
         draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
         isDragging && 'opacity-40 transition-none',
@@ -1167,10 +1911,12 @@ type PaletteItemCardProps = {
   id: string;
   icon: React.ReactNode;
   label: string;
+  shortLabel?: string;
   data: PaletteItemData;
+  onQuickAdd?: (data: PaletteItemData) => void;
 };
 
-function PaletteItemCard({ id, icon, label, data }: PaletteItemCardProps) {
+function PaletteItemCard({ id, icon, label, shortLabel, data, onQuickAdd }: PaletteItemCardProps) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id,
     data: data as Record<string, unknown>,
@@ -1181,13 +1927,74 @@ function PaletteItemCard({ id, icon, label, data }: PaletteItemCardProps) {
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      role="button"
+      tabIndex={0}
+      title={`${label} — glissez vers le plan, ou cliquez pour ajouter`}
+      aria-label={`${label} — glissez vers le plan, ou cliquez pour ajouter`}
+      onClick={() => onQuickAdd?.(data)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onQuickAdd?.(data);
+        }
+      }}
       className={cn(
-        'flex items-center gap-3 rounded-md border border-border bg-background p-2 cursor-grab active:cursor-grabbing select-none hover:bg-accent/50 transition-colors',
+        'flex cursor-grab select-none items-center gap-2 rounded-md border border-border bg-background px-2 py-2 transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing lg:min-h-9 lg:w-full lg:gap-1 lg:px-1 lg:py-1',
         isDragging && 'opacity-0',
       )}
     >
       {icon}
-      <span className="text-sm font-medium">{label}</span>
+      <span className="min-w-0 flex-1 text-xs font-medium text-foreground lg:whitespace-normal lg:text-center lg:text-[10px] lg:leading-tight">
+        <span className="lg:hidden">{label}</span>
+        <span className="hidden lg:inline">{shortLabel}</span>
+      </span>
+    </div>
+  );
+}
+
+function PaletteExistingTableCard({
+  table,
+  onPlace,
+}: {
+  table: CanvasTable;
+  onPlace: (table: CanvasTable) => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `palette-table-${table.id}`,
+    data: { kind: 'placeTable', table } as Record<string, unknown>,
+  });
+  const displayName = table.displayName ?? table.name;
+  const sectionLabel = table.sectionName || 'Sans section';
+
+  return (
+    <div
+      id={`palette-table-${table.id}`}
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      role="button"
+      tabIndex={0}
+      title={`${displayName} · ${table.capacity} places · ${sectionLabel} — glissez vers le plan`}
+      aria-label={`${displayName}, ${table.capacity} places, ${sectionLabel} — glissez vers le plan`}
+      onClick={() => onPlace(table)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onPlace(table);
+        }
+      }}
+      className={cn(
+        'flex cursor-grab select-none items-center gap-2 rounded-md border border-border bg-background px-2.5 py-2 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing',
+        isDragging && 'opacity-0',
+      )}
+    >
+      <Grip size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-xs font-semibold text-foreground">{displayName}</span>
+        <span className="block truncate text-[10px] text-muted-foreground">
+          {table.capacity} places · {sectionLabel}
+        </span>
+      </span>
     </div>
   );
 }
@@ -1504,49 +2311,98 @@ export function WaitingListPanel({
   );
 }
 
-function FloorPlanPalette() {
+function FloorPlanPalette({
+  tablesToPlace,
+  totalTables,
+  onPlaceTable,
+  onCreateTable,
+  onAutoLayout,
+  autoLayoutLoading,
+  onQuickAdd,
+}: {
+  tablesToPlace: CanvasTable[];
+  totalTables: number;
+  onPlaceTable: (table: CanvasTable) => void;
+  onCreateTable: () => void;
+  onAutoLayout: () => void;
+  autoLayoutLoading: boolean;
+  onQuickAdd: (data: PaletteItemData) => void;
+}) {
   return (
-    <div className="w-56 min-w-56 h-full border-r border-border bg-card flex flex-col gap-5 p-3 overflow-y-auto">
-      <div>
-        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-          Tables
+    <div className="flex max-h-32 w-full min-w-0 flex-row gap-3 overflow-x-auto overflow-y-hidden border-t border-border bg-card p-2.5 lg:order-1 lg:h-full lg:max-h-none lg:w-36 lg:min-w-36 lg:flex-col lg:items-center lg:gap-2 lg:overflow-y-auto lg:border-r lg:border-t-0 lg:p-2">
+      <div className="min-w-36 flex-1 lg:w-full lg:min-w-0 lg:flex-none">
+        <h4 className="mb-1.5 hidden text-center text-[9px] font-semibold uppercase tracking-wider text-muted-foreground lg:block">
+          Tables à placer · {tablesToPlace.length}
         </h4>
         <div className="flex flex-col gap-2">
-          <PaletteItemCard
-            id="palette-table-round"
-            icon={<Circle size={18} className="text-primary" />}
-            label="Table ronde"
-            data={{ kind: 'table', shape: 'round', capacity: 4 }}
-          />
-          <PaletteItemCard
-            id="palette-table-rect"
-            icon={<Square size={18} className="text-primary" />}
-            label="Table rectangle"
-            data={{ kind: 'table', shape: 'rect', capacity: 4 }}
-          />
+          {tablesToPlace.length > 0 ? (
+            tablesToPlace.map((table) => (
+              <PaletteExistingTableCard key={table.id} table={table} onPlace={onPlaceTable} />
+            ))
+          ) : (
+            <p className="px-1 text-[10px] leading-tight text-muted-foreground">
+              {totalTables === 0 ? 'Aucune table configurée.' : 'Toutes les tables sont placées.'}
+            </p>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 w-full justify-center gap-1 px-2 text-[11px] transition-all duration-200"
+            onClick={onCreateTable}
+          >
+            <Plus size={13} />
+            <span>Ajouter une table</span>
+          </Button>
+          {tablesToPlace.length > 1 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 w-full px-1 text-[10px] text-muted-foreground transition-all duration-200 hover:text-foreground"
+              onClick={onAutoLayout}
+              disabled={autoLayoutLoading}
+            >
+              {autoLayoutLoading ? 'Placement…' : 'Disposition automatique'}
+            </Button>
+          ) : null}
         </div>
       </div>
-      <div>
-        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-          Murs / Décor
+      <div className="w-full lg:w-full">
+        <h4 className="mb-1.5 hidden text-center text-[9px] font-semibold uppercase tracking-wider text-muted-foreground lg:block">
+          Aménagement
         </h4>
         <div className="flex flex-col gap-2">
+          <PaletteItemCard
+            id="palette-zone"
+            icon={<Square size={18} className="text-muted-foreground" />}
+            label="Zone"
+            shortLabel="Zone"
+            onQuickAdd={onQuickAdd}
+            data={{ kind: 'zone' }}
+          />
           <PaletteItemCard
             id="palette-wall"
             icon={<Minus size={18} className="text-muted-foreground" />}
             label="Mur"
+            shortLabel="Mur"
+            onQuickAdd={onQuickAdd}
             data={{ kind: 'wall', type: 'wall' }}
           />
           <PaletteItemCard
             id="palette-door"
             icon={<DoorOpen size={18} className="text-muted-foreground" />}
             label="Porte"
+            shortLabel="Porte"
+            onQuickAdd={onQuickAdd}
             data={{ kind: 'wall', type: 'door' }}
           />
           <PaletteItemCard
             id="palette-bar"
             icon={<Wine size={18} className="text-muted-foreground" />}
             label="Bar"
+            shortLabel="Bar"
+            onQuickAdd={onQuickAdd}
             data={{ kind: 'wall', type: 'bar' }}
           />
         </div>
@@ -1646,6 +2502,10 @@ export function FloorPlanCanvas({
   floorPlanId,
   initialDelayImpact,
   onInitialDelayApplied,
+  onRequestEdit,
+  onRequestWalkIn,
+  planOptions,
+  onSelectPlan,
 }: {
   orgId: string;
   mode?: 'service' | 'design';
@@ -1657,6 +2517,10 @@ export function FloorPlanCanvas({
     serviceDate?: string;
   } | null;
   onInitialDelayApplied?: () => void;
+  onRequestEdit?: () => void;
+  onRequestWalkIn?: () => void;
+  planOptions?: Array<{ id: string; name: string }>;
+  onSelectPlan?: (id: string) => void;
 }) {
   const { get, post, patch, del } = useApi();
   const getRef = useRef(get);
@@ -1683,11 +2547,38 @@ export function FloorPlanCanvas({
   } = useUndoHistory<GeometrySnapshot>();
 
   const [zoom, setZoom] = useState(1);
-  const [gridVisible, setGridVisible] = useState(true);
+  // Dernière échelle appliquée, lue par les gestes natifs (pincement) qui ne
+  // re-rendent pas à chaque déplacement de doigt.
+  const zoomRef = useRef(zoom);
+  // Dernière échelle de cadrage calculée : elle sert de plancher au zoom
+  // manuel (dézoomer sous le niveau « la salle entière tient » ne montre
+  // que du vide autour du plan).
+  const fitZoomRef = useRef(0);
+  zoomRef.current = zoom;
+  // Un zoom choisi par le restaurateur n'est plus écrasé par le cadrage auto.
+  const userAdjustedZoomRef = useRef(false);
+  // Chaque plan reçoit son cadrage d'ouverture une seule fois. Cette identité
+  // évite de réutiliser le zoom ou le défilement d'une autre salle et permet de
+  // réparer un ancien cadrage conservé pendant un rafraîchissement à chaud.
+  const autoFittedPlanIdRef = useRef<string | null>(null);
+  // Zone occupée par les tables posées : sert au cadrage d'ouverture et au
+  // recentrage. Lue via une ref pour que le déplacement d'une table pendant
+  // l'édition ne déclenche pas de recadrage automatique.
+  const contentBoundsRef = useRef<ContentBounds | null>(null);
+  // Repère d'édition : masqué par défaut en service pour garder la salle lisible
+  // pendant le coup de feu (le bouton et la touche « G » restent disponibles).
+  const [gridVisible, setGridVisible] = useState(mode !== 'service');
   const [snap, setSnap] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const live = mode === 'service';
+  // Cadres tactiles : sur téléphone et tablette, le plan est la surface
+  // principale. On y adapte l'échelle minimale, le cadrage d'ouverture, les
+  // gestes et la taille des cartes de table.
+  const touchCanvasLayout = useMediaQuery('(max-width: 1023px)');
+  const compactTableCards = useIsMobile();
+  const coarsePointer = useMediaQuery('(pointer: coarse)');
   const [liveDate, setLiveDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
-  const [serviceTab, setServiceTab] = useState<'plan' | 'waiting-list' | 'stats'>('plan');
+  const [serviceTab, setServiceTab] = useState<ServiceTabId>('plan');
   const [selectedServerFilter, setSelectedServerFilter] = useState<string | null>(null);
   const liveDateRef = useRef(liveDate);
   liveDateRef.current = liveDate;
@@ -1701,6 +2592,7 @@ export function FloorPlanCanvas({
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [loadedLiveDate, setLoadedLiveDate] = useState<string | null>(null);
   const [selectedServiceTableId, setSelectedServiceTableId] = useState<string | null>(null);
+  const [mobileServiceDetailsOpen, setMobileServiceDetailsOpen] = useState(false);
   const [updatingReservationStateId, setUpdatingReservationStateId] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<TableSuggestion[]>([]);
   const [delayMinutes, setDelayMinutes] = useState(20);
@@ -1778,6 +2670,12 @@ export function FloorPlanCanvas({
 
   const [activeDragData, setActiveDragData] = useState<ActiveDragData | null>(null);
   const [dragStart, setDragStart] = useState<DragStartInfo | null>(null);
+  const [autoLayoutLoading, setAutoLayoutLoading] = useState(false);
+  const [autoLayoutNotice, setAutoLayoutNotice] = useState(false);
+  // Le placement initial ne doit être proposé qu'une seule fois pour un plan
+  // fraîchement chargé. On ne le déclenche pas après la création manuelle d'une
+  // table, ni après l'actualisation d'un plan déjà configuré.
+  const autoLayoutCandidateRef = useRef<string | null>(null);
   const justDraggedRef = useRef(false);
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const tableMoveIdRef = useRef(0);
@@ -1789,6 +2687,13 @@ export function FloorPlanCanvas({
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<CanvasTable | null>(null);
+  const [bulkCreateDialogOpen, setBulkCreateDialogOpen] = useState(false);
+  const [bulkCreateLoading, setBulkCreateLoading] = useState(false);
+  const [bulkCreateForm, setBulkCreateForm] = useState({
+    count: '5',
+    capacity: '4',
+    sectionId: '',
+  });
   const [form, setForm] = useState<TableForm>({
     name: '',
     capacity: '4',
@@ -1803,6 +2708,22 @@ export function FloorPlanCanvas({
   const [multiDeleteConfirmOpen, setMultiDeleteConfirmOpen] = useState(false);
 
   const [selectedWallId, setSelectedWallId] = useState<string | null>(null);
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [zoneDragStart, setZoneDragStart] = useState<{
+    zone: FloorPlanZone;
+    pointerX: number;
+    pointerY: number;
+  } | null>(null);
+  const [resizeZoneId, setResizeZoneId] = useState<string | null>(null);
+  const resizeZoneStartRef = useRef<{
+    pointerX: number;
+    pointerY: number;
+    width: number;
+    height: number;
+    currentWidth?: number;
+    currentHeight?: number;
+  } | null>(null);
+  const zoneJustDraggedRef = useRef(false);
   const [wallDragMode, setWallDragMode] = useState<'move' | 'resize-start' | 'resize-end' | null>(
     null,
   );
@@ -1819,23 +2740,302 @@ export function FloorPlanCanvas({
   const [wallAlignGuide, setWallAlignGuide] = useState<{ axis: 'x' | 'y'; value: number } | null>(
     null,
   );
+  // Guides de table (bords et centres) visibles pendant le déplacement : ils
+  // rendent le magnétisme compréhensible au lieu de laisser un déplacement
+  // sembler arbitraire.
+  const [tableAlignGuides, setTableAlignGuides] =
+    useState<TableAlignmentGuides>(emptyTableAlignmentGuides);
   const [wallLengthGuide, setWallLengthGuide] = useState<WallLengthGuide | null>(null);
   const [wallResizeAlignGuide, setWallResizeAlignGuide] = useState<WallResizeAlignGuide | null>(
     null,
   );
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
-  const [floorSettings, setFloorSettings] = useState({ name: '', width: 1400, height: 900 });
+  const [floorSettings, setFloorSettings] = useState({
+    name: '',
+    widthMeters: formatRoomMeters(DEFAULT_CANVAS_WIDTH),
+    lengthMeters: formatRoomMeters(DEFAULT_CANVAS_HEIGHT),
+  });
+  const [settingsError, setSettingsError] = useState('');
   const [savingPlan, setSavingPlan] = useState(false);
   const [planSaved, setPlanSaved] = useState(false);
 
   const canvasWidth = floorPlan?.width ?? DEFAULT_CANVAS_WIDTH;
   const canvasHeight = floorPlan?.height ?? DEFAULT_CANVAS_HEIGHT;
 
+  // Sur écran tactile, un glissement d'un doigt doit faire défiler le plan :
+  // déplacer une table demande donc une pression maintenue. À la souris, on
+  // conserve le seuil historique de 3 px.
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 3 },
+      activationConstraint: coarsePointer ? { delay: 260, tolerance: 8 } : { distance: 3 },
     }),
   );
+
+  const minZoom = touchCanvasLayout ? MIN_ZOOM_TOUCH : MIN_ZOOM;
+
+  /**
+   * Cadre le plan dans la fenêtre visible : la zone réellement occupée par les
+   * tables quand il y en a (sinon le plan entier, comportement historique), et
+   * renvoie l'échelle appliquée ainsi que le défilement qui centre la zone,
+   * pour pouvoir enchaîner le cadrage sans attendre le prochain rendu.
+   */
+  const fitCanvasToViewport = useCallback(() => {
+    const viewport = canvasViewportRef.current;
+    if (!viewport) return null;
+    const viewportWidth = viewport.clientWidth;
+    const viewportHeight = viewport.clientHeight;
+    if (viewportWidth < 40 || viewportHeight < 40) return null;
+    const fitFloor =
+      live && serviceTab === 'plan' ? TOUCH_FIT_FLOOR : touchCanvasLayout ? TOUCH_FIT_FLOOR : 1;
+    // Plancher du dézoom manuel : cadrer le plan entier.
+    const fullCanvasZoom = computeFitZoom({
+      viewportWidth,
+      viewportHeight,
+      canvasWidth,
+      canvasHeight,
+      minZoom,
+      floor: fitFloor,
+    });
+    const bounds = contentBoundsRef.current;
+    let nextZoom = fullCanvasZoom;
+    if (bounds) {
+      const contentZoom = computeFitZoom({
+        viewportWidth,
+        viewportHeight,
+        canvasWidth: bounds.width,
+        canvasHeight: bounds.height,
+        minZoom,
+        floor: fitFloor,
+      });
+      // En Live, le cadre est déjà réduit au groupe de tables : on peut donc
+      // dépasser 100 % pour remplir utilement la fenêtre sans réintroduire la
+      // hauteur vide de la zone d'édition. L'éditeur garde son plafond à 100 %.
+      const fitCeiling = live && serviceTab === 'plan' ? MAX_ZOOM : 1;
+      nextZoom = clampZoom(
+        Math.max(Math.min(contentZoom, fitCeiling), fullCanvasZoom),
+        minZoom,
+        MAX_ZOOM,
+      );
+    }
+    const scroll =
+      live && serviceTab === 'plan' && bounds
+        ? {
+            left: Math.max(0, (bounds.width * nextZoom - viewportWidth) / 2),
+            top: Math.max(0, (bounds.height * nextZoom - viewportHeight) / 2),
+          }
+        : computeFocusScroll({
+            viewportWidth,
+            viewportHeight,
+            region: bounds ?? { x: 0, y: 0, width: canvasWidth, height: canvasHeight },
+            zoom: nextZoom,
+          });
+    zoomRef.current = nextZoom;
+    fitZoomRef.current = fullCanvasZoom;
+    setZoom(nextZoom);
+    return { zoom: nextZoom, scroll };
+  }, [canvasHeight, canvasWidth, live, minZoom, serviceTab, touchCanvasLayout]);
+
+  /**
+   * Plancher du zoom manuel sur écran tactile : quand le plan tient déjà
+   * entièrement à l'échelle de cadrage, dézoomer davantage ne montre que du
+   * vide autour de la salle. Si le cadrage a été plafonné par le plancher
+   * tactile (plan plus grand que la fenêtre), on garde la marge MIN_ZOOM_TOUCH.
+   */
+  const manualMinZoom = useCallback(() => {
+    if (!touchCanvasLayout) return MIN_ZOOM;
+    const fit = fitZoomRef.current;
+    return fit >= TOUCH_FIT_FLOOR ? fit : MIN_ZOOM_TOUCH;
+  }, [touchCanvasLayout]);
+
+  /** Zoom manuel : il ne doit plus être écrasé par le cadrage automatique. */
+  function changeZoom(delta: number) {
+    userAdjustedZoomRef.current = true;
+    setZoom((current) => clampZoom(Math.round((current + delta) * 100) / 100, manualMinZoom()));
+  }
+
+  /** Replace le plan à l'échelle de cadrage et le centre (double-tap, bouton). */
+  function resetView() {
+    const viewport = canvasViewportRef.current;
+    if (!viewport) return;
+    userAdjustedZoomRef.current = false;
+    const fit = fitCanvasToViewport();
+    const scroll = fit?.scroll ?? {
+      ...computeCenterScroll({
+        viewportWidth: viewport.clientWidth,
+        viewportHeight: viewport.clientHeight,
+        canvasWidth,
+        canvasHeight,
+        zoom: zoomRef.current,
+      }),
+    };
+    window.requestAnimationFrame(() => {
+      viewport.scrollTo({ ...scroll, behavior: 'smooth' });
+    });
+  }
+
+  const resetViewRef = useRef(resetView);
+  resetViewRef.current = resetView;
+
+  // Cadrage d'ouverture : sur téléphone et tablette, un plan de 14 m affiché à
+  // 100 % ne montre qu'un quart de la salle. On cadre la zone occupée par les
+  // tables (et on la centre) une fois, puis on respecte le zoom choisi par le
+  // restaurateur.
+  useEffect(() => {
+    if (!touchCanvasLayout && !live) return;
+    if (loading || error) return;
+    if (serviceTab !== 'plan') return;
+    const planId = floorPlan?.id;
+    if (!planId || autoFittedPlanIdRef.current === planId) return;
+    const viewport = canvasViewportRef.current;
+    userAdjustedZoomRef.current = false;
+    let retryFrame: number | null = null;
+    const applyInitialFit = () => {
+      const fit = fitCanvasToViewport();
+      if (!viewport || !fit) {
+        // Le premier frame peut précéder la mesure finale du panneau sur
+        // Safari. Un second essai suffit sans installer d'observateur durable.
+        retryFrame = window.requestAnimationFrame(() => {
+          const retryFit = fitCanvasToViewport();
+          if (!viewport || !retryFit) return;
+          viewport.scrollLeft = retryFit.scroll.left;
+          viewport.scrollTop = retryFit.scroll.top;
+          autoFittedPlanIdRef.current = planId;
+        });
+        return;
+      }
+      viewport.scrollLeft = fit.scroll.left;
+      viewport.scrollTop = fit.scroll.top;
+      autoFittedPlanIdRef.current = planId;
+    };
+    const frame = window.requestAnimationFrame(applyInitialFit);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (retryFrame !== null) window.cancelAnimationFrame(retryFrame);
+    };
+  }, [touchCanvasLayout, live, loading, error, serviceTab, floorPlan?.id, fitCanvasToViewport]);
+
+  // Gestes du plan : pincer pour zoomer, double-tap pour recadrer. Le
+  // défilement à un doigt reste natif (voir `touch-action` sur la fenêtre).
+  useEffect(() => {
+    const viewport = canvasViewportRef.current;
+    // Live est une vue finalisée : pas de zoom local ni de double-tap qui
+    // permettrait de sortir du cadrage utile. Le défilement natif reste
+    // disponible lorsque la zone est plus large que la fenêtre.
+    if (!viewport || (live && serviceTab === 'plan')) return;
+
+    let pinchStart: { distance: number; zoom: number } | null = null;
+    let lastTap: { time: number; x: number; y: number } | null = null;
+
+    function distanceBetween(a: { x: number; y: number }, b: { x: number; y: number }) {
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    function applyZoomAtPoint(nextZoom: number, clientX: number, clientY: number) {
+      if (!viewport) return;
+      const rect = viewport.getBoundingClientRect();
+      const offsetX = clientX - rect.left;
+      const offsetY = clientY - rect.top;
+      const currentZoom = zoomRef.current;
+      if (Math.abs(nextZoom - currentZoom) < 0.005) return;
+      const nextScroll = computeZoomAnchorScroll({
+        scrollLeft: viewport.scrollLeft,
+        scrollTop: viewport.scrollTop,
+        offsetX,
+        offsetY,
+        zoom: currentZoom,
+        nextZoom,
+      });
+      userAdjustedZoomRef.current = true;
+      zoomRef.current = nextZoom;
+      setZoom(nextZoom);
+      // La surface de défilement suit l'échelle : on repositionne le point
+      // touché une fois le rendu appliqué.
+      window.requestAnimationFrame(() => {
+        viewport.scrollLeft = nextScroll.left;
+        viewport.scrollTop = nextScroll.top;
+      });
+    }
+
+    function handleTouchStart(event: TouchEvent) {
+      const touches = Array.from(event.touches).map((touch) => ({
+        x: touch.clientX,
+        y: touch.clientY,
+      }));
+      if (touches.length >= 2) {
+        pinchStart = {
+          distance: distanceBetween(touches[0], touches[1]),
+          zoom: zoomRef.current,
+        };
+        lastTap = null;
+        return;
+      }
+      if (touches.length !== 1) return;
+      const target = event.target as HTMLElement | null;
+      // Un appui sur une table ou un bouton garde son action : pas de recadrage.
+      if (target?.closest('[role="button"], button, a, input, select')) {
+        lastTap = null;
+        return;
+      }
+      const tap = { time: event.timeStamp, x: touches[0].x, y: touches[0].y };
+      if (isDoubleTap(lastTap, tap)) {
+        lastTap = null;
+        resetViewRef.current();
+        return;
+      }
+      lastTap = tap;
+    }
+
+    function handleTouchMove(event: TouchEvent) {
+      if (!pinchStart || event.touches.length < 2) return;
+      const touches = Array.from(event.touches).map((touch) => ({
+        x: touch.clientX,
+        y: touch.clientY,
+      }));
+      // Le pincement pilote le plan, pas la page : sans cela Safari zoome la vue.
+      if (event.cancelable) event.preventDefault();
+      if (pinchStart.distance < 8) return;
+      const ratio = distanceBetween(touches[0], touches[1]) / pinchStart.distance;
+      applyZoomAtPoint(
+        clampZoom(pinchStart.zoom * ratio, manualMinZoom()),
+        (touches[0].x + touches[1].x) / 2,
+        (touches[0].y + touches[1].y) / 2,
+      );
+    }
+
+    function handleTouchEnd(event: TouchEvent) {
+      if (event.touches.length < 2) pinchStart = null;
+    }
+
+    function handleWheel(event: WheelEvent) {
+      // Pincement sur pavé tactile (Ctrl + molette). Le zoom navigateur reste
+      // disponible ailleurs dans la page.
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      const factor = Math.exp(-event.deltaY * 0.0025);
+      applyZoomAtPoint(clampZoom(zoomRef.current * factor, minZoom), event.clientX, event.clientY);
+    }
+
+    function handleDoubleClick(event: MouseEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('[role="button"], button, a, input, select')) return;
+      resetViewRef.current();
+    }
+
+    viewport.addEventListener('touchstart', handleTouchStart, { passive: true });
+    viewport.addEventListener('touchmove', handleTouchMove, { passive: false });
+    viewport.addEventListener('touchend', handleTouchEnd, { passive: true });
+    viewport.addEventListener('touchcancel', handleTouchEnd, { passive: true });
+    viewport.addEventListener('wheel', handleWheel, { passive: false });
+    viewport.addEventListener('dblclick', handleDoubleClick);
+    return () => {
+      viewport.removeEventListener('touchstart', handleTouchStart);
+      viewport.removeEventListener('touchmove', handleTouchMove);
+      viewport.removeEventListener('touchend', handleTouchEnd);
+      viewport.removeEventListener('touchcancel', handleTouchEnd);
+      viewport.removeEventListener('wheel', handleWheel);
+      viewport.removeEventListener('dblclick', handleDoubleClick);
+    };
+  }, [loading, live, manualMinZoom, minZoom, serviceTab]);
 
   const loadFloorPlan = useCallback(async () => {
     setLoading(true);
@@ -1845,6 +3045,15 @@ export function FloorPlanCanvas({
         ? `restaurants/${orgId}/floor-plans/${floorPlanId}`
         : `restaurants/${orgId}/floor-plan`;
       const data = await getRef.current<FloorPlan>(path);
+      const loadedTables = [
+        ...data.sections.flatMap((section) => section.tables),
+        ...(data.tables ?? []),
+      ];
+      const allLoadedTablesAreUnplaced =
+        loadedTables.length > 0 &&
+        loadedTables.every((table) => table.positionX === null || table.positionY === null);
+      autoLayoutCandidateRef.current = !live && allLoadedTablesAreUnplaced ? data.id : null;
+      setAutoLayoutNotice(false);
       // purge tout historique et version obsolète avant de remplacer le plan —
       // les snapshots référencent les objets de l'ancien chargement
       resetGeometryHistory();
@@ -1856,7 +3065,7 @@ export function FloorPlanCanvas({
     } finally {
       setLoading(false);
     }
-  }, [orgId, floorPlanId, resetGeometryHistory]);
+  }, [orgId, floorPlanId, live, resetGeometryHistory]);
 
   const pollAbortRef = useRef<AbortController | null>(null);
   const pollInFlightRef = useRef(false);
@@ -1973,16 +3182,19 @@ export function FloorPlanCanvas({
   );
 
   const createWalkIn = useCallback(
-    async (tableId: string) => {
+    async (tableId: string, partySize?: number, customerName?: string) => {
       if (!orgId) return;
       try {
+        const table = floorPlan?.tables?.find((t) => t.id === tableId);
+        const resolvedPartySize = partySize ?? table?.capacity ?? 2;
+        const resolvedCustomerName = customerName?.trim() || 'Walk-in';
         const idempotencyKey = crypto.randomUUID();
         const res = await postRef.current<{ id: string }>(
           `restaurants/${orgId}/floor-plan/walk-ins`,
           {
             tableId,
-            partySize: 2,
-            customerName: 'Walk-in',
+            partySize: resolvedPartySize,
+            customerName: resolvedCustomerName,
             idempotencyKey,
           },
         );
@@ -1992,12 +3204,12 @@ export function FloorPlanCanvas({
           {
             id: res.id,
             tableId,
-            tableName: null,
-            sectionName: null,
+            tableName: table?.name ?? null,
+            sectionName: table?.sectionName ?? null,
             startsAt: now,
             endsAt: now,
-            partySize: 2,
-            customerName: 'Walk-in',
+            partySize: resolvedPartySize,
+            customerName: resolvedCustomerName,
             state: 'SEATED',
             seatedAt: now,
           },
@@ -2007,7 +3219,7 @@ export function FloorPlanCanvas({
         setError(getErrorMessage(err, 'Impossible de créer le walk-in'));
       }
     },
-    [orgId, loadReservations],
+    [orgId, floorPlan?.tables, loadReservations],
   );
 
   const promoteWaitingListEntry = useCallback(
@@ -2393,8 +3605,10 @@ export function FloorPlanCanvas({
     let nextNumber = 1;
 
     return combined.map((table) => {
+      const tableName = table.name.trim();
       const existingNumber = Number(table.name.match(/^T0*(\d+)$/i)?.[1] ?? 0);
       if (existingNumber > 0) return { ...table, displayName: `T${existingNumber}` };
+      if (tableName) return { ...table, displayName: tableName };
       while (usedNumbers.has(nextNumber)) nextNumber += 1;
       const displayName = `T${nextNumber}`;
       usedNumbers.add(nextNumber);
@@ -2402,6 +3616,69 @@ export function FloorPlanCanvas({
       return { ...table, displayName };
     });
   }, [floorPlan]);
+
+  const placedTables = useMemo(
+    () => allTables.filter((table) => table.positionX !== null && table.positionY !== null),
+    [allTables],
+  );
+  const tablesToPlace = useMemo(
+    () => allTables.filter((table) => table.positionX === null || table.positionY === null),
+    [allTables],
+  );
+  const zones = useMemo<FloorPlanZone[]>(
+    () =>
+      (floorPlan?.zones ?? []).map((zone) => ({
+        ...zone,
+        sectionName: zone.sectionName ?? zone.section?.name ?? null,
+      })),
+    [floorPlan?.zones],
+  );
+  // En Live, seules les zones qui contiennent une table posée sont pertinentes
+  // pour l'exploitation. Une zone vide ne doit ni être affichée ni agrandir la
+  // surface défilable ; l'édition conserve toutes les zones du plan.
+  const liveZones = useMemo(
+    () =>
+      live
+        ? zones.filter((zone) => placedTables.some((table) => isTableInsideZone(table, zone)))
+        : zones,
+    [live, placedTables, zones],
+  );
+  const contentBounds = useMemo(
+    () =>
+      live
+        ? computeLiveContentBounds(liveZones, placedTables, canvasWidth, canvasHeight)
+        : computeContentBounds(placedTables, canvasWidth, canvasHeight),
+    [canvasHeight, canvasWidth, live, liveZones, placedTables],
+  );
+  // Mise à jour pendant le rendu (convention du fichier, cf. zoomRef) : la
+  // lecture par ref dans le cadrage évite tout recadrage automatique quand le
+  // restaurateur déplace ou redimensionne une table.
+  contentBoundsRef.current = contentBounds;
+  const tableCombinations = useMemo<FloorPlanTableCombination[]>(
+    () => floorPlan?.tableCombinations ?? [],
+    [floorPlan?.tableCombinations],
+  );
+  const combinableTableIds = useMemo(
+    () =>
+      new Set(
+        tableCombinations.flatMap((combination) => combination.members.map((m) => m.tableId)),
+      ),
+    [tableCombinations],
+  );
+  const selectedZone = selectedZoneId
+    ? (zones.find((zone) => zone.id === selectedZoneId) ?? null)
+    : null;
+  const selectedCombination = useMemo(() => {
+    if (selectedTableIds.size < 2) return null;
+    return (
+      tableCombinations.find((combination) => {
+        const ids = new Set(combination.members.map((member) => member.tableId));
+        return (
+          ids.size === selectedTableIds.size && [...selectedTableIds].every((id) => ids.has(id))
+        );
+      }) ?? null
+    );
+  }, [selectedTableIds, tableCombinations]);
 
   const tableStatuses = useMemo(() => {
     const map = new Map<string, { status: TableStatus; reservation: PlanningReservation | null }>();
@@ -2413,20 +3690,44 @@ export function FloorPlanCanvas({
     return map;
   }, [live, allTables, reservations]);
 
-  const allServers = useMemo(() => {
-    const set = new Set<string>();
+  const serverSummary = useMemo(() => {
+    const counts = new Map<string, number>();
+    let unassigned = 0;
+
     for (const table of allTables) {
-      if (table.assignedServer) {
-        set.add(table.assignedServer);
+      const server = table.assignedServer?.trim();
+      if (!server) {
+        unassigned += 1;
+        continue;
       }
+      counts.set(server, (counts.get(server) ?? 0) + 1);
     }
-    return Array.from(set).sort();
+
+    return {
+      counts,
+      servers: Array.from(counts.keys()).sort((a, b) => a.localeCompare(b, 'fr')),
+      unassigned,
+    };
   }, [allTables]);
 
-  const unassignedCount = useMemo(
-    () => allTables.filter((t) => !t.assignedServer).length,
-    [allTables],
-  );
+  const allServers = serverSummary.servers;
+  const serverTableCounts = serverSummary.counts;
+  const unassignedCount = serverSummary.unassigned;
+  const hasServerFilter = allTables.length > 0 && (allServers.length > 0 || unassignedCount > 0);
+
+  useEffect(() => {
+    if (selectedServerFilter === '_unassigned_' && unassignedCount === 0) {
+      setSelectedServerFilter(null);
+      return;
+    }
+    if (
+      selectedServerFilter &&
+      selectedServerFilter !== '_unassigned_' &&
+      !serverTableCounts.has(selectedServerFilter)
+    ) {
+      setSelectedServerFilter(null);
+    }
+  }, [selectedServerFilter, serverTableCounts, unassignedCount]);
 
   const selectedWall = useMemo(
     () => (floorPlan?.walls ?? []).find((wall) => wall.id === selectedWallId) ?? null,
@@ -2469,19 +3770,308 @@ export function FloorPlanCanvas({
     });
   }
 
-  function openCreateDialog() {
-    setPlanSaved(false);
-    setEditingTable(null);
-    setForm({
-      name: 'Nouvelle table',
-      capacity: '4',
-      minCapacity: '1',
-      shape: 'rect',
-      sectionId: floorPlan?.sections[0]?.id ?? '',
-      isActive: true,
+  function openRoomSettings() {
+    setFloorSettings({
+      name: floorPlan?.name ?? '',
+      widthMeters: formatRoomMeters(floorPlan?.width ?? DEFAULT_CANVAS_WIDTH),
+      lengthMeters: formatRoomMeters(floorPlan?.height ?? DEFAULT_CANVAS_HEIGHT),
     });
-    setDialogOpen(true);
+    setSettingsError('');
+    setSettingsDialogOpen(true);
   }
+
+  function focusTablesToPlace() {
+    const firstTableId = tablesToPlace[0]?.id;
+    if (!firstTableId) return;
+    document.getElementById(`palette-table-${firstTableId}`)?.focus();
+  }
+
+  async function placeExistingTable(table: CanvasTable) {
+    if (!orgId || live) return;
+    const { width, height } = getTableSize(table);
+    const { x, y } = findNextPosition(width, height, placedTables, canvasWidth, canvasHeight);
+    const before = snapshotTableGeometry(table);
+    const after = snapshotTableGeometry({ ...table, positionX: x, positionY: y });
+    recordGeometry({
+      before: { tables: [before], walls: [] },
+      after: { tables: [after], walls: [] },
+    });
+    setPlanSaved(false);
+    setSelectedTableIds(new Set([table.id]));
+    setLastSelectedTableId(table.id);
+    setSelectedWallId(null);
+    setFloorPlan((prev) => (prev ? replaceTablePosition(prev, table.id, x, y) : prev));
+
+    try {
+      setError('');
+      const updated = await patch<FloorPlanTable>(
+        `restaurants/${orgId}/floor-plan/tables/${table.id}`,
+        {
+          positionX: x,
+          positionY: y,
+          ...(floorPlanId ? { floorPlanId } : {}),
+        },
+      );
+      setFloorPlan((prev) =>
+        prev
+          ? replaceTablePosition(prev, table.id, updated.positionX ?? x, updated.positionY ?? y)
+          : prev,
+      );
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de placer la table'));
+      setFloorPlan((prev) =>
+        prev ? replaceTablePosition(prev, table.id, table.positionX, table.positionY) : prev,
+      );
+    }
+  }
+
+  async function createUnplacedTable() {
+    if (!orgId || live) return;
+    const name = getNextTableName(allTables);
+    try {
+      setError('');
+      setPlanSaved(false);
+      const created = await post<FloorPlanTable>(`restaurants/${orgId}/floor-plan/tables`, {
+        sectionId: null,
+        minCapacity: 1,
+        positionX: null,
+        positionY: null,
+        capacity: 4,
+        shape: 'rect',
+        name,
+        ...(floorPlanId ? { floorPlanId } : {}),
+      });
+      setFloorPlan((prev) => (prev ? replaceTable(prev, created) : prev));
+      setSelectedTableIds(new Set([created.id]));
+      setLastSelectedTableId(created.id);
+      setSelectedWallId(null);
+      window.setTimeout(() => document.getElementById(`palette-table-${created.id}`)?.focus(), 0);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de créer la table'));
+    }
+  }
+
+  async function createTablesBatch(event: React.FormEvent) {
+    event.preventDefault();
+    if (!orgId || live || bulkCreateLoading) return;
+    const count = Number(bulkCreateForm.count);
+    const capacity = Number(bulkCreateForm.capacity);
+    if (!Number.isInteger(count) || count < 1 || count > 50) {
+      setError('Choisissez entre 1 et 50 tables.');
+      return;
+    }
+    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 30) {
+      setError('La capacité doit être comprise entre 1 et 30 places.');
+      return;
+    }
+
+    setBulkCreateLoading(true);
+    setError('');
+    setPlanSaved(false);
+    const names = [...allTables];
+    const created: FloorPlanTable[] = [];
+    try {
+      for (let index = 0; index < count; index += 1) {
+        const name = getNextTableName(names);
+        const table = await post<FloorPlanTable>(`restaurants/${orgId}/floor-plan/tables`, {
+          sectionId: bulkCreateForm.sectionId || null,
+          minCapacity: 1,
+          positionX: null,
+          positionY: null,
+          capacity,
+          shape: 'rect',
+          name,
+          ...(floorPlanId ? { floorPlanId } : {}),
+        });
+        created.push(table);
+        names.push({ ...table, name } as CanvasTable);
+      }
+      setFloorPlan((prev) => {
+        if (!prev) return prev;
+        return created.reduce((next, table) => replaceTable(next, table), prev);
+      });
+      setSelectedTableIds(new Set(created.map((table) => table.id)));
+      setLastSelectedTableId(created[0]?.id ?? null);
+      setSelectedWallId(null);
+      setBulkCreateDialogOpen(false);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de créer les tables'));
+    } finally {
+      setBulkCreateLoading(false);
+    }
+  }
+
+  async function autoLayoutTables({ initial = false }: { initial?: boolean } = {}) {
+    if (!orgId || live || autoLayoutLoading || tablesToPlace.length === 0 || !floorPlan) return;
+    setAutoLayoutLoading(true);
+    setError('');
+    setPlanSaved(false);
+    const occupied = [...placedTables];
+    const placements = tablesToPlace.map((table) => {
+      const { width, height } = getTableSize(table);
+      const position = findNextPosition(width, height, occupied, canvasWidth, canvasHeight);
+      occupied.push({ ...table, positionX: position.x, positionY: position.y });
+      return { table, ...position };
+    });
+
+    try {
+      const updatedTables = await Promise.all(
+        placements.map(({ table, x, y }) =>
+          patch<FloorPlanTable>(`restaurants/${orgId}/floor-plan/tables/${table.id}`, {
+            positionX: x,
+            positionY: y,
+            ...(floorPlanId ? { floorPlanId } : {}),
+          }),
+        ),
+      );
+      const nextPlan = updatedTables.reduce(
+        (plan, updated, index) =>
+          replaceTablePosition(
+            plan,
+            placements[index].table.id,
+            updated.positionX ?? placements[index].x,
+            updated.positionY ?? placements[index].y,
+          ),
+        floorPlan,
+      );
+      recordGeometry({
+        before: { tables: tablesToPlace.map(snapshotTableGeometry), walls: [] },
+        after: {
+          tables: updatedTables.map((updated, index) =>
+            snapshotTableGeometry({
+              ...placements[index].table,
+              positionX: updated.positionX ?? placements[index].x,
+              positionY: updated.positionY ?? placements[index].y,
+            }),
+          ),
+          walls: [],
+        },
+      });
+      setFloorPlan(nextPlan);
+      if (initial) {
+        setSelectedTableIds(new Set());
+        setLastSelectedTableId(null);
+        setSelectedWallId(null);
+        setAutoLayoutNotice(true);
+      } else {
+        setSelectedTableIds(new Set(updatedTables.map((table) => table.id)));
+        setLastSelectedTableId(updatedTables[0]?.id ?? null);
+      }
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de générer la disposition automatique'));
+    } finally {
+      setAutoLayoutLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (
+      live ||
+      !floorPlan ||
+      autoLayoutCandidateRef.current !== floorPlan.id ||
+      autoLayoutLoading ||
+      allTables.length === 0 ||
+      placedTables.length > 0
+    ) {
+      return;
+    }
+
+    // Consommer le candidat avant la mutation asynchrone évite qu'un rerender
+    // ou la réponse de l'API ne relance une seconde disposition automatique.
+    autoLayoutCandidateRef.current = null;
+    void autoLayoutTables({ initial: true });
+  }, [allTables.length, autoLayoutLoading, autoLayoutTables, floorPlan, live, placedTables.length]);
+
+  const quickAddFromPalette = useCallback(
+    async (data: PaletteItemData) => {
+      if (!orgId || live) return;
+      if (data.kind === 'table') {
+        const { width, height } = getTableSize({
+          capacity: data.capacity,
+          shape: data.shape,
+        } as FloorPlanTable);
+        const { x, y } = findNextPosition(width, height, placedTables, canvasWidth, canvasHeight);
+        const name = getNextTableName(allTables);
+        try {
+          setError('');
+          const created = await post<FloorPlanTable>(`restaurants/${orgId}/floor-plan/tables`, {
+            sectionId: null,
+            minCapacity: 1,
+            positionX: x,
+            positionY: y,
+            capacity: data.capacity,
+            shape: data.shape,
+            name,
+            ...(floorPlanId ? { floorPlanId } : {}),
+          });
+          setFloorPlan((prev) => (prev ? replaceTable(prev, created) : prev));
+          setSelectedTableIds(new Set([created.id]));
+          setLastSelectedTableId(created.id);
+          setSelectedWallId(null);
+        } catch (err) {
+          setError(getErrorMessage(err, 'Impossible de créer la table'));
+        }
+        return;
+      }
+      if (data.kind === 'zone') {
+        const width = Math.min(360, canvasWidth - 64);
+        const height = Math.min(220, canvasHeight - 64);
+        const position = findNextZonePosition(width, height, zones, canvasWidth, canvasHeight);
+        try {
+          setError('');
+          const created = await post<FloorPlanZone>(`restaurants/${orgId}/floor-plan/zones`, {
+            name: getNextZoneName(zones),
+            sectionId: null,
+            ...position,
+            width,
+            height,
+            rotation: 0,
+            ...(floorPlanId ? { floorPlanId } : {}),
+          });
+          setFloorPlan((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  zones: [...(prev.zones ?? []), created],
+                }
+              : prev,
+          );
+          setSelectedTableIds(new Set());
+          setLastSelectedTableId(null);
+          setSelectedWallId(null);
+          setSelectedZoneId(created.id);
+        } catch (err) {
+          setError(getErrorMessage(err, 'Impossible de créer la zone'));
+        }
+        return;
+      }
+      if (data.kind !== 'wall') return;
+      const wallLengths: Record<PaletteWallType, number> = { wall: 160, door: 110, bar: 160 };
+      const length = wallLengths[data.type];
+      const centerX = Math.round(canvasWidth / 2);
+      const centerY = Math.round(canvasHeight / 2);
+      try {
+        setError('');
+        const wall = await post<FloorPlanWall>(`restaurants/${orgId}/floor-plan/walls`, {
+          x1: Math.max(0, centerX - length / 2),
+          y1: centerY,
+          x2: Math.min(canvasWidth, centerX + length / 2),
+          y2: centerY,
+          type: data.type as WallType,
+          name: null,
+          ...(floorPlanId ? { floorPlanId } : {}),
+        });
+        setFloorPlan((prev) => (prev ? { ...prev, walls: [...(prev.walls ?? []), wall] } : prev));
+        setSelectedTableIds(new Set());
+        setLastSelectedTableId(null);
+        setSelectedWallId(wall.id);
+        setSelectedZoneId(null);
+      } catch (err) {
+        setError(getErrorMessage(err, 'Impossible de créer le mur'));
+      }
+    },
+    [orgId, live, allTables, placedTables, zones, canvasWidth, canvasHeight, floorPlanId, post],
+  );
 
   function openEditDialog(table: CanvasTable) {
     setEditingTable(table);
@@ -2501,6 +4091,7 @@ export function FloorPlanCanvas({
       setSelectedTableIds(new Set([table.id]));
       setLastSelectedTableId(table.id);
       setSelectedWallId(null);
+      setSelectedZoneId(null);
       return;
     }
     const isMeta = event.ctrlKey || event.metaKey;
@@ -2514,6 +4105,7 @@ export function FloorPlanCanvas({
       });
       setLastSelectedTableId(table.id);
       setSelectedWallId(null);
+      setSelectedZoneId(null);
       return;
     }
     if (isShift && lastSelectedTableId) {
@@ -2531,11 +4123,13 @@ export function FloorPlanCanvas({
       }
       setLastSelectedTableId(table.id);
       setSelectedWallId(null);
+      setSelectedZoneId(null);
       return;
     }
     setSelectedTableIds(new Set([table.id]));
     setLastSelectedTableId(table.id);
     setSelectedWallId(null);
+    setSelectedZoneId(null);
   }
 
   function handleTableClick(table: CanvasTable, event?: React.MouseEvent) {
@@ -2549,6 +4143,155 @@ export function FloorPlanCanvas({
     }
     selectTable(table, event);
   }
+
+  function selectZone(zone: FloorPlanZone) {
+    if (live) return;
+    if (zoneJustDraggedRef.current) {
+      zoneJustDraggedRef.current = false;
+      return;
+    }
+    setSelectedZoneId(zone.id);
+    setSelectedTableIds(new Set());
+    setLastSelectedTableId(null);
+    setSelectedWallId(null);
+  }
+
+  function handleZonePointerDown(event: React.PointerEvent<HTMLDivElement>, zone: FloorPlanZone) {
+    if (live) return;
+    zoneJustDraggedRef.current = false;
+    setSelectedZoneId(zone.id);
+    setSelectedTableIds(new Set());
+    setSelectedWallId(null);
+    setZoneDragStart({ zone, pointerX: event.clientX, pointerY: event.clientY });
+  }
+
+  function startZoneResize(event: React.PointerEvent<HTMLDivElement>, zone: FloorPlanZone) {
+    if (live) return;
+    event.stopPropagation();
+    event.preventDefault();
+    resizeZoneStartRef.current = {
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      width: zone.width,
+      height: zone.height,
+    };
+    setSelectedZoneId(zone.id);
+    setSelectedTableIds(new Set());
+    setSelectedWallId(null);
+    setResizeZoneId(zone.id);
+  }
+
+  useEffect(() => {
+    if (!zoneDragStart) return;
+    const handleMove = (event: PointerEvent) => {
+      const dx = (event.clientX - zoneDragStart.pointerX) / zoom;
+      const dy = (event.clientY - zoneDragStart.pointerY) / zoom;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) zoneJustDraggedRef.current = true;
+      const grid = snap ? GRID_SIZE : 1;
+      const nextX = Math.max(
+        0,
+        Math.min(
+          canvasWidth - zoneDragStart.zone.width,
+          Math.round((zoneDragStart.zone.x + dx) / grid) * grid,
+        ),
+      );
+      const nextY = Math.max(
+        0,
+        Math.min(
+          canvasHeight - zoneDragStart.zone.height,
+          Math.round((zoneDragStart.zone.y + dy) / grid) * grid,
+        ),
+      );
+      setFloorPlan((prev) =>
+        prev
+          ? replaceZone(prev, {
+              ...zoneDragStart.zone,
+              x: nextX,
+              y: nextY,
+            })
+          : prev,
+      );
+    };
+    const handleUp = () => {
+      const current = zoneDragStart.zone;
+      const latest = zones.find((zone) => zone.id === current.id);
+      if (latest && (latest.x !== current.x || latest.y !== current.y)) {
+        recordGeometry({
+          before: { tables: [], walls: [], zones: [snapshotZoneGeometry(current)] },
+          after: { tables: [], walls: [], zones: [snapshotZoneGeometry(latest)] },
+        });
+        void patchZone(current.id, { x: latest.x, y: latest.y });
+      }
+      setZoneDragStart(null);
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+  }, [zoneDragStart, zoom, snap, canvasWidth, canvasHeight, zones]);
+
+  useEffect(() => {
+    if (!resizeZoneId || !resizeZoneStartRef.current) return;
+    const handleMove = (event: PointerEvent) => {
+      const start = resizeZoneStartRef.current;
+      if (!start) return;
+      const zone = zones.find((item) => item.id === resizeZoneId);
+      if (!zone) return;
+      const dx = (event.clientX - start.pointerX) / zoom;
+      const dy = (event.clientY - start.pointerY) / zoom;
+      const grid = snap ? GRID_SIZE : 1;
+      const width = Math.max(
+        ZONE_MIN_WIDTH,
+        Math.min(canvasWidth - zone.x, Math.round((start.width + dx) / grid) * grid),
+      );
+      const height = Math.max(
+        ZONE_MIN_HEIGHT,
+        Math.min(canvasHeight - zone.y, Math.round((start.height + dy) / grid) * grid),
+      );
+      start.currentWidth = width;
+      start.currentHeight = height;
+      setFloorPlan((prev) =>
+        prev
+          ? replaceZone(prev, {
+              ...zone,
+              width,
+              height,
+            })
+          : prev,
+      );
+    };
+    const handleUp = () => {
+      const start = resizeZoneStartRef.current;
+      const zone = zones.find((item) => item.id === resizeZoneId);
+      if (start && zone) {
+        const width = Math.round(start.currentWidth ?? start.width);
+        const height = Math.round(start.currentHeight ?? start.height);
+        if (width !== start.width || height !== start.height) {
+          const before = zone
+            ? snapshotZoneGeometry({ ...zone, width: start.width, height: start.height })
+            : null;
+          const after = zone ? snapshotZoneGeometry({ ...zone, width, height }) : null;
+          if (before && after) {
+            recordGeometry({
+              before: { tables: [], walls: [], zones: [before] },
+              after: { tables: [], walls: [], zones: [after] },
+            });
+          }
+          void patchZone(resizeZoneId, { width, height });
+        }
+      }
+      setResizeZoneId(null);
+      resizeZoneStartRef.current = null;
+    };
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+  }, [resizeZoneId, zoom, snap, canvasWidth, canvasHeight, zones]);
 
   function handleTableDoubleClick(table: CanvasTable) {
     if (live) return;
@@ -2574,27 +4317,125 @@ export function FloorPlanCanvas({
     }
   }
 
-  async function adjustCapacity(delta: number) {
-    if (selectedTables.length === 0) return;
+  function saveTableName(table: CanvasTable, rawName: string) {
+    const name = rawName.trim();
+    if (!name || name === table.name) return;
+    void patchTable(table.id, { name });
+  }
+
+  function changeTableCapacity(table: CanvasTable, delta: number) {
+    const capacity = Math.max(1, table.capacity + delta);
+    if (capacity === table.capacity) return;
+    void patchTable(table.id, { capacity });
+  }
+
+  async function patchZone(zoneId: string, updates: Partial<FloorPlanZone>) {
+    if (!orgId) return;
     setPlanSaved(false);
     try {
       setError('');
-      const results = await Promise.all(
-        selectedTables.map((table) =>
-          patch<FloorPlanTable>(`restaurants/${orgId}/floor-plan/tables/${table.id}`, {
-            capacity: Math.max(1, table.capacity + delta),
-            ...(floorPlanId ? { floorPlanId } : {}),
-          }),
-        ),
+      const updated = await patch<FloorPlanZone>(
+        `restaurants/${orgId}/floor-plan/zones/${zoneId}`,
+        { ...updates, ...(floorPlanId ? { floorPlanId } : {}) },
       );
-      setFloorPlan((prev) => {
-        if (!prev) return prev;
-        let next = prev;
-        for (const updated of results) next = replaceTable(next, updated);
-        return next;
-      });
+      setFloorPlan((prev) => (prev ? replaceZone(prev, updated) : prev));
     } catch (err) {
-      setError(getErrorMessage(err, 'Impossible de modifier la capacité'));
+      setError(getErrorMessage(err, 'Impossible de modifier la zone'));
+    }
+  }
+
+  async function deleteZone(zoneId: string) {
+    if (!orgId) return;
+    setPlanSaved(false);
+    try {
+      setError('');
+      await del(
+        `restaurants/${orgId}/floor-plan/zones/${zoneId}${floorPlanId ? `?floorPlanId=${floorPlanId}` : ''}`,
+      );
+      setFloorPlan((prev) => (prev ? removeZone(prev, zoneId) : prev));
+      setSelectedZoneId(null);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de supprimer la zone'));
+    }
+  }
+
+  async function createTableCombination() {
+    if (!orgId || selectedTableIds.size < 2) return;
+    const tableIds = [...selectedTableIds];
+    try {
+      setError('');
+      setPlanSaved(false);
+      const created = await post<{
+        id: string;
+        floorPlanId: string;
+        name: string | null;
+        tableIds: string[];
+      }>(`restaurants/${orgId}/floor-plan/table-combinations`, {
+        tableIds,
+        ...(floorPlanId ? { floorPlanId } : {}),
+      });
+      const combination: FloorPlanTableCombination = {
+        id: created.id,
+        floorPlanId: created.floorPlanId,
+        name: created.name,
+        members: created.tableIds.map((tableId) => ({ tableId })),
+      };
+      setFloorPlan((prev) =>
+        prev
+          ? {
+              ...prev,
+              tableCombinations: [
+                ...(prev.tableCombinations ?? []).filter((item) => item.id !== combination.id),
+                combination,
+              ],
+            }
+          : prev,
+      );
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de créer la combinaison'));
+    }
+  }
+
+  async function deleteTableCombination(combination: FloorPlanTableCombination) {
+    if (!orgId) return;
+    try {
+      setError('');
+      setPlanSaved(false);
+      await del(
+        `restaurants/${orgId}/floor-plan/table-combinations/${combination.id}${floorPlanId ? `?floorPlanId=${floorPlanId}` : ''}`,
+      );
+      setFloorPlan((prev) =>
+        prev
+          ? {
+              ...prev,
+              tableCombinations: (prev.tableCombinations ?? []).filter(
+                (item) => item.id !== combination.id,
+              ),
+            }
+          : prev,
+      );
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de retirer la combinaison'));
+    }
+  }
+
+  async function unplaceTable(table: CanvasTable) {
+    if (!orgId) return;
+    setPlanSaved(false);
+    setSelectedTableIds(new Set());
+    try {
+      setError('');
+      const updated = await patch<FloorPlanTable>(
+        `restaurants/${orgId}/floor-plan/tables/${table.id}`,
+        {
+          positionX: null,
+          positionY: null,
+          ...(floorPlanId ? { floorPlanId } : {}),
+        },
+      );
+      setFloorPlan((prev) => (prev ? replaceTable(prev, updated) : prev));
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de retirer la table du plan'));
     }
   }
 
@@ -2622,6 +4463,28 @@ export function FloorPlanCanvas({
       ...(floorPlanId ? { floorPlanId } : {}),
     });
     return created;
+  }
+
+  async function duplicateSingleTable(table: FloorPlanTable) {
+    if (!orgId || !floorPlan) return;
+    try {
+      setPlanSaved(false);
+      const position = findDuplicatePosition(table, allTables, canvasWidth, canvasHeight);
+      if (!position) {
+        setError('Aucun emplacement libre pour dupliquer cette table dans le plan.');
+        return;
+      }
+      const created = await duplicateTable(table, position.x, position.y);
+      if (created) {
+        setFloorPlan((prev) =>
+          prev ? { ...prev, tables: [...(prev.tables ?? []), created] } : prev,
+        );
+        setSelectedTableIds(new Set([created.id]));
+        setLastSelectedTableId(created.id);
+      }
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossible de dupliquer la table'));
+    }
   }
 
   function nextTableName(offset = 1): string {
@@ -2996,7 +4859,7 @@ export function FloorPlanCanvas({
 
   async function handleSubmitTable(e: React.FormEvent) {
     e.preventDefault();
-    if (!orgId || !form.name.trim()) return;
+    if (!orgId || !form.name.trim() || !editingTable) return;
 
     const capacity = Number(form.capacity);
     const minCapacity = Number(form.minCapacity);
@@ -3013,38 +4876,19 @@ export function FloorPlanCanvas({
     setPlanSaved(false);
 
     try {
-      if (editingTable) {
-        const updated = await patch<FloorPlanTable>(
-          `restaurants/${orgId}/floor-plan/tables/${editingTable.id}`,
-          {
-            sectionId: form.sectionId || null,
-            name: form.name.trim(),
-            capacity,
-            minCapacity,
-            shape: form.shape,
-            isActive: form.isActive,
-            ...(floorPlanId ? { floorPlanId } : {}),
-          },
-        );
-        setFloorPlan((prev) => (prev ? replaceTable(prev, updated) : prev));
-      } else {
-        const { width, height } = getTableSize({
-          capacity,
-          shape: form.shape,
-        } as FloorPlanTable);
-        const { x, y } = findNextPosition(width, height, allTables, canvasWidth, canvasHeight);
-        const created = await post<FloorPlanTable>(`restaurants/${orgId}/floor-plan/tables`, {
+      const updated = await patch<FloorPlanTable>(
+        `restaurants/${orgId}/floor-plan/tables/${editingTable.id}`,
+        {
           sectionId: form.sectionId || null,
           name: form.name.trim(),
           capacity,
           minCapacity,
           shape: form.shape,
-          positionX: x,
-          positionY: y,
+          isActive: form.isActive,
           ...(floorPlanId ? { floorPlanId } : {}),
-        });
-        setFloorPlan((prev) => (prev ? replaceTable(prev, created) : prev));
-      }
+        },
+      );
+      setFloorPlan((prev) => (prev ? replaceTable(prev, updated) : prev));
       setDialogOpen(false);
       setEditingTable(null);
     } catch (err) {
@@ -3147,10 +4991,12 @@ export function FloorPlanCanvas({
    * point de vue de la pile, tout en conservant les mutations API existantes.
    */
   function applyGeometrySnapshot(snapshot: GeometrySnapshot) {
-    if (snapshot.tables.length === 0 && snapshot.walls.length === 0) return;
+    if (snapshot.tables.length === 0 && snapshot.walls.length === 0 && !snapshot.zones?.length)
+      return;
 
     const tableUpdates = new Map(snapshot.tables.map((table) => [table.id, table]));
     const wallUpdates = new Map(snapshot.walls.map((wall) => [wall.id, wall]));
+    const zoneUpdates = new Map((snapshot.zones ?? []).map((zone) => [zone.id, zone]));
     const currentTableIds = new Set(
       [
         ...(floorPlan?.sections.flatMap((section) => section.tables) ?? []),
@@ -3158,6 +5004,7 @@ export function FloorPlanCanvas({
       ].map((table) => table.id),
     );
     const currentWalls = new Map((floorPlan?.walls ?? []).map((wall) => [wall.id, wall]));
+    const currentZones = new Map((floorPlan?.zones ?? []).map((zone) => [zone.id, zone]));
 
     setFloorPlan((prev) => {
       if (!prev) return prev;
@@ -3176,6 +5023,10 @@ export function FloorPlanCanvas({
           const geometry = wallUpdates.get(wall.id);
           return geometry ? { ...wall, ...geometry } : wall;
         }),
+        zones: (prev.zones ?? []).map((zone) => {
+          const geometry = zoneUpdates.get(zone.id);
+          return geometry ? { ...zone, ...geometry } : zone;
+        }),
       };
     });
 
@@ -3185,6 +5036,10 @@ export function FloorPlanCanvas({
     for (const geometry of snapshot.walls) {
       if (!currentWalls.has(geometry.id)) continue;
       void updateWallGeometry(geometry);
+    }
+    for (const geometry of snapshot.zones ?? []) {
+      if (!currentZones.has(geometry.id)) continue;
+      void patchZone(geometry.id, geometry);
     }
   }
 
@@ -3287,18 +5142,28 @@ export function FloorPlanCanvas({
   async function handleSaveFloorSettings(e: React.FormEvent) {
     e.preventDefault();
     if (!orgId) return;
+    const widthMeters = parseRoomMeters(floorSettings.widthMeters);
+    const lengthMeters = parseRoomMeters(floorSettings.lengthMeters);
+    if (widthMeters === null || lengthMeters === null) {
+      setSettingsError(
+        `Utilisez des dimensions comprises entre ${MIN_ROOM_DIMENSION_METERS} et ${MAX_ROOM_DIMENSION_METERS} m, avec au maximum deux décimales.`,
+      );
+      return;
+    }
     setError('');
+    setSettingsError('');
     setPlanSaved(false);
     try {
       const path = floorPlanId
         ? `restaurants/${orgId}/floor-plans/${floorPlanId}`
         : `restaurants/${orgId}/floor-plan`;
       const updated = await patch<FloorPlan>(path, {
-        name: floorSettings.name,
-        width: floorSettings.width,
-        height: floorSettings.height,
+        name: floorSettings.name.trim() || 'Salle principale',
+        width: Math.round(widthMeters * CANVAS_PIXELS_PER_METER),
+        height: Math.round(lengthMeters * CANVAS_PIXELS_PER_METER),
       });
       setFloorPlan(updated);
+      setPlanSaved(true);
       setSettingsDialogOpen(false);
     } catch (err) {
       setError(getErrorMessage(err, 'Impossible de modifier les paramètres du plan'));
@@ -3703,13 +5568,13 @@ export function FloorPlanCanvas({
         return;
       }
 
-      if (event.key.toLowerCase() === 'g') {
+      if (event.key.toLowerCase() === 'g' && !live) {
         event.preventDefault();
         setGridVisible((visible) => !visible);
       } else if (event.key.toLowerCase() === 's' && !live) {
         event.preventDefault();
         setSnap((enabled) => !enabled);
-      } else if (event.key.toLowerCase() === 'f') {
+      } else if (event.key.toLowerCase() === 'f' && !live) {
         event.preventDefault();
         centerCanvas();
       } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') {
@@ -3729,6 +5594,9 @@ export function FloorPlanCanvas({
         if (selectedTables.length > 0) {
           event.preventDefault();
           setMultiDeleteConfirmOpen(true);
+        } else if (selectedZone) {
+          event.preventDefault();
+          void deleteZone(selectedZone.id);
         } else if (selectedWall) {
           event.preventDefault();
           void deleteWall(selectedWall.id);
@@ -3772,9 +5640,44 @@ export function FloorPlanCanvas({
     return () => window.removeEventListener('keydown', handleShortcut);
   });
 
+  function resolveTableDragPosition(
+    start: DragStartInfo,
+    delta: { x: number; y: number },
+  ): { positionX: number; positionY: number; guides: TableAlignmentGuides } {
+    const rawX = start.originalX + delta.x / zoom;
+    const rawY = start.originalY + delta.y / zoom;
+    const boundedX = Math.max(0, Math.min(canvasWidth - start.width, rawX));
+    const boundedY = Math.max(0, Math.min(canvasHeight - start.height, rawY));
+    const guides = snap
+      ? getTableAlignmentGuides({
+          x: boundedX,
+          y: boundedY,
+          width: start.width,
+          height: start.height,
+          tables: allTables,
+          excludedTableId: start.tableId,
+        })
+      : emptyTableAlignmentGuides();
+    const grid = snap ? GRID_SIZE : 1;
+    const snappedX = guides.x?.position ?? Math.round(boundedX / grid) * grid;
+    const snappedY = guides.y?.position ?? Math.round(boundedY / grid) * grid;
+    const positionX = Math.max(0, Math.min(canvasWidth - start.width, snappedX));
+    const positionY = Math.max(0, Math.min(canvasHeight - start.height, snappedY));
+
+    return {
+      positionX,
+      positionY,
+      guides: {
+        x: guides.x && positionX === guides.x.position ? guides.x : null,
+        y: guides.y && positionY === guides.y.position ? guides.y : null,
+      },
+    };
+  }
+
   function handleDragStart(event: DragStartEvent) {
     setPlanSaved(false);
     justDraggedRef.current = true;
+    setTableAlignGuides(emptyTableAlignmentGuides());
     const pointer = event.activatorEvent as PointerEvent | undefined;
     if (pointer) {
       pointerStartRef.current = { x: pointer.clientX, y: pointer.clientY };
@@ -3814,6 +5717,7 @@ export function FloorPlanCanvas({
     setActiveDragData(null);
     setDragStart(null);
     setWallAlignGuide(null);
+    setTableAlignGuides(emptyTableAlignmentGuides());
     pointerStartRef.current = null;
     setTimeout(() => {
       justDraggedRef.current = false;
@@ -3827,6 +5731,7 @@ export function FloorPlanCanvas({
     setActiveDragData(null);
     setDragStart(null);
     setWallAlignGuide(null);
+    setTableAlignGuides(emptyTableAlignmentGuides());
     pointerStartRef.current = null;
     setTimeout(() => {
       justDraggedRef.current = false;
@@ -3849,17 +5754,10 @@ export function FloorPlanCanvas({
 
     if (data?.kind === 'existingTable') {
       if (!start) return;
-
-      const { delta } = event;
-      const newX = start.originalX + delta.x / zoom;
-      const newY = start.originalY + delta.y / zoom;
-
-      const grid = snap ? GRID_SIZE : 1;
-      const snappedX = Math.round(newX / grid) * grid;
-      const snappedY = Math.round(newY / grid) * grid;
-
-      const clampedX = Math.max(0, Math.min(canvasWidth - start.width, snappedX));
-      const clampedY = Math.max(0, Math.min(canvasHeight - start.height, snappedY));
+      const { positionX: clampedX, positionY: clampedY } = resolveTableDragPosition(
+        start,
+        event.delta,
+      );
 
       if (clampedX !== start.originalX || clampedY !== start.originalY) {
         recordGeometry({
@@ -3923,6 +5821,102 @@ export function FloorPlanCanvas({
         setFloorPlan((prev) =>
           prev ? replaceTablePosition(prev, start.tableId, start.originalX, start.originalY) : prev,
         );
+      }
+      return;
+    }
+
+    if (data?.kind === 'placeTable' && pointerStart && canvasRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const { width, height } = getTableSize(data.table);
+      const grid = snap ? GRID_SIZE : 1;
+      const cursorX = (pointerStart.x + event.delta.x - rect.left) / zoom;
+      const cursorY = (pointerStart.y + event.delta.y - rect.top) / zoom;
+      const positionX = Math.max(
+        0,
+        Math.min(canvasWidth - width, Math.round((cursorX - width / 2) / grid) * grid),
+      );
+      const positionY = Math.max(
+        0,
+        Math.min(canvasHeight - height, Math.round((cursorY - height / 2) / grid) * grid),
+      );
+      const before = snapshotTableGeometry(data.table);
+      const after = snapshotTableGeometry({ ...data.table, positionX, positionY });
+      recordGeometry({
+        before: { tables: [before], walls: [] },
+        after: { tables: [after], walls: [] },
+      });
+      setPlanSaved(false);
+      setSelectedTableIds(new Set([data.table.id]));
+      setLastSelectedTableId(data.table.id);
+      setSelectedWallId(null);
+      setFloorPlan((prev) =>
+        prev ? replaceTablePosition(prev, data.table.id, positionX, positionY) : prev,
+      );
+      try {
+        setError('');
+        const updated = await patch<FloorPlanTable>(
+          `restaurants/${orgId}/floor-plan/tables/${data.table.id}`,
+          {
+            positionX,
+            positionY,
+            ...(floorPlanId ? { floorPlanId } : {}),
+          },
+        );
+        setFloorPlan((prev) =>
+          prev
+            ? replaceTablePosition(
+                prev,
+                data.table.id,
+                updated.positionX ?? positionX,
+                updated.positionY ?? positionY,
+              )
+            : prev,
+        );
+      } catch (err) {
+        setError(getErrorMessage(err, 'Impossible de placer la table'));
+        setFloorPlan((prev) =>
+          prev
+            ? replaceTablePosition(prev, data.table.id, data.table.positionX, data.table.positionY)
+            : prev,
+        );
+      }
+      return;
+    }
+
+    if (data?.kind === 'zone' && pointerStart && canvasRef.current) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const width = Math.min(360, canvasWidth - 64);
+      const height = Math.min(220, canvasHeight - 64);
+      const grid = snap ? GRID_SIZE : 1;
+      const cursorX = (pointerStart.x + event.delta.x - rect.left) / zoom;
+      const cursorY = (pointerStart.y + event.delta.y - rect.top) / zoom;
+      const x = Math.max(
+        0,
+        Math.min(canvasWidth - width, Math.round((cursorX - width / 2) / grid) * grid),
+      );
+      const y = Math.max(
+        0,
+        Math.min(canvasHeight - height, Math.round((cursorY - height / 2) / grid) * grid),
+      );
+      try {
+        setError('');
+        const zone = await post<FloorPlanZone>(`restaurants/${orgId}/floor-plan/zones`, {
+          name: getNextZoneName(zones),
+          sectionId: null,
+          x,
+          y,
+          width,
+          height,
+          rotation: 0,
+          ...(floorPlanId ? { floorPlanId } : {}),
+        });
+        setFloorPlan((prev) => (prev ? { ...prev, zones: [...(prev.zones ?? []), zone] } : prev));
+        setSelectedTableIds(new Set());
+        setLastSelectedTableId(null);
+        setSelectedWallId(null);
+        setSelectedZoneId(zone.id);
+      } catch (err) {
+        setError(getErrorMessage(err, 'Impossible de créer la zone'));
       }
       return;
     }
@@ -4050,6 +6044,24 @@ export function FloorPlanCanvas({
   function handleDragMove(event: DragMoveEvent) {
     const data = activeDragData;
     const pointerStart = pointerStartRef.current;
+
+    if (data?.kind === 'existingTable' && dragStart) {
+      const nextGuides = resolveTableDragPosition(dragStart, event.delta).guides;
+      setTableAlignGuides((current) => {
+        const sameGuide = (a: TableAlignmentGuide | null, b: TableAlignmentGuide | null) =>
+          a?.value === b?.value && a?.position === b?.position;
+        return sameGuide(current.x, nextGuides.x) && sameGuide(current.y, nextGuides.y)
+          ? current
+          : nextGuides;
+      });
+      if (wallAlignGuide) setWallAlignGuide(null);
+      return;
+    }
+
+    setTableAlignGuides((current) =>
+      current.x || current.y ? emptyTableAlignmentGuides() : current,
+    );
+
     if (data?.kind !== 'wall' || !pointerStart || !canvasRef.current) {
       if (wallAlignGuide) setWallAlignGuide(null);
       return;
@@ -4102,12 +6114,8 @@ export function FloorPlanCanvas({
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{editingTable ? 'Modifier la table' : 'Ajouter une table'}</DialogTitle>
-          <DialogDescription>
-            {editingTable
-              ? 'Modifiez les informations de la table.'
-              : 'Créez une nouvelle table sur le plan 2D.'}
-          </DialogDescription>
+          <DialogTitle>Modifier la table</DialogTitle>
+          <DialogDescription>Modifiez les informations de la table.</DialogDescription>
         </DialogHeader>
 
         <form id="table-form" onSubmit={handleSubmitTable} className="space-y-4">
@@ -4224,7 +6232,7 @@ export function FloorPlanCanvas({
             Annuler
           </Button>
           <Button type="submit" form="table-form">
-            {editingTable ? 'Enregistrer' : 'Ajouter'}
+            Enregistrer
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -4307,53 +6315,77 @@ export function FloorPlanCanvas({
 
   const settingsDialog = (
     <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="bg-card/95 sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Ajouter une salle</DialogTitle>
-          <DialogDescription>
-            Définissez le nom et les dimensions de la salle affichée sur le plan.
-          </DialogDescription>
+          <DialogTitle>Paramètres de la salle</DialogTitle>
+          <DialogDescription>Modifiez le nom et les dimensions du plan.</DialogDescription>
         </DialogHeader>
 
-        <form id="floor-settings-form" onSubmit={handleSaveFloorSettings} className="space-y-4">
-          <div className="space-y-2">
+        <form id="floor-settings-form" onSubmit={handleSaveFloorSettings} className="space-y-3.5">
+          <div className="space-y-1.5">
             <Label htmlFor="floor-name">Nom</Label>
             <Input
               id="floor-name"
               value={floorSettings.name}
-              onChange={(e) => setFloorSettings((s) => ({ ...s, name: e.target.value }))}
-              className="bg-card border-border"
+              onChange={(e) => {
+                setSettingsError('');
+                setFloorSettings((s) => ({ ...s, name: e.target.value }));
+              }}
+              placeholder="Salle principale"
+              className="bg-background"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="floor-width">Largeur (px)</Label>
-              <Input
-                id="floor-width"
-                type="number"
-                min={400}
-                value={floorSettings.width}
-                onChange={(e) =>
-                  setFloorSettings((s) => ({ ...s, width: Number(e.target.value) || 0 }))
-                }
-                className="bg-card border-border"
-              />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="floor-width">Largeur</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="floor-width"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={floorSettings.widthMeters}
+                  onChange={(e) => {
+                    setSettingsError('');
+                    setFloorSettings((s) => ({ ...s, widthMeters: e.target.value }));
+                  }}
+                  aria-invalid={Boolean(settingsError)}
+                  aria-describedby="floor-settings-help"
+                  className="bg-background tabular-nums"
+                />
+                <span className="text-sm text-muted-foreground">m</span>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="floor-height">Hauteur (px)</Label>
-              <Input
-                id="floor-height"
-                type="number"
-                min={400}
-                value={floorSettings.height}
-                onChange={(e) =>
-                  setFloorSettings((s) => ({ ...s, height: Number(e.target.value) || 0 }))
-                }
-                className="bg-card border-border"
-              />
+            <div className="space-y-1.5">
+              <Label htmlFor="floor-length">Longueur</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="floor-length"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={floorSettings.lengthMeters}
+                  onChange={(e) => {
+                    setSettingsError('');
+                    setFloorSettings((s) => ({ ...s, lengthMeters: e.target.value }));
+                  }}
+                  aria-invalid={Boolean(settingsError)}
+                  aria-describedby="floor-settings-help"
+                  className="bg-background tabular-nums"
+                />
+                <span className="text-sm text-muted-foreground">m</span>
+              </div>
             </div>
           </div>
+          <p
+            id="floor-settings-help"
+            className={cn('text-xs text-muted-foreground', settingsError && 'text-destructive')}
+            role={settingsError ? 'alert' : undefined}
+          >
+            {settingsError ||
+              `De ${MIN_ROOM_DIMENSION_METERS} à ${MAX_ROOM_DIMENSION_METERS} m · 12,5 et 12.5 sont acceptés.`}
+          </p>
         </form>
 
         <DialogFooter className="gap-2 sm:gap-2">
@@ -4361,7 +6393,86 @@ export function FloorPlanCanvas({
             Annuler
           </Button>
           <Button type="submit" form="floor-settings-form">
-            Enregistrer la salle
+            Appliquer
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  const bulkCreateDialog = (
+    <Dialog open={bulkCreateDialogOpen} onOpenChange={setBulkCreateDialogOpen}>
+      <DialogContent className="bg-card/95 sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Créer mes tables</DialogTitle>
+          <DialogDescription>
+            Créez rapidement un lot de tables. Elles apparaîtront ensuite dans « À placer ».
+          </DialogDescription>
+        </DialogHeader>
+
+        <form id="bulk-create-tables-form" onSubmit={createTablesBatch} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="bulk-table-count">Nombre de tables</Label>
+              <Input
+                id="bulk-table-count"
+                type="number"
+                min={1}
+                max={50}
+                value={bulkCreateForm.count}
+                onChange={(event) =>
+                  setBulkCreateForm((form) => ({ ...form, count: event.target.value }))
+                }
+                className="bg-background tabular-nums"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="bulk-table-capacity">Places par table</Label>
+              <Input
+                id="bulk-table-capacity"
+                type="number"
+                min={1}
+                max={30}
+                value={bulkCreateForm.capacity}
+                onChange={(event) =>
+                  setBulkCreateForm((form) => ({ ...form, capacity: event.target.value }))
+                }
+                className="bg-background tabular-nums"
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="bulk-table-section">Section (optionnel)</Label>
+            <Select
+              value={bulkCreateForm.sectionId || '_none_'}
+              onValueChange={(value) =>
+                setBulkCreateForm((form) => ({
+                  ...form,
+                  sectionId: value === '_none_' ? '' : value,
+                }))
+              }
+            >
+              <SelectTrigger id="bulk-table-section" className="bg-background">
+                <SelectValue placeholder="Aucune section" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none_">Aucune section</SelectItem>
+                {(floorPlan?.sections ?? []).map((section) => (
+                  <SelectItem key={section.id} value={section.id}>
+                    {section.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </form>
+
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button type="button" variant="outline" onClick={() => setBulkCreateDialogOpen(false)}>
+            Annuler
+          </Button>
+          <Button type="submit" form="bulk-create-tables-form" disabled={bulkCreateLoading}>
+            {bulkCreateLoading ? 'Création…' : 'Créer les tables'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -4496,14 +6607,453 @@ export function FloorPlanCanvas({
     </Dialog>
   );
 
+  // Le plein écran est piloté par la carte : on reflète l'état réel du navigateur
+  // pour proposer une sortie explicite au lieu du seul raccourci Échap.
+  useEffect(() => {
+    function handleFullscreenChange() {
+      setIsFullscreen(document.fullscreenElement === cardRef.current);
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
   const selectedServiceStatus = selectedServiceTable
     ? tableStatuses.get(selectedServiceTable.id)
     : undefined;
   const selectedServiceReservation = selectedServiceStatus?.reservation ?? null;
 
+  useEffect(() => {
+    setMobileServiceDetailsOpen(false);
+  }, [selectedServiceTableId]);
+
+  const selectedServiceStatusDotClass =
+    selectedServiceStatus?.status === 'occupied'
+      ? 'bg-floor-table-accent'
+      : selectedServiceStatus?.status === 'late'
+        ? 'bg-destructive'
+        : selectedServiceStatus?.status === 'upcoming'
+          ? 'bg-warning'
+          : selectedServiceStatus?.status === 'reserved'
+            ? 'bg-brand'
+            : 'bg-floor-table-muted/80';
+
+  const mobileServiceInspector =
+    live && serviceTab === 'plan' && selectedServiceTable ? (
+      <aside
+        role="dialog"
+        aria-label={`Actions pour ${selectedServiceTable.displayName ?? selectedServiceTable.name}`}
+        className="floor-plan-mobile-service-sheet pointer-events-auto max-h-[18rem] overflow-y-auto rounded-2xl border border-border bg-card/95 p-3 shadow-2xl backdrop-blur-md lg:hidden"
+      >
+        <div
+          className="mx-auto mb-2 h-1 w-10 rounded-full bg-muted-foreground/25"
+          aria-hidden="true"
+        />
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-foreground">
+              {selectedServiceTable.displayName ?? selectedServiceTable.name}
+              <span className="font-normal text-muted-foreground">
+                {' · '}
+                {selectedServiceTable.capacity} places
+              </span>
+            </p>
+            <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <span
+                aria-hidden="true"
+                className={cn('size-1.5 shrink-0 rounded-full', selectedServiceStatusDotClass)}
+              />
+              {selectedServiceStatus
+                ? statusMeta[selectedServiceStatus.status].label
+                : 'Disponible'}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="size-8 shrink-0 rounded-full p-0 text-muted-foreground transition-all duration-200 hover:text-foreground"
+            aria-label="Fermer les actions de la table"
+            onClick={() => setSelectedServiceTableId(null)}
+          >
+            <X size={16} />
+          </Button>
+        </div>
+
+        {selectedServiceReservation ? (
+          <div className="mt-2 space-y-1">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                <UserRound size={13} aria-hidden="true" />
+                <span className="truncate">
+                  {selectedServiceReservation.customerName || 'Sans nom'} ·{' '}
+                  {selectedServiceReservation.partySize} pers.
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Clock3 size={13} aria-hidden="true" />
+                {format(parseISO(selectedServiceReservation.startsAt), 'HH:mm')}
+              </span>
+            </div>
+            {selectedServiceReservation.state === 'SEATED' &&
+              selectedServiceReservation.seatedAt && (
+                <p className="flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                  <Clock3 size={11} aria-hidden="true" />
+                  <span>
+                    À table depuis{' '}
+                    {formatDistanceToNow(parseISO(selectedServiceReservation.seatedAt), {
+                      locale: fr,
+                      addSuffix: true,
+                    })}
+                  </span>
+                </p>
+              )}
+          </div>
+        ) : null}
+
+        <div className="mt-3 flex gap-2">
+          {selectedServiceReservation ? (
+            <Button
+              type="button"
+              size="sm"
+              className="h-10 min-w-0 flex-1 transition-all duration-200"
+              disabled={updatingReservationStateId === selectedServiceReservation.id}
+              onClick={() =>
+                void updateReservationState(
+                  selectedServiceReservation.id,
+                  selectedServiceReservation.state === 'SEATED' ? 'HONORED' : 'SEATED',
+                )
+              }
+            >
+              {selectedServiceReservation.state === 'SEATED' ? 'Terminer le service' : 'Installer'}
+            </Button>
+          ) : (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                className="h-10 min-w-0 flex-1 font-medium transition-all duration-200"
+                onClick={() =>
+                  void createWalkIn(selectedServiceTable.id, selectedServiceTable.capacity)
+                }
+              >
+                ⚡ Installer ({selectedServiceTable.capacity} pers.)
+              </Button>
+              {selectedServiceTable.capacity > 2 ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-10 shrink-0 px-3 text-xs transition-all duration-200"
+                  onClick={() => void createWalkIn(selectedServiceTable.id, 2)}
+                  title="Installer 2 personnes"
+                >
+                  2 pers.
+                </Button>
+              ) : null}
+            </>
+          )}
+          {selectedServiceReservation ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-10 min-w-0 flex-1 transition-all duration-200"
+              disabled={!selectedServiceReservation}
+              aria-expanded={Boolean(selectedServiceReservation && mobileServiceDetailsOpen)}
+              onClick={() => setMobileServiceDetailsOpen((open) => !open)}
+            >
+              Voir la réservation
+            </Button>
+          ) : null}
+        </div>
+
+        {selectedServiceReservation && mobileServiceDetailsOpen ? (
+          <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-border bg-background/70 p-3 text-xs">
+            <div>
+              <p className="text-muted-foreground">Arrivée</p>
+              <p className="mt-0.5 font-medium text-foreground">
+                {format(parseISO(selectedServiceReservation.startsAt), 'HH:mm')}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Suivi</p>
+              <p className="mt-0.5 font-medium text-foreground">
+                {formatServiceTiming(
+                  selectedServiceReservation,
+                  selectedServiceStatus?.status ?? 'upcoming',
+                  new Date(),
+                )}
+              </p>
+            </div>
+          </div>
+        ) : null}
+      </aside>
+    ) : null;
+
+  const mobileEditInspector =
+    !live && selectedTables.length > 0 && selectedTables.some((t) => t.positionX !== null) ? (
+      <aside
+        aria-label={
+          selectedTable
+            ? `Actions pour ${selectedTable.displayName ?? selectedTable.name}`
+            : `${selectedTables.length} tables sélectionnées`
+        }
+        className="floor-plan-mobile-service-sheet pointer-events-auto max-h-[26rem] overflow-y-auto rounded-2xl border border-border bg-card/95 p-3 shadow-2xl backdrop-blur-md lg:hidden"
+      >
+        <div
+          className="mx-auto mb-2 h-1 w-10 rounded-full bg-muted-foreground/25"
+          aria-hidden="true"
+        />
+        {selectedTable ? (
+          <div className="space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-foreground">
+                  {selectedTable.displayName ?? selectedTable.name}
+                  <span className="font-normal text-muted-foreground">
+                    {' · '}
+                    {selectedTable.capacity} places
+                    {selectedTable.sectionName ? ` · ${selectedTable.sectionName}` : ''}
+                  </span>
+                </p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {selectedTable.shape === 'round' ? 'Table ronde' : 'Table rectangulaire'}
+                  {selectedTable.rotation ? ` · ${selectedTable.rotation}°` : ''}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="size-8 shrink-0 rounded-full p-0 text-muted-foreground transition-all duration-200 hover:text-foreground"
+                aria-label="Fermer"
+                onClick={() => setSelectedTableIds(new Set())}
+              >
+                <X size={16} />
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
+              <div className="min-w-0 space-y-1">
+                <Label
+                  className="text-[10px] text-muted-foreground"
+                  htmlFor="mobile-selected-table-name"
+                >
+                  Nom de la table
+                </Label>
+                <Input
+                  key={`mobile-name-${selectedTable.id}-${selectedTable.name}`}
+                  id="mobile-selected-table-name"
+                  defaultValue={selectedTable.name}
+                  className="h-9 bg-background text-sm"
+                  onBlur={(event) => saveTableName(selectedTable, event.currentTarget.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <p className="text-[10px] text-muted-foreground">Couverts</p>
+                <div className="flex h-9 items-center rounded-md border border-input bg-background">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="size-8 rounded-r-none p-0"
+                    aria-label="Diminuer la capacité"
+                    disabled={selectedTable.capacity <= 1}
+                    onClick={() => changeTableCapacity(selectedTable, -1)}
+                  >
+                    <Minus size={14} />
+                  </Button>
+                  <span
+                    aria-live="polite"
+                    className="min-w-7 px-1 text-center text-xs font-semibold tabular-nums"
+                  >
+                    {selectedTable.capacity}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="size-8 rounded-l-none p-0"
+                    aria-label="Augmenter la capacité"
+                    onClick={() => changeTableCapacity(selectedTable, 1)}
+                  >
+                    <Plus size={14} />
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-9 justify-center gap-1.5 text-xs font-medium transition-all duration-200"
+                onClick={() => void duplicateSingleTable(selectedTable)}
+              >
+                <Copy size={14} />
+                Dupliquer
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 justify-center gap-1.5 text-xs font-medium transition-all duration-200"
+                onClick={() =>
+                  void patchTable(selectedTable.id, {
+                    rotation: ((selectedTable.rotation ?? 0) + 90) % 360,
+                  })
+                }
+              >
+                <RotateCw size={14} />
+                90°
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 justify-center gap-1.5 text-xs font-medium transition-all duration-200"
+                onClick={() =>
+                  void patchTable(selectedTable.id, {
+                    shape: selectedTable.shape === 'round' ? 'rect' : 'round',
+                  })
+                }
+              >
+                {selectedTable.shape === 'round' ? (
+                  <>
+                    <Square size={14} />
+                    Rect.
+                  </>
+                ) : (
+                  <>
+                    <Circle size={14} />
+                    Ronde
+                  </>
+                )}
+              </Button>
+            </div>
+
+            <div className="flex gap-2">
+              <div className="min-w-0 flex-1">
+                <Select
+                  value={selectedTable.sectionId || '_none_'}
+                  onValueChange={(value) =>
+                    void patchTable(selectedTable.id, {
+                      sectionId: value === '_none_' ? null : value,
+                    })
+                  }
+                >
+                  <SelectTrigger className="h-9 bg-background text-xs">
+                    <SelectValue placeholder="Section" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none_">Aucune section</SelectItem>
+                    {(floorPlan?.sections ?? []).map((section) => (
+                      <SelectItem key={section.id} value={section.id}>
+                        {section.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 shrink-0 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive transition-all duration-200"
+                onClick={() => void unplaceTable(selectedTable)}
+              >
+                <Trash2 size={14} className="mr-1" />
+                Retirer
+              </Button>
+            </div>
+          </div>
+        ) : selectedTables.length > 1 ? (
+          <div className="space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-foreground">
+                  {selectedTables.length} tables sélectionnées
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Capacité cumulée : {selectedTables.reduce((acc, t) => acc + t.capacity, 0)} places
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="size-8 shrink-0 rounded-full p-0 text-muted-foreground transition-all duration-200 hover:text-foreground"
+                aria-label="Fermer"
+                onClick={() => setSelectedTableIds(new Set())}
+              >
+                <X size={16} />
+              </Button>
+            </div>
+
+            <div className="flex gap-2">
+              {selectedCombination ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 flex-1 gap-1.5 text-xs font-medium transition-all duration-200"
+                  onClick={() => void deleteTableCombination(selectedCombination)}
+                >
+                  <Link2 size={14} />
+                  Délier combinaison
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-9 flex-1 gap-1.5 text-xs font-medium transition-all duration-200"
+                  onClick={() => void createTableCombination()}
+                >
+                  <Link2 size={14} />
+                  Combiner les tables
+                </Button>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 flex-1 gap-1 text-xs"
+                onClick={() => alignSelectedTables('x', 'center')}
+              >
+                <AlignCenter size={13} />
+                Aligner
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="h-9 shrink-0 gap-1 text-xs"
+                onClick={() => setMultiDeleteConfirmOpen(true)}
+              >
+                <Trash2 size={13} />
+                Supprimer
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </aside>
+    ) : null;
+
   const inspector = live ? (
-    <aside className="flex h-full w-72 min-w-72 flex-col border-l border-border bg-card">
-      <div className="border-b border-border p-4">
+    <aside
+      className={cn(
+        'order-3 h-auto max-h-72 w-full min-w-0 flex-col overflow-hidden border-t border-border bg-card lg:h-full lg:max-h-none lg:w-72 lg:min-w-72 lg:border-l lg:border-t-0',
+        selectedServiceTable ? 'hidden lg:flex' : 'flex',
+      )}
+    >
+      {/* L'en-tête live n'a de sens que dans la sidebar desktop : sur téléphone,
+          l'inspecteur s'empile sous le plan et répétait une troisième fois le
+          statut déjà porté par le cockpit et le badge. */}
+      <div className="hidden border-b border-border p-4 lg:block">
         <div className="flex items-center gap-2">
           <span className="relative flex h-2.5 w-2.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-50" />
@@ -4776,76 +7326,106 @@ export function FloorPlanCanvas({
               <Button
                 size="sm"
                 className="mt-3 w-full"
-                onClick={() => void createWalkIn(selectedServiceTable?.id ?? '')}
+                onClick={() =>
+                  void createWalkIn(
+                    selectedServiceTable?.id ?? '',
+                    selectedServiceTable?.capacity ?? 2,
+                  )
+                }
                 disabled={!selectedServiceTable?.id}
               >
-                Walk-in
+                ⚡ Installer Walk-in ({selectedServiceTable?.capacity ?? 2} pers.)
               </Button>
             </div>
           )}
         </div>
       ) : (
-        <div className="flex-1 space-y-4 p-4">
-          <p className="text-sm font-medium">Vue d’ensemble</p>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="rounded-lg border border-border bg-background p-3">
-              <p className="text-xl font-semibold">
-                {[...tableStatuses.values()].filter((item) => item.status === 'occupied').length}
-              </p>
-              <p className="text-xs text-muted-foreground">Occupées</p>
-            </div>
-            <div className="rounded-lg border border-border bg-background p-3">
-              <p className="text-xl font-semibold">
-                {
-                  [...tableStatuses.values()].filter((item) =>
-                    ['reserved', 'upcoming', 'late'].includes(item.status),
-                  ).length
-                }
-              </p>
-              <p className="text-xs text-muted-foreground">Attendues</p>
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Sélectionnez une table pour afficher la réservation et le temps d’occupation.
+        <div className="flex-1 space-y-3 p-4">
+          {/* Vue d'ensemble condensée : une ligne porte la volumétrie, la légende
+              se déplie à la demande. Sur téléphone, deux grandes cartes et un
+              texte d'invite consommaient la hauteur du plan pour peu
+              d'information — le détail d'une table vit dans la feuille qui
+              s'ouvre au toucher. */}
+          <p
+            role="status"
+            aria-label="Vue d’ensemble de la salle"
+            className="text-xs text-muted-foreground"
+          >
+            <span className="font-semibold tabular-nums text-foreground">
+              {[...tableStatuses.values()].filter((item) => item.status === 'occupied').length}
+            </span>{' '}
+            occupées ·{' '}
+            <span className="font-semibold tabular-nums text-foreground">
+              {
+                [...tableStatuses.values()].filter((item) =>
+                  ['reserved', 'upcoming', 'late'].includes(item.status),
+                ).length
+              }
+            </span>{' '}
+            attendues ·{' '}
+            <span className="font-semibold tabular-nums text-foreground">
+              {
+                allTables.filter(
+                  (table) =>
+                    table.isActive && (tableStatuses.get(table.id)?.status ?? 'free') === 'free',
+                ).length
+              }
+            </span>{' '}
+            disponibles
           </p>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border pt-4">
-            {(['free', 'reserved', 'upcoming', 'late', 'occupied'] as TableStatus[]).map(
-              (status) => {
-                const StatusIcon = statusMeta[status].icon;
-                return (
-                  <div
-                    key={status}
-                    className="flex items-center gap-2 text-xs text-muted-foreground"
-                  >
-                    <span
-                      className={cn(
-                        'flex size-6 shrink-0 items-center justify-center rounded-md border',
-                        statusClasses[status],
-                      )}
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+              Légende des statuts
+              <ChevronDown
+                size={14}
+                aria-hidden="true"
+                className="transition-transform duration-200 group-open:rotate-180"
+              />
+            </summary>
+            <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border pt-3">
+              {(['free', 'reserved', 'upcoming', 'late', 'occupied'] as TableStatus[]).map(
+                (status) => {
+                  const StatusIcon = statusMeta[status].icon;
+                  return (
+                    <div
+                      key={status}
+                      className="flex items-center gap-2 text-xs text-muted-foreground"
                     >
-                      <StatusIcon className="size-3.5" aria-hidden="true" />
-                    </span>
-                    <span>{statusMeta[status].label}</span>
-                  </div>
-                );
-              },
-            )}
-          </div>
+                      <span
+                        className={cn(
+                          'flex size-6 shrink-0 items-center justify-center rounded-md border',
+                          statusClasses[status],
+                        )}
+                      >
+                        <StatusIcon className="size-3.5" aria-hidden="true" />
+                      </span>
+                      <span>{statusMeta[status].label}</span>
+                    </div>
+                  );
+                },
+              )}
+            </div>
+          </details>
         </div>
       )}
     </aside>
-  ) : (
-    <aside className="flex h-full w-72 min-w-72 flex-col border-l border-border bg-card">
-      <div className="border-b border-border p-4">
+  ) : selectedWall || selectedZone || selectedTables.length > 0 ? (
+    <aside
+      className={cn(
+        'order-3 h-auto max-h-72 w-full min-w-0 flex-col overflow-hidden border-t border-border bg-card lg:h-full lg:max-h-none lg:w-72 lg:min-w-72 lg:border-l lg:border-t-0',
+        selectedTables.length > 0 ? 'hidden lg:flex' : 'flex',
+      )}
+    >
+      <div className="border-b border-border px-4 py-3">
         <p className="text-sm font-semibold">Inspecteur</p>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="mt-0.5 text-xs text-muted-foreground">
           {selectedWall
-            ? 'Propriétés du mur sélectionné'
-            : selectedTables.length > 0
-              ? selectedTables.length === 1
-                ? 'Propriétés de la table sélectionnée'
-                : `${selectedTables.length} tables sélectionnées`
-              : 'Sélectionnez un objet du plan'}
+            ? 'Mur sélectionné'
+            : selectedZone
+              ? `Zone ${selectedZone.name}`
+              : selectedTables.length === 1
+                ? `Table ${selectedTables[0]?.name ?? ''}`
+                : `${selectedTables.length} tables sélectionnées`}
         </p>
       </div>
       {selectedWall ? (
@@ -4998,112 +7578,283 @@ export function FloorPlanCanvas({
             </Button>
           </div>
         </div>
+      ) : selectedZone ? (
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          <div className="space-y-2">
+            <Label htmlFor="zone-inspector-name">Nom de la zone</Label>
+            <Input
+              key={`zone-name-${selectedZone.id}-${selectedZone.name}`}
+              id="zone-inspector-name"
+              defaultValue={selectedZone.name}
+              className="bg-background"
+              onBlur={(event) =>
+                void patchZone(selectedZone.id, { name: event.currentTarget.value.trim() }).catch(
+                  () => {},
+                )
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="zone-inspector-section">Section liée</Label>
+            <Select
+              value={selectedZone.sectionId ?? '_none_'}
+              onValueChange={(value) =>
+                void patchZone(selectedZone.id, {
+                  sectionId: value === '_none_' ? null : value,
+                })
+              }
+            >
+              <SelectTrigger id="zone-inspector-section" className="bg-background">
+                <SelectValue placeholder="Aucune section" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none_">Aucune section</SelectItem>
+                {(floorPlan?.sections ?? []).map((section) => (
+                  <SelectItem key={section.id} value={section.id}>
+                    {section.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Une zone matérialise une section de la salle. Déplacez les tables à l&apos;intérieur et
+            utilisez la poignée du coin pour l&apos;adapter au plan.
+          </p>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            className="w-full transition-all duration-200"
+            onClick={() => void deleteZone(selectedZone.id)}
+          >
+            <Trash2 size={14} className="mr-1.5" />
+            Supprimer la zone
+          </Button>
+        </div>
       ) : selectedTables.length > 0 ? (
         <div className="flex-1 space-y-5 overflow-y-auto p-4">
           {selectedTable ? (
             <div className="space-y-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-lg font-semibold">
-                    {selectedTable.displayName ?? selectedTable.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {selectedTable.capacity} places
-                    {selectedTable.sectionName ? ` · ${selectedTable.sectionName}` : ''}
-                  </p>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+                <div className="min-w-0 space-y-2">
+                  <Label htmlFor="selected-table-name">Nom de la table</Label>
+                  <Input
+                    key={`selected-table-name-${selectedTable.id}-${selectedTable.name}`}
+                    id="selected-table-name"
+                    defaultValue={selectedTable.name}
+                    className="bg-background"
+                    onBlur={(event) => saveTableName(selectedTable, event.currentTarget.value)}
+                  />
+                  {selectedTable.sectionName ? (
+                    <p className="text-xs text-muted-foreground">{selectedTable.sectionName}</p>
+                  ) : null}
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="space-y-2">
+                  <Label>Couverts</Label>
+                  <div className="flex h-10 items-center rounded-md border border-input bg-background">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="size-9 rounded-r-none p-0"
+                      aria-label="Diminuer la capacité"
+                      disabled={selectedTable.capacity <= 1}
+                      onClick={() => changeTableCapacity(selectedTable, -1)}
+                    >
+                      <Minus size={15} />
+                    </Button>
+                    <span
+                      aria-live="polite"
+                      className="min-w-8 px-1 text-center text-sm font-semibold tabular-nums"
+                    >
+                      {selectedTable.capacity}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="size-9 rounded-l-none p-0"
+                      aria-label="Augmenter la capacité"
+                      onClick={() => changeTableCapacity(selectedTable, 1)}
+                    >
+                      <Plus size={15} />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-2 border-t border-border pt-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Forme
+                </p>
+                <div className="grid grid-cols-2 gap-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-7 w-7 p-0"
-                    title="Diminuer la capacité"
-                    onClick={() => void adjustCapacity(-1)}
+                    className={cn(
+                      'px-1 transition-all duration-200',
+                      selectedTable.shape !== 'round' && 'bg-secondary font-semibold',
+                    )}
+                    aria-label="Forme rectangle"
+                    aria-pressed={selectedTable.shape !== 'round'}
+                    onClick={() => void patchTable(selectedTable.id, { shape: 'rect' })}
                   >
-                    <Minus size={14} />
+                    <Square size={14} className="mr-1" />
+                    Rectangle
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-7 w-7 p-0"
-                    title="Augmenter la capacité"
-                    onClick={() => void adjustCapacity(1)}
+                    className={cn(
+                      'px-1 transition-all duration-200',
+                      selectedTable.shape === 'round' && 'bg-secondary font-semibold',
+                    )}
+                    aria-label="Forme ronde"
+                    aria-pressed={selectedTable.shape === 'round'}
+                    onClick={() => void patchTable(selectedTable.id, { shape: 'round' })}
                   >
-                    <Plus size={14} />
+                    <Circle size={14} className="mr-1" />
+                    Ronde
                   </Button>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-2 border-t border-border pt-4">
+              <div className="space-y-2">
+                <Label htmlFor="selected-table-section">Section</Label>
+                <Select
+                  value={selectedTable.sectionId || '_none_'}
+                  onValueChange={(value) =>
+                    void patchTable(selectedTable.id, {
+                      sectionId: value === '_none_' ? null : value,
+                    })
+                  }
+                >
+                  <SelectTrigger id="selected-table-section" className="bg-background">
+                    <SelectValue placeholder="Section" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none_">Aucune section</SelectItem>
+                    {(floorPlan?.sections ?? []).map((section) => (
+                      <SelectItem key={section.id} value={section.id}>
+                        {section.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
                 <Button
+                  type="button"
                   variant="outline"
                   size="sm"
-                  className="px-1"
-                  onClick={() => void patchTable(selectedTable.id, { shape: 'rect' })}
+                  className="w-full justify-center transition-all duration-200"
+                  onClick={() => void duplicateSingleTable(selectedTable)}
                 >
-                  <Square size={14} className="mr-1" />
-                  Rect.
+                  <Copy size={14} className="mr-1.5" />
+                  Dupliquer
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-center transition-all duration-200"
+                  title="Pivoter de 90°"
+                  onClick={() =>
+                    void patchTable(selectedTable.id, {
+                      rotation: ((selectedTable.rotation ?? 0) + 90) % 360,
+                    })
+                  }
+                >
+                  <RotateCw size={14} className="mr-1.5" />
+                  Pivoter 90°
+                </Button>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full justify-center transition-all duration-200"
+                onClick={() => void unplaceTable(selectedTable)}
+              >
+                Retirer du plan
+              </Button>
+            </div>
+          ) : null}
+
+          {selectedTables.length > 1 ? (
+            <div className="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3">
+              <div className="flex items-start gap-2">
+                <Link2 size={15} className="mt-0.5 shrink-0 text-primary" />
+                <div>
+                  <p className="text-xs font-semibold">Tables combinables</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    Signalez que cette sélection peut accueillir un même groupe.
+                  </p>
+                </div>
+              </div>
+              {selectedCombination ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full transition-all duration-200"
+                  onClick={() => void deleteTableCombination(selectedCombination)}
+                >
+                  Retirer la combinaison
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="w-full transition-all duration-200"
+                  onClick={() => void createTableCombination()}
+                >
+                  Marquer comme combinables
+                </Button>
+              )}
+            </div>
+          ) : null}
+
+          {selectedTables.length > 1 ? (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Aligner
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <Button variant="outline" size="sm" onClick={() => alignSelectedTables('x', 'min')}>
+                  <AlignLeft size={14} className="mr-1" />
+                  Gauche
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="px-1"
-                  onClick={() => void patchTable(selectedTable.id, { shape: 'round' })}
+                  onClick={() => alignSelectedTables('x', 'center')}
                 >
-                  <Circle size={14} className="mr-1" />
-                  Ronde
+                  <AlignCenter size={14} className="mr-1" />
+                  Centre
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => alignSelectedTables('x', 'max')}>
+                  <AlignRight size={14} className="mr-1" />
+                  Droite
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => alignSelectedTables('y', 'min')}>
+                  <AlignVerticalJustifyStart size={14} className="mr-1" />
+                  Haut
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="px-1"
-                  onClick={() => openEditDialog(selectedTable)}
+                  onClick={() => alignSelectedTables('y', 'center')}
                 >
-                  <Maximize2 size={14} className="mr-1" />
-                  Éditer
+                  <AlignVerticalJustifyCenter size={14} className="mr-1" />
+                  Milieu
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => alignSelectedTables('y', 'max')}>
+                  <AlignVerticalJustifyEnd size={14} className="mr-1" />
+                  Bas
                 </Button>
               </div>
             </div>
           ) : null}
-
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Aligner
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              <Button variant="outline" size="sm" onClick={() => alignSelectedTables('x', 'min')}>
-                <AlignLeft size={14} className="mr-1" />
-                Gauche
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => alignSelectedTables('x', 'center')}
-              >
-                <AlignCenter size={14} className="mr-1" />
-                Centre
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => alignSelectedTables('x', 'max')}>
-                <AlignRight size={14} className="mr-1" />
-                Droite
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => alignSelectedTables('y', 'min')}>
-                <AlignVerticalJustifyStart size={14} className="mr-1" />
-                Haut
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => alignSelectedTables('y', 'center')}
-              >
-                <AlignVerticalJustifyCenter size={14} className="mr-1" />
-                Milieu
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => alignSelectedTables('y', 'max')}>
-                <AlignVerticalJustifyEnd size={14} className="mr-1" />
-                Bas
-              </Button>
-            </div>
-          </div>
 
           {selectedTables.length >= 3 ? (
             <div className="space-y-2">
@@ -5123,35 +7874,37 @@ export function FloorPlanCanvas({
             </div>
           ) : null}
 
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Multiplier
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setDuplicateForm((f) => ({ ...f, mode: 'row' }));
-                  setDuplicateDialogOpen(true);
-                }}
-              >
-                <Copy size={14} className="mr-1" />
-                Rangée
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setDuplicateForm((f) => ({ ...f, mode: 'grid' }));
-                  setDuplicateDialogOpen(true);
-                }}
-              >
-                <Grid3x3 size={14} className="mr-1" />
-                Grille
-              </Button>
+          {selectedTables.length > 1 ? (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Multiplier
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setDuplicateForm((f) => ({ ...f, mode: 'row' }));
+                    setDuplicateDialogOpen(true);
+                  }}
+                >
+                  <Copy size={14} className="mr-1" />
+                  Rangée
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setDuplicateForm((f) => ({ ...f, mode: 'grid' }));
+                    setDuplicateDialogOpen(true);
+                  }}
+                >
+                  <Grid3x3 size={14} className="mr-1" />
+                  Grille
+                </Button>
+              </div>
             </div>
-          </div>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-2 border-t border-border pt-4">
             <Button variant="outline" size="sm" onClick={() => setSelectedTableIds(new Set())}>
@@ -5163,17 +7916,9 @@ export function FloorPlanCanvas({
             </Button>
           </div>
         </div>
-      ) : (
-        <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
-          <Move size={24} className="mb-3 text-muted-foreground" />
-          <p className="text-sm font-medium">Aucun objet sélectionné</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Cliquez sur une table ou un mur pour modifier l’objet.
-          </p>
-        </div>
-      )}
+      ) : null}
     </aside>
-  );
+  ) : null;
 
   if (loading) {
     return (
@@ -5182,7 +7927,16 @@ export function FloorPlanCanvas({
           <CardHeader className="p-4">
             <Skeleton className="h-6 w-32 rounded-md" />
           </CardHeader>
-          <CardContent className="p-0 overflow-hidden h-[600px]">
+          <CardContent
+            className={cn(
+              'overflow-hidden p-0',
+              // Le squelette reprend la hauteur de la vue cible : sinon la page
+              // saute d'un cran quand le plan arrive sur téléphone.
+              live
+                ? 'h-[calc(100dvh-26rem)] min-h-[18rem] md:h-[600px] md:min-h-0'
+                : 'h-[calc(100dvh-13.5rem)] min-h-[20rem] md:h-[600px] md:min-h-0',
+            )}
+          >
             <Skeleton className="h-full w-full" />
           </CardContent>
         </Card>
@@ -5216,204 +7970,478 @@ export function FloorPlanCanvas({
   }
 
   const activeDragTable = activeDragData?.kind === 'existingTable' ? activeDragData.table : null;
+  const livePlanIsEmpty = live && serviceTab === 'plan' && placedTables.length === 0;
+  const liveViewportBounds = live && serviceTab === 'plan' ? contentBounds : null;
+  // En Live, le viewport est lui-même dimensionné sur la zone utile. Le canvas
+  // complet est ensuite translaté sous ce cadre : les coordonnées métier restent
+  // inchangées, mais le défilement ne peut plus atteindre le vide extérieur.
+  const stageWidth = (liveViewportBounds?.width ?? canvasWidth) * zoom;
+  const stageHeight = (liveViewportBounds?.height ?? canvasHeight) * zoom;
+  const canvasTransform = liveViewportBounds
+    ? `translate(${-liveViewportBounds.x * zoom}px, ${-liveViewportBounds.y * zoom}px) scale(${zoom})`
+    : `scale(${zoom})`;
+
+  // --- Cockpit de service : état, volumétrie, navigation ---------------------
+  // Une seule source de vérité par information : le bandeau d'état porte le
+  // statut et les actions à mener, la bande KPI ne porte que la volumétrie.
+  const serviceToday = format(new Date(), 'yyyy-MM-dd');
+  // Dérivé de la date affichée uniquement : `servicePulse.isLiveDate` décrit la
+  // date du dernier pulse chargé et peut donc être périmé pendant le changement
+  // de jour, ce qui ferait diverger le badge du champ date.
+  const serviceIsToday = liveDate === serviceToday;
+  const serviceDateLabel = format(parseISO(liveDate), 'd MMM yyyy', { locale: fr });
+  const serviceActiveTables = allTables.filter((table) => table.isActive);
+  const serviceOccupiedTables = [...tableStatuses.values()].filter(
+    (item) => item.status === 'occupied',
+  ).length;
+  const serviceOccupancyRate =
+    serviceActiveTables.length > 0
+      ? Math.round((serviceOccupiedTables / serviceActiveTables.length) * 100)
+      : 0;
+  const serviceCovers = reservations
+    .filter((reservation) => !['CANCELLED', 'NO_SHOW'].includes(reservation.state))
+    .reduce((total, reservation) => total + (reservation.partySize ?? 0), 0);
+  // Service vide : sans réservation ni action en attente, le cockpit complet
+  // affichait deux bandes de zéros (statut + volumétrie) et un message d'état
+  // vide, soit près de la moitié de l'écran d'un téléphone pour ne rien dire.
+  // Les compteurs restent masqués dans cet état ; la navigation du service
+  // devient le premier repère visuel et le plan démarre immédiatement dessous.
+  const compactServiceCockpit = Boolean(
+    live &&
+    servicePulse &&
+    servicePulse.status === 'calm' &&
+    reservations.length === 0 &&
+    servicePulse.lateArrivals === 0 &&
+    servicePulse.arrivalsToSeat === 0 &&
+    servicePulse.arrivalsNext30Minutes === 0 &&
+    servicePulse.seatedTables === 0 &&
+    servicePulse.pendingWaitingList === 0,
+  );
+  function shiftServiceDate(days: number) {
+    setLiveDate(format(addDays(parseISO(liveDate), days), 'yyyy-MM-dd'));
+  }
+
+  // Navigation clavier du groupe d'onglets (flèches, Début, Fin) : sans elle,
+  // l'onglet inactif devient inatteignable au clavier à cause du tabIndex mobile.
+  function handleServiceTabKeyDown(event: React.KeyboardEvent, index: number) {
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % SERVICE_TABS.length;
+    else if (event.key === 'ArrowLeft')
+      nextIndex = (index - 1 + SERVICE_TABS.length) % SERVICE_TABS.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = SERVICE_TABS.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextTab = SERVICE_TABS[nextIndex];
+    setServiceTab(nextTab.id);
+    document.getElementById(`service-tab-${nextTab.id}`)?.focus();
+  }
+
+  const serviceTablist = (
+    <div
+      role="tablist"
+      aria-label="Vue du service"
+      className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      {SERVICE_TABS.map((tab, index) => (
+        <Button
+          key={tab.id}
+          type="button"
+          role="tab"
+          id={`service-tab-${tab.id}`}
+          aria-selected={serviceTab === tab.id}
+          aria-controls="service-tabpanel"
+          tabIndex={serviceTab === tab.id ? 0 : -1}
+          variant={serviceTab === tab.id ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-9 min-w-0 flex-1 rounded-lg px-2.5 text-xs transition-all duration-200 sm:flex-none sm:px-3 sm:text-sm"
+          onClick={() => setServiceTab(tab.id)}
+          onKeyDown={(event) => handleServiceTabKeyDown(event, index)}
+        >
+          {tab.label}
+        </Button>
+      ))}
+    </div>
+  );
 
   return (
     <>
-      <Card ref={cardRef} className="sokar-card overflow-hidden">
-        <CardHeader className="flex flex-col gap-3 border-b border-border p-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <CardTitle className="text-base font-medium">
-              {floorPlan?.name || 'Plan de salle'}
-            </CardTitle>
-            {!live ? (
+      <Card
+        ref={cardRef}
+        className={cn(
+          // Vue service : même surface que les autres rubriques (arrondis, bordure,
+          // fond carte). Le plein écran repasse en angles droits pour ne pas laisser
+          // apparaître la page dans les coins de l'écran.
+          'sokar-card',
+          live && isFullscreen && 'rounded-none',
+        )}
+      >
+        <CardHeader
+          className={cn(
+            'border-b border-border',
+            // `space-y-0` neutralise le `space-y-1.5` du CardHeader de base : sinon
+            // une couture de 6 px apparaît entre les bandes du cockpit.
+            live ? 'gap-0 space-y-0 p-0' : 'flex flex-col gap-2 p-2.5',
+          )}
+        >
+          {live ? (
+            <div className="px-3 py-2 sm:px-4">{serviceTablist}</div>
+          ) : (
+            <div className="flex min-w-0 items-center justify-between gap-2 overflow-hidden sm:justify-start sm:overflow-x-auto">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="hidden h-8 shrink-0 px-2 sm:flex"
+                title="Paramètres du plan"
+                aria-label="Paramètres du plan"
+                onClick={openRoomSettings}
+              >
+                <Settings2 size={16} />
+              </Button>
+              <div
+                role="toolbar"
+                aria-label="Affichage du plan"
+                className="hidden shrink-0 items-center gap-0.5 rounded-md border border-border bg-background p-1 sm:flex"
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2"
+                  title="Zoom arrière — −"
+                  aria-label="Zoom arrière"
+                  onClick={() => changeZoom(-ZOOM_STEP)}
+                >
+                  <ZoomOut size={16} />
+                </Button>
+                <button
+                  type="button"
+                  className="min-w-11 rounded-md px-1 text-center text-xs tabular-nums text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+                  title="Ajuster le plan à l'écran"
+                  aria-label="Ajuster le plan à l'écran"
+                  onClick={resetView}
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2"
+                  title="Zoom avant — +"
+                  aria-label="Zoom avant"
+                  onClick={() => changeZoom(ZOOM_STEP)}
+                >
+                  <ZoomIn size={16} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2"
+                  title="Centrer le plan — F"
+                  aria-label="Centrer le plan"
+                  onClick={centerCanvas}
+                >
+                  <LocateFixed size={16} className="sm:mr-1.5" />
+                  <span className="hidden sm:inline">Centrer</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2"
+                  title="Plein écran"
+                  aria-label="Plein écran"
+                  onClick={() => {
+                    if (document.fullscreenElement) void document.exitFullscreen();
+                    else void cardRef.current?.requestFullscreen();
+                  }}
+                >
+                  <Maximize2 size={16} />
+                </Button>
+              </div>
+              <div
+                role="toolbar"
+                aria-label="Aides au placement"
+                className="flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-background p-1 shadow-sm"
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    'h-9 gap-1 rounded-md px-1.5 transition-all duration-200 sm:gap-1.5 sm:px-2',
+                    gridVisible
+                      ? 'border border-primary/20 bg-secondary font-semibold text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:bg-accent/70 hover:text-foreground',
+                  )}
+                  title={
+                    gridVisible
+                      ? 'Grille active — masquer avec G'
+                      : 'Grille inactive — afficher avec G'
+                  }
+                  aria-label={gridVisible ? 'Grille active, masquer' : 'Grille inactive, afficher'}
+                  aria-pressed={gridVisible}
+                  onClick={() => setGridVisible((v) => !v)}
+                >
+                  <Grid2x2 size={16} className="sm:mr-1.5" />
+                  <span className="hidden sm:inline">Grille</span>
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'ml-0.5 h-1.5 w-1.5 shrink-0 rounded-full',
+                      gridVisible ? 'bg-primary' : 'bg-muted-foreground/40',
+                    )}
+                  />
+                </Button>
+                <span className="mx-0.5 h-5 w-px bg-border" aria-hidden="true" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    'h-9 gap-1 rounded-md px-1.5 transition-all duration-200 sm:gap-1.5 sm:px-2',
+                    snap
+                      ? 'border border-primary/20 bg-secondary font-semibold text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:bg-accent/70 hover:text-foreground',
+                  )}
+                  title={
+                    snap
+                      ? 'Magnétisme actif — désactiver avec S'
+                      : 'Magnétisme inactif — activer avec S'
+                  }
+                  aria-label={snap ? 'Magnétisme actif, désactiver' : 'Magnétisme inactif, activer'}
+                  aria-pressed={snap}
+                  onClick={() => setSnap((s) => !s)}
+                >
+                  <Magnet size={16} className="sm:mr-1.5" />
+                  <span className="hidden sm:inline">Magnétisme</span>
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'ml-0.5 h-1.5 w-1.5 shrink-0 rounded-full',
+                      snap ? 'bg-primary' : 'bg-muted-foreground/40',
+                    )}
+                  />
+                </Button>
+              </div>
+              <div
+                role="toolbar"
+                aria-label="Historique"
+                className="flex shrink-0 items-center gap-0.5 rounded-md border border-border bg-background p-1 shadow-sm"
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 w-9 p-0"
+                  title="Annuler — ⌘Z"
+                  aria-label="Annuler"
+                  disabled={!canUndo}
+                  onClick={undoGeometry}
+                >
+                  <Undo2 size={16} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 w-9 p-0"
+                  title="Rétablir — ⌘⇧Z"
+                  aria-label="Rétablir"
+                  disabled={!canRedo}
+                  onClick={redoGeometry}
+                >
+                  <Redo2 size={16} />
+                </Button>
+              </div>
               <Button
                 type="button"
                 variant={planSaved ? 'outline' : 'default'}
                 size="sm"
-                className="gap-2 transition-all duration-200"
+                className="ml-0 h-11 min-w-[6.5rem] shrink-0 justify-center gap-1 rounded-xl px-2 text-xs shadow-sm transition-all duration-200 sm:ml-auto sm:h-9 sm:gap-2 sm:px-3 sm:text-sm"
                 disabled={savingPlan}
                 onClick={() => void savePlan()}
+                aria-label="Enregistrer le plan"
               >
                 {planSaved ? <Check size={16} /> : <Save size={16} />}
-                {savingPlan
-                  ? 'Enregistrement…'
-                  : planSaved
-                    ? 'Plan enregistré'
-                    : 'Enregistrer le plan'}
-              </Button>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-3 border-t border-border pt-3">
-            <div className="flex items-center gap-1 rounded-md border border-border bg-background p-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                title="Zoom arrière — −"
-                aria-label="Zoom arrière"
-                onClick={() =>
-                  setZoom((z) => Math.max(MIN_ZOOM, Math.round((z - ZOOM_STEP) * 10) / 10))
-                }
-              >
-                <ZoomOut size={16} />
-              </Button>
-              <span className="min-w-11 text-center text-xs text-muted-foreground">
-                {Math.round(zoom * 100)}%
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                title="Zoom avant — +"
-                aria-label="Zoom avant"
-                onClick={() =>
-                  setZoom((z) => Math.min(MAX_ZOOM, Math.round((z + ZOOM_STEP) * 10) / 10))
-                }
-              >
-                <ZoomIn size={16} />
-              </Button>
-              <Button variant="ghost" size="sm" title="Centrer le plan — F" onClick={centerCanvas}>
-                <RotateCcw size={16} className="mr-1.5" />
-                Centrer
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                title="Plein écran"
-                onClick={() => {
-                  if (document.fullscreenElement) void document.exitFullscreen();
-                  else void cardRef.current?.requestFullscreen();
-                }}
-              >
-                <Maximize2 size={16} />
-              </Button>
-              <Button
-                variant={gridVisible ? 'secondary' : 'ghost'}
-                size="sm"
-                title="Afficher ou masquer la grille — G"
-                aria-pressed={gridVisible}
-                onClick={() => setGridVisible((v) => !v)}
-              >
-                <Grid3x3 size={16} className="mr-1.5" />
-                Grille
+                {savingPlan ? (
+                  'Enregistrement…'
+                ) : planSaved ? (
+                  <>
+                    <span className="sm:hidden">Enregistré</span>
+                    <span className="hidden sm:inline">Plan enregistré</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="sm:hidden">Enregistrer</span>
+                    <span className="hidden sm:inline">Enregistrer</span>
+                  </>
+                )}
               </Button>
             </div>
-            {!live ? (
-              <>
-                <div className="flex items-center gap-1 rounded-md border border-border bg-background p-1">
-                  <span className="px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Alignement
-                  </span>
+          )}
+          {live ? (
+            <>
+              {/* Volumétrie du service. Chaque information n'apparaît qu'une fois :
+                  les compteurs d'action (retards, à installer, en service, en attente)
+                  restent portés par le bandeau d'état ci-dessus. Sur téléphone, une
+                  seule ligne porte valeurs et jauge : deux étages de chiffres
+                  consommaient la hauteur utile du plan. */}
+              {compactServiceCockpit ? null : (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-border px-4 py-2 lg:flex-nowrap lg:gap-8">
+                  <div className="flex min-w-0 items-center gap-x-3 text-[11px] text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <Users size={12} className="hidden sm:block" aria-hidden="true" />
+                      <span className="text-sm font-semibold tabular-nums text-foreground">
+                        {serviceCovers}
+                      </span>
+                      couverts
+                    </span>
+                    <span className="h-3 w-px shrink-0 bg-border" aria-hidden="true" />
+                    <span className="inline-flex items-center gap-1">
+                      <Armchair size={12} className="hidden sm:block" aria-hidden="true" />
+                      <span className="text-sm font-semibold tabular-nums text-foreground">
+                        {serviceOccupiedTables}
+                        <span className="text-muted-foreground">/{serviceActiveTables.length}</span>
+                      </span>
+                      <span className="sm:hidden">tables</span>
+                      <span className="hidden sm:inline">tables occupées</span>
+                    </span>
+                    <span className="h-3 w-px shrink-0 bg-border" aria-hidden="true" />
+                    <span className="inline-flex items-center gap-1">
+                      <CalendarDays size={12} className="hidden sm:block" aria-hidden="true" />
+                      <span className="text-sm font-semibold tabular-nums text-foreground">
+                        {reservations.length}
+                      </span>
+                      réservations
+                    </span>
+                  </div>
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <div
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={serviceOccupancyRate}
+                      aria-label={`Taux d’occupation de la salle : ${serviceOccupancyRate} %`}
+                      className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-secondary"
+                    >
+                      <div
+                        className="h-full rounded-full bg-foreground/70 transition-all duration-200"
+                        style={{ width: `${serviceOccupancyRate}%` }}
+                      />
+                    </div>
+                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                      {serviceOccupancyRate}&nbsp;%
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Navigation du service : jour et filtre serveur. Les onglets sont
+                  placés en tête du cockpit pour remplacer l'ancien bandeau de pouls. */}
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5 border-t border-border px-3 py-2 sm:flex-nowrap sm:px-4">
+                <div
+                  title={serviceDateLabel}
+                  className="order-1 flex min-w-0 items-center gap-0.5 rounded-md border border-border bg-background p-0.5 sm:order-none"
+                >
                   <Button
+                    type="button"
                     variant="ghost"
                     size="sm"
-                    title="Annuler — ⌘Z"
-                    aria-label="Annuler"
-                    disabled={!canUndo}
-                    onClick={undoGeometry}
+                    className="hidden h-8 px-1.5 transition-all duration-200 sm:inline-flex"
+                    title="Jour précédent"
+                    aria-label="Jour précédent"
+                    onClick={() => shiftServiceDate(-1)}
                   >
-                    <Undo2 size={16} />
+                    <ChevronLeft size={16} />
                   </Button>
+                  <div className="relative h-8 w-32 min-w-0">
+                    <Input
+                      type="date"
+                      value={liveDate}
+                      aria-label="Date du service"
+                      onChange={(e) => setLiveDate(e.target.value)}
+                      className="floor-plan-service-date-input peer relative z-10 h-8 w-32 border-0 bg-transparent px-1 text-center text-sm text-transparent focus:text-foreground sm:text-foreground"
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center truncate px-1 text-sm text-foreground peer-focus:opacity-0 sm:hidden"
+                    >
+                      {serviceDateLabel}
+                    </span>
+                  </div>
                   <Button
+                    type="button"
                     variant="ghost"
                     size="sm"
-                    title="Rétablir — ⌘⇧Z"
-                    aria-label="Rétablir"
-                    disabled={!canRedo}
-                    onClick={redoGeometry}
+                    className="hidden h-8 px-1.5 transition-all duration-200 sm:inline-flex"
+                    title="Jour suivant"
+                    aria-label="Jour suivant"
+                    onClick={() => shiftServiceDate(1)}
                   >
-                    <Redo2 size={16} />
-                  </Button>
-                  <Button
-                    variant={snap ? 'secondary' : 'ghost'}
-                    size="sm"
-                    title="Activer ou désactiver le magnétisme — S"
-                    aria-pressed={snap}
-                    onClick={() => setSnap((s) => !s)}
-                  >
-                    <Magnet size={16} className="mr-1.5" />
-                    Magnétisme
+                    <ChevronRight size={16} />
                   </Button>
                 </div>
-                <div className="ml-auto flex items-center gap-1">
-                  <Button
-                    variant="default"
-                    size="sm"
-                    title="Ajouter ou configurer une salle"
-                    onClick={() => {
-                      setFloorSettings({
-                        name: floorPlan?.name ?? '',
-                        width: floorPlan?.width ?? 1400,
-                        height: floorPlan?.height ?? 900,
-                      });
-                      setSettingsDialogOpen(true);
-                    }}
-                  >
-                    <Plus size={16} className="mr-1.5" />
-                    Ajouter une salle
-                  </Button>
-                  <Button size="sm" onClick={openCreateDialog}>
-                    <Plus size={16} className="mr-1.5" />
-                    Ajouter une table
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <div className="ml-auto flex flex-wrap items-center gap-2">
-                <div className="flex items-center rounded-md border border-border p-0.5">
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    // En direct, l'onglet et la date suffisent à identifier le
+                    // contexte ; le badge n'est donc affiché que pour Archive.
+                    'h-7 gap-1.5 whitespace-nowrap px-2 text-[10px] sm:h-8 sm:px-2.5 sm:text-[11px]',
+                    serviceIsToday ? 'hidden sm:inline-flex' : 'inline-flex',
+                    serviceIsToday
+                      ? 'border-brand/40 text-brand'
+                      : 'border-border text-muted-foreground',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'h-1.5 w-1.5 rounded-full',
+                      serviceIsToday ? 'bg-brand' : 'bg-muted-foreground',
+                    )}
+                    aria-hidden="true"
+                  />
+                  {serviceIsToday ? 'En direct' : 'Archive'}
+                </Badge>
+                {!serviceIsToday ? (
                   <Button
                     type="button"
-                    variant={serviceTab === 'plan' ? 'secondary' : 'ghost'}
+                    variant="outline"
                     size="sm"
-                    onClick={() => setServiceTab('plan')}
+                    className="h-8 transition-all duration-200"
+                    onClick={() => setLiveDate(serviceToday)}
                   >
-                    Plan
+                    Aujourd’hui
                   </Button>
-                  <Button
-                    type="button"
-                    variant={serviceTab === 'waiting-list' ? 'secondary' : 'ghost'}
-                    size="sm"
-                    onClick={() => setServiceTab('waiting-list')}
-                  >
-                    Liste d&apos;attente
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={serviceTab === 'stats' ? 'secondary' : 'ghost'}
-                    size="sm"
-                    onClick={() => setServiceTab('stats')}
-                  >
-                    Statistiques
-                  </Button>
-                </div>
-                <Input
-                  type="date"
-                  value={liveDate}
-                  aria-label="Date du service"
-                  onChange={(e) => setLiveDate(e.target.value)}
-                  className="w-40 bg-background border-border"
-                />
-                {allServers.length > 0 ? (
+                ) : null}
+                {hasServerFilter ? (
                   <Select
                     value={selectedServerFilter ?? '_all_'}
                     onValueChange={(val) => setSelectedServerFilter(val === '_all_' ? null : val)}
                   >
-                    <SelectTrigger className="h-8 w-auto gap-1 border-border bg-background px-2.5 text-xs font-medium">
+                    <SelectTrigger
+                      aria-label="Filtrer par serveur"
+                      title="Filtrer par serveur"
+                      className="order-3 ml-auto h-8 w-9 justify-center gap-1 border-border bg-background px-0 text-xs font-medium sm:order-none sm:w-auto sm:max-w-[11rem] sm:justify-start sm:px-2.5"
+                    >
                       {selectedServerFilter === '_unassigned_' ? (
                         <UserX size={13} className="shrink-0 text-muted-foreground" />
                       ) : (
                         <UserRound size={13} className="shrink-0 text-primary" />
                       )}
-                      <SelectValue placeholder="Tous les serveurs" />
+                      {/* Sur téléphone le filtre reste une icône : la ligne du jour
+                          doit tenir sans repousser les onglets sur une 3e ligne. */}
+                      <span className="!hidden min-w-0 truncate sm:!inline-flex">
+                        <SelectValue placeholder="Tous les serveurs" />
+                      </span>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="_all_">Tous les serveurs ({allTables.length})</SelectItem>
-                      <SelectItem value="_unassigned_">
-                        <span className="flex items-center gap-1.5">
-                          <UserX size={13} className="shrink-0 text-muted-foreground" />
-                          Non affectées ({unassignedCount})
-                        </span>
-                      </SelectItem>
+                      <SelectItem value="_all_">Toutes les tables ({allTables.length})</SelectItem>
+                      {unassignedCount > 0 ? (
+                        <SelectItem value="_unassigned_">
+                          <span className="flex items-center gap-1.5">
+                            <UserX size={13} className="shrink-0 text-muted-foreground" />
+                            Non affectées ({unassignedCount})
+                          </span>
+                        </SelectItem>
+                      ) : null}
                       {allServers.map((server) => {
-                        const count = allTables.filter((t) => t.assignedServer === server).length;
+                        const count = serverTableCounts.get(server) ?? 0;
                         return (
                           <SelectItem key={server} value={server}>
                             {server} ({count} {count > 1 ? 'tables' : 'table'})
@@ -5423,20 +8451,9 @@ export function FloorPlanCanvas({
                     </SelectContent>
                   </Select>
                 ) : null}
-                <Badge variant="outline" className="gap-1.5 py-1.5">
-                  <ListFilter size={14} /> {reservations.length} réservations
-                </Badge>
-                <Badge variant="outline" className="gap-1.5 py-1.5">
-                  <ListOrdered size={14} /> {waitingList.length} en attente
-                </Badge>
-                <Badge variant="outline" className="gap-1.5 py-1.5">
-                  <BarChart3 size={14} />
-                  {[...tableStatuses.values()].filter((item) => item.status === 'occupied').length}/
-                  {allTables.filter((table) => table.isActive).length} occupées
-                </Badge>
               </div>
-            )}
-          </div>
+            </>
+          ) : null}
         </CardHeader>
 
         {error ? (
@@ -5446,86 +8463,34 @@ export function FloorPlanCanvas({
           </div>
         ) : null}
 
-        {live && servicePulse ? (
-          <section
+        {!live && autoLayoutNotice ? (
+          <div
             role="status"
-            aria-label="Pouls du service"
-            className={cn(
-              'flex flex-col gap-2 border-b border-border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between',
-              servicePulse.status === 'urgent'
-                ? 'bg-destructive/[0.06]'
-                : servicePulse.status === 'attention'
-                  ? 'bg-warning/[0.06]'
-                  : 'bg-success/[0.05]',
-            )}
+            className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-2 text-xs text-muted-foreground"
           >
-            <div className="flex min-w-0 items-center gap-2">
-              {servicePulse.status === 'urgent' ? (
-                <AlertTriangle size={16} className="shrink-0 text-destructive" />
-              ) : servicePulse.status === 'attention' ? (
-                <AlertCircle size={16} className="shrink-0 text-warning" />
-              ) : (
-                <CircleCheck size={16} className="shrink-0 text-success" />
-              )}
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      'h-5 text-[10px]',
-                      servicePulse.status === 'urgent'
-                        ? 'border-destructive/30 text-destructive'
-                        : servicePulse.status === 'attention'
-                          ? 'border-warning/30 text-warning'
-                          : 'border-success/30 text-success',
-                    )}
-                  >
-                    {servicePulse.status === 'urgent'
-                      ? 'Urgent'
-                      : servicePulse.status === 'attention'
-                        ? 'À surveiller'
-                        : 'Sous contrôle'}
-                  </Badge>
-                  <p className="text-xs font-semibold text-foreground">{servicePulse.headline}</p>
-                </div>
-                <p className="truncate text-[11px] text-muted-foreground">
-                  {servicePulse.isLiveDate
-                    ? 'Lecture en direct — les actions restent toujours confirmées manuellement.'
-                    : 'Synthèse de la date sélectionnée — aucune action automatique.'}
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-              {servicePulse.lateArrivals > 0 ? (
-                <Badge variant="outline" className="border-destructive/30 text-destructive">
-                  {servicePulse.lateArrivals} retard{servicePulse.lateArrivals > 1 ? 's' : ''}
-                </Badge>
-              ) : null}
-              {servicePulse.isLiveDate ? (
-                <Badge variant="outline">{servicePulse.arrivalsToSeat} à installer</Badge>
-              ) : (
-                <Badge variant="outline">
-                  {servicePulse.confirmedReservations} confirmée
-                  {servicePulse.confirmedReservations > 1 ? 's' : ''}
-                </Badge>
-              )}
-              <Badge variant="outline">
-                {servicePulse.seatedTables} table{servicePulse.seatedTables > 1 ? 's' : ''} en
-                service
-              </Badge>
-              <Badge variant="outline">{servicePulse.pendingWaitingList} attente</Badge>
-              {servicePulse.isLiveDate && servicePulse.arrivalsNext30Minutes > 0 ? (
-                <Badge variant="outline">+{servicePulse.arrivalsNext30Minutes} dans 30 min</Badge>
-              ) : null}
-            </div>
-          </section>
+            <CircleCheck size={15} className="shrink-0 text-primary" aria-hidden="true" />
+            <p className="min-w-0 flex-1">
+              Disposition initiale appliquée. Ajustez les tables, puis enregistrez le plan. Vous
+              pouvez annuler avec ⌘Z.
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0"
+              aria-label="Masquer le message de disposition automatique"
+              onClick={() => setAutoLayoutNotice(false)}
+            >
+              <X size={14} />
+            </Button>
+          </div>
         ) : null}
 
         {live && serviceTab === 'plan' && delayRecoveries.length > 0 ? (
           <section
             role="region"
             aria-label="Historique des plans de retard"
-            className="border-b border-border bg-muted/30 px-3 py-2.5"
+            className="border-b border-border bg-muted/30 px-4 py-2.5"
           >
             <div className="mb-2 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -5601,7 +8566,65 @@ export function FloorPlanCanvas({
           </section>
         ) : null}
 
-        <CardContent className="p-0 overflow-hidden h-[600px]">
+        {/* État vide : quand le cockpit est déjà réduit à une ligne, le message
+            d'absence de réservation est porté par cette ligne. Ici on ne garde
+            la bande que pour les services qui ont des tables ou des actions. */}
+        {live &&
+        !compactServiceCockpit &&
+        serviceTab === 'plan' &&
+        allTables.length > 0 &&
+        reservations.length === 0 &&
+        loadedLiveDate === liveDate ? (
+          <div
+            role="status"
+            className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/30 px-4 py-2 text-xs text-muted-foreground"
+          >
+            <span className="flex items-center gap-1.5">
+              <CalendarDays size={14} aria-hidden="true" />
+              {serviceIsToday
+                ? 'Aucune réservation pour aujourd’hui.'
+                : `Aucune réservation pour le ${serviceDateLabel}.`}
+            </span>
+            {!serviceIsToday ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs transition-all duration-200"
+                onClick={() => setLiveDate(serviceToday)}
+              >
+                Revenir à aujourd’hui
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+
+        <CardContent
+          role={live ? 'tabpanel' : undefined}
+          id={live ? 'service-tabpanel' : undefined}
+          aria-labelledby={live ? `service-tab-${serviceTab}` : undefined}
+          className={cn(
+            'overflow-hidden p-0',
+            live
+              ? liveViewportBounds
+                ? // Les tables cadrées occupent parfois moins de hauteur que
+                  // l'écran d'un téléphone. Garder une surface utile jusqu'au
+                  // dessus de la navigation tactile évite le vide mort entre
+                  // la légende et la barre fixe.
+                  'h-auto min-h-[calc(100dvh-15rem)] md:min-h-0'
+                : cn(
+                    // Sur téléphone, la surface du plan prend la hauteur restante de
+                    // l'écran : un cockpit compact laisse plus de place qu'un
+                    // cockpit complet. La réserve couvre le chrome au-dessus du plan
+                    // et la navigation tactile fixe ; elle est calibrée sur un
+                    // iPhone 13 et se règle ici si le chrome change.
+                    compactServiceCockpit ? 'h-[calc(100dvh-21.5rem)]' : 'h-[calc(100dvh-28.5rem)]',
+                    'min-h-[18rem] md:min-h-0',
+                    livePlanIsEmpty ? 'md:h-[24rem]' : 'md:h-[600px]',
+                  )
+              : 'h-[calc(100dvh-13.5rem)] min-h-[20rem] md:h-[600px] md:min-h-0',
+          )}
+        >
           {live && serviceTab === 'stats' ? (
             <StatsPanel
               reservations={reservations}
@@ -5625,461 +8648,699 @@ export function FloorPlanCanvas({
               onDragEnd={handleDragEnd}
               onDragCancel={handleDragCancel}
             >
-              <div className="flex h-full">
-                {!live ? <FloorPlanPalette /> : null}
-                <div
-                  ref={canvasViewportRef}
-                  className="relative min-w-0 flex-1 overflow-auto bg-muted"
-                >
-                  {displayedInitialDelayImpact && !reportedDelayBannerDismissed ? (
-                    <div
-                      role="region"
-                      aria-label="Retard signalé par téléphone"
-                      className={cn(
-                        'absolute left-3 right-3 top-3 z-40 rounded-xl border bg-background/95 p-3 shadow-lg backdrop-blur transition-all duration-200',
-                        delayRecoveryApplied ? 'border-success/30' : 'border-warning/30',
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={cn(
-                            'mt-0.5 rounded-full p-2',
-                            delayRecoveryApplied ? 'bg-success/10' : 'bg-warning/10',
-                          )}
-                        >
-                          {delayRecoveryApplied ? (
-                            <CircleCheck size={18} className="text-success" />
-                          ) : (
-                            <Phone size={18} className="text-warning" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge
-                              variant="outline"
-                              className={cn(
-                                'h-5 text-[10px] uppercase tracking-wide',
-                                delayRecoveryApplied
-                                  ? 'border-success/30 text-success'
-                                  : 'border-warning/30 text-warning',
-                              )}
-                            >
-                              {delayRecoveryReverted
-                                ? 'Plan restauré'
-                                : delayRecoveryApplied
-                                  ? 'Communication requise'
-                                  : 'Appel reçu'}
-                            </Badge>
-                            <p className="text-sm font-semibold text-foreground">
-                              {delayRecoveryApplied
-                                ? delayRecoveryReverted
-                                  ? 'Plan de retard annulé'
-                                  : 'Plan de retard appliqué'
-                                : `${reportedDelayReservation?.customerName || 'Client'} · ${reportedDelayReservation?.partySize ?? '—'} pers. · +${displayedInitialDelayImpact.delayMinutes} min`}
-                            </p>
-                          </div>
-                          {delayRecoveryApplied ? (
-                            <div className="mt-2 rounded-lg border border-warning/25 bg-warning/[0.05] px-3 py-2">
-                              <p className="text-xs font-semibold text-foreground">
-                                {delayRecoveryReverted ? 'Plan initial restauré' : 'Plan appliqué'}
-                              </p>
-                              <p className="mt-0.5 text-xs text-muted-foreground">
-                                {appliedDelayRecovery
-                                  ? delayRecoveryReverted
-                                    ? `${appliedDelayRecovery.delayedCustomerName} retrouve ${appliedDelayRecovery.delayedOriginalTableName} et son horaire initial. ${appliedDelayRecovery.waitingCustomerName} retourne en liste d’attente.`
-                                    : `${appliedDelayRecovery.waitingCustomerName} : liste d’attente → ${appliedDelayRecovery.waitingTableName}. ${appliedDelayRecovery.delayedCustomerName} : ${appliedDelayRecovery.delayedOriginalTableName} → ${appliedDelayRecovery.delayedAlternativeTableName}.`
-                                  : 'Les deux changements de table ont été enregistrés.'}
-                              </p>
-                              {delayRecoveryReverted ? (
-                                <p className="mt-1 text-xs font-medium text-warning">
-                                  Prévenez les deux clients : les communications humaines déjà
-                                  effectuées ne peuvent pas être annulées.
-                                </p>
-                              ) : (
-                                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                  <p className="text-xs font-medium text-warning">
-                                    Prévenez les deux clients. Aucun message n’a été envoyé
-                                    automatiquement.
-                                  </p>
-                                  {appliedDelayRecovery ? (
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="outline"
-                                      className="shrink-0 transition-all duration-200"
-                                      onClick={() => setDelayRecoveryRevertConfirmOpen(true)}
-                                    >
-                                      <Undo2 size={14} className="mr-1.5" />
-                                      Annuler ce plan
-                                    </Button>
-                                  ) : null}
-                                </div>
-                              )}
-                            </div>
-                          ) : reportedDelayLookupError ? (
-                            <p className="mt-2 text-xs font-medium text-warning">
-                              {reportedDelayLookupError}
-                            </p>
-                          ) : delayImpactLoading ? (
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Analyse de la salle et de la liste d’attente…
-                            </p>
-                          ) : delayImpact &&
-                            delayImpactReservationId ===
-                              displayedInitialDelayImpact.reservationId ? (
-                            <>
-                              {delayImpact.feasible &&
-                              delayImpact.alternativeTable &&
-                              delayImpact.waitingListEntry ? (
-                                <div className="mt-2 space-y-2">
-                                  <div className="grid gap-2 sm:grid-cols-2">
-                                    <div className="rounded-lg border border-border bg-card px-3 py-2">
-                                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                        {delayImpact.waitingListEntry.isAvailableNow
-                                          ? 'Disponible maintenant'
-                                          : `Créneau ${format(
-                                              parseISO(
-                                                delayImpact.waitingListEntry
-                                                  .customerFacingRequestedStartsAt ??
-                                                  delayImpact.waitingListEntry.proposedStartsAt,
-                                              ),
-                                              'HH:mm',
-                                            )}`}
-                                      </p>
-                                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-foreground">
-                                        <span className="truncate">Liste d’attente</span>
-                                        <ArrowRight
-                                          size={13}
-                                          className="shrink-0 text-muted-foreground"
-                                        />
-                                        <span className="shrink-0">
-                                          {delayImpact.delayedReservation?.originalTableName ||
-                                            reportedDelayReservation?.tableName ||
-                                            'Table actuelle'}
-                                        </span>
-                                      </div>
-                                      <p className="mt-1 truncate text-[11px] text-muted-foreground">
-                                        {delayImpact.waitingListEntry.customerName} n’avait pas
-                                        encore de table.
-                                      </p>
-                                    </div>
-                                    <div className="rounded-lg border border-border bg-card px-3 py-2">
-                                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                        {delayImpact.delayedReservation
-                                          ?.customerFacingProposedStartsAt
-                                          ? `À ${format(
-                                              parseISO(
-                                                delayImpact.delayedReservation
-                                                  .customerFacingProposedStartsAt,
-                                              ),
-                                              'HH:mm',
-                                            )}`
-                                          : 'À son arrivée'}
-                                      </p>
-                                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-foreground">
-                                        <span className="truncate">
-                                          {reportedDelayReservation?.customerName ||
-                                            'Réservation retardée'}
-                                        </span>
-                                        <span className="shrink-0 text-muted-foreground">
-                                          ·{' '}
-                                          {delayImpact.delayedReservation?.originalTableName ||
-                                            reportedDelayReservation?.tableName ||
-                                            'Table actuelle'}
-                                        </span>
-                                        <ArrowRight
-                                          size={13}
-                                          className="shrink-0 text-muted-foreground"
-                                        />
-                                        <span className="shrink-0">
-                                          {delayImpact.alternativeTable.name}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                    <p className="text-[11px] text-muted-foreground">
-                                      Vérification automatique avant application · Aucun SMS envoyé
-                                    </p>
-                                    <Button
-                                      size="sm"
-                                      className="shrink-0"
-                                      onClick={() => setDelayRecoveryConfirmOpen(true)}
-                                    >
-                                      Vérifier et appliquer
-                                    </Button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <p className="mt-2 text-xs font-medium text-warning">
-                                  Aucun changement sûr n’est proposé. Aucune modification n’est
-                                  appliquée.
-                                </p>
-                              )}
-                            </>
-                          ) : (
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              Ouvrez la table sélectionnée pour relancer l’analyse.
-                            </p>
-                          )}
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 shrink-0 p-0"
-                          aria-label="Masquer le retard signalé"
-                          onClick={() => setReportedDelayBannerDismissed(true)}
-                        >
-                          <X size={16} />
-                        </Button>
-                      </div>
-                    </div>
+              <div className="flex h-full min-h-0 flex-col lg:flex-row">
+                <div className="order-2 lg:order-1 lg:contents">
+                  {!live ? (
+                    <FloorPlanPalette
+                      tablesToPlace={tablesToPlace}
+                      totalTables={allTables.length}
+                      onPlaceTable={(table) => void placeExistingTable(table)}
+                      onCreateTable={() => void createUnplacedTable()}
+                      onAutoLayout={() => void autoLayoutTables()}
+                      autoLayoutLoading={autoLayoutLoading}
+                      onQuickAdd={quickAddFromPalette}
+                    />
                   ) : null}
+                </div>
+                <div className="relative order-1 flex min-h-0 min-w-0 flex-1 flex-col lg:order-2">
+                  {/* Le pincement à deux doigts pilote le zoom du plan ; le
+                      glissement d'un doigt le défile (défilement natif). */}
                   <div
-                    ref={canvasRef}
-                    className="absolute origin-top-left bg-muted"
-                    onClick={() => {
-                      setSelectedTableIds(new Set());
-                      setSelectedWallId(null);
-                    }}
-                    style={{
-                      width: canvasWidth,
-                      height: canvasHeight,
-                      transform: `scale(${zoom})`,
-                      transformOrigin: 'top left',
-                      backgroundImage: gridVisible
-                        ? `linear-gradient(to right, hsl(var(--border) / 0.5) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--border) / 0.5) 1px, transparent 1px)`
-                        : undefined,
-                      backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px`,
-                    }}
+                    ref={canvasViewportRef}
+                    style={{ touchAction: 'pan-x pan-y' }}
+                    className={cn(
+                      'relative min-h-0 w-full flex-1 overflow-auto bg-muted/50',
+                      livePlanIsEmpty ? 'min-h-0' : 'min-h-[14rem] md:min-h-[22rem]',
+                      activeDragData?.kind === 'table' ||
+                        activeDragData?.kind === 'wall' ||
+                        activeDragData?.kind === 'zone'
+                        ? 'cursor-copy'
+                        : activeDragTable
+                          ? 'cursor-grabbing'
+                          : undefined,
+                    )}
                   >
-                    <svg
-                      className="absolute inset-0 w-full h-full pointer-events-none"
-                      style={{ zIndex: 10 }}
-                      onClick={() => setSelectedWallId(null)}
+                    {displayedInitialDelayImpact && !reportedDelayBannerDismissed ? (
+                      <div
+                        role="region"
+                        aria-label="Retard signalé par téléphone"
+                        className={cn(
+                          'absolute left-3 right-3 top-3 z-40 rounded-xl border bg-background/95 p-3 shadow-lg backdrop-blur transition-all duration-200',
+                          delayRecoveryApplied ? 'border-success/30' : 'border-warning/30',
+                        )}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div
+                            className={cn(
+                              'mt-0.5 rounded-full p-2',
+                              delayRecoveryApplied ? 'bg-success/10' : 'bg-warning/10',
+                            )}
+                          >
+                            {delayRecoveryApplied ? (
+                              <CircleCheck size={18} className="text-success" />
+                            ) : (
+                              <Phone size={18} className="text-warning" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  'h-5 text-[10px] uppercase tracking-wide',
+                                  delayRecoveryApplied
+                                    ? 'border-success/30 text-success'
+                                    : 'border-warning/30 text-warning',
+                                )}
+                              >
+                                {delayRecoveryReverted
+                                  ? 'Plan restauré'
+                                  : delayRecoveryApplied
+                                    ? 'Communication requise'
+                                    : 'Appel reçu'}
+                              </Badge>
+                              <p className="text-sm font-semibold text-foreground">
+                                {delayRecoveryApplied
+                                  ? delayRecoveryReverted
+                                    ? 'Plan de retard annulé'
+                                    : 'Plan de retard appliqué'
+                                  : `${reportedDelayReservation?.customerName || 'Client'} · ${reportedDelayReservation?.partySize ?? '—'} pers. · +${displayedInitialDelayImpact.delayMinutes} min`}
+                              </p>
+                            </div>
+                            {delayRecoveryApplied ? (
+                              <div className="mt-2 rounded-lg border border-warning/25 bg-warning/[0.05] px-3 py-2">
+                                <p className="text-xs font-semibold text-foreground">
+                                  {delayRecoveryReverted
+                                    ? 'Plan initial restauré'
+                                    : 'Plan appliqué'}
+                                </p>
+                                <p className="mt-0.5 text-xs text-muted-foreground">
+                                  {appliedDelayRecovery
+                                    ? delayRecoveryReverted
+                                      ? `${appliedDelayRecovery.delayedCustomerName} retrouve ${appliedDelayRecovery.delayedOriginalTableName} et son horaire initial. ${appliedDelayRecovery.waitingCustomerName} retourne en liste d’attente.`
+                                      : `${appliedDelayRecovery.waitingCustomerName} : liste d’attente → ${appliedDelayRecovery.waitingTableName}. ${appliedDelayRecovery.delayedCustomerName} : ${appliedDelayRecovery.delayedOriginalTableName} → ${appliedDelayRecovery.delayedAlternativeTableName}.`
+                                    : 'Les deux changements de table ont été enregistrés.'}
+                                </p>
+                                {delayRecoveryReverted ? (
+                                  <p className="mt-1 text-xs font-medium text-warning">
+                                    Prévenez les deux clients : les communications humaines déjà
+                                    effectuées ne peuvent pas être annulées.
+                                  </p>
+                                ) : (
+                                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <p className="text-xs font-medium text-warning">
+                                      Prévenez les deux clients. Aucun message n’a été envoyé
+                                      automatiquement.
+                                    </p>
+                                    {appliedDelayRecovery ? (
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="shrink-0 transition-all duration-200"
+                                        onClick={() => setDelayRecoveryRevertConfirmOpen(true)}
+                                      >
+                                        <Undo2 size={14} className="mr-1.5" />
+                                        Annuler ce plan
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                )}
+                              </div>
+                            ) : reportedDelayLookupError ? (
+                              <p className="mt-2 text-xs font-medium text-warning">
+                                {reportedDelayLookupError}
+                              </p>
+                            ) : delayImpactLoading ? (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Analyse de la salle et de la liste d’attente…
+                              </p>
+                            ) : delayImpact &&
+                              delayImpactReservationId ===
+                                displayedInitialDelayImpact.reservationId ? (
+                              <>
+                                {delayImpact.feasible &&
+                                delayImpact.alternativeTable &&
+                                delayImpact.waitingListEntry ? (
+                                  <div className="mt-2 space-y-2">
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                      <div className="rounded-lg border border-border bg-card px-3 py-2">
+                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                          {delayImpact.waitingListEntry.isAvailableNow
+                                            ? 'Disponible maintenant'
+                                            : `Créneau ${format(
+                                                parseISO(
+                                                  delayImpact.waitingListEntry
+                                                    .customerFacingRequestedStartsAt ??
+                                                    delayImpact.waitingListEntry.proposedStartsAt,
+                                                ),
+                                                'HH:mm',
+                                              )}`}
+                                        </p>
+                                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-foreground">
+                                          <span className="truncate">Liste d’attente</span>
+                                          <ArrowRight
+                                            size={13}
+                                            className="shrink-0 text-muted-foreground"
+                                          />
+                                          <span className="shrink-0">
+                                            {delayImpact.delayedReservation?.originalTableName ||
+                                              reportedDelayReservation?.tableName ||
+                                              'Table actuelle'}
+                                          </span>
+                                        </div>
+                                        <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                                          {delayImpact.waitingListEntry.customerName} n’avait pas
+                                          encore de table.
+                                        </p>
+                                      </div>
+                                      <div className="rounded-lg border border-border bg-card px-3 py-2">
+                                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                          {delayImpact.delayedReservation
+                                            ?.customerFacingProposedStartsAt
+                                            ? `À ${format(
+                                                parseISO(
+                                                  delayImpact.delayedReservation
+                                                    .customerFacingProposedStartsAt,
+                                                ),
+                                                'HH:mm',
+                                              )}`
+                                            : 'À son arrivée'}
+                                        </p>
+                                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-semibold text-foreground">
+                                          <span className="truncate">
+                                            {reportedDelayReservation?.customerName ||
+                                              'Réservation retardée'}
+                                          </span>
+                                          <span className="shrink-0 text-muted-foreground">
+                                            ·{' '}
+                                            {delayImpact.delayedReservation?.originalTableName ||
+                                              reportedDelayReservation?.tableName ||
+                                              'Table actuelle'}
+                                          </span>
+                                          <ArrowRight
+                                            size={13}
+                                            className="shrink-0 text-muted-foreground"
+                                          />
+                                          <span className="shrink-0">
+                                            {delayImpact.alternativeTable.name}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                      <p className="text-[11px] text-muted-foreground">
+                                        Vérification automatique avant application · Aucun SMS
+                                        envoyé
+                                      </p>
+                                      <Button
+                                        size="sm"
+                                        className="shrink-0"
+                                        onClick={() => setDelayRecoveryConfirmOpen(true)}
+                                      >
+                                        Vérifier et appliquer
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="mt-2 text-xs font-medium text-warning">
+                                    Aucun changement sûr n’est proposé. Aucune modification n’est
+                                    appliquée.
+                                  </p>
+                                )}
+                              </>
+                            ) : (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Ouvrez la table sélectionnée pour relancer l’analyse.
+                              </p>
+                            )}
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 shrink-0 p-0"
+                            aria-label="Masquer le retard signalé"
+                            onClick={() => setReportedDelayBannerDismissed(true)}
+                          >
+                            <X size={16} />
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    <div
+                      className={cn(
+                        'relative',
+                        liveViewportBounds ? 'mx-auto overflow-hidden' : undefined,
+                      )}
+                      data-testid={liveViewportBounds ? 'floor-plan-live-stage' : undefined}
+                      style={{ width: stageWidth, height: stageHeight }}
                     >
-                      <g className="pointer-events-auto">
-                        {floorPlan?.walls?.map((w) => (
-                          <WallSegment
-                            key={w.id}
-                            wall={w}
-                            isSelected={!live && selectedWallId === w.id}
+                      {/* Garantie d'aire défilable : l'espaceur fait exactement la
+                          taille de la scène visible. En Live, cette scène est
+                          limitée à la zone utile ; l'édition conserve la salle
+                          entière comme surface de travail. */}
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none"
+                        style={{ width: stageWidth, height: stageHeight }}
+                      />
+                      <div
+                        ref={canvasRef}
+                        className={cn(
+                          // Le canvas doit recouvrir l'espaceur de scroll, pas se
+                          // placer apres lui a sa position statique. Sans cet
+                          // ancrage, sa hauteur zoomée apparaissait comme un grand
+                          // vide au-dessus des tables, surtout en Live mobile.
+                          liveViewportBounds
+                            ? 'absolute left-0 top-0 origin-top-left border-0 bg-transparent shadow-none'
+                            : 'absolute left-0 top-0 origin-top-left border border-border bg-background shadow-sm',
+                          activeDragData?.kind === 'table' ||
+                            activeDragData?.kind === 'wall' ||
+                            activeDragData?.kind === 'zone'
+                            ? 'cursor-copy border-primary/50 ring-2 ring-primary/30'
+                            : undefined,
+                        )}
+                        onClick={() => {
+                          setSelectedTableIds(new Set());
+                          setSelectedServiceTableId(null);
+                          setSelectedWallId(null);
+                          setSelectedZoneId(null);
+                        }}
+                        style={{
+                          width: canvasWidth,
+                          height: canvasHeight,
+                          transform: canvasTransform,
+                          transformOrigin: 'top left',
+                          backgroundImage:
+                            !live && gridVisible
+                              ? `linear-gradient(to right, hsl(var(--muted-foreground) / 0.22) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--muted-foreground) / 0.22) 1px, transparent 1px), linear-gradient(to right, hsl(var(--muted-foreground) / 0.08) 1px, transparent 1px), linear-gradient(to bottom, hsl(var(--muted-foreground) / 0.08) 1px, transparent 1px)`
+                              : undefined,
+                          backgroundSize: `${GRID_SIZE * 5}px ${GRID_SIZE * 5}px, ${GRID_SIZE * 5}px ${
+                            GRID_SIZE * 5
+                          }px, ${GRID_SIZE}px ${GRID_SIZE}px, ${GRID_SIZE}px ${GRID_SIZE}px`,
+                        }}
+                      >
+                        {!live ? (
+                          <div
+                            className="absolute left-0 top-0 z-20 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background"
+                            title="Origine du plan"
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                        {(live ? liveZones : zones).map((zone) => (
+                          <ZoneCard
+                            key={zone.id}
+                            zone={zone}
                             editable={!live}
-                            locked={lockedWallIds.has(w.id)}
-                            onClick={() => {
-                              if (live) return;
-                              if (wallJustDraggedRef.current) {
-                                wallJustDraggedRef.current = false;
-                                return;
-                              }
-                              setSelectedTableIds(new Set());
-                              setSelectedWallId(w.id);
-                            }}
-                            onPointerDownMove={(e) => handleWallPointerDown(e, w, 'move')}
-                            onPointerDownStart={(e) => handleWallPointerDown(e, w, 'resize-start')}
-                            onPointerDownEnd={(e) => handleWallPointerDown(e, w, 'resize-end')}
+                            showLabel={!liveViewportBounds}
+                            isSelected={!live && selectedZoneId === zone.id}
+                            onClick={() => selectZone(zone)}
+                            onPointerDown={(event) => handleZonePointerDown(event, zone)}
+                            onResizeStart={(event) => startZoneResize(event, zone)}
                           />
                         ))}
-                        {wallLengthGuide ? (
-                          <g className="pointer-events-none">
-                            <line
-                              x1={wallLengthGuide.activeWall.x1}
-                              y1={wallLengthGuide.activeWall.y1}
-                              x2={wallLengthGuide.activeWall.x2}
-                              y2={wallLengthGuide.activeWall.y2}
-                              stroke="hsl(var(--primary))"
-                              strokeWidth={8}
-                              strokeLinecap="square"
-                              opacity={0.35}
-                            />
-                            <line
-                              x1={wallLengthGuide.referenceWall.x1}
-                              y1={wallLengthGuide.referenceWall.y1}
-                              x2={wallLengthGuide.referenceWall.x2}
-                              y2={wallLengthGuide.referenceWall.y2}
-                              stroke="hsl(var(--primary))"
-                              strokeWidth={8}
-                              strokeLinecap="square"
-                              opacity={0.35}
-                            />
-                            <line
-                              x1={
-                                (wallLengthGuide.activeWall.x1 + wallLengthGuide.activeWall.x2) / 2
-                              }
-                              y1={
-                                (wallLengthGuide.activeWall.y1 + wallLengthGuide.activeWall.y2) / 2
-                              }
-                              x2={
-                                (wallLengthGuide.referenceWall.x1 +
-                                  wallLengthGuide.referenceWall.x2) /
-                                2
-                              }
-                              y2={
-                                (wallLengthGuide.referenceWall.y1 +
-                                  wallLengthGuide.referenceWall.y2) /
-                                2
-                              }
-                              stroke="hsl(var(--primary))"
-                              strokeWidth={1.5}
-                              strokeDasharray="5 5"
-                              opacity={0.9}
-                            />
-                            <circle
-                              cx={
-                                (wallLengthGuide.activeWall.x1 + wallLengthGuide.activeWall.x2) / 2
-                              }
-                              cy={
-                                (wallLengthGuide.activeWall.y1 + wallLengthGuide.activeWall.y2) / 2
-                              }
-                              r={4}
-                              fill="hsl(var(--primary))"
-                            />
-                            <circle
-                              cx={
-                                (wallLengthGuide.referenceWall.x1 +
-                                  wallLengthGuide.referenceWall.x2) /
-                                2
-                              }
-                              cy={
-                                (wallLengthGuide.referenceWall.y1 +
-                                  wallLengthGuide.referenceWall.y2) /
-                                2
-                              }
-                              r={4}
-                              fill="hsl(var(--primary))"
-                            />
-                            <foreignObject
-                              x={Math.max(
-                                8,
-                                Math.min(canvasWidth - 132, wallLengthGuide.labelX - 66),
-                              )}
-                              y={Math.max(
-                                8,
-                                Math.min(canvasHeight - 38, wallLengthGuide.labelY - 19),
-                              )}
-                              width={132}
-                              height={38}
-                            >
-                              <div className="flex h-full items-center justify-center rounded-md border border-primary/40 bg-background/95 px-2 text-[11px] font-medium text-primary shadow-sm">
-                                Même longueur · {formatWallLength(wallLengthGuide.length)}
-                              </div>
-                            </foreignObject>
+                        <svg
+                          className="absolute inset-0 w-full h-full pointer-events-none"
+                          style={{ zIndex: 10 }}
+                          onClick={() => {
+                            setSelectedWallId(null);
+                            setSelectedZoneId(null);
+                          }}
+                        >
+                          <g className="pointer-events-auto">
+                            {!live
+                              ? floorPlan?.walls?.map((w) => (
+                                  <WallSegment
+                                    key={w.id}
+                                    wall={w}
+                                    isSelected={!live && selectedWallId === w.id}
+                                    editable={!live}
+                                    locked={lockedWallIds.has(w.id)}
+                                    onClick={() => {
+                                      if (live) return;
+                                      if (wallJustDraggedRef.current) {
+                                        wallJustDraggedRef.current = false;
+                                        return;
+                                      }
+                                      setSelectedTableIds(new Set());
+                                      setSelectedWallId(w.id);
+                                    }}
+                                    onPointerDownMove={(e) => handleWallPointerDown(e, w, 'move')}
+                                    onPointerDownStart={(e) =>
+                                      handleWallPointerDown(e, w, 'resize-start')
+                                    }
+                                    onPointerDownEnd={(e) =>
+                                      handleWallPointerDown(e, w, 'resize-end')
+                                    }
+                                  />
+                                ))
+                              : null}
+                            {wallLengthGuide ? (
+                              <g className="pointer-events-none">
+                                <line
+                                  x1={wallLengthGuide.activeWall.x1}
+                                  y1={wallLengthGuide.activeWall.y1}
+                                  x2={wallLengthGuide.activeWall.x2}
+                                  y2={wallLengthGuide.activeWall.y2}
+                                  stroke="hsl(var(--primary))"
+                                  strokeWidth={8}
+                                  strokeLinecap="square"
+                                  opacity={0.35}
+                                />
+                                <line
+                                  x1={wallLengthGuide.referenceWall.x1}
+                                  y1={wallLengthGuide.referenceWall.y1}
+                                  x2={wallLengthGuide.referenceWall.x2}
+                                  y2={wallLengthGuide.referenceWall.y2}
+                                  stroke="hsl(var(--primary))"
+                                  strokeWidth={8}
+                                  strokeLinecap="square"
+                                  opacity={0.35}
+                                />
+                                <line
+                                  x1={
+                                    (wallLengthGuide.activeWall.x1 +
+                                      wallLengthGuide.activeWall.x2) /
+                                    2
+                                  }
+                                  y1={
+                                    (wallLengthGuide.activeWall.y1 +
+                                      wallLengthGuide.activeWall.y2) /
+                                    2
+                                  }
+                                  x2={
+                                    (wallLengthGuide.referenceWall.x1 +
+                                      wallLengthGuide.referenceWall.x2) /
+                                    2
+                                  }
+                                  y2={
+                                    (wallLengthGuide.referenceWall.y1 +
+                                      wallLengthGuide.referenceWall.y2) /
+                                    2
+                                  }
+                                  stroke="hsl(var(--primary))"
+                                  strokeWidth={1.5}
+                                  strokeDasharray="5 5"
+                                  opacity={0.9}
+                                />
+                                <circle
+                                  cx={
+                                    (wallLengthGuide.activeWall.x1 +
+                                      wallLengthGuide.activeWall.x2) /
+                                    2
+                                  }
+                                  cy={
+                                    (wallLengthGuide.activeWall.y1 +
+                                      wallLengthGuide.activeWall.y2) /
+                                    2
+                                  }
+                                  r={4}
+                                  fill="hsl(var(--primary))"
+                                />
+                                <circle
+                                  cx={
+                                    (wallLengthGuide.referenceWall.x1 +
+                                      wallLengthGuide.referenceWall.x2) /
+                                    2
+                                  }
+                                  cy={
+                                    (wallLengthGuide.referenceWall.y1 +
+                                      wallLengthGuide.referenceWall.y2) /
+                                    2
+                                  }
+                                  r={4}
+                                  fill="hsl(var(--primary))"
+                                />
+                                <foreignObject
+                                  x={Math.max(
+                                    8,
+                                    Math.min(canvasWidth - 132, wallLengthGuide.labelX - 66),
+                                  )}
+                                  y={Math.max(
+                                    8,
+                                    Math.min(canvasHeight - 38, wallLengthGuide.labelY - 19),
+                                  )}
+                                  width={132}
+                                  height={38}
+                                >
+                                  <div className="flex h-full items-center justify-center rounded-md border border-primary/40 bg-background/95 px-2 text-[11px] font-medium text-primary shadow-sm">
+                                    Même longueur · {formatWallLength(wallLengthGuide.length)}
+                                  </div>
+                                </foreignObject>
+                              </g>
+                            ) : null}
+                            {wallResizeAlignGuide ? (
+                              <g className="pointer-events-none">
+                                {wallResizeAlignGuide.axis === 'y' ? (
+                                  <line
+                                    x1={0}
+                                    y1={wallResizeAlignGuide.value}
+                                    x2={canvasWidth}
+                                    y2={wallResizeAlignGuide.value}
+                                    stroke="hsl(var(--primary))"
+                                    strokeWidth={2}
+                                    strokeDasharray="6 4"
+                                    opacity={0.95}
+                                  />
+                                ) : (
+                                  <line
+                                    x1={wallResizeAlignGuide.value}
+                                    y1={0}
+                                    x2={wallResizeAlignGuide.value}
+                                    y2={canvasHeight}
+                                    stroke="hsl(var(--primary))"
+                                    strokeWidth={2}
+                                    strokeDasharray="6 4"
+                                    opacity={0.95}
+                                  />
+                                )}
+                              </g>
+                            ) : null}
                           </g>
-                        ) : null}
-                        {wallResizeAlignGuide ? (
-                          <g className="pointer-events-none">
-                            {wallResizeAlignGuide.axis === 'y' ? (
+                        </svg>
+                        {wallAlignGuide ? (
+                          <svg
+                            className="absolute inset-0 w-full h-full pointer-events-none"
+                            style={{ zIndex: 11 }}
+                          >
+                            {wallAlignGuide.axis === 'y' ? (
                               <line
                                 x1={0}
-                                y1={wallResizeAlignGuide.value}
+                                y1={wallAlignGuide.value}
                                 x2={canvasWidth}
-                                y2={wallResizeAlignGuide.value}
+                                y2={wallAlignGuide.value}
                                 stroke="hsl(var(--primary))"
-                                strokeWidth={2}
-                                strokeDasharray="6 4"
-                                opacity={0.95}
+                                strokeWidth={1}
+                                strokeDasharray="4 4"
                               />
                             ) : (
                               <line
-                                x1={wallResizeAlignGuide.value}
+                                x1={wallAlignGuide.value}
                                 y1={0}
-                                x2={wallResizeAlignGuide.value}
+                                x2={wallAlignGuide.value}
                                 y2={canvasHeight}
                                 stroke="hsl(var(--primary))"
-                                strokeWidth={2}
-                                strokeDasharray="6 4"
-                                opacity={0.95}
+                                strokeWidth={1}
+                                strokeDasharray="4 4"
                               />
                             )}
-                          </g>
+                          </svg>
                         ) : null}
-                      </g>
-                    </svg>
-                    {wallAlignGuide ? (
-                      <svg
-                        className="absolute inset-0 w-full h-full pointer-events-none"
-                        style={{ zIndex: 11 }}
-                      >
-                        {wallAlignGuide.axis === 'y' ? (
-                          <line
-                            x1={0}
-                            y1={wallAlignGuide.value}
-                            x2={canvasWidth}
-                            y2={wallAlignGuide.value}
-                            stroke="hsl(var(--primary))"
-                            strokeWidth={1}
-                            strokeDasharray="4 4"
-                          />
-                        ) : (
-                          <line
-                            x1={wallAlignGuide.value}
-                            y1={0}
-                            x2={wallAlignGuide.value}
-                            y2={canvasHeight}
-                            stroke="hsl(var(--primary))"
-                            strokeWidth={1}
-                            strokeDasharray="4 4"
-                          />
-                        )}
-                      </svg>
-                    ) : null}
-                    {allTables.map((table) => {
-                      const { width, height } = getTableSize(table);
-                      const status = live ? tableStatuses.get(table.id) : undefined;
-                      const isFilteredOut =
-                        live &&
-                        selectedServerFilter !== null &&
-                        (selectedServerFilter === '_unassigned_'
-                          ? !!table.assignedServer
-                          : table.assignedServer !== selectedServerFilter);
-                      return (
-                        <DraggableTable
-                          key={table.id}
-                          table={table}
-                          status={status}
-                          isSelected={
-                            live
-                              ? selectedServiceTableId === table.id ||
-                                (!reportedDelayBannerDismissed &&
-                                  (reportedDelayOriginalTableId === table.id ||
-                                    reportedDelayAlternativeTableId === table.id))
-                              : selectedTableIds.has(table.id)
-                          }
-                          draggable={!live}
-                          droppable={live}
-                          draggableReservation={live}
-                          zoom={zoom}
-                          onClick={(e) => handleTableClick(table, e)}
-                          onDoubleClick={() => handleTableDoubleClick(table)}
-                          onResizeStart={(e) => startTableResize(e, table)}
-                          onRotateStart={(e) => startTableRotate(e, table)}
-                          style={{
-                            left: table.positionX ?? 0,
-                            top: table.positionY ?? 0,
-                            width,
-                            height,
-                            position: 'absolute',
-                            opacity: isFilteredOut ? 0.25 : 1,
-                            filter: isFilteredOut ? 'grayscale(80%)' : undefined,
-                            transition: 'all 0.2s ease',
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                  {allTables.length === 0 ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                      <p className="text-sm text-muted-foreground">
-                        Aucune table dans votre plan 2D
-                      </p>
-                      <p className="text-xs text-muted-foreground opacity-60">
-                        Glissez-déposez un élément depuis la palette pour commencer.
-                      </p>
+                        {tableAlignGuides.x || tableAlignGuides.y ? (
+                          <svg
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0 h-full w-full"
+                            style={{ zIndex: 12 }}
+                          >
+                            {tableAlignGuides.x ? (
+                              <line
+                                x1={tableAlignGuides.x.value}
+                                y1={0}
+                                x2={tableAlignGuides.x.value}
+                                y2={canvasHeight}
+                                stroke="hsl(var(--primary))"
+                                strokeWidth={1.5}
+                                strokeDasharray="5 4"
+                                opacity={0.9}
+                              />
+                            ) : null}
+                            {tableAlignGuides.y ? (
+                              <line
+                                x1={0}
+                                y1={tableAlignGuides.y.value}
+                                x2={canvasWidth}
+                                y2={tableAlignGuides.y.value}
+                                stroke="hsl(var(--primary))"
+                                strokeWidth={1.5}
+                                strokeDasharray="5 4"
+                                opacity={0.9}
+                              />
+                            ) : null}
+                          </svg>
+                        ) : null}
+                        {placedTables.map((table) => {
+                          const { width, height } = getTableSize(table);
+                          const status = live ? tableStatuses.get(table.id) : undefined;
+                          const tableServer = table.assignedServer?.trim() || null;
+                          const isFilteredOut =
+                            live &&
+                            selectedServerFilter !== null &&
+                            (selectedServerFilter === '_unassigned_'
+                              ? Boolean(tableServer)
+                              : tableServer !== selectedServerFilter);
+                          return (
+                            <DraggableTable
+                              key={table.id}
+                              table={table}
+                              status={status}
+                              isSelected={
+                                live
+                                  ? selectedServiceTableId === table.id ||
+                                    (!reportedDelayBannerDismissed &&
+                                      (reportedDelayOriginalTableId === table.id ||
+                                        reportedDelayAlternativeTableId === table.id))
+                                  : selectedTableIds.has(table.id)
+                              }
+                              draggable={!live}
+                              droppable={live}
+                              draggableReservation={live}
+                              editable={!live}
+                              zoom={zoom}
+                              compact={compactTableCards}
+                              onClick={(e) => handleTableClick(table, e)}
+                              onDoubleClick={() => handleTableDoubleClick(table)}
+                              onResizeStart={(e) => startTableResize(e, table)}
+                              onRotateStart={(e) => startTableRotate(e, table)}
+                              isCombinable={combinableTableIds.has(table.id)}
+                              style={{
+                                left: table.positionX ?? 0,
+                                top: table.positionY ?? 0,
+                                width,
+                                height,
+                                position: 'absolute',
+                                zIndex: selectedTableIds.has(table.id) ? 3 : 2,
+                                opacity: isFilteredOut ? 0.25 : 1,
+                                filter: isFilteredOut ? 'grayscale(80%)' : undefined,
+                                transition: 'all 0.2s ease',
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
+                      {liveViewportBounds && liveZones.length > 0 ? (
+                        <div
+                          className="pointer-events-none absolute left-2 top-2 z-30 flex max-w-[calc(100%-1rem)] flex-wrap gap-1.5"
+                          aria-hidden="true"
+                        >
+                          {liveZones.map((zone) => (
+                            <span
+                              key={`live-zone-label-${zone.id}`}
+                              className="rounded-md border border-primary/20 bg-background/85 px-1.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground shadow-sm backdrop-blur-sm"
+                            >
+                              {zone.name}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
-                  ) : null}
+                    {!live ? (
+                      <div className="pointer-events-none absolute bottom-3 left-3 z-30 flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 rounded-full border border-border bg-background/90 px-2.5 py-1 text-[10px] tabular-nums text-muted-foreground shadow-sm backdrop-blur">
+                          <span>
+                            {formatRoomMeters(canvasWidth)} × {formatRoomMeters(canvasHeight)} m
+                          </span>
+                          <span aria-hidden="true">·</span>
+                          <span>1 carreau = {formatRoomCentimeters(GRID_SIZE)} cm</span>
+                        </div>
+                        {!selectedWall && selectedTables.length === 0 ? (
+                          <p className="flex items-center rounded-full border border-border bg-background/90 px-2.5 py-1 text-[10px] text-muted-foreground shadow-sm backdrop-blur">
+                            Sélectionnez un élément pour modifier ses propriétés.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {placedTables.length === 0 &&
+                    ((floorPlan?.walls ?? []).length === 0 || !live) ? (
+                      <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center p-6">
+                        <div className="flex max-w-xs flex-col items-center text-center">
+                          {live ? (
+                            <span
+                              className="flex h-11 w-11 items-center justify-center rounded-full border border-dashed border-muted-foreground/40 bg-background/90 text-muted-foreground shadow-sm"
+                              aria-hidden="true"
+                            >
+                              <Armchair size={20} />
+                            </span>
+                          ) : null}
+                          <p
+                            className={cn('text-sm font-medium text-foreground', live && 'mt-2.5')}
+                          >
+                            {live
+                              ? allTables.length > 0
+                                ? `${allTables.length} table${allTables.length > 1 ? 's' : ''} à placer`
+                                : 'Aucune table dans ce plan'
+                              : tablesToPlace.length > 0
+                                ? 'Construisez votre plan'
+                                : 'Aucune table configurée'}
+                          </p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {live
+                              ? allTables.length > 0
+                                ? 'Placez les tables depuis Plan visuel pour suivre le service ici.'
+                                : 'Ajoutez vos tables depuis Plan visuel pour suivre le service ici.'
+                              : tablesToPlace.length > 0
+                                ? `${tablesToPlace.length} table${tablesToPlace.length > 1 ? 's restent' : ' reste'} à placer.`
+                                : 'Créez vos tables métier avant de les positionner dans la salle.'}
+                          </p>
+                          {!live && tablesToPlace.length > 0 ? (
+                            <div className="pointer-events-auto mt-3 flex flex-wrap justify-center gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="transition-all duration-200"
+                                onClick={focusTablesToPlace}
+                              >
+                                Placer les tables
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="transition-all duration-200"
+                                onClick={() => void autoLayoutTables()}
+                                disabled={autoLayoutLoading}
+                              >
+                                {autoLayoutLoading ? 'Placement…' : 'Disposition automatique'}
+                              </Button>
+                            </div>
+                          ) : null}
+                          {!live && allTables.length === 0 ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="pointer-events-auto mt-3 transition-all duration-200"
+                              onClick={() => setBulkCreateDialogOpen(true)}
+                            >
+                              <Plus size={15} className="mr-1.5" />
+                              Créer mes tables
+                            </Button>
+                          ) : null}
+                          {live && onRequestEdit ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="pointer-events-auto mt-3 w-full transition-all duration-200 sm:w-auto"
+                              onClick={onRequestEdit}
+                            >
+                              Configurer la salle
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
-                {inspector}
+                {!live || allTables.length > 0 ? inspector : null}
               </div>
               {typeof document !== 'undefined'
                 ? createPortal(
@@ -6093,6 +9354,7 @@ export function FloorPlanCanvas({
                                 status={live ? tableStatuses.get(activeDragTable.id) : undefined}
                                 isOverlay
                                 zoom={zoom}
+                                compact={compactTableCards}
                                 style={{
                                   transform: `scale(${zoom})`,
                                   transformOrigin: 'top left',
@@ -6101,12 +9363,29 @@ export function FloorPlanCanvas({
                             );
                           })()
                         : null}
+                      {activeDragData?.kind === 'placeTable' ? (
+                        <TableCard
+                          table={activeDragData.table}
+                          isOverlay
+                          zoom={zoom}
+                          compact={compactTableCards}
+                          style={{
+                            transform: `scale(${zoom})`,
+                            transformOrigin: 'top left',
+                          }}
+                        />
+                      ) : null}
                       {activeDragData?.kind === 'table' ? (
                         <NewTableOverlay
                           shape={activeDragData.shape}
                           capacity={activeDragData.capacity}
                           zoom={zoom}
                         />
+                      ) : null}
+                      {activeDragData?.kind === 'zone' ? (
+                        <div className="flex h-28 w-44 items-center justify-center rounded-xl border border-primary/40 bg-primary/10 text-xs font-semibold uppercase tracking-[0.14em] text-primary shadow-lg">
+                          Zone
+                        </div>
                       ) : null}
                       {activeDragData?.kind === 'wall' ? (
                         <NewWallOverlay type={activeDragData.type} zoom={zoom} />
@@ -6139,12 +9418,22 @@ export function FloorPlanCanvas({
           )}
         </CardContent>
       </Card>
+      {typeof document !== 'undefined'
+        ? createPortal(
+            <>
+              {mobileServiceInspector}
+              {mobileEditInspector}
+            </>,
+            document.body,
+          )
+        : null}
       {dialog}
       {confirm}
       {delayRecoveryConfirm}
       {delayRecoveryRevertConfirm}
       {multiDeleteConfirm}
       {settingsDialog}
+      {bulkCreateDialog}
       {duplicateDialog}
     </>
   );

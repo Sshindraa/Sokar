@@ -283,7 +283,7 @@ export default function NewMarketingCampaignPage() {
         <div>
           <div className="flex items-center gap-2">
             <Megaphone className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-semibold tracking-tight">Nouvelle campagne</h1>
+            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Nouvelle campagne</h1>
             <Badge variant="secondary">Marketing Pro</Badge>
           </div>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
@@ -301,8 +301,8 @@ export default function NewMarketingCampaignPage() {
       <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm">
         <Info className="mt-0.5 h-4 w-4 flex-none text-warning" />
         <p className="text-muted-foreground">
-          Le rendu et le calcul des unités sont actifs en local. Aucun fournisseur n’est contacté
-          tant que le flag d’envoi reste désactivé.
+          Brouillon local : aucun fournisseur n&apos;est contacté tant que l&apos;envoi reste
+          désactivé.
         </p>
       </div>
 
