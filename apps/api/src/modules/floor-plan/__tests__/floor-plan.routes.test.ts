@@ -38,6 +38,82 @@ describe('floorPlanRoutes', () => {
     await closeApp();
   });
 
+  describe('Zones et tables combinables', () => {
+    it('crée une zone dans le plan demandé', async () => {
+      const app = await getApp();
+      const zone = {
+        id: 'zone-1',
+        floorPlanId: 'fp-1',
+        sectionId: null,
+        name: 'Terrasse',
+        x: 32,
+        y: 32,
+        width: 360,
+        height: 220,
+        rotation: 0,
+      };
+      const spy = vi.spyOn(FloorPlanService.prototype, 'createZone').mockResolvedValue(zone as any);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/floor-plan/zones',
+        headers: { authorization: 'Bearer test' },
+        payload: { ...zone, id: undefined },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(spy).toHaveBeenCalledWith(
+        'test-rest-1',
+        expect.objectContaining({ name: 'Terrasse', width: 360 }),
+        'fp-1',
+      );
+      expect(res.json()).toEqual(zone);
+    });
+
+    it('refuse une combinaison hors du tenant', async () => {
+      const app = await getApp();
+      const spy = vi.spyOn(FloorPlanService.prototype, 'createTableCombination');
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/other-rest/floor-plan/table-combinations',
+        headers: { authorization: 'Bearer test' },
+        payload: { tableIds: ['table-1', 'table-2'], floorPlanId: 'fp-1' },
+      });
+
+      expect(res.statusCode).toBe(403);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('persiste une combinaison de tables sélectionnées', async () => {
+      const app = await getApp();
+      const combination = {
+        id: 'combination-1',
+        floorPlanId: 'fp-1',
+        name: null,
+        tableIds: ['table-1', 'table-2'],
+      };
+      const spy = vi
+        .spyOn(FloorPlanService.prototype, 'createTableCombination')
+        .mockResolvedValue(combination);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/restaurants/test-rest-1/floor-plan/table-combinations',
+        headers: { authorization: 'Bearer test' },
+        payload: { tableIds: combination.tableIds, floorPlanId: 'fp-1' },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(spy).toHaveBeenCalledWith(
+        'test-rest-1',
+        { tableIds: combination.tableIds, floorPlanId: 'fp-1' },
+        'fp-1',
+      );
+      expect(res.json()).toEqual(combination);
+    });
+  });
+
   describe('PATCH /restaurants/:id/floor-plan/state', () => {
     it('retourne 204 et appelle transitionState avec le bon scope', async () => {
       const app = await getApp();

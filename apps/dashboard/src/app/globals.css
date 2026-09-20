@@ -40,6 +40,14 @@
     --pricing-card-highlight: 0 0% 100% / 0.08;
     --metal: 38 7.8% 52%;
     --faint-foreground: 36 4% 47.5%;
+
+    /* Carte opérationnelle compacte du plan Live : les tables restent lisibles
+       même quand le canvas utilise une surface sombre ou une vue réduite. */
+    --floor-table-surface: 225 17% 24%;
+    --floor-table-chair: 225 17% 28%;
+    --floor-table-accent: 174 63% 72%;
+    --floor-table-text: 0 0% 96%;
+    --floor-table-muted: 218 12% 68%;
   }
 
   /*
@@ -137,6 +145,15 @@
     --glass-stroke: 43 13% 90%;
     --metal: 38 8% 45%;
     --faint-foreground: 40 7.4% 68.2%;
+
+    /* Les cartes de table suivent le thème : surface blanche et rail métal gris
+       en clair, surface ardoise et rail cyan en sombre. Les assises restent
+       volontairement contrastées pour conserver la lecture de la disposition. */
+    --floor-table-surface: 0 0% 100%;
+    --floor-table-chair: 0 0% 100%;
+    --floor-table-accent: 38 8% 45%;
+    --floor-table-text: 0 0% 6.7%;
+    --floor-table-muted: 38 7.8% 45%;
   }
 }
 
@@ -196,7 +213,13 @@
   }
 
   .sokar-empty {
-    @apply flex min-h-64 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border bg-card/60 p-8 text-center text-muted-foreground;
+    @apply flex min-h-40 flex-col items-center justify-center gap-2.5 rounded-2xl border border-dashed border-border bg-card/60 p-5 text-center text-muted-foreground;
+  }
+
+  @media (min-width: 768px) {
+    .sokar-empty {
+      @apply min-h-48 p-6;
+    }
   }
 
   .sokar-error {
@@ -992,8 +1015,31 @@ body {
 
 .dashboard-flow-header {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  min-height: 2.75rem;
+  flex-direction: row;
+  align-items: center;
+}
+
+.dashboard-flow-header__brand {
+  flex: 0 1 auto;
+}
+
+.dashboard-flow-header__actions {
+  flex: 0 0 auto;
+}
+
+.dashboard-brand-link {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.dashboard-brand-logo {
+  display: block;
+}
+
+/* The supplied mark is white; invert it only on the light dashboard surface. */
+.light .dashboard-brand-logo {
+  filter: invert(1);
 }
 
 /* Sur téléphone et iPad, le sélecteur d'espace reste visible en entier. Il
@@ -1001,11 +1047,18 @@ body {
    flux pour garder trois cibles tactiles confortables. */
 .dashboard-mobile-mode-switcher {
   display: flex;
+  min-width: 0;
   justify-content: center;
 }
 
+.dashboard-mobile-mode-switcher--inline {
+  width: auto;
+  flex: 1 1 auto;
+}
+
 .dashboard-mobile-mode-switcher .dashboard-mode-switcher__nav {
-  width: min(100%, 42rem);
+  width: 100%;
+  min-width: 0;
 }
 
 .dashboard-mobile-mode-switcher .dashboard-mode-switcher__dialog {
@@ -1013,6 +1066,25 @@ body {
 }
 
 @media (max-width: 479px) {
+  .dashboard-flow-header {
+    gap: 0.35rem;
+  }
+
+  .dashboard-brand-link {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 0.7rem;
+  }
+
+  .dashboard-brand-logo {
+    width: 1.85rem;
+    height: 1.85rem;
+  }
+
+  .dashboard-flow-header__actions {
+    gap: 0.25rem;
+  }
+
   .dashboard-mobile-mode-switcher .dashboard-mode-switcher__nav {
     gap: 0;
     padding: 0.2rem;
@@ -1026,12 +1098,33 @@ body {
 
 .dashboard-shell {
   padding-top: 0;
+  /* Keep focus/scrollIntoView targets clear of the tactile navigation. */
+  scroll-padding-bottom: calc(7.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 .dashboard-shell-content {
-  /* Keep the last chart labels above the fixed tactile navigation. */
+  /* Reserve more than the bar's visual height so the last row of every view
+     can be read and reached without sitting underneath the fixed navigation. */
   padding-bottom: calc(7.5rem + env(safe-area-inset-bottom, 0px));
   padding-top: 0.5rem;
+}
+
+/* En mode Salle (surtout Live), la page remplit la hauteur utile de l'écran tactile
+   sans laisser de vide mort sous le plan : la barre de service mobile s'ancre
+   directement au-dessus de la barre de navigation. */
+.dashboard-shell-content--salle {
+  padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  min-height: calc(100dvh - 1rem);
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 1024px) {
+  .dashboard-shell-content--salle {
+    padding-bottom: 2rem;
+    min-height: auto;
+    display: block;
+  }
 }
 
 .dashboard-mobile-nav {
@@ -1041,7 +1134,7 @@ body {
   z-index: 50;
   display: flex;
   justify-content: center;
-  padding: 0 0.85rem max(0.85rem, env(safe-area-inset-bottom, 0px));
+  padding: 0 0.85rem max(0.65rem, env(safe-area-inset-bottom, 0px));
   pointer-events: none;
   opacity: 1;
   transform: translate3d(0, 0, 0) scale(1);
@@ -1049,35 +1142,68 @@ body {
     transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
     opacity 220ms ease;
   will-change: transform, opacity;
+  isolation: isolate;
 }
 
-/* Au défilement, la barre se resserre comme la barre d'onglets iOS. Elle
-   conserve une petite présence tactile afin de rester retrouvable et revient
-   immédiatement au moindre défilement vers le haut. */
-.dashboard-mobile-nav.is-minimized {
-  opacity: 0.94;
-  transform: translate3d(0, calc(100% - 1.1rem), 0) scale(0.965);
+/* Action sheet du plan Live : il reste au-dessus de la navigation tactile
+   pour rendre l'action sur une table disponible sans faire défiler le canvas. */
+.floor-plan-mobile-service-sheet {
+  position: fixed;
+  inset-inline: 0.75rem;
+  bottom: calc(4.9rem + env(safe-area-inset-bottom, 0px));
+  /* Au-dessus de la navigation tactile (z-index: 50) et, rendu via portal,
+     hors de la surface canvas qui coupe volontairement son overflow. */
+  z-index: var(--z-index-floor-plan-sheet, 60);
 }
 
-.dashboard-mobile-nav.is-minimized:focus-within,
-.dashboard-mobile-nav.is-minimized:hover {
-  opacity: 1;
-  transform: translate3d(0, 0, 0) scale(1);
+/* Le champ date natif garde son vrai contrôle tactile, mais son indicateur
+   WebKit recouvrait le libellé français superposé sur les écrans étroits. */
+@media (max-width: 639px) {
+  .floor-plan-service-date-input::-webkit-calendar-picker-indicator {
+    opacity: 0;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .floor-plan-mobile-service-sheet {
+    inset-inline: max(1.5rem, env(safe-area-inset-left, 0px));
+    bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+    max-width: 42rem;
+    margin-inline: auto;
+  }
+}
+
+/* Le contenu peut défiler sous une barre fixe, mais il ne doit pas rester
+   lisible à travers le verre. Ce scrim très court protège la dernière ligne
+   sans ajouter une seconde surface visible autour de la barre. */
+.dashboard-mobile-nav::before {
+  position: absolute;
+  inset: -1.5rem 0 0;
+  z-index: 0;
+  pointer-events: none;
+  content: '';
+  background: linear-gradient(
+    to bottom,
+    hsl(var(--background) / 0),
+    hsl(var(--background) / 0.72) 42%,
+    hsl(var(--background) / 0.96) 78%
+  );
 }
 
 .dashboard-mobile-nav__inner {
   position: relative;
+  z-index: 1;
   display: flex;
   width: min(100%, 28rem);
-  height: 4.25rem;
+  height: 3.5rem;
   align-items: center;
   overflow: hidden;
   isolation: isolate;
   border: 1px solid hsl(var(--foreground) / 0.14);
-  border-radius: 1.65rem;
+  border-radius: 1.4rem;
   background:
     radial-gradient(120% 170% at 50% -45%, hsl(var(--foreground) / 0.14), transparent 58%),
-    linear-gradient(135deg, hsl(var(--popover)), hsl(var(--background) / 0.78));
+    linear-gradient(135deg, hsl(var(--popover) / 0.97), hsl(var(--background) / 0.94));
   box-shadow:
     0 16px 38px hsl(var(--background) / 0.48),
     0 3px 10px hsl(var(--background) / 0.28),
@@ -1102,7 +1228,7 @@ body {
 
 .dashboard-mobile-nav__inner::before {
   inset: 1px;
-  border-radius: calc(1.65rem - 1px);
+  border-radius: calc(1.4rem - 1px);
   background:
     linear-gradient(118deg, hsl(var(--foreground) / 0.12), transparent 24%),
     linear-gradient(300deg, hsl(var(--foreground) / 0.07), transparent 35%);
@@ -1304,17 +1430,8 @@ body {
   color: hsl(var(--primary));
 }
 
-.dashboard-mobile-nav.is-minimized .dashboard-mobile-nav__label {
-  opacity: 0;
-  transform: translate3d(0, 0.3rem, 0) scale(0.84);
-}
-
-.dashboard-mobile-nav.is-minimized .dashboard-mobile-nav__icon {
-  transform: translate3d(0, 0.34rem, 0) scale(0.9);
-}
-
 .dashboard-mobile-more-menu {
-  bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  bottom: calc(4.65rem + env(safe-area-inset-bottom, 0px));
   max-height: min(72dvh, 40rem);
   overscroll-behavior: contain;
   transform-origin: 88% 100%;
@@ -1354,6 +1471,50 @@ body {
    cibles de toucher généreuses. Le mode paysage bascule déjà sur le chrome PC
    à partir de 1024px. */
 @media (min-width: 768px) and (max-width: 1023px) {
+  /* L'iPad portrait garde la barre tactile, mais adopte un en-tête de
+     tablette centré comme le chrome PC au lieu d'un flux de téléphone. */
+  .dashboard-flow-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(16rem, 24rem) auto;
+    min-height: 3.5rem;
+    gap: 1rem;
+  }
+
+  .dashboard-flow-header__brand {
+    min-width: 0;
+  }
+
+  .dashboard-flow-header__actions {
+    gap: 0.5rem;
+  }
+
+  .dashboard-mobile-mode-switcher--inline {
+    width: 100%;
+    flex: none;
+  }
+
+  .dashboard-mobile-mode-switcher .dashboard-mode-switcher__nav {
+    height: 3.25rem;
+    gap: 0.25rem;
+    padding: 0.25rem;
+  }
+
+  .dashboard-mobile-mode-switcher .dashboard-mode-switcher__item {
+    height: 2.75rem;
+    padding-inline: 1rem;
+    font-size: 0.95rem;
+  }
+
+  .dashboard-shell {
+    scroll-padding-bottom: calc(7.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .dashboard-shell-content {
+    padding-inline: 1.5rem;
+    padding-bottom: calc(7.75rem + env(safe-area-inset-bottom, 0px));
+    padding-top: 0.75rem;
+  }
+
   .dashboard-mobile-nav {
     padding-inline: 1.25rem;
   }
@@ -1379,12 +1540,12 @@ body {
   }
 
   .dashboard-mobile-nav__liquid-indicator {
-    height: 3.45rem;
-    border-radius: 1.7rem;
+    height: 2.7rem;
+    border-radius: 1.45rem;
   }
 
   .dashboard-mobile-more-menu {
-    bottom: calc(5.85rem + env(safe-area-inset-bottom, 0px));
+    bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
     width: min(calc(100% - 2rem), 46rem);
   }
 }

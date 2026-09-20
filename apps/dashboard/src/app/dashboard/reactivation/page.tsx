@@ -144,7 +144,7 @@ export default function ReactivationPage() {
       <div className="flex items-center gap-3">
         <HeartHandshake size={24} className="text-warning" />
         <div>
-          <h1 className="text-xl font-semibold">Réactivation VIP</h1>
+          <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Réactivation VIP</h1>
           <p className="text-sm text-muted-foreground">
             Vos meilleurs clients qui ne sont plus venus depuis un moment.
           </p>

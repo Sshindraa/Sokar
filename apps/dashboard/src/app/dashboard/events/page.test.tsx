@@ -163,6 +163,6 @@ describe('EventsPage', () => {
     apiMocks.get.mockRejectedValue(new Error('EVENTS_DISABLED'));
     render(<EventsPage />);
     expect(await screen.findByText('EVENTS_DISABLED')).toBeInTheDocument();
-    expect(screen.getByText(/restent verrouillés pendant la qualification/)).toBeInTheDocument();
+    expect(screen.getByText(/Paiement et distribution en préparation/)).toBeInTheDocument();
   });
 });

@@ -90,6 +90,7 @@ function reservationRow(overrides: Record<string, unknown> = {}) {
 describe('experience routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.setSystemTime(NOW);
     vi.stubEnv('EXPERIENCES_ENABLED', 'false');
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
       id: 'test-rest-1',
@@ -100,6 +101,7 @@ describe('experience routes', () => {
   });
 
   afterAll(async () => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
     await closeApp();
   });

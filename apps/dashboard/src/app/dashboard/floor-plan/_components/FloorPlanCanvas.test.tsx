@@ -1,9 +1,19 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  clampZoom,
+  computeCenterScroll,
+  computeContentBounds,
+  computeFitZoom,
+  computeFocusScroll,
+  computeLiveContentBounds,
+  computeZoomAnchorScroll,
+  findDuplicatePosition,
   FloorPlanCanvas,
+  getTableAlignmentGuides,
   getChairPositions,
   getSafeTableDimensions,
+  isDoubleTap,
   StatsPanel,
   TABLE_LAYOUT,
   WaitingListPanel,
@@ -81,7 +91,20 @@ vi.mock('@/lib/api', () => ({
   useApi: () => apiMocks,
 }));
 
+// jsdom n'implémente pas `matchMedia` : le mock rend le chemin tactile
+// pilotable par test, tout en gardant le rendu desktop par défaut.
+const mediaMocks = vi.hoisted(() => ({ mobile: false, touch: false, coarse: false }));
+
+vi.mock('@/lib/useMediaQuery', () => ({
+  useIsMobile: () => mediaMocks.mobile,
+  useMediaQuery: (query: string) =>
+    query === '(pointer: coarse)' ? mediaMocks.coarse : mediaMocks.touch,
+}));
+
 beforeEach(() => {
+  mediaMocks.mobile = false;
+  mediaMocks.touch = false;
+  mediaMocks.coarse = false;
   apiMocks.get.mockReset();
   apiMocks.post.mockReset();
   apiMocks.patch.mockReset();
@@ -206,6 +229,51 @@ describe('FloorPlanCanvas — disposition des chaises', () => {
   });
 });
 
+describe('FloorPlanCanvas — guides et duplication de table', () => {
+  const referenceTable = {
+    id: 'reference',
+    name: 'T1',
+    capacity: 4,
+    minCapacity: 1,
+    isActive: true,
+    positionX: 100,
+    positionY: 100,
+    width: 80,
+    height: 80,
+    rotation: 0,
+    shape: 'rect' as const,
+  };
+
+  it('propose les guides de bord et de centre les plus proches pendant un drag', () => {
+    const guides = getTableAlignmentGuides({
+      x: 178,
+      y: 100,
+      width: 80,
+      height: 80,
+      tables: [referenceTable],
+      excludedTableId: 'moving',
+    });
+
+    expect(guides.x).toMatchObject({ axis: 'x', value: 180, position: 180, distance: 2 });
+    expect(guides.y).toMatchObject({ axis: 'y', value: 100, position: 100, distance: 0 });
+  });
+
+  it('duplique à proximité sans chevaucher la table voisine', () => {
+    const source = { ...referenceTable, id: 'source', positionX: 96, positionY: 96 };
+    const occupiedRight = {
+      ...referenceTable,
+      id: 'occupied-right',
+      positionX: 192,
+      positionY: 96,
+    };
+
+    expect(findDuplicatePosition(source, [source, occupiedRight], 800, 500)).toEqual({
+      x: 96,
+      y: 192,
+    });
+  });
+});
+
 describe('FloorPlanCanvas — taille des tables', () => {
   it('keeps a minimum-size round T4 card shrinkable to its explicit dimensions', async () => {
     render(<FloorPlanCanvas orgId="org_test" />);
@@ -215,12 +283,17 @@ describe('FloorPlanCanvas — taille des tables', () => {
     expect(table).toHaveClass('min-w-0', 'min-h-0');
     expect(table).toHaveStyle({ width: '64px', height: '64px' });
 
-    const tableName = screen.getByText('T4');
-    const capacity = screen.getByText('· 4 places');
+    const tableName = within(table).getByText('T4');
+    const capacity = within(table).getByText('4 places');
 
-    expect(tableName.parentElement).toHaveClass('min-w-0', 'flex-wrap');
-    expect(tableName).toHaveClass('min-w-0');
-    expect(capacity).toHaveClass('min-w-0');
+    expect(tableName).toHaveClass('max-w-full', 'truncate');
+    expect(capacity).toHaveClass('truncate');
+    expect(table.querySelectorAll('.bg-floor-table-chair')).toHaveLength(4);
+    expect(table.querySelector('.rounded-full.bg-floor-table-surface')).toHaveStyle({
+      width: '72px',
+      height: '72px',
+    });
+    expect(table.querySelector('.bg-floor-table-accent')).not.toBeNull();
   });
 
   it('récupère le plan spécifique quand floorPlanId est fourni', async () => {
@@ -461,6 +534,147 @@ describe('FloorPlanCanvas — guides des murs', () => {
   });
 });
 
+describe('FloorPlanCanvas — édition du plan', () => {
+  it('affiche le libellé personnalisé d’une table sur le canvas', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/reservations')) return [];
+      return {
+        ...floorPlan,
+        tables: [{ ...floorPlan.tables![0], name: 'Banquette 1' }],
+      };
+    });
+
+    render(<FloorPlanCanvas orgId="org_test" mode="design" />);
+
+    expect(
+      await screen.findByRole('button', { name: 'Banquette 1 · 4 places' }),
+    ).toBeInTheDocument();
+  });
+
+  it('dispose automatiquement les tables existantes au premier chargement', async () => {
+    const unplacedTables = [
+      {
+        ...floorPlan.tables![0],
+        id: 'table-unplaced-1',
+        name: 'T1',
+        positionX: null,
+        positionY: null,
+      },
+      {
+        ...floorPlan.tables![0],
+        id: 'table-unplaced-2',
+        name: 'T2',
+        positionX: null,
+        positionY: null,
+      },
+    ];
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/reservations')) return [];
+      return { ...floorPlan, tables: unplacedTables, walls: [], sections: [] };
+    });
+    apiMocks.patch.mockImplementation(async (path: string, body: Record<string, unknown>) => {
+      const tableId = path.split('/').pop();
+      const table = unplacedTables.find((item) => item.id === tableId);
+      if (!table) throw new Error('Fixture table missing');
+      return { ...table, ...body };
+    });
+
+    render(<FloorPlanCanvas orgId="org_test" mode="design" />);
+
+    expect(
+      await screen.findByText('Disposition initiale appliquée.', { exact: false }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(2));
+
+    expect(screen.getByRole('button', { name: 'T1 · 4 places' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'T2 · 4 places' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Annuler' })).not.toBeDisabled();
+    expect(screen.queryByText('Construisez votre plan')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tables à placer · 2')).not.toBeInTheDocument();
+  });
+
+  it('crée une table métier à placer depuis la palette', async () => {
+    apiMocks.post.mockImplementation(async (path: string, body: Record<string, unknown>) => {
+      if (path.includes('/floor-plan/tables')) {
+        return {
+          id: 'table-created',
+          name: 'T1',
+          capacity: 4,
+          minCapacity: 1,
+          isActive: true,
+          positionX: body.positionX,
+          positionY: body.positionY,
+          width: null,
+          height: null,
+          rotation: 0,
+          shape: 'round',
+        };
+      }
+      throw new Error(`Unexpected POST ${path}`);
+    });
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/reservations')) return [];
+      return { ...floorPlan, tables: [], walls: [], sections: [] };
+    });
+
+    render(<FloorPlanCanvas orgId="org_test" mode="design" />);
+
+    expect(await screen.findByText('Aucune table configurée')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ajouter une table' }));
+
+    await waitFor(() => {
+      expect(apiMocks.post).toHaveBeenCalledWith(
+        'restaurants/org_test/floor-plan/tables',
+        expect.objectContaining({
+          shape: 'rect',
+          capacity: 4,
+          name: 'T1',
+          positionX: null,
+          positionY: null,
+        }),
+      );
+    });
+
+    expect(await screen.findByText('Table T1', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.getByText('Tables à placer · 1')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Table ronde/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nouvelle table' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('garde un inspecteur discret quand rien n’est sélectionné', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/reservations')) return [];
+      return { ...floorPlan, tables: [], walls: [], sections: [] };
+    });
+
+    render(<FloorPlanCanvas orgId="org_test" mode="design" />);
+
+    expect(await screen.findByText('Aucune table configurée')).toBeInTheDocument();
+    expect(
+      screen.getByText('Sélectionnez un élément pour modifier ses propriétés.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nouvelle table' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Table' })).not.toBeInTheDocument();
+  });
+
+  it('garde les outils du plan et la sauvegarde dans un seul bandeau', async () => {
+    render(<FloorPlanCanvas orgId="org_test" mode="design" />);
+
+    const saveButton = await screen.findByRole('button', { name: /Enregistrer/ });
+    expect(saveButton).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Plan test/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Paramètres du plan' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Paramètres de la salle' }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Annuler' }));
+    expect(saveButton).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ajouter une salle' })).not.toBeInTheDocument();
+    expect(screen.getByRole('toolbar', { name: /Historique/ })).toBeInTheDocument();
+  });
+});
+
 describe("FloorPlanCanvas — liste d'attente Live service", () => {
   it('charge les entrées PENDING, les affiche dans Live service et les promeut', async () => {
     apiMocks.get.mockImplementation(async (path: string) => {
@@ -472,7 +686,7 @@ describe("FloorPlanCanvas — liste d'attente Live service", () => {
 
     render(<FloorPlanCanvas orgId="org_test" mode="service" />);
 
-    fireEvent.click(await screen.findByRole('button', { name: "Liste d'attente" }));
+    fireEvent.click(await screen.findByRole('tab', { name: "Liste d'attente" }));
 
     expect(await screen.findByText('Alice Martin')).toBeInTheDocument();
     expect(screen.getByText('Terrasse')).toBeInTheDocument();
@@ -523,7 +737,7 @@ describe('FloorPlanCanvas — actions Live service', () => {
     };
   }
 
-  it('affiche un pouls de service lisible avant le plan', async () => {
+  it('place les onglets du service en tête sans bandeau de pouls', async () => {
     apiMocks.get.mockImplementation(async (path: string) => {
       if (path.includes('/floor-plan/reservations')) return [];
       if (path.includes('/waiting-list')) return [];
@@ -547,13 +761,207 @@ describe('FloorPlanCanvas — actions Live service', () => {
 
     render(<FloorPlanCanvas orgId="org_test" mode="service" />);
 
-    const pulse = await screen.findByRole('status', { name: 'Pouls du service' });
-    expect(within(pulse).getByText('Urgent')).toBeInTheDocument();
-    expect(within(pulse).getByText('1 arrivée en retard à traiter')).toBeInTheDocument();
-    expect(within(pulse).getByText('1 retard')).toBeInTheDocument();
-    expect(within(pulse).getByText('2 à installer')).toBeInTheDocument();
-    expect(within(pulse).getByText('4 tables en service')).toBeInTheDocument();
-    expect(within(pulse).getByText('+3 dans 30 min')).toBeInTheDocument();
+    const tablist = await screen.findByRole('tablist', { name: 'Vue du service' });
+    expect(tablist).toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: 'Pouls du service' })).not.toBeInTheDocument();
+    // La vue service doit utiliser la même surface que les autres rubriques
+    // (arrondis + bordure + fond carte) et non l'ancien rendu à plat.
+    expect(tablist.closest('.sokar-card')).not.toBeNull();
+  });
+
+  it('expose les vues du service comme un véritable groupe d’onglets', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return [];
+      if (path.includes('/waiting-list')) return [];
+      return floorPlan;
+    });
+
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+    const tablist = await screen.findByRole('tablist', { name: 'Vue du service' });
+    expect(
+      within(tablist)
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    ).toEqual(['Plan', "Liste d'attente", 'Statistiques']);
+    expect(within(tablist).getByRole('tab', { name: 'Plan' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(within(tablist).getByRole('tab', { name: 'Statistiques' })).toHaveAttribute(
+      'aria-selected',
+      'false',
+    );
+
+    fireEvent.click(within(tablist).getByRole('tab', { name: 'Statistiques' }));
+
+    expect(within(tablist).getByRole('tab', { name: 'Statistiques' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(within(tablist).getByRole('tab', { name: 'Plan' })).toHaveAttribute(
+      'aria-selected',
+      'false',
+    );
+  });
+
+  it('affiche la volumétrie du service et le taux d’occupation', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return [makeReservation('SEATED')];
+      if (path.includes('/waiting-list')) return [];
+      if (path.includes('/service-copilot/pulse')) {
+        return {
+          date: '2026-09-18',
+          generatedAt: '2026-09-18T17:30:00.000Z',
+          isLiveDate: true,
+          status: 'calm',
+          headline: 'Service sous contrôle',
+          lateArrivals: 0,
+          arrivalsToSeat: 0,
+          arrivalsNext30Minutes: 0,
+          seatedTables: 1,
+          pendingWaitingList: 0,
+          confirmedReservations: 1,
+        };
+      }
+      return floorPlan;
+    });
+
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+    const occupancy = await screen.findByRole('progressbar', { name: /Taux d’occupation/ });
+    expect(occupancy).toHaveAttribute('aria-valuenow', '100');
+    expect(screen.getByText('couverts')).toBeInTheDocument();
+    expect(screen.getByText('tables occupées')).toBeInTheDocument();
+    expect(screen.getByText('réservations')).toBeInTheDocument();
+    expect(screen.getByText('Martin Dupont')).toBeInTheDocument();
+    expect(screen.getAllByText('Occupée').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByTitle('Occupée')).toBeInTheDocument();
+  });
+
+  it('signale une date passée et permet de revenir au jour courant', async () => {
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return [];
+      if (path.includes('/waiting-list')) return [];
+      if (path.includes('/service-copilot/pulse')) {
+        return {
+          date: '2026-09-18',
+          generatedAt: '2026-09-18T17:30:00.000Z',
+          isLiveDate: false,
+          status: 'calm',
+          headline: 'Service sous contrôle',
+          lateArrivals: 0,
+          arrivalsToSeat: 0,
+          arrivalsNext30Minutes: 0,
+          seatedTables: 0,
+          pendingWaitingList: 0,
+          confirmedReservations: 0,
+        };
+      }
+      return floorPlan;
+    });
+
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+    const dateInput = await screen.findByLabelText('Date du service');
+    fireEvent.change(dateInput, { target: { value: '2026-01-05' } });
+
+    expect(await screen.findByText('Archive')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aujourd’hui' }));
+
+    expect(await screen.findByText('En direct')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Aujourd’hui' })).not.toBeInTheDocument();
+  });
+
+  it('propose une sortie claire quand le plan Live ne contient aucune table', async () => {
+    const onRequestEdit = vi.fn();
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return [];
+      if (path.includes('/waiting-list')) return [];
+      return { ...floorPlan, tables: [], walls: [], sections: [] };
+    });
+
+    render(<FloorPlanCanvas orgId="org_test" mode="service" onRequestEdit={onRequestEdit} />);
+
+    expect(await screen.findByText('Aucune table dans ce plan')).toBeInTheDocument();
+    expect(
+      screen.getByText('Ajoutez vos tables depuis Plan visuel pour suivre le service ici.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Cliquez sur un élément de la palette, ou glissez-le ici.'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'Sélectionnez une table pour afficher la réservation et le temps d’occupation.',
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Filtrer par serveur' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Configurer la salle' }));
+    expect(onRequestEdit).toHaveBeenCalledOnce();
+  });
+
+  it('propose les affectations serveur sans afficher les options vides', async () => {
+    const assignedPlan: FloorPlan = {
+      ...floorPlan,
+      tables: [
+        { ...floorPlan.tables![0], assignedServer: 'Léa' },
+        {
+          ...floorPlan.tables![0],
+          id: 'table-t2',
+          name: 'T2',
+          positionX: 180,
+          assignedServer: null,
+        },
+      ],
+    };
+    apiMocks.get.mockImplementation(async (path: string) => {
+      if (path.includes('/floor-plan/reservations')) return [];
+      if (path.includes('/waiting-list')) return [];
+      if (path.includes('/service-copilot/delay-recoveries')) return { recoveries: [] };
+      if (path.includes('/service-copilot/pulse')) {
+        return {
+          date: '2026-09-18',
+          generatedAt: '2026-09-18T17:30:00.000Z',
+          isLiveDate: true,
+          status: 'calm',
+          headline: 'Service sous contrôle',
+          lateArrivals: 0,
+          arrivalsToSeat: 0,
+          arrivalsNext30Minutes: 0,
+          seatedTables: 0,
+          pendingWaitingList: 0,
+          confirmedReservations: 0,
+        };
+      }
+      return assignedPlan;
+    });
+
+    render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+    const filter = await screen.findByRole('combobox', { name: 'Filtrer par serveur' });
+    const previousScrollIntoView = Element.prototype.scrollIntoView;
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    try {
+      fireEvent.click(filter);
+
+      expect(await screen.findAllByText('Toutes les tables (2)')).not.toHaveLength(0);
+      expect(screen.getAllByText('Non affectées (1)')).not.toHaveLength(0);
+      expect(screen.getAllByText('Léa (1 table)')).not.toHaveLength(0);
+    } finally {
+      if (previousScrollIntoView) {
+        Object.defineProperty(Element.prototype, 'scrollIntoView', {
+          configurable: true,
+          value: previousScrollIntoView,
+        });
+      } else {
+        Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+      }
+    }
   });
 
   it('emploie des actions métier explicites pour installer et libérer une table', async () => {
@@ -1080,5 +1488,282 @@ describe('StatsPanel — alertes', () => {
     expect(screen.getByText('2 réservations sans table')).toBeInTheDocument();
     expect(screen.getByText(/Alice One/)).toBeInTheDocument();
     expect(screen.getByText(/Bob Two/)).toBeInTheDocument();
+  });
+});
+
+describe('FloorPlanCanvas — cadrage tactile et gestes', () => {
+  it('cadre le plan dans la fenêtre visible sans descendre sous le plancher tactile', () => {
+    // Salle 1400 × 900 dans la fenêtre d'un iPhone 13 : le cadrage strict
+    // donnerait 0,26, soit des tables plus petites que la cible tactile.
+    expect(
+      computeFitZoom({
+        viewportWidth: 358,
+        viewportHeight: 420,
+        canvasWidth: 1400,
+        canvasHeight: 900,
+        minZoom: 0.3,
+        floor: 0.45,
+      }),
+    ).toBeCloseTo(0.45, 5);
+
+    // Un petit plan tient entièrement : le plancher ne le dégrade pas.
+    expect(
+      computeFitZoom({
+        viewportWidth: 358,
+        viewportHeight: 420,
+        canvasWidth: 640,
+        canvasHeight: 480,
+        minZoom: 0.3,
+        floor: 0.45,
+      }),
+    ).toBeCloseTo(358 / 640, 5);
+  });
+
+  it('borne le zoom et refuse un cadrage sur une fenêtre non mesurée', () => {
+    expect(clampZoom(0.05, 0.3)).toBe(0.3);
+    expect(clampZoom(4, 0.3)).toBe(2);
+    expect(
+      computeFitZoom({
+        viewportWidth: 0,
+        viewportHeight: 0,
+        canvasWidth: 1400,
+        canvasHeight: 900,
+        minZoom: 0.3,
+      }),
+    ).toBe(0.3);
+  });
+
+  it('calcule la zone occupée par les tables posées', () => {
+    expect(
+      computeContentBounds(
+        [
+          { positionX: 100, positionY: 200, width: 144, height: 104, rotation: 0 },
+          { positionX: 400, positionY: 300, width: 128, height: 128, shape: 'round', rotation: 0 },
+          { positionX: null, positionY: null },
+        ],
+        1400,
+        900,
+      ),
+    ).toEqual({
+      x: 52,
+      y: 152,
+      width: 524,
+      height: 324,
+    });
+
+    // Aucune table posée : pas de zone, le cadrage retombe sur le plan entier.
+    expect(computeContentBounds([{ positionX: null, positionY: null }], 1400, 900)).toBeNull();
+  });
+
+  it("tient compte de la rotation pour l'empreinte au sol", () => {
+    // 144 × 104 tourné à 90° pivote autour du centre : l'empreinte devient
+    // 104 × 144, ancrée au coin supérieur gauche d'origine.
+    expect(
+      computeContentBounds(
+        [{ positionX: 100, positionY: 100, width: 144, height: 104, rotation: 90 }],
+        1400,
+        900,
+      ),
+    ).toEqual({
+      x: 72,
+      y: 32,
+      width: 200,
+      height: 240,
+    });
+  });
+
+  it('cadre en Live les tables sans reprendre la hauteur vide de la zone', () => {
+    expect(
+      computeLiveContentBounds(
+        [{ x: 100, y: 120, width: 500, height: 300, rotation: 0 }],
+        [{ positionX: 180, positionY: 180, width: 64, height: 64, rotation: 0 }],
+        1400,
+        900,
+      ),
+    ).toEqual({ x: 156, y: 156, width: 112, height: 112 });
+  });
+
+  it('centre la zone des tables dans la fenêtre', () => {
+    expect(
+      computeFocusScroll({
+        viewportWidth: 358,
+        viewportHeight: 420,
+        region: { x: 400, y: 300, width: 400, height: 300 },
+        zoom: 1,
+      }),
+    ).toEqual({ left: 421, top: 240 });
+
+    // Zone déjà visible : le défilement reste borné à zéro.
+    expect(
+      computeFocusScroll({
+        viewportWidth: 358,
+        viewportHeight: 420,
+        region: { x: 52, y: 152, width: 524, height: 324 },
+        zoom: 0.45,
+      }),
+    ).toEqual({ left: 0, top: 0 });
+  });
+
+  it('garde le point touché immobile pendant un changement d’échelle', () => {
+    const anchor = computeZoomAnchorScroll({
+      scrollLeft: 100,
+      scrollTop: 50,
+      offsetX: 40,
+      offsetY: 30,
+      zoom: 1,
+      nextZoom: 2,
+    });
+
+    // Le point du plan sous le doigt (140, 80 en coordonnées plan) reste
+    // sous le doigt : (scroll + offset) / zoom est invariant.
+    expect((anchor.left + 40) / 2).toBeCloseTo(140, 5);
+    expect((anchor.top + 30) / 2).toBeCloseTo(80, 5);
+  });
+
+  describe('FloorPlanCanvas — vue service sur téléphone', () => {
+    function calmPulse(overrides: Partial<Record<string, number>> = {}) {
+      return {
+        date: '2026-09-18',
+        generatedAt: '2026-09-18T17:30:00.000Z',
+        isLiveDate: true,
+        status: 'calm' as const,
+        headline: 'Service sous contrôle',
+        lateArrivals: 0,
+        arrivalsToSeat: 0,
+        arrivalsNext30Minutes: 0,
+        seatedTables: 0,
+        pendingWaitingList: 0,
+        confirmedReservations: 0,
+        ...overrides,
+      };
+    }
+
+    function mockServicePulse(pulse: ReturnType<typeof calmPulse>, reservations: unknown[]) {
+      apiMocks.get.mockImplementation(async (path: string) => {
+        if (path.includes('/floor-plan/reservations')) return reservations;
+        if (path.includes('/waiting-list')) return [];
+        if (path.includes('/service-copilot/delay-recoveries')) return { recoveries: [] };
+        if (path.includes('/service-copilot/pulse')) return pulse;
+        return floorPlan;
+      });
+    }
+
+    it('réduit le cockpit à une ligne et cadre le plan quand le service est vide', async () => {
+      mediaMocks.mobile = true;
+      mediaMocks.touch = true;
+      mediaMocks.coarse = true;
+      mockServicePulse(calmPulse(), []);
+
+      // Fenêtre utile d'un iPhone 13 dans le plan de salle.
+      const widthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(358);
+      const heightSpy = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(420);
+      try {
+        render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+        // La navigation remplace désormais le bandeau d'état compact.
+        expect(await screen.findByRole('tablist', { name: 'Vue du service' })).toBeInTheDocument();
+        expect(screen.queryByRole('status', { name: 'Pouls du service' })).not.toBeInTheDocument();
+        // Ni volumétrie à zéro ni jauge ne mangent la hauteur utile du plan.
+        expect(screen.queryByText('couverts')).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole('progressbar', { name: /Taux d’occupation/ }),
+        ).not.toBeInTheDocument();
+
+        // Le plan s'ouvre cadré sur la zone des tables, sans exposer de
+        // contrôle de zoom au service : Live est une vue finalisée.
+        expect(await screen.findByRole('button', { name: 'T4 · 4 places' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Zoom arrière' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Zoom avant' })).not.toBeInTheDocument();
+        await waitFor(() =>
+          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '224px' }),
+        );
+
+        // Le canvas recouvre l'espaceur qui fournit l'aire de défilement. S'il
+        // n'est pas ancré en haut à gauche, sa position statique le place après
+        // l'espaceur et crée précisément le grand vide vu au-dessus des tables.
+        const table = screen.getByRole('button', { name: 'T4 · 4 places' });
+        expect(table.closest('.origin-top-left')).toHaveClass('left-0', 'top-0');
+      } finally {
+        widthSpy.mockRestore();
+        heightSpy.mockRestore();
+      }
+    });
+
+    it('garde le cockpit complet dès qu’une action est en attente', async () => {
+      mediaMocks.mobile = true;
+      mediaMocks.touch = true;
+      mockServicePulse(calmPulse({ pendingWaitingList: 2 }), []);
+
+      render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+      expect(await screen.findByText('couverts')).toBeInTheDocument();
+      expect(screen.getByRole('progressbar', { name: /Taux d’occupation/ })).toBeInTheDocument();
+      expect(
+        screen.queryByText('Service en direct · Aucune réservation aujourd’hui'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('recadre chaque plan au premier affichage', async () => {
+      mediaMocks.mobile = true;
+      mediaMocks.touch = true;
+      mediaMocks.coarse = true;
+      let activePlan = floorPlan;
+      apiMocks.get.mockImplementation(async (path: string) => {
+        if (path.includes('/floor-plan/reservations')) return [];
+        if (path.includes('/waiting-list')) return [];
+        if (path.includes('/service-copilot/delay-recoveries')) return { recoveries: [] };
+        if (path.includes('/service-copilot/pulse')) return calmPulse();
+        return activePlan;
+      });
+
+      const widthSpy = vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(358);
+      const heightSpy = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(420);
+      try {
+        const { rerender } = render(<FloorPlanCanvas orgId="org_test" mode="service" />);
+
+        expect(await screen.findByRole('button', { name: 'T4 · 4 places' })).toBeInTheDocument();
+        activePlan = { ...floorPlan, id: 'floor-plan-terrace', name: 'Terrasse' };
+        rerender(
+          <FloorPlanCanvas orgId="org_test" mode="service" floorPlanId="floor-plan-terrace" />,
+        );
+
+        expect(await screen.findByRole('button', { name: 'T4 · 4 places' })).toBeInTheDocument();
+        await waitFor(() =>
+          expect(screen.getByTestId('floor-plan-live-stage')).toHaveStyle({ width: '224px' }),
+        );
+      } finally {
+        widthSpy.mockRestore();
+        heightSpy.mockRestore();
+      }
+    });
+  });
+
+  it('centre le plan sans jamais produire de défilement négatif', () => {
+    expect(
+      computeCenterScroll({
+        viewportWidth: 400,
+        viewportHeight: 300,
+        canvasWidth: 1400,
+        canvasHeight: 900,
+        zoom: 0.5,
+      }),
+    ).toEqual({ left: 150, top: 75 });
+    expect(
+      computeCenterScroll({
+        viewportWidth: 800,
+        viewportHeight: 600,
+        canvasWidth: 700,
+        canvasHeight: 420,
+        zoom: 1,
+      }),
+    ).toEqual({ left: 0, top: 0 });
+  });
+
+  it('reconnaît un double-tap proche dans le temps et l’espace', () => {
+    const first = { time: 1000, x: 40, y: 60 };
+    expect(isDoubleTap(null, first)).toBe(false);
+    expect(isDoubleTap(first, { time: 1200, x: 50, y: 66 })).toBe(true);
+    expect(isDoubleTap(first, { time: 1500, x: 50, y: 66 })).toBe(false);
+    expect(isDoubleTap(first, { time: 1200, x: 140, y: 66 })).toBe(false);
   });
 });

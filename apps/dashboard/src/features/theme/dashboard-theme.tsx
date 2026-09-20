@@ -23,6 +23,16 @@ export function DashboardThemeProvider({ children }: { children: ReactNode }) {
     if (stored === 'light' || stored === 'dark') setTheme(stored);
   }, []);
 
+  // Les Dialog Radix sont portés par un portal directement sous `body`.
+  // Refléter le thème sur la racine garantit que leurs tokens restent alignés
+  // avec le dashboard, y compris en mode clair.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.remove('dark', 'light');
+    root.classList.add(theme);
+    return () => root.classList.remove('dark', 'light');
+  }, [theme]);
+
   const toggleTheme = () => {
     setTheme((prev) => {
       const next = prev === 'dark' ? 'light' : 'dark';

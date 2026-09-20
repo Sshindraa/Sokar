@@ -278,19 +278,21 @@ model RestaurantImage {
 // ─── Floor plan (P1) ───────────────────────────────────────────────
 
 model FloorPlan {
-  id           String     @id @default(uuid())
-  restaurantId String     @map("restaurant_id")
-  name         String     @default("Salle principale")
-  width        Int        @default(1400) @map("width")
-  height       Int        @default(900) @map("height")
-  isDefault    Boolean    @default(true) @map("is_default")
-  isActive     Boolean    @default(true) @map("is_active")
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  sections     Section[]
-  tables       Table[]
-  walls        Wall[]
-  createdAt    DateTime   @default(now()) @map("created_at")
-  updatedAt    DateTime   @updatedAt @map("updated_at")
+  id                String             @id @default(uuid())
+  restaurantId      String             @map("restaurant_id")
+  name              String             @default("Salle principale")
+  width             Int                @default(1400) @map("width")
+  height            Int                @default(900) @map("height")
+  isDefault         Boolean            @default(true) @map("is_default")
+  isActive          Boolean            @default(true) @map("is_active")
+  restaurant        Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  sections          Section[]
+  tables            Table[]
+  walls             Wall[]
+  zones             FloorPlanZone[]
+  tableCombinations TableCombination[]
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
 
   @@index([restaurantId, isDefault])
   @@index([restaurantId, isActive])
@@ -321,6 +323,7 @@ model Section {
   position           Int                @default(0)
   floorPlan          FloorPlan          @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
   tables             Table[]
+  zones              FloorPlanZone[]
   waitingListEntries WaitingListEntry[]
   createdAt          DateTime           @default(now()) @map("created_at")
   updatedAt          DateTime           @updatedAt @map("updated_at")
@@ -330,31 +333,76 @@ model Section {
 }
 
 model Table {
-  id             String        @id @default(uuid())
-  floorPlanId    String        @map("floor_plan_id")
-  sectionId      String?       @map("section_id")
-  name           String
-  capacity       Int
-  minCapacity    Int           @default(1) @map("min_capacity")
-  positionX      Int?          @map("position_x")
-  positionY      Int?          @map("position_y")
-  width          Int?          @map("width")
-  height         Int?          @map("height")
-  rotation       Int           @default(0) @map("rotation")
-  shape          String        @default("rect")
-  assignedServer String?       @map("assigned_server")
-  isActive       Boolean       @default(true) @map("is_active")
-  floorPlan      FloorPlan     @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
-  section        Section?      @relation(fields: [sectionId], references: [id], onDelete: SetNull)
-  reservations   Reservation[]
-  holds          AgenticHold[]
-  createdAt      DateTime      @default(now()) @map("created_at")
-  updatedAt      DateTime      @updatedAt @map("updated_at")
+  id                 String                   @id @default(uuid())
+  floorPlanId        String                   @map("floor_plan_id")
+  sectionId          String?                  @map("section_id")
+  name               String
+  capacity           Int
+  minCapacity        Int                      @default(1) @map("min_capacity")
+  positionX          Int?                     @map("position_x")
+  positionY          Int?                     @map("position_y")
+  width              Int?                     @map("width")
+  height             Int?                     @map("height")
+  rotation           Int                      @default(0) @map("rotation")
+  shape              String                   @default("rect")
+  assignedServer     String?                  @map("assigned_server")
+  isActive           Boolean                  @default(true) @map("is_active")
+  floorPlan          FloorPlan                @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  section            Section?                 @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  combinationMembers TableCombinationMember[]
+  reservations       Reservation[]
+  holds              AgenticHold[]
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  updatedAt          DateTime                 @updatedAt @map("updated_at")
 
   @@index([floorPlanId, isActive])
   @@index([floorPlanId, isActive, capacity])
   @@index([sectionId])
   @@map("floor_plan_tables")
+}
+
+model FloorPlanZone {
+  id          String    @id @default(uuid())
+  floorPlanId String    @map("floor_plan_id")
+  sectionId   String?   @map("section_id")
+  name        String
+  x           Int
+  y           Int
+  width       Int
+  height      Int
+  rotation    Int       @default(0)
+  floorPlan   FloorPlan @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  section     Section?  @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([floorPlanId])
+  @@index([sectionId])
+  @@map("floor_plan_zones")
+}
+
+model TableCombination {
+  id          String                   @id @default(uuid())
+  floorPlanId String                   @map("floor_plan_id")
+  name        String?
+  floorPlan   FloorPlan                @relation(fields: [floorPlanId], references: [id], onDelete: Cascade)
+  members     TableCombinationMember[]
+  createdAt   DateTime                 @default(now()) @map("created_at")
+  updatedAt   DateTime                 @updatedAt @map("updated_at")
+
+  @@index([floorPlanId])
+  @@map("floor_plan_table_combinations")
+}
+
+model TableCombinationMember {
+  combinationId String           @map("combination_id")
+  tableId       String           @map("table_id")
+  combination   TableCombination @relation(fields: [combinationId], references: [id], onDelete: Cascade)
+  table         Table            @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@id([combinationId, tableId])
+  @@index([tableId])
+  @@map("floor_plan_table_combination_members")
 }
 
 model Call {

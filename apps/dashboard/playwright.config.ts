@@ -61,10 +61,10 @@ export default defineConfig({
   projects: [
     // ── Tests fonctionnels (dashboard.spec.ts) ──
     {
-      name: 'iphone-14',
+      name: 'iphone-13',
       testIgnore: ['visual-regression.spec.ts'],
       use: {
-        ...devices['iPhone 14'],
+        ...devices['iPhone 13'],
         // Force chromium : webkit n'est pas installé en CI (poids ~100 Mo).
         // L'émulation mobile (viewport + touch + UA) suffit pour valider le
         // rendu responsive du dashboard.
@@ -93,7 +93,9 @@ export default defineConfig({
       name: 'visual-iphone-14',
       testMatch: ['visual-regression.spec.ts'],
       use: {
-        ...devices['iPhone 14'],
+        // Les baselines conservent le suffixe historique `iphone-14`, mais
+        // le contexte navigateur est bien celui d'un iPhone 13.
+        ...devices['iPhone 13'],
         defaultBrowserType: 'chromium',
       },
     },

@@ -160,7 +160,7 @@ export default function ReputationPage() {
         <div>
           <div className="flex items-center gap-2">
             <Star className="text-primary" size={20} aria-hidden="true" />
-            <h1 className="text-2xl font-semibold tracking-tight">Réputation</h1>
+            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Réputation</h1>
             <Badge variant="secondary">Pro</Badge>
           </div>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
@@ -186,8 +186,8 @@ export default function ReputationPage() {
               <p>{error}</p>
               {locked ? (
                 <p className="text-muted-foreground">
-                  La fondation réputation est réservée à Pro et reste verrouillée tant que le pilote
-                  d’envoi et les sources d’avis ne sont pas qualifiés.
+                  Module Pro indisponible tant que les sources d’avis et le pilote d’envoi ne sont
+                  pas validés.
                 </p>
               ) : null}
               <Button variant="outline" size="sm" onClick={() => void load()}>

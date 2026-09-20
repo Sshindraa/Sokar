@@ -150,6 +150,27 @@ export interface FloorPlanWall {
   name: string | null;
 }
 
+export interface FloorPlanZone {
+  id: string;
+  floorPlanId: string;
+  sectionId: string | null;
+  sectionName?: string | null;
+  section?: { id: string; name: string } | null;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+}
+
+export interface FloorPlanTableCombination {
+  id: string;
+  floorPlanId: string;
+  name: string | null;
+  members: Array<{ tableId: string }>;
+}
+
 export interface FloorPlanTable {
   id: string;
   name: string;
@@ -184,6 +205,8 @@ export interface FloorPlan {
   sections: FloorPlanSection[];
   tables?: FloorPlanTable[];
   walls?: FloorPlanWall[];
+  zones?: FloorPlanZone[];
+  tableCombinations?: FloorPlanTableCombination[];
 }
 
 export interface FloorPlanSummary {

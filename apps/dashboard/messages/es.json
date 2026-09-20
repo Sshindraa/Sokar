@@ -19,6 +19,8 @@
     "calls": "Llamadas",
     "reservations": "Reservas",
     "floorPlan": "Sala",
+    "live": "En vivo",
+    "edition": "Edición",
     "liveService": "Servicio en vivo",
     "floorPlanEdit": "Editar sala",
     "customers": "Clientes",

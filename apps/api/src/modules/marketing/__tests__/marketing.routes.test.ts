@@ -5,6 +5,7 @@ import { db } from '../../../shared/db/client';
 import { queues } from '../../../shared/queue/queues';
 
 const AUTH = { authorization: 'Bearer test' };
+const NOW = new Date('2026-09-14T10:00:00.000Z');
 const DEFINITION = {
   version: 1,
   operator: 'AND',
@@ -14,6 +15,7 @@ const DEFINITION = {
 describe('marketing control plane routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.setSystemTime(NOW);
     process.env.MARKETING_ATTRIBUTION_SECRET = 'a'.repeat(48);
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({ plan: 'PRO' } as never);
     vi.mocked(db.customerConsent.findMany).mockResolvedValue([]);
@@ -23,7 +25,10 @@ describe('marketing control plane routes', () => {
     vi.mocked(db.usageEvent.findMany).mockResolvedValue([]);
   });
 
-  afterAll(closeApp);
+  afterAll(async () => {
+    vi.useRealTimers();
+    await closeApp();
+  });
 
   it('expose la readiness provider sans valeurs sensibles', async () => {
     const app = await getApp();

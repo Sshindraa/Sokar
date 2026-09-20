@@ -116,6 +116,7 @@ function ticketRow(overrides: Record<string, unknown> = {}) {
 describe('event routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.setSystemTime(NOW);
     vi.stubEnv('EVENTS_ENABLED', 'false');
     vi.mocked(db.restaurant.findUnique).mockResolvedValue({
       id: 'test-rest-1',
@@ -125,6 +126,7 @@ describe('event routes', () => {
     vi.mocked(db.restaurant.findFirst).mockResolvedValue({ id: 'test-rest-1' } as never);
   });
   afterAll(async () => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
     await closeApp();
   });

@@ -19,6 +19,8 @@
     "calls": "Calls",
     "reservations": "Reservations",
     "floorPlan": "Floor plan",
+    "live": "Live",
+    "edition": "Edition",
     "liveService": "Live service",
     "floorPlanEdit": "Edit floor plan",
     "customers": "Customers",

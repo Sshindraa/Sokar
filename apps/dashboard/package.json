@@ -9,7 +9,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "test": "vitest run",
-    "test:e2e": "playwright test --project=iphone-14 --project=ipad-mini --project=desktop-1440",
+    "test:e2e": "playwright test --project=iphone-13 --project=ipad-mini --project=desktop-1440",
     "test:visual": "playwright test visual-regression",
     "clean": "rm -rf .turbo .next"
   },

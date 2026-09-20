@@ -234,6 +234,11 @@ export default function ServiceCopilotWidget({ showCalm = true }: { showCalm?: b
   if (!orgId) return null;
 
   if (loading) {
+    // Le widget est optionnel sur le plan Live (`showCalm={false}`). Ne pas
+    // réserver d’espace pendant sa requête évite un saut de mise en page sur
+    // mobile, puis le plan reste ancré au même endroit quand la réponse arrive.
+    if (!showCalm) return null;
+
     return (
       <section className="inline-flex max-w-full items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
         <Skeleton className="h-4 w-4 rounded-full" />

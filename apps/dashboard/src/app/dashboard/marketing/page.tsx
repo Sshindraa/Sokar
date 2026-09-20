@@ -374,7 +374,7 @@ export default function MarketingPage() {
         <div>
           <div className="flex items-center gap-2">
             <Megaphone className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-semibold tracking-tight">Marketing Pro</h1>
+            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Marketing Pro</h1>
           </div>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             Automatisez les relances utiles à partir de vos visites, avec consentement et mesure de
@@ -403,8 +403,7 @@ export default function MarketingPage() {
       <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 p-4 text-sm">
         <ShieldCheck className="mt-0.5 h-4 w-4 flex-none text-warning" />
         <p className="text-muted-foreground">
-          Les envois fournisseurs restent verrouillés pendant la préparation du produit. Les règles
-          sont enregistrées, testables et ne déclenchent aucun SMS ou email dans cet environnement.
+          Les règles restent en brouillon. Aucun SMS ni email n&apos;est envoyé ici.
         </p>
       </div>
 

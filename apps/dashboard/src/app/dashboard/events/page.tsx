@@ -370,12 +370,12 @@ export default function EventsPage() {
         <div>
           <div className="flex items-center gap-2">
             <CalendarDays className="h-5 w-5 text-primary" />
-            <h1 className="text-2xl font-semibold tracking-tight">Événements</h1>
+            <h1 className="text-xl font-semibold tracking-tight md:text-2xl">Événements</h1>
             <Badge variant="secondary">Pro</Badge>
           </div>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Sessions, tarifs, billets et contrôle d’accès avec jauge partagée. Le paiement, les
-            remboursements externes et la distribution restent verrouillés pendant la qualification.
+            Sessions, tarifs et billets avec jauge partagée. Paiement et distribution en
+            préparation.
           </p>
         </div>
         <Button variant="outline" onClick={() => void load()} disabled={loading || busy}>

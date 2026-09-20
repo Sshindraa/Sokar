@@ -250,7 +250,9 @@ export default function AgenticSettingsPage() {
   return (
     <div className="space-y-8">
       <OnboardingLockBanner task="phone" />
-      <h1 className="text-2xl font-semibold tracking-tight">Réservations par les agents</h1>
+      <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
+        Réservations par les agents
+      </h1>
 
       {error && (
         <div className="sokar-error">

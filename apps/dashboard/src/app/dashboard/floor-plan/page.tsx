@@ -21,9 +21,9 @@ import {
 } from '@/components/ui/dialog';
 import { FloorPlanCanvas } from './_components/FloorPlanCanvas';
 import { FloorPlanCrud } from './_components/FloorPlanCrud';
-import { FloorPlanSelector } from './_components/FloorPlanSelector';
 import { ServiceCopilotSimulator } from './_components/ServiceCopilotSimulator';
 import { DataFetchError } from '@/components/DataFetchError';
+import { ChevronDown, Plus } from 'lucide-react';
 
 const ServiceCopilotWidget = dynamic(() => import('../ServiceCopilotWidget'), {
   ssr: false,
@@ -44,6 +44,7 @@ export default function FloorPlanPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeView = searchParams.get('view') === 'edit-plan' ? 'edit-plan' : 'service-live';
+  const requestedFloorPlanId = searchParams.get('floorPlanId');
   const reportedReservationId = searchParams.get('reservationId');
   const reportedDelayReportId = searchParams.get('delayReportId');
   const reportedServiceDate = searchParams.get('serviceDate');
@@ -71,17 +72,7 @@ export default function FloorPlanPage() {
   const [createName, setCreateName] = useState('');
   const [createIsDefault, setCreateIsDefault] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
-
-  const setView = (view: 'service-live' | 'edit-plan') => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (view === 'service-live') {
-      params.delete('view');
-    } else {
-      params.set('view', view);
-    }
-    const query = params.toString();
-    router.replace(`${pathname}${query ? `?${query}` : ''}`, { scroll: false });
-  };
+  const [walkInModalOpen, setWalkInModalOpen] = useState(false);
 
   const clearReportedDelay = useCallback(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -101,13 +92,29 @@ export default function FloorPlanPage() {
       const data = await get<FloorPlanSummary[]>(`restaurants/${orgId}/floor-plans`);
       setFloorPlans(data);
       const defaultPlan = getDefaultFloorPlan(data);
-      setSelectedFloorPlanId((prev) => prev ?? defaultPlan?.id ?? null);
+      let persistedFloorPlanId: string | null = null;
+      try {
+        persistedFloorPlanId = window.localStorage.getItem(`sokar.floor-plan.${orgId}`);
+      } catch {
+        // Local storage may be unavailable in a private browsing context.
+      }
+      setSelectedFloorPlanId((prev) => {
+        const persistedPlan = data.find((plan) => plan.id === persistedFloorPlanId);
+        return persistedPlan?.id ?? prev ?? defaultPlan?.id ?? null;
+      });
     } catch (err) {
       setListError(getErrorMessage(err, 'Impossible de charger les plans de salle'));
     } finally {
       setListLoading(false);
     }
   }, [orgId, get]);
+
+  useEffect(() => {
+    if (!requestedFloorPlanId || !floorPlans) return;
+    if (floorPlans.some((plan) => plan.id === requestedFloorPlanId)) {
+      setSelectedFloorPlanId(requestedFloorPlanId);
+    }
+  }, [floorPlans, requestedFloorPlanId]);
 
   useEffect(() => {
     void loadFloorPlans();
@@ -125,6 +132,15 @@ export default function FloorPlanPage() {
       });
       await loadFloorPlans();
       setSelectedFloorPlanId(created.id);
+      try {
+        window.localStorage.setItem(`sokar.floor-plan.${orgId}`, created.id);
+        window.dispatchEvent(new Event('sokar:floor-plans-changed'));
+      } catch {
+        // Local storage may be unavailable in a private browsing context.
+      }
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('floorPlanId', created.id);
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
       setCreateDialogOpen(false);
       setCreateName('');
       setCreateIsDefault(false);
@@ -135,9 +151,16 @@ export default function FloorPlanPage() {
     }
   }
 
+  function openFloorPlanEditor() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('view', 'edit-plan');
+    if (selectedFloorPlanId) params.set('floorPlanId', selectedFloorPlanId);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
   if (!orgId) {
     return (
-      <div className="p-6 md:p-8">
+      <div className="space-y-6">
         <Card className="sokar-card">
           <CardContent className="p-8 text-center text-muted-foreground">
             <Skeleton className="mx-auto h-8 w-48 rounded-full" />
@@ -149,105 +172,84 @@ export default function FloorPlanPage() {
   }
 
   return (
-    <div className="space-y-6 p-6 md:p-8">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight md:text-2xl">
-            {activeView === 'edit-plan' ? 'Salle édition' : 'Live service'}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {activeView === 'edit-plan'
-              ? 'Concevez et organisez le plan de votre salle.'
-              : 'Pilotez le service en temps réel sans modifier le plan.'}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant={activeView === 'service-live' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setView('service-live')}
-            aria-pressed={activeView === 'service-live'}
-          >
-            Live service
-          </Button>
-          <Button
-            type="button"
-            variant={activeView === 'edit-plan' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setView('edit-plan')}
-            aria-pressed={activeView === 'edit-plan'}
-          >
-            Salle édition
-          </Button>
-        </div>
-      </div>
-
+    <div
+      className={
+        activeView === 'edit-plan'
+          ? 'space-y-3'
+          : 'flex flex-1 flex-col min-h-0 space-y-2 sm:space-y-4 md:space-y-6'
+      }
+    >
       {listError && (
         <DataFetchError message={listError} onRetry={loadFloorPlans} retrying={listLoading} />
       )}
 
       {listLoading || (floorPlans === null && !listError) ? (
-        <div className="flex items-center gap-4">
-          <Skeleton className="h-10 w-64 rounded-lg" />
-          <Skeleton className="h-10 w-24 rounded-lg" />
-        </div>
+        <Skeleton className="h-10 w-64 rounded-lg" />
       ) : floorPlans === null ? null : floorPlans.length === 0 ? (
         listError ? null : (
           <div className="sokar-empty">
             <p className="text-sm">Aucun plan de salle</p>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setCreateDialogOpen(true)}
-              className="mt-4"
-            >
-              Créer un plan
-            </Button>
+            {activeView === 'edit-plan' && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setCreateDialogOpen(true)}
+                className="mt-4"
+              >
+                Créer votre premier plan
+              </Button>
+            )}
           </div>
         )
-      ) : (
-        <FloorPlanSelector
-          floorPlans={floorPlans}
-          selectedId={selectedFloorPlanId ?? undefined}
-          onSelect={setSelectedFloorPlanId}
-          onCreate={() => setCreateDialogOpen(true)}
-        />
-      )}
+      ) : null}
 
       {activeView === 'edit-plan' && selectedFloorPlanId && (
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-x-3">
+          <div
+            role="tablist"
+            aria-label="Mode d’édition"
+            className="flex min-w-0 shrink-0 items-center gap-0.5 rounded-md border border-border bg-card p-0.5"
+          >
+            <Button
+              type="button"
+              role="tab"
+              variant={designTab === 'visual' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setDesignTab('visual')}
+              aria-selected={designTab === 'visual'}
+              className="h-7 px-2.5 text-xs"
+            >
+              Plan visuel
+            </Button>
+            <Button
+              type="button"
+              role="tab"
+              variant={designTab === 'crud' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setDesignTab('crud')}
+              aria-selected={designTab === 'crud'}
+              className="h-7 px-2.5 text-xs"
+            >
+              Sections & tables
+            </Button>
+          </div>
           <Button
             type="button"
-            variant={designTab === 'visual' ? 'default' : 'outline'}
+            variant="ghost"
             size="sm"
-            onClick={() => setDesignTab('visual')}
-            aria-pressed={designTab === 'visual'}
+            data-testid="create-floor-plan"
+            onClick={() => setCreateDialogOpen(true)}
+            title="Créer un plan de salle supplémentaire (ex. Terrasse, Étage) — le plan ouvert reste inchangé"
+            className="ml-auto h-7 shrink-0 gap-1.5 whitespace-nowrap px-2 text-xs text-muted-foreground"
           >
-            Plan visuel
-          </Button>
-          <Button
-            type="button"
-            variant={designTab === 'crud' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setDesignTab('crud')}
-            aria-pressed={designTab === 'crud'}
-          >
-            Sections & tables
+            <Plus size={14} aria-hidden="true" />
+            Nouveau plan
           </Button>
         </div>
       )}
 
       {selectedFloorPlanId && activeView === 'service-live' && (
         <ServiceCopilotWidget showCalm={false} />
-      )}
-      {selectedFloorPlanId && activeView === 'service-live' && (
-        <ServiceCopilotSimulator
-          key={`simulator-${selectedFloorPlanId}`}
-          orgId={orgId}
-          selectedFloorPlanId={selectedFloorPlanId}
-        />
       )}
       {selectedFloorPlanId && activeView === 'service-live' && (
         <FloorPlanCanvas
@@ -257,7 +259,48 @@ export default function FloorPlanPage() {
           floorPlanId={selectedFloorPlanId}
           initialDelayImpact={initialDelayImpact}
           onInitialDelayApplied={clearReportedDelay}
+          onRequestEdit={openFloorPlanEditor}
+          onRequestWalkIn={() => setWalkInModalOpen(true)}
         />
+      )}
+      {selectedFloorPlanId && activeView === 'service-live' && (
+        <>
+          <Dialog open={walkInModalOpen} onOpenChange={setWalkInModalOpen}>
+            <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
+              <DialogHeader>
+                <DialogTitle>Accueillir un walk-in</DialogTitle>
+                <DialogDescription>
+                  Trouvez instantanément la table idéale pour des clients sans réservation.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="pt-2">
+                <ServiceCopilotSimulator
+                  key={`simulator-modal-${selectedFloorPlanId}`}
+                  orgId={orgId}
+                  selectedFloorPlanId={selectedFloorPlanId}
+                />
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <details className="group hidden md:block">
+            <summary className="flex cursor-pointer list-none items-center justify-between rounded-xl border border-border bg-card/70 px-4 py-3 text-sm font-medium text-foreground transition-all duration-200 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+              <span>Accueillir un walk-in · Simulateur Copilot</span>
+              <ChevronDown
+                size={17}
+                aria-hidden="true"
+                className="text-muted-foreground transition-transform duration-200 group-open:rotate-180"
+              />
+            </summary>
+            <div className="mt-3">
+              <ServiceCopilotSimulator
+                key={`simulator-${selectedFloorPlanId}`}
+                orgId={orgId}
+                selectedFloorPlanId={selectedFloorPlanId}
+              />
+            </div>
+          </details>
+        </>
       )}
       {selectedFloorPlanId && activeView === 'edit-plan' && designTab === 'visual' && (
         <FloorPlanCanvas
@@ -286,7 +329,8 @@ export default function FloorPlanPage() {
             <DialogHeader>
               <DialogTitle>Créer un plan de salle</DialogTitle>
               <DialogDescription>
-                Donnez un nom au nouveau plan. Vous pouvez le définir comme plan par défaut.
+                Crée un plan de salle supplémentaire. Le plan ouvert reste inchangé. Vous pouvez le
+                définir comme plan par défaut.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">

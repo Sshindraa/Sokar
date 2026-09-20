@@ -69,6 +69,13 @@ module.exports = {
         // spéculaire pour l'effet verre.
         glass2: 'hsl(var(--glass-2))',
         'glass-stroke': 'hsl(var(--glass-stroke))',
+        'floor-table': {
+          surface: 'hsl(var(--floor-table-surface))',
+          chair: 'hsl(var(--floor-table-chair))',
+          accent: 'hsl(var(--floor-table-accent))',
+          text: 'hsl(var(--floor-table-text))',
+          muted: 'hsl(var(--floor-table-muted))',
+        },
         // Métal champagne (#8E877B) — séparateurs, badges passifs, icônes secondaires.
         metal: 'hsl(var(--metal))',
         'pricing-accent': 'hsl(var(--pricing-accent))',
