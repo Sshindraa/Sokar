@@ -246,10 +246,14 @@ Scripts SQL d'urgence :
 
 ### Topologie des backups
 
-| Type    | Script                                   | Cible                        | Fréquence      | Rétention |
-| ------- | ---------------------------------------- | ---------------------------- | -------------- | --------- |
-| Local   | `scripts/database/backup-postgres.sh`    | `/var/backups/sokar` (VPS)   | cron 03:20 UTC | 14 jours  |
-| Offsite | `scripts/database/backup-postgres-r2.sh` | `r2:sokar-backups/postgres/` | cron 04:00 UTC | 30 jours  |
+| Type    | Script                                   | Cible                        | Fréquence         | Rétention |
+| ------- | ---------------------------------------- | ---------------------------- | ----------------- | --------- |
+| Local   | `scripts/database/backup-postgres.sh`    | `/var/backups/sokar` (VPS)   | cron 03:20 (hôte) | 14 jours  |
+| Offsite | `scripts/database/backup-postgres-r2.sh` | `r2:sokar-backups/postgres/` | cron 04:00 (hôte) | 30 jours  |
+
+Les deux heures de cron suivent le fuseau de l'hôte (Europe/Paris), soit
+respectivement 01:20 UTC et 02:00 UTC — ce sont ces heures UTC qui apparaissent
+dans le nom des dumps.
 
 - **Local** : dump `pg_dump --format=custom --compress=6`, vérifié par
   restauration temporaire (compare le nombre de tables source vs restauré).
@@ -257,9 +261,16 @@ Scripts SQL d'urgence :
   d'intégrité par hash SHA256 local vs distant**, rotation automatique,
   garde-fou de quota (5 GB / 10 GB free tier), alerte optionnelle via
   `ALERT_CMD`.
-- Cron installé sur le VPS par `scripts/_archive/install-r2-backup.sh` (script one-time déjà exécuté, conservé pour référence).
+- Crons versionnés dans `infra/cron/` (`sokar-postgres-backup`, `sokar-r2-backup`)
+  et installés par `sokar-deploy-root install-runtime prod`. Le cron offsite a
+  longtemps existé **uniquement sur le serveur** (créé par le script archivé
+  `scripts/_archive/install-r2-backup.sh`) : une reconstruction du VPS perdait
+  la copie hors-site sans que rien ne le signale.
 - Logs : `/var/log/sokar/postgres-r2-backup.log` (rotaté par
   `infra/logrotate/sokar`).
+- Surveillance : `sokar-watchdog` vérifie l'âge **et** la ligne de succès des
+  deux journaux (`postgres-backup.log`, `postgres-r2-backup.log`), avec un
+  seuil de 26 h.
 
 ### Vérifier qu'un backup est restaurable (test régulier)
 
@@ -275,7 +286,12 @@ restaurer sur une base vierge :
 5. Nettoie la base temporaire
 
 ```bash
-# Sur le VPS (ou en local avec Docker + rclone configuré)
+# Sur le VPS, via le wrapper privilégié : le compte deploy n'a ni le groupe
+# docker ni les clients PostgreSQL, donc le script ne peut pas tourner
+# directement sous ce compte.
+sudo /usr/local/sbin/sokar-deploy-root restore-test prod
+
+# En local avec Docker + rclone configuré, le script reste utilisable tel quel
 bash scripts/database/test-restore-vierge.sh
 
 # Conserver la base de test pour debug

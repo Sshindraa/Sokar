@@ -10,6 +10,7 @@ import type {
 import { zonedTimeToUtc } from './availability-capacity-aware.service.js';
 import { TableAllocationService } from './table-allocation.service.js';
 import { observeReservationMutation } from '../../shared/observability/reservation-contract';
+import { creationProjection } from '../../shared/reservations/reservation-state';
 
 /** Capacité minimale par défaut d'une table (1 personne) */
 const DEFAULT_TABLE_MIN_CAPACITY = 1;
@@ -641,8 +642,7 @@ export class FloorPlanService {
             customerName: args.customerName ?? 'Walk-in',
             reservedAt: now,
             channel: 'API',
-            state: 'SEATED',
-            status: 'SEATED',
+            ...creationProjection('SEATED'),
             startsAt: now,
             endsAt,
             createdByClient: args.restaurantId,

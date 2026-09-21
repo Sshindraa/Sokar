@@ -23,6 +23,14 @@ set -euo pipefail
 
 export PATH="$HOME/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
+# Le cron de backup offsite tourne en root avec la configuration rclone du
+# compte `deploy` (root n'a pas la sienne). L'exercice de restauration
+# s'exécute lui aussi en root, via `sokar-deploy-root restore-test` : sans cette
+# résolution, `rclone lsf r2:…` échoue et l'exercice est impossible à lancer.
+if [ -z "${RCLONE_CONFIG:-}" ] && [ -f /home/deploy/.config/rclone/rclone.conf ]; then
+  export RCLONE_CONFIG=/home/deploy/.config/rclone/rclone.conf
+fi
+
 CONTAINER="${POSTGRES_CONTAINER:-infra-postgres-1}"
 DB_USER="${POSTGRES_USER:-sokar}"
 BUCKET="${R2_BUCKET:-sokar-backups}"

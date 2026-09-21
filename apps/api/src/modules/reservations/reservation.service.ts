@@ -19,6 +19,11 @@ import {
 import { buildReservationNotificationJobId } from '../../shared/queue/job-options';
 import { CustomerService } from '../customers/customer.service';
 import {
+  creationProjection,
+  stateForStatus,
+  transitionProjection,
+} from '../../shared/reservations/reservation-state';
+import {
   deactivateMarketingConversions,
   recordMarketingAttributionClick,
   recordMarketingConversion,
@@ -62,18 +67,6 @@ function dateKey(date: Date): string {
 function timeKey(date: Date): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
-
-/**
- * Le dashboard historique manipule encore `status`, alors que les parcours
- * agentiques utilisent `state`. Les deux colonnes décrivent le même état
- * métier pour les statuts exposés par cette route et doivent rester alignées.
- */
-const STATUS_TO_STATE: Record<ReservationStatus, ReservationState> = {
-  CONFIRMED: 'CONFIRMED',
-  CANCELLED: 'CANCELLED',
-  SEATED: 'SEATED',
-  NO_SHOW: 'NO_SHOW',
-};
 
 function reservationLifecycleEvent(
   state: ReservationState | null | undefined,
@@ -275,7 +268,10 @@ export class ReservationService {
             customerName: input.customerName,
             customerPhone: input.customerPhone,
             ...(customerId ? { customerId } : {}),
-            status: 'CONFIRMED',
+            // `state` est écrit explicitement : s'en remettre au défaut Prisma
+            // marchait par coïncidence et laissait la porte ouverte à une
+            // divergence silencieuse avec `status` (R1-4).
+            ...creationProjection('CONFIRMED'),
             tableId: table.id,
             estimatedRevenue: input.partySize * 35,
           },
@@ -444,7 +440,7 @@ export class ReservationService {
 
     const status = getLegacyStatus(data.status);
     const updateData: Prisma.ReservationUpdateInput = status
-      ? { ...data, state: STATUS_TO_STATE[status] }
+      ? { ...data, state: stateForStatus(status) }
       : data;
 
     const updated = await db.$transaction(async (tx) => {
@@ -454,7 +450,7 @@ export class ReservationService {
       });
 
       const fromState = reservation.state as ReservationState | null | undefined;
-      const toState = (result.state ?? (status ? STATUS_TO_STATE[status] : fromState)) as
+      const toState = (result.state ?? (status ? stateForStatus(status) : fromState)) as
         | ReservationState
         | null
         | undefined;
@@ -612,7 +608,7 @@ export class ReservationService {
       const result = needsTerminalTransition
         ? await tx.reservation.update({
             where: { id, restaurantId },
-            data: { status: 'CANCELLED', state: 'CANCELLED' },
+            data: transitionProjection('CANCELLED', reservation.status),
           })
         : reservation;
 

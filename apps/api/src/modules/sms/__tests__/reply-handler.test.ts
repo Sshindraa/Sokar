@@ -61,6 +61,7 @@ function makeReservation(overrides: Record<string, unknown> = {}) {
     partySize: 4,
     reservedAt: new Date('2026-07-15T19:30:00+02:00'),
     status: 'CONFIRMED',
+    state: 'CONFIRMED',
     confirmationStatus: 'PENDING',
     restaurantId: 'rest-1',
     restaurant: {
@@ -125,6 +126,22 @@ describe('handleReply', () => {
     expect(result.action).toBe('no_reservation');
     expect(mockFindFirst).toHaveBeenCalledTimes(1);
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('exige state=CONFIRMED pour ne pas toucher une résa non ferme (R1-4)', async () => {
+    mockFindFirst.mockResolvedValue(null);
+
+    await handleReply('+336****0001', 'NON', 'sms');
+
+    // `status` est une projection lossy de `state` : une validation manuelle
+    // (state=PENDING) et un client déjà installé (state=HONORED) portent tous
+    // deux status=CONFIRMED. Filtrer sur `status` seul laissait un « NON »
+    // annuler une réservation qui n'était pas ferme.
+    expect(mockFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'CONFIRMED', state: 'CONFIRMED' }),
+      }),
+    );
   });
 
   it('confirme la résa et met à jour confirmationStatus=CONFIRMED', async () => {

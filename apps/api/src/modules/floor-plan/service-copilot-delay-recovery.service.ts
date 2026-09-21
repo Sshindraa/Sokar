@@ -11,6 +11,10 @@ import { AuditLogService } from '../agentic-reservations/core/audit-log.service'
 import { TableAllocationService } from './table-allocation.service';
 import { ServiceCopilotDelayImpactService } from './service-copilot-delay-impact.service';
 import { observeReservationMutation } from '../../shared/observability/reservation-contract';
+import {
+  creationProjection,
+  transitionProjection,
+} from '../../shared/reservations/reservation-state';
 
 export class DelayRecoveryConflictError extends Error {
   constructor(message: string) {
@@ -355,8 +359,7 @@ export class ServiceCopilotDelayRecoveryService {
           startsAt: promotedStartsAt,
           endsAt: promotedEndsAt,
           tableId: originalTable.id,
-          state: 'CONFIRMED' as ReservationState,
-          status: 'CONFIRMED' as ReservationStatus,
+          ...creationProjection('CONFIRMED'),
           channel: 'ADMIN' as ReservationChannel,
           source: 'service_copilot_delay_recovery',
           privacyPolicyVersion: '2026-06-20',
@@ -597,10 +600,7 @@ export class ServiceCopilotDelayRecoveryService {
       });
       await tx.reservation.update({
         where: { id: promoted.id },
-        data: {
-          state: 'CANCELLED' as ReservationState,
-          status: 'CANCELLED' as ReservationStatus,
-        },
+        data: transitionProjection('CANCELLED', promoted.status),
       });
       await tx.waitingListEntry.update({
         where: { id: entry.id },

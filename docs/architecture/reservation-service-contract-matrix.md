@@ -1,5 +1,23 @@
 # Matrice des contrats de réservation
 
+> **Mise à jour du 22 septembre 2026 (R1-4)** — Cette cartographie reste la
+> référence des comportements observés au 2 septembre, mais trois points ont
+> changé depuis :
+>
+> - la correspondance `state` ↔ `status` n'existe plus qu'à un seul endroit,
+>   [`apps/api/src/shared/reservations/reservation-state.ts`](../../apps/api/src/shared/reservations/reservation-state.ts)
+>   (`stateForStatus`, `statusForState`, `creationProjection`,
+>   `transitionProjection`, `isConfirmedReservation`) ; les trois copies
+>   décrites ci-dessous ont été supprimées ;
+> - la projection à la création n'est plus recopiée dans les cinq
+>   `reservation.create` : `PENDING` porte toujours `status = CONFIRMED`, mais
+>   la règle est désormais écrite une fois ;
+> - le handler de réponse SMS filtre aussi sur `state = CONFIRMED`, ce qui
+>   corrige le cas « un NON annule une réservation en validation manuelle ».
+>
+> Le reste de la matrice — écritures directes du copilot, allocation de table,
+> RGPD, absence de source d'écriture unique — décrit toujours l'état réel.
+
 ## Objet et méthode
 
 Cette note est une cartographie de l'état observé au 2 septembre 2026. Elle

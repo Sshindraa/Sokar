@@ -7,6 +7,7 @@ import { setupWorkerListeners, jobLogger } from './helper';
 import { formatDate } from '@sokar/shared';
 import { queues } from '../queues';
 import { CONFIRMATION_SMS_WORKER_CONCURRENCY } from '../constants';
+import { isConfirmedReservation } from '../../reservations/reservation-state';
 import {
   acquireNotificationClaim,
   buildNotificationClaimKey,
@@ -70,12 +71,9 @@ function isReminderEligible(reservation: {
   confirmationSentAt: Date | null;
 }): boolean {
   // La confirmation client ne peut être envoyée qu'après la confirmation
-  // métier. status reste une projection legacy et ne suffit pas à lui seul.
-  return (
-    reservation.status === 'CONFIRMED' &&
-    reservation.state === 'CONFIRMED' &&
-    reservation.confirmationSentAt === null
-  );
+  // métier : `status` est une projection lossy de `state` et ne suffit pas
+  // seul. Prédicat partagé avec le handler de réponse SMS (R1-4).
+  return isConfirmedReservation(reservation) && reservation.confirmationSentAt === null;
 }
 
 function getResultOutcome(

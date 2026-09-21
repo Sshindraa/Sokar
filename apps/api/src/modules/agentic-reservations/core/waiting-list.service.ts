@@ -11,7 +11,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { Prisma, type PrismaClient, type Reservation, type WaitingListEntry } from '@prisma/client';
 import type { WaitingListStatus } from '@prisma/client';
-import type { ReservationState, ReservationStatus, ReservationChannel } from '@prisma/client';
+import type { ReservationChannel } from '@prisma/client';
+import { creationProjection } from '../../../shared/reservations/reservation-state.js';
 import { normalizePhone } from '@sokar/shared';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
 import { resolveServiceDurationMinutes } from '../../floor-plan/floor-plan.types.js';
@@ -265,8 +266,7 @@ export class WaitingListService {
           startsAt: entry.slotStart,
           endsAt: entry.slotEnd,
           tableId: table.id,
-          state: 'CONFIRMED' as ReservationState,
-          status: 'CONFIRMED' as ReservationStatus,
+          ...creationProjection('CONFIRMED'),
           channel: 'WEB' as ReservationChannel,
           source: 'waiting_list',
           privacyPolicyVersion: '2026-06-20',

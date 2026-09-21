@@ -1,5 +1,6 @@
 import { Prisma, ReservationPaymentStatus, ReservationPaymentType } from '@prisma/client';
 import { db } from '../../shared/db/client';
+import { transitionProjection } from '../../shared/reservations/reservation-state';
 
 export const PAYMENT_AMOUNT_MODES = ['FIXED', 'PER_PERSON'] as const;
 export type ReservationPaymentAmountMode = (typeof PAYMENT_AMOUNT_MODES)[number];
@@ -853,7 +854,10 @@ export async function applyReservationPaymentProviderEvent(
           restaurantId: input.restaurantId,
           state: 'PENDING',
         },
-        data: { state: 'CONFIRMED', status: 'CONFIRMED' },
+        // La ligne visée est `state = PENDING`, qui porte `status = CONFIRMED`
+        // (projection lossy, voir reservation-state.ts) : confirmer le paiement
+        // projette donc CONFIRMED → CONFIRMED.
+        data: transitionProjection('CONFIRMED', 'CONFIRMED'),
       });
       reservationConfirmed = confirmed.count > 0;
     }

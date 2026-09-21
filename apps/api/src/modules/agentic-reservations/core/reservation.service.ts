@@ -48,6 +48,11 @@ import {
   reservationCapacityEffect,
 } from '../../../shared/observability/reservation-contract';
 import { ACTIVE_RESERVATION_STATES } from '../../../shared/reservations/capacity.js';
+import {
+  creationProjection,
+  transitionProjection,
+  type CreatableReservationState,
+} from '../../../shared/reservations/reservation-state.js';
 import { GiftCardService } from '../../gift-cards/gift-card.service.js';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service.js';
@@ -385,7 +390,7 @@ export class ReservationService {
           );
         }
 
-        const initialState: ReservationState = input.policy.requireManualValidation
+        const initialState: CreatableReservationState = input.policy.requireManualValidation
           ? 'PENDING'
           : 'CONFIRMED';
 
@@ -398,7 +403,7 @@ export class ReservationService {
             partySize: input.partySize,
             reservedAt: input.startsAt,
             channel: input.channel,
-            state: initialState,
+            ...creationProjection(initialState),
             startsAt: input.startsAt,
             endsAt: input.endsAt,
             specialRequests: input.specialRequests,
@@ -416,7 +421,6 @@ export class ReservationService {
             idempotencyPayloadHash: idempotency.payloadHash,
             consumedHoldId,
             tableId,
-            status: 'CONFIRMED', // legacy enum, aligner avec state
           },
         });
 
@@ -609,25 +613,6 @@ export class ReservationService {
   }
 
   /**
-   * Synchronise `status` avec `state` quand le statut correspond à un enum Prisma.
-   * Les états sans équivalent (`PENDING`, `HONORED`, `FAILED`, `EXPIRED`) ne
-   * modifient pas `status` : ils n'ont pas de valeur dans l'enum `ReservationStatus`.
-   */
-  private statusForState(state: ReservationState): ReservationStatus | undefined {
-    const mapping: Record<ReservationState, ReservationStatus | undefined> = {
-      CONFIRMED: 'CONFIRMED',
-      SEATED: 'SEATED',
-      CANCELLED: 'CANCELLED',
-      NO_SHOW: 'NO_SHOW',
-      PENDING: undefined,
-      HONORED: undefined,
-      FAILED: undefined,
-      EXPIRED: undefined,
-    };
-    return mapping[state];
-  }
-
-  /**
    * Transitionne une réservation vers un nouvel état.
    * Jette InvalidStateTransitionError ou InvalidStateInvariantError si la transition n'est pas autorisée.
    */
@@ -658,8 +643,11 @@ export class ReservationService {
       fromState = reservation.state as ReservationState;
       assertCanTransition(fromState, args.toState, reservation);
 
-      const newStatus = this.statusForState(args.toState);
-      statusAfterTransition = newStatus ?? (reservation.status as ReservationStatus);
+      const projection = transitionProjection(
+        args.toState,
+        reservation.status as ReservationStatus,
+      );
+      statusAfterTransition = projection.status;
 
       if (args.toState === 'SEATED') {
         if (!reservation.tableId) {
@@ -686,10 +674,7 @@ export class ReservationService {
 
       await tx.reservation.update({
         where: { id: reservation.id },
-        data: {
-          state: args.toState,
-          ...(newStatus ? { status: newStatus } : {}),
-        },
+        data: projection,
       });
 
       const event = this.eventForTransition(args.toState);
@@ -798,7 +783,7 @@ export class ReservationService {
 
       await tx.reservation.update({
         where: { id: row.id },
-        data: { state: 'CANCELLED', status: 'CANCELLED' },
+        data: transitionProjection('CANCELLED', row.status as ReservationStatus),
       });
 
       // Libérer le hold si encore actif

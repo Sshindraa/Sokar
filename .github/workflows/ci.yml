@@ -51,6 +51,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Le contrôle de sûreté des migrations compare la branche à
+          # `origin/main` : un clone superficiel ne fournit pas la référence.
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -73,6 +77,18 @@ jobs:
 
       - name: Test
         run: pnpm turbo test --filter=@sokar/shared --filter=@sokar/config --filter=@sokar/database
+
+      - name: Quality guards self-test
+        # Teste la logique des garde-fous de qualification (R1-5) : cible de
+        # `db push` et sûreté des migrations.
+        run: |
+          node scripts/quality/check-db-push-target.mjs --self-test
+          node scripts/quality/check-migration-safety.mjs --self-test
+
+      - name: Migration safety guard
+        # Échoue si une migration ajoutée par la branche contient un DROP /
+        # TRUNCATE / DELETE sans acquittement explicite (R1-5).
+        run: node scripts/quality/check-migration-safety.mjs
 
   # ─────────────────────────────────────────────────────────────
   # API: typecheck (turbo-orchestrated, includes workspace deps),
