@@ -16,6 +16,11 @@ if [ -x "$ROOT/scripts/quality/check-memory.sh" ]; then
   bash "$ROOT/scripts/quality/check-memory.sh" warn || true
 fi
 
+# Le vault est lu à chaque démarrage de session : alerte s'il regonfle.
+if [ -x "$ROOT/scripts/quality/check-vault-size.sh" ]; then
+  bash "$ROOT/scripts/quality/check-vault-size.sh" warn || true
+fi
+
 BASE_REF="${SOKAR_BASE_REF:-origin/main}"
 if ! git rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
   BASE_REF="HEAD~1"
