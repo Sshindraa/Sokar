@@ -27,6 +27,17 @@ if [ -f "$ROOT/scripts/quality/check-tenant-scoping.mjs" ]; then
   node "$ROOT/scripts/quality/check-tenant-scoping.mjs"
 fi
 
+# Garde-fous de qualification (R1-5) : logique de la cible de `db push` et
+# sûreté des migrations. Les auto-tests couvrent les garde-fous eux-mêmes ;
+# le dernier appel refuse une migration destructive non acquittée.
+if [ -f "$ROOT/scripts/quality/check-db-push-target.mjs" ]; then
+  node "$ROOT/scripts/quality/check-db-push-target.mjs" --self-test
+fi
+if [ -f "$ROOT/scripts/quality/check-migration-safety.mjs" ]; then
+  node "$ROOT/scripts/quality/check-migration-safety.mjs" --self-test
+  node "$ROOT/scripts/quality/check-migration-safety.mjs"
+fi
+
 BASE_REF="${SOKAR_BASE_REF:-origin/main}"
 if ! git rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
   BASE_REF="HEAD~1"

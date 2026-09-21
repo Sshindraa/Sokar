@@ -10,7 +10,7 @@
   "scripts": {
     "build": "prisma generate && tsc",
     "generate": "prisma generate",
-    "push": "prisma db push",
+    "push": "node ../../scripts/quality/check-db-push-target.mjs && prisma db push",
     "seed": "prisma db seed",
     "backfill:restaurant-accounts": "tsx prisma/scripts/backfill-restaurant-accounts.ts",
     "seed:floor-plan": "tsx scripts/migrate-floor-plan.ts",

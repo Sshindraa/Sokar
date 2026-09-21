@@ -1,0 +1,10 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RCLONE_CONFIG=/home/deploy/.config/rclone/rclone.conf
+
+# Backup offsite R2 quotidien, 2 h après le dump local (03:20 UTC).
+# Lancer en root : docker exec exige docker.sock (deploy ne l'a pas).
+# RCLONE_CONFIG pointe vers la conf rclone de deploy (le root n'a pas la sienne).
+# Les heures de cron suivent le fuseau de l'hôte (Europe/Paris) : 04:00 local
+# = 02:00 UTC.
+0 4 * * * root /opt/sokar/scripts/database/backup-postgres-r2.sh >> /var/log/sokar/postgres-r2-backup.log 2>&1

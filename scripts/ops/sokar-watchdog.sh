@@ -142,6 +142,30 @@ check_backup() {
   fi
 }
 
+# Le backup offsite R2 est la copie qui survit à une perte du VPS. Rien ne le
+# surveillait : ce watchdog ne regardait que le dump local, donc un upload R2
+# arrêté silencieusement laissait la production sans copie hors-site. On lit le
+# journal (pas de réseau toutes les 5 minutes) et on exige la ligne de succès,
+# car un échec précoce réécrit aussi le fichier.
+check_offsite_backup() {
+  local log="${OFFSITE_BACKUP_LOG:-/var/log/sokar/postgres-r2-backup.log}"
+  local max_age="${OFFSITE_BACKUP_MAX_AGE_MIN:-1560}"
+  if [ ! -f "$log" ]; then
+    fail "offsite-backup" "CRITIQUE" \
+      "Journal de backup offsite introuvable ($log). Vérifier le cron sokar-r2-backup."
+    return 0
+  fi
+  local recent last
+  recent=$(find "$log" -mmin "-$max_age" -print -quit 2>/dev/null)
+  last=$(tail -n 1 "$log" 2>/dev/null)
+  if [ -n "$recent" ] && [ "${last#*Backup offsite sokar terminé}" != "$last" ]; then
+    ok "offsite-backup" "Backup offsite R2"
+  else
+    fail "offsite-backup" "CRITIQUE" \
+      "Backup offsite R2 absent ou en échec depuis plus de $((max_age / 60))h. Vérifier $log et le cron sokar-r2-backup."
+  fi
+}
+
 check_disk() {
   local usage
   usage=$(df -P / | awk 'NR==2 {gsub(/%/, "", $5); print $5}')
@@ -183,6 +207,7 @@ check_http "connect" "Sokar Connect" "$CONNECT_URL" "WARNING"
 check_container "redis" "Redis (BullMQ)" "$REDIS_CONTAINER" redis-cli ping
 check_container "postgres" "Postgres" "$POSTGRES_CONTAINER" pg_isready -U sokar
 check_backup
+check_offsite_backup
 check_disk
 check_memory
 

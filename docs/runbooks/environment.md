@@ -40,6 +40,11 @@ historique** dans `_prisma_migrations`. `prisma migrate status` liste donc les 7
 
 - Pour synchroniser le schéma local : `pnpm db:push`. Jamais `prisma migrate deploy` en local, qui
   tenterait de recréer toutes les tables par-dessus l'existant.
+- `pnpm db:push` refuse toute cible non locale depuis le 21 septembre 2026
+  (`scripts/quality/check-db-push-target.mjs`, chantier R1-5). Sur une base partagée, écrire une
+  migration et la déployer. Le forçage existe pour une base de test distante jetable :
+  `SOKAR_ALLOW_REMOTE_DB_PUSH=I-UNDERSTAND-DB-PUSH-IS-DESTRUCTIVE`. Voir
+  [`migration.md`](./migration.md).
 - `db:push` peut réclamer `--accept-data-loss` pour un simple index unique : vérifier le diff avant
   d'accepter avec
   `prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --script`.

@@ -11,7 +11,7 @@ PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
 SUDOERS_DST="/etc/sudoers.d/deploy"
 
 usage() {
-    echo "Usage: $0 {check-cert|clean-next|install-nginx|restore-nginx|reload-nginx|install-runtime|configure-watchdog|self-update|check-prod-vhost|start-localstack|stop-localstack|backup-db} {prod|staging} [dashboard|connect]" >&2
+    echo "Usage: $0 {check-cert|clean-next|install-nginx|restore-nginx|reload-nginx|install-runtime|configure-watchdog|self-update|check-prod-vhost|start-localstack|stop-localstack|backup-db|restore-test} {prod|staging} [dashboard|connect]" >&2
     exit 2
 }
 
@@ -80,6 +80,10 @@ install_runtime() {
         install -d -m 0700 -o deploy -g deploy /var/backups/sokar
         install -m 0750 "$ROOT/scripts/database/backup-postgres.sh" /usr/local/sbin/sokar-backup-postgres
         install -m 0644 "$ROOT/infra/cron/sokar-postgres-backup" /etc/cron.d/sokar-postgres-backup
+        # Le backup offsite R2 vivait uniquement sur le serveur : sans ce
+        # fichier versionné, une reconstruction du VPS perdait la copie
+        # hors-site sans que rien ne le signale.
+        install -m 0644 "$ROOT/infra/cron/sokar-r2-backup" /etc/cron.d/sokar-r2-backup
         # Watchdog monitoring (toutes les 5 min) : API/dashboard/Redis/backup/disque/mémoire.
         install -d -m 0750 /var/lib/sokar/watchdog
         install -m 0755 "$ROOT/scripts/ops/sokar-watchdog.sh" /usr/local/sbin/sokar-watchdog
@@ -183,6 +187,22 @@ self_update() {
     echo "✅ Wrapper sokar-deploy-root mis à jour depuis $wrapper_src"
 }
 
+# ── Exercice de restauration (R1-5) ──────────────────────────────
+# Le compte `deploy` n'a ni le groupe docker ni les clients PostgreSQL
+# (`psql`, `pg_restore`, `createdb` sont absents de l'hôte) : l'exercice de
+# restauration documenté ne peut donc s'exécuter qu'en root, via cette action.
+# Le script crée une base temporaire, restaure le dernier dump R2, vérifie
+# tables / contraintes / index critiques, puis supprime la base. Il ne touche
+# jamais la base de production.
+restore_test() {
+    local script="$ROOT/scripts/database/test-restore-vierge.sh"
+    if [ ! -f "$script" ]; then
+        echo "Erreur: $script introuvable dans $ROOT." >&2
+        exit 1
+    fi
+    bash "$script"
+}
+
 case "$ACTION" in
     check-cert)
         [ "$#" -eq 2 ] || usage
@@ -220,6 +240,10 @@ case "$ACTION" in
         else
             /usr/local/sbin/sokar-staging-backup-postgres
         fi
+        ;;
+    restore-test)
+        [ "$#" -eq 2 ] || usage
+        restore_test
         ;;
     self-update)
         [ "$#" -eq 2 ] || usage
