@@ -8,7 +8,16 @@
 type Slot = { time: string; available: boolean };
 
 export function SlotGrid({ slots, onSelect }: { slots: Slot[]; onSelect: (time: string) => void }) {
-  if (slots.length === 0) return null;
+  if (slots.length === 0) {
+    return (
+      <p
+        role="status"
+        className="rounded-lg border border-border bg-muted/50 p-3 text-sm text-muted-foreground"
+      >
+        Aucun créneau disponible pour cette date et ce nombre de personnes.
+      </p>
+    );
+  }
 
   return (
     <div>

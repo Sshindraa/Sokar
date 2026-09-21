@@ -20,6 +20,19 @@ import { test, expect } from '@playwright/test';
 
 const API_URL = process.env.API_URL || 'http://localhost:4000';
 const RESTAURANT_SLUG = 'chez-sokar-demo';
+const DEMO_SERVICE_DAYS = new Set([2, 3, 4, 5, 6]); // mardi → samedi
+
+function nextDemoServiceDate(): string {
+  const today = new Date();
+  for (let offset = 1; offset <= 7; offset += 1) {
+    const candidate = new Date(today);
+    candidate.setUTCDate(today.getUTCDate() + offset);
+    if (DEMO_SERVICE_DAYS.has(candidate.getUTCDay())) {
+      return candidate.toISOString().slice(0, 10);
+    }
+  }
+  throw new Error('Impossible de calculer une date de service pour le restaurant de démo.');
+}
 
 test.describe.configure({ mode: 'serial' });
 
@@ -70,8 +83,9 @@ test.describe('Flow de réservation via le widget', () => {
     const partySizeSelect = page.getByLabel(/nombre de personnes/i);
     await partySizeSelect.selectOption('2');
 
-    // La date est pré-remplie avec aujourd'hui — on garde aujourd'hui
-    // (le champ date a min=today, donc today est valide)
+    // Le seed est ouvert du mardi au samedi : choisir le prochain service
+    // rend le test indépendant du jour où la CI s'exécute.
+    await page.getByLabel('Date').fill(nextDemoServiceDate());
 
     // Cliquer sur "Voir les disponibilités"
     const loadButton = page.getByRole('button', { name: /voir les disponibilités/i });
@@ -92,6 +106,7 @@ test.describe('Flow de réservation via le widget', () => {
 
     // Party size 2
     await page.getByLabel(/nombre de personnes/i).selectOption('2');
+    await page.getByLabel('Date').fill(nextDemoServiceDate());
 
     // Charger les disponibilités
     await page.getByRole('button', { name: /voir les disponibilités/i }).click();
