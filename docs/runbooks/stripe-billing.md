@@ -65,6 +65,122 @@ recopie que des `priceId` déjà créés et vérifiés dans Stripe.
 
 Les identifiants de prix sont conservés comme variables GitHub Actions non secrètes (`STRIPE_STAGING_*` et `STRIPE_PRODUCTION_*`). Chaque déploiement les synchronise dans le fichier `.env` du VPS avant le build ; une variable manquante ou invalide bloque le déploiement au lieu de publier une API partiellement configurée. La clé Stripe (`STRIPE_SECRET_KEY`) reste, elle, un secret géré séparément.
 
+### Contrôle automatique du catalogue
+
+`scripts/ops/verify-stripe-catalog.mjs` lit chaque `price_...` côté Stripe et compare montant, devise,
+cadence et état au catalogue produit (199/299/249 + 99 €, annuel −20 %). Il est en **lecture seule**
+côté Stripe. `scripts/ops/sync-stripe-prices.sh` propage toujours les `priceId`, y compris quand le
+checkout reste fermé : cette synchronisation ne crée pas de session et évite qu'une activation future
+ne redémarre avec les anciens tarifs. Dès que `BILLING_CHECKOUT_ENABLED=true`, le script vérifie le
+catalogue dans un fichier temporaire et échoue avant toute publication si un `priceId` pointe vers
+l'ancien tarif 149/249 €, si le script de contrôle est absent ou si Stripe est indisponible.
+
+```zsh
+node --env-file=apps/api/.env scripts/ops/verify-stripe-catalog.mjs
+# → tableau des huit prix, puis « N prix non conformes » et code retour 1 en cas d'écart
+```
+
+Les montants annuels sont contrôlés eux aussi ; `STRIPE_EXPECTED_<SUFFIXE>` (par exemple
+`STRIPE_EXPECTED_PRO_ANNUAL=287040`) permet de les surcharger le jour où la grille change, sans
+toucher au script.
+
+### Provisionnement idempotent de la grille v2
+
+Les prix Stripe étant immuables, `scripts/ops/provision-stripe-catalog.mjs` crée la grille v2 sur
+les produits existants, avec une `lookup_key` stable, sans modifier ni archiver les anciens prix.
+Les souscriptions historiques conservent donc leur prix ; seules les nouvelles souscriptions
+utilisent les nouveaux `priceId` après synchronisation. La commande lit les huit
+`STRIPE_PRICE_*` actuels pour retrouver les produits sources et exige des prix EUR, HT
+(`tax_behavior=exclusive`) et récurrents à l'intervalle attendu.
+
+```zsh
+# Aperçu sans mutation (avec les priceId source dans l'environnement)
+node --env-file=apps/api/.env scripts/ops/provision-stripe-catalog.mjs
+
+# Compte test : crée ou réutilise les huit prix, puis affiche les variables à synchroniser
+node --env-file=apps/api/.env scripts/ops/provision-stripe-catalog.mjs --apply --env
+```
+
+La création est protégée par `--apply`. Avec une clé `sk_live_`, elle exige en plus
+`--allow-live` et `STRIPE_ALLOW_LIVE_CATALOG_MUTATION=CREATE_SOKAR_CATALOG_V2`; cette double
+garde évite de créer un catalogue live par erreur. Reporter ensuite les huit valeurs dans les
+variables GitHub de l'environnement concerné, lancer `verify-stripe-catalog.mjs`, puis seulement
+déployer. Ne jamais archiver les prix historiques tant qu'une souscription peut encore les référencer.
+
+## Réconciliation du catalogue — porte P1_ESSENTIAL
+
+1. Créer dans Stripe (mode test d'abord, puis live) les huit prix récurrents aux montants du tableau
+   ci-dessus, en EUR, intervalles `month`/`year` et `interval_count = 1`.
+2. Renseigner les huit variables GitHub Actions (`STRIPE_STAGING_*`, `STRIPE_PRODUCTION_*`) avec les
+   `priceId` obtenus — jamais la clé secrète.
+3. Vérifier avant tout déploiement : `node --env-file=apps/api/.env scripts/ops/verify-stripe-catalog.mjs`.
+4. Le déploiement refuse de synchroniser des prix non conformes, donc un catalogue à l'ancien tarif
+   ne peut pas être activé par inadvertance.
+
+## Rejeu du cycle complet en sandbox — porte P1_ESSENTIAL
+
+À exécuter avec les clés et les prix de test, en conservant les preuves (captures, identifiants
+d'événements) dans `docs/audits/` :
+
+| Étape                      | Ce qui est vérifié                                                           | Preuve attendue                             |
+| -------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------- |
+| 1. Checkout Essential      | redirection, montant 199 €, client Stripe créé                               | capture + `checkout.session.completed`      |
+| 2. Souscription active     | `GET /billing/status` renvoie `essential`, cadence et échéance               | réponse JSON                                |
+| 3. Facture                 | facture au bon montant, `invoice.paid` traité                                | capture Stripe + ligne `StripeWebhookEvent` |
+| 4. Portail                 | ouverture du portail, changement de formule                                  | capture                                     |
+| 5. Échec de paiement       | `invoice.payment_failed` → `past_due`, droits conservés                      | réponse `/billing/status`                   |
+| 6. Grâce puis recouvrement | paiement suivant → retour `active`                                           | captures                                    |
+| 7. Annulation              | `cancel_at_period_end` puis `customer.subscription.deleted` → rétrogradation | réponses `/billing/status`                  |
+| 8. Réactivation            | second Checkout possible après annulation                                    | capture                                     |
+
+`BILLING_CHECKOUT_ENABLED` ne passe à `true` en production qu'après ces huit étapes et la vérification
+du catalogue.
+
+Le dernier rejeu sandbox est archivé dans
+[`docs/audits/2026-09-21-billing-replay.md`](../audits/2026-09-21-billing-replay.md), avec les
+identifiants Stripe de test, les états `/billing/status` et le traitement du ledger webhook.
+
+### Migration des abonnements historiques
+
+Les abonnements restent sur leur `priceId` d'origine après une hausse de tarif : Stripe ne permet pas
+de modifier un Price existant. La migration additive
+`20260921164000_subscription_billing_interval` conserve donc leur cadence dans les projections
+Sokar, au lieu de la déduire des seuls prix actuellement proposés. Après `prisma migrate deploy`,
+exécuter le backfill en lecture seule puis avec `--apply` sur chaque environnement :
+
+```zsh
+pnpm --filter @sokar/api ops:billing-interval-backfill
+pnpm --filter @sokar/api ops:billing-interval-backfill -- --apply
+```
+
+Le script lit les objets Price Stripe et ne modifie que les projections dont la cadence est absente.
+
+### Événements webhook requis
+
+L'endpoint Stripe de chaque environnement doit conserver les événements déjà utilisés par les cartes
+cadeaux **et** recevoir `checkout.session.completed`, `customer.subscription.created|updated|deleted`,
+`invoice.paid`, `invoice.payment_failed` et `invoice.payment_succeeded`. Sans les trois événements de
+facture, Checkout peut réussir tandis qu'un échec ou un recouvrement ne met jamais à jour les droits.
+
+```zsh
+STRIPE_WEBHOOK_ENDPOINT_URL=https://api-staging.sokar.tech/webhooks/stripe \
+  node --env-file=apps/api/.env scripts/ops/ensure-stripe-webhook-events.mjs
+
+# Compte test : ajoute seulement les événements manquants, en préservant les autres.
+STRIPE_WEBHOOK_ENDPOINT_URL=https://api-staging.sokar.tech/webhooks/stripe \
+  node --env-file=apps/api/.env scripts/ops/ensure-stripe-webhook-events.mjs --apply
+```
+
+Pour le compte live, la même commande exige aussi `--allow-live` et
+`STRIPE_ALLOW_LIVE_WEBHOOK_MUTATION=ENSURE_SOKAR_BILLING_EVENTS`.
+
+## Pilotes Essential — porte P1_ESSENTIAL
+
+Deux restaurants, sept jours, avec au minimum : consentement du restaurateur, captures des écrans
+clés, métriques (appels, réservations, incidents) et décision GO/NO-GO signée. La fiche de pilote va
+dans `docs/audits/` et la porte `P1_ESSENTIAL` de `docs/release/product-gates.json` ne passe à
+`CLOSED` qu'avec ces preuves.
+
 Sur staging uniquement, le workflow injecte au build `NEXT_PUBLIC_DEMO_RESTAURANT_ID` (l'identifiant du restaurant de démonstration `chez-sokar-demo`) et `NEXT_PUBLIC_DEMO_STAGING=1`. Le dashboard peut ainsi charger les données de démo sans session Clerk pendant les tests Checkout. Ces variables ne sont jamais injectées en production ; le dashboard de production reste toujours derrière l'authentification.
 
 Le secret `STRIPE_WEBHOOK_SECRET` existant doit rester configuré sur le même endpoint `POST /webhooks/stripe`. Les événements d'abonnement à activer sont :

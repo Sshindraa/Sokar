@@ -9,6 +9,9 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: '4000',
         HOST: '127.0.0.1',
+        // Les workers tournent dans le process `sokar-workers` (R1-1) : l'API
+        // ne doit pas consommer les files ni inscrire les schedulers.
+        RUN_WORKERS_IN_PROCESS: 'false',
       },
       watch: false,
       max_memory_restart: '500M',
@@ -21,6 +24,35 @@ module.exports = {
       listen_timeout: 30000,
       kill_timeout: 8000,
       // Restart strategy : backoff exponentiel pour éviter les crash loops.
+      exp_backoff_restart_delay: 4000,
+      max_restarts: 10,
+      min_uptime: '10s',
+    },
+    {
+      // Process dédié aux workers BullMQ et aux jobs récurrents (R1-1).
+      // Aucun HTTP : il consomme les files et porte les schedulers.
+      name: 'sokar-workers',
+      cwd: '/opt/sokar/apps/api',
+      script: 'dist/worker.js',
+      node_args: '--env-file=.env',
+      env: {
+        NODE_ENV: 'production',
+        // Les workers n'écoutent pas ; la variable est là pour rendre explicite
+        // que ce process porte bien les workers.
+        RUN_WORKERS_IN_PROCESS: 'false',
+        // Endpoint de métriques du worker (R1-6), scrapé par Prometheus.
+        METRICS_PORT: '4001',
+      },
+      watch: false,
+      max_memory_restart: '700M',
+      error_file: '/var/log/sokar/workers-error.log',
+      out_file: '/var/log/sokar/workers-out.log',
+      merge_logs: true,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      // `worker.ts` envoie 'ready' une fois les schedulers inscrits.
+      wait_ready: true,
+      listen_timeout: 30000,
+      kill_timeout: 15000,
       exp_backoff_restart_delay: 4000,
       max_restarts: 10,
       min_uptime: '10s',

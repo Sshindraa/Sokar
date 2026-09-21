@@ -220,7 +220,7 @@ export const openaiReserveFeedRequestsTotal = new Counter({
  * (cible p95 < 2s, p99 < 5s).
  */
 export const voiceTurnDurationMs = new Histogram({
-  name: 'voice_turn_duration_ms',
+  name: 'sokar_voice_turn_duration_ms',
   help: "Durée complète d'un tour de parole voice (ms)",
   buckets: [100, 200, 500, 1000, 2000, 5000, 10000, 30000],
   registers: [getRegistry()],
@@ -231,7 +231,7 @@ export const voiceTurnDurationMs = new Histogram({
  * conversation naturelle (Cerebras/Groq LPU).
  */
 export const voiceLlmFirstTokenMs = new Histogram({
-  name: 'voice_llm_first_token_ms',
+  name: 'sokar_voice_llm_first_token_ms',
   help: "Temps jusqu'au premier token LLM (TTFT, ms)",
   buckets: [50, 100, 200, 500, 1000, 2000, 5000],
   registers: [getRegistry()],
@@ -239,7 +239,7 @@ export const voiceLlmFirstTokenMs = new Histogram({
 
 /** Temps jusqu'à la première phrase complète livrée au pipeline TTS. */
 export const voiceLlmFirstPhraseMs = new Histogram({
-  name: 'voice_llm_first_phrase_ms',
+  name: 'sokar_voice_llm_first_phrase_ms',
   help: "Temps jusqu'à la première phrase LLM complète (ms)",
   buckets: [100, 200, 500, 1000, 2000, 5000, 10000],
   registers: [getRegistry()],
@@ -249,7 +249,7 @@ export const voiceLlmFirstPhraseMs = new Histogram({
  * Temps jusqu'au premier audio TTS (Cartesia). Cible < 500ms.
  */
 export const voiceTtsFirstAudioMs = new Histogram({
-  name: 'voice_tts_first_audio_ms',
+  name: 'sokar_voice_tts_first_audio_ms',
   help: "Temps jusqu'au premier audio TTS (ms)",
   buckets: [50, 100, 200, 500, 1000, 2000, 5000],
   registers: [getRegistry()],
@@ -261,7 +261,7 @@ export const voiceTtsFirstAudioMs = new Histogram({
  * Labels : direction (ex. groq_to_openrouter, cerebras_to_openrouter).
  */
 export const voiceLlmFallbackTotal = new Counter({
-  name: 'voice_llm_fallback_total',
+  name: 'sokar_voice_llm_fallback_total',
   help: 'Nombre total de fallbacks LLM (provider primaire → provider de secours)',
   labelNames: ['direction'] as const,
   registers: [getRegistry()],
@@ -274,7 +274,9 @@ export const voiceLlmFallbackTotal = new Counter({
  * Labels : provider (elevenlabs_stt | cartesia | cerebras | groq | openrouter) × type (429 | 4xx | 5xx | timeout | session_abort | ws_error).
  */
 export const voiceProviderErrorsTotal = new Counter({
-  name: 'voice_provider_errors_total',
+  // Préfixe `sokar_` comme toutes les métriques maison : sans lui, impossible
+  // de distinguer nos séries des métriques système dans un dashboard.
+  name: 'sokar_voice_provider_errors_total',
   help: 'Erreurs par provider voice',
   labelNames: ['provider', 'type'] as const,
   registers: [getRegistry()],
@@ -288,6 +290,18 @@ export const voiceProviderErrorsTotal = new Counter({
  */
 export async function renderMetrics(): Promise<string> {
   return getRegistry().metrics();
+}
+
+/**
+ * Noms des métriques réellement enregistrées, y compris celles qui n'ont pas
+ * encore de valeur (une jauge sans label défini ne produit aucune ligne dans le
+ * rendu texte). Utilisé par le garde-fou des règles d'alerte (R1-6).
+ */
+export function registeredMetricNames(): string[] {
+  return getRegistry()
+    .getMetricsAsArray()
+    .map((metric) => metric.name)
+    .sort();
 }
 
 /**
@@ -457,5 +471,45 @@ export const callsMissingTranscriptGauge = new Gauge({
 export const reservationsMissingSmsGauge = new Gauge({
   name: 'sokar_reservations_missing_confirmation_sms_24h',
   help: 'Reservations in the last 24h without a confirmation SMS audit trail (refreshed every 5 min)',
+  registers: [getRegistry()],
+});
+
+/**
+ * État de conformité des SLO (R0-5), rafraîchi à chaque tick du worker
+ * alert-evaluation (toutes les 5 min).
+ *
+ * Valeurs : 1 = objectif tenu, 0 = objectif manqué, -1 = pas de mesure
+ * (aucun trafic dans la fenêtre, ou baseline absente après un redémarrage).
+ * Le runbook `docs/runbooks/slo.md` décrit les objectifs et la réaction.
+ */
+export const sloStatusGauge = new Gauge({
+  name: 'sokar_slo_status',
+  help: 'SLO compliance: 1 met, 0 breached, -1 unknown',
+  labelNames: ['slo'] as const,
+  registers: [getRegistry()],
+});
+
+/** Valeur mesurée du SLO, dans son unité (ratio ou millisecondes). */
+export const sloValueGauge = new Gauge({
+  name: 'sokar_slo_value',
+  help: 'Measured SLO value in its own unit (ratio or milliseconds)',
+  labelNames: ['slo', 'unit'] as const,
+  registers: [getRegistry()],
+});
+
+/**
+ * Sessions vocales simultanées tenues par le process (R1-3).
+ *
+ * Capacité locale mesurée le 21/09/2026 sur le poste de dev : ~100 sessions
+ * concurrentes saturent le CPU (pic 95 %) avec des fournisseurs neutralisés,
+ * pour ~2,3 Mo de RSS par session. C'est un plancher : l'acheminement STT et la
+ * lecture TTS ne sont pas exercés dans ce test, donc la saturation réelle arrive
+ * plus tôt. Le seuil d'alerte à 70 laisse 30 % de marge sous ce plancher et doit
+ * être confirmé en staging puis sur le VPS.
+ * Cf. `docs/audits/2026-09-21-voice-load-report.md`.
+ */
+export const voiceActiveSessionsGauge = new Gauge({
+  name: 'sokar_voice_active_sessions',
+  help: 'Concurrent voice sessions held by this process',
   registers: [getRegistry()],
 });

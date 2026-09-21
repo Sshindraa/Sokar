@@ -1,5 +1,10 @@
 /**
- * Worker d'anonymisation automatique (RGPD — rétention 2 ans).
+ * Anonymisation automatique (RGPD — rétention 2 ans).
+ *
+ * Ce module porte la logique, pas le worker : le worker qui l'exécute vit dans
+ * `shared/queue/workers/rgpd-anonymization.worker.ts` et reste désactivé par
+ * défaut (`RGPD_ANONYMIZATION_ENABLED=false`), car l'opération est destructive
+ * et n'a jamais tourné en production.
  *
  * Tourne quotidiennement. Pour chaque résa plus vieille que 2 ans
  * ET sans interaction récente, anonymise la PII (customerName, customerPhone,
@@ -14,7 +19,6 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
-import type { Queue } from 'bullmq';
 import { logger } from '../../shared/logger/pino';
 
 export const ANONYMIZATION_RETENTION_DAYS = 730; // 2 ans
@@ -35,6 +39,7 @@ export async function runAnonymization(prisma: PrismaClient): Promise<Anonymizat
   logger.info({ cutoffAnonymize, cutoffGrace }, 'Starting RGPD anonymization scan');
 
   // 1. Trouver les candidats : résas de +2 ans, non anonymisées
+  // tenant-scoping: global — rétention RGPD : le job balaie tous les établissements.
   const candidates = await prisma.reservation.findMany({
     where: {
       createdAt: { lt: cutoffAnonymize },
@@ -57,7 +62,8 @@ export async function runAnonymization(prisma: PrismaClient): Promise<Anonymizat
   ];
   const recentCounts =
     customerPhones.length > 0
-      ? await prisma.reservation.groupBy({
+      ? // tenant-scoping: global — rétention RGPD : agrégat par téléphone, tous établissements.
+        await prisma.reservation.groupBy({
           by: ['customerPhone'],
           where: {
             customerPhone: { in: customerPhones },
@@ -105,6 +111,7 @@ export async function runAnonymization(prisma: PrismaClient): Promise<Anonymizat
 }
 
 async function anonymizeOne(prisma: PrismaClient, reservationId: string): Promise<void> {
+  // tenant-scoping: global — anonymisation d'une réservation ciblée par id, hors requête tenant.
   await prisma.reservation.update({
     where: { id: reservationId },
     data: {
@@ -114,19 +121,4 @@ async function anonymizeOne(prisma: PrismaClient, reservationId: string): Promis
       specialRequests: null,
     },
   });
-}
-
-/**
- * Schedule le cron d'anonymisation (1x par jour à 3h du matin).
- * Idempotent — peut être appelé plusieurs fois.
- */
-export async function scheduleAnonymizationCron(queue: Queue): Promise<void> {
-  await queue.upsertJobScheduler(
-    'rgpd-anonymization',
-    { pattern: '0 3 * * *', tz: 'Europe/Paris' },
-    {
-      name: 'rgpd-anonymization-daily',
-      data: { type: 'rgpd_anonymization' },
-    },
-  );
 }

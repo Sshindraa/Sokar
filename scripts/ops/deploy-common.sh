@@ -8,7 +8,7 @@ set -Eeuo pipefail
 #   SOKAR_ROOT              /opt/sokar | /opt/sokar-staging
 #   RELEASES_DIR            $SOKAR_ROOT/releases
 #   PORT_API / PORT_DASH / PORT_CONNECT
-#   PM2_API / PM2_DASH / PM2_CONNECT
+#   PM2_API / PM2_WORKERS / PM2_DASH / PM2_CONNECT
 #   ECOSYSTEM_FILE          infra/ecosystem.config.js | infra/ecosystem.staging.config.js
 #   NGINX_CONFIG            sokar | sokar-staging (sans .conf)
 #   DB_NAME                 sokar | sokar_staging
@@ -405,11 +405,11 @@ recover_services() {
 
     log info "   → Remise en ligne des services ${DEPLOY_ENV}..."
     if [ "${NEXT_BUILDS_ACTIVATED:-false}" = true ]; then
-        pm2 restart "$PM2_API" "$PM2_DASH" "$PM2_CONNECT" 2>/dev/null \
+        pm2 restart "$PM2_API" "$PM2_WORKERS" "$PM2_DASH" "$PM2_CONNECT" 2>/dev/null \
             || pm2 resurrect 2>/dev/null \
             || true
     elif [ "${NEED_API:-false}" = true ]; then
-        pm2 restart "$PM2_API" 2>/dev/null || true
+        pm2 restart "$PM2_API" "$PM2_WORKERS" 2>/dev/null || true
     fi
 
     if [ "$DEPLOY_ENV" = "prod" ]; then
@@ -710,7 +710,7 @@ restart_services() {
     # déploiements purement Dashboard/Connect ne provoquent ainsi aucun arrêt
     # du backend.
     if [ "${NEED_API:-false}" = true ]; then
-        pm2 restart "$PM2_API" 2>/dev/null || true
+        pm2 restart "$PM2_API" "$PM2_WORKERS" 2>/dev/null || true
     fi
     pm2 save
     sudo "$PRIVILEGED_WRAPPER" reload-nginx "$DEPLOY_ENV"
@@ -991,7 +991,7 @@ parse_deploy_args() {
 # ── Validation env ───────────────────────────────────────
 # Extrait du bloc inline de deploy.sh.
 # Set les variables globales : SOKAR_ROOT, RELEASES_DIR, PORT_API, PORT_DASH,
-# PORT_CONNECT, PM2_API, PM2_DASH, PM2_CONNECT, ECOSYSTEM_FILE, NGINX_CONFIG,
+# PORT_CONNECT, PM2_API, PM2_WORKERS, PM2_DASH, PM2_CONNECT, ECOSYSTEM_FILE, NGINX_CONFIG,
 # DB_NAME, KEEP_RELEASES, HAS_LOCALSTACK, HAS_LOGROTATE, HAS_CERT_CHECK,
 # EXTENDED_HEALTH_CHECKS.
 # Appelle print_usage et exit 1 si --env est manquant ou invalide.
@@ -1013,6 +1013,7 @@ validate_deploy_env() {
             PM2_API="sokar-api"
             PM2_DASH="sokar-dashboard"
             PM2_CONNECT="sokar-connect"
+            PM2_WORKERS="sokar-workers"
             ECOSYSTEM_FILE="infra/ecosystem.config.js"
             NGINX_CONFIG="sokar"
             DB_NAME="sokar"
@@ -1041,6 +1042,7 @@ validate_deploy_env() {
             PM2_API="sokar-staging-api"
             PM2_DASH="sokar-staging-dashboard"
             PM2_CONNECT="sokar-staging-connect"
+            PM2_WORKERS="sokar-staging-workers"
             ECOSYSTEM_FILE="infra/ecosystem.staging.config.js"
             NGINX_CONFIG="sokar-staging"
             DB_NAME="sokar_staging"
@@ -1069,6 +1071,7 @@ validate_deploy_env() {
 #   RELEASES_DIR       $SOKAR_ROOT/releases
 #   WITH_DB_ROLLBACK   true | false
 #   TARGET_RELEASE     release cible (peut être vide → calculée automatiquement)
+#   PM2_WORKERS        nom du process PM2 des workers BullMQ (R1-1)
 #   PM2_DASH           nom du process PM2 dashboard
 #   PM2_CONNECT        nom du process PM2 connect
 #   ECOSYSTEM_FILE     infra/ecosystem.config.js | infra/ecosystem.staging.config.js

@@ -14,7 +14,13 @@ function getStripe(): Stripe {
     if (!process.env.STRIPE_SECRET_KEY) {
       throw new Error('STRIPE_SECRET_KEY is required');
     }
-    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    // R1-2 : bornes explicites plutôt que les défauts du SDK. `timeout` évite
+    // qu'un paiement reste en vol, `maxNetworkRetries` rejoue uniquement les
+    // erreurs réseau (Stripe ne rejoue jamais un 4xx).
+    _stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      timeout: 10_000,
+      maxNetworkRetries: 2,
+    });
   }
   return _stripe;
 }

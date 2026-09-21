@@ -52,7 +52,44 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Observabilité (R1-6) ─────────────────────────────────────────
+  # `network_mode: host` est volontaire : Prometheus doit atteindre l'API et le
+  # process worker sur la loopback (127.0.0.1:4000 et :4001), ce que la garde
+  # `/metrics` accepte sans secret supplémentaire. Grafana écoute sur 3030 et
+  # reste lié à la loopback : l'accès se fait par tunnel SSH, pas par Nginx.
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    network_mode: host
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.listen-address=127.0.0.1:9090'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    network_mode: host
+    environment:
+      GF_SERVER_HTTP_ADDR: '127.0.0.1'
+      GF_SERVER_HTTP_PORT: '3030'
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD requis}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
 volumes:
   pgdata:
   redis-data:
   localstack-data:
+  prometheus-data:
+  grafana-data:

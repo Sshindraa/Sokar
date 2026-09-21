@@ -21,6 +21,12 @@ if [ -x "$ROOT/scripts/quality/check-vault-size.sh" ]; then
   bash "$ROOT/scripts/quality/check-vault-size.sh" warn || true
 fi
 
+# Scoping tenant : échoue si un fichier API gagne un appel Prisma non scopé
+# (nouveau modèle ou nouveau call site). La baseline ne peut que baisser.
+if [ -f "$ROOT/scripts/quality/check-tenant-scoping.mjs" ]; then
+  node "$ROOT/scripts/quality/check-tenant-scoping.mjs"
+fi
+
 BASE_REF="${SOKAR_BASE_REF:-origin/main}"
 if ! git rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
   BASE_REF="HEAD~1"

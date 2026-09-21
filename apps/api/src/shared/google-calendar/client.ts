@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { logger } from '../logger/pino';
+import { fetchWithTimeout, retry } from '../resilience';
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
@@ -98,7 +99,7 @@ export class GoogleCalendarClient {
       };
     }
 
-    const response = await fetch('https://oauth2.googleapis.com/token', {
+    const response = await fetchWithTimeout('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -128,16 +129,23 @@ export class GoogleCalendarClient {
       return 'mock_access_token_xyz';
     }
 
-    const response = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-      }),
-    });
+    // R1-2 : le rafraîchissement de token est idempotent, donc rejouable. Un
+    // 5xx transitoire de Google ne doit pas faire échouer un appel vocal qui
+    // consulte la disponibilité du calendrier.
+    const response = await retry(
+      () =>
+        fetchWithTimeout('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            client_id: GOOGLE_CLIENT_ID,
+            client_secret: GOOGLE_CLIENT_SECRET,
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken,
+          }),
+        }),
+      { attempts: 2, baseDelayMs: 250 },
+    );
 
     if (!response.ok) {
       const errText = await response.text();
@@ -168,7 +176,7 @@ export class GoogleCalendarClient {
 
     const accessToken = await this.getAccessToken(refreshToken);
 
-    const response = await fetch('https://www.googleapis.com/calendar/v3/freeBusy', {
+    const response = await fetchWithTimeout('https://www.googleapis.com/calendar/v3/freeBusy', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -210,7 +218,7 @@ export class GoogleCalendarClient {
 
     const accessToken = await this.getAccessToken(refreshToken);
 
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
       {
         method: 'POST',
@@ -259,7 +267,7 @@ export class GoogleCalendarClient {
 
     const accessToken = await this.getAccessToken(refreshToken);
 
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
       {
         method: 'PUT',
@@ -301,7 +309,7 @@ export class GoogleCalendarClient {
 
     const accessToken = await this.getAccessToken(refreshToken);
 
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
       {
         method: 'DELETE',

@@ -117,6 +117,7 @@ vi.mock('@prisma/client', async (importOriginal) => {
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+      count: vi.fn().mockResolvedValue(0),
     };
     customer = {
       findMany: vi.fn(),
@@ -450,6 +451,7 @@ vi.mock('@prisma/client', async (importOriginal) => {
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+      count: vi.fn().mockResolvedValue(0),
     };
     reservationAuditLog = {
       findFirst: vi.fn(),
@@ -515,6 +517,10 @@ vi.mock('ioredis', () => {
 // ── Mock BullMQ ──
 vi.mock('bullmq', () => {
   class Queue {
+    name: string;
+    constructor(name: string) {
+      this.name = name;
+    }
     add = vi.fn().mockResolvedValue({});
     upsertJobScheduler = vi.fn().mockResolvedValue({});
   }

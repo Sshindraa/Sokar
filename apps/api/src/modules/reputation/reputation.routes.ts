@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ReputationFeedbackRequestStatus, ReputationRecoveryTaskStatus } from '@prisma/client';
 import { requireOrg } from '../../plugins/clerk';
 import { requireCapability } from '../entitlements/entitlement.guard';
+import { RATE_LIMIT_PUBLIC_WRITE } from '../../plugins/rate-limit.policy';
 import {
   REPUTATION_FEEDBACK_CHANNELS,
   REPUTATION_RECOVERY_STATUSES,
@@ -227,7 +228,10 @@ export async function reputationRoutes(app: FastifyInstance): Promise<void> {
   // cannot be used while the local foundation is disabled during the freeze.
   app.post(
     '/reputation/feedback/submit',
-    { preHandler: requireReputationFeature },
+    {
+      preHandler: requireReputationFeature,
+      config: { rateLimit: RATE_LIMIT_PUBLIC_WRITE },
+    },
     async (request, reply) => {
       const body = SubmitFeedbackBodySchema.parse(request.body);
       try {

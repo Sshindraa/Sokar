@@ -24,6 +24,7 @@ const TELNYX_API_URL = process.env.TELNYX_API_URL ?? 'https://api.telnyx.com';
  * Passé via `dispatcher` — extension undici de Node 18+.
  */
 import * as https from 'https';
+import { DEFAULT_PROVIDER_TIMEOUT_MS, fetchWithTimeout } from '../resilience';
 
 export const telnyxAgent = new https.Agent({
   keepAlive: true,
@@ -40,10 +41,16 @@ export const telnyxAgent = new https.Agent({
  */
 export async function telnyxFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const url = `${TELNYX_API_URL}${path}`;
-  return fetch(url, {
-    ...init,
-    keepalive: true,
-  });
+  // Borne explicite : sans timeout, une socket Telnyx qui ne répond plus bloque
+  // le pipeline vocal (answer/speak/record) jusqu'à la mort de la connexion.
+  return fetchWithTimeout(
+    url,
+    {
+      ...init,
+      keepalive: true,
+    },
+    DEFAULT_PROVIDER_TIMEOUT_MS,
+  );
 }
 
 /**

@@ -11,7 +11,7 @@ type TransactionClient = Parameters<Parameters<PrismaClient['$transaction']>[0]>
 import { ConsentService, ConsentRequiredError } from '../consent.service';
 import { ErasureService, ErasureSubjectNotFoundError } from '../erasure.service';
 import { ExportService, ExportSubjectNotFoundError } from '../export.service';
-import { runAnonymization, ANONYMIZATION_RETENTION_DAYS } from '../anonymization.worker';
+import { runAnonymization, ANONYMIZATION_RETENTION_DAYS } from '../anonymization.service';
 import { CURRENT_PRIVACY_POLICY_VERSION } from '../privacy-policy';
 import { queues } from '../../../shared/queue/queues';
 

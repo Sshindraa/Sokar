@@ -1,12 +1,18 @@
 import { createHash } from 'node:crypto';
 import { FastifyInstance } from 'fastify';
 import { telnyxWebhookGuard } from '../voice/telnyx.guard';
+import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
 import { handleReply } from '../sms/reply-handler';
 import { applyMarketingProviderEvent } from '../marketing/marketing-provider.service';
 
 interface TelnyxFromObject {
   phone_number?: string;
 }
+
+const webhookRouteOptions = {
+  preHandler: telnyxWebhookGuard,
+  config: { rateLimit: RATE_LIMIT_PROVIDER_WEBHOOK },
+};
 
 interface TelnyxMessagePayload {
   id?: string;
@@ -38,7 +44,7 @@ interface TelnyxWebhookBody {
  */
 
 export async function whatsappWebhookRoutes(app: FastifyInstance) {
-  app.post('/whatsapp/webhook', { preHandler: telnyxWebhookGuard }, async (req, reply) => {
+  app.post('/whatsapp/webhook', webhookRouteOptions, async (req, reply) => {
     const body = req.body as TelnyxWebhookBody;
     const eventType = body?.data?.event_type;
     const payload = body?.data?.payload;

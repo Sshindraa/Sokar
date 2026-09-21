@@ -18,6 +18,8 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: '4100',
         HOST: '127.0.0.1',
+        // Les workers tournent dans `sokar-staging-workers` (R1-1).
+        RUN_WORKERS_IN_PROCESS: 'false',
       },
       watch: false,
       max_memory_restart: '500M',
@@ -29,6 +31,32 @@ module.exports = {
       wait_ready: true,
       listen_timeout: 30000,
       kill_timeout: 8000,
+      exp_backoff_restart_delay: 4000,
+      max_restarts: 10,
+      min_uptime: '10s',
+    },
+    {
+      // Process dédié aux workers BullMQ et aux jobs récurrents (R1-1).
+      name: 'sokar-staging-workers',
+      cwd: '/opt/sokar-staging/apps/api',
+      script: 'dist/worker.js',
+      node_args: '--env-file=.env',
+      env: {
+        NODE_ENV: 'production',
+        RUN_WORKERS_IN_PROCESS: 'false',
+        // Endpoint de métriques du worker (R1-6). Port dédié côté staging pour
+        // ne pas entrer en collision avec la prod sur le même VPS.
+        METRICS_PORT: '4101',
+      },
+      watch: false,
+      max_memory_restart: '700M',
+      error_file: '/var/log/sokar/staging-workers-error.log',
+      out_file: '/var/log/sokar/staging-workers-out.log',
+      merge_logs: true,
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+      wait_ready: true,
+      listen_timeout: 30000,
+      kill_timeout: 15000,
       exp_backoff_restart_delay: 4000,
       max_restarts: 10,
       min_uptime: '10s',

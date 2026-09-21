@@ -7,6 +7,7 @@ import { requireOrg, requireSokarOperator } from '../../plugins/clerk';
 import { requireCapability } from '../entitlements/entitlement.guard';
 import { constructWebhookEvent } from '../gift-cards/stripe.service';
 import { checkRateLimit, getClientIp, rateLimitKey } from '../../shared/redis/rate-limit';
+import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
 import {
   PAYMENT_AMOUNT_MODES,
   ReservationPaymentInputError,
@@ -224,66 +225,75 @@ export async function reservationPaymentRoutes(app: FastifyInstance): Promise<vo
   /** Stripe callback: verify the raw signature first, then persist only a
    * normalized event hash/status. Unknown event types are acknowledged and
    * recorded for audit without changing the payment. */
-  app.post('/webhooks/stripe/reservation-payments', async (request, reply) => {
-    if (!reservationPaymentsEnabled()) {
-      return reply.status(503).send({ error: 'RESERVATION_PAYMENTS_DISABLED' });
-    }
-    const ip = getClientIp(request);
-    if (!(await checkRateLimit(rateLimitKey('reservation-payment-webhook', ip), 300))) {
-      return reply.status(429).send({ error: 'RATE_LIMITED' });
-    }
-    const signatureHeader = request.headers['stripe-signature'];
-    const signature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
-    if (!signature) return reply.status(400).send({ error: 'MISSING_STRIPE_SIGNATURE' });
-    const rawBody = (request as unknown as { rawBody?: unknown }).rawBody;
-    if (typeof rawBody !== 'string') return reply.status(400).send({ error: 'RAW_BODY_REQUIRED' });
+  // Provider tier: the global 100 req/min budget must not throttle Stripe.
+  const stripeWebhookRouteOptions = {
+    config: { rateLimit: RATE_LIMIT_PROVIDER_WEBHOOK },
+  };
+  app.post(
+    '/webhooks/stripe/reservation-payments',
+    stripeWebhookRouteOptions,
+    async (request, reply) => {
+      if (!reservationPaymentsEnabled()) {
+        return reply.status(503).send({ error: 'RESERVATION_PAYMENTS_DISABLED' });
+      }
+      const ip = getClientIp(request);
+      if (!(await checkRateLimit(rateLimitKey('reservation-payment-webhook', ip), 300))) {
+        return reply.status(429).send({ error: 'RATE_LIMITED' });
+      }
+      const signatureHeader = request.headers['stripe-signature'];
+      const signature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
+      if (!signature) return reply.status(400).send({ error: 'MISSING_STRIPE_SIGNATURE' });
+      const rawBody = (request as unknown as { rawBody?: unknown }).rawBody;
+      if (typeof rawBody !== 'string')
+        return reply.status(400).send({ error: 'RAW_BODY_REQUIRED' });
 
-    let event: Awaited<ReturnType<typeof constructWebhookEvent>>;
-    try {
-      event = await constructWebhookEvent(rawBody, signature);
-    } catch {
-      return reply.status(400).send({ error: 'INVALID_STRIPE_SIGNATURE' });
-    }
+      let event: Awaited<ReturnType<typeof constructWebhookEvent>>;
+      try {
+        event = await constructWebhookEvent(rawBody, signature);
+      } catch {
+        return reply.status(400).send({ error: 'INVALID_STRIPE_SIGNATURE' });
+      }
 
-    const object = event.data.object as unknown as Record<string, unknown>;
-    const metadataCandidate = object.metadata;
-    const metadataParsed = WebhookMetadataSchema.safeParse(metadataCandidate);
-    if (!metadataParsed.success) {
-      return reply.status(400).send({ error: 'PAYMENT_METADATA_REQUIRED' });
-    }
-    const metadata = metadataParsed.data;
-    if (
-      metadata.restaurantId !== request.headers['x-sokar-restaurant-id'] &&
-      request.headers['x-sokar-restaurant-id']
-    ) {
-      return reply.status(403).send({ error: 'PAYMENT_TENANT_MISMATCH' });
-    }
-    const amount = numberValue(object.amount_received) ?? numberValue(object.amount);
-    const currency = stringValue(object.currency)?.toUpperCase();
-    const occurredAt = new Date(event.created * 1000);
-    const paymentIntentId = stringValue(object.payment_intent) ?? stringValue(object.id);
-    const setupIntentId = event.type.startsWith('setup_intent.')
-      ? stringValue(object.id)
-      : undefined;
-    const result = await applyReservationPaymentProviderEvent({
-      restaurantId: metadata.restaurantId,
-      paymentId: metadata.reservationPaymentId,
-      providerEventId: event.id,
-      eventType: event.type,
-      occurredAt: Number.isNaN(occurredAt.getTime()) ? new Date() : occurredAt,
-      payloadHash: createHash('sha256').update(rawBody).digest('hex'),
-      ...(amount !== undefined ? { amount: amount / 100 } : {}),
-      ...(currency ? { currency } : {}),
-      ...(paymentIntentId && event.type.startsWith('payment_intent.')
-        ? { stripePaymentIntentId: paymentIntentId }
-        : {}),
-      ...(setupIntentId ? { stripeSetupIntentId: setupIntentId } : {}),
-      ...(event.type === 'payment_intent.payment_failed'
-        ? { failureCode: stringValue(object.last_payment_error) ?? 'PAYMENT_FAILED' }
-        : {}),
-    });
-    return reply.send({ received: true, ...result });
-  });
+      const object = event.data.object as unknown as Record<string, unknown>;
+      const metadataCandidate = object.metadata;
+      const metadataParsed = WebhookMetadataSchema.safeParse(metadataCandidate);
+      if (!metadataParsed.success) {
+        return reply.status(400).send({ error: 'PAYMENT_METADATA_REQUIRED' });
+      }
+      const metadata = metadataParsed.data;
+      if (
+        metadata.restaurantId !== request.headers['x-sokar-restaurant-id'] &&
+        request.headers['x-sokar-restaurant-id']
+      ) {
+        return reply.status(403).send({ error: 'PAYMENT_TENANT_MISMATCH' });
+      }
+      const amount = numberValue(object.amount_received) ?? numberValue(object.amount);
+      const currency = stringValue(object.currency)?.toUpperCase();
+      const occurredAt = new Date(event.created * 1000);
+      const paymentIntentId = stringValue(object.payment_intent) ?? stringValue(object.id);
+      const setupIntentId = event.type.startsWith('setup_intent.')
+        ? stringValue(object.id)
+        : undefined;
+      const result = await applyReservationPaymentProviderEvent({
+        restaurantId: metadata.restaurantId,
+        paymentId: metadata.reservationPaymentId,
+        providerEventId: event.id,
+        eventType: event.type,
+        occurredAt: Number.isNaN(occurredAt.getTime()) ? new Date() : occurredAt,
+        payloadHash: createHash('sha256').update(rawBody).digest('hex'),
+        ...(amount !== undefined ? { amount: amount / 100 } : {}),
+        ...(currency ? { currency } : {}),
+        ...(paymentIntentId && event.type.startsWith('payment_intent.')
+          ? { stripePaymentIntentId: paymentIntentId }
+          : {}),
+        ...(setupIntentId ? { stripeSetupIntentId: setupIntentId } : {}),
+        ...(event.type === 'payment_intent.payment_failed'
+          ? { failureCode: stringValue(object.last_payment_error) ?? 'PAYMENT_FAILED' }
+          : {}),
+      });
+      return reply.send({ received: true, ...result });
+    },
+  );
 
   app.get(
     '/reservation-payments/:paymentId',

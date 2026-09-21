@@ -1,0 +1,50 @@
+# Configuration Prometheus Sokar (R1-6).
+#
+# Prod et staging tournent sur le même VPS : un seul Prometheus scrape les deux,
+# chaque cible portant son label `env` pour que les dashboards puissent filtrer.
+#
+# Le service tourne en `network_mode: host` (cf. infra/docker-compose.yml) : les
+# cibles sont donc vues depuis la loopback, ce que la garde `/metrics` accepte
+# sans configuration supplémentaire. Si Prometheus repasse un jour en réseau
+# bridge, il faudra définir `METRICS_BASIC_AUTH_USER`/`_PASSWORD` sur les deux
+# process et ajouter `basic_auth` ici.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # ── Production ────────────────────────────────────────────────
+  - job_name: sokar-api
+    static_configs:
+      - targets: ['127.0.0.1:4000']
+        labels:
+          env: production
+          process: api
+
+  # Métriques de files, de SLO et d'alertes : publiées par le process worker
+  # depuis R1-1, exposées par son propre endpoint (METRICS_PORT).
+  - job_name: sokar-workers
+    static_configs:
+      - targets: ['127.0.0.1:4001']
+        labels:
+          env: production
+          process: workers
+
+  # ── Staging ───────────────────────────────────────────────────
+  - job_name: sokar-staging-api
+    static_configs:
+      - targets: ['127.0.0.1:4100']
+        labels:
+          env: staging
+          process: api
+
+  - job_name: sokar-staging-workers
+    static_configs:
+      - targets: ['127.0.0.1:4101']
+        labels:
+          env: staging
+          process: workers
