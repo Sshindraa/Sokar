@@ -94,6 +94,23 @@ const voiceLlmTimeoutSchema = z.preprocess((value) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_VOICE_LLM_TIMEOUT_MS;
 }, z.number().positive());
 
+/**
+ * Une variable d'environnement vide n'est pas absente : `pm2` transmet à ses
+ * process l'environnement du shell qui l'a lancé, donc un secret de workflow
+ * non renseigné arrive en chaîne vide et fait échouer `z.string().url()` —
+ * `.optional()` ne protège pas, puisque la valeur existe. Le 2026-09-22,
+ * `ALERT_WEBHOOK_URL=''` a fait boucler le process de workers en crash et
+ * bloqué la promotion staging → production. Une valeur vide doit se lire
+ * « non configuré », pas « invalide ».
+ */
+export const optionalUrlSchema = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  // Le trim évite qu'un espace invisible dans un secret GitHub produise une
+  // URL « valide » en apparence mais refusée par `new URL()`.
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
+}, z.string().url().optional());
+
 /** Configuration LLM voice issue des variables d'environnement validées. */
 export const VoiceConfigSchema = z.object({
   VOICE_LLM_PROVIDER: voiceLlmProviderSchema,
@@ -186,7 +203,7 @@ const EnvSchema = z
     CALL_RECORDING_TEST_RESTAURANT_IDS: z.string().optional(),
     CALL_RECORDINGS_BUCKET: z.string().min(1).optional(),
     CALL_RECORDINGS_REGION: z.string().default('eu-west-3'),
-    CALL_RECORDINGS_ENDPOINT: z.string().url().optional(),
+    CALL_RECORDINGS_ENDPOINT: optionalUrlSchema,
     CALL_RECORDINGS_ACCESS_KEY_ID: z.string().optional(),
     CALL_RECORDINGS_SECRET_ACCESS_KEY: z.string().optional(),
     CALL_RECORDINGS_RETENTION_DAYS: z.coerce.number().int().min(1).max(30).default(30),
@@ -239,7 +256,7 @@ const EnvSchema = z
     //   ALERT_WEBHOOK_URL : webhook Slack/Discord ({ "text": "..." }).
     //   ALERT_SMS_TO      : numéro E.164 recevant un SMS pour les alertes critiques.
     ALERT_EMAIL_TO: z.string().optional(),
-    ALERT_WEBHOOK_URL: z.string().url().optional(),
+    ALERT_WEBHOOK_URL: optionalUrlSchema,
     ALERT_SMS_TO: z.string().optional(),
     // Jeton séparé pour le feed interne de marge (jamais exposé au dashboard client).
     SOKAR_INTERNAL_USAGE_TOKEN: z.string().optional(),

@@ -4,7 +4,35 @@ import {
   VOICE_LLM_FALLBACK_MODEL_DEFAULT,
   VOICE_LLM_MODEL_DEFAULT,
 } from '@sokar/config';
-import { VoiceConfigSchema } from '../env';
+import { VoiceConfigSchema, optionalUrlSchema } from '../env';
+
+/**
+ * Incident du 2026-09-22 : `pm2` transmet à ses process l'environnement du
+ * shell qui l'a lancé, donc un secret de workflow non renseigné arrive en
+ * chaîne vide. `.optional()` ne protège pas dans ce cas, et le process de
+ * workers bouclait en crash — bloquant toute promotion staging → production.
+ */
+describe('optionalUrlSchema', () => {
+  it('traite une variable absente comme non configurée', () => {
+    expect(optionalUrlSchema.parse(undefined)).toBeUndefined();
+  });
+
+  it('traite une variable vide comme non configurée', () => {
+    expect(optionalUrlSchema.parse('')).toBeUndefined();
+    expect(optionalUrlSchema.parse('   ')).toBeUndefined();
+  });
+
+  it('accepte une URL valide et retire les espaces', () => {
+    expect(optionalUrlSchema.parse('  https://hooks.example.test/T1  ')).toBe(
+      'https://hooks.example.test/T1',
+    );
+  });
+
+  it('refuse une valeur non vide qui n’est pas une URL', () => {
+    expect(optionalUrlSchema.safeParse('pas-une-url').success).toBe(false);
+    expect(optionalUrlSchema.safeParse('hooks.example.test').success).toBe(false);
+  });
+});
 
 describe('VoiceConfigSchema', () => {
   it('conserve les valeurs par défaut du pipeline voice', () => {
