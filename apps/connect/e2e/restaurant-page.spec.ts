@@ -8,19 +8,27 @@ import { test, expect } from '@playwright/test';
  * informations pratiques (adresse, téléphone) sont présentes, et que le CTA
  * "Réserver une table" est visible.
  *
- * Nécessite l'API Fastify (localhost:4100 en staging, localhost:4000 en dev)
- * + DB seedée avec le restaurant de démo "chez-sokar-demo".
- * Si l'API n'est pas disponible, le beforeAll échoue et la suite est marquée failed.
+ * Nécessite l'API Fastify (localhost:4000 en dev, 4100 en staging) + DB seedée
+ * avec le restaurant de démo "chez-sokar-demo".
+ * Si l'API n'est pas disponible, la suite est skippée (non bloquant pour un job
+ * CI sans infra) plutôt que marquée en échec.
  */
 
-const API_URL = process.env.API_URL || 'http://localhost:4100';
+const API_URL = process.env.API_URL || 'http://localhost:4000';
 const RESTAURANT_SLUG = 'chez-sokar-demo';
 
-// Vérifie que l'API répond avant de lancer les tests.
-// Si elle ne répond pas, on skip tout le fichier (non-bloquant en CI sans infra).
+let apiAvailable = false;
 test.beforeAll(async () => {
-  const res = await fetch(`${API_URL}/health`);
-  if (!res.ok) throw new Error(`API health check failed: ${res.status}`);
+  try {
+    const res = await fetch(`${API_URL}/health`);
+    apiAvailable = res.ok;
+  } catch {
+    apiAvailable = false;
+  }
+});
+
+test.beforeEach(() => {
+  test.skip(!apiAvailable, `API Sokar indisponible sur ${API_URL}`);
 });
 
 test.describe('Page restaurant publique', () => {

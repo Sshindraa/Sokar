@@ -34,7 +34,7 @@ export default defineConfig({
   use: {
     // PLAYWRIGHT_BASE_URL permet de cibler un environnement distant (staging)
     // sans démarrer le dev server local.
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:4102',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:4002',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
@@ -56,7 +56,7 @@ export default defineConfig({
     : {
         webServer: {
           command: 'pnpm --filter @sokar/connect dev',
-          url: 'http://localhost:4102',
+          url: 'http://localhost:4002',
           timeout: 60_000,
           reuseExistingServer: !process.env.CI,
           cwd: __dirname,
