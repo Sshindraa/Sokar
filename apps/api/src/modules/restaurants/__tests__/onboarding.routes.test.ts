@@ -378,6 +378,30 @@ describe('restaurant.routes - onboarding', () => {
         exposureSettings: expect.objectContaining({ maxPartySize: 8, connectPublished: true }),
       });
     });
+
+    it('refuse de publier une page sans slug', async () => {
+      const app = await getApp();
+      vi.mocked(db.restaurant.findUnique).mockResolvedValue({
+        id: 'test-rest-1',
+        slug: null,
+      } as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>);
+      vi.mocked(db.restaurantExposureSettings.upsert).mockResolvedValue({
+        restaurantId: 'test-rest-1',
+        capacitySpecials: {},
+      } as unknown as Awaited<ReturnType<typeof db.restaurantExposureSettings.upsert>>);
+
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/restaurants/test-rest-1/connect',
+        headers: { authorization: 'Bearer test' },
+        payload: { connectPublished: true },
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toMatchObject({ code: 'CONNECT_SLUG_REQUIRED', missing: ['slug'] });
+      expect(db.restaurant.update).not.toHaveBeenCalled();
+      expect(db.restaurantExposureSettings.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('POST /restaurants/:id/images', () => {
