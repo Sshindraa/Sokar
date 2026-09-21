@@ -16,6 +16,18 @@ import { db } from '../../../shared/db/client';
 import { redisCache } from '../../../shared/redis/client';
 import type { FastifyInstance } from 'fastify';
 
+/**
+ * Copie volontaire de l'invariant de publication : le test doit énoncer le
+ * contrat indépendamment de `PUBLIC_CONNECT_WHERE`, sinon retirer une condition
+ * de la constante retirerait aussi l'attente (cf. connect.routes.test.ts).
+ */
+const EXPECTED_PUBLIC_PREDICATE = {
+  exposureSettings: { connectPublished: true },
+  publishedAt: { not: null },
+  slug: { not: null },
+  agenticOptIn: true,
+};
+
 const RESTAURANT_BASE = {
   id: 'rest-1',
   slug: 'chez-sokar-demo',
@@ -106,6 +118,11 @@ describe('Sokar Connect — Pages locales T7', () => {
     expect(data.cities[0].citySlug).toBe('lyon');
     expect(data.cities[0].total).toBe(5);
     expect(data.cities[0].cuisines.length).toBe(4);
+
+    // Même invariant que le sitemap et la page détail (cf. PUBLIC_CONNECT_WHERE).
+    expect(vi.mocked(db.restaurant.findMany)).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining(EXPECTED_PUBLIC_PREDICATE) }),
+    );
   });
 
   it('GET /public/cities/:slug → 200 + restaurants si indexable', async () => {
@@ -128,6 +145,13 @@ describe('Sokar Connect — Pages locales T7', () => {
     expect(data.city).toBe('Lyon');
     expect(data.totalInCity).toBe(6);
     expect(data.shouldIndex).toBe(true);
+
+    // La 2e requête est celle qui liste les fiches de la ville : elle doit
+    // porter le même invariant, sinon la page ville annonce des URL en 404.
+    expect(vi.mocked(db.restaurant.findMany)).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ where: expect.objectContaining(EXPECTED_PUBLIC_PREDICATE) }),
+    );
     expect(Array.isArray(data.restaurants)).toBe(true);
   });
 

@@ -63,6 +63,7 @@ import {
   AvailabilityQuerySchema,
   ConfirmInputSchema,
   HoldInputSchema,
+  PUBLIC_CONNECT_WHERE,
   SlugParamSchema,
   normalizeConnectSource,
   type Source,
@@ -222,10 +223,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     { config: { rateLimit: { max: RATE_LIMIT_SITEMAP_MAX, timeWindow: '1 minute' } } },
     async (_req, reply) => {
       const rows = await db.restaurant.findMany({
-        where: {
-          exposureSettings: { connectPublished: true },
-          publishedAt: { not: null },
-        },
+        where: PUBLIC_CONNECT_WHERE,
         select: {
           slug: true,
           updatedAt: true,
@@ -234,9 +232,9 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         orderBy: { updatedAt: 'desc' },
       });
       const restaurants = rows
-        .filter((r) => r.slug !== null)
+        .filter((r): r is typeof r & { slug: string } => r.slug !== null)
         .map((r) => ({
-          slug: r.slug!,
+          slug: r.slug,
           updatedAt: (r.updatedAt ?? new Date()).toISOString(),
           publishedAt: (r.publishedAt ?? new Date()).toISOString(),
         }));
@@ -281,8 +279,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     async (_req, reply) => {
       const rows = await db.restaurant.findMany({
         where: {
-          exposureSettings: { connectPublished: true },
-          publishedAt: { not: null },
+          ...PUBLIC_CONNECT_WHERE,
           city: { not: null },
         },
         select: { city: true, cuisineType: true },
@@ -335,7 +332,7 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const allCities = await db.restaurant.findMany({
-        where: { exposureSettings: { connectPublished: true }, city: { not: null } },
+        where: { ...PUBLIC_CONNECT_WHERE, city: { not: null } },
         select: { city: true, cuisineType: true },
       });
       const cityRow = allCities.find((r) => slugifyCity(r.city ?? '') === params.slug);
@@ -388,9 +385,8 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
 
       const restaurantsRaw = await db.restaurant.findMany({
         where: {
+          ...PUBLIC_CONNECT_WHERE,
           city: cityName,
-          exposureSettings: { connectPublished: true },
-          publishedAt: { not: null },
           ...(cuisineFilter && cuisineName ? { cuisineType: { has: cuisineName } } : {}),
         },
         select: { slug: true },

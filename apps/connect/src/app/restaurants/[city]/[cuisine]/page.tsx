@@ -33,7 +33,8 @@ export async function generateMetadata({
 
   const canonical = `${SITE_URL}/restaurants/${data.citySlug}/${cuisine}`;
   return {
-    title: `Restaurants ${data.cuisine.toLowerCase()} réservables à ${data.city} | Sokar`,
+    // Marque ajoutée par le template du layout (cf. restaurant/[slug]).
+    title: `Restaurants ${data.cuisine.toLowerCase()} réservables à ${data.city}`,
     description: `Découvrez les restaurants ${data.cuisine.toLowerCase()} réservables en ligne à ${data.city} via Sokar.`,
     alternates: { canonical },
     robots: data.shouldIndex ? { index: true, follow: true } : { index: false, follow: true },

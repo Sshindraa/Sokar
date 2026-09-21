@@ -10,6 +10,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:watch": "vitest",
     "copy-static": "bash scripts/copy-static.sh",
     "clean": "rm -rf .turbo .next"

@@ -87,7 +87,9 @@ export async function generateMetadata({
   const canonical = `${SITE_URL}/restaurant/${restaurant.slug}`;
 
   return {
-    title: `${restaurant.name} — Réservation en ligne à ${restaurant.address.city} | Sokar`,
+    // La marque est ajoutée par le template du layout (`%s | Sokar`) : la
+    // répéter ici produisait « … | Sokar | Sokar » sur chaque fiche.
+    title: `${restaurant.name} — Réservation en ligne à ${restaurant.address.city}`,
     description: `Réservez une table chez ${restaurant.name}, restaurant ${cuisine.toLowerCase()} à ${restaurant.address.city}. Horaires, adresse et réservation en ligne via Sokar.`,
     alternates: { canonical },
     openGraph: {

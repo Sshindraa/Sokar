@@ -17,7 +17,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'Réserver avec votre assistant IA — Sokar',
+  // Marque ajoutée par le template du layout (cf. restaurant/[slug]).
+  title: 'Réserver avec votre assistant IA',
   description:
     'Les restaurants du réseau Sokar sont trouvables et réservables via ChatGPT, Claude, Mistral et Perplexity. Votre assistant IA trouve le restaurant et vous réserve une table.',
   robots: { index: true, follow: true },
