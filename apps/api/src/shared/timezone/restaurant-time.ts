@@ -45,3 +45,36 @@ export function zonedTimeToUtc(dateStr: string, timeStr: string, timeZone: strin
   const offsetMs = localAsUtc - naive.getTime();
   return new Date(naive.getTime() - offsetMs);
 }
+
+/**
+ * Inverse of `zonedTimeToUtc`: render a persisted instant back as the local
+ * date/time of the restaurant.
+ *
+ * Slicing `date.toISOString()` is NOT a valid substitute: it returns UTC, so a
+ * 19:00 Paris booking would be reported as 17:00 to API consumers (agents,
+ * analytics). Always go through this helper when exposing a slot to a client.
+ */
+export function utcToZonedParts(
+  instant: Date,
+  timeZone: string = DEFAULT_RESTAURANT_TIMEZONE,
+): { date: string; time: string } {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(instant);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
+
+  // Some ICU versions report midnight as "24" with hour12:false.
+  const hour = get('hour') === '24' ? '00' : get('hour');
+
+  return {
+    date: `${get('year')}-${get('month')}-${get('day')}`,
+    time: `${hour}:${get('minute')}`,
+  };
+}

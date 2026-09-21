@@ -27,6 +27,7 @@ import {
 // désormais centralisée dans shared/timezone.
 export {
   DEFAULT_RESTAURANT_TIMEZONE,
+  utcToZonedParts,
   zonedTimeToUtc,
 } from '../../shared/timezone/restaurant-time.js';
 

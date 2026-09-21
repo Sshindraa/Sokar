@@ -47,15 +47,21 @@ async function callAgent(tool: string, args: Record<string, unknown>) {
 }
 
 async function ensureFloorPlan(restoId: string) {
-  const floorPlan = await db.floorPlan.upsert({
+  // A restaurant owns several floor plans since the editor rework, so
+  // `restaurantId` is no longer unique and cannot be used in an upsert.
+  const existingPlan = await db.floorPlan.findFirst({
     where: { restaurantId: restoId },
-    update: {},
-    create: {
-      id: randomUUID(),
-      restaurantId: restoId,
-      name: 'Salle principale',
-    },
+    orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
   });
+  const floorPlan =
+    existingPlan ??
+    (await db.floorPlan.create({
+      data: {
+        id: randomUUID(),
+        restaurantId: restoId,
+        name: 'Salle principale',
+      },
+    }));
 
   const existing = await db.table.findFirst({ where: { floorPlanId: floorPlan.id } });
   if (!existing) {
@@ -73,6 +79,23 @@ async function ensureFloorPlan(restoId: string) {
   return floorPlan;
 }
 
+/**
+ * The demo restaurant opens Tuesday to Saturday. Return the next such day at
+ * 19:00 in the machine's timezone so the simulation never depends on a date
+ * that silently expires.
+ */
+function nextOpenSlot(): { start: string; end: string } {
+  const openDays = new Set([2, 3, 4, 5, 6]); // mardi → samedi
+  const start = new Date();
+  start.setDate(start.getDate() + 1);
+  for (let i = 0; i < 8 && !openDays.has(start.getDay()); i += 1) {
+    start.setDate(start.getDate() + 1);
+  }
+  start.setHours(19, 0, 0, 0);
+  const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
 async function main() {
   const resto = await db.restaurant.findUnique({ where: { slug: 'chez-sokar-demo' } });
   if (!resto) {
@@ -82,8 +105,9 @@ async function main() {
 
   await ensureFloorPlan(resto.id);
 
-  const slotStart = '2026-07-14T19:00:00+02:00';
-  const slotEnd = '2026-07-14T21:00:00+02:00';
+  const { start: slotStart, end: slotEnd } = nextOpenSlot();
+  // eslint-disable-next-line no-console
+  console.log(`Créneau simulé : ${slotStart} → ${slotEnd}`);
 
   // eslint-disable-next-line no-console
   console.log('--- search_restaurants ---');

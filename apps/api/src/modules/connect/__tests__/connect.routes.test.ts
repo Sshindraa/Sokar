@@ -35,10 +35,17 @@ vi.mock('../../floor-plan/availability-capacity-aware.service', () => {
 
   return {
     CapacityAwareAvailabilityService,
+    DEFAULT_RESTAURANT_TIMEZONE: 'Europe/Paris',
     zonedTimeToUtc: vi.fn().mockImplementation((_date: string, time: string) => {
       const [h, m] = time.split(':').map(Number);
       return new Date(Date.UTC(2026, 5, 29, h, m));
     }),
+    // Le stub ne modélise pas de fuseau : on re-rend l'instant tel quel, ce qui
+    // laisse les attentes du test sur l'heure inchangées.
+    utcToZonedParts: vi.fn().mockImplementation((instant: Date) => ({
+      date: instant.toISOString().slice(0, 10),
+      time: instant.toISOString().slice(11, 16),
+    })),
   };
 });
 
