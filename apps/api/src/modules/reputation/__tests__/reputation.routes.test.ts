@@ -12,6 +12,11 @@ import { db } from '../../../shared/db/client';
 const AUTH = { authorization: 'Bearer test' };
 const NOW = new Date('2026-09-14T10:00:00.000Z');
 
+// keep the expiry relative: the service rejects requests whose `expiresAt` is in
+// the past, and the public route cannot inject `now`, unlike the service tests.
+// A hardcoded date turns this suite red once the wall clock passes it.
+const EXPIRES_AT = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
 function requestRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'request-1',
@@ -20,7 +25,7 @@ function requestRow(overrides: Record<string, unknown> = {}) {
     customerId: 'customer-1',
     channel: ReputationFeedbackChannel.EMAIL,
     status: ReputationFeedbackRequestStatus.PENDING,
-    expiresAt: new Date('2026-09-21T10:00:00.000Z'),
+    expiresAt: EXPIRES_AT,
     requestedAt: NOW,
     sentAt: null,
     submittedAt: null,
