@@ -36,13 +36,14 @@ export async function generateMetadata({
 
   const canonical = `${SITE_URL}/restaurants/${data.citySlug}`;
   return {
-    title: `Restaurants réservables à ${data.city} | Sokar`,
+    // Marque ajoutée par le template du layout (cf. restaurant/[slug]).
+    title: `Restaurants réservables à ${data.city}`,
     description: `Découvrez les restaurants réservables en ligne à ${data.city} via Sokar. Consultez les horaires, adresses et disponibilités avant de réserver votre table.`,
     alternates: { canonical },
     robots: data.shouldIndex ? { index: true, follow: true } : { index: false, follow: true },
     openGraph: {
       type: 'website',
-      title: `Restaurants réservables à ${data.city} | Sokar`,
+      title: `Restaurants réservables à ${data.city}`,
       description: `Découvrez les restaurants réservables en ligne à ${data.city}.`,
       url: canonical,
     },
