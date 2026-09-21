@@ -42,13 +42,36 @@ describe('BookingWidget waiting list flow', () => {
     globalThis.fetch = vi.fn();
   });
 
-  function setFetchSequence(responses: Response[]) {
+  function setFetchSequence(responses: Array<Response | Error>) {
     const queue = [...responses];
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementation(() => {
-      const res = queue.shift();
-      return Promise.resolve(res ?? new Response('not found', { status: 404 }));
+      const response = queue.shift();
+      if (response instanceof Error) return Promise.reject(response);
+      return Promise.resolve(response ?? new Response('not found', { status: 404 }));
     });
   }
+
+  it('shows the network error without presenting a false empty state', async () => {
+    setFetchSequence([
+      jsonResponse({
+        id: 'rest-1',
+        slug,
+        name: 'Chez Sokar',
+        connectAgentic: false,
+        city: 'Paris',
+        sections: [],
+      }),
+      new Error('offline'),
+    ]);
+
+    render(<BookingWidget slug={slug} />);
+
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: /voir les disponibilités/i }));
+
+    await waitFor(() => expect(screen.getByText(/erreur réseau/i)).toBeInTheDocument());
+    expect(screen.queryByText(/aucun créneau disponible/i)).not.toBeInTheDocument();
+  });
 
   it('shows the waiting list option when hold returns 409 with waitingListEnabled true', async () => {
     setFetchSequence([

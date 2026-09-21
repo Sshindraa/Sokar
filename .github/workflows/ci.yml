@@ -397,6 +397,9 @@ jobs:
       # Les composants client sont compilés avec NEXT_PUBLIC_* ; sans cette
       # variable, les parcours réservation et carte cadeau visent :3001.
       NEXT_PUBLIC_API_URL: http://localhost:4000
+      # Connect tourne sur 4002 dans ce job ; l'origine doit être autorisée
+      # par Fastify pour que les fetch navigateur ne soient pas bloqués par CORS.
+      CORS_ORIGINS: http://localhost:4002,http://127.0.0.1:4002
       NEXT_TELEMETRY_DISABLED: 1
     steps:
       - uses: actions/checkout@v4
