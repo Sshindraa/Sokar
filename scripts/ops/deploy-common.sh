@@ -1134,7 +1134,13 @@ handle_rollback() {
     fi
 
     log info "→ Restart services..."
-    pm2 start "$ECOSYSTEM_FILE"
+    # `pm2 start <ecosystem>` redémarre les apps déjà connues puis affiche son
+    # tableau. Si une app boucle en crash, la CLI plante elle-même (TypeError
+    # dans speedList) et faisait échouer tout le rollback — alors que le verdict
+    # réel vient de wait_for_services juste après. On trace l'avertissement et
+    # on laisse la vérification de santé décider.
+    pm2 start "$ECOSYSTEM_FILE" ||
+        log_warn "pm2 start a retourné une erreur ; la vérification des services suit"
     wait_for_services
     pm2 save
     sudo "$PRIVILEGED_WRAPPER" reload-nginx "$DEPLOY_ENV" 2>/dev/null || true
