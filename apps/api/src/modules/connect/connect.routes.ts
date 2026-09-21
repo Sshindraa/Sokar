@@ -24,6 +24,8 @@ import { logger } from '../../shared/logger/pino';
 import { ConnectService, hashPhone } from './connect.service';
 import {
   CapacityAwareAvailabilityService,
+  DEFAULT_RESTAURANT_TIMEZONE,
+  utcToZonedParts,
   zonedTimeToUtc,
 } from '../floor-plan/availability-capacity-aware.service';
 import { TableAllocationService } from '../floor-plan/table-allocation.service';
@@ -699,6 +701,17 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
         restaurant.connectAgentic,
       );
 
+      // Le hold est persisté en UTC : on le re-rend dans le fuseau du restaurant
+      // avant de l'exposer, sinon un agent lit 17:00 pour une réservation à 19:00.
+      const restaurantTz = await db.restaurant.findUnique({
+        where: { id: restaurant.id },
+        select: { timezone: true },
+      });
+      const { date: localDate, time: localTime } = utcToZonedParts(
+        hold.slotStart,
+        restaurantTz?.timezone ?? DEFAULT_RESTAURANT_TIMEZONE,
+      );
+
       // RGPD consent (channel=WEB, context=web_booking_intent)
       const ipHash = req.ip ? hashIp(req.ip) : undefined;
       await consents.recordConsent({
@@ -799,8 +812,8 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           restaurantSlug: restaurant.slug,
           city: restaurant.address.city,
           source,
-          date: hold.slotStart.toISOString().slice(0, 10),
-          time: hold.slotStart.toISOString().slice(11, 16),
+          date: localDate,
+          time: localTime,
           partySize: hold.partySize,
           reservationId: result.reservationId,
         });
@@ -811,8 +824,8 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           state: result.state,
           reused: result.reused,
           restaurantName: restaurant.name,
-          date: hold.slotStart.toISOString().slice(0, 10),
-          time: hold.slotStart.toISOString().slice(11, 16),
+          date: localDate,
+          time: localTime,
           partySize: hold.partySize,
           source,
           giftCardApplication: result.giftCardApplication,
@@ -828,8 +841,8 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           restaurantSlug: restaurant.slug,
           city: restaurant.address.city,
           source,
-          date: hold.slotStart.toISOString().slice(0, 10),
-          time: hold.slotStart.toISOString().slice(11, 16),
+          date: localDate,
+          time: localTime,
           partySize: hold.partySize,
         });
         const message = err instanceof Error ? err.message : 'Internal error';
