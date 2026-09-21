@@ -33,6 +33,7 @@ import {
   type JoinWaitingListResponse,
   PublicApiError,
 } from '@/lib/api-client';
+import { normalizeBookingSource } from '@/lib/booking-source';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
@@ -91,6 +92,7 @@ export function BookingWidget({
   const [restaurant, setRestaurant] = useState<PublicRestaurant | null>(null);
   const [partySize, setPartySize] = useState<number>(initialPartySize ?? 2);
   const [date, setDate] = useState<string>(initialDate ?? todayIso());
+  const [availabilityLoaded, setAvailabilityLoaded] = useState(false);
   const [preferredSectionId, setPreferredSectionId] = useState<string>('');
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedTime, setSelectedTime] = useState<string | null>(initialTime ?? null);
@@ -100,7 +102,7 @@ export function BookingWidget({
   const [specialRequests, setSpecialRequests] = useState<string>('');
   // Honeypot (anti-bot). Si rempli, on bloque la soumission.
   const [honeypot, setHoneypot] = useState<string>('');
-  const [source] = useState<string>(initialSource ?? 'web');
+  const [source] = useState<string>(() => normalizeBookingSource(initialSource));
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmResult, setConfirmResult] = useState<ConfirmDto | null>(null);
@@ -178,6 +180,7 @@ export function BookingWidget({
       return;
     }
     setLoading(true);
+    setAvailabilityLoaded(false);
     setError(null);
     setSlots([]);
     setSelectedTime(null);
@@ -207,6 +210,7 @@ export function BookingWidget({
       }
     } finally {
       setLoading(false);
+      setAvailabilityLoaded(true);
     }
   }, [slug, date, partySize, preferredSectionId, initialTime]);
 
@@ -779,31 +783,33 @@ export function BookingWidget({
             </div>
           )}
 
-          <SlotGrid
-            slots={slots}
-            onSelect={(time) => {
-              setSelectedTime(time);
-              setStep('confirm');
-              setWaitingListOffer(null);
-              setShowWaitingListForm(false);
-              setWaitingListResult(null);
-              setWaitingListCancelled(false);
-              // Générer l'idempotency key une fois par sélection de slot.
-              // Réutilisée pour hold + confirm → protège contre le double submit.
-              setIdempotencyKey(crypto.randomUUID());
-              if (restaurant) {
-                trackEvent({
-                  event: 'availability_slot_selected',
-                  restaurantId: restaurant.id,
-                  restaurantSlug: restaurant.slug,
-                  date,
-                  time,
-                  partySize,
-                  source,
-                });
-              }
-            }}
-          />
+          {availabilityLoaded && !loading && !error && (
+            <SlotGrid
+              slots={slots}
+              onSelect={(time) => {
+                setSelectedTime(time);
+                setStep('confirm');
+                setWaitingListOffer(null);
+                setShowWaitingListForm(false);
+                setWaitingListResult(null);
+                setWaitingListCancelled(false);
+                // Générer l'idempotency key une fois par sélection de slot.
+                // Réutilisée pour hold + confirm → protège contre le double submit.
+                setIdempotencyKey(crypto.randomUUID());
+                if (restaurant) {
+                  trackEvent({
+                    event: 'availability_slot_selected',
+                    restaurantId: restaurant.id,
+                    restaurantSlug: restaurant.slug,
+                    date,
+                    time,
+                    partySize,
+                    source,
+                  });
+                }
+              }}
+            />
+          )}
 
           {restaurant && !restaurant.connectAgentic && !embedded && (
             <p className="text-xs text-muted-foreground">

@@ -39,6 +39,10 @@ function getCspFrameAncestors(response: ReturnType<typeof middleware>): string |
   return match ? match[1] : null;
 }
 
+function getCsp(response: ReturnType<typeof middleware>): string | null {
+  return response.headers.get('Content-Security-Policy');
+}
+
 describe('middleware framing policy', () => {
   it('denies framing by default', () => {
     const response = middleware(makeRequest('/restaurant/chez-sokar-demo'));
@@ -56,6 +60,53 @@ describe('middleware framing policy', () => {
     const response = middleware(makeRequest('/restaurant/chez-sokar-demo', { preview: '1' }));
     expect(response.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
     expect(getCspFrameAncestors(response)).toBe("'self'");
+  });
+
+  it('allows browser calls to the configured public API origin', () => {
+    const previousApiUrl = process.env.API_URL;
+    const previousPublicApiUrl = process.env.NEXT_PUBLIC_API_URL;
+    process.env.API_URL = 'http://internal-api:4000';
+    process.env.NEXT_PUBLIC_API_URL = 'https://api.sokar.example';
+
+    try {
+      const response = middleware(makeRequest('/widget/chez-sokar-demo'));
+      expect(getCsp(response)).toContain("connect-src 'self' https://api.sokar.example");
+    } finally {
+      if (previousApiUrl === undefined) delete process.env.API_URL;
+      else process.env.API_URL = previousApiUrl;
+      if (previousPublicApiUrl === undefined) delete process.env.NEXT_PUBLIC_API_URL;
+      else process.env.NEXT_PUBLIC_API_URL = previousPublicApiUrl;
+    }
+  });
+
+  it('allows Stripe.js and its payment frames', () => {
+    const response = middleware(makeRequest('/widget/chez-sokar-demo/gift-card'));
+    const csp = getCsp(response);
+
+    expect(csp).toContain('script-src');
+    expect(csp).toContain('https://js.stripe.com');
+    expect(csp).toContain('connect-src');
+    expect(csp).toContain('https://api.stripe.com');
+    expect(csp).toContain("frame-src 'self' https://js.stripe.com https://hooks.stripe.com");
+  });
+
+  it('allows Next dev eval only in development', () => {
+    const env = process.env as Record<string, string | undefined>;
+    const previousNodeEnv = env.NODE_ENV;
+    env.NODE_ENV = 'development';
+
+    try {
+      const devResponse = middleware(makeRequest('/widget/chez-sokar-demo'));
+      expect(getCsp(devResponse)).toContain("script-src 'self'");
+      expect(getCsp(devResponse)).toContain("'unsafe-eval'");
+
+      env.NODE_ENV = 'production';
+      const productionResponse = middleware(makeRequest('/widget/chez-sokar-demo'));
+      expect(getCsp(productionResponse)).not.toContain("'unsafe-eval'");
+    } finally {
+      if (previousNodeEnv === undefined) delete env.NODE_ENV;
+      else env.NODE_ENV = previousNodeEnv;
+    }
   });
 });
 

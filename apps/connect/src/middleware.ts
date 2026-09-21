@@ -223,21 +223,48 @@ function applySecurityHeaders(
         : "'self'"
       : "'none'";
 
+  const apiOrigin = getConfiguredApiOrigin();
+  const connectSources = ["'self'", apiOrigin].filter((source): source is string =>
+    Boolean(source),
+  );
+
   // CSP : nonce-based pour script-src (audit sécurité Phase 2 — supprime 'unsafe-inline').
   // Les scripts JSON-LD inline reçoivent le nonce via l'attribut nonce= en Server Component.
+  // Le runtime webpack de Next en mode dev utilise eval pour le hot reload ; cette
+  // exception reste limitée au développement et n'est jamais envoyée en production.
   // style-src garde 'unsafe-inline' (Tailwind injecte des styles inline au runtime).
+  const scriptSources = [
+    "'self'",
+    `'nonce-${nonce}'`,
+    'https://js.stripe.com',
+    ...(process.env.NODE_ENV === 'development' ? ["'unsafe-eval'"] : []),
+  ];
+  const frameSources = ["'self'", 'https://js.stripe.com', 'https://hooks.stripe.com'];
+  const apiConnectSources = [...connectSources, 'https://api.stripe.com', 'https://r.stripe.com'];
   const csp = [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}'`,
+    `script-src ${scriptSources.join(' ')}`,
     "style-src 'self' 'unsafe-inline'", // Tailwind inline styles
     "img-src 'self' https://res.cloudinary.com https://images.unsplash.com data:",
     "font-src 'self' data:",
-    "connect-src 'self'",
+    `connect-src ${apiConnectSources.join(' ')}`,
+    `frame-src ${frameSources.join(' ')}`,
     `frame-ancestors ${frameAncestors}`,
     "base-uri 'self'",
     "form-action 'self'",
   ].join('; ');
   response.headers.set('Content-Security-Policy', csp);
+}
+
+function getConfiguredApiOrigin(): string | null {
+  const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL ?? process.env.API_URL;
+  if (!configuredApiUrl) return null;
+
+  try {
+    return new URL(configuredApiUrl).origin;
+  } catch {
+    return null;
+  }
 }
 
 export const config = {

@@ -16,6 +16,7 @@ import { fetchWidgetRestaurant } from '@/lib/api-client';
 import { BookingWidget } from '@/components/booking-widget';
 import { trackEventAsync } from '@/lib/tracking';
 import { toHexColor, isValidSlug } from '@/lib/widget-colors';
+import { normalizeBookingSource } from '@/lib/booking-source';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,7 +55,7 @@ export default async function WidgetPage({
   const isEmbedded = sp.embedded === '1';
   const primary = toHexColor(sp.primary, '#0F172A');
   const accent = toHexColor(sp.accent, '#0284C7');
-  const source = sp.source ?? 'widget';
+  const source = normalizeBookingSource(sp.source);
 
   // Params de pré-sélection (depuis l'aperçu inline de /restaurant/[slug])
   const partySize = sp.partySize ? Number(sp.partySize) : undefined;

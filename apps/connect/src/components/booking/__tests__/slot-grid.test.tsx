@@ -31,9 +31,9 @@ describe('SlotGrid', () => {
     ).toBeInTheDocument();
   });
 
-  it('returns null when slots array is empty', () => {
-    const { container } = render(<SlotGrid slots={[]} onSelect={() => {}} />);
-    expect(container.firstChild).toBeNull();
+  it('shows an explicit empty state when slots array is empty', () => {
+    render(<SlotGrid slots={[]} onSelect={() => {}} />);
+    expect(screen.getByRole('status')).toHaveTextContent(/aucun créneau disponible/i);
   });
 
   it('calls onSelect when clicking an available slot', () => {

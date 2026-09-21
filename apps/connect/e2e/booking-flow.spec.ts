@@ -20,10 +20,43 @@ import { test, expect } from '@playwright/test';
 
 const API_URL = process.env.API_URL || 'http://localhost:4000';
 const RESTAURANT_SLUG = 'chez-sokar-demo';
+const DEMO_DATE_LOOKAHEAD_DAYS = 14;
+
+type AvailabilityResponse = {
+  slots?: Array<{ available?: boolean }>;
+};
+
+async function findNextAvailableDemoDate(): Promise<string> {
+  const today = new Date();
+  for (let offset = 1; offset <= DEMO_DATE_LOOKAHEAD_DAYS; offset += 1) {
+    const candidate = new Date(today);
+    candidate.setUTCDate(today.getUTCDate() + offset);
+    const date = candidate.toISOString().slice(0, 10);
+
+    try {
+      const response = await fetch(
+        `${API_URL}/public/r/${RESTAURANT_SLUG}/availability?date=${date}&partySize=2`,
+      );
+      if (!response.ok) continue;
+
+      const data = (await response.json()) as AvailabilityResponse;
+      if (data.slots?.some((slot) => slot.available === true)) {
+        return date;
+      }
+    } catch {
+      // Let the final diagnostic below explain that no usable fixture was found.
+    }
+  }
+
+  throw new Error(
+    `Aucun créneau disponible pour ${RESTAURANT_SLUG} dans les ${DEMO_DATE_LOOKAHEAD_DAYS} prochains jours.`,
+  );
+}
 
 test.describe.configure({ mode: 'serial' });
 
 let apiAvailable = false;
+let demoServiceDate: string | undefined;
 test.beforeAll(async () => {
   try {
     const res = await fetch(`${API_URL}/health`);
@@ -37,6 +70,10 @@ test.beforeAll(async () => {
   // tests.
   if (!apiAvailable && process.env.CI) {
     throw new Error(`API Sokar indisponible sur ${API_URL} : le job CI doit la démarrer.`);
+  }
+
+  if (apiAvailable) {
+    demoServiceDate = await findNextAvailableDemoDate();
   }
 });
 
@@ -70,8 +107,9 @@ test.describe('Flow de réservation via le widget', () => {
     const partySizeSelect = page.getByLabel(/nombre de personnes/i);
     await partySizeSelect.selectOption('2');
 
-    // La date est pré-remplie avec aujourd'hui — on garde aujourd'hui
-    // (le champ date a min=today, donc today est valide)
+    // Choisir le prochain jour réellement disponible rend le test indépendant
+    // du jour où la CI s'exécute et des réservations déjà présentes.
+    await page.getByLabel('Date').fill(demoServiceDate ?? '');
 
     // Cliquer sur "Voir les disponibilités"
     const loadButton = page.getByRole('button', { name: /voir les disponibilités/i });
@@ -83,7 +121,8 @@ test.describe('Flow de réservation via le widget', () => {
     await expect(
       page
         .getByRole('group', { name: /créneaux horaires disponibles/i })
-        .or(page.getByText(/impossible de charger|erreur réseau|aucun créneau/i)),
+        .or(page.getByText(/impossible de charger|erreur réseau|aucun créneau/i))
+        .first(),
     ).toBeVisible({ timeout: 15_000 });
   });
 
@@ -92,15 +131,23 @@ test.describe('Flow de réservation via le widget', () => {
 
     // Party size 2
     await page.getByLabel(/nombre de personnes/i).selectOption('2');
+    await page.getByLabel('Date').fill(demoServiceDate ?? '');
 
     // Charger les disponibilités
     await page.getByRole('button', { name: /voir les disponibilités/i }).click();
 
-    // Attendre que les créneaux se chargent
+    // `locator.isVisible()` ne patiente pas, même si un timeout lui est passé.
+    // Attendre explicitement un état final évite de lire le DOM pendant le fetch.
     const slotsGroup = page.getByRole('group', { name: /créneaux horaires disponibles/i });
+    await expect(
+      slotsGroup
+        .or(page.getByRole('status'))
+        .or(page.getByText(/impossible de charger|erreur réseau/i))
+        .first(),
+    ).toBeVisible({ timeout: 15_000 });
 
     // Vérifier si des créneaux sont disponibles
-    const slotsVisible = await slotsGroup.isVisible({ timeout: 15_000 }).catch(() => false);
+    const slotsVisible = await slotsGroup.isVisible();
 
     if (!slotsVisible) {
       // En local, l'absence de créneaux est fréquente (base non seedée, date
@@ -113,7 +160,8 @@ test.describe('Flow de réservation via le widget', () => {
     }
 
     // Sélectionner le premier créneau disponible (bouton non désactivé)
-    const firstSlot = slotsGroup.getByRole('button').first();
+    const firstSlot = slotsGroup.locator('button:not([disabled])').first();
+    await expect(firstSlot).toBeVisible();
     await firstSlot.click();
 
     // Le formulaire de coordonnées s'affiche
@@ -130,8 +178,9 @@ test.describe('Flow de réservation via le widget', () => {
     await confirmButton.click();
 
     // Vérifier l'écran de confirmation
-    await expect(page.getByRole('status')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(/réservation confirmée/i)).toBeVisible();
-    await expect(page.getByText(/chez sokar/i)).toBeVisible();
+    const confirmation = page.getByRole('status');
+    await expect(confirmation).toBeVisible({ timeout: 20_000 });
+    await expect(confirmation.getByText(/réservation confirmée/i)).toBeVisible();
+    await expect(confirmation.getByText(/chez sokar/i)).toBeVisible();
   });
 });

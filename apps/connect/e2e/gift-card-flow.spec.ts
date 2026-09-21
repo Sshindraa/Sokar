@@ -93,8 +93,8 @@ test.describe("Flow d'achat de carte cadeau", () => {
 
     // Les champs expéditeur et destinataire sont présents
     // Les inputs ont des placeholders "Nom", "Email", "Téléphone"
-    await expect(page.getByText('Expéditeur')).toBeVisible();
-    await expect(page.getByText('Destinataire')).toBeVisible();
+    await expect(page.getByText('Expéditeur', { exact: true })).toBeVisible();
+    await expect(page.getByText('Destinataire', { exact: true })).toBeVisible();
   });
 
   test('remplit les infos expéditeur et destinataire', async ({ page }) => {
