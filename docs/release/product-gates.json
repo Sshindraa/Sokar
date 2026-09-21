@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-09-21",
+  "updatedAt": "2026-09-22",
   "productionFreeze": true,
   "productionRelease": {
     "mode": "SCOPED",
@@ -20,7 +20,6 @@
       "PILOTS"
     ],
     "disabledFeatureFlags": [
-      "BILLING_CHECKOUT_ENABLED",
       "CRM_ADVANCED_ENABLED",
       "MARKETING_SENDS_ENABLED",
       "MARKETING_WHATSAPP_ENABLED",
@@ -33,7 +32,10 @@
       "EVENTS_ENABLED",
       "DISTRIBUTION_ENABLED"
     ],
-    "evidence": ["docs/release/evidence/scoped-production-release-2026-09-15.md"]
+    "evidence": [
+      "docs/release/evidence/scoped-production-release-2026-09-15.md",
+      "docs/release/evidence/essential-checkout-opening-2026-09-22.md"
+    ]
   },
   "gates": [
     {
@@ -61,13 +63,10 @@
         "docs/roadmap-produit-crm-marketing-199-299.md",
         "docs/release/evidence/local-validation-matrix-2026-09-14.md",
         "docs/audits/2026-09-21-billing-replay.md",
-        "docs/runbooks/stripe-billing.md"
+        "docs/runbooks/stripe-billing.md",
+        "docs/release/evidence/essential-checkout-opening-2026-09-22.md"
       ],
-      "blockers": [
-        "déployer le code et la migration additive, puis backfiller les projections historiques",
-        "activer le checkout production uniquement après le smoke test de la release",
-        "signer deux pilotes Essential et conserver les métriques de sept jours"
-      ]
+      "blockers": ["signer deux pilotes Essential et conserver les métriques de sept jours"]
     },
     {
       "id": "P2_CRM",
