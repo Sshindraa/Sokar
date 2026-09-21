@@ -2,25 +2,31 @@
  * Routes pilot KPIs :
  *   - GET /api/internal/pilot-kpis : agrège les 5 KPIs cibles
  *
- * Phase 7 préparation : pas d'auth forte (réseau interne). À durcir
- * avec une API key + IP allowlist avant exposition publique.
+ * Ces KPIs passent par le vhost public de l'API : « interne » décrit leur
+ * audience, pas leur accessibilité. La route exige donc une identité
+ * opérateur Sokar, comme les autres routes `/api/internal/*`.
  */
 
 import type { FastifyInstance } from 'fastify';
 import { PilotKpiService } from './pilot-kpis.service';
 import { logger } from '../../shared/logger/pino';
 import { db } from '../../shared/db/client';
+import { requireSokarOperator } from '../../plugins/clerk';
 
 export async function pilotRoutes(app: FastifyInstance): Promise<void> {
   const service = new PilotKpiService(db);
 
-  app.get('/api/internal/pilot-kpis', async (_req, reply) => {
-    try {
-      const kpis = await service.getKpis();
-      return reply.send(kpis);
-    } catch (err) {
-      logger.error({ err }, 'pilot kpis failed');
-      return reply.status(500).send({ error: 'Internal error' });
-    }
-  });
+  app.get(
+    '/api/internal/pilot-kpis',
+    { preHandler: requireSokarOperator() },
+    async (_req, reply) => {
+      try {
+        const kpis = await service.getKpis();
+        return reply.send(kpis);
+      } catch (err) {
+        logger.error({ err }, 'pilot kpis failed');
+        return reply.status(500).send({ error: 'Internal error' });
+      }
+    },
+  );
 }

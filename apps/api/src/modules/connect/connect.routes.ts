@@ -9,7 +9,9 @@
  *   POST   /public/r/:slug/hold
  *   POST   /public/r/:slug/confirm
  *
- * Pas de Clerk, pas de requireOrg.
+ * Pas de Clerk sur les routes publiques. La seule exception est la route
+ * interne `/api/internal/connect-kpis`, qui exige une identité opérateur :
+ * elle passe par le vhost public, donc « interne » ne protège rien.
  * CORS : origines sokar.tech (géré par plugins/cors.ts)
  */
 
@@ -52,6 +54,7 @@ import {
   WaitingListSlotFullError,
 } from '../agentic-reservations/core/waiting-list.errors';
 import { ConsentService } from '../rgpd/consent.service';
+import { requireSokarOperator } from '../../plugins/clerk';
 import {
   computeIdempotencyScope,
   hashPayload,
@@ -1045,20 +1048,25 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // ─── KPIs pilote P1 (internal, pas public) ────────────────────
+  // ─── KPIs pilote P1 (réservés aux opérateurs Sokar) ───────────
   // GET /api/internal/connect-kpis : agrège les 4 critères go/no-go P1.
-  // Pas d'auth forte (réseau interne), même pattern que /api/internal/pilot-kpis.
+  // Même garde que /api/internal/pilot-kpis : la route est joignable depuis
+  // Internet, « interne » ne décrit que son audience.
   const connectKpis = new ConnectKpiService();
 
-  app.get('/api/internal/connect-kpis', async (_req, reply) => {
-    try {
-      const kpis = await connectKpis.getKpis();
-      return reply.send(kpis);
-    } catch (err) {
-      logger.error({ err }, 'connect kpis failed');
-      return reply.status(500).send({ error: 'Internal error' });
-    }
-  });
+  app.get(
+    '/api/internal/connect-kpis',
+    { preHandler: requireSokarOperator() },
+    async (_req, reply) => {
+      try {
+        const kpis = await connectKpis.getKpis();
+        return reply.send(kpis);
+      } catch (err) {
+        logger.error({ err }, 'connect kpis failed');
+        return reply.status(500).send({ error: 'Internal error' });
+      }
+    },
+  );
 }
 
 /**
