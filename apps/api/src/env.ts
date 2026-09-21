@@ -68,6 +68,15 @@ const PROD_HOST_ALLOWLIST = [
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_VOICE_LLM_TIMEOUT_MS = 8000;
 
+/**
+ * Stripe live secret keys must never be used by a local/test process.
+ * Production mode is deliberately the only environment where they are
+ * accepted; staging runs with NODE_ENV=production but uses sk_test_* keys.
+ */
+export function isLiveStripeSecretKey(value: string | undefined): boolean {
+  return value?.trim().startsWith('sk_live_') ?? false;
+}
+
 // Le code voice historique traitait toute valeur autre que "openrouter"
 // comme "cerebras". La normalisation conserve ce fallback tout en exposant
 // le provider Groq direct pour Qwen 3.8.
@@ -406,6 +415,17 @@ const EnvSchema = z
     {
       message: 'STRIPE_WEBHOOK_SECRET doit être défini quand STRIPE_SECRET_KEY est configuré.',
       path: ['STRIPE_WEBHOOK_SECRET'],
+    },
+  )
+  .refine(
+    (data) => {
+      if (data.NODE_ENV === 'production') return true;
+      return !isLiveStripeSecretKey(data.STRIPE_SECRET_KEY);
+    },
+    {
+      message:
+        'Une clé Stripe live (sk_live_*) est interdite hors production. Utilisez une clé sk_test_* en local ou en test.',
+      path: ['STRIPE_SECRET_KEY'],
     },
   )
   .refine(
