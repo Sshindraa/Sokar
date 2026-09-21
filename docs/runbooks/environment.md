@@ -31,6 +31,24 @@
 | `apps/dashboard/.env` (prod) | Clerk keys, `API_URL`, Sentry                                     |
 | `apps/connect/.env` (prod)   | `SITE_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`, `DASHBOARD_URL`     |
 
+## Base de données locale
+
+La base de dev (`sokar`) est gérée par `pnpm db:push`, pas par migrations : elle n'a **aucun
+historique** dans `_prisma_migrations`. `prisma migrate status` liste donc les 78 migrations comme
+« non appliquées » alors que le schéma est bien en place. C'est attendu, et il ne faut pas chercher
+à corriger ce chiffre.
+
+- Pour synchroniser le schéma local : `pnpm db:push`. Jamais `prisma migrate deploy` en local, qui
+  tenterait de recréer toutes les tables par-dessus l'existant.
+- `db:push` peut réclamer `--accept-data-loss` pour un simple index unique : vérifier le diff avant
+  d'accepter avec
+  `prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --script`.
+  Il doit être purement additif — aucun `DROP`, aucun `ALTER COLUMN ... TYPE`.
+- `sokar_preview` suit la même logique ; elle était à jour au 21 septembre 2026.
+- Sauvegarder avant toute synchro : `pg_dump` doit être en version 17
+  (`/opt/homebrew/opt/postgresql@17/bin/pg_dump`). Le binaire 16 du `PATH` refuse de dumper un
+  serveur 17 (« server version mismatch »).
+
 ### Clé Clerk staging
 
 La clé Development est stockée dans le secret GitHub Actions `CLERK_SECRET_KEY`
