@@ -1080,8 +1080,23 @@ export async function restaurantRoutes(app: FastifyInstance) {
     if (body.dietary !== undefined) restaurantData.dietary = body.dietary;
     if (body.coverImageUrl !== undefined) restaurantData.coverImageUrl = body.coverImageUrl;
 
-    // Gating activation / publication
+    // Gating activation / publication.
+    // La page publique exige `connectPublished && slug && publishedAt`
+    // (cf. connect.service.ts) : publier sans slug marquerait la fiche comme
+    // publiée sans jamais créer de page, et l'opérateur le découvrirait sans
+    // message d'erreur.
     if (body.connectPublished) {
+      const currentRestaurant = await app.db.restaurant.findUnique({
+        where: { id: restaurantId },
+        select: { slug: true },
+      });
+      const effectiveSlug = body.slug ?? currentRestaurant?.slug ?? null;
+      if (!effectiveSlug) {
+        return reply.status(409).send({
+          code: 'CONNECT_SLUG_REQUIRED',
+          missing: ['slug'],
+        });
+      }
       restaurantData.publishedAt = now;
       restaurantData.agenticOptIn = true;
     }
