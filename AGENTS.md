@@ -43,8 +43,8 @@ sokar/
 4. Never commit secrets. Use env vars (`key_env` = secrets loaded from environment only, never from code), not plaintext keys.
 5. Before saying done, run the smallest relevant verification: tests, build, lint, curl, or typecheck.
 6. Git can be unstable on this Mac when multiple IDEs are open. Before bulk git ops, inspect active git/IDE processes and prefer scoped staging.
-7. Session start: read the Obsidian vault for current state — `docs/obsidian/Context.md` (full, ~1.4k tokens) and the **last ~3 entries of `docs/obsidian/Journal.md`** (tail -3, NOT the full 47KB file). The vault is cross-session memory; AGENTS.md is repo-specific, the vault is the running log.
-8. After any significant change (architecture, schema, provider, feature flag, API route, decision, legacy removal), update the vault per the `obsidian-doc` skill — `Context.md` + append to `Journal.md`. Do not wait to be asked.
+7. Session start: read the Obsidian vault for current state — `docs/obsidian/Context.md` (keep it short; it now holds only TODOs, recent decisions and the last ~25 activity entries) and the **last ~3 entries of `docs/obsidian/Journal.md`** (`tail -3`, never the full file). Never `cat` a whole vault file: `Context.md` and `Journal.md` are append-only logs and reading them in full costs tens of thousands of tokens. The vault is cross-session memory; AGENTS.md is repo-specific, the vault is the running log.
+8. After any significant change (architecture, schema, provider, feature flag, API route, decision, legacy removal), update the vault. Do not wait to be asked. Append a dated entry to `docs/obsidian/Journal.md` (the full log), and touch `docs/obsidian/Context.md` only when a TODO, a decision or the current state really changes — never paste a log entry there. Keep `Context.md` under ~30 Ko.
 9. After committing a change on a working branch, run `pnpm pr:submit`: it pushes the branch, creates or reuses its PR, and queues squash auto-merge once required CI checks pass. Never push directly to `main`.
 
 ## Commands
