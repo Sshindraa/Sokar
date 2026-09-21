@@ -49,17 +49,29 @@ devant. **Pas de static export** (incompatible avec ISR/SSR).
 
 ## Gating double volet
 
-| Flag                                  | Rôle                                                                   | Défaut |
-| ------------------------------------- | ---------------------------------------------------------------------- | ------ |
-| `connectPublished` (ExposureSettings) | autorise page publique + réservation web                               | false  |
-| `connectAgentic` (ExposureSettings)   | autorise JSON-LD `ReserveAction` + OAI-SearchBot + deep-link `source=` | false  |
-| `agenticOptIn` (Restaurant)           | legacy, non utilisé pour Sokar Connect                                 | false  |
+| Flag                                  | Rôle                                                                                                                             | Défaut |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `connectPublished` (ExposureSettings) | autorise page publique + réservation web                                                                                         | false  |
+| `connectAgentic` (ExposureSettings)   | autorise JSON-LD `ReserveAction` + OAI-SearchBot + deep-link `source=`                                                           | false  |
+| `agenticOptIn` (Restaurant)           | **requis pour qu'une page existe** (voir ci-dessous), et source de `acceptsReservations` ; piloté par le toggle MCP du dashboard | false  |
 
 3 prédicats calculés :
 
-- `canPublicPageRender` = `connectPublished && slug && publishedAt`
+- `canPublicPageRender` = `connectPublished && slug && publishedAt && agenticOptIn`
 - `canWebBookingWork` = `connectPublished && acceptsReservations && publishedAt`
 - `canAgenticMetadataExpose` = `connectPublished && connectAgentic`
+
+> **Correction du 2026-09-21** — `agenticOptIn` figurait ici comme « legacy, non
+> utilisé », et `canPublicPageRender` était documenté sans lui. C'était faux : la
+> page Connect est une surface de réservation, donc un restaurant qui n'accepte
+> pas les réservations n'a pas de page (`connect.routes.test.ts` ›
+> « retourne 404 si agenticOptIn=false »). Comme le sitemap et les listes de
+> villes n'appliquaient que deux ou trois conditions, une fiche publiée dont MCP
+> était désactivé restait annoncée aux crawlers tout en répondant 404 : le
+> sitemap promettait des URL mortes. L'invariant est désormais déclaré une seule
+> fois dans `apps/api/src/modules/connect/connect.types.ts`
+> (`PUBLIC_CONNECT_WHERE` + `isPublicConnectPage`) et réutilisé par le sitemap,
+> les pages villes et la page détail. Toute modification de la règle se fait là.
 
 ## Plan d'exécution (5 semaines)
 

@@ -17,7 +17,9 @@ import { env } from '../../env';
 import {
   type OpeningHoursDay,
   type OpeningHoursSpec,
+  PUBLIC_CONNECT_WHERE,
   type PublicRestaurantDto,
+  isPublicConnectPage,
   priceRangeToSymbol,
 } from './connect.types';
 
@@ -70,20 +72,10 @@ export class ConnectService {
       return null;
     }
 
-    const exposure = restaurant.exposureSettings;
-
     // Gating: la page publique requiert connectPublished + publishedAt + slug
-    // (Bypassé en preview mode)
+    // (Bypassé en preview mode). Prédicat partagé, cf. connect.types.ts.
     if (!isPreview) {
-      if (!exposure?.connectPublished) {
-        return null;
-      }
-      if (!restaurant.publishedAt) {
-        return null;
-      }
-      // agenticOptIn est utilisé comme "acceptsReservations" sémantique
-      // (cf. memory RGPD v1.1 §13.7 — renommage à acceptReservations en P5)
-      if (!restaurant.agenticOptIn) {
+      if (!isPublicConnectPage(restaurant)) {
         return null;
       }
     }
@@ -116,10 +108,10 @@ export class ConnectService {
 
     const rows = await this.prisma.restaurant.findMany({
       where: {
+        ...PUBLIC_CONNECT_WHERE,
+        // On cherche des slugs précis : `in` remplace le `not: null` du where
+        // partagé (une comparaison à des chaînes exclut déjà null).
         slug: { in: slugs },
-        exposureSettings: { connectPublished: true },
-        publishedAt: { not: null },
-        agenticOptIn: true,
       },
       include: {
         exposureSettings: true,
@@ -154,12 +146,7 @@ export class ConnectService {
     page: number;
     limit: number;
   }> {
-    const where = {
-      exposureSettings: { connectPublished: true },
-      publishedAt: { not: null },
-      slug: { not: null },
-      agenticOptIn: true,
-    };
+    const where = PUBLIC_CONNECT_WHERE;
 
     const [total, rows] = await Promise.all([
       this.prisma.restaurant.count({ where }),

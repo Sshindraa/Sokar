@@ -16,6 +16,19 @@ import { describe, it, expect, beforeEach, afterAll, vi, type Mock } from 'vites
 import type { FastifyInstance } from 'fastify';
 import type { PublicRestaurantDto } from '../connect.types';
 
+/**
+ * Copie volontaire de l'invariant de publication (cf. `PUBLIC_CONNECT_WHERE`).
+ * Le test doit énoncer le contrat indépendamment de l'implémentation : s'appuyer
+ * sur la constante rendrait le contrôle insensible à la suppression d'une
+ * condition, ce qui est précisément la dérive à détecter.
+ */
+const EXPECTED_PUBLIC_PREDICATE = {
+  exposureSettings: { connectPublished: true },
+  publishedAt: { not: null },
+  slug: { not: null },
+  agenticOptIn: true,
+};
+
 vi.mock('../../floor-plan/availability-capacity-aware.service', () => {
   const CapacityAwareAvailabilityService = vi.fn().mockImplementation(function (this: {
     getAvailability: ReturnType<typeof vi.fn>;
@@ -319,6 +332,12 @@ describe('Sokar Connect — Routes publiques', () => {
       expect(body.restaurants).toHaveLength(2);
       expect(body.restaurants[0].slug).toBe('chez-sokar-demo');
       expect(body.restaurants[0].updatedAt).toBe('2026-06-24T00:00:00.000Z');
+
+      // Le sitemap doit annoncer exactement les fiches que la page détail
+      // accepte de rendre : sinon il promet des URL en 404.
+      expect(vi.mocked(db.restaurant.findMany)).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining(EXPECTED_PUBLIC_PREDICATE) }),
+      );
     });
 
     it('filtre les slugs null', async () => {

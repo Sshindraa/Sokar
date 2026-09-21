@@ -90,6 +90,46 @@ export function normalizeConnectSource(requestedSource: Source, connectAgentic: 
   return !connectAgentic && AGENTIC_NEUTRAL_SOURCES.has(requestedSource) ? 'web' : requestedSource;
 }
 
+// ─── Invariant de publication ─────────────────────────────────
+/**
+ * Source de vérité unique de « ce restaurant a une page Sokar Connect publique ».
+ *
+ *   canPublicPageRender = connectPublished && slug && publishedAt
+ *   (cf. docs/obsidian/Sokar Connect P0.md §Gating)
+ *
+ * `agenticOptIn` en fait partie : la page Connect est une surface de
+ * réservation, et non une simple fiche vitrine. Un restaurant qui n'accepte pas
+ * les réservations en ligne n'a pas de page (comportement couvert par
+ * `connect.routes.test.ts` › « retourne 404 si agenticOptIn=false »).
+ *
+ * Historiquement seule cette page appliquait les quatre conditions : le sitemap
+ * et les listes de villes n'en vérifiaient que deux ou trois, donc une fiche
+ * publiée avec MCP désactivé restait annoncée aux crawlers tout en répondant
+ * 404 — le sitemap promettait une URL morte. Les surfaces DOIVENT désormais
+ * réutiliser ces deux représentations — le `where` Prisma pour les requêtes, le
+ * prédicat pour les vérifications en mémoire — plutôt que de redéclarer la règle.
+ */
+export const PUBLIC_CONNECT_WHERE = {
+  exposureSettings: { connectPublished: true },
+  publishedAt: { not: null },
+  slug: { not: null },
+  agenticOptIn: true,
+} as const;
+
+export function isPublicConnectPage(restaurant: {
+  slug: string | null;
+  publishedAt: Date | null;
+  agenticOptIn: boolean;
+  exposureSettings: { connectPublished: boolean } | null;
+}): boolean {
+  return Boolean(
+    restaurant.slug &&
+    restaurant.publishedAt &&
+    restaurant.agenticOptIn &&
+    restaurant.exposureSettings?.connectPublished,
+  );
+}
+
 export const HoldInputSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^\d{2}:\d{2}$/),
