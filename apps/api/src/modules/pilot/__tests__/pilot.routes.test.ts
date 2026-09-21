@@ -2,6 +2,8 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 
+const AUTH = { authorization: 'Bearer test' };
+
 describe('Pilot routes', () => {
   afterAll(async () => {
     await closeApp();
@@ -20,7 +22,11 @@ describe('Pilot routes', () => {
     ] as unknown as Awaited<ReturnType<typeof db.reservation.groupBy>>);
 
     const app = await getApp();
-    const res = await app.inject({ method: 'GET', url: '/api/internal/pilot-kpis' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/internal/pilot-kpis',
+      headers: AUTH,
+    });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.timestamp).toBeDefined();
@@ -34,7 +40,18 @@ describe('Pilot routes', () => {
     vi.mocked(db.reservation.groupBy).mockRejectedValueOnce(new Error('DB down'));
 
     const app = await getApp();
-    const res = await app.inject({ method: 'GET', url: '/api/internal/pilot-kpis' });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/internal/pilot-kpis',
+      headers: AUTH,
+    });
     expect(res.statusCode).toBe(500);
+  });
+
+  it('refuse les KPIs sans identité opérateur', async () => {
+    const app = await getApp();
+    const res = await app.inject({ method: 'GET', url: '/api/internal/pilot-kpis' });
+    expect(res.statusCode).toBe(401);
+    expect(db.reservation.groupBy).not.toHaveBeenCalled();
   });
 });
