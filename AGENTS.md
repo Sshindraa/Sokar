@@ -81,6 +81,35 @@ pnpm pr:submit  # push branch, open PR, queue squash auto-merge after CI
 - Queues/cache: BullMQ + Redis; make retries/idempotency explicit.
 - French copy: `vous` everywhere, never `tu` (user-facing). Test `onboarding-tone.test.ts` enforces this.
 
+## Code Review Rules
+
+Read by Codex Code Review and by human reviewers. These complement CI (Prettier, stylelint, Tailwind tokens, `onboarding-tone.test.ts`, gitleaks); they do not replace it.
+
+### Integration surfaces
+
+Do not rename or remove anything consumed outside the repo: public routes and response fields in `apps/api`, the widget embed contract, MCP tool schemas, analytics event names.
+Safe path: additive change, or a new versioned route/tool.
+
+### Secrets
+
+No key, token or credential in plaintext, including in a script, a test fixture or an example.
+Safe path: environment variable (`key_env`), documented in `docs/runbooks/environment.md`.
+
+### Database
+
+No destructive operation and no `db push` against a remote database without explicit confirmation.
+Safe path: review the diff with `prisma migrate diff --from-url --to-schema-datamodel --script`, check for `DROP`/`TRUNCATE`, back up first.
+
+### Demo data
+
+A seed or fixture must never be able to publish fake listings to a remote database.
+Safe path: guard on the `DATABASE_URL` host, explicit opt-in for a remote target.
+
+### PII
+
+No personal data (phone number, name, address) in logs, Sentry extras or analytics events.
+Safe path: `redactPii()`.
+
 ## Dashboard constraints
 
 - Tailwind colors must use design tokens (`bg-background`, `text-muted-foreground`, `border-border`). No arbitrary hex classes.
