@@ -166,3 +166,9 @@ The seed creates a fictional `Chez Sokar` (slug `chez-sokar-demo`):
 - Hours, personality, test customers (including a VIP)
 
 Used for local voice / MCP tests before a real pilot.
+
+The seed also creates extra published demo listings (`chez-sokar-*` outside `chez-sokar-demo`) so
+the city pages (`/restaurants/:city`, which require at least five listings per city) have something
+to render. Those are **refused on a remote database** unless `SEED_DEMO_RESTAURANTS=true` is set:
+seeding them on production once published ten fake restaurants in the public sitemap (2026-06-28,
+cleaned up 2026-09-21). Use the opt-in for staging only, never for production.
