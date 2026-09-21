@@ -178,9 +178,12 @@ export function GiftCardTypeStep({
         {/* Montant libre — input */}
         {mode === 'free' && (
           <div className={panelClass}>
-            <label className={labelClass}>Montant (€)</label>
+            <label htmlFor="gift-card-amount" className={labelClass}>
+              Montant (€)
+            </label>
             <div className="relative mt-2">
               <input
+                id="gift-card-amount"
                 type="number"
                 step="0.01"
                 min="1"
