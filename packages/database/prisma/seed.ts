@@ -1,5 +1,6 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
+import { shouldSeedDemoListings } from './seed-demo-guard';
 
 const prisma = new PrismaClient({
   datasources: { db: { url: process.env.DATABASE_URL } },
@@ -232,9 +233,11 @@ async function main() {
   // Pour tester les pages locales (/restaurants/lyon, /restaurants/paris)
   // qui requièrent ≥5 restos par ville.
   // connectPublished=true, connectAgentic=false.
-  // SKIP en production : NODE_ENV=production → ne pas polluer l'index.
-  // (cf. spec connect-v1.1 §11.1)
-  if (process.env.NODE_ENV !== 'production') {
+  // Jamais sur une base distante sans opt-in explicite : ces fiches sont
+  // publiées, donc les semer en production les met dans le sitemap public et
+  // dans l'index Google (incident du 2026-06-28, nettoyé le 2026-09-21).
+  // (cf. spec connect-v1.1 §11.1 et docs/runbooks/environment.md)
+  if (shouldSeedDemoListings(process.env)) {
     const LYON_RESTOS = [
       {
         slug: 'chez-sokar-bouchon-lyon',
@@ -684,7 +687,10 @@ async function main() {
 
     console.info('Sokar Connect seed complete — 5 Lyon + 5 Paris + 9 pilot P1');
   } else {
-    console.info('Sokar Connect seed skipped (NODE_ENV=production)');
+    console.info(
+      'Sokar Connect demo listings skipped — base distante ou NODE_ENV=production. ' +
+        'SEED_DEMO_RESTAURANTS=true force la création (staging uniquement).',
+    );
   }
 }
 
