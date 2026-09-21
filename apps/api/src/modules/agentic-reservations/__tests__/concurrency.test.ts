@@ -33,6 +33,16 @@ import {
   ReservationSlotUnavailableError,
 } from '../core/reservation.service.js';
 import { ReservationService as LegacyReservationService } from '../../reservations/reservation.service';
+import {
+  compareReservationContractResults,
+  normalizeReservationContractResult,
+} from '../../reservations/contract-shadow-harness';
+import {
+  creationProjection,
+  isConfirmedReservation,
+  isReservationState,
+  type CreatableReservationState,
+} from '../../../shared/reservations/reservation-state';
 import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service.js';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
 
@@ -62,6 +72,36 @@ const policy = buildPolicySnapshot({
 
 const ACTIVE_RESERVATION_STATES = ['PENDING', 'CONFIRMED', 'SEATED'] as const;
 type ActiveReservationState = (typeof ACTIVE_RESERVATION_STATES)[number];
+
+/** Même grille que `policy`, avec la validation manuelle activée. */
+const manualValidationPolicy = buildPolicySnapshot({
+  policyVersion: '2026-06-20',
+  maxPartySize: 12,
+  minLeadTimeMinutes: 30,
+  requireManualValidation: true,
+  quoteTtlSeconds: 300,
+  holdTtlSeconds: 420,
+  noShowPolicy: 'warning',
+  notificationChannels: ['sms'],
+  capacitySpecials: {},
+});
+
+/** Numéros déterministes et uniques par exécution (pas de collision intra-run). */
+let parityPhoneOffset = 0;
+
+function parityPhone(): string {
+  parityPhoneOffset += 1;
+  return `+3360000${String(parityPhoneOffset).padStart(4, '0')}`;
+}
+
+function parityIdempotency(seed: string) {
+  return {
+    scope: `${testRestaurantId}:parity:${seed}`,
+    key: `parity-${seed}`,
+    payloadHash: hashPayload({ seed }),
+    ttlSeconds: 60,
+  };
+}
 
 let capacitySlotOffset = 0;
 
@@ -649,4 +689,181 @@ describeIntegration('capacity — réservation active sans table dans le chemin 
       }
     },
   );
+});
+
+/**
+ * Parité des deux entrées d'écriture (R1-4).
+ *
+ * Les deux services restent deux implémentations, mais ils écrivent les mêmes
+ * deux colonnes : `state` (agentic) et `status` (historique, projeté). Ce bloc
+ * exécute les deux contre une vraie base et compare leurs sorties normalisées.
+ * C'est ce qui rend le harness shadow utile : jusqu'ici il ne comparait que des
+ * fixtures statiques, donc il ne pouvait pas détecter une divergence réelle.
+ */
+describeIntegration('contrat — parité des deux entrées d’écriture (R1-4)', () => {
+  async function createViaLegacy(args: { startsAt: Date; name: string; phone: string }) {
+    return LegacyReservationService.create({
+      restaurantId: testRestaurantId,
+      reservedAt: args.startsAt,
+      partySize: 4,
+      customerName: args.name,
+      customerPhone: args.phone,
+    });
+  }
+
+  async function createViaAgentic(args: {
+    startsAt: Date;
+    endsAt: Date;
+    name: string;
+    phone: string;
+    policySnapshot?: typeof policy;
+  }) {
+    const service = new ReservationService(prisma, audit, holds, idem);
+    return service.createReservation(
+      {
+        restaurantId: testRestaurantId,
+        partySize: 4,
+        startsAt: args.startsAt,
+        endsAt: args.endsAt,
+        customerName: args.name,
+        customerPhone: args.phone,
+        channel: 'MCP',
+        policy: args.policySnapshot ?? policy,
+        actor: 'test:parity',
+      },
+      parityIdempotency(randomUUID()),
+    );
+  }
+
+  /** Snapshot normalisé, construit sur la ligne et l'audit réellement écrits. */
+  async function readContract(reservationId: string, idempotency: 'keyed' | 'unkeyed') {
+    const [row, audits] = await Promise.all([
+      prisma.reservation.findUniqueOrThrow({
+        where: { id: reservationId },
+        select: { status: true, state: true },
+      }),
+      prisma.reservationAuditLog.findMany({
+        where: { reservationId },
+        select: { event: true },
+        orderBy: { event: 'asc' },
+      }),
+    ]);
+    return normalizeReservationContractResult({
+      outcome: 'committed',
+      status: row.status,
+      state: row.state,
+      idempotency,
+      auditEvents: audits.map((entry) => entry.event),
+      notificationJobs: [],
+      // Les deux scénarios sont des créations : la capacité vient d'être prise.
+      capacity: 'reserved',
+      hold: 'none',
+    });
+  }
+
+  it('les deux services respectent la projection canonique à la création', async () => {
+    const legacySlot = nextCapacitySlot();
+    const legacy = await createViaLegacy({
+      startsAt: legacySlot.startsAt,
+      name: 'Parité legacy',
+      phone: parityPhone(),
+    });
+
+    const agenticSlot = nextCapacitySlot();
+    const agentic = await createViaAgentic({
+      startsAt: agenticSlot.startsAt,
+      endsAt: agenticSlot.endsAt,
+      name: 'Parité agentic',
+      phone: parityPhone(),
+    });
+
+    const rows = await prisma.reservation.findMany({
+      where: { id: { in: [legacy.id, agentic.reservationId] } },
+      select: { id: true, status: true, state: true },
+    });
+    expect(rows).toHaveLength(2);
+
+    for (const row of rows) {
+      expect(isReservationState(row.state)).toBe(true);
+      // Invariant canonique : `status` est exactement ce que projette `state`.
+      expect(row.status).toBe(creationProjection(row.state as CreatableReservationState).status);
+      expect(row).toMatchObject({ status: 'CONFIRMED', state: 'CONFIRMED' });
+    }
+  });
+
+  it('la validation manuelle reste non ferme malgré status=CONFIRMED', async () => {
+    const slot = nextCapacitySlot();
+    const phone = parityPhone();
+
+    const created = await createViaAgentic({
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+      name: 'Parité validation manuelle',
+      phone,
+      policySnapshot: manualValidationPolicy,
+    });
+
+    const row = await prisma.reservation.findUniqueOrThrow({
+      where: { id: created.reservationId },
+      select: { status: true, state: true },
+    });
+
+    // Projection lossy assumée : l'énumération historique ne sait pas exprimer
+    // « en attente de validation », donc `status` porte CONFIRMED.
+    expect(row).toEqual({ status: 'CONFIRMED', state: 'PENDING' });
+    expect(isConfirmedReservation(row)).toBe(false);
+
+    // Filtre réel du handler de réponse SMS (status **et** state). C'est le bug
+    // corrigé en R1-4 : sur `status` seul, un « NON » annulait cette ligne.
+    const matched = await prisma.reservation.findFirst({
+      where: {
+        customerPhone: phone,
+        status: 'CONFIRMED',
+        state: 'CONFIRMED',
+        confirmationStatus: 'PENDING',
+        reservedAt: {
+          gte: new Date(slot.startsAt.getTime() - 24 * 60 * 60 * 1000),
+          lte: new Date(slot.startsAt.getTime() + 24 * 60 * 60 * 1000),
+        },
+      },
+      select: { id: true },
+    });
+    expect(matched).toBeNull();
+  });
+
+  it('le harness shadow compare les deux entrées sur des faits réels', async () => {
+    const legacySlot = nextCapacitySlot();
+    const legacy = await createViaLegacy({
+      startsAt: legacySlot.startsAt,
+      name: 'Parité shadow legacy',
+      phone: parityPhone(),
+    });
+
+    const agenticSlot = nextCapacitySlot();
+    const agentic = await createViaAgentic({
+      startsAt: agenticSlot.startsAt,
+      endsAt: agenticSlot.endsAt,
+      name: 'Parité shadow agentic',
+      phone: parityPhone(),
+    });
+
+    const comparison = compareReservationContractResults(
+      await readContract(legacy.id, 'unkeyed'),
+      await readContract(agentic.reservationId, 'keyed'),
+    );
+
+    expect(comparison.legacy).toMatchObject({ status: 'CONFIRMED', state: 'CONFIRMED' });
+    expect(comparison.agentic).toMatchObject({ status: 'CONFIRMED', state: 'CONFIRMED' });
+
+    // Les deux colonnes d'état sont identiques : c'est la convergence visée.
+    // Les écarts restants sont assumés et restent visibles ici.
+    expect(comparison.legacy.auditEvents).toEqual(['reservation_created']);
+    // Le chemin agentic matérialise un hold même sans token fourni ; le chemin
+    // legacy n'a pas cette notion.
+    expect(comparison.agentic.auditEvents).toEqual(['hold_consumed', 'reservation_created']);
+
+    // Toute différence supplémentaire fait échouer ce test, ce qui force une
+    // décision explicite plutôt qu'une dérive silencieuse entre les deux entrées.
+    expect(comparison.differences).toEqual(['idempotency', 'auditEvents']);
+  });
 });

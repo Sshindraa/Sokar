@@ -293,6 +293,45 @@ le test, contrôler l'absence de restaurant, hold, réservation et record
 d'idempotence, puis supprimer explicitement la base dédiée. Ne jamais utiliser
 les données staging existantes pour activer `AGENTIC_INT_TESTS`.
 
+### Prérequis d'extension
+
+La migration `20260621003000_agentic_p0_extensions` crée `pg_trgm`, `cube` et
+`earthdistance`, ce qui exige un rôle superuser. Le rôle `sokar` ne l'est pas :
+sur une base jetable, créer les extensions avant la première migration, sinon
+`migrate deploy` échoue en `E42501` et laisse la migration marquée _failed_
+(à reprendre par `prisma migrate resolve --rolled-back <migration>`).
+
+```zsh
+createdb -O sokar sokar_parity_test
+psql -d sokar_parity_test -c \
+  "CREATE EXTENSION IF NOT EXISTS pg_trgm; CREATE EXTENSION IF NOT EXISTS cube; \
+   CREATE EXTENSION IF NOT EXISTS earthdistance; CREATE EXTENSION IF NOT EXISTS btree_gist;"
+DATABASE_URL='postgresql://sokar:…@localhost:5432/sokar_parity_test' \
+  pnpm --filter @sokar/database migrate:deploy
+```
+
+### Parité des deux entrées de réservation (R1-4)
+
+`src/modules/agentic-reservations/__tests__/concurrency.test.ts` contient un
+bloc `contrat — parité des deux entrées d’écriture`. Il exécute le service
+legacy et le service agentic contre la même base, puis compare leurs sorties
+normalisées via le harness shadow
+(`src/modules/reservations/contract-shadow-harness.ts`). Trois propriétés sont
+verrouillées :
+
+- les deux entrées écrivent une ligne qui respecte la projection canonique
+  (`status` est exactement `creationProjection(state).status`) ;
+- une validation manuelle porte `status = CONFIRMED` et `state = PENDING`, et le
+  filtre du handler de réponse SMS (`status` **et** `state`) ne la retient pas ;
+- les écarts entre les deux entrées sont exactement ceux documentés :
+  `idempotency` (l'agentic est keyé, le legacy non) et `auditEvents` (l'agentic
+  matérialise un `hold_consumed`, le legacy n'a pas cette notion).
+
+Toute différence supplémentaire fait échouer le test : c'est le garde-fou contre
+une dérive silencieuse entre les deux chemins. Le bloc est ignoré sans
+`AGENTIC_INT_TESTS=1`, donc il ne tourne que dans le job CI `api-integration` et
+en local sur base jetable.
+
 Le même harnais contient aussi les tests de capacité : 17 cas sont exécutés
 en mode intégration. Les six tests historiques de concurrence, idempotence et
 append-only sont complétés par 11 cas sur les états actifs avec/sans

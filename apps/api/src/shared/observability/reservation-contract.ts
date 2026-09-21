@@ -4,6 +4,8 @@ import {
   reservationStatusStateMismatchesTotal,
 } from './metrics';
 import { logger } from '../logger/pino';
+import { isActiveReservationState } from '../reservations/capacity';
+import { isReservationState, statusForState } from '../reservations/reservation-state';
 
 /**
  * Vocabulaire volontairement fermé pour les métriques de contrat réservation.
@@ -108,19 +110,6 @@ type ContractObservationType =
   | 'capacity_conflict'
   | 'capacity_not_released';
 
-const STATUS_FOR_STATE: Record<string, string | undefined> = {
-  CONFIRMED: 'CONFIRMED',
-  SEATED: 'SEATED',
-  CANCELLED: 'CANCELLED',
-  NO_SHOW: 'NO_SHOW',
-  PENDING: undefined,
-  HONORED: undefined,
-  FAILED: undefined,
-  EXPIRED: undefined,
-};
-
-const CAPACITY_BLOCKING_STATES = new Set(['PENDING', 'CONFIRMED', 'SEATED']);
-
 function statusStateObservation(
   status: string | null | undefined,
   state: string | null | undefined,
@@ -137,10 +126,10 @@ function statusStateObservation(
     return 'status_state_pending_projection';
   }
 
-  const expectedStatus = STATUS_FOR_STATE[state];
-  if (expectedStatus === undefined && state in STATUS_FOR_STATE) {
-    return 'status_state_unmapped';
-  }
+  if (!isReservationState(state)) return 'status_state_mismatch';
+
+  const expectedStatus = statusForState(state);
+  if (expectedStatus === null) return 'status_state_unmapped';
   return expectedStatus === status ? 'status_state_match' : 'status_state_mismatch';
 }
 
@@ -275,8 +264,8 @@ export function reservationCapacityEffect(
   toState: string | null | undefined,
 ): ReservationCapacityObservation {
   if (!fromState || !toState) return 'unchanged';
-  const wasBlocking = CAPACITY_BLOCKING_STATES.has(fromState);
-  const isBlocking = CAPACITY_BLOCKING_STATES.has(toState);
+  const wasBlocking = isActiveReservationState(fromState);
+  const isBlocking = isActiveReservationState(toState);
   if (!wasBlocking && isBlocking) return 'reserved';
   if (wasBlocking && !isBlocking) return 'released';
   return 'unchanged';

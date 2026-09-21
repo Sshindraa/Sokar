@@ -66,7 +66,13 @@ export async function handleReply(
   const reservation = await db.reservation.findFirst({
     where: {
       customerPhone: from,
+      // `status` est une projection lossy de `state` : une réservation en
+      // validation manuelle (`state = PENDING`) ou déjà installée
+      // (`state = HONORED`) porte encore `status = CONFIRMED`. Exiger les deux
+      // colonnes évite d'annuler une réservation qui n'était pas ferme, et
+      // aligne ce filtre sur `isConfirmedReservation` (R1-4).
       status: 'CONFIRMED',
+      state: 'CONFIRMED',
       confirmationStatus: 'PENDING',
       reservedAt: { gte: yesterdayStart, lte: tomorrowEnd },
     },
