@@ -3,29 +3,12 @@ import { logger } from '../../logger/pino';
 import { captureException } from '../../sentry/client';
 import { queues } from '../queues';
 import { sanitizeJobId } from '../job-options';
+import { buildDeadLetterPayload, redactJobData } from '../dead-letter.service';
+import { registerWorker } from './registry';
 
 interface JobLogData {
   readonly restaurantId?: string;
   readonly idempotencyKey?: string;
-}
-
-function sanitizeJobData(data: unknown): unknown {
-  if (!data || typeof data !== 'object') return data;
-  return JSON.parse(
-    JSON.stringify(data, (key, value) => {
-      const lower = key.toLowerCase();
-      if (
-        lower.includes('token') ||
-        lower.includes('secret') ||
-        lower.includes('apikey') ||
-        lower.includes('api_key') ||
-        lower.includes('authorization')
-      ) {
-        return '[REDACTED]';
-      }
-      return value;
-    }),
-  );
 }
 
 /**
@@ -49,27 +32,25 @@ async function moveFailedJobToDeadLetter(worker: Worker, job: Job, err: Error): 
   const willRetry = job.attemptsMade < maxAttempts;
   if (willRetry) return;
 
-  await queues.deadLetter.add(
-    `${worker.name}:${job.name}`,
-    {
-      originalQueue: worker.name,
-      originalJobId: job.id,
-      originalJobName: job.name,
-      attemptsMade: job.attemptsMade,
-      failedReason: err.message,
-      stack: err.stack,
-      data: sanitizeJobData(job.data),
-      failedAt: new Date().toISOString(),
-    },
-    {
-      jobId: sanitizeJobId(`dead_${worker.name}_${job.id ?? job.name}_${job.attemptsMade}`),
-      removeOnComplete: 5000,
-      removeOnFail: false,
-    },
-  );
+  const payload = buildDeadLetterPayload({
+    queueName: worker.name,
+    jobName: job.name,
+    jobId: job.id,
+    attemptsMade: job.attemptsMade,
+    data: job.data,
+    error: { message: err.message, stack: err.stack },
+  });
+
+  await queues.deadLetter.add(`${worker.name}:${job.name}`, payload, {
+    jobId: sanitizeJobId(`dead_${worker.name}_${job.id ?? job.name}_${job.attemptsMade}`),
+    removeOnComplete: 5000,
+    removeOnFail: false,
+  });
 }
 
 export function setupWorkerListeners(worker: Worker) {
+  registerWorker(worker);
+
   worker.on('completed', (job) => {
     jobLogger(job).info('job completed');
   });
@@ -83,7 +64,7 @@ export function setupWorkerListeners(worker: Worker) {
         attemptsMade: job?.attemptsMade,
         attempts: job?.opts.attempts,
         queueName: worker.name,
-        jobData: sanitizeJobData(job?.data),
+        jobData: redactJobData(job?.data),
       },
       `[Worker:${worker.name}] Job ${job?.id ?? 'unknown'} failed`,
     );
@@ -97,7 +78,7 @@ export function setupWorkerListeners(worker: Worker) {
       extra: {
         attemptsMade: job?.attemptsMade,
         attempts: job?.opts.attempts,
-        jobData: sanitizeJobData(job?.data),
+        jobData: redactJobData(job?.data),
       },
     });
 

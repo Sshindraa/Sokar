@@ -137,6 +137,10 @@ const EnvSchema = z
     METRICS_BASIC_AUTH_USER: z.string().optional(),
     METRICS_BASIC_AUTH_PASSWORD: z.string().min(1).optional(),
     METRICS_ALLOWLIST_IPS: z.string().default('127.0.0.1, ::1'),
+    // Endpoint de métriques du process worker (R1-6). Loopback par défaut :
+    // seul Prometheus, sur le même hôte, doit pouvoir le lire.
+    METRICS_PORT: z.coerce.number().int().positive().default(4001),
+    METRICS_BIND_HOST: z.string().default('127.0.0.1'),
     // IDs Clerk des opérateurs Sokar autorisés à utiliser les routes globales
     // de provisioning et de santé. CSV, obligatoire dans l'environnement de
     // déploiement avant d'ouvrir l'administration multi-restaurant.
@@ -169,6 +173,15 @@ const EnvSchema = z
     TELNYX_API_URL: z.string().default('https://api.telnyx.com'),
     // Enregistrements d'appels : opt-in explicite, stockage S3-compatible privé.
     CALL_RECORDING_ENABLED: z.enum(['true', 'false']).default('false'),
+    // Topologie d'exécution : en développement l'API porte aussi les workers
+    // pour que `pnpm dev` reste utilisable seul. En production, l'écosystème PM2
+    // force `false` sur `sokar-api` et les workers tournent dans `dist/worker.js`
+    // (PM2 `sokar-workers`). Cf. docs/PROJECT_MAP.md.
+    RUN_WORKERS_IN_PROCESS: z.enum(['true', 'false']).default('true'),
+    // Anonymisation RGPD (rétention 2 ans) : opération destructive, jamais
+    // exécutée en production. Le worker et son scheduler existent, mais le job
+    // sort immédiatement tant que ce flag n'est pas explicitement activé.
+    RGPD_ANONYMIZATION_ENABLED: z.enum(['true', 'false']).default('false'),
     // Liste CSV des seuls restaurants de test autorisés à lancer un enregistrement.
     CALL_RECORDING_TEST_RESTAURANT_IDS: z.string().optional(),
     CALL_RECORDINGS_BUCKET: z.string().min(1).optional(),

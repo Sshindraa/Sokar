@@ -15,7 +15,7 @@ import { getApp, closeApp } from '../../../test/helpers';
 import { db } from '../../../shared/db/client';
 import { env } from '../../../env';
 
-const VALID_KEY = ['sk', '_sokar', '_agent_'].join('') + 'a'.repeat(40);
+const VALID_KEY = ['sk', '_sokar', '_agent_'].join('') + 'test_fixture_' + 'b'.repeat(32);
 const AUTH = {
   authorization: `Bearer ${VALID_KEY}`,
   origin: 'https://claude.ai',

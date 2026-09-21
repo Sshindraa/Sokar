@@ -60,86 +60,99 @@ function createFakeTelnyxWs(): WebSocket {
  *     -d '{"callerPhone": "+336****5678", "mode": "mock"}'
  */
 export async function testRoutes(app: FastifyInstance) {
-  app.post('/api/test/simulate-call', async (req, reply) => {
-    const body = SimulateCallSchema.parse(req.body);
-    const { callerPhone, restaurantPhone, mode } = body;
+  app.post(
+    '/api/test/simulate-call',
+    // Route de test uniquement (ENABLE_TEST_ROUTES=true, jamais en production).
+    // Le harnais de charge R1-3 doit pouvoir créer N sessions d'affilée ; le
+    // budget global de 100 req/min le plafonnerait à 99.
+    { config: { rateLimit: { max: 2_000, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      const body = SimulateCallSchema.parse(req.body);
+      const { callerPhone, restaurantPhone, mode } = body;
 
-    const phone = restaurantPhone ?? '+331****0405';
-    const restaurant = await db.restaurant.findUnique({
-      where: { phoneNumber: phone },
-      include: { personality: true },
-    });
+      const phone = restaurantPhone ?? '+331****0405';
+      const restaurant = await db.restaurant.findUnique({
+        where: { phoneNumber: phone },
+        include: { personality: true },
+      });
 
-    if (!restaurant) {
-      return reply.status(404).send({ error: 'Restaurant not found', phone });
-    }
+      if (!restaurant) {
+        return reply.status(404).send({ error: 'Restaurant not found', phone });
+      }
 
-    const ctx = await RestaurantService.loadContext(phone);
-    const safe = await RestaurantService.checkMarginHealth(ctx.id);
-    if (!safe) {
-      return reply.status(429).send({ error: "Circuit breaker triggered — trop d'appels récents" });
-    }
+      const ctx = await RestaurantService.loadContext(phone);
+      const safe = await RestaurantService.checkMarginHealth(ctx.id);
+      if (!safe) {
+        return reply
+          .status(429)
+          .send({ error: "Circuit breaker triggered — trop d'appels récents" });
+      }
 
-    const customer = await CustomerService.lookupOrCreate(ctx.id, callerPhone);
-    const customerExtra = CustomerService.buildVipPromptExtra(customer);
-    const systemPrompt = buildSystemPrompt({
-      ...ctx,
-      openingHours: ctx.openingHours as OpeningHours,
-      customerExtra,
-    });
+      const customer = await CustomerService.lookupOrCreate(ctx.id, callerPhone);
+      const customerExtra = CustomerService.buildVipPromptExtra(customer);
+      const systemPrompt = buildSystemPrompt({
+        ...ctx,
+        openingHours: ctx.openingHours as OpeningHours,
+        customerExtra,
+      });
 
-    // Créer un Call record en DB
-    const callControlId = `test-call-${Date.now()}`;
-    const callSessionId = `test-session-${Date.now()}`;
-    await db.call.create({
-      data: {
-        id: callControlId,
-        callSid: callControlId,
+      // Créer un Call record en DB
+      const callControlId = `test-call-${Date.now()}`;
+      const callSessionId = `test-session-${Date.now()}`;
+      await db.call.create({
+        data: {
+          id: callControlId,
+          callSid: callControlId,
+          restaurantId: ctx.id,
+          carrier: 'test-simulation',
+          sttProvider: 'test',
+          llmProvider: mode,
+          ttsProvider: 'test',
+        },
+      });
+
+      // Créer la session en mémoire
+      const mgr = CallSessionManager.getInstance();
+      mgr.create({
+        callControlId,
+        callSessionId,
+        from: callerPhone,
+        to: phone,
         restaurantId: ctx.id,
-        carrier: 'test-simulation',
-        sttProvider: 'test',
-        llmProvider: mode,
-        ttsProvider: 'test',
-      },
-    });
+        restaurantName: ctx.name,
+        giftCardMinimumAmount: ctx.giftCardMinimumAmount ?? undefined,
+        systemPrompt,
+        isVip: customer?.isVip ?? false,
+        telnyxWs: createFakeTelnyxWs(),
+        callLegId: callControlId,
+        codec: 'PCMU',
+        personality: restaurant.personality
+          ? {
+              fillerStyle: restaurant.personality.fillerStyle,
+              systemPromptExtra: restaurant.personality.systemPromptExtra,
+            }
+          : null,
+      });
 
-    // Créer la session en mémoire
-    const mgr = CallSessionManager.getInstance();
-    mgr.create({
-      callControlId,
-      callSessionId,
-      from: callerPhone,
-      to: phone,
-      restaurantId: ctx.id,
-      restaurantName: ctx.name,
-      giftCardMinimumAmount: ctx.giftCardMinimumAmount ?? undefined,
-      systemPrompt,
-      isVip: customer?.isVip ?? false,
-      telnyxWs: createFakeTelnyxWs(),
-      callLegId: callControlId,
-      codec: 'PCMU',
-      personality: restaurant.personality
-        ? {
-            fillerStyle: restaurant.personality.fillerStyle,
-            systemPromptExtra: restaurant.personality.systemPromptExtra,
-          }
-        : null,
-    });
+      // En mode mock, on active le flag interne sans toucher à la clé réelle.
+      if (mode === 'mock') {
+        process.env.SOKAR_SIMULATE_MOCK_LLM = 'true';
+      }
 
-    // En mode mock, on active le flag interne sans toucher à la clé réelle.
-    if (mode === 'mock') {
-      process.env.SOKAR_SIMULATE_MOCK_LLM = 'true';
-    }
-
-    return reply.send({
-      test: true,
-      mode,
-      callControlId,
-      restaurant: { id: ctx.id, name: ctx.name, plan: ctx.plan },
-      caller: { phone: callerPhone, name: customer?.name ?? null, isVip: customer?.isVip ?? false },
-      nextStep: 'POST /api/test/simulate-utterance with { callControlId, transcript }',
-    });
-  });
+      return reply.send({
+        test: true,
+        mode,
+        callControlId,
+        restaurant: { id: ctx.id, name: ctx.name, plan: ctx.plan },
+        caller: {
+          phone: callerPhone,
+          name: customer?.name ?? null,
+          isVip: customer?.isVip ?? false,
+        },
+        nextStep: 'POST /api/test/simulate-utterance with { callControlId, transcript }',
+      });
+    },
+  );
 
   app.post('/api/test/simulate-utterance', async (req, reply) => {
     const body = SimulateUtteranceSchema.parse(req.body);

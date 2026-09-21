@@ -29,10 +29,17 @@ test.beforeAll(async () => {
   } catch {
     apiAvailable = false;
   }
+
+  // En CI, l'API et la base seedée sont fournies par le job : une API
+  // injoignable est une panne d'infrastructure, pas une raison de sauter les
+  // tests.
+  if (!apiAvailable && process.env.CI) {
+    throw new Error(`API Sokar indisponible sur ${API_URL} : le job CI doit la démarrer.`);
+  }
 });
 
 test.beforeEach(() => {
-  test.skip(!apiAvailable, `API Sokar indisponible sur ${API_URL}`);
+  test.skip(!apiAvailable && !process.env.CI, `API Sokar indisponible sur ${API_URL}`);
 });
 
 test.describe("Flow d'achat de carte cadeau", () => {

@@ -201,6 +201,23 @@ jamais lus comme un quota client.
 pnpm test:e2e   # Playwright dashboard
 ```
 
+### Connect E2E (API réelle, base seedée)
+
+```zsh
+pnpm --filter @sokar/connect test:e2e   # Playwright Connect
+```
+
+Le job CI `connect-e2e` fournit Postgres 16 et Redis 7 éphémères, applique les migrations, seed le
+restaurant de démo puis son plan de salle (`pnpm --filter @sokar/database seed` puis
+`seed:floor-plan`), démarre l'API sur `:4000` et lance les trois parcours publics (fiche restaurant,
+widget de réservation, carte cadeau). `API_URL` est lu par le serveur Next de Connect pour ses
+fetches SSR : sans cette variable, Connect appellerait `:3001`.
+
+En local, sans API joignable, les specs se skippent : c'est le comportement voulu pour ne pas
+bloquer un poste sans infra. En CI, `CI=true` rend l'API obligatoire — une API absente fait échouer
+la suite, et une absence de créneaux (plan de salle incomplet) échoue au lieu de sauter le parcours
+de réservation. Un skip silencieux en CI masquerait une régression de la surface commerciale.
+
 Le groupe `Espace administration Sokar` de `apps/dashboard/e2e/dashboard.spec.ts` vérifie aussi
 les trois formats (`iphone-14`, `ipad-mini`, `desktop-1440`) : ouverture de `/admin`, redirection
 des anciennes URLs `/dashboard/admin/*` et renvoi d'un compte non opérateur vers `/dashboard`.

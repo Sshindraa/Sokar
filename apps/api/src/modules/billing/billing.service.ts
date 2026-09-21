@@ -172,6 +172,41 @@ function getBillingIntervalFromPriceId(priceId: string): BillingInterval | null 
   return null;
 }
 
+/** Converts Stripe's recurring cadence to the public billing vocabulary. */
+export function billingIntervalFromStripeRecurringInterval(
+  interval: string | null | undefined,
+): BillingInterval | null {
+  if (interval === 'month') return 'monthly';
+  if (interval === 'year') return 'annual';
+  return null;
+}
+
+function billingIntervalFromStripePrice(
+  price: { recurring?: { interval?: string | null } | null } | null | undefined,
+): BillingInterval | null {
+  return billingIntervalFromStripeRecurringInterval(price?.recurring?.interval);
+}
+
+function storedBillingInterval(value: string | null | undefined): BillingInterval | null {
+  const normalized = value?.trim();
+  return normalized && isBillingInterval(normalized) ? normalized : null;
+}
+
+/**
+ * The active price map only identifies prices offered to new customers. A
+ * subscriber can legitimately keep a retired price forever, so the durable
+ * cadence captured from Stripe takes over when the price is no longer current.
+ */
+export function resolveBillingIntervalForStatus(
+  priceId: string | null | undefined,
+  persistedInterval: string | null | undefined,
+): BillingInterval | null {
+  return (
+    (priceId ? getBillingIntervalFromPriceId(priceId) : null) ??
+    storedBillingInterval(persistedInterval)
+  );
+}
+
 function getPublicPlanFromDatabasePlan(plan: Plan | null | undefined): PublicBillingPlan | null {
   if (plan === 'PRO') return 'pro';
   if (plan === 'PREMIUM') return 'multi-site';
@@ -193,6 +228,7 @@ export interface BillingStatus {
 type BillingStatusProjection = {
   subscriptionStatus?: string | null;
   subscriptionPriceId?: string | null;
+  subscriptionBillingInterval?: string | null;
   subscriptionCurrentPeriodEnd?: Date | null;
   subscriptionCancelAtPeriodEnd?: boolean | null;
   entitledSiteCount?: number | null;
@@ -242,7 +278,10 @@ export async function getBillingStatus(input: {
   return {
     plan,
     subscriptionStatus: projection?.subscriptionStatus ?? null,
-    billingInterval: priceId ? getBillingIntervalFromPriceId(priceId) : null,
+    billingInterval: resolveBillingIntervalForStatus(
+      priceId,
+      projection?.subscriptionBillingInterval,
+    ),
     currentPeriodEnd: periodEnd instanceof Date ? periodEnd.toISOString() : null,
     cancelAtPeriodEnd: projection?.subscriptionCancelAtPeriodEnd === true,
     entitledSiteCount:
@@ -649,11 +688,13 @@ async function markStripeEventFailed(event: Stripe.Event, error: unknown): Promi
 
 function subscriptionUpdateData(subscription: SubscriptionObject, deleted: boolean) {
   const priceId = subscription.items.data[0]?.price?.id;
+  const billingInterval = billingIntervalFromStripePrice(subscription.items.data[0]?.price);
   return {
     stripeCustomerId: stripeObjectId(subscription.customer),
     stripeSubscriptionId: subscription.id,
     subscriptionStatus: deleted ? 'canceled' : subscription.status,
     subscriptionPriceId: priceId ?? undefined,
+    ...(billingInterval ? { subscriptionBillingInterval: billingInterval } : {}),
     subscriptionCurrentPeriodEnd: subscription.current_period_end
       ? new Date(subscription.current_period_end * 1000)
       : null,
@@ -692,6 +733,7 @@ async function projectAccountBilling(
     stripeSubscriptionId?: string | null;
     subscriptionStatus?: string | null;
     subscriptionPriceId?: string | null;
+    subscriptionBillingInterval?: BillingInterval | null;
     plan?: Plan;
     entitledSiteCount: number;
     subscriptionCurrentPeriodEnd?: Date | null;
@@ -721,6 +763,7 @@ async function projectAccountBilling(
       stripeSubscriptionId: data.stripeSubscriptionId ?? null,
       subscriptionStatus: data.subscriptionStatus ?? null,
       subscriptionPriceId: data.subscriptionPriceId ?? null,
+      subscriptionBillingInterval: data.subscriptionBillingInterval ?? null,
       entitledSiteCount: data.entitledSiteCount,
       entitlementSource: 'STRIPE',
       subscriptionCurrentPeriodEnd: data.subscriptionCurrentPeriodEnd ?? null,
@@ -733,6 +776,7 @@ async function projectAccountBilling(
       stripeSubscriptionId: data.stripeSubscriptionId ?? undefined,
       subscriptionStatus: data.subscriptionStatus ?? undefined,
       subscriptionPriceId: data.subscriptionPriceId ?? undefined,
+      subscriptionBillingInterval: data.subscriptionBillingInterval ?? undefined,
       entitledSiteCount: data.entitledSiteCount,
       entitlementSource: 'STRIPE',
       subscriptionCurrentPeriodEnd: data.subscriptionCurrentPeriodEnd ?? null,
@@ -769,6 +813,7 @@ async function handleCheckoutCompleted(event: Stripe.Event): Promise<boolean> {
     stripeSubscriptionId: subscriptionId,
     subscriptionStatus: 'active',
     subscriptionPriceId: resolvePriceId(plan, billingInterval),
+    subscriptionBillingInterval: billingInterval,
     plan: PLAN_TO_DATABASE[plan],
     entitledSiteCount: siteCount,
     lastStripeEventCreated: eventCreated(event),
@@ -782,6 +827,7 @@ async function handleCheckoutCompleted(event: Stripe.Event): Promise<boolean> {
       stripeSubscriptionId: subscriptionId,
       subscriptionStatus: 'active',
       subscriptionPriceId: resolvePriceId(plan, billingInterval),
+      subscriptionBillingInterval: billingInterval,
       ...eventCheckpoint(event),
       ...clearCheckoutAttempt(),
     },
@@ -790,6 +836,7 @@ async function handleCheckoutCompleted(event: Stripe.Event): Promise<boolean> {
       stripeSubscriptionId: subscriptionId ?? undefined,
       subscriptionStatus: 'active',
       subscriptionPriceId: resolvePriceId(plan, billingInterval),
+      subscriptionBillingInterval: billingInterval,
       ...eventCheckpoint(event),
       ...clearCheckoutAttempt(),
     },
@@ -863,13 +910,29 @@ type InvoiceBillingRecord = {
   stripeSubscriptionId?: string | null;
   subscriptionStatus?: string | null;
   subscriptionPriceId?: string | null;
+  subscriptionBillingInterval?: string | null;
   subscriptionCurrentPeriodEnd?: Date | null;
   subscriptionCancelAtPeriodEnd?: boolean;
 };
 
+function invoicePrice(invoice: InvoiceObject): {
+  id: string;
+  recurring?: { interval?: string | null } | null;
+} | null {
+  const line = invoice.lines?.data?.[0] as
+    | {
+        price?: string | { id: string; recurring?: { interval?: string | null } | null } | null;
+      }
+    | undefined;
+  return typeof line?.price === 'object' && line.price ? line.price : null;
+}
+
 function invoicePriceId(invoice: InvoiceObject): string | undefined {
-  const line = invoice.lines?.data?.[0] as { price?: string | { id: string } | null } | undefined;
-  return stripeObjectId(line?.price) ?? undefined;
+  return stripeObjectId(invoicePrice(invoice)) ?? undefined;
+}
+
+function invoiceBillingInterval(invoice: InvoiceObject): BillingInterval | null {
+  return billingIntervalFromStripePrice(invoicePrice(invoice));
 }
 
 function invoicePeriodEnd(invoice: InvoiceObject): Date | undefined {
@@ -933,6 +996,8 @@ async function handleInvoiceEvent(
   const subscriptionId =
     stripeObjectId(invoice.subscription) ?? billing?.stripeSubscriptionId ?? null;
   const priceId = invoicePriceId(invoice) ?? billing?.subscriptionPriceId ?? null;
+  const billingInterval =
+    invoiceBillingInterval(invoice) ?? storedBillingInterval(billing?.subscriptionBillingInterval);
   const planFromMetadata =
     metadata.plan && isPublicBillingPlan(metadata.plan) ? metadata.plan : null;
   const plan = planFromMetadata ?? (priceId ? getPublicPlanFromPriceId(priceId) : null);
@@ -959,6 +1024,7 @@ async function handleInvoiceEvent(
     stripeSubscriptionId: subscriptionId,
     subscriptionStatus: status,
     subscriptionPriceId: priceId,
+    ...(billingInterval ? { subscriptionBillingInterval: billingInterval } : {}),
     plan: paid && plan ? PLAN_TO_DATABASE[plan] : undefined,
     entitledSiteCount: siteCount,
     subscriptionCurrentPeriodEnd: periodEnd,
@@ -975,6 +1041,7 @@ async function handleInvoiceEvent(
       stripeSubscriptionId: subscriptionId,
       subscriptionStatus: status,
       subscriptionPriceId: priceId,
+      ...(billingInterval ? { subscriptionBillingInterval: billingInterval } : {}),
       subscriptionCurrentPeriodEnd: periodEnd,
       subscriptionCancelAtPeriodEnd: cancelAtPeriodEnd,
       ...eventCheckpoint(event),
@@ -985,6 +1052,7 @@ async function handleInvoiceEvent(
       stripeSubscriptionId: subscriptionId ?? undefined,
       subscriptionStatus: status,
       subscriptionPriceId: priceId ?? undefined,
+      ...(billingInterval ? { subscriptionBillingInterval: billingInterval } : {}),
       subscriptionCurrentPeriodEnd: periodEnd ?? undefined,
       subscriptionCancelAtPeriodEnd: cancelAtPeriodEnd,
       ...eventCheckpoint(event),

@@ -27,7 +27,7 @@ Non exécutés en CI — usage développeur local uniquement.
 | `CARTESIA_BENCHMARK_DIR` | benchmark-cartesia-voices                             | `/private/tmp/sokar-cartesia-voice-benchmark` | Répertoire temporaire des MP3 et du manifeste |
 | `OPENROUTER_MODEL`       | test-stt-tts                                          | `mistralai/ministral-3b-2512`                 | Modèle LLM                                    |
 | `SOKAR_API_BASE`         | simulate-voice-call, test-mcp-client, sokar-mcp-stdio | `http://localhost:4000`                       | URL de base de l'API                          |
-| `SOKAR_MCP_KEY`          | test-mcp-client, sokar-mcp-stdio                      | placeholder dev                               | Clé MCP (surcharger en production)            |
+| `SOKAR_MCP_KEY`          | test-mcp-client, sokar-mcp-stdio                      | obligatoire                                   | Clé MCP locale générée par le dashboard       |
 | `SOKAR_CALLER_PHONE`     | simulate-voice-call                                   | `+336****5678`                                | Numéro appelant simulé                        |
 | `SOKAR_SIMULATE_MODE`    | simulate-voice-call                                   | `mock`                                        | Mode de simulation (`auto` ou `mock`)         |
 | `SOKAR_DOGFOOD_URL`      | dogfood-sokar                                         | `https://sokar.tech`                          | URL cible dogfood                             |

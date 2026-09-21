@@ -28,6 +28,7 @@ import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
 import { redactPii } from './pii-redact';
 import { persistLatencyTrace } from './session-persistence';
+import { VOICE_PROVIDER_TIMEOUT_MS, fetchWithTimeout } from '../../../shared/resilience';
 import {
   CARTESIA_RETRY_DELAY_MS,
   CARTESIA_TTS_MAX_ATTEMPTS,
@@ -369,15 +370,33 @@ async function speakTtsFragment(
 
       let response: Response | null = null;
       for (let attempt = 0; attempt < CARTESIA_TTS_MAX_ATTEMPTS; attempt++) {
-        response = await fetch('https://api.cartesia.ai/tts/bytes', {
-          method: 'POST',
-          headers: {
-            'Cartesia-Version': '2026-03-01',
-            'X-API-Key': apiKey,
-            'Content-Type': 'application/json',
-          },
-          body: cartesiaBody,
-        });
+        try {
+          // R1-2 : chaque tentative est bornée. Sans timeout, une socket
+          // Cartesia qui ne répond plus laissait l'appel muet jusqu'à la mort
+          // de la connexion, sans jamais déclencher la dégradation ci-dessous.
+          response = await fetchWithTimeout(
+            'https://api.cartesia.ai/tts/bytes',
+            {
+              method: 'POST',
+              headers: {
+                'Cartesia-Version': '2026-03-01',
+                'X-API-Key': apiKey,
+                'Content-Type': 'application/json',
+              },
+              body: cartesiaBody,
+            },
+            VOICE_PROVIDER_TIMEOUT_MS,
+          );
+        } catch {
+          writeDebugLog(`[speakTtsStreamed] Cartesia timeout (tentative ${attempt + 1})`);
+          voiceProviderErrorsTotal.inc({ provider: 'cartesia', type: 'timeout' });
+          response = null;
+          if (attempt === 0) {
+            await new Promise((r) => setTimeout(r, CARTESIA_RETRY_DELAY_MS));
+            continue;
+          }
+          break;
+        }
         if (response.ok) break;
         if (attempt === 0 && (response.status >= 500 || response.status === 429)) {
           writeDebugLog(

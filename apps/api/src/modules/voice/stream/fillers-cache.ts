@@ -36,6 +36,7 @@ import { TTS_FRAME_DURATION_MS } from './constants';
 import { logger } from '../../../shared/logger/pino';
 import { CARTESIA_MODEL, FILLER_CACHE_TTL_SECONDS } from '@sokar/config';
 import { redisCache } from '../../../shared/redis/client';
+import { VOICE_PROVIDER_TIMEOUT_MS, fetchWithTimeout } from '../../../shared/resilience';
 import {
   buildCartesiaCacheVariant,
   CARTESIA_NORMALIZATION,
@@ -431,29 +432,45 @@ async function generateFillerAudio(
   let response: Response | null = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    response = await fetch('https://api.cartesia.ai/tts/sse', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cartesia-Version': '2026-03-01',
-        'X-API-Key': process.env.CARTESIA_API_KEY ?? '',
-      },
-      body: JSON.stringify({
-        model_id: CARTESIA_MODEL,
-        transcript: text,
-        locale: normalizeVoiceLocale(language) ?? `${language}-US`,
-        normalization: CARTESIA_NORMALIZATION,
-        voice: {
-          mode: 'id',
-          id: getCartesiaVoiceId(),
+    try {
+      // R1-2 : borne sur l'établissement de la réponse SSE. Le timer est
+      // libéré dès les headers reçus, donc le streaming du corps n'est pas
+      // coupé ; seul un fournisseur muet est interrompu.
+      response = await fetchWithTimeout(
+        'https://api.cartesia.ai/tts/sse',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Cartesia-Version': '2026-03-01',
+            'X-API-Key': process.env.CARTESIA_API_KEY ?? '',
+          },
+          body: JSON.stringify({
+            model_id: CARTESIA_MODEL,
+            transcript: text,
+            locale: normalizeVoiceLocale(language) ?? `${language}-US`,
+            normalization: CARTESIA_NORMALIZATION,
+            voice: {
+              mode: 'id',
+              id: getCartesiaVoiceId(),
+            },
+            output_format: {
+              container: 'raw',
+              encoding: fillerEncoding,
+              sample_rate: 8000,
+            },
+          }),
         },
-        output_format: {
-          container: 'raw',
-          encoding: fillerEncoding,
-          sample_rate: 8000,
-        },
-      }),
-    });
+        VOICE_PROVIDER_TIMEOUT_MS,
+      );
+    } catch {
+      // Les fillers sont un confort : un timeout ne doit jamais casser l'appel.
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt)));
+        continue;
+      }
+      throw new Error('Filler TTS: timeout after max retries');
+    }
 
     if (response.ok) break;
     // 429 = concurrency limit — retry avec backoff

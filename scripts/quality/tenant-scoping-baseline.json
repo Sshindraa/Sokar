@@ -1,0 +1,358 @@
+{
+  "note": "Baseline du garde-fou de scoping tenant (R0-6). Compte les appels Prisma non scopés par fichier et par modèle.méthode. La faire baisser quand la dette est payée ; ne jamais l’augmenter sans justification en revue.",
+  "files": {
+    "apps/api/src/modules/admin/provisioning.routes.ts": {
+      "Restaurant.findMany": 1
+    },
+    "apps/api/src/modules/admin/provisioning.service.ts": {
+      "Restaurant.findMany": 1
+    },
+    "apps/api/src/modules/agentic-reservations/admin/admin.service.ts": {
+      "AgentClient.update": 1
+    },
+    "apps/api/src/modules/agentic-reservations/core/availability.service.ts": {
+      "Restaurant.findMany": 2
+    },
+    "apps/api/src/modules/agentic-reservations/core/hold.service.ts": {
+      "AgenticHold.findFirst": 1,
+      "AgenticHold.findUnique": 4,
+      "AgenticHold.updateMany": 5,
+      "AgenticHold.findUniqueOrThrow": 1,
+      "AgenticHold.update": 1
+    },
+    "apps/api/src/modules/agentic-reservations/core/reservation.service.ts": {
+      "AgenticHold.findUnique": 2,
+      "AgenticHold.updateMany": 3,
+      "AgenticHold.update": 1,
+      "Reservation.findUnique": 3,
+      "Reservation.update": 3
+    },
+    "apps/api/src/modules/agentic-reservations/core/waiting-list.service.ts": {
+      "WaitingListEntry.findUnique": 3,
+      "WaitingListEntry.update": 3,
+      "WaitingListEntry.findUniqueOrThrow": 2,
+      "Reservation.findUnique": 1,
+      "WaitingListEntry.updateMany": 2,
+      "WaitingListEntry.findMany": 1
+    },
+    "apps/api/src/modules/agentic-reservations/mcp/auth.ts": {
+      "AgentClient.update": 1
+    },
+    "apps/api/src/modules/agentic-reservations/openai-reserve/openai-reserve.service.ts": {
+      "Restaurant.count": 1,
+      "Restaurant.findMany": 1,
+      "Restaurant.findUnique": 1
+    },
+    "apps/api/src/modules/agentic-reservations/workers/agentic-notify.worker.ts": {
+      "Reservation.findUnique": 1
+    },
+    "apps/api/src/modules/agentic-reservations/workers/waiting-list-promote.worker.ts": {
+      "WaitingListEntry.findUnique": 1
+    },
+    "apps/api/src/modules/auth/auth.routes.ts": {
+      "Restaurant.findUnique": 1,
+      "RestaurantAccountMembership.update": 1
+    },
+    "apps/api/src/modules/billing/billing.service.ts": {
+      "RestaurantBilling.findUnique": 3
+    },
+    "apps/api/src/modules/connect/connect.routes.ts": {
+      "Restaurant.findMany": 4,
+      "Restaurant.findUnique": 3,
+      "Reservation.update": 1
+    },
+    "apps/api/src/modules/connect/connect.service.ts": {
+      "Restaurant.findUnique": 1,
+      "Restaurant.findMany": 2,
+      "Restaurant.count": 1
+    },
+    "apps/api/src/modules/customer-groups/customer-group.service.ts": {
+      "CustomerGroupProfile.findUnique": 2,
+      "CustomerGroupProfile.update": 1
+    },
+    "apps/api/src/modules/customers/customer-crm.routes.ts": {
+      "Customer.findMany": 1
+    },
+    "apps/api/src/modules/customers/customer-crm.service.ts": {
+      "CustomerMetricSnapshot.findUnique": 2,
+      "CustomerTimelineEvent.findUnique": 1
+    },
+    "apps/api/src/modules/customers/customer-merge.service.ts": {
+      "Reservation.findMany": 1,
+      "GiftCard.findMany": 1,
+      "CustomerConsent.findMany": 1,
+      "CustomerTimelineEvent.findMany": 1,
+      "MarketingPermission.findMany": 1,
+      "MarketingPermissionEvent.findMany": 1,
+      "MarketingSuppression.findMany": 1,
+      "MarketingAutomationDispatch.findMany": 1,
+      "MarketingFrequencyWindow.findMany": 1,
+      "MarketingAttributionLink.findMany": 1,
+      "CustomerMetricSnapshot.deleteMany": 1,
+      "CustomerPreference.delete": 1,
+      "CustomerPreference.update": 1,
+      "CustomerIdentity.delete": 1,
+      "CustomerIdentity.update": 1,
+      "MarketingPermission.update": 2,
+      "MarketingPermissionEvent.updateMany": 3,
+      "MarketingPermission.delete": 1,
+      "MarketingSuppression.update": 2,
+      "MarketingSuppression.delete": 1,
+      "MarketingAutomationDispatch.update": 2,
+      "MarketingAutomationDispatch.delete": 1,
+      "MarketingFrequencyWindow.update": 2,
+      "MarketingFrequencyWindow.delete": 1,
+      "MarketingAttributionLink.update": 2,
+      "MarketingAttributionLink.delete": 1,
+      "Customer.update": 1,
+      "CustomerMergeAudit.findUnique": 2
+    },
+    "apps/api/src/modules/customers/customer-segment.routes.ts": {
+      "CustomerSegment.update": 1
+    },
+    "apps/api/src/modules/customers/customer-segment.service.ts": {
+      "Customer.count": 1,
+      "Customer.findMany": 1,
+      "CustomerSegment.update": 1
+    },
+    "apps/api/src/modules/customers/customer.routes.ts": {
+      "Customer.findMany": 1,
+      "Customer.count": 1
+    },
+    "apps/api/src/modules/dashboard/dashboard.routes.ts": {
+      "Call.count": 3,
+      "Reservation.findMany": 1
+    },
+    "apps/api/src/modules/dashboard/reactivation.routes.ts": {
+      "ReactivationCampaign.update": 1
+    },
+    "apps/api/src/modules/distribution/distribution.service.ts": {
+      "DistributionConnection.update": 2,
+      "DistributionSyncRun.findUnique": 2,
+      "DistributionSyncRun.update": 1,
+      "DistributionReservationLink.findUnique": 4,
+      "DistributionWebhookEvent.update": 1
+    },
+    "apps/api/src/modules/events/event.service.ts": {
+      "Event.update": 1,
+      "EventSession.update": 1,
+      "EventTicketType.update": 1,
+      "EventOrder.findUnique": 2,
+      "EventTicket.updateMany": 3,
+      "EventOrder.update": 2,
+      "EventWaitlistEntry.findUnique": 1,
+      "EventSession.findMany": 1,
+      "EventSession.updateMany": 1,
+      "EventWaitlistEntry.updateMany": 1
+    },
+    "apps/api/src/modules/experiences/experience.service.ts": {
+      "Experience.update": 1,
+      "ExperienceSession.update": 1,
+      "ExperienceReservation.findUnique": 1,
+      "ExperienceSession.findMany": 1,
+      "ExperienceSession.updateMany": 1
+    },
+    "apps/api/src/modules/floor-plan/floor-plan.service.ts": {
+      "FloorPlan.update": 2,
+      "FloorPlan.delete": 1,
+      "FloorPlan.findUnique": 1,
+      "Reservation.findFirst": 1
+    },
+    "apps/api/src/modules/floor-plan/service-copilot-delay-recovery.service.ts": {
+      "Reservation.update": 3,
+      "WaitingListEntry.update": 2
+    },
+    "apps/api/src/modules/floor-plan/service-copilot-telemetry.service.ts": {
+      "CopilotOccurrence.update": 1
+    },
+    "apps/api/src/modules/floor-plan/table-allocation.service.ts": {
+      "Reservation.update": 2,
+      "Reservation.findUniqueOrThrow": 1
+    },
+    "apps/api/src/modules/gift-cards/gift-card-code.util.ts": {
+      "GiftCard.findUnique": 1
+    },
+    "apps/api/src/modules/gift-cards/gift-card-crowdfunding.service.ts": {
+      "GiftCard.findUnique": 2,
+      "GiftCard.findFirst": 1,
+      "GiftCard.update": 1
+    },
+    "apps/api/src/modules/gift-cards/gift-card-pack.service.ts": {
+      "GiftCardPack.update": 3
+    },
+    "apps/api/src/modules/gift-cards/gift-card-payment.service.ts": {
+      "GiftCard.findFirst": 4,
+      "GiftCard.update": 2
+    },
+    "apps/api/src/modules/gift-cards/gift-card.routes.ts": {
+      "GiftCard.findMany": 1,
+      "GiftCard.count": 1,
+      "GiftCard.update": 1,
+      "Restaurant.findFirst": 1,
+      "GiftCardPack.findUnique": 1,
+      "GiftCard.findUnique": 1
+    },
+    "apps/api/src/modules/gift-cards/gift-card.service.ts": {
+      "GiftCard.findUnique": 6,
+      "GiftCard.update": 2
+    },
+    "apps/api/src/modules/gift-cards/workers/gift-card-reminder.worker.ts": {
+      "GiftCard.findUnique": 1,
+      "GiftCard.update": 1
+    },
+    "apps/api/src/modules/loyalty/loyalty.service.ts": {
+      "LoyaltyBenefit.update": 1,
+      "LoyaltyGrant.findUnique": 1,
+      "LoyaltyGrant.findMany": 1,
+      "LoyaltyGrant.updateMany": 1
+    },
+    "apps/api/src/modules/marketing/marketing-attribution.service.ts": {
+      "MarketingAttributionLink.update": 1,
+      "MarketingCampaign.update": 1
+    },
+    "apps/api/src/modules/marketing/marketing-automation.service.ts": {
+      "Customer.findMany": 3,
+      "MarketingCampaign.update": 2,
+      "MarketingAutomation.update": 1
+    },
+    "apps/api/src/modules/marketing/marketing-campaign.service.ts": {
+      "Customer.findMany": 1,
+      "MarketingCampaign.update": 4
+    },
+    "apps/api/src/modules/marketing/marketing-campaign.worker.ts": {
+      "MarketingCampaign.update": 4,
+      "MarketingPermission.findUnique": 1
+    },
+    "apps/api/src/modules/marketing/marketing-provider.service.ts": {
+      "MarketingProviderReconciliation.upsert": 1,
+      "MarketingProviderReconciliation.updateMany": 1,
+      "MarketingCampaign.update": 2
+    },
+    "apps/api/src/modules/marketing/marketing-report.service.ts": {
+      "MarketingAttributionLink.findMany": 1
+    },
+    "apps/api/src/modules/marketing/marketing.routes.ts": {
+      "MarketingCampaign.update": 2
+    },
+    "apps/api/src/modules/pilot/pilot-kpis.service.ts": {
+      "Reservation.groupBy": 1
+    },
+    "apps/api/src/modules/pos/pos-connection.service.ts": {
+      "PosConnection.update": 2
+    },
+    "apps/api/src/modules/pos/pos-sync.service.ts": {
+      "PosConnection.update": 1
+    },
+    "apps/api/src/modules/reputation/reputation.service.ts": {
+      "ReputationFeedbackRequest.findUnique": 5,
+      "ReputationFeedbackRequest.update": 2,
+      "ReputationFeedback.findUnique": 3,
+      "ReputationRecoveryTask.findUnique": 3,
+      "ReputationFeedbackRequest.updateMany": 2,
+      "ReputationRecoveryTask.update": 1,
+      "ReputationFeedbackRequest.findMany": 1
+    },
+    "apps/api/src/modules/reservation-payments/reservation-payment.service.ts": {
+      "ReservationPayment.findUnique": 2,
+      "ReservationPayment.update": 2,
+      "ReservationPaymentEvent.findUnique": 2,
+      "ReservationPayment.updateMany": 1
+    },
+    "apps/api/src/modules/reservations/reservation.service.ts": {
+      "Reservation.findUnique": 2,
+      "Reservation.update": 1,
+      "Reservation.findMany": 1
+    },
+    "apps/api/src/modules/restaurants/restaurant.routes.ts": {
+      "Restaurant.create": 1,
+      "Restaurant.update": 3,
+      "RestaurantAccountMembership.update": 1,
+      "RestaurantAccountMembership.delete": 1,
+      "Restaurant.findUniqueOrThrow": 5,
+      "Restaurant.findUnique": 2
+    },
+    "apps/api/src/modules/rgpd/consent.service.ts": {
+      "CustomerConsent.findFirst": 1,
+      "CustomerConsent.updateMany": 1
+    },
+    "apps/api/src/modules/rgpd/erasure.service.ts": {
+      "Reservation.findFirst": 1,
+      "CustomerConsent.findFirst": 1,
+      "Customer.findMany": 1,
+      "Reservation.updateMany": 1,
+      "Message.updateMany": 1,
+      "CustomerConsent.count": 1
+    },
+    "apps/api/src/modules/rgpd/export.service.ts": {
+      "CustomerConsent.findMany": 1
+    },
+    "apps/api/src/modules/sms/reply-handler.ts": {
+      "Reservation.update": 2
+    },
+    "apps/api/src/modules/usage/usage-accounting-export.service.ts": {
+      "Restaurant.findMany": 1
+    },
+    "apps/api/src/modules/usage/usage-adjustment.service.ts": {
+      "UsageReconciliationAdjustment.findUnique": 5,
+      "UsageReconciliationAdjustment.create": 1,
+      "UsageReconciliationAdjustment.updateMany": 1
+    },
+    "apps/api/src/modules/usage/usage-internal.service.ts": {
+      "Restaurant.findMany": 1
+    },
+    "apps/api/src/modules/usage/usage.routes.ts": {
+      "UsageReconciliationAdjustment.findMany": 1
+    },
+    "apps/api/src/modules/usage/usage.service.ts": {
+      "UsageEvent.findUnique": 2
+    },
+    "apps/api/src/modules/voice/call-recording.service.ts": {
+      "Call.updateMany": 2,
+      "Call.update": 2,
+      "Call.findUnique": 1,
+      "Call.findMany": 1
+    },
+    "apps/api/src/modules/voice/stream/greeting-cache.ts": {
+      "Restaurant.findMany": 1
+    },
+    "apps/api/src/modules/voice/stream/session-persistence.ts": {
+      "Call.findUnique": 1
+    },
+    "apps/api/src/modules/voice/telnyx.pipeline.ts": {
+      "Call.update": 1
+    },
+    "apps/api/src/shared/outbox/outbox.service.ts": {
+      "OutboxEvent.findMany": 1,
+      "OutboxEvent.updateMany": 3
+    },
+    "apps/api/src/shared/queue/notification-repair.ts": {
+      "Reservation.findUnique": 3,
+      "Reservation.updateMany": 1,
+      "GiftCard.findUnique": 2,
+      "GiftCard.updateMany": 1
+    },
+    "apps/api/src/shared/queue/workers/confirmation-sms.worker.ts": {
+      "Reservation.findUnique": 1,
+      "Reservation.update": 2
+    },
+    "apps/api/src/shared/queue/workers/google-places-sync.worker.ts": {
+      "Restaurant.findMany": 1
+    },
+    "apps/api/src/shared/queue/workers/outbox-delivery.worker.ts": {
+      "OutboxEvent.findUnique": 1
+    },
+    "apps/api/src/shared/queue/workers/reactivation.worker.ts": {
+      "Restaurant.findMany": 1,
+      "ReactivationCampaign.findUniqueOrThrow": 1
+    },
+    "apps/api/src/shared/queue/workers/telnyx-webhook.worker.ts": {
+      "Call.updateMany": 1
+    },
+    "apps/api/src/shared/queue/workers/usage-alerts.worker.ts": {
+      "Restaurant.findMany": 1
+    },
+    "apps/api/src/shared/queue/workers/usage-rollup.worker.ts": {
+      "Restaurant.findMany": 1
+    }
+  }
+}

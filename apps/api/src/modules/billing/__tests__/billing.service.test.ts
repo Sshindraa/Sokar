@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../../../shared/db/client';
 import {
   BillingWebhookInProgressError,
+  billingIntervalFromStripeRecurringInterval,
   handleBillingWebhook,
   isBillingCheckoutEnabled,
+  resolveBillingIntervalForStatus,
 } from '../billing.service';
 
 describe('billing.service - release flag', () => {
@@ -16,6 +18,26 @@ describe('billing.service - release flag', () => {
       isBillingCheckoutEnabled({ NODE_ENV: 'production', BILLING_CHECKOUT_ENABLED: 'true' }),
     ).toBe(true);
     expect(isBillingCheckoutEnabled({ NODE_ENV: 'test' })).toBe(true);
+  });
+});
+
+describe('billing.service - cadence des prix migrés', () => {
+  afterEach(() => {
+    delete process.env.STRIPE_PRICE_ESSENTIAL_ANNUAL;
+  });
+
+  it('préserve la cadence persistée pour un abonnement sur un ancien prix', () => {
+    process.env.STRIPE_PRICE_ESSENTIAL_ANNUAL = 'price_essential_2026';
+
+    expect(resolveBillingIntervalForStatus('price_essential_historic', 'monthly')).toBe('monthly');
+    expect(resolveBillingIntervalForStatus('price_essential_2026', 'monthly')).toBe('annual');
+    expect(resolveBillingIntervalForStatus('price_essential_historic', 'quarterly')).toBeNull();
+  });
+
+  it('convertit uniquement les cadences Stripe prises en charge', () => {
+    expect(billingIntervalFromStripeRecurringInterval('month')).toBe('monthly');
+    expect(billingIntervalFromStripeRecurringInterval('year')).toBe('annual');
+    expect(billingIntervalFromStripeRecurringInterval('week')).toBeNull();
   });
 });
 

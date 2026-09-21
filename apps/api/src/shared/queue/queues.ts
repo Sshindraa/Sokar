@@ -173,4 +173,16 @@ export const queues = {
       removeOnFail: 500,
     },
   }),
+  // Anonymisation RGPD (rétention 2 ans). Le scheduler est inscrit au boot,
+  // mais le worker ne fait rien tant que `RGPD_ANONYMIZATION_ENABLED` est
+  // `false` : l'opération est destructive et n'a jamais tourné en production.
+  rgpdAnonymization: new Queue('rgpd-anonymization', {
+    connection: redisQueue,
+    defaultJobOptions: {
+      attempts: 2,
+      backoff: { type: 'exponential', delay: 60_000 },
+      removeOnComplete: 30,
+      removeOnFail: 100,
+    },
+  }),
 };

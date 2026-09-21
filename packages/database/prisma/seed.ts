@@ -1,6 +1,6 @@
 import { PrismaClient, Prisma } from '@prisma/client';
-import { createHash } from 'crypto';
-import { shouldSeedDemoListings } from './seed-demo-guard';
+import { createHash, randomBytes } from 'crypto';
+import { shouldSeedDemoListings, shouldSeedDemoMcpClient } from './seed-demo-guard';
 
 const prisma = new PrismaClient({
   datasources: { db: { url: process.env.DATABASE_URL } },
@@ -8,7 +8,7 @@ const prisma = new PrismaClient({
 
 const DEMO_SLUG = 'chez-sokar-demo';
 const DEMO_PHONE = '+33102030405';
-const DEMO_MCP_KEY = 'sk_sokar_agent_' + 'a'.repeat(40);
+const DEMO_MCP_CLIENT_NAME = 'Sokar demo MCP client';
 
 const openingHours: Prisma.JsonValue = {
   tue: { open: '12:00', close: '22:00' },
@@ -180,26 +180,31 @@ async function main() {
     },
   });
 
-  await prisma.agentClient.upsert({
-    where: {
-      keyHash: createHash('sha256').update(DEMO_MCP_KEY).digest('hex'),
-    },
-    update: {
-      restaurantId: restaurant.id,
-      name: 'Sokar demo MCP client',
-      scopes: ['mcp:read', 'mcp:reserve', 'mcp:cancel'],
-      allowedOrigins: ['https://claude.ai', 'https://cursor.sh'],
-      revokedAt: null,
-    },
-    create: {
-      restaurantId: restaurant.id,
-      name: 'Sokar demo MCP client',
-      keyPrefix: DEMO_MCP_KEY.slice(0, 'sk_sokar_agent_'.length + 8),
-      keyHash: createHash('sha256').update(DEMO_MCP_KEY).digest('hex'),
-      scopes: ['mcp:read', 'mcp:reserve', 'mcp:cancel'],
-      allowedOrigins: ['https://claude.ai', 'https://cursor.sh'],
-    },
-  });
+  if (shouldSeedDemoMcpClient(process.env)) {
+    const existingDemoClient = await prisma.agentClient.findFirst({
+      where: {
+        restaurantId: restaurant.id,
+        name: DEMO_MCP_CLIENT_NAME,
+      },
+      select: { id: true },
+    });
+
+    if (!existingDemoClient) {
+      const demoMcpKey = `sk_sokar_agent_${randomBytes(32).toString('base64url')}`;
+      await prisma.agentClient.create({
+        data: {
+          restaurantId: restaurant.id,
+          name: DEMO_MCP_CLIENT_NAME,
+          keyPrefix: demoMcpKey.slice(0, 'sk_sokar_agent_'.length + 8),
+          keyHash: createHash('sha256').update(demoMcpKey).digest('hex'),
+          scopes: ['mcp:read', 'mcp:reserve', 'mcp:cancel'],
+          allowedOrigins: ['https://claude.ai', 'https://cursor.sh'],
+        },
+      });
+      // eslint-disable-next-line no-console -- seed output is the operator's local bootstrap key.
+      console.log(`Local demo MCP client created. SOKAR_MCP_KEY=${demoMcpKey}`);
+    }
+  }
 
   // Customer de test (non-VIP)
   await prisma.customer.upsert({

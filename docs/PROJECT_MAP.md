@@ -368,6 +368,14 @@ Modèles clés (`packages/database/prisma/schema.prisma`) :
 
 Définitions de queues : `apps/api/src/shared/queue/queues.ts`. Workers : `apps/api/src/shared/queue/workers/`.
 
+Deux topologies d'exécution (R1-1) : en développement, l'API porte aussi les workers
+(`RUN_WORKERS_IN_PROCESS=true`, défaut) ; en production, `dist/main.js` ne sert que le HTTP
+(`RUN_WORKERS_IN_PROCESS=false` posé par PM2) et les workers tournent dans `dist/worker.js`
+(PM2 `sokar-workers`). La liste des workers à charger est unique :
+`apps/api/src/workers/index.ts`, protégée par un test qui échoue si un `*.worker.ts` n'y est pas
+importé. L'inscription des jobs récurrents vit dans `apps/api/src/shared/queue/schedulers.ts` et
+utilise `upsertJobScheduler`, idempotent par identifiant.
+
 - `eveningReport` — rapport nocturne par restaurant.
 - `confirmationSms` — SMS de rappel J-1 à 17h.
 - `reconciliation` — reconciliation appels/SMS journalière.
@@ -439,7 +447,9 @@ pnpm test:visual # régression visuelle
 - Ne jamais committer de secrets ; utiliser `key_env` et `.env`.
 - `NEXT_PUBLIC_*` est baked au build time.
 - Les webhooks Telnyx nécessitent le raw body pour vérifier la signature. Ne pas modifier le `contentTypeParser` de `main.ts` sans retester les signatures.
-- Rate limiting et CORS : `apps/api/src/plugins/`.
+- Rate limiting et CORS : `apps/api/src/plugins/`. La politique à paliers (webhooks fournisseurs,
+  endpoints publics à token, écritures publiques) est dans `plugins/rate-limit.policy.ts` ; le
+  global 100 req/min est dans `plugins/rate-limit.ts`.
 - Agentic : expiration des holds/devis, index partiel sur l'idempotence.
 - RGPD : erase/export via pattern OTP → verification token → one-shot action.
 - Connect : pages publiques statiques/ISR ; staging force-dynamic pour `/restaurant/[slug]`.

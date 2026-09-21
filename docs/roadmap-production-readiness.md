@@ -1,0 +1,330 @@
+# Roadmap production-readiness — Sokar
+
+> **Statut : ACTIF — créé le 21 septembre 2026.**
+> Référence dépôt : `main@9d4ead37`.
+> Ce document traduit l'audit de maturité en chantiers ordonnés. Il complète
+> [`audits/2026-09-15-current-state.md`](./audits/2026-09-15-current-state.md) (état des portes
+> P0–P9) et [`DOCUMENTATION_STATUS.md`](./DOCUMENTATION_STATUS.md) (statut des documents).
+> Il ne remplace pas le manifest [`release/product-gates.json`](./release/product-gates.json),
+> qui reste l'autorité pour autoriser ou refuser une promotion.
+
+## Comment lire cette roadmap
+
+- **Priorité** : `P0` bloque une mise en production réelle, `P1` bloque la montée en charge ou la
+  vente, `P2` consolide la qualité d'exploitation, `P3` prépare l'échelle.
+- **Effort** : `S` (≤ 2 jours), `M` (≤ 1 semaine), `L` (2–4 semaines), `XL` (au-delà, à découper).
+- **Sortie** : ce qui doit être vrai pour fermer le chantier. Un chantier n'est pas fermé par un
+  commit : il l'est par une **preuve** (test vert, mesure en production, contrat, capture
+  fournisseur). Les dépendances externes (Stripe, Clerk, Telnyx, caisse, plateforme d'avis)
+  exigent une preuve externe, pas un mock.
+- **Règle d'exécution** : un chantier de cette roadmap qui touche un schéma, un paiement, une
+  route publique, la voice ou un contrat d'intégration suit l'ordre _code → plus petit contrôle
+  vert → preuve datée dans `docs/audits/` → mise à jour du vault_.
+
+## Photographie actuelle
+
+| Surface                                                                                 | État réel                                                                     | Ce qui manque pour dire « production-grade »                                                                |
+| --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Cœur réservation (agentic + legacy)                                                     | État, audit, contraintes d'exclusion, idempotence, outbox : solides et testés | Preuve en charge réelle, convergence des deux chemins de réservation                                        |
+| Voice (Telnyx / ElevenLabs / Cartesia)                                                  | Pipeline complet, télémétrie, cache, redaction PII                            | Dimensionnement, dégradation explicite fournisseur, test de concurrence                                     |
+| Facturation SaaS                                                                        | Code, entitlements, catalogue v2 test/live et rejeu sandbox prouvés           | Déployer la migration, backfiller les historiques et signer deux pilotes ; checkout production encore fermé |
+| Sokar Connect                                                                           | Pages publiques, JSON-LD, ISR, widget, analytics                              | Pilote réel incomplet (10 restos, sitemap GSC), e2e absent de la CI                                         |
+| CRM / marketing / POS / réputation / fidélité / expériences / événements / distribution | Fondations livrées et testées localement                                      | Preuves externes : provider, identités Clerk réelles, sandbox, pilote                                       |
+| Ops                                                                                     | CI sérieuse, backups vérifiés, watchdog, smoke tests                          | Mono-VPS, mono-Postgres, DLQ sans consommateur, pas de SLO outillé                                          |
+| Observabilité                                                                           | Logs structurés, Sentry, health checks, alertes in-app                        | Prometheus/Grafana non déployés, pas de SLO ni de tracing distribué                                         |
+
+---
+
+## 1. Les zones encore « MVP »
+
+### 1.1 Un seul processus porte l'API, le scheduling et tous les workers
+
+`apps/api/src/main.ts` enregistre les jobs répétables (`evening-report`, `reconciliation`,
+`marketing-automation`, expirations, etc.) **dans le processus API**, et les workers BullMQ
+tournent dans le même process (`apps/api/src/modules/**/**.worker.ts`, enregistrés via
+`apps/api/src/shared/queue/workers/`). `infra/ecosystem.config.js` ne déclare qu'un `sokar-api`
+unique. Conséquences : un crash worker affecte l'API, le scheduling n'est pas coordonné si une
+seconde instance apparaît, et il n'existe pas de marge pour scaler l'écoute HTTP indépendamment du
+traitement de fond.
+
+### 1.2 La dead-letter queue est en écriture seule
+
+`apps/api/src/shared/queue/queues.ts` déclare `deadLetter`, et
+`apps/api/src/shared/queue/workers/helper.ts` y déplace les jobs épuisés. Aucun `Worker` ne consomme
+`dead-letter` (`rg "new Worker('dead-letter'"` ne renvoie rien). Le worker `system-health` alerte sur
+sa taille, mais il n'existe ni outil de rejeu, ni triage, ni runbook « job mort à 3 h du matin ». Un
+job perdu se voit donc, mais ne se répare pas sans intervention manuelle en Redis.
+
+### 1.3 Les états UI ne sont pas systématiques
+
+Le dashboard expose **41 `page.tsx`** pour **1 `loading.tsx`** et **1 `error.tsx`**
+(`apps/dashboard/src/app/`). Le `AGENTS.md` impose pourtant que chaque composant gère les états
+`loading / empty / error / data`. En pratique, beaucoup de pages dépendent d'un composant client qui
+gère l'erreur, mais rien ne garantit qu'une page ne reste pas blanche ou bloquée sur un spinner si
+l'API renvoie 500 ou si le réseau tombe.
+
+### 1.4 L'observabilité est outillée dans le code, pas déployée
+
+`infra/prometheus/alerts.yml` documente des règles et les gauges sont publiées par
+`apps/api/src/shared/queue/workers/system-health.worker.ts`. Mais `infra/docker-compose.yml` ne
+déclare ni Prometheus ni Grafana, et aucune stack de scraping n'est versionnée. En l'état, les règles
+Prometheus sont **de la documentation** ; l'alerte réelle passe par le worker in-app et le watchdog
+shell. C'est suffisant pour un pilote, pas pour un SaaS qui doit expliquer une dégradation.
+
+### 1.5 L'isolation multi-tenant repose uniquement sur l'application
+
+`apps/api/src/plugins/clerk.ts` résout le contexte établissement/compte et le pose sur `req`. Mais
+PostgreSQL n'a pas de _Row Level Security_ : toute requête Prisma qui oublierait
+`where: { restaurantId }` fuit vers un autre client. Les tests couvrent les routes connues ; il
+n'existe pas de garde-fou automatique qui échoue sur une requête non scopée. Pour un SaaS qui
+contiendra des noms, téléphones et historiques clients, c'est une fragilité structurelle.
+
+### 1.6 La boucle commerciale est prouvée en sandbox, pas encore ouverte en production
+
+`apps/api/src/env.ts` laisse `BILLING_CHECKOUT_ENABLED` à `false` par défaut. Les catalogues Stripe
+test et live sont maintenant réconciliés avec la grille 199/299 et le rejeu staging a couvert
+Checkout, facture, portail, échec `past_due`, récupération et annulation. La migration additive de
+cadence doit encore être déployée et les projections historiques backfillées avant d'ouvrir la vente
+production ; deux pilotes Essential de sept jours restent la preuve commerciale attendue.
+
+### 1.7 Douze surfaces Pro sont livrées mais non qualifiées
+
+`CRM_ADVANCED_ENABLED`, `MARKETING_FEATURES_ENABLED`, `MARKETING_SENDS_ENABLED`,
+`MARKETING_WHATSAPP_ENABLED`, `POS_CONNECTORS_ENABLED`, `RESERVATION_PAYMENTS_ENABLED`,
+`CUSTOMER_GROUPS_ENABLED`, `REPUTATION_ENABLED`, `LOYALTY_ENABLED`, `EXPERIENCES_ENABLED`,
+`EVENTS_ENABLED`, `DISTRIBUTION_ENABLED` sont toutes à `false`. Les portes correspondantes sont
+`LOCAL_ONLY` : code et tests présents, preuve externe absente. C'est une dette de **qualification**,
+pas de développement — mais elle est réelle et bloque le discours commercial.
+
+### 1.8 Sokar Connect est livré, pas encore prouvé
+
+`apps/connect/e2e/` contient des parcours Playwright (booking, gift card, page restaurant). La suite
+est devenue exécutable localement (`pnpm --filter @sokar/connect test:e2e`, config corrigée le
+21/09), mais elle reste `skip` si l'API n'est pas joignable et le job CI `connect`
+(`.github/workflows/ci.yml`) ne lance **que** typecheck, lint, unités et build : aucun test e2e
+Connect n'est exécuté en CI. La fiche restaurant est en `dynamic = 'force-dynamic'` avec un
+`revalidate = 60` porté par le cache amont (Nginx/Cloudflare) : c'est un contournement assumé, pas
+un mécanisme ISR de référence. Enfin le pilote fermé n'est pas complet (TODO vault : 10 restaurants
+réels + sitemap GSC).
+
+### 1.9 La voice n'a pas de preuve de charge ni de dégradation explicite
+
+Le pipeline est mature fonctionnellement, mais il n'existe ni test de concurrence (N appels
+simultanés), ni circuit breaker sur les fournisseurs, ni plan de dégradation documenté (que se
+passe-t-il si ElevenLabs tombe pendant un service du soir ?). `apps/api/src/modules/voice/llm-provider.ts`
+choisit un provider par configuration, sans bascule automatique.
+
+### 1.10 L'onboarding et le support restent artisanaux
+
+Les événements de funnel existent (`OnboardingEvent`), mais il n'y a pas de preuve de parcours
+self-service complet, ni d'outil de support (impersonation encadrée, historique client, statut
+d'incident). Pour un restaurant qui appelle à 19 h un vendredi, l'absence de ces outils se paie en
+churn.
+
+---
+
+## 2. Principaux risques avant une vraie production à grande échelle
+
+| ID  | Risque                                     | Impact                                       | Pourquoi c'est plausible ici                                                        | Traitement                |
+| --- | ------------------------------------------ | -------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------- |
+| R1  | Fuite de données entre établissements      | Critique (RGPD, confiance)                   | Isolation applicative seule, pas de RLS ni de garde-fou de requête                  | Phase 4, préparé par R0-6 |
+| R2  | Panne totale du VPS                        | Critique (arrêt de service)                  | API, dashboard, Connect, Postgres, Redis sur une seule machine                      | Phase 4                   |
+| R3  | Saturation voice un vendredi soir          | Élevé (appels perdus = réservations perdues) | Écoute et workers dans le même process, aucune mesure de concurrence                | Phase 1                   |
+| R4  | Job métier perdu sans rejeu                | Élevé                                        | DLQ en écriture seule                                                               | Phase 0                   |
+| R5  | Facturation incorrecte                     | Élevé (litige, revenu)                       | Catalogue Stripe non réconcilié, checkout fermé                                     | Phase 2                   |
+| R6  | Panne fournisseur non dégradée             | Élevé                                        | Pas de circuit breaker STT/TTS/LLM/SMS/Stripe                                       | Phase 1                   |
+| R7  | Dérive entre réservation legacy et agentic | Moyen-élevé                                  | Deux modèles et deux services coexistent (`reservations` vs `agentic-reservations`) | Phase 1                   |
+| R8  | Non-conformité multi-site / effacement     | Élevé (RGPD)                                 | Export/effacement consolidés non prouvés, identités Clerk réelles absentes          | Phase 3                   |
+| R9  | Incident invisible pour l'équipe           | Moyen-élevé                                  | Prometheus non déployé, pas de SLO, pas d'astreinte formalisée                      | Phase 0 → 4               |
+| R10 | Coût unitaire dérive                       | Moyen                                        | Ledger et marge internes existent, mais pas de seuil d'alerte commercial            | Phase 4                   |
+
+---
+
+## 3. Ce qui est déjà mature — à ne pas refaire
+
+Ces briques sont au niveau attendu ; les réécrire serait une perte de temps et un risque de
+régression.
+
+- **Machine d'état réservation** : `apps/api/src/modules/agentic-reservations/core/state-machine.ts`,
+  validation d'invariants, transitions conditionnelles, contraintes d'exclusion PostgreSQL et tests
+  d'intégration exécutés en CI sur une vraie base (`api-integration` dans `ci.yml`).
+- **Audit et idempotence** : `ReservationAuditLog`, `IdempotencyRecord` avec index partiel et purge
+  planifiée, séparation claire entre lecture et mutation.
+- **Pattern outbox** : `OutboxEvent` + `outbox-dispatcher` (`SKIP LOCKED`, leases) +
+  `outbox-delivery` idempotent. C'est la bonne fondation pour tout effet de bord critique.
+- **Ledger d'usage et coûts** : `UsageEvent` append-only, rollups, tarifs versionnés, ajustements de
+  réconciliation `OPEN/APPROVED/REJECTED`, cockpit `/admin/margin` et export interne.
+- **Sécurité applicative** : garde de signature Telnyx avec raw body, garde webhook WhatsApp,
+  `requireSokarOperator()` sur les routes internes, rate limits ciblés, tokens HMAC hashés,
+  masquage PII (`apps/api/src/shared/observability/pii-leak.ts`), redaction Pino centralisée.
+- **Cartes cadeaux Stripe** : paiements, packs, redeem atomique, remboursements, codes courts avec
+  retry sur collision.
+- **Plan de salle** : allocation atomique (`SKIP LOCKED`), disponibilité capacitaire, cockpit
+  responsive.
+- **Déploiement** : release dirs, snapshots d'artefacts, rollback, smoke tests de production,
+  `verify-product-gates.mjs` qui refuse une promotion hors profil autorisé.
+- **Sauvegardes** : backup quotidien avec restauration de vérification, backup staging, couverture
+  watchdog de l'absence de backup de plus de 26 h.
+- **CI** : gitleaks, typecheck, ESLint, couverture API avec seuils bloquants, tests d'intégration
+  Postgres/Redis, e2e dashboard, build des quatre apps.
+
+---
+
+## 4. Roadmap priorisée
+
+### Phase 0 — Garde-fous immédiats (0–3 semaines)
+
+Objectif : supprimer les angles morts opérationnels qui coûtent cher le jour où ils se produisent,
+sans toucher à l'architecture.
+
+| ID   | Priorité | Effort | Chantier                                                                                                                                                         | Sortie / preuve                                                                                  |
+| ---- | -------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| R0-1 | P0       | M      | **Rendre la DLQ opérable** : consommateur de triage, outil de rejeu par job id, runbook `docs/runbooks/dead-letter.md`                                           | Un job mort est rejoué en < 5 min par une commande documentée ; test unitaire du rejeu           |
+| R0-2 | P0       | S      | **Uniformiser le rate limiting des surfaces sensibles** : voice webhooks, MCP OAuth, routes publiques Connect, widget                                            | Tests par endpoint ; plus aucune surface publique sans limite explicite                          |
+| R0-3 | P1       | M      | **États UI systématiques** : `loading.tsx`/`error.tsx` par section dashboard ou composant d'état partagé                                                         | Les 41 pages ont un état dégradé vérifié ; test Playwright sur 3 pages critiques avec API en 500 |
+| R0-4 | P1       | M      | **e2e Connect en CI** : servir l'API en conteneur, lancer `pnpm --filter @sokar/connect test:e2e`                                                                | Job CI vert, plus aucun `test.skip` dépendant de l'absence d'API                                 |
+| R0-5 | P1       | S      | **SLO minimaux + tableau de bord** : disponibilité API, taux de réservation confirmée, p95 Connect, taux d'appels sans outcome                                   | SLO écrits dans un runbook, mesurés par le worker d'alerte, seuils déclenchant une alerte réelle |
+| R0-6 | P1       | M      | **Inventaire des requêtes Prisma non scopées** : script d'analyse + garde de test qui échoue si un modèle tenant n'est pas filtré par `restaurantId`/`accountId` | Un test échoue si une nouvelle requête non scopée est introduite                                 |
+
+### Phase 1 — Cœur réservation et voice fiables en charge (3–8 semaines)
+
+Objectif : pouvoir tenir un vrai service du soir, sur plusieurs restaurants, sans supervision
+permanente.
+
+| ID   | Priorité | Effort | Chantier                                                                                                                                                           | Sortie / preuve                                                                          |
+| ---- | -------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| R1-1 | P0       | L      | **Séparer l'exécution** : process PM2 dédié aux workers, scheduling via BullMQ repeatable jobs unique (plus de `register()` in-process dans `main.ts`)             | API et workers redémarrables indépendamment ; deux instances API ne dupliquent aucun job |
+| R1-2 | P0       | M      | **Résilience fournisseurs** : timeouts, retries bornés, circuit breaker, dégradation explicite et testée pour STT, TTS, LLM, SMS, Stripe                           | Test de panne simulée par fournisseur ; comportement documenté                           |
+| R1-3 | P0       | L      | **Test de charge voice** : N appels simultanés, mesure CPU/mémoire/latence, seuil d'alerte et dimensionnement écrit                                                | Rapport de charge daté dans `docs/audits/`, capacité chiffrée, limite connue             |
+| R1-4 | P1       | L      | **Convergence des chemins de réservation** : un contrat de service unique pour legacy et agentic (voir `docs/architecture/reservation-service-contract-matrix.md`) | Une seule source d'écriture d'état, tests de non-régression sur les deux entrées         |
+| R1-5 | P1       | M      | **Discipline migrations** : `migrate deploy` uniquement hors local, garde-fou sur `db:push`, checklist de migration, exercice de rollback DB                       | Runbook `docs/runbooks/migration.md` mis à jour, exercice de restauration daté           |
+| R1-6 | P1       | M      | **Observabilité de production** : déployer Prometheus + Grafana, dashboards résa/voice/queues, alerting SLO                                                        | Grafana accessible à l'équipe, au moins une alerte déclenchée par un test contrôlé       |
+
+### Phase 2 — Boucle commerciale (4–10 semaines)
+
+Objectif : pouvoir vendre, encaisser et mesurer sans intervention manuelle.
+
+| ID                                   | Priorité                | Effort                                                                                                                                                                                                                                   | Chantier                                                                                                                             | Sortie / preuve                                                                                                                              |
+| ------------------------------------ | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| R2-1                                 | P0                      | M                                                                                                                                                                                                                                        | **Réconcilier le catalogue Stripe 199/299** : créer/synchroniser les `price_id`, vérifier le mapping entitlements                    | **Livré le 21/09/2026** : huit prix v2 test/live créés, vérifiés et propagés dans GitHub ; preuve `docs/audits/2026-09-21-billing-replay.md` |
+| R2-1b — Contrôle du catalogue Stripe | **Livré le 21/09/2026** | Le contrôle montant/devise/cadence/état est branché dans `sync-stripe-prices.sh` et bloque l'ouverture sur un prix historique. Les deux comptes Stripe ont été contrôlés et leurs webhooks complétés sans archiver les prix historiques. |
+| R2-2                                 | P0                      | M                                                                                                                                                                                                                                        | **Rejouer le cycle de facturation** en sandbox puis production : Checkout, facture, portail, annulation, échec, période de grâce     | **Sandbox livré le 21/09/2026** ; déployer la migration et la release avant toute activation production                                      |
+| R2-3                                 | P0                      | M                                                                                                                                                                                                                                        | **Deux pilotes Essential sur sept jours** : consentement, captures, métriques, incidents, décision GO/NO-GO                          | Fiche pilote signée, métriques réelles, incidents documentés                                                                                 |
+| R2-4                                 | P1                      | M                                                                                                                                                                                                                                        | **Compléter le pilote Connect** : 10 restaurants réels, sitemap Google Search Console, suivi conversion                              | Porte `PILOTS` documentée, sitemap validé                                                                                                    |
+| R2-5                                 | P1                      | M                                                                                                                                                                                                                                        | **Onboarding self-service mesuré** : temps jusqu'à première réservation, taux d'abandon par étape, correction des points de friction | Funnel lisible dans le dashboard, amélioration mesurée                                                                                       |
+
+### Phase 3 — Surfaces Pro, un canal à la fois (par ordre de valeur commerciale)
+
+Objectif : ouvrir les portes `LOCAL_ONLY` dans un ordre défendable, en fermant chaque porte par une
+preuve externe. Ordre recommandé : CRM (P2) → attribution (P4) → marketing un canal (P3) → paiement
+réservation (P5) → POS (P6) → multi-site (P7) → réputation/fidélité (P8) → écosystème (P9).
+
+Chaque porte suit le même gabarit :
+
+1. choisir un fournisseur et signer le DPA si données personnelles ;
+2. exécuter un sandbox réel avec webhooks et échecs ;
+3. écrire le runbook d'exploitation et de désactivation ;
+4. faire tourner un pilote avec métriques ;
+5. mettre à jour `release/product-gates.json` et `audits/` avec la preuve.
+
+| ID   | Priorité | Effort | Chantier                                                                                                  | Sortie / preuve                                                |
+| ---- | -------- | ------ | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| R3-1 | P1       | L      | **CRM P2** : preuve PostgreSQL concurrente, deux identités Clerk, export/effacement réels                 | Porte P2 fermée, tests d'isolation verts                       |
+| R3-2 | P1       | L      | **Marketing P3** : un provider, un canal (SMS ou email), consentement, désinscription, templates, coûts   | Porte P3 fermée, `MARKETING_SENDS_ENABLED` activé sur un canal |
+| R3-3 | P1       | M      | **Attribution P4** : parcours pilote complet, comparaison au revenu encaissé                              | Porte P4 fermée, rapport de revenu attribué                    |
+| R3-4 | P1       | XL     | **Paiement réservation P5** : modèle marchand, Stripe Connect, 3DS, captures, remboursements, chargebacks | Porte P5 fermée, runbook litiges                               |
+| R3-5 | P2       | XL     | **POS P6** : caisse choisie, secret manager, adaptateur, DLQ, rapprochement 30 jours                      | Porte P6 fermée, réconciliation concluante                     |
+| R3-6 | P2       | L      | **Multi-site P7** : identités Clerk réelles, rôles par site, export/effacement consolidés                 | Porte P7 fermée, test de non-fuite inter-sites                 |
+| R3-7 | P2       | L      | **Réputation/fidélité P8** : canal d'envoi, sources d'avis, fréquence et coût                             | Porte P8 fermée                                                |
+| R3-8 | P3       | XL     | **Écosystème P9** : expériences, événements, distribution avec paiement, notifications, partenaires       | Porte P9 fermée, réconciliation fournisseur                    |
+
+### Phase 4 — Exploitation, sécurité et échelle (en continu)
+
+| ID   | Priorité | Effort | Chantier                                                                                                                               | Sortie / preuve                                          |
+| ---- | -------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| R4-1 | P1       | L      | **Haute disponibilité données** : réplica PostgreSQL, PITR, persistance Redis, exercice de restauration trimestriel                    | RTO/RPO écrits et testés                                 |
+| R4-2 | P1       | L      | **Défense en profondeur multi-tenant** : RLS PostgreSQL ou couche d'accès imposée, plus le garde-fou R0-6                              | Un test d'intrusion interne ne franchit pas la frontière |
+| R4-3 | P1       | M      | **Pentest externe** sur l'API publique, MCP, widget et dashboard                                                                       | Rapport et correctifs priorisés                          |
+| R4-4 | P1       | M      | **Gestion de secrets et rotation** : gestionnaire dédié, procédure de rotation, disparition des dépendances à `.env` manuel sur le VPS | Rotation rejouée sans downtime                           |
+| R4-5 | P2       | M      | **Astreinte et gestion d'incident** : page de statut, runbooks, post-mortems, escalade                                                 | Un incident simulé est traité de bout en bout            |
+| R4-6 | P2       | M      | **Unit economics** : marge par établissement, seuils d'alerte, scénarios de coût voice/LLM                                             | Cockpit de marge avec seuils actionnables                |
+| R4-7 | P2       | M      | **Tests de reprise** : chaos contrôlé (Redis down, Postgres lent, fournisseur 5xx) sur staging                                         | Rapport de reprise, aucune perte de réservation          |
+
+### Phase 5 — Sortie de gel commercial
+
+Condition d'entrée : toutes les portes requises `CLOSED`, chaque porte différée explicitement
+partitionnée, flags correspondants désactivés, preuves datées.
+
+1. Rejouer `node scripts/verify-product-gates.mjs` en profil complet.
+2. Promouvoir une release dédiée qui passe `productionFreeze` à `false`.
+3. Surveiller 14 jours avec SLO actifs et astreinte.
+4. Décider le retrait du profil scoped comme seule forme de promotion autorisée.
+
+---
+
+## Suivi d'exécution
+
+| Chantier                                    | Statut                  | Preuve                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R0-1 — Rendre la DLQ opérable               | **Livré le 21/09/2026** | `apps/api/src/shared/queue/dead-letter.service.ts`, CLI `pnpm --filter @sokar/api ops:dead-letter`, runbook [`runbooks/dead-letter.md`](./runbooks/dead-letter.md). 15 tests unitaires ; rejeu vérifié sur Redis réel : entrée supprimée, job retrouvé dans sa file d'origine, payload brut intact. Le premier triage a révélé 500 jobs morts accumulés en local (257 `outbox-dispatcher`, 76 `evening-report`), tous écrits par l'ancien format redacté et donc non rejouables.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| R0-2 — Rate limiting des surfaces sensibles | **Livré le 21/09/2026** | Politique à paliers dans `apps/api/src/plugins/rate-limit.policy.ts` : webhooks fournisseurs 600/min (au lieu du global 100), endpoints publics à token 30/min, écritures publiques 20/min. Constat de départ : le global 100/min s'appliquait **avant** le budget applicatif de 300/min des webhooks Stripe, qui était donc inopérant. 6 tests d'intégration verrouillent les paliers (burst Telnyx et Stripe sans 429, 429 effectif sur token et écriture publique).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| R0-3 — États UI systématiques               | **Livré le 21/09/2026** | Boundary d'erreur et skeleton partagés (`components/RouteErrorState.tsx`, `components/RouteLoadingState.tsx`) branchés sur `/admin`, `/onboarding` et `/mcp`, qui n'avaient aucune boundary ; `/dashboard` réutilise la même implémentation. 10 tests unitaires, un garde-fou qui échoue si un segment applicatif perd son `loading.tsx`/`error.tsx`, et 3 tests Playwright vérifiant qu'une API en 500 laisse une page exploitable (alerte inline ou skeleton) au lieu d'un écran blanc. Limite connue : le `next build` local n'a pas pu être rejoué, le port 3000 étant occupé par un autre projet (`guard-next-build.sh`) ; typecheck, lint, CSS lint, unitaires et e2e sont verts.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| R0-4 — e2e Connect en CI                    | **Livré le 21/09/2026** | Job `connect-e2e` ajouté à `ci.yml` : Postgres 16 + Redis 7 éphémères, migrations, seed du restaurant de démo et de son plan de salle, API démarrée sur `:4000` avec sonde `/health`, puis `pnpm --filter @sokar/connect test:e2e`. Les trois specs ne se skippent plus en CI : une API injoignable échoue avec un message explicite, et l'absence de créneaux (plan de salle incomplet) échoue au lieu de sauter le parcours de réservation. Localement le skip reste actif sans infra (14 tests skippés, comportement préservé). Limite connue : la chaîne complète n'a pas pu être rejouée localement, le rôle Postgres de dev n'ayant pas le droit de créer l'extension `earthdistance` ; la CI est la première exécution réelle.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| R0-5 — SLO minimaux + tableau de bord       | **Livré le 21/09/2026** | Catalogue de cinq SLO dans `shared/observability/slo.ts` (disponibilité API, disponibilité Connect, p95 Connect, couverture des transcriptions, traçabilité des confirmations), évalué par le worker `alert-evaluation` à chaque tick. Publication des gauges `sokar_slo_status` / `sokar_slo_value`, finding `slo_breach` (warning, cooldown 30 min) dispatché sur les canaux d'alerte existants, et runbook [`runbooks/slo.md`](./runbooks/slo.md). Un état `unknown` (pas de trafic, baseline perdue au redémarrage) ne déclenche rien. 18 tests unitaires. Reste R1-6 pour un vrai Prometheus/Grafana : aujourd'hui la lecture passe par `/metrics`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| R0-6 — Garde-fou de scoping tenant          | **Livré le 21/09/2026** | Scanner `scripts/quality/check-tenant-scoping.mjs` : il lit les modèles porteurs de `restaurantId`/`accountId` dans le schéma, repère les appels Prisma sans filtre tenant, et compare à une baseline ratchet (`scripts/quality/tenant-scoping-baseline.json`). Une nouvelle requête non scopée fait échouer le pre-push et la CI. Une exception volontaire se déclare au call site par `// tenant-scoping: global — <raison>`, ce qui la rend visible en revue au lieu de la cacher dans la baseline. État mesuré : 69 modèles tenant, 321 appels non scopés dans 77 fichiers, dont 101 requêtes multi-lignes (`findMany`, `updateMany`, `count`, `groupBy`) — c'est le périmètre à brûler en R4-2. Vérifié par sonde : échec avec `db.customer.findMany({})`, succès avec le filtre `restaurantId`.                                                                                                                                                                                                                                                                                                                                                                   |
+| R1-1 — Séparer l'exécution API / workers    | **Livré le 21/09/2026** | `src/worker.ts` devient le point d'entrée des workers (PM2 `sokar-workers`, `dist/worker.js`) : il charge `workers/index.ts`, inscrit les schedulers et ferme proprement les 34 workers au SIGTERM. `main.ts` ne charge plus aucun worker en production (`RUN_WORKERS_IN_PROCESS=false` posé par PM2) et n'inscrit plus les jobs récurrents : ceux-ci vivent dans `shared/queue/schedulers.ts`, partagé par les deux topologies et idempotent via `upsertJobScheduler`. En développement, l'API garde les workers (`RUN_WORKERS_IN_PROCESS=true` par défaut) pour que `pnpm dev` reste utilisable seul. Un test échoue si un `*.worker.ts` n'est pas importé par le registre. Effet de bord découvert : `agentic-notify.worker.ts` n'était importé nulle part (jamais démarré) et l'anonymisation RGPD n'était ni planifiée ni consommée — les deux sont câblés, l'anonymisation restant fermée par `RGPD_ANONYMIZATION_ENABLED=false` car l'opération est destructive et n'a jamais tourné. Conséquence à traiter en R1-6 : les gauges Prometheus vivent désormais dans le process worker, donc plus dans le `/metrics` de l'API.                                      |
+| R1-2 — Résilience fournisseurs              | **Livré le 21/09/2026** | Primitives partagées dans `shared/resilience/` : `withTimeout`, `fetchWithTimeout` (AbortController), `retry` borné (backoff exponentiel, jitter ±20 %, ne rejoue que timeout/réseau/5xx/429) et `CircuitBreaker` closed/open/half-open avec sonde unique. Appliqué aux appels qui n'avaient **aucune borne** : les deux fetch Cartesia du chemin vocal (`/tts/bytes` streamé et `/tts/sse` des fillers), `telnyxFetch`, les six fetch Google Calendar, Resend (SDK sans timeout), et Stripe (`timeout: 10s`, `maxNetworkRetries: 2`). La dégradation existait déjà côté voice (message d'excuse parlé, filler ignoré) mais n'était jamais atteinte sans timeout. Circuit breaker partagé sur la synthèse Cartesia one-shot ; le breaker LLM reste dans `manager.ts` (bascule Cerebras/OpenRouter) et l'unification est un suivi assumé. Tableau par fournisseur (timeout, retries, breaker, dégradation) dans [`runbooks/provider-resilience.md`](./runbooks/provider-resilience.md). 16 tests unitaires sur les primitives.                                                                                                                                           |
+| R1-3 — Test de charge voice                 | **Livré le 21/09/2026** | Harnais `apps/api/scripts/voice-load-test.ts` : démarre sa propre API sur un port dédié (fournisseurs neutralisés, Redis isolé, build compilé), crée N sessions via la route de test, ouvre N WebSocket média, streame des trames PCMU au rythme réel (50/s) et échantillonne RSS/CPU du process. Mesures sur Apple M5 : 5 sessions → pic CPU 25 %, 20 → 36,9 %, 50 → 60,4 % (1 connexion en échec), 100 → pic 95 % (1 échec), p95 de connexion de 4 ms à 67 ms, ~2,3 Mo de RSS par session. Conclusion : le coût local mesuré est un **plancher** (STT sortant et lecture TTS non exercés, clés factices), la limite locale est la CPU (~100 sessions), le mur mémoire PM2 (500 Mo) arrive après (~130-140) ; seuil d'alerte provisoire à 70 sessions, à confirmer en staging avec de vrais fournisseurs. Rapport daté dans [`audits/2026-09-21-voice-load-report.md`](./audits/2026-09-21-voice-load-report.md), jauge `sokar_voice_active_sessions` publiée par `CallSessionManager`, règle Prometheus `VoiceSessionsHigh`. Limites assumées : latence fournisseur non mesurée (clés factices) et chiffres non transposables au VPS — procédure de rejeu documentée. |
+| R1-6 — Observabilité de production          | **Livré le 21/09/2026** | Réparation de la régression introduite par R1-1 : les jauges de files, de SLO et d'alertes vivent désormais dans le process worker, qui expose son propre `/metrics` (`shared/observability/metrics-server.ts`, `node:http` minimal, loopback + garde partagée `metrics-auth.ts` extraite de la route Fastify). Stack versionnée : `infra/prometheus/prometheus.yml` (4 cibles prod+staging, label `env`), services Compose `prometheus` (rétention 30 j) et `grafana` (loopback 3030, accès par tunnel SSH, mot de passe obligatoire), provisioning datasource + deux dashboards (« Voice & SLO », « Files & Alertes ») dans `infra/grafana/`. Les règles d'alerte sont désormais testées : `alert-rules.test.ts` échoue si une règle cite une métrique inexistante, si une règle n'a pas `expr`/`for`/`severity`/`summary`, ou si une métrique maison n'a pas le préfixe `sokar_` — ce dernier contrôle a révélé six métriques voice mal nommées, renommées. Runbook `docs/runbooks/observability.md`. Vérifié en réel : worker démarré, `/metrics` en 200 avec `sokar_voice_active_sessions`, chemin inconnu en 404.                                                 |
+
+---
+
+## Séquencement et dépendances
+
+| Chantier                    | Dépend de                    | Bloque          |
+| --------------------------- | ---------------------------- | --------------- |
+| R0-1 DLQ                    | —                            | R1-1            |
+| R0-6 garde-fou Prisma       | —                            | R4-2            |
+| R1-1 séparation API/workers | R0-1                         | R1-3, R4-1      |
+| R1-3 charge voice           | R1-1                         | Phase 2 pilotes |
+| R2-1/R2-2 Stripe            | —                            | R2-3, Phase 5   |
+| R2-3 pilotes Essential      | R2-2, R0-5                   | Phase 5         |
+| R3-x portes Pro             | R4-4 secrets pour la plupart | Phase 5         |
+| R4-1 HA données             | R1-1                         | Phase 5         |
+
+Chemin critique vers la sortie de gel : `R0-1 → R1-1 → R1-3 → R2-1 → R2-2 → R2-3 → Phase 5`.
+
+---
+
+## Indicateurs de sortie de gel
+
+- Taux de réservations confirmées via voice et Connect ≥ cible fixée en R0-5, mesuré sur 30 jours.
+- p95 de latence Connect stable, taux d'erreur 5xx sous seuil, alertes SLO réellement déclenchées.
+- Zéro perte de réservation constatée sur les tests de reprise (R4-7) et les pilotes.
+- Cycle de facturation complet rejoué et preuve Stripe jointe.
+- Chaque porte de `product-gates.json` est `CLOSED` ou explicitement différée avec justification.
+- Un incident simulé a été traité de bout en bout avec post-mortem.
+
+## Definition of Done (rappels)
+
+- Le code ou la configuration est livré et couvert par le plus petit contrôle pertinent.
+- La preuve externe est jointe si le chantier dépend d'un fournisseur, d'un pilote ou d'une
+  identité réelle.
+- `DOCUMENTATION_STATUS.md`, `docs/obsidian/Context.md` (si état courant) et
+  `docs/obsidian/Journal.md` reflètent le nouvel état.
+- Aucune nouvelle surface publique, aucun secret, aucune donnée personnelle hors des règles
+  `AGENTS.md`.
+
+## Annexe — sources vérifiées pour cette roadmap
+
+- `apps/api/src/main.ts` (scheduling in-process, health, error handler, plugins).
+- `apps/api/src/shared/queue/queues.ts`, `job-options.ts`, `workers/helper.ts` (retries, DLQ).
+- `apps/api/src/plugins/clerk.ts`, `rate-limit.ts`, `cors.ts` (isolation et garde-fous).
+- `apps/api/src/shared/observability/` et `shared/logger/pino.ts` (observabilité, PII).
+- `apps/api/src/env.ts` (drapeaux `*_ENABLED` à `false` par défaut).
+- `apps/dashboard/src/app/` (41 pages, 1 `loading.tsx`, 1 `error.tsx`).
+- `apps/connect/src/app/`, `apps/connect/e2e/` (ISR, e2e non exécutés en CI).
+- `.github/workflows/ci.yml`, `deploy-prod.yml` (couverture CI, smoke tests).
+- `infra/ecosystem.config.js`, `infra/docker-compose.yml`, `infra/cron/`, `infra/prometheus/`.
+- `scripts/deploy.sh`, `scripts/database/`, `scripts/ops/` (release, backups, watchdog).
+- `docs/audits/2026-09-15-current-state.md` et `docs/release/product-gates.json`.

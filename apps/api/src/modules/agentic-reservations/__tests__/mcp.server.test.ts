@@ -18,7 +18,7 @@ import { env } from '../../../env';
 
 // Construction runtime pour contourner le masquage statique de secrets
 // sur les patterns qui ressemblent à des API keys.
-const VALID_KEY = ['sk', '_sokar', '_agent_'].join('') + 'a'.repeat(40); // 53 chars total
+const VALID_KEY = ['sk', '_sokar', '_agent_'].join('') + 'test_fixture_' + 'b'.repeat(32);
 const AUTH = { authorization: `Bearer ${VALID_KEY}`, origin: 'https://claude.ai' };
 
 function callTool(name: string, args: Record<string, unknown>) {

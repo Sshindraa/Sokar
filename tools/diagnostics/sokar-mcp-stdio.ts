@@ -11,7 +11,13 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 
 const API_BASE = process.env.SOKAR_API_BASE ?? 'http://localhost:4000';
-const MCP_KEY = process.env.SOKAR_MCP_KEY ?? 'sk_sokar_agent_' + 'a'.repeat(40); // placeholder dev — surcharger via SOKAR_MCP_KEY
+const MCP_KEY = process.env.SOKAR_MCP_KEY;
+
+if (!MCP_KEY) {
+  throw new Error(
+    'SOKAR_MCP_KEY est obligatoire ; utilisez une clé MCP locale générée par le dashboard.',
+  );
+}
 
 type ToolCallResponse = {
   jsonrpc: '2.0';

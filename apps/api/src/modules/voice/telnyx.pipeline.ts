@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { telnyxWebhookGuard, webhookEventLabel } from './telnyx.guard';
+import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
 import { telnyxWebhookEventsTotal } from '../../shared/observability/metrics';
 import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
@@ -17,6 +18,16 @@ import {
 } from '../../shared/queue/job-options';
 import { isVoicePipelineEnabled } from '../../shared/configcat';
 import { telnyxFetch } from '../../shared/telnyx/http-agent';
+
+/**
+ * Telnyx retries callbacks, but answering a call event with 429 delays the live
+ * pipeline. Provider webhooks therefore use their own tier instead of the
+ * global 100 req/min budget (see `plugins/rate-limit.policy.ts`).
+ */
+const webhookRouteOptions = {
+  preHandler: telnyxWebhookGuard,
+  config: { rateLimit: RATE_LIMIT_PROVIDER_WEBHOOK },
+};
 import { MS_TO_SECONDS } from '../../shared/constants/time.js';
 import { recordPricedUsageEvent } from '../usage/usage-tariff.service';
 
@@ -76,7 +87,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
     done();
   });
 
-  app.post('/voice/telnyx', { preHandler: telnyxWebhookGuard }, async (req, reply) => {
+  app.post('/voice/telnyx', webhookRouteOptions, async (req, reply) => {
     const body = req.body as TelnyxCallPayload;
     const eventType = body.data.event_type;
     const payload = body.data.payload;
@@ -284,7 +295,11 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
               } else {
                 const body = await res.text();
                 app.log.warn(
-                  { callId: payload.call_control_id, status: res.status, body: body.slice(0, 200) },
+                  {
+                    callId: payload.call_control_id,
+                    status: res.status,
+                    body: body.slice(0, 200),
+                  },
                   'Direct answer failed — falling back to queue retry',
                 );
                 // Fallback : enqueue le job pour retry automatique
@@ -324,7 +339,9 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
                 )
                 .catch((enqueueErr) =>
                   app.log.error(
-                    { err: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr) },
+                    {
+                      err: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr),
+                    },
                     'Failed to enqueue answer-call fallback',
                   ),
                 );
@@ -458,7 +475,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post('/voice/telnyx/end', { preHandler: telnyxWebhookGuard }, async (req, reply) => {
+  app.post('/voice/telnyx/end', webhookRouteOptions, async (req, reply) => {
     const {
       call_leg_id,
       transcript,

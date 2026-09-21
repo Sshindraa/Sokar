@@ -41,3 +41,12 @@ export function shouldSeedDemoListings(env: SeedEnvironment): boolean {
   if (env.NODE_ENV === 'production') return false;
   return isLocalDatabaseUrl(env.DATABASE_URL);
 }
+
+/**
+ * Demo MCP credentials are local fixtures, never deployment data. A seed may
+ * target a remote database even when NODE_ENV is missing, so require both a
+ * non-production environment and a loopback database before creating one.
+ */
+export function shouldSeedDemoMcpClient(env: SeedEnvironment): boolean {
+  return env.NODE_ENV !== 'production' && isLocalDatabaseUrl(env.DATABASE_URL);
+}

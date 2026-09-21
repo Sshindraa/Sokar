@@ -443,7 +443,7 @@ PATH="/usr/local/opt/node@22/bin:$PATH" \
 pnpm db:seed
 
 cd ~/Projects/Sokar/apps/api
-SOKAR_MCP_KEY="sk_sokar_agent_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+SOKAR_MCP_KEY="${SOKAR_MCP_KEY:?Définissez une clé MCP locale générée par le dashboard}" \
 PATH="/usr/local/opt/node@22/bin:$PATH" \
 pnpm --filter @sokar/api exec tsx ../../tools/diagnostics/test-mcp-client.ts
 ```
@@ -468,7 +468,7 @@ Commande manuelle:
 ```zsh
 cd ~/Projects/Sokar/apps/api
 SOKAR_API_BASE="http://localhost:4000" \
-SOKAR_MCP_KEY="sk_sokar_agent_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+SOKAR_MCP_KEY="${SOKAR_MCP_KEY:?Définissez une clé MCP locale générée par le dashboard}" \
 PATH="/usr/local/opt/node@22/bin:$PATH" \
 pnpm --filter @sokar/api exec tsx ../../tools/diagnostics/sokar-mcp-stdio.ts
 ```
@@ -490,7 +490,7 @@ Exemple `claude_desktop_config.json`:
       "env": {
         "PATH": "/usr/local/opt/node@22/bin:/usr/local/bin:/usr/bin:/bin",
         "SOKAR_API_BASE": "http://localhost:4000",
-        "SOKAR_MCP_KEY": "sk_sokar_agent_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "SOKAR_MCP_KEY": "REPLACE_WITH_LOCAL_MCP_KEY"
       }
     }
   }

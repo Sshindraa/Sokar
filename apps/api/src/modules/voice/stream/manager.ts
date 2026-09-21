@@ -36,6 +36,7 @@ import {
 import {
   voiceLlmFallbackTotal,
   voiceProviderErrorsTotal,
+  voiceActiveSessionsGauge,
 } from '../../../shared/observability/metrics';
 
 // ─── LLM error classification for voice_provider_errors_total ──────────
@@ -433,6 +434,9 @@ export class CallSessionManager {
       conversation: createConversationState(),
     };
     this.sessions.set(sessionIdKey(opts.callControlId), session);
+    // Capacité locale (R1-3) : la jauge suit le nombre de sessions tenues par
+    // ce process, pour alerter avant la saturation CPU mesurée à ~100 sessions.
+    voiceActiveSessionsGauge.set(this.sessions.size);
     return session;
   }
 
@@ -445,6 +449,7 @@ export class CallSessionManager {
     if (session) {
       this.cleanup(session);
       this.sessions.delete(sessionIdKey(ccId));
+      voiceActiveSessionsGauge.set(this.sessions.size);
     }
   }
 

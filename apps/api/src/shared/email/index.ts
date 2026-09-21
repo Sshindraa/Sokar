@@ -9,6 +9,7 @@ import {
   recordAcceptedMessagingUsage,
   type MessagingUsageContext,
 } from '../../modules/usage/messaging-usage.service';
+import { DEFAULT_PROVIDER_TIMEOUT_MS, withTimeout } from '../resilience';
 
 // Resend HTTP API (port 443) — l'envoi ne dépend plus des ports SMTP sortants du VPS.
 // L'API HTTP de Resend utilise le port 443 (HTTPS).
@@ -110,12 +111,19 @@ export function normalizeResendSendResponse(response: unknown): NotificationSend
 }
 
 export async function sendEmail(opts: SendEmailOptions): Promise<void | NotificationSendResult> {
-  const response = await getResend().emails.send({
-    from: process.env.EMAIL_FROM ?? 'noreply@sokar.fr',
-    to: opts.to,
-    subject: opts.subject,
-    html: opts.html,
-  });
+  // R1-2 : le SDK Resend n'expose pas de timeout. On borne l'attente côté
+  // appelant pour qu'un envoi bloqué ne retienne pas le worker indéfiniment ;
+  // la requête HTTP peut continuer côté SDK, mais l'appel métier est rendu.
+  const response = await withTimeout(
+    getResend().emails.send({
+      from: process.env.EMAIL_FROM ?? 'noreply@sokar.fr',
+      to: opts.to,
+      subject: opts.subject,
+      html: opts.html,
+    }),
+    DEFAULT_PROVIDER_TIMEOUT_MS,
+    'resend.emails.send',
+  );
   const result = normalizeResendSendResponse(response);
   if (opts.usage) {
     await recordAcceptedMessagingUsage({

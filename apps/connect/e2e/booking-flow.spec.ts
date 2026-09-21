@@ -31,10 +31,17 @@ test.beforeAll(async () => {
   } catch {
     apiAvailable = false;
   }
+
+  // En CI, l'API et la base seedée sont fournies par le job : une API
+  // injoignable est une panne d'infrastructure, pas une raison de sauter les
+  // tests.
+  if (!apiAvailable && process.env.CI) {
+    throw new Error(`API Sokar indisponible sur ${API_URL} : le job CI doit la démarrer.`);
+  }
 });
 
 test.beforeEach(() => {
-  test.skip(!apiAvailable, `API Sokar indisponible sur ${API_URL}`);
+  test.skip(!apiAvailable && !process.env.CI, `API Sokar indisponible sur ${API_URL}`);
 });
 
 test.describe('Flow de réservation via le widget', () => {
@@ -96,6 +103,12 @@ test.describe('Flow de réservation via le widget', () => {
     const slotsVisible = await slotsGroup.isVisible({ timeout: 15_000 }).catch(() => false);
 
     if (!slotsVisible) {
+      // En local, l'absence de créneaux est fréquente (base non seedée, date
+      // fermée). En CI, le job seed le plan de salle : ne rien trouver signifie
+      // que le parcours de réservation n'est plus exerçable.
+      if (process.env.CI) {
+        throw new Error('Aucun créneau disponible en CI — le plan de salle de démo est incomplet.');
+      }
       test.skip(true, 'Aucun créneau disponible — skip du test de réservation complète');
     }
 

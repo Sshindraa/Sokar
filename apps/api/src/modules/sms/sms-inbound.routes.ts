@@ -2,11 +2,17 @@ import { createHash } from 'node:crypto';
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { telnyxWebhookGuard } from '../voice/telnyx.guard';
+import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
 import { handleReply } from './reply-handler';
 import { telnyxMessagingEventsTotal } from '../../shared/observability/metrics';
 import { applyMarketingProviderEvent } from '../marketing/marketing-provider.service';
 
 const TelnyxFromSchema = z.union([z.string(), z.object({ phone_number: z.string() })]);
+
+const inboundRouteOptions = {
+  preHandler: telnyxWebhookGuard,
+  config: { rateLimit: RATE_LIMIT_PROVIDER_WEBHOOK },
+};
 const TelnyxRecipientSchema = z.object({
   phone_number: z.string().optional(),
   status: z.string().optional(),
@@ -64,7 +70,7 @@ function normalizeMessagingStatus(eventType: string, status?: string): Messaging
  */
 
 export async function smsInboundRoutes(app: FastifyInstance) {
-  app.post('/sms/telnyx/inbound', { preHandler: telnyxWebhookGuard }, async (req, reply) => {
+  app.post('/sms/telnyx/inbound', inboundRouteOptions, async (req, reply) => {
     const parseResult = TelnyxWebhookBodySchema.safeParse(req.body);
     if (!parseResult.success) {
       req.log.warn({ errors: parseResult.error.errors }, 'sms inbound: invalid payload');

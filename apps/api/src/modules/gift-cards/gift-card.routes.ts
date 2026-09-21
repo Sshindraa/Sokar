@@ -14,6 +14,7 @@ import { GiftCardCrowdfundingService } from './gift-card-crowdfunding.service';
 import { generateGiftCardPdf } from './gift-card-pdf.service';
 import { logger } from '../../shared/logger/pino';
 import { checkRateLimit, rateLimitKey, getClientIp } from '../../shared/redis/rate-limit';
+import { RATE_LIMIT_PROVIDER_WEBHOOK } from '../../plugins/rate-limit.policy';
 import { GIFT_CARD_MESSAGE_MAX_LENGTH, GIFT_CARD_IMAGE_URL_MAX_LENGTH } from './constants';
 import { handleBillingWebhook } from '../billing/billing.service';
 
@@ -829,8 +830,14 @@ export async function giftCardRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ─── P2 — Stripe webhook ─────────────────────────────────────────
-  app.post('/webhooks/stripe', async (req, reply) => {
-    // Rate limiting avant vérification de signature (route publique)
+  // Provider tier: the global 100 req/min budget must not throttle Stripe.
+  const stripeWebhookRouteOptions = {
+    config: { rateLimit: RATE_LIMIT_PROVIDER_WEBHOOK },
+  };
+  app.post('/webhooks/stripe', stripeWebhookRouteOptions, async (req, reply) => {
+    // Rate limiting avant vérification de signature (route publique).
+    // Le budget applicatif ci-dessous (300/min) reste la limite effective :
+    // il est plus strict que le palier webhook (600/min) déclaré sur la route.
     const ip = getClientIp(req);
     const allowed = await checkRateLimit(rateLimitKey('stripe-webhook', ip), 300);
     if (!allowed) {

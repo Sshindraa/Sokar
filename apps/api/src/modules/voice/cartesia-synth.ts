@@ -19,6 +19,24 @@ import {
   type CartesiaGenerationConfig,
 } from './stream/cartesia-config';
 import { normalizeVoiceLocale } from './stream/voice-language';
+import {
+  CircuitBreaker,
+  VOICE_PROVIDER_TIMEOUT_MS,
+  fetchWithTimeout,
+} from '../../shared/resilience';
+
+/**
+ * Circuit breaker TTS (R1-2) : après 3 échecs consécutifs, on arrête d'appeler
+ * Cartesia pendant 30 s. Un appel vocal qui n'a plus de synthèse doit dégrader
+ * explicitement (message d'attente, transfert) plutôt que d'attendre un
+ * fournisseur qui ne répond pas.
+ */
+const cartesiaBreaker = new CircuitBreaker({
+  name: 'cartesia-tts',
+  failureThreshold: 3,
+  cooldownMs: 30_000,
+  onStateChange: (state, name) => logger.warn({ provider: name, state }, '[circuit-breaker] state'),
+});
 
 export type CartesiaFormat = {
   container: 'mp3' | 'wav' | 'raw';
@@ -82,28 +100,34 @@ export async function synthesizeText(opts: SynthesizeOptions): Promise<Buffer | 
     process.env.CARTESIA_PRONUNCIATION_DICT_ID?.trim() ||
     undefined;
 
-  const response = await fetch('https://api.cartesia.ai/tts/bytes', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Cartesia-Version': '2026-03-01',
-      'X-API-Key': apiKey,
-    },
-    body: JSON.stringify({
-      model_id: CARTESIA_MODEL,
-      transcript: opts.text,
-      voice: { mode: 'id', id: voiceId },
-      locale,
-      normalization: opts.normalization ?? CARTESIA_NORMALIZATION,
-      ...(generationConfig ? { generation_config: generationConfig } : {}),
-      ...(pronunciationDictId ? { pronunciation_dict_id: pronunciationDictId } : {}),
-      output_format: {
-        container: format.container,
-        encoding: format.encoding,
-        sample_rate: format.sampleRate,
+  const response = await cartesiaBreaker.execute(() =>
+    fetchWithTimeout(
+      'https://api.cartesia.ai/tts/bytes',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cartesia-Version': '2026-03-01',
+          'X-API-Key': apiKey,
+        },
+        body: JSON.stringify({
+          model_id: CARTESIA_MODEL,
+          transcript: opts.text,
+          voice: { mode: 'id', id: voiceId },
+          locale,
+          normalization: opts.normalization ?? CARTESIA_NORMALIZATION,
+          ...(generationConfig ? { generation_config: generationConfig } : {}),
+          ...(pronunciationDictId ? { pronunciation_dict_id: pronunciationDictId } : {}),
+          output_format: {
+            container: format.container,
+            encoding: format.encoding,
+            sample_rate: format.sampleRate,
+          },
+        }),
       },
-    }),
-  });
+      VOICE_PROVIDER_TIMEOUT_MS,
+    ),
+  );
 
   if (!response.ok) {
     const detail = await response.text().catch(() => '');

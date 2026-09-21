@@ -15,7 +15,7 @@ import { env } from '../../../env';
 
 describe('mcp auth', () => {
   const PREFIX = ['sk', '_sokar', '_agent_'].join('');
-  const VALID_KEY = PREFIX + 'a'.repeat(40);
+  const VALID_KEY = PREFIX + 'test_fixture_' + 'b'.repeat(32);
 
   beforeEach(() => {
     env.ENABLE_DEV_AUTH = 'false';

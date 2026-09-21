@@ -14,40 +14,40 @@ describe('Voice Prometheus metrics', () => {
     __resetMetrics();
   });
 
-  it('enregistre voice_turn_duration_ms dans le registry Prometheus', async () => {
+  it('enregistre sokar_voice_turn_duration_ms dans le registry Prometheus', async () => {
     voiceTurnDurationMs.observe(750);
     const payload = await renderMetrics();
-    expect(payload).toContain('voice_turn_duration_ms');
-    expect(payload).toContain('voice_turn_duration_ms_bucket{le="1000"');
+    expect(payload).toContain('sokar_voice_turn_duration_ms');
+    expect(payload).toContain('sokar_voice_turn_duration_ms_bucket{le="1000"');
   });
 
-  it('observe voice_llm_first_token_ms (TTFT)', async () => {
+  it('observe sokar_voice_llm_first_token_ms (TTFT)', async () => {
     voiceLlmFirstTokenMs.observe(120);
     voiceLlmFirstTokenMs.observe(480);
     const payload = await renderMetrics();
-    expect(payload).toContain('voice_llm_first_token_ms');
-    expect(payload).toContain('voice_llm_first_token_ms_bucket{le="200"');
-    expect(payload).toContain('voice_llm_first_token_ms_bucket{le="500"');
+    expect(payload).toContain('sokar_voice_llm_first_token_ms');
+    expect(payload).toContain('sokar_voice_llm_first_token_ms_bucket{le="200"');
+    expect(payload).toContain('sokar_voice_llm_first_token_ms_bucket{le="500"');
   });
 
-  it('observe voice_tts_first_audio_ms', async () => {
+  it('observe sokar_voice_tts_first_audio_ms', async () => {
     voiceTtsFirstAudioMs.observe(300);
     const payload = await renderMetrics();
-    expect(payload).toContain('voice_tts_first_audio_ms');
-    expect(payload).toContain('voice_tts_first_audio_ms_bucket{le="500"');
+    expect(payload).toContain('sokar_voice_tts_first_audio_ms');
+    expect(payload).toContain('sokar_voice_tts_first_audio_ms_bucket{le="500"');
   });
 
-  it('incrémente voice_llm_fallback_total avec label direction', async () => {
+  it('incrémente sokar_voice_llm_fallback_total avec label direction', async () => {
     voiceLlmFallbackTotal.inc({ direction: 'cerebras_to_openrouter' });
     voiceLlmFallbackTotal.inc({ direction: 'cerebras_to_openrouter' });
     voiceLlmFallbackTotal.inc({ direction: 'openrouter_to_cerebras' });
     const payload = await renderMetrics();
-    expect(payload).toContain('voice_llm_fallback_total');
+    expect(payload).toContain('sokar_voice_llm_fallback_total');
     expect(payload).toMatch(
-      /voice_llm_fallback_total\{[^}]*direction="cerebras_to_openrouter"[^}]*\} 2/,
+      /sokar_voice_llm_fallback_total\{[^}]*direction="cerebras_to_openrouter"[^}]*\} 2/,
     );
     expect(payload).toMatch(
-      /voice_llm_fallback_total\{[^}]*direction="openrouter_to_cerebras"[^}]*\} 1/,
+      /sokar_voice_llm_fallback_total\{[^}]*direction="openrouter_to_cerebras"[^}]*\} 1/,
     );
   });
 
@@ -90,11 +90,11 @@ describe('Voice Prometheus metrics', () => {
     const voiceNames = voiceHelpLines.map((line) => line.split(' ')[2]);
     const uniqueNames = new Set(voiceNames);
     expect(voiceNames.length).toBe(uniqueNames.size);
-    expect(voiceNames).toContain('voice_turn_duration_ms');
-    expect(voiceNames).toContain('voice_llm_first_token_ms');
-    expect(voiceNames).toContain('voice_tts_first_audio_ms');
-    expect(voiceNames).toContain('voice_llm_fallback_total');
-    expect(voiceNames).toContain('voice_provider_errors_total');
+    expect(voiceNames).toContain('sokar_voice_turn_duration_ms');
+    expect(voiceNames).toContain('sokar_voice_llm_first_token_ms');
+    expect(voiceNames).toContain('sokar_voice_tts_first_audio_ms');
+    expect(voiceNames).toContain('sokar_voice_llm_fallback_total');
+    expect(voiceNames).toContain('sokar_voice_provider_errors_total');
   });
 
   it('les buckets voice sont réalistes pour la latence voice (TTFT < 500ms target)', () => {

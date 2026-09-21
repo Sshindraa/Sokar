@@ -44,6 +44,16 @@ import {
   marketingCampaignReportToCsv,
 } from './marketing-report.service';
 import { getMarketingProviderReadiness } from './marketing-provider.service';
+import { RATE_LIMIT_PUBLIC_TOKEN } from '../../plugins/rate-limit.policy';
+
+/**
+ * Public token endpoints (attribution click, unsubscribe). They are
+ * unauthenticated and guarded only by an opaque token, so they use the
+ * stricter `PUBLIC_TOKEN` tier instead of the global budget.
+ */
+const publicTokenRouteOptions = {
+  config: { rateLimit: RATE_LIMIT_PUBLIC_TOKEN },
+};
 
 const CustomerIdParamsSchema = z.object({
   id: z.string().trim().min(1).max(128),
@@ -647,7 +657,7 @@ export async function marketingRoutes(app: FastifyInstance) {
 
   // Public click endpoint: it records only a timestamp and never returns the
   // campaign or customer identifiers to the browser.
-  app.post('/marketing/attribution/click', async (request, reply) => {
+  app.post('/marketing/attribution/click', publicTokenRouteOptions, async (request, reply) => {
     const body = ClickBodySchema.parse(request.body);
     try {
       const link = await recordMarketingAttributionClick({ token: body.token });
@@ -661,7 +671,7 @@ export async function marketingRoutes(app: FastifyInstance) {
 
   // One-click unsubscribe endpoint. The token carries only opaque tenant and
   // customer identifiers and is verified before changing the permission.
-  app.post('/marketing/unsubscribe', async (request, reply) => {
+  app.post('/marketing/unsubscribe', publicTokenRouteOptions, async (request, reply) => {
     const body = z.object({ token: z.string().trim().min(20).max(4096) }).parse(request.body);
     try {
       const result = await consumeMarketingUnsubscribeToken({ token: body.token });
@@ -685,7 +695,7 @@ export async function marketingRoutes(app: FastifyInstance) {
   // The same token is accepted through GET so the URL included in an SMS or
   // email is actionable in a browser. The response remains deliberately
   // minimal and never echoes a phone number or email address.
-  app.get('/marketing/unsubscribe', async (request, reply) => {
+  app.get('/marketing/unsubscribe', publicTokenRouteOptions, async (request, reply) => {
     const query = z.object({ token: z.string().trim().min(20).max(4096) }).parse(request.query);
     try {
       const result = await consumeMarketingUnsubscribeToken({ token: query.token });
