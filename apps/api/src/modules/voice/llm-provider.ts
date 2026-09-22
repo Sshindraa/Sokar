@@ -1,15 +1,18 @@
-import { voiceConfig } from '../../env';
-
 /**
- * Résolution du provider LLM vocal — source de vérité unique.
+ * Provider LLM vocal — source de vérité unique.
  *
- * Le provider réel est piloté par VOICE_LLM_PROVIDER ('cerebras' par défaut,
- * 'openrouter' ou 'groq' en alternative). Les métadonnées d'appel (SafeProviderConfig,
- * enregistrement Call.llmProvider) doivent refléter CE provider, jamais le
- * modèle — un mélange modèle/providers rend les compteurs mensuels inexploitables.
+ * Un seul provider depuis le 22 septembre 2026 : Groq en direct. Les anciens
+ * chemins Cerebras et OpenRouter (provider alternatif et repli) ont été
+ * supprimés pour ne laisser qu'un chemin d'appel.
+ *
+ * Les métadonnées d'appel (SafeProviderConfig, `Call.llmProvider`) doivent
+ * refléter ce provider, jamais le modèle : un mélange modèle/provider rend les
+ * compteurs mensuels inexploitables.
  */
-export type VoiceLlmProvider = 'cerebras' | 'openrouter' | 'groq';
+export const VOICE_LLM_PROVIDER = 'groq' as const;
+
+export type VoiceLlmProvider = typeof VOICE_LLM_PROVIDER;
 
 export function getVoiceLlmProvider(): VoiceLlmProvider {
-  return voiceConfig.VOICE_LLM_PROVIDER;
+  return VOICE_LLM_PROVIDER;
 }

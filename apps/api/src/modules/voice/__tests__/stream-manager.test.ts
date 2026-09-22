@@ -168,27 +168,14 @@ function authorizeReservation(
 
 type VoiceConfigSnapshot = Pick<
   VoiceConfig,
-  | 'VOICE_LLM_PROVIDER'
-  | 'VOICE_LLM_MODEL'
-  | 'VOICE_LLM_FALLBACK_MODEL'
-  | 'VOICE_LLM_TIMEOUT_MS'
-  | 'OPENROUTER_BASE_URL'
-  | 'GROQ_BASE_URL'
-  | 'CEREBRAS_API_KEY'
-  | 'OPENROUTER_API_KEY'
-  | 'GROQ_API_KEY'
+  'VOICE_LLM_MODEL' | 'VOICE_LLM_TIMEOUT_MS' | 'GROQ_BASE_URL' | 'GROQ_API_KEY'
 >;
 
 function snapshotVoiceConfig(): VoiceConfigSnapshot {
   return {
-    VOICE_LLM_PROVIDER: voiceConfig.VOICE_LLM_PROVIDER,
     VOICE_LLM_MODEL: voiceConfig.VOICE_LLM_MODEL,
-    VOICE_LLM_FALLBACK_MODEL: voiceConfig.VOICE_LLM_FALLBACK_MODEL,
     VOICE_LLM_TIMEOUT_MS: voiceConfig.VOICE_LLM_TIMEOUT_MS,
-    OPENROUTER_BASE_URL: voiceConfig.OPENROUTER_BASE_URL,
     GROQ_BASE_URL: voiceConfig.GROQ_BASE_URL,
-    CEREBRAS_API_KEY: voiceConfig.CEREBRAS_API_KEY,
-    OPENROUTER_API_KEY: voiceConfig.OPENROUTER_API_KEY,
     GROQ_API_KEY: voiceConfig.GROQ_API_KEY,
   };
 }
@@ -1523,7 +1510,7 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  // ── Mid-stream timeout fallback ────────────────────────────────────────────
+  // ── Timeout mid-stream ─────────────────────────────────────────────────────
 
   /**
    * Crée un ReadableStream qui envoie les chunks fournis puis throw une AbortError
@@ -1558,25 +1545,17 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     });
   }
 
-  it("mid-stream timeout : retry sur l'autre provider si aucun audio envoyé", async () => {
-    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
-    voiceConfig.CEREBRAS_API_KEY = 'test-k1';
-    voiceConfig.OPENROUTER_API_KEY = 'test-k2';
+  it('mid-stream timeout sans audio : dégrade au lieu de rejouer', async () => {
+    // Un seul provider : il n'y a plus de repli possible. Sans audio envoyé,
+    // la seule issue honnête est de propager l'erreur pour que l'appelant
+    // prononce le message d'excuse, plutôt que de retourner une réponse vide.
+    voiceConfig.GROQ_API_KEY = GROQ_TEST_KEY;
     _resetCircuitBreakersForTesting();
 
-    // 1er fetch (Cerebras) : stream qui abort immédiatement (aucun token envoyé)
-    const abortingStream = makeStreamThatAbortsAfter([]);
-    // 2e fetch (OpenRouter fallback) : stream normal avec du texte
-    const retryStream = makeNormalStream([
-      'data: {"choices":[{"delta":{"content":"Bonjour, ça va ?"}}]}\n',
-      'data: [DONE]\n',
-    ]);
-
-    const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url.includes('cerebras.ai')) {
-        return Promise.resolve({ ok: true, body: abortingStream });
-      }
-      return Promise.resolve({ ok: true, body: retryStream });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: makeStreamThatAbortsAfter([]),
     });
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
@@ -1584,37 +1563,24 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     const session = makeSession();
     const phrases: string[] = [];
 
-    const fullText = await mgr.processUtteranceStreaming(session, 'Salut', (phrase) => {
-      phrases.push(phrase);
-    });
+    await expect(
+      mgr.processUtteranceStreaming(session, 'Salut', (phrase) => {
+        phrases.push(phrase);
+      }),
+    ).rejects.toThrow();
 
-    // Le texte vient du retry (OpenRouter)
-    expect(fullText).toContain('Bonjour');
-    // 2 appels fetch : Cerebras (abort) + OpenRouter (retry)
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(phrases).toHaveLength(0);
   });
 
-  it('mid-stream timeout : pas de retry si audio déjà envoyé', async () => {
-    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
-    voiceConfig.CEREBRAS_API_KEY = 'test-k1';
-    voiceConfig.OPENROUTER_API_KEY = 'test-k2';
+  it('mid-stream timeout après audio : retourne le partiel sans rejouer', async () => {
+    voiceConfig.GROQ_API_KEY = GROQ_TEST_KEY;
     _resetCircuitBreakersForTesting();
 
-    // 1er fetch (Cerebras) : stream qui envoie "Bonjour." puis abort
-    const abortingStream = makeStreamThatAbortsAfter([
-      'data: {"choices":[{"delta":{"content":"Bonjour."}}]}\n',
-    ]);
-    // 2e fetch (OpenRouter) : ne devrait PAS être appelé
-    const retryStream = makeNormalStream([
-      'data: {"choices":[{"delta":{"content":"Ne devrait pas être lu."}}]}\n',
-      'data: [DONE]\n',
-    ]);
-
-    const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url.includes('cerebras.ai')) {
-        return Promise.resolve({ ok: true, body: abortingStream });
-      }
-      return Promise.resolve({ ok: true, body: retryStream });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: makeStreamThatAbortsAfter(['data: {"choices":[{"delta":{"content":"Bonjour."}}]}\n']),
     });
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
@@ -1626,136 +1592,62 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
       phrases.push(phrase);
     });
 
-    // Le texte partiel vient de Cerebras (avant le timeout)
     expect(fullText).toContain('Bonjour');
-    // Pas de retry : seulement 1 appel fetch (Cerebras)
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    // Une phrase a été yield avant le timeout
     expect(phrases).toContain('Bonjour.');
+    // Aucun second appel : rejouer ferait entendre un doublon à l'utilisateur.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('mid-stream timeout : pas de tool call incomplet exécuté', async () => {
-    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
-    voiceConfig.CEREBRAS_API_KEY = 'test-k1';
-    voiceConfig.OPENROUTER_API_KEY = 'test-k2';
+    voiceConfig.GROQ_API_KEY = GROQ_TEST_KEY;
     _resetCircuitBreakersForTesting();
 
-    // 1er fetch (Cerebras) : stream qui envoie un tool_call partiel (nom sans arguments complets) puis abort
-    const abortingStream = makeStreamThatAbortsAfter([
-      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"tc-1","type":"function","function":{"name":"handoffToManager","arguments":""}}]}}]}\n',
-    ]);
-
-    const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url.includes('cerebras.ai')) {
-        return Promise.resolve({ ok: true, body: abortingStream });
-      }
-      return Promise.resolve({
-        ok: true,
-        body: makeNormalStream(['data: [DONE]\n']),
-      });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: makeStreamThatAbortsAfter([
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"create_reservation","arguments":"{\\"par"}}]}}]}\n',
+      ]),
     });
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
-    const phrases: string[] = [];
+    const executeToolSpy = vi.spyOn(
+      mgr as unknown as { executeTool: (...args: unknown[]) => Promise<string> },
+      'executeTool',
+    );
 
-    const fullText = await mgr.processUtteranceStreaming(session, 'Parler au gérant', (phrase) => {
-      phrases.push(phrase);
-    });
+    await mgr.processUtteranceStreaming(session, 'Salut', () => {}).catch(() => undefined);
 
-    // Pas de tool exécuté (tool call incomplet → skip)
-    // handoffToManager n'a pas d'effet métier mais on vérifie qu'aucun tool n'est exécuté
-    // en vérifiant qu'aucun message "tool" n'est ajouté à l'historique
-    const toolMessages = session.history.filter((m) => m.role === 'tool');
-    expect(toolMessages).toHaveLength(0);
-    // Pas de retry (tool_call détecté = hasToolCall=true, mais midStreamTimedOut=true → pas de retry non plus)
-    // Seulement 1 appel fetch
+    // Un tool_call tronqué ne doit jamais déclencher d'opération métier.
+    expect(executeToolSpy).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('mid-stream session abort : pas de retry (raccroché)', async () => {
-    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
-    voiceConfig.CEREBRAS_API_KEY = 'test-k1';
-    voiceConfig.OPENROUTER_API_KEY = 'test-k2';
+  it('mid-stream session abort : pas de rejeu (raccroché)', async () => {
+    voiceConfig.GROQ_API_KEY = GROQ_TEST_KEY;
     _resetCircuitBreakersForTesting();
 
     const abortController = new AbortController();
-
-    // Stream qui envoie un chunk puis throw AbortError (session abortée = raccroché)
-    const encoder = new TextEncoder();
     const abortingStream = new ReadableStream<Uint8Array>({
-      pull(controller) {
-        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Bonjour"}}]}\n'));
-        // Abort la session (simule raccroché / barge-in)
+      pull() {
         abortController.abort();
-        // Throw AbortError pour simuler le stream interrompu par l'abort
         const err = new Error('Aborted');
         err.name = 'AbortError';
         throw err;
       },
     });
 
-    const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (url.includes('cerebras.ai')) {
-        return Promise.resolve({ ok: true, body: abortingStream });
-      }
-      // OpenRouter ne devrait jamais être appelé (pas de retry sur session abort)
-      return Promise.resolve({
-        ok: true,
-        body: makeNormalStream([
-          'data: {"choices":[{"delta":{"content":"Ne devrait pas être lu."}}]}\n',
-          'data: [DONE]\n',
-        ]),
-      });
-    });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, body: abortingStream });
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
     session.abortController = abortController;
 
-    // L'erreur doit propager (session abortée, pas de retry)
     await expect(mgr.processUtteranceStreaming(session, 'Salut', () => {})).rejects.toThrow();
-
-    // Seulement 1 appel fetch (Cerebras) — pas de retry sur session abort
     expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('mid-stream timeout : retry aussi timeout → erreur remonte', async () => {
-    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
-    voiceConfig.CEREBRAS_API_KEY = 'test-k1';
-    voiceConfig.OPENROUTER_API_KEY = 'test-k2';
-    _resetCircuitBreakersForTesting();
-
-    // Stream qui throw AbortError immédiatement (timeout, session non abortée)
-    const makeAbortStream = (): ReadableStream<Uint8Array> =>
-      new ReadableStream<Uint8Array>({
-        pull() {
-          const err = new Error('Aborted');
-          err.name = 'AbortError';
-          throw err;
-        },
-      });
-
-    const fetchMock = vi.fn().mockImplementation((url: string) => {
-      // Cerebras puis OpenRouter — les deux timeout
-      if (url.includes('cerebras.ai')) {
-        return Promise.resolve({ ok: true, body: makeAbortStream() });
-      }
-      return Promise.resolve({ ok: true, body: makeAbortStream() });
-    });
-    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-
-    const mgr = CallSessionManager.getInstance();
-    const session = makeSession();
-    // Ne pas abort la session — simule un timeout-only
-
-    // L'erreur doit propager (retry aussi timeout)
-    await expect(mgr.processUtteranceStreaming(session, 'Salut', () => {})).rejects.toThrow();
-
-    // 2 appels : Cerebras + OpenRouter retry. Pas de retry supplémentaire.
-    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -1824,7 +1716,7 @@ describe('CallSessionManager — cleanup avancé', () => {
   });
 });
 
-// ── Circuit breaker + timeout + network-error fallback ─────────────────────
+// ── Circuit breaker + timeout ──────────────────────────────────────────────
 
 type LlmOpts = {
   tools?: ReturnType<typeof getRestaurantTools>;
@@ -1862,69 +1754,32 @@ function callFetchLlmStreaming(
   ).fetchLlmStreaming(messages, opts);
 }
 
-/** Mock fetch qui retourne 503 pour Cerebras et 200 pour OpenRouter. */
-function mockFetchCerebrasFailOpenRouterOk() {
-  const fetchMock = vi.fn().mockImplementation((url: string) => {
-    if (url.includes('cerebras.ai')) {
-      return Promise.resolve({
-        ok: false,
-        status: 503,
-        text: vi.fn().mockResolvedValue('Service Unavailable'),
-        json: vi.fn().mockResolvedValue({}),
-      });
-    }
+/**
+ * Hôte réellement appelé. On compare l'hôte exact plutôt qu'une sous-chaîne :
+ * `api.groq.com.evil.test` contient `api.groq.com`, ce que CodeQL signale à
+ * juste titre (js/incomplete-url-substring-sanitization).
+ */
+function requestHost(input: unknown): string {
+  return new URL(String(input)).host;
+}
+
+/** Mock fetch qui répond 503 (provider indisponible). */
+function mockFetchGroqFail() {
+  const fetchMock = vi.fn().mockImplementation((_url: string) => {
     return Promise.resolve({
-      ok: true,
-      status: 200,
-      text: vi.fn().mockResolvedValue(''),
-      json: vi.fn().mockResolvedValue({
-        choices: [{ message: { role: 'assistant', content: 'OK from OpenRouter' } }],
-      }),
+      ok: false,
+      status: 503,
+      text: vi.fn().mockResolvedValue('Service Unavailable'),
+      json: vi.fn().mockResolvedValue({}),
     });
   });
   globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
   return fetchMock;
 }
 
-/** Mock fetch qui retourne 503 pour OpenRouter et 200 pour Cerebras. */
-function mockFetchOpenRouterFailCerebrasOk() {
-  const fetchMock = vi.fn().mockImplementation((url: string) => {
-    if (url.includes('openrouter.ai')) {
-      return Promise.resolve({
-        ok: false,
-        status: 503,
-        text: vi.fn().mockResolvedValue('Service Unavailable'),
-        json: vi.fn().mockResolvedValue({}),
-      });
-    }
-    return Promise.resolve({
-      ok: true,
-      status: 200,
-      text: vi.fn().mockResolvedValue(''),
-      json: vi.fn().mockResolvedValue({
-        choices: [{ message: { role: 'assistant', content: 'OK from Cerebras' } }],
-      }),
-    });
-  });
-  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-  return fetchMock;
-}
-
-/** Mock fetch qui throw une TypeError (network error) pour Cerebras, 200 pour OpenRouter. */
-function mockFetchCerebrasNetworkErrorOpenRouterOk() {
-  const fetchMock = vi.fn().mockImplementation((url: string) => {
-    if (url.includes('cerebras.ai')) {
-      return Promise.reject(new TypeError('fetch failed'));
-    }
-    return Promise.resolve({
-      ok: true,
-      status: 200,
-      text: vi.fn().mockResolvedValue(''),
-      json: vi.fn().mockResolvedValue({
-        choices: [{ message: { role: 'assistant', content: 'OK from OpenRouter' } }],
-      }),
-    });
-  });
+/** Mock fetch qui throw une TypeError (erreur réseau). */
+function mockFetchGroqNetworkError() {
+  const fetchMock = vi.fn().mockImplementation(() => Promise.reject(new TypeError('fetch failed')));
   globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
   return fetchMock;
 }
@@ -1949,21 +1804,7 @@ function mockFetchHanging() {
   return fetchMock;
 }
 
-/** Mock fetch qui retourne 503 pour Cerebras ET OpenRouter (les deux providers en panne). */
-function mockFetchAllProvidersFail() {
-  const fetchMock = vi.fn().mockImplementation((_url: string) => {
-    return Promise.resolve({
-      ok: false,
-      status: 503,
-      text: vi.fn().mockResolvedValue('Service Unavailable'),
-      json: vi.fn().mockResolvedValue({}),
-    });
-  });
-  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-  return fetchMock;
-}
-
-describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
+describe('CallSessionManager — provider LLM unique, circuit breaker et timeout', () => {
   let originalFetch: typeof globalThis.fetch;
   let savedVoiceConfig: VoiceConfigSnapshot;
 
@@ -1973,9 +1814,7 @@ describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
     originalFetch = globalThis.fetch;
     savedVoiceConfig = snapshotVoiceConfig();
     _resetCircuitBreakersForTesting();
-    // Clés API présentes pour que les fallbacks soient activés
-    voiceConfig.CEREBRAS_API_KEY = 'test-k1';
-    voiceConfig.OPENROUTER_API_KEY = 'test-k2';
+    voiceConfig.GROQ_API_KEY = GROQ_TEST_KEY;
   });
 
   afterEach(() => {
@@ -1986,9 +1825,7 @@ describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
   });
 
   it('Groq utilise Qwen 3.8 en mode instruct avec tool use', async () => {
-    voiceConfig.VOICE_LLM_PROVIDER = 'groq';
     voiceConfig.VOICE_LLM_MODEL = 'qwen/qwen3.8-27b';
-    voiceConfig.GROQ_API_KEY = GROQ_TEST_KEY;
 
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -2001,250 +1838,132 @@ describe('CallSessionManager — circuit breaker + timeout + fallback', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const mgr = CallSessionManager.getInstance();
-    const res = await callFetchLlmCompletion(mgr, [{ role: 'user', content: 'Bonjour' }], {
-      maxTokens: 100,
-      temperature: 0.7,
-    });
-
-    expect(res.ok).toBe(true);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://api.groq.com/openai/v1/chat/completions');
-    expect(init.headers).toMatchObject({
-      Authorization: `Bearer ${GROQ_TEST_KEY}`,
-      'Content-Type': 'application/json',
-    });
-    expect(JSON.parse(String(init.body))).toMatchObject({
-      model: 'qwen/qwen3.8-27b',
-      reasoning_effort: 'none',
-      top_p: 0.8,
-    });
-  });
-
-  it('Groq retombe sur OpenRouter quand le quota renvoie HTTP 402', async () => {
-    voiceConfig.VOICE_LLM_PROVIDER = 'groq';
-    voiceConfig.VOICE_LLM_MODEL = 'qwen/qwen3.8-27b';
-    voiceConfig.VOICE_LLM_FALLBACK_MODEL = 'meta-llama/llama-3.3-70b-instruct';
-    voiceConfig.GROQ_API_KEY = GROQ_TEST_KEY;
-
-    const fetchMock = vi.fn().mockImplementation((url: string) => {
-      if (new URL(url).hostname === 'api.groq.com') {
-        return Promise.resolve({
-          ok: false,
-          status: 402,
-          text: vi.fn().mockResolvedValue('Payment Required'),
-          json: vi.fn().mockResolvedValue({}),
-        });
-      }
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        text: vi.fn().mockResolvedValue(''),
-        json: vi.fn().mockResolvedValue({
-          choices: [{ message: { role: 'assistant', content: 'Réponse de secours' } }],
-        }),
-      });
-    });
-    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-
-    const mgr = CallSessionManager.getInstance();
-    const res = await callFetchLlmCompletion(mgr, [{ role: 'user', content: 'Bonjour' }], {
-      maxTokens: 100,
-      temperature: 0.7,
-    });
-
-    expect(res.ok).toBe(true);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(String(fetchMock.mock.calls[0][0])).toContain('api.groq.com');
-    expect(String(fetchMock.mock.calls[1][0])).toContain('openrouter.ai');
-  });
-
-  it('Groq expose le chemin streaming et le provider utilisé', async () => {
-    voiceConfig.VOICE_LLM_PROVIDER = 'groq';
-    voiceConfig.VOICE_LLM_MODEL = 'qwen/qwen3.8-27b';
-    voiceConfig.GROQ_API_KEY = GROQ_TEST_KEY;
-
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      body: new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.close();
-        },
-      }),
-    });
-    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-
-    const mgr = CallSessionManager.getInstance();
-    const result = await callFetchLlmStreaming(mgr, [{ role: 'user', content: 'Bonjour' }], {
-      maxTokens: 100,
-      temperature: 0.7,
-    });
-
-    expect(result.provider).toBe('groq');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://api.groq.com/openai/v1/chat/completions');
-    expect(JSON.parse(String(init.body))).toMatchObject({
-      model: 'qwen/qwen3.8-27b',
-      stream: true,
-      reasoning_effort: 'none',
-    });
-  });
-
-  it('circuit breaker : skip Cerebras après 3 échecs consécutifs', async () => {
-    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
-    const fetchMock = mockFetchCerebrasFailOpenRouterOk();
-    const mgr = CallSessionManager.getInstance();
-    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
-    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
-
-    // 3 appels : Cerebras 503 → fallback OpenRouter OK
-    for (let i = 0; i < 3; i++) {
-      const res = await callFetchLlmCompletion(mgr, messages, opts);
-      expect(res.ok).toBe(true);
-    }
-
-    // Le 4e appel : circuit breaker open → Cerebras n'est PAS appelé
-    fetchMock.mockClear();
-    const res4 = await callFetchLlmCompletion(mgr, messages, opts);
-    expect(res4.ok).toBe(true);
-
-    // Vérifier qu'aucun appel fetch ne contient l'URL Cerebras
-    const cerebrasCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('cerebras.ai'));
-    expect(cerebrasCalls).toHaveLength(0);
-    // OpenRouter doit avoir été appelé
-    const openRouterCalls = fetchMock.mock.calls.filter((c) =>
-      String(c[0]).includes('openrouter.ai'),
-    );
-    expect(openRouterCalls.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('fallback sur erreur réseau (timeout)', async () => {
-    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
-    mockFetchCerebrasNetworkErrorOpenRouterOk();
-    const mgr = CallSessionManager.getInstance();
     const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
     const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
 
     const res = await callFetchLlmCompletion(mgr, messages, opts);
     expect(res.ok).toBe(true);
-    expect(res.status).toBe(200);
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(requestHost(url)).toBe('api.groq.com');
+    expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${GROQ_TEST_KEY}`);
+    const body = JSON.parse(String(init.body));
+    expect(body.model).toBe('qwen/qwen3.8-27b');
+    expect(body.reasoning_effort).toBe('none');
+  });
+
+  it('Groq ne bascule plus sur un autre provider : la réponse d’erreur remonte', async () => {
+    // Le repli OpenRouter/Cerebras a été retiré le 22 septembre 2026. Un 402 ou
+    // un 5xx doit remonter tel quel à l'appelant, qui dégrade l'appel.
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 402,
+      text: vi.fn().mockResolvedValue('Payment Required'),
+      json: vi.fn().mockResolvedValue({}),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const mgr = CallSessionManager.getInstance();
+    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
+    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
+
+    const res = await callFetchLlmCompletion(mgr, messages, opts);
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe(402);
+    // Un seul appel : aucun second provider n'est sollicité.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+    expect(urls.every((u) => requestHost(u) === 'api.groq.com')).toBe(true);
+  });
+
+  it('Groq expose le chemin streaming et le provider utilisé', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, body: null });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const mgr = CallSessionManager.getInstance();
+    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
+    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
+
+    const { provider } = await callFetchLlmStreaming(mgr, messages, opts);
+    expect(provider).toBe('groq');
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(requestHost(url)).toBe('api.groq.com');
+  });
+
+  it('circuit breaker : court-circuite Groq après 3 échecs consécutifs', async () => {
+    const fetchMock = mockFetchGroqFail();
+    const mgr = CallSessionManager.getInstance();
+    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
+    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
+
+    for (let i = 0; i < 3; i++) {
+      const res = await callFetchLlmCompletion(mgr, messages, opts);
+      expect(res.ok).toBe(false);
+    }
+
+    // 4e appel : le breaker est open, aucune requête ne part.
+    fetchMock.mockClear();
+    await expect(callFetchLlmCompletion(mgr, messages, opts)).rejects.toThrow(/circuit open/);
+    expect(fetchMock).toHaveBeenCalledTimes(0);
+  });
+
+  it('circuit breaker : se réinitialise après le cooldown', async () => {
+    vi.useFakeTimers();
+    const fetchMock = mockFetchGroqFail();
+    const mgr = CallSessionManager.getInstance();
+    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
+    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
+
+    for (let i = 0; i < 3; i++) {
+      await callFetchLlmCompletion(mgr, messages, opts);
+    }
+
+    vi.advanceTimersByTime(31_000);
+
+    // Half-open : une requête de sonde repart.
+    fetchMock.mockClear();
+    await callFetchLlmCompletion(mgr, messages, opts);
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('circuit breaker : un échec half-open redémarre le cooldown', async () => {
+    vi.useFakeTimers();
+    const fetchMock = mockFetchGroqFail();
+    const mgr = CallSessionManager.getInstance();
+    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
+    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
+
+    for (let i = 0; i < 3; i++) {
+      await callFetchLlmCompletion(mgr, messages, opts);
+    }
+    vi.advanceTimersByTime(31_000);
+
+    // Sonde half-open : elle échoue, le cooldown repart pour 30 s.
+    await callFetchLlmCompletion(mgr, messages, opts);
+    vi.advanceTimersByTime(29_000);
+
+    fetchMock.mockClear();
+    await expect(callFetchLlmCompletion(mgr, messages, opts)).rejects.toThrow(/circuit open/);
+    expect(fetchMock).toHaveBeenCalledTimes(0);
   });
 
   it('timeout : abort la requête après VOICE_LLM_TIMEOUT_MS', async () => {
-    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
-    // Désactiver le fallback pour que l'erreur de timeout remonte directement
-    voiceConfig.OPENROUTER_API_KEY = undefined;
     voiceConfig.VOICE_LLM_TIMEOUT_MS = 100;
     mockFetchHanging();
     const mgr = CallSessionManager.getInstance();
     const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
     const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
 
-    // La requête doit rejeter à cause du timeout (≤ 500ms de marge)
     await expect(callFetchLlmCompletion(mgr, messages, opts)).rejects.toThrow();
   });
 
-  it('circuit breaker : se réinitialise après cooldown', async () => {
-    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
-    vi.useFakeTimers();
-    const fetchMock = mockFetchCerebrasFailOpenRouterOk();
+  it('erreur réseau : remonte à l’appelant sans repli', async () => {
+    const fetchMock = mockFetchGroqNetworkError();
     const mgr = CallSessionManager.getInstance();
     const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
     const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
 
-    // 3 échecs pour ouvrir le circuit breaker
-    for (let i = 0; i < 3; i++) {
-      await callFetchLlmCompletion(mgr, messages, opts);
-    }
-
-    // Avancer le temps au-delà du cooldown (31s)
-    vi.advanceTimersByTime(31_000);
-
-    // Le prochain appel doit tenter Cerebras à nouveau (half-open)
-    fetchMock.mockClear();
-    await callFetchLlmCompletion(mgr, messages, opts);
-    const cerebrasCalls = fetchMock.mock.calls.filter((c) => String(c[0]).includes('cerebras.ai'));
-    expect(cerebrasCalls.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('fallback bidirectionnel : OpenRouter primaire → Cerebras fallback', async () => {
-    voiceConfig.VOICE_LLM_PROVIDER = 'openrouter';
-    mockFetchOpenRouterFailCerebrasOk();
-    const mgr = CallSessionManager.getInstance();
-    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
-    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
-
-    const res = await callFetchLlmCompletion(mgr, messages, opts);
-    expect(res.ok).toBe(true);
-    expect(res.status).toBe(200);
-  });
-
-  it('circuit breaker : half-open failure redémarre le cooldown', async () => {
-    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
-    vi.useFakeTimers();
-    const fetchMock = mockFetchCerebrasFailOpenRouterOk();
-    const mgr = CallSessionManager.getInstance();
-    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
-    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
-
-    // 3 échecs pour ouvrir le circuit breaker (Cerebras 503 → fallback OpenRouter OK)
-    for (let i = 0; i < 3; i++) {
-      await callFetchLlmCompletion(mgr, messages, opts);
-    }
-
-    // Avancer le temps au-delà du cooldown (31s) → half-open
-    vi.advanceTimersByTime(31_000);
-
-    // Le prochain appel tente Cerebras (half-open), échoue, fallback OpenRouter OK
-    fetchMock.mockClear();
-    await callFetchLlmCompletion(mgr, messages, opts);
-    const cerebrasCallsAfterHalfOpen = fetchMock.mock.calls.filter((c) =>
-      String(c[0]).includes('cerebras.ai'),
-    );
-    expect(cerebrasCallsAfterHalfOpen.length).toBeGreaterThanOrEqual(1);
-
-    // Avancer le temps de 29s (toujours dans le nouveau cooldown)
-    vi.advanceTimersByTime(29_000);
-
-    // Le prochain appel doit SKIP Cerebras (cooldown non expiré), aller direct sur OpenRouter
-    fetchMock.mockClear();
-    await callFetchLlmCompletion(mgr, messages, opts);
-    const cerebrasCallsAfterRestart = fetchMock.mock.calls.filter((c) =>
-      String(c[0]).includes('cerebras.ai'),
-    );
-    expect(cerebrasCallsAfterRestart).toHaveLength(0);
-    const openRouterCallsAfterRestart = fetchMock.mock.calls.filter((c) =>
-      String(c[0]).includes('openrouter.ai'),
-    );
-    expect(openRouterCallsAfterRestart.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('circuit breaker : les deux providers en panne → erreur remonte au caller', async () => {
-    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
-    const fetchMock = mockFetchAllProvidersFail();
-    const mgr = CallSessionManager.getInstance();
-    const messages: ChatMessage[] = [{ role: 'user', content: 'test' }];
-    const opts: LlmOpts = { maxTokens: 100, temperature: 0.7 };
-
-    // 3 appels : Cerebras 503 → fallback OpenRouter 503 → réponse 503 (erreur remonte)
-    for (let i = 0; i < 3; i++) {
-      const res = await callFetchLlmCompletion(mgr, messages, opts);
-      expect(res.ok).toBe(false);
-      expect(res.status).toBe(503);
-    }
-
-    // Les deux circuit breakers doivent être open (failures >= 3)
-    // 4e appel : les deux breakers sont open → fetchWithFallback tente half-open sur OpenRouter → échoue → 503
-    const callsBefore4th = fetchMock.mock.calls.length;
-    const res4 = await callFetchLlmCompletion(mgr, messages, opts);
-    expect(res4.ok).toBe(false);
-    expect(res4.status).toBe(503);
-
-    // Vérifier qu'il n'y a pas de retry infini : nombre d'appels fetch fini et borné
-    const callsAfter4th = fetchMock.mock.calls.length;
-    expect(callsAfter4th - callsBefore4th).toBeLessThanOrEqual(3);
-    expect(callsAfter4th).toBeLessThan(50);
+    await expect(callFetchLlmCompletion(mgr, messages, opts)).rejects.toThrow(/fetch failed/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
