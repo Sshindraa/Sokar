@@ -7,13 +7,10 @@ import { CustomerService } from '../customers/customer.service';
 import { buildSystemPrompt, type OpeningHours } from './prompts';
 import { CallSessionManager } from './stream/manager';
 import { acknowledgeCallEnding } from './stream/call-ending';
-import { finalizeVoiceCall, type CallRecoveryDispatchInput } from './call-finalization.service';
+import { finalizeVoiceCall } from './call-finalization.service';
+import { callFinalizationDependencies } from './call-finalization.dependencies';
 
-import {
-  buildSmsJobId,
-  buildTelnyxWebhookJobId,
-  sanitizeJobId,
-} from '../../shared/queue/job-options';
+import { buildSmsJobId, buildTelnyxWebhookJobId } from '../../shared/queue/job-options';
 import { isVoicePipelineEnabled } from '../../shared/configcat';
 import { telnyxFetch } from '../../shared/telnyx/http-agent';
 
@@ -28,41 +25,6 @@ const webhookRouteOptions = {
 };
 import { MS_TO_SECONDS } from '../../shared/constants/time.js';
 import { recordPricedUsageEvent } from '../usage/usage-tariff.service';
-
-function buildRecoveryJobId(callLegId: string): string {
-  return sanitizeJobId(`recovery_${callLegId}`);
-}
-
-/**
- * Dépendances de finalisation partagées par le raccrochage et la route `/end` :
- * même contexte restaurant, même enqueue de récupération, donc même résultat
- * quel que soit l'événement qui arrive en premier.
- */
-function callFinalizationDependencies(app: FastifyInstance) {
-  return {
-    db: app.db,
-    loadRestaurantContext: async (toNumber: string) => {
-      const ctx = await RestaurantService.loadContext(toNumber);
-      return {
-        id: ctx.id,
-        name: ctx.name,
-        slug: ctx.slug ?? null,
-        phoneNumber: ctx.phoneNumber ?? null,
-      };
-    },
-    enqueueRecovery: async (input: CallRecoveryDispatchInput, callLegId: string): Promise<void> => {
-      const customer = await app.db.customer.findFirst({
-        where: { restaurantId: input.restaurantId, phone: input.customerPhone },
-        select: { name: true },
-      });
-      await app.queues.callRecovery.add(
-        'send-recovery-sms',
-        { ...input, customerName: customer?.name ?? input.customerName },
-        { jobId: buildRecoveryJobId(callLegId) },
-      );
-    },
-  };
-}
 
 interface TelnyxCallPayload {
   data: {

@@ -24,7 +24,6 @@ import { db } from '../../shared/db/client';
 import { DEFAULT_TRANSACTION_OPTIONS } from '../../shared/db/transaction-options';
 import { logger } from '../../shared/logger/pino';
 import { captureException } from '../../shared/sentry/client';
-import { getVoiceLlmProvider } from './llm-provider';
 import { hadReservationIntent } from './outcome';
 
 export type VoiceFinalizationSource =
@@ -278,7 +277,9 @@ export function planCallFinalization(
   const outcome = pickOutcome(snapshot.outcome, resolveVoiceOutcome(facts));
   const durationSec = pickDuration(snapshot.durationSec, hints.durationSec);
   const sttProvider = pickProvider(hints.sttProvider, snapshot.sttProvider, DEFAULT_STT_PROVIDER);
-  const llmProvider = pickProvider(hints.llmProvider, snapshot.llmProvider, getVoiceLlmProvider());
+  // Ne pas enregistrer le provider configuré par défaut : un appel qui n'a
+  // jamais déclenché de tour LLM doit rester sans provider observé.
+  const llmProvider = pickObservedProvider(hints.llmProvider, snapshot.llmProvider);
   const ttsProvider = pickProvider(hints.ttsProvider, snapshot.ttsProvider, defaultTtsProvider());
 
   const data: CallFinalizationData = {};
@@ -303,7 +304,7 @@ export function planCallFinalization(
     data.sttProvider = sttProvider;
     updatedFields.push('sttProvider');
   }
-  if (llmProvider !== snapshot.llmProvider) {
+  if (llmProvider && llmProvider !== snapshot.llmProvider) {
     data.llmProvider = llmProvider;
     updatedFields.push('llmProvider');
   }
@@ -313,6 +314,16 @@ export function planCallFinalization(
   }
 
   return { facts, data, updatedFields, outcome, intent };
+}
+
+function pickObservedProvider(
+  incoming: string | null | undefined,
+  observed: string | null | undefined,
+): string | null {
+  const provided = incoming?.trim();
+  if (provided) return provided;
+  const seen = observed?.trim();
+  return seen || null;
 }
 
 interface CallFinalizationRow {
@@ -498,7 +509,7 @@ async function finalizeVoiceCallAttempt(
             outcome: createPlan.outcome,
             durationSec: createPlan.data.durationSec ?? null,
             sttProvider: String(createPlan.data.sttProvider),
-            llmProvider: String(createPlan.data.llmProvider),
+            ...(createPlan.data.llmProvider ? { llmProvider: createPlan.data.llmProvider } : {}),
             ttsProvider: String(createPlan.data.ttsProvider),
           },
           select: CALL_FINALIZATION_SELECT,
@@ -515,7 +526,7 @@ async function finalizeVoiceCallAttempt(
             intent: createPlan.intent,
             outcome: createPlan.outcome,
             sttProvider: String(createPlan.data.sttProvider),
-            llmProvider: String(createPlan.data.llmProvider),
+            llmProvider: createPlan.data.llmProvider ?? null,
             ttsProvider: String(createPlan.data.ttsProvider),
             reservationCreated: false,
             messageRecorded: false,

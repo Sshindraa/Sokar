@@ -37,7 +37,7 @@ interface DailyReconciliationJobData {
   readonly dayKey?: string;
 }
 
-/** Fenêtre du rattrapage fréquent : ni trop tôt, ni sur un historique illimité. */
+/** Fenêtre du rattrapage fréquent : garde les rappels utiles et borne le balayage. */
 const VOICE_FINALIZATION_MIN_AGE_MS = 10 * 60 * 1000;
 const VOICE_FINALIZATION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const VOICE_FINALIZATION_BATCH_SIZE = 200;
@@ -388,10 +388,11 @@ interface FinalizationLogger {
 }
 
 /**
- * Rattrapage des appels restés incomplets : rejoue la finalisation commune sur
- * chaque appel candidat. Un échec unitaire ne bloque pas le lot ; si la base
- * est indisponible pour tous les candidats, on relance le job pour bénéficier
- * du retry BullMQ plutôt que de perdre le lot.
+ * Rattrapage des appels incomplets et des récupérations non mises en file :
+ * rejoue la finalisation commune sur chaque appel candidat. Les identifiants
+ * BullMQ et claims du worker empêchent un second SMS si la tâche était déjà
+ * partie. Un échec unitaire ne bloque pas le lot ; si la base est indisponible
+ * pour tous les candidats, le retry BullMQ reprend le lot.
  */
 async function finalizeIncompleteCalls(
   deps: ReconciliationDependencies,
@@ -484,11 +485,21 @@ export async function processReconciliationJob(
   if (data.kind === 'voice-finalization') {
     const now = Date.now();
     // tenant-scoping: global — balayage de maintenance : tous les
-    // établissements sont concernés par le rattrapage des appels incomplets.
+    // établissements sont concernés par le rattrapage de fin d'appel et des
+    // récupérations commerciales dont l'enqueue aurait échoué.
     const calls = await deps.db.call.findMany({
       where: {
         carrier: 'telnyx',
-        outcome: null,
+        OR: [
+          { outcome: null },
+          {
+            outcome: { in: ['NO_ACTION', 'ERROR'] },
+            intent: 'RESERVATION',
+            callerPhone: { not: null },
+            reservation: { is: null },
+            messages: { none: {} },
+          },
+        ],
         createdAt: {
           gte: new Date(now - VOICE_FINALIZATION_MAX_AGE_MS),
           lte: new Date(now - VOICE_FINALIZATION_MIN_AGE_MS),
