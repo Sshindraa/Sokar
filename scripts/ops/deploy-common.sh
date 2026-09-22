@@ -535,6 +535,15 @@ build_packages_api() {
     local need_packages="$1"
     local need_api="$2"
 
+    # `tsconfig.json` active la compilation incrémentale : un `.tsbuildinfo`
+    # périmé fait croire à `tsc` qu'un fichier déjà émis l'est encore, et un
+    # fichier *nouveau* peut alors ne jamais être écrit dans `dist`. C'est ce qui
+    # a fait échouer le déploiement du 22 septembre 2026 : `reservation-state.js`
+    # manquait, l'API bouclait sur `MODULE_NOT_FOUND`, et le rollback laissait un
+    # `dist` mixte (ancien API + nouveau package) donc un second crash.
+    # Repartir d'un état incrémental propre coûte quelques secondes de build.
+    find "$SOKAR_ROOT/apps" "$SOKAR_ROOT/packages" -maxdepth 2 -name 'tsconfig.tsbuildinfo' -delete 2>/dev/null || true
+
     if [ "$need_packages" = true ] || [ "$need_api" = true ]; then
         NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/config build
         NODE_OPTIONS="--max-old-space-size=1536" pnpm --filter @sokar/database build
