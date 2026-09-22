@@ -153,6 +153,11 @@ function makeMockSession(): CallSession {
 async function startApp() {
   const app = Fastify();
   await app.register(fastifyWebsocket);
+  const recoveryQueueAdd = vi.fn().mockResolvedValue(undefined);
+  Object.assign(app, {
+    db: { customer: { findFirst: vi.fn().mockResolvedValue({ name: 'Test Caller' }) } },
+    queues: { callRecovery: { add: recoveryQueueAdd } },
+  });
   registerMediaStreamRoutes(app);
   // Le sandbox de test ne permet pas l'écoute IPv6 `::1`. Forcer IPv4
   // garde le test fidèle au parcours WebSocket sans dépendre de la résolution
@@ -160,7 +165,7 @@ async function startApp() {
   await app.listen({ port: 0, host: '127.0.0.1' });
   const address = app.server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
-  return { app, port };
+  return { app, port, recoveryQueueAdd };
 }
 
 function connectWs(port: number, callId: string): Promise<WebSocket> {
@@ -185,6 +190,7 @@ function delay(ms: number): Promise<void> {
 
 describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
   let app: Awaited<ReturnType<typeof startApp>>['app'];
+  let recoveryQueueAdd: ReturnType<typeof vi.fn>;
   let port: number;
   let originalFetch: typeof globalThis.fetch;
 
@@ -202,6 +208,7 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
     const started = await startApp();
     app = started.app;
     port = started.port;
+    recoveryQueueAdd = started.recoveryQueueAdd;
   });
 
   afterEach(async () => {
@@ -387,6 +394,7 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
 
   it('fermeture WS : marque la session comme ended et appelle mgr.delete', async () => {
     const session = makeMockSession();
+    session.currentTurn = { llmProvider: 'groq' } as NonNullable<CallSession['currentTurn']>;
     mockMgr.get.mockReturnValue(session);
 
     const ws = await connectWs(port, 'cc-ws-1');
@@ -413,8 +421,30 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
     // resterait sans outcome si `/voice/telnyx/end` n'arrive jamais.
     expect(mockFinalizeVoiceCall).toHaveBeenCalledWith(
       'leg-ws-1',
-      expect.objectContaining({ source: 'stream-close' }),
-      expect.anything(),
+      expect.objectContaining({ source: 'stream-close', llmProvider: 'groq' }),
+      expect.objectContaining({
+        enqueueRecovery: expect.any(Function),
+        loadRestaurantContext: expect.any(Function),
+      }),
+    );
+    const finalizationDependencies = mockFinalizeVoiceCall.mock.calls[0][2];
+    await finalizationDependencies.enqueueRecovery(
+      {
+        callId: 'call-1',
+        restaurantId: 'rest-1',
+        customerPhone: '+33****0001',
+        customerName: null,
+        restaurantName: 'Test Resto',
+        restaurantSlug: null,
+        restaurantPhone: null,
+        reason: 'no_action_with_intent',
+      },
+      'leg-ws-1',
+    );
+    expect(recoveryQueueAdd).toHaveBeenCalledWith(
+      'send-recovery-sms',
+      expect.objectContaining({ customerName: 'Test Caller', callId: 'call-1' }),
+      { jobId: 'recovery_leg-ws-1' },
     );
   });
 

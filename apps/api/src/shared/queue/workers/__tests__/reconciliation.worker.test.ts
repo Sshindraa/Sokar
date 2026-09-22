@@ -647,6 +647,41 @@ describe('reconciliation.worker voice finalization sweep', () => {
     );
   });
 
+  it('retente la récupération d’un appel déjà finalisé si l’enqueue précédent a échoué', async () => {
+    const db = makeVoiceDb([makeCallRow({ outcome: 'NO_ACTION', intent: 'RESERVATION' })]);
+    const enqueueRecovery = vi.fn().mockResolvedValue(undefined);
+    const deps = makeVoiceDeps(db);
+
+    await processReconciliationJob(
+      {
+        name: 'voice-finalization',
+        data: { kind: 'voice-finalization' },
+      } as unknown as Job<ReconciliationJobData>,
+      { ...deps, enqueueRecovery },
+    );
+
+    expect(db.call.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            expect.objectContaining({ outcome: null }),
+            expect.objectContaining({
+              outcome: { in: ['NO_ACTION', 'ERROR'] },
+              intent: 'RESERVATION',
+              callerPhone: { not: null },
+              reservation: { is: null },
+              messages: { none: {} },
+            }),
+          ]),
+        }),
+      }),
+    );
+    expect(enqueueRecovery).toHaveBeenCalledWith(
+      expect.objectContaining({ callId: 'call-1', reason: 'no_action_with_intent' }),
+      'leg-1',
+    );
+  });
+
   it('classe un message enregistré en MESSAGE sans récupération', async () => {
     const db = makeVoiceDb([
       makeCallRow({ messages: [{ id: 'msg-1' }], callerPhone: '+33600000000' }),

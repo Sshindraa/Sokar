@@ -138,6 +138,23 @@ describe('call finalization — décision par les faits', () => {
     expect(plan.outcome).toBe('NO_ACTION');
   });
 
+  it('n’attribue pas le provider configuré à un appel sans tour LLM observé', () => {
+    const plan = planCallFinalization(
+      snapshot(),
+      hints({ transcript: 'Quels sont vos horaires ?' }),
+    );
+
+    expect(plan.data.llmProvider).toBeUndefined();
+    expect(plan.updatedFields).not.toContain('llmProvider');
+  });
+
+  it('enregistre le provider lorsqu’un tour LLM observé le fournit', () => {
+    const plan = planCallFinalization(snapshot(), hints({ llmProvider: 'groq' }));
+
+    expect(plan.data.llmProvider).toBe('groq');
+    expect(plan.updatedFields).toContain('llmProvider');
+  });
+
   it('déduit l’intention du dialogue quand la transcription est absente', () => {
     expect(deriveCallIntent({ conversationIntent: 'reservation' })).toBe('RESERVATION');
     expect(deriveCallIntent({ conversationIntent: 'cancel' })).toBe('CANCEL');
@@ -222,6 +239,17 @@ describe('finalizeVoiceCall — idempotence et ordre des événements', () => {
     expect(second.created).toBe(false);
     expect(second.updatedFields).toEqual([]);
     expect(fake.call.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('laisse le provider LLM vide à la création si aucun tour ne l’a appelé', async () => {
+    const fake = makeFakeDb(null);
+    await finalizeVoiceCall(
+      'leg-1',
+      hints({ restaurantId: 'rest-1', transcript: 'Quels sont vos horaires ?' }),
+      { db: fake },
+    );
+
+    expect(fake.call.create.mock.calls[0][0].data).not.toHaveProperty('llmProvider');
   });
 
   it('refuse de créer une ligne orpheline sans restaurant', async () => {
