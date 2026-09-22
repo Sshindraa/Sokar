@@ -5,7 +5,6 @@ import {
   voiceTurnDurationMs,
   voiceLlmFirstTokenMs,
   voiceTtsFirstAudioMs,
-  voiceLlmFallbackTotal,
   voiceProviderErrorsTotal,
 } from '../metrics';
 
@@ -37,27 +36,13 @@ describe('Voice Prometheus metrics', () => {
     expect(payload).toContain('sokar_voice_tts_first_audio_ms_bucket{le="500"');
   });
 
-  it('incrémente sokar_voice_llm_fallback_total avec label direction', async () => {
-    voiceLlmFallbackTotal.inc({ direction: 'cerebras_to_openrouter' });
-    voiceLlmFallbackTotal.inc({ direction: 'cerebras_to_openrouter' });
-    voiceLlmFallbackTotal.inc({ direction: 'openrouter_to_cerebras' });
-    const payload = await renderMetrics();
-    expect(payload).toContain('sokar_voice_llm_fallback_total');
-    expect(payload).toMatch(
-      /sokar_voice_llm_fallback_total\{[^}]*direction="cerebras_to_openrouter"[^}]*\} 2/,
-    );
-    expect(payload).toMatch(
-      /sokar_voice_llm_fallback_total\{[^}]*direction="openrouter_to_cerebras"[^}]*\} 1/,
-    );
-  });
-
   it('incrémente voice_provider_errors_total avec labels provider et type', async () => {
     voiceProviderErrorsTotal.inc({ provider: 'elevenlabs_stt', type: 'ws_error' });
     voiceProviderErrorsTotal.inc({ provider: 'cartesia', type: '5xx' });
-    voiceProviderErrorsTotal.inc({ provider: 'cerebras', type: 'timeout' });
-    voiceProviderErrorsTotal.inc({ provider: 'cerebras', type: '429' });
-    voiceProviderErrorsTotal.inc({ provider: 'openrouter', type: '4xx' });
-    voiceProviderErrorsTotal.inc({ provider: 'openrouter', type: 'session_abort' });
+    voiceProviderErrorsTotal.inc({ provider: 'groq', type: 'timeout' });
+    voiceProviderErrorsTotal.inc({ provider: 'groq', type: '429' });
+    voiceProviderErrorsTotal.inc({ provider: 'groq', type: '5xx' });
+    voiceProviderErrorsTotal.inc({ provider: 'groq', type: 'session_abort' });
     const payload = await renderMetrics();
     expect(payload).toContain('voice_provider_errors_total');
     expect(payload).toMatch(
@@ -67,16 +52,16 @@ describe('Voice Prometheus metrics', () => {
       /voice_provider_errors_total\{[^}]*provider="cartesia"[^}]*type="5xx"[^}]*\} 1/,
     );
     expect(payload).toMatch(
-      /voice_provider_errors_total\{[^}]*provider="cerebras"[^}]*type="timeout"[^}]*\} 1/,
+      /voice_provider_errors_total\{[^}]*provider="groq"[^}]*type="timeout"[^}]*\} 1/,
     );
     expect(payload).toMatch(
-      /voice_provider_errors_total\{[^}]*provider="cerebras"[^}]*type="429"[^}]*\} 1/,
+      /voice_provider_errors_total\{[^}]*provider="groq"[^}]*type="429"[^}]*\} 1/,
     );
     expect(payload).toMatch(
-      /voice_provider_errors_total\{[^}]*provider="openrouter"[^}]*type="4xx"[^}]*\} 1/,
+      /voice_provider_errors_total\{[^}]*provider="groq"[^}]*type="5xx"[^}]*\} 1/,
     );
     expect(payload).toMatch(
-      /voice_provider_errors_total\{[^}]*provider="openrouter"[^}]*type="session_abort"[^}]*\} 1/,
+      /voice_provider_errors_total\{[^}]*provider="groq"[^}]*type="session_abort"[^}]*\} 1/,
     );
   });
 
@@ -93,7 +78,6 @@ describe('Voice Prometheus metrics', () => {
     expect(voiceNames).toContain('sokar_voice_turn_duration_ms');
     expect(voiceNames).toContain('sokar_voice_llm_first_token_ms');
     expect(voiceNames).toContain('sokar_voice_tts_first_audio_ms');
-    expect(voiceNames).toContain('sokar_voice_llm_fallback_total');
     expect(voiceNames).toContain('sokar_voice_provider_errors_total');
   });
 

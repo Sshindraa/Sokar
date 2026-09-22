@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { REDIS_CTX_TTL_SECONDS, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
+import { voiceConfig } from '../../../env';
 
 vi.mock('../../../shared/db/client', () => ({
   db: {
@@ -96,7 +97,9 @@ describe('RestaurantService context cache', () => {
     expect(cachedPayload).toContain('Suggère les plats du jour.');
     expect(cachedPayload).toContain('calendar-safe-id');
     expect(cachedPayload).toContain('voice-from-personality');
-    expect(cachedPayload).toContain(VOICE_LLM_MODEL_DEFAULT);
+    // Le modèle effectivement configuré, pas la constante par défaut : le .env
+    // local peut le surcharger, et c'est ce modèle-là qui part en cache.
+    expect(cachedPayload).toContain(voiceConfig.VOICE_LLM_MODEL);
     expect(cachedPayload).toContain('cartesia');
     expect(cachedPayload).toContain('scribe_v2_realtime');
     expect(cachedPayload).not.toContain('secret-refresh-token-never-cache');

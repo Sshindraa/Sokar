@@ -36,22 +36,33 @@ import {
 
 ## État par fournisseur
 
-| Fournisseur                        | Usage                                         | Timeout                        | Retries                | Circuit breaker                              | Dégradation si panne                                       |
-| ---------------------------------- | --------------------------------------------- | ------------------------------ | ---------------------- | -------------------------------------------- | ---------------------------------------------------------- |
-| Telnyx (contrôle d'appel)          | `answer`, `speak`, `record` via `telnyxFetch` | 10 s                           | aucun (appel en cours) | non                                          | l'appel se poursuit ou se termine côté Telnyx              |
-| Telnyx (SMS / WhatsApp)            | SDK + agent keep-alive                        | SDK                            | BullMQ (`attempts: 5`) | non                                          | job en dead-letter, alerte `dead_letter_backlog`           |
-| Cartesia TTS (appel live)          | `/tts/bytes` streamé                          | 8 s par tentative              | 2 tentatives           | non                                          | message d'excuse parlé via `speakTelnyxNative`             |
-| Cartesia TTS (fillers)             | `/tts/sse`                                    | 8 s                            | 3 tentatives           | non                                          | filler ignoré, la réponse principale continue              |
-| Cartesia TTS (démo/preview)        | `/tts/bytes` one-shot                         | 8 s                            | aucun                  | oui, 3 échecs / 30 s                         | erreur explicite de l'endpoint                             |
-| ElevenLabs STT                     | WebSocket temps réel                          | géré par le bridge             | reconnexion du bridge  | non                                          | tour sans transcription, alerte `calls_without_transcript` |
-| LLM (Cerebras / OpenRouter / Groq) | complétion vocale                             | par provider dans `manager.ts` | bascule de provider    | oui, 3 échecs / 30 s (implémentation dédiée) | réponse de repli, provider suivant                         |
-| Stripe                             | PaymentIntent, webhooks                       | 10 s (SDK)                     | `maxNetworkRetries: 2` | non                                          | paiement refusé proprement, job en dead-letter             |
-| Resend                             | email transactionnel                          | 10 s                           | BullMQ                 | non                                          | email non envoyé, trace en base                            |
-| Google Calendar / Places           | freeBusy, recherche                           | 10 s                           | aucun                  | non                                          | disponibilité réduite, log d'avertissement                 |
+| Fournisseur                 | Usage                                         | Timeout                      | Retries                | Circuit breaker                              | Dégradation si panne                                       |
+| --------------------------- | --------------------------------------------- | ---------------------------- | ---------------------- | -------------------------------------------- | ---------------------------------------------------------- |
+| Telnyx (contrôle d'appel)   | `answer`, `speak`, `record` via `telnyxFetch` | 10 s                         | aucun (appel en cours) | non                                          | l'appel se poursuit ou se termine côté Telnyx              |
+| Telnyx (SMS / WhatsApp)     | SDK + agent keep-alive                        | SDK                          | BullMQ (`attempts: 5`) | non                                          | job en dead-letter, alerte `dead_letter_backlog`           |
+| Cartesia TTS (appel live)   | `/tts/bytes` streamé                          | 8 s par tentative            | 2 tentatives           | non                                          | message d'excuse parlé via `speakTelnyxNative`             |
+| Cartesia TTS (fillers)      | `/tts/sse`                                    | 8 s                          | 3 tentatives           | non                                          | filler ignoré, la réponse principale continue              |
+| Cartesia TTS (démo/preview) | `/tts/bytes` one-shot                         | 8 s                          | aucun                  | oui, 3 échecs / 30 s                         | erreur explicite de l'endpoint                             |
+| ElevenLabs STT              | WebSocket temps réel                          | géré par le bridge           | reconnexion du bridge  | non                                          | tour sans transcription, alerte `calls_without_transcript` |
+| LLM vocal (Groq)            | complétion vocale                             | 8 s (`VOICE_LLM_TIMEOUT_MS`) | aucun                  | oui, 3 échecs / 30 s (implémentation dédiée) | message d'excuse parlé, l'appel ne bascule plus de modèle  |
+| Stripe                      | PaymentIntent, webhooks                       | 10 s (SDK)                   | `maxNetworkRetries: 2` | non                                          | paiement refusé proprement, job en dead-letter             |
+| Resend                      | email transactionnel                          | 10 s                         | BullMQ                 | non                                          | email non envoyé, trace en base                            |
+| Google Calendar / Places    | freeBusy, recherche                           | 10 s                         | aucun                  | non                                          | disponibilité réduite, log d'avertissement                 |
 
-Le circuit breaker LLM vit dans `modules/voice/stream/manager.ts` (logique historique, avec bascule
-Cerebras ↔ OpenRouter). Il n'a pas été migré vers le module partagé pour ne pas toucher le chemin
-vocal dans ce lot ; l'unification est un suivi assumé, pas un oubli.
+Le circuit breaker LLM vit dans `modules/voice/stream/manager.ts`. Il n'a pas été migré vers le
+module partagé pour ne pas toucher le chemin vocal ; l'unification est un suivi assumé, pas un
+oubli.
+
+Depuis le 22 septembre 2026, le pipeline vocal n'a **qu'un provider** : Groq en direct, modèle
+`qwen/qwen3.8-27b`. Les chemins Cerebras (Gemma) et OpenRouter (Llama) ont été retirés, ainsi que
+le repli automatique : un 402/429/5xx ou une erreur réseau remonte à l'appelant, qui prononce le
+message d'excuse parlé. Le circuit breaker reste utile pour ne pas marteler Groq pendant 30 s après
+trois échecs consécutifs.
+
+Conséquence à garder en tête : **il n'y a plus de continuité de modèle**. Une panne Groq dégrade la
+conversation au lieu de la faire basculer. Si ce compromis doit être rouvert, la bonne forme n'est
+pas de restaurer l'ancien repli — qui repassait par Groq via OpenRouter — mais d'ajouter un provider
+réellement indépendant.
 
 ## Ajouter un appel fournisseur
 
