@@ -16,8 +16,13 @@
  */
 
 import { FastifyInstance } from 'fastify';
-import { requireOrg } from '../../plugins/clerk';
+import { requireOrg, requireSokarOperator } from '../../plugins/clerk';
 import { db } from '../../shared/db/client';
+import {
+  aggregateOnboardingCohort,
+  perRestaurantProgress,
+  type RestaurantTimeline,
+} from './onboarding-funnel.service';
 
 const STEP_ORDER = [
   'restaurant',
@@ -33,6 +38,43 @@ const STEP_ORDER = [
 ] as const;
 
 export async function onboardingFunnelRoutes(app: FastifyInstance) {
+  /**
+   * Vue cohorte, réservée à l'opérateur : elle agrège tous les établissements,
+   * donc elle n'est pas scopée par organisation. C'est ce que la page
+   * /dashboard/admin/onboarding consomme pour mesurer le pilote (R2-5).
+   */
+  app.get(
+    '/admin/onboarding-funnel/cohort',
+    { preHandler: requireSokarOperator() },
+    async (req, reply) => {
+      try {
+        // tenant-scoping: global — funnel opérateur agrégé, pas une lecture tenant.
+        const events = await db.onboardingEvent.findMany({
+          select: { restaurantId: true, event: true, task: true, createdAt: true },
+          orderBy: { createdAt: 'asc' },
+        });
+
+        // tenant-scoping: global — première réservation par établissement, agrégat opérateur.
+        const firstReservations = await db.reservation.groupBy({
+          by: ['restaurantId'],
+          _min: { reservedAt: true },
+        });
+        const timelines: RestaurantTimeline[] = firstReservations.map((row) => ({
+          restaurantId: row.restaurantId,
+          firstReservationAt: row._min.reservedAt ?? null,
+        }));
+
+        return reply.send({
+          funnel: aggregateOnboardingCohort(events, timelines),
+          restaurants: perRestaurantProgress(events, timelines),
+        });
+      } catch (err) {
+        req.log.error({ err }, 'onboarding-funnel: failed to aggregate cohort');
+        return reply.status(500).send({ error: 'Failed to read onboarding cohort funnel' });
+      }
+    },
+  );
+
   app.get('/admin/onboarding-funnel', { preHandler: requireOrg() }, async (req, reply) => {
     const restaurantId = req.restaurantId as string;
 

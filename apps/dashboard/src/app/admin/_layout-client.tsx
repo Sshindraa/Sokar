@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Moon,
   Radio,
+  Route,
   ShieldCheck,
   Sun,
 } from 'lucide-react';
@@ -26,6 +27,7 @@ const adminNavigation = [
   { href: '/admin/margin', label: 'Coûts opérationnels', icon: BarChart3 },
   { href: '/admin/health', label: 'Santé des restaurants', icon: Activity },
   { href: '/admin/provisioning', label: 'Provisioning', icon: Radio },
+  { href: '/admin/onboarding', label: 'Onboarding — cohorte', icon: Route },
 ] as const;
 
 function AdminThemeToggle() {

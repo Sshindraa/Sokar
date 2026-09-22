@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import AdminHomePage from './page';
 
 describe('AdminHomePage', () => {
-  it('présente les trois espaces opérateur sans contenu restaurant', () => {
+  it('présente les espaces opérateur sans contenu restaurant', () => {
     render(<AdminHomePage />);
 
     expect(
@@ -20,6 +20,10 @@ describe('AdminHomePage', () => {
     expect(screen.getByRole('link', { name: /Provisioning/ })).toHaveAttribute(
       'href',
       '/admin/provisioning',
+    );
+    expect(screen.getByRole('link', { name: /Onboarding — cohorte/ })).toHaveAttribute(
+      'href',
+      '/admin/onboarding',
     );
     expect(screen.queryByText(/Chez Sokar HQ/)).not.toBeInTheDocument();
   });
