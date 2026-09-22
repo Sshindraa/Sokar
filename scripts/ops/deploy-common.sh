@@ -65,6 +65,14 @@ ARTIFACT_PATHS=(
     "apps/dashboard/public"
     "apps/connect/.next"
     "apps/connect/public"
+    # Les paquets partagés sont compilés dans le même build : un rollback qui
+    # restaure l'API sans eux produit une paire incompatible. Le 22 septembre
+    # 2026, l'ancien `dist/env.js` d'une release restaurée appelait
+    # `VOICE_LLM_FALLBACK_MODEL_DEFAULT`, retiré du paquet config par la release
+    # suivante : l'API bouclait sur « Required » et le test de rollback échouait.
+    "packages/config/dist"
+    "packages/database/dist"
+    "packages/shared/dist"
 )
 
 ensure_privileged_wrapper() {
