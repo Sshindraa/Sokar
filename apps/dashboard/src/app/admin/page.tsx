@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Activity, ArrowUpRight, BarChart3, Radio } from 'lucide-react';
+import { Activity, ArrowUpRight, BarChart3, Radio, Route } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const adminAreas = [
@@ -21,6 +21,12 @@ const adminAreas = [
     description: 'Préparer les numéros, webhooks, renvois et appels de validation.',
     icon: Radio,
   },
+  {
+    href: '/admin/onboarding',
+    title: 'Onboarding — cohorte',
+    description: "Mesurer l'abandon par étape et le délai jusqu'à la première réservation.",
+    icon: Route,
+  },
 ] as const;
 
 export default function AdminHomePage() {
@@ -39,7 +45,7 @@ export default function AdminHomePage() {
         </p>
       </header>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {adminAreas.map(({ href, title, description, icon: Icon }) => (
           <Link key={href} href={href} className="group block">
             <Card className="h-full transition-all duration-200 group-hover:-translate-y-0.5 group-hover:border-primary/50">
