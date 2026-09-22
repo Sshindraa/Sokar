@@ -76,11 +76,14 @@ export async function whatsappWebhookRoutes(app: FastifyInstance) {
     const text = payload.text;
 
     if (!from || !text) {
-      req.log.warn({ from, hasText: !!text }, 'whatsapp inbound: missing from or text');
+      req.log.warn(
+        { hasFrom: Boolean(from), hasText: !!text },
+        'whatsapp inbound: missing from or text',
+      );
       return reply.send({ result: 'ok' });
     }
 
-    req.log.info({ from, textLength: text.length }, 'whatsapp inbound received');
+    req.log.info({ hasFrom: true, textLength: text.length }, 'whatsapp inbound received');
 
     // Même handler que SMS — parse OUI/NON et agit sur la résa
     await handleReply(from, text, 'whatsapp');

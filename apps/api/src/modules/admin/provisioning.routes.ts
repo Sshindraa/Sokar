@@ -120,7 +120,15 @@ export async function provisioningRoutes(app: FastifyInstance) {
         });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
-        app.log.error({ err, restaurantId, body }, 'Failed to assign phone number');
+        app.log.error(
+          {
+            err,
+            restaurantId,
+            hasPhoneNumber: Boolean(body.phoneNumber),
+            hasTelnyxPhoneNumberId: Boolean(body.telnyxPhoneNumberId),
+          },
+          'Failed to assign phone number',
+        );
         return reply.status(400).send({ error: message });
       }
     },
@@ -201,7 +209,10 @@ export async function provisioningRoutes(app: FastifyInstance) {
         });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
-        app.log.error({ err, restaurantId, targetPhone }, 'Failed to trigger test call');
+        app.log.error(
+          { err, restaurantId, hasTargetPhone: Boolean(targetPhone) },
+          'Failed to trigger test call',
+        );
         return reply.status(502).send({ error: message });
       }
     },

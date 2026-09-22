@@ -3,7 +3,7 @@
  *
  * Extrait de handler.ts. Ces fonctions prennent une CallSession en
  * paramètre et lisent son état (state, ended, telnyxWs, codec,
- * latencyTrace) mais ne mutent que latencyTrace (pour la télémétrie).
+ * latencyTrace) ; les jalons TTS sont enregistrés par turn-telemetry.
  */
 
 import { WebSocket } from 'ws';

@@ -2,8 +2,8 @@
 
 > **Statut : ACTIF — audité le 12 septembre 2026.**
 > La dernière preuve documentée confirme ElevenLabs et Cartesia fonctionnels en staging ; Telnyx
-> reste absent et bloque un appel réel. Toujours contrôler `/health/dependencies` et les variables
-> présentes sans afficher leur valeur avant un test voice. Voir
+> reste absent et bloque un appel réel. Toujours contrôler `/health` (qui expose les dépendances)
+> et les variables présentes sans afficher leur valeur avant un test voice. Voir
 > [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md).
 
 ## URLs

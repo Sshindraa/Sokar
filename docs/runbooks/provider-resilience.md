@@ -54,15 +54,19 @@ module partagé pour ne pas toucher le chemin vocal ; l'unification est un suivi
 oubli.
 
 Depuis le 22 septembre 2026, le pipeline vocal n'a **qu'un provider** : Groq en direct, modèle
-`qwen/qwen3.8-27b`. Les chemins Cerebras (Gemma) et OpenRouter (Llama) ont été retirés, ainsi que
-le repli automatique : un 402/429/5xx ou une erreur réseau remonte à l'appelant, qui prononce le
-message d'excuse parlé. Le circuit breaker reste utile pour ne pas marteler Groq pendant 30 s après
-trois échecs consécutifs.
+`qwen/qwen3.8-27b`. Il n'y a aucun routage secondaire : un 402/429/5xx ou une erreur réseau
+remonte à l'appelant, qui prononce le message d'excuse parlé. Le circuit breaker reste utile pour
+ne pas marteler Groq pendant 30 s après trois échecs consécutifs.
 
-Conséquence à garder en tête : **il n'y a plus de continuité de modèle**. Une panne Groq dégrade la
-conversation au lieu de la faire basculer. Si ce compromis doit être rouvert, la bonne forme n'est
-pas de restaurer l'ancien repli — qui repassait par Groq via OpenRouter — mais d'ajouter un provider
-réellement indépendant.
+Conséquence à garder en tête : **il n'y a pas de continuité de modèle**. Une panne Groq dégrade la
+conversation. Si ce compromis doit être rouvert, il faudra ajouter un provider réellement
+indépendant, avec ses propres timeouts, métriques, coûts et tests de panne.
+
+L'identité effective est enregistrée à l'ouverture du stream et dans la télémétrie :
+`llmProvider=groq` et `llmModel=VOICE_LLM_MODEL` sur `VoiceTurnTelemetry` et
+`VoiceCallTelemetry`. Le log de démarrage expose aussi `openrouterKeyConfigured` (présence de la
+clé dans l'environnement) et `openrouterUsed` (route effectivement empruntée). La première valeur
+peut être vraie pour un outil externe ; avec le pipeline actuel, la seconde reste toujours fausse.
 
 ## Ajouter un appel fournisseur
 

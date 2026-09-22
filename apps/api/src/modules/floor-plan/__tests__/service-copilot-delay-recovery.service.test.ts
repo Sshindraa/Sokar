@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TableAllocationService } from '../table-allocation.service';
 import { ServiceCopilotDelayImpactService } from '../service-copilot-delay-impact.service';
+import { CapacityAwareAvailabilityService } from '../availability-capacity-aware.service';
 import {
   computeDelayRecoveryPayloadHash,
   DelayRecoveryConflictError,
@@ -386,6 +387,12 @@ describe('ServiceCopilotDelayRecoveryService', () => {
     tx.table.findFirst
       .mockResolvedValueOnce({ id: 'table-12' })
       .mockResolvedValueOnce({ id: 'table-7' });
+    tx.reservation.update
+      .mockResolvedValueOnce({ id: 'reservation-1' })
+      .mockResolvedValueOnce({ id: 'promoted-1', status: 'CANCELLED', state: 'CANCELLED' });
+    const invalidate = vi
+      .spyOn(CapacityAwareAvailabilityService, 'invalidateAvailability')
+      .mockResolvedValue(undefined);
     vi.spyOn(TableAllocationService.prototype, 'isTableAvailable').mockResolvedValue(true);
 
     await expect(
@@ -401,7 +408,7 @@ describe('ServiceCopilotDelayRecoveryService', () => {
       waitingListEntryId: 'waiting-1',
       operationId: 'delay-report-1',
     });
-    expect(tx.$queryRaw).toHaveBeenCalledTimes(5);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(6);
     expect(tx.reservation.update).toHaveBeenNthCalledWith(1, {
       where: { id: 'reservation-1' },
       data: {
@@ -411,7 +418,7 @@ describe('ServiceCopilotDelayRecoveryService', () => {
       },
     });
     expect(tx.reservation.update).toHaveBeenNthCalledWith(2, {
-      where: { id: 'promoted-1' },
+      where: { id: 'promoted-1', restaurantId: 'rest-1' },
       data: { state: 'CANCELLED', status: 'CANCELLED' },
     });
     expect(tx.waitingListEntry.update).toHaveBeenCalledWith({
@@ -419,6 +426,7 @@ describe('ServiceCopilotDelayRecoveryService', () => {
       data: { status: 'PENDING', promotedReservationId: null, promotedAt: null },
     });
     expect(tx.reservationAuditLog.create).toHaveBeenCalledTimes(3);
+    expect(invalidate).toHaveBeenCalledWith('rest-1');
   });
 
   it('refuse le retour arrière si la réservation promue a déjà été installée', async () => {

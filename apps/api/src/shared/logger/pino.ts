@@ -27,10 +27,38 @@ export const REDACT_PATHS = [
   '*.holdToken',
 
   // PII
+  'phone',
   '*.phone',
+  'phoneNumber',
+  '*.phoneNumber',
+  'phone_number',
+  '*.phone_number',
+  'callerPhone',
+  '*.callerPhone',
+  'caller_phone',
+  '*.caller_phone',
+  'customerPhone',
   '*.customerPhone',
+  'customer_phone',
+  '*.customer_phone',
+  'customerPhoneNormalized',
   '*.customerPhoneNormalized',
+  'targetPhone',
+  '*.targetPhone',
+  'targetPhoneNumber',
+  '*.targetPhoneNumber',
+  'msisdn',
+  '*.msisdn',
+  // Provider payloads use generic `from`/`to` keys for phone numbers. These
+  // names are redacted centrally so a new webhook log cannot leak a caller by
+  // accident. State-machine logs use fromState/toState instead.
+  'from',
+  '*.from',
+  'to',
+  '*.to',
+  'email',
   '*.email',
+  'customerEmail',
   '*.customerEmail',
 
   // Application env vars that contain secrets (used when `env` is logged)

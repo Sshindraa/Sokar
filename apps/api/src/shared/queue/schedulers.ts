@@ -59,6 +59,15 @@ export async function registerJobSchedulers(): Promise<void> {
       { name: 'sms', data: { kind: 'sms' } },
     ),
   );
+  // Rattrapage fréquent des appels sans outcome : un appel terminé doit
+  // produire un résultat exploitable même si le webhook de fin est perdu.
+  await register('reconciliation/voice-finalization', () =>
+    queues.reconciliation.upsertJobScheduler(
+      'voice-finalization-sweep',
+      { pattern: '*/15 * * * *', tz: 'Europe/Paris' },
+      { name: 'voice-finalization', data: { kind: 'voice-finalization' } },
+    ),
+  );
 
   // SMS de rappel J-1 : envoie les SMS à 17h chaque jour
   await register('confirmation-sms/scan', () =>

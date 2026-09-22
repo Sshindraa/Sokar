@@ -501,6 +501,7 @@ export class McpToolRegistry {
 
       await this.reservationService.cancelReservation({
         reservationId: input.reservationId,
+        restaurantId: reservation.restaurantId,
         actor: ctx.actor,
         reason: input.reason,
       });

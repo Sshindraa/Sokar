@@ -18,12 +18,20 @@ export const CALL_INTENT_LABELS: Record<CallIntent, string> = {
   OTHER: 'Autre',
 };
 
-export const CALL_OUTCOME_VALUES = ['RESERVED', 'INFO', 'NO_ACTION', 'HANDOFF', 'ERROR'] as const;
+export const CALL_OUTCOME_VALUES = [
+  'RESERVED',
+  'INFO',
+  'MESSAGE',
+  'NO_ACTION',
+  'HANDOFF',
+  'ERROR',
+] as const;
 export type CallOutcome = (typeof CALL_OUTCOME_VALUES)[number];
 
 export const CALL_OUTCOME_LABELS: Record<CallOutcome, string> = {
   RESERVED: 'Réservation créée',
   INFO: 'Information donnée',
+  MESSAGE: 'Message enregistré',
   NO_ACTION: 'Aucun action',
   HANDOFF: 'Transfert humain',
   ERROR: 'Erreur',

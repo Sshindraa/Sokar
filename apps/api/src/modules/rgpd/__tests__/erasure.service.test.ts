@@ -7,7 +7,8 @@
  *   - reservation.customerPhone → null
  *   - reservation.customerId → null
  *   - reservation.specialRequests → null
- *   - call.customerPhone → null (best-effort)
+ *   - message.customerPhone → null (best-effort)
+ *   - call.callerPhone → null (best-effort)
  *
  * Les customer_consents sont conservés (preuve légale).
  * Un audit log 'rgpd_erasure' est créé (preuve légale + observabilité).
@@ -34,6 +35,9 @@ function makePrisma() {
       count: vi.fn().mockResolvedValue(0),
     },
     message: {
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+    call: {
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     reservationAuditLog: {
@@ -112,6 +116,29 @@ describe('ErasureService.eraseSubject', () => {
     });
 
     expect(result.callsAnonymized).toBe(2);
+  });
+
+  it('anonymise aussi le numéro d’appelant persisté sur Call', async () => {
+    (prisma.reservation.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'res-1' });
+    (prisma.customerConsent.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    (prisma.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (fn: (tx: { reservation: typeof prisma.reservation }) => unknown) =>
+        fn({ reservation: prisma.reservation }),
+    );
+    (prisma.message.updateMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 2 });
+    (prisma.call.updateMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 3 });
+
+    const result = await service.eraseSubject({
+      subject: '+336****4444',
+      reason: 'r',
+      actor: 'a',
+    });
+
+    expect(prisma.call.updateMany).toHaveBeenCalledWith({
+      where: { callerPhone: '+336****4444' },
+      data: { callerPhone: null },
+    });
+    expect(result.callsAnonymized).toBe(5);
   });
 
   it("ne fait pas échouer si la table Message n'a pas de customerPhone (catch silencieux)", async () => {

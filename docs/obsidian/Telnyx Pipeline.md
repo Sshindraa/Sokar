@@ -1,6 +1,6 @@
 # Telnyx Pipeline
 
-**Dernière mise à jour** : Mai 2026
+**Dernière mise à jour** : 22 septembre 2026
 **Carrier** : Telnyx (production)
 **Code** : `apps/api/src/modules/voice/telnyx.pipeline.ts`
 
@@ -34,7 +34,7 @@ POST /voice/telnyx  ← call.initiated webhook
 | Étape               | Provider                               | Modèle                                                       | Détail                                                                                  |
 | ------------------- | -------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
 | **STT**             | Telnyx ai_config / Scribe Media Stream | `scribe_v2_realtime` en Media Stream                         | La route Media Stream envoie PCMU en `ulaw_8000` et convertit PCMA en `pcm_8000`        |
-| **LLM**             | OpenRouter                             | `deepseek/deepseek-v4-flash` (default) ou PRO si VIP         | System prompt + conversation turns                                                      |
+| **LLM**             | Groq OpenAI-compatible                 | `qwen/qwen3.8-27b`                                           | System prompt + conversation turns ; aucun repli de modèle                              |
 | **TTS**             | Cartesia                               | `sonic-3.6` + Katie (`f786b574-daa5-4673-aa0c-cbe3e8534c02`) | Chunk on `.`, `!`, `?`, min_chunk_length 4. Voice ID depuis `ctx.personality.voiceIdCa` |
 | **First utterance** | —                                      | —                                                            | `"Bonjour, ${ctx.name}..."`                                                             |
 
@@ -57,8 +57,8 @@ Le code de langue détecté par Scribe est transmis au LLM ; Cartesia reçoit la
          │ utterances textuelles
          ▼
 ┌─────────────────┐
-│   OpenRouter LLM  │  ← decision + tool calls
-│   (fonction appel)│
+│   Groq LLM       │  ← décision + tool calls
+│   Qwen 3.8 27B   │
 └────────┬────────┘
          │ réponse textuelle
          ▼
@@ -112,22 +112,23 @@ Reçoit : `call_leg_id`, `transcript`, `ended_reason`, `started_at`, `ended_at`,
 
 Met à jour le Call record avec durée, transcript, outcome, provider info, flag carrier.
 
-> **Attention** : `call.hangup` Telnyx event arrive _avant_ le webhook `/end`. Utiliser `/end` pour les stats finales, `hangup` pour les actions temps réel.
+> **Depuis le 22/09/2026** : `call.hangup`, la fermeture du stream WebSocket et cette route convergent toutes vers `modules/voice/call-finalization.service.ts`. L'ordre et les doublons n'importent plus : la finalisation est idempotente, ne régresse jamais (un outcome plus fort n'est pas remplacé par un plus faible, une transcription plus courte n'écrase pas la plus complète) et déduit le résultat des faits persistés. `calls.caller_phone` est persisté dès `call.initiated` (migration `20260922120000`), ce qui permet au job `voice-finalization` (toutes les 15 min) de rattraper un appel resté sans `outcome` **et** de déclencher la récupération commerciale sans dépendre du webhook. La valeur `CallOutcome.MESSAGE` distingue un message enregistré pour le gérant d'un simple abandon.
 
 ---
 
-## Sélection du Modèle LLM
+## Modèle LLM vocal
 
-```typescript
-function selectLlmModel(isVip: boolean, turnCount: number): string {
-  if (isVip || turnCount > LLM_VIP_TURN_THRESHOLD) return LLM_MODELS.PRO;
-  return LLM_MODELS.FLASH;
-}
-```
+Le chemin vocal utilise un seul modèle configuré par `VOICE_LLM_MODEL`, avec
+`qwen/qwen3.8-27b` comme valeur par défaut. Le provider est Groq direct ; il
+n'existe plus de sélection VIP, de canari par restaurant ou de repli automatique.
+Après trois échecs consécutifs, le circuit breaker court-circuite temporairement
+les appels et le pipeline prononce le message de dégradation prévu.
 
-- **FLASH** : `deepseek/deepseek-v4-flash` (défaut, rapide/économique)
-- **PRO** : Modèle premium pour clients VIP ou conversations longues
-- Configuré dans `@sokar/config`
+L'ouverture du stream journalise le provider et le modèle résolus. Chaque tour
+persiste `llmProvider` et `llmModel` lorsqu'un appel LLM a effectivement été
+exécuté ; le bilan d'appel reprend le couple pour les KPI. Le même log distingue
+`openrouterKeyConfigured` (clé présente) de `openrouterUsed` (route utilisée),
+sans jamais enregistrer la clé elle-même.
 
 ---
 
@@ -202,5 +203,5 @@ apps/api/src/modules/voice/
 
 Voir aussi : [[Architecture]] (section Voice Pipeline)
 
-2026-09-04 14:08 — [voice, confirmation, closing] **Corrections de dialogue préparées pour test téléphonique** — Branche isolée `codex/voice-confirmation-closing` depuis `origin/main@28f5bfa`, intégrant les améliorations locales d’épellation/STT. La première question termine la réponse LLM (stream primaire, fallback et non-streaming) avant toute suite ou outil du même tour. Une clôture explicite du client passe en `CLOSING`, annule génération/spéculation, ignore les nouveaux transcripts, attend le mark Telnyx (ou le webhook TTS natif) avant hangup idempotent ; timeout borné et retry réseau. Un simple merci garde l’appel ouvert ; un court transcript ambigu après le départ demande clarification. Disponibilité annoncée explicitement. Vérification : suite vocale 429/429, typecheck et lint sans erreur ; test audio réel et déploiement encore à effectuer. Aucun changement de voix, de modèle ou de schéma.
+2026-09-04 14:08 — [voice, confirmation, closing] **Corrections de dialogue préparées pour test téléphonique** — Branche isolée `codex/voice-confirmation-closing` depuis `origin/main@28f5bfa`, intégrant les améliorations locales d’épellation/STT. La première question termine la réponse LLM (streaming et non-streaming) avant toute suite ou outil du même tour. Une clôture explicite du client passe en `CLOSING`, annule génération/spéculation, ignore les nouveaux transcripts, attend le mark Telnyx (ou le webhook TTS natif) avant hangup idempotent ; timeout borné et retry réseau. Un simple merci garde l’appel ouvert ; un court transcript ambigu après le départ demande clarification. Disponibilité annoncée explicitement. Vérification : suite vocale 429/429, typecheck et lint sans erreur ; test audio réel et déploiement encore à effectuer. Aucun changement de voix, de modèle ou de schéma.
 2026-09-04 14:55 — [voice, analysis, name-spelling] **Régression d’épellation identifiée après test Henri** — Le dernier appel a confirmé l’alternative 12h30, mais une transcription STT bruitée a permis au LLM de confirmer « A D K I F » malgré « Non ». Le parseur reconnaît maintenant « en nombre de actifs », les corrections « non, … » et « A deux K I F » ; les keyterms STT incluent `deux k` et `double k`. Tests ciblés : 171/171 ; typecheck API et formatage OK. Déploiement contrôlé à réaliser.

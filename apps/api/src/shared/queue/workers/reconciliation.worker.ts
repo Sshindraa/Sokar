@@ -27,11 +27,20 @@ import {
   repairNotificationAfterProviderSuccess,
   type NotificationRepairStatus,
 } from '../notification-repair';
+import {
+  finalizeVoiceCall,
+  type CallFinalizationDependencies,
+} from '../../../modules/voice/call-finalization.service';
 
 interface DailyReconciliationJobData {
-  readonly kind: 'calls' | 'sms';
+  readonly kind: 'calls' | 'sms' | 'voice-finalization';
   readonly dayKey?: string;
 }
+
+/** Fenêtre du rattrapage fréquent : ni trop tôt, ni sur un historique illimité. */
+const VOICE_FINALIZATION_MIN_AGE_MS = 10 * 60 * 1000;
+const VOICE_FINALIZATION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const VOICE_FINALIZATION_BATCH_SIZE = 200;
 
 export type ReconciliationJobData = DailyReconciliationJobData | NotificationReconciliationJobData;
 
@@ -52,6 +61,12 @@ export interface ReconciliationDependencies {
   deadLetterQueue: ManualReviewQueue;
   reconciliationQueue?: NotificationReconciliationQueue;
   repairNotification?: (claimKey: string, now?: Date) => Promise<NotificationRepairStatus>;
+  /**
+   * Injection de la finalisation d'appel : permet au rattrapage de déclencher
+   * la récupération commerciale (le worker n'a pas le contexte restaurant).
+   */
+  enqueueRecovery?: CallFinalizationDependencies['enqueueRecovery'];
+  loadRestaurantContext?: CallFinalizationDependencies['loadRestaurantContext'];
 }
 
 function getDefaultDependencies(): ReconciliationDependencies {
@@ -66,6 +81,24 @@ function getDefaultDependencies(): ReconciliationDependencies {
     reconciliationQueue: queues.reconciliation,
     repairNotification: (claimKey, now) =>
       repairNotificationAfterProviderSuccess(db, claimKey, now),
+    // Le worker connaît la queue de récupération ; le contexte restaurant est
+    // résolu depuis le numéro appelé quand le hint le porte.
+    enqueueRecovery: async (input, callLegId) => {
+      const { sanitizeJobId } = await import('../job-options');
+      await queues.callRecovery.add('send-recovery-sms', input, {
+        jobId: sanitizeJobId(`recovery_${callLegId}`),
+      });
+    },
+    loadRestaurantContext: async (toNumber) => {
+      const { RestaurantService } = await import('../../../modules/restaurants/restaurant.service');
+      const ctx = await RestaurantService.loadContext(toNumber);
+      return {
+        id: ctx.id,
+        name: ctx.name,
+        slug: ctx.slug ?? null,
+        phoneNumber: ctx.phoneNumber ?? null,
+      };
+    },
   };
 }
 
@@ -350,6 +383,51 @@ async function processNotificationReconciliation(
   );
 }
 
+interface FinalizationLogger {
+  error: (fields: Record<string, unknown>, message: string) => void;
+}
+
+/**
+ * Rattrapage des appels restés incomplets : rejoue la finalisation commune sur
+ * chaque appel candidat. Un échec unitaire ne bloque pas le lot ; si la base
+ * est indisponible pour tous les candidats, on relance le job pour bénéficier
+ * du retry BullMQ plutôt que de perdre le lot.
+ */
+async function finalizeIncompleteCalls(
+  deps: ReconciliationDependencies,
+  log: FinalizationLogger,
+  callSids: string[],
+): Promise<number> {
+  let repaired = 0;
+  let failures = 0;
+  for (const callSid of callSids) {
+    try {
+      const result = await finalizeVoiceCall(
+        callSid,
+        { source: 'sweep' },
+        {
+          db: deps.db,
+          ...(deps.enqueueRecovery ? { enqueueRecovery: deps.enqueueRecovery } : {}),
+          ...(deps.loadRestaurantContext
+            ? { loadRestaurantContext: deps.loadRestaurantContext }
+            : {}),
+        },
+      );
+      if (result.created || result.updatedFields.length > 0) repaired += 1;
+    } catch (err) {
+      failures += 1;
+      log.error(
+        { err: err instanceof Error ? err.message : String(err), callSid },
+        'voice finalization failed for call',
+      );
+    }
+  }
+  if (failures > 0 && failures === callSids.length) {
+    throw new Error(`voice finalization failed for all ${failures} candidate calls`);
+  }
+  return repaired;
+}
+
 export async function processReconciliationJob(
   job: Job<ReconciliationJobData>,
   deps: ReconciliationDependencies = getDefaultDependencies(),
@@ -382,14 +460,56 @@ export async function processReconciliationJob(
       take: 500,
     });
 
+    // Rattrapage profond de la journée : on répare au lieu de seulement
+    // journaliser, sinon un appel sans outcome reste inexploitable pour le
+    // restaurant et pour la mesure produit.
+    const repaired = await finalizeIncompleteCalls(
+      deps,
+      log,
+      calls.map((call) => call.callSid),
+    );
+
     log.warn(
       {
         dayKey,
         unresolvedCount: calls.length,
+        repairedCount: repaired,
         unresolvedCallSids: calls.map((call) => call.callSid).slice(0, 25),
       },
       'call reconciliation completed',
     );
+    return;
+  }
+
+  if (data.kind === 'voice-finalization') {
+    const now = Date.now();
+    // tenant-scoping: global — balayage de maintenance : tous les
+    // établissements sont concernés par le rattrapage des appels incomplets.
+    const calls = await deps.db.call.findMany({
+      where: {
+        carrier: 'telnyx',
+        outcome: null,
+        createdAt: {
+          gte: new Date(now - VOICE_FINALIZATION_MAX_AGE_MS),
+          lte: new Date(now - VOICE_FINALIZATION_MIN_AGE_MS),
+        },
+      },
+      select: { callSid: true },
+      orderBy: { createdAt: 'desc' },
+      take: VOICE_FINALIZATION_BATCH_SIZE,
+    });
+
+    if (calls.length === 0) {
+      log.info({ dayKey }, 'voice finalization sweep: nothing to repair');
+      return;
+    }
+
+    const repaired = await finalizeIncompleteCalls(
+      deps,
+      log,
+      calls.map((call) => call.callSid),
+    );
+    log.info({ dayKey, candidates: calls.length, repaired }, 'voice finalization sweep completed');
     return;
   }
 

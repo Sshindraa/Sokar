@@ -5,11 +5,9 @@ import { telnyxWebhookEventsTotal } from '../../shared/observability/metrics';
 import { RestaurantService } from '../restaurants/restaurant.service';
 import { CustomerService } from '../customers/customer.service';
 import { buildSystemPrompt, type OpeningHours } from './prompts';
-import { detectOutcome, hadReservationIntent } from './outcome';
 import { CallSessionManager } from './stream/manager';
 import { acknowledgeCallEnding } from './stream/call-ending';
-import { getVoiceLlmProvider } from './llm-provider';
-import { CARTESIA_MODEL } from '@sokar/config';
+import { finalizeVoiceCall, type CallRecoveryDispatchInput } from './call-finalization.service';
 
 import {
   buildSmsJobId,
@@ -35,6 +33,37 @@ function buildRecoveryJobId(callLegId: string): string {
   return sanitizeJobId(`recovery_${callLegId}`);
 }
 
+/**
+ * Dépendances de finalisation partagées par le raccrochage et la route `/end` :
+ * même contexte restaurant, même enqueue de récupération, donc même résultat
+ * quel que soit l'événement qui arrive en premier.
+ */
+function callFinalizationDependencies(app: FastifyInstance) {
+  return {
+    db: app.db,
+    loadRestaurantContext: async (toNumber: string) => {
+      const ctx = await RestaurantService.loadContext(toNumber);
+      return {
+        id: ctx.id,
+        name: ctx.name,
+        slug: ctx.slug ?? null,
+        phoneNumber: ctx.phoneNumber ?? null,
+      };
+    },
+    enqueueRecovery: async (input: CallRecoveryDispatchInput, callLegId: string): Promise<void> => {
+      const customer = await app.db.customer.findFirst({
+        where: { restaurantId: input.restaurantId, phone: input.customerPhone },
+        select: { name: true },
+      });
+      await app.queues.callRecovery.add(
+        'send-recovery-sms',
+        { ...input, customerName: customer?.name ?? input.customerName },
+        { jobId: buildRecoveryJobId(callLegId) },
+      );
+    },
+  };
+}
+
 interface TelnyxCallPayload {
   data: {
     event_type: string;
@@ -52,6 +81,8 @@ interface TelnyxCallPayload {
       recording_urls?: { mp3?: string; wav?: string };
       started_at?: string;
       ended_at?: string;
+      recording_started_at?: string;
+      recording_ended_at?: string;
     };
   };
 }
@@ -116,8 +147,11 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
             callLegId: payload.call_leg_id,
             recordingId,
             downloadUrl,
-            startedAt: payload.started_at,
-            endedAt: payload.ended_at,
+            // `call.recording.saved` exposes recording_started_at/ended_at.
+            // Keep the generic names as a compatibility fallback for older
+            // fixtures/provider payloads, but prefer the recording fields.
+            startedAt: payload.recording_started_at ?? payload.started_at,
+            endedAt: payload.recording_ended_at ?? payload.ended_at,
           },
           { jobId },
         );
@@ -130,7 +164,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           ctx = await RestaurantService.loadContext(payload.to);
         } catch (err: unknown) {
           app.log.error(
-            { err: err instanceof Error ? err.message : String(err), to: payload.to },
+            { err: err instanceof Error ? err.message : String(err), hasTo: Boolean(payload.to) },
             'Restaurant not found for phone number',
           );
           return reply.send({ result: 'ok' });
@@ -198,6 +232,10 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
               callSid: payload.call_leg_id,
               restaurantId: ctx.id,
               carrier: 'telnyx',
+              // Persisté dès l'init : c'est le seul moment où le numéro est
+              // garanti. Le rattrapage des appels incomplets en a besoin pour
+              // déclencher la récupération commerciale.
+              callerPhone: payload.from ?? null,
             },
           });
         } catch (err: unknown) {
@@ -467,6 +505,33 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           }
         }
 
+        // Finalisation commune : `call.hangup` est le signal le plus fiable du
+        // fournisseur. `/voice/telnyx/end` peut ne jamais arriver ; l'outcome ne
+        // doit pas rester nul pour autant. La session en mémoire enrichit les
+        // faits quand elle est encore vivante (même process).
+        try {
+          const session = CallSessionManager.getInstance().get(payload.call_control_id);
+          await finalizeVoiceCall(
+            payload.call_leg_id,
+            {
+              source: 'hangup',
+              restaurantId: callRecord?.restaurantId,
+              transcript: session?.transcript,
+              durationSec,
+              handoffConclusion: session?.handoffConclusion,
+              conversationIntent: session?.conversation?.intent ?? null,
+              to: payload.to,
+              customerPhone: payload.from,
+            },
+            callFinalizationDependencies(app),
+          );
+        } catch (err: unknown) {
+          app.log.error(
+            { err: err instanceof Error ? err.message : String(err), callSid: payload.call_leg_id },
+            'call.hangup: finalization failed',
+          );
+        }
+
         return reply.send({ result: 'ok' });
       }
 
@@ -489,8 +554,6 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
       to,
     } = req.body as TelnyxCallEndPayload;
 
-    const outcome = detectOutcome({ transcript, endedReason: ended_reason });
-
     // Résoudre le restaurantId : le guard ne peuple pas req.restaurantId.
     // On tente (1) l'attribut posé par un authMiddleware éventuel, puis
     // (2) un lookup via le numéro Telnyx `to`. Si aucun n'est disponible,
@@ -502,7 +565,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
         restaurantId = ctx.id;
       } catch (err: unknown) {
         app.log.warn(
-          { err: err instanceof Error ? err.message : String(err), to },
+          { err: err instanceof Error ? err.message : String(err), hasTo: Boolean(to) },
           '/voice/telnyx/end: failed to resolve restaurantId from `to`',
         );
       }
@@ -515,94 +578,39 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'restaurantId is required' });
     }
 
-    const callRow = await app.db.call.upsert({
-      where: { callSid: call_leg_id },
-      update: {
-        durationSec: Math.round(
-          ended_at && started_at
-            ? (new Date(ended_at).getTime() - new Date(started_at).getTime()) / MS_TO_SECONDS
-            : 0,
-        ),
-        // Le webhook Telnyx ne porte pas toujours la transcription Scribe.
-        // La session Media Stream l'a déjà persistée ; ne pas l'effacer avec
-        // un `null` arrivé plus tard lors du hangup.
-        ...(transcript?.trim() ? { transcript } : {}),
-        outcome,
-        sttProvider: stt_provider ?? 'elevenlabs-scribe-v2-realtime',
-        llmProvider: llm_provider ?? getVoiceLlmProvider(),
-        ttsProvider: tts_provider ?? `cartesia-${CARTESIA_MODEL}`,
-        carrier: 'telnyx',
-      },
-      create: {
-        callSid: call_leg_id,
-        restaurantId,
-        durationSec: Math.round(
-          ended_at && started_at
-            ? (new Date(ended_at).getTime() - new Date(started_at).getTime()) / MS_TO_SECONDS
-            : 0,
-        ),
-        transcript: transcript?.trim() ? transcript : null,
-        outcome,
-        sttProvider: stt_provider ?? 'elevenlabs-scribe-v2-realtime',
-        llmProvider: llm_provider ?? getVoiceLlmProvider(),
-        ttsProvider: tts_provider ?? `cartesia-${CARTESIA_MODEL}`,
-        carrier: 'telnyx',
-      },
-    });
-
-    // ─── Revenue Engine: recovery dispatch ──────────────────────────────
-    // If the call ended without a reservation but the transcript shows clear
-    // reservation intent, enqueue a follow-up SMS so the caller's booking
-    // attempt is recovered. Idempotent on call_leg_id.
-    const shouldRecover =
-      outcome !== 'RESERVED' &&
-      outcome !== 'INFO' &&
-      hadReservationIntent({ transcript, endedReason: ended_reason });
-
-    if (shouldRecover && callRow.id && from) {
-      try {
-        // restaurantId est garanti non-vide ici (vérifié plus haut).
-        // On charge le ctx via to s'il est disponible, sinon via loadContext(to).
-        const ctx = to
-          ? await RestaurantService.loadContext(to).catch(() => ({
-              id: restaurantId!,
-              name: '',
-              slug: null as string | null,
-              phoneNumber: null,
-            }))
-          : { id: restaurantId!, name: '', slug: null as string | null, phoneNumber: null };
-        const customer = await app.db.customer.findFirst({
-          where: { restaurantId: ctx.id, phone: from },
-          select: { name: true },
-        });
-        const reason: 'no_action_with_intent' | 'handoff_dropped' | 'transport_error' =
-          outcome === 'HANDOFF'
-            ? 'handoff_dropped'
-            : outcome === 'ERROR'
-              ? 'transport_error'
-              : 'no_action_with_intent';
-
-        const jobId = buildRecoveryJobId(call_leg_id);
-        await app.queues.callRecovery.add(
-          'send-recovery-sms',
-          {
-            callId: callRow.id,
-            restaurantId: ctx.id,
-            customerPhone: from,
-            customerName: customer?.name ?? null,
-            restaurantName: ctx.name,
-            restaurantSlug: ctx.slug ?? null,
-            restaurantPhone: ctx.phoneNumber ?? null,
-            reason,
-          },
-          { jobId },
-        );
-      } catch (err: unknown) {
-        app.log.warn(
-          { err: err instanceof Error ? err.message : String(err), callId: call_leg_id },
-          'failed to enqueue recovery SMS',
-        );
-      }
+    // Finalisation commune : outcome déduit des faits persistés (réservation
+    // réellement créée, transfert accepté, message enregistré), écriture
+    // idempotente et récupération commerciale déclenchée une seule fois.
+    try {
+      await finalizeVoiceCall(
+        call_leg_id,
+        {
+          source: 'end-webhook',
+          restaurantId,
+          transcript,
+          endedReason: ended_reason,
+          durationSec: Math.round(
+            ended_at && started_at
+              ? (new Date(ended_at).getTime() - new Date(started_at).getTime()) / MS_TO_SECONDS
+              : 0,
+          ),
+          sttProvider: stt_provider,
+          llmProvider: llm_provider,
+          ttsProvider: tts_provider,
+          to,
+          customerPhone: from,
+        },
+        callFinalizationDependencies(app),
+      );
+    } catch (err: unknown) {
+      // Une base momentanément indisponible ne doit pas perdre l'événement :
+      // Telnyx rejouera ce webhook, et le worker de rattrapage reprendra
+      // l'appel resté incomplet.
+      app.log.error(
+        { err: err instanceof Error ? err.message : String(err), call_leg_id },
+        '/voice/telnyx/end: finalization failed',
+      );
+      return reply.status(503).send({ error: 'finalization_unavailable' });
     }
 
     return reply.send({ received: true });

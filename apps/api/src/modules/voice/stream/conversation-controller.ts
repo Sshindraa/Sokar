@@ -1,6 +1,7 @@
 import type {
   CallSession,
   ConversationState,
+  DialogueStallLevel,
   NameCollection,
   PendingQuestion,
   SpellingToken,
@@ -36,6 +37,10 @@ export function createConversationState(): ConversationState {
     spellingCandidate: null,
     nameCollection: createNameCollection(),
     misunderstandingCount: 0,
+    stalledTurns: 0,
+    stallSignature: null,
+    humanFallbackOffered: false,
+    lastDialogueGuard: null,
     closing: false,
   };
 }
@@ -1971,6 +1976,43 @@ export function extractPlainCustomerName(transcript: string, expectName = false)
   return candidate;
 }
 
+export function asksForAvailabilityOptions(transcript: string): boolean {
+  const text = normalizeTranscript(transcript);
+  return /\b(?:disponib|creneaux?|horaires?|possible|available|availability|slots?)|\b(?:quelle heure|quand|what time)\b/.test(
+    text,
+  );
+}
+
+export function getOpenAvailabilityRequest(session: CallSession) {
+  const { intent, slots, wantsAvailabilityOptions, toolInFlight } = session.conversation;
+  if (!wantsAvailabilityOptions || toolInFlight || slots.time || !slots.date || !slots.partySize)
+    return null;
+  if (intent !== 'reservation' && intent !== 'availability') return null;
+  return { date: slots.date, partySize: slots.partySize };
+}
+
+export function buildOpenAvailabilityReply(session: CallSession, availableSlots: string[]): string {
+  const slots = [...new Set(availableSlots)].sort();
+  // Répartir les propositions sur la journée plutôt que trois quarts d'heure consécutifs.
+  const offered =
+    slots.length <= 3
+      ? slots
+      : [slots[0], slots[Math.floor(slots.length / 2)], slots[slots.length - 1]];
+  const { date, partySize } = session.conversation.slots;
+  session.conversation.offeredAvailability = { date: date!, partySize: partySize!, slots: offered };
+  const en = effectiveVoiceLanguage(session) === 'en';
+  if (!offered.length)
+    return en
+      ? 'I have no available times that day for your party. Would you like to try another day?'
+      : "Je n'ai aucun créneau disponible ce jour-là pour votre groupe. Souhaitez-vous regarder un autre jour ?";
+  const choices = offered
+    .map((slot) => formatAvailabilitySlot(slot, en ? 'en' : 'fr'))
+    .join(en ? ' or ' : ' ou ');
+  return en
+    ? `I can offer ${choices}. Which one works for you?`
+    : `Je peux vous proposer ${choices}. Quel horaire vous convient ?`;
+}
+
 export function recordUserTurn(
   session: CallSession,
   transcript: string,
@@ -1989,6 +2031,35 @@ export function recordUserTurn(
     session.conversation.intent = inferIntent(transcript) ?? session.conversation.intent;
     const extracted = extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris', now);
     const current = session.conversation.slots;
+    const offered = session.conversation.offeredAvailability;
+    if (
+      offered &&
+      session.conversation.pendingQuestion === 'timeChoice' &&
+      offered.date === current.date &&
+      offered.partySize === current.partySize &&
+      !extracted.date &&
+      !extracted.partySize &&
+      !extracted.time
+    ) {
+      const choice = normalizeTranscript(transcript).match(
+        /^(?:(?:le|la|the) )?(premier|premiere|deuxieme|second|seconde|troisieme|dernier|derniere|first|second|third|last)(?: (?:creneau|horaire|one))?(?: s il vous plait| please)?$/,
+      );
+      if (choice) {
+        const index = /premier|first/.test(choice[1])
+          ? 0
+          : /deuxieme|second/.test(choice[1])
+            ? 1
+            : /troisieme|third/.test(choice[1])
+              ? 2
+              : offered.slots.length - 1;
+        extracted.time = offered.slots[index];
+      }
+    }
+    const wantsAvailabilityOptions = asksForAvailabilityOptions(transcript);
+    if (wantsAvailabilityOptions) {
+      session.conversation.wantsAvailabilityOptions = true;
+      session.conversation.intent ??= 'availability';
+    }
     const plainCustomerName = extractPlainCustomerName(
       transcript,
       session.conversation.pendingQuestion === 'customerName' && !isNameCollectionBlocking(session),
@@ -2003,11 +2074,21 @@ export function recordUserTurn(
       clearReservationConfirmation(session);
     }
     if (slotChanged) {
+      session.conversation.offeredAvailability = undefined;
       session.conversation.lastAvailabilityResult = null;
       session.conversation.lastAvailabilityCheck = null;
     }
     Object.assign(current, extracted);
     if (plainCustomerName) current.customerName = plainCustomerName;
+
+    // Un tour qui a fait avancer le brouillon remet le garde-fou à zéro : la
+    // relance suivante est une première relance, pas une répétition.
+    if (slotChanged || customerNameChanged || wantsAvailabilityOptions) {
+      resetDialogueStall(session);
+      // Une proposition de repli humain devient caduque dès que l'appelant
+      // apporte une information : le parcours de réservation reprend.
+      session.conversation.humanFallbackOffered = false;
+    }
   }
 }
 
@@ -2080,6 +2161,8 @@ export function buildReservationProgressResponse(
 ): string | null {
   const { intent, slots } = session.conversation;
   if (intent !== 'reservation' && intent !== 'availability') return null;
+  // Une conversation qui se clôt ne doit plus relancer le formulaire.
+  if (session.conversation.closing) return null;
 
   // Ne pas répondre déterministiquement si le transcript de l'utilisateur
   // n'est pas pertinent pour la réservation (plainte, question, frustration,
@@ -2098,6 +2181,10 @@ export function buildReservationProgressResponse(
     // c'est probablement une phrase complexe → LLM
     const extracted = extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris');
     const hasSlotInfo = Boolean(extracted.date || extracted.time || extracted.partySize);
+    // Une question, une objection ou une demande d'explication n'est pas une
+    // réponse au champ manquant : le LLM y répond dans le contexte plutôt que
+    // de relancer le formulaire comme si l'appelant n'avait rien dit.
+    if (!hasSlotInfo && isExploratoryUtterance(transcript)) return null;
     if (normalized.length > 60 && !hasSlotInfo) {
       return null;
     }
@@ -2105,14 +2192,38 @@ export function buildReservationProgressResponse(
 
   const language = effectiveVoiceLanguage(session);
   if (!slots.date)
-    return language === 'en' ? 'What day would you like to come?' : 'Pour quel jour ?';
+    return guardDialogueReprompt(
+      session,
+      'date',
+      language === 'en' ? 'What day would you like to come?' : 'Pour quel jour ?',
+    );
   if (!slots.partySize)
-    return language === 'en' ? 'How many people will there be?' : 'Vous serez combien ?';
+    return guardDialogueReprompt(
+      session,
+      'partySize',
+      language === 'en' ? 'How many people will there be?' : 'Vous serez combien ?',
+    );
   if (!slots.time)
-    return language === 'en'
-      ? 'What time would you like to come?'
-      : 'Vous voulez venir vers quelle heure ?';
+    return guardDialogueReprompt(
+      session,
+      'time',
+      language === 'en'
+        ? 'What time would you like to come?'
+        : 'Vous voulez venir vers quelle heure ?',
+    );
   return null;
+}
+
+/**
+ * Une question, une objection ou un aveu d'incompréhension demandent une
+ * réponse contextualisée, jamais une relance mécanique du champ manquant.
+ */
+function isExploratoryUtterance(transcript: string): boolean {
+  if (/\?/.test(transcript)) return true;
+  const normalized = normalizeTranscript(transcript);
+  return /\b(?:pourquoi|comment|qu est ce que|est ce que|c est quoi|expliquez|explique|je ne comprends pas|je comprends pas|je ne sais pas|why|how|what is|do you|can you|could you|i don t understand|i don t know)\b/.test(
+    normalized,
+  );
 }
 
 function isAmbiguousPartySizeReply(session: CallSession, transcript: string): boolean {
@@ -2126,8 +2237,22 @@ function isAmbiguousPartySizeReply(session: CallSession, transcript: string): bo
   );
 }
 
+/**
+ * Détecte une proposition de repli humain (transfert gérant ou prise de
+ * message) dans un texte de l'agent. La réponse de l'appelant doit alors
+ * déclencher une action réelle au lieu de relancer le formulaire.
+ */
+export function isHumanFallbackOfferText(text: string): boolean {
+  return /\b(?:passe(?:r)? le gerant|transferer au gerant|prendre un message|laisser un message|take a message|put you through|connect you to the manager)\b/.test(
+    normalizeTranscript(text),
+  );
+}
+
 export function pendingQuestionFrom(question: string): PendingQuestion {
   const normalized = normalizeTranscript(question);
+  // Proposition de repli humain : la réponse de l'appelant doit déclencher une
+  // action réelle (transfert ou prise de message), pas une relance du formulaire.
+  if (isHumanFallbackOfferText(question)) return 'humanFallback';
   if (/\b(?:quelle date|quel jour|quand|what day|which day|what date|when)/.test(normalized))
     return 'date';
   if (
@@ -2183,9 +2308,17 @@ export function recordAssistantReply(session: CallSession, reply: string): void 
     // intermédiaire n'a pas de point d'interrogation exploitable.
     pendingQuestion = 'customerName';
   }
-  session.conversation.pendingQuestion = pendingQuestion;
+  // Une proposition de repli humain peut s'étaler sur plusieurs phrases : on
+  // l'analyse sur le texte complet, pas seulement sur la dernière question.
+  const fallbackOffer =
+    session.conversation.humanFallbackOffered || isHumanFallbackOfferText(reply);
+  const effectivePendingQuestion: PendingQuestion = fallbackOffer
+    ? 'humanFallback'
+    : pendingQuestion;
+  session.conversation.pendingQuestion = effectivePendingQuestion;
+  if (fallbackOffer) session.conversation.humanFallbackOffered = true;
 
-  if (pendingQuestion === 'confirmation') {
+  if (effectivePendingQuestion === 'confirmation') {
     // Chaque nouveau récapitulatif remplace l'ancien. L'accord doit porter
     // sur exactement ce brouillon, jamais sur une confirmation plus ancienne.
     session.conversation.pendingReservationConfirmationKey = getReservationConfirmationKey(session);
@@ -2207,30 +2340,213 @@ export function recordAssistantReply(session: CallSession, reply: string): void 
   }
 }
 
+/** Fil de dialogue suivi par le garde-fou anti-boucle. */
+export type DialogueStallKey =
+  | 'date'
+  | 'time'
+  | 'timeChoice'
+  | 'partySize'
+  | 'customerName'
+  | 'customerPhone'
+  | 'open';
+
+/** Oublie le fil en cours : un tour qui a fait avancer le brouillon repart à zéro. */
+export function resetDialogueStall(session: CallSession): void {
+  session.conversation.stalledTurns = 0;
+  session.conversation.stallSignature = null;
+}
+
+/** Efface la trace du garde-fou anti-boucle avant le tour suivant. */
+export function clearDialogueGuardTrace(session: CallSession): void {
+  session.conversation.lastDialogueGuard = null;
+}
+
+function dialogueStallKeyFromPendingQuestion(session: CallSession): DialogueStallKey {
+  switch (session.conversation.pendingQuestion) {
+    case 'date':
+    case 'time':
+    case 'timeChoice':
+    case 'partySize':
+    case 'customerName':
+    case 'customerPhone':
+      return session.conversation.pendingQuestion;
+    default:
+      return 'open';
+  }
+}
+
+/**
+ * Enregistre une relance déterministe et retourne le niveau de réponse.
+ *
+ * `ask` pour la première demande, `reformulate` quand la même question revient
+ * sans progrès, `escalate` quand le blocage persiste : le dialogue ne doit
+ * jamais rester coincé sur une phrase répétée à l'identique.
+ */
+export function registerDialogueStall(
+  session: CallSession,
+  key: DialogueStallKey,
+): DialogueStallLevel {
+  const conversation = session.conversation;
+  if (conversation.stallSignature === key) {
+    conversation.stalledTurns += 1;
+  } else {
+    conversation.stallSignature = key;
+    conversation.stalledTurns = 1;
+  }
+  const level: DialogueStallLevel =
+    conversation.stalledTurns >= 3
+      ? 'escalate'
+      : conversation.stalledTurns >= 2
+        ? 'reformulate'
+        : 'ask';
+  conversation.lastDialogueGuard = { key, level, count: conversation.stalledTurns };
+  return level;
+}
+
+/** Reformulation d'une question déjà posée, avec un exemple concret. */
+function buildReformulatedPrompt(session: CallSession, key: DialogueStallKey): string {
+  const en = effectiveVoiceLanguage(session) === 'en';
+  switch (key) {
+    case 'date':
+      return en
+        ? "I still don't have the day. Say for example “tomorrow” or “Friday”. Which day suits you?"
+        : "Je n'ai pas encore le jour. Dites-moi par exemple « demain » ou « vendredi ». Quel jour vous convient ?";
+    case 'time':
+      return en
+        ? 'What time would work for you? For example 7 PM or 8:30 PM.'
+        : 'Quelle heure vous arrangerait ? Par exemple « 19 h » ou « 20 h 30 ».';
+    case 'timeChoice':
+      return en
+        ? 'Which of the times I just offered would you like? Say “the first”, “the second”, or the exact time.'
+        : 'Lequel des horaires que je viens de proposer préférez-vous ? Dites « le premier », « le deuxième », ou l’heure exacte.';
+    case 'partySize':
+      return en
+        ? 'How many people should I book for? Just tell me a number, for example “four”.'
+        : 'Je note combien de personnes ? Dites-moi simplement un nombre, par exemple « quatre ».';
+    case 'customerName':
+      return en
+        ? 'What name should I put the booking under? You can also spell it letter by letter.'
+        : 'Quel nom je note pour la réservation ? Vous pouvez aussi épeler votre nom, lettre par lettre.';
+    case 'customerPhone':
+      return en
+        ? 'Which number may I use to text you the confirmation?'
+        : 'Quel numéro je peux utiliser pour vous envoyer la confirmation par SMS ?';
+    case 'open':
+      return en
+        ? 'Let’s restart simply. Tell me what you need: a table, a cancellation, or a message for the team.'
+        : "Reprenons simplement. Dites-moi ce dont vous avez besoin : une table, une annulation ou un message pour l'équipe.";
+  }
+}
+
+/**
+ * Proposition de repli humain réellement disponible. Elle annonce uniquement
+ * ce que le manager peut exécuter : transfert si une ligne gérant est
+ * configurée, prise de message sinon.
+ */
+export function buildHumanFallbackOffer(session: CallSession): string {
+  session.conversation.humanFallbackOffered = true;
+  const en = effectiveVoiceLanguage(session) === 'en';
+  if (session.managerPhone?.trim()) {
+    return en
+      ? 'I can put you through to the manager, or take a message for them. Which do you prefer?'
+      : 'Je peux vous passer le gérant, ou prendre un message pour lui. Que préférez-vous ?';
+  }
+  return en
+    ? 'I can take a message for the manager; they will call you back. Would you like me to do that?'
+    : 'Je peux prendre un message pour le gérant, il vous rappellera. Voulez-vous que je le fasse ?';
+}
+
+/** Efface l'état de repli humain quand la proposition n'est plus en attente. */
+export function clearHumanFallback(session: CallSession): void {
+  session.conversation.humanFallbackOffered = false;
+  session.conversation.pendingQuestion = null;
+  session.conversation.lastAssistantQuestion = null;
+  resetDialogueStall(session);
+}
+
+export type HumanFallbackChoice = 'transfer' | 'message' | null;
+
+/**
+ * Interprète la réponse à une proposition de repli humain. Un accord déclenche
+ * une action réelle (transfert ou prise de message) ; un refus clôt la
+ * proposition, et tout autre réponse repart vers le LLM sans boucle.
+ */
+export function resolveHumanFallbackChoice(
+  session: CallSession,
+  transcript: string,
+): HumanFallbackChoice {
+  const normalized = normalizeTranscript(transcript);
+  const hasManagerLine = Boolean(session.managerPhone?.trim());
+  const wantsTransfer = /\b(?:gerant|manager|transfert|transfer|passez moi|put me through)\b/.test(
+    normalized,
+  );
+  const wantsMessage = /\b(?:message|rappel|rappeler|reclamation|call back|callback)\b/.test(
+    normalized,
+  );
+
+  let choice: HumanFallbackChoice = null;
+  if (wantsTransfer && hasManagerLine) choice = 'transfer';
+  else if (wantsMessage) choice = 'message';
+  else if (isAffirmativeShortResponse(transcript)) choice = hasManagerLine ? 'transfer' : 'message';
+
+  if (choice) {
+    clearHumanFallback(session);
+    return choice;
+  }
+  if (isNegativeShortResponse(transcript) || classifyVoiceSpeechAct(transcript) === 'closing') {
+    // Le client refuse le repli : on arrête de relancer la même question et on
+    // laisse la conversation se clore naturellement.
+    clearHumanFallback(session);
+    session.conversation.closing = true;
+  }
+  return null;
+}
+
+/**
+ * Applique le garde-fou à une relance : première formulation habituelle,
+ * reformulation avec exemple, puis proposition de repli humain. La formulation
+ * principale reste fournie par l'appelant pour que le message exact du tour
+ * initial ne change pas.
+ */
+export function guardDialogueReprompt(
+  session: CallSession,
+  key: DialogueStallKey,
+  primary: string,
+): string {
+  const level = registerDialogueStall(session, key);
+  if (level === 'escalate') return buildHumanFallbackOffer(session);
+  if (level === 'reformulate') return buildReformulatedPrompt(session, key);
+  return primary;
+}
+
 /** Réponses courtes qui ne nécessitent ni interprétation ni appel LLM.
  *
  * Volontairement minimal : on laisse le LLM gérer le stt conversationnel
  * (demander date/heure/nombre, répondre aux questions, gérer les corrections)
  * pour des réponses naturelles et variées. Le déterministe ne garde que :
- * - handoff après 2 incompréhensions (sécurité)
+ * - proposition de repli humain après 2 incompréhensions (sécurité)
  * - backchannel simple (l'utilisateur dit "oui" → reposer la dernière question)
  * - clarification nombre de personnes ambigu
  * - followup de disponibilité (alternatives proposées par l'outil)
+ * - garde-fou anti-boucle : reformulation puis repli humain réel
  */
 export function buildDeterministicTurnResponse(
   session: CallSession,
   speechAct: VoiceSpeechAct,
   transcript = '',
 ): string | null {
+  // Une proposition de repli humain en attente est traitée par l'orchestrateur
+  // (transfert ou message réellement exécuté) : le déterministe ne la répète pas.
+  if (session.conversation.pendingQuestion === 'humanFallback') return null;
+
   const pendingShortResponse = buildPendingQuestionResponse(session, transcript);
   if (pendingShortResponse) return pendingShortResponse;
 
   // Deux incompréhensions consécutives constituent un échec de dialogue,
-  // pas une invitation à poser une troisième fois la même question.
+  // pas une invitation à poser une troisième fois la même question. On propose
+  // un repli humain réel au lieu d'annoncer un transfert qui n'aurait pas lieu.
   if (speechAct === 'content' && session.conversation.misunderstandingCount >= 2) {
-    return effectiveVoiceLanguage(session) === 'en'
-      ? "I'll put you through to the manager to help you."
-      : 'Je vais vous passer le gérant pour vous aider.';
+    return buildHumanFallbackOffer(session);
   }
 
   if (
@@ -2238,16 +2554,20 @@ export function buildDeterministicTurnResponse(
     session.conversation.pendingQuestion !== 'confirmation' &&
     session.conversation.lastAssistantQuestion
   ) {
-    return effectiveVoiceLanguage(session) === 'en'
-      ? `All right. ${session.conversation.lastAssistantQuestion}`
-      : `D'accord. ${session.conversation.lastAssistantQuestion}`;
+    const primary =
+      effectiveVoiceLanguage(session) === 'en'
+        ? `All right. ${session.conversation.lastAssistantQuestion}`
+        : `D'accord. ${session.conversation.lastAssistantQuestion}`;
+    return guardDialogueReprompt(session, dialogueStallKeyFromPendingQuestion(session), primary);
   }
 
   if (speechAct === 'content' || speechAct === 'correction') {
     if (isAmbiguousPartySizeReply(session, transcript)) {
-      return effectiveVoiceLanguage(session) === 'en'
-        ? "I didn't catch the number of people. How many will there be?"
-        : "Je n'ai pas bien compris le nombre de personnes. Vous serez combien ?";
+      const primary =
+        effectiveVoiceLanguage(session) === 'en'
+          ? "I didn't catch the number of people. How many will there be?"
+          : "Je n'ai pas bien compris le nombre de personnes. Vous serez combien ?";
+      return guardDialogueReprompt(session, 'partySize', primary);
     }
     // Followup de disponibilité : alternatives proposées par l'outil
     // (ces réponses dépendent du résultat de checkAvailability, pas du LLM)
@@ -2268,38 +2588,44 @@ export function buildPendingQuestionResponse(
 ): string | null {
   if (!isAffirmativeShortResponse(transcript)) return null;
 
-  switch (session.conversation.pendingQuestion) {
-    case 'date':
-      return effectiveVoiceLanguage(session) === 'en'
-        ? 'Which day would you like to book?'
-        : 'Pour quel jour souhaitez-vous réserver ?';
-    case 'time':
-      return effectiveVoiceLanguage(session) === 'en'
-        ? 'What time would you like to come?'
-        : 'Vers quelle heure souhaitez-vous venir ?';
-    case 'timeChoice':
-      return effectiveVoiceLanguage(session) === 'en'
-        ? 'Which time would work for you?'
-        : 'Quel horaire vous conviendrait ?';
-    case 'partySize':
-      return effectiveVoiceLanguage(session) === 'en'
-        ? 'How many people should I book for?'
-        : 'Pour combien de personnes dois-je réserver ?';
-    case 'customerName':
-      if (
-        session.conversation.nameCollection.state === 'confirming' &&
-        session.conversation.nameCollection.presentedCandidate
-      )
+  const en = effectiveVoiceLanguage(session) === 'en';
+  const primary = ((): string | null => {
+    switch (session.conversation.pendingQuestion) {
+      case 'date':
+        return en
+          ? 'Which day would you like to book?'
+          : 'Pour quel jour souhaitez-vous réserver ?';
+      case 'time':
+        return en
+          ? 'What time would you like to come?'
+          : 'Vers quelle heure souhaitez-vous venir ?';
+      case 'timeChoice':
+        return en ? 'Which time would work for you?' : 'Quel horaire vous conviendrait ?';
+      case 'partySize':
+        return en
+          ? 'How many people should I book for?'
+          : 'Pour combien de personnes dois-je réserver ?';
+      case 'customerName':
+        if (
+          session.conversation.nameCollection.state === 'confirming' &&
+          session.conversation.nameCollection.presentedCandidate
+        )
+          return null;
+        return en
+          ? 'What name should I put the reservation under?'
+          : 'Quel nom dois-je inscrire pour la réservation ?';
+      case 'customerPhone':
+        return en
+          ? 'Which phone number may I use for the confirmation?'
+          : 'Quel numéro de téléphone puis-je utiliser pour la confirmation ?';
+      case 'confirmation':
+      case 'humanFallback':
+      case null:
         return null;
-      return effectiveVoiceLanguage(session) === 'en'
-        ? 'What name should I put the reservation under?'
-        : 'Quel nom dois-je inscrire pour la réservation ?';
-    case 'customerPhone':
-      return effectiveVoiceLanguage(session) === 'en'
-        ? 'Which phone number may I use for the confirmation?'
-        : 'Quel numéro de téléphone puis-je utiliser pour la confirmation ?';
-    case 'confirmation':
-    case null:
-      return null;
-  }
+    }
+  })();
+  if (!primary) return null;
+  // Une acquiescement répété sur la même question ne doit pas produire la même
+  // phrase à l'identique : le garde-fou reformule, puis propose un repli humain.
+  return guardDialogueReprompt(session, dialogueStallKeyFromPendingQuestion(session), primary);
 }

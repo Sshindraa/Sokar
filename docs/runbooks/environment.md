@@ -159,26 +159,33 @@ rejoué sur un environnement non productif, avec consentement de test et rollbac
 
 ## Voice LLM
 
-Le provider vocal est sélectionné au démarrage de l’API par `VOICE_LLM_PROVIDER` :
+Le chemin vocal utilise un provider unique : Groq direct avec le modèle
+`qwen/qwen3.8-27b` par défaut. `VOICE_LLM_PROVIDER` et
+`VOICE_LLM_FALLBACK_MODEL` ne sont plus lus par l’API et ne doivent pas être
+ajoutés aux environnements.
 
-- `cerebras` (défaut historique) : `VOICE_LLM_MODEL` sur Cerebras ;
-- `openrouter` : `VOICE_LLM_MODEL` sur OpenRouter ;
-- `groq` : `VOICE_LLM_MODEL` directement sur l’API Groq OpenAI-compatible.
-
-Pour le modèle Qwen 3.8 direct sur Groq, définir dans `apps/api/.env` :
+Définir dans `apps/api/.env` :
 
 ```dotenv
 GROQ_API_KEY="gsk_..."
 GROQ_BASE_URL="https://api.groq.com/openai/v1"
-VOICE_LLM_PROVIDER="groq"
 VOICE_LLM_MODEL="qwen/qwen3.8-27b"
-VOICE_LLM_FALLBACK_MODEL="meta-llama/llama-3.3-70b-instruct"
+VOICE_LLM_TIMEOUT_MS="8000"
 ```
 
-La clé est un secret local au VPS et ne doit jamais être commitée ou envoyée dans le chat. Une réponse
-Groq en 402 (quota), 429 (limite) ou 5xx, ainsi qu’une erreur réseau, bascule vers OpenRouter si
-`OPENROUTER_API_KEY` est défini. En production, l’API refuse de démarrer si la clé du provider primaire
-est absente.
+La clé Groq est un secret local au VPS et ne doit jamais être commitée ou
+envoyée dans le chat. Une réponse en 402, 429, 5xx ou une erreur réseau
+déclenche la dégradation vocale prévue ; aucun autre modèle n'est appelé.
+
+`OPENROUTER_API_KEY` peut rester provisionnée comme clé isolée pour des outils
+hors production. Elle n'est pas lue par le pipeline vocal et ne constitue pas
+un mécanisme de repli.
+
+Pour le diagnostic d'un appel, se fier à `VoiceTurnTelemetry.llmProvider` et
+`VoiceTurnTelemetry.llmModel`, puis au même couple dans le bilan
+`VoiceCallTelemetry`. Le log `Start call` ajoute `openrouterKeyConfigured` et
+`openrouterUsed` afin de ne pas confondre une clé présente avec une requête
+effectivement envoyée à OpenRouter.
 
 ## Demo restaurant
 

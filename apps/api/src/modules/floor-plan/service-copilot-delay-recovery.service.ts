@@ -2,6 +2,7 @@ import {
   Prisma,
   type PrismaClient,
   type ReservationChannel,
+  type Reservation,
   type ReservationState,
   type ReservationStatus,
   type WaitingListStatus,
@@ -11,10 +12,11 @@ import { AuditLogService } from '../agentic-reservations/core/audit-log.service'
 import { TableAllocationService } from './table-allocation.service';
 import { ServiceCopilotDelayImpactService } from './service-copilot-delay-impact.service';
 import { observeReservationMutation } from '../../shared/observability/reservation-contract';
+import { creationProjection } from '../../shared/reservations/reservation-state';
 import {
-  creationProjection,
-  transitionProjection,
-} from '../../shared/reservations/reservation-state';
+  ReservationLifecycleService,
+  type ReservationLifecycleResult,
+} from '../reservations/reservation-lifecycle.service.js';
 
 export class DelayRecoveryConflictError extends Error {
   constructor(message: string) {
@@ -147,10 +149,12 @@ export function parseDelayRecoverySnapshot(
 export class ServiceCopilotDelayRecoveryService {
   private readonly allocation: TableAllocationService;
   private readonly audit: AuditLogService;
+  private readonly lifecycle: ReservationLifecycleService;
 
   constructor(private readonly prisma: PrismaClient) {
     this.allocation = new TableAllocationService(prisma);
     this.audit = new AuditLogService(prisma);
+    this.lifecycle = new ReservationLifecycleService(prisma);
   }
 
   async apply(args: {
@@ -504,6 +508,7 @@ export class ServiceCopilotDelayRecoveryService {
       );
     }
 
+    let lifecycleResult: ReservationLifecycleResult | null = null;
     const result: DelayRecoveryRevertResult = await this.prisma.$transaction(async (tx) => {
       for (const reservationId of [args.reservationId, snapshot.promotedReservationId].sort()) {
         await tx.$queryRaw(
@@ -598,9 +603,21 @@ export class ServiceCopilotDelayRecoveryService {
           endsAt: snapshot.originalEndsAt,
         },
       });
-      await tx.reservation.update({
-        where: { id: promoted.id },
-        data: transitionProjection('CANCELLED', promoted.status),
+      lifecycleResult = await this.lifecycle.transitionInTransaction(tx, {
+        reservationId: promoted.id,
+        restaurantId: args.restaurantId,
+        toState: 'CANCELLED',
+        actor: args.actor,
+        auditEvent: 'reservation_cancelled',
+        operation: 'revert_cancel',
+        observationSource: 'copilot',
+        metadata: {
+          operationId: args.operationId,
+          reason: 'delay_recovery_reverted',
+        },
+        // The production transaction client re-reads under the row lock. The
+        // snapshot keeps the small recovery fakes compatible with the helper.
+        snapshot: promoted as Reservation,
       });
       await tx.waitingListEntry.update({
         where: { id: entry.id },
@@ -629,18 +646,6 @@ export class ServiceCopilotDelayRecoveryService {
       );
       await this.audit.record(
         {
-          event: 'reservation_cancelled',
-          reservationId: promoted.id,
-          actor: args.actor,
-          fromState: 'CONFIRMED',
-          toState: 'CANCELLED',
-          correlationId: `revert:${args.operationId}`,
-          metadata: { reason: 'delay_recovery_reverted' },
-        },
-        tx,
-      );
-      await this.audit.record(
-        {
           event: 'waiting_list_restored',
           reservationId: promoted.id,
           actor: args.actor,
@@ -659,6 +664,20 @@ export class ServiceCopilotDelayRecoveryService {
       };
     });
 
+    if (lifecycleResult) {
+      await this.lifecycle.finalizeTransition(
+        {
+          reservationId: snapshot.promotedReservationId,
+          restaurantId: args.restaurantId,
+          toState: 'CANCELLED',
+          actor: args.actor,
+          operation: 'revert_cancel',
+          observationSource: 'copilot',
+        },
+        lifecycleResult,
+      );
+    }
+
     const idempotent = result.idempotent === true;
     observeReservationMutation({
       source: 'copilot',
@@ -671,17 +690,19 @@ export class ServiceCopilotDelayRecoveryService {
       capacity: 'unchanged',
       mutated: !idempotent,
     });
-    observeReservationMutation({
-      source: 'copilot',
-      operation: 'revert_cancel',
-      status: idempotent ? undefined : 'CANCELLED',
-      state: idempotent ? undefined : 'CANCELLED',
-      idempotency: idempotent ? 'reused' : 'keyed',
-      audit: idempotent ? 'not_applicable' : 'written',
-      notification: idempotent ? 'not_applicable' : 'not_sent',
-      capacity: idempotent ? 'unchanged' : 'released',
-      mutated: !idempotent,
-    });
+    if (!lifecycleResult) {
+      observeReservationMutation({
+        source: 'copilot',
+        operation: 'revert_cancel',
+        status: idempotent ? undefined : 'CANCELLED',
+        state: idempotent ? undefined : 'CANCELLED',
+        idempotency: idempotent ? 'reused' : 'keyed',
+        audit: idempotent ? 'not_applicable' : 'written',
+        notification: idempotent ? 'not_applicable' : 'not_sent',
+        capacity: idempotent ? 'unchanged' : 'released',
+        mutated: !idempotent,
+      });
+    }
     return result;
   }
 

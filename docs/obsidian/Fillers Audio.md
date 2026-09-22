@@ -14,7 +14,7 @@ Quand un client appelle et pose une question, voici la chaîne :
 | Étape                              | Latence typique |
 | ---------------------------------- | --------------- |
 | STT (ElevenLabs capte la question) | ~300 ms         |
-| LLM (OpenRouter réfléchit)         | 500-2000 ms     |
+| LLM (Groq/Qwen réfléchit)          | 500-2000 ms     |
 | TTS (Cartesia synthétise)          | 150-300 ms      |
 
 Le silence entre l'étape 1 et 3 = **500 ms à 2 secondes de blanc**. Si le client

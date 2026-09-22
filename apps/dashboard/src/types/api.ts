@@ -95,8 +95,60 @@ export interface Reservation {
 // ─── Call ───────────────────────────────────────────────────────────────
 
 export type CallIntent = 'RESERVATION' | 'HOURS' | 'MENU' | 'CANCEL' | 'OTHER';
-export type CallOutcome = 'RESERVED' | 'INFO' | 'HANDOFF' | 'NO_ACTION' | 'ERROR';
+export type CallOutcome = 'RESERVED' | 'INFO' | 'MESSAGE' | 'HANDOFF' | 'NO_ACTION' | 'ERROR';
 export type CallRecordingStatus = 'NOT_REQUESTED' | 'PENDING' | 'AVAILABLE' | 'FAILED' | 'DELETED';
+
+export interface VoiceCallTelemetry {
+  llmProvider: string | null;
+  llmModel: string | null;
+  totalSpeechMs: number | null;
+  totalTranscriptionMs: number | null;
+  totalLlmMs: number | null;
+  totalAvailabilityMs: number | null;
+  totalTtsMs: number | null;
+  firstLlmFirstTokenMs: number | null;
+  firstLlmFirstPhraseMs: number | null;
+  firstTtsFirstAudioMs: number | null;
+  firstSttFinalToAudioMs: number | null;
+  turnCount: number;
+  llmTurnCount: number;
+  deterministicTurnCount: number;
+  fallbackTurnCount: number;
+  availabilitySearchCount: number;
+  availabilityFailureCount: number;
+  loopCount: number;
+  reservationConfirmed: boolean;
+  reservationIntentAbandoned: boolean;
+  finalizedAt: string | null;
+}
+
+export interface VoiceTurnTelemetry {
+  id: string;
+  turnId: string;
+  sequence: number;
+  path: 'unknown' | 'deterministic' | 'llm' | 'availability' | 'fallback';
+  transcriptLength: number;
+  speechDurationMs: number | null;
+  transcriptionDurationMs: number | null;
+  speechToSttFinalMs: number | null;
+  llmFirstTokenMs: number | null;
+  llmFirstPhraseMs: number | null;
+  llmDurationMs: number | null;
+  availabilityDurationMs: number | null;
+  ttsFirstByteMs: number | null;
+  sttFinalToAudioMs: number | null;
+  ttsDurationMs: number | null;
+  totalE2eMs: number | null;
+  sttProvider: string | null;
+  llmProvider: string | null;
+  llmModel: string | null;
+  ttsProvider: string | null;
+  loopDetected: boolean;
+  interrupted: boolean;
+  completed: boolean;
+  startedAt: string;
+  endedAt: string | null;
+}
 
 export interface Call {
   id: string;
@@ -111,6 +163,16 @@ export interface Call {
   recordingEndedAt: string | null;
   recordingExpiresAt: string | null;
   createdAt: string;
+  latencyTrace?: {
+    vadEndMs: number | null;
+    sttFinalMs: number | null;
+    llmFirstToken: number | null;
+    ttsFirstByte: number | null;
+    audioPlayingMs: number | null;
+    totalE2eMs: number | null;
+  } | null;
+  voiceTelemetry?: VoiceCallTelemetry | null;
+  voiceTurns?: VoiceTurnTelemetry[];
 }
 
 export interface CallListResponse {

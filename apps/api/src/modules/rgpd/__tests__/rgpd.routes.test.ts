@@ -55,6 +55,7 @@ function setupPrismaMocks() {
   vi.mocked(db.call.updateMany).mockResolvedValue({ count: 1 } as unknown as Awaited<
     ReturnType<typeof db.call.updateMany>
   >);
+  vi.mocked(db.call.findMany).mockResolvedValue([]);
   vi.mocked(db.reservationAuditLog.create).mockResolvedValue({
     id: 'audit-1',
   } as unknown as Awaited<ReturnType<typeof db.reservationAuditLog.create>>);

@@ -124,11 +124,14 @@ export async function smsInboundRoutes(app: FastifyInstance) {
     const text = data.payload.text;
 
     if (!from || !text) {
-      req.log.warn({ from, hasText: !!text }, 'sms inbound: missing from or text');
+      req.log.warn(
+        { hasFrom: Boolean(from), hasText: !!text },
+        'sms inbound: missing from or text',
+      );
       return reply.send({ result: 'ok' });
     }
 
-    req.log.info({ from, textLength: text.length }, 'sms inbound received');
+    req.log.info({ hasFrom: true, textLength: text.length }, 'sms inbound received');
 
     await handleReply(from, text, 'sms');
 

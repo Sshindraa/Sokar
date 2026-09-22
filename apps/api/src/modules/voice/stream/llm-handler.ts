@@ -30,6 +30,8 @@ import {
   recordVoiceTurnEvent,
   recordVoiceTurnEventIfCurrent,
   completeVoiceTurnInput,
+  markVoiceTurnLlmFirstPhrase,
+  markVoiceTurnLlmFirstToken,
   startVoiceTurn,
 } from './turn-telemetry';
 import { isVoiceTtsContextV2Enabled } from '../../../shared/configcat';
@@ -47,11 +49,14 @@ import {
 } from './voice-language';
 import {
   buildAvailabilityErrorReply,
+  getOpenAvailabilityRequest,
+  buildOpenAvailabilityReply,
   buildAvailabilityLlmContext,
   buildAvailabilityReply,
   buildDeterministicTurnResponse,
   buildReservationProgressResponse,
   classifyVoiceSpeechActInContext,
+  clearDialogueGuardTrace,
   confirmReservationDraft,
   clearReservationConfirmation,
   getReadyAvailabilityRequest,
@@ -61,6 +66,7 @@ import {
   isNegativeShortResponse,
   recordAssistantReply,
   recordUserTurn,
+  resolveHumanFallbackChoice,
   resetNameCollectionAfterFallback,
 } from './conversation-controller';
 
@@ -415,7 +421,7 @@ export function handleSttEvent(
       // Cumuler le transcript pour persistance et rattacher la fin au tour
       // commencé par UtteranceStart.
       session.transcript += (session.transcript ? ' ' : '') + event.transcript;
-      completeVoiceTurnInput(session, event.transcript);
+      completeVoiceTurnInput(session, event.transcript, event.words);
 
       const isSpeculativeEnabled = isSpeculativeLlmEnabled(session);
       const speculativeTranscript = session.speculativeTranscript;
@@ -459,6 +465,7 @@ export function handleSttEvent(
         session.speculativeLlm = null;
         session.speculativeResult = null;
         session.speculativeTranscript = '';
+        const currentTurnId = session.currentTurn?.id;
         speculativeLlm
           .then(async (response) => {
             const cleanResponse = stripRepeatedGreeting(response, session);
@@ -475,8 +482,8 @@ export function handleSttEvent(
               { role: 'assistant', content: cleanResponse },
             );
             recordAssistantReply(session, cleanResponse);
-            session.latencyTrace!.llmFirstTokenMs = Date.now() - session.latencyTrace!.startTime;
-            recordVoiceTurnEvent(session, 'speculation_hit', {
+            markVoiceTurnLlmFirstToken(session, currentTurnId);
+            recordVoiceTurnEventIfCurrent(session, currentTurnId, 'speculation_hit', {
               mode: 'speculative',
               llmResponseMs: session.latencyTrace
                 ? Date.now() - session.latencyTrace.startTime
@@ -584,9 +591,7 @@ async function processTranscript(
     writeDebugLog(`[processTranscript] Calling LLM...`);
     const llmResponse = await mgr.processUtterance(session, transcript);
 
-    if (session.latencyTrace) {
-      session.latencyTrace.llmFirstTokenMs = Date.now() - session.latencyTrace.startTime;
-    }
+    markVoiceTurnLlmFirstToken(session, session.currentTurn?.id);
     const ttsResponse = stripRepeatedGreeting(llmResponse, session);
     writeDebugLog(`[processTranscript] LLM responded: "${redactPii(llmResponse)}"`);
 
@@ -795,6 +800,34 @@ export async function processTranscriptStreaming(
   if (!isCurrentResponse()) return;
   syncSpellingProfile(session);
 
+  // Le garde-fou anti-boucle a proposé un repli humain (transfert ou message).
+  // L'annonce ne vaut que si l'action est réellement exécutée ici.
+  if (deterministicLanguage && pendingQuestionBeforeTurn === 'humanFallback') {
+    const fallbackChoice = resolveHumanFallbackChoice(session, transcript);
+    if (fallbackChoice) {
+      recordVoiceTurnEvent(session, 'dialogue_guard', {
+        level: 'escalate',
+        action: fallbackChoice,
+      });
+      const response =
+        fallbackChoice === 'transfer'
+          ? await mgr.handoffToManager(session)
+          : await mgr.recordDialogueFallbackMessage(session);
+      if (!isCurrentResponse()) return;
+      session.turnCount++;
+      session.history.push(
+        { role: 'user', content: transcript },
+        { role: 'assistant', content: response },
+      );
+      recordAssistantReply(session, response);
+      syncSpellingProfile(session);
+      mgr.transition(session, 'SPEAKING');
+      await speakTtsStreamed(session, response);
+      if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+      return;
+    }
+  }
+
   // Seul un « oui » au dernier récapitulatif ouvre le verrou de création. La
   // confirmation de l'orthographe du nom ne suffit pas : le client doit encore
   // valider la date, l'heure et le nombre de personnes.
@@ -848,10 +881,53 @@ export async function processTranscriptStreaming(
         .join(' ')}`
     : transcript;
 
+  const openRequest = deterministicLanguage ? getOpenAvailabilityRequest(session) : null;
+  if (openRequest) {
+    session.conversation.toolInFlight = 'checkAvailability';
+    recordVoiceTurnEvent(session, 'availability_started', openRequest);
+    let response: string;
+    try {
+      const result = await mgr.getAvailability(session, openRequest.date, openRequest.partySize);
+      if (!isCurrentResponse()) return;
+      recordVoiceTurnEvent(session, 'availability_completed', { slotCount: result.slots.length });
+      response = buildOpenAvailabilityReply(session, result.slots);
+    } catch (err) {
+      if (!isCurrentResponse()) return;
+      recordVoiceTurnEvent(session, 'availability_failed', {});
+      logger.warn(
+        { err, callId: session.callControlId },
+        '[voice-turn] Open availability lookup failed',
+      );
+      session.conversation.offeredAvailability = undefined;
+      response = buildAvailabilityErrorReply(language);
+    } finally {
+      if (isCurrentResponse()) session.conversation.toolInFlight = null;
+    }
+    session.turnCount++;
+    session.history.push(
+      { role: 'user', content: transcript },
+      { role: 'assistant', content: response },
+    );
+    recordAssistantReply(session, response);
+    mgr.transition(session, 'SPEAKING');
+    await speakTtsStreamed(session, response);
+    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+    return;
+  }
+
+  clearDialogueGuardTrace(session);
   const deterministicResponse = deterministicLanguage
     ? (buildDeterministicTurnResponse(session, speechAct, transcript) ??
       buildReservationProgressResponse(session, transcript))
     : null;
+  const dialogueGuard = session.conversation.lastDialogueGuard;
+  if (deterministicResponse && dialogueGuard && dialogueGuard.level !== 'ask') {
+    recordVoiceTurnEvent(session, 'dialogue_guard', {
+      level: dialogueGuard.level,
+      key: dialogueGuard.key,
+      count: dialogueGuard.count,
+    });
+  }
   if (deterministicResponse) {
     if (!isCurrentResponse()) return;
     writeDebugLog(
@@ -1032,12 +1108,7 @@ export async function processTranscriptStreaming(
         if (!isCurrentResponse() || abortController.signal.aborted) return;
         cancelScheduledFiller(session);
         writeDebugLog(`[processTranscriptStreaming] Phrase received: "${redactPii(phrase)}"`);
-        if (session.latencyTrace && session.latencyTrace.llmFirstPhraseMs === undefined) {
-          session.latencyTrace.llmFirstPhraseMs = Date.now() - session.latencyTrace.startTime;
-          recordVoiceTurnEvent(session, 'llm_first_phrase', {
-            llmFirstPhraseMs: session.latencyTrace.llmFirstPhraseMs,
-          });
-        }
+        markVoiceTurnLlmFirstPhrase(session, telemetryTurnId);
         recordVoiceTurnEvent(session, 'llm_phrase_generated', {
           characterCount: phrase.length,
         });

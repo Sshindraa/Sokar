@@ -8,16 +8,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { logger } from '../../../shared/logger/pino';
+import { redactPii } from './pii-redact';
 
 export function writeDebugLog(msg: string, err?: unknown) {
   const timestamp = new Date().toISOString();
   const errStr =
     err instanceof Error
-      ? ` | ERROR: ${err.message}\n${err.stack}`
+      ? ` | ERROR: ${redactPii(err.message)}\n${redactPii(err.stack ?? '')}`
       : err
-        ? ` | ERROR: ${String(err)}`
+        ? ` | ERROR: ${redactPii(String(err))}`
         : '';
-  const logMsg = `[${timestamp}] ${msg}${errStr}\n`;
+  const logMsg = `[${timestamp}] ${redactPii(msg)}${errStr}\n`;
   try {
     const logPath =
       process.env.DEBUG_LOG_PATH || path.join(process.cwd(), 'scratch', 'call_debug.log');

@@ -175,7 +175,27 @@ describe('reservation payment foundation routes', () => {
       paymentId: 'payment-1',
       resultingStatus: ReservationPaymentStatus.CAPTURED,
     } as never);
-    vi.mocked(db.reservation.updateMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(db.reservation.findUnique).mockResolvedValue({
+      id: 'reservation-1',
+      restaurantId: 'test-rest-1',
+      partySize: 2,
+      customerName: 'Test customer',
+      customerPhone: null,
+      reservedAt: new Date('2026-09-14T10:00:00.000Z'),
+      startsAt: new Date('2026-09-14T10:00:00.000Z'),
+      endsAt: new Date('2026-09-14T12:00:00.000Z'),
+      tableId: null,
+      status: 'CONFIRMED',
+      state: 'PENDING',
+      consumedHoldId: null,
+    } as never);
+    vi.mocked(db.reservation.update).mockResolvedValue({
+      id: 'reservation-1',
+      restaurantId: 'test-rest-1',
+      status: 'CONFIRMED',
+      state: 'CONFIRMED',
+    } as never);
+    vi.mocked(db.reservationAuditLog.create).mockResolvedValue({ id: 'audit-1' } as never);
 
     const app = await getApp();
     const response = await app.inject({

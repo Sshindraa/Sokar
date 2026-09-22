@@ -321,6 +321,45 @@ describe('ReservationService - Google Calendar Sync', () => {
         data: { googleEventId: null },
       });
     });
+
+    it('routes a state-only lifecycle patch through the canonical projection', async () => {
+      const mockReservationWithRest = {
+        id: 'res-456',
+        restaurantId: 'rest-123',
+        status: 'CONFIRMED',
+        state: 'CONFIRMED',
+        googleEventId: null,
+        restaurant: mockRestaurant,
+      };
+      const updatedReservation = {
+        ...mockReservationWithRest,
+        status: 'CANCELLED',
+        state: 'CANCELLED',
+      };
+
+      vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(
+        mockReservationWithRest as unknown as Awaited<
+          ReturnType<typeof db.reservation.findUniqueOrThrow>
+        >,
+      );
+      vi.mocked(db.reservation.update).mockResolvedValue(
+        updatedReservation as unknown as Awaited<ReturnType<typeof db.reservation.update>>,
+      );
+
+      await ReservationService.update('res-456', 'rest-123', { state: 'CANCELLED' });
+
+      expect(db.reservation.update).toHaveBeenCalledWith({
+        where: { id: 'res-456', restaurantId: 'rest-123' },
+        data: { status: 'CANCELLED', state: 'CANCELLED' },
+      });
+      expect(db.reservationAuditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          event: 'reservation_cancelled',
+          fromState: 'CONFIRMED',
+          toState: 'CANCELLED',
+        }),
+      });
+    });
   });
 
   describe('delete', () => {

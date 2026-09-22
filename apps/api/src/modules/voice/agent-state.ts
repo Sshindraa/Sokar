@@ -24,10 +24,10 @@ import { logger } from '../../shared/logger/pino';
 export type AgentState = 'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING';
 
 const VALID_TRANSITIONS: Record<AgentState, AgentState[]> = {
-  IDLE:       ['LISTENING'],
-  LISTENING:  ['IDLE', 'PROCESSING'],
+  IDLE: ['LISTENING'],
+  LISTENING: ['IDLE', 'PROCESSING'],
   PROCESSING: ['SPEAKING', 'IDLE'],
-  SPEAKING:   ['LISTENING', 'IDLE'],
+  SPEAKING: ['LISTENING', 'IDLE'],
 };
 
 export class AgentStateMachine {
@@ -45,7 +45,7 @@ export class AgentStateMachine {
   transition(to: AgentState): boolean {
     const allowed = VALID_TRANSITIONS[this.state];
     if (!allowed.includes(to)) {
-      logger.warn({ from: this.state, to }, '[AgentState] Invalid transition');
+      logger.warn({ fromState: this.state, toState: to }, '[AgentState] Invalid transition');
       return false;
     }
     const from = this.state;
@@ -57,7 +57,7 @@ export class AgentStateMachine {
   onTransition(fn: (from: AgentState, to: AgentState) => void): () => void {
     this.listeners.push(fn);
     return () => {
-      this.listeners = this.listeners.filter(l => l !== fn);
+      this.listeners = this.listeners.filter((l) => l !== fn);
     };
   }
 

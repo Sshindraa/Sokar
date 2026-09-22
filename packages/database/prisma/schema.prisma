@@ -408,32 +408,40 @@ model TableCombinationMember {
 }
 
 model Call {
-  id                          String              @id @default(uuid())
-  restaurantId                String              @map("restaurant_id")
-  callSid                     String              @unique @map("call_sid")
-  durationSec                 Int?                @map("duration_sec")
+  id                          String               @id @default(uuid())
+  restaurantId                String               @map("restaurant_id")
+  callSid                     String               @unique @map("call_sid")
+  /**
+   * Numéro de l'appelant (E.164), nécessaire pour la récupération commerciale
+   * déclenchée par le rattrapage des appels incomplets. Anonymisé à l'effacement
+   * RGPD. Absent sur les appels historiques et certains fixtures de test.
+   */
+  callerPhone                 String?              @map("caller_phone")
+  durationSec                 Int?                 @map("duration_sec")
   transcript                  String?
   intent                      CallIntent?
   outcome                     CallOutcome?
-  sttProvider                 String?             @map("stt_provider")
-  llmProvider                 String?             @map("llm_provider")
-  ttsProvider                 String?             @map("tts_provider")
+  sttProvider                 String?              @map("stt_provider")
+  llmProvider                 String?              @map("llm_provider")
+  ttsProvider                 String?              @map("tts_provider")
   carrier                     String?
-  recordingStatus             CallRecordingStatus @default(NOT_REQUESTED) @map("recording_status")
-  recordingProviderId         String?             @map("recording_provider_id")
-  recordingStorageKey         String?             @map("recording_storage_key")
-  recordingContentType        String?             @map("recording_content_type")
-  recordingSizeBytes          Int?                @map("recording_size_bytes")
-  recordingConsentAnnouncedAt DateTime?           @map("recording_consent_announced_at")
-  recordingStartedAt          DateTime?           @map("recording_started_at")
-  recordingEndedAt            DateTime?           @map("recording_ended_at")
-  recordingExpiresAt          DateTime?           @map("recording_expires_at")
-  recordingError              String?             @map("recording_error")
-  createdAt                   DateTime            @default(now()) @map("created_at")
-  updatedAt                   DateTime            @default(now()) @updatedAt @map("updated_at")
-  restaurant                  Restaurant          @relation(fields: [restaurantId], references: [id])
+  recordingStatus             CallRecordingStatus  @default(NOT_REQUESTED) @map("recording_status")
+  recordingProviderId         String?              @map("recording_provider_id")
+  recordingStorageKey         String?              @map("recording_storage_key")
+  recordingContentType        String?              @map("recording_content_type")
+  recordingSizeBytes          Int?                 @map("recording_size_bytes")
+  recordingConsentAnnouncedAt DateTime?            @map("recording_consent_announced_at")
+  recordingStartedAt          DateTime?            @map("recording_started_at")
+  recordingEndedAt            DateTime?            @map("recording_ended_at")
+  recordingExpiresAt          DateTime?            @map("recording_expires_at")
+  recordingError              String?              @map("recording_error")
+  createdAt                   DateTime             @default(now()) @map("created_at")
+  updatedAt                   DateTime             @default(now()) @updatedAt @map("updated_at")
+  restaurant                  Restaurant           @relation(fields: [restaurantId], references: [id])
   reservation                 Reservation?
   latencyTrace                LatencyTrace?
+  voiceTelemetry              VoiceCallTelemetry?
+  voiceTurns                  VoiceTurnTelemetry[]
   messages                    Message[]
 
   @@index([restaurantId, createdAt(sort: Desc)])
@@ -2219,6 +2227,82 @@ model LatencyTrace {
   @@map("latency_traces")
 }
 
+/// Bilan durable d'un appel vocal. Les métriques par tour sont conservées
+/// séparément dans VoiceTurnTelemetry ; cette ligne sert aux KPIs et au
+/// diagnostic d'un appel entier sans dépendre de la dernière réponse.
+model VoiceCallTelemetry {
+  id                         String    @id @default(uuid())
+  callId                     String    @unique @map("call_id")
+  llmProvider                String?   @map("llm_provider")
+  llmModel                   String?   @map("llm_model")
+  totalSpeechMs              Int?      @map("total_speech_ms")
+  totalTranscriptionMs       Int?      @map("total_transcription_ms")
+  totalLlmMs                 Int?      @map("total_llm_ms")
+  totalAvailabilityMs        Int?      @map("total_availability_ms")
+  totalTtsMs                 Int?      @map("total_tts_ms")
+  firstLlmFirstTokenMs       Int?      @map("first_llm_first_token_ms")
+  firstLlmFirstPhraseMs      Int?      @map("first_llm_first_phrase_ms")
+  firstTtsFirstAudioMs       Int?      @map("first_tts_first_audio_ms")
+  firstSttFinalToAudioMs     Int?      @map("first_stt_final_to_audio_ms")
+  turnCount                  Int       @default(0) @map("turn_count")
+  llmTurnCount               Int       @default(0) @map("llm_turn_count")
+  deterministicTurnCount     Int       @default(0) @map("deterministic_turn_count")
+  fallbackTurnCount          Int       @default(0) @map("fallback_turn_count")
+  availabilitySearchCount    Int       @default(0) @map("availability_search_count")
+  availabilityFailureCount   Int       @default(0) @map("availability_failure_count")
+  loopCount                  Int       @default(0) @map("loop_count")
+  reservationConfirmed       Boolean   @default(false) @map("reservation_confirmed")
+  reservationIntentAbandoned Boolean   @default(false) @map("reservation_intent_abandoned")
+  finalizedAt                DateTime? @map("finalized_at")
+  createdAt                  DateTime  @default(now()) @map("created_at")
+  updatedAt                  DateTime  @updatedAt @map("updated_at")
+  call                       Call      @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@map("voice_call_telemetry")
+}
+
+/// Chronologie structurée d'un tour vocal. Une ligne est réécrite uniquement
+/// pour le même (appel, turnId), jamais remplacée par le tour suivant.
+model VoiceTurnTelemetry {
+  id                      String    @id @default(uuid())
+  callId                  String    @map("call_id")
+  turnId                  String    @map("turn_id")
+  sequence                Int
+  path                    String    @default("unknown")
+  transcriptLength        Int       @default(0) @map("transcript_length")
+  transcriptFingerprint   String?   @map("transcript_fingerprint")
+  speechDurationMs        Int?      @map("speech_duration_ms")
+  transcriptionDurationMs Int?      @map("transcription_duration_ms")
+  speechToSttFinalMs      Int?      @map("speech_to_stt_final_ms")
+  llmFirstTokenMs         Int?      @map("llm_first_token_ms")
+  llmFirstPhraseMs        Int?      @map("llm_first_phrase_ms")
+  llmDurationMs           Int?      @map("llm_duration_ms")
+  availabilityDurationMs  Int?      @map("availability_duration_ms")
+  ttsFirstByteMs          Int?      @map("tts_first_byte_ms")
+  sttFinalToAudioMs       Int?      @map("stt_final_to_audio_ms")
+  ttsDurationMs           Int?      @map("tts_duration_ms")
+  totalE2eMs              Int?      @map("total_e2e_ms")
+  sttProvider             String?   @map("stt_provider")
+  llmProvider             String?   @map("llm_provider")
+  llmModel                String?   @map("llm_model")
+  ttsProvider             String?   @map("tts_provider")
+  availabilitySearches    Int       @default(0) @map("availability_searches")
+  availabilityFailures    Int       @default(0) @map("availability_failures")
+  loopDetected            Boolean   @default(false) @map("loop_detected")
+  interrupted             Boolean   @default(false)
+  completed               Boolean   @default(false)
+  startedAt               DateTime  @map("started_at")
+  endedAt                 DateTime? @map("ended_at")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+  call                    Call      @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@unique([callId, turnId], map: "voice_turn_telemetry_call_turn_key")
+  @@index([callId, sequence], map: "voice_turn_telemetry_call_sequence_idx")
+  @@index([callId, path], map: "voice_turn_telemetry_call_path_idx")
+  @@map("voice_turn_telemetry")
+}
+
 enum Plan {
   ESSENTIAL
   STARTER
@@ -2256,6 +2340,10 @@ enum CallIntent {
 enum CallOutcome {
   RESERVED
   INFO
+  /**
+   * Message enregistré pour le gérant : aboutissement réel sans réservation.
+   */
+  MESSAGE
   NO_ACTION
   HANDOFF
   ERROR

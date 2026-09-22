@@ -46,7 +46,10 @@ export async function handleReply(
   const intent = parseReply(text);
 
   if (intent === 'UNKNOWN') {
-    logger.info({ from, text, channel }, 'inbound reply: unparseable, ignoring');
+    logger.info(
+      { hasFrom: Boolean(from), textLength: text.length, channel },
+      'inbound reply: unparseable, ignoring',
+    );
     return { intent };
   }
 
@@ -82,7 +85,7 @@ export async function handleReply(
   });
 
   if (!reservation) {
-    logger.info({ from, channel }, 'inbound reply: no pending reservation found');
+    logger.info({ hasFrom: Boolean(from), channel }, 'inbound reply: no pending reservation found');
     return { intent, action: 'no_reservation' };
   }
 
@@ -105,7 +108,7 @@ export async function handleReply(
       capacity: 'unchanged',
     });
     logger.info(
-      { reservationId: reservation.id, from, channel },
+      { reservationId: reservation.id, hasFrom: Boolean(from), channel },
       'reservation confirmed via reply',
     );
     return { intent, reservationId: reservation.id, action: 'confirmed' };
@@ -158,7 +161,7 @@ export async function handleReply(
     }
 
     logger.info(
-      { reservationId: reservation.id, from, channel },
+      { reservationId: reservation.id, hasFrom: Boolean(from), channel },
       'reservation cancelled via reply',
     );
     return { intent, reservationId: reservation.id, action: 'cancelled' };

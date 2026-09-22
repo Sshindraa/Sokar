@@ -1,12 +1,11 @@
 # Runbook — Stripe Billing (abonnements Sokar)
 
-> **Statut : ACTIF — réconcilié le 15 septembre 2026.**
+> **Statut : ACTIF — réconcilié le 22 septembre 2026.**
 > Le catalogue applicatif et les pages publiques affichent Essential 199 €/mois et Pro 299 €/mois.
-> Multi-site reste à 249 €/mois + 99 €/site supplémentaire. Les prix et `priceId` Stripe actifs
-> restent l'ancien catalogue 149/249 € jusqu'à la migration externe et sa validation ; ne pas
-> annoncer ou facturer les nouveaux montants avant cette porte. Voir
-> [`../DOCUMENTATION_STATUS.md`](../DOCUMENTATION_STATUS.md) et la
-> [réconciliation des audits](../audits/2026-09-15-current-state.md).
+> Multi-site reste à 249 €/mois + 99 €/site supplémentaire. Les huit prix Stripe live sont
+> réconciliés avec cette grille et le checkout Essential est ouvert en production. La preuve de
+> l'ouverture et le seul bloqueur restant (deux pilotes Essential sur sept jours) sont dans
+> [`../release/evidence/essential-checkout-opening-2026-09-22.md`](../release/evidence/essential-checkout-opening-2026-09-22.md).
 
 ## Parcours
 
@@ -109,6 +108,13 @@ déployer. Ne jamais archiver les prix historiques tant qu'une souscription peut
 
 ## Réconciliation du catalogue — porte P1_ESSENTIAL
 
+**Livré le 22 septembre 2026.** Le catalogue live contient huit prix conformes
+à la grille 199/299/249 + 99 €, avec cadence mensuelle et annuelle. La commande
+de contrôle a retourné `8/8 conformes` avant l'ouverture du checkout.
+
+Pour une nouvelle grille, conserver la séquence ci-dessous en lecture seule puis
+mettre à jour la preuve de release ; ne jamais modifier un Price existant.
+
 1. Créer dans Stripe (mode test d'abord, puis live) les huit prix récurrents aux montants du tableau
    ci-dessus, en EUR, intervalles `month`/`year` et `interval_count = 1`.
 2. Renseigner les huit variables GitHub Actions (`STRIPE_STAGING_*`, `STRIPE_PRODUCTION_*`) avec les
@@ -119,8 +125,11 @@ déployer. Ne jamais archiver les prix historiques tant qu'une souscription peut
 
 ## Rejeu du cycle complet en sandbox — porte P1_ESSENTIAL
 
-À exécuter avec les clés et les prix de test, en conservant les preuves (captures, identifiants
-d'événements) dans `docs/audits/` :
+**Livré le 21 septembre 2026.** Le rejeu sandbox complet est conservé dans
+[`docs/audits/2026-09-21-billing-replay.md`](../audits/2026-09-21-billing-replay.md).
+Le tableau reste la procédure de référence pour rejouer le parcours après une
+modification Stripe ; conserver les preuves (captures, identifiants d'événements)
+dans `docs/audits/`.
 
 | Étape                      | Ce qui est vérifié                                                           | Preuve attendue                             |
 | -------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------- |
@@ -133,8 +142,8 @@ d'événements) dans `docs/audits/` :
 | 7. Annulation              | `cancel_at_period_end` puis `customer.subscription.deleted` → rétrogradation | réponses `/billing/status`                  |
 | 8. Réactivation            | second Checkout possible après annulation                                    | capture                                     |
 
-`BILLING_CHECKOUT_ENABLED` ne passe à `true` en production qu'après ces huit étapes et la vérification
-du catalogue.
+`BILLING_CHECKOUT_ENABLED` est à `true` en production depuis le 22 septembre
+2026, après ces huit étapes et la vérification du catalogue.
 
 Le dernier rejeu sandbox est archivé dans
 [`docs/audits/2026-09-21-billing-replay.md`](../audits/2026-09-21-billing-replay.md), avec les
@@ -176,10 +185,11 @@ Pour le compte live, la même commande exige aussi `--allow-live` et
 
 ## Pilotes Essential — porte P1_ESSENTIAL
 
-Deux restaurants, sept jours, avec au minimum : consentement du restaurateur, captures des écrans
-clés, métriques (appels, réservations, incidents) et décision GO/NO-GO signée. La fiche de pilote va
-dans `docs/audits/` et la porte `P1_ESSENTIAL` de `docs/release/product-gates.json` ne passe à
-`CLOSED` qu'avec ces preuves.
+**Reste ouvert.** Deux restaurants, sept jours, avec au minimum : consentement
+du restaurateur, captures des écrans clés, métriques (appels, réservations,
+incidents, statut de paiement) et décision GO/NO-GO signée. La fiche de pilote
+va dans `docs/audits/` et la porte `P1_ESSENTIAL` de
+`docs/release/product-gates.json` ne passe à `CLOSED` qu'avec ces preuves.
 
 Sur staging uniquement, le workflow injecte au build `NEXT_PUBLIC_DEMO_RESTAURANT_ID` (l'identifiant du restaurant de démonstration `chez-sokar-demo`) et `NEXT_PUBLIC_DEMO_STAGING=1`. Le dashboard peut ainsi charger les données de démo sans session Clerk pendant les tests Checkout. Ces variables ne sont jamais injectées en production ; le dashboard de production reste toujours derrière l'authentification.
 
