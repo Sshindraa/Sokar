@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  GROQ_BASE_URL,
-  VOICE_LLM_FALLBACK_MODEL_DEFAULT,
-  VOICE_LLM_MODEL_DEFAULT,
-} from '@sokar/config';
+import { GROQ_BASE_URL, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
 import { VoiceConfigSchema, optionalUrlSchema } from '../env';
 
 /**
@@ -39,71 +35,56 @@ describe('VoiceConfigSchema', () => {
     const config = VoiceConfigSchema.parse({});
 
     expect(config).toMatchObject({
-      VOICE_LLM_PROVIDER: 'cerebras',
       VOICE_LLM_MODEL: VOICE_LLM_MODEL_DEFAULT,
-      VOICE_LLM_FALLBACK_MODEL: VOICE_LLM_FALLBACK_MODEL_DEFAULT,
       VOICE_LLM_TIMEOUT_MS: 8000,
-      OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1',
       GROQ_BASE_URL,
     });
-    expect(config.CEREBRAS_API_KEY).toBeUndefined();
-    expect(config.OPENROUTER_API_KEY).toBeUndefined();
     expect(config.GROQ_API_KEY).toBeUndefined();
   });
 
-  it('parse les overrides typés et conserve les clés API optionnelles', () => {
+  it('parse les overrides typés et conserve la clé API optionnelle', () => {
     const config = VoiceConfigSchema.parse({
-      VOICE_LLM_PROVIDER: 'openrouter',
-      VOICE_LLM_MODEL: 'primary/test-model',
-      VOICE_LLM_FALLBACK_MODEL: 'fallback/test-model',
+      VOICE_LLM_MODEL: 'qwen/qwen3.8-27b',
       VOICE_LLM_TIMEOUT_MS: '1250',
-      OPENROUTER_BASE_URL: 'https://router.example.test/v1',
       GROQ_BASE_URL: 'https://groq.example.test/openai/v1',
-      CEREBRAS_API_KEY: 'csk',
-      OPENROUTER_API_KEY: 'or-key',
       GROQ_API_KEY: 'gsk-key',
     });
 
     expect(config).toEqual({
-      VOICE_LLM_PROVIDER: 'openrouter',
-      VOICE_LLM_MODEL: 'primary/test-model',
-      VOICE_LLM_FALLBACK_MODEL: 'fallback/test-model',
+      VOICE_LLM_MODEL: 'qwen/qwen3.8-27b',
       VOICE_LLM_TIMEOUT_MS: 1250,
-      OPENROUTER_BASE_URL: 'https://router.example.test/v1',
       GROQ_BASE_URL: 'https://groq.example.test/openai/v1',
+      GROQ_API_KEY: 'gsk-key',
+    });
+  });
+
+  it('ignore les variables des providers supprimés', () => {
+    // Cerebras et OpenRouter ont été retirés le 22 septembre 2026 : leurs clés
+    // ne doivent plus entrer dans la configuration validée, même si elles
+    // traînent encore dans un .env.
+    const config = VoiceConfigSchema.parse({
+      VOICE_LLM_PROVIDER: 'cerebras',
+      VOICE_LLM_FALLBACK_MODEL: 'meta-llama/llama-3.3-70b-instruct',
+      OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1',
       CEREBRAS_API_KEY: 'csk',
       OPENROUTER_API_KEY: 'or-key',
-      GROQ_API_KEY: 'gsk-key',
-    });
-  });
-
-  it('accepte Groq comme provider vocal', () => {
-    const config = VoiceConfigSchema.parse({
-      VOICE_LLM_PROVIDER: 'groq',
-      VOICE_LLM_MODEL: 'qwen/qwen3.8-27b',
-      GROQ_API_KEY: 'gsk-key',
     });
 
-    expect(config).toMatchObject({
-      VOICE_LLM_PROVIDER: 'groq',
-      VOICE_LLM_MODEL: 'qwen/qwen3.8-27b',
+    expect(config).toEqual({
+      VOICE_LLM_MODEL: VOICE_LLM_MODEL_DEFAULT,
+      VOICE_LLM_TIMEOUT_MS: 8000,
       GROQ_BASE_URL,
-      GROQ_API_KEY: 'gsk-key',
     });
   });
 
-  it('préserve les fallbacks historiques pour provider et timeout invalides', () => {
-    const config = VoiceConfigSchema.parse({
-      VOICE_LLM_PROVIDER: 'legacy-provider',
-      VOICE_LLM_TIMEOUT_MS: 'not-a-number',
-    });
+  it('retombe sur le timeout par défaut si la valeur est invalide', () => {
+    const config = VoiceConfigSchema.parse({ VOICE_LLM_TIMEOUT_MS: 'not-a-number' });
 
-    expect(config.VOICE_LLM_PROVIDER).toBe('cerebras');
     expect(config.VOICE_LLM_TIMEOUT_MS).toBe(8000);
   });
 
-  it('refuse une URL OpenRouter invalide', () => {
-    const result = VoiceConfigSchema.safeParse({ OPENROUTER_BASE_URL: 'not-a-url' });
+  it('refuse une URL Groq invalide', () => {
+    const result = VoiceConfigSchema.safeParse({ GROQ_BASE_URL: 'not-a-url' });
 
     expect(result.success).toBe(false);
   });

@@ -36,7 +36,6 @@ export const REDACT_PATHS = [
   // Application env vars that contain secrets (used when `env` is logged)
   'env.SENTRY_DSN',
   'env.CLERK_SECRET_KEY',
-  'env.OPENROUTER_API_KEY',
   'env.GROQ_API_KEY',
   'env.CARTESIA_API_KEY',
   'env.TELNYX_API_KEY',

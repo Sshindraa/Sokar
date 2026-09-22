@@ -33,8 +33,8 @@ describe('voice usage counters', () => {
     const session = makeSession();
     addSttAudioSamples(session, 16_000);
     addCartesiaTtsCharacters(session, 120);
-    addLlmUsage(session, 'cerebras', 'turn-1', 40, 12, true);
-    addLlmUsage(session, 'cerebras', 'turn-1', 10, 3, false);
+    addLlmUsage(session, 'groq', 'turn-1', 40, 12, true);
+    addLlmUsage(session, 'groq', 'turn-1', 10, 3, false);
 
     await finalizeVoiceUsage(session);
     await finalizeVoiceUsage(session);
@@ -45,8 +45,8 @@ describe('voice usage counters', () => {
       expect.arrayContaining([
         'elevenlabs:stt:leg-1:final',
         'cartesia:tts:leg-1:final',
-        'cerebras:llm:leg-1:turn-1:input',
-        'cerebras:llm:leg-1:turn-1:output',
+        'groq:llm:leg-1:turn-1:input',
+        'groq:llm:leg-1:turn-1:output',
       ]),
     );
     expect(

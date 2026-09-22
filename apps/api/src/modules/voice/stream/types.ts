@@ -182,7 +182,7 @@ export interface TelnyxStreamMessage {
   stream_id?: string;
 }
 
-/** Message de chat au format OpenAI-compatible (Cerebras, Groq, OpenRouter) */
+/** Message de chat au format OpenAI-compatible (Groq). */
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;

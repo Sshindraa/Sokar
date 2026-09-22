@@ -2,11 +2,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
-import {
-  GROQ_BASE_URL,
-  VOICE_LLM_FALLBACK_MODEL_DEFAULT,
-  VOICE_LLM_MODEL_DEFAULT,
-} from '@sokar/config';
+import { GROQ_BASE_URL, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
 
 function isValidCorsOrigins(val: string): boolean {
   return val
@@ -65,7 +61,6 @@ const PROD_HOST_ALLOWLIST = [
   'api-staging.sokar.tech',
 ];
 
-const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_VOICE_LLM_TIMEOUT_MS = 8000;
 
 /**
@@ -76,15 +71,6 @@ const DEFAULT_VOICE_LLM_TIMEOUT_MS = 8000;
 export function isLiveStripeSecretKey(value: string | undefined): boolean {
   return value?.trim().startsWith('sk_live_') ?? false;
 }
-
-// Le code voice historique traitait toute valeur autre que "openrouter"
-// comme "cerebras". La normalisation conserve ce fallback tout en exposant
-// le provider Groq direct pour Qwen 3.8.
-const voiceLlmProviderSchema = z.preprocess(
-  (value) =>
-    value === 'openrouter' || value === 'cerebras' || value === 'groq' ? value : undefined,
-  z.enum(['cerebras', 'openrouter', 'groq']).default('cerebras'),
-);
 
 // Même compatibilité que manager.ts avant centralisation : une valeur absente,
 // invalide, non positive ou non finie retombe sur 8 secondes.
@@ -113,14 +99,9 @@ export const optionalUrlSchema = z.preprocess((value) => {
 
 /** Configuration LLM voice issue des variables d'environnement validées. */
 export const VoiceConfigSchema = z.object({
-  VOICE_LLM_PROVIDER: voiceLlmProviderSchema,
   VOICE_LLM_MODEL: z.string().default(VOICE_LLM_MODEL_DEFAULT),
-  VOICE_LLM_FALLBACK_MODEL: z.string().default(VOICE_LLM_FALLBACK_MODEL_DEFAULT),
   VOICE_LLM_TIMEOUT_MS: voiceLlmTimeoutSchema,
-  OPENROUTER_BASE_URL: z.string().url().default(DEFAULT_OPENROUTER_BASE_URL),
   GROQ_BASE_URL: z.string().url().default(GROQ_BASE_URL),
-  CEREBRAS_API_KEY: z.string().optional(),
-  OPENROUTER_API_KEY: z.string().optional(),
   GROQ_API_KEY: z.string().optional(),
 });
 
@@ -421,18 +402,13 @@ const EnvSchema = z
   .refine(
     (data) => {
       if (data.NODE_ENV !== 'production' || process.env.VOICE_DISABLED === 'true') return true;
-      const key =
-        data.VOICE_LLM_PROVIDER === 'groq'
-          ? data.GROQ_API_KEY
-          : data.VOICE_LLM_PROVIDER === 'openrouter'
-            ? data.OPENROUTER_API_KEY
-            : data.CEREBRAS_API_KEY;
+      const key = data.GROQ_API_KEY;
       return !!key && key.length >= 20;
     },
     {
       message:
-        'La clé API du provider LLM vocal configuré doit être définie en production (≥20 caractères).',
-      path: ['VOICE_LLM_PROVIDER'],
+        'GROQ_API_KEY doit être définie en production (≥20 caractères) : c’est le seul provider LLM vocal.',
+      path: ['GROQ_API_KEY'],
     },
   )
   .refine(

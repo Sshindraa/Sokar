@@ -228,7 +228,7 @@ export const voiceTurnDurationMs = new Histogram({
 
 /**
  * Temps jusqu'au premier token LLM (TTFT). Cible < 500ms pour une
- * conversation naturelle (Cerebras/Groq LPU).
+ * conversation naturelle (Groq LPU).
  */
 export const voiceLlmFirstTokenMs = new Histogram({
   name: 'sokar_voice_llm_first_token_ms',
@@ -256,22 +256,9 @@ export const voiceTtsFirstAudioMs = new Histogram({
 });
 
 /**
- * Nombre total de fallbacks LLM (provider primaire → provider de secours).
- * Permet de suivre la stabilité des providers voice.
- * Labels : direction (ex. groq_to_openrouter, cerebras_to_openrouter).
- */
-export const voiceLlmFallbackTotal = new Counter({
-  name: 'sokar_voice_llm_fallback_total',
-  help: 'Nombre total de fallbacks LLM (provider primaire → provider de secours)',
-  labelNames: ['direction'] as const,
-  registers: [getRegistry()],
-});
-
-/**
- * Erreurs par provider voice (ElevenLabs STT, Cartesia, Cerebras, Groq, OpenRouter).
- * Permet de corréler les fallbacks avec les erreurs sous-jacentes et de
- * mesurer la fiabilité de chaque provider LLM indépendamment.
- * Labels : provider (elevenlabs_stt | cartesia | cerebras | groq | openrouter) × type (429 | 4xx | 5xx | timeout | session_abort | ws_error).
+ * Erreurs par provider voice (ElevenLabs STT, Cartesia, Groq).
+ * Permet de mesurer la fiabilité de chaque provider indépendamment.
+ * Labels : provider (elevenlabs_stt | cartesia | groq) × type (429 | 4xx | 5xx | timeout | session_abort | ws_error).
  */
 export const voiceProviderErrorsTotal = new Counter({
   // Préfixe `sokar_` comme toutes les métriques maison : sans lui, impossible
@@ -337,7 +324,6 @@ export function __resetMetrics(): void {
   voiceLlmFirstTokenMs.reset();
   voiceLlmFirstPhraseMs.reset();
   voiceTtsFirstAudioMs.reset();
-  voiceLlmFallbackTotal.reset();
   voiceProviderErrorsTotal.reset();
 }
 
