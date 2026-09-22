@@ -319,8 +319,8 @@ export class ErasureService {
       });
     }
 
-    // 3. Anonymiser les messages d'appels (Message contient customerPhone/customerName).
-    //    La table Call n'a pas de colonne customerPhone directe.
+    // 3. Anonymiser les messages d'appels (Message contient customerPhone/customerName)
+    //    et le numéro d'appelant persisté sur Call.
     let callsAnonymized = 0;
     try {
       const messageResult = await this.prisma.message.updateMany({
@@ -330,6 +330,18 @@ export class ErasureService {
       callsAnonymized = messageResult.count;
     } catch (err) {
       logger.debug({ err }, 'Message table does not have customerPhone field, skipping');
+    }
+    try {
+      // tenant-scoping: global — effacement RGPD multi-établissements : toutes
+      // les lignes portant ce numéro doivent être anonymisées.
+      callsAnonymized += (
+        await this.prisma.call.updateMany({
+          where: { callerPhone: args.subject },
+          data: { callerPhone: null },
+        })
+      ).count;
+    } catch (err) {
+      logger.debug({ err }, 'Call table does not have callerPhone field, skipping');
     }
 
     // 4. Conserver les consents (preuve légale) — pas d'anonymisation

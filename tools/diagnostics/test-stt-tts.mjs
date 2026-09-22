@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Test pipeline vocal — STT (ElevenLabs Scribe) ↔ TTS (Cartesia) ↔ LLM (OpenRouter)
+ * Test pipeline vocal — STT (ElevenLabs Scribe) ↔ TTS (Cartesia) ↔ LLM (Groq)
  *
  * Usage : pnpm test:diagnostic  (ou node --env-file=.env.local tools/diagnostics/test-stt-tts.mjs)
  *
@@ -8,11 +8,7 @@
  */
 
 // ─── Vérifier que .env.local est chargé (via --env-file) ─────────────────────
-if (
-  !process.env.ELEVENLABS_API_KEY &&
-  !process.env.CARTESIA_API_KEY &&
-  !process.env.OPENROUTER_API_KEY
-) {
+if (!process.env.ELEVENLABS_API_KEY && !process.env.CARTESIA_API_KEY && !process.env.GROQ_API_KEY) {
   console.log("❌ Variables d'environnement manquantes — .env.local non chargé.");
   console.log('   Lancez via : pnpm test:diagnostic');
   console.log('   ou          : node --env-file=.env.local tools/diagnostics/test-stt-tts.mjs');
@@ -21,11 +17,12 @@ if (
 
 const EL_KEY = process.env.ELEVENLABS_API_KEY || '';
 const CA_KEY = process.env.CARTESIA_API_KEY || '';
-const OR_KEY = process.env.OPENROUTER_API_KEY || '';
+const GROQ_KEY = process.env.GROQ_API_KEY || '';
+const GROQ_BASE_URL = process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1';
 const CA_VOICE = process.env.CARTESIA_VOICE_ID || 'f786b574-daa5-4673-aa0c-cbe3e8534c02';
 const EL_MODEL = process.env.ELEVENLABS_STT_MODEL || 'scribe_v2_realtime';
 const CA_MODEL = process.env.CARTESIA_MODEL || 'sonic-3.6';
-const OR_MODEL = process.env.OPENROUTER_MODEL || 'mistralai/ministral-3b-2512';
+const VOICE_MODEL = process.env.VOICE_LLM_MODEL || 'qwen/qwen3.8-27b';
 
 function keyOk(k) {
   return k && k.length > 10 && k !== '...' && !k.includes('***');
@@ -139,22 +136,23 @@ async function testCartesia() {
   }
 }
 
-// ─── 3. OpenRouter LLM ──────────────────────────────────────────────────────────
-async function testOpenrouter() {
-  console.log('\n━━━ 3. OpenRouter LLM ━━━');
-  if (!keyOk(OR_KEY)) return skip('OpenRouter', 'clé API manquante');
+// ─── 3. Groq LLM ───────────────────────────────────────────────────────────────
+async function testGroq() {
+  console.log('\n━━━ 3. Groq LLM ━━━');
+  if (!keyOk(GROQ_KEY)) return skip('Groq', 'clé API manquante');
 
   try {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const res = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OR_KEY}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
       body: JSON.stringify({
-        model: OR_MODEL,
+        model: VOICE_MODEL,
         messages: [
           { role: 'system', content: 'Vous êtes un agent vocal concis.' },
           { role: 'user', content: 'Dis bonjour en français.' },
         ],
         max_tokens: 50,
+        reasoning_effort: 'none',
       }),
     });
     const data = await res.json();
@@ -172,18 +170,18 @@ async function testOpenrouter() {
 async function main() {
   console.log('═'.repeat(60));
   console.log('  🔍 Diagnostic Pipeline Vocal');
-  console.log('  TTS : Cartesia sonic-3.6 | STT : ElevenLabs Scribe | LLM : OpenRouter');
+  console.log(`  TTS : Cartesia sonic-3.6 | STT : ElevenLabs Scribe | LLM : Groq (${VOICE_MODEL})`);
   console.log('═'.repeat(60));
   console.log('');
   console.log('  État des clés API dans .env.local :');
   console.log(`  • ELEVENLABS_API_KEY  : ${keyOk(EL_KEY) ? '✓' : '✗'}`);
   console.log(`  • CARTESIA_API_KEY  : ${keyOk(CA_KEY) ? '✓' : '✗ (placeholder)'}`);
-  console.log(`  • OPENROUTER_API_KEY: ${keyOk(OR_KEY) ? '✓' : '✗'}`);
+  console.log(`  • GROQ_API_KEY       : ${keyOk(GROQ_KEY) ? '✓' : '✗'}`);
   console.log('');
 
   await testElevenLabsStt();
   await testCartesia();
-  await testOpenrouter();
+  await testGroq();
 
   console.log('\n' + '═'.repeat(60));
   const total = passed + failed + skipped;
@@ -191,12 +189,14 @@ async function main() {
   console.log('═'.repeat(60));
 
   // Recommandations
-  if (!keyOk(EL_KEY) || !keyOk(CA_KEY)) {
+  if (!keyOk(EL_KEY) || !keyOk(CA_KEY) || !keyOk(GROQ_KEY)) {
     console.log('\n📋 Clés API nécessaires :');
     if (!keyOk(EL_KEY))
       console.log('  • ElevenLabs : https://elevenlabs.io → API Keys → générer une clé');
     if (!keyOk(CA_KEY))
       console.log('  • Cartesia : https://cartesia.ai → API Keys → créer une clé');
+    if (!keyOk(GROQ_KEY))
+      console.log('  • Groq : https://console.groq.com → API Keys → créer une clé');
     console.log('');
     console.log('  Ajoutez-les dans .env :');
     console.log('    ELEVENLABS_API_KEY="cle"');

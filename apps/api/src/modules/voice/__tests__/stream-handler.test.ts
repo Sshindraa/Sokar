@@ -73,6 +73,14 @@ vi.mock('../call-recording.service', () => ({
   startTestCallRecording: vi.fn().mockResolvedValue(undefined),
 }));
 
+const { mockFinalizeVoiceCall } = vi.hoisted(() => ({
+  mockFinalizeVoiceCall: vi.fn(),
+}));
+
+vi.mock('../call-finalization.service', () => ({
+  finalizeVoiceCall: mockFinalizeVoiceCall,
+}));
+
 vi.mock('../../../shared/db/client', () => ({
   db: {
     call: {
@@ -80,6 +88,13 @@ vi.mock('../../../shared/db/client', () => ({
       findUnique: vi.fn().mockResolvedValue({ id: 'call-1' }),
     },
     latencyTrace: {
+      upsert: vi.fn().mockResolvedValue(undefined),
+    },
+    voiceCallTelemetry: {
+      upsert: vi.fn().mockResolvedValue(undefined),
+      updateMany: vi.fn().mockResolvedValue(undefined),
+    },
+    voiceTurnTelemetry: {
       upsert: vi.fn().mockResolvedValue(undefined),
     },
   },
@@ -175,6 +190,7 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockFinalizeVoiceCall.mockResolvedValue(undefined);
     mockMgr.get.mockReturnValue(undefined);
     mockMgr.transition.mockReturnValue(true);
     originalFetch = globalThis.fetch;
@@ -393,6 +409,13 @@ describe('registerMediaStreamRoutes — WebSocket Telnyx Media Stream', () => {
 
     expect(session.ended).toBe(true);
     expect(mockMgr.delete).toHaveBeenCalledWith('cc-ws-1');
+    // La fermeture du stream finalise l'appel : sans ça, un appel coupé
+    // resterait sans outcome si `/voice/telnyx/end` n'arrive jamais.
+    expect(mockFinalizeVoiceCall).toHaveBeenCalledWith(
+      'leg-ws-1',
+      expect.objectContaining({ source: 'stream-close' }),
+      expect.anything(),
+    );
   });
 
   it("message JSON invalide : log l'erreur sans crash", async () => {

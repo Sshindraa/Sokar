@@ -34,13 +34,36 @@ export interface CallRecoveryDependencies {
   claimStore: NotificationClaimStore;
   sendSms: typeof sendSms;
   reconciliationQueue?: NotificationReconciliationQueue;
+  /**
+   * Vérifie qu'aucune réservation n'a finalement été créée pour cet appel.
+   * Le webhook de fin peut devancer de quelques secondes la création d'une
+   * réservation ; sans ce contrôle, un client déjà réservé recevrait un SMS
+   * de récupération.
+   */
+  reservationLookup?: (callId: string) => Promise<boolean>;
+}
+
+async function hasReservationForCall(callId: string): Promise<boolean> {
+  const { db } = await import('../../db/client');
+  // tenant-scoping: global — `callId` est unique sur Reservation : c'est une
+  // lecture d'identité, pas une requête tenant.
+  const reservation = await db.reservation.findFirst({
+    where: { callId },
+    select: { id: true },
+  });
+  return Boolean(reservation);
 }
 
 function resolveDependencies(
   input: NotificationClaimStore | CallRecoveryDependencies,
 ): CallRecoveryDependencies {
   if ('claimStore' in input) return input;
-  return { claimStore: input, sendSms, reconciliationQueue: queues.reconciliation };
+  return {
+    claimStore: input,
+    sendSms,
+    reconciliationQueue: queues.reconciliation,
+    reservationLookup: hasReservationForCall,
+  };
 }
 
 async function requeueUnknownRecovery(
@@ -72,6 +95,23 @@ export async function processCallRecoveryJob(
   const log = jobLogger(job);
   const data = job.data as CallRecoveryJobData;
   const deps = resolveDependencies(dependencies);
+
+  // Dernière vérification avant l'envoi : si une réservation a fini par être
+  // créée (création en vol au moment du raccrochage), la récupération est
+  // inutile et le SMS ne doit pas partir.
+  if (deps.reservationLookup) {
+    try {
+      if (await deps.reservationLookup(data.callId)) {
+        log.info({ callId: data.callId }, 'recovery SMS skipped: reservation was created');
+        return;
+      }
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err), callId: data.callId },
+        'recovery reservation lookup failed',
+      );
+    }
+  }
 
   const opening = data.customerName ? `Bonjour ${data.customerName.split(' ')[0]}, ` : 'Bonjour, ';
 

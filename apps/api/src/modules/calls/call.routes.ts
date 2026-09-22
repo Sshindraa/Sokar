@@ -52,7 +52,14 @@ export async function callRoutes(app: FastifyInstance) {
 
     const call = await db.call.findUnique({
       where: { id, restaurantId },
-      include: { latencyTrace: true },
+      include: {
+        latencyTrace: true,
+        voiceTelemetry: true,
+        voiceTurns: {
+          orderBy: { sequence: 'asc' },
+          take: 200,
+        },
+      },
     });
 
     if (!call) {

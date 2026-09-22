@@ -147,6 +147,22 @@ function makeHangupPayload(
   };
 }
 
+function makeEndPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    call_leg_id: 'leg-end-1',
+    transcript: null,
+    ended_reason: null,
+    started_at: null,
+    ended_at: null,
+    stt_provider: null,
+    llm_provider: null,
+    tts_provider: null,
+    from: '+33****0001',
+    to: '+33****0000',
+    ...overrides,
+  };
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 describe('POST /voice/telnyx — call.initiated', () => {
@@ -200,6 +216,9 @@ describe('POST /voice/telnyx — call.initiated', () => {
         callSid: 'leg-1',
         restaurantId: 'rest-1',
         carrier: 'telnyx',
+        // Le numéro d'appelant est persisté dès l'init : le rattrapage des
+        // appels incomplets en a besoin pour la récupération commerciale.
+        callerPhone: '+33****0001',
       },
     });
 
@@ -531,7 +550,7 @@ describe('POST /voice/telnyx — call.hangup', () => {
     delete process.env.CALL_RECORDING_ENABLED;
   });
 
-  it('skips the duration update when duration_sec is missing', async () => {
+  it('finalise le hangup sans inventer de durée quand duration_sec manque', async () => {
     vi.mocked(db.call.findUnique).mockResolvedValue({ reservation: null } as unknown as Awaited<
       ReturnType<typeof db.call.findUnique>
     >);
@@ -545,7 +564,19 @@ describe('POST /voice/telnyx — call.hangup', () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(db.call.update).not.toHaveBeenCalled();
+    // Aucune durée inventée...
+    expect(db.call.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ durationSec: expect.anything() }),
+      }),
+    );
+    // ...mais l'appel est bien finalisé : le hangup seul suffit désormais.
+    expect(db.call.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { callSid: 'leg-1' },
+        data: expect.objectContaining({ outcome: 'NO_ACTION' }),
+      }),
+    );
   });
 
   it('increments the customer visit count when the call produced a reservation', async () => {
@@ -650,8 +681,8 @@ describe('POST /voice/telnyx — call.recording.saved', () => {
             direction: 'incoming',
             recording_id: 'rec-1',
             recording_urls: { mp3: 'https://recordings.telnyx.com/signed.mp3' },
-            started_at: '2026-07-22T10:00:00.000Z',
-            ended_at: '2026-07-22T10:01:00.000Z',
+            recording_started_at: '2026-07-22T10:00:00.000Z',
+            recording_ended_at: '2026-07-22T10:01:00.000Z',
           },
         },
       },
@@ -664,6 +695,8 @@ describe('POST /voice/telnyx — call.recording.saved', () => {
         callLegId: 'leg-1',
         recordingId: 'rec-1',
         downloadUrl: 'https://recordings.telnyx.com/signed.mp3',
+        startedAt: '2026-07-22T10:00:00.000Z',
+        endedAt: '2026-07-22T10:01:00.000Z',
       }),
       { jobId: expect.any(String) },
     );
@@ -694,26 +727,11 @@ describe('POST /voice/telnyx/end — restaurantId resolution', () => {
     await closeApp();
   });
 
-  function makeEndPayload(overrides: Record<string, unknown> = {}) {
-    return {
-      call_leg_id: 'leg-end-1',
-      transcript: null,
-      ended_reason: null,
-      started_at: null,
-      ended_at: null,
-      stt_provider: null,
-      llm_provider: null,
-      tts_provider: null,
-      from: '+33****0001',
-      to: '+33****0000',
-      ...overrides,
-    };
-  }
-
   it('resolves restaurantId via loadContext(to) when req.restaurantId is unset', async () => {
     mockLoadContext.mockResolvedValue(makeRestaurantCtx());
-    vi.mocked(db.call.upsert).mockResolvedValue({ id: 'call-1' } as unknown as Awaited<
-      ReturnType<typeof db.call.upsert>
+    vi.mocked(db.call.findUnique).mockResolvedValue(null);
+    vi.mocked(db.call.create).mockResolvedValue({ id: 'call-1' } as unknown as Awaited<
+      ReturnType<typeof db.call.create>
     >);
 
     const res = await app.inject({
@@ -725,9 +743,9 @@ describe('POST /voice/telnyx/end — restaurantId resolution', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ received: true });
     expect(mockLoadContext).toHaveBeenCalledWith('+33****0000');
-    expect(db.call.upsert).toHaveBeenCalledWith(
+    expect(db.call.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        create: expect.objectContaining({
+        data: expect.objectContaining({
           callSid: 'leg-end-1',
           restaurantId: 'rest-1',
         }),
@@ -745,7 +763,7 @@ describe('POST /voice/telnyx/end — restaurantId resolution', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: 'restaurantId is required' });
-    expect(db.call.upsert).not.toHaveBeenCalled();
+    expect(db.call.create).not.toHaveBeenCalled();
   });
 
   it('returns 400 when `to` is present but loadContext cannot find a restaurant', async () => {
@@ -759,7 +777,7 @@ describe('POST /voice/telnyx/end — restaurantId resolution', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: 'restaurantId is required' });
-    expect(db.call.upsert).not.toHaveBeenCalled();
+    expect(db.call.create).not.toHaveBeenCalled();
   });
 });
 
@@ -819,5 +837,145 @@ describe('POST /voice/telnyx — call.initiated — non-P2002 Prisma error handl
     const session = CallSessionManager.getInstance().get('cc-1');
     expect(session).toBeUndefined();
     expect(queues.telnyxWebhooks.add).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Finalisation commune : un appel terminé doit produire un résultat ────
+//
+// `call.hangup` et `/voice/telnyx/end` peuvent arriver dans n'importe quel
+// ordre, en double, ou pas du tout. Les deux chemins convergent vers la même
+// finalisation, qui ne régresse jamais et n'efface jamais une donnée complète.
+
+describe('finalisation commune des appels — ordre, doublons et pannes', () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
+    app = await getApp();
+  });
+
+  afterAll(async () => {
+    await closeApp();
+  });
+
+  const finalizedCall = {
+    id: 'call-1',
+    restaurantId: 'rest-1',
+    callSid: 'leg-end-1',
+    durationSec: 61,
+    transcript: 'Bonjour je voudrais réserver pour quatre personnes',
+    intent: 'RESERVATION',
+    outcome: 'NO_ACTION',
+    sttProvider: 'elevenlabs-scribe-v2-realtime',
+    llmProvider: 'groq',
+    ttsProvider: 'cartesia-sonic',
+    reservation: null,
+    messages: [],
+  };
+
+  it('un /end tardif et vide n’efface ni la transcription ni l’outcome', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
+    vi.mocked(db.call.findUnique).mockResolvedValue(
+      finalizedCall as unknown as Awaited<ReturnType<typeof db.call.findUnique>>,
+    );
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx/end',
+      payload: makeEndPayload({ transcript: null, started_at: null, ended_at: null }),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ received: true });
+    // Rien à écrire : le hangup avait déjà posé des valeurs plus complètes.
+    expect(db.call.update).not.toHaveBeenCalled();
+  });
+
+  it('un /end tardif ne dégrade pas une réservation déjà enregistrée', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
+    vi.mocked(db.call.findUnique).mockResolvedValue({
+      ...finalizedCall,
+      outcome: 'RESERVED',
+      reservation: { id: 'res-1' },
+    } as unknown as Awaited<ReturnType<typeof db.call.findUnique>>);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx/end',
+      payload: makeEndPayload({ transcript: 'Bonjour' }),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(db.call.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ outcome: 'NO_ACTION' }),
+      }),
+    );
+  });
+
+  it('le hangup finalise l’appel même sans session en mémoire', async () => {
+    vi.mocked(db.call.findUnique).mockResolvedValue({
+      ...finalizedCall,
+      outcome: null,
+      transcript: null,
+      intent: null,
+      durationSec: null,
+      sttProvider: null,
+      llmProvider: null,
+      ttsProvider: null,
+    } as unknown as Awaited<ReturnType<typeof db.call.findUnique>>);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx',
+      payload: makeHangupPayload({ duration_sec: 61 }),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(db.call.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { callSid: 'leg-1' },
+        data: expect.objectContaining({
+          outcome: 'NO_ACTION',
+          sttProvider: 'elevenlabs-scribe-v2-realtime',
+        }),
+      }),
+    );
+  });
+
+  it('répond 503 et laisse le rattrapage reprendre quand la base tombe', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
+    vi.mocked(db.call.findUnique).mockRejectedValue(new Error('Connection lost'));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/voice/telnyx/end',
+      payload: makeEndPayload(),
+    });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({ error: 'finalization_unavailable' });
+  });
+
+  it('n’envoie qu’une seule récupération pour un même appel rejoué', async () => {
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
+    vi.mocked(db.call.findUnique).mockResolvedValue(null);
+    vi.mocked(db.call.create).mockResolvedValue({ id: 'call-1' } as unknown as Awaited<
+      ReturnType<typeof db.call.create>
+    >);
+    const payload = makeEndPayload({
+      transcript: 'Je voudrais réserver une table demain soir',
+    });
+
+    await app.inject({ method: 'POST', url: '/voice/telnyx/end', payload });
+    await app.inject({ method: 'POST', url: '/voice/telnyx/end', payload });
+
+    expect(queues.callRecovery.add).toHaveBeenCalledTimes(2);
+    const jobIds = vi
+      .mocked(queues.callRecovery.add)
+      .mock.calls.map((call) => (call[2] as { jobId: string }).jobId);
+    expect(new Set(jobIds).size).toBe(1);
   });
 });

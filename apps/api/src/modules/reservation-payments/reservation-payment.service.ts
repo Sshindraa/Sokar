@@ -1,6 +1,11 @@
 import { Prisma, ReservationPaymentStatus, ReservationPaymentType } from '@prisma/client';
 import { db } from '../../shared/db/client';
-import { transitionProjection } from '../../shared/reservations/reservation-state';
+import {
+  ReservationLifecycleService,
+  type ReservationLifecycleResult,
+} from '../reservations/reservation-lifecycle.service.js';
+
+const reservationLifecycle = new ReservationLifecycleService(db);
 
 export const PAYMENT_AMOUNT_MODES = ['FIXED', 'PER_PERSON'] as const;
 export type ReservationPaymentAmountMode = (typeof PAYMENT_AMOUNT_MODES)[number];
@@ -797,12 +802,12 @@ export async function applyReservationPaymentProviderEvent(
     throw new ReservationPaymentStateError('PAYMENT_TRANSITION_INVALID');
   }
 
-  const [event, updated, reservationConfirmed] = await db.$transaction(async (tx) => {
+  const [event, updated, lifecycleResult] = await db.$transaction(async (tx) => {
     const duplicateInTx = await tx.reservationPaymentEvent.findUnique({
       where: { providerEventId },
       select: { id: true, paymentId: true, resultingStatus: true },
     });
-    if (duplicateInTx) return [duplicateInTx, null, false] as const;
+    if (duplicateInTx) return [duplicateInTx, null, null] as const;
 
     const updateData: Prisma.ReservationPaymentUpdateInput = {
       status: resultingStatus,
@@ -843,26 +848,32 @@ export async function applyReservationPaymentProviderEvent(
       select: { id: true, paymentId: true, resultingStatus: true },
     });
 
-    let reservationConfirmed = false;
+    let lifecycleResult: ReservationLifecycleResult | null = null;
     if (
       resultingStatus === ReservationPaymentStatus.AUTHORIZED ||
       resultingStatus === ReservationPaymentStatus.CAPTURED
     ) {
-      const confirmed = await tx.reservation.updateMany({
-        where: {
-          id: payment.reservationId,
-          restaurantId: input.restaurantId,
-          state: 'PENDING',
+      // Le paiement ne peut confirmer que la demande encore en validation
+      // manuelle. Le writer verrouille la ligne et transforme un changement
+      // concurrent en no-op, comme le faisait l'ancien updateMany conditionnel.
+      lifecycleResult = await reservationLifecycle.transitionInTransaction(tx, {
+        reservationId: payment.reservationId,
+        restaurantId: input.restaurantId,
+        toState: 'CONFIRMED',
+        onlyIfFromState: 'PENDING',
+        actor: 'payment:provider-webhook',
+        auditEvent: 'reservation_confirmed',
+        operation: 'confirmation',
+        observationSource: 'direct',
+        metadata: {
+          paymentId: payment.id,
+          providerEventId,
+          resultingPaymentStatus: resultingStatus,
         },
-        // La ligne visée est `state = PENDING`, qui porte `status = CONFIRMED`
-        // (projection lossy, voir reservation-state.ts) : confirmer le paiement
-        // projette donc CONFIRMED → CONFIRMED.
-        data: transitionProjection('CONFIRMED', 'CONFIRMED'),
       });
-      reservationConfirmed = confirmed.count > 0;
     }
 
-    return [createdEvent, next, reservationConfirmed] as const;
+    return [createdEvent, next, lifecycleResult] as const;
   });
 
   if (!updated) {
@@ -877,6 +888,20 @@ export async function applyReservationPaymentProviderEvent(
     };
   }
 
+  if (lifecycleResult) {
+    await reservationLifecycle.finalizeTransition(
+      {
+        reservationId: payment.reservationId,
+        restaurantId: input.restaurantId,
+        toState: 'CONFIRMED',
+        actor: 'payment:provider-webhook',
+        operation: 'confirmation',
+        observationSource: 'direct',
+      },
+      lifecycleResult,
+    );
+  }
+
   return {
     eventId: event.id,
     paymentId: payment.id,
@@ -884,7 +909,7 @@ export async function applyReservationPaymentProviderEvent(
     changed: payment.status !== resultingStatus,
     duplicate: false,
     stale: false,
-    reservationConfirmed,
+    reservationConfirmed: lifecycleResult?.mutated === true,
   };
 }
 

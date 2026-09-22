@@ -207,4 +207,34 @@ describe('call-recovery.worker', () => {
     expect(claims.size).toBe(1);
     expect(jobIds.size).toBe(1);
   });
+
+  it('n’envoie rien quand une réservation a finalement été créée', async () => {
+    const { claims, store } = makeClaimStore();
+    const deps = {
+      claimStore: store,
+      sendSms,
+      reservationLookup: vi.fn().mockResolvedValue(true),
+    };
+
+    await processCallRecoveryJob(makeJob({}), deps);
+
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(claims.size).toBe(0);
+  });
+
+  it('continue la récupération quand la vérification de réservation échoue', async () => {
+    const { claims, store } = makeClaimStore();
+    const deps = {
+      claimStore: store,
+      sendSms,
+      reservationLookup: vi.fn().mockRejectedValue(new Error('db down')),
+    };
+
+    await processCallRecoveryJob(makeJob({}), deps);
+
+    // Un doute sur la réservation ne doit pas bloquer un rappel légitime :
+    // le claim garantit toujours un seul envoi.
+    expect(sendSms).toHaveBeenCalledTimes(1);
+    expect(claims.size).toBe(1);
+  });
 });

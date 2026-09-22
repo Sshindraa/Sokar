@@ -16,7 +16,7 @@ const candidates = [
   { name: 'skylar', id: 'db6b0ed5-d5d3-463d-ae85-518a07d3c2b4' },
   { name: 'daniel', id: '47c38ca4-5f35-497b-b1a3-415245fb35e1' },
   { name: 'jacqueline', id: '9626c31c-bec5-4cca-baa8-f8ba9e84c8bc' },
-  { name: 'gemma', id: '62ae83ad-4f6a-430b-af41-a9bede9286ca' },
+  { name: 'warm-female', id: '62ae83ad-4f6a-430b-af41-a9bede9286ca' },
   { name: 'archie', id: 'ef191366-f52f-447a-a398-ed8c0f2943a1' },
 ];
 

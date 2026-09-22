@@ -18,20 +18,18 @@ import {
 } from '../../shared/observability/reservation-contract';
 import { buildReservationNotificationJobId } from '../../shared/queue/job-options';
 import { CustomerService } from '../customers/customer.service';
-import {
-  creationProjection,
-  stateForStatus,
-  transitionProjection,
-} from '../../shared/reservations/reservation-state';
+import { creationProjection, stateForStatus } from '../../shared/reservations/reservation-state';
 import {
   deactivateMarketingConversions,
   recordMarketingAttributionClick,
   recordMarketingConversion,
   recordMarketingHonoredConversions,
 } from '../marketing/marketing-attribution.service';
+import { ReservationLifecycleService } from './reservation-lifecycle.service.js';
 
 const availability = new CapacityAwareAvailabilityService(db);
 const tableAllocation = new TableAllocationService(db);
+const lifecycle = new ReservationLifecycleService(db);
 
 export interface CreateReservationInput {
   restaurantId: string;
@@ -87,6 +85,10 @@ function getLegacyStatus(
   status: Prisma.ReservationUpdateInput['status'],
 ): ReservationStatus | null {
   return typeof status === 'string' ? (status as ReservationStatus) : null;
+}
+
+function getLegacyState(state: Prisma.ReservationUpdateInput['state']): ReservationState | null {
+  return typeof state === 'string' ? (state as ReservationState) : null;
 }
 
 /**
@@ -439,46 +441,75 @@ export class ReservationService {
     });
 
     const status = getLegacyStatus(data.status);
-    const updateData: Prisma.ReservationUpdateInput = status
-      ? { ...data, state: stateForStatus(status) }
-      : data;
+    const requestedState = getLegacyState(data.state);
+    const lifecycleFieldProvided = data.status !== undefined || data.state !== undefined;
+    const projectedState = status ? stateForStatus(status) : requestedState;
+    if (lifecycleFieldProvided && !projectedState) {
+      throw new Error('Reservation lifecycle updates must use a concrete status or state');
+    }
+    if (status && requestedState && stateForStatus(status) !== requestedState) {
+      throw new Error('Reservation status and state must describe the same lifecycle state');
+    }
+    let updated: Reservation;
+    let stateChanged = false;
+    let lifecycleMutation = false;
 
-    const updated = await db.$transaction(async (tx) => {
-      const result = await tx.reservation.update({
-        where: { id, restaurantId },
-        data: updateData,
+    if (projectedState) {
+      const additionalData = { ...data };
+      // The lifecycle gateway owns both columns. Other fields still travel in
+      // the same transaction so dashboard edits remain atomic with a status
+      // transition.
+      delete additionalData.status;
+      delete additionalData.state;
+
+      const result = await lifecycle.transition({
+        reservationId: id,
+        restaurantId,
+        toState: projectedState,
+        actor,
+        additionalData,
+        metadata:
+          projectedState === 'CANCELLED'
+            ? { source: 'legacy_reservation_update' }
+            : { source: 'legacy_reservation_update', status },
+        operation: projectedState === 'CANCELLED' ? 'cancel' : 'update',
+        observationSource: 'legacy_service',
+        allowAlreadyInTarget: true,
+        snapshot: reservation,
       });
-
-      const fromState = reservation.state as ReservationState | null | undefined;
-      const toState = (result.state ?? (status ? stateForStatus(status) : fromState)) as
-        | ReservationState
-        | null
-        | undefined;
-      if (fromState && toState && fromState !== toState) {
-        await tx.reservationAuditLog.create({
-          data: {
-            event: toState === 'CANCELLED' ? 'reservation_cancelled' : 'reservation_state_changed',
-            reservationId: id,
-            actor,
-            fromState,
-            toState,
-            metadata:
-              toState === 'CANCELLED'
-                ? { source: 'legacy_reservation_update' }
-                : { source: 'legacy_reservation_update', status: status ?? null },
-          },
+      updated = result.reservation;
+      stateChanged = result.fromState !== result.toState;
+      lifecycleMutation = result.mutated;
+    } else {
+      updated = await db.$transaction(async (tx) => {
+        const result = await tx.reservation.update({
+          where: { id, restaurantId },
+          data,
         });
-      }
 
-      return result;
-    });
+        const fromState = reservation.state as ReservationState | null | undefined;
+        const toState = result.state as ReservationState | null | undefined;
+        if (fromState && toState && fromState !== toState) {
+          await tx.reservationAuditLog.create({
+            data: {
+              event:
+                toState === 'CANCELLED' ? 'reservation_cancelled' : 'reservation_state_changed',
+              reservationId: id,
+              actor,
+              fromState,
+              toState,
+              metadata: { source: 'legacy_reservation_update' },
+            },
+          });
+        }
+
+        return result;
+      });
+      stateChanged = reservation.state !== updated.state;
+    }
 
     const lifecycleEvent = reservationLifecycleEvent(updated.state);
-    if (
-      lifecycleEvent &&
-      reservation.state !== updated.state &&
-      (reservation.customerPhone || reservation.customerId)
-    ) {
+    if (lifecycleEvent && stateChanged && (reservation.customerPhone || reservation.customerId)) {
       try {
         await CustomerService.recordReservationEvent({
           restaurantId,
@@ -575,18 +606,33 @@ export class ReservationService {
       }
     }
 
-    await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
-    observeReservationMutation({
-      source: 'legacy_service',
-      operation: status === 'CANCELLED' ? 'cancel' : 'update',
-      status: updated.status,
-      state: updated.state,
-      idempotency: 'not_applicable',
-      audit: reservation.state !== updated.state ? 'written' : 'not_applicable',
-      notification: 'not_applicable',
-      capacity:
-        status === 'CANCELLED' && reservation.state !== 'CANCELLED' ? 'released' : 'unchanged',
-    });
+    if (!projectedState) {
+      await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
+      observeReservationMutation({
+        source: 'legacy_service',
+        operation: 'update',
+        status: updated.status,
+        state: updated.state,
+        idempotency: 'not_applicable',
+        audit: stateChanged ? 'written' : 'not_applicable',
+        notification: 'not_applicable',
+        capacity: 'unchanged',
+      });
+    } else if (!lifecycleMutation) {
+      // A status-only replay with no state change still reached the canonical
+      // writer, but did not mutate the row. Keep the observation explicit.
+      observeReservationMutation({
+        source: 'legacy_service',
+        operation: projectedState === 'CANCELLED' ? 'cancel' : 'update',
+        status: updated.status,
+        state: updated.state,
+        idempotency: 'not_applicable',
+        audit: 'not_applicable',
+        notification: 'not_applicable',
+        capacity: 'unchanged',
+        mutated: false,
+      });
+    }
     return updated;
   }
 
@@ -604,32 +650,25 @@ export class ReservationService {
     const needsTerminalTransition =
       reservation.status !== 'CANCELLED' || reservation.state !== 'CANCELLED';
 
-    const updated = await db.$transaction(async (tx) => {
-      const result = needsTerminalTransition
-        ? await tx.reservation.update({
-            where: { id, restaurantId },
-            data: transitionProjection('CANCELLED', reservation.status),
-          })
-        : reservation;
-
-      if (needsTerminalTransition) {
-        await tx.reservationAuditLog.create({
-          data: {
-            event: 'reservation_deleted',
-            reservationId: id,
-            actor: 'legacy:reservation-delete',
-            fromState: reservation.state,
-            toState: 'CANCELLED',
-            metadata: {
-              source: 'legacy_reservation_service',
-              mode: 'terminal_state',
-            },
+    const lifecycleResult = needsTerminalTransition
+      ? await lifecycle.transition({
+          reservationId: id,
+          restaurantId,
+          toState: 'CANCELLED',
+          actor: 'legacy:reservation-delete',
+          metadata: {
+            source: 'legacy_reservation_service',
+            mode: 'terminal_state',
           },
-        });
-      }
-
-      return result;
-    });
+          auditEvent: 'reservation_deleted',
+          operation: 'delete',
+          observationSource: 'legacy_service',
+          allowAlreadyInTarget: true,
+          auditConsumedHoldRelease: true,
+          snapshot: reservation,
+        })
+      : null;
+    const updated = lifecycleResult?.reservation ?? reservation;
 
     if (needsTerminalTransition && (reservation.customerPhone || reservation.customerId)) {
       try {
@@ -694,20 +733,19 @@ export class ReservationService {
       }
     }
 
-    if (needsTerminalTransition) {
-      await CapacityAwareAvailabilityService.invalidateAvailability(restaurantId);
+    if (!needsTerminalTransition) {
+      observeReservationMutation({
+        source: 'legacy_service',
+        operation: 'delete',
+        status: updated.status,
+        state: updated.state,
+        idempotency: 'not_applicable',
+        audit: 'not_applicable',
+        notification: 'not_applicable',
+        capacity: 'unchanged',
+        mutated: calendarCleared,
+      });
     }
-    observeReservationMutation({
-      source: 'legacy_service',
-      operation: 'delete',
-      status: updated.status,
-      state: updated.state,
-      idempotency: 'not_applicable',
-      audit: needsTerminalTransition ? 'written' : 'not_applicable',
-      notification: 'not_applicable',
-      capacity: needsTerminalTransition ? 'released' : 'unchanged',
-      mutated: needsTerminalTransition || calendarCleared,
-    });
   }
 
   static async allocateTable(id: string, restaurantId: string): Promise<Reservation> {

@@ -14,6 +14,7 @@ function makePrisma() {
   return {
     reservation: { findMany: vi.fn() },
     customerConsent: { findMany: vi.fn() },
+    call: { findMany: vi.fn().mockResolvedValue([]) },
   } as unknown as PrismaClient;
 }
 
@@ -98,6 +99,50 @@ describe('ExportService.exportSubject', () => {
       channel: 'MCP',
       marketingOptIn: true,
     });
+  });
+
+  it('exporte les appels rattachés au numéro appelant', async () => {
+    (prisma.reservation.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (prisma.customerConsent.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'c-1',
+        restaurantId: 'rest-1',
+        channel: 'VOICE',
+        context: 'voice_call',
+        reservationProcessing: true,
+        transactionalSms: false,
+        transactionalEmail: false,
+        marketingOptIn: false,
+        privacyPolicyVersion: '2026-01-01',
+        consentedAt: new Date('2026-06-15T10:00:00Z'),
+      },
+    ]);
+    (prisma.call.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'call-1',
+        restaurantId: 'rest-1',
+        outcome: 'MESSAGE',
+        intent: 'RESERVATION',
+        durationSec: 61,
+        createdAt: new Date('2026-09-20T19:00:00Z'),
+      },
+    ]);
+
+    const result = await service.exportSubject({ subject: '+336****2222' });
+
+    expect(prisma.call.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { callerPhone: '+336****2222' } }),
+    );
+    expect(result.calls).toEqual([
+      {
+        id: 'call-1',
+        restaurantId: 'rest-1',
+        outcome: 'MESSAGE',
+        intent: 'RESERVATION',
+        durationSec: 61,
+        createdAt: '2026-09-20T19:00:00.000Z',
+      },
+    ]);
   });
 
   it("profile est null si le sujet n'a aucune résa (mais a des consents)", async () => {

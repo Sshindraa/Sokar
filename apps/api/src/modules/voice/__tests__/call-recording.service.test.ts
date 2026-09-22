@@ -69,6 +69,9 @@ describe('call recording service', () => {
       where: { callSid: 'leg-1' },
       data: expect.objectContaining({ recordingStatus: 'PENDING' }),
     });
+    expect(vi.mocked(db.call.updateMany).mock.calls[0]?.[0].data).not.toHaveProperty(
+      'recordingConsentAnnouncedAt',
+    );
   });
 
   it('does not record a restaurant absent from the test allowlist', async () => {
@@ -79,6 +82,24 @@ describe('call recording service', () => {
 
     expect(fetch).not.toHaveBeenCalled();
     expect(db.call.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('does not ingest a provider recording outside the test allowlist', async () => {
+    vi.mocked(db.call.findUnique).mockResolvedValue({
+      id: 'call-outside-allowlist',
+      restaurantId: 'another-restaurant',
+    } as unknown as Awaited<ReturnType<typeof db.call.findUnique>>);
+    vi.stubGlobal('fetch', vi.fn());
+
+    await storeSavedRecording({
+      callLegId: 'leg-1',
+      recordingId: 'rec-outside-allowlist',
+      downloadUrl: 'https://recordings.telnyx.com/signed.mp3',
+    });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(s3Send).not.toHaveBeenCalled();
+    expect(db.call.update).not.toHaveBeenCalled();
   });
 
   it('copies the short-lived Telnyx file into private storage with retention metadata', async () => {
@@ -120,13 +141,43 @@ describe('call recording service', () => {
         recordingStatus: 'AVAILABLE',
         recordingStorageKey: 'call-recordings/rest-1/call-1/rec-1.mp3',
         recordingSizeBytes: 4,
+        recordingStartedAt: new Date('2026-07-22T10:00:00.000Z'),
+        recordingEndedAt: new Date('2026-07-22T10:01:00.000Z'),
+      }),
+    });
+  });
+
+  it('ignore les timestamps provider invalides sans perdre le fichier', async () => {
+    vi.mocked(db.call.findUnique).mockResolvedValue({
+      id: 'call-1',
+      restaurantId: 'rest-1',
+    } as unknown as Awaited<ReturnType<typeof db.call.findUnique>>);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(new Uint8Array([1, 2, 3]), { status: 200 })),
+    );
+
+    await storeSavedRecording({
+      callLegId: 'leg-1',
+      recordingId: 'rec-invalid-date',
+      downloadUrl: 'https://recordings.telnyx.com/signed.mp3',
+      startedAt: 'not-a-date',
+      endedAt: 'also-not-a-date',
+    });
+
+    expect(db.call.update).toHaveBeenCalledWith({
+      where: { id: 'call-1' },
+      data: expect.objectContaining({
+        recordingStatus: 'AVAILABLE',
+        recordingStartedAt: undefined,
+        recordingEndedAt: undefined,
       }),
     });
   });
 
   it('recovers a pending recording when the provider webhook is missing', async () => {
     vi.mocked(db.call.findUnique)
-      .mockResolvedValueOnce({ recordingStatus: 'PENDING' } as never)
+      .mockResolvedValueOnce({ recordingStatus: 'PENDING', restaurantId: 'rest-1' } as never)
       .mockResolvedValueOnce({ id: 'call-1', restaurantId: 'rest-1' } as never);
     const audio = new Uint8Array([1, 2, 3, 4]);
     vi.stubGlobal(
@@ -159,6 +210,19 @@ describe('call recording service', () => {
     );
     expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('filter%5Bcall_leg_id%5D=leg-1');
     expect(s3Send).toHaveBeenCalledOnce();
+  });
+
+  it('does not recover a pending recording outside the test allowlist', async () => {
+    vi.mocked(db.call.findUnique).mockResolvedValue({
+      recordingStatus: 'PENDING',
+      restaurantId: 'another-restaurant',
+    } as never);
+    vi.stubGlobal('fetch', vi.fn());
+
+    await recoverPendingRecording({ callLegId: 'leg-1' });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(s3Send).not.toHaveBeenCalled();
   });
 
   it('refuses a non-HTTPS provider URL', async () => {

@@ -25,7 +25,7 @@ import {
 } from './conversation-controller';
 import { markVoiceTurnLlmFirstToken, recordVoiceTurnEvent } from './turn-telemetry';
 import { cancelScheduledFiller } from './filler-scheduler';
-import { getVoiceLlmProvider } from '../llm-provider';
+import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
 import { buildLlmMessagesWithLanguage, effectiveVoiceLanguage } from './voice-language';
 import {
   addLlmUsage,
@@ -77,8 +77,8 @@ function appendEphemeralContext(messages: ChatMessage[], context?: string): void
 /**
  * Détecte une annulation de session (barge-in, raccroché) — pas un timeout.
  * Dans ce cas, on ne doit PAS enregistrer une failure provider ni lancer de
- * fallback : la session est terminée, le signal est déjà aborted, toute
- * requête ultérieure échouerait immédiatement.
+ * nouvelle requête : la session est terminée, le signal est déjà aborted et
+ * toute requête ultérieure échouerait immédiatement.
  */
 function isSessionAbortError(err: unknown, sessionSignal?: AbortSignal): boolean {
   return err instanceof Error && err.name === 'AbortError' && !!sessionSignal?.aborted;
@@ -106,16 +106,6 @@ interface LlmRequestOptions {
   telemetryTurnId?: string;
 }
 
-/**
- * Résout le modèle LLM depuis la configuration voice validée au démarrage.
- */
-function getVoiceLlmModel(): string {
-  return voiceConfig.VOICE_LLM_MODEL;
-}
-
-/**
- * Résout le modèle LLM de fallback depuis la configuration validée au démarrage.
- */
 /** URL de base Groq (API OpenAI-compatible), surchargeable pour les tests. */
 function getGroqBaseUrl(): string {
   return voiceConfig.GROQ_BASE_URL;
@@ -244,7 +234,8 @@ export function _resetCircuitBreakersForTesting(): void {
 
 /**
  * Timeout par requête LLM (ms). Si le provider ne répond pas dans ce délai,
- * on abort et on fallback. La valeur est validée dans env.ts.
+ * on abort et la dégradation vocale prend le relais. La valeur est validée
+ * dans env.ts.
  */
 /**
  * Combine le signal de session avec un timeout par requête.
@@ -334,6 +325,8 @@ export class CallSessionManager {
       responseGeneration: 0,
       ttsContext: null,
       currentTurn: null,
+      voiceTurnHistory: [],
+      voiceCallTelemetry: {},
       bargeInChunks: 0,
       abortController: null,
       speculativeLlm: null,
@@ -512,6 +505,36 @@ export class CallSessionManager {
         customerName: session.conversation.nameCollection?.confirmedName ?? 'Client',
         message:
           "Le client a besoin d'une aide humaine pour confirmer l'orthographe de son nom avant sa réservation.",
+        callbackPhone: session.from,
+      }),
+    );
+  }
+
+  /**
+   * Exécute réellement le transfert vers le gérant. Une phrase qui annonce un
+   * transfert ne doit jamais remplacer l'action côté Telnyx : c'est ce chemin
+   * qui la déclenche après une proposition de repli humain acceptée.
+   */
+  async handoffToManager(session: CallSession): Promise<string> {
+    return this.executeTool(session, 'handoffToManager', JSON.stringify({}));
+  }
+
+  /**
+   * Repli humain persisté quand le dialogue est bloqué : le message est
+   * enregistré pour le gérant au lieu de répéter une question sans fin.
+   */
+  async recordDialogueFallbackMessage(session: CallSession): Promise<string> {
+    const customerName =
+      session.conversation.nameCollection?.confirmedName ??
+      session.conversation.slots.customerName ??
+      'Client';
+    return this.executeTool(
+      session,
+      'takeMessage',
+      JSON.stringify({
+        customerName,
+        message:
+          "Le client n'a pas pu être compris après plusieurs relances pendant la prise de réservation.",
         callbackPhone: session.from,
       }),
     );
@@ -924,7 +947,7 @@ export class CallSessionManager {
    * Parse le SSE du provider (format OpenAI-compatible), détecte les phrases
    * complètes,
    * et invoque onPhrase pour chaque phrase.
-   * Si un tool_call est détecté, fallback sur callLlm non-streaming.
+   * Si un tool_call est détecté, relance le même provider en mode non-streaming.
    * Retourne le texte complet.
    */
   private async callLlmStreaming(

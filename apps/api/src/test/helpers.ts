@@ -877,6 +877,22 @@ vi.mock('../shared/db/client', () => {
     },
     latencyTrace: {
       findMany: vi.fn(),
+      upsert: vi.fn(),
+      findUnique: vi.fn(),
+    },
+    voiceCallTelemetry: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      aggregate: vi.fn(),
+      count: vi.fn(),
+      upsert: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    voiceTurnTelemetry: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
+      updateMany: vi.fn(),
     },
     customerConsent: {
       create: vi.fn(),

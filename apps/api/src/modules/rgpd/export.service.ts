@@ -51,6 +51,19 @@ export type ExportPayload = {
     specialRequests: string | null;
     createdAt: string;
   }>;
+  /**
+   * Appels téléphoniques rattachés au numéro appelant. Exporté parce que la
+   * table `calls` porte désormais `callerPhone` : le périmètre annoncé au
+   * client inclut ces données.
+   */
+  calls: Array<{
+    id: string;
+    restaurantId: string;
+    outcome: string | null;
+    intent: string | null;
+    durationSec: number | null;
+    createdAt: string;
+  }>;
   experienceReservations: Array<{
     id: string;
     restaurantId: string;
@@ -221,6 +234,30 @@ export class ExportService {
       where: { subjectHash },
       orderBy: { consentedAt: 'desc' },
     });
+
+    // Appels rattachés au numéro appelant. Le modèle est optionnel pendant la
+    // fenêtre de déploiement (colonne additive), donc on le garde défensif.
+    const callModel = (
+      this.prisma as unknown as {
+        call?: {
+          findMany: (args: unknown) => Promise<Array<Record<string, unknown>>>;
+        };
+      }
+    ).call;
+    const calls = callModel
+      ? await callModel.findMany({
+          where: { callerPhone: args.subject },
+          select: {
+            id: true,
+            restaurantId: true,
+            outcome: true,
+            intent: true,
+            durationSec: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        })
+      : [];
 
     // Customer CRM projections are optional during the expand/backfill window.
     // Guard the model so older test fixtures and pre-migration workers can still
@@ -486,6 +523,17 @@ export class ExportService {
         customerPhone: r.customerPhone,
         specialRequests: r.specialRequests,
         createdAt: r.createdAt.toISOString(),
+      })),
+      calls: (calls as Array<Record<string, unknown>>).map((call) => ({
+        id: String(call.id),
+        restaurantId: String(call.restaurantId),
+        outcome: (call.outcome as string | null) ?? null,
+        intent: (call.intent as string | null) ?? null,
+        durationSec: (call.durationSec as number | null) ?? null,
+        createdAt:
+          call.createdAt instanceof Date
+            ? call.createdAt.toISOString()
+            : String(call.createdAt ?? ''),
       })),
       experienceReservations: (experienceReservations as Array<Record<string, unknown>>).map(
         (reservation) => {

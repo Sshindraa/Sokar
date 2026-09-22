@@ -21,6 +21,7 @@
  */
 import * as configcat from 'configcat-node';
 import type { IConfigCatClient, User } from 'configcat-node';
+import { PLAN_VALUES, type Plan } from '@sokar/shared';
 import { createHash } from 'crypto';
 import { logger } from '../logger/pino';
 
@@ -148,16 +149,18 @@ export async function getRestaurantPlanOverride(
   restaurantId: string,
   dbPlan: string,
 ): Promise<string> {
-  const override = await getFlag<string>(FLAGS.RESTAURANT_PLAN, '', restaurantId);
-  if (override && isValidPlan(override)) {
-    return override;
+  // ConfigCat peut renvoyer une valeur d'un autre type si le flag est
+  // recréé ou mal typé dans le dashboard. Le cast du SDK ne constitue pas une
+  // validation runtime : la base reste la source de vérité dans ce cas.
+  const candidate: unknown = await getFlag<string>(FLAGS.RESTAURANT_PLAN, '', restaurantId);
+  if (isValidPlan(candidate)) {
+    return candidate;
   }
   return dbPlan;
 }
 
-const VALID_PLANS = new Set(['ESSENTIAL', 'STARTER', 'PRO', 'PREMIUM']);
-function isValidPlan(value: string): boolean {
-  return VALID_PLANS.has(value);
+export function isValidPlan(value: unknown): value is Plan {
+  return typeof value === 'string' && (PLAN_VALUES as readonly string[]).includes(value);
 }
 
 /**

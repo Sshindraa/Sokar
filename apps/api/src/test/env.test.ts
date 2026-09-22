@@ -59,14 +59,13 @@ describe('VoiceConfigSchema', () => {
   });
 
   it('ignore les variables des providers supprimés', () => {
-    // Cerebras et OpenRouter ont été retirés le 22 septembre 2026 : leurs clés
-    // ne doivent plus entrer dans la configuration validée, même si elles
-    // traînent encore dans un .env.
+    // Les anciennes variables de routage ne doivent plus entrer dans la
+    // configuration validée, même si elles traînent encore dans un .env.
     const config = VoiceConfigSchema.parse({
-      VOICE_LLM_PROVIDER: 'cerebras',
-      VOICE_LLM_FALLBACK_MODEL: 'meta-llama/llama-3.3-70b-instruct',
-      OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1',
-      CEREBRAS_API_KEY: 'csk',
+      VOICE_LLM_PROVIDER: 'legacy',
+      VOICE_LLM_FALLBACK_MODEL: 'legacy-model',
+      VOICE_LLM_BASE_URL: 'https://legacy.example.test',
+      VOICE_LLM_API_KEY: 'x',
       OPENROUTER_API_KEY: 'or-key',
     });
 

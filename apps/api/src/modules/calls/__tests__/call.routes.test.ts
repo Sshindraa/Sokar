@@ -126,7 +126,14 @@ describe('call.routes', () => {
       expect(res.json()).toEqual(call);
       expect(db.call.findUnique).toHaveBeenCalledWith({
         where: { id: 'c1', restaurantId: 'test-rest-1' },
-        include: { latencyTrace: true },
+        include: {
+          latencyTrace: true,
+          voiceTelemetry: true,
+          voiceTurns: {
+            orderBy: { sequence: 'asc' },
+            take: 200,
+          },
+        },
       });
     });
 

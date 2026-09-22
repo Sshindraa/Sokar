@@ -154,7 +154,27 @@ describe('reservation payment foundation', () => {
       paymentId: 'payment-1',
       resultingStatus: ReservationPaymentStatus.CAPTURED,
     } as never);
-    vi.mocked(db.reservation.updateMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(db.reservation.findUnique).mockResolvedValue({
+      id: RESERVATION_ID,
+      restaurantId: RESTAURANT_ID,
+      partySize: 2,
+      customerName: 'Test customer',
+      customerPhone: null,
+      reservedAt: NOW,
+      startsAt: NOW,
+      endsAt: new Date(NOW.getTime() + 2 * 60 * 60 * 1000),
+      tableId: null,
+      status: 'CONFIRMED',
+      state: 'PENDING',
+      consumedHoldId: null,
+    } as never);
+    vi.mocked(db.reservation.update).mockResolvedValue({
+      id: RESERVATION_ID,
+      restaurantId: RESTAURANT_ID,
+      status: 'CONFIRMED',
+      state: 'CONFIRMED',
+    } as never);
+    vi.mocked(db.reservationAuditLog.create).mockResolvedValue({ id: 'audit-1' } as never);
 
     const result = await applyReservationPaymentProviderEvent({
       restaurantId: RESTAURANT_ID,
@@ -174,8 +194,16 @@ describe('reservation payment foundation', () => {
       changed: true,
       reservationConfirmed: true,
     });
-    expect(db.reservation.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ state: 'PENDING' }) }),
-    );
+    expect(db.reservation.update).toHaveBeenCalledWith({
+      where: { id: RESERVATION_ID, restaurantId: RESTAURANT_ID },
+      data: { state: 'CONFIRMED', status: 'CONFIRMED' },
+    });
+    expect(db.reservationAuditLog.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        event: 'reservation_confirmed',
+        fromState: 'PENDING',
+        toState: 'CONFIRMED',
+      }),
+    });
   });
 });

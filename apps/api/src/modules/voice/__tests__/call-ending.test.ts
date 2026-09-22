@@ -49,6 +49,10 @@ function fixture() {
     processUtteranceStreaming: vi.fn(),
     getAvailability: vi.fn(),
     createReservationFromConversation: vi.fn().mockResolvedValue(null),
+    handoffToManager: vi.fn().mockResolvedValue('Le gérant a accepté le transfert.'),
+    recordDialogueFallbackMessage: vi
+      .fn()
+      .mockResolvedValue("J'ai bien noté votre message pour le gérant."),
   } as unknown as CallSessionManager;
   return { session, mgr };
 }
@@ -328,5 +332,214 @@ describe('farewell playback and hangup', () => {
     );
     expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
     expect(session.ending).toBeUndefined();
+  });
+});
+
+describe('availability without a requested time', () => {
+  it('proposes verified times, resolves the second choice and checks it again', async () => {
+    const { session, mgr } = fixture();
+    vi.mocked(mgr.getAvailability).mockResolvedValue({
+      slots: ['12:00', '19:00', '20:00'],
+    } as Awaited<ReturnType<CallSessionManager['getAvailability']>>);
+    await processTranscriptStreaming(session, 'Une réservation pour quatre personnes', mgr);
+    await processTranscriptStreaming(session, 'Est-ce possible demain ?', mgr);
+    expect(mgr.getAvailability).toHaveBeenCalledTimes(1);
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      'Je peux vous proposer 12 h ou 19 h ou 20 h. Quel horaire vous convient ?',
+    );
+    expect(session.conversation.slots.time).toBeUndefined();
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+    await processTranscriptStreaming(session, 'Le deuxième', mgr);
+    expect(session.conversation.slots.time).toBe('19:00');
+    expect(mgr.getAvailability).toHaveBeenCalledTimes(2);
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'Vous avez de la disponibilité vers quelle heure vous ?',
+    'Quels horaires avez-vous ?',
+    'Quand avez-vous de la place ?',
+  ])('handles %s while waiting for a time', async (text) => {
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots = { date: '2026-09-23', partySize: 4 };
+    recordAssistantReply(session, 'Vous voulez venir vers quelle heure ?');
+    vi.mocked(mgr.getAvailability).mockResolvedValue({ slots: ['20:00'] } as Awaited<
+      ReturnType<CallSessionManager['getAvailability']>
+    >);
+    await processTranscriptStreaming(session, text, mgr);
+    expect(mgr.getAvailability).toHaveBeenCalledWith(session, '2026-09-23', 4);
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      'Je peux vous proposer 20 h. Quel horaire vous convient ?',
+    );
+  });
+
+  it('retains the request while collecting missing data and refreshes after a date correction', async () => {
+    const { session, mgr } = fixture();
+    vi.mocked(mgr.getAvailability).mockResolvedValue({ slots: ['19:00'] } as Awaited<
+      ReturnType<CallSessionManager['getAvailability']>
+    >);
+    await processTranscriptStreaming(session, 'Quels horaires avez-vous demain ?', mgr);
+    expect(mgr.getAvailability).not.toHaveBeenCalled();
+    await processTranscriptStreaming(session, 'Pour quatre personnes', mgr);
+    expect(mgr.getAvailability).toHaveBeenCalledTimes(1);
+    const oldDate = session.conversation.slots.date;
+    await processTranscriptStreaming(session, 'Plutôt après-demain', mgr);
+    expect(mgr.getAvailability).toHaveBeenCalledTimes(2);
+    expect(session.conversation.offeredAvailability?.date).not.toBe(oldDate);
+  });
+
+  it('rechecks an explicit alternative before progressing', async () => {
+    const { session, mgr } = fixture();
+    vi.mocked(mgr.getAvailability).mockResolvedValue({ slots: ['19:00', '20:00'] } as Awaited<
+      ReturnType<CallSessionManager['getAvailability']>
+    >);
+    await processTranscriptStreaming(
+      session,
+      'Des disponibilités demain pour quatre personnes ?',
+      mgr,
+    );
+    await processTranscriptStreaming(session, 'Plutôt vingt heures', mgr);
+    expect(session.conversation.slots.time).toBe('20:00');
+    expect(mgr.getAvailability).toHaveBeenCalledTimes(2);
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+  });
+
+  it('ignores a lookup completed after the caller has hung up', async () => {
+    const { session, mgr } = fixture();
+    let resolve!: (value: Awaited<ReturnType<CallSessionManager['getAvailability']>>) => void;
+    vi.mocked(mgr.getAvailability).mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const pending = processTranscriptStreaming(
+      session,
+      'Des disponibilités demain pour quatre personnes ?',
+      mgr,
+    );
+    session.ended = true;
+    resolve({ slots: ['19:00'] } as Awaited<ReturnType<CallSessionManager['getAvailability']>>);
+    await pending;
+    expect(speakTtsStreamed).not.toHaveBeenCalled();
+    expect(session.conversation.offeredAvailability).toBeUndefined();
+  });
+
+  it('does not invent a time when closed or full', async () => {
+    const { session, mgr } = fixture();
+    vi.mocked(mgr.getAvailability).mockResolvedValue({ slots: [] } as unknown as Awaited<
+      ReturnType<CallSessionManager['getAvailability']>
+    >);
+    await processTranscriptStreaming(
+      session,
+      'Des disponibilités demain pour quatre personnes ?',
+      mgr,
+    );
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      expect.stringContaining('aucun créneau disponible'),
+    );
+    expect(session.conversation.slots.time).toBeUndefined();
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+  });
+
+  it('does not announce availability when the lookup fails', async () => {
+    const { session, mgr } = fixture();
+    vi.mocked(mgr.getAvailability).mockRejectedValue(new Error('unavailable'));
+    await processTranscriptStreaming(
+      session,
+      'Des disponibilités demain pour quatre personnes ?',
+      mgr,
+    );
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      expect.stringContaining("Je n'arrive pas à vérifier"),
+    );
+    expect(session.conversation.offeredAvailability).toBeUndefined();
+    expect(session.conversation.toolInFlight).toBeNull();
+  });
+});
+
+describe('dialogue loop guard', () => {
+  it('reformule puis propose un repli humain sans créer de réservation', async () => {
+    const { session, mgr } = fixture();
+    session.timezone = 'Europe/Paris';
+
+    await processTranscriptStreaming(session, 'Je voudrais réserver demain soir', mgr);
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(session, 'Vous serez combien ?');
+
+    await processTranscriptStreaming(session, 'Euh, alors voila', mgr);
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      'Je note combien de personnes ? Dites-moi simplement un nombre, par exemple « quatre ».',
+    );
+
+    await processTranscriptStreaming(session, 'Ben, je sais pas trop', mgr);
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      'Je peux prendre un message pour le gérant, il vous rappellera. Voulez-vous que je le fasse ?',
+    );
+    expect(session.conversation.pendingQuestion).toBe('humanFallback');
+    expect(session.conversation.humanFallbackOffered).toBe(true);
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+    expect(mgr.handoffToManager).not.toHaveBeenCalled();
+    expect(mgr.recordDialogueFallbackMessage).not.toHaveBeenCalled();
+  });
+
+  it('exécute réellement la prise de message quand l’appelant accepte', async () => {
+    const { session, mgr } = fixture();
+    session.timezone = 'Europe/Paris';
+
+    await processTranscriptStreaming(session, 'Je voudrais réserver demain soir', mgr);
+    await processTranscriptStreaming(session, 'Euh, alors voila', mgr);
+    await processTranscriptStreaming(session, 'Ben, je sais pas trop', mgr);
+    await processTranscriptStreaming(session, 'Oui', mgr);
+
+    expect(mgr.recordDialogueFallbackMessage).toHaveBeenCalledTimes(1);
+    expect(mgr.handoffToManager).not.toHaveBeenCalled();
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      "J'ai bien noté votre message pour le gérant.",
+    );
+    expect(session.conversation.pendingQuestion).toBeNull();
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+  });
+
+  it('exécute réellement le transfert seulement quand la ligne gérant existe', async () => {
+    const { session, mgr } = fixture();
+    session.timezone = 'Europe/Paris';
+    session.managerPhone = '+33600000000';
+
+    await processTranscriptStreaming(session, 'Je voudrais réserver demain soir', mgr);
+    await processTranscriptStreaming(session, 'Euh, alors voila', mgr);
+    await processTranscriptStreaming(session, 'Ben, je sais pas trop', mgr);
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      'Je peux vous passer le gérant, ou prendre un message pour lui. Que préférez-vous ?',
+    );
+
+    await processTranscriptStreaming(session, 'Passez-moi le gérant', mgr);
+    expect(mgr.handoffToManager).toHaveBeenCalledTimes(1);
+    expect(mgr.recordDialogueFallbackMessage).not.toHaveBeenCalled();
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(session, 'Le gérant a accepté le transfert.');
+    expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
+  });
+
+  it('n’exécute rien quand l’appelant refuse la proposition', async () => {
+    const { session, mgr } = fixture();
+    session.timezone = 'Europe/Paris';
+    session.managerPhone = '+33600000000';
+
+    await processTranscriptStreaming(session, 'Je voudrais réserver demain soir', mgr);
+    await processTranscriptStreaming(session, 'Euh, alors voila', mgr);
+    await processTranscriptStreaming(session, 'Ben, je sais pas trop', mgr);
+    await processTranscriptStreaming(session, 'Non merci', mgr);
+
+    expect(mgr.handoffToManager).not.toHaveBeenCalled();
+    expect(mgr.recordDialogueFallbackMessage).not.toHaveBeenCalled();
+    expect(session.conversation.humanFallbackOffered).toBe(false);
+    expect(session.conversation.pendingQuestion).toBeNull();
   });
 });

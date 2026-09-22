@@ -20,12 +20,7 @@
  */
 
 import { Prisma } from '@prisma/client';
-import type {
-  PrismaClient,
-  Reservation,
-  ReservationState,
-  ReservationStatus,
-} from '@prisma/client';
+import type { PrismaClient, ReservationState } from '@prisma/client';
 import { AuditLogService } from './audit-log.service.js';
 import { logger } from '../../../shared/logger/pino';
 import {
@@ -37,25 +32,18 @@ import {
 } from './hold.service.js';
 import { IdempotencyPendingError, IdempotencyService } from './idempotency.service.js';
 import { type PolicySnapshot, validateReservationAgainstPolicy } from './policies.service.js';
-import {
-  type ReservationChannel,
-  assertCanTransition,
-  InvalidStateInvariantError,
-} from './state-machine.js';
+import { type ReservationChannel } from './state-machine.js';
 import {
   inferReservationObservationSource,
   observeReservationMutation,
-  reservationCapacityEffect,
 } from '../../../shared/observability/reservation-contract';
 import { ACTIVE_RESERVATION_STATES } from '../../../shared/reservations/capacity.js';
 import {
   creationProjection,
-  transitionProjection,
   type CreatableReservationState,
 } from '../../../shared/reservations/reservation-state.js';
 import { GiftCardService } from '../../gift-cards/gift-card.service.js';
 import { TableAllocationService } from '../../floor-plan/table-allocation.service.js';
-import { CapacityAwareAvailabilityService } from '../../floor-plan/availability-capacity-aware.service.js';
 import type { GiftCardApplicationResult } from '../../gift-cards/gift-card.types.js';
 import {
   IDEMPOTENCY_POLL_INTERVAL_MS,
@@ -69,13 +57,12 @@ import {
   recordMarketingConversion,
   recordMarketingHonoredConversions,
 } from '../../marketing/marketing-attribution.service';
+import {
+  ReservationLifecycleService,
+  ReservationNotFoundError,
+} from '../../reservations/reservation-lifecycle.service.js';
 
-export class ReservationNotFoundError extends Error {
-  constructor(public readonly id: string) {
-    super(`Reservation not found: id=${id}`);
-    this.name = 'ReservationNotFoundError';
-  }
-}
+export { ReservationNotFoundError } from '../../reservations/reservation-lifecycle.service.js';
 
 export class ReservationAlreadyExistsError extends Error {
   constructor(public readonly idempotencyKey: string) {
@@ -155,6 +142,7 @@ function reservationLifecycleEvent(
 
 export class ReservationService {
   private readonly tableAllocation: TableAllocationService;
+  private readonly lifecycle: ReservationLifecycleService;
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -163,6 +151,7 @@ export class ReservationService {
     private readonly idempotency: IdempotencyService,
   ) {
     this.tableAllocation = new TableAllocationService(this.prisma);
+    this.lifecycle = new ReservationLifecycleService(this.prisma);
   }
 
   /**
@@ -623,91 +612,23 @@ export class ReservationService {
     actor: string;
     metadata?: Record<string, unknown>;
   }): Promise<void> {
-    let fromState: ReservationState | undefined;
-    let statusAfterTransition: ReservationStatus | undefined;
-    let customerForProjection:
-      | { customerId: string | null; phone: string | null; name: string }
-      | undefined;
-    await this.prisma.$transaction(async (tx) => {
-      const reservation = await tx.reservation.findUnique({
-        where: { id: args.reservationId, restaurantId: args.restaurantId },
-      });
-      if (!reservation) throw new ReservationNotFoundError(args.reservationId);
-
-      customerForProjection = {
-        customerId: reservation.customerId,
-        phone: reservation.customerPhone,
-        name: reservation.customerName,
-      };
-
-      fromState = reservation.state as ReservationState;
-      assertCanTransition(fromState, args.toState, reservation);
-
-      const projection = transitionProjection(
-        args.toState,
-        reservation.status as ReservationStatus,
-      );
-      statusAfterTransition = projection.status;
-
-      if (args.toState === 'SEATED') {
-        if (!reservation.tableId) {
-          throw new InvalidStateInvariantError('SEATED requires a tableId');
-        }
-        const now = new Date();
-        if (reservation.endsAt && reservation.endsAt <= now) {
-          throw new InvalidStateInvariantError('Cannot seat a reservation that has already ended');
-        }
-        const startsAt = now;
-        const endsAt = reservation.endsAt ?? new Date(now.getTime() + 2 * 60 * 60 * 1000);
-        await this.tableAllocation.assertTableAvailableForSeating(
-          {
-            restaurantId: args.restaurantId,
-            tableId: reservation.tableId,
-            partySize: reservation.partySize,
-            startsAt,
-            endsAt,
-            excludeReservationId: reservation.id,
-          },
-          tx,
-        );
-      }
-
-      await tx.reservation.update({
-        where: { id: reservation.id },
-        data: projection,
-      });
-
-      const event = this.eventForTransition(args.toState);
-      await tx.reservationAuditLog.create({
-        data: {
-          event,
-          reservationId: reservation.id,
-          actor: args.actor,
-          fromState,
-          toState: args.toState,
-          metadata: (args.metadata ?? {}) as Prisma.InputJsonValue,
-        },
-      });
-    });
-
-    const capacity = reservationCapacityEffect(fromState, args.toState);
-    if (capacity !== 'unchanged') {
-      // Les transitions terminales libèrent la capacité logique. Le cache
-      // doit être invalidé après le commit, sinon une réponse availability
-      // peut rester bloquée jusqu'à son TTL.
-      await CapacityAwareAvailabilityService.invalidateAvailability(args.restaurantId);
-    }
-    observeReservationMutation({
-      source: inferReservationObservationSource(args.actor),
+    const lifecycle = await this.lifecycle.transition({
+      reservationId: args.reservationId,
+      restaurantId: args.restaurantId,
+      toState: args.toState,
+      actor: args.actor,
+      metadata: args.metadata,
       operation: 'transition',
-      status: statusAfterTransition,
-      state: args.toState,
-      idempotency: 'not_applicable',
-      audit: 'written',
-      notification: 'not_sent',
-      capacity,
+      observationSource: inferReservationObservationSource(args.actor),
     });
-    if (customerForProjection && reservationLifecycleEvent(args.toState)) {
+    const reservation = lifecycle.previous;
+    const customerForProjection = {
+      customerId: reservation.customerId,
+      phone: reservation.customerPhone,
+      name: reservation.customerName,
+    };
+
+    if (reservationLifecycleEvent(args.toState)) {
       try {
         await CustomerService.recordReservationEvent({
           restaurantId: args.restaurantId,
@@ -771,53 +692,28 @@ export class ReservationService {
     reservationId: string;
     actor: string;
     reason?: string;
+    /** Optional tenant scope for callers that already resolved the row. */
+    restaurantId?: string;
   }): Promise<void> {
-    const reservation = await this.prisma.$transaction<Reservation>(async (tx) => {
-      const row = await tx.reservation.findUnique({
-        where: { id: args.reservationId },
-      });
-      if (!row) throw new ReservationNotFoundError(args.reservationId);
+    const snapshot = args.restaurantId
+      ? undefined
+      : await this.prisma.reservation.findUnique({ where: { id: args.reservationId } });
+    if (!args.restaurantId && !snapshot) throw new ReservationNotFoundError(args.reservationId);
+    const restaurantId = args.restaurantId ?? snapshot?.restaurantId;
+    if (!restaurantId) throw new ReservationNotFoundError(args.reservationId);
 
-      const fromState = row.state as ReservationState;
-      assertCanTransition(fromState, 'CANCELLED', row);
-
-      await tx.reservation.update({
-        where: { id: row.id },
-        data: transitionProjection('CANCELLED', row.status as ReservationStatus),
-      });
-
-      // Libérer le hold si encore actif
-      if (row.consumedHoldId) {
-        const hold = await tx.agenticHold.findUnique({
-          where: { id: row.consumedHoldId },
-        });
-        if (hold && hold.status === 'CONSUMED') {
-          // Le hold est déjà consommé, on log juste l'événement
-          await tx.reservationAuditLog.create({
-            data: {
-              event: 'hold_released',
-              holdId: hold.id,
-              reservationId: row.id,
-              actor: args.actor,
-              metadata: { reason: 'reservation_cancelled' },
-            },
-          });
-        }
-      }
-
-      await tx.reservationAuditLog.create({
-        data: {
-          event: 'reservation_cancelled',
-          reservationId: row.id,
-          actor: args.actor,
-          fromState,
-          toState: 'CANCELLED',
-          metadata: (args.reason ? { reason: args.reason } : {}) as Prisma.InputJsonValue,
-        },
-      });
-
-      return row;
+    const lifecycle = await this.lifecycle.transition({
+      reservationId: args.reservationId,
+      restaurantId,
+      toState: 'CANCELLED',
+      actor: args.actor,
+      metadata: args.reason ? { reason: args.reason } : {},
+      operation: 'cancel',
+      observationSource: inferReservationObservationSource(args.actor),
+      auditConsumedHoldRelease: true,
+      snapshot: snapshot ?? undefined,
     });
+    const reservation = lifecycle.previous;
 
     try {
       await CustomerService.recordReservationEvent({
@@ -852,37 +748,6 @@ export class ReservationService {
         },
         '[AgenticReservationService] Marketing conversion deactivation unavailable',
       );
-    }
-
-    await CapacityAwareAvailabilityService.invalidateAvailability(reservation.restaurantId);
-    observeReservationMutation({
-      source: inferReservationObservationSource(args.actor),
-      operation: 'cancel',
-      status: 'CANCELLED',
-      state: 'CANCELLED',
-      idempotency: 'not_applicable',
-      audit: 'written',
-      notification: 'not_sent',
-      capacity: 'released',
-    });
-  }
-
-  private eventForTransition(to: ReservationState): string {
-    switch (to) {
-      case 'SEATED':
-        return 'reservation_seated';
-      case 'HONORED':
-        return 'reservation_honored';
-      case 'NO_SHOW':
-        return 'reservation_no_show';
-      case 'CANCELLED':
-        return 'reservation_cancelled';
-      case 'FAILED':
-        return 'reservation_failed';
-      case 'EXPIRED':
-        return 'hold_expired';
-      default:
-        return 'state_transition';
     }
   }
 

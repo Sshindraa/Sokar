@@ -48,6 +48,10 @@ function OutcomeBadge({ outcome }: { outcome: string | null }) {
           Transféré
         </Badge>
       );
+    case 'MESSAGE':
+      return (
+        <Badge className="border-brand/20 bg-brand/10 text-brand hover:bg-brand/15">Message</Badge>
+      );
     case 'NO_ACTION':
       return <Badge variant="secondary">Aucune action</Badge>;
     case 'ERROR':

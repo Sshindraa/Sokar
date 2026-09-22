@@ -1853,8 +1853,7 @@ describe('CallSessionManager — provider LLM unique, circuit breaker et timeout
   });
 
   it('Groq ne bascule plus sur un autre provider : la réponse d’erreur remonte', async () => {
-    // Le repli OpenRouter/Cerebras a été retiré le 22 septembre 2026. Un 402 ou
-    // un 5xx doit remonter tel quel à l'appelant, qui dégrade l'appel.
+    // Une erreur fournisseur doit remonter à l'appelant, qui dégrade l'appel.
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 402,

@@ -16,6 +16,9 @@ export function isCallRecordingEnabled(): boolean {
 }
 
 export function isTestCallRecordingEnabled(restaurantId: string): boolean {
+  // Until the live announcement/consent flow exists, recording is deliberately
+  // restricted to an explicit test allowlist. The same guard is applied when
+  // ingesting provider webhooks, not only when calling record_start.
   if (!isCallRecordingEnabled()) return false;
 
   const allowedRestaurantIds = new Set(
@@ -79,6 +82,12 @@ interface TelnyxRecordingListResponse {
   data?: TelnyxRecordingListItem[];
 }
 
+function parseRecordingDate(value: string | undefined): Date | undefined {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
 export async function startTestCallRecording(session: CallSession): Promise<void> {
   if (!isTestCallRecordingEnabled(session.restaurantId)) return;
 
@@ -126,6 +135,13 @@ export async function storeSavedRecording(data: SavedRecordingJobData): Promise<
     select: { id: true, restaurantId: true },
   });
   if (!call) throw new Error(`Call not found for recording ${data.recordingId}`);
+  if (!isTestCallRecordingEnabled(call.restaurantId)) {
+    logger.info(
+      { callId: call.id },
+      'Recording ingestion ignored: restaurant is outside the test allowlist',
+    );
+    return;
+  }
 
   const url = new URL(data.downloadUrl);
   if (url.protocol !== 'https:') throw new Error('Recording download URL must use HTTPS');
@@ -164,8 +180,10 @@ export async function storeSavedRecording(data: SavedRecordingJobData): Promise<
       recordingStorageKey: storageKey,
       recordingContentType: contentType,
       recordingSizeBytes: bytes.byteLength,
-      recordingStartedAt: data.startedAt ? new Date(data.startedAt) : undefined,
-      recordingEndedAt: data.endedAt ? new Date(data.endedAt) : undefined,
+      // Telnyx's recording timestamps are optional. Invalid provider values
+      // must not turn an otherwise usable recording into a failed DB write.
+      recordingStartedAt: parseRecordingDate(data.startedAt),
+      recordingEndedAt: parseRecordingDate(data.endedAt),
       recordingExpiresAt: expiresAt,
       recordingError: null,
     },
@@ -182,9 +200,16 @@ export async function recoverPendingRecording(data: RecoverRecordingJobData): Pr
 
   const call = await db.call.findUnique({
     where: { callSid: data.callLegId },
-    select: { recordingStatus: true },
+    select: { recordingStatus: true, restaurantId: true },
   });
   if (!call || call.recordingStatus !== 'PENDING') return;
+  if (!isTestCallRecordingEnabled(call.restaurantId)) {
+    logger.info(
+      { callLegId: data.callLegId },
+      'Recording recovery ignored: restaurant is outside the test allowlist',
+    );
+    return;
+  }
 
   const apiKey = process.env.TELNYX_API_KEY;
   if (!apiKey) throw new Error('TELNYX_API_KEY not configured');

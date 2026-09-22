@@ -1,7 +1,7 @@
 # Architecture Sokar
 
-**Dernière mise à jour** : 2026-06-24
-**Stack** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx / Next.js 15 + React 19 + Tailwind 3 / ElevenLabs Scribe Realtime STT + Cartesia Sonic 3.6 continu (`sonic-3.6`; pipeline vocal : STT ElevenLabs, LLM OpenRouter, TTS Cartesia). Agent CLI Hermes : `minimax-m3` via `opencode-go`.
+**Dernière mise à jour** : 2026-09-22
+**Stack** : Fastify 5 + Prisma 6 + Redis + BullMQ + Telnyx / Next.js 15 + React 19 + Tailwind 3 / ElevenLabs Scribe Realtime STT + Cartesia Sonic 3.6 continu (`sonic-3.6`; pipeline vocal : STT ElevenLabs, LLM Groq direct (`qwen/qwen3.8-27b`), TTS Cartesia). Agent CLI Hermes : `minimax-m3` via `opencode-go`.
 **Carrier** : Telnyx (production) — Vapi legacy purgé
 **TTS** : Cartesia Sonic 3.6 continu (`sonic-3.6`) ; locale BCP-47, `normalization=auto`, génération configurable et dictionnaire de prononciation optionnel (depuis 2026-09-10)
 **Model switch** : Hermes sur `minimax-m3` via `opencode-go` (depuis 2026-06-23)
@@ -74,7 +74,7 @@ Appel entrant → Telnyx → Webhook → Agent State Machine
                                     ┌────┴────┐
                                     │  STT    │  ElevenLabs
                                     ├─────────┤
-                                    │  LLM    │  OpenRouter (deepseek)
+                                    │  LLM    │  Groq direct (Qwen 3.8 27B)
                                     ├─────────┤
                                     │  TTS    │  Cartesia
                                     └─────────┘

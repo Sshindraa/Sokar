@@ -22,7 +22,7 @@ Passe locale suivante, non déployée :
 - accueil réduit à « Bonjour, ici [restaurant]. Je vous écoute. » selon la décision produit ;
 - enregistrement conservé uniquement pour les restaurants de test explicitement autorisés par `CALL_RECORDING_TEST_RESTAURANT_IDS` ;
 - génération de réponse invalidée dès que l'appelant reprend la parole pendant `PROCESSING` ou `SPEAKING` ;
-- propagation du signal d'annulation aux deux requêtes LLM, y compris le fallback non-streaming après détection d'outil ;
+- propagation du signal d'annulation aux deux requêtes LLM, y compris la requête non-streaming après détection d'outil ;
 - une réponse périmée ne peut plus parler, modifier l'état du nouveau tour, réutiliser un transcript spéculatif ou effacer son contrôleur d'annulation.
 
 Validation de cette passe : suite voix complète 263/263, typecheck et lint API verts.
@@ -40,7 +40,7 @@ Les quatre qualités à optimiser ensemble sont :
 
 ## 2. Diagnostic factuel des appels observés
 
-Pipeline actuel : Telnyx Media Stream → ElevenLabs Scribe Realtime → OpenRouter/Mistral → Cartesia Sonic 3.6 (`sonic-3.6`) → Telnyx.
+Pipeline actuel : Telnyx Media Stream → ElevenLabs Scribe Realtime → Groq/Qwen 3.8 27B → Cartesia Sonic 3.6 (`sonic-3.6`) → Telnyx.
 
 ### Points déjà corrigés en production
 
@@ -57,7 +57,7 @@ Pipeline actuel : Telnyx Media Stream → ElevenLabs Scribe Realtime → OpenRou
 - Le timer de fin de tour peut partir après 400 ms lorsqu’une transcription semble ponctuée. Une ponctuation STT erronée peut donc fermer trop tôt une phrase incomplète.
 - Chaque phrase est synthétisée séparément. L’intonation peut repartir à zéro à chaque frontière de phrase.
 - Les réponses sont grammaticalement correctes mais trop administratives et répétitives : « souhaitez-vous », « en quoi puis-je », récapitulations systématiques.
-- Le prompt ne fournit pas explicitement la date courante. Un smoke Gemini a converti « demain » en `2025-02-17` avant correction expérimentale. Ce défaut doit être traité avant tout changement de modèle.
+- Le prompt ne fournit pas explicitement la date courante. Un ancien smoke de fournisseur a converti « demain » en une date incorrecte avant correction expérimentale. Ce défaut doit être traité indépendamment du modèle.
 
 ## 3. Cibles mesurables
 
@@ -146,7 +146,7 @@ Valider la structure et les slots avant TTS. Les champs critiques doivent être 
 7. Interdire « je vais vérifier » si aucun appel d’outil n’est produit dans le tour.
 8. Retirer défensivement les secondes salutations et relances génériques avant TTS.
 9. Passer le délai des fillers de 400 ms à 900–1 200 ms ; valeur initiale recommandée : 1 000 ms.
-10. ~~Conserver Mistral comme fallback et tester Gemini 3.5 Flash-Lite via un flag par restaurant.~~ Clos le 22/09/2026 : un seul provider, Groq/Qwen, sans repli ni flag par restaurant (voir Chantier F).
+10. ~~Conserver plusieurs modèles et tester un canari par restaurant.~~ Clos le 22/09/2026 : un seul provider, Groq/Qwen, sans repli ni flag par restaurant (voir Chantier F).
 
 Un prototype de ces changements existe dans le worktree local `/private/tmp/sokar-liveness-deploy`, non déployé. Il doit être revu et repris proprement, pas copié aveuglément.
 
@@ -196,11 +196,11 @@ Ne pas ajouter artificiellement des « euh ». Une hésitation simulée et rép�
 
 ### Chantier F — Modèle et routage, priorité P1
 
-**Clos le 22 septembre 2026.** Ce chantier proposait un choix de modèle par restaurant, un contrôle
-Mistral Small 3.2, un candidat Gemini 3.5 Flash-Lite et un repli automatique. La décision prise est
-l'inverse : **un seul provider, Groq en direct avec `qwen/qwen3.8-27b`, sans repli et sans flag par
-restaurant**. Cerebras (Gemma) et OpenRouter (Llama) ont été retirés du code, et les trois documents
-de benchmark du 22 juillet sont archivés dans [`docs/_archive/`](../../_archive/README.md).
+**Clos le 22 septembre 2026.** La sélection de modèle par restaurant, les canaris
+de provider et le repli automatique ont été retirés : **un seul provider, Groq en
+direct avec `qwen/qwen3.8-27b`, sans repli et sans flag par restaurant**. Les
+anciens documents de comparaison sont archivés dans
+[`docs/_archive/`](../../_archive/README.md) et ne font plus partie du chemin actif.
 
 Reste applicable de ce chantier : conserver une température modérée pour les outils, pour que la
 variété de style ne dégrade pas les arguments structurés. Le tableau de suivi est
@@ -217,6 +217,8 @@ Persister ou exporter pour chaque tour, avec données minimisées :
 - état conversationnel avant/après ;
 - slots extraits et corrections ;
 - modèle, premier token, première phrase ;
+- provider et modèle effectivement utilisés, séparés de la présence d'une clé
+  OpenRouter réservée aux outils externes ;
 - outil demandé, durée, résultat catégorisé ;
 - filler commencé/terminé/interrompu ;
 - TTS first byte, début/fin audio ;
@@ -253,7 +255,7 @@ Créer des scénarios multi-tours avec assertions sur état, outil et texte :
 
 ### Smokes fournisseur
 
-- Exécuter au moins 10 répétitions par modèle sur le même scénario.
+- Exécuter au moins 10 répétitions sur le même scénario et la même configuration de production.
 - Refuser la livraison si une date relative est fausse, même une seule fois.
 - Refuser la livraison si le modèle annonce une action sans tool call.
 - Archiver uniquement les métriques et sorties anonymisées nécessaires.
@@ -279,7 +281,6 @@ Créer des scénarios multi-tours avec assertions sur état, outil et texte :
 Flags recommandés :
 
 - `voice_natural_prompt_v2`
-- `voice_gemini_canary`
 - `voice_turn_taking_v2`
 - `voice_fillers_v3`
 - `voice_tts_context_v2`
@@ -296,7 +297,7 @@ Rollback immédiat si l’un des événements suivants apparaît :
 - p95 première réponse utile > 2 secondes hors outil ;
 - filler interrompu sur > 3 % des tours ;
 - répétition de l’accueil > 1 % des appels ;
-- erreurs fournisseur ou fallback > 2 % ;
+- erreurs fournisseur ou dégradation > 2 % ;
 - coût moyen par appel dépassant le budget défini.
 
 ## 10. Passe Cartesia/Scribe livrée localement le 10 septembre 2026
@@ -328,7 +329,7 @@ Validation locale : 86 tests voix ciblés, typecheck API, build API, lint API (0
 5. Ajouter l’état conversationnel minimal et les actes de parole du Chantier B.
 6. Instrumenter les métriques par tour avant de modifier profondément l’endpointing.
 7. Tester le contexte TTS Cartesia derrière un flag séparé.
-8. Effectuer les comparaisons Mistral/Gemini sur le même corpus.
+8. Comparer les versions du pipeline uniquement dans un environnement isolé, sans canari de modèle en production.
 9. Présenter au propriétaire : résultats, extraits audio, coût, risques et plan de rollback.
 10. Ne pousser ni déployer en production sans confirmation explicite.
 
@@ -341,7 +342,7 @@ Le worktree `/private/tmp/sokar-liveness-deploy` contient actuellement une expé
 - date/fuseau injectés ;
 - `checkAvailability` avec heure précise ;
 - filler à 1 000 ms ;
-- modèle unique : Groq/Qwen 3.8 27B (le défaut Gemini proposé à l’époque a été abandonné le 22/09/2026) ;
+- modèle unique : Groq/Qwen 3.8 27B ;
 - smoke réel `apps/api/scripts/smoke-voice-naturalness.ts`.
 
 Résultats obtenus avant cette passation :
@@ -349,7 +350,7 @@ Résultats obtenus avant cette passation :
 - suite voice + cache restaurant : 235/235 ;
 - ciblée finale : 98/98 ;
 - WebSocket : 13/13 ;
-- trois smokes Gemini consécutifs : `2026-07-23`, 2 personnes, 20:00, appel immédiat de `checkAvailability`, puis demande du nom ;
+- trois smokes consécutifs : `2026-07-23`, 2 personnes, 20:00, appel immédiat de `checkAvailability`, puis demande du nom ;
 - lint ciblé et build config : verts.
 
 Attention : le typecheck global de ce worktree emprunte le client Prisma généré du workspace principal, lequel contient des champs de provisioning non présents dans le commit propre. L’unique erreur observée vient de cette contamination de dépendances dans `availability-capacity-aware.service.test.ts`. Refaire la validation dans un environnement dépendances propre avant livraison.

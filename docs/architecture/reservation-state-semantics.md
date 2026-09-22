@@ -363,3 +363,17 @@ preuve complète. La synchronisation Google Calendar reste best-effort et une
 répétition sur une ligne déjà clôturée n'ajoute pas d'audit supplémentaire. La
 route HTTP DELETE est préservée pour compatibilité, mais elle ne signifie plus
 une suppression SQL.
+
+## Amendement R1-4 — writer de cycle de vie commun
+
+Le lot 3 de R1-4 a été livré le 22 septembre 2026. Les transitions
+post-création exposées par les services legacy et agentic passent par
+`apps/api/src/modules/reservations/reservation-lifecycle.service.ts`. Ce writer
+rejoue dans une transaction tenant-scopée la state machine, la projection
+`state`/`status`, l'audit append-only et l'invalidation du cache de capacité.
+Les adaptateurs conservent leurs effets propres après commit : synchronisation
+Google Calendar et contrat SMS côté legacy, holds, policies et idempotence côté
+agentic. Les workflows de paiement et de récupération de retard gardent leur
+propre transaction englobante, mais délèguent désormais leur transition d'état
+à la primitive transactionnelle du writer. La création n'est donc pas
+artificiellement aplatie tant que ces contrats produit ne sont pas identiques.

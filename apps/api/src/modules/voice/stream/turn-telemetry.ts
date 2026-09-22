@@ -1,5 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { CallSession, VoiceSpeechAct } from './types';
+import type {
+  CallSession,
+  SttWord,
+  VoiceSpeechAct,
+  VoiceTurnLatencyTrace,
+  VoiceTurnTelemetry,
+  VoiceTurnPath,
+} from './types';
 import { logger } from '../../../shared/logger/pino';
 import {
   voiceTurnDurationMs,
@@ -7,6 +14,7 @@ import {
   voiceLlmFirstPhraseMs,
   voiceTtsFirstAudioMs,
 } from '../../../shared/observability/metrics';
+import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
 
 export type VoiceTurnPhase =
   | 'speech'
@@ -32,6 +40,7 @@ export type VoiceTurnEvent =
   | 'availability_started'
   | 'availability_completed'
   | 'availability_failed'
+  | 'dialogue_guard'
   | 'filler_started'
   | 'filler_completed'
   | 'filler_interrupted'
@@ -50,6 +59,51 @@ function transcriptFingerprint(transcript: string): string {
   return createHash('sha256').update(transcript).digest('hex').slice(0, 12);
 }
 
+function cloneLatencyTrace(
+  trace: VoiceTurnLatencyTrace | undefined,
+): VoiceTurnLatencyTrace | undefined {
+  return trace ? { ...trace } : undefined;
+}
+
+/**
+ * Archive le tour précédent avant que le prochain tour ne remplace la trace
+ * runtime. La copie est volontaire : les callbacks LLM/TTS tardifs ne doivent
+ * jamais modifier l'historique déjà observé.
+ */
+function archiveCurrentVoiceTurn(session: CallSession, endedAt = Date.now()): void {
+  const current = session.currentTurn;
+  if (!current) return;
+  current.endedAt ??= endedAt;
+  current.completed ||= Boolean(current.latencyTrace?.audioSentAt);
+  current.latencyTrace = cloneLatencyTrace(session.latencyTrace);
+  const history = session.voiceTurnHistory ?? (session.voiceTurnHistory = []);
+  const existing = history.findIndex((turn) => turn.id === current.id);
+  const snapshot = {
+    ...current,
+    latencyTrace: cloneLatencyTrace(current.latencyTrace),
+  };
+  if (existing >= 0) history[existing] = snapshot;
+  else history.push(snapshot);
+}
+
+function currentPath(session: CallSession): VoiceTurnPath {
+  return session.currentTurn?.path ?? 'unknown';
+}
+
+/**
+ * Définit le chemin primaire du tour en conservant les chemins plus
+ * informatifs lorsqu'un tour combine disponibilité et LLM.
+ */
+function setVoiceTurnPath(session: CallSession, next: VoiceTurnPath): void {
+  const turn = session.currentTurn;
+  if (!turn) return;
+  const current = currentPath(session);
+  if (next === 'fallback' || current === 'fallback') turn.path = 'fallback';
+  else if (next === 'availability' || current === 'availability') turn.path = 'availability';
+  else if (next === 'llm' || current === 'llm') turn.path = 'llm';
+  else if (next !== 'unknown') turn.path = next;
+}
+
 function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
   switch (event) {
     case 'started':
@@ -65,6 +119,7 @@ function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
     case 'llm_completed':
     case 'llm_interrupted':
     case 'speculation_hit':
+    case 'dialogue_guard':
       return 'generation';
     case 'availability_started':
     case 'availability_completed':
@@ -92,21 +147,31 @@ function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
  * Le transcript peut être vide : il sera enrichi au commit final.
  */
 export function startVoiceTurn(session: CallSession, transcript = ''): void {
+  archiveCurrentVoiceTurn(session);
   const startedAt = Date.now();
-  session.currentTurn = {
-    id: randomUUID(),
-    startedAt,
-    transcriptLength: transcript.length,
-    transcriptFingerprint: transcriptFingerprint(transcript),
-    eventSequence: 0,
-  };
-  // Cette trace est volontairement bornée au tour courant. La persistance DB
-  // reste un dernier état d'appel, tandis que les logs structurés gardent la
-  // chronologie complète de chaque tour.
-  session.latencyTrace = {
+  const latencyTrace: VoiceTurnLatencyTrace = {
     startTime: startedAt,
     speechStartedAt: startedAt,
   };
+  const sequence = (session.voiceTurnHistory?.length ?? 0) + 1;
+  session.currentTurn = {
+    id: randomUUID(),
+    sequence,
+    startedAt,
+    transcriptLength: transcript.length,
+    transcriptFingerprint: transcriptFingerprint(transcript),
+    path: 'unknown',
+    availabilitySearches: 0,
+    availabilityFailures: 0,
+    loopDetected: false,
+    completed: false,
+    sttProvider: session.sttModel,
+    latencyTrace,
+    eventSequence: 0,
+  };
+  // La trace legacy reste bornée au tour courant pour les consommateurs
+  // existants ; l'historique séparé est persisté par session-persistence.
+  session.latencyTrace = latencyTrace;
   recordVoiceTurnEvent(session, 'started');
 }
 
@@ -114,7 +179,11 @@ export function startVoiceTurn(session: CallSession, transcript = ''): void {
  * Attache la transcription finale au tour commencé par UtteranceStart.
  * Le fallback startVoiceTurn couvre les commits courts sans partial observable.
  */
-export function completeVoiceTurnInput(session: CallSession, transcript: string): void {
+export function completeVoiceTurnInput(
+  session: CallSession,
+  transcript: string,
+  words: SttWord[] = [],
+): void {
   if (!session.currentTurn) startVoiceTurn(session);
   const turn = session.currentTurn;
   if (!turn) return;
@@ -125,9 +194,20 @@ export function completeVoiceTurnInput(session: CallSession, transcript: string)
   if (session.latencyTrace) {
     session.latencyTrace.sttFinalAt = completedAt;
     session.latencyTrace.sttFinalMs = completedAt - session.latencyTrace.startTime;
+    const wordStarts = words
+      .map((word) => word.start)
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    const wordEnds = words
+      .map((word) => word.end)
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    if (wordStarts.length > 0 && wordEnds.length > 0) {
+      const durationMs = Math.max(0, (Math.max(...wordEnds) - Math.min(...wordStarts)) * 1000);
+      session.latencyTrace.speechDurationMs = Math.round(durationMs);
+    }
   }
   recordVoiceTurnEvent(session, 'stt_final', {
     sttFinalMs: session.latencyTrace?.sttFinalMs ?? 0,
+    speechDurationMs: session.latencyTrace?.speechDurationMs ?? null,
     transcriptLength: transcript.length,
   });
 }
@@ -170,6 +250,22 @@ export function markVoiceTurnLlmFirstToken(
   trace.llmFirstTokenMs = elapsedMs;
   recordVoiceTurnEvent(session, 'llm_first_token', {
     llmFirstTokenMs: elapsedMs,
+  });
+  return elapsedMs;
+}
+
+/** Mesure la première phrase complète remise au pipeline TTS. */
+export function markVoiceTurnLlmFirstPhrase(
+  session: CallSession,
+  turnId?: string,
+): number | undefined {
+  if (!isCurrentVoiceTurn(session, turnId)) return undefined;
+  const trace = session.latencyTrace;
+  if (!trace || trace.llmFirstPhraseMs !== undefined) return trace?.llmFirstPhraseMs;
+  const elapsedMs = Date.now() - trace.startTime;
+  trace.llmFirstPhraseMs = elapsedMs;
+  recordVoiceTurnEvent(session, 'llm_first_phrase', {
+    llmFirstPhraseMs: elapsedMs,
   });
   return elapsedMs;
 }
@@ -232,22 +328,86 @@ export function recordVoiceTurnEvent(
   // structuré ci-dessous.
   const trace = session.latencyTrace;
   if (trace) {
+    if (turn.latencyTrace !== trace) turn.latencyTrace = trace;
     switch (event) {
+      case 'llm_started':
+        setVoiceTurnPath(session, 'llm');
+        turn.llmProvider =
+          typeof fields.provider === 'string' ? fields.provider : getVoiceLlmProvider();
+        turn.llmModel = typeof fields.model === 'string' ? fields.model : getVoiceLlmModel();
+        break;
+      case 'availability_started':
+        setVoiceTurnPath(session, 'availability');
+        // Un callback du fournisseur ou de l'orchestrateur peut être livré
+        // deux fois. Tant qu'une recherche est déjà ouverte, ne pas compter
+        // un second démarrage fantôme ni déplacer son point de départ.
+        if (turn.availabilityStartedAt === undefined) {
+          turn.availabilitySearches += 1;
+          turn.availabilityStartedAt = eventAt;
+        }
+        break;
+      case 'availability_completed':
+        if (turn.availabilityStartedAt !== undefined) {
+          const durationMs =
+            typeof fields.durationMs === 'number'
+              ? fields.durationMs
+              : eventAt - turn.availabilityStartedAt;
+          trace.availabilityDurationMs = (trace.availabilityDurationMs ?? 0) + durationMs;
+          turn.availabilityStartedAt = undefined;
+        }
+        break;
+      case 'availability_failed':
+        if (turn.availabilityStartedAt !== undefined) {
+          turn.availabilityFailures += 1;
+          const durationMs =
+            typeof fields.durationMs === 'number'
+              ? fields.durationMs
+              : eventAt - turn.availabilityStartedAt;
+          trace.availabilityDurationMs = (trace.availabilityDurationMs ?? 0) + durationMs;
+          turn.availabilityStartedAt = undefined;
+        }
+        break;
+      case 'dialogue_guard': {
+        const level = fields.level;
+        if (level === 'escalate') {
+          setVoiceTurnPath(session, 'fallback');
+          turn.loopDetected = true;
+        } else {
+          setVoiceTurnPath(session, 'deterministic');
+          if (level === 'reformulate') turn.loopDetected = true;
+        }
+        break;
+      }
+      case 'tts_synthesis_started':
+        if (fields.source === 'native_fallback') setVoiceTurnPath(session, 'fallback');
+        else if (currentPath(session) === 'unknown') setVoiceTurnPath(session, 'deterministic');
+        turn.ttsProvider = fields.source === 'native_fallback' ? 'telnyx-native' : 'cartesia';
+        trace.ttsSynthesisStartedAt ??= eventAt;
+        break;
+      case 'llm_interrupted':
+        if (fields.reason === 'error') setVoiceTurnPath(session, 'fallback');
+        break;
       case 'llm_completed':
         trace.llmCompletedMs =
           typeof fields.durationMs === 'number' ? fields.durationMs : elapsedMs;
         break;
-      case 'tts_synthesis_started':
-        trace.ttsSynthesisStartedAt ??= eventAt;
+      case 'tts_synthesis_first_byte':
+        turn.ttsProvider = fields.source === 'native_fallback' ? 'telnyx-native' : 'cartesia';
         break;
       case 'tts_synthesis_completed':
       case 'tts_completed':
+        if (fields.source === 'native_fallback') setVoiceTurnPath(session, 'fallback');
         trace.ttsCompletedMs =
           typeof fields.durationMs === 'number' ? fields.durationMs : elapsedMs;
+        if (event === 'tts_completed') {
+          turn.completed = true;
+          turn.endedAt = eventAt;
+        }
         break;
       case 'tts_interrupted':
       case 'barge_in':
         trace.interruptedAt = eventAt;
+        turn.interrupted = true;
         break;
     }
   }
@@ -293,4 +453,13 @@ export function recordVoiceTurnEvent(
     },
     `[voice-turn] ${event}`,
   );
+}
+
+/** Retourne un instantané complet, incluant le tour encore actif. */
+export function snapshotVoiceTurnTelemetry(session: CallSession): VoiceTurnTelemetry[] {
+  archiveCurrentVoiceTurn(session);
+  return (session.voiceTurnHistory ?? []).map((turn) => ({
+    ...turn,
+    latencyTrace: cloneLatencyTrace(turn.latencyTrace),
+  }));
 }

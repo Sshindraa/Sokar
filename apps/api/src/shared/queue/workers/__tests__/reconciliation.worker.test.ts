@@ -523,3 +523,183 @@ describe('reconciliation.worker notification outcomes', () => {
     expect(jobs[0].data).toMatchObject({ reason: 'local_repair_failed' });
   });
 });
+
+// ─── Rattrapage des appels restés incomplets ──────────────────────────────
+
+describe('reconciliation.worker voice finalization sweep', () => {
+  function makeVoiceDb(rows: Array<Record<string, unknown>>, options: { failAll?: boolean } = {}) {
+    const table = new Map(rows.map((row) => [String(row.callSid), row]));
+    const db = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      call: {
+        findMany: vi.fn().mockResolvedValue(rows.map((row) => ({ callSid: row.callSid }))),
+        findUnique: options.failAll
+          ? vi.fn().mockRejectedValue(new Error('db down'))
+          : vi.fn(
+              async ({ where }: { where: { callSid: string } }) => table.get(where.callSid) ?? null,
+            ),
+        update: vi.fn(async ({ where, data }: { where: { callSid: string }; data: object }) => {
+          const next = { ...(table.get(where.callSid) ?? {}), ...data };
+          table.set(where.callSid, next);
+          return next;
+        }),
+        create: vi.fn(),
+      },
+    };
+    (db as unknown as Record<string, unknown>).$transaction = vi.fn(
+      async (fn: (tx: unknown) => Promise<unknown>) => fn(db),
+    );
+    return db;
+  }
+
+  function makeVoiceDeps(db: unknown): ReconciliationDependencies {
+    const { store } = makeClaimStore();
+    return {
+      db: db as PrismaClient,
+      claimStore: store,
+      lookupProviderMessage: vi.fn(),
+      deadLetterQueue: { add: vi.fn() },
+    };
+  }
+
+  function makeCallRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'call-1',
+      restaurantId: 'rest-1',
+      callSid: 'leg-1',
+      callerPhone: '+33600000000',
+      durationSec: 30,
+      transcript: 'Bonjour je voudrais réserver une table demain soir',
+      intent: null,
+      outcome: null,
+      sttProvider: null,
+      llmProvider: null,
+      ttsProvider: null,
+      reservation: null,
+      messages: [],
+      ...overrides,
+    };
+  }
+
+  it('finalise les appels sans outcome dans la fenêtre de rattrapage', async () => {
+    const db = makeVoiceDb([makeCallRow()]);
+
+    await processReconciliationJob(
+      {
+        name: 'voice-finalization',
+        data: { kind: 'voice-finalization' },
+      } as unknown as Job<ReconciliationJobData>,
+      makeVoiceDeps(db),
+    );
+
+    expect(db.call.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { callSid: 'leg-1' },
+        data: expect.objectContaining({ outcome: 'NO_ACTION', intent: 'RESERVATION' }),
+      }),
+    );
+  });
+
+  it('ne réécrit rien quand l’appel est déjà complet', async () => {
+    const db = makeVoiceDb([
+      makeCallRow({
+        outcome: 'RESERVED',
+        intent: 'RESERVATION',
+        sttProvider: 'elevenlabs-scribe-v2-realtime',
+        llmProvider: 'groq',
+        ttsProvider: 'cartesia-sonic',
+        reservation: { id: 'res-1' },
+      }),
+    ]);
+
+    await processReconciliationJob(
+      {
+        name: 'voice-finalization',
+        data: { kind: 'voice-finalization' },
+      } as unknown as Job<ReconciliationJobData>,
+      makeVoiceDeps(db),
+    );
+
+    expect(db.call.update).not.toHaveBeenCalled();
+  });
+
+  it('déclenche la récupération commerciale grâce au numéro persisté', async () => {
+    const db = makeVoiceDb([makeCallRow()]);
+    const enqueueRecovery = vi.fn().mockResolvedValue(undefined);
+    const deps = makeVoiceDeps(db);
+
+    await processReconciliationJob(
+      {
+        name: 'voice-finalization',
+        data: { kind: 'voice-finalization' },
+      } as unknown as Job<ReconciliationJobData>,
+      { ...deps, enqueueRecovery },
+    );
+
+    // Le sweep ne dispose d'aucun hint webhook : le numéro vient de la ligne.
+    expect(enqueueRecovery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callId: 'call-1',
+        customerPhone: '+33600000000',
+        reason: 'no_action_with_intent',
+      }),
+      'leg-1',
+    );
+  });
+
+  it('classe un message enregistré en MESSAGE sans récupération', async () => {
+    const db = makeVoiceDb([
+      makeCallRow({ messages: [{ id: 'msg-1' }], callerPhone: '+33600000000' }),
+    ]);
+    const enqueueRecovery = vi.fn().mockResolvedValue(undefined);
+    const deps = makeVoiceDeps(db);
+
+    await processReconciliationJob(
+      {
+        name: 'voice-finalization',
+        data: { kind: 'voice-finalization' },
+      } as unknown as Job<ReconciliationJobData>,
+      { ...deps, enqueueRecovery },
+    );
+
+    expect(db.call.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ outcome: 'MESSAGE' }),
+      }),
+    );
+    expect(enqueueRecovery).not.toHaveBeenCalled();
+  });
+
+  it('relance le job quand la base est indisponible pour tous les candidats', async () => {
+    const db = makeVoiceDb([makeCallRow()], { failAll: true });
+
+    await expect(
+      processReconciliationJob(
+        {
+          name: 'voice-finalization',
+          data: { kind: 'voice-finalization' },
+        } as unknown as Job<ReconciliationJobData>,
+        makeVoiceDeps(db),
+      ),
+    ).rejects.toThrow('voice finalization failed for all 1 candidate calls');
+  });
+
+  it('répare aussi la réconciliation quotidienne au lieu de seulement journaliser', async () => {
+    const db = makeVoiceDb([makeCallRow()]);
+
+    await processReconciliationJob(
+      {
+        name: 'calls',
+        data: { kind: 'calls', dayKey: '2026-09-21' },
+      } as unknown as Job<ReconciliationJobData>,
+      makeVoiceDeps(db),
+    );
+
+    expect(db.call.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { callSid: 'leg-1' },
+        data: expect.objectContaining({ outcome: 'NO_ACTION' }),
+      }),
+    );
+  });
+});

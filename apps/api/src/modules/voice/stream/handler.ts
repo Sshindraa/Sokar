@@ -36,6 +36,43 @@ import { redactPii } from './pii-redact';
 import { acknowledgeCallEnding } from './call-ending';
 import { startTestCallRecording } from '../call-recording.service';
 import { finalizeVoiceUsage } from '../../usage/voice-usage.service';
+import { db } from '../../../shared/db/client';
+import { finalizeVoiceCall } from '../call-finalization.service';
+import { getVoiceLlmRuntimeInfo } from '../llm-provider';
+
+/**
+ * Finalisation métier d'un appel depuis le stream : le WebSocket peut se
+ * fermer avant que `/voice/telnyx/end` n'arrive, l'appel doit tout de même
+ * produire un outcome exploitable. La récupération commerciale reste portée
+ * par le webhook Telnyx, qui seul connaît le contexte restaurant complet ;
+ * la mise à jour est monotone, donc le webhook peut la compléter ensuite.
+ */
+function finalizeSessionCall(
+  session: CallSession,
+  source: 'stream-close' | 'stream-error',
+  log: { error: (obj: unknown, msg?: string) => void },
+): void {
+  try {
+    finalizeVoiceCall(
+      session.callLegId,
+      {
+        source,
+        restaurantId: session.restaurantId,
+        transcript: session.transcript,
+        endedReason: source === 'stream-error' ? 'error' : null,
+        handoffConclusion: session.handoffConclusion,
+        conversationIntent: session.conversation?.intent ?? null,
+        to: session.to,
+        customerPhone: session.from,
+      },
+      { db },
+    ).catch((err) => log.error({ err }, '[stream] finalizeVoiceCall failed'));
+  } catch (err) {
+    // La fermeture du stream ne doit jamais être interrompue par la
+    // finalisation : le worker de rattrapage reprendra l'appel.
+    log.error({ err }, '[stream] finalizeVoiceCall threw synchronously');
+  }
+}
 
 export function buildInitialGreeting(restaurantName: string): string {
   return `Bonjour, ici ${restaurantName}. Je vous écoute.`;
@@ -88,6 +125,7 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
         finalizeVoiceUsage(session).catch((err) =>
           log.error({ err }, '[stream] finalizeVoiceUsage failed'),
         );
+        finalizeSessionCall(session, 'stream-close', log);
         closeStt(session);
         mgr.delete(session.callControlId);
       }
@@ -112,6 +150,7 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
         finalizeVoiceUsage(session).catch((err) =>
           log.error({ err }, '[stream] finalizeVoiceUsage failed (error path)'),
         );
+        finalizeSessionCall(session, 'stream-error', log);
         closeStt(session);
         mgr.delete(session.callControlId);
       }
@@ -136,9 +175,18 @@ function handleTelnyxMessage(
 
     case 'start': {
       const start = msg.start!;
+      const llmRuntime = getVoiceLlmRuntimeInfo();
       writeDebugLog(`[stream] Received start event for call ${start.call_control_id}`);
       logger.info(
-        { callId: start.call_control_id, from: start.from, encoding: start.media_format.encoding },
+        {
+          callId: start.call_control_id,
+          hasCaller: Boolean(start.from),
+          encoding: start.media_format.encoding,
+          llmProvider: llmRuntime.provider,
+          llmModel: llmRuntime.model,
+          openrouterKeyConfigured: llmRuntime.openrouterKeyConfigured,
+          openrouterUsed: llmRuntime.openrouterUsed,
+        },
         '[stream] Start call',
       );
 

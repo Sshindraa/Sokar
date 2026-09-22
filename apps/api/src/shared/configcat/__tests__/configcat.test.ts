@@ -7,6 +7,7 @@ import {
   isVoicePipelineEnabled,
   getRestaurantPlanOverride,
   isFlagEnabledWithRollout,
+  isValidPlan,
   FLAGS,
 } from '../index';
 
@@ -118,6 +119,17 @@ describe('configcat', () => {
     it('returns db plan when SDK key is absent (no override possible)', async () => {
       expect(await getRestaurantPlanOverride('r1', 'STARTER')).toBe('STARTER');
       expect(await getRestaurantPlanOverride('r1', 'PREMIUM')).toBe('PREMIUM');
+    });
+
+    it('accepts only the shared Plan values at runtime', () => {
+      expect(isValidPlan('ESSENTIAL')).toBe(true);
+      expect(isValidPlan('STARTER')).toBe(true);
+      expect(isValidPlan('PRO')).toBe(true);
+      expect(isValidPlan('PREMIUM')).toBe(true);
+      expect(isValidPlan('299')).toBe(false);
+      expect(isValidPlan('INVALID')).toBe(false);
+      expect(isValidPlan(299)).toBe(false);
+      expect(isValidPlan(null)).toBe(false);
     });
   });
 

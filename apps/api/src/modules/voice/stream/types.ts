@@ -18,7 +18,16 @@ export type PendingQuestion =
   | 'customerName'
   | 'customerPhone'
   | 'confirmation'
+  /** Repli humain proposé après un blocage de dialogue (message ou transfert). */
+  | 'humanFallback'
   | null;
+
+/**
+ * Niveau du garde-fou anti-boucle pour une relance déterministe :
+ * `ask` = première relance, `reformulate` = même question reformulée,
+ * `escalate` = repli humain proposé pour ne pas boucler.
+ */
+export type DialogueStallLevel = 'ask' | 'reformulate' | 'escalate';
 
 export type SpellingTokenKind = 'letter' | 'separator' | 'ambiguous';
 
@@ -87,6 +96,9 @@ export interface ConversationState {
     customerName?: string;
     customerPhone?: string;
   };
+  /** Demande d'horaires conservée pendant la collecte date/couverts. */
+  wantsAvailabilityOptions?: boolean;
+  offeredAvailability?: { date: string; partySize: number; slots: string[] };
   toolInFlight: 'checkAvailability' | null;
   lastAvailabilityCheck: string | null;
   /** Dernier résultat réellement renvoyé par le moteur de disponibilité. */
@@ -108,6 +120,14 @@ export interface ConversationState {
   spellingCandidate: string | null;
   nameCollection: NameCollection;
   misunderstandingCount: number;
+  /** Relances déterministes consécutives sur la même question sans progrès. */
+  stalledTurns: number;
+  /** Question actuellement relancée, pour détecter la répétition. */
+  stallSignature: string | null;
+  /** Vrai tant qu'une proposition de message/transfert attend une réponse. */
+  humanFallbackOffered: boolean;
+  /** Dernière décision du garde-fou anti-boucle, consommée par la télémétrie. */
+  lastDialogueGuard: { key: string; level: DialogueStallLevel; count: number } | null;
   closing: boolean;
 }
 
@@ -130,12 +150,51 @@ export interface VoiceUsageCounters {
   finalization?: Promise<void>;
 }
 
+/** Chemin réellement emprunté par un tour, après exécution. */
+export type VoiceTurnPath = 'unknown' | 'deterministic' | 'llm' | 'availability' | 'fallback';
+
+export interface VoiceTurnLatencyTrace {
+  startTime: number;
+  /** Horodatages/durées ajoutés pour la chronologie de diagnostic. */
+  speechStartedAt?: number;
+  speechDurationMs?: number;
+  sttFinalAt?: number;
+  sttFinalMs?: number;
+  llmFirstTokenMs?: number;
+  llmFirstPhraseMs?: number;
+  llmCompletedMs?: number;
+  availabilityDurationMs?: number;
+  ttsSynthesisStartedAt?: number;
+  ttsFirstByteMs?: number;
+  audioSentAt?: number;
+  ttsCompletedMs?: number;
+  interruptedAt?: number;
+  totalE2eMs?: number;
+}
+
 /** Identité minimisée du tour courant pour les logs d'observabilité. */
 export interface VoiceTurnTelemetry {
   id: string;
+  /** Position du tour dans l'appel, indépendante de turnCount métier. */
+  sequence: number;
   startedAt: number;
   transcriptLength: number;
   transcriptFingerprint: string;
+  path: VoiceTurnPath;
+  availabilitySearches: number;
+  availabilityFailures: number;
+  loopDetected: boolean;
+  interrupted?: boolean;
+  completed: boolean;
+  sttProvider?: string;
+  llmProvider?: string;
+  llmModel?: string;
+  ttsProvider?: string;
+  /** Snapshot partagé avec la trace héritée, pour ne jamais perdre un tour. */
+  latencyTrace?: VoiceTurnLatencyTrace;
+  /** Dernier début de recherche, utilisé pour calculer sa durée. */
+  availabilityStartedAt?: number;
+  endedAt?: number;
   /** Numéro monotone des événements structurés de ce tour. */
   eventSequence?: number;
 }
@@ -285,6 +344,18 @@ export interface CallSession {
   ttsContext: ActiveTtsContext | null;
   /** Tour utilisateur courant, créé à la finalisation STT. */
   currentTurn: VoiceTurnTelemetry | null;
+  /** Tours précédents conservés jusqu'à la finalisation de l'appel. */
+  voiceTurnHistory?: VoiceTurnTelemetry[];
+  /** Bilan runtime, alimenté à partir des faits et persisté en fin d'appel. */
+  voiceCallTelemetry?: {
+    finalizedAt?: number;
+    reservationConfirmed?: boolean;
+    reservationIntentAbandoned?: boolean;
+  };
+  /** Sérialise les snapshots DB déclenchés par TTS, stop et fermeture WS. */
+  voiceTelemetryPersistence?: Promise<void>;
+  /** Révisions des tours déjà confirmées en base ; les échecs restent rejouables. */
+  voiceTelemetryPersistedTurns?: Record<string, string>;
   /** Compteurs de coût providers, gardés en mémoire puis persistés à la fin. */
   voiceUsage?: VoiceUsageCounters;
 
@@ -317,22 +388,7 @@ export interface CallSession {
   createdAt: number;
 
   // Latence
-  latencyTrace?: {
-    startTime: number;
-    /** Horodatages/durées ajoutés pour la chronologie de diagnostic. */
-    speechStartedAt?: number;
-    sttFinalAt?: number;
-    sttFinalMs?: number;
-    llmFirstTokenMs?: number;
-    llmFirstPhraseMs?: number;
-    llmCompletedMs?: number;
-    ttsSynthesisStartedAt?: number;
-    ttsFirstByteMs?: number;
-    audioSentAt?: number;
-    ttsCompletedMs?: number;
-    interruptedAt?: number;
-    totalE2eMs?: number;
-  };
+  latencyTrace?: VoiceTurnLatencyTrace;
   personality: {
     fillerStyle: 'CASUAL' | 'FORMAL' | 'WARM';
     systemPromptExtra?: string | null;

@@ -4,11 +4,13 @@ import {
   buildAvailabilityFollowupResponse,
   buildAvailabilityLlmContext,
   buildAvailabilityReply,
+  buildHumanFallbackOffer,
   classifyVoiceSpeechAct,
   classifyVoiceSpeechActInContext,
   createConversationState,
   extractConversationSlots,
   getReadyAvailabilityRequest,
+  guardDialogueReprompt,
   buildReservationProgressResponse,
   buildPendingQuestionResponse,
   confirmReservationDraft,
@@ -20,7 +22,9 @@ import {
   parseSpelledNameTranscriptDetailed,
   recordAssistantReply,
   recordUserTurn,
+  resetDialogueStall,
   resetNameCollectionAfterFallback,
+  resolveHumanFallbackChoice,
   pendingQuestionFrom,
 } from '../stream/conversation-controller';
 import type { CallSession } from '../stream/types';
@@ -581,14 +585,19 @@ describe('conversation state', () => {
     expect(session.conversation.closing).toBe(true);
   });
 
-  it('transfère après deux incompréhensions consécutives', () => {
+  it('propose un repli humain exécutable après deux incompréhensions consécutives', () => {
     const session = makeSession();
     recordAssistantReply(session, "Désolé, je n'ai pas bien compris. Pouvez-vous répéter ?");
     recordAssistantReply(session, "Désolé, je n'ai pas bien compris. Pouvez-vous répéter ?");
 
-    expect(buildDeterministicTurnResponse(session, 'content')).toBe(
-      'Je vais vous passer le gérant pour vous aider.',
+    const offer = buildDeterministicTurnResponse(session, 'content');
+    expect(offer).toBe(
+      'Je peux prendre un message pour le gérant, il vous rappellera. Voulez-vous que je le fasse ?',
     );
+    // Aucune phrase ne doit annoncer un transfert qui n'aurait pas lieu.
+    expect(offer).not.toContain('Je vais vous passer le gérant');
+    expect(session.conversation.humanFallbackOffered).toBe(true);
+    expect(pendingQuestionFrom(offer!)).toBe('humanFallback');
   });
 
   it('réinitialise le compteur dès qu’une réponse métier a été comprise', () => {
@@ -598,6 +607,162 @@ describe('conversation state', () => {
 
     expect(session.conversation.misunderstandingCount).toBe(0);
     expect(buildDeterministicTurnResponse(session, 'content')).toBeNull();
+  });
+
+  it('reformule puis propose un repli humain quand la même question reste sans réponse', () => {
+    const session = makeSession();
+    session.timezone = 'Europe/Paris';
+    recordUserTurn(
+      session,
+      'Je voudrais réserver demain soir',
+      'content',
+      new Date('2026-09-04T10:00:00Z'),
+    );
+
+    expect(buildReservationProgressResponse(session, 'Euh alors voila')).toBe(
+      'Vous serez combien ?',
+    );
+
+    recordUserTurn(session, 'Euh alors voila', 'content');
+    expect(buildReservationProgressResponse(session, 'Euh alors voila')).toBe(
+      'Je note combien de personnes ? Dites-moi simplement un nombre, par exemple « quatre ».',
+    );
+
+    recordUserTurn(session, 'Euh alors voila', 'content');
+    const offer = buildReservationProgressResponse(session, 'Euh alors voila');
+    expect(offer).toBe(
+      'Je peux prendre un message pour le gérant, il vous rappellera. Voulez-vous que je le fasse ?',
+    );
+    expect(session.conversation.humanFallbackOffered).toBe(true);
+    expect(pendingQuestionFrom(offer!)).toBe('humanFallback');
+  });
+
+  it('repart de la formulation normale dès qu’une information progresse', () => {
+    const session = makeSession();
+    session.timezone = 'Europe/Paris';
+    recordUserTurn(
+      session,
+      'Je voudrais réserver demain soir',
+      'content',
+      new Date('2026-09-04T10:00:00Z'),
+    );
+
+    expect(buildReservationProgressResponse(session, 'Euh alors voila')).toBe(
+      'Vous serez combien ?',
+    );
+    expect(buildReservationProgressResponse(session, 'Euh alors voila')).toContain(
+      'Je note combien de personnes',
+    );
+
+    recordUserTurn(session, 'Pour quatre personnes', 'content');
+    expect(buildReservationProgressResponse(session, 'Pour quatre personnes')).toBe(
+      'Vous voulez venir vers quelle heure ?',
+    );
+  });
+
+  it('n’exécute un repli humain que sur une réponse explicite', () => {
+    const withoutLine = makeSession();
+    withoutLine.conversation.pendingQuestion = 'humanFallback';
+    withoutLine.conversation.humanFallbackOffered = true;
+    expect(resolveHumanFallbackChoice(withoutLine, 'Oui')).toBe('message');
+    expect(withoutLine.conversation.pendingQuestion).toBeNull();
+    expect(withoutLine.conversation.humanFallbackOffered).toBe(false);
+
+    const withLine = makeSession();
+    withLine.managerPhone = '+33600000000';
+    withLine.conversation.pendingQuestion = 'humanFallback';
+    withLine.conversation.humanFallbackOffered = true;
+    expect(resolveHumanFallbackChoice(withLine, 'Oui, passez-moi le gérant')).toBe('transfer');
+
+    const decline = makeSession();
+    decline.conversation.pendingQuestion = 'humanFallback';
+    decline.conversation.humanFallbackOffered = true;
+    expect(resolveHumanFallbackChoice(decline, 'Non merci')).toBeNull();
+    expect(decline.conversation.pendingQuestion).toBeNull();
+    expect(decline.conversation.humanFallbackOffered).toBe(false);
+  });
+
+  it('ne répète pas une proposition de repli humain déjà en attente', () => {
+    const session = makeSession();
+    recordAssistantReply(
+      session,
+      'Je peux prendre un message pour le gérant, il vous rappellera. Voulez-vous que je le fasse ?',
+    );
+
+    expect(session.conversation.pendingQuestion).toBe('humanFallback');
+    expect(buildDeterministicTurnResponse(session, 'content', 'Euh alors voila')).toBeNull();
+    expect(buildDeterministicTurnResponse(session, 'backchannel')).toBeNull();
+  });
+
+  it('abandonne la proposition de repli dès que le brouillon progresse', () => {
+    const session = makeSession();
+    session.timezone = 'Europe/Paris';
+    session.conversation.intent = 'reservation';
+    session.conversation.slots = { date: '2026-09-23' };
+    session.conversation.pendingQuestion = 'humanFallback';
+    session.conversation.humanFallbackOffered = true;
+    session.conversation.lastAssistantQuestion = 'Que préférez-vous ?';
+
+    recordUserTurn(session, 'En fait, quatre personnes', 'content');
+
+    expect(session.conversation.slots.partySize).toBe(4);
+    expect(session.conversation.humanFallbackOffered).toBe(false);
+    expect(resolveHumanFallbackChoice(session, 'En fait, quatre personnes')).toBeNull();
+    expect(buildReservationProgressResponse(session, 'En fait, quatre personnes')).toBe(
+      'Vous voulez venir vers quelle heure ?',
+    );
+  });
+
+  it('rend l’offre de repli exécutable quand la disponibilité ne renvoie rien', () => {
+    const session = makeSession();
+    session.conversation.lastAvailabilityResult = {
+      key: '2026-07-23:20:00:2',
+      date: '2026-07-23',
+      time: '20:00',
+      partySize: 2,
+      slots: [],
+    };
+
+    const reply = buildAvailabilityFollowupResponse(session, 'Du coup, vous proposez quoi ?');
+    recordAssistantReply(session, reply!);
+    expect(session.conversation.pendingQuestion).toBe('humanFallback');
+  });
+
+  it('garde la première relance intacte et n’escalade qu’après répétition', () => {
+    const session = makeSession();
+    session.conversation.pendingQuestion = 'partySize';
+    const primary = 'Pour combien de personnes dois-je réserver ?';
+
+    expect(guardDialogueReprompt(session, 'partySize', primary)).toBe(primary);
+    expect(session.conversation.stalledTurns).toBe(1);
+    expect(guardDialogueReprompt(session, 'partySize', primary)).toContain('Je note combien');
+    expect(session.conversation.stalledTurns).toBe(2);
+
+    resetDialogueStall(session);
+    expect(guardDialogueReprompt(session, 'partySize', primary)).toBe(primary);
+    expect(session.conversation.stalledTurns).toBe(1);
+  });
+
+  it('propose un transfert réel seulement quand une ligne gérant est configurée', () => {
+    const withoutLine = makeSession();
+    expect(buildHumanFallbackOffer(withoutLine)).not.toContain('passer le gérant');
+    expect(withoutLine.conversation.humanFallbackOffered).toBe(true);
+
+    const withLine = makeSession();
+    withLine.managerPhone = '+33600000000';
+    expect(buildHumanFallbackOffer(withLine)).toContain('passer le gérant');
+    expect(pendingQuestionFrom(buildHumanFallbackOffer(withLine))).toBe('humanFallback');
+  });
+
+  it('n’interprète pas une question comme la réponse à un champ manquant', () => {
+    const session = makeSession();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots = { date: '2026-09-23', partySize: 4 };
+
+    expect(
+      buildReservationProgressResponse(session, 'Est-ce que vous avez une terrasse ?'),
+    ).toBeNull();
+    expect(session.conversation.stalledTurns).toBe(0);
   });
 
   it('extrait les slots français et rend la disponibilité prête au même tour', () => {
