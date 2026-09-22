@@ -146,7 +146,7 @@ Valider la structure et les slots avant TTS. Les champs critiques doivent être 
 7. Interdire « je vais vérifier » si aucun appel d’outil n’est produit dans le tour.
 8. Retirer défensivement les secondes salutations et relances génériques avant TTS.
 9. Passer le délai des fillers de 400 ms à 900–1 200 ms ; valeur initiale recommandée : 1 000 ms.
-10. Conserver Mistral comme fallback et tester Gemini 3.5 Flash-Lite via un flag par restaurant.
+10. ~~Conserver Mistral comme fallback et tester Gemini 3.5 Flash-Lite via un flag par restaurant.~~ Clos le 22/09/2026 : un seul provider, Groq/Qwen, sans repli ni flag par restaurant (voir Chantier F).
 
 Un prototype de ces changements existe dans le worktree local `/private/tmp/sokar-liveness-deploy`, non déployé. Il doit être revu et repris proprement, pas copié aveuglément.
 
@@ -196,14 +196,17 @@ Ne pas ajouter artificiellement des « euh ». Une hésitation simulée et rép�
 
 ### Chantier F — Modèle et routage, priorité P1
 
-1. Ne pas remplacer globalement Mistral sans canary.
-2. Ajouter un choix de modèle par restaurant ou flag :
-   - contrôle : Mistral Small 3.2 ;
-   - candidat naturel : Gemini 3.5 Flash-Lite ;
-   - fallback automatique : Mistral si Gemini échoue ou dépasse le timeout.
-3. Évaluer séparément : exactitude outils, naturel, latence, coût et taux de reformulation trompeuse.
-4. Conserver une température modérée pour les outils ; la variété de style ne doit pas dégrader les arguments structurés.
-5. Le benchmark interne actuel indique environ 4,3× le coût LLM de Mistral pour Gemini 3.5, mais toujours une fraction de centime par scénario. Mesurer le coût par appel complet avant généralisation.
+**Clos le 22 septembre 2026.** Ce chantier proposait un choix de modèle par restaurant, un contrôle
+Mistral Small 3.2, un candidat Gemini 3.5 Flash-Lite et un repli automatique. La décision prise est
+l'inverse : **un seul provider, Groq en direct avec `qwen/qwen3.8-27b`, sans repli et sans flag par
+restaurant**. Cerebras (Gemma) et OpenRouter (Llama) ont été retirés du code, et les trois documents
+de benchmark du 22 juillet sont archivés dans [`docs/_archive/`](../../_archive/README.md).
+
+Reste applicable de ce chantier : conserver une température modérée pour les outils, pour que la
+variété de style ne dégrade pas les arguments structurés. Le tableau de suivi est
+[`runbooks/provider-resilience.md`](../../runbooks/provider-resilience.md) ; toute réintroduction
+d'un second modèle devra passer par un provider réellement indépendant, pas par un repli qui
+repasserait par Groq.
 
 ## 6. Observabilité requise
 
@@ -338,7 +341,7 @@ Le worktree `/private/tmp/sokar-liveness-deploy` contient actuellement une expé
 - date/fuseau injectés ;
 - `checkAvailability` avec heure précise ;
 - filler à 1 000 ms ;
-- défaut proposé Gemini 3.5 Flash-Lite ;
+- modèle unique : Groq/Qwen 3.8 27B (le défaut Gemini proposé à l’époque a été abandonné le 22/09/2026) ;
 - smoke réel `apps/api/scripts/smoke-voice-naturalness.ts`.
 
 Résultats obtenus avant cette passation :
