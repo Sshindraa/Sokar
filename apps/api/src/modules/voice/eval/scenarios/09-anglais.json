@@ -2,6 +2,7 @@
   {
     "id": "en-01",
     "category": "english",
+    "pr": true,
     "persona": "British tourist, polite.",
     "goal": "Book a table for 2 tomorrow at 8 pm. Your name is Smith; spell it if asked. Confirm the summary with « yes ».",
     "expected": {

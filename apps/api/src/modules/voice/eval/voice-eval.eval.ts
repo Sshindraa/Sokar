@@ -4,25 +4,43 @@
  *
  *   pnpm --filter @sokar/api eval:voice
  *
- * Variables : GROQ_API_KEY (obligatoire), VOICE_EVAL_FILTER (sous-chaîne
- * d'identifiant ou de catégorie), VOICE_EVAL_MIN_PASS_RATE (défaut 0.95),
- * VOICE_EVAL_CALLER_MODEL, VOICE_EVAL_JUDGE_MODEL, VOICE_EVAL_OUTPUT_DIR.
+ * Variables :
+ * - VOICE_EVAL_GROQ_API_KEY (clé dédiée ; à défaut GROQ_API_KEY en local) ;
+ * - VOICE_EVAL_TIER=pr : sous-ensemble rapide (~10 scénarios) ;
+ * - VOICE_EVAL_FILTER : sous-chaîne d'identifiant ou de catégorie ;
+ * - VOICE_EVAL_REPEAT : nombre de passages par scénario (calibrage) ;
+ * - VOICE_EVAL_MIN_PASS_RATE : seuil de réussite bloquant, désactivé tant
+ *   qu'il n'est pas calibré. Les erreurs critiques bloquent toujours ;
+ * - VOICE_EVAL_NOW : date figée (défaut : un mardi, EVAL_FIXED_NOW) ;
+ * - VOICE_EVAL_CALLER_MODEL, VOICE_EVAL_JUDGE_MODEL, VOICE_EVAL_OUTPUT_DIR.
  */
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { voiceConfig } from '../../../env';
 import { readEvalLlmConfig } from './eval-llm';
 import { installEvalFakes, type EvalFakesState } from './fakes';
 import { createScenarioRuntime, runScenario, type ScenarioReport } from './run-scenario';
-import { loadScenarios, RESTAURANT_PRESETS } from './scenario';
+import { EVAL_FIXED_NOW, loadScenarios, RESTAURANT_PRESETS } from './scenario';
 
 const config = readEvalLlmConfig();
 const filter = process.env.VOICE_EVAL_FILTER?.trim();
-const minPassRate = Number(process.env.VOICE_EVAL_MIN_PASS_RATE ?? '0.95');
+const prTier = process.env.VOICE_EVAL_TIER === 'pr';
+const repeat = Math.max(1, Math.min(10, Number(process.env.VOICE_EVAL_REPEAT ?? '1') || 1));
+const minPassRateSetting = process.env.VOICE_EVAL_MIN_PASS_RATE?.trim();
+const minPassRate = minPassRateSetting ? Number(minPassRateSetting) : null;
+const fixedNow = new Date(process.env.VOICE_EVAL_NOW ?? EVAL_FIXED_NOW);
 const outputDir = path.resolve(process.env.VOICE_EVAL_OUTPUT_DIR ?? 'eval-results');
 const scenarios = loadScenarios().filter(
-  (scenario) => !filter || scenario.id.includes(filter) || scenario.category.includes(filter),
+  (scenario) =>
+    (!prTier || scenario.pr) &&
+    (!filter || scenario.id.includes(filter) || scenario.category.includes(filter)),
+);
+const runs = scenarios.flatMap((scenario) =>
+  Array.from({ length: repeat }, (_, index) => ({
+    label: repeat > 1 ? `${scenario.id} #${index + 1}` : scenario.id,
+    scenario,
+  })),
 );
 
 const fakes: EvalFakesState = { runtime: null, restaurantId: '' };
@@ -31,6 +49,9 @@ const reports: ScenarioReport[] = [];
 beforeAll(() => {
   if (!config) return;
   voiceConfig.GROQ_API_KEY = config.apiKey;
+  // Date figée : le résultat ne dépend pas du jour du passage. Seule la
+  // date est simulée ; les minuteries restent réelles pour le réseau.
+  vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true, now: fixedNow });
   // Réponses toujours en direct : ni cache TTS ni options expérimentales.
   delete process.env.VOICE_TURN_PLAN_SHADOW_ENABLED;
   delete process.env.SPECULATIVE_LLM_ENABLED;
@@ -54,6 +75,9 @@ afterAll(() => {
     criticalErrors: critical.length,
     naturalness: Number(naturalness.toFixed(2)),
     minPassRate,
+    tier: prTier ? 'pr' : 'full',
+    repeat,
+    fixedNow: fixedNow.toISOString(),
     callerModel: config.callerModel,
     judgeModel: config.judgeModel,
   };
@@ -73,7 +97,7 @@ afterAll(() => {
   const markdown = [
     '## Banc d’évaluation vocal',
     '',
-    `**${passed}/${reports.length} scénarios réussis (${(summary.passRate * 100).toFixed(1)} %)** — seuil ${(minPassRate * 100).toFixed(0)} %`,
+    `**${passed}/${reports.length} passages réussis (${(summary.passRate * 100).toFixed(1)} %)** — ${minPassRate === null ? 'seuil de réussite non bloquant (calibrage)' : `seuil ${(minPassRate * 100).toFixed(0)} %`}`,
     `Erreurs critiques : **${critical.length}** · Naturel moyen : **${summary.naturalness}/5**`,
     '',
     '| Catégorie | Réussis |',
@@ -104,13 +128,13 @@ afterAll(() => {
 });
 
 describe.skipIf(!config)('banc d’évaluation vocal', () => {
-  it.each(scenarios.map((scenario) => [scenario.id, scenario] as const))(
+  it.each(runs.map((run) => [run.label, run.scenario] as const))(
     '%s',
-    async (_id, scenario) => {
+    async (_label, scenario) => {
       const runtime = createScenarioRuntime(scenario);
       fakes.runtime = runtime;
       fakes.restaurantId = RESTAURANT_PRESETS[scenario.restaurant].id;
-      const report = await runScenario(scenario, config!, runtime);
+      const report = await runScenario(scenario, config!, runtime, new Date());
       reports.push(report);
       fakes.runtime = null;
       // Un scénario raté n'arrête pas le banc : le seuil global décide.
@@ -119,10 +143,13 @@ describe.skipIf(!config)('banc d’évaluation vocal', () => {
     300_000,
   );
 
-  it('respecte le seuil bloquant (≥ 95 % de réussite, 0 erreur critique)', () => {
-    const passed = reports.filter((report) => report.passed).length;
+  it('aucune erreur critique (date, heure ou nombre faux)', () => {
     const critical = reports.filter((report) => report.critical).map((report) => report.id);
     expect(critical, `erreurs critiques : ${critical.join(', ')}`).toEqual([]);
-    expect(passed / Math.max(1, reports.length)).toBeGreaterThanOrEqual(minPassRate);
+  });
+
+  it.skipIf(minPassRate === null)('respecte le seuil de réussite calibré', () => {
+    const passed = reports.filter((report) => report.passed).length;
+    expect(passed / Math.max(1, reports.length)).toBeGreaterThanOrEqual(minPassRate ?? 0);
   });
 });

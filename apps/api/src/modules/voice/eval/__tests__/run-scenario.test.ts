@@ -5,9 +5,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { voiceConfig } from '../../../../env';
 import type { EvalLlmConfig } from '../eval-llm';
-import { installEvalFakes, type EvalFakesState } from '../fakes';
+import { installEvalFakes, slotsForDate, type EvalFakesState } from '../fakes';
 import { createScenarioRuntime, runScenario } from '../run-scenario';
-import { RESTAURANT_PRESETS, ScenarioSchema } from '../scenario';
+import { EVAL_FIXED_NOW, RESTAURANT_PRESETS, ScenarioSchema } from '../scenario';
 
 const config: EvalLlmConfig = {
   apiKey: ['fake', 'eval', 'key'].join('-'),
@@ -53,10 +53,28 @@ beforeAll(() => {
   voiceConfig.GROQ_BASE_URL = config.baseUrl;
   globalThis.fetch = fakeGroq as unknown as typeof globalThis.fetch;
   installEvalFakes(fakes);
+  // Même horloge figée que le banc réel.
+  vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true, now: new Date(EVAL_FIXED_NOW) });
 });
 
 afterAll(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
+});
+
+describe('horloge et jours de fermeture', () => {
+  it('fige le passage un mardi, quel que soit le jour réel', () => {
+    expect(new Date().getDay()).toBe(2);
+  });
+
+  it('ne renvoie aucun créneau un jour de fermeture, et reste dans les horaires sinon', () => {
+    const runtime = createScenarioRuntime(
+      ScenarioSchema.parse({ id: 'x', category: 'c', persona: 'p', goal: 'g', expected: {} }),
+    );
+    expect(slotsForDate(runtime, '2026-09-27')).toEqual([]); // dimanche
+    runtime.availableSlots = ['11:00', '12:00', '22:30', '23:00'];
+    expect(slotsForDate(runtime, '2026-09-23')).toEqual(['12:00']); // mercredi, fermeture 22:30
+  });
 });
 
 describe('runScenario', () => {

@@ -2,6 +2,7 @@
   {
     "id": "corr-01",
     "category": "correction",
+    "pr": true,
     "persona": "Homme qui se corrige.",
     "goal": "Demande d'abord demain 20 h pour 2, puis corrige : « non, plutôt 20 h 30 ». Ton nom est Lefèvre ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
     "expected": {

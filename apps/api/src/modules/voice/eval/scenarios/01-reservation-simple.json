@@ -2,6 +2,7 @@
   {
     "id": "simple-01",
     "category": "reservation_simple",
+    "pr": true,
     "persona": "Femme de 40 ans, pressée mais aimable.",
     "goal": "Réserver une table pour 2 personnes demain à 20 h. Ton nom est Martin ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
     "expected": {

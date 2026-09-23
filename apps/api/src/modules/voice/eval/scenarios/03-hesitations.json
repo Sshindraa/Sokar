@@ -2,6 +2,7 @@
   {
     "id": "hesit-01",
     "category": "hesitation",
+    "pr": true,
     "persona": "Homme hésitant, beaucoup de « euh ».",
     "goal": "Réserver pour 4 personnes demain à 20 h, mais commence par hésiter sur le nombre (« euh… trois ou quatre… quatre ») avant de fixer 4. Ton nom est Robin ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
     "expected": {

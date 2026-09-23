@@ -1,9 +1,12 @@
 name: Voice eval
 
 # Banc d'évaluation vocal (phase 4) : un LLM joue l'appelant contre le vrai
-# pipeline de l'agent, un autre note le naturel. Appels Groq réels.
-# Seuil bloquant : ≥ 95 % de scénarios réussis et 0 erreur critique
-# (réservation créée avec une date, une heure ou un nombre faux).
+# pipeline de l'agent, un autre note le naturel. Appels Groq réels, sur une
+# clé dédiée (secret VOICE_EVAL_GROQ_API_KEY) pour ne jamais partager les
+# limites de débit de la production.
+# - Nuit : les 50 scénarios. PR : sous-ensemble rapide (~10).
+# - Bloquant : 0 erreur critique (réservation avec date, heure ou nombre faux).
+#   Le seuil de réussite ne bloque qu'une fois calibré (min_pass_rate).
 on:
   schedule:
     # Chaque nuit à 2 h UTC.
@@ -17,6 +20,14 @@ on:
     inputs:
       filter:
         description: 'Sous-chaîne d’identifiant ou de catégorie de scénario (vide = tous)'
+        required: false
+        default: ''
+      repeat:
+        description: 'Passages par scénario (calibrage : 3)'
+        required: false
+        default: '1'
+      min_pass_rate:
+        description: 'Seuil de réussite bloquant, ex. 0.9 (vide = non bloquant)'
         required: false
         default: ''
 
@@ -35,15 +46,18 @@ jobs:
       contents: read
     timeout-minutes: 60
     env:
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      VOICE_EVAL_GROQ_API_KEY: ${{ secrets.VOICE_EVAL_GROQ_API_KEY }}
       VOICE_EVAL_FILTER: ${{ github.event.inputs.filter }}
+      VOICE_EVAL_TIER: ${{ github.event_name == 'pull_request' && 'pr' || 'full' }}
+      VOICE_EVAL_REPEAT: ${{ github.event.inputs.repeat || '1' }}
+      VOICE_EVAL_MIN_PASS_RATE: ${{ github.event.inputs.min_pass_rate || vars.VOICE_EVAL_MIN_PASS_RATE }}
       VOICE_EVAL_OUTPUT_DIR: ${{ github.workspace }}/apps/api/eval-results
     steps:
       - name: Check Groq key
         id: key
         run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "::warning::Secret GROQ_API_KEY absent : banc d'évaluation vocal ignoré."
+          if [ -z "$VOICE_EVAL_GROQ_API_KEY" ]; then
+            echo "::warning::Secret VOICE_EVAL_GROQ_API_KEY absent : banc d'évaluation vocal ignoré."
             echo "available=false" >> "$GITHUB_OUTPUT"
           else
             echo "available=true" >> "$GITHUB_OUTPUT"

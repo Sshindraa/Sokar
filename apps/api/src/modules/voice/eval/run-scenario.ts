@@ -23,6 +23,8 @@ import { DEFAULT_AVAILABLE_SLOTS, RESTAURANT_PRESETS, type Scenario } from './sc
 /** Effets observés pendant un scénario, alimentés par les faux services. */
 export interface ScenarioRuntime {
   availableSlots: string[];
+  /** Horaires du restaurant du scénario : un jour fermé n'a aucun créneau. */
+  openingHours: OpeningHours;
   toolCalls: RecordedToolCall[];
   createdReservations: CreatedReservation[];
   returnedSlots: string[];
@@ -31,6 +33,7 @@ export interface ScenarioRuntime {
 export function createScenarioRuntime(scenario: Scenario): ScenarioRuntime {
   return {
     availableSlots: scenario.availableSlots ?? DEFAULT_AVAILABLE_SLOTS,
+    openingHours: RESTAURANT_PRESETS[scenario.restaurant].openingHours as OpeningHours,
     toolCalls: [],
     createdReservations: [],
     returnedSlots: [],

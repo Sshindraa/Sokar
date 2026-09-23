@@ -116,6 +116,13 @@ describe('evaluateConversation', () => {
 });
 
 describe('scénarios', () => {
+  it('garde un sous-ensemble PR d’une dizaine de scénarios, toutes catégories', () => {
+    const pr = loadScenarios().filter((scenario) => scenario.pr);
+    expect(pr.length).toBeGreaterThanOrEqual(8);
+    expect(pr.length).toBeLessThanOrEqual(12);
+    expect(new Set(pr.map((scenario) => scenario.category)).size).toBeGreaterThanOrEqual(8);
+  });
+
   it('charge au moins 50 scénarios valides et couvre toutes les catégories demandées', () => {
     const scenarios = loadScenarios();
     expect(scenarios.length).toBeGreaterThanOrEqual(50);

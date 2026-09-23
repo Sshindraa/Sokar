@@ -2,6 +2,7 @@
   {
     "id": "info-01",
     "category": "practical_question",
+    "pr": true,
     "restaurant": "standard",
     "persona": "Homme curieux.",
     "goal": "Demander si le restaurant est ouvert dimanche. Il est fermé ce jour-là : remercie et raccroche.",
@@ -15,6 +16,7 @@
   {
     "id": "info-02",
     "category": "practical_question",
+    "pr": true,
     "restaurant": "open_sunday",
     "persona": "Femme qui prévoit un déjeuner en famille.",
     "goal": "Demander si le restaurant est ouvert dimanche. Écoute la réponse, remercie et raccroche sans réserver.",

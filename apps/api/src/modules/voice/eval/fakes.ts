@@ -13,6 +13,16 @@ function pad(value: number): string {
   return String(value).padStart(2, '0');
 }
 
+const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
+
+/** Créneaux du scénario limités aux horaires d'ouverture du jour demandé. */
+export function slotsForDate(runtime: ScenarioRuntime, date: string): string[] {
+  const weekday = WEEKDAY_KEYS[new Date(`${date}T12:00:00Z`).getUTCDay()];
+  const hours = runtime.openingHours[weekday];
+  if (!hours) return [];
+  return runtime.availableSlots.filter((slot) => slot >= hours.open && slot < hours.close);
+}
+
 export interface EvalFakesState {
   runtime: ScenarioRuntime | null;
   restaurantId: string;
@@ -20,7 +30,7 @@ export interface EvalFakesState {
 
 export function installEvalFakes(state: EvalFakesState): void {
   vi.spyOn(ReservationService, 'availability').mockImplementation(async (_id, date, partySize) => {
-    const slots = state.runtime?.availableSlots ?? [];
+    const slots = state.runtime ? slotsForDate(state.runtime, date) : [];
     state.runtime?.returnedSlots.push(...slots);
     return { date, partySize, slots } as unknown as Awaited<
       ReturnType<typeof ReservationService.availability>

@@ -2,6 +2,7 @@
   {
     "id": "unavail-01",
     "category": "unavailable",
+    "pr": true,
     "persona": "Femme souple sur l'horaire.",
     "goal": "Réserver demain pour 2 à 20 h. Si ce n'est pas possible, accepte le créneau le plus proche proposé après 20 h. Ton nom est Colin ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
     "expected": {

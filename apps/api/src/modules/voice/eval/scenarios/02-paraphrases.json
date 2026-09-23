@@ -17,6 +17,7 @@
   {
     "id": "para-02",
     "category": "paraphrase",
+    "pr": true,
     "persona": "Mère de famille.",
     "goal": "Réserver pour toi, ton mari et vos trois enfants (5 personnes), demain à 12 h 30. Ne dis pas « cinq » directement : décris qui vient. Ton nom est Blanc ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
     "expected": {

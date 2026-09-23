@@ -2,6 +2,7 @@
   {
     "id": "allo-01",
     "category": "allo",
+    "pr": true,
     "persona": "Homme dans un endroit bruyant.",
     "goal": "Réserver pour 2 demain à 20 h. Après la première question de l'assistant, dis seulement « allô ? » comme si la ligne avait coupé, puis continue. Ton nom est Simon ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
     "expected": {

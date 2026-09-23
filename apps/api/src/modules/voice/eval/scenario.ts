@@ -75,6 +75,8 @@ export const DEFAULT_AVAILABLE_SLOTS = [
 export const ScenarioSchema = z.object({
   id: z.string().min(1),
   category: z.string().min(1),
+  /** Inclus dans le sous-ensemble rapide joué sur chaque PR. */
+  pr: z.boolean().default(false),
   language: z.enum(['fr', 'en']).default('fr'),
   restaurant: z.enum(['standard', 'open_sunday', 'no_manager']).default('standard'),
   /** Qui est l'appelant et comment il parle. */
@@ -108,6 +110,12 @@ export const ScenarioSchema = z.object({
 });
 
 export type Scenario = z.infer<typeof ScenarioSchema>;
+
+/**
+ * Date figée des passages : un mardi. « Demain » et « après-demain » tombent
+ * donc toujours un jour d'ouverture, quel que soit le jour du vrai passage.
+ */
+export const EVAL_FIXED_NOW = '2026-09-22T10:00:00+02:00';
 
 export const SCENARIOS_DIR = path.join(__dirname, 'scenarios');
 

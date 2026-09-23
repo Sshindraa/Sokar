@@ -14,6 +14,7 @@
   {
     "id": "group-02",
     "category": "large_group",
+    "pr": true,
     "restaurant": "standard",
     "persona": "Responsable d'une équipe.",
     "goal": "Réserver pour 8 personnes demain à 20 h. Accepte d'être transféré au gérant.",
