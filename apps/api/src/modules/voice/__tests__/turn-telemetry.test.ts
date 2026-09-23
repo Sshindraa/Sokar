@@ -6,6 +6,8 @@ vi.mock('../../../shared/logger/pino', () => ({
 }));
 
 import { logger } from '../../../shared/logger/pino';
+import { __resetMetrics, renderMetrics } from '../../../shared/observability/metrics';
+import { markVoiceTurnAudioSent } from '../stream/turn-telemetry';
 import {
   completeVoiceTurnInput,
   markVoiceTurnLlmFirstToken,
@@ -172,5 +174,63 @@ describe('voice turn telemetry', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe('métriques de référence par restaurant', () => {
+    beforeEach(() => __resetMetrics());
+
+    function restaurantSession(): CallSession {
+      return {
+        ...makeSession(),
+        restaurantId: 'resto-1',
+        sttTurnConfig: {
+          applied: {
+            vadSilenceThresholdSecs: 0.5,
+            minSpeechDurationMs: 80,
+            minSilenceDurationMs: 220,
+          },
+        },
+      } as CallSession;
+    }
+
+    it('mesure fin de parole → premier audio par chemin, VAD incluse', async () => {
+      vi.useFakeTimers();
+      try {
+        const session = restaurantSession();
+        startVoiceTurn(session);
+        completeVoiceTurnInput(session, 'Pour deux personnes.');
+        recordVoiceTurnEvent(session, 'llm_started');
+        vi.advanceTimersByTime(600);
+        markVoiceTurnAudioSent(session);
+        const metrics = await renderMetrics();
+        expect(metrics).toContain(
+          'sokar_voice_end_of_speech_to_first_audio_ms_bucket{le="1250",path="llm",restaurant_id="resto-1"} 1',
+        );
+        expect(metrics).toContain(
+          'sokar_voice_end_of_speech_to_first_audio_ms_bucket{le="1000",path="llm",restaurant_id="resto-1"} 0',
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('compte fausses fins de tour, fillers et statuts TurnPlan', async () => {
+      const session = restaurantSession();
+      startVoiceTurn(session);
+      recordVoiceTurnEvent(session, 'speech_resumed');
+      recordVoiceTurnEvent(session, 'llm_interrupted', { reason: 'speech_resumed' });
+      recordVoiceTurnEvent(session, 'llm_interrupted', { reason: 'error' });
+      recordVoiceTurnEvent(session, 'filler_started', { purpose: 'thinking' });
+      recordVoiceTurnEvent(session, 'filler_interrupted', { purpose: 'thinking' });
+      recordVoiceTurnEvent(session, 'turn_plan_shadow', { status: 'speech_missing' });
+      const metrics = await renderMetrics();
+      expect(metrics).toContain('sokar_voice_false_end_of_turn_total{restaurant_id="resto-1"} 2');
+      expect(metrics).toContain(
+        'sokar_voice_filler_events_total{outcome="interrupted",purpose="thinking",restaurant_id="resto-1"} 1',
+      );
+      expect(metrics).toContain(
+        'sokar_voice_turn_plan_shadow_by_restaurant_total{status="speech_missing",restaurant_id="resto-1"} 1',
+      );
+    });
   });
 });

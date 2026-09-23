@@ -1,0 +1,296 @@
+{
+  "uid": "sokar-voice-baseline",
+  "title": "Sokar — Référence naturalité voice (Phase 0)",
+  "tags": ["sokar", "voice", "baseline"],
+  "timezone": "Europe/Paris",
+  "schemaVersion": 39,
+  "refresh": "5m",
+  "time": {
+    "from": "now-14d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "env",
+        "label": "Environnement",
+        "type": "custom",
+        "query": "production,staging",
+        "current": {
+          "text": "production",
+          "value": "production"
+        },
+        "includeAll": true,
+        "multi": true,
+        "options": []
+      },
+      {
+        "name": "restaurant",
+        "label": "Restaurant",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(sokar_voice_calls_total, restaurant_id)",
+          "refId": "R"
+        },
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "allValue": ".*"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Fin de parole → premier audio, p50 par chemin",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le, path) (rate(sokar_voice_end_of_speech_to_first_audio_ms_bucket{env=~\"$env\",restaurant_id=~\"$restaurant\"}[$__rate_interval])))",
+          "legendFormat": "{{path}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "description": "Fin de parole estimée = commit STT moins le silence VAD configuré."
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Fin de parole → premier audio, p95 par chemin",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, path) (rate(sokar_voice_end_of_speech_to_first_audio_ms_bucket{env=~\"$env\",restaurant_id=~\"$restaurant\"}[$__rate_interval])))",
+          "legendFormat": "{{path}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Fin de parole → premier audio par restaurant (période)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le, restaurant_id, path) (increase(sokar_voice_end_of_speech_to_first_audio_ms_bucket{env=~\"$env\",restaurant_id=~\"$restaurant\"}[$__range])))",
+          "legendFormat": "p50",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le, restaurant_id, path) (increase(sokar_voice_end_of_speech_to_first_audio_ms_bucket{env=~\"$env\",restaurant_id=~\"$restaurant\"}[$__range])))",
+          "legendFormat": "p95",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (restaurant_id, path) (increase(sokar_voice_end_of_speech_to_first_audio_ms_count{env=~\"$env\",restaurant_id=~\"$restaurant\"}[$__range]))",
+          "legendFormat": "tours",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "bargauge",
+      "title": "Fausses fins de tour (% des tours)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (restaurant_id) (increase(sokar_voice_false_end_of_turn_total{env=~\"$env\",restaurant_id=~\"$restaurant\"}[$__range])) / sum by (restaurant_id) (increase(sokar_voice_end_of_speech_to_first_audio_ms_count{env=~\"$env\",restaurant_id=~\"$restaurant\"}[$__range]))",
+          "legendFormat": "{{restaurant_id}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "description": "Reprise de parole pendant PROCESSING (SpeechResumed + llm_interrupted/speech_resumed), rapportée aux tours ayant produit de l'audio."
+    },
+    {
+      "id": 5,
+      "type": "bargauge",
+      "title": "Fillers : démarrés / terminés / interrompus",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome, purpose) (increase(sokar_voice_filler_events_total{env=~\"$env\",restaurant_id=~\"$restaurant\"}[$__range]))",
+          "legendFormat": "{{purpose}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "bargauge",
+      "title": "TurnPlan shadow : taux speech_missing et missing",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status) (increase(sokar_voice_turn_plan_shadow_by_restaurant_total{env=~\"$env\",restaurant_id=~\"$restaurant\",status=~\"speech_missing|missing\"}[$__range])) / scalar(sum(increase(sokar_voice_turn_plan_shadow_by_restaurant_total{env=~\"$env\",restaurant_id=~\"$restaurant\"}[$__range])))",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Transferts par motif (% des appels)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (motive) (increase(sokar_voice_transfers_total{env=~\"$env\",restaurant_id=~\"$restaurant\"}[$__range])) / scalar(sum(increase(sokar_voice_calls_total{env=~\"$env\",restaurant_id=~\"$restaurant\"}[$__range])))",
+          "legendFormat": "{{motive}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Transferts par motif, intention et résultat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (restaurant_id, motive, intent, outcome) (increase(sokar_voice_transfers_total{env=~\"$env\",restaurant_id=~\"$restaurant\"}[$__range]))",
+          "legendFormat": "",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    }
+  ]
+}
