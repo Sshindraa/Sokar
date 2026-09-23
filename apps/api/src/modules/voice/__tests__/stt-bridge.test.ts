@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import type { CallSession } from '../stream/types';
 import { CallSessionManager } from '../stream/manager';
@@ -15,8 +15,10 @@ import {
   STT_SPELLING_EOT_GRACE_MS,
   STT_TIMESTAMPED_COMMIT_GRACE_MS,
   getSmartEndpointDelay,
-  STT_SEMANTIC_HOLD_MAX_MS,
-  SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS,
+  isSmartEndpointEnabled,
+  SMART_ENDPOINT_HOLD_CORRECTION_MS,
+  SMART_ENDPOINT_HOLD_NO_PUNCTUATION_MS,
+  SMART_ENDPOINT_HOLD_SUSPENDED_MS,
   isLikelyIncompleteTranscript,
   isLikelyRepeatedNoiseTranscript,
   isPunctuationOnlyTranscript,
@@ -390,74 +392,108 @@ describe('handleSttMessage', () => {
     expect(ws.send).not.toHaveBeenCalled();
   });
 
-  it('envoie immédiatement une phrase complète après le commit Scribe', () => {
-    const session = makeSession();
-    const onEvent = vi.fn();
-    session.onSttEvent = onEvent;
-    handleSttMessage(session, {
-      message_type: 'committed_transcript_with_timestamps',
-      text: 'Pour deux personnes.',
+  describe('fin de tour hybride', () => {
+    beforeEach(() => {
+      process.env.VOICE_SMART_ENDPOINT_ENABLED = 'true';
+      delete process.env.VOICE_SMART_ENDPOINT_RESTAURANT_IDS;
+      vi.useFakeTimers();
     });
-    expect(onEvent).toHaveBeenCalledWith({
-      type: 'UtteranceEnd',
-      transcript: 'Pour deux personnes.',
+    afterEach(() => {
+      delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
+      delete process.env.VOICE_SMART_ENDPOINT_RESTAURANT_IDS;
+      vi.useRealTimers();
     });
-  });
 
-  it('retient une phrase inachevée et fusionne la suite dans le même tour', () => {
-    vi.useFakeTimers();
-    try {
+    function commit(session: ReturnType<typeof makeSession>, text: string) {
+      handleSttMessage(session, { message_type: 'committed_transcript_with_timestamps', text });
+    }
+    const utteranceEnds = (onEvent: ReturnType<typeof vi.fn>) =>
+      onEvent.mock.calls.filter(([event]) => event.type === 'UtteranceEnd');
+
+    it('respecte le flag et la liste de restaurants', () => {
+      const session = makeSession();
+      expect(isSmartEndpointEnabled(session)).toBe(true);
+      process.env.VOICE_SMART_ENDPOINT_RESTAURANT_IDS = 'autre-resto';
+      expect(isSmartEndpointEnabled(session)).toBe(false);
+      process.env.VOICE_SMART_ENDPOINT_RESTAURANT_IDS = `autre-resto, ${session.restaurantId}`;
+      expect(isSmartEndpointEnabled(session)).toBe(true);
+      delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
+      expect(isSmartEndpointEnabled(session)).toBe(false);
+    });
+
+    it('utilise un silence Scribe de 0,5 s seulement quand le flag est actif', () => {
+      const session = makeSession();
+      setSttSpellingProfile(session, false);
+      expect(session.sttTurnConfig?.base.vadSilenceThresholdSecs).toBe(0.5);
+      delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
+      const legacy = makeSession({ callControlId: 'cc-stt-legacy' });
+      setSttSpellingProfile(legacy, false);
+      expect(legacy.sttTurnConfig?.base.vadSilenceThresholdSecs).toBe(0.95);
+    });
+
+    it('envoie immédiatement une phrase complète', () => {
       const session = makeSession();
       const onEvent = vi.fn();
       session.onSttEvent = onEvent;
-      handleSttMessage(session, {
-        message_type: 'committed_transcript_with_timestamps',
-        text: 'Demain à',
+      commit(session, 'Pour deux personnes.');
+      expect(onEvent).toHaveBeenCalledWith({
+        type: 'UtteranceEnd',
+        transcript: 'Pour deux personnes.',
       });
-      expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
+    });
+
+    it('retient une fin en suspens puis fusionne la reprise en un seul tour', () => {
+      const session = makeSession();
+      const onEvent = vi.fn();
+      session.onSttEvent = onEvent;
+      commit(session, 'Demain à');
+      expect(utteranceEnds(onEvent)).toHaveLength(0);
 
       handleSttMessage(session, { message_type: 'partial_transcript', text: 'vingt heures' });
-      vi.advanceTimersByTime(STT_SEMANTIC_HOLD_MAX_MS + 100);
-      expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
+      vi.advanceTimersByTime(SMART_ENDPOINT_HOLD_SUSPENDED_MS * 2);
+      expect(utteranceEnds(onEvent)).toHaveLength(0);
 
-      handleSttMessage(session, {
-        message_type: 'committed_transcript_with_timestamps',
-        text: 'vingt heures.',
-      });
-      expect(onEvent).toHaveBeenCalledTimes(1);
-      expect(onEvent).toHaveBeenCalledWith({
-        type: 'UtteranceEnd',
-        transcript: 'Demain à vingt heures.',
-      });
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+      commit(session, 'vingt heures.');
+      expect(utteranceEnds(onEvent)).toEqual([
+        [{ type: 'UtteranceEnd', transcript: 'Demain à vingt heures.' }],
+      ]);
+    });
 
-  it('libère une phrase inachevée après l’attente sémantique', () => {
-    vi.useFakeTimers();
-    try {
+    it('libère le tour retenu à la fin de l’attente', () => {
       const session = makeSession();
       const onEvent = vi.fn();
       session.onSttEvent = onEvent;
-      handleSttMessage(session, {
-        message_type: 'committed_transcript_with_timestamps',
-        text: 'On sera quatre et',
-      });
-      vi.advanceTimersByTime(STT_SEMANTIC_HOLD_MAX_MS);
-      expect(onEvent).toHaveBeenCalledWith({
-        type: 'UtteranceEnd',
-        transcript: 'On sera quatre et',
-      });
-    } finally {
-      vi.useRealTimers();
-    }
+      commit(session, 'Ce sera au nom de');
+      vi.advanceTimersByTime(SMART_ENDPOINT_HOLD_SUSPENDED_MS - 1);
+      expect(utteranceEnds(onEvent)).toHaveLength(0);
+      vi.advanceTimersByTime(1);
+      expect(utteranceEnds(onEvent)).toHaveLength(1);
+    });
+
+    it('envoie directement quand le flag est coupé', () => {
+      delete process.env.VOICE_SMART_ENDPOINT_ENABLED;
+      const session = makeSession();
+      const onEvent = vi.fn();
+      session.onSttEvent = onEvent;
+      commit(session, 'Demain à');
+      expect(utteranceEnds(onEvent)).toHaveLength(1);
+    });
   });
 
-  it('conserve le délai de protection des présentations incomplètes', () => {
-    expect(getSmartEndpointDelay('Bonjour je suis Martin')).toEqual({
-      timeoutMs: SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS,
-      reason: 'incomplete_identity',
-    });
+  it.each([
+    ['Pour deux personnes.', 0, 'complete'],
+    ['oui', 0, 'complete'],
+    ["d'accord", 0, 'complete'],
+    ['Demain à', SMART_ENDPOINT_HOLD_SUSPENDED_MS, 'suspended'],
+    ['demain À,', SMART_ENDPOINT_HOLD_SUSPENDED_MS, 'suspended'],
+    ['On sera quatre pour', SMART_ENDPOINT_HOLD_SUSPENDED_MS, 'suspended'],
+    ['Ce sera au nom de', SMART_ENDPOINT_HOLD_SUSPENDED_MS, 'suspended'],
+    ['Bonjour je suis', SMART_ENDPOINT_HOLD_SUSPENDED_MS, 'suspended'],
+    ['Non, plutôt vingt', SMART_ENDPOINT_HOLD_CORRECTION_MS, 'correction'],
+    ['Non, plutôt vingt heures.', 0, 'complete'],
+    ['Bonjour je suis Martin', SMART_ENDPOINT_HOLD_NO_PUNCTUATION_MS, 'no_punctuation'],
+    ['je voudrais réserver une table', SMART_ENDPOINT_HOLD_NO_PUNCTUATION_MS, 'no_punctuation'],
+  ])('getSmartEndpointDelay(%s) → %i ms (%s)', (transcript, holdMs, reason) => {
+    expect(getSmartEndpointDelay(transcript)).toEqual({ holdMs, reason });
   });
 });
