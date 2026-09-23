@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  appendDebugSpeechText,
   formatDebugSpeech,
   isVoiceDebugDialogueEnabled,
   recordDebugAgentSpeech,
@@ -56,28 +57,39 @@ describe('debug-dialogue', () => {
     });
   });
 
-  it('ne garde que ce que l’appelant a réellement entendu', () => {
+  it('ne garde que les répliques dont l’audio est parti', () => {
     process.env.VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS = 'rest-test';
     const s = session('rest-test');
-    const played = recordDebugAgentSpeech(s, 'Vous serez combien ?');
+    const sent = recordDebugAgentSpeech(s, 'Vous serez combien ?');
     const cut = recordDebugAgentSpeech(s, 'Je vous récapitule la réservation.');
-    const silent = recordDebugAgentSpeech(s, 'Phrase jamais lue.');
+    const silent = recordDebugAgentSpeech(s, 'Phrase jamais envoyée.');
     const pending = recordDebugAgentSpeech(s, 'Encore en lecture.');
-    settleDebugSpeech(played, 12, true);
+    settleDebugSpeech(sent, 12, true);
     settleDebugSpeech(cut, 3, false);
     settleDebugSpeech(silent, 0, false);
     // Un statut fixé ne change plus.
-    settleDebugSpeech(played, 0, false);
+    settleDebugSpeech(sent, 0, false);
 
-    expect([played?.status, cut?.status, silent?.status, pending?.status]).toEqual([
-      'played',
-      'interrupted',
-      'not_played',
+    expect([sent?.status, cut?.status, silent?.status, pending?.status]).toEqual([
+      'sent',
+      'partially_sent',
+      'not_sent',
       'pending',
     ]);
     expect(formatDebugSpeech(s.currentTurn!.debugDialogue!.agentSpeech)).toBe(
-      'Vous serez combien ? Je vous récapitule la réservation. [interrompu] Encore en lecture. [en cours]',
+      'Vous serez combien ? Je vous récapitule la réservation. [envoi coupé] Encore en lecture. [en cours]',
     );
-    expect(formatDebugSpeech([{ text: 'Muet.', status: 'not_played' }])).toBeNull();
+    expect(formatDebugSpeech([{ text: 'Muet.', status: 'not_sent' }])).toBeNull();
+  });
+
+  it('regroupe en une réplique les phrases lues d’un seul flux', () => {
+    process.env.VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS = 'rest-test';
+    const s = session('rest-test');
+    const entry = recordDebugAgentSpeech(s, "C'est bon pour 20 h.")!;
+    appendDebugSpeechText(entry, 'C’est à quel nom ?');
+    settleDebugSpeech(entry, 4, false);
+    expect(formatDebugSpeech(s.currentTurn!.debugDialogue!.agentSpeech)).toBe(
+      "C'est bon pour 20 h. C’est à quel nom ? [envoi coupé]",
+    );
   });
 });

@@ -251,12 +251,13 @@ export interface VoiceTurnDebugDialogue {
 }
 
 /**
- * Réplique de l'agent, et ce que l'appelant en a réellement entendu : fixé à
- * la fin de la lecture d'après les trames audio envoyées à Telnyx.
+ * Réplique de l'agent et sort de son audio, fixé en fin de lecture d'après les
+ * trames envoyées à Telnyx pour cette seule réplique. Envoyé ne veut pas dire
+ * entendu : une interruption peut encore vider l'audio en attente côté Telnyx.
  */
 export interface DebugSpeechEntry {
   text: string;
-  status: 'pending' | 'played' | 'interrupted' | 'not_played';
+  status: 'pending' | 'sent' | 'partially_sent' | 'not_sent';
 }
 
 /** Événements normalisés produits par le fournisseur STT. */
@@ -414,8 +415,6 @@ export interface CallSession {
   currentTurn: VoiceTurnTelemetry | null;
   /** Tours précédents conservés jusqu'à la finalisation de l'appel. */
   voiceTurnHistory?: VoiceTurnTelemetry[];
-  /** Trames audio envoyées à Telnyx depuis le début de l'appel (dialogue de test). */
-  audioFramesSent?: number;
   /** Bilan runtime, alimenté à partir des faits et persisté en fin d'appel. */
   voiceCallTelemetry?: {
     finalizedAt?: number;

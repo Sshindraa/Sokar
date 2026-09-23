@@ -37,8 +37,8 @@ export function recordDebugCallerText(session: CallSession, text: string): void 
 
 /**
  * Note une réplique au moment où elle est demandée. Son statut reste « pending »
- * jusqu'à settleDebugSpeech : une réplique jamais entendue ne doit pas
- * apparaître comme dite.
+ * jusqu'à settleDebugSpeech : une réplique dont aucun audio n'est parti ne doit
+ * pas apparaître comme dite.
  */
 export function recordDebugAgentSpeech(
   session: CallSession,
@@ -52,29 +52,35 @@ export function recordDebugAgentSpeech(
   return entry;
 }
 
-/** Compte une trame audio réellement envoyée à Telnyx. */
-export function countAudioFrameSent(session: CallSession | undefined): void {
-  if (session) session.audioFramesSent = (session.audioFramesSent ?? 0) + 1;
+/** Complète une réplique lue d'un seul flux (contexte Cartesia). */
+export function appendDebugSpeechText(entry: DebugSpeechEntry, text: string): void {
+  if (text.trim()) entry.text = `${entry.text} ${redactPii(text.trim())}`;
 }
 
-/** Fixe ce que l'appelant a entendu : rien, une partie, ou toute la réplique. */
+/**
+ * Fixe le sort de l'audio d'une réplique à partir de ses propres trames :
+ * aucune envoyée, envoi coupé en route, ou tout envoyé.
+ */
 export function settleDebugSpeech(
   entry: DebugSpeechEntry | null,
   framesSent: number,
   completed: boolean,
 ): void {
   if (!entry || entry.status !== 'pending') return;
-  entry.status = framesSent <= 0 ? 'not_played' : completed ? 'played' : 'interrupted';
+  entry.status = framesSent <= 0 ? 'not_sent' : completed ? 'sent' : 'partially_sent';
 }
 
-/** Texte persisté : répliques entendues, les coupées marquées, les muettes omises. */
+/**
+ * Texte persisté : répliques envoyées, les coupées marquées, celles sans audio
+ * omises. « Envoyé » reste distinct d'« entendu » (tampon Telnyx vidé au barge-in).
+ */
 export function formatDebugSpeech(entries: readonly DebugSpeechEntry[]): string | null {
   const parts = entries
-    .filter((entry) => entry.status !== 'not_played')
+    .filter((entry) => entry.status !== 'not_sent')
     .map((entry) =>
-      entry.status === 'played'
+      entry.status === 'sent'
         ? entry.text
-        : `${entry.text} [${entry.status === 'interrupted' ? 'interrompu' : 'en cours'}]`,
+        : `${entry.text} [${entry.status === 'partially_sent' ? 'envoi coupé' : 'en cours'}]`,
     );
   return parts.join(' ') || null;
 }

@@ -37,7 +37,7 @@ import { logger } from '../../../shared/logger/pino';
 import { CARTESIA_MODEL, FILLER_CACHE_TTL_SECONDS } from '@sokar/config';
 import { redisCache } from '../../../shared/redis/client';
 import { VOICE_PROVIDER_TIMEOUT_MS, fetchWithTimeout } from '../../../shared/resilience';
-import { countAudioFrameSent, recordDebugAgentSpeech, settleDebugSpeech } from './debug-dialogue';
+import { recordDebugAgentSpeech, settleDebugSpeech } from './debug-dialogue';
 import {
   buildCartesiaCacheVariant,
   CARTESIA_NORMALIZATION,
@@ -421,7 +421,6 @@ export async function playFiller(
         if (ws.readyState !== WebSocket.OPEN) break;
         ws.send(JSON.stringify({ event: 'media', media: { payload: frame.toString('base64') } }));
         fillerFramesSent++;
-        countAudioFrameSent(session);
         await new Promise((r) => setTimeout(r, TTS_FRAME_DURATION_MS));
         if (options.signal?.aborted) break;
       }

@@ -45,7 +45,7 @@ import {
 } from './turn-telemetry';
 import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
 import { addCartesiaTtsCharacters } from '../../usage/voice-usage.service';
-import { countAudioFrameSent, recordDebugAgentSpeech, settleDebugSpeech } from './debug-dialogue';
+import { recordDebugAgentSpeech, settleDebugSpeech } from './debug-dialogue';
 
 export function isSessionActiveForTts(session: CallSession, generation?: number): boolean {
   return (
@@ -68,11 +68,15 @@ function persistFirstAudioFrame(session: CallSession, turnId?: string): void {
   );
 }
 
+/** Trames envoyées à Telnyx pour une seule réplique (dialogue de test). */
+type FragmentFrameTally = { frames: number };
+
 async function sendPacedAudioFrames(
   session: CallSession,
   audio: Buffer,
   generation?: number,
   turnId?: string,
+  tally?: FragmentFrameTally,
 ): Promise<number> {
   const frames = splitTelnyxAudioFrames(audio, session.codec);
   let framesSent = 0;
@@ -86,7 +90,7 @@ async function sendPacedAudioFrames(
       }),
     );
     framesSent++;
-    countAudioFrameSent(session);
+    if (tally) tally.frames++;
     persistFirstAudioFrame(session, turnId);
     await new Promise((resolve) => setTimeout(resolve, TTS_PACE_PAUSE_MS));
   }
@@ -243,15 +247,14 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
       );
     })
     .then(async () => {
-      // La lecture est sérialisée : les trames envoyées pendant ce fragment
-      // sont les siennes.
-      const framesBefore = session.audioFramesSent ?? 0;
+      // Compteur propre à ce fragment : un filler joué en parallèle ne s'y ajoute pas.
+      const tally: FragmentFrameTally = { frames: 0 };
       let completed = false;
       try {
-        await speakTtsFragment(session, text, generation, turnId);
+        await speakTtsFragment(session, text, generation, turnId, tally);
         completed = isSessionActiveForTts(session, generation);
       } finally {
-        settleDebugSpeech(debugEntry, (session.audioFramesSent ?? 0) - framesBefore, completed);
+        settleDebugSpeech(debugEntry, tally.frames, completed);
       }
     });
 
@@ -270,6 +273,7 @@ async function speakTtsFragment(
   text: string,
   generation: number,
   turnId?: string,
+  tally: FragmentFrameTally = { frames: 0 },
 ): Promise<void> {
   const language = effectiveVoiceLanguage(session);
   const cleanedText = cleanTextForTts(text, language);
@@ -356,7 +360,13 @@ async function speakTtsFragment(
       writeDebugLog(`[speakTtsStreamed] Cache HIT for sentence: "${redactPii(trimmed)}"`);
       markVoiceTurnTtsSynthesisFirstByte(session, 'cache', turnId);
 
-      const framesSent = await sendPacedAudioFrames(session, cachedBuffer, generation, turnId);
+      const framesSent = await sendPacedAudioFrames(
+        session,
+        cachedBuffer,
+        generation,
+        turnId,
+        tally,
+      );
       writeDebugLog(
         `[speakTtsStreamed] Sent ${framesSent} cached audio frames to Telnyx for sentence ${i}`,
       );
@@ -512,7 +522,7 @@ async function speakTtsFragment(
             }),
           );
           framesSent++;
-          countAudioFrameSent(session);
+          tally.frames++;
           persistFirstAudioFrame(session, turnId);
 
           await new Promise((r) => setTimeout(r, TTS_PACE_PAUSE_MS));

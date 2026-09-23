@@ -271,6 +271,10 @@ réponses et fillers de l'agent, outils appelés, type de tour. Table `voice_deb
 passé par `redactPii()` (téléphones, e-mails ; les noms restent), suppression 14 jours après
 l'appel par la tâche quotidienne `purge-expired-voice-debug-turns` (3 h 30, Europe/Paris). Ne
 jamais y mettre un restaurant client. Les mesures du tour restent dans `voice_turn_telemetry`.
+Chaque réplique de l'agent est comptée par ses propres trames envoyées à Telnyx : envoyée en
+entier, « [envoi coupé] », ou omise si aucune trame n'est partie. Avec le contexte Cartesia, la
+réponse forme une seule réplique (l'audio ne se rattache pas phrase par phrase). Envoyé ne veut
+pas dire entendu : un barge-in peut encore vider l'audio en attente côté Telnyx.
 
 `SOKAR_VOICE_READ_TOKEN` (secret, `openssl rand -hex 32`) protège la lecture interne, en
 `Authorization: Bearer <jeton>` ; sans lui, les routes répondent 503. Lecture seule :

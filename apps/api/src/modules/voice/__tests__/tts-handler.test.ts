@@ -195,16 +195,16 @@ describe('speakTtsStreamed — dialogue des appels de test', () => {
   const spokenStatus = (session: CallSession) =>
     session.currentTurn?.debugDialogue?.agentSpeech.map((entry) => entry.status);
 
-  it('marque « prononcée » une réplique lue jusqu’au bout', async () => {
+  it('marque « envoyée » une réplique dont tout l’audio est parti', async () => {
     vi.mocked(getTtsCached).mockResolvedValue(Buffer.alloc(TTS_FRAME_BYTES * 2, 0x11));
     const session = makeDebugSession();
 
     await speakTtsStreamed(session, 'Vous serez combien ?');
 
-    expect(spokenStatus(session)).toEqual(['played']);
+    expect(spokenStatus(session)).toEqual(['sent']);
   });
 
-  it('marque « interrompue » une réplique coupée après la première trame', async () => {
+  it('marque « envoi coupé » une réplique interrompue après la première trame', async () => {
     vi.mocked(getTtsCached).mockResolvedValue(Buffer.alloc(TTS_FRAME_BYTES * 3, 0x11));
     const session = makeDebugSession();
     vi.mocked(session.telnyxWs.send).mockImplementationOnce(() => {
@@ -215,10 +215,10 @@ describe('speakTtsStreamed — dialogue des appels de test', () => {
     await speakTtsStreamed(session, 'Je vous récapitule la réservation.');
 
     expect(vi.mocked(session.telnyxWs.send)).toHaveBeenCalledTimes(1);
-    expect(spokenStatus(session)).toEqual(['interrupted']);
+    expect(spokenStatus(session)).toEqual(['partially_sent']);
   });
 
-  it('marque « non prononcée » une réplique jamais lue', async () => {
+  it('marque « non envoyée » une réplique sans aucune trame', async () => {
     vi.mocked(getTtsCached).mockResolvedValue(Buffer.alloc(TTS_FRAME_BYTES, 0x11));
     const session = makeDebugSession();
 
@@ -226,6 +226,6 @@ describe('speakTtsStreamed — dialogue des appels de test', () => {
     (session as unknown as { ttsGeneration: number }).ttsGeneration = 1;
     await playback;
 
-    expect(spokenStatus(session)).toEqual(['not_played']);
+    expect(spokenStatus(session)).toEqual(['not_sent']);
   });
 });

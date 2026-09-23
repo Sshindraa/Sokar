@@ -18,7 +18,7 @@ import { cancelScheduledFiller, scheduleThinkingFiller } from './filler-schedule
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
-import { recordDebugAgentSpeech, settleDebugSpeech } from './debug-dialogue';
+import { appendDebugSpeechText, recordDebugAgentSpeech, settleDebugSpeech } from './debug-dialogue';
 import { redactPii } from './pii-redact';
 import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from './tts-handler';
 import {
@@ -1380,13 +1380,13 @@ export async function processTranscriptStreaming(
     current: useCartesiaContext ? createCartesiaContextTurn(session, true) : null,
   };
   if (contextTtsRef.current) session.ttsContext = contextTtsRef.current;
-  // Avec le contexte Cartesia, la réponse est lue comme un seul flux : ses
-  // répliques partagent le même sort (entendues, coupées ou muettes).
-  const contextDebugEntries: DebugSpeechEntry[] = [];
-  const contextFramesBefore = session.audioFramesSent ?? 0;
+  // Avec le contexte Cartesia, la réponse est lue d'un seul flux et l'audio ne
+  // se rattache pas phrase par phrase : elle est notée comme une seule réplique,
+  // mesurée par les trames de ce seul contexte.
+  let contextDebugEntry: DebugSpeechEntry | null = null;
+  const contextTurnForDebug = contextTtsRef.current;
   const settleContextDebugSpeech = (completed: boolean) => {
-    const framesSent = (session.audioFramesSent ?? 0) - contextFramesBefore;
-    for (const entry of contextDebugEntries) settleDebugSpeech(entry, framesSent, completed);
+    settleDebugSpeech(contextDebugEntry, contextTurnForDebug?.framesSent ?? 0, completed);
   };
   const abortController = new AbortController();
   const llmStartedAt = Date.now();
@@ -1425,8 +1425,8 @@ export async function processTranscriptStreaming(
         // contexte échoue avant le premier audio.
         if (contextTtsRef.current) {
           session.ttsContext = contextTtsRef.current;
-          const debugEntry = recordDebugAgentSpeech(session, cleanPhrase);
-          if (debugEntry) contextDebugEntries.push(debugEntry);
+          if (contextDebugEntry) appendDebugSpeechText(contextDebugEntry, cleanPhrase);
+          else contextDebugEntry = recordDebugAgentSpeech(session, cleanPhrase);
           contextTtsRef.current.push(cleanTextForTts(cleanPhrase, effectiveVoiceLanguage(session)));
           return;
         }
