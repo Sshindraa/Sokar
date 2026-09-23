@@ -219,7 +219,11 @@ labels `dimension` = `intent` | `slots` | `interaction` | `assistant_interaction
 taux global masque qu'une seule dimension diverge.
 
 `VOICE_TURN_PLAN_AUTHORITY_ENABLED=true` (défaut `false`, sans effet si le shadow est
-coupé) donne au TurnPlan valide et accepté par la policy une autorité limitée, appliquée
+coupé) ne s'applique qu'aux restaurants listés dans
+`VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS` (IDs séparés par des virgules, `*` pour tous ;
+vide = aucun). Cette liste n'est pas un booléen : elle ne passe pas par
+`sync-runtime-flags.sh` et se pose directement dans le fichier d'environnement de l'API,
+avant le reload. Pour ces restaurants, l'autorité donne au TurnPlan valide et accepté par la policy une autorité limitée, appliquée
 après la réponse vocale : il complète date, heure, couverts et intention seulement quand
 ces champs étaient vides avant le tour et n'ont pas été posés par le déterministe ; il ne
 remplace jamais un fait existant. Il fixe aussi l'interaction attendue au lieu de
@@ -229,6 +233,15 @@ restent sur l'inférence texte. Aucun tool ni confirmation ne dépend du plan. L
 continue de comparer le plan à l'état déterministe seul. Décisions comptées par
 `sokar_voice_turn_plan_authority_total{field,outcome}`. N'activer qu'après lecture de
 l'accord par dimension sur des appels réels.
+
+Un tour de contenu que les extracteurs n'ont pas compris est confié au modèle au lieu
+d'une relance mécanique. Son résultat est compté par
+`sokar_voice_turn_plan_deferred_total{outcome}` : `fact_applied`, `no_fact`,
+`plan_rejected`, `plan_unavailable`, ou `stall_handoff`. Le garde-fou anti-boucle
+s'applique aussi à ces tours : si le modèle repose la même question sans nouveau fait, la
+relance est comptée ; après deux relances, le tour suivant revient au déterministe, qui
+propose un repli humain réel (`stall_handoff`). Les métriques shadow portent un label
+`path` (`llm` ou `deferred`) pour lire l'accord séparément sur ces tours.
 Grafana donne un accès anonyme en lecture seule, sans inscription, et s'ouvre
 uniquement par tunnel SSH ; ne publiez pas son port.
 

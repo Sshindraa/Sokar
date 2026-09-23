@@ -6,6 +6,7 @@ import { getVoiceLlmModel } from '../llm-provider';
 import {
   recordVoiceTurnPlanShadowDimension,
   recordVoiceTurnPlanShadowObservation,
+  type VoiceTurnPlanShadowPath,
 } from '../../../shared/observability/metrics';
 
 export interface TurnPlanPolicySnapshot {
@@ -124,6 +125,7 @@ export function recordInBandTurnPlanShadow(
   before: TurnPlanPolicySnapshot,
   after: TurnPlanPolicySnapshot,
   turnId: string | undefined,
+  path: VoiceTurnPlanShadowPath = 'llm',
 ): void {
   if (!isTurnPlanShadowEnabled() || !turnId || !isCurrentVoiceTurn(session, turnId)) return;
   const policyDecision =
@@ -136,20 +138,23 @@ export function recordInBandTurnPlanShadow(
     status: result.status,
     policyOutcome: policyDecision?.status ?? 'not_evaluated',
     agreement: comparison ? (comparison.agrees ? 'agree' : 'disagree') : 'not_comparable',
+    path,
   });
   if (comparison) {
-    recordVoiceTurnPlanShadowDimension('intent', comparison.intentAgreement);
-    recordVoiceTurnPlanShadowDimension('slots', comparison.slotAgreement);
-    recordVoiceTurnPlanShadowDimension('interaction', comparison.interactionAgreement);
+    recordVoiceTurnPlanShadowDimension('intent', comparison.intentAgreement, path);
+    recordVoiceTurnPlanShadowDimension('slots', comparison.slotAgreement, path);
+    recordVoiceTurnPlanShadowDimension('interaction', comparison.interactionAgreement, path);
     if (comparison.assistantInteractionAgreement !== null) {
       recordVoiceTurnPlanShadowDimension(
         'assistant_interaction',
         comparison.assistantInteractionAgreement,
+        path,
       );
     }
   }
   recordVoiceTurnEventIfCurrent(session, turnId, 'turn_plan_shadow', {
     status: result.status,
+    path,
     policyAccepted: policyDecision ? policyDecision.status === 'accepted' : null,
     policyRejectionReason: policyDecision?.status === 'rejected' ? policyDecision.reason : null,
     provider: 'groq',

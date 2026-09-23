@@ -151,19 +151,19 @@ describe('TurnPlan shadow policy boundary', () => {
       durationMs: 120,
     };
 
-    recordInBandTurnPlanShadow(session, context, result, before, after, 'turn-current');
+    recordInBandTurnPlanShadow(session, context, result, before, after, 'turn-current', 'deferred');
     session.currentTurn!.id = 'turn-next';
     recordInBandTurnPlanShadow(session, context, result, before, after, 'turn-current');
 
     const payload = await renderMetrics();
     expect(payload).toMatch(
-      /sokar_voice_turn_plan_shadow_observations_total\{[^}]*status="valid"[^}]*policy_outcome="accepted"[^}]*agreement="agree"[^}]*\} 1/,
+      /sokar_voice_turn_plan_shadow_observations_total\{[^}]*status="valid"[^}]*policy_outcome="accepted"[^}]*agreement="agree"[^}]*path="deferred"[^}]*\} 1/,
     );
     expect(payload).toMatch(
-      /sokar_voice_turn_plan_shadow_dimension_total\{dimension="slots",agreement="agree"\} 1/,
+      /sokar_voice_turn_plan_shadow_dimension_total\{dimension="slots",agreement="agree",path="deferred"\} 1/,
     );
     expect(payload).toMatch(
-      /sokar_voice_turn_plan_shadow_dimension_total\{dimension="interaction",agreement="agree"\} 1/,
+      /sokar_voice_turn_plan_shadow_dimension_total\{dimension="interaction",agreement="agree",path="deferred"\} 1/,
     );
     expect(payload).not.toMatch(/dimension="assistant_interaction"/);
   });

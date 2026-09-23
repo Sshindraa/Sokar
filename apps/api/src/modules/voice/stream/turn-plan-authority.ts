@@ -18,10 +18,35 @@ import { recordVoiceTurnPlanAuthority } from '../../../shared/observability/metr
 
 /**
  * Canary d'autorité TurnPlan. Il n'est actif qu'avec le shadow, puisque le plan
- * est collecté par le même appel in-band.
+ * est collecté par le même appel in-band, et seulement pour les restaurants
+ * listés explicitement (`*` pour tous) : le shadow observe partout, l'autorité
+ * décide d'abord sur un pilote.
  */
-export function isTurnPlanAuthorityEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.VOICE_TURN_PLAN_AUTHORITY_ENABLED === 'true' && isTurnPlanShadowEnabled(env);
+export function isTurnPlanAuthorityEnabled(
+  restaurantId: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (env.VOICE_TURN_PLAN_AUTHORITY_ENABLED !== 'true' || !isTurnPlanShadowEnabled(env)) {
+    return false;
+  }
+  const allowlist = (env.VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  return allowlist.includes('*') || (Boolean(restaurantId) && allowlist.includes(restaurantId!));
+}
+
+/** Un fait ou l'intention a-t-il changé pendant le tour ? */
+export function hasTurnFactProgress(
+  before: TurnPlanPolicySnapshot,
+  after: TurnPlanPolicySnapshot,
+): boolean {
+  return (
+    before.intent !== after.intent ||
+    (['date', 'time', 'partySize', 'customerName'] as const).some(
+      (slot) => before.slots[slot] !== after.slots[slot],
+    )
+  );
 }
 
 /** Le déterministe a-t-il compris ce tour : fait, intention ou interaction résolue ? */
@@ -30,10 +55,7 @@ export function hasDeterministicTurnProgress(
   after: TurnPlanPolicySnapshot,
 ): boolean {
   return (
-    before.intent !== after.intent ||
-    (['date', 'time', 'partySize', 'customerName'] as const).some(
-      (slot) => before.slots[slot] !== after.slots[slot],
-    ) ||
+    hasTurnFactProgress(before, after) ||
     (after.pendingInteractionStatus !== before.pendingInteractionStatus &&
       after.pendingInteractionStatus === 'resolved')
   );
@@ -52,6 +74,7 @@ const TEXT_ONLY_ASSISTANT_INTERACTIONS = new Set<PendingInteractionKind>([
 export type TurnPlanAuthorityFact = 'intent' | 'date' | 'time' | 'partySize';
 
 export interface TurnPlanAuthorityResult {
+  policyAccepted: boolean;
   appliedFacts: TurnPlanAuthorityFact[];
   assistantInteractionSource: 'turn_plan' | 'llm_text_fallback';
   /** Interaction que l'inférence texte aurait retenue, pour garder un shadow comparable. */
@@ -173,21 +196,22 @@ export function applyTurnPlanAuthority(
   );
   const legacyProposal = proposeAssistantInteractionFromLlmText(session, input.reply);
   const legacyAssistantInteraction = interactionKindOf(session, legacyProposal);
-  const planProposal =
-    decideTurnPlanPolicy(input.context, input.plan).status === 'accepted'
-      ? proposeAssistantInteractionFromTurnPlan(
-          session,
-          input.plan,
-          input.reply,
-          legacyAssistantInteraction,
-        )
-      : null;
+  const policyAccepted = decideTurnPlanPolicy(input.context, input.plan).status === 'accepted';
+  const planProposal = policyAccepted
+    ? proposeAssistantInteractionFromTurnPlan(
+        session,
+        input.plan,
+        input.reply,
+        legacyAssistantInteraction,
+      )
+    : null;
   recordAssistantReplyWithPolicy(session, input.reply, planProposal ?? legacyProposal);
   recordVoiceTurnPlanAuthority(
     'assistant_interaction',
     planProposal ? 'applied' : 'deterministic_fallback',
   );
   return {
+    policyAccepted,
     appliedFacts,
     assistantInteractionSource: planProposal ? 'turn_plan' : 'llm_text_fallback',
     legacyAssistantInteraction,

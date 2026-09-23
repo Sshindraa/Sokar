@@ -57,17 +57,30 @@ function plan(overrides: Partial<TurnPlan>): TurnPlan {
 }
 
 describe('TurnPlan canary authority', () => {
-  it('reste coupé sans le shadow, même si le flag d’autorité est posé', () => {
-    expect(isTurnPlanAuthorityEnabled({})).toBe(false);
+  it('reste coupé sans le shadow ni restaurant explicitement autorisé', () => {
+    const enabled = {
+      VOICE_TURN_PLAN_AUTHORITY_ENABLED: 'true',
+      VOICE_TURN_PLAN_SHADOW_ENABLED: 'true',
+    };
+    expect(isTurnPlanAuthorityEnabled('pilot-1', {})).toBe(false);
     expect(
-      isTurnPlanAuthorityEnabled({
+      isTurnPlanAuthorityEnabled('pilot-1', {
         VOICE_TURN_PLAN_AUTHORITY_ENABLED: 'true',
+        VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS: 'pilot-1',
       } as NodeJS.ProcessEnv),
     ).toBe(false);
+    expect(isTurnPlanAuthorityEnabled('pilot-1', enabled as NodeJS.ProcessEnv)).toBe(false);
+    const pilot = {
+      ...enabled,
+      VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS: ' pilot-1 , pilot-2 ',
+    } as NodeJS.ProcessEnv;
+    expect(isTurnPlanAuthorityEnabled('pilot-2', pilot)).toBe(true);
+    expect(isTurnPlanAuthorityEnabled('other', pilot)).toBe(false);
+    expect(isTurnPlanAuthorityEnabled(undefined, pilot)).toBe(false);
     expect(
-      isTurnPlanAuthorityEnabled({
-        VOICE_TURN_PLAN_AUTHORITY_ENABLED: 'true',
-        VOICE_TURN_PLAN_SHADOW_ENABLED: 'true',
+      isTurnPlanAuthorityEnabled('other', {
+        ...enabled,
+        VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS: '*',
       } as NodeJS.ProcessEnv),
     ).toBe(true);
   });

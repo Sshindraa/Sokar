@@ -2892,6 +2892,37 @@ export function resetDialogueStall(session: CallSession): void {
   session.conversation.stallSignature = null;
 }
 
+/**
+ * Garde-fou d'un tour confié au modèle : la même question reposée sans nouveau
+ * fait compte comme une relance, exactement comme une relance déterministe.
+ */
+export function recordModelTurnStall(
+  session: CallSession,
+  questionBeforeTurn: PendingQuestion,
+  progressed: boolean,
+): DialogueStallLevel | null {
+  if (progressed) {
+    resetDialogueStall(session);
+    return null;
+  }
+  const question = session.conversation.pendingQuestion;
+  if (!question || question !== questionBeforeTurn) return null;
+  return registerDialogueStall(session, dialogueStallKeyFromPendingQuestion(session));
+}
+
+/**
+ * Après deux relances sur la même question, le tour suivant revient au
+ * déterministe, qui reformule puis propose un repli humain réel.
+ */
+export function isModelTurnStalled(session: CallSession): boolean {
+  const { stalledTurns, stallSignature, pendingQuestion } = session.conversation;
+  return (
+    pendingQuestion !== null &&
+    stalledTurns >= 2 &&
+    stallSignature === dialogueStallKeyFromPendingQuestion(session)
+  );
+}
+
 /** Efface la trace du garde-fou anti-boucle avant le tour suivant. */
 export function clearDialogueGuardTrace(session: CallSession): void {
   session.conversation.lastDialogueGuard = null;

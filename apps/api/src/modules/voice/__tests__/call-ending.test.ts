@@ -10,6 +10,7 @@ import type { CallSession } from '../stream/types';
 import type { CallSessionManager } from '../stream/manager';
 import { speakTtsStreamed } from '../stream/tts-handler';
 import { telnyxFetch } from '../../../shared/telnyx/http-agent';
+import { __resetMetrics, renderMetrics } from '../../../shared/observability/metrics';
 
 vi.mock('../stream/tts-handler', () => ({
   speakTtsStreamed: vi.fn().mockResolvedValue(undefined),
@@ -63,6 +64,7 @@ function fixture() {
 }
 
 beforeEach(() => {
+  __resetMetrics();
   vi.clearAllMocks();
   vi.useFakeTimers();
 });
@@ -199,6 +201,7 @@ describe('farewell playback and hangup', () => {
     );
 
     vi.stubEnv('VOICE_TURN_PLAN_AUTHORITY_ENABLED', 'true');
+    vi.stubEnv('VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS', '*');
     const { session, mgr } = fixture();
     session.conversation.intent = 'reservation';
     session.conversation.slots.date = '2026-09-05';
@@ -231,6 +234,42 @@ describe('farewell playback and hangup', () => {
     expect(mgr.processUtteranceStreaming).toHaveBeenCalledTimes(1);
     expect(session.conversation.slots.partySize).toBe(5);
     expect(session.conversation.pendingQuestion).toBe('time');
+    expect(session.conversation.stalledTurns).toBe(0);
+    const payload = await renderMetrics();
+    expect(payload).toMatch(/sokar_voice_turn_plan_deferred_total\{outcome="fact_applied"\} 1/);
+  });
+
+  it('rend la main au déterministe après deux relances du modèle sur la même question', async () => {
+    vi.stubEnv('VOICE_TURN_PLAN_SHADOW_ENABLED', 'true');
+    vi.stubEnv('VOICE_TURN_PLAN_AUTHORITY_ENABLED', 'true');
+    vi.stubEnv('VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS', '*');
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.date = '2026-09-05';
+    recordAssistantReply(session, 'Vous serez combien ?');
+    const reply = 'Pardon, je n’ai pas saisi. Vous serez combien au total ?';
+    vi.mocked(mgr.processUtteranceStreaming).mockImplementation(
+      async (_session, _transcript, onPhrase) => {
+        await onPhrase?.(reply);
+        return reply;
+      },
+    );
+
+    try {
+      await processTranscriptStreaming(session, 'Moi, ma femme et nos trois enfants', mgr);
+      expect(session.conversation.stalledTurns).toBe(1);
+      await processTranscriptStreaming(session, 'Ma femme, moi et les trois petits', mgr);
+      expect(session.conversation.stalledTurns).toBe(2);
+      await processTranscriptStreaming(session, 'Toute la famille avec les petits', mgr);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(mgr.processUtteranceStreaming).toHaveBeenCalledTimes(2);
+    expect(session.conversation.pendingQuestion).toBe('humanFallback');
+    const payload = await renderMetrics();
+    expect(payload).toMatch(/sokar_voice_turn_plan_deferred_total\{outcome="plan_unavailable"\} 2/);
+    expect(payload).toMatch(/sokar_voice_turn_plan_deferred_total\{outcome="stall_handoff"\} 1/);
   });
 
   it('vérifie « à midi » avant de demander le nom', async () => {

@@ -37,7 +37,12 @@ import {
 import { isVoiceTtsContextV2Enabled } from '../../../shared/configcat';
 import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts.js';
 import { isSpeculativeLlmEnabled } from './speculation';
-import { getActivePendingInteraction, isNameCollectionBlocking } from './conversation-controller';
+import {
+  getActivePendingInteraction,
+  isModelTurnStalled,
+  isNameCollectionBlocking,
+  recordModelTurnStall,
+} from './conversation-controller';
 import {
   captureTurnPlanPolicySnapshot,
   isTurnPlanShadowEnabled,
@@ -47,8 +52,13 @@ import type { InBandTurnPlanResult, TurnPlanPolicySnapshot } from './turn-plan-s
 import {
   applyTurnPlanAuthority,
   hasDeterministicTurnProgress,
+  hasTurnFactProgress,
   isTurnPlanAuthorityEnabled,
 } from './turn-plan-authority';
+import {
+  recordVoiceTurnPlanDeferred,
+  type VoiceTurnPlanDeferredOutcome,
+} from '../../../shared/observability/metrics';
 import type { TurnPlanContext } from './turn-plan';
 import { setSttSpellingProfile } from './stt-bridge';
 import {
@@ -1047,9 +1057,11 @@ export async function processTranscriptStreaming(
   clearDialogueGuardTrace(session);
   // Canary TurnPlan : les relances déterministes ne servent qu'après un tour
   // compris par les extracteurs ; sinon le modèle interprète et propose le plan.
-  const deferUnresolvedToModel =
-    turnPlanShadowEnabled &&
-    isTurnPlanAuthorityEnabled() &&
+  // Après deux relances du modèle sur la même question, le déterministe reprend
+  // la main pour reformuler puis proposer un repli humain réel.
+  const turnPlanAuthorityEnabled = isTurnPlanAuthorityEnabled(session.restaurantId);
+  const unresolvedContentTurn =
+    turnPlanAuthorityEnabled &&
     !explicitEnd &&
     (speechAct === 'content' || speechAct === 'correction') &&
     !isNameCollectionBlocking(session) &&
@@ -1057,6 +1069,9 @@ export async function processTranscriptStreaming(
       turnPlanBefore,
       captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
     );
+  const modelTurnStalled = unresolvedContentTurn && isModelTurnStalled(session);
+  if (modelTurnStalled) recordVoiceTurnPlanDeferred('stall_handoff');
+  const deferUnresolvedToModel = unresolvedContentTurn && !modelTurnStalled;
   const deterministicReplyPlan = deterministicLanguage
     ? (buildDeterministicTurnPlan(session, speechAct, transcript, { deferUnresolvedToModel }) ??
       (deferUnresolvedToModel ? null : buildReservationProgressPlan(session, transcript)))
@@ -1247,6 +1262,7 @@ export async function processTranscriptStreaming(
       turnPlanBefore,
       after,
       telemetryTurnId,
+      deferUnresolvedToModel ? 'deferred' : 'llm',
     );
   };
   // Réponse LLM libre : le TurnPlan canary devient l'autorité des faits non
@@ -1254,13 +1270,14 @@ export async function processTranscriptStreaming(
   const recordLlmReply = (reply: string) => {
     const plan =
       shouldCollectInBandTurnPlan &&
-      isTurnPlanAuthorityEnabled() &&
+      turnPlanAuthorityEnabled &&
       inBandTurnPlanResult?.status === 'valid'
         ? inBandTurnPlanResult.plan
         : null;
     if (!plan) {
       recordAssistantReplyFromLlmTextFallback(session, reply);
       recordTurnPlanObservation();
+      if (deferUnresolvedToModel) recordDeferredTurnOutcome('plan_unavailable');
       return;
     }
     const deterministic = captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null);
@@ -1283,6 +1300,32 @@ export async function processTranscriptStreaming(
       activeInteractionKind: authority.legacyAssistantInteraction,
     };
     recordTurnPlanObservation(inBandTurnPlanResult, after);
+    if (deferUnresolvedToModel) {
+      recordDeferredTurnOutcome(
+        !authority.policyAccepted
+          ? 'plan_rejected'
+          : authority.appliedFacts.length
+            ? 'fact_applied'
+            : 'no_fact',
+      );
+    }
+  };
+  // Un tour confié au modèle garde le garde-fou anti-boucle : même question
+  // reposée sans nouveau fait = relance comptée.
+  const recordDeferredTurnOutcome = (outcome: VoiceTurnPlanDeferredOutcome) => {
+    recordVoiceTurnPlanDeferred(outcome);
+    const stallLevel = recordModelTurnStall(
+      session,
+      pendingQuestionBeforeTurn,
+      hasTurnFactProgress(
+        turnPlanBefore,
+        captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
+      ),
+    );
+    recordVoiceTurnEventIfCurrent(session, telemetryTurnId, 'turn_plan_deferred', {
+      outcome,
+      stallLevel,
+    });
   };
 
   // ── Thinking filler : combler ponctuellement le silence pendant que le LLM génère.
