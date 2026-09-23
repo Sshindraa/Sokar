@@ -12,7 +12,7 @@
 import { buildLlmRecoveryReply } from './llm-recovery';
 import { prefetchAvailabilityFromPartial, takeAvailabilityPrefetch } from './availability-prefetch';
 import { WebSocket } from 'ws';
-import type { SttEvent, CallSession } from './types';
+import type { SttEvent, CallSession, DebugSpeechEntry } from './types';
 import type { CallSessionManager } from './manager';
 import { finishCall, isExplicitCallEnd } from './call-ending';
 import { playFiller, selectRandomGoodbyeText } from './fillers-cache';
@@ -20,6 +20,7 @@ import { cancelScheduledFiller, scheduleThinkingFiller } from './filler-schedule
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
+import { appendDebugSpeechText, recordDebugAgentSpeech, settleDebugSpeech } from './debug-dialogue';
 import { redactPii } from './pii-redact';
 import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from './tts-handler';
 import {
@@ -1252,6 +1253,14 @@ export async function processTranscriptStreaming(
     current: useCartesiaContext ? createCartesiaContextTurn(session, true) : null,
   };
   if (contextTtsRef.current) session.ttsContext = contextTtsRef.current;
+  // Avec le contexte Cartesia, la réponse est lue d'un seul flux et l'audio ne
+  // se rattache pas phrase par phrase : elle est notée comme une seule réplique,
+  // mesurée par les trames de ce seul contexte.
+  let contextDebugEntry: DebugSpeechEntry | null = null;
+  const contextTurnForDebug = contextTtsRef.current;
+  const settleContextDebugSpeech = (completed: boolean) => {
+    settleDebugSpeech(contextDebugEntry, contextTurnForDebug?.framesSent ?? 0, completed);
+  };
   const abortController = new AbortController();
   const llmStartedAt = Date.now();
   let llmPhraseReceived = false;
@@ -1298,6 +1307,8 @@ export async function processTranscriptStreaming(
         // contexte échoue avant le premier audio.
         if (contextTtsRef.current) {
           session.ttsContext = contextTtsRef.current;
+          if (contextDebugEntry) appendDebugSpeechText(contextDebugEntry, cleanPhrase);
+          else contextDebugEntry = recordDebugAgentSpeech(session, cleanPhrase);
           contextTtsRef.current.push(cleanTextForTts(cleanPhrase, effectiveVoiceLanguage(session)));
           return;
         }
@@ -1354,7 +1365,9 @@ export async function processTranscriptStreaming(
     if (contextTts) {
       try {
         await contextTts.finish();
+        settleContextDebugSpeech(isCurrentResponse());
       } catch (err) {
+        settleContextDebugSpeech(false);
         logger.error(
           { err, callId: session.callControlId },
           '[processTranscriptStreaming] Cartesia context TTS failed',
@@ -1433,6 +1446,8 @@ export async function processTranscriptStreaming(
     }
     mgr.transition(session, 'LISTENING');
   } finally {
+    // Réponse abandonnée (erreur, interruption) : ce qui n'a pas été fixé l'est ici.
+    settleContextDebugSpeech(false);
     cancelScheduledFiller(session);
     if (session.ttsContext === contextTtsRef.current) session.ttsContext = null;
     if (session.abortController === abortController) session.abortController = null;

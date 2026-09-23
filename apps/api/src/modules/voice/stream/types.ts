@@ -238,6 +238,27 @@ export interface VoiceTurnTelemetry {
   endedAt?: number;
   /** Numéro monotone des événements structurés de ce tour. */
   eventSequence?: number;
+  /** Dialogue du tour, rempli seulement pour les restaurants de test. */
+  debugDialogue?: VoiceTurnDebugDialogue;
+}
+
+/** Paroles d'un tour (appels de test uniquement, cf. debug-dialogue.ts). */
+export interface VoiceTurnDebugDialogue {
+  callerText?: string;
+  speechAct?: string;
+  agentSpeech: DebugSpeechEntry[];
+  fillers: DebugSpeechEntry[];
+  tools: string[];
+}
+
+/**
+ * Réplique de l'agent et sort de son audio, fixé en fin de lecture d'après les
+ * trames envoyées à Telnyx pour cette seule réplique. Envoyé ne veut pas dire
+ * entendu : une interruption peut encore vider l'audio en attente côté Telnyx.
+ */
+export interface DebugSpeechEntry {
+  text: string;
+  status: 'pending' | 'sent' | 'partially_sent' | 'not_sent';
 }
 
 /** Événements normalisés produits par le fournisseur STT. */
