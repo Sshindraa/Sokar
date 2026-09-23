@@ -6,6 +6,7 @@
  * Utilisé par la route de test `/api/test/simulate-utterance` et par le banc
  * d'évaluation (`modules/voice/eval`). Jamais branché sur un vrai appel.
  */
+import { randomUUID } from 'node:crypto';
 import { WebSocket } from 'ws';
 import { CallSessionManager } from './manager';
 import { handleSttEvent } from './llm-handler';
@@ -107,7 +108,7 @@ export async function startSimulatedCall(
   options: SimulatedCallOptions,
   mgr = CallSessionManager.getInstance(),
 ): Promise<{ session: CallSession; greeting: string; spoken: SpokenEntry[] }> {
-  const callControlId = options.callControlId ?? `sim-call-${Date.now()}-${Math.random()}`;
+  const callControlId = options.callControlId ?? `sim-call-${randomUUID()}`;
   const session = mgr.create({
     callControlId,
     callSessionId: `${callControlId}-session`,
