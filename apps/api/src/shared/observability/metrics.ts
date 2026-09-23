@@ -285,9 +285,10 @@ export type VoiceTurnPlanShadowAgreement = 'agree' | 'disagree' | 'not_comparabl
  */
 /**
  * Chemin du tour observé : `llm` pour un tour déjà confié au modèle, `deferred`
- * pour un tour que les extracteurs n'ont pas compris et que le canary lui confie.
+ * pour un tour que les extracteurs n'ont pas compris et que le canary lui confie,
+ * `deterministic` pour un tour répondu sans LLM et observé hors bande.
  */
-export type VoiceTurnPlanShadowPath = 'llm' | 'deferred';
+export type VoiceTurnPlanShadowPath = 'llm' | 'deferred' | 'deterministic';
 
 export const voiceTurnPlanShadowObservationsTotal = new Counter({
   name: 'sokar_voice_turn_plan_shadow_observations_total',

@@ -1994,6 +1994,84 @@ describe('CallSessionManager — TurnPlan shadow in-band', () => {
   });
 });
 
+describe('CallSessionManager — observation TurnPlan hors bande', () => {
+  const context = {
+    transcript: 'Moi, ma femme et nos trois enfants',
+    language: 'fr',
+    timezone: 'Europe/Paris',
+    referenceTime: '2026-09-23T10:00:00.000Z',
+    intent: 'reservation' as const,
+    pendingInteraction: { kind: 'partySize' as const },
+    slots: {},
+    hasConfirmedName: false,
+  };
+
+  beforeEach(() => {
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
+  });
+
+  it('force l’outil d’observation et renvoie un plan borné sans modifier la session', async () => {
+    const plan = {
+      interpretation: 'answer',
+      intent: 'unchanged',
+      slots: { partySize: 5 },
+      interactionDisposition: 'resolve',
+      confidence: 'high',
+      assistantInteraction: 'partySize',
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call-1',
+                  type: 'function',
+                  function: { name: 'proposeTurnPlanShadow', arguments: JSON.stringify(plan) },
+                },
+              ],
+            },
+          },
+        ],
+        usage: { prompt_tokens: 120, completion_tokens: 30 },
+      }),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    const conversationBefore = JSON.stringify(session.conversation);
+    const historyLength = session.history.length;
+
+    const result = await mgr.observeTurnPlan(session, context, 'Vous serez combien ?', 'turn-1');
+
+    expect(result).toMatchObject({ status: 'valid', plan: { slots: { partySize: 5 } } });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.tool_choice).toEqual({
+      type: 'function',
+      function: { name: 'proposeTurnPlanShadow' },
+    });
+    expect(body.tools).toHaveLength(1);
+    expect(body.messages.at(-1)).toEqual({ role: 'user', content: context.transcript });
+    expect(JSON.stringify(session.conversation)).toBe(conversationBefore);
+    expect(session.history).toHaveLength(historyLength);
+  });
+
+  it('retourne failed sans lever quand Groq échoue', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValue(new Error('network down')) as unknown as typeof globalThis.fetch;
+    const mgr = CallSessionManager.getInstance();
+
+    const result = await mgr.observeTurnPlan(makeSession(), context, 'Vous serez combien ?', 't');
+
+    expect(result.status).toBe('failed');
+  });
+});
+
 describe('CallSessionManager — cleanup avancé', () => {
   beforeEach(() => {
     (CallSessionManager as unknown as { instance: CallSessionManager }).instance =

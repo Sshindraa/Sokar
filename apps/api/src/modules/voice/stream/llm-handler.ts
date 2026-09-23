@@ -47,6 +47,7 @@ import {
   captureTurnPlanPolicySnapshot,
   isTurnPlanShadowEnabled,
   recordInBandTurnPlanShadow,
+  shouldObserveDeterministicTurnPlan,
 } from './turn-plan-shadow';
 import type { InBandTurnPlanResult, TurnPlanPolicySnapshot } from './turn-plan-shadow';
 import {
@@ -1101,6 +1102,37 @@ export async function processTranscriptStreaming(
         deterministicResponse,
         deterministicReplyPlan.proposal,
       );
+    }
+    // Shadow hors bande : mesure aussi les tours où la regex a décidé seule,
+    // sans retarder la réponse déjà prête.
+    if (
+      turnPlanShadowEnabled &&
+      !explicitEnd &&
+      (speechAct === 'content' || speechAct === 'correction') &&
+      !isNameCollectionBlocking(session) &&
+      shouldObserveDeterministicTurnPlan()
+    ) {
+      const observedTurnId = session.currentTurn?.id;
+      const observedAfter = captureTurnPlanPolicySnapshot(
+        session,
+        interactionBeforeTurn?.id ?? null,
+      );
+      mgr
+        .observeTurnPlan(session, turnPlanContext, deterministicResponse, observedTurnId)
+        .then((result) =>
+          recordInBandTurnPlanShadow(
+            session,
+            turnPlanContext,
+            result,
+            turnPlanBefore,
+            observedAfter,
+            observedTurnId,
+            'deterministic',
+          ),
+        )
+        .catch((err: unknown) =>
+          logger.warn({ err }, '[voice-turn] Deterministic TurnPlan observation failed'),
+        );
     }
     syncSpellingProfile(session);
     if (!isCurrentResponse()) return;

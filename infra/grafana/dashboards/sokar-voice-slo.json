@@ -262,15 +262,15 @@
     {
       "id": 12,
       "type": "bargauge",
-      "title": "Accord TurnPlan par dimension (24 h)",
+      "title": "Accord TurnPlan par dimension et chemin (24 h)",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 7, "w": 12, "x": 0, "y": 35 },
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * sum by (dimension) (increase(sokar_voice_turn_plan_shadow_dimension_total{env=~\"$env\",agreement=\"agree\"}[24h])) / (sum by (dimension) (increase(sokar_voice_turn_plan_shadow_dimension_total{env=~\"$env\"}[24h])) > 0)",
+          "expr": "100 * sum by (dimension, path) (increase(sokar_voice_turn_plan_shadow_dimension_total{env=~\"$env\",agreement=\"agree\"}[24h])) / (sum by (dimension, path) (increase(sokar_voice_turn_plan_shadow_dimension_total{env=~\"$env\"}[24h])) > 0)",
           "instant": true,
-          "legendFormat": "{{dimension}}"
+          "legendFormat": "{{dimension}} · {{path}}"
         }
       ],
       "options": {

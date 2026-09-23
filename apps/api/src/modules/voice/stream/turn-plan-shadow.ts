@@ -49,6 +49,24 @@ export function isTurnPlanShadowEnabled(env: NodeJS.ProcessEnv = process.env): b
   return env.VOICE_TURN_PLAN_SHADOW_ENABLED === 'true';
 }
 
+/**
+ * Part des tours répondus sans LLM observés par un appel TurnPlan séparé
+ * (0 à 1, défaut 0). Chaque observation coûte un petit appel Groq.
+ */
+export function turnPlanDeterministicShadowRate(env: NodeJS.ProcessEnv = process.env): number {
+  if (!isTurnPlanShadowEnabled(env)) return 0;
+  const rate = Number(env.VOICE_TURN_PLAN_DETERMINISTIC_SHADOW_RATE ?? '0');
+  return Number.isFinite(rate) ? Math.min(Math.max(rate, 0), 1) : 0;
+}
+
+export function shouldObserveDeterministicTurnPlan(
+  env: NodeJS.ProcessEnv = process.env,
+  random: () => number = Math.random,
+): boolean {
+  const rate = turnPlanDeterministicShadowRate(env);
+  return rate > 0 && random() < rate;
+}
+
 function sameSlotValue(left: unknown, right: unknown): boolean {
   if (typeof left !== 'string' || typeof right !== 'string') return left === right;
   return left.trim().toLocaleLowerCase('fr-FR') === right.trim().toLocaleLowerCase('fr-FR');
@@ -127,7 +145,10 @@ export function recordInBandTurnPlanShadow(
   turnId: string | undefined,
   path: VoiceTurnPlanShadowPath = 'llm',
 ): void {
-  if (!isTurnPlanShadowEnabled() || !turnId || !isCurrentVoiceTurn(session, turnId)) return;
+  // Une observation hors bande peut arriver après le début du tour suivant :
+  // ses instantanés sont figés, seule la trace du tour est alors omise.
+  if (!isTurnPlanShadowEnabled() || !turnId) return;
+  if (path !== 'deterministic' && !isCurrentVoiceTurn(session, turnId)) return;
   const policyDecision =
     result.status === 'valid' ? decideTurnPlanPolicy(context, result.plan) : null;
   const comparison =

@@ -241,7 +241,17 @@ d'une relance mécanique. Son résultat est compté par
 s'applique aussi à ces tours : si le modèle repose la même question sans nouveau fait, la
 relance est comptée ; après deux relances, le tour suivant revient au déterministe, qui
 propose un repli humain réel (`stall_handoff`). Les métriques shadow portent un label
-`path` (`llm` ou `deferred`) pour lire l'accord séparément sur ces tours.
+`path` (`llm`, `deferred` ou `deterministic`) pour lire l'accord séparément sur ces tours.
+
+`VOICE_TURN_PLAN_DETERMINISTIC_SHADOW_RATE` (0 à 1, défaut `0`, sans effet si le shadow est
+coupé) observe aussi une part des tours répondus sans LLM : après la réponse déterministe,
+un appel TurnPlan séparé (outil forcé, température 0, 2,5 s maximum) interprète le tour.
+Il ne retarde pas la réponse, ne modifie ni l'état ni l'historique, et ne passe pas par le
+disjoncteur Groq, pour qu'une observation lente ne coupe jamais le LLM des appels réels.
+Son coût est rattaché à l'appel. C'est la seule mesure des tours où la regex décide seule,
+y compris quand elle se trompe sans le savoir (`path="deterministic"`). Commencer bas
+(par exemple `0.2`) et monter selon le volume. Comme la liste d'IDs, cette valeur n'est
+pas un booléen et se pose directement dans le fichier d'environnement de l'API.
 Grafana donne un accès anonyme en lecture seule, sans inscription, et s'ouvre
 uniquement par tunnel SSH ; ne publiez pas son port.
 

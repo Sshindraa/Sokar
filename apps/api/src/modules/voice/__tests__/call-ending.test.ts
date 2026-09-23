@@ -239,6 +239,73 @@ describe('farewell playback and hangup', () => {
     expect(payload).toMatch(/sokar_voice_turn_plan_deferred_total\{outcome="fact_applied"\} 1/);
   });
 
+  it('observe hors bande un tour répondu sans LLM, sans attendre ni modifier la réponse', async () => {
+    vi.stubEnv('VOICE_TURN_PLAN_SHADOW_ENABLED', 'true');
+    vi.stubEnv('VOICE_TURN_PLAN_DETERMINISTIC_SHADOW_RATE', '1');
+    const { session, mgr } = fixture();
+    session.currentTurn = {
+      id: 'turn-det',
+      sequence: 1,
+      startedAt: Date.now(),
+      transcriptLength: 0,
+      transcriptFingerprint: 'fp',
+      path: 'unknown',
+      availabilitySearches: 0,
+      availabilityFailures: 0,
+      loopDetected: false,
+      completed: false,
+      eventSequence: 0,
+    } as unknown as CallSession['currentTurn'];
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.date = '2026-09-05';
+    recordAssistantReply(session, 'Vous serez combien ?');
+    let resolveObservation!: (value: unknown) => void;
+    const observeTurnPlan = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveObservation = resolve;
+        }),
+    );
+    (mgr as unknown as { observeTurnPlan: typeof observeTurnPlan }).observeTurnPlan =
+      observeTurnPlan;
+
+    try {
+      await processTranscriptStreaming(session, 'Moi, ma femme et nos trois enfants', mgr);
+      expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
+      expect(speakTtsStreamed).toHaveBeenLastCalledWith(session, 'Vous serez combien ?');
+      expect(observeTurnPlan).toHaveBeenCalledWith(
+        session,
+        expect.objectContaining({ transcript: 'Moi, ma femme et nos trois enfants' }),
+        'Vous serez combien ?',
+        'turn-det',
+      );
+      resolveObservation({
+        status: 'valid',
+        durationMs: 300,
+        plan: {
+          interpretation: 'answer',
+          intent: 'unchanged',
+          slots: { partySize: 5 },
+          interactionDisposition: 'resolve',
+          confidence: 'high',
+          assistantInteraction: 'partySize',
+        },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(session.conversation.slots.partySize).toBeUndefined();
+    const payload = await renderMetrics();
+    expect(payload).toMatch(
+      /sokar_voice_turn_plan_shadow_observations_total\{[^}]*status="valid"[^}]*agreement="disagree"[^}]*path="deterministic"[^}]*\} 1/,
+    );
+    expect(payload).toMatch(
+      /sokar_voice_turn_plan_shadow_dimension_total\{dimension="slots",agreement="disagree",path="deterministic"\} 1/,
+    );
+  });
+
   it('rend la main au déterministe après deux relances du modèle sur la même question', async () => {
     vi.stubEnv('VOICE_TURN_PLAN_SHADOW_ENABLED', 'true');
     vi.stubEnv('VOICE_TURN_PLAN_AUTHORITY_ENABLED', 'true');

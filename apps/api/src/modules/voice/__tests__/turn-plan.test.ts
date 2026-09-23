@@ -5,6 +5,8 @@ import {
   compareTurnPlanWithPolicy,
   isTurnPlanShadowEnabled,
   recordInBandTurnPlanShadow,
+  shouldObserveDeterministicTurnPlan,
+  turnPlanDeterministicShadowRate,
 } from '../stream/turn-plan-shadow';
 import { decideTurnPlanPolicy } from '../stream/turn-policy';
 import { createConversationState } from '../stream/conversation-controller';
@@ -93,6 +95,23 @@ describe('TurnPlan shadow policy boundary', () => {
         VOICE_TURN_PLAN_SHADOW_ENABLED: 'false',
       } as NodeJS.ProcessEnv),
     ).toBe(false);
+  });
+
+  it('borne le taux d’observation des tours déterministes et exige le shadow', () => {
+    const env = (rate: string, shadow = 'true') =>
+      ({
+        VOICE_TURN_PLAN_SHADOW_ENABLED: shadow,
+        VOICE_TURN_PLAN_DETERMINISTIC_SHADOW_RATE: rate,
+      }) as NodeJS.ProcessEnv;
+    expect(turnPlanDeterministicShadowRate({})).toBe(0);
+    expect(turnPlanDeterministicShadowRate(env('0.25'))).toBe(0.25);
+    expect(turnPlanDeterministicShadowRate(env('3'))).toBe(1);
+    expect(turnPlanDeterministicShadowRate(env('-1'))).toBe(0);
+    expect(turnPlanDeterministicShadowRate(env('abc'))).toBe(0);
+    expect(turnPlanDeterministicShadowRate(env('1', 'false'))).toBe(0);
+    expect(shouldObserveDeterministicTurnPlan(env('0.25'), () => 0.2)).toBe(true);
+    expect(shouldObserveDeterministicTurnPlan(env('0.25'), () => 0.3)).toBe(false);
+    expect(shouldObserveDeterministicTurnPlan(env('0'), () => 0)).toBe(false);
   });
 
   it('compte une seule fois une observation courante et ignore un callback tardif', async () => {
