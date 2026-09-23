@@ -36,6 +36,11 @@ async function requireVoiceReadToken(
   }
 }
 
+// Same 12-char SHA-256 prefix as voice_turn_telemetry.transcript_fingerprint.
+function fingerprint(text: string): string {
+  return createHash('sha256').update(text).digest('hex').slice(0, 12);
+}
+
 function redactNullable(text: string | null): string | null {
   return text === null ? null : redactPii(text);
 }
@@ -76,10 +81,13 @@ export async function voiceReadRoutes(app: FastifyInstance) {
         orderBy: { sequence: 'asc' },
       });
 
+      // The raw transcript is never returned: redactPii() cannot detect names or addresses.
+      const { transcript, ...callFields } = call;
       return reply.send({
         call: {
-          ...call,
-          transcript: redactNullable(call.transcript),
+          ...callFields,
+          transcriptLength: transcript?.length ?? 0,
+          transcriptFingerprint: transcript ? fingerprint(transcript) : null,
           recordingError: redactNullable(call.recordingError),
           createdAt: call.createdAt.toISOString(),
           updatedAt: call.updatedAt.toISOString(),

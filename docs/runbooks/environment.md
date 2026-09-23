@@ -106,8 +106,8 @@ Sans ce secret, la route répond `503`; elle ne doit jamais être ajoutée à un
 
 `SOKAR_VOICE_READ_TOKEN` protège la route interne en lecture seule
 `GET /api/internal/voice/calls/latest?restaurantId=…` (dernier appel d'un
-restaurant et ses lignes `voice_turn_telemetry`, textes passés par
-`redactPii()`, sans numéro de l'appelant). Le jeton est envoyé dans l'en-tête
+restaurant et ses lignes `voice_turn_telemetry`, sans transcription brute
+ni numéro de l'appelant ; autres textes passés par `redactPii()`). Le jeton est envoyé dans l'en-tête
 `x-sokar-voice-read-token` ou `Authorization: Bearer …`. Génération :
 `openssl rand -hex 32`. Sans ce secret, la route répond `503` ; un jeton absent
 ou faux donne `401`. Révocation : changer la valeur dans l'environnement de

@@ -54,7 +54,7 @@ describe('internal voice read route', () => {
     expect(response.statusCode).toBe(404);
   });
 
-  it('returns the latest call with redacted text and ordered turns', async () => {
+  it('returns the latest call without its transcript and with ordered turns', async () => {
     const now = new Date('2026-09-23T10:00:00Z');
     vi.mocked(db.call.findMany).mockResolvedValue([
       {
@@ -96,7 +96,10 @@ describe('internal voice read route', () => {
     const body = response.json();
 
     expect(response.statusCode).toBe(200);
-    expect(body.call.transcript).toBe('Rappelez-moi au [PHONE] ou [EMAIL]');
+    expect(body.call).not.toHaveProperty('transcript');
+    expect(body.call.transcriptLength).toBeGreaterThan(0);
+    expect(body.call.transcriptFingerprint).toMatch(/^[a-f0-9]{12}$/);
+    expect(JSON.stringify(body)).not.toMatch(/06 12 34|jean@example\.com/);
     expect(body.call).not.toHaveProperty('callerPhone');
     expect(body.turns).toHaveLength(1);
     expect(db.call.findMany).toHaveBeenCalledWith(
