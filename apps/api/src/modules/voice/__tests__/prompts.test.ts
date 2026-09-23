@@ -41,7 +41,7 @@ describe('buildSystemPrompt', () => {
       'EXEMPLES DE DIALOGUES',
       'OUTILS',
       "CONTEXTE DE L'APPEL",
-    ].map((title) => prompt.indexOf(title));
+    ].map((title) => prompt.indexOf(`\n${title}`));
     expect(blocks.every((index) => index >= 0)).toBe(true);
     expect([...blocks].sort((a, b) => a - b)).toEqual(blocks);
     for (const dialogue of [
@@ -51,6 +51,26 @@ describe('buildSystemPrompt', () => {
       'Question pratique :',
     ]) {
       expect(prompt).toContain(dialogue);
+    }
+  });
+
+  it('fait précéder chaque fait des exemples de sa source et les déclare fictifs', () => {
+    const prompt = buildSystemPrompt(baseCtx);
+    const examples = prompt.slice(
+      prompt.indexOf('EXEMPLES DE DIALOGUES'),
+      prompt.indexOf('\nOUTILS'),
+    );
+    expect(examples).toContain('sont fictifs');
+    expect(examples).toContain("seuls le bloc CONTEXTE DE L'APPEL");
+    const facts: Array<[string, string]> = [
+      ['[Horaires du bloc CONTEXTE : dimanche fermé]', 'le dimanche nous sommes fermés'],
+      ['[checkAvailability : 20:00 complet, 19:30 et 21:15 disponibles]', '19 h 30 ou 21 h 15'],
+      ["[Nom confirmé plus tôt par l'appelant : Martin]", 'au nom de Martin'],
+      ['[checkAvailability : 20:30 disponible]', "C'est libre aussi"],
+    ];
+    for (const [source, fact] of facts) {
+      expect(examples.indexOf(source)).toBeGreaterThanOrEqual(0);
+      expect(examples.indexOf(source)).toBeLessThan(examples.indexOf(fact));
     }
   });
 
@@ -73,7 +93,7 @@ describe('buildSystemPrompt', () => {
       },
       new Date('2026-12-01T18:00:00Z'),
     );
-    const prefixEnd = a.indexOf("CONTEXTE DE L'APPEL");
+    const prefixEnd = a.indexOf("\nCONTEXTE DE L'APPEL\n");
     expect(prefixEnd).toBeGreaterThan(1_000);
     expect(b.slice(0, prefixEnd)).toBe(a.slice(0, prefixEnd));
     expect(a.slice(0, prefixEnd)).not.toContain('Chez Michel');
