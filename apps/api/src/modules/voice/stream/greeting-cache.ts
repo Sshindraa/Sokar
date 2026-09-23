@@ -1,7 +1,8 @@
 /**
  * Pré-génération des greetings audio par restaurant au boot.
  *
- * Le greeting "Bonjour, ici {restaurant}. Je vous écoute." est la première
+ * Le greeting "Bonjour, ici {restaurant}, je suis son assistant virtuel. Je
+ * vous écoute." est la première
  * chose que le client entend. Sans cache, il faut ~400-800ms pour le
  * synthétiser via Cartesia au premier appel. En pré-générant au boot et en
  * cachant dans Redis (via le TTS cache existant), le greeting devient un
@@ -29,11 +30,15 @@ import { buildCartesiaCacheVariant, CARTESIA_NORMALIZATION } from './cartesia-co
 import { normalizeVoiceLocale } from './voice-language';
 
 /**
- * Construit le texte du greeting pour un restaurant.
- * Doit être identique à buildInitialGreeting dans handler.ts.
+ * Construit le texte du greeting pour un restaurant. Source unique, utilisée
+ * aussi par buildInitialGreeting (handler.ts) : le cache TTS étant indexé par
+ * le texte, un changement ici produit de nouvelles clés, régénérées au boot.
+ *
+ * L'annonce « assistant virtuel » répond à l'obligation de transparence de
+ * l'AI Act (article 50) : l'appelant sait dès l'accueil qu'il parle à une IA.
  */
 export function buildGreetingText(restaurantName: string): string {
-  return `Bonjour, ici ${restaurantName}. Je vous écoute.`;
+  return `Bonjour, ici ${restaurantName}, je suis son assistant virtuel. Je vous écoute.`;
 }
 
 /**

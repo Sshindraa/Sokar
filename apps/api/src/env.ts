@@ -61,7 +61,7 @@ const PROD_HOST_ALLOWLIST = [
   'api-staging.sokar.tech',
 ];
 
-const DEFAULT_VOICE_LLM_TIMEOUT_MS = 8000;
+const DEFAULT_VOICE_LLM_TIMEOUT_MS = 4000;
 
 /**
  * Stripe live secret keys must never be used by a local/test process.
@@ -73,7 +73,7 @@ export function isLiveStripeSecretKey(value: string | undefined): boolean {
 }
 
 // Même compatibilité que manager.ts avant centralisation : une valeur absente,
-// invalide, non positive ou non finie retombe sur 8 secondes.
+// invalide, non positive ou non finie retombe sur 4 secondes.
 const voiceLlmTimeoutSchema = z.preprocess((value) => {
   if (value === undefined) return DEFAULT_VOICE_LLM_TIMEOUT_MS;
   const parsed = Number(value);

@@ -11,6 +11,7 @@ import type {
   SpellingToken,
   VoiceSpeechAct,
 } from './types';
+import { pickVariant } from './reply-variants';
 import { effectiveVoiceLanguage, type VoiceLanguageCode } from './voice-language';
 import {
   decideAssistantInteractionPolicy,
@@ -2168,10 +2169,29 @@ export function buildAvailabilityErrorReply(
 }
 
 export function buildAvailabilityErrorPlan(session: CallSession): AssistantReplyEmissionPlan {
-  const reply = buildAvailabilityErrorReply(
-    effectiveVoiceLanguage(session),
-    Boolean(session.managerPhone?.trim()),
+  const language = effectiveVoiceLanguage(session);
+  const baseReply = buildAvailabilityErrorReply(language, Boolean(session.managerPhone?.trim()));
+  // Seule l'ouverture varie : l'offre (gérant ou message) reste identique.
+  const opening =
+    language === 'en'
+      ? "I can't check that time right now"
+      : "Je n'arrive pas à vérifier ce créneau pour le moment";
+  const variedOpening = pickVariant(
+    session,
+    'availability_error',
+    language === 'en'
+      ? [
+          opening,
+          "The booking system isn't responding right now",
+          "I can't reach our planning at the moment",
+        ]
+      : [
+          opening,
+          'Notre planning ne répond pas pour le moment',
+          "Je n'ai pas accès aux disponibilités pour l'instant",
+        ],
   );
+  const reply = baseReply.replace(opening, variedOpening);
   return buildExplicitInteractionReplyPlan(session, reply, 'humanFallback');
 }
 
@@ -2809,6 +2829,18 @@ function buildHumanFallbackReplyPlan(
 }
 
 /**
+ * Repli humain après plusieurs échecs LLM d'affilée : la proposition est
+ * traitée ensuite sans LLM (transfert ou message réellement exécuté).
+ */
+export function buildLlmFailureFallbackPlan(session: CallSession): AssistantReplyEmissionPlan {
+  const en = effectiveVoiceLanguage(session) === 'en';
+  const apology = en
+    ? "I'm sorry, I'm having trouble on my end."
+    : "Excusez-moi, j'ai un souci de mon côté.";
+  return buildHumanFallbackReplyPlan(session, `${apology} ${buildHumanFallbackOffer(session)}`);
+}
+
+/**
  * Applies only a policy-approved assistant plan. `reply` is presentation and
  * contributes no question or interaction semantics here.
  */
@@ -3214,10 +3246,14 @@ export function buildDeterministicTurnPlan(
     session.conversation.pendingQuestion !== 'confirmation' &&
     session.conversation.lastAssistantQuestion
   ) {
-    const primary =
+    const acknowledgement = pickVariant(
+      session,
+      'backchannel',
       effectiveVoiceLanguage(session) === 'en'
-        ? `All right. ${session.conversation.lastAssistantQuestion}`
-        : `D'accord. ${session.conversation.lastAssistantQuestion}`;
+        ? ['All right.', 'Okay.', 'Sure.']
+        : ["D'accord.", 'Très bien.', 'Entendu.'],
+    );
+    const primary = `${acknowledgement} ${session.conversation.lastAssistantQuestion}`;
     return guardDialogueRepromptPlan(
       session,
       dialogueStallKeyFromPendingQuestion(session),

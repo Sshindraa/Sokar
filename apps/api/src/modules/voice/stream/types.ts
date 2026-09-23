@@ -1,3 +1,4 @@
+import type { AvailabilityResult } from '../../reservations/reservation.service';
 import type { WebSocket } from 'ws';
 import type { VoiceLanguageCode } from './voice-language';
 
@@ -271,11 +272,7 @@ export type SttEvent =
       languageCode?: string;
     }
   | { type: 'SpeechResumed' }
-  | {
-      type: 'InterimHighConfidence';
-      transcript: string;
-      words?: SttWord[];
-    }
+  | { type: 'PartialTranscript'; transcript: string }
   | { type: 'Error'; message: string };
 
 /** Message entrant de Telnyx Media Stream WebSocket */
@@ -436,13 +433,18 @@ export interface CallSession {
   /** AbortController pour annuler la requête LLM en cours */
   abortController: AbortController | null;
 
-  // LLM spéculatif
-  /** Promise LLM en cours (spéculation sur interim result) */
-  speculativeLlm: Promise<string> | null;
-  /** Transcript utilisé pour la spéculation (pour vérifier si toujours valide) */
-  speculativeTranscript: string;
-  /** Résultat LLM spéculatif mis en cache (résolu). */
-  speculativeResult: string | null;
+  /** Formulations déjà dites dans l'appel, par clé (voir pickVariant). */
+  replyVariantHistory?: Record<string, number[]>;
+  /** Reprises parlées consécutives après un échec LLM (repli humain à 2). */
+  llmRecoveryStreak?: number;
+  /** Tour pendant lequel un filler a déjà été joué (évite « D'accord… D'accord »). */
+  fillerPlayedTurnId?: string | null;
+  /** Disponibilités lues en tâche de fond pendant la phrase du client. */
+  availabilityPrefetch?: {
+    key: string;
+    startedAt: number;
+    promise: Promise<AvailabilityResult | null>;
+  } | null;
 
   // Transcript cumulé (persistance)
   /** Transcript final cumulé de tout l'appel (concaténation des UtteranceEnd) */

@@ -51,6 +51,7 @@ function fixture() {
       s.state = 'IDLE';
     }),
     processUtteranceStreaming: vi.fn(),
+    observeTurnPlan: vi.fn().mockResolvedValue({ status: 'missing', durationMs: 0 }),
     getAvailability: vi.fn(),
     createReservationFromConversation: vi.fn().mockResolvedValue(null),
     handoffToManager: vi
@@ -182,6 +183,99 @@ describe('farewell playback and hangup', () => {
     expect(session.conversation.pendingQuestion).toBe('time');
   });
 
+  it('s’excuse puis repose la dernière question quand le LLM échoue avant tout audio', async () => {
+    const { session, mgr } = fixture();
+    session.conversation.lastAssistantQuestion = 'Vous serez combien ?';
+    vi.mocked(mgr.processUtteranceStreaming).mockRejectedValue(
+      Object.assign(new Error('The operation was aborted due to timeout'), {
+        name: 'TimeoutError',
+      }),
+    );
+
+    await processTranscriptStreaming(session, 'Est-ce que vous avez une terrasse ?', mgr);
+
+    expect(mgr.processUtteranceStreaming).toHaveBeenCalledOnce();
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      'Excusez-moi, un petit souci de mon côté. Vous serez combien ?',
+    );
+    expect(session.state).toBe('LISTENING');
+  });
+
+  it('propose le repli humain après deux reprises LLM d’affilée', async () => {
+    const { session, mgr } = fixture();
+    session.managerPhone = '+33100000000';
+    session.conversation.lastAssistantQuestion = 'Vous serez combien ?';
+    vi.mocked(mgr.processUtteranceStreaming).mockRejectedValue(
+      new Error('LLM provider unavailable (circuit open)'),
+    );
+    const recovery = 'Excusez-moi, un petit souci de mon côté. Vous serez combien ?';
+
+    await processTranscriptStreaming(session, 'Est-ce que vous avez une terrasse ?', mgr);
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(session, recovery);
+    await processTranscriptStreaming(session, 'Et un parking, peut-être ?', mgr);
+    // La deuxième excuse est formulée autrement.
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      "Pardon, j'ai eu un petit souci. Vous serez combien ?",
+    );
+    await processTranscriptStreaming(session, 'Vous acceptez les chiens ?', mgr);
+
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      "Excusez-moi, j'ai un souci de mon côté. Je peux vous passer le gérant, ou prendre un message pour lui. Que préférez-vous ?",
+    );
+    expect(session.conversation.pendingQuestion).toBe('humanFallback');
+    expect(session.llmRecoveryStreak).toBe(0);
+  });
+
+  it('ne répète pas « D’accord » quand un filler vient d’être joué', async () => {
+    const { session, mgr } = fixture();
+    session.currentTurn = { id: 'turn-filler' } as unknown as CallSession['currentTurn'];
+    session.fillerPlayedTurnId = 'turn-filler';
+    vi.mocked(mgr.processUtteranceStreaming).mockImplementation(
+      async (_session, _transcript, onPhrase) => {
+        await onPhrase?.("D'accord, et vous avez une préférence pour la salle ?");
+        await onPhrase?.('Très bien noté.');
+        return "D'accord, et vous avez une préférence pour la salle ?";
+      },
+    );
+
+    await processTranscriptStreaming(session, 'Est-ce que vous avez une terrasse ?', mgr);
+
+    expect(speakTtsStreamed).toHaveBeenCalledWith(
+      session,
+      'Et vous avez une préférence pour la salle ?',
+    );
+    // Seule la première phrase est concernée.
+    expect(speakTtsStreamed).toHaveBeenCalledWith(session, 'Très bien noté.');
+  });
+
+  it('met à jour l’état tout de suite quand le TurnPlan n’a pas l’autorité', async () => {
+    vi.stubEnv('VOICE_TURN_PLAN_SHADOW_ENABLED', 'true');
+    const { session, mgr } = fixture();
+    session.currentTurn = { id: 'turn-shadow' } as unknown as CallSession['currentTurn'];
+    vi.mocked(mgr.observeTurnPlan).mockImplementation(() => new Promise(() => undefined));
+    const reply = 'Oui, nous avons une terrasse. Pour combien de personnes ?';
+    vi.mocked(mgr.processUtteranceStreaming).mockImplementation(
+      async (_session, _transcript, onPhrase) => {
+        await onPhrase?.(reply);
+        return reply;
+      },
+    );
+
+    try {
+      await processTranscriptStreaming(session, 'Est-ce que vous avez une terrasse ?', mgr);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    // Le plan n'a jamais répondu : le tour est quand même terminé et l'état à jour.
+    expect(mgr.observeTurnPlan).toHaveBeenCalledOnce();
+    expect(session.conversation.lastAssistantQuestion).toBe('Pour combien de personnes ?');
+    expect(session.state).toBe('LISTENING');
+  });
+
   it('confie au TurnPlan canary une réponse que les extracteurs n’ont pas comprise', async () => {
     const turn = 'Moi, ma femme et nos trois enfants';
     const reply = 'Parfait, pour cinq. Vers quelle heure souhaitez-vous venir ?';
@@ -206,27 +300,48 @@ describe('farewell playback and hangup', () => {
     session.conversation.intent = 'reservation';
     session.conversation.slots.date = '2026-09-05';
     recordAssistantReply(session, 'Vous serez combien ?');
+    let resolvePlan: (
+      value: Awaited<ReturnType<CallSessionManager['observeTurnPlan']>>,
+    ) => void = () => undefined;
+    vi.mocked(mgr.observeTurnPlan).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePlan = resolve;
+        }),
+    );
     vi.mocked(mgr.processUtteranceStreaming).mockImplementation(
-      async (_session, _transcript, onPhrase, options) => {
-        options?.onTurnPlanShadowResult?.({
-          status: 'valid',
-          durationMs: 0,
-          plan: {
-            interpretation: 'answer',
-            intent: 'unchanged',
-            slots: { partySize: 5 },
-            interactionDisposition: 'resolve',
-            confidence: 'high',
-            assistantInteraction: 'time',
-          },
-        });
+      async (_session, _transcript, onPhrase) => {
         await onPhrase?.(reply);
         return reply;
       },
     );
+    const pending = processTranscriptStreaming(session, turn, mgr);
+    // La réponse parlée part avant que le plan séparé ne réponde.
+    await vi.waitFor(() => expect(mgr.observeTurnPlan).toHaveBeenCalled());
+    expect(speakTtsStreamed).toHaveBeenCalledWith(session, reply);
+    expect(mgr.observeTurnPlan).toHaveBeenCalledWith(
+      session,
+      expect.objectContaining({ transcript: turn }),
+      reply,
+      undefined,
+      1_500,
+    );
+    expect(session.conversation.slots.partySize).toBeUndefined();
+    resolvePlan({
+      status: 'valid',
+      durationMs: 0,
+      plan: {
+        interpretation: 'answer',
+        intent: 'unchanged',
+        slots: { partySize: 5 },
+        interactionDisposition: 'resolve',
+        confidence: 'high',
+        assistantInteraction: 'time',
+      },
+    });
 
     try {
-      await processTranscriptStreaming(session, turn, mgr);
+      await pending;
     } finally {
       vi.unstubAllEnvs();
     }

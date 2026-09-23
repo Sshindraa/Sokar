@@ -20,6 +20,7 @@
  * handler. Il n'y a pas de logique de buffer à extraire ici.
  */
 
+import { buildGreetingText } from './greeting-cache';
 import type { FastifyInstance } from 'fastify';
 import '@fastify/websocket';
 import { WebSocket } from 'ws';
@@ -79,7 +80,7 @@ function finalizeSessionCall(
 }
 
 export function buildInitialGreeting(restaurantName: string): string {
-  return `Bonjour, ici ${restaurantName}. Je vous écoute.`;
+  return buildGreetingText(restaurantName);
 }
 
 /**

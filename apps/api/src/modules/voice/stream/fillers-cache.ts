@@ -52,41 +52,18 @@ interface FillerSet {
 
 export type FillerPurpose = 'availability' | 'generic' | 'goodbye';
 
+// Relances neutres pendant que le LLM réfléchit : elles n'annoncent aucune
+// action. « Je regarde » est réservé à une vraie action (disponibilité).
 const FILLERS: FillerSet = {
-  casual: [
-    'Je regarde ça…',
-    'Laissez-moi voir…',
-    'Un instant…',
-    'Voyons voir…',
-    'Alors, je vérifie…',
-  ],
-  warm: [
-    'Pas de souci, je regarde ça…',
-    "Je m'en occupe, une seconde…",
-    'Je vous dis ça tout de suite…',
-    'Alors laissez-moi checker…',
-  ],
-  formal: [
-    'Veuillez patienter un instant…',
-    'Je consulte nos disponibilités…',
-    "Un moment, s'il vous plaît…",
-    'Je regarde cela pour vous…',
-  ],
+  casual: ["D'accord…", 'Très bien…', 'Entendu…'],
+  warm: ["D'accord…", 'Très bien…', 'Oui, bien sûr…'],
+  formal: ['Très bien…', 'Entendu…', "D'accord…"],
 };
 
 const ENGLISH_FILLERS: FillerSet = {
-  casual: ['Let me check that…', 'One moment…', 'Let me see…', 'I’ll check that for you…'],
-  warm: [
-    'Of course, let me check that…',
-    'I’ll take care of that, one moment…',
-    'Let me look into that for you…',
-  ],
-  formal: [
-    'Please hold for a moment…',
-    'I’m checking our availability…',
-    'One moment, please…',
-    'Let me check that for you…',
-  ],
+  casual: ['Okay…', 'All right…', 'Sure…'],
+  warm: ['Okay…', 'All right…', 'Of course…'],
+  formal: ['Very well…', 'Certainly…', 'All right…'],
 };
 
 const GOODBYE_FILLERS: Record<keyof FillerSet, string[]> = {
@@ -138,9 +115,9 @@ const FILLER_BY_PURPOSE: Record<FillerPurpose, Record<keyof FillerSet, string>> 
     formal: 'Je consulte nos disponibilités…',
   },
   generic: {
-    casual: 'Un instant…',
-    warm: "Je m'en occupe, une seconde…",
-    formal: 'Veuillez patienter un instant…',
+    casual: "D'accord…",
+    warm: 'Très bien…',
+    formal: 'Entendu…',
   },
   goodbye: {
     casual: "D'accord, bonne soirée, au revoir.",
@@ -156,9 +133,9 @@ const ENGLISH_FILLER_BY_PURPOSE: Record<FillerPurpose, Record<keyof FillerSet, s
     formal: 'I’m checking our availability…',
   },
   generic: {
-    casual: 'One moment…',
-    warm: 'I’ll take care of that, one moment…',
-    formal: 'Please hold for a moment…',
+    casual: 'Okay…',
+    warm: 'All right…',
+    formal: 'Certainly…',
   },
   goodbye: {
     casual: 'All right, have a great evening. Goodbye.',
@@ -177,8 +154,13 @@ export function selectFillerText(
 }
 
 /** Sélectionne une formule courte dans le pool de la personnalité. */
-export function selectRandomFillerText(style: 'CASUAL' | 'FORMAL' | 'WARM'): string {
-  const pool = FILLERS[style.toLowerCase() as keyof FillerSet];
+export function selectRandomFillerText(
+  style: 'CASUAL' | 'FORMAL' | 'WARM',
+  language: VoiceLanguageCode = 'fr',
+): string {
+  const pool = (language === 'en' ? ENGLISH_FILLERS : FILLERS)[
+    style.toLowerCase() as keyof FillerSet
+  ];
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -261,6 +243,7 @@ export async function initFillerCache(): Promise<void> {
       ...FILLERS.casual,
       ...FILLERS.warm,
       ...FILLERS.formal,
+      ...Object.values(FILLER_BY_PURPOSE.availability),
       ...GOODBYE_FILLERS.casual,
       ...GOODBYE_FILLERS.warm,
       ...GOODBYE_FILLERS.formal,
@@ -269,6 +252,7 @@ export async function initFillerCache(): Promise<void> {
       ...ENGLISH_FILLERS.casual,
       ...ENGLISH_FILLERS.warm,
       ...ENGLISH_FILLERS.formal,
+      ...Object.values(ENGLISH_FILLER_BY_PURPOSE.availability),
       ...ENGLISH_GOODBYE_FILLERS.casual,
       ...ENGLISH_GOODBYE_FILLERS.warm,
       ...ENGLISH_GOODBYE_FILLERS.formal,
@@ -377,7 +361,7 @@ export async function playFiller(
   const voiceId = session ? getCartesiaVoiceId(session) : getCartesiaVoiceId();
   const text =
     purpose === 'generic' && options.randomize
-      ? selectRandomFillerText(style)
+      ? selectRandomFillerText(style, language)
       : selectFillerText(style, purpose, language);
   const debugEntry = session ? recordDebugAgentSpeech(session, text, 'filler') : null;
   let fillerFramesSent = 0;

@@ -4,11 +4,15 @@
  *
  * Extrait de handler.ts. Ces fonctions prennent une CallSession et un
  * CallSessionManager en paramètres. Elles mutent l'état de la session
- * (state, speculativeLlm, transcript, etc.) mais c'est le design
+ * (state, transcript, etc.) mais c'est le design
  * existant — le handler principal délègue en passant la session par
  * référence.
  */
 
+import { pickVariant } from './reply-variants';
+import { RESTAURANT_PROMPT_PREFIX } from '../prompts';
+import { buildLlmRecoveryReply } from './llm-recovery';
+import { prefetchAvailabilityFromPartial, takeAvailabilityPrefetch } from './availability-prefetch';
 import { WebSocket } from 'ws';
 import type { SttEvent, CallSession, DebugSpeechEntry } from './types';
 import type { CallSessionManager } from './manager';
@@ -37,7 +41,6 @@ import {
 } from './turn-telemetry';
 import { isVoiceTtsContextV2Enabled } from '../../../shared/configcat';
 import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts.js';
-import { isSpeculativeLlmEnabled } from './speculation';
 import {
   getActivePendingInteraction,
   isModelTurnStalled,
@@ -85,8 +88,8 @@ import {
   confirmReservationDraft,
   clearReservationConfirmation,
   getReadyAvailabilityRequest,
+  buildLlmFailureFallbackPlan,
   handleCustomerNameTurn,
-  parseSpelledNameTranscriptDetailed,
   finalAssistantQuestion,
   isAffirmativeShortResponse,
   isNegativeShortResponse,
@@ -103,6 +106,20 @@ const recentTranscripts = new WeakMap<
   { normalized: string; at: number; dialogueContext: string }
 >();
 export const LLM_FILLER_DELAY_MS = 1_000;
+/** Attente maximale du TurnPlan séparé avant de retomber sur l'inférence texte. */
+export const TURN_PLAN_REPLY_WAIT_MS = 1_500;
+/** Reprises parlées tolérées avant de proposer le transfert ou un message. */
+export const LLM_RECOVERY_MAX_STREAK = 2;
+
+const LEADING_ACKNOWLEDGEMENT =
+  /^(?:d['’]accord|tr[eè]s bien|entendu|oui,? bien s[uû]r|bien s[uû]r|parfait|super|ok(?:ay)?|all right|alright|sure|certainly|very well|of course)(?![\p{L}])[\s,.!…]*/iu;
+
+/** Retire « D'accord, » en tête de phrase et remet une majuscule. */
+export function stripLeadingAcknowledgement(phrase: string): string {
+  const stripped = phrase.replace(LEADING_ACKNOWLEDGEMENT, '').trim();
+  if (!stripped || stripped === phrase.trim()) return stripped;
+  return stripped.charAt(0).toLocaleUpperCase('fr-FR') + stripped.slice(1);
+}
 
 function syncSpellingProfile(session: CallSession): void {
   setSttSpellingProfile(
@@ -181,6 +198,13 @@ export function shouldSkipDuplicateTranscript(session: CallSession, transcript: 
 }
 
 export function extractRestaurantName(systemPrompt: string): string {
+  // Prompt actuel : le nom est sur la ligne « RESTAURANT : … » du contexte final.
+  const contextLine = systemPrompt
+    .split('\n')
+    .find((line) => line.startsWith(RESTAURANT_PROMPT_PREFIX));
+  if (contextLine) return contextLine.slice(RESTAURANT_PROMPT_PREFIX.length).trim();
+
+  // Anciens prompts : le nom suit l'identité en première ligne.
   const firstLine = systemPrompt.split('\n')[0] ?? '';
   const withoutPrefix = firstLine
     .replace(/^Tu es l'hôte d'accueil et assistant vocal chaleureux de /, '')
@@ -233,13 +257,57 @@ export function buildLivenessResponse(session: CallSession, transcript: string):
   if (!lastAssistantMessage) return null;
 
   const lastQuestion = lastAssistantMessage.match(/(?:^|[.!]\s*)([^.?!]+\?)\s*$/u)?.[1]?.trim();
-  return effectiveVoiceLanguage(session) === 'en'
-    ? lastQuestion
-      ? `Yes, I'm here. ${lastQuestion}`
-      : "Yes, I'm here. I'm listening."
-    : lastQuestion
-      ? `Oui, je suis là. ${lastQuestion}`
-      : 'Oui, je suis là. Je vous écoute.';
+  const en = effectiveVoiceLanguage(session) === 'en';
+  const shortQuestion = shortPendingQuestion(session, en) ?? lastQuestion;
+  if (!shortQuestion) {
+    return pickVariant(
+      session,
+      'liveness:open',
+      en
+        ? ["Yes, I'm here. I'm listening.", "I'm still here, go ahead.", 'Yes, I can hear you.']
+        : [
+            'Oui, je suis là. Je vous écoute.',
+            'Je suis toujours là, je vous écoute.',
+            'Oui, je vous entends bien.',
+          ],
+    );
+  }
+  const lead = pickVariant(
+    session,
+    'liveness',
+    en
+      ? ["Yes, I'm here. So,", "I'm still here. So,", 'Yes, I can hear you.', 'Still here!']
+      : [
+          'Oui, je suis là. On disait,',
+          'Je suis toujours là. Alors,',
+          'Oui, je vous entends.',
+          'Toujours là !',
+        ],
+  );
+  // Après une ponctuation forte, la question repart avec une majuscule.
+  const question = /[.!]$/.test(lead)
+    ? shortQuestion.charAt(0).toLocaleUpperCase('fr-FR') + shortQuestion.slice(1)
+    : shortQuestion.charAt(0).toLocaleLowerCase('fr-FR') + shortQuestion.slice(1);
+  return `${lead} ${question}`;
+}
+
+/**
+ * Reprise courte de la question en attente (« pour combien de personnes ? »)
+ * plutôt que de relire mot pour mot la dernière question.
+ */
+function shortPendingQuestion(session: CallSession, en: boolean): string | null {
+  switch (session.conversation?.pendingQuestion) {
+    case 'partySize':
+      return en ? 'how many people?' : 'pour combien de personnes ?';
+    case 'time':
+      return en ? 'what time?' : 'pour quelle heure ?';
+    case 'date':
+      return en ? 'which day?' : 'pour quel jour ?';
+    case 'customerName':
+      return en ? 'what name should I put it under?' : 'à quel nom ?';
+    default:
+      return null;
+  }
 }
 
 /**
@@ -272,22 +340,6 @@ export function transcriptsMatch(a: string, b: string): boolean {
 }
 
 /**
- * Une pré-réponse devient audible si le STT a stabilisé une phrase
- * suffisamment proche de la phrase spéculative. On utilise un fuzzy match
- * (80% de mots communs dans l'ordre) au lieu d'un match exact, car ElevenLabs
- * peut légèrement modifier le transcript entre l'interim et le final
- * (ponctuation, corrections de dernier mot).
- */
-function speculativeTranscriptMatches(a: string, b: string): boolean {
-  const normA = normalizeTranscriptForDedupe(a);
-  const normB = normalizeTranscriptForDedupe(b);
-  // Match exact d'abord (cas le plus commun)
-  if (normA === normB) return true;
-  // Fuzzy match : 80% de mots communs dans l'ordre
-  return transcriptsMatch(normA, normB);
-}
-
-/**
  * Gère les événements provenant de ElevenLabs Scribe.
  */
 export function handleSttEvent(
@@ -314,9 +366,6 @@ export function handleSttEvent(
       if (session.state === 'PROCESSING') {
         session.responseGeneration++;
         session.conversation.toolInFlight = null;
-        session.speculativeLlm = null;
-        session.speculativeResult = null;
-        session.speculativeTranscript = '';
         mgr.transition(session, 'LISTENING');
       } else if (session.state === 'IDLE') {
         mgr.transition(session, 'LISTENING');
@@ -335,72 +384,14 @@ export function handleSttEvent(
       if (session.state === 'PROCESSING') {
         session.responseGeneration++;
         session.conversation.toolInFlight = null;
-        session.speculativeLlm = null;
-        session.speculativeResult = null;
-        session.speculativeTranscript = '';
         mgr.transition(session, 'LISTENING');
       }
       break;
     }
 
-    case 'InterimHighConfidence': {
-      // Spéculation LLM : lancer le LLM sans attendre la fin de l'utterance
-      // Stocker la promise pour la réutiliser si l'utterance finale correspond
-      if (!isSpeculativeLlmEnabled(session)) break;
-      const spellingInterim = parseSpelledNameTranscriptDetailed(event.transcript);
-      const nameContextExpected =
-        session.conversation?.pendingQuestion === 'customerName' ||
-        ((session.conversation?.intent === 'reservation' ||
-          session.conversation?.intent === 'availability') &&
-          !session.conversation?.slots.customerName);
-      if (
-        isNameCollectionBlocking(session) ||
-        session.conversation?.pendingQuestion === 'customerName' ||
-        Boolean(spellingInterim && nameContextExpected)
-      )
-        break;
-      if (session.state !== 'LISTENING' && session.state !== 'IDLE') break;
-
-      // Ne change pas l'état de l'appel ni son historique : tant que Scribe n'a
-      // pas confirmé le tour, l'appelant peut encore poursuivre sa phrase.
-      const abortController = new AbortController();
-      const speculativeTurnId = session.currentTurn?.id;
-      const speculativeStartedAt = Date.now();
-      recordVoiceTurnEventIfCurrent(session, speculativeTurnId, 'llm_started', {
-        mode: 'speculative',
-      });
-      session.abortController = abortController;
-      session.speculativeLlm = mgr
-        .prepareSpeculativeReply(session, event.transcript, abortController.signal)
-        .then((response) => {
-          session.speculativeResult = response;
-          recordVoiceTurnEventIfCurrent(session, speculativeTurnId, 'llm_completed', {
-            mode: 'speculative',
-            durationMs: Date.now() - speculativeStartedAt,
-            characterCount: response.length,
-          });
-          return response;
-        })
-        .catch((err) => {
-          recordVoiceTurnEventIfCurrent(session, speculativeTurnId, 'llm_interrupted', {
-            mode: 'speculative',
-            reason: abortController.signal.aborted ? 'aborted' : 'error',
-            durationMs: Date.now() - speculativeStartedAt,
-          });
-          logger.error(
-            { err, callId: session.callControlId },
-            `[speculative] LLM failed: ${err.message}`,
-          );
-          captureException(err, {
-            tags: { service: 'handler', action: 'speculative-llm' },
-            extra: { callId: session.callControlId, transcript: redactPii(event.transcript) },
-          });
-          session.speculativeLlm = null;
-          session.speculativeResult = null;
-          return '';
-        });
+    case 'PartialTranscript':
+      prefetchAvailabilityFromPartial(session, mgr, event.transcript);
       break;
-    }
 
     case 'UtteranceEnd': {
       const detectedLanguage = normalizeVoiceLanguage(event.languageCode);
@@ -428,14 +419,8 @@ export function handleSttEvent(
           );
         }
         if (languageDecision.changed) {
-          // Une spéculation lancée avant le commit Scribe peut avoir utilisé
-          // l'ancienne langue (notamment sur un premier « yes »). Elle ne doit
-          // jamais être réutilisée après un changement de langue détecté.
           session.abortController?.abort();
           session.abortController = null;
-          session.speculativeLlm = null;
-          session.speculativeResult = null;
-          session.speculativeTranscript = '';
           logger.info(
             {
               callId: session.callControlId,
@@ -451,105 +436,13 @@ export function handleSttEvent(
       session.transcript += (session.transcript ? ' ' : '') + event.transcript;
       completeVoiceTurnInput(session, event.transcript, event.words);
 
-      const isSpeculativeEnabled = isSpeculativeLlmEnabled(session);
-      const speculativeTranscript = session.speculativeTranscript;
-      const speechAct = classifyVoiceSpeechActInContext(session, event.transcript);
-      const startFinalStreaming = () => {
+      if (session.state === 'LISTENING' || session.state === 'IDLE') {
         processTranscriptStreaming(session, event.transcript, mgr).catch((err) =>
           logger.error(
             { err, callId: session.callControlId },
             '[stt] processTranscriptStreaming failed',
           ),
         );
-      };
-
-      // Une spéculation commencée avant l'entrée dans la collecte du nom ne
-      // doit jamais court-circuiter le contrôle déterministe de confirmation.
-      if (
-        isNameCollectionBlocking(session) ||
-        session.conversation?.pendingQuestion === 'customerName'
-      ) {
-        session.speculativeLlm = null;
-        session.speculativeResult = null;
-        session.speculativeTranscript = '';
-        startFinalStreaming();
-        break;
-      }
-
-      if (
-        isSpeculativeEnabled &&
-        session.speculativeLlm &&
-        speculativeTranscript &&
-        speechAct === 'backchannel' &&
-        speculativeTranscriptMatches(speculativeTranscript, event.transcript)
-      ) {
-        // La formulation reste générée par le LLM, mais son raisonnement a
-        // commencé pendant la fin de phrase de l'appelant.
-        logger.info(
-          { callId: session.callControlId },
-          '[speculative] Match! Using cached LLM response',
-        );
-        const speculativeLlm = session.speculativeLlm;
-        session.speculativeLlm = null;
-        session.speculativeResult = null;
-        session.speculativeTranscript = '';
-        const currentTurnId = session.currentTurn?.id;
-        speculativeLlm
-          .then(async (response) => {
-            const cleanResponse = stripRepeatedGreeting(response, session);
-            if (!cleanResponse || session.state === 'SPEAKING' || session.ended) {
-              if (!session.ended && session.state !== 'SPEAKING') startFinalStreaming();
-              return;
-            }
-
-            recordUserTurn(session, event.transcript, speechAct);
-            recordVoiceTurnClassification(session, speechAct);
-            session.turnCount++;
-            session.history.push(
-              { role: 'user', content: event.transcript },
-              { role: 'assistant', content: cleanResponse },
-            );
-            recordAssistantReplyFromLlmTextFallback(session, cleanResponse);
-            markVoiceTurnLlmFirstToken(session, currentTurnId);
-            recordVoiceTurnEventIfCurrent(session, currentTurnId, 'speculation_hit', {
-              mode: 'speculative',
-              llmResponseMs: session.latencyTrace
-                ? Date.now() - session.latencyTrace.startTime
-                : null,
-            });
-            mgr.transition(session, 'SPEAKING');
-            await speakTtsStreamed(session, cleanResponse);
-            if (!session.ended) mgr.transition(session, 'LISTENING');
-          })
-          .catch((err) => {
-            logger.error(
-              { err, callId: session.callControlId },
-              '[speculative] speculativeLlm.then failed',
-            );
-            if (!session.ended && (session.state === 'LISTENING' || session.state === 'IDLE')) {
-              startFinalStreaming();
-            }
-          });
-      } else {
-        // Pas de spéculation valide ou mismatch / désactivé !
-        if (session.speculativeLlm) {
-          logger.info(
-            {
-              callId: session.callControlId,
-              interim: speculativeTranscript,
-              final: event.transcript,
-            },
-            '[speculative] Mismatch or disabled. Clearing speculative state',
-          );
-          session.speculativeLlm = null;
-          session.speculativeResult = null;
-          session.speculativeTranscript = '';
-          if (session.state === 'PROCESSING') mgr.transition(session, 'LISTENING');
-        }
-
-        if (session.state === 'LISTENING' || session.state === 'IDLE') {
-          startFinalStreaming();
-        }
       }
       break;
     }
@@ -587,7 +480,7 @@ export function handleSttEvent(
  *
  * NOTE: not currently called from this file. The streaming path
  * (processTranscriptStreaming) is the live code path. Kept for the
- * speculative / fallback flows that may re-introduce it.
+ * fallback flows that may re-introduce it.
  */
 export function normalizeSttTranscript(text: string): string {
   if (!text) return text;
@@ -759,14 +652,14 @@ export async function processTranscriptStreaming(
 
   if (deterministicLanguage && /^(?:merci|thanks?|thank you)[.! ]*$/i.test(transcript)) {
     const question = session.conversation.lastAssistantQuestion;
-    const response =
+    const thanks = pickVariant(
+      session,
+      'thanks',
       language === 'en'
-        ? question
-          ? `You're welcome. ${question}`
-          : "You're welcome."
-        : question
-          ? `Je vous en prie. ${question}`
-          : 'Je vous en prie.';
+        ? ["You're welcome.", 'My pleasure.', 'No problem.']
+        : ['Je vous en prie.', 'Avec plaisir.', 'De rien.'],
+    );
+    const response = question ? `${thanks} ${question}` : thanks;
     session.history.push(
       { role: 'user', content: transcript },
       { role: 'assistant', content: response },
@@ -1149,16 +1042,24 @@ export async function processTranscriptStreaming(
     session.conversation.toolInFlight = 'checkAvailability';
     mgr.transition(session, 'PROCESSING');
     const availabilityStartedAt = Date.now();
+    // Réutilise la lecture lancée pendant la phrase du client si elle porte
+    // sur la même date et le même nombre de personnes.
+    const prefetched = takeAvailabilityPrefetch(
+      session,
+      availabilityRequest.date,
+      availabilityRequest.partySize,
+    );
     recordVoiceTurnEvent(session, 'availability_started', {
+      prefetched: Boolean(prefetched),
       date: availabilityRequest.date,
       time: availabilityRequest.time,
       partySize: availabilityRequest.partySize,
     });
     try {
-      const availabilityPromise = mgr.getAvailability(
-        session,
-        availabilityRequest.date,
-        availabilityRequest.partySize,
+      const availabilityPromise = (prefetched ?? Promise.resolve(null)).then(
+        (result) =>
+          result ??
+          mgr.getAvailability(session, availabilityRequest.date, availabilityRequest.partySize),
       );
       let timeout: ReturnType<typeof setTimeout> | null = null;
       let firstResult:
@@ -1183,6 +1084,7 @@ export async function processTranscriptStreaming(
           : await (async () => {
               if (!isCurrentResponse()) return availabilityPromise;
               recordVoiceTurnEvent(session, 'filler_started', { purpose: 'availability' });
+              session.fillerPlayedTurnId = session.currentTurn?.id ?? null;
               writeDebugLog(
                 `[voice-turn] Availability exceeds ${LLM_FILLER_DELAY_MS}ms; playing contextual filler`,
               );
@@ -1264,7 +1166,7 @@ export async function processTranscriptStreaming(
   // formulation libre du LLM mais on omet le schéma d'outils et on borne la
   // réponse, ce qui réduit le prompt et le temps de génération.
   const telemetryTurnId = session.currentTurn?.id;
-  let inBandTurnPlanResult: InBandTurnPlanResult | undefined;
+  let turnPlanRequested = false;
   const shouldCollectInBandTurnPlan =
     turnPlanShadowEnabled &&
     !explicitEnd &&
@@ -1273,25 +1175,17 @@ export async function processTranscriptStreaming(
   const llmOptions = {
     ...(availabilityContext ? { context: availabilityContext, includeTools: false } : {}),
     ...(confirmationTurn ? { includeTools: false } : {}),
-    ...(shouldCollectInBandTurnPlan
-      ? {
-          turnPlanShadowContext: turnPlanContext,
-          onTurnPlanShadowResult: (result: InBandTurnPlanResult) => {
-            inBandTurnPlanResult = result;
-          },
-        }
-      : {}),
     telemetryTurnId,
   };
   const recordTurnPlanObservation = (
-    result = inBandTurnPlanResult,
+    result: InBandTurnPlanResult,
     after = captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
   ) => {
     if (!shouldCollectInBandTurnPlan || !telemetryTurnId) return;
     recordInBandTurnPlanShadow(
       session,
       turnPlanContext,
-      result ?? { status: 'missing', durationMs: 0 },
+      result,
       turnPlanBefore,
       after,
       telemetryTurnId,
@@ -1300,16 +1194,48 @@ export async function processTranscriptStreaming(
   };
   // Réponse LLM libre : le TurnPlan canary devient l'autorité des faits non
   // sensibles et de l'interaction attendue ; sinon l'inférence texte reste.
-  const recordLlmReply = (reply: string) => {
-    const plan =
-      shouldCollectInBandTurnPlan &&
-      turnPlanAuthorityEnabled &&
-      inBandTurnPlanResult?.status === 'valid'
-        ? inBandTurnPlanResult.plan
-        : null;
+  // Le plan est une requête séparée, lancée dès que le texte parlé est connu :
+  // l'audio part sans l'attendre, seul l'état du tour patiente (borné).
+  const recordLlmReply = async (reply: string): Promise<void> => {
+    if (!shouldCollectInBandTurnPlan || !turnPlanAuthorityEnabled) {
+      // Sans autorité, le plan ne sert qu'à l'observation : l'état est mis à
+      // jour tout de suite depuis le texte, l'observation part en tâche de fond.
+      recordAssistantReplyFromLlmTextFallback(session, reply);
+      if (deferUnresolvedToModel) recordDeferredTurnOutcome('plan_unavailable');
+      if (shouldCollectInBandTurnPlan) {
+        turnPlanRequested = true;
+        const observedAfter = captureTurnPlanPolicySnapshot(
+          session,
+          interactionBeforeTurn?.id ?? null,
+        );
+        mgr
+          .observeTurnPlan(session, turnPlanContext, reply, telemetryTurnId)
+          .then((result) => recordTurnPlanObservation(result, observedAfter))
+          .catch((err: unknown) =>
+            logger.warn({ err }, '[voice-turn] TurnPlan observation failed'),
+          );
+      }
+      return;
+    }
+    // Autorité (pilote) : l'état attend le plan, borné à 1,5 s.
+    turnPlanRequested = true;
+    const planResult = await mgr.observeTurnPlan(
+      session,
+      turnPlanContext,
+      reply,
+      telemetryTurnId,
+      TURN_PLAN_REPLY_WAIT_MS,
+    );
+    // Réponse devenue périmée (reprise de parole, nouveau tour) : comme avant,
+    // elle ne modifie plus l'état.
+    if (!isCurrentResponse()) {
+      recordTurnPlanObservation({ status: 'aborted', durationMs: planResult.durationMs });
+      return;
+    }
+    const plan = planResult.status === 'valid' ? planResult.plan : null;
     if (!plan) {
       recordAssistantReplyFromLlmTextFallback(session, reply);
-      recordTurnPlanObservation();
+      recordTurnPlanObservation(planResult);
       if (deferUnresolvedToModel) recordDeferredTurnOutcome('plan_unavailable');
       return;
     }
@@ -1332,7 +1258,7 @@ export async function processTranscriptStreaming(
       slots: deterministic.slots,
       activeInteractionKind: authority.legacyAssistantInteraction,
     };
-    recordTurnPlanObservation(inBandTurnPlanResult, after);
+    recordTurnPlanObservation(planResult, after);
     if (deferUnresolvedToModel) {
       recordDeferredTurnOutcome(
         !authority.policyAccepted
@@ -1390,6 +1316,7 @@ export async function processTranscriptStreaming(
   };
   const abortController = new AbortController();
   const llmStartedAt = Date.now();
+  let llmPhraseReceived = false;
   recordVoiceTurnEventIfCurrent(session, telemetryTurnId, 'llm_started', {
     mode: availabilityContext ? 'availability_context' : 'live',
   });
@@ -1401,6 +1328,9 @@ export async function processTranscriptStreaming(
       transcriptForLlm,
       (phrase: string) => {
         if (!isCurrentResponse() || abortController.signal.aborted) return;
+        const firstPhrase = !llmPhraseReceived;
+        llmPhraseReceived = true;
+        session.llmRecoveryStreak = 0;
         cancelScheduledFiller(session);
         writeDebugLog(`[processTranscriptStreaming] Phrase received: "${redactPii(phrase)}"`);
         markVoiceTurnLlmFirstPhrase(session, telemetryTurnId);
@@ -1408,7 +1338,12 @@ export async function processTranscriptStreaming(
           characterCount: phrase.length,
         });
 
-        const cleanPhrase = stripRepeatedGreeting(phrase, session);
+        let cleanPhrase = stripRepeatedGreeting(phrase, session);
+        // Un filler (« D'accord… ») vient d'être joué : ne pas le répéter en
+        // tête de la réponse.
+        if (firstPhrase && telemetryTurnId && session.fillerPlayedTurnId === telemetryTurnId) {
+          cleanPhrase = stripLeadingAcknowledgement(cleanPhrase);
+        }
         if (!cleanPhrase) return;
 
         if (session.state !== 'SPEAKING') {
@@ -1462,14 +1397,21 @@ export async function processTranscriptStreaming(
       const fallbackResponse = fallbackPlan.reply;
       session.history.push({ role: 'assistant', content: fallbackResponse });
       recordAssistantReplyWithPolicy(session, fallbackResponse, fallbackPlan.proposal);
-      recordTurnPlanObservation();
       mgr.transition(session, 'SPEAKING');
       await speakTtsStreamed(session, fallbackResponse);
       if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
       return;
     }
-    recordLlmReply(fullResponse);
-    syncSpellingProfile(session);
+    const replyRecorded = recordLlmReply(fullResponse)
+      .then(() => {
+        if (isCurrentResponse()) syncSpellingProfile(session);
+      })
+      .catch((err: unknown) =>
+        logger.warn(
+          { err, callId: session.callControlId },
+          '[processTranscriptStreaming] Failed to record LLM reply state',
+        ),
+      );
 
     writeDebugLog(`[processTranscriptStreaming] LLM stream ended, waiting for TTS...`);
     const contextTts = contextTtsRef.current;
@@ -1493,13 +1435,14 @@ export async function processTranscriptStreaming(
       await Promise.all(ttsPromises);
     }
     writeDebugLog(`[processTranscriptStreaming] All TTS completed`);
+    await replyRecorded;
 
     if (isCurrentResponse()) {
       mgr.transition(session, 'LISTENING');
       writeDebugLog(`[processTranscriptStreaming] Transitioned back to LISTENING`);
     }
   } catch (err: unknown) {
-    if (shouldCollectInBandTurnPlan && !inBandTurnPlanResult) {
+    if (shouldCollectInBandTurnPlan && !turnPlanRequested) {
       recordTurnPlanObservation({
         status: abortController.signal.aborted ? 'aborted' : 'failed',
         durationMs: Date.now() - llmStartedAt,
@@ -1527,6 +1470,33 @@ export async function processTranscriptStreaming(
       tags: { service: 'handler', action: 'processTranscriptStreaming' },
       extra: { callId: session.callControlId, transcript: redactPii(transcript) },
     });
+    // Délai dépassé ou erreur avant tout audio : ne jamais laisser un silence.
+    // Une excuse courte puis la dernière question, qui reste en attente.
+    // Après deux reprises d'affilée (fournisseur en panne), proposer le repli
+    // humain plutôt que de reposer la même question sans fin.
+    if (!llmPhraseReceived && isSessionActiveForTts(session)) {
+      cancelScheduledFiller(session);
+      const streak = (session.llmRecoveryStreak ?? 0) + 1;
+      session.llmRecoveryStreak = streak;
+      let recovery: string;
+      if (streak > LLM_RECOVERY_MAX_STREAK) {
+        const fallbackPlan = buildLlmFailureFallbackPlan(session);
+        recovery = fallbackPlan.reply;
+        session.llmRecoveryStreak = 0;
+        recordAssistantReplyWithPolicy(session, recovery, fallbackPlan.proposal);
+        recordVoiceTurnEvent(session, 'dialogue_guard', {
+          level: 'escalate',
+          reason: 'llm_failure',
+        });
+      } else {
+        recovery = buildLlmRecoveryReply(session);
+      }
+      session.history.push({ role: 'assistant', content: recovery });
+      mgr.transition(session, 'SPEAKING');
+      await speakTtsStreamed(session, recovery);
+      if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+      return;
+    }
     mgr.transition(session, 'LISTENING');
   } finally {
     // Réponse abandonnée (erreur, interruption) : ce qui n'a pas été fixé l'est ici.
