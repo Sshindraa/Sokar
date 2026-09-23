@@ -96,6 +96,7 @@ export function scheduleThinkingFiller(
 
     schedule.started = true;
     lastStartedAt.set(session, Date.now());
+    session.fillerPlayedTurnId = session.currentTurn?.id ?? null;
     recordVoiceTurnEvent(session, 'filler_started', { purpose: 'thinking', delayedMs: delayMs });
     playFiller(session, style, 'generic', {
       signal: controller.signal,

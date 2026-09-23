@@ -85,6 +85,7 @@ import {
   confirmReservationDraft,
   clearReservationConfirmation,
   getReadyAvailabilityRequest,
+  buildLlmFailureFallbackPlan,
   handleCustomerNameTurn,
   finalAssistantQuestion,
   isAffirmativeShortResponse,
@@ -104,6 +105,18 @@ const recentTranscripts = new WeakMap<
 export const LLM_FILLER_DELAY_MS = 1_000;
 /** Attente maximale du TurnPlan séparé avant de retomber sur l'inférence texte. */
 export const TURN_PLAN_REPLY_WAIT_MS = 1_500;
+/** Reprises parlées tolérées avant de proposer le transfert ou un message. */
+export const LLM_RECOVERY_MAX_STREAK = 2;
+
+const LEADING_ACKNOWLEDGEMENT =
+  /^(?:d['’]accord|tr[eè]s bien|entendu|oui,? bien s[uû]r|bien s[uû]r|parfait|super|ok(?:ay)?|all right|alright|sure|certainly|very well|of course)(?![\p{L}])[\s,.!…]*/iu;
+
+/** Retire « D'accord, » en tête de phrase et remet une majuscule. */
+export function stripLeadingAcknowledgement(phrase: string): string {
+  const stripped = phrase.replace(LEADING_ACKNOWLEDGEMENT, '').trim();
+  if (!stripped || stripped === phrase.trim()) return stripped;
+  return stripped.charAt(0).toLocaleUpperCase('fr-FR') + stripped.slice(1);
+}
 
 function syncSpellingProfile(session: CallSession): void {
   setSttSpellingProfile(
@@ -1017,6 +1030,7 @@ export async function processTranscriptStreaming(
           : await (async () => {
               if (!isCurrentResponse()) return availabilityPromise;
               recordVoiceTurnEvent(session, 'filler_started', { purpose: 'availability' });
+              session.fillerPlayedTurnId = session.currentTurn?.id ?? null;
               writeDebugLog(
                 `[voice-turn] Availability exceeds ${LLM_FILLER_DELAY_MS}ms; playing contextual filler`,
               );
@@ -1129,11 +1143,27 @@ export async function processTranscriptStreaming(
   // Le plan est une requête séparée, lancée dès que le texte parlé est connu :
   // l'audio part sans l'attendre, seul l'état du tour patiente (borné).
   const recordLlmReply = async (reply: string): Promise<void> => {
-    if (!shouldCollectInBandTurnPlan) {
+    if (!shouldCollectInBandTurnPlan || !turnPlanAuthorityEnabled) {
+      // Sans autorité, le plan ne sert qu'à l'observation : l'état est mis à
+      // jour tout de suite depuis le texte, l'observation part en tâche de fond.
       recordAssistantReplyFromLlmTextFallback(session, reply);
       if (deferUnresolvedToModel) recordDeferredTurnOutcome('plan_unavailable');
+      if (shouldCollectInBandTurnPlan) {
+        turnPlanRequested = true;
+        const observedAfter = captureTurnPlanPolicySnapshot(
+          session,
+          interactionBeforeTurn?.id ?? null,
+        );
+        mgr
+          .observeTurnPlan(session, turnPlanContext, reply, telemetryTurnId)
+          .then((result) => recordTurnPlanObservation(result, observedAfter))
+          .catch((err: unknown) =>
+            logger.warn({ err }, '[voice-turn] TurnPlan observation failed'),
+          );
+      }
       return;
     }
+    // Autorité (pilote) : l'état attend le plan, borné à 1,5 s.
     turnPlanRequested = true;
     const planResult = await mgr.observeTurnPlan(
       session,
@@ -1148,7 +1178,7 @@ export async function processTranscriptStreaming(
       recordTurnPlanObservation({ status: 'aborted', durationMs: planResult.durationMs });
       return;
     }
-    const plan = turnPlanAuthorityEnabled && planResult.status === 'valid' ? planResult.plan : null;
+    const plan = planResult.status === 'valid' ? planResult.plan : null;
     if (!plan) {
       recordAssistantReplyFromLlmTextFallback(session, reply);
       recordTurnPlanObservation(planResult);
@@ -1236,7 +1266,9 @@ export async function processTranscriptStreaming(
       transcriptForLlm,
       (phrase: string) => {
         if (!isCurrentResponse() || abortController.signal.aborted) return;
+        const firstPhrase = !llmPhraseReceived;
         llmPhraseReceived = true;
+        session.llmRecoveryStreak = 0;
         cancelScheduledFiller(session);
         writeDebugLog(`[processTranscriptStreaming] Phrase received: "${redactPii(phrase)}"`);
         markVoiceTurnLlmFirstPhrase(session, telemetryTurnId);
@@ -1244,7 +1276,12 @@ export async function processTranscriptStreaming(
           characterCount: phrase.length,
         });
 
-        const cleanPhrase = stripRepeatedGreeting(phrase, session);
+        let cleanPhrase = stripRepeatedGreeting(phrase, session);
+        // Un filler (« D'accord… ») vient d'être joué : ne pas le répéter en
+        // tête de la réponse.
+        if (firstPhrase && telemetryTurnId && session.fillerPlayedTurnId === telemetryTurnId) {
+          cleanPhrase = stripLeadingAcknowledgement(cleanPhrase);
+        }
         if (!cleanPhrase) return;
 
         if (session.state !== 'SPEAKING') {
@@ -1369,9 +1406,25 @@ export async function processTranscriptStreaming(
     });
     // Délai dépassé ou erreur avant tout audio : ne jamais laisser un silence.
     // Une excuse courte puis la dernière question, qui reste en attente.
+    // Après deux reprises d'affilée (fournisseur en panne), proposer le repli
+    // humain plutôt que de reposer la même question sans fin.
     if (!llmPhraseReceived && isSessionActiveForTts(session)) {
       cancelScheduledFiller(session);
-      const recovery = buildLlmRecoveryReply(session);
+      const streak = (session.llmRecoveryStreak ?? 0) + 1;
+      session.llmRecoveryStreak = streak;
+      let recovery: string;
+      if (streak > LLM_RECOVERY_MAX_STREAK) {
+        const fallbackPlan = buildLlmFailureFallbackPlan(session);
+        recovery = fallbackPlan.reply;
+        session.llmRecoveryStreak = 0;
+        recordAssistantReplyWithPolicy(session, recovery, fallbackPlan.proposal);
+        recordVoiceTurnEvent(session, 'dialogue_guard', {
+          level: 'escalate',
+          reason: 'llm_failure',
+        });
+      } else {
+        recovery = buildLlmRecoveryReply(session);
+      }
       session.history.push({ role: 'assistant', content: recovery });
       mgr.transition(session, 'SPEAKING');
       await speakTtsStreamed(session, recovery);

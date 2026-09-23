@@ -412,6 +412,10 @@ export interface CallSession {
   /** AbortController pour annuler la requête LLM en cours */
   abortController: AbortController | null;
 
+  /** Reprises parlées consécutives après un échec LLM (repli humain à 2). */
+  llmRecoveryStreak?: number;
+  /** Tour pendant lequel un filler a déjà été joué (évite « D'accord… D'accord »). */
+  fillerPlayedTurnId?: string | null;
   /** Disponibilités lues en tâche de fond pendant la phrase du client. */
   availabilityPrefetch?: {
     key: string;

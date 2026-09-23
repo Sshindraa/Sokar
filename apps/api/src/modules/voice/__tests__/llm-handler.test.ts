@@ -6,6 +6,7 @@ import {
   extractRestaurantName,
   handleSttEvent,
   LLM_FILLER_DELAY_MS,
+  stripLeadingAcknowledgement,
   stripRepeatedGreeting,
 } from '../stream/llm-handler';
 import type { CallSession } from '../stream/types';
@@ -210,5 +211,19 @@ describe('handleSttEvent — pré-chargement des disponibilités', () => {
       mgr,
     );
     expect(mgr.getAvailability).not.toHaveBeenCalled();
+  });
+});
+
+describe('stripLeadingAcknowledgement', () => {
+  it.each([
+    ["D'accord, vous serez combien ?", 'Vous serez combien ?'],
+    ['Très bien. Et à quelle heure ?', 'Et à quelle heure ?'],
+    ['Oui, bien sûr ! Pour quand ?', 'Pour quand ?'],
+    ['Okay, what time?', 'What time?'],
+    ['Entendu', ''],
+    ['Superbe terrasse, oui.', 'Superbe terrasse, oui.'],
+    ['Vous serez combien ?', 'Vous serez combien ?'],
+  ])('%s → %s', (input, expected) => {
+    expect(stripLeadingAcknowledgement(input)).toBe(expected);
   });
 });
