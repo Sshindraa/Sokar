@@ -1,0 +1,92 @@
+[
+  {
+    "id": "hesit-01",
+    "category": "hesitation",
+    "persona": "Homme hésitant, beaucoup de « euh ».",
+    "goal": "Réserver pour 4 personnes demain à 20 h, mais commence par hésiter sur le nombre (« euh… trois ou quatre… quatre ») avant de fixer 4. Ton nom est Robin ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "20:00",
+        "partySize": 4
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "hesit-02",
+    "category": "hesitation",
+    "persona": "Femme qui réfléchit à voix haute.",
+    "goal": "Réserver demain pour 2 ; tu hésites sur l'heure (« 19 h… non, plutôt 19 h 30, oui ») et tu fixes 19 h 30. Ton nom est Clément ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "19:30",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "hesit-03",
+    "category": "hesitation",
+    "persona": "Jeune homme qui fait des pauses.",
+    "goal": "Réserver pour 5 après-demain à 21 h ; tu donnes les informations par petits morceaux, avec des « attendez » et « heu ». Ton nom est Gauthier ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 2,
+        "time": "21:00",
+        "partySize": 5
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "hesit-04",
+    "category": "hesitation",
+    "persona": "Personne âgée qui cherche ses mots.",
+    "goal": "Réserver pour 3 demain midi, 12 h ; tu commences des phrases que tu ne finis pas avant de te reprendre. Ton nom est Perrin ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "12:00",
+        "partySize": 3
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "hesit-05",
+    "category": "hesitation",
+    "persona": "Homme qui consulte quelqu'un à côté.",
+    "goal": "Réserver pour 6 demain à 20 h 30 ; à un moment tu dis « attendez, je demande à ma femme… oui, six ». Ton nom est Morel ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "20:30",
+        "partySize": 6
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "hesit-06",
+    "category": "hesitation",
+    "persona": "Femme qui hésite sur le jour.",
+    "goal": "Tu hésites entre demain et après-demain, puis tu choisis après-demain, 19 h, pour 2. Ton nom est Fournier ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 2,
+        "time": "19:00",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  }
+]

@@ -454,11 +454,12 @@ export function handleSttEvent(
       const speculativeTranscript = session.speculativeTranscript;
       const speechAct = classifyVoiceSpeechActInContext(session, event.transcript);
       const startFinalStreaming = () => {
-        processTranscriptStreaming(session, event.transcript, mgr).catch((err) =>
-          logger.error(
-            { err, callId: session.callControlId },
-            '[stt] processTranscriptStreaming failed',
-          ),
+        session.turnProcessing = processTranscriptStreaming(session, event.transcript, mgr).catch(
+          (err) =>
+            logger.error(
+              { err, callId: session.callControlId },
+              '[stt] processTranscriptStreaming failed',
+            ),
         );
       };
 
@@ -1369,7 +1370,9 @@ export async function processTranscriptStreaming(
 
   // Le TTS Context V2 garde son ciblage ConfigCat indépendant du shadow TurnPlan.
   const useCartesiaContext =
-    isCartesiaContextV2Enabled() && (await isVoiceTtsContextV2Enabled(session.restaurantId));
+    !session.speechSink &&
+    isCartesiaContextV2Enabled() &&
+    (await isVoiceTtsContextV2Enabled(session.restaurantId));
   if (!isCurrentResponse()) return;
   const ttsPromises: Promise<void>[] = [];
   // Ouvrir le socket pendant la génération LLM masque sa poignée de main

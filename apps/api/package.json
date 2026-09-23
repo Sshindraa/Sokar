@@ -14,6 +14,7 @@
     "test:int": "AGENTIC_INT_TESTS=1 vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "eval:voice": "vitest run --config vitest.eval.config.ts",
     "seed": "tsx seed.ts",
     "usage:telnyx:fetch": "node --import tsx scripts/fetch-telnyx-usage-invoice.ts",
     "usage:accounting:package": "node --import tsx scripts/build-usage-accounting-package.ts",

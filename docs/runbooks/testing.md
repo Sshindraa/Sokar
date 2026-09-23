@@ -195,6 +195,23 @@ référence est `/admin/margin` (l'ancienne URL `/dashboard/admin/margin` rediri
 `USAGE_ALERT_VOICE_BUDGET_MINUTES` et/ou `USAGE_ALERT_SMS_BUDGET_SEGMENTS` ; ces budgets ne sont
 jamais lus comme un quota client.
 
+## Banc d'évaluation vocal
+
+Un LLM joue l'appelant contre le vrai pipeline de l'agent (événements Scribe → contrôleur → LLM Groq), un autre note le naturel de 1 à 5. La base, les réservations et Telnyx sont simulés ; la parole est captée par `session.speechSink` au lieu d'être synthétisée.
+
+```zsh
+GROQ_API_KEY=... pnpm --filter @sokar/api eval:voice
+VOICE_EVAL_FILTER=correction pnpm --filter @sokar/api eval:voice   # une catégorie ou un identifiant
+```
+
+- Scénarios : `apps/api/src/modules/voice/eval/scenarios/*.json` (persona, objectif, résultat attendu). 50 aujourd'hui, objectif 200.
+- Contrôles : réservation créée avec les bons date, heure et nombre ; outils attendus et interdits ; aucun horaire sans source (appelant, disponibilité ou horaires du restaurant) ; nombre de tours ; pas de répétition de l'accueil ; motifs à dire ou à éviter.
+- Seuil bloquant : ≥ 95 % de réussite (`VOICE_EVAL_MIN_PASS_RATE`) et 0 erreur critique (réservation avec une date, une heure ou un nombre faux).
+- Modèles : `VOICE_EVAL_CALLER_MODEL` et `VOICE_EVAL_JUDGE_MODEL` (défaut `openai/gpt-oss-120b` sur Groq).
+- Rapport : `apps/api/eval-results/voice-eval-report.{json,md}`, et résumé dans la page du run GitHub.
+- CI : `.github/workflows/voice-eval.yml`, chaque nuit et sur chaque PR qui touche `apps/api/src/modules/voice/`. Nécessite le secret GitHub `GROQ_API_KEY` ; sans lui, le job est ignoré avec un avertissement. Pour qu'il bloque la fusion, l'ajouter aux checks requis de `main`.
+- La route `/api/test/simulate-utterance` passe désormais par le même simulateur (`stream/simulator.ts`).
+
 ## E2E
 
 ```zsh

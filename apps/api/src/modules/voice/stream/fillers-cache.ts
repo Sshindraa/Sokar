@@ -378,6 +378,10 @@ export async function playFiller(
     purpose === 'generic' && options.randomize
       ? selectRandomFillerText(style)
       : selectFillerText(style, purpose, language);
+  if (session?.speechSink) {
+    session.speechSink(text, 'filler');
+    return;
+  }
 
   // 1. RAM
   let chunks = fillerCache.get(memoryKey(text, voiceId, language));

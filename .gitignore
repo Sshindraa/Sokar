@@ -62,3 +62,6 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache
+
+# Rapports du banc d’évaluation vocal
+apps/api/eval-results/

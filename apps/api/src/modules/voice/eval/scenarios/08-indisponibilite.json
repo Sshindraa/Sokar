@@ -1,0 +1,61 @@
+[
+  {
+    "id": "unavail-01",
+    "category": "unavailable",
+    "persona": "Femme souple sur l'horaire.",
+    "goal": "Réserver demain pour 2 à 20 h. Si ce n'est pas possible, accepte le créneau le plus proche proposé après 20 h. Ton nom est Colin ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "21:00",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    },
+    "availableSlots": ["19:00", "21:00"]
+  },
+  {
+    "id": "unavail-02",
+    "category": "unavailable",
+    "persona": "Homme qui préfère plus tôt.",
+    "goal": "Réserver demain pour 4 à 20 h 30. Si ce n'est pas possible, accepte le créneau proposé avant 20 h 30. Ton nom est Riviere ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "19:30",
+        "partySize": 4
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    },
+    "availableSlots": ["19:30", "22:00"]
+  },
+  {
+    "id": "unavail-03",
+    "category": "unavailable",
+    "restaurant": "standard",
+    "persona": "Femme qui ne peut venir qu'à 20 h.",
+    "goal": "Réserver demain pour 2 à 20 h exactement. Refuse tout autre horaire. Si on te propose le gérant ou un message, refuse poliment et raccroche.",
+    "availableSlots": ["19:00", "21:30"],
+    "expected": {
+      "tools": [],
+      "forbiddenTools": ["createReservation"],
+      "mustSay": ["(19|21)"],
+      "maxTurns": 8
+    }
+  },
+  {
+    "id": "unavail-04",
+    "category": "unavailable",
+    "restaurant": "standard",
+    "persona": "Homme qui appelle pour un soir complet.",
+    "goal": "Réserver demain soir pour 3 à 20 h. Il n'y a plus aucune place : accepte d'être passé au gérant.",
+    "availableSlots": [],
+    "expected": {
+      "tools": ["handoffToManager"],
+      "forbiddenTools": ["createReservation"],
+      "maxTurns": 8
+    }
+  }
+]

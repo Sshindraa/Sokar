@@ -1,0 +1,85 @@
+name: Voice eval
+
+# Banc d'évaluation vocal (phase 4) : un LLM joue l'appelant contre le vrai
+# pipeline de l'agent, un autre note le naturel. Appels Groq réels.
+# Seuil bloquant : ≥ 95 % de scénarios réussis et 0 erreur critique
+# (réservation créée avec une date, une heure ou un nombre faux).
+on:
+  schedule:
+    # Chaque nuit à 2 h UTC.
+    - cron: '0 2 * * *'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/api/src/modules/voice/**'
+      - '.github/workflows/voice-eval.yml'
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: 'Sous-chaîne d’identifiant ou de catégorie de scénario (vide = tous)'
+        required: false
+        default: ''
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TURBO_TELEMETRY_DISABLED: 1
+
+jobs:
+  voice-eval:
+    name: Voice eval
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      VOICE_EVAL_FILTER: ${{ github.event.inputs.filter }}
+      VOICE_EVAL_OUTPUT_DIR: ${{ github.workspace }}/apps/api/eval-results
+    steps:
+      - name: Check Groq key
+        id: key
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "::warning::Secret GROQ_API_KEY absent : banc d'évaluation vocal ignoré."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.available == 'true'
+
+      - name: Setup pnpm
+        if: steps.key.outputs.available == 'true'
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        if: steps.key.outputs.available == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        if: steps.key.outputs.available == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace dependencies
+        if: steps.key.outputs.available == 'true'
+        run: pnpm turbo build --filter=@sokar/api^...
+
+      - name: Run voice eval
+        if: steps.key.outputs.available == 'true'
+        run: pnpm --filter @sokar/api eval:voice
+
+      - name: Upload report
+        if: always() && steps.key.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: voice-eval-report
+          path: apps/api/eval-results/
+          if-no-files-found: ignore
+          retention-days: 30

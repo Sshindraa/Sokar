@@ -367,6 +367,14 @@ export interface CallSession {
     languageCode?: string;
   } | null;
 
+  /**
+   * Simulation uniquement (banc d'évaluation, route de test) : reçoit le texte
+   * qui aurait été prononcé, à la place de la synthèse et de l'envoi Telnyx.
+   */
+  speechSink?: ((text: string, kind: 'speech' | 'filler') => void) | null;
+  /** Traitement du dernier tour lancé par UtteranceEnd (attendu par le simulateur). */
+  turnProcessing?: Promise<void> | null;
+
   // Gestion audio
   audioBuffer: Buffer[];
   isSpeaking: boolean;

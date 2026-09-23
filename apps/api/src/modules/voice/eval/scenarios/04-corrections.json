@@ -1,0 +1,92 @@
+[
+  {
+    "id": "corr-01",
+    "category": "correction",
+    "persona": "Homme qui se corrige.",
+    "goal": "Demande d'abord demain 20 h pour 2, puis corrige : « non, plutôt 20 h 30 ». Ton nom est Lefèvre ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "20:30",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "corr-02",
+    "category": "correction",
+    "persona": "Femme qui change le nombre.",
+    "goal": "Demande demain 19 h pour 4, puis corrige : « ah non, on sera cinq finalement ». Ton nom est Chevalier ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "19:00",
+        "partySize": 5
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "corr-03",
+    "category": "correction",
+    "persona": "Homme qui change de jour.",
+    "goal": "Demande demain 21 h pour 3, puis corrige : « pardon, je voulais dire après-demain ». Ton nom est Vincent ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 2,
+        "time": "21:00",
+        "partySize": 3
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "corr-04",
+    "category": "correction",
+    "persona": "Femme qui corrige au moment du récapitulatif.",
+    "goal": "Demande demain 20 h pour 2. Au récapitulatif, dis que ce n'est pas 20 h mais 21 h, puis confirme la version corrigée. Ton nom est Muller ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "21:00",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "corr-05",
+    "category": "correction",
+    "persona": "Homme qui revient sur une correction.",
+    "goal": "Demande demain 19 h 30 pour 4, dis « non, 20 h », puis « finalement 19 h 30 c'est bien ». Ton nom est Faure ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "19:30",
+        "partySize": 4
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "corr-06",
+    "category": "correction",
+    "persona": "Femme qui corrige son nom.",
+    "goal": "Réserve demain 20 h pour 2 ; au nom de « André », puis corrige : « non, Andrieu, A N D R I E U ». Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "20:00",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 14
+    }
+  }
+]

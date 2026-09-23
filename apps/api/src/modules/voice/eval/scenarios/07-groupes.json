@@ -1,0 +1,50 @@
+[
+  {
+    "id": "group-01",
+    "category": "large_group",
+    "restaurant": "standard",
+    "persona": "Organisateur d'un anniversaire.",
+    "goal": "Réserver pour 12 personnes samedi soir. Accepte d'être transféré au gérant.",
+    "expected": {
+      "tools": ["handoffToManager"],
+      "forbiddenTools": ["createReservation"],
+      "maxTurns": 6
+    }
+  },
+  {
+    "id": "group-02",
+    "category": "large_group",
+    "restaurant": "standard",
+    "persona": "Responsable d'une équipe.",
+    "goal": "Réserver pour 8 personnes demain à 20 h. Accepte d'être transféré au gérant.",
+    "expected": {
+      "tools": ["handoffToManager"],
+      "forbiddenTools": ["createReservation"],
+      "maxTurns": 6
+    }
+  },
+  {
+    "id": "group-03",
+    "category": "large_group",
+    "restaurant": "no_manager",
+    "persona": "Femme qui organise un repas de famille.",
+    "goal": "Réserver pour 10 personnes après-demain midi. Accepte de laisser un message au gérant : ton nom est Rey, ton message : réservation pour 10 après-demain midi.",
+    "expected": {
+      "tools": ["takeMessage"],
+      "forbiddenTools": ["createReservation"],
+      "maxTurns": 8
+    }
+  },
+  {
+    "id": "group-04",
+    "category": "large_group",
+    "restaurant": "standard",
+    "persona": "Homme qui minimise la taille du groupe.",
+    "goal": "Dis d'abord « on sera une petite dizaine », puis précise 9 personnes, demain à 21 h. Accepte le transfert au gérant.",
+    "expected": {
+      "tools": ["handoffToManager"],
+      "forbiddenTools": ["createReservation"],
+      "maxTurns": 6
+    }
+  }
+]

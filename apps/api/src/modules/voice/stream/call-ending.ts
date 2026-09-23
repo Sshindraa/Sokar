@@ -68,6 +68,9 @@ export async function finishCall(
   try {
     await speakTtsStreamed(session, goodbye);
     if (session.ended) return;
+    // Appel simulé : la parole est captée, il n'y a ni mark Telnyx à attendre
+    // ni appel à raccrocher.
+    if (session.speechSink) return;
     await new Promise<void>((resolve) => {
       ending.complete = resolve;
       if (ending.playbackCompleted) return resolve();

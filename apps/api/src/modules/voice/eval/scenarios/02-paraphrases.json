@@ -1,0 +1,107 @@
+[
+  {
+    "id": "para-01",
+    "category": "paraphrase",
+    "persona": "Homme qui parle de façon imagée.",
+    "goal": "Réserver pour ta femme et toi (2 personnes), demain en début de soirée, précisément 19 h si on te demande l'heure. Ton nom est Fabre ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "19:00",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "para-02",
+    "category": "paraphrase",
+    "persona": "Mère de famille.",
+    "goal": "Réserver pour toi, ton mari et vos trois enfants (5 personnes), demain à 12 h 30. Ne dis pas « cinq » directement : décris qui vient. Ton nom est Blanc ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "12:30",
+        "partySize": 5
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "para-03",
+    "category": "paraphrase",
+    "persona": "Jeune homme, langage familier.",
+    "goal": "Réserver « une table pour deux » pour « demain soir, genre huit heures » (20 h). Ton nom est Henry ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "20:00",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "para-04",
+    "category": "paraphrase",
+    "persona": "Organisatrice d'un petit dîner.",
+    "goal": "Réserver pour « une petite tablée de six » après-demain « vers neuf heures du soir » (21 h). Ton nom est Lambert ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 2,
+        "time": "21:00",
+        "partySize": 6
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "para-05",
+    "category": "paraphrase",
+    "persona": "Homme âgé, formules anciennes.",
+    "goal": "Réserver « pour déjeuner » demain, « à midi et demi » (12 h 30), pour « mon épouse et moi-même ». Ton nom est Mercier ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "12:30",
+        "partySize": 2
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "para-06",
+    "category": "paraphrase",
+    "persona": "Collègue qui organise un repas.",
+    "goal": "Réserver pour « nous quatre du bureau » demain « à treize heures ». Ton nom est Girard ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "13:00",
+        "partySize": 4
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  },
+  {
+    "id": "para-07",
+    "category": "paraphrase",
+    "persona": "Femme qui parle vite.",
+    "goal": "Réserver « pour trois, demain, vingt heures trente ». Ton nom est Bonnet ; épelle-le si on te le demande. Confirme le récapitulatif par « oui ».",
+    "expected": {
+      "reservation": {
+        "dateOffsetDays": 1,
+        "time": "20:30",
+        "partySize": 3
+      },
+      "tools": ["createReservation"],
+      "maxTurns": 12
+    }
+  }
+]

@@ -113,7 +113,8 @@ describe('CallSessionManager — integration', () => {
 
       expect(reply).toMatch(/bonjour|réserver|table/i);
       expect(session.turnCount).toBe(1);
-      expect(session.state).toBe('SPEAKING');
+      // Le tour passe par le vrai pipeline : il se termine en écoute.
+      expect(session.state).toBe('LISTENING');
       // user message appended, assistant message appended
       const userMsgs = session.history.filter((m) => m.role === 'user');
       const assistantMsgs = session.history.filter((m) => m.role === 'assistant');
