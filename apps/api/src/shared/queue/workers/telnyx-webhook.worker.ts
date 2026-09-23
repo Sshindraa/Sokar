@@ -10,6 +10,7 @@ import {
   type SavedRecordingJobData,
 } from '../../../modules/voice/call-recording.service';
 import { db } from '../../db/client';
+import { purgeExpiredVoiceDebugTurns } from '../../../modules/voice/stream/debug-dialogue';
 
 export interface TelnyxAnswerJobData {
   readonly callControlId: string;
@@ -47,6 +48,12 @@ export const telnyxWebhookWorker = new Worker(
 
     if (job.name === 'purge-expired-recordings') {
       await purgeExpiredRecordings();
+      return;
+    }
+
+    if (job.name === 'purge-expired-voice-debug-turns') {
+      const deleted = await purgeExpiredVoiceDebugTurns();
+      log.info({ deleted }, 'Expired voice debug turns purged');
       return;
     }
 

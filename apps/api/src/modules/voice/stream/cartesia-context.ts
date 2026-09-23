@@ -123,6 +123,7 @@ export class CartesiaContextTurn {
   private cancelled = false;
   private firstAudioOutput = false;
   private playbackStarted = false;
+  private sentFrames = 0;
   private playbackPromise: Promise<void> | null = null;
   private openTimeout: ReturnType<typeof setTimeout> | null = null;
   private lastTranscript = '';
@@ -150,6 +151,11 @@ export class CartesiaContextTurn {
 
   get hasAudioOutput(): boolean {
     return this.firstAudioOutput;
+  }
+
+  /** Trames de ce contexte envoyées à Telnyx. */
+  get framesSent(): number {
+    return this.sentFrames;
   }
 
   push(transcript: string): void {
@@ -317,6 +323,7 @@ export class CartesiaContextTurn {
       this.session.telnyxWs.send(
         JSON.stringify({ event: 'media', media: { payload: frame.toString('base64') } }),
       );
+      this.sentFrames++;
       const hadAudioSent = this.session.latencyTrace?.totalE2eMs !== undefined;
       markVoiceTurnAudioSent(this.session, { ttsPath: 'cartesia_context' }, this.turnId);
       if (!hadAudioSent && this.session.latencyTrace?.totalE2eMs !== undefined) {
