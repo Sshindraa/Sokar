@@ -14,6 +14,7 @@
 import { db } from '../db/client';
 import { logger } from '../logger/pino';
 import { queues } from './queues';
+import { env } from '../../env';
 
 export async function registerJobSchedulers(): Promise<void> {
   // Chaque scheduler est inscrit dans son propre try/catch pour qu'un
@@ -28,21 +29,41 @@ export async function registerJobSchedulers(): Promise<void> {
         logger.error({ err, scheduler: label }, 'Failed to register scheduler (non-blocking)');
       });
 
-  // Evening-report : un scheduler par restaurant (boucle).
-  try {
-    // tenant-scoping: global — planification : un rapport par établissement.
-    const restaurants = await db.restaurant.findMany({ select: { id: true } });
-    for (const r of restaurants) {
-      await register(`evening-report/${r.id}`, () =>
-        queues.eveningReport.upsertJobScheduler(
-          `nightly-${r.id}`,
-          { pattern: '0 23 * * *', tz: 'Europe/Paris' },
-          { name: 'nightly', data: { restaurantId: r.id } },
-        ),
-      );
+  // Evening-report : un scheduler par restaurant. Staging n'a pas de Resend ;
+  // retirer aussi les schedulers déjà présents évite d'accumuler des jobs morts
+  // au prochain 23 h ou après un redémarrage du worker.
+  if (env.EVENING_REPORTS_ENABLED) {
+    try {
+      // tenant-scoping: global — planification : un rapport par établissement.
+      const restaurants = await db.restaurant.findMany({ select: { id: true } });
+      for (const r of restaurants) {
+        await register(`evening-report/${r.id}`, () =>
+          queues.eveningReport.upsertJobScheduler(
+            `nightly-${r.id}`,
+            { pattern: '0 23 * * *', tz: 'Europe/Paris' },
+            { name: 'nightly', data: { restaurantId: r.id } },
+          ),
+        );
+      }
+    } catch (err) {
+      logger.error({ err }, 'Failed to load restaurants for evening-report schedulers');
     }
-  } catch (err) {
-    logger.error({ err }, 'Failed to load restaurants for evening-report schedulers');
+  } else {
+    try {
+      const schedulers = await queues.eveningReport.getJobSchedulers(0, -1);
+      const nightlySchedulers = schedulers.filter((scheduler) => scheduler.name === 'nightly');
+      for (const scheduler of nightlySchedulers) {
+        await register('evening-report/disable', () =>
+          queues.eveningReport.removeJobScheduler(scheduler.key),
+        );
+      }
+      logger.info(
+        { removed: nightlySchedulers.length },
+        'Evening-report schedulers disabled by configuration',
+      );
+    } catch (err) {
+      logger.error({ err }, 'Failed to remove disabled evening-report schedulers');
+    }
   }
 
   await register('reconciliation/calls', () =>
