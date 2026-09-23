@@ -416,6 +416,29 @@ describe('CallSessionManager — tool execution', () => {
     expect(reply).toContain('Réservation confirmée pour Jean');
   });
 
+  it('createReservation : convertit l’heure dans le fuseau du restaurant, pas du serveur', async () => {
+    vi.mocked(ReservationService.create).mockResolvedValue({ id: 'res-tz' } as unknown as Awaited<
+      ReturnType<typeof ReservationService.create>
+    >);
+    mockFetchToolCall(
+      'createReservation',
+      { date: '2026-07-16', time: '19:30', partySize: 2, customerName: 'Jean' },
+      "Parfait, c'est noté.",
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    // Fuseau volontairement différent de celui des tests (Europe/Paris) : une
+    // conversion par le fuseau du processus donnerait 17:30 UTC.
+    const session = makeSession();
+    session.timezone = 'America/New_York';
+    authorizeReservation(session, '2026-07-16', '19:30', 2, 'Jean');
+    await mgr.processUtterance(session, 'Je voudrais réserver');
+
+    expect(ReservationService.create).toHaveBeenCalledWith(
+      expect.objectContaining({ reservedAt: new Date('2026-07-16T23:30:00.000Z') }),
+    );
+  });
+
   it('createReservation : conserve le nom épelé après confirmation', async () => {
     vi.mocked(ReservationService.create).mockResolvedValue({
       id: 'res-spelled',
@@ -723,6 +746,31 @@ describe('CallSessionManager — tool execution', () => {
     expect(ReservationService.update).toHaveBeenCalledWith('res-cancel-1', 'rest-1', {
       status: 'CANCELLED',
     });
+  });
+
+  it('cancelReservation : cherche sur la journée locale du restaurant', async () => {
+    vi.mocked(db.reservation.findMany).mockResolvedValue([]);
+    mockFetchToolCall(
+      'cancelReservation',
+      { customerName: 'Jean Dupont', date: '2026-07-16' },
+      "C'est annulé.",
+    );
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    session.timezone = 'America/New_York';
+    await mgr.processUtterance(session, 'Annuler ma résa');
+
+    expect(db.reservation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          reservedAt: {
+            gte: new Date('2026-07-16T04:00:00.000Z'),
+            lte: new Date('2026-07-17T03:59:59.999Z'),
+          },
+        }),
+      }),
+    );
   });
 
   it('cancelReservation : retourne message si aucune résa trouvée', async () => {

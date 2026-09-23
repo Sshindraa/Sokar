@@ -39,7 +39,30 @@ import {
 import {
   voiceProviderErrorsTotal,
   voiceActiveSessionsGauge,
+  voiceCallsTotal,
+  voiceTransfersTotal,
+  type VoiceTransferMotive,
+  type VoiceTransferOutcome,
 } from '../../../shared/observability/metrics';
+
+function recordVoiceTransfer(
+  session: CallSession,
+  authorizationBasis: VoiceToolAuthorizationBasis | undefined,
+  outcome: VoiceTransferOutcome,
+): void {
+  const motive: VoiceTransferMotive =
+    authorizationBasis?.kind === 'human_fallback_choice'
+      ? 'dialogue_stall'
+      : authorizationBasis?.kind === 'name_spelling_escalation'
+        ? 'name_spelling'
+        : 'caller_request';
+  voiceTransfersTotal.inc({
+    motive,
+    intent: session.conversation.intent ?? 'none',
+    outcome,
+    restaurant_id: session.restaurantId || 'unknown',
+  });
+}
 
 // ─── LLM error classification for voice_provider_errors_total ──────────
 // Un seul provider LLM depuis le 22 septembre 2026 : Groq. Le label reste
@@ -531,6 +554,7 @@ export class CallSessionManager {
     // Capacité locale (R1-3) : la jauge suit le nombre de sessions tenues par
     // ce process, pour alerter avant la saturation CPU mesurée à ~100 sessions.
     voiceActiveSessionsGauge.set(this.sessions.size);
+    voiceCallsTotal.inc({ restaurant_id: session.restaurantId || 'unknown' });
     return session;
   }
 
@@ -570,6 +594,8 @@ export class CallSessionManager {
       session.sttPendingCommit = null;
     }
     session.pendingSttEndOfTurn = null;
+    if (session.sttSemanticHold?.timer) clearTimeout(session.sttSemanticHold.timer);
+    session.sttSemanticHold = null;
     if (session.abortController) {
       session.abortController.abort();
       session.abortController = null;
@@ -1794,7 +1820,8 @@ export class CallSessionManager {
             await ReservationService.create({
               restaurantId: session.restaurantId,
               callId: callRecordId,
-              reservedAt: new Date(`${date}T${time}`),
+              // Heure locale du restaurant, jamais celle du serveur.
+              reservedAt: zonedTimeToUtc(date, time, session.timezone || 'Europe/Paris'),
               partySize: partySize ?? 1,
               customerName: reservationCustomerName,
               customerPhone: customerPhone ?? session.from,
@@ -1872,8 +1899,17 @@ export class CallSessionManager {
 
           try {
             // Trouver la réservation par nom + date
-            const dayStart = new Date(`${date}T00:00:00`);
-            const dayEnd = new Date(`${date}T23:59:59`);
+            // Journée locale du restaurant, indépendante du fuseau du serveur.
+            const dayTimeZone = session.timezone || 'Europe/Paris';
+            const dayStart = zonedTimeToUtc(date, '00:00', dayTimeZone);
+            // zonedTimeToUtc ignore les secondes : la fin de journée est le
+            // minuit local suivant moins une milliseconde.
+            const nextDay = new Date(`${date}T00:00:00.000Z`);
+            nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+            const dayEnd = new Date(
+              zonedTimeToUtc(nextDay.toISOString().slice(0, 10), '00:00', dayTimeZone).getTime() -
+                1,
+            );
 
             // Requête volontairement large (contains+insensitive) pour capter les
             // variations STT ; l'affinage se fait en JS ci-dessous.
@@ -2160,6 +2196,7 @@ export class CallSessionManager {
         case 'handoffToManager':
           if (!session.managerPhone?.trim()) {
             session.handoffConclusion = 'manager_unconfigured';
+            recordVoiceTransfer(session, authorizationBasis, 'unconfigured');
             return terminalToolReply(
               executionControl,
               "Je n'ai pas de ligne directe configurée pour le gérant. Je peux prendre un message à transmettre immédiatement.",
@@ -2182,6 +2219,7 @@ export class CallSessionManager {
             if (!transferResponse.ok) {
               const responseBody = await transferResponse.text().catch(() => '');
               session.handoffConclusion = 'manager_transfer_rejected';
+              recordVoiceTransfer(session, authorizationBasis, 'rejected');
               logger.warn(
                 {
                   callId: session.callControlId,
@@ -2199,12 +2237,14 @@ export class CallSessionManager {
             // la sonnerie et le décroché du gérant ne sont pas encore connus.
             session.handoffInProgress = true;
             session.handoffConclusion = 'manager_transfer_requested';
+            recordVoiceTransfer(session, authorizationBasis, 'requested');
             return terminalToolReply(
               executionControl,
               'Je lance le transfert vers le gérant, un instant.',
             );
           } catch (err) {
             session.handoffConclusion = 'manager_transfer_failed';
+            recordVoiceTransfer(session, authorizationBasis, 'failed');
             logger.warn({ err, callId: session.callControlId }, '[tool] Manager transfer failed');
             return terminalToolReply(
               executionControl,
