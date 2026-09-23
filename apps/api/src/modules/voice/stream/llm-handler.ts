@@ -18,6 +18,7 @@ import { cancelScheduledFiller, scheduleThinkingFiller } from './filler-schedule
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
+import { recordDebugAgentSpeech } from './debug-dialogue';
 import { redactPii } from './pii-redact';
 import { cleanTextForTts, isSessionActiveForTts, speakTtsStreamed } from './tts-handler';
 import {
@@ -1416,6 +1417,7 @@ export async function processTranscriptStreaming(
         // contexte échoue avant le premier audio.
         if (contextTtsRef.current) {
           session.ttsContext = contextTtsRef.current;
+          recordDebugAgentSpeech(session, cleanPhrase);
           contextTtsRef.current.push(cleanTextForTts(cleanPhrase, effectiveVoiceLanguage(session)));
           return;
         }

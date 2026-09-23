@@ -37,6 +37,7 @@ import { logger } from '../../../shared/logger/pino';
 import { CARTESIA_MODEL, FILLER_CACHE_TTL_SECONDS } from '@sokar/config';
 import { redisCache } from '../../../shared/redis/client';
 import { VOICE_PROVIDER_TIMEOUT_MS, fetchWithTimeout } from '../../../shared/resilience';
+import { recordDebugAgentSpeech } from './debug-dialogue';
 import {
   buildCartesiaCacheVariant,
   CARTESIA_NORMALIZATION,
@@ -378,6 +379,7 @@ export async function playFiller(
     purpose === 'generic' && options.randomize
       ? selectRandomFillerText(style)
       : selectFillerText(style, purpose, language);
+  if (session) recordDebugAgentSpeech(session, text, 'filler');
 
   // 1. RAM
   let chunks = fillerCache.get(memoryKey(text, voiceId, language));

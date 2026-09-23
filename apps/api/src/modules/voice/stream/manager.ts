@@ -26,6 +26,7 @@ import {
 } from './conversation-controller';
 import { authorizeVoiceTool, type VoiceToolAuthorizationBasis } from './turn-policy';
 import { markVoiceTurnLlmFirstToken, recordVoiceTurnEvent } from './turn-telemetry';
+import { recordDebugTool } from './debug-dialogue';
 import { cancelScheduledFiller } from './filler-scheduler';
 import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
 import { buildLlmMessagesWithLanguage, effectiveVoiceLanguage } from './voice-language';
@@ -1705,6 +1706,7 @@ export class CallSessionManager {
     executionControl?: VoiceToolExecutionControl,
   ): Promise<string> {
     if (session.ending || session.ended) return 'Appel terminé.';
+    recordDebugTool(session, name);
     try {
       const validated = validateToolArgs(name, argsJson);
       if (!validated.success) {

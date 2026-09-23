@@ -12,6 +12,7 @@ import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
+import { VOICE_DEBUG_DIALOGUE_RETENTION_DAYS } from './debug-dialogue';
 import { MS_TO_SECONDS } from '../../../shared/constants/time.js';
 
 /** Crée ou met à jour un enregistrement Call en base pour un appel Scribe */
@@ -115,6 +116,14 @@ async function persistLatencyTraceNow(session: CallSession): Promise<void> {
         update: data,
         create: data,
       });
+      if (turn.debugDialogue) {
+        const debug = buildVoiceDebugTurnData(turn, callRecord.id, session.restaurantId);
+        await db.voiceDebugTurn.upsert({
+          where: { callId_turnId: { callId: callRecord.id, turnId: turn.id } },
+          update: debug,
+          create: debug,
+        });
+      }
       persistedTurns[turn.id] = revision;
     }
 
@@ -174,7 +183,26 @@ function voiceTurnRevision(
     trace: turn.latencyTrace ?? null,
     providers: [data.sttProvider, data.llmProvider, data.llmModel, data.ttsProvider],
     availability: [data.availabilitySearches, data.availabilityFailures],
+    // Une phrase prononcée après l'écriture des mesures doit aussi être persistée.
+    dialogue: turn.debugDialogue ?? null,
   });
+}
+
+/** Dialogue d'un tour de test, conservé VOICE_DEBUG_DIALOGUE_RETENTION_DAYS jours. */
+function buildVoiceDebugTurnData(turn: VoiceTurnTelemetry, callId: string, restaurantId: string) {
+  const dialogue = turn.debugDialogue!;
+  return {
+    callId,
+    restaurantId,
+    turnId: turn.id,
+    sequence: turn.sequence,
+    callerText: dialogue.callerText ?? null,
+    agentText: dialogue.agentSpeech.join(' ') || null,
+    fillerText: dialogue.fillers.join(' ') || null,
+    speechAct: dialogue.speechAct ?? null,
+    tools: [...dialogue.tools],
+    expiresAt: new Date(turn.startedAt + VOICE_DEBUG_DIALOGUE_RETENTION_DAYS * 24 * 60 * 60 * 1000),
+  };
 }
 
 type VoiceCallProviders = {

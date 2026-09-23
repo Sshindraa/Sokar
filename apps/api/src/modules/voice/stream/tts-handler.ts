@@ -45,6 +45,7 @@ import {
 } from './turn-telemetry';
 import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
 import { addCartesiaTtsCharacters } from '../../usage/voice-usage.service';
+import { recordDebugAgentSpeech } from './debug-dialogue';
 
 export function isSessionActiveForTts(session: CallSession, generation?: number): boolean {
   return (
@@ -217,6 +218,7 @@ export async function speakTelnyxNative(session: CallSession, text: string): Pro
  * donc naturellement les fragments encore en attente.
  */
 export async function speakTtsStreamed(session: CallSession, text: string): Promise<void> {
+  recordDebugAgentSpeech(session, text);
   const previousPlayback = session.ttsPlayback ?? Promise.resolve();
   const generation = session.ttsGeneration ?? 0;
   const turnId = session.currentTurn?.id;

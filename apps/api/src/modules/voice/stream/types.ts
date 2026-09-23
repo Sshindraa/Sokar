@@ -237,6 +237,17 @@ export interface VoiceTurnTelemetry {
   endedAt?: number;
   /** Numéro monotone des événements structurés de ce tour. */
   eventSequence?: number;
+  /** Dialogue du tour, rempli seulement pour les restaurants de test. */
+  debugDialogue?: VoiceTurnDebugDialogue;
+}
+
+/** Paroles d'un tour (appels de test uniquement, cf. debug-dialogue.ts). */
+export interface VoiceTurnDebugDialogue {
+  callerText?: string;
+  speechAct?: string;
+  agentSpeech: string[];
+  fillers: string[];
+  tools: string[];
 }
 
 /** Événements normalisés produits par le fournisseur STT. */

@@ -19,6 +19,7 @@ import {
   voiceTurnPlanShadowByRestaurantTotal,
 } from '../../../shared/observability/metrics';
 import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
+import { recordDebugCallerText, recordDebugSpeechAct } from './debug-dialogue';
 
 export type VoiceTurnPhase =
   | 'speech'
@@ -199,6 +200,7 @@ export function completeVoiceTurnInput(
   if (!turn) return;
 
   const completedAt = Date.now();
+  recordDebugCallerText(session, transcript);
   turn.transcriptLength = transcript.length;
   turn.transcriptFingerprint = transcriptFingerprint(transcript);
   if (session.latencyTrace) {
@@ -226,6 +228,7 @@ export function recordVoiceTurnClassification(
   session: CallSession,
   speechAct: VoiceSpeechAct,
 ): void {
+  recordDebugSpeechAct(session, speechAct);
   recordVoiceTurnEvent(session, 'classified', {
     speechAct,
     intent: session.conversation.intent,
