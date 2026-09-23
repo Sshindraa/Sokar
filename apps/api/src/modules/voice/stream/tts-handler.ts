@@ -45,6 +45,7 @@ import {
 } from './turn-telemetry';
 import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
 import { addCartesiaTtsCharacters } from '../../usage/voice-usage.service';
+import { recordDebugAgentSpeech, settleDebugSpeech } from './debug-dialogue';
 
 export function isSessionActiveForTts(session: CallSession, generation?: number): boolean {
   return (
@@ -67,11 +68,15 @@ function persistFirstAudioFrame(session: CallSession, turnId?: string): void {
   );
 }
 
+/** Trames envoyées à Telnyx pour une seule réplique (dialogue de test). */
+type FragmentFrameTally = { frames: number };
+
 async function sendPacedAudioFrames(
   session: CallSession,
   audio: Buffer,
   generation?: number,
   turnId?: string,
+  tally?: FragmentFrameTally,
 ): Promise<number> {
   const frames = splitTelnyxAudioFrames(audio, session.codec);
   let framesSent = 0;
@@ -85,6 +90,7 @@ async function sendPacedAudioFrames(
       }),
     );
     framesSent++;
+    if (tally) tally.frames++;
     persistFirstAudioFrame(session, turnId);
     await new Promise((resolve) => setTimeout(resolve, TTS_PACE_PAUSE_MS));
   }
@@ -201,6 +207,18 @@ export async function speakTelnyxNative(session: CallSession, text: string): Pro
       writeDebugLog(`[speakTelnyxNative] Telnyx native speak failed: ${res.status} ${errText}`);
     } else {
       writeDebugLog(`[speakTelnyxNative] Telnyx native speak command sent successfully`);
+      settleDebugSpeech(
+        recordDebugAgentSpeech(
+          session,
+          session.ending
+            ? effectiveVoiceLanguage(session) === 'en'
+              ? 'Goodbye, have a great day.'
+              : 'Au revoir, bonne journée.'
+            : text,
+        ),
+        1,
+        true,
+      );
     }
   } catch (err: unknown) {
     writeDebugLog(`[speakTelnyxNative] Error in Telnyx native speak`, err);
@@ -217,6 +235,7 @@ export async function speakTelnyxNative(session: CallSession, text: string): Pro
  * donc naturellement les fragments encore en attente.
  */
 export async function speakTtsStreamed(session: CallSession, text: string): Promise<void> {
+  const debugEntry = recordDebugAgentSpeech(session, text);
   const previousPlayback = session.ttsPlayback ?? Promise.resolve();
   const generation = session.ttsGeneration ?? 0;
   const turnId = session.currentTurn?.id;
@@ -227,7 +246,17 @@ export async function speakTtsStreamed(session: CallSession, text: string): Prom
         '[speakTtsStreamed] Previous queued TTS playback failed',
       );
     })
-    .then(() => speakTtsFragment(session, text, generation, turnId));
+    .then(async () => {
+      // Compteur propre à ce fragment : un filler joué en parallèle ne s'y ajoute pas.
+      const tally: FragmentFrameTally = { frames: 0 };
+      let completed = false;
+      try {
+        await speakTtsFragment(session, text, generation, turnId, tally);
+        completed = isSessionActiveForTts(session, generation);
+      } finally {
+        settleDebugSpeech(debugEntry, tally.frames, completed);
+      }
+    });
 
   // Conserver une chaîne résiliente : une erreur d'un fragment ne doit pas
   // empêcher les suivants d'être prononcés.
@@ -244,6 +273,7 @@ async function speakTtsFragment(
   text: string,
   generation: number,
   turnId?: string,
+  tally: FragmentFrameTally = { frames: 0 },
 ): Promise<void> {
   const language = effectiveVoiceLanguage(session);
   const cleanedText = cleanTextForTts(text, language);
@@ -330,7 +360,13 @@ async function speakTtsFragment(
       writeDebugLog(`[speakTtsStreamed] Cache HIT for sentence: "${redactPii(trimmed)}"`);
       markVoiceTurnTtsSynthesisFirstByte(session, 'cache', turnId);
 
-      const framesSent = await sendPacedAudioFrames(session, cachedBuffer, generation, turnId);
+      const framesSent = await sendPacedAudioFrames(
+        session,
+        cachedBuffer,
+        generation,
+        turnId,
+        tally,
+      );
       writeDebugLog(
         `[speakTtsStreamed] Sent ${framesSent} cached audio frames to Telnyx for sentence ${i}`,
       );
@@ -486,6 +522,7 @@ async function speakTtsFragment(
             }),
           );
           framesSent++;
+          tally.frames++;
           persistFirstAudioFrame(session, turnId);
 
           await new Promise((r) => setTimeout(r, TTS_PACE_PAUSE_MS));
