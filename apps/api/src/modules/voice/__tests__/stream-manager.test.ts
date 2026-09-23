@@ -1724,7 +1724,7 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
   });
 });
 
-describe('CallSessionManager — TurnPlan shadow in-band', () => {
+describe('CallSessionManager — réponse parlée sans TurnPlan', () => {
   let originalFetch: typeof globalThis.fetch;
   let savedVoiceConfig: VoiceConfigSnapshot;
 
@@ -1752,39 +1752,9 @@ describe('CallSessionManager — TurnPlan shadow in-band', () => {
     restoreVoiceConfig(savedVoiceConfig);
   });
 
-  it('reçoit le TurnPlan avec la réponse parlée et ne l’exécute jamais comme un outil métier', async () => {
-    const proposal = {
-      interpretation: 'answer',
-      intent: 'unchanged',
-      slots: {},
-      interactionDisposition: 'keep',
-      confidence: 'medium',
-      assistantInteraction: 'partySize',
-    };
+  it('n’ajoute jamais le schéma TurnPlan ni son contexte à la requête parlée', async () => {
     const sse = [
-      `data: ${JSON.stringify({ choices: [{ delta: { content: 'Pour combien de personnes ?' } }] })}\n`,
-      `data: ${JSON.stringify({
-        choices: [
-          {
-            delta: {
-              tool_calls: [
-                {
-                  index: 0,
-                  id: 'shadow-1',
-                  type: 'function',
-                  function: { name: 'proposeTurnPlanShadow', arguments: JSON.stringify(proposal) },
-                },
-                {
-                  index: 1,
-                  id: 'late-action',
-                  type: 'function',
-                  function: { name: 'handoffToManager', arguments: '{}' },
-                },
-              ],
-            },
-          },
-        ],
-      })}\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: 'Pour combien de personnes ? Et à quelle heure ?' } }] })}\n`,
       'data: [DONE]\n',
     ];
     const fetchMock = vi.fn().mockResolvedValue({
@@ -1795,202 +1765,21 @@ describe('CallSessionManager — TurnPlan shadow in-band', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
-    const onTurnPlanShadowResult = vi.fn();
-    const executeTool = vi.spyOn(
-      mgr as unknown as { executeTool: (...args: unknown[]) => Promise<string> },
-      'executeTool',
-    );
-    const context = {
-      transcript: 'quatre',
-      language: 'fr',
-      timezone: 'Europe/Paris',
-      referenceTime: '2026-09-23T10:00:00.000Z',
-      intent: 'reservation',
-      pendingInteraction: { kind: 'partySize' },
-      slots: {},
-      hasConfirmedName: false,
-    } as const;
     const response = await mgr.processUtteranceStreaming(
       session,
-      'Combien de personnes ?',
+      'Je voudrais réserver',
       () => {},
-      {
-        turnPlanShadowContext: context,
-        onTurnPlanShadowResult,
-      },
+      {},
     );
 
     expect(response).toBe('Pour combien de personnes ?');
-    expect(onTurnPlanShadowResult).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'valid', plan: { ...proposal, facts: [] } }),
-    );
-    expect(executeTool).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const requestBody = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(
-      requestBody.tools.map((tool: { function: { name: string } }) => tool.function.name),
-    ).toContain('proposeTurnPlanShadow');
-    expect(JSON.stringify(requestBody.messages)).toContain('referenceTime');
-    expect(session.history.at(-1)).toEqual({ role: 'assistant', content: response });
-  });
-
-  it('filtre le tool shadow quand il accompagne un véritable outil métier', async () => {
-    const proposal = {
-      interpretation: 'answer',
-      intent: 'unchanged',
-      slots: {},
-      interactionDisposition: 'keep',
-      confidence: 'medium',
-      assistantInteraction: 'none',
-    };
-    const firstRound = [
-      `data: ${JSON.stringify({ choices: [{ delta: { content: 'Je vérifie.' } }] })}\n`,
-      `data: ${JSON.stringify({
-        choices: [
-          {
-            delta: {
-              tool_calls: [
-                {
-                  index: 0,
-                  id: 'shadow-1',
-                  type: 'function',
-                  function: { name: 'proposeTurnPlanShadow', arguments: JSON.stringify(proposal) },
-                },
-                {
-                  index: 1,
-                  id: 'business-1',
-                  type: 'function',
-                  function: {
-                    name: 'recommendGiftCardAmount',
-                    arguments: JSON.stringify({ occasion: 'anniversaire', partySize: 4 }),
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      })}\n`,
-      'data: [DONE]\n',
-    ];
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        body: makeShadowStream(firstRound),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        body: makeShadowStream([
-          `data: ${JSON.stringify({ choices: [{ delta: { content: 'Je vous conseille cinquante euros.' } }] })}\n`,
-          'data: [DONE]\n',
-        ]),
-      });
-    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-    const mgr = CallSessionManager.getInstance();
-    const session = makeSession();
-    const executeTool = vi
-      .spyOn(
-        mgr as unknown as { executeTool: (...args: unknown[]) => Promise<string> },
-        'executeTool',
-      )
-      .mockResolvedValue('Suggestion calculée.');
-
-    const response = await mgr.processUtteranceStreaming(session, 'Quel montant ?', () => {}, {
-      turnPlanShadowContext: {
-        transcript: 'Quel montant ?',
-        language: 'fr',
-        timezone: 'Europe/Paris',
-        referenceTime: '2026-09-23T10:00:00.000Z',
-        intent: 'gift_card',
-        pendingInteraction: null,
-        slots: {},
-        hasConfirmedName: false,
-      },
-    });
-
-    expect(response).toBe('Je vous conseille cinquante euros.');
-    expect(executeTool).toHaveBeenCalledTimes(1);
-    expect(executeTool.mock.calls[0][1]).toBe('recommendGiftCardAmount');
-    expect(executeTool.mock.calls.some((call) => call[1] === 'proposeTurnPlanShadow')).toBe(false);
-  });
-
-  it('récupère une réponse parlée si le modèle choisit le tool shadow seul', async () => {
-    const planOnly = {
-      interpretation: 'answer',
-      intent: 'unchanged',
-      slots: {},
-      interactionDisposition: 'keep',
-      confidence: 'low',
-      assistantInteraction: 'none',
-    };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        body: makeShadowStream([
-          `data: ${JSON.stringify({
-            choices: [
-              {
-                delta: {
-                  tool_calls: [
-                    {
-                      index: 0,
-                      id: 'shadow-only',
-                      type: 'function',
-                      function: {
-                        name: 'proposeTurnPlanShadow',
-                        arguments: JSON.stringify(planOnly),
-                      },
-                    },
-                  ],
-                },
-              },
-            ],
-          })}\n`,
-          'data: [DONE]\n',
-        ]),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        body: makeShadowStream([
-          `data: ${JSON.stringify({ choices: [{ delta: { content: 'Je vous écoute.' } }] })}\n`,
-          'data: [DONE]\n',
-        ]),
-      });
-    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-    const mgr = CallSessionManager.getInstance();
-    const session = makeSession();
-    const onTurnPlanShadowResult = vi.fn();
-    const executeTool = vi.spyOn(
-      mgr as unknown as { executeTool: (...args: unknown[]) => Promise<string> },
-      'executeTool',
+    const toolNames = (requestBody.tools ?? []).map(
+      (tool: { function: { name: string } }) => tool.function.name,
     );
-
-    const response = await mgr.processUtteranceStreaming(session, 'Oui', () => {}, {
-      turnPlanShadowContext: {
-        transcript: 'Oui',
-        language: 'fr',
-        timezone: 'Europe/Paris',
-        referenceTime: '2026-09-23T10:00:00.000Z',
-        intent: null,
-        pendingInteraction: null,
-        slots: {},
-        hasConfirmedName: false,
-      },
-      onTurnPlanShadowResult,
-    });
-
-    expect(response).toBe('Je vous écoute.');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(executeTool).not.toHaveBeenCalled();
-    expect(onTurnPlanShadowResult).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'speech_missing' }),
-    );
-    expect(session.history.some((message) => message.content.includes('shadow-only'))).toBe(false);
+    expect(toolNames).not.toContain('proposeTurnPlanShadow');
+    expect(JSON.stringify(requestBody.messages)).not.toContain('referenceTime');
   });
 });
 

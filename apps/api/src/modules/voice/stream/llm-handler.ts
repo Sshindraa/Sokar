@@ -102,6 +102,8 @@ const recentTranscripts = new WeakMap<
   { normalized: string; at: number; dialogueContext: string }
 >();
 export const LLM_FILLER_DELAY_MS = 1_000;
+/** Attente maximale du TurnPlan séparé avant de retomber sur l'inférence texte. */
+export const TURN_PLAN_REPLY_WAIT_MS = 1_500;
 
 function syncSpellingProfile(session: CallSession): void {
   setSttSpellingProfile(
@@ -1263,7 +1265,7 @@ export async function processTranscriptStreaming(
   // formulation libre du LLM mais on omet le schéma d'outils et on borne la
   // réponse, ce qui réduit le prompt et le temps de génération.
   const telemetryTurnId = session.currentTurn?.id;
-  let inBandTurnPlanResult: InBandTurnPlanResult | undefined;
+  let turnPlanRequested = false;
   const shouldCollectInBandTurnPlan =
     turnPlanShadowEnabled &&
     !explicitEnd &&
@@ -1272,25 +1274,17 @@ export async function processTranscriptStreaming(
   const llmOptions = {
     ...(availabilityContext ? { context: availabilityContext, includeTools: false } : {}),
     ...(confirmationTurn ? { includeTools: false } : {}),
-    ...(shouldCollectInBandTurnPlan
-      ? {
-          turnPlanShadowContext: turnPlanContext,
-          onTurnPlanShadowResult: (result: InBandTurnPlanResult) => {
-            inBandTurnPlanResult = result;
-          },
-        }
-      : {}),
     telemetryTurnId,
   };
   const recordTurnPlanObservation = (
-    result = inBandTurnPlanResult,
+    result: InBandTurnPlanResult,
     after = captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
   ) => {
     if (!shouldCollectInBandTurnPlan || !telemetryTurnId) return;
     recordInBandTurnPlanShadow(
       session,
       turnPlanContext,
-      result ?? { status: 'missing', durationMs: 0 },
+      result,
       turnPlanBefore,
       after,
       telemetryTurnId,
@@ -1299,16 +1293,32 @@ export async function processTranscriptStreaming(
   };
   // Réponse LLM libre : le TurnPlan canary devient l'autorité des faits non
   // sensibles et de l'interaction attendue ; sinon l'inférence texte reste.
-  const recordLlmReply = (reply: string) => {
-    const plan =
-      shouldCollectInBandTurnPlan &&
-      turnPlanAuthorityEnabled &&
-      inBandTurnPlanResult?.status === 'valid'
-        ? inBandTurnPlanResult.plan
-        : null;
+  // Le plan est une requête séparée, lancée dès que le texte parlé est connu :
+  // l'audio part sans l'attendre, seul l'état du tour patiente (borné).
+  const recordLlmReply = async (reply: string): Promise<void> => {
+    if (!shouldCollectInBandTurnPlan) {
+      recordAssistantReplyFromLlmTextFallback(session, reply);
+      if (deferUnresolvedToModel) recordDeferredTurnOutcome('plan_unavailable');
+      return;
+    }
+    turnPlanRequested = true;
+    const planResult = await mgr.observeTurnPlan(
+      session,
+      turnPlanContext,
+      reply,
+      telemetryTurnId,
+      TURN_PLAN_REPLY_WAIT_MS,
+    );
+    // Réponse devenue périmée (reprise de parole, nouveau tour) : comme avant,
+    // elle ne modifie plus l'état.
+    if (!isCurrentResponse()) {
+      recordTurnPlanObservation({ status: 'aborted', durationMs: planResult.durationMs });
+      return;
+    }
+    const plan = turnPlanAuthorityEnabled && planResult.status === 'valid' ? planResult.plan : null;
     if (!plan) {
       recordAssistantReplyFromLlmTextFallback(session, reply);
-      recordTurnPlanObservation();
+      recordTurnPlanObservation(planResult);
       if (deferUnresolvedToModel) recordDeferredTurnOutcome('plan_unavailable');
       return;
     }
@@ -1331,7 +1341,7 @@ export async function processTranscriptStreaming(
       slots: deterministic.slots,
       activeInteractionKind: authority.legacyAssistantInteraction,
     };
-    recordTurnPlanObservation(inBandTurnPlanResult, after);
+    recordTurnPlanObservation(planResult, after);
     if (deferUnresolvedToModel) {
       recordDeferredTurnOutcome(
         !authority.policyAccepted
@@ -1451,14 +1461,21 @@ export async function processTranscriptStreaming(
       const fallbackResponse = fallbackPlan.reply;
       session.history.push({ role: 'assistant', content: fallbackResponse });
       recordAssistantReplyWithPolicy(session, fallbackResponse, fallbackPlan.proposal);
-      recordTurnPlanObservation();
       mgr.transition(session, 'SPEAKING');
       await speakTtsStreamed(session, fallbackResponse);
       if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
       return;
     }
-    recordLlmReply(fullResponse);
-    syncSpellingProfile(session);
+    const replyRecorded = recordLlmReply(fullResponse)
+      .then(() => {
+        if (isCurrentResponse()) syncSpellingProfile(session);
+      })
+      .catch((err: unknown) =>
+        logger.warn(
+          { err, callId: session.callControlId },
+          '[processTranscriptStreaming] Failed to record LLM reply state',
+        ),
+      );
 
     writeDebugLog(`[processTranscriptStreaming] LLM stream ended, waiting for TTS...`);
     const contextTts = contextTtsRef.current;
@@ -1480,13 +1497,14 @@ export async function processTranscriptStreaming(
       await Promise.all(ttsPromises);
     }
     writeDebugLog(`[processTranscriptStreaming] All TTS completed`);
+    await replyRecorded;
 
     if (isCurrentResponse()) {
       mgr.transition(session, 'LISTENING');
       writeDebugLog(`[processTranscriptStreaming] Transitioned back to LISTENING`);
     }
   } catch (err: unknown) {
-    if (shouldCollectInBandTurnPlan && !inBandTurnPlanResult) {
+    if (shouldCollectInBandTurnPlan && !turnPlanRequested) {
       recordTurnPlanObservation({
         status: abortController.signal.aborted ? 'aborted' : 'failed',
         durationMs: Date.now() - llmStartedAt,

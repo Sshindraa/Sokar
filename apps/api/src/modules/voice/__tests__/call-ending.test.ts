@@ -51,6 +51,7 @@ function fixture() {
       s.state = 'IDLE';
     }),
     processUtteranceStreaming: vi.fn(),
+    observeTurnPlan: vi.fn().mockResolvedValue({ status: 'missing', durationMs: 0 }),
     getAvailability: vi.fn(),
     createReservationFromConversation: vi.fn().mockResolvedValue(null),
     handoffToManager: vi
@@ -206,27 +207,48 @@ describe('farewell playback and hangup', () => {
     session.conversation.intent = 'reservation';
     session.conversation.slots.date = '2026-09-05';
     recordAssistantReply(session, 'Vous serez combien ?');
+    let resolvePlan: (
+      value: Awaited<ReturnType<CallSessionManager['observeTurnPlan']>>,
+    ) => void = () => undefined;
+    vi.mocked(mgr.observeTurnPlan).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePlan = resolve;
+        }),
+    );
     vi.mocked(mgr.processUtteranceStreaming).mockImplementation(
-      async (_session, _transcript, onPhrase, options) => {
-        options?.onTurnPlanShadowResult?.({
-          status: 'valid',
-          durationMs: 0,
-          plan: {
-            interpretation: 'answer',
-            intent: 'unchanged',
-            slots: { partySize: 5 },
-            interactionDisposition: 'resolve',
-            confidence: 'high',
-            assistantInteraction: 'time',
-          },
-        });
+      async (_session, _transcript, onPhrase) => {
         await onPhrase?.(reply);
         return reply;
       },
     );
+    const pending = processTranscriptStreaming(session, turn, mgr);
+    // La réponse parlée part avant que le plan séparé ne réponde.
+    await vi.waitFor(() => expect(mgr.observeTurnPlan).toHaveBeenCalled());
+    expect(speakTtsStreamed).toHaveBeenCalledWith(session, reply);
+    expect(mgr.observeTurnPlan).toHaveBeenCalledWith(
+      session,
+      expect.objectContaining({ transcript: turn }),
+      reply,
+      undefined,
+      1_500,
+    );
+    expect(session.conversation.slots.partySize).toBeUndefined();
+    resolvePlan({
+      status: 'valid',
+      durationMs: 0,
+      plan: {
+        interpretation: 'answer',
+        intent: 'unchanged',
+        slots: { partySize: 5 },
+        interactionDisposition: 'resolve',
+        confidence: 'high',
+        assistantInteraction: 'time',
+      },
+    });
 
     try {
-      await processTranscriptStreaming(session, turn, mgr);
+      await pending;
     } finally {
       vi.unstubAllEnvs();
     }
