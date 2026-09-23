@@ -258,6 +258,79 @@
         },
         "overrides": []
       }
+    },
+    {
+      "id": 12,
+      "type": "bargauge",
+      "title": "Accord TurnPlan par dimension et chemin (24 h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 35 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum by (dimension, path) (increase(sokar_voice_turn_plan_shadow_dimension_total{env=~\"$env\",agreement=\"agree\"}[24h])) / (sum by (dimension, path) (increase(sokar_voice_turn_plan_shadow_dimension_total{env=~\"$env\"}[24h])) > 0)",
+          "instant": true,
+          "legendFormat": "{{dimension}} · {{path}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "noValue": "Aucun plan comparable"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Autorité TurnPlan canary par champ (volume horaire)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 35 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (field, outcome) (increase(sokar_voice_turn_plan_authority_total{env=~\"$env\"}[1h]))",
+          "legendFormat": "{{field}} · {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Tours confiés au modèle par résultat (volume horaire)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 42 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (outcome) (increase(sokar_voice_turn_plan_deferred_total{env=~\"$env\"}[1h]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+        },
+        "overrides": []
+      }
     }
   ]
 }

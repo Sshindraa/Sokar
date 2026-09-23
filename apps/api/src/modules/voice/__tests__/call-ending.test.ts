@@ -10,6 +10,7 @@ import type { CallSession } from '../stream/types';
 import type { CallSessionManager } from '../stream/manager';
 import { speakTtsStreamed } from '../stream/tts-handler';
 import { telnyxFetch } from '../../../shared/telnyx/http-agent';
+import { __resetMetrics, renderMetrics } from '../../../shared/observability/metrics';
 
 vi.mock('../stream/tts-handler', () => ({
   speakTtsStreamed: vi.fn().mockResolvedValue(undefined),
@@ -52,7 +53,9 @@ function fixture() {
     processUtteranceStreaming: vi.fn(),
     getAvailability: vi.fn(),
     createReservationFromConversation: vi.fn().mockResolvedValue(null),
-    handoffToManager: vi.fn().mockResolvedValue('Le gérant a accepté le transfert.'),
+    handoffToManager: vi
+      .fn()
+      .mockResolvedValue('Je lance le transfert vers le gérant, un instant.'),
     recordDialogueFallbackMessage: vi
       .fn()
       .mockResolvedValue("J'ai bien noté votre message pour le gérant."),
@@ -61,6 +64,7 @@ function fixture() {
 }
 
 beforeEach(() => {
+  __resetMetrics();
   vi.clearAllMocks();
   vi.useFakeTimers();
 });
@@ -176,6 +180,163 @@ describe('farewell playback and hangup', () => {
     expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
     expect(speakTtsStreamed).toHaveBeenCalledWith(session, 'Vous voulez venir vers quelle heure ?');
     expect(session.conversation.pendingQuestion).toBe('time');
+  });
+
+  it('confie au TurnPlan canary une réponse que les extracteurs n’ont pas comprise', async () => {
+    const turn = 'Moi, ma femme et nos trois enfants';
+    const reply = 'Parfait, pour cinq. Vers quelle heure souhaitez-vous venir ?';
+    const withoutCanary = fixture();
+    withoutCanary.session.conversation.intent = 'reservation';
+    withoutCanary.session.conversation.slots.date = '2026-09-05';
+    recordAssistantReply(withoutCanary.session, 'Vous serez combien ?');
+    vi.stubEnv('VOICE_TURN_PLAN_SHADOW_ENABLED', 'true');
+
+    await processTranscriptStreaming(withoutCanary.session, turn, withoutCanary.mgr);
+
+    expect(withoutCanary.mgr.processUtteranceStreaming).not.toHaveBeenCalled();
+    expect(withoutCanary.session.conversation.slots.partySize).toBeUndefined();
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      withoutCanary.session,
+      'Vous serez combien ?',
+    );
+
+    vi.stubEnv('VOICE_TURN_PLAN_AUTHORITY_ENABLED', 'true');
+    vi.stubEnv('VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS', '*');
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.date = '2026-09-05';
+    recordAssistantReply(session, 'Vous serez combien ?');
+    vi.mocked(mgr.processUtteranceStreaming).mockImplementation(
+      async (_session, _transcript, onPhrase, options) => {
+        options?.onTurnPlanShadowResult?.({
+          status: 'valid',
+          durationMs: 0,
+          plan: {
+            interpretation: 'answer',
+            intent: 'unchanged',
+            slots: { partySize: 5 },
+            interactionDisposition: 'resolve',
+            confidence: 'high',
+            assistantInteraction: 'time',
+          },
+        });
+        await onPhrase?.(reply);
+        return reply;
+      },
+    );
+
+    try {
+      await processTranscriptStreaming(session, turn, mgr);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(mgr.processUtteranceStreaming).toHaveBeenCalledTimes(1);
+    expect(session.conversation.slots.partySize).toBe(5);
+    expect(session.conversation.pendingQuestion).toBe('time');
+    expect(session.conversation.stalledTurns).toBe(0);
+    const payload = await renderMetrics();
+    expect(payload).toMatch(/sokar_voice_turn_plan_deferred_total\{outcome="fact_applied"\} 1/);
+  });
+
+  it('observe hors bande un tour répondu sans LLM, sans attendre ni modifier la réponse', async () => {
+    vi.stubEnv('VOICE_TURN_PLAN_SHADOW_ENABLED', 'true');
+    vi.stubEnv('VOICE_TURN_PLAN_DETERMINISTIC_SHADOW_RATE', '1');
+    const { session, mgr } = fixture();
+    session.currentTurn = {
+      id: 'turn-det',
+      sequence: 1,
+      startedAt: Date.now(),
+      transcriptLength: 0,
+      transcriptFingerprint: 'fp',
+      path: 'unknown',
+      availabilitySearches: 0,
+      availabilityFailures: 0,
+      loopDetected: false,
+      completed: false,
+      eventSequence: 0,
+    } as unknown as CallSession['currentTurn'];
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.date = '2026-09-05';
+    recordAssistantReply(session, 'Vous serez combien ?');
+    let resolveObservation!: (value: unknown) => void;
+    const observeTurnPlan = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveObservation = resolve;
+        }),
+    );
+    (mgr as unknown as { observeTurnPlan: typeof observeTurnPlan }).observeTurnPlan =
+      observeTurnPlan;
+
+    try {
+      await processTranscriptStreaming(session, 'Moi, ma femme et nos trois enfants', mgr);
+      expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
+      expect(speakTtsStreamed).toHaveBeenLastCalledWith(session, 'Vous serez combien ?');
+      expect(observeTurnPlan).toHaveBeenCalledWith(
+        session,
+        expect.objectContaining({ transcript: 'Moi, ma femme et nos trois enfants' }),
+        'Vous serez combien ?',
+        'turn-det',
+      );
+      resolveObservation({
+        status: 'valid',
+        durationMs: 300,
+        plan: {
+          interpretation: 'answer',
+          intent: 'unchanged',
+          slots: { partySize: 5 },
+          interactionDisposition: 'resolve',
+          confidence: 'high',
+          assistantInteraction: 'partySize',
+        },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(session.conversation.slots.partySize).toBeUndefined();
+    const payload = await renderMetrics();
+    expect(payload).toMatch(
+      /sokar_voice_turn_plan_shadow_observations_total\{[^}]*status="valid"[^}]*agreement="disagree"[^}]*path="deterministic"[^}]*\} 1/,
+    );
+    expect(payload).toMatch(
+      /sokar_voice_turn_plan_shadow_dimension_total\{dimension="slots",agreement="disagree",path="deterministic"\} 1/,
+    );
+  });
+
+  it('rend la main au déterministe après deux relances du modèle sur la même question', async () => {
+    vi.stubEnv('VOICE_TURN_PLAN_SHADOW_ENABLED', 'true');
+    vi.stubEnv('VOICE_TURN_PLAN_AUTHORITY_ENABLED', 'true');
+    vi.stubEnv('VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS', '*');
+    const { session, mgr } = fixture();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.date = '2026-09-05';
+    recordAssistantReply(session, 'Vous serez combien ?');
+    const reply = 'Pardon, je n’ai pas saisi. Vous serez combien au total ?';
+    vi.mocked(mgr.processUtteranceStreaming).mockImplementation(
+      async (_session, _transcript, onPhrase) => {
+        await onPhrase?.(reply);
+        return reply;
+      },
+    );
+
+    try {
+      await processTranscriptStreaming(session, 'Moi, ma femme et nos trois enfants', mgr);
+      expect(session.conversation.stalledTurns).toBe(1);
+      await processTranscriptStreaming(session, 'Ma femme, moi et les trois petits', mgr);
+      expect(session.conversation.stalledTurns).toBe(2);
+      await processTranscriptStreaming(session, 'Toute la famille avec les petits', mgr);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    expect(mgr.processUtteranceStreaming).toHaveBeenCalledTimes(2);
+    expect(session.conversation.pendingQuestion).toBe('humanFallback');
+    const payload = await renderMetrics();
+    expect(payload).toMatch(/sokar_voice_turn_plan_deferred_total\{outcome="plan_unavailable"\} 2/);
+    expect(payload).toMatch(/sokar_voice_turn_plan_deferred_total\{outcome="stall_handoff"\} 1/);
   });
 
   it('vérifie « à midi » avant de demander le nom', async () => {
@@ -526,7 +687,10 @@ describe('dialogue loop guard', () => {
     await processTranscriptStreaming(session, 'Passez-moi le gérant', mgr);
     expect(mgr.handoffToManager).toHaveBeenCalledTimes(1);
     expect(mgr.recordDialogueFallbackMessage).not.toHaveBeenCalled();
-    expect(speakTtsStreamed).toHaveBeenLastCalledWith(session, 'Le gérant a accepté le transfert.');
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      'Je lance le transfert vers le gérant, un instant.',
+    );
     expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
   });
 

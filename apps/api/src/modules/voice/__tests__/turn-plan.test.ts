@@ -5,6 +5,8 @@ import {
   compareTurnPlanWithPolicy,
   isTurnPlanShadowEnabled,
   recordInBandTurnPlanShadow,
+  shouldObserveDeterministicTurnPlan,
+  turnPlanDeterministicShadowRate,
 } from '../stream/turn-plan-shadow';
 import { decideTurnPlanPolicy } from '../stream/turn-policy';
 import { createConversationState } from '../stream/conversation-controller';
@@ -29,10 +31,98 @@ describe('parseTurnPlan', () => {
     ).toEqual({
       interpretation: 'answer',
       intent: 'unchanged',
+      facts: [{ field: 'partySize', op: 'set', value: 4, source: 'user_explicit' }],
       slots: { partySize: 4 },
       interactionDisposition: 'resolve',
       confidence: 'high',
     });
+  });
+
+  it('lit les patches avec opération et origine, sans compter un fait hésitant', () => {
+    const plan = parseTurnPlan(
+      JSON.stringify({
+        interpretation: 'correction',
+        intent: 'unchanged',
+        facts: [
+          { field: 'partySize', op: 'replace', value: 5, source: 'correction' },
+          { field: 'time', op: 'set', value: '20:00', source: 'user_tentative' },
+          { field: 'date', op: 'clear', source: 'user_explicit' },
+        ],
+        interactionDisposition: 'none',
+        confidence: 'high',
+      }),
+    );
+    expect(plan?.facts).toHaveLength(3);
+    expect(plan?.slots).toEqual({ partySize: 5 });
+  });
+
+  it('refuse aussi via les facts un plan unclear ou touchant au téléphone', () => {
+    const context = {
+      transcript: 'euh peut-être',
+      language: 'fr',
+      timezone: 'Europe/Paris',
+      referenceTime: '2026-09-23T10:00:00.000Z',
+      intent: null,
+      pendingInteraction: null,
+      slots: {},
+      hasConfirmedName: false,
+    };
+    const base = {
+      intent: 'unchanged' as const,
+      slots: {},
+      interactionDisposition: 'none' as const,
+      confidence: 'high' as const,
+    };
+    expect(
+      decideTurnPlanPolicy(context, {
+        ...base,
+        interpretation: 'unclear',
+        facts: [{ field: 'partySize', op: 'set', value: 5, source: 'user_tentative' }],
+      }),
+    ).toMatchObject({ status: 'rejected', reason: 'unclear_with_facts' });
+    expect(
+      decideTurnPlanPolicy(context, {
+        ...base,
+        interpretation: 'answer',
+        facts: [{ field: 'customerPhone', op: 'clear', source: 'correction' }],
+      }),
+    ).toMatchObject({ status: 'rejected', reason: 'unsupported_phone_slot' });
+  });
+
+  it.each([
+    ['slots et facts ensemble', { slots: {}, facts: [] }],
+    [
+      'un champ en double',
+      {
+        facts: [
+          { field: 'partySize', op: 'set', value: 4, source: 'user_explicit' },
+          { field: 'partySize', op: 'replace', value: 5, source: 'correction' },
+        ],
+      },
+    ],
+    [
+      'clear avec valeur',
+      { facts: [{ field: 'date', op: 'clear', value: '2026-09-25', source: 'correction' }] },
+    ],
+    ['set sans valeur', { facts: [{ field: 'date', op: 'set', source: 'user_explicit' }] }],
+    ['origine inconnue', { facts: [{ field: 'partySize', op: 'set', value: 4, source: 'guess' }] }],
+    [
+      'clé inattendue',
+      { facts: [{ field: 'partySize', op: 'set', value: 4, source: 'user_explicit', note: 'x' }] },
+    ],
+    ['aucun fait ni slot', {}],
+  ])('refuse un plan avec %s', (_label, factsOrSlots) => {
+    expect(
+      parseTurnPlan(
+        JSON.stringify({
+          interpretation: 'answer',
+          intent: 'unchanged',
+          interactionDisposition: 'none',
+          confidence: 'high',
+          ...factsOrSlots,
+        }),
+      ),
+    ).toBeNull();
   });
 
   it.each([
@@ -95,6 +185,23 @@ describe('TurnPlan shadow policy boundary', () => {
     ).toBe(false);
   });
 
+  it('borne le taux d’observation des tours déterministes et exige le shadow', () => {
+    const env = (rate: string, shadow = 'true') =>
+      ({
+        VOICE_TURN_PLAN_SHADOW_ENABLED: shadow,
+        VOICE_TURN_PLAN_DETERMINISTIC_SHADOW_RATE: rate,
+      }) as NodeJS.ProcessEnv;
+    expect(turnPlanDeterministicShadowRate({})).toBe(0);
+    expect(turnPlanDeterministicShadowRate(env('0.25'))).toBe(0.25);
+    expect(turnPlanDeterministicShadowRate(env('3'))).toBe(1);
+    expect(turnPlanDeterministicShadowRate(env('-1'))).toBe(0);
+    expect(turnPlanDeterministicShadowRate(env('abc'))).toBe(0);
+    expect(turnPlanDeterministicShadowRate(env('1', 'false'))).toBe(0);
+    expect(shouldObserveDeterministicTurnPlan(env('0.25'), () => 0.2)).toBe(true);
+    expect(shouldObserveDeterministicTurnPlan(env('0.25'), () => 0.3)).toBe(false);
+    expect(shouldObserveDeterministicTurnPlan(env('0'), () => 0)).toBe(false);
+  });
+
   it('compte une seule fois une observation courante et ignore un callback tardif', async () => {
     vi.stubEnv('VOICE_TURN_PLAN_SHADOW_ENABLED', 'true');
     const session = {
@@ -151,14 +258,21 @@ describe('TurnPlan shadow policy boundary', () => {
       durationMs: 120,
     };
 
-    recordInBandTurnPlanShadow(session, context, result, before, after, 'turn-current');
+    recordInBandTurnPlanShadow(session, context, result, before, after, 'turn-current', 'deferred');
     session.currentTurn!.id = 'turn-next';
     recordInBandTurnPlanShadow(session, context, result, before, after, 'turn-current');
 
     const payload = await renderMetrics();
     expect(payload).toMatch(
-      /sokar_voice_turn_plan_shadow_observations_total\{[^}]*status="valid"[^}]*policy_outcome="accepted"[^}]*agreement="agree"[^}]*\} 1/,
+      /sokar_voice_turn_plan_shadow_observations_total\{[^}]*status="valid"[^}]*policy_outcome="accepted"[^}]*agreement="agree"[^}]*path="deferred"[^}]*\} 1/,
     );
+    expect(payload).toMatch(
+      /sokar_voice_turn_plan_shadow_dimension_total\{dimension="slots",agreement="agree",path="deferred"\} 1/,
+    );
+    expect(payload).toMatch(
+      /sokar_voice_turn_plan_shadow_dimension_total\{dimension="interaction",agreement="agree",path="deferred"\} 1/,
+    );
+    expect(payload).not.toMatch(/dimension="assistant_interaction"/);
   });
 
   it('compare la proposition aux seules valeurs effectivement appliquées', () => {

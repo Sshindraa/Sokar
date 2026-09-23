@@ -283,10 +283,17 @@ export type VoiceTurnPlanShadowAgreement = 'agree' | 'disagree' | 'not_comparabl
  * Résultats d'observation TurnPlan. Labels strictement bornés : pas de tenant,
  * de transcription, de créneau ni d'identifiant d'appel.
  */
+/**
+ * Chemin du tour observé : `llm` pour un tour déjà confié au modèle, `deferred`
+ * pour un tour que les extracteurs n'ont pas compris et que le canary lui confie,
+ * `deterministic` pour un tour répondu sans LLM et observé hors bande.
+ */
+export type VoiceTurnPlanShadowPath = 'llm' | 'deferred' | 'deterministic';
+
 export const voiceTurnPlanShadowObservationsTotal = new Counter({
   name: 'sokar_voice_turn_plan_shadow_observations_total',
   help: 'Total in-band TurnPlan shadow observations by bounded outcome',
-  labelNames: ['status', 'policy_outcome', 'agreement'] as const,
+  labelNames: ['status', 'policy_outcome', 'agreement', 'path'] as const,
   registers: [getRegistry()],
 });
 
@@ -294,12 +301,99 @@ export function recordVoiceTurnPlanShadowObservation(input: {
   status: VoiceTurnPlanShadowStatus;
   policyOutcome: VoiceTurnPlanShadowPolicyOutcome;
   agreement: VoiceTurnPlanShadowAgreement;
+  path: VoiceTurnPlanShadowPath;
 }): void {
   voiceTurnPlanShadowObservationsTotal.inc({
     status: input.status,
     policy_outcome: input.policyOutcome,
     agreement: input.agreement,
+    path: input.path,
   });
+}
+
+export type VoiceTurnPlanShadowDimension =
+  | 'intent'
+  | 'slots'
+  | 'interaction'
+  | 'assistant_interaction';
+
+/**
+ * Accord TurnPlan par dimension, pour distinguer un désaccord d'intention
+ * d'un désaccord de slots ou d'interaction. Labels bornés.
+ */
+export const voiceTurnPlanShadowDimensionTotal = new Counter({
+  name: 'sokar_voice_turn_plan_shadow_dimension_total',
+  help: 'In-band TurnPlan shadow agreement by comparison dimension',
+  labelNames: ['dimension', 'agreement', 'path'] as const,
+  registers: [getRegistry()],
+});
+
+export function recordVoiceTurnPlanShadowDimension(
+  dimension: VoiceTurnPlanShadowDimension,
+  agrees: boolean,
+  path: VoiceTurnPlanShadowPath,
+): void {
+  voiceTurnPlanShadowDimensionTotal.inc({
+    dimension,
+    agreement: agrees ? 'agree' : 'disagree',
+    path,
+  });
+}
+
+export type VoiceTurnPlanAuthorityField =
+  | 'intent'
+  | 'date'
+  | 'time'
+  | 'partySize'
+  | 'assistant_interaction';
+export type VoiceTurnPlanAuthorityOutcome =
+  | 'applied'
+  | 'replaced'
+  | 'already_set'
+  | 'protected'
+  | 'tentative'
+  | 'unsupported'
+  | 'deterministic_fallback';
+
+/**
+ * Canary d'autorité TurnPlan : faits appliqués depuis le modèle, déjà connus,
+ * ou laissés au repli déterministe. Labels bornés.
+ */
+export const voiceTurnPlanAuthorityTotal = new Counter({
+  name: 'sokar_voice_turn_plan_authority_total',
+  help: 'TurnPlan canary authority decisions by field and outcome',
+  labelNames: ['field', 'outcome'] as const,
+  registers: [getRegistry()],
+});
+
+export function recordVoiceTurnPlanAuthority(
+  field: VoiceTurnPlanAuthorityField,
+  outcome: VoiceTurnPlanAuthorityOutcome,
+): void {
+  voiceTurnPlanAuthorityTotal.inc({ field, outcome });
+}
+
+export type VoiceTurnPlanDeferredOutcome =
+  | 'fact_applied'
+  | 'no_fact'
+  | 'plan_rejected'
+  | 'plan_unavailable'
+  | 'stall_handoff';
+
+/**
+ * Tours non compris par les extracteurs et confiés au modèle par le canary :
+ * fait appliqué, aucun fait, plan refusé ou absent, ou retour au déterministe
+ * après deux relances. Labels bornés.
+ */
+export const voiceTurnPlanDeferredTotal = new Counter({
+  name: 'sokar_voice_turn_plan_deferred_total',
+  help: 'Turns deferred from deterministic re-asks to the model, by outcome',
+  labelNames: ['outcome'] as const,
+  registers: [getRegistry()],
+});
+
+export function recordVoiceTurnPlanDeferred(outcome: VoiceTurnPlanDeferredOutcome): void {
+  voiceTurnPlanDeferredTotal.inc({ outcome });
 }
 
 // ─── Render ───────────────────────────────────────────────────
@@ -359,6 +453,9 @@ export function __resetMetrics(): void {
   voiceTtsFirstAudioMs.reset();
   voiceProviderErrorsTotal.reset();
   voiceTurnPlanShadowObservationsTotal.reset();
+  voiceTurnPlanShadowDimensionTotal.reset();
+  voiceTurnPlanAuthorityTotal.reset();
+  voiceTurnPlanDeferredTotal.reset();
 }
 
 // ─── Sokar Connect (Phase 1) ────────────────────────────────────────

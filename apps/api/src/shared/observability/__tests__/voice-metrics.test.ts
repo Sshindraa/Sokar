@@ -71,19 +71,21 @@ describe('Voice Prometheus metrics', () => {
       status: 'valid',
       policyOutcome: 'accepted',
       agreement: 'disagree',
+      path: 'llm',
     });
     recordVoiceTurnPlanShadowObservation({
       status: 'missing',
       policyOutcome: 'not_evaluated',
       agreement: 'not_comparable',
+      path: 'deferred',
     });
 
     const payload = await renderMetrics();
     expect(payload).toMatch(
-      /sokar_voice_turn_plan_shadow_observations_total\{[^}]*status="valid"[^}]*policy_outcome="accepted"[^}]*agreement="disagree"[^}]*\} 1/,
+      /sokar_voice_turn_plan_shadow_observations_total\{[^}]*status="valid"[^}]*policy_outcome="accepted"[^}]*agreement="disagree"[^}]*path="llm"[^}]*\} 1/,
     );
     expect(payload).toMatch(
-      /sokar_voice_turn_plan_shadow_observations_total\{[^}]*status="missing"[^}]*policy_outcome="not_evaluated"[^}]*agreement="not_comparable"[^}]*\} 1/,
+      /sokar_voice_turn_plan_shadow_observations_total\{[^}]*status="missing"[^}]*policy_outcome="not_evaluated"[^}]*agreement="not_comparable"[^}]*path="deferred"[^}]*\} 1/,
     );
   });
 

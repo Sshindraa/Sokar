@@ -37,13 +37,29 @@ import {
 import { isVoiceTtsContextV2Enabled } from '../../../shared/configcat';
 import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts.js';
 import { isSpeculativeLlmEnabled } from './speculation';
-import { getActivePendingInteraction, isNameCollectionBlocking } from './conversation-controller';
+import {
+  getActivePendingInteraction,
+  isModelTurnStalled,
+  isNameCollectionBlocking,
+  recordModelTurnStall,
+} from './conversation-controller';
 import {
   captureTurnPlanPolicySnapshot,
   isTurnPlanShadowEnabled,
   recordInBandTurnPlanShadow,
+  shouldObserveDeterministicTurnPlan,
 } from './turn-plan-shadow';
-import type { InBandTurnPlanResult } from './turn-plan-shadow';
+import type { InBandTurnPlanResult, TurnPlanPolicySnapshot } from './turn-plan-shadow';
+import {
+  applyTurnPlanAuthority,
+  hasDeterministicTurnProgress,
+  hasTurnFactProgress,
+  isTurnPlanAuthorityEnabled,
+} from './turn-plan-authority';
+import {
+  recordVoiceTurnPlanDeferred,
+  type VoiceTurnPlanDeferredOutcome,
+} from '../../../shared/observability/metrics';
 import type { TurnPlanContext } from './turn-plan';
 import { setSttSpellingProfile } from './stt-bridge';
 import {
@@ -1040,9 +1056,26 @@ export async function processTranscriptStreaming(
   }
 
   clearDialogueGuardTrace(session);
+  // Canary TurnPlan : les relances déterministes ne servent qu'après un tour
+  // compris par les extracteurs ; sinon le modèle interprète et propose le plan.
+  // Après deux relances du modèle sur la même question, le déterministe reprend
+  // la main pour reformuler puis proposer un repli humain réel.
+  const turnPlanAuthorityEnabled = isTurnPlanAuthorityEnabled(session.restaurantId);
+  const unresolvedContentTurn =
+    turnPlanAuthorityEnabled &&
+    !explicitEnd &&
+    (speechAct === 'content' || speechAct === 'correction') &&
+    !isNameCollectionBlocking(session) &&
+    !hasDeterministicTurnProgress(
+      turnPlanBefore,
+      captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
+    );
+  const modelTurnStalled = unresolvedContentTurn && isModelTurnStalled(session);
+  if (modelTurnStalled) recordVoiceTurnPlanDeferred('stall_handoff');
+  const deferUnresolvedToModel = unresolvedContentTurn && !modelTurnStalled;
   const deterministicReplyPlan = deterministicLanguage
-    ? (buildDeterministicTurnPlan(session, speechAct, transcript) ??
-      buildReservationProgressPlan(session, transcript))
+    ? (buildDeterministicTurnPlan(session, speechAct, transcript, { deferUnresolvedToModel }) ??
+      (deferUnresolvedToModel ? null : buildReservationProgressPlan(session, transcript)))
     : null;
   const deterministicResponse = deterministicReplyPlan?.reply ?? null;
   const dialogueGuard = session.conversation.lastDialogueGuard;
@@ -1069,6 +1102,37 @@ export async function processTranscriptStreaming(
         deterministicResponse,
         deterministicReplyPlan.proposal,
       );
+    }
+    // Shadow hors bande : mesure aussi les tours où la regex a décidé seule,
+    // sans retarder la réponse déjà prête.
+    if (
+      turnPlanShadowEnabled &&
+      !explicitEnd &&
+      (speechAct === 'content' || speechAct === 'correction') &&
+      !isNameCollectionBlocking(session) &&
+      shouldObserveDeterministicTurnPlan()
+    ) {
+      const observedTurnId = session.currentTurn?.id;
+      const observedAfter = captureTurnPlanPolicySnapshot(
+        session,
+        interactionBeforeTurn?.id ?? null,
+      );
+      mgr
+        .observeTurnPlan(session, turnPlanContext, deterministicResponse, observedTurnId)
+        .then((result) =>
+          recordInBandTurnPlanShadow(
+            session,
+            turnPlanContext,
+            result,
+            turnPlanBefore,
+            observedAfter,
+            observedTurnId,
+            'deterministic',
+          ),
+        )
+        .catch((err: unknown) =>
+          logger.warn({ err }, '[voice-turn] Deterministic TurnPlan observation failed'),
+        );
     }
     syncSpellingProfile(session);
     if (!isCurrentResponse()) return;
@@ -1218,16 +1282,82 @@ export async function processTranscriptStreaming(
       : {}),
     telemetryTurnId,
   };
-  const recordTurnPlanObservation = (result = inBandTurnPlanResult) => {
+  const recordTurnPlanObservation = (
+    result = inBandTurnPlanResult,
+    after = captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
+  ) => {
     if (!shouldCollectInBandTurnPlan || !telemetryTurnId) return;
     recordInBandTurnPlanShadow(
       session,
       turnPlanContext,
       result ?? { status: 'missing', durationMs: 0 },
       turnPlanBefore,
-      captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
+      after,
       telemetryTurnId,
+      deferUnresolvedToModel ? 'deferred' : 'llm',
     );
+  };
+  // Réponse LLM libre : le TurnPlan canary devient l'autorité des faits non
+  // sensibles et de l'interaction attendue ; sinon l'inférence texte reste.
+  const recordLlmReply = (reply: string) => {
+    const plan =
+      shouldCollectInBandTurnPlan &&
+      turnPlanAuthorityEnabled &&
+      inBandTurnPlanResult?.status === 'valid'
+        ? inBandTurnPlanResult.plan
+        : null;
+    if (!plan) {
+      recordAssistantReplyFromLlmTextFallback(session, reply);
+      recordTurnPlanObservation();
+      if (deferUnresolvedToModel) recordDeferredTurnOutcome('plan_unavailable');
+      return;
+    }
+    const deterministic = captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null);
+    const authority = applyTurnPlanAuthority(session, {
+      context: turnPlanContext,
+      plan,
+      before: turnPlanBefore,
+      speechAct,
+      reply,
+    });
+    recordVoiceTurnEventIfCurrent(session, telemetryTurnId, 'turn_plan_authority', {
+      appliedFacts: authority.appliedFacts.join(',') || null,
+      assistantInteractionSource: authority.assistantInteractionSource,
+    });
+    // Le shadow reste comparé au déterministe seul, sinon l'accord serait circulaire.
+    const after: TurnPlanPolicySnapshot = {
+      ...captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
+      intent: deterministic.intent,
+      slots: deterministic.slots,
+      activeInteractionKind: authority.legacyAssistantInteraction,
+    };
+    recordTurnPlanObservation(inBandTurnPlanResult, after);
+    if (deferUnresolvedToModel) {
+      recordDeferredTurnOutcome(
+        !authority.policyAccepted
+          ? 'plan_rejected'
+          : authority.appliedFacts.length
+            ? 'fact_applied'
+            : 'no_fact',
+      );
+    }
+  };
+  // Un tour confié au modèle garde le garde-fou anti-boucle : même question
+  // reposée sans nouveau fait = relance comptée.
+  const recordDeferredTurnOutcome = (outcome: VoiceTurnPlanDeferredOutcome) => {
+    recordVoiceTurnPlanDeferred(outcome);
+    const stallLevel = recordModelTurnStall(
+      session,
+      pendingQuestionBeforeTurn,
+      hasTurnFactProgress(
+        turnPlanBefore,
+        captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
+      ),
+    );
+    recordVoiceTurnEventIfCurrent(session, telemetryTurnId, 'turn_plan_deferred', {
+      outcome,
+      stallLevel,
+    });
   };
 
   // ── Thinking filler : combler ponctuellement le silence pendant que le LLM génère.
@@ -1327,8 +1457,7 @@ export async function processTranscriptStreaming(
       if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
       return;
     }
-    recordAssistantReplyFromLlmTextFallback(session, fullResponse);
-    recordTurnPlanObservation();
+    recordLlmReply(fullResponse);
     syncSpellingProfile(session);
 
     writeDebugLog(`[processTranscriptStreaming] LLM stream ended, waiting for TTS...`);

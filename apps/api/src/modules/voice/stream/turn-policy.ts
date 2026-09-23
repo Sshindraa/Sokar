@@ -5,7 +5,7 @@ import type {
   PendingQuestion,
   VoiceSpeechAct,
 } from './types';
-import type { TurnPlan, TurnPlanContext } from './turn-plan';
+import { turnPlanFacts, type TurnPlan, type TurnPlanContext } from './turn-plan';
 
 export type PartySizeEvidence = 'explicit' | 'contextual' | 'confirmation' | 'none';
 
@@ -39,7 +39,7 @@ export interface TurnPolicyDecision {
 }
 
 export interface AssistantInteractionProposal {
-  source: 'explicit' | 'llm_text_fallback';
+  source: 'explicit' | 'llm_text_fallback' | 'turn_plan';
   operation: 'activate' | 'keep' | 'cancel';
   interaction?: {
     kind: PendingInteractionKind;
@@ -364,13 +364,11 @@ export function decideTurnPlanPolicy(
     return { status: 'rejected', reason: 'pending_interaction_mismatch', allowedTools: [] };
   }
 
-  if (
-    plan.interpretation === 'unclear' &&
-    (plan.intent !== 'unchanged' || Object.keys(plan.slots).length)
-  ) {
+  const facts = turnPlanFacts(plan);
+  if (plan.interpretation === 'unclear' && (plan.intent !== 'unchanged' || facts.length)) {
     return { status: 'rejected', reason: 'unclear_with_facts', allowedTools: [] };
   }
-  if ('customerPhone' in plan.slots) {
+  if (facts.some((fact) => fact.field === 'customerPhone')) {
     return { status: 'rejected', reason: 'unsupported_phone_slot', allowedTools: [] };
   }
 

@@ -1097,6 +1097,7 @@ describe('CallSessionManager — tool execution', () => {
       }),
     );
     expect(session.handoffInProgress).toBe(true);
+    expect(session.handoffConclusion).toBe('manager_transfer_requested');
     expect(session.history.length).toBeGreaterThan(2);
   });
 
@@ -1389,9 +1390,7 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
       phrases.push(phrase);
     });
 
-    expect(fullText).toBe(
-      'Le gérant a accepté le transfert. Je vous mets en relation, un instant.',
-    );
+    expect(fullText).toBe('Je lance le transfert vers le gérant, un instant.');
     // Le résultat Telnyx vérifié termine le tour sans laisser le LLM l'inventer.
     expect(fetchMock).toHaveBeenCalledOnce();
   });
@@ -1569,9 +1568,7 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     });
 
     // L'outil retourne l'état Telnyx observé ; aucun texte final LLM ne le remplace.
-    expect(fullText).toBe(
-      'Le gérant a accepté le transfert. Je vous mets en relation, un instant.',
-    );
+    expect(fullText).toBe('Je lance le transfert vers le gérant, un instant.');
 
     // Le texte du round 0 (avant et après le tool_call) est dans l'historique
     // comme contenu du message assistant avec tool_calls.
@@ -1825,7 +1822,7 @@ describe('CallSessionManager — TurnPlan shadow in-band', () => {
 
     expect(response).toBe('Pour combien de personnes ?');
     expect(onTurnPlanShadowResult).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'valid', plan: proposal }),
+      expect.objectContaining({ status: 'valid', plan: { ...proposal, facts: [] } }),
     );
     expect(executeTool).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -1994,6 +1991,84 @@ describe('CallSessionManager — TurnPlan shadow in-band', () => {
       expect.objectContaining({ status: 'speech_missing' }),
     );
     expect(session.history.some((message) => message.content.includes('shadow-only'))).toBe(false);
+  });
+});
+
+describe('CallSessionManager — observation TurnPlan hors bande', () => {
+  const context = {
+    transcript: 'Moi, ma femme et nos trois enfants',
+    language: 'fr',
+    timezone: 'Europe/Paris',
+    referenceTime: '2026-09-23T10:00:00.000Z',
+    intent: 'reservation' as const,
+    pendingInteraction: { kind: 'partySize' as const },
+    slots: {},
+    hasConfirmedName: false,
+  };
+
+  beforeEach(() => {
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
+  });
+
+  it('force l’outil d’observation et renvoie un plan borné sans modifier la session', async () => {
+    const plan = {
+      interpretation: 'answer',
+      intent: 'unchanged',
+      slots: { partySize: 5 },
+      interactionDisposition: 'resolve',
+      confidence: 'high',
+      assistantInteraction: 'partySize',
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call-1',
+                  type: 'function',
+                  function: { name: 'proposeTurnPlanShadow', arguments: JSON.stringify(plan) },
+                },
+              ],
+            },
+          },
+        ],
+        usage: { prompt_tokens: 120, completion_tokens: 30 },
+      }),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    const conversationBefore = JSON.stringify(session.conversation);
+    const historyLength = session.history.length;
+
+    const result = await mgr.observeTurnPlan(session, context, 'Vous serez combien ?', 'turn-1');
+
+    expect(result).toMatchObject({ status: 'valid', plan: { slots: { partySize: 5 } } });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.tool_choice).toEqual({
+      type: 'function',
+      function: { name: 'proposeTurnPlanShadow' },
+    });
+    expect(body.tools).toHaveLength(1);
+    expect(body.messages.at(-1)).toEqual({ role: 'user', content: context.transcript });
+    expect(JSON.stringify(session.conversation)).toBe(conversationBefore);
+    expect(session.history).toHaveLength(historyLength);
+  });
+
+  it('retourne failed sans lever quand Groq échoue', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValue(new Error('network down')) as unknown as typeof globalThis.fetch;
+    const mgr = CallSessionManager.getInstance();
+
+    const result = await mgr.observeTurnPlan(makeSession(), context, 'Vous serez combien ?', 't');
+
+    expect(result.status).toBe('failed');
   });
 });
 

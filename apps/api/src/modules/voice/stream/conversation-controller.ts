@@ -2405,6 +2405,18 @@ export function recordUserTurn(
     session.conversation.lastAvailabilityCheck = null;
   }
   Object.assign(current, decision.slots);
+  for (const slot of ['date', 'time', 'partySize'] as const) {
+    const value = decision.slots[slot];
+    if (value === undefined) continue;
+    session.conversation.slotProvenance = {
+      ...session.conversation.slotProvenance,
+      [slot]: {
+        source:
+          slot === 'partySize' && partySizeEvidence !== 'none' ? partySizeEvidence : 'explicit',
+        value,
+      },
+    };
+  }
   if (decision.customerName) current.customerName = decision.customerName;
 
   if (activeInteraction && decision.resolveInteraction) {
@@ -2634,7 +2646,15 @@ function extractContextualPartySize(transcript: string): number | null {
     `\\b(?:on (?:serait|sera|serons|est|ferait|fait|vient)|nous (?:serions|serons|sommes|ferions|faisons|venons)|vous (?:etes|seriez|serez)|we (?:are|will be)|there (?:will be|are))\\s+(?:bien\\s+)?(?:a|pour)?\\s*${SPOKEN_PARTY_SIZE_PATTERN}\\b`,
     'g',
   );
-  const contextualMatches = [...normalized.matchAll(contextualPattern)];
+  // « on sera une petite tablée », « on est un groupe » : un/une suivi d'un
+  // autre mot que l'unité est un article, pas un nombre de couverts.
+  const contextualMatches = [...normalized.matchAll(contextualPattern)].filter(
+    (match) =>
+      !/^une?$/.test(match[1]) ||
+      !/^\s+(?!(?:personnes?|seule?|people|guests?|person)\b)\p{L}/u.test(
+        normalized.slice((match.index ?? 0) + match[0].length),
+      ),
+  );
   if (contextualMatches.length) {
     const values = contextualMatches
       .map((match) => partySizeFromNumberToken(match[1]))
@@ -2706,7 +2726,7 @@ export function pendingQuestionFrom(question: string): PendingQuestion {
   return null;
 }
 
-function proposeAssistantInteractionFromLlmText(
+export function proposeAssistantInteractionFromLlmText(
   session: CallSession,
   reply: string,
 ): AssistantInteractionProposal {
@@ -2882,6 +2902,37 @@ export type DialogueStallKey =
 export function resetDialogueStall(session: CallSession): void {
   session.conversation.stalledTurns = 0;
   session.conversation.stallSignature = null;
+}
+
+/**
+ * Garde-fou d'un tour confié au modèle : la même question reposée sans nouveau
+ * fait compte comme une relance, exactement comme une relance déterministe.
+ */
+export function recordModelTurnStall(
+  session: CallSession,
+  questionBeforeTurn: PendingQuestion,
+  progressed: boolean,
+): DialogueStallLevel | null {
+  if (progressed) {
+    resetDialogueStall(session);
+    return null;
+  }
+  const question = session.conversation.pendingQuestion;
+  if (!question || question !== questionBeforeTurn) return null;
+  return registerDialogueStall(session, dialogueStallKeyFromPendingQuestion(session));
+}
+
+/**
+ * Après deux relances sur la même question, le tour suivant revient au
+ * déterministe, qui reformule puis propose un repli humain réel.
+ */
+export function isModelTurnStalled(session: CallSession): boolean {
+  const { stalledTurns, stallSignature, pendingQuestion } = session.conversation;
+  return (
+    pendingQuestion !== null &&
+    stalledTurns >= 2 &&
+    stallSignature === dialogueStallKeyFromPendingQuestion(session)
+  );
 }
 
 /** Efface la trace du garde-fou anti-boucle avant le tour suivant. */
@@ -3142,6 +3193,7 @@ export function buildDeterministicTurnPlan(
   session: CallSession,
   speechAct: VoiceSpeechAct,
   transcript = '',
+  options: { deferUnresolvedToModel?: boolean } = {},
 ): AssistantReplyEmissionPlan | null {
   // Une proposition de repli humain en attente est traitée par l'orchestrateur
   // (transfert ou message réellement exécuté) : le déterministe ne la répète pas.
@@ -3174,7 +3226,9 @@ export function buildDeterministicTurnPlan(
   }
 
   if (speechAct === 'content' || speechAct === 'correction') {
-    if (isAmbiguousPartySizeReply(session, transcript)) {
+    // Canary TurnPlan : une réponse que les extracteurs n'ont pas comprise va
+    // au modèle au lieu d'une relance mécanique de la même question.
+    if (!options.deferUnresolvedToModel && isAmbiguousPartySizeReply(session, transcript)) {
       const primary =
         effectiveVoiceLanguage(session) === 'en'
           ? "I didn't catch the number of people. How many will there be?"

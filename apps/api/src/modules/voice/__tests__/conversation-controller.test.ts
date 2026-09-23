@@ -139,6 +139,32 @@ describe('conversation state', () => {
     },
   );
 
+  it.each([
+    'On sera une petite tablée, disons cinq',
+    'On est un groupe, cinq je pense',
+    'Nous serons une famille nombreuse',
+  ])('ne lit pas l’article de « %s » comme un couvert', (transcript) => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Vous serez combien ?');
+
+    recordUserTurn(session, transcript, 'content');
+
+    expect(session.conversation.slots.partySize).not.toBe(1);
+    expect([5, undefined]).toContain(session.conversation.slots.partySize);
+  });
+
+  it.each(['On sera un', 'nous serons une personne', 'on sera un seul', 'on sera une.'])(
+    'garde « %s » à un couvert',
+    (transcript) => {
+      const session = makeSession();
+      recordAssistantReply(session, 'Vous serez combien ?');
+
+      recordUserTurn(session, transcript, 'content');
+
+      expect(session.conversation.slots.partySize).toBe(1);
+    },
+  );
+
   it('ne contourne pas la limite de sept couverts du parcours vocal', () => {
     const session = makeSession();
     recordAssistantReply(session, 'Vous serez combien ?');

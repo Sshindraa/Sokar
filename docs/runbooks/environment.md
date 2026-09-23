@@ -213,6 +213,55 @@ déploiement production démarre Prometheus et Grafana séparément sur la loopb
 avec 30 jours de rétention Prometheus. Prometheus ne dépend pas du secret Grafana.
 Le workflow provisionne `GRAFANA_ADMIN_PASSWORD` depuis l'environnement GitHub
 `production` dans `/etc/sokar/grafana.env` (droits `0600`, root uniquement, hors du checkout).
+
+L'accord est aussi compté par dimension (`sokar_voice_turn_plan_shadow_dimension_total`,
+labels `dimension` = `intent` | `slots` | `interaction` | `assistant_interaction`) : un
+taux global masque qu'une seule dimension diverge.
+
+`VOICE_TURN_PLAN_AUTHORITY_ENABLED=true` (défaut `false`, sans effet si le shadow est
+coupé) ne s'applique qu'aux restaurants listés dans
+`VOICE_TURN_PLAN_AUTHORITY_RESTAURANT_IDS` (IDs séparés par des virgules, `*` pour tous ;
+vide = aucun). Cette liste n'est pas un booléen : elle ne passe pas par
+`sync-runtime-flags.sh` et se pose directement dans le fichier d'environnement de l'API,
+avant le reload. Pour ces restaurants, l'autorité donne au TurnPlan valide et accepté par la policy une autorité limitée, appliquée
+après la réponse vocale : il complète date, heure, couverts et intention seulement quand
+ces champs étaient vides avant le tour et n'ont pas été posés par le déterministe ; il ne
+remplace jamais un fait existant. Il fixe aussi l'interaction attendue au lieu de
+l'inférence regex sur la phrase générée, sauf pour `confirmation`, `humanFallback` et
+`partySizeConfirmation`, qui ouvrent une autorisation ou exigent des métadonnées et
+restent sur l'inférence texte. Aucun tool ni confirmation ne dépend du plan. Le shadow
+continue de comparer le plan à l'état déterministe seul. Décisions comptées par
+`sokar_voice_turn_plan_authority_total{field,outcome}`. N'activer qu'après lecture de
+l'accord par dimension sur des appels réels.
+
+Un tour de contenu que les extracteurs n'ont pas compris est confié au modèle au lieu
+d'une relance mécanique. Son résultat est compté par
+`sokar_voice_turn_plan_deferred_total{outcome}` : `fact_applied`, `no_fact`,
+`plan_rejected`, `plan_unavailable`, ou `stall_handoff`. Le garde-fou anti-boucle
+s'applique aussi à ces tours : si le modèle repose la même question sans nouveau fait, la
+relance est comptée ; après deux relances, le tour suivant revient au déterministe, qui
+propose un repli humain réel (`stall_handoff`). Les métriques shadow portent un label
+`path` (`llm`, `deferred` ou `deterministic`) pour lire l'accord séparément sur ces tours.
+
+`VOICE_TURN_PLAN_DETERMINISTIC_SHADOW_RATE` (0 à 1, défaut `0`, sans effet si le shadow est
+coupé) observe aussi une part des tours répondus sans LLM : après la réponse déterministe,
+un appel TurnPlan séparé (outil forcé, température 0, 2,5 s maximum) interprète le tour.
+Il ne retarde pas la réponse, ne modifie ni l'état ni l'historique, et ne passe pas par le
+disjoncteur Groq, pour qu'une observation lente ne coupe jamais le LLM des appels réels.
+Son coût est rattaché à l'appel. C'est la seule mesure des tours où la regex décide seule,
+y compris quand elle se trompe sans le savoir (`path="deterministic"`). Commencer bas
+(par exemple `0.2`) et monter selon le volume. Comme la liste d'IDs, cette valeur n'est
+pas un booléen et se pose directement dans le fichier d'environnement de l'API.
+
+Le TurnPlan propose désormais des `facts` : `{field, op: set|replace|clear, value, source:
+user_explicit|user_tentative|correction}` ; les anciens `slots` restent lus comme `set` affirmé.
+Sous autorité, `set` remplit seulement un champ vide. `replace` corrige un fait d'origine
+`contextual` ou `model`, un fait `explicit` seulement si `interpretation=correction`, et jamais
+un fait `confirmation` ni un fait d'origine inconnue ou périmée. Un fait `user_tentative` n'est
+jamais enregistré ; `clear` n'est pas encore pris en charge. Un remplacement invalide l'accord
+de réservation et la disponibilité. La provenance est stockée dans
+`conversation.slotProvenance`, liée à la valeur qu'elle décrit. Résultats ajoutés à
+`sokar_voice_turn_plan_authority_total` : `replaced`, `protected`, `tentative`, `unsupported`.
 Grafana donne un accès anonyme en lecture seule, sans inscription, et s'ouvre
 uniquement par tunnel SSH ; ne publiez pas son port.
 
