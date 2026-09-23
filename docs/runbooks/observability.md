@@ -33,18 +33,24 @@ Grafana écoute sur `127.0.0.1:3030` et n'est **pas** exposé par Nginx. L'accè
 
 ```zsh
 ssh -L 3030:127.0.0.1:3030 deploy@sokar
-# puis http://localhost:3030 — utilisateur admin, mot de passe GRAFANA_ADMIN_PASSWORD
+# puis http://localhost:3030 — accès lecture seule, sans compte requis
 ```
 
-`GRAFANA_ADMIN_PASSWORD` doit être présent dans l'environnement du compose avant le premier
-démarrage : sans lui, le service refuse de démarrer (volontairement, plutôt qu'un mot de passe par
-défaut).
+Le compte anonyme est limité au rôle Viewer ; les inscriptions sont désactivées. Le mot de passe
+admin unique est conservé comme secret `GRAFANA_ADMIN_PASSWORD` dans l'environnement GitHub
+`production`, puis provisionné dans `/etc/sokar/grafana.env` avec les droits `0600` par le wrapper
+privilégié. Il reste hors du checkout, n'est pas versionné et n'est pas affiché dans les journaux.
+Seul le compose Grafana consomme ce secret ; Prometheus reste démarrable indépendamment. N'exposez
+pas le port 3030 dans Nginx ou sur une interface publique.
 
 ## Démarrer la stack
 
 ```zsh
-# sur le VPS, depuis /opt/sokar
-docker compose -f infra/docker-compose.yml up -d prometheus grafana
+# Le workflow de déploiement production provisionne le secret puis démarre
+# Prometheus et Grafana via sokar-deploy-root. Pour un diagnostic manuel :
+sudo /usr/local/sbin/sokar-deploy-root start-prometheus prod
+# Grafana requiert GRAFANA_ADMIN_PASSWORD, synchronisé par le workflow de production.
+sudo /usr/local/sbin/sokar-deploy-root start-grafana prod
 ```
 
 Prometheus conserve 30 jours de séries (`prometheus-data`), Grafana ses dashboards et son état
@@ -74,5 +80,6 @@ s'éditent pas dans l'interface, toute modification passe par le dépôt :
 - Les compteurs HTTP vivent en mémoire : un redémarrage remet les séries à zéro. C'est sans
   conséquence sur Prometheus (les compteurs sont monotones par process), mais `rate()` peut produire
   un pic au redémarrage.
-- Les alertes in-app (`system-health`, `alert-evaluation`) restent la source des notifications
-  email/webhook/SMS. Prometheus et Grafana servent à l'historique et aux dashboards.
+- Les alertes in-app (`system-health`, `alert-evaluation`) envoient les notifications configurées
+  par email/webhook/SMS. Les règles Prometheus évaluent et historisent les conditions ; Grafana les
+  visualise. Une règle Prometheus seule n'envoie pas de notification.

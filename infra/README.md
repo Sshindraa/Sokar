@@ -84,7 +84,9 @@ docker compose -f infra/docker-compose.yml exec redis redis-cli
 The VPS runs Postgres and Redis in Docker, while the API and dashboard are
 managed by `pm2` (see `/opt/sokar/infra/ecosystem.config.js`). Production
 Prometheus is managed separately by the privileged deploy wrapper using
-`prometheus-compose.yml`; this avoids requiring the Grafana admin credential
-to start metrics collection. Grafana remains loopback-only and requires a
-unique `GRAFANA_ADMIN_PASSWORD` before it is started. Don't try to dockerize
-the apps on the VPS — Next.js builds can exhaust memory without pre-build cleanup.
+`prometheus-compose.yml`, independently from `grafana-compose.yml`; metrics
+collection does not depend on Grafana credentials. Both services are
+loopback-only. Grafana requires a unique `GRAFANA_ADMIN_PASSWORD` provisioned
+from the GitHub `production` environment and provides anonymous read-only
+dashboard access through an SSH tunnel. Don't try to dockerize the apps on the
+VPS — Next.js builds can exhaust memory without pre-build cleanup.

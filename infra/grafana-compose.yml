@@ -1,0 +1,23 @@
+# Production Grafana runs separately so Prometheus remains operational even
+# when the admin secret has not been provisioned. Both interfaces use loopback.
+services:
+  grafana:
+    image: grafana/grafana:11.5.1
+    container_name: sokar-grafana
+    network_mode: host
+    environment:
+      GF_SERVER_HTTP_ADDR: '127.0.0.1'
+      GF_SERVER_HTTP_PORT: '3030'
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD requis}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    restart: unless-stopped
+
+volumes:
+  grafana-data:

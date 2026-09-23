@@ -11,7 +11,7 @@ PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
 SUDOERS_DST="/etc/sudoers.d/deploy"
 
 usage() {
-    echo "Usage: $0 {check-cert|clean-next|install-nginx|restore-nginx|reload-nginx|install-runtime|configure-watchdog|self-update|check-prod-vhost|start-localstack|stop-localstack|start-prometheus|backup-db|restore-test} {prod|staging} [dashboard|connect]" >&2
+    echo "Usage: $0 {check-cert|clean-next|install-nginx|restore-nginx|reload-nginx|install-runtime|configure-watchdog|configure-grafana|self-update|check-prod-vhost|start-localstack|stop-localstack|validate-monitoring|start-prometheus|start-grafana|backup-db|restore-test} {prod|staging} [dashboard|connect]" >&2
     exit 2
 }
 
@@ -156,6 +156,12 @@ configure_watchdog() {
     echo "Configuration watchdog installée."
 }
 
+configure_grafana() {
+    [ "$ENVIRONMENT" = "prod" ] || usage
+    # Valeur transmise uniquement par stdin, jamais en argument ou dans les logs.
+    bash "$ROOT/scripts/ops/configure-grafana-env.sh" /etc/sokar/grafana.env
+}
+
 self_update() {
     [ "$ENVIRONMENT" = "prod" ] || [ "$ENVIRONMENT" = "staging" ] || usage
     local wrapper_src="$ROOT/scripts/ops/sokar-deploy-root.sh"
@@ -222,6 +228,39 @@ start_prometheus() {
     exit 1
 }
 
+validate_monitoring() {
+    [ "$ENVIRONMENT" = "prod" ] || usage
+    /usr/bin/docker compose \
+        --project-name sokar-monitoring \
+        -f "$ROOT/infra/prometheus-compose.yml" \
+        config --quiet
+    /usr/bin/docker compose \
+        --project-name sokar-monitoring \
+        --env-file /etc/sokar/grafana.env \
+        -f "$ROOT/infra/grafana-compose.yml" \
+        config --quiet
+}
+
+start_grafana() {
+    [ "$ENVIRONMENT" = "prod" ] || usage
+    /usr/bin/docker compose \
+        --project-name sokar-monitoring \
+        --env-file /etc/sokar/grafana.env \
+        -f "$ROOT/infra/grafana-compose.yml" \
+        up -d grafana
+
+    local attempt
+    for attempt in $(seq 1 60); do
+        if curl -fsS --max-time 2 http://127.0.0.1:3030/api/health >/dev/null; then
+            echo "Grafana est opérationnel sur la loopback."
+            return 0
+        fi
+        sleep 1
+    done
+    echo "Grafana n'a pas passé son health check en 60 secondes." >&2
+    exit 1
+}
+
 case "$ACTION" in
     check-cert)
         [ "$#" -eq 2 ] || usage
@@ -252,6 +291,10 @@ case "$ACTION" in
         [ "$#" -eq 2 ] || usage
         configure_watchdog
         ;;
+    configure-grafana)
+        [ "$#" -eq 2 ] || usage
+        configure_grafana
+        ;;
     backup-db)
         [ "$#" -eq 2 ] || usage
         if [ "$ENVIRONMENT" = "prod" ]; then
@@ -279,6 +322,14 @@ case "$ACTION" in
     start-prometheus)
         [ "$#" -eq 2 ] || usage
         start_prometheus
+        ;;
+    validate-monitoring)
+        [ "$#" -eq 2 ] || usage
+        validate_monitoring
+        ;;
+    start-grafana)
+        [ "$#" -eq 2 ] || usage
+        start_grafana
         ;;
     *)
         usage
