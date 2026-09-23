@@ -1,6 +1,6 @@
 # Runbook — Staging
 
-> **Statut : ACTIF — audité le 12 septembre 2026.**
+> **Statut : ACTIF — mis à jour le 23 septembre 2026.**
 > La dernière preuve documentée confirme ElevenLabs et Cartesia fonctionnels en staging ; Telnyx
 > reste absent et bloque un appel réel. Toujours contrôler `/health` (qui expose les dépendances)
 > et les variables présentes sans afficher leur valeur avant un test voice. Voir
@@ -27,6 +27,11 @@
 - La configuration voice est évolutive : `VOICE_DISABLED` doit refléter le but de la campagne.
   ElevenLabs et Cartesia peuvent être activés pour les tests de transcription/synthèse. Sans
   `TELNYX_API_KEY` et configuration Telnyx complète, aucun appel réel ne doit être tenté.
+- Les emails sortants sont désactivés par défaut en staging (`RESEND_API_KEY` vide). Ne copiez
+  pas la clé de production. Les rapports nocturnes doivent rester coupés via
+  `EVENING_REPORTS_ENABLED=false`. Avant d'activer des tests email, prévoir une clé dédiée et une
+  destination de test/allowlist. Un rejeu d'un ancien `evening-report` peut envoyer un rapport du
+  jour courant (le scheduler ne fige pas `dayKey`) ; ne rejouez pas un rapport périmé.
 - `CORS_ORIGINS` must be explicit in production.
 - Stripe staging utilise exclusivement des clés et Price IDs de test.
 - `X-Robots-Tag: noindex, nofollow` on all staging vhosts.

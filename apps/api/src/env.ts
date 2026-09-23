@@ -231,6 +231,12 @@ const EnvSchema = z
     // Il reste optionnel tant que les envois marketing sont gelés.
     RESEND_WEBHOOK_SECRET: z.string().min(16).optional(),
     EMAIL_FROM: z.string().optional(),
+    // Les rapports récurrents envoient un email aux gestionnaires. Staging les
+    // désactive explicitement tant qu'il n'existe pas de canal d'envoi isolé.
+    EVENING_REPORTS_ENABLED: z
+      .enum(['true', 'false'])
+      .default('true')
+      .transform((v) => v === 'true'),
     // Canaux d'alerte ops (monitoring pilote). Tous optionnels ; si aucun n'est
     // défini, les alertes ne partent que dans les logs + Sentry.
     //   ALERT_EMAIL_TO    : destinataires email des alertes, séparés par des virgules.

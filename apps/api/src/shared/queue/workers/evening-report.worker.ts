@@ -5,6 +5,7 @@ import { sendEmail } from '../../email';
 import { buildReportEmail } from '../../../modules/analytics/report.service';
 import { setupWorkerListeners, jobLogger } from './helper';
 import type { MessagingUsageContext } from '../../../modules/usage/messaging-usage.service';
+import { env } from '../../../env';
 
 interface EveningReportJobData {
   readonly restaurantId: string;
@@ -30,6 +31,11 @@ export const eveningReportWorker = new Worker(
   'evening-report',
   async (job) => {
     const log = jobLogger(job);
+    if (!env.EVENING_REPORTS_ENABLED) {
+      log.info('evening report skipped because email reports are disabled in this environment');
+      return;
+    }
+
     const { restaurantId, dayKey } = job.data as EveningReportJobData;
     const { start, end, label } = getReportDayRange(dayKey);
 
