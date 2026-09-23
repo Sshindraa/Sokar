@@ -2405,6 +2405,18 @@ export function recordUserTurn(
     session.conversation.lastAvailabilityCheck = null;
   }
   Object.assign(current, decision.slots);
+  for (const slot of ['date', 'time', 'partySize'] as const) {
+    const value = decision.slots[slot];
+    if (value === undefined) continue;
+    session.conversation.slotProvenance = {
+      ...session.conversation.slotProvenance,
+      [slot]: {
+        source:
+          slot === 'partySize' && partySizeEvidence !== 'none' ? partySizeEvidence : 'explicit',
+        value,
+      },
+    };
+  }
   if (decision.customerName) current.customerName = decision.customerName;
 
   if (activeInteraction && decision.resolveInteraction) {

@@ -7,6 +7,13 @@ export type CallState = 'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING' | 'CLOS
 /** Acte de parole détecté avant l'orchestration LLM. */
 export type VoiceSpeechAct = 'liveness' | 'backchannel' | 'closing' | 'correction' | 'content';
 
+/**
+ * `explicit` : extracteur sur une formulation explicite ; `contextual` : nombre
+ * nu lu grâce à la question en attente ; `confirmation` : validé par l'appelant ;
+ * `model` : complété par un TurnPlan accepté.
+ */
+export type SlotProvenanceSource = 'explicit' | 'contextual' | 'confirmation' | 'model';
+
 export type NameCollectionState = 'idle' | 'collecting' | 'clarifying' | 'confirming' | 'confirmed';
 
 /** Réponse métier attendue après la dernière question de l'agent. */
@@ -117,6 +124,13 @@ export interface ConversationState {
     customerName?: string;
     customerPhone?: string;
   };
+  /**
+   * Origine des faits de réservation, liée à la valeur décrite : une origine
+   * dont la valeur ne correspond plus au slot est ignorée.
+   */
+  slotProvenance?: Partial<
+    Record<'date' | 'time' | 'partySize', { source: SlotProvenanceSource; value: string | number }>
+  >;
   /** Demande d'horaires conservée pendant la collecte date/couverts. */
   wantsAvailabilityOptions?: boolean;
   offeredAvailability?: { date: string; partySize: number; slots: string[] };

@@ -1822,7 +1822,7 @@ describe('CallSessionManager — TurnPlan shadow in-band', () => {
 
     expect(response).toBe('Pour combien de personnes ?');
     expect(onTurnPlanShadowResult).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'valid', plan: proposal }),
+      expect.objectContaining({ status: 'valid', plan: { ...proposal, facts: [] } }),
     );
     expect(executeTool).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);

@@ -1,5 +1,5 @@
 import type { CallSession, PendingInteractionKind, VoiceSpeechAct } from './types';
-import type { TurnPlan, TurnPlanContext } from './turn-plan';
+import { turnPlanFacts, type TurnPlan, type TurnPlanContext } from './turn-plan';
 import { isTurnPlanShadowEnabled, type TurnPlanPolicySnapshot } from './turn-plan-shadow';
 import {
   decideAssistantInteractionPolicy,
@@ -81,10 +81,50 @@ export interface TurnPlanAuthorityResult {
   legacyAssistantInteraction: PendingInteractionKind | 'none';
 }
 
+type AuthorityFactField = 'date' | 'time' | 'partySize';
+
 /**
- * Faits du plan accepté par la policy, en complément du déterministe : un champ
- * déjà connu avant le tour, ou posé pendant le tour, n'est jamais remplacé.
- * Une correction exige une opération explicite que le plan ne porte pas encore.
+ * Un fait existant peut-il être remplacé par une correction du modèle ?
+ * Jamais un fait validé par l'appelant ni un fait d'origine inconnue ; un fait
+ * extrait explicitement seulement si le tour est interprété comme une correction.
+ */
+function isReplaceableFact(
+  session: CallSession,
+  field: AuthorityFactField,
+  plan: TurnPlan,
+): 'replaceable' | 'protected' {
+  const current = session.conversation.slots[field];
+  const provenance = session.conversation.slotProvenance?.[field];
+  if (!provenance || provenance.value !== current) return 'protected';
+  switch (provenance.source) {
+    case 'contextual':
+    case 'model':
+      return 'replaceable';
+    case 'explicit':
+      return plan.interpretation === 'correction' ? 'replaceable' : 'protected';
+    case 'confirmation':
+      return 'protected';
+  }
+}
+
+function writeModelFact(
+  session: CallSession,
+  field: AuthorityFactField,
+  value: string | number,
+): void {
+  const { conversation } = session;
+  if (field === 'partySize') conversation.slots.partySize = value as number;
+  else conversation.slots[field] = value as string;
+  conversation.slotProvenance = {
+    ...conversation.slotProvenance,
+    [field]: { source: 'model', value },
+  };
+}
+
+/**
+ * Faits du plan accepté par la policy. `set` ne remplit qu'un champ vide ;
+ * `replace` ne corrige qu'un fait remplaçable ; un fait hésitant n'est jamais
+ * enregistré ; `clear` n'est pas encore pris en charge.
  */
 function applyTurnPlanFacts(
   session: CallSession,
@@ -99,22 +139,39 @@ function applyTurnPlanFacts(
 
   const { conversation } = session;
   const applied: TurnPlanAuthorityFact[] = [];
-  const { date, time, partySize } = decision.factPatch;
-  const facts = [
-    ['date', typeof date === 'string' ? date : undefined],
-    ['time', typeof time === 'string' ? time : undefined],
-    ['partySize', typeof partySize === 'number' ? partySize : undefined],
-  ] as const;
-  for (const [field, value] of facts) {
-    if (value === undefined) continue;
-    if (before.slots[field] !== undefined || conversation.slots[field] !== undefined) {
+  for (const fact of turnPlanFacts(plan)) {
+    if (fact.field !== 'date' && fact.field !== 'time' && fact.field !== 'partySize') continue;
+    const field = fact.field;
+    if (fact.source === 'user_tentative') {
+      recordVoiceTurnPlanAuthority(field, 'tentative');
+      continue;
+    }
+    if (fact.op === 'clear' || fact.value === undefined) {
+      recordVoiceTurnPlanAuthority(field, 'unsupported');
+      continue;
+    }
+    const current = conversation.slots[field];
+    if (before.slots[field] === undefined && current === undefined) {
+      writeModelFact(session, field, fact.value);
+      applied.push(field);
+      recordVoiceTurnPlanAuthority(field, 'applied');
+      continue;
+    }
+    if (current === fact.value) {
       recordVoiceTurnPlanAuthority(field, 'already_set');
       continue;
     }
-    if (field === 'partySize') conversation.slots.partySize = value as number;
-    else conversation.slots[field] = value as string;
+    if (fact.op !== 'replace') {
+      recordVoiceTurnPlanAuthority(field, 'already_set');
+      continue;
+    }
+    if (isReplaceableFact(session, field, plan) === 'protected') {
+      recordVoiceTurnPlanAuthority(field, 'protected');
+      continue;
+    }
+    writeModelFact(session, field, fact.value);
     applied.push(field);
-    recordVoiceTurnPlanAuthority(field, 'applied');
+    recordVoiceTurnPlanAuthority(field, 'replaced');
   }
   if (applied.length) {
     // Même invalidation qu'un fait déterministe : le brouillon a changé.

@@ -252,6 +252,16 @@ Son coût est rattaché à l'appel. C'est la seule mesure des tours où la regex
 y compris quand elle se trompe sans le savoir (`path="deterministic"`). Commencer bas
 (par exemple `0.2`) et monter selon le volume. Comme la liste d'IDs, cette valeur n'est
 pas un booléen et se pose directement dans le fichier d'environnement de l'API.
+
+Le TurnPlan propose désormais des `facts` : `{field, op: set|replace|clear, value, source:
+user_explicit|user_tentative|correction}` ; les anciens `slots` restent lus comme `set` affirmé.
+Sous autorité, `set` remplit seulement un champ vide. `replace` corrige un fait d'origine
+`contextual` ou `model`, un fait `explicit` seulement si `interpretation=correction`, et jamais
+un fait `confirmation` ni un fait d'origine inconnue ou périmée. Un fait `user_tentative` n'est
+jamais enregistré ; `clear` n'est pas encore pris en charge. Un remplacement invalide l'accord
+de réservation et la disponibilité. La provenance est stockée dans
+`conversation.slotProvenance`, liée à la valeur qu'elle décrit. Résultats ajoutés à
+`sokar_voice_turn_plan_authority_total` : `replaced`, `protected`, `tentative`, `unsupported`.
 Grafana donne un accès anonyme en lecture seule, sans inscription, et s'ouvre
 uniquement par tunnel SSH ; ne publiez pas son port.
 

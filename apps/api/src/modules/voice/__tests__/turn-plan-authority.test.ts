@@ -5,6 +5,7 @@ import {
   activatePendingInteraction,
   createConversationState,
   getActivePendingInteraction,
+  recordUserTurn,
 } from '../stream/conversation-controller';
 import type { TurnPlan, TurnPlanContext } from '../stream/turn-plan';
 import type { CallSession } from '../stream/types';
@@ -212,5 +213,143 @@ describe('TurnPlan canary authority', () => {
 
     expect(result.appliedFacts).toEqual([]);
     expect(session.conversation.slots.date).toBeUndefined();
+  });
+});
+
+describe('TurnPlan canary authority — opération et provenance', () => {
+  function sessionWithPartySize(
+    source: 'explicit' | 'contextual' | 'confirmation' | 'model' | null,
+    value = 1,
+  ): CallSession {
+    const session = makeSession();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.partySize = value;
+    if (source) session.conversation.slotProvenance = { partySize: { source, value } };
+    return session;
+  }
+
+  function replacePartySize(
+    session: CallSession,
+    overrides: Partial<TurnPlan> = {},
+    source: 'correction' | 'user_explicit' | 'user_tentative' = 'correction',
+  ) {
+    return applyTurnPlanAuthority(session, {
+      context: contextFor(session, 'on sera cinq en fait'),
+      plan: plan({
+        interpretation: 'correction',
+        facts: [{ field: 'partySize', op: 'replace', value: 5, source }],
+        slots: source === 'user_tentative' ? {} : { partySize: 5 },
+        ...overrides,
+      }),
+      before: captureTurnPlanPolicySnapshot(session, null),
+      speechAct: 'content',
+      reply: 'Entendu, pour cinq. Pour quel jour ?',
+    });
+  }
+
+  it('remplace un nombre lu par la regex contextuelle', async () => {
+    const session = sessionWithPartySize('contextual');
+
+    const result = replacePartySize(session, { interpretation: 'answer' }, 'user_explicit');
+
+    expect(result.appliedFacts).toEqual(['partySize']);
+    expect(session.conversation.slots.partySize).toBe(5);
+    expect(session.conversation.slotProvenance?.partySize).toEqual({ source: 'model', value: 5 });
+    expect(await renderMetrics()).toMatch(
+      /sokar_voice_turn_plan_authority_total\{field="partySize",outcome="replaced"\} 1/,
+    );
+  });
+
+  it('ne remplace un fait explicite que si le tour est une correction', () => {
+    const answer = sessionWithPartySize('explicit', 4);
+    replacePartySize(answer, { interpretation: 'answer' });
+    expect(answer.conversation.slots.partySize).toBe(4);
+
+    const correction = sessionWithPartySize('explicit', 4);
+    replacePartySize(correction);
+    expect(correction.conversation.slots.partySize).toBe(5);
+  });
+
+  it('protège un fait validé par l’appelant et un fait d’origine inconnue ou périmée', async () => {
+    const confirmed = sessionWithPartySize('confirmation', 4);
+    replacePartySize(confirmed);
+    expect(confirmed.conversation.slots.partySize).toBe(4);
+
+    const unknown = sessionWithPartySize(null, 4);
+    replacePartySize(unknown);
+    expect(unknown.conversation.slots.partySize).toBe(4);
+
+    const stale = sessionWithPartySize('contextual', 4);
+    stale.conversation.slotProvenance = { partySize: { source: 'contextual', value: 2 } };
+    replacePartySize(stale);
+    expect(stale.conversation.slots.partySize).toBe(4);
+
+    expect(await renderMetrics()).toMatch(
+      /sokar_voice_turn_plan_authority_total\{field="partySize",outcome="protected"\} 3/,
+    );
+  });
+
+  it('n’enregistre jamais un fait hésitant, même dans un champ vide', async () => {
+    const session = makeSession();
+    session.conversation.intent = 'reservation';
+
+    const result = applyTurnPlanAuthority(session, {
+      context: contextFor(session, 'peut-être cinq, je dois vérifier'),
+      plan: plan({
+        facts: [{ field: 'partySize', op: 'set', value: 5, source: 'user_tentative' }],
+      }),
+      before: captureTurnPlanPolicySnapshot(session, null),
+      speechAct: 'content',
+      reply: 'Pas de souci. Vous me direz quand vous saurez ?',
+    });
+
+    expect(result.appliedFacts).toEqual([]);
+    expect(session.conversation.slots.partySize).toBeUndefined();
+    expect(await renderMetrics()).toMatch(
+      /sokar_voice_turn_plan_authority_total\{field="partySize",outcome="tentative"\} 1/,
+    );
+  });
+
+  it('ne prend pas encore en charge le retrait d’un fait', () => {
+    const session = sessionWithPartySize('contextual', 4);
+
+    applyTurnPlanAuthority(session, {
+      context: contextFor(session, 'oubliez le nombre'),
+      plan: plan({ facts: [{ field: 'partySize', op: 'clear', source: 'correction' }] }),
+      before: captureTurnPlanPolicySnapshot(session, null),
+      speechAct: 'content',
+      reply: 'D’accord. Vous serez combien ?',
+    });
+
+    expect(session.conversation.slots.partySize).toBe(4);
+  });
+
+  it('invalide l’accord de réservation après un remplacement', () => {
+    const session = sessionWithPartySize('contextual', 4);
+    session.conversation.pendingReservationConfirmationKey = 'k';
+    session.conversation.confirmedReservationKey = 'k';
+
+    replacePartySize(session);
+
+    expect(session.conversation.pendingReservationConfirmationKey).toBeNull();
+    expect(session.conversation.confirmedReservationKey).toBeNull();
+  });
+
+  it('enregistre la provenance posée par les extracteurs', () => {
+    const session = makeSession();
+    activatePendingInteraction(session, 'partySize', 'Vous serez combien ?');
+
+    recordUserTurn(session, 'quatre', 'content', new Date('2026-09-22T10:00:00Z'));
+    expect(session.conversation.slotProvenance?.partySize).toEqual({
+      source: 'contextual',
+      value: 4,
+    });
+
+    recordUserTurn(session, 'demain pour 6 personnes', 'content', new Date('2026-09-22T10:00:00Z'));
+    expect(session.conversation.slotProvenance?.partySize).toEqual({
+      source: 'explicit',
+      value: 6,
+    });
+    expect(session.conversation.slotProvenance?.date?.source).toBe('explicit');
   });
 });

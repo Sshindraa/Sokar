@@ -346,7 +346,14 @@ export type VoiceTurnPlanAuthorityField =
   | 'time'
   | 'partySize'
   | 'assistant_interaction';
-export type VoiceTurnPlanAuthorityOutcome = 'applied' | 'already_set' | 'deterministic_fallback';
+export type VoiceTurnPlanAuthorityOutcome =
+  | 'applied'
+  | 'replaced'
+  | 'already_set'
+  | 'protected'
+  | 'tentative'
+  | 'unsupported'
+  | 'deterministic_fallback';
 
 /**
  * Canary d'autorité TurnPlan : faits appliqués depuis le modèle, déjà connus,
