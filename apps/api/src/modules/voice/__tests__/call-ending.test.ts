@@ -214,7 +214,11 @@ describe('farewell playback and hangup', () => {
     await processTranscriptStreaming(session, 'Est-ce que vous avez une terrasse ?', mgr);
     expect(speakTtsStreamed).toHaveBeenLastCalledWith(session, recovery);
     await processTranscriptStreaming(session, 'Et un parking, peut-être ?', mgr);
-    expect(speakTtsStreamed).toHaveBeenLastCalledWith(session, recovery);
+    // La deuxième excuse est formulée autrement.
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      "Pardon, j'ai eu un petit souci. Vous serez combien ?",
+    );
     await processTranscriptStreaming(session, 'Vous acceptez les chiens ?', mgr);
 
     expect(speakTtsStreamed).toHaveBeenLastCalledWith(

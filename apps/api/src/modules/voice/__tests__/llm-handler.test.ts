@@ -84,8 +84,32 @@ describe('buildLivenessResponse', () => {
     } as CallSession;
 
     expect(buildLivenessResponse(inProgressSession, 'Allô ?')).toBe(
-      'Oui, je suis là. Quel est votre nom pour la réservation ?',
+      'Oui, je suis là. On disait, quel est votre nom pour la réservation ?',
     );
+  });
+
+  it('donne trois formulations différentes à trois « allô » du même appel', () => {
+    const conversation = createConversationState();
+    conversation.pendingQuestion = 'partySize';
+    const callSession = {
+      ...session,
+      conversation,
+      history: [
+        { role: 'system', content: session.systemPrompt },
+        { role: 'assistant', content: 'Très bien. Vous serez combien ?' },
+      ],
+    } as CallSession;
+
+    const replies = ['Allô ?', 'Vous êtes là ?', 'Allô'].map((transcript) =>
+      buildLivenessResponse(callSession, transcript),
+    );
+
+    expect(new Set(replies).size).toBe(3);
+    expect(replies[0]).toBe('Oui, je suis là. On disait, pour combien de personnes ?');
+    for (const reply of replies) {
+      expect(reply).toMatch(/pour combien de personnes \?$/iu);
+      expect(reply).not.toContain('Vous serez combien ?');
+    }
   });
 
   it('ne transforme pas le premier « allô » d’un appel en reprise de contexte', () => {
@@ -211,6 +235,16 @@ describe('handleSttEvent — pré-chargement des disponibilités', () => {
       mgr,
     );
     expect(mgr.getAvailability).not.toHaveBeenCalled();
+  });
+});
+
+describe('extractRestaurantName — prompt actuel', () => {
+  it('lit le nom sur la ligne RESTAURANT du contexte final', () => {
+    expect(
+      extractRestaurantName(
+        "Tu es l'assistant virtuel d'un restaurant.\n\nCONTEXTE DE L'APPEL\nRESTAURANT : Chez Michel\nHoraires :",
+      ),
+    ).toBe('Chez Michel');
   });
 });
 

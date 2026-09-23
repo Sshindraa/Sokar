@@ -1,4 +1,5 @@
 import { effectiveVoiceLanguage } from './voice-language';
+import { pickVariant } from './reply-variants';
 import type { CallSession } from './types';
 
 /**
@@ -8,11 +9,15 @@ import type { CallSession } from './types';
 export function buildLlmRecoveryReply(session: CallSession): string {
   const question = session.conversation?.lastAssistantQuestion?.trim();
   if (effectiveVoiceLanguage(session) === 'en') {
-    return question
-      ? `Sorry, I had a small hiccup. ${question}`
-      : 'Sorry, I had a small hiccup. Could you say that again?';
+    const apology = pickVariant(session, 'llm_recovery', [
+      'Sorry, I had a small hiccup.',
+      'Sorry about that, I missed something.',
+    ]);
+    return `${apology} ${question ?? 'Could you say that again?'}`;
   }
-  return question
-    ? `Excusez-moi, un petit souci de mon côté. ${question}`
-    : 'Excusez-moi, un petit souci de mon côté. Pouvez-vous répéter ?';
+  const apology = pickVariant(session, 'llm_recovery', [
+    'Excusez-moi, un petit souci de mon côté.',
+    "Pardon, j'ai eu un petit souci.",
+  ]);
+  return `${apology} ${question ?? 'Pouvez-vous répéter ?'}`;
 }

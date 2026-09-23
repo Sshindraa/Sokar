@@ -9,6 +9,8 @@
  * référence.
  */
 
+import { pickVariant } from './reply-variants';
+import { RESTAURANT_PROMPT_PREFIX } from '../prompts';
 import { buildLlmRecoveryReply } from './llm-recovery';
 import { prefetchAvailabilityFromPartial, takeAvailabilityPrefetch } from './availability-prefetch';
 import { WebSocket } from 'ws';
@@ -195,6 +197,13 @@ export function shouldSkipDuplicateTranscript(session: CallSession, transcript: 
 }
 
 export function extractRestaurantName(systemPrompt: string): string {
+  // Prompt actuel : le nom est sur la ligne « RESTAURANT : … » du contexte final.
+  const contextLine = systemPrompt
+    .split('\n')
+    .find((line) => line.startsWith(RESTAURANT_PROMPT_PREFIX));
+  if (contextLine) return contextLine.slice(RESTAURANT_PROMPT_PREFIX.length).trim();
+
+  // Anciens prompts : le nom suit l'identité en première ligne.
   const firstLine = systemPrompt.split('\n')[0] ?? '';
   const withoutPrefix = firstLine
     .replace(/^Tu es l'hôte d'accueil et assistant vocal chaleureux de /, '')
@@ -247,13 +256,57 @@ export function buildLivenessResponse(session: CallSession, transcript: string):
   if (!lastAssistantMessage) return null;
 
   const lastQuestion = lastAssistantMessage.match(/(?:^|[.!]\s*)([^.?!]+\?)\s*$/u)?.[1]?.trim();
-  return effectiveVoiceLanguage(session) === 'en'
-    ? lastQuestion
-      ? `Yes, I'm here. ${lastQuestion}`
-      : "Yes, I'm here. I'm listening."
-    : lastQuestion
-      ? `Oui, je suis là. ${lastQuestion}`
-      : 'Oui, je suis là. Je vous écoute.';
+  const en = effectiveVoiceLanguage(session) === 'en';
+  const shortQuestion = shortPendingQuestion(session, en) ?? lastQuestion;
+  if (!shortQuestion) {
+    return pickVariant(
+      session,
+      'liveness:open',
+      en
+        ? ["Yes, I'm here. I'm listening.", "I'm still here, go ahead.", 'Yes, I can hear you.']
+        : [
+            'Oui, je suis là. Je vous écoute.',
+            'Je suis toujours là, je vous écoute.',
+            'Oui, je vous entends bien.',
+          ],
+    );
+  }
+  const lead = pickVariant(
+    session,
+    'liveness',
+    en
+      ? ["Yes, I'm here. So,", "I'm still here. So,", 'Yes, I can hear you.', 'Still here!']
+      : [
+          'Oui, je suis là. On disait,',
+          'Je suis toujours là. Alors,',
+          'Oui, je vous entends.',
+          'Toujours là !',
+        ],
+  );
+  // Après une ponctuation forte, la question repart avec une majuscule.
+  const question = /[.!]$/.test(lead)
+    ? shortQuestion.charAt(0).toLocaleUpperCase('fr-FR') + shortQuestion.slice(1)
+    : shortQuestion.charAt(0).toLocaleLowerCase('fr-FR') + shortQuestion.slice(1);
+  return `${lead} ${question}`;
+}
+
+/**
+ * Reprise courte de la question en attente (« pour combien de personnes ? »)
+ * plutôt que de relire mot pour mot la dernière question.
+ */
+function shortPendingQuestion(session: CallSession, en: boolean): string | null {
+  switch (session.conversation?.pendingQuestion) {
+    case 'partySize':
+      return en ? 'how many people?' : 'pour combien de personnes ?';
+    case 'time':
+      return en ? 'what time?' : 'pour quelle heure ?';
+    case 'date':
+      return en ? 'which day?' : 'pour quel jour ?';
+    case 'customerName':
+      return en ? 'what name should I put it under?' : 'à quel nom ?';
+    default:
+      return null;
+  }
 }
 
 /**
@@ -598,14 +651,14 @@ export async function processTranscriptStreaming(
 
   if (deterministicLanguage && /^(?:merci|thanks?|thank you)[.! ]*$/i.test(transcript)) {
     const question = session.conversation.lastAssistantQuestion;
-    const response =
+    const thanks = pickVariant(
+      session,
+      'thanks',
       language === 'en'
-        ? question
-          ? `You're welcome. ${question}`
-          : "You're welcome."
-        : question
-          ? `Je vous en prie. ${question}`
-          : 'Je vous en prie.';
+        ? ["You're welcome.", 'My pleasure.', 'No problem.']
+        : ['Je vous en prie.', 'Avec plaisir.', 'De rien.'],
+    );
+    const response = question ? `${thanks} ${question}` : thanks;
     session.history.push(
       { role: 'user', content: transcript },
       { role: 'assistant', content: response },

@@ -412,6 +412,8 @@ export interface CallSession {
   /** AbortController pour annuler la requête LLM en cours */
   abortController: AbortController | null;
 
+  /** Formulations déjà dites dans l'appel, par clé (voir pickVariant). */
+  replyVariantHistory?: Record<string, number[]>;
   /** Reprises parlées consécutives après un échec LLM (repli humain à 2). */
   llmRecoveryStreak?: number;
   /** Tour pendant lequel un filler a déjà été joué (évite « D'accord… D'accord »). */
