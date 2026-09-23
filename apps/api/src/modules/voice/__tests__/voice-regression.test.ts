@@ -2,8 +2,8 @@
  * Mini-harness de régression déterministe pour le pipeline voice.
  *
  * Rejoue des transcripts connus via processUtterance (chemin non-streaming)
- * avec des réponses LLM scriptées et asserte sur les effets de bord
- * (appels de service, appels DB) — pas sur le texte de retour.
+ * avec des réponses LLM scriptées et asserte sur les effets de bord ainsi que
+ * sur les réponses vocales issues des résultats réellement vérifiés.
  *
  * Couverture des lots de durcissement :
  * - Lot 1 (Validation Zod)         : S9 — rejet d'args invalides
@@ -263,7 +263,7 @@ describe('voice regression harness', () => {
       'Je voudrais réserver une table pour 2 demain à 19h30',
     );
 
-    expect(reply).toBe("Parfait, c'est noté.");
+    expect(reply).toContain('Réservation confirmée pour Jean Dupont');
     expect(ReservationService.create).toHaveBeenCalledWith(
       expect.objectContaining({
         restaurantId: 'rest-1',
@@ -460,9 +460,9 @@ describe('voice regression harness', () => {
     expect(ReservationService.availability).toHaveBeenCalledWith('rest-1', '2026-07-25', 4);
   });
 
-  // ── Scénario 7 : Transfert gérant (handoffToManager) ────────────────────
+  // ── Scénario 7 : Refus de faux transfert sans ligne configurée ─────────
 
-  it('S7 — handoffToManager : aucun effet de bord, l\'historique contient "transfère"', async () => {
+  it('S7 — handoffToManager : ne prétend pas transférer sans ligne gérant configurée', async () => {
     mockLlmRounds([
       { type: 'tool_call', toolName: 'handoffToManager', args: {} },
       { type: 'text', content: 'Je vous transfère au gérant.' },
@@ -472,16 +472,17 @@ describe('voice regression harness', () => {
     const session = makeSession();
     await mgr.processUtterance(session, 'Je veux parler au gérant');
 
-    // handoffToManager retourne un texte fixe, pas d'effet de bord service/DB.
+    // Aucun transfert réel n'est possible sans numéro gérant configuré.
     expect(ReservationService.create).not.toHaveBeenCalled();
     expect(ReservationService.update).not.toHaveBeenCalled();
     expect(ReservationService.availability).not.toHaveBeenCalled();
     expect(db.message.create).not.toHaveBeenCalled();
 
-    // L'historique contient le message assistant avec "transfère".
+    // La policy force la réponse factuelle et ignore la suite inventée par le LLM.
     const assistantMessages = session.history.filter((m) => m.role === 'assistant');
     const lastAssistant = assistantMessages[assistantMessages.length - 1];
-    expect(lastAssistant.content).toContain('transfère');
+    expect(lastAssistant.content).toContain('pas de ligne directe configurée');
+    expect(lastAssistant.content).not.toContain('Je vous transfère');
   });
 
   // ── Scénario 8 : Prise de message (takeMessage) ─────────────────────────

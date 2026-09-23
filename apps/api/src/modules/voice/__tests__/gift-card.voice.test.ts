@@ -78,7 +78,7 @@ function makeTelnyxWs(): WebSocket {
 
 function makeSession() {
   const mgr = CallSessionManager.getInstance();
-  return mgr.create({
+  const session = mgr.create({
     callControlId: 'cc-gift-1',
     callSessionId: 'cs-gift-1',
     from: '+33600000001',
@@ -92,6 +92,9 @@ function makeSession() {
     callLegId: 'leg-gift-1',
     codec: 'PCMA',
   });
+  session.conversation.intent = 'gift_card';
+  session.history.push({ role: 'user', content: 'Je voudrais acheter une carte cadeau' });
+  return session;
 }
 
 describe('CallSessionManager — gift card tools', () => {
@@ -123,6 +126,8 @@ describe('CallSessionManager — gift card tools', () => {
         callLegId: 'leg-gift-min',
         codec: 'PCMA',
       });
+      session.conversation.intent = 'gift_card';
+      session.history.push({ role: 'user', content: 'Je voudrais acheter une carte cadeau' });
 
       const result = await (
         mgr as unknown as {
@@ -220,7 +225,7 @@ describe('CallSessionManager — gift card tools', () => {
       expect(result).not.toContain('SOKAR-1234-5678-9012');
     });
 
-    it('returns a handoff message when SMS fails', async () => {
+    it('offers recovery when SMS fails without claiming an unexecuted transfer', async () => {
       const mgr = CallSessionManager.getInstance();
       const session = makeSession();
 
@@ -246,7 +251,9 @@ describe('CallSessionManager — gift card tools', () => {
         }),
       );
 
-      expect(result).toContain('transfère');
+      expect(result).toContain("le SMS n'a pas été envoyé");
+      expect(result).toContain('laisser un message');
+      expect(result).not.toContain('transfér');
       expect(result).not.toContain('SOKAR-9876-5432-1098');
     });
   });

@@ -15,12 +15,33 @@ export type PendingQuestion =
   | 'time'
   | 'timeChoice'
   | 'partySize'
+  | 'partySizeConfirmation'
   | 'customerName'
   | 'customerPhone'
   | 'confirmation'
   /** Repli humain proposé après un blocage de dialogue (message ou transfert). */
   | 'humanFallback'
   | null;
+
+/** Action proposée et encore en attente de choix explicite. */
+export type HumanFallbackMode = 'choice' | 'transfer' | 'message' | null;
+
+export type PendingInteractionKind = Exclude<PendingQuestion, null> | 'open';
+export type PendingInteractionStatus = 'active' | 'suspended' | 'resolved' | 'cancelled';
+export type PendingInteractionResumePolicy = 'resume_after_child' | 'discard_on_detour' | null;
+
+/** Question/action en attente, avec un cycle de vie distinct de la transcription. */
+export interface PendingInteraction {
+  id: number;
+  kind: PendingInteractionKind;
+  prompt: string;
+  status: PendingInteractionStatus;
+  resumePolicy: PendingInteractionResumePolicy;
+  /** Intention métier active au moment où cette question a été posée. */
+  intentContext?: ConversationState['intent'];
+  fallbackMode?: Exclude<HumanFallbackMode, null>;
+  candidatePartySize?: number;
+}
 
 /**
  * Niveau du garde-fou anti-boucle pour une relance déterministe :
@@ -112,6 +133,9 @@ export interface ConversationState {
   /** Contexte explicite utilisé pour interpréter les réponses courtes. */
   pendingQuestion: PendingQuestion;
   lastAssistantQuestion: string | null;
+  /** Historique borné des interactions ouvertes, suspendues ou terminées. */
+  pendingInteractions: PendingInteraction[];
+  nextPendingInteractionId: number;
   /** Clé du dernier récapitulatif de réservation qui attend un accord explicite. */
   pendingReservationConfirmationKey: string | null;
   /** Clé du brouillon accepté explicitement, consommée à la création. */
@@ -126,6 +150,8 @@ export interface ConversationState {
   stallSignature: string | null;
   /** Vrai tant qu'une proposition de message/transfert attend une réponse. */
   humanFallbackOffered: boolean;
+  /** Permet de ne jamais convertir un « oui » en choix entre deux actions. */
+  humanFallbackMode: HumanFallbackMode;
   /** Dernière décision du garde-fou anti-boucle, consommée par la télémétrie. */
   lastDialogueGuard: { key: string; level: DialogueStallLevel; count: number } | null;
   closing: boolean;

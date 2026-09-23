@@ -37,6 +37,7 @@ export type VoiceTurnEvent =
   | 'llm_completed'
   | 'llm_interrupted'
   | 'speculation_hit'
+  | 'turn_plan_shadow'
   | 'availability_started'
   | 'availability_completed'
   | 'availability_failed'
@@ -119,6 +120,7 @@ function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
     case 'llm_completed':
     case 'llm_interrupted':
     case 'speculation_hit':
+    case 'turn_plan_shadow':
     case 'dialogue_guard':
       return 'generation';
     case 'availability_started':

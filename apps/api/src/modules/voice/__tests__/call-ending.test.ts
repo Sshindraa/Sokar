@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { acknowledgeCallEnding, finishCall, isExplicitCallEnd } from '../stream/call-ending';
 import { handleSttEvent, processTranscriptStreaming } from '../stream/llm-handler';
-import { createConversationState, recordAssistantReply } from '../stream/conversation-controller';
+import {
+  createConversationState,
+  recordAssistantReplyFromLlmTextFallback as recordAssistantReply,
+} from '../stream/conversation-controller';
 import type { CallSession } from '../stream/types';
 import type { CallSessionManager } from '../stream/manager';
 import { speakTtsStreamed } from '../stream/tts-handler';
@@ -277,7 +280,7 @@ describe('farewell playback and hangup', () => {
     expect(mgr.processUtteranceStreaming).not.toHaveBeenCalled();
     expect(speakTtsStreamed).toHaveBeenCalledWith(
       session,
-      "Je n'arrive pas à vérifier ce créneau pour le moment. Voulez-vous que je vous passe le gérant ?",
+      "Je n'arrive pas à vérifier ce créneau pour le moment, mais je peux prendre un message pour le gérant. Voulez-vous que je le fasse ?",
     );
   });
 
@@ -527,6 +530,60 @@ describe('dialogue loop guard', () => {
     expect(mgr.createReservationFromConversation).not.toHaveBeenCalled();
   });
 
+  it('ne choisit pas un transfert quand le client répond oui à deux options', async () => {
+    const { session, mgr } = fixture();
+    session.timezone = 'Europe/Paris';
+    session.managerPhone = '+33600000000';
+
+    await processTranscriptStreaming(session, 'Je voudrais réserver demain soir', mgr);
+    await processTranscriptStreaming(session, 'Euh, alors voila', mgr);
+    await processTranscriptStreaming(session, 'Ben, je sais pas trop', mgr);
+    await processTranscriptStreaming(session, 'Oui', mgr);
+
+    expect(mgr.handoffToManager).not.toHaveBeenCalled();
+    expect(mgr.recordDialogueFallbackMessage).not.toHaveBeenCalled();
+    expect(session.conversation.pendingQuestion).toBe('humanFallback');
+    expect(session.conversation.humanFallbackMode).toBe('choice');
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      'Vous préférez que je vous passe le gérant ou que je prenne un message ?',
+    );
+  });
+
+  it('ne laisse pas une ancienne offre de transfert intercepter le oui à une nouvelle question', async () => {
+    const { session, mgr } = fixture();
+    session.timezone = 'Europe/Paris';
+    session.managerPhone = '+33600000000';
+    const replies = ['Désolé, j’ai perdu le fil. On est bien à quatre ?'];
+    vi.mocked(mgr.processUtteranceStreaming).mockImplementation(
+      async (_session, _transcript, onPhrase) => {
+        const reply = replies.shift() ?? 'D’accord.';
+        await onPhrase?.(reply);
+        return reply;
+      },
+    );
+
+    await processTranscriptStreaming(session, 'Je voudrais réserver demain soir', mgr);
+    await processTranscriptStreaming(session, 'Euh, alors voila', mgr);
+    await processTranscriptStreaming(session, 'Ben, je sais pas trop', mgr);
+    await processTranscriptStreaming(session, 'Pourquoi ?', mgr);
+
+    expect(mgr.processUtteranceStreaming).toHaveBeenCalledTimes(1);
+    expect(session.conversation.humanFallbackOffered).toBe(false);
+    expect(session.conversation.pendingQuestion).not.toBe('humanFallback');
+
+    await processTranscriptStreaming(session, 'Oui', mgr);
+
+    expect(mgr.handoffToManager).not.toHaveBeenCalled();
+    expect(mgr.recordDialogueFallbackMessage).not.toHaveBeenCalled();
+    expect(session.conversation.slots.partySize).toBe(4);
+    expect(
+      session.conversation.pendingInteractions.find(
+        (interaction) => interaction.kind === 'humanFallback',
+      )?.status,
+    ).toBe('cancelled');
+  });
+
   it('n’exécute rien quand l’appelant refuse la proposition', async () => {
     const { session, mgr } = fixture();
     session.timezone = 'Europe/Paris';
@@ -540,6 +597,6 @@ describe('dialogue loop guard', () => {
     expect(mgr.handoffToManager).not.toHaveBeenCalled();
     expect(mgr.recordDialogueFallbackMessage).not.toHaveBeenCalled();
     expect(session.conversation.humanFallbackOffered).toBe(false);
-    expect(session.conversation.pendingQuestion).toBeNull();
+    expect(session.conversation.pendingQuestion).not.toBe('humanFallback');
   });
 });
