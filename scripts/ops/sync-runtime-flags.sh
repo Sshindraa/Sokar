@@ -19,7 +19,7 @@ fi
 
 # Allowlist deliberately excludes provider credentials and outbound switches.
 # Opening the Marketing control plane must never enable SMS/email delivery.
-RUNTIME_FLAG_NAMES=(MARKETING_FEATURES_ENABLED VOICE_TURN_PLAN_SHADOW_ENABLED)
+RUNTIME_FLAG_NAMES=(MARKETING_FEATURES_ENABLED VOICE_TURN_PLAN_SHADOW_ENABLED VOICE_TURN_PLAN_AUTHORITY_ENABLED)
 
 valid_value() {
   local value="$1"

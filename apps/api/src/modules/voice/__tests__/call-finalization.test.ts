@@ -391,6 +391,16 @@ describe('finalizeVoiceCall — récupération commerciale', () => {
     expect(handoffResult.outcome).toBe('HANDOFF');
     expect(enqueueHandoff).not.toHaveBeenCalled();
 
+    const requested = makeFakeDb({ intent: 'RESERVATION' });
+    const enqueueRequested = vi.fn().mockResolvedValue(undefined);
+    const requestedResult = await finalizeVoiceCall(
+      'leg-1',
+      hints({ handoffConclusion: 'manager_transfer_requested', customerPhone: '+33600000000' }),
+      deps(requested, enqueueRequested),
+    );
+    expect(requestedResult.outcome).toBe('HANDOFF');
+    expect(enqueueRequested).not.toHaveBeenCalled();
+
     const message = makeFakeDb({ intent: 'RESERVATION', messageRecorded: true });
     const enqueueMessage = vi.fn().mockResolvedValue(undefined);
     const messageResult = await finalizeVoiceCall(

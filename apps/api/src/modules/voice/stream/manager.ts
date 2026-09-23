@@ -2092,11 +2092,13 @@ export class CallSessionManager {
                 "Je n'ai pas réussi à joindre le gérant. Je peux prendre un message à lui transmettre.",
               );
             }
+            // Un 2xx signifie seulement que Telnyx a accepté la commande :
+            // la sonnerie et le décroché du gérant ne sont pas encore connus.
             session.handoffInProgress = true;
-            session.handoffConclusion = 'manager_transfer_accepted';
+            session.handoffConclusion = 'manager_transfer_requested';
             return terminalToolReply(
               executionControl,
-              'Le gérant a accepté le transfert. Je vous mets en relation, un instant.',
+              'Je lance le transfert vers le gérant, un instant.',
             );
           } catch (err) {
             session.handoffConclusion = 'manager_transfer_failed';

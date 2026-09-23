@@ -2706,7 +2706,7 @@ export function pendingQuestionFrom(question: string): PendingQuestion {
   return null;
 }
 
-function proposeAssistantInteractionFromLlmText(
+export function proposeAssistantInteractionFromLlmText(
   session: CallSession,
   reply: string,
 ): AssistantInteractionProposal {
@@ -3142,6 +3142,7 @@ export function buildDeterministicTurnPlan(
   session: CallSession,
   speechAct: VoiceSpeechAct,
   transcript = '',
+  options: { deferUnresolvedToModel?: boolean } = {},
 ): AssistantReplyEmissionPlan | null {
   // Une proposition de repli humain en attente est traitée par l'orchestrateur
   // (transfert ou message réellement exécuté) : le déterministe ne la répète pas.
@@ -3174,7 +3175,9 @@ export function buildDeterministicTurnPlan(
   }
 
   if (speechAct === 'content' || speechAct === 'correction') {
-    if (isAmbiguousPartySizeReply(session, transcript)) {
+    // Canary TurnPlan : une réponse que les extracteurs n'ont pas comprise va
+    // au modèle au lieu d'une relance mécanique de la même question.
+    if (!options.deferUnresolvedToModel && isAmbiguousPartySizeReply(session, transcript)) {
       const primary =
         effectiveVoiceLanguage(session) === 'en'
           ? "I didn't catch the number of people. How many will there be?"

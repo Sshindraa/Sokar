@@ -302,6 +302,56 @@ export function recordVoiceTurnPlanShadowObservation(input: {
   });
 }
 
+export type VoiceTurnPlanShadowDimension =
+  | 'intent'
+  | 'slots'
+  | 'interaction'
+  | 'assistant_interaction';
+
+/**
+ * Accord TurnPlan par dimension, pour distinguer un désaccord d'intention
+ * d'un désaccord de slots ou d'interaction. Labels bornés.
+ */
+export const voiceTurnPlanShadowDimensionTotal = new Counter({
+  name: 'sokar_voice_turn_plan_shadow_dimension_total',
+  help: 'In-band TurnPlan shadow agreement by comparison dimension',
+  labelNames: ['dimension', 'agreement'] as const,
+  registers: [getRegistry()],
+});
+
+export function recordVoiceTurnPlanShadowDimension(
+  dimension: VoiceTurnPlanShadowDimension,
+  agrees: boolean,
+): void {
+  voiceTurnPlanShadowDimensionTotal.inc({ dimension, agreement: agrees ? 'agree' : 'disagree' });
+}
+
+export type VoiceTurnPlanAuthorityField =
+  | 'intent'
+  | 'date'
+  | 'time'
+  | 'partySize'
+  | 'assistant_interaction';
+export type VoiceTurnPlanAuthorityOutcome = 'applied' | 'already_set' | 'deterministic_fallback';
+
+/**
+ * Canary d'autorité TurnPlan : faits appliqués depuis le modèle, déjà connus,
+ * ou laissés au repli déterministe. Labels bornés.
+ */
+export const voiceTurnPlanAuthorityTotal = new Counter({
+  name: 'sokar_voice_turn_plan_authority_total',
+  help: 'TurnPlan canary authority decisions by field and outcome',
+  labelNames: ['field', 'outcome'] as const,
+  registers: [getRegistry()],
+});
+
+export function recordVoiceTurnPlanAuthority(
+  field: VoiceTurnPlanAuthorityField,
+  outcome: VoiceTurnPlanAuthorityOutcome,
+): void {
+  voiceTurnPlanAuthorityTotal.inc({ field, outcome });
+}
+
 // ─── Render ───────────────────────────────────────────────────
 
 /**
@@ -359,6 +409,8 @@ export function __resetMetrics(): void {
   voiceTtsFirstAudioMs.reset();
   voiceProviderErrorsTotal.reset();
   voiceTurnPlanShadowObservationsTotal.reset();
+  voiceTurnPlanShadowDimensionTotal.reset();
+  voiceTurnPlanAuthorityTotal.reset();
 }
 
 // ─── Sokar Connect (Phase 1) ────────────────────────────────────────

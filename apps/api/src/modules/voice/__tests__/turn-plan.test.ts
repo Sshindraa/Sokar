@@ -159,6 +159,13 @@ describe('TurnPlan shadow policy boundary', () => {
     expect(payload).toMatch(
       /sokar_voice_turn_plan_shadow_observations_total\{[^}]*status="valid"[^}]*policy_outcome="accepted"[^}]*agreement="agree"[^}]*\} 1/,
     );
+    expect(payload).toMatch(
+      /sokar_voice_turn_plan_shadow_dimension_total\{dimension="slots",agreement="agree"\} 1/,
+    );
+    expect(payload).toMatch(
+      /sokar_voice_turn_plan_shadow_dimension_total\{dimension="interaction",agreement="agree"\} 1/,
+    );
+    expect(payload).not.toMatch(/dimension="assistant_interaction"/);
   });
 
   it('compare la proposition aux seules valeurs effectivement appliquées', () => {

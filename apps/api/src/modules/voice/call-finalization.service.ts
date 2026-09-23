@@ -44,7 +44,7 @@ export interface VoiceFinalizationHints {
   sttProvider?: string | null;
   llmProvider?: string | null;
   ttsProvider?: string | null;
-  /** Conclusion du dernier transfert tenté (`manager_transfer_accepted`, …). */
+  /** Conclusion du dernier transfert tenté (`manager_transfer_requested`, …). */
   handoffConclusion?: string | null;
   /** Intention de dialogue suivie en mémoire (`reservation`, `cancel`, …). */
   conversationIntent?: string | null;
@@ -256,8 +256,12 @@ export function planCallFinalization(
   );
   const facts: VoiceCallFacts = {
     reservationCreated: snapshot.reservationCreated,
+    // `manager_transfer_requested` : commande de transfert acceptée par Telnyx.
+    // `manager_transfer_accepted` reste lu pour les sessions antérieures.
     handoffAccepted:
-      snapshot.outcome === 'HANDOFF' || hints.handoffConclusion === 'manager_transfer_accepted',
+      snapshot.outcome === 'HANDOFF' ||
+      hints.handoffConclusion === 'manager_transfer_requested' ||
+      hints.handoffConclusion === 'manager_transfer_accepted',
     handoffFailed:
       hints.handoffConclusion === 'manager_transfer_failed' ||
       hints.handoffConclusion === 'manager_transfer_rejected',

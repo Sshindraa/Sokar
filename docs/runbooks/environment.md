@@ -213,6 +213,22 @@ déploiement production démarre Prometheus et Grafana séparément sur la loopb
 avec 30 jours de rétention Prometheus. Prometheus ne dépend pas du secret Grafana.
 Le workflow provisionne `GRAFANA_ADMIN_PASSWORD` depuis l'environnement GitHub
 `production` dans `/etc/sokar/grafana.env` (droits `0600`, root uniquement, hors du checkout).
+
+L'accord est aussi compté par dimension (`sokar_voice_turn_plan_shadow_dimension_total`,
+labels `dimension` = `intent` | `slots` | `interaction` | `assistant_interaction`) : un
+taux global masque qu'une seule dimension diverge.
+
+`VOICE_TURN_PLAN_AUTHORITY_ENABLED=true` (défaut `false`, sans effet si le shadow est
+coupé) donne au TurnPlan valide et accepté par la policy une autorité limitée, appliquée
+après la réponse vocale : il complète date, heure, couverts et intention seulement quand
+ces champs étaient vides avant le tour et n'ont pas été posés par le déterministe ; il ne
+remplace jamais un fait existant. Il fixe aussi l'interaction attendue au lieu de
+l'inférence regex sur la phrase générée, sauf pour `confirmation`, `humanFallback` et
+`partySizeConfirmation`, qui ouvrent une autorisation ou exigent des métadonnées et
+restent sur l'inférence texte. Aucun tool ni confirmation ne dépend du plan. Le shadow
+continue de comparer le plan à l'état déterministe seul. Décisions comptées par
+`sokar_voice_turn_plan_authority_total{field,outcome}`. N'activer qu'après lecture de
+l'accord par dimension sur des appels réels.
 Grafana donne un accès anonyme en lecture seule, sans inscription, et s'ouvre
 uniquement par tunnel SSH ; ne publiez pas son port.
 

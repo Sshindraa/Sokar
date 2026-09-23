@@ -1097,6 +1097,7 @@ describe('CallSessionManager — tool execution', () => {
       }),
     );
     expect(session.handoffInProgress).toBe(true);
+    expect(session.handoffConclusion).toBe('manager_transfer_requested');
     expect(session.history.length).toBeGreaterThan(2);
   });
 
@@ -1389,9 +1390,7 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
       phrases.push(phrase);
     });
 
-    expect(fullText).toBe(
-      'Le gérant a accepté le transfert. Je vous mets en relation, un instant.',
-    );
+    expect(fullText).toBe('Je lance le transfert vers le gérant, un instant.');
     // Le résultat Telnyx vérifié termine le tour sans laisser le LLM l'inventer.
     expect(fetchMock).toHaveBeenCalledOnce();
   });
@@ -1569,9 +1568,7 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     });
 
     // L'outil retourne l'état Telnyx observé ; aucun texte final LLM ne le remplace.
-    expect(fullText).toBe(
-      'Le gérant a accepté le transfert. Je vous mets en relation, un instant.',
-    );
+    expect(fullText).toBe('Je lance le transfert vers le gérant, un instant.');
 
     // Le texte du round 0 (avant et après le tool_call) est dans l'historique
     // comme contenu du message assistant avec tool_calls.

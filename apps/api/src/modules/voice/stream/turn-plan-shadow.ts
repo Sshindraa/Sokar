@@ -3,7 +3,10 @@ import type { TurnPlan, TurnPlanContext, TurnPlanSlot } from './turn-plan';
 import { decideTurnPlanPolicy } from './turn-policy';
 import { isCurrentVoiceTurn, recordVoiceTurnEventIfCurrent } from './turn-telemetry';
 import { getVoiceLlmModel } from '../llm-provider';
-import { recordVoiceTurnPlanShadowObservation } from '../../../shared/observability/metrics';
+import {
+  recordVoiceTurnPlanShadowDimension,
+  recordVoiceTurnPlanShadowObservation,
+} from '../../../shared/observability/metrics';
 
 export interface TurnPlanPolicySnapshot {
   intent: CallSession['conversation']['intent'];
@@ -134,6 +137,17 @@ export function recordInBandTurnPlanShadow(
     policyOutcome: policyDecision?.status ?? 'not_evaluated',
     agreement: comparison ? (comparison.agrees ? 'agree' : 'disagree') : 'not_comparable',
   });
+  if (comparison) {
+    recordVoiceTurnPlanShadowDimension('intent', comparison.intentAgreement);
+    recordVoiceTurnPlanShadowDimension('slots', comparison.slotAgreement);
+    recordVoiceTurnPlanShadowDimension('interaction', comparison.interactionAgreement);
+    if (comparison.assistantInteractionAgreement !== null) {
+      recordVoiceTurnPlanShadowDimension(
+        'assistant_interaction',
+        comparison.assistantInteractionAgreement,
+      );
+    }
+  }
   recordVoiceTurnEventIfCurrent(session, turnId, 'turn_plan_shadow', {
     status: result.status,
     policyAccepted: policyDecision ? policyDecision.status === 'accepted' : null,

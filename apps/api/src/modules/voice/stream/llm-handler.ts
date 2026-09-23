@@ -43,7 +43,12 @@ import {
   isTurnPlanShadowEnabled,
   recordInBandTurnPlanShadow,
 } from './turn-plan-shadow';
-import type { InBandTurnPlanResult } from './turn-plan-shadow';
+import type { InBandTurnPlanResult, TurnPlanPolicySnapshot } from './turn-plan-shadow';
+import {
+  applyTurnPlanAuthority,
+  hasDeterministicTurnProgress,
+  isTurnPlanAuthorityEnabled,
+} from './turn-plan-authority';
 import type { TurnPlanContext } from './turn-plan';
 import { setSttSpellingProfile } from './stt-bridge';
 import {
@@ -1040,9 +1045,21 @@ export async function processTranscriptStreaming(
   }
 
   clearDialogueGuardTrace(session);
+  // Canary TurnPlan : les relances déterministes ne servent qu'après un tour
+  // compris par les extracteurs ; sinon le modèle interprète et propose le plan.
+  const deferUnresolvedToModel =
+    turnPlanShadowEnabled &&
+    isTurnPlanAuthorityEnabled() &&
+    !explicitEnd &&
+    (speechAct === 'content' || speechAct === 'correction') &&
+    !isNameCollectionBlocking(session) &&
+    !hasDeterministicTurnProgress(
+      turnPlanBefore,
+      captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
+    );
   const deterministicReplyPlan = deterministicLanguage
-    ? (buildDeterministicTurnPlan(session, speechAct, transcript) ??
-      buildReservationProgressPlan(session, transcript))
+    ? (buildDeterministicTurnPlan(session, speechAct, transcript, { deferUnresolvedToModel }) ??
+      (deferUnresolvedToModel ? null : buildReservationProgressPlan(session, transcript)))
     : null;
   const deterministicResponse = deterministicReplyPlan?.reply ?? null;
   const dialogueGuard = session.conversation.lastDialogueGuard;
@@ -1218,16 +1235,54 @@ export async function processTranscriptStreaming(
       : {}),
     telemetryTurnId,
   };
-  const recordTurnPlanObservation = (result = inBandTurnPlanResult) => {
+  const recordTurnPlanObservation = (
+    result = inBandTurnPlanResult,
+    after = captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
+  ) => {
     if (!shouldCollectInBandTurnPlan || !telemetryTurnId) return;
     recordInBandTurnPlanShadow(
       session,
       turnPlanContext,
       result ?? { status: 'missing', durationMs: 0 },
       turnPlanBefore,
-      captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
+      after,
       telemetryTurnId,
     );
+  };
+  // Réponse LLM libre : le TurnPlan canary devient l'autorité des faits non
+  // sensibles et de l'interaction attendue ; sinon l'inférence texte reste.
+  const recordLlmReply = (reply: string) => {
+    const plan =
+      shouldCollectInBandTurnPlan &&
+      isTurnPlanAuthorityEnabled() &&
+      inBandTurnPlanResult?.status === 'valid'
+        ? inBandTurnPlanResult.plan
+        : null;
+    if (!plan) {
+      recordAssistantReplyFromLlmTextFallback(session, reply);
+      recordTurnPlanObservation();
+      return;
+    }
+    const deterministic = captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null);
+    const authority = applyTurnPlanAuthority(session, {
+      context: turnPlanContext,
+      plan,
+      before: turnPlanBefore,
+      speechAct,
+      reply,
+    });
+    recordVoiceTurnEventIfCurrent(session, telemetryTurnId, 'turn_plan_authority', {
+      appliedFacts: authority.appliedFacts.join(',') || null,
+      assistantInteractionSource: authority.assistantInteractionSource,
+    });
+    // Le shadow reste comparé au déterministe seul, sinon l'accord serait circulaire.
+    const after: TurnPlanPolicySnapshot = {
+      ...captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
+      intent: deterministic.intent,
+      slots: deterministic.slots,
+      activeInteractionKind: authority.legacyAssistantInteraction,
+    };
+    recordTurnPlanObservation(inBandTurnPlanResult, after);
   };
 
   // ── Thinking filler : combler ponctuellement le silence pendant que le LLM génère.
@@ -1327,8 +1382,7 @@ export async function processTranscriptStreaming(
       if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
       return;
     }
-    recordAssistantReplyFromLlmTextFallback(session, fullResponse);
-    recordTurnPlanObservation();
+    recordLlmReply(fullResponse);
     syncSpellingProfile(session);
 
     writeDebugLog(`[processTranscriptStreaming] LLM stream ended, waiting for TTS...`);

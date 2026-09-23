@@ -39,7 +39,7 @@ export interface TurnPolicyDecision {
 }
 
 export interface AssistantInteractionProposal {
-  source: 'explicit' | 'llm_text_fallback';
+  source: 'explicit' | 'llm_text_fallback' | 'turn_plan';
   operation: 'activate' | 'keep' | 'cancel';
   interaction?: {
     kind: PendingInteractionKind;
