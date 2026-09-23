@@ -39,7 +39,30 @@ import {
 import {
   voiceProviderErrorsTotal,
   voiceActiveSessionsGauge,
+  voiceCallsTotal,
+  voiceTransfersTotal,
+  type VoiceTransferMotive,
+  type VoiceTransferOutcome,
 } from '../../../shared/observability/metrics';
+
+function recordVoiceTransfer(
+  session: CallSession,
+  authorizationBasis: VoiceToolAuthorizationBasis | undefined,
+  outcome: VoiceTransferOutcome,
+): void {
+  const motive: VoiceTransferMotive =
+    authorizationBasis?.kind === 'human_fallback_choice'
+      ? 'dialogue_stall'
+      : authorizationBasis?.kind === 'name_spelling_escalation'
+        ? 'name_spelling'
+        : 'caller_request';
+  voiceTransfersTotal.inc({
+    motive,
+    intent: session.conversation.intent ?? 'none',
+    outcome,
+    restaurant_id: session.restaurantId || 'unknown',
+  });
+}
 
 // ─── LLM error classification for voice_provider_errors_total ──────────
 // Un seul provider LLM depuis le 22 septembre 2026 : Groq. Le label reste
@@ -531,6 +554,7 @@ export class CallSessionManager {
     // Capacité locale (R1-3) : la jauge suit le nombre de sessions tenues par
     // ce process, pour alerter avant la saturation CPU mesurée à ~100 sessions.
     voiceActiveSessionsGauge.set(this.sessions.size);
+    voiceCallsTotal.inc({ restaurant_id: session.restaurantId || 'unknown' });
     return session;
   }
 
@@ -2154,6 +2178,7 @@ export class CallSessionManager {
         case 'handoffToManager':
           if (!session.managerPhone?.trim()) {
             session.handoffConclusion = 'manager_unconfigured';
+            recordVoiceTransfer(session, authorizationBasis, 'unconfigured');
             return terminalToolReply(
               executionControl,
               "Je n'ai pas de ligne directe configurée pour le gérant. Je peux prendre un message à transmettre immédiatement.",
@@ -2176,6 +2201,7 @@ export class CallSessionManager {
             if (!transferResponse.ok) {
               const responseBody = await transferResponse.text().catch(() => '');
               session.handoffConclusion = 'manager_transfer_rejected';
+              recordVoiceTransfer(session, authorizationBasis, 'rejected');
               logger.warn(
                 {
                   callId: session.callControlId,
@@ -2193,12 +2219,14 @@ export class CallSessionManager {
             // la sonnerie et le décroché du gérant ne sont pas encore connus.
             session.handoffInProgress = true;
             session.handoffConclusion = 'manager_transfer_requested';
+            recordVoiceTransfer(session, authorizationBasis, 'requested');
             return terminalToolReply(
               executionControl,
               'Je lance le transfert vers le gérant, un instant.',
             );
           } catch (err) {
             session.handoffConclusion = 'manager_transfer_failed';
+            recordVoiceTransfer(session, authorizationBasis, 'failed');
             logger.warn({ err, callId: session.callControlId }, '[tool] Manager transfer failed');
             return terminalToolReply(
               executionControl,
