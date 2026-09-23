@@ -22,6 +22,7 @@ import { marketingProviderRoutes } from './modules/marketing/marketing-provider.
 import { analyticsRoutes } from './modules/analytics/analytics.routes';
 import { reservationRoutes } from './modules/reservations/reservation.routes';
 import { callRoutes } from './modules/calls/call.routes';
+import { voiceReadRoutes } from './modules/voice/voice-read.routes';
 import { dashboardRoutes } from './modules/dashboard/dashboard.routes';
 import { reactivationRoutes } from './modules/dashboard/reactivation.routes';
 import { authSyncRoutes } from './modules/auth/auth.routes';
@@ -225,6 +226,7 @@ export async function buildApp() {
   await app.register(analyticsRoutes);
   await app.register(reservationRoutes);
   await app.register(callRoutes);
+  await app.register(voiceReadRoutes);
   await app.register(dashboardRoutes);
   await app.register(reactivationRoutes);
   await app.register(authSyncRoutes);

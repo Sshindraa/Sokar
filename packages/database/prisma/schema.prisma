@@ -442,6 +442,7 @@ model Call {
   latencyTrace                LatencyTrace?
   voiceTelemetry              VoiceCallTelemetry?
   voiceTurns                  VoiceTurnTelemetry[]
+  voiceDebugTurns             VoiceDebugTurn[]
   messages                    Message[]
 
   @@index([restaurantId, createdAt(sort: Desc)])
@@ -2301,6 +2302,31 @@ model VoiceTurnTelemetry {
   @@index([callId, sequence], map: "voice_turn_telemetry_call_sequence_idx")
   @@index([callId, path], map: "voice_turn_telemetry_call_path_idx")
   @@map("voice_turn_telemetry")
+}
+
+/// Dialogue d'un tour (paroles du client, réponses de l'agent, outils), gardé
+/// 14 jours pour les seuls restaurants de VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS.
+/// Jamais écrit pour un restaurant client. Mesures du tour : voice_turn_telemetry.
+model VoiceDebugTurn {
+  id           String   @id @default(uuid())
+  callId       String   @map("call_id")
+  restaurantId String   @map("restaurant_id")
+  turnId       String   @map("turn_id")
+  sequence     Int
+  callerText   String?  @map("caller_text")
+  agentText    String?  @map("agent_text")
+  fillerText   String?  @map("filler_text")
+  speechAct    String?  @map("speech_act")
+  tools        String[] @default([])
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  call         Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@unique([callId, turnId], map: "voice_debug_turns_call_turn_key")
+  @@index([restaurantId, createdAt], map: "voice_debug_turns_restaurant_created_at_idx")
+  @@index([expiresAt], map: "voice_debug_turns_expires_at_idx")
+  @@map("voice_debug_turns")
 }
 
 enum Plan {
