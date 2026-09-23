@@ -37,6 +37,7 @@ jobs:
           ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
           ALERT_SMS_TO: ${{ secrets.ALERT_SMS_TO }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           RESERVATION_SERVICE_TOKEN: ${{ secrets.RESERVATION_SERVICE_TOKEN }}
           STRIPE_PRICE_ESSENTIAL_MONTHLY: ${{ vars.STRIPE_PRODUCTION_ESSENTIAL_MONTHLY }}
           STRIPE_PRICE_ESSENTIAL_ANNUAL: ${{ vars.STRIPE_PRODUCTION_ESSENTIAL_ANNUAL }}
@@ -55,7 +56,7 @@ jobs:
           username: deploy
           key: ${{ secrets.STAGING_SSH_KEY }}
           command_timeout: 18m
-          envs: ALERT_WEBHOOK,HEALTHCHECKS_PING_URL,SENTRY_DSN,ALERT_EMAIL_TO,ALERT_WEBHOOK_URL,ALERT_SMS_TO,RESERVATION_SERVICE_TOKEN,STRIPE_PRICE_ESSENTIAL_MONTHLY,STRIPE_PRICE_ESSENTIAL_ANNUAL,STRIPE_PRICE_PRO_MONTHLY,STRIPE_PRICE_PRO_ANNUAL,STRIPE_PRICE_MULTI_SITE_MONTHLY,STRIPE_PRICE_MULTI_SITE_ANNUAL,STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL,SOKAR_OPERATOR_USER_IDS,MARKETING_FEATURES_ENABLED
+          envs: ALERT_WEBHOOK,HEALTHCHECKS_PING_URL,SENTRY_DSN,ALERT_EMAIL_TO,ALERT_WEBHOOK_URL,ALERT_SMS_TO,GRAFANA_ADMIN_PASSWORD,RESERVATION_SERVICE_TOKEN,STRIPE_PRICE_ESSENTIAL_MONTHLY,STRIPE_PRICE_ESSENTIAL_ANNUAL,STRIPE_PRICE_PRO_MONTHLY,STRIPE_PRICE_PRO_ANNUAL,STRIPE_PRICE_MULTI_SITE_MONTHLY,STRIPE_PRICE_MULTI_SITE_ANNUAL,STRIPE_PRICE_MULTI_SITE_ADDON_MONTHLY,STRIPE_PRICE_MULTI_SITE_ADDON_ANNUAL,SOKAR_OPERATOR_USER_IDS,MARKETING_FEATURES_ENABLED
           script: |
             set -euo pipefail
             cd /opt/sokar
@@ -68,6 +69,13 @@ jobs:
                 scripts/ops/sokar-deploy-root.sh /usr/local/sbin/sokar-deploy-root
             fi
             sudo /usr/local/sbin/sokar-deploy-root self-update prod
+            if [ -z "${GRAFANA_ADMIN_PASSWORD:-}" ]; then
+              echo "GRAFANA_ADMIN_PASSWORD secret is required for production Grafana" >&2
+              exit 1
+            fi
+            printf 'GRAFANA_ADMIN_PASSWORD\t%s\n' "$GRAFANA_ADMIN_PASSWORD" | \
+              sudo /usr/local/sbin/sokar-deploy-root configure-grafana prod
+            sudo /usr/local/sbin/sokar-deploy-root validate-monitoring prod
             if [ -n "${SENTRY_DSN:-}${ALERT_EMAIL_TO:-}${ALERT_WEBHOOK_URL:-}${ALERT_SMS_TO:-}" ]; then
               bash scripts/ops/sync-alerting-config.sh prod
             fi
@@ -85,6 +93,7 @@ jobs:
             bash scripts/ops/sync-stripe-prices.sh prod
             bash scripts/deploy.sh --env prod --confirm-production
             sudo /usr/local/sbin/sokar-deploy-root start-prometheus prod
+            sudo /usr/local/sbin/sokar-deploy-root start-grafana prod
 
   smoke-tests:
     name: Smoke tests against production

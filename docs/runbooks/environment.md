@@ -209,9 +209,12 @@ recharger `sokar-api` avec `pm2 reload sokar-api --update-env`.
 Les compteurs globaux de validité, décision de policy et accord sont exposés à
 Prometheus et présentés dans le dashboard Grafana `Sokar — Voice & SLO`. Ils
 n'ont pas de label restaurant et ne contiennent aucune transcription. Le
-déploiement production démarre Prometheus sur la loopback avec 30 jours de
-rétention. L'interface Grafana production reste arrêtée jusqu'à provisionnement
-d'un `GRAFANA_ADMIN_PASSWORD` dédié ; ne pas utiliser de mot de passe par défaut.
+déploiement production démarre Prometheus et Grafana séparément sur la loopback,
+avec 30 jours de rétention Prometheus. Prometheus ne dépend pas du secret Grafana.
+Le workflow provisionne `GRAFANA_ADMIN_PASSWORD` depuis l'environnement GitHub
+`production` dans `/etc/sokar/grafana.env` (droits `0600`, root uniquement, hors du checkout).
+Grafana donne un accès anonyme en lecture seule, sans inscription, et s'ouvre
+uniquement par tunnel SSH ; ne publiez pas son port.
 
 ## Demo restaurant
 

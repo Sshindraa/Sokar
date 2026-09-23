@@ -1,6 +1,6 @@
-# Production Prometheus runs separately from the local-dev infrastructure stack.
-# Host networking lets it scrape the loopback-only prod/staging API processes;
-# its query endpoint remains bound to loopback.
+# Production Prometheus runs separately from the local-dev infrastructure
+# stack. Host networking lets it scrape loopback-only API/workers; its query
+# endpoint remains bound to loopback.
 services:
   prometheus:
     image: prom/prometheus:v3.1.0
