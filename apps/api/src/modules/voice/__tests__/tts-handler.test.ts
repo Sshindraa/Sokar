@@ -9,7 +9,7 @@ vi.mock('../tts-cache', () => ({
 }));
 
 vi.mock('../../../shared/logger/pino', () => ({
-  logger: { error: vi.fn() },
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock('../../../shared/sentry/client', () => ({
@@ -150,9 +150,7 @@ describe('prosodie TTS', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [, init] = fetchMock.mock.calls[0];
-    expect(JSON.parse(String(init?.body)).transcript).toBe(
-      'Très bien. Je vérifie votre créneau.',
-    );
+    expect(JSON.parse(String(init?.body)).transcript).toBe('Très bien. Je vérifie votre créneau.');
     fetchMock.mockRestore();
   });
 
@@ -175,5 +173,59 @@ describe('prosodie TTS', () => {
       `|${CARTESIA_MODEL}|en-US|`,
     );
     fetchMock.mockRestore();
+  });
+});
+
+describe('speakTtsStreamed — dialogue des appels de test', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setEnv('CARTESIA_API_KEY', ['test', 'key'].join('-'));
+    setEnv('CARTESIA_VOICE_ID', ['test', 'voice'].join('-'));
+    setEnv('VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS', 'rest-test');
+  });
+
+  function makeDebugSession(): CallSession {
+    return Object.assign(makeSession(), {
+      restaurantId: 'rest-test',
+      ttsGeneration: 0,
+      currentTurn: { id: 'turn-1', sequence: 1, startedAt: 0 },
+    }) as unknown as CallSession;
+  }
+
+  const spokenStatus = (session: CallSession) =>
+    session.currentTurn?.debugDialogue?.agentSpeech.map((entry) => entry.status);
+
+  it('marque « prononcée » une réplique lue jusqu’au bout', async () => {
+    vi.mocked(getTtsCached).mockResolvedValue(Buffer.alloc(TTS_FRAME_BYTES * 2, 0x11));
+    const session = makeDebugSession();
+
+    await speakTtsStreamed(session, 'Vous serez combien ?');
+
+    expect(spokenStatus(session)).toEqual(['played']);
+  });
+
+  it('marque « interrompue » une réplique coupée après la première trame', async () => {
+    vi.mocked(getTtsCached).mockResolvedValue(Buffer.alloc(TTS_FRAME_BYTES * 3, 0x11));
+    const session = makeDebugSession();
+    vi.mocked(session.telnyxWs.send).mockImplementationOnce(() => {
+      // L'appelant reprend la parole : barge-in.
+      (session as unknown as { ttsGeneration: number }).ttsGeneration = 1;
+    });
+
+    await speakTtsStreamed(session, 'Je vous récapitule la réservation.');
+
+    expect(vi.mocked(session.telnyxWs.send)).toHaveBeenCalledTimes(1);
+    expect(spokenStatus(session)).toEqual(['interrupted']);
+  });
+
+  it('marque « non prononcée » une réplique jamais lue', async () => {
+    vi.mocked(getTtsCached).mockResolvedValue(Buffer.alloc(TTS_FRAME_BYTES, 0x11));
+    const session = makeDebugSession();
+
+    const playback = speakTtsStreamed(session, 'Phrase jamais entendue.');
+    (session as unknown as { ttsGeneration: number }).ttsGeneration = 1;
+    await playback;
+
+    expect(spokenStatus(session)).toEqual(['not_played']);
   });
 });

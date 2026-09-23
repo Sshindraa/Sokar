@@ -7,7 +7,7 @@
  * reste en base 14 jours (table voice_debug_turns, purge quotidienne).
  */
 import { redactPii } from './pii-redact';
-import type { CallSession, VoiceTurnDebugDialogue } from './types';
+import type { CallSession, DebugSpeechEntry, VoiceTurnDebugDialogue } from './types';
 
 export const VOICE_DEBUG_DIALOGUE_RETENTION_DAYS = 14;
 
@@ -35,14 +35,48 @@ export function recordDebugCallerText(session: CallSession, text: string): void 
   dialogue.callerText = dialogue.callerText ? `${dialogue.callerText} ${clean}` : clean;
 }
 
+/**
+ * Note une réplique au moment où elle est demandée. Son statut reste « pending »
+ * jusqu'à settleDebugSpeech : une réplique jamais entendue ne doit pas
+ * apparaître comme dite.
+ */
 export function recordDebugAgentSpeech(
   session: CallSession,
   text: string,
   kind: 'speech' | 'filler' = 'speech',
-): void {
+): DebugSpeechEntry | null {
   const dialogue = currentDialogue(session);
-  if (!dialogue || !text.trim()) return;
-  (kind === 'filler' ? dialogue.fillers : dialogue.agentSpeech).push(redactPii(text.trim()));
+  if (!dialogue || !text.trim()) return null;
+  const entry: DebugSpeechEntry = { text: redactPii(text.trim()), status: 'pending' };
+  (kind === 'filler' ? dialogue.fillers : dialogue.agentSpeech).push(entry);
+  return entry;
+}
+
+/** Compte une trame audio réellement envoyée à Telnyx. */
+export function countAudioFrameSent(session: CallSession | undefined): void {
+  if (session) session.audioFramesSent = (session.audioFramesSent ?? 0) + 1;
+}
+
+/** Fixe ce que l'appelant a entendu : rien, une partie, ou toute la réplique. */
+export function settleDebugSpeech(
+  entry: DebugSpeechEntry | null,
+  framesSent: number,
+  completed: boolean,
+): void {
+  if (!entry || entry.status !== 'pending') return;
+  entry.status = framesSent <= 0 ? 'not_played' : completed ? 'played' : 'interrupted';
+}
+
+/** Texte persisté : répliques entendues, les coupées marquées, les muettes omises. */
+export function formatDebugSpeech(entries: readonly DebugSpeechEntry[]): string | null {
+  const parts = entries
+    .filter((entry) => entry.status !== 'not_played')
+    .map((entry) =>
+      entry.status === 'played'
+        ? entry.text
+        : `${entry.text} [${entry.status === 'interrupted' ? 'interrompu' : 'en cours'}]`,
+    );
+  return parts.join(' ') || null;
 }
 
 export function recordDebugTool(session: CallSession, name: string): void {

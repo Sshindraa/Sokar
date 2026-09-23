@@ -245,9 +245,18 @@ export interface VoiceTurnTelemetry {
 export interface VoiceTurnDebugDialogue {
   callerText?: string;
   speechAct?: string;
-  agentSpeech: string[];
-  fillers: string[];
+  agentSpeech: DebugSpeechEntry[];
+  fillers: DebugSpeechEntry[];
   tools: string[];
+}
+
+/**
+ * Réplique de l'agent, et ce que l'appelant en a réellement entendu : fixé à
+ * la fin de la lecture d'après les trames audio envoyées à Telnyx.
+ */
+export interface DebugSpeechEntry {
+  text: string;
+  status: 'pending' | 'played' | 'interrupted' | 'not_played';
 }
 
 /** Événements normalisés produits par le fournisseur STT. */
@@ -405,6 +414,8 @@ export interface CallSession {
   currentTurn: VoiceTurnTelemetry | null;
   /** Tours précédents conservés jusqu'à la finalisation de l'appel. */
   voiceTurnHistory?: VoiceTurnTelemetry[];
+  /** Trames audio envoyées à Telnyx depuis le début de l'appel (dialogue de test). */
+  audioFramesSent?: number;
   /** Bilan runtime, alimenté à partir des faits et persisté en fin d'appel. */
   voiceCallTelemetry?: {
     finalizedAt?: number;

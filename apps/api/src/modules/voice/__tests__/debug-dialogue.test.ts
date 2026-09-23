@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  formatDebugSpeech,
   isVoiceDebugDialogueEnabled,
   recordDebugAgentSpeech,
   recordDebugCallerText,
   recordDebugSpeechAct,
   recordDebugTool,
+  settleDebugSpeech,
 } from '../stream/debug-dialogue';
 import type { CallSession } from '../stream/types';
 
@@ -48,9 +50,34 @@ describe('debug-dialogue', () => {
     expect(s.currentTurn?.debugDialogue).toEqual({
       callerText: 'Mon numéro est le [PHONE] et mon mail [EMAIL]',
       speechAct: 'content',
-      agentSpeech: ['C’est noté.'],
-      fillers: ["D'accord…"],
+      agentSpeech: [{ text: 'C’est noté.', status: 'pending' }],
+      fillers: [{ text: "D'accord…", status: 'pending' }],
       tools: ['takeMessage'],
     });
+  });
+
+  it('ne garde que ce que l’appelant a réellement entendu', () => {
+    process.env.VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS = 'rest-test';
+    const s = session('rest-test');
+    const played = recordDebugAgentSpeech(s, 'Vous serez combien ?');
+    const cut = recordDebugAgentSpeech(s, 'Je vous récapitule la réservation.');
+    const silent = recordDebugAgentSpeech(s, 'Phrase jamais lue.');
+    const pending = recordDebugAgentSpeech(s, 'Encore en lecture.');
+    settleDebugSpeech(played, 12, true);
+    settleDebugSpeech(cut, 3, false);
+    settleDebugSpeech(silent, 0, false);
+    // Un statut fixé ne change plus.
+    settleDebugSpeech(played, 0, false);
+
+    expect([played?.status, cut?.status, silent?.status, pending?.status]).toEqual([
+      'played',
+      'interrupted',
+      'not_played',
+      'pending',
+    ]);
+    expect(formatDebugSpeech(s.currentTurn!.debugDialogue!.agentSpeech)).toBe(
+      'Vous serez combien ? Je vous récapitule la réservation. [interrompu] Encore en lecture. [en cours]',
+    );
+    expect(formatDebugSpeech([{ text: 'Muet.', status: 'not_played' }])).toBeNull();
   });
 });

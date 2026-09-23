@@ -23,6 +23,7 @@ import {
   recordVoiceTurnEventIfCurrent,
 } from './turn-telemetry';
 import { addCartesiaTtsCharacters } from '../../usage/voice-usage.service';
+import { countAudioFrameSent } from './debug-dialogue';
 
 const CARTESIA_WEBSOCKET_URL = 'wss://api.cartesia.ai/tts/websocket';
 const CARTESIA_VERSION = '2026-03-01';
@@ -317,6 +318,7 @@ export class CartesiaContextTurn {
       this.session.telnyxWs.send(
         JSON.stringify({ event: 'media', media: { payload: frame.toString('base64') } }),
       );
+      countAudioFrameSent(this.session);
       const hadAudioSent = this.session.latencyTrace?.totalE2eMs !== undefined;
       markVoiceTurnAudioSent(this.session, { ttsPath: 'cartesia_context' }, this.turnId);
       if (!hadAudioSent && this.session.latencyTrace?.totalE2eMs !== undefined) {

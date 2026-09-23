@@ -12,7 +12,7 @@ import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
-import { VOICE_DEBUG_DIALOGUE_RETENTION_DAYS } from './debug-dialogue';
+import { VOICE_DEBUG_DIALOGUE_RETENTION_DAYS, formatDebugSpeech } from './debug-dialogue';
 import { MS_TO_SECONDS } from '../../../shared/constants/time.js';
 
 /** Crée ou met à jour un enregistrement Call en base pour un appel Scribe */
@@ -199,8 +199,8 @@ function buildVoiceDebugTurnData(turn: VoiceTurnTelemetry, callId: string, resta
     turnId: turn.id,
     sequence: turn.sequence,
     callerText: dialogue.callerText ?? null,
-    agentText: dialogue.agentSpeech.join(' ') || null,
-    fillerText: dialogue.fillers.join(' ') || null,
+    agentText: formatDebugSpeech(dialogue.agentSpeech),
+    fillerText: formatDebugSpeech(dialogue.fillers),
     speechAct: dialogue.speechAct ?? null,
     tools: [...dialogue.tools],
     expiresAt: new Date(turn.startedAt + VOICE_DEBUG_DIALOGUE_RETENTION_DAYS * 24 * 60 * 60 * 1000),

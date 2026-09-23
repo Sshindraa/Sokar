@@ -37,7 +37,7 @@ import { logger } from '../../../shared/logger/pino';
 import { CARTESIA_MODEL, FILLER_CACHE_TTL_SECONDS } from '@sokar/config';
 import { redisCache } from '../../../shared/redis/client';
 import { VOICE_PROVIDER_TIMEOUT_MS, fetchWithTimeout } from '../../../shared/resilience';
-import { recordDebugAgentSpeech } from './debug-dialogue';
+import { countAudioFrameSent, recordDebugAgentSpeech, settleDebugSpeech } from './debug-dialogue';
 import {
   buildCartesiaCacheVariant,
   CARTESIA_NORMALIZATION,
@@ -379,50 +379,58 @@ export async function playFiller(
     purpose === 'generic' && options.randomize
       ? selectRandomFillerText(style)
       : selectFillerText(style, purpose, language);
-  if (session) recordDebugAgentSpeech(session, text, 'filler');
+  const debugEntry = session ? recordDebugAgentSpeech(session, text, 'filler') : null;
+  let fillerFramesSent = 0;
+  let fillerCompleted = false;
+  try {
+    // 1. RAM
+    let chunks = fillerCache.get(memoryKey(text, voiceId, language));
 
-  // 1. RAM
-  let chunks = fillerCache.get(memoryKey(text, voiceId, language));
-
-  // 2. Redis fallback
-  if (!chunks) {
-    try {
-      const key = redisKey(text, voiceId, fillerEncoding, language);
-      const cached = await redisCache.get(key);
-      if (options.signal?.aborted) return;
-      if (cached) {
-        chunks = JSON.parse(cached) as string[];
-        if (Array.isArray(chunks) && chunks.length > 0) {
-          // Promotion en RAM pour le prochain appel
-          fillerCache.set(memoryKey(text, voiceId, language), chunks);
+    // 2. Redis fallback
+    if (!chunks) {
+      try {
+        const key = redisKey(text, voiceId, fillerEncoding, language);
+        const cached = await redisCache.get(key);
+        if (options.signal?.aborted) return;
+        if (cached) {
+          chunks = JSON.parse(cached) as string[];
+          if (Array.isArray(chunks) && chunks.length > 0) {
+            // Promotion en RAM pour le prochain appel
+            fillerCache.set(memoryKey(text, voiceId, language), chunks);
+          }
         }
+      } catch (err) {
+        logger.warn({ err, text }, '[fillers] Redis read failed during playFiller');
       }
-    } catch (err) {
-      logger.warn({ err, text }, '[fillers] Redis read failed during playFiller');
     }
-  }
 
-  if (chunks && chunks.length > 0) {
-    const audio = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk, 'base64')));
-    const frames = splitTelnyxAudioFrames(audio, fillerEncoding === 'pcm_alaw' ? 'PCMA' : 'PCMU');
-    writeDebugLog(`[fillers] Playing filler: "${text}" (${frames.length} frames, 100ms paced)`);
-    for (const frame of frames) {
-      if (
-        options.signal?.aborted ||
-        (session && (session.ended || session.state !== 'PROCESSING'))
-      ) {
-        writeDebugLog(
-          `[fillers] Interrupted filler playback due to cancellation or state change (state=${session?.state ?? 'unknown'})`,
-        );
-        break;
+    if (chunks && chunks.length > 0) {
+      const audio = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk, 'base64')));
+      const frames = splitTelnyxAudioFrames(audio, fillerEncoding === 'pcm_alaw' ? 'PCMA' : 'PCMU');
+      writeDebugLog(`[fillers] Playing filler: "${text}" (${frames.length} frames, 100ms paced)`);
+      for (const frame of frames) {
+        if (
+          options.signal?.aborted ||
+          (session && (session.ended || session.state !== 'PROCESSING'))
+        ) {
+          writeDebugLog(
+            `[fillers] Interrupted filler playback due to cancellation or state change (state=${session?.state ?? 'unknown'})`,
+          );
+          break;
+        }
+        if (ws.readyState !== WebSocket.OPEN) break;
+        ws.send(JSON.stringify({ event: 'media', media: { payload: frame.toString('base64') } }));
+        fillerFramesSent++;
+        countAudioFrameSent(session);
+        await new Promise((r) => setTimeout(r, TTS_FRAME_DURATION_MS));
+        if (options.signal?.aborted) break;
       }
-      if (ws.readyState !== WebSocket.OPEN) break;
-      ws.send(JSON.stringify({ event: 'media', media: { payload: frame.toString('base64') } }));
-      await new Promise((r) => setTimeout(r, TTS_FRAME_DURATION_MS));
-      if (options.signal?.aborted) break;
+      fillerCompleted = fillerFramesSent === frames.length;
+    } else {
+      logger.warn({ text }, '[fillers] No cached audio for filler (warm-up incomplete?)');
     }
-  } else {
-    logger.warn({ text }, '[fillers] No cached audio for filler (warm-up incomplete?)');
+  } finally {
+    settleDebugSpeech(debugEntry, fillerFramesSent, fillerCompleted);
   }
 }
 
