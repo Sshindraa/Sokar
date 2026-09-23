@@ -6,7 +6,6 @@ import { CallSessionManager } from './manager';
 import { isNameCollectionBlocking } from './conversation-controller';
 import { logger } from '../../../shared/logger/pino';
 import * as Sentry from '@sentry/node';
-import { isSpeculativeLlmEnabled } from './speculation';
 import { redactPii } from './pii-redact';
 import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
 import { addSttAudioSamples, sttSamplesForBuffer } from '../../usage/voice-usage.service';
@@ -840,19 +839,11 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
 
   session.turnTranscript = mergeSttTranscripts(session.turnTranscript, cleanTranscript);
 
-  const wordCount = cleanTranscript.split(/\s+/u).filter(Boolean).length;
-  const isSpeculativeEnabled = isSpeculativeLlmEnabled(session);
-  if (
-    isSpeculativeEnabled &&
-    !isNameCollectionBlocking(session) &&
-    session.conversation?.pendingQuestion !== 'customerName' &&
-    wordCount >= 3 &&
-    wordCount <= 20 &&
-    cleanTranscript !== session.speculativeTranscript
-  ) {
-    session.speculativeTranscript = cleanTranscript;
-    session.onSttEvent?.({ type: 'InterimHighConfidence', transcript: cleanTranscript });
-  }
+  // Le texte retenu par la fin de tour hybride fait partie de la même phrase.
+  const utterance = session.sttSemanticHold
+    ? mergeSttTranscripts(session.sttSemanticHold.transcript, session.turnTranscript)
+    : session.turnTranscript;
+  session.onSttEvent?.({ type: 'PartialTranscript', transcript: utterance });
 }
 
 function dispatchCommittedTranscript(

@@ -524,9 +524,6 @@ export class CallSessionManager {
       voiceCallTelemetry: {},
       bargeInChunks: 0,
       abortController: null,
-      speculativeLlm: null,
-      speculativeTranscript: '',
-      speculativeResult: null,
       transcript: '',
       turnTranscript: '',
       speechFinalTimer: null,
@@ -843,25 +840,6 @@ export class CallSessionManager {
       this.transition(session, 'SPEAKING');
     }
     return fullText;
-  }
-
-  /**
-   * Prépare une réponse LLM sans muter l'historique ni exécuter d'outil.
-   * Elle ne peut être réutilisée que si ElevenLabs confirme ensuite exactement
-   * le même énoncé final : aucun effet métier ne peut donc partir trop tôt.
-   */
-  async prepareSpeculativeReply(
-    session: CallSession,
-    transcript: string,
-    signal: AbortSignal,
-  ): Promise<string> {
-    return (
-      (await this.callLlm(session, transcript, signal, {
-        includeTools: false,
-        maxTokens: 40,
-        persistHistory: false,
-      })) ?? ''
-    );
   }
 
   /**

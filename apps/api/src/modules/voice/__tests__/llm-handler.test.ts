@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { takeAvailabilityPrefetch } from '../stream/availability-prefetch';
+import { createConversationState } from '../stream/conversation-controller';
 import {
   buildLivenessResponse,
   extractRestaurantName,
@@ -105,11 +107,8 @@ describe('handleSttEvent — interruption pendant le traitement', () => {
         state: 'PROCESSING',
         responseGeneration: 4,
         abortController,
-        speculativeLlm: Promise.resolve('ancienne réponse'),
-        speculativeResult: 'ancienne réponse',
-        speculativeTranscript: 'je voudrais réserver',
         conversation: { toolInFlight: 'checkAvailability' },
-      } as CallSession;
+      } as unknown as CallSession;
       const mgr = {
         transition: vi.fn((target: CallSession, state: CallSession['state']) => {
           target.state = state;
@@ -123,42 +122,93 @@ describe('handleSttEvent — interruption pendant le traitement', () => {
       expect(interruptedSession.responseGeneration).toBe(5);
       expect(interruptedSession.state).toBe('LISTENING');
       expect(interruptedSession.conversation.toolInFlight).toBeNull();
-      expect(interruptedSession.speculativeLlm).toBeNull();
-      expect(interruptedSession.speculativeResult).toBeNull();
-      expect(interruptedSession.speculativeTranscript).toBe('');
     },
   );
 });
 
-describe('handleSttEvent — pré-réflexion LLM', () => {
-  it('prépare une réponse sans changer l’état ni l’historique avant la fin confirmée', () => {
-    const previous = process.env.SPECULATIVE_LLM_ENABLED;
-    process.env.SPECULATIVE_LLM_ENABLED = 'true';
-    const speculativeSession = {
+describe('handleSttEvent — pré-chargement des disponibilités', () => {
+  function prefetchSession(): CallSession {
+    const conversation = createConversationState();
+    conversation.intent = 'reservation';
+    conversation.slots.date = '2026-10-01';
+    return {
       ...session,
       state: 'LISTENING',
+      timezone: 'Europe/Paris',
       history: [{ role: 'system', content: session.systemPrompt }],
-      speculativeLlm: null,
-      speculativeResult: null,
-      speculativeTranscript: 'Non non merci au revoir',
-      abortController: null,
+      conversation,
+      availabilityPrefetch: null,
     } as CallSession;
+  }
+
+  it('lance la lecture dès que date, heure et nombre de personnes sont connus', () => {
+    const prefetchedSession = prefetchSession();
+    const result = { date: '2026-10-01', partySize: 4, slots: ['20:00'] };
     const mgr = {
-      prepareSpeculativeReply: vi.fn().mockResolvedValue('Avec plaisir, bonne soirée !'),
+      getAvailability: vi.fn().mockResolvedValue(result),
     } as unknown as CallSessionManager;
 
     handleSttEvent(
-      { type: 'InterimHighConfidence', transcript: 'Non non merci au revoir' },
-      speculativeSession,
+      { type: 'PartialTranscript', transcript: 'pour quatre personnes' },
+      prefetchedSession,
+      mgr,
+    );
+    expect(mgr.getAvailability).not.toHaveBeenCalled();
+
+    handleSttEvent(
+      { type: 'PartialTranscript', transcript: 'pour quatre personnes à vingt heures' },
+      prefetchedSession,
+      mgr,
+    );
+    handleSttEvent(
+      {
+        type: 'PartialTranscript',
+        transcript: 'pour quatre personnes à vingt heures s’il vous plaît',
+      },
+      prefetchedSession,
       mgr,
     );
 
-    expect(mgr.prepareSpeculativeReply).toHaveBeenCalledOnce();
-    expect(speculativeSession.state).toBe('LISTENING');
-    expect(speculativeSession.history).toHaveLength(1);
-    expect(speculativeSession.abortController).toBeInstanceOf(AbortController);
+    expect(mgr.getAvailability).toHaveBeenCalledOnce();
+    expect(mgr.getAvailability).toHaveBeenCalledWith(prefetchedSession, '2026-10-01', 4);
+    expect(prefetchedSession.state).toBe('LISTENING');
+    expect(prefetchedSession.history).toHaveLength(1);
+    expect(prefetchedSession.conversation.slots.partySize).toBeUndefined();
+  });
 
-    if (previous === undefined) delete process.env.SPECULATIVE_LLM_ENABLED;
-    else process.env.SPECULATIVE_LLM_ENABLED = previous;
+  it('réutilise le résultat seulement si date et nombre de personnes correspondent', async () => {
+    const prefetchedSession = prefetchSession();
+    const result = { date: '2026-10-01', partySize: 4, slots: ['20:00'] };
+    const mgr = {
+      getAvailability: vi.fn().mockResolvedValue(result),
+    } as unknown as CallSessionManager;
+    handleSttEvent(
+      { type: 'PartialTranscript', transcript: 'pour quatre personnes à vingt heures' },
+      prefetchedSession,
+      mgr,
+    );
+
+    expect(takeAvailabilityPrefetch(prefetchedSession, '2026-10-01', 5)).toBeNull();
+    handleSttEvent(
+      { type: 'PartialTranscript', transcript: 'pour quatre personnes à vingt heures' },
+      prefetchedSession,
+      mgr,
+    );
+    await expect(takeAvailabilityPrefetch(prefetchedSession, '2026-10-01', 4)).resolves.toEqual(
+      result,
+    );
+    expect(takeAvailabilityPrefetch(prefetchedSession, '2026-10-01', 4)).toBeNull();
+  });
+
+  it('ne pré-charge rien pendant la collecte du nom', () => {
+    const prefetchedSession = prefetchSession();
+    prefetchedSession.conversation.pendingQuestion = 'customerName';
+    const mgr = { getAvailability: vi.fn() } as unknown as CallSessionManager;
+    handleSttEvent(
+      { type: 'PartialTranscript', transcript: 'pour quatre personnes à vingt heures' },
+      prefetchedSession,
+      mgr,
+    );
+    expect(mgr.getAvailability).not.toHaveBeenCalled();
   });
 });
