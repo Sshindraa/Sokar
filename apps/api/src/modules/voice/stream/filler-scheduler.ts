@@ -5,12 +5,12 @@ import { logger } from '../../../shared/logger/pino';
 import { recordVoiceTurnEvent } from './turn-telemetry';
 
 /**
- * Un filler ne doit pas masquer une réponse rapide. Le délai laisse au LLM
- * une fenêtre silencieuse naturelle, et la probabilité évite une ritournelle
- * audible à chaque tour.
+ * Un filler ne doit pas masquer une réponse rapide : le délai laisse au LLM
+ * une fenêtre silencieuse naturelle. Passé ce délai, une relance neutre est
+ * toujours jouée ; le cooldown évite qu'elle revienne à chaque tour.
  */
 export const THINKING_FILLER_DELAY_MS = 900;
-export const THINKING_FILLER_PROBABILITY = 0.35;
+export const THINKING_FILLER_PROBABILITY = 1;
 export const THINKING_FILLER_COOLDOWN_MS = 5_000;
 
 interface FillerSchedule {
@@ -96,6 +96,7 @@ export function scheduleThinkingFiller(
 
     schedule.started = true;
     lastStartedAt.set(session, Date.now());
+    session.fillerPlayedTurnId = session.currentTurn?.id ?? null;
     recordVoiceTurnEvent(session, 'filler_started', { purpose: 'thinking', delayedMs: delayMs });
     playFiller(session, style, 'generic', {
       signal: controller.signal,

@@ -45,9 +45,7 @@ export async function finishCall(
   if (session.ended || session.ending) return;
   session.abortController?.abort();
   session.abortController = null;
-  session.speculativeLlm = null;
-  session.speculativeResult = null;
-  session.speculativeTranscript = '';
+  session.availabilityPrefetch = null;
   session.responseGeneration++;
   session.ttsGeneration++;
   cancelScheduledFiller(session);

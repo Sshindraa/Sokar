@@ -26,6 +26,7 @@ import {
   initFillerCache,
   playFiller,
   selectFillerText,
+  selectRandomFillerText,
   setFillerCodec,
 } from '../stream/fillers-cache';
 import { redisCache } from '../../../shared/redis/client';
@@ -81,7 +82,18 @@ describe('selectFillerText', () => {
   });
 
   it('conserve une formule neutre lorsqu’aucune action longue n’est connue', () => {
-    expect(selectFillerText('CASUAL', 'generic')).toBe('Un instant…');
+    expect(selectFillerText('CASUAL', 'generic')).toBe("D'accord…");
+    expect(selectFillerText('CASUAL', 'generic', 'en')).toBe('Okay…');
+  });
+
+  it('réserve « je regarde » aux vraies actions et garde des relances neutres', () => {
+    for (const style of ['CASUAL', 'WARM', 'FORMAL'] as const) {
+      for (let i = 0; i < 20; i++) {
+        expect(selectRandomFillerText(style)).not.toMatch(/regarde|vérifie|consulte|instant/i);
+        expect(selectRandomFillerText(style, 'en')).not.toMatch(/check|moment|hold/i);
+      }
+    }
+    expect(selectFillerText('CASUAL', 'availability')).toBe('Je regarde ça…');
   });
 });
 

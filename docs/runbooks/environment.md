@@ -170,12 +170,22 @@ Définir dans `apps/api/.env` :
 GROQ_API_KEY="gsk_..."
 GROQ_BASE_URL="https://api.groq.com/openai/v1"
 VOICE_LLM_MODEL="qwen/qwen3.8-27b"
-VOICE_LLM_TIMEOUT_MS="8000"
+VOICE_LLM_TIMEOUT_MS="4000"
 ```
 
 La clé Groq est un secret local au VPS et ne doit jamais être commitée ou
 envoyée dans le chat. Une réponse en 402, 429, 5xx ou une erreur réseau
 déclenche la dégradation vocale prévue ; aucun autre modèle n'est appelé.
+`VOICE_LLM_TIMEOUT_MS` vaut 4000 par défaut : au-delà, sans audio déjà envoyé,
+l'agent s'excuse brièvement puis repose la dernière question.
+
+Le TurnPlan (shadow ou autorité) n'est plus ajouté à la requête parlée : il part
+comme une requête séparée (outil forcé, température 0) dès que le texte parlé
+est connu, en parallèle de l'audio, et l'état du tour l'attend 1,5 s au plus.
+Cela double à peu près les tokens d'entrée des tours concernés ; régler le
+volume avec les flags TurnPlan existants. `SPECULATIVE_LLM_ENABLED` et
+`SPECULATIVE_LLM_RESTAURANT_IDS` ne sont plus lus : la pré-réponse spéculative
+est remplacée par un pré-chargement des disponibilités, sans flag (lecture seule).
 
 `OPENROUTER_API_KEY` peut rester provisionnée comme clé isolée pour des outils
 hors production. Elle n'est pas lue par le pipeline vocal et ne constitue pas

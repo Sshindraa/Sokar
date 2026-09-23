@@ -166,7 +166,6 @@ describe('sendAudioToStt', () => {
 
 describe('handleSttMessage', () => {
   beforeEach(() => {
-    delete process.env.SPECULATIVE_LLM_ENABLED;
     (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
       new CallSessionManager();
   });
@@ -185,6 +184,10 @@ describe('handleSttMessage', () => {
 
     expect(onEvent).toHaveBeenNthCalledWith(1, { type: 'UtteranceStart' });
     expect(onEvent).toHaveBeenNthCalledWith(2, {
+      type: 'PartialTranscript',
+      transcript: 'Je voudrais réserver',
+    });
+    expect(onEvent).toHaveBeenNthCalledWith(3, {
       type: 'UtteranceEnd',
       transcript: 'Je voudrais réserver',
       words: [{ word: 'réserver', start: 0.5, end: 1.1 }],

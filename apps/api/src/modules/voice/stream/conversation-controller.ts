@@ -2809,6 +2809,18 @@ function buildHumanFallbackReplyPlan(
 }
 
 /**
+ * Repli humain après plusieurs échecs LLM d'affilée : la proposition est
+ * traitée ensuite sans LLM (transfert ou message réellement exécuté).
+ */
+export function buildLlmFailureFallbackPlan(session: CallSession): AssistantReplyEmissionPlan {
+  const en = effectiveVoiceLanguage(session) === 'en';
+  const apology = en
+    ? "I'm sorry, I'm having trouble on my end."
+    : "Excusez-moi, j'ai un souci de mon côté.";
+  return buildHumanFallbackReplyPlan(session, `${apology} ${buildHumanFallbackOffer(session)}`);
+}
+
+/**
  * Applies only a policy-approved assistant plan. `reply` is presentation and
  * contributes no question or interaction semantics here.
  */
