@@ -118,6 +118,8 @@ async function persistLatencyTraceNow(session: CallSession): Promise<void> {
       });
       if (turn.debugDialogue) {
         const debug = buildVoiceDebugTurnData(turn, callRecord.id, session.restaurantId);
+        // tenant-scoping: global — ligne ciblée par la clé de l'appel de cette session ;
+        // restaurantId de la session écrit dans les données.
         await db.voiceDebugTurn.upsert({
           where: { callId_turnId: { callId: callRecord.id, turnId: turn.id } },
           update: debug,

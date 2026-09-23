@@ -58,6 +58,7 @@ export function recordDebugSpeechAct(session: CallSession, speechAct: string): v
 /** Supprime les dialogues de test arrivés à échéance (tâche quotidienne). */
 export async function purgeExpiredVoiceDebugTurns(now = new Date()): Promise<number> {
   const { db } = await import('../../../shared/db/client');
+  // tenant-scoping: global — purge de rétention sur tous les restaurants de test.
   const { count } = await db.voiceDebugTurn.deleteMany({ where: { expiresAt: { lte: now } } });
   return count;
 }
