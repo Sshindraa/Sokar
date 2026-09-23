@@ -1812,7 +1812,8 @@ export class CallSessionManager {
             await ReservationService.create({
               restaurantId: session.restaurantId,
               callId: callRecordId,
-              reservedAt: new Date(`${date}T${time}`),
+              // Heure locale du restaurant, jamais celle du serveur.
+              reservedAt: zonedTimeToUtc(date, time, session.timezone || 'Europe/Paris'),
               partySize: partySize ?? 1,
               customerName: reservationCustomerName,
               customerPhone: customerPhone ?? session.from,
@@ -1890,8 +1891,17 @@ export class CallSessionManager {
 
           try {
             // Trouver la réservation par nom + date
-            const dayStart = new Date(`${date}T00:00:00`);
-            const dayEnd = new Date(`${date}T23:59:59`);
+            // Journée locale du restaurant, indépendante du fuseau du serveur.
+            const dayTimeZone = session.timezone || 'Europe/Paris';
+            const dayStart = zonedTimeToUtc(date, '00:00', dayTimeZone);
+            // zonedTimeToUtc ignore les secondes : la fin de journée est le
+            // minuit local suivant moins une milliseconde.
+            const nextDay = new Date(`${date}T00:00:00.000Z`);
+            nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+            const dayEnd = new Date(
+              zonedTimeToUtc(nextDay.toISOString().slice(0, 10), '00:00', dayTimeZone).getTime() -
+                1,
+            );
 
             // Requête volontairement large (contains+insensitive) pour capter les
             // variations STT ; l'affinage se fait en JS ci-dessous.
