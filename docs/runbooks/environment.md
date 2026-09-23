@@ -197,9 +197,21 @@ Aucune valeur proposée ne modifie la conversation ni n’autorise un effet mét
 et la télémétrie n’enregistre pas les valeurs de nom/téléphone. Si le modèle
 retourne le tool interne sans contenu parlé, Sokar effectue une génération de
 récupération pour préserver la réponse vocale ; ce cas est tracé `speech_missing`.
-Au prochain déploiement, le workflow staging activera ce flag globalement. La
-promotion du code vers la production ne l'active pas : le flag production reste
-inchangé jusqu'à la fin de l'observation staging et à son activation explicite.
+Le workflow staging active ce flag globalement. Le staging ne dispose pas de
+configuration Telnyx : ses smoke tests ne valident donc pas un appel vocal réel.
+En production, le flag a été explicitement activé le 2026-09-23 après
+vérification qu'aucune session vocale n'était active. Le workflow de production
+laisse les flags runtime absents inchangés ; cette activation persiste dans le
+fichier d'environnement jusqu'à sa désactivation explicite. Pour changer un
+flag vocal en production, synchroniser sa valeur avec
+`scripts/ops/sync-runtime-flags.sh prod`, attendre zéro session active, puis
+recharger `sokar-api` avec `pm2 reload sokar-api --update-env`.
+Les compteurs globaux de validité, décision de policy et accord sont exposés à
+Prometheus et présentés dans le dashboard Grafana `Sokar — Voice & SLO`. Ils
+n'ont pas de label restaurant et ne contiennent aucune transcription. Le
+déploiement production démarre Prometheus sur la loopback avec 30 jours de
+rétention. L'interface Grafana production reste arrêtée jusqu'à provisionnement
+d'un `GRAFANA_ADMIN_PASSWORD` dédié ; ne pas utiliser de mot de passe par défaut.
 
 ## Demo restaurant
 

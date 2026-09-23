@@ -20,7 +20,7 @@
 
 ## Décisions récentes
 
-2026-09-23 — [voice, TurnPlan] **Shadow global in-band, sans autorité** — `VOICE_TURN_PLAN_SHADOW_ENABLED=true` inclut tous les restaurants, sans allowlist ; `false` coupe partout. Le prochain déploiement staging l’activera globalement ; la production reste coupée pendant l’observation. La policy compare le plan et l’interaction sans appliquer. Réponses libres et fallback actuel inchangés.
+2026-09-23 — [voice, TurnPlan] **Shadow global activé, observation outillée** — `VOICE_TURN_PLAN_SHADOW_ENABLED=true` concerne tous les restaurants, sans allowlist ; `false` coupe partout. Flag actif en staging et production, API saine après reload sans session active. Le TurnPlan ne modifie rien. Compteurs Prometheus bornés + panels Grafana versionnés ; déploiement production démarrera Prometheus, Grafana attend un secret admin dédié. Aucun appel réel staging (Telnyx absent).
 
 2026-09-21 — [connect, onboarding, api] **Publier exige un slug** — `PATCH /api/restaurants/:id/connect` avec `connectPublished: true` refusait auparavant d'échouer proprement : sans slug, la fiche passait `connectPublished=true` + `publishedAt` + `agenticOptIn=true` mais ne produisait aucune page publique, sans message. La route renvoie désormais `409 { code: 'CONNECT_SLUG_REQUIRED', missing: ['slug'] }` avant toute écriture. Forme alignée sur `PROVISIONING_NOT_READY`.
 

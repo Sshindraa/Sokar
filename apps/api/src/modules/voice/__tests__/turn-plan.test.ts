@@ -1,13 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseTurnPlan } from '../stream/turn-plan';
 import {
   captureTurnPlanPolicySnapshot,
   compareTurnPlanWithPolicy,
   isTurnPlanShadowEnabled,
+  recordInBandTurnPlanShadow,
 } from '../stream/turn-plan-shadow';
 import { decideTurnPlanPolicy } from '../stream/turn-policy';
 import { createConversationState } from '../stream/conversation-controller';
-import type { CallSession } from '../stream/types';
+import type { CallSession, PendingInteraction } from '../stream/types';
+import { __resetMetrics, renderMetrics } from '../../../shared/observability/metrics';
+
+beforeEach(() => __resetMetrics());
+afterEach(() => vi.unstubAllEnvs());
 
 describe('parseTurnPlan', () => {
   it('valide une proposition structurée sans lui donner d’autorité', () => {
@@ -88,6 +93,72 @@ describe('TurnPlan shadow policy boundary', () => {
         VOICE_TURN_PLAN_SHADOW_ENABLED: 'false',
       } as NodeJS.ProcessEnv),
     ).toBe(false);
+  });
+
+  it('compte une seule fois une observation courante et ignore un callback tardif', async () => {
+    vi.stubEnv('VOICE_TURN_PLAN_SHADOW_ENABLED', 'true');
+    const session = {
+      callControlId: 'test-call',
+      restaurantId: 'test-restaurant',
+      conversation: createConversationState(),
+      currentTurn: {
+        id: 'turn-current',
+        sequence: 1,
+        startedAt: Date.now(),
+        transcriptLength: 6,
+        transcriptFingerprint: 'test-fingerprint',
+        path: 'llm',
+        availabilitySearches: 0,
+        availabilityFailures: 0,
+        loopDetected: false,
+        completed: false,
+        eventSequence: 0,
+      },
+    } as unknown as CallSession;
+    session.conversation.intent = 'reservation';
+    const pendingInteraction: PendingInteraction = {
+      id: 1,
+      kind: 'partySize' as const,
+      prompt: 'Pour combien de personnes ?',
+      status: 'active',
+      resumePolicy: null,
+      intentContext: 'reservation',
+    };
+    session.conversation.pendingInteractions.push(pendingInteraction);
+    const context = {
+      transcript: 'quatre',
+      language: 'fr',
+      timezone: 'Europe/Paris',
+      referenceTime: '2026-09-23T10:00:00.000Z',
+      intent: 'reservation' as const,
+      pendingInteraction: { kind: 'partySize' as const },
+      slots: {},
+      hasConfirmedName: false,
+    };
+    const before = captureTurnPlanPolicySnapshot(session, 1);
+    session.conversation.slots.partySize = 4;
+    pendingInteraction.status = 'resolved';
+    const after = captureTurnPlanPolicySnapshot(session, 1);
+    const result = {
+      status: 'valid' as const,
+      plan: {
+        interpretation: 'answer' as const,
+        intent: 'unchanged' as const,
+        slots: { partySize: 4 },
+        interactionDisposition: 'resolve' as const,
+        confidence: 'high' as const,
+      },
+      durationMs: 120,
+    };
+
+    recordInBandTurnPlanShadow(session, context, result, before, after, 'turn-current');
+    session.currentTurn!.id = 'turn-next';
+    recordInBandTurnPlanShadow(session, context, result, before, after, 'turn-current');
+
+    const payload = await renderMetrics();
+    expect(payload).toMatch(
+      /sokar_voice_turn_plan_shadow_observations_total\{[^}]*status="valid"[^}]*policy_outcome="accepted"[^}]*agreement="agree"[^}]*\} 1/,
+    );
   });
 
   it('compare la proposition aux seules valeurs effectivement appliquées', () => {

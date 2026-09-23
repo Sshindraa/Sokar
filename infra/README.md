@@ -19,7 +19,8 @@ pnpm infra:up
 
 # 3. Verify health
 docker compose -f infra/docker-compose.yml ps
-# All three (postgres, redis, localstack) should be 'healthy' within ~10s
+# Postgres, Redis and LocalStack should become healthy; Prometheus and Grafana
+# should be running after startup.
 
 # 4. Run the API + dashboard natively (separate terminals, or via pnpm dev)
 pnpm dev
@@ -27,11 +28,13 @@ pnpm dev
 
 ## What's inside
 
-| Service      | Image                       | Port (host)    | Purpose                              |
-| ------------ | --------------------------- | -------------- | ------------------------------------ |
-| `postgres`   | `postgres:16-alpine`        | 127.0.0.1:5432 | Primary DB (`sokar` database)        |
-| `redis`      | `redis:7-alpine`            | 127.0.0.1:6379 | Cache + BullMQ queue                 |
-| `localstack` | `localstack/localstack:4.2` | 127.0.0.1:4566 | AWS emulation (S3, SQS, SES, Lambda) |
+| Service      | Image                       | Port (host)    | Purpose                                   |
+| ------------ | --------------------------- | -------------- | ----------------------------------------- |
+| `postgres`   | `postgres:16-alpine`        | 127.0.0.1:5432 | Primary DB (`sokar` database)             |
+| `redis`      | `redis:7-alpine`            | 127.0.0.1:6379 | Cache + BullMQ queue                      |
+| `localstack` | `localstack/localstack:4.2` | 127.0.0.1:4566 | AWS emulation (S3, SQS, SES, Lambda)      |
+| `prometheus` | `prom/prometheus:v3.1.0`    | 127.0.0.1:9090 | Metrics scraping, 30-day retention        |
+| `grafana`    | `grafana/grafana:11.5.1`    | 127.0.0.1:3030 | Local dashboards, admin password required |
 
 Ports are bound to `127.0.0.1` (loopback) only — not exposed to the LAN.
 The infra is intended for local dev or a single-host VPS; the API/dashboard
@@ -78,7 +81,10 @@ docker compose -f infra/docker-compose.yml exec redis redis-cli
 
 ## Production (VPS) notes
 
-The VPS uses the same `docker-compose.yml` to run Postgres + Redis, but
-the API and dashboard are managed by `pm2` (see
-`/opt/sokar/infra/ecosystem.config.js`). Don't try to dockerize the apps
-on the 4GB VPS — Next.js build OOMs without aggressive pre-build cleanup.
+The VPS runs Postgres and Redis in Docker, while the API and dashboard are
+managed by `pm2` (see `/opt/sokar/infra/ecosystem.config.js`). Production
+Prometheus is managed separately by the privileged deploy wrapper using
+`prometheus-compose.yml`; this avoids requiring the Grafana admin credential
+to start metrics collection. Grafana remains loopback-only and requires a
+unique `GRAFANA_ADMIN_PASSWORD` before it is started. Don't try to dockerize
+the apps on the VPS — Next.js builds can exhaust memory without pre-build cleanup.

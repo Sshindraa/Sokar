@@ -84,6 +84,7 @@ jobs:
             fi
             bash scripts/ops/sync-stripe-prices.sh prod
             bash scripts/deploy.sh --env prod --confirm-production
+            sudo /usr/local/sbin/sokar-deploy-root start-prometheus prod
 
   smoke-tests:
     name: Smoke tests against production
