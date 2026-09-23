@@ -570,6 +570,8 @@ export class CallSessionManager {
       session.sttPendingCommit = null;
     }
     session.pendingSttEndOfTurn = null;
+    if (session.sttSemanticHold?.timer) clearTimeout(session.sttSemanticHold.timer);
+    session.sttSemanticHold = null;
     if (session.abortController) {
       session.abortController.abort();
       session.abortController = null;

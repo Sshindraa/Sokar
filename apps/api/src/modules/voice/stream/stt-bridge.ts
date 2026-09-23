@@ -94,10 +94,11 @@ function normalizeSttLanguageCode(value: string): string {
 }
 
 export const DEFAULT_STT_TURN_CONFIG: SttTurnConfig = {
-  // 120 ms séparait trop souvent une phrase sur une micro-pause naturelle.
-  // Une pause téléphonique de 220 ms reste réactive tout en laissant Scribe
-  // stabiliser « on sera quatre personnes » en un seul segment.
-  vadSilenceThresholdSecs: 0.95,
+  // La VAD Scribe ne sert plus qu'à proposer une fin de tour : 500 ms de
+  // silence suffisent pour une phrase complète. Les phrases visiblement
+  // inachevées (« demain à… ») sont retenues côté application par
+  // `getSmartEndpointDelay` avant d'être envoyées au LLM.
+  vadSilenceThresholdSecs: 0.5,
   minSpeechDurationMs: 80,
   minSilenceDurationMs: 220,
 };
@@ -399,6 +400,70 @@ function mergeSttTranscripts(previous: string, next: string): string {
     }
   }
   return [...previousWords, ...nextWords].join(' ');
+}
+
+/** Plafond de l'attente sémantique ajoutée après le commit Scribe. */
+export const STT_SEMANTIC_HOLD_MAX_MS = 1_000;
+
+function clearSemanticHold(
+  session: CallSession,
+): NonNullable<CallSession['sttSemanticHold']> | null {
+  const hold = session.sttSemanticHold ?? null;
+  if (hold?.timer) clearTimeout(hold.timer);
+  session.sttSemanticHold = null;
+  return hold;
+}
+
+function armSemanticHoldTimer(
+  session: CallSession,
+  hold: NonNullable<CallSession['sttSemanticHold']>,
+): void {
+  if (hold.timer) clearTimeout(hold.timer);
+  hold.timer = setTimeout(() => {
+    if (session.sttSemanticHold !== hold) return;
+    session.sttSemanticHold = null;
+    dispatchUtteranceEnd(session, hold.transcript, hold.words, hold.languageCode);
+  }, hold.holdMs);
+}
+
+/**
+ * Fin de tour sémantique : Scribe commite après un silence court, puis on
+ * n'attend davantage que si la phrase semble inachevée. Une reprise de parole
+ * pendant cette attente est fusionnée dans le même tour.
+ */
+function dispatchOrHoldUtteranceEnd(
+  session: CallSession,
+  transcript: string,
+  words?: SttWord[],
+  languageCode?: string,
+): void {
+  const previous = clearSemanticHold(session);
+  const merged = previous ? mergeSttTranscripts(previous.transcript, transcript) : transcript;
+  const mergedWords = previous?.words && words ? [...previous.words, ...words] : words;
+  const mergedLanguage = languageCode ?? previous?.languageCode;
+
+  const { timeoutMs, reason } = getSmartEndpointDelay(merged);
+  const vadMs = Math.round(ensureSttTurnConfig(session).desired.vadSilenceThresholdSecs * 1_000);
+  const holdMs = Math.min(Math.max(timeoutMs - vadMs, 0), STT_SEMANTIC_HOLD_MAX_MS);
+  const isIncomplete = reason !== 'punctuation' && reason !== 'silence';
+  if (!isIncomplete || holdMs === 0) {
+    dispatchUtteranceEnd(session, merged, mergedWords, mergedLanguage);
+    return;
+  }
+
+  logger.debug(
+    { callId: session.callControlId, reason, holdMs },
+    '[stt] Holding end of turn for incomplete sentence',
+  );
+  const hold: NonNullable<CallSession['sttSemanticHold']> = {
+    transcript: merged,
+    ...(mergedWords ? { words: mergedWords } : {}),
+    ...(mergedLanguage ? { languageCode: mergedLanguage } : {}),
+    holdMs,
+    timer: null,
+  };
+  session.sttSemanticHold = hold;
+  armSemanticHoldTimer(session, hold);
 }
 
 function dispatchUtteranceEnd(
@@ -743,7 +808,15 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
   const mgr = CallSessionManager.getInstance();
   handleBargeInFromTranscript(session, mgr, cleanTranscript);
 
-  if (!session.turnTranscript.trim()) {
+  const semanticHold = session.sttSemanticHold;
+  if (semanticHold?.timer) {
+    // Le client reprend sa phrase : le tour retenu reste ouvert jusqu'au
+    // prochain commit, qui le fusionnera.
+    clearTimeout(semanticHold.timer);
+    semanticHold.timer = null;
+  }
+
+  if (!session.turnTranscript.trim() && !semanticHold) {
     flushPendingSttEndOfTurn(session);
     session.onSttEvent?.({ type: 'UtteranceStart' });
   } else if (session.state === 'PROCESSING' && cleanTranscript !== session.turnTranscript) {
@@ -787,6 +860,9 @@ function dispatchCommittedTranscript(
       },
       '[stt] Ignoring low-signal committed transcript',
     );
+    // Un tour retenu ne doit jamais rester bloqué derrière un commit ignoré.
+    const hold = session.sttSemanticHold;
+    if (hold && !hold.timer) armSemanticHoldTimer(session, hold);
     return;
   }
 
@@ -806,7 +882,7 @@ function dispatchCommittedTranscript(
     schedulePendingSttEndOfTurn(session);
     return;
   }
-  dispatchUtteranceEnd(session, cleanTranscript, words, languageCode);
+  dispatchOrHoldUtteranceEnd(session, cleanTranscript, words, languageCode);
 }
 
 export function handleSttMessage(session: CallSession, msg: ElevenLabsSttMessage): void {
@@ -972,6 +1048,7 @@ export function sendAudioToStt(session: CallSession, audioPayload: string): void
 
 export function closeStt(session: CallSession): void {
   clearPendingSttEndOfTurn(session);
+  clearSemanticHold(session);
   clearPendingSttCommit(session);
   const ws = session.sttWs;
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -982,8 +1059,8 @@ export function closeStt(session: CallSession): void {
   }
 }
 
-export const SMART_ENDPOINT_DELAY_WITH_PUNCTUATION_MS = 650;
-export const SMART_ENDPOINT_DELAY_WITHOUT_PUNCTUATION_MS = 1_200;
+export const SMART_ENDPOINT_DELAY_WITH_PUNCTUATION_MS = 500;
+export const SMART_ENDPOINT_DELAY_WITHOUT_PUNCTUATION_MS = 800;
 export const SMART_ENDPOINT_DELAY_INCOMPLETE_RESERVATION_MS = 1_300;
 export const SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS = 2_500;
 export const SMART_ENDPOINT_DELAY_INCOMPLETE_FRAGMENT_MS = 1_500;
@@ -1003,7 +1080,9 @@ export function getSmartEndpointDelay(transcript: string): {
   const startsWithCorrection =
     /^\s*(?:non\b|plutot\b|en\s+fait\b|j['’]ai\s+dit\b|je\s+voulais\s+dire\b)/iu.test(transcript);
   const endsWithReservationFragment =
-    /\b(?:pour|a|vers)\s*$|\b(?:demain|aujourd['’]hui)\s+(?:a|vers)\s*$/iu.test(transcript);
+    /(?:^|\s)(?:pour|à|a|vers|de|et|le|la|les|au|aux|chez|mais)\s*,?\s*$|\b(?:demain|aujourd['’]hui)\s+(?:à|a|vers)\s*,?\s*$/iu.test(
+      transcript,
+    );
   const endsWithShortConnector =
     /^(?:ok(?:ay)?|d['’]accord|donc|du coup|mais|alors|et)(?:\s+(?:donc|du coup|alors))?\s*[.!?]?$/iu.test(
       transcript.trim(),

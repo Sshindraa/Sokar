@@ -360,6 +360,14 @@ export interface CallSession {
   } | null;
   /** Timer de grâce pour une fin de tour reçue pendant une épellation. */
   sttEndOfTurnTimer?: ReturnType<typeof setTimeout> | null;
+  /** Fin de tour retenue parce que la phrase semble inachevée. */
+  sttSemanticHold?: {
+    transcript: string;
+    words?: SttWord[];
+    languageCode?: string;
+    holdMs: number;
+    timer: ReturnType<typeof setTimeout> | null;
+  } | null;
   /** Fin de tour mise en attente pendant cette courte grâce. */
   pendingSttEndOfTurn?: {
     transcript: string;

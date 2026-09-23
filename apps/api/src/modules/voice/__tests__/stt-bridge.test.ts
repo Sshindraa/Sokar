@@ -15,6 +15,7 @@ import {
   STT_SPELLING_EOT_GRACE_MS,
   STT_TIMESTAMPED_COMMIT_GRACE_MS,
   getSmartEndpointDelay,
+  STT_SEMANTIC_HOLD_MAX_MS,
   SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS,
   isLikelyIncompleteTranscript,
   isLikelyRepeatedNoiseTranscript,
@@ -387,6 +388,70 @@ describe('handleSttMessage', () => {
     setSttSpellingProfile(session, true);
     expect(session.sttTurnConfig?.spellingActive).toBe(true);
     expect(ws.send).not.toHaveBeenCalled();
+  });
+
+  it('envoie immédiatement une phrase complète après le commit Scribe', () => {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+    handleSttMessage(session, {
+      message_type: 'committed_transcript_with_timestamps',
+      text: 'Pour deux personnes.',
+    });
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'UtteranceEnd',
+      transcript: 'Pour deux personnes.',
+    });
+  });
+
+  it('retient une phrase inachevée et fusionne la suite dans le même tour', () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeSession();
+      const onEvent = vi.fn();
+      session.onSttEvent = onEvent;
+      handleSttMessage(session, {
+        message_type: 'committed_transcript_with_timestamps',
+        text: 'Demain à',
+      });
+      expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
+
+      handleSttMessage(session, { message_type: 'partial_transcript', text: 'vingt heures' });
+      vi.advanceTimersByTime(STT_SEMANTIC_HOLD_MAX_MS + 100);
+      expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'UtteranceEnd' }));
+
+      handleSttMessage(session, {
+        message_type: 'committed_transcript_with_timestamps',
+        text: 'vingt heures.',
+      });
+      expect(onEvent).toHaveBeenCalledTimes(1);
+      expect(onEvent).toHaveBeenCalledWith({
+        type: 'UtteranceEnd',
+        transcript: 'Demain à vingt heures.',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('libère une phrase inachevée après l’attente sémantique', () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeSession();
+      const onEvent = vi.fn();
+      session.onSttEvent = onEvent;
+      handleSttMessage(session, {
+        message_type: 'committed_transcript_with_timestamps',
+        text: 'On sera quatre et',
+      });
+      vi.advanceTimersByTime(STT_SEMANTIC_HOLD_MAX_MS);
+      expect(onEvent).toHaveBeenCalledWith({
+        type: 'UtteranceEnd',
+        transcript: 'On sera quatre et',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('conserve le délai de protection des présentations incomplètes', () => {
