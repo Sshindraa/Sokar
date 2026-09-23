@@ -27,6 +27,7 @@ import {
 import { authorizeVoiceTool, type VoiceToolAuthorizationBasis } from './turn-policy';
 import { markVoiceTurnLlmFirstToken, recordVoiceTurnEvent } from './turn-telemetry';
 import { cancelScheduledFiller } from './filler-scheduler';
+import { buildLlmRecoveryReply } from './llm-recovery';
 import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
 import { buildLlmMessagesWithLanguage, effectiveVoiceLanguage } from './voice-language';
 import { parseTurnPlan, type TurnPlanContext } from './turn-plan';
@@ -986,10 +987,7 @@ export class CallSessionManager {
       return msg.content ?? '';
     }
 
-    const defaultErrorMsg =
-      effectiveVoiceLanguage(session) === 'en'
-        ? "I'm sorry, I couldn't process your request."
-        : "Désolé, je n'ai pas pu traiter votre demande.";
+    const defaultErrorMsg = buildLlmRecoveryReply(session);
     session.history.push({ role: 'assistant', content: defaultErrorMsg });
     return defaultErrorMsg;
   }
@@ -1519,10 +1517,7 @@ export class CallSessionManager {
       return fullText.trim();
     }
 
-    const defaultErrorMsg =
-      effectiveVoiceLanguage(session) === 'en'
-        ? "I'm sorry, I couldn't process your request."
-        : "Désolé, je n'ai pas pu traiter votre demande.";
+    const defaultErrorMsg = buildLlmRecoveryReply(session);
     session.history.push({ role: 'assistant', content: defaultErrorMsg });
     await onPhrase(defaultErrorMsg);
     return defaultErrorMsg;

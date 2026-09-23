@@ -36,7 +36,7 @@ describe('VoiceConfigSchema', () => {
 
     expect(config).toMatchObject({
       VOICE_LLM_MODEL: VOICE_LLM_MODEL_DEFAULT,
-      VOICE_LLM_TIMEOUT_MS: 8000,
+      VOICE_LLM_TIMEOUT_MS: 4000,
       GROQ_BASE_URL,
     });
     expect(config.GROQ_API_KEY).toBeUndefined();
@@ -71,7 +71,7 @@ describe('VoiceConfigSchema', () => {
 
     expect(config).toEqual({
       VOICE_LLM_MODEL: VOICE_LLM_MODEL_DEFAULT,
-      VOICE_LLM_TIMEOUT_MS: 8000,
+      VOICE_LLM_TIMEOUT_MS: 4000,
       GROQ_BASE_URL,
     });
   });
@@ -79,7 +79,7 @@ describe('VoiceConfigSchema', () => {
   it('retombe sur le timeout par défaut si la valeur est invalide', () => {
     const config = VoiceConfigSchema.parse({ VOICE_LLM_TIMEOUT_MS: 'not-a-number' });
 
-    expect(config.VOICE_LLM_TIMEOUT_MS).toBe(8000);
+    expect(config.VOICE_LLM_TIMEOUT_MS).toBe(4000);
   });
 
   it('refuse une URL Groq invalide', () => {

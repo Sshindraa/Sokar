@@ -183,6 +183,25 @@ describe('farewell playback and hangup', () => {
     expect(session.conversation.pendingQuestion).toBe('time');
   });
 
+  it('s’excuse puis repose la dernière question quand le LLM échoue avant tout audio', async () => {
+    const { session, mgr } = fixture();
+    session.conversation.lastAssistantQuestion = 'Vous serez combien ?';
+    vi.mocked(mgr.processUtteranceStreaming).mockRejectedValue(
+      Object.assign(new Error('The operation was aborted due to timeout'), {
+        name: 'TimeoutError',
+      }),
+    );
+
+    await processTranscriptStreaming(session, 'Est-ce que vous avez une terrasse ?', mgr);
+
+    expect(mgr.processUtteranceStreaming).toHaveBeenCalledOnce();
+    expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+      session,
+      'Excusez-moi, un petit souci de mon côté. Vous serez combien ?',
+    );
+    expect(session.state).toBe('LISTENING');
+  });
+
   it('confie au TurnPlan canary une réponse que les extracteurs n’ont pas comprise', async () => {
     const turn = 'Moi, ma femme et nos trois enfants';
     const reply = 'Parfait, pour cinq. Vers quelle heure souhaitez-vous venir ?';

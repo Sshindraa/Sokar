@@ -9,6 +9,7 @@
  * référence.
  */
 
+import { buildLlmRecoveryReply } from './llm-recovery';
 import { prefetchAvailabilityFromPartial, takeAvailabilityPrefetch } from './availability-prefetch';
 import { WebSocket } from 'ws';
 import type { SttEvent, CallSession } from './types';
@@ -1223,6 +1224,7 @@ export async function processTranscriptStreaming(
   if (contextTtsRef.current) session.ttsContext = contextTtsRef.current;
   const abortController = new AbortController();
   const llmStartedAt = Date.now();
+  let llmPhraseReceived = false;
   recordVoiceTurnEventIfCurrent(session, telemetryTurnId, 'llm_started', {
     mode: availabilityContext ? 'availability_context' : 'live',
   });
@@ -1234,6 +1236,7 @@ export async function processTranscriptStreaming(
       transcriptForLlm,
       (phrase: string) => {
         if (!isCurrentResponse() || abortController.signal.aborted) return;
+        llmPhraseReceived = true;
         cancelScheduledFiller(session);
         writeDebugLog(`[processTranscriptStreaming] Phrase received: "${redactPii(phrase)}"`);
         markVoiceTurnLlmFirstPhrase(session, telemetryTurnId);
@@ -1364,6 +1367,17 @@ export async function processTranscriptStreaming(
       tags: { service: 'handler', action: 'processTranscriptStreaming' },
       extra: { callId: session.callControlId, transcript: redactPii(transcript) },
     });
+    // Délai dépassé ou erreur avant tout audio : ne jamais laisser un silence.
+    // Une excuse courte puis la dernière question, qui reste en attente.
+    if (!llmPhraseReceived && isSessionActiveForTts(session)) {
+      cancelScheduledFiller(session);
+      const recovery = buildLlmRecoveryReply(session);
+      session.history.push({ role: 'assistant', content: recovery });
+      mgr.transition(session, 'SPEAKING');
+      await speakTtsStreamed(session, recovery);
+      if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+      return;
+    }
     mgr.transition(session, 'LISTENING');
   } finally {
     cancelScheduledFiller(session);
