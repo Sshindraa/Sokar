@@ -104,6 +104,15 @@ de l'API opérateur et envoyé dans l'en-tête `x-sokar-internal-usage-token`.
 Sans ce secret, la route répond `503`; elle ne doit jamais être ajoutée à un
 écran ou une intégration client.
 
+`SOKAR_VOICE_READ_TOKEN` protège la route interne en lecture seule
+`GET /api/internal/voice/calls/latest?restaurantId=…` (dernier appel d'un
+restaurant et ses lignes `voice_turn_telemetry`, textes passés par
+`redactPii()`, sans numéro de l'appelant). Le jeton est envoyé dans l'en-tête
+`x-sokar-voice-read-token` ou `Authorization: Bearer …`. Génération :
+`openssl rand -hex 32`. Sans ce secret, la route répond `503` ; un jeton absent
+ou faux donne `401`. Révocation : changer la valeur dans l'environnement de
+l'API puis redémarrer l'API.
+
 `RESERVATION_SERVICE_TOKEN` protège la route legacy `POST /reservations`. Il
 doit être généré et injecté uniquement par le secret manager (au moins 32
 caractères), jamais dans le dépôt, le navigateur ou les payloads Connect. Les
