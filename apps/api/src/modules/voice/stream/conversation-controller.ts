@@ -2634,7 +2634,15 @@ function extractContextualPartySize(transcript: string): number | null {
     `\\b(?:on (?:serait|sera|serons|est|ferait|fait|vient)|nous (?:serions|serons|sommes|ferions|faisons|venons)|vous (?:etes|seriez|serez)|we (?:are|will be)|there (?:will be|are))\\s+(?:bien\\s+)?(?:a|pour)?\\s*${SPOKEN_PARTY_SIZE_PATTERN}\\b`,
     'g',
   );
-  const contextualMatches = [...normalized.matchAll(contextualPattern)];
+  // « on sera une petite tablée », « on est un groupe » : un/une suivi d'un
+  // autre mot que l'unité est un article, pas un nombre de couverts.
+  const contextualMatches = [...normalized.matchAll(contextualPattern)].filter(
+    (match) =>
+      !/^une?$/.test(match[1]) ||
+      !/^\s+(?!(?:personnes?|seule?|people|guests?|person)\b)\p{L}/u.test(
+        normalized.slice((match.index ?? 0) + match[0].length),
+      ),
+  );
   if (contextualMatches.length) {
     const values = contextualMatches
       .map((match) => partySizeFromNumberToken(match[1]))
