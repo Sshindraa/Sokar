@@ -37,7 +37,14 @@ import {
 import { isVoiceTtsContextV2Enabled } from '../../../shared/configcat';
 import { TRANSCRIPT_DEDUPE_WINDOW_MS } from '../../../shared/constants/timeouts.js';
 import { isSpeculativeLlmEnabled } from './speculation';
-import { isNameCollectionBlocking } from './conversation-controller';
+import { getActivePendingInteraction, isNameCollectionBlocking } from './conversation-controller';
+import {
+  captureTurnPlanPolicySnapshot,
+  isTurnPlanShadowEnabled,
+  recordInBandTurnPlanShadow,
+} from './turn-plan-shadow';
+import type { InBandTurnPlanResult } from './turn-plan-shadow';
+import type { TurnPlanContext } from './turn-plan';
 import { setSttSpellingProfile } from './stt-bridge';
 import {
   effectiveVoiceLanguage,
@@ -48,13 +55,14 @@ import {
   type VoiceLanguageCode,
 } from './voice-language';
 import {
-  buildAvailabilityErrorReply,
+  buildAvailabilityErrorPlan,
   getOpenAvailabilityRequest,
   buildOpenAvailabilityReply,
   buildAvailabilityLlmContext,
-  buildAvailabilityReply,
-  buildDeterministicTurnResponse,
-  buildReservationProgressResponse,
+  buildAvailabilityReplyPlan,
+  buildDeterministicTurnPlan,
+  buildHumanFallbackClarification,
+  buildReservationProgressPlan,
   classifyVoiceSpeechActInContext,
   clearDialogueGuardTrace,
   confirmReservationDraft,
@@ -62,11 +70,14 @@ import {
   getReadyAvailabilityRequest,
   handleCustomerNameTurn,
   parseSpelledNameTranscriptDetailed,
+  finalAssistantQuestion,
   isAffirmativeShortResponse,
   isNegativeShortResponse,
-  recordAssistantReply,
+  recordAssistantReplyWithPolicy,
+  recordAssistantReplyFromLlmTextFallback,
   recordUserTurn,
   resolveHumanFallbackChoice,
+  suspendPendingInteractionForDetour,
   resetNameCollectionAfterFallback,
 } from './conversation-controller';
 
@@ -481,7 +492,7 @@ export function handleSttEvent(
               { role: 'user', content: event.transcript },
               { role: 'assistant', content: cleanResponse },
             );
-            recordAssistantReply(session, cleanResponse);
+            recordAssistantReplyFromLlmTextFallback(session, cleanResponse);
             markVoiceTurnLlmFirstToken(session, currentTurnId);
             recordVoiceTurnEventIfCurrent(session, currentTurnId, 'speculation_hit', {
               mode: 'speculative',
@@ -656,6 +667,36 @@ export async function processTranscriptStreaming(
   const language = effectiveVoiceLanguage(session);
   const deterministicLanguage = supportsDeterministicVoiceLanguage(language);
   const pendingQuestionBeforeTurn = session.conversation.pendingQuestion;
+  const interactionBeforeTurn = getActivePendingInteraction(session);
+  const turnPlanContext: TurnPlanContext = {
+    transcript,
+    language,
+    timezone: session.timezone,
+    referenceTime: new Date().toISOString(),
+    intent: session.conversation.intent,
+    pendingInteraction: interactionBeforeTurn
+      ? {
+          kind: interactionBeforeTurn.kind,
+          intentContext: interactionBeforeTurn.intentContext ?? null,
+          ...(interactionBeforeTurn.fallbackMode
+            ? { fallbackMode: interactionBeforeTurn.fallbackMode }
+            : {}),
+          ...(interactionBeforeTurn.candidatePartySize !== undefined
+            ? { candidatePartySize: interactionBeforeTurn.candidatePartySize }
+            : {}),
+        }
+      : null,
+    slots: {
+      ...(session.conversation.slots.date ? { date: session.conversation.slots.date } : {}),
+      ...(session.conversation.slots.time ? { time: session.conversation.slots.time } : {}),
+      ...(session.conversation.slots.partySize !== undefined
+        ? { partySize: session.conversation.slots.partySize }
+        : {}),
+    },
+    hasConfirmedName: Boolean(session.conversation.nameCollection?.confirmedName),
+  };
+  const turnPlanBefore = captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null);
+  const turnPlanShadowEnabled = isTurnPlanShadowEnabled();
   const isCurrentResponse = () =>
     !session.ended && session.responseGeneration === responseGeneration;
   if (session.state === 'IDLE') mgr.transition(session, 'LISTENING');
@@ -667,6 +708,7 @@ export async function processTranscriptStreaming(
   const classifiedAct = classifyVoiceSpeechActInContext(session, transcript);
   const explicitEnd = isExplicitCallEnd(transcript);
   const speechAct = classifiedAct === 'closing' && !explicitEnd ? 'backchannel' : classifiedAct;
+  if (!explicitEnd) suspendPendingInteractionForDetour(session, transcript);
   recordUserTurn(session, transcript, speechAct);
   recordVoiceTurnClassification(session, speechAct);
   logger.info(
@@ -685,7 +727,10 @@ export async function processTranscriptStreaming(
       { role: 'user', content: transcript },
       { role: 'assistant', content: goodbye },
     );
-    recordAssistantReply(session, goodbye);
+    recordAssistantReplyWithPolicy(session, goodbye, {
+      source: 'explicit',
+      operation: 'cancel',
+    });
     await finishCall(session, mgr, goodbye);
     return;
   }
@@ -709,7 +754,10 @@ export async function processTranscriptStreaming(
       { role: 'user', content: transcript },
       { role: 'assistant', content: response },
     );
-    recordAssistantReply(session, response);
+    recordAssistantReplyWithPolicy(session, response, {
+      source: 'explicit',
+      operation: question ? 'keep' : 'cancel',
+    });
     mgr.transition(session, 'SPEAKING');
     await speakTtsStreamed(session, response);
     if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
@@ -739,7 +787,11 @@ export async function processTranscriptStreaming(
       { role: 'user', content: transcript },
       { role: 'assistant', content: response },
     );
-    recordAssistantReply(session, response);
+    recordAssistantReplyWithPolicy(session, response, {
+      source: 'explicit',
+      operation: 'activate',
+      interaction: { kind: 'open', prompt: finalAssistantQuestion(response) ?? response },
+    });
     mgr.transition(session, 'SPEAKING');
     await speakTtsStreamed(session, response);
     if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
@@ -754,7 +806,10 @@ export async function processTranscriptStreaming(
       { role: 'user', content: transcript },
       { role: 'assistant', content: livenessResponse },
     );
-    recordAssistantReply(session, livenessResponse);
+    recordAssistantReplyWithPolicy(session, livenessResponse, {
+      source: 'explicit',
+      operation: 'keep',
+    });
     syncSpellingProfile(session);
     mgr.transition(session, 'SPEAKING');
     await speakTtsStreamed(session, livenessResponse);
@@ -786,7 +841,20 @@ export async function processTranscriptStreaming(
       { role: 'user', content: transcript },
       { role: 'assistant', content: response },
     );
-    recordAssistantReply(session, response);
+    recordAssistantReplyWithPolicy(
+      session,
+      response,
+      customerNameTurn.escalate
+        ? { source: 'explicit', operation: 'cancel' }
+        : {
+            source: 'explicit',
+            operation: 'activate',
+            interaction: {
+              kind: 'customerName',
+              prompt: finalAssistantQuestion(response) ?? response,
+            },
+          },
+    );
     syncSpellingProfile(session);
     if (!isCurrentResponse()) return;
     mgr.transition(session, 'SPEAKING');
@@ -802,24 +870,55 @@ export async function processTranscriptStreaming(
 
   // Le garde-fou anti-boucle a proposé un repli humain (transfert ou message).
   // L'annonce ne vaut que si l'action est réellement exécutée ici.
-  if (deterministicLanguage && pendingQuestionBeforeTurn === 'humanFallback') {
+  if (
+    deterministicLanguage &&
+    pendingQuestionBeforeTurn === 'humanFallback' &&
+    session.conversation.humanFallbackOffered
+  ) {
     const fallbackChoice = resolveHumanFallbackChoice(session, transcript);
     if (fallbackChoice) {
-      recordVoiceTurnEvent(session, 'dialogue_guard', {
-        level: 'escalate',
-        action: fallbackChoice,
-      });
       const response =
-        fallbackChoice === 'transfer'
-          ? await mgr.handoffToManager(session)
-          : await mgr.recordDialogueFallbackMessage(session);
+        fallbackChoice === 'clarify'
+          ? buildHumanFallbackClarification(session, transcript)
+          : await (fallbackChoice === 'transfer'
+              ? mgr.handoffToManager(session, {
+                  kind: 'human_fallback_choice',
+                  choice: 'transfer',
+                })
+              : mgr.recordDialogueFallbackMessage(session, {
+                  kind: 'human_fallback_choice',
+                  choice: 'message',
+                }));
+      if (fallbackChoice !== 'clarify') {
+        recordVoiceTurnEvent(session, 'dialogue_guard', {
+          level: 'escalate',
+          action: fallbackChoice,
+        });
+      }
       if (!isCurrentResponse()) return;
       session.turnCount++;
       session.history.push(
         { role: 'user', content: transcript },
         { role: 'assistant', content: response },
       );
-      recordAssistantReply(session, response);
+      if (fallbackChoice === 'clarify') {
+        recordAssistantReplyWithPolicy(session, response, {
+          source: 'explicit',
+          operation: 'activate',
+          interaction: {
+            kind: 'humanFallback',
+            prompt: response,
+            fallbackMode:
+              session.conversation.humanFallbackMode ??
+              (session.managerPhone?.trim() ? 'choice' : 'message'),
+          },
+        });
+      } else {
+        recordAssistantReplyWithPolicy(session, response, {
+          source: 'explicit',
+          operation: 'cancel',
+        });
+      }
       syncSpellingProfile(session);
       mgr.transition(session, 'SPEAKING');
       await speakTtsStreamed(session, response);
@@ -842,7 +941,10 @@ export async function processTranscriptStreaming(
         { role: 'user', content: transcript },
         { role: 'assistant', content: response },
       );
-      recordAssistantReply(session, response);
+      recordAssistantReplyWithPolicy(session, response, {
+        source: 'explicit',
+        operation: 'cancel',
+      });
       mgr.transition(session, 'SPEAKING');
       await speakTtsStreamed(session, response);
       if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
@@ -863,7 +965,10 @@ export async function processTranscriptStreaming(
         { role: 'user', content: transcript },
         { role: 'assistant', content: response },
       );
-      recordAssistantReply(session, response);
+      recordAssistantReplyWithPolicy(session, response, {
+        source: 'explicit',
+        operation: 'cancel',
+      });
       syncSpellingProfile(session);
       mgr.transition(session, 'SPEAKING');
       await speakTtsStreamed(session, response);
@@ -886,6 +991,7 @@ export async function processTranscriptStreaming(
     session.conversation.toolInFlight = 'checkAvailability';
     recordVoiceTurnEvent(session, 'availability_started', openRequest);
     let response: string;
+    let explicitReplyPlan: ReturnType<typeof buildAvailabilityErrorPlan> | null = null;
     try {
       const result = await mgr.getAvailability(session, openRequest.date, openRequest.partySize);
       if (!isCurrentResponse()) return;
@@ -899,7 +1005,8 @@ export async function processTranscriptStreaming(
         '[voice-turn] Open availability lookup failed',
       );
       session.conversation.offeredAvailability = undefined;
-      response = buildAvailabilityErrorReply(language);
+      explicitReplyPlan = buildAvailabilityErrorPlan(session);
+      response = explicitReplyPlan.reply;
     } finally {
       if (isCurrentResponse()) session.conversation.toolInFlight = null;
     }
@@ -908,7 +1015,24 @@ export async function processTranscriptStreaming(
       { role: 'user', content: transcript },
       { role: 'assistant', content: response },
     );
-    recordAssistantReply(session, response);
+    const offeredSlots = session.conversation.offeredAvailability;
+    if (explicitReplyPlan) {
+      recordAssistantReplyWithPolicy(session, response, explicitReplyPlan.proposal);
+    } else if (offeredSlots) {
+      recordAssistantReplyWithPolicy(session, response, {
+        source: 'explicit',
+        operation: 'activate',
+        interaction: {
+          kind: offeredSlots.slots.length ? 'timeChoice' : 'date',
+          prompt: finalAssistantQuestion(response) ?? response,
+        },
+      });
+    } else {
+      recordAssistantReplyWithPolicy(session, response, {
+        source: 'explicit',
+        operation: 'cancel',
+      });
+    }
     mgr.transition(session, 'SPEAKING');
     await speakTtsStreamed(session, response);
     if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
@@ -916,10 +1040,11 @@ export async function processTranscriptStreaming(
   }
 
   clearDialogueGuardTrace(session);
-  const deterministicResponse = deterministicLanguage
-    ? (buildDeterministicTurnResponse(session, speechAct, transcript) ??
-      buildReservationProgressResponse(session, transcript))
+  const deterministicReplyPlan = deterministicLanguage
+    ? (buildDeterministicTurnPlan(session, speechAct, transcript) ??
+      buildReservationProgressPlan(session, transcript))
     : null;
+  const deterministicResponse = deterministicReplyPlan?.reply ?? null;
   const dialogueGuard = session.conversation.lastDialogueGuard;
   if (deterministicResponse && dialogueGuard && dialogueGuard.level !== 'ask') {
     recordVoiceTurnEvent(session, 'dialogue_guard', {
@@ -938,7 +1063,13 @@ export async function processTranscriptStreaming(
       { role: 'user', content: transcript },
       { role: 'assistant', content: deterministicResponse },
     );
-    recordAssistantReply(session, deterministicResponse);
+    if (deterministicReplyPlan) {
+      recordAssistantReplyWithPolicy(
+        session,
+        deterministicResponse,
+        deterministicReplyPlan.proposal,
+      );
+    }
     syncSpellingProfile(session);
     if (!isCurrentResponse()) return;
     mgr.transition(session, 'SPEAKING');
@@ -1029,13 +1160,14 @@ export async function processTranscriptStreaming(
         '[voice-turn] Direct availability lookup failed; using a safe deterministic fallback',
       );
       if (isCurrentResponse()) {
-        const response = buildAvailabilityErrorReply(language);
+        const errorPlan = buildAvailabilityErrorPlan(session);
+        const response = errorPlan.reply;
         session.turnCount++;
         session.history.push(
           { role: 'user', content: transcript },
           { role: 'assistant', content: response },
         );
-        recordAssistantReply(session, response);
+        recordAssistantReplyWithPolicy(session, response, errorPlan.proposal);
         syncSpellingProfile(session);
         mgr.transition(session, 'SPEAKING');
         await speakTtsStreamed(session, response);
@@ -1067,10 +1199,35 @@ export async function processTranscriptStreaming(
   // formulation libre du LLM mais on omet le schéma d'outils et on borne la
   // réponse, ce qui réduit le prompt et le temps de génération.
   const telemetryTurnId = session.currentTurn?.id;
+  let inBandTurnPlanResult: InBandTurnPlanResult | undefined;
+  const shouldCollectInBandTurnPlan =
+    turnPlanShadowEnabled &&
+    !explicitEnd &&
+    speechAct !== 'liveness' &&
+    !isNameCollectionBlocking(session);
   const llmOptions = {
     ...(availabilityContext ? { context: availabilityContext, includeTools: false } : {}),
     ...(confirmationTurn ? { includeTools: false } : {}),
+    ...(shouldCollectInBandTurnPlan
+      ? {
+          turnPlanShadowContext: turnPlanContext,
+          onTurnPlanShadowResult: (result: InBandTurnPlanResult) => {
+            inBandTurnPlanResult = result;
+          },
+        }
+      : {}),
     telemetryTurnId,
+  };
+  const recordTurnPlanObservation = (result = inBandTurnPlanResult) => {
+    if (!shouldCollectInBandTurnPlan || !telemetryTurnId) return;
+    recordInBandTurnPlanShadow(
+      session,
+      turnPlanContext,
+      result ?? { status: 'missing', durationMs: 0 },
+      turnPlanBefore,
+      captureTurnPlanPolicySnapshot(session, interactionBeforeTurn?.id ?? null),
+      telemetryTurnId,
+    );
   };
 
   // ── Thinking filler : combler ponctuellement le silence pendant que le LLM génère.
@@ -1080,8 +1237,7 @@ export async function processTranscriptStreaming(
     scheduleThinkingFiller(session, session.personality?.fillerStyle ?? 'CASUAL');
   }
 
-  // Double verrou : l'environnement garde le kill switch global fermé et
-  // ConfigCat ne cible que le restaurant canary choisi.
+  // Le TTS Context V2 garde son ciblage ConfigCat indépendant du shadow TurnPlan.
   const useCartesiaContext =
     isCartesiaContextV2Enabled() && (await isVoiceTtsContextV2Enabled(session.restaurantId));
   if (!isCurrentResponse()) return;
@@ -1152,7 +1308,8 @@ export async function processTranscriptStreaming(
     if (!fullResponse.trim() && availabilityContext) {
       // Le LLM reste responsable de la formulation ; ce repli ne sert qu'en
       // cas de réponse vide du transport et reprend les faits vérifiés.
-      const fallbackResponse = buildAvailabilityReply(
+      const fallbackPlan = buildAvailabilityReplyPlan(
+        session,
         availabilityRequest ?? {
           date: session.conversation.slots.date!,
           time: session.conversation.slots.time!,
@@ -1161,14 +1318,17 @@ export async function processTranscriptStreaming(
         session.conversation.lastAvailabilityResult?.slots ?? [],
         language,
       );
+      const fallbackResponse = fallbackPlan.reply;
       session.history.push({ role: 'assistant', content: fallbackResponse });
-      recordAssistantReply(session, fallbackResponse);
+      recordAssistantReplyWithPolicy(session, fallbackResponse, fallbackPlan.proposal);
+      recordTurnPlanObservation();
       mgr.transition(session, 'SPEAKING');
       await speakTtsStreamed(session, fallbackResponse);
       if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
       return;
     }
-    recordAssistantReply(session, fullResponse);
+    recordAssistantReplyFromLlmTextFallback(session, fullResponse);
+    recordTurnPlanObservation();
     syncSpellingProfile(session);
 
     writeDebugLog(`[processTranscriptStreaming] LLM stream ended, waiting for TTS...`);
@@ -1197,6 +1357,12 @@ export async function processTranscriptStreaming(
       writeDebugLog(`[processTranscriptStreaming] Transitioned back to LISTENING`);
     }
   } catch (err: unknown) {
+    if (shouldCollectInBandTurnPlan && !inBandTurnPlanResult) {
+      recordTurnPlanObservation({
+        status: abortController.signal.aborted ? 'aborted' : 'failed',
+        durationMs: Date.now() - llmStartedAt,
+      });
+    }
     recordVoiceTurnEventIfCurrent(session, telemetryTurnId, 'llm_interrupted', {
       mode: availabilityContext ? 'availability_context' : 'live',
       reason: abortController.signal.aborted ? 'aborted' : 'error',

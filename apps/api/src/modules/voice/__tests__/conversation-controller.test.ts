@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDeterministicTurnResponse,
+  buildDeterministicTurnPlan,
+  buildAvailabilityFollowupPlan,
   buildAvailabilityFollowupResponse,
+  buildAvailabilityReplyPlan,
+  buildAvailabilityErrorPlan,
   buildAvailabilityLlmContext,
   buildAvailabilityReply,
+  buildHumanFallbackClarification,
   buildHumanFallbackOffer,
   classifyVoiceSpeechAct,
   classifyVoiceSpeechActInContext,
@@ -11,22 +16,28 @@ import {
   extractConversationSlots,
   getReadyAvailabilityRequest,
   guardDialogueReprompt,
+  buildReservationProgressPlan,
   buildReservationProgressResponse,
   buildPendingQuestionResponse,
   confirmReservationDraft,
   extractPlainCustomerName,
+  getActivePendingInteraction,
   getReservationConfirmationKey,
   handleCustomerNameTurn,
   isNameCollectionBlocking,
   parseSpelledNameTranscript,
   parseSpelledNameTranscriptDetailed,
-  recordAssistantReply,
+  recordAssistantReply as applyAssistantReplyPolicyDecision,
+  recordAssistantReplyWithPolicy,
+  recordAssistantReplyFromLlmTextFallback as recordAssistantReply,
   recordUserTurn,
   resetDialogueStall,
   resetNameCollectionAfterFallback,
   resolveHumanFallbackChoice,
+  suspendPendingInteractionForDetour,
   pendingQuestionFrom,
 } from '../stream/conversation-controller';
+import { decideAssistantInteractionPolicy } from '../stream/turn-policy';
 import type { CallSession } from '../stream/types';
 
 function makeSession(): CallSession {
@@ -63,9 +74,115 @@ describe('classifyVoiceSpeechAct', () => {
     expect(pendingQuestionFrom('Quel créneau préférez-vous ?')).toBe('timeChoice');
     expect(pendingQuestionFrom('Quel numéro puis-je utiliser ?')).toBe('customerPhone');
   });
+
+  it('type une confirmation de couverts séparément de la confirmation de réservation', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Pour être sûr, on est bien à quatre, c’est ça ?');
+
+    expect(session.conversation.pendingQuestion).toBe('partySizeConfirmation');
+    expect(getActivePendingInteraction(session)).toMatchObject({
+      kind: 'partySizeConfirmation',
+      candidatePartySize: 4,
+      status: 'active',
+    });
+  });
+
+  it('recordAssistantReply applique la policy reçue sans inférer une question depuis le texte', () => {
+    const session = makeSession();
+    const decision = decideAssistantInteractionPolicy(
+      { source: 'explicit', operation: 'cancel' },
+      null,
+    );
+
+    expect(decision.status).toBe('accepted');
+    if (decision.status === 'accepted') {
+      applyAssistantReplyPolicyDecision(
+        session,
+        'Pour combien de personnes souhaitez-vous réserver ?',
+        decision,
+      );
+    }
+
+    expect(session.conversation.pendingQuestion).toBeNull();
+    expect(session.conversation.pendingInteractions).toEqual([]);
+  });
+
+  it('une proposition explicite invalide échoue sans déduire le type depuis la phrase', () => {
+    const session = makeSession();
+    recordAssistantReply(
+      session,
+      'Je peux prendre un message pour le gérant. Voulez-vous que je le fasse ?',
+    );
+
+    recordAssistantReplyWithPolicy(session, 'Pour combien de personnes souhaitez-vous réserver ?', {
+      source: 'explicit',
+      operation: 'activate',
+    });
+
+    expect(getActivePendingInteraction(session)).toBeNull();
+    expect(session.conversation.pendingQuestion).toBeNull();
+  });
 });
 
 describe('conversation state', () => {
+  it.each(['quatre', 'on ferait quatre', 'on serait quatre', 'on vient à quatre'])(
+    'comprend « %s » quand la question active demande le nombre de couverts',
+    (transcript) => {
+      const session = makeSession();
+      recordAssistantReply(session, 'Pour combien de personnes souhaitez-vous réserver ?');
+
+      recordUserTurn(session, transcript, 'content', new Date('2026-09-22T10:00:00Z'));
+
+      expect(session.conversation.slots.partySize).toBe(4);
+      expect(getActivePendingInteraction(session)).toBeNull();
+      expect(session.conversation.pendingInteractions.at(-1)?.status).toBe('resolved');
+    },
+  );
+
+  it('ne contourne pas la limite de sept couverts du parcours vocal', () => {
+    const session = makeSession();
+    recordAssistantReply(session, 'Vous serez combien ?');
+
+    recordUserTurn(session, 'on serait huit', 'content');
+
+    expect(session.conversation.slots.partySize).toBeUndefined();
+    expect(getActivePendingInteraction(session)?.kind).toBe('partySize');
+  });
+
+  it('applique un oui à la confirmation des couverts et jamais à celle de la réservation', () => {
+    const session = makeSession();
+    session.conversation.intent = 'reservation';
+    recordAssistantReply(session, 'On est bien à quatre, c’est ça ?');
+
+    recordUserTurn(session, 'Oui', 'content');
+
+    expect(session.conversation.slots.partySize).toBe(4);
+    expect(session.conversation.pendingQuestion).toBeNull();
+    expect(session.conversation.pendingReservationConfirmationKey).toBeNull();
+    expect(session.conversation.pendingInteractions.at(-1)?.status).toBe('resolved');
+  });
+
+  it('suspend une interaction pendant une digression puis la reprend après la réponse enfant', () => {
+    const session = makeSession();
+    session.timezone = 'Europe/Paris';
+    recordAssistantReply(session, 'Vous serez combien ?');
+    const partySizeInteraction = getActivePendingInteraction(session)!;
+
+    expect(suspendPendingInteractionForDetour(session, 'Pourquoi ?')).toBe(true);
+    expect(partySizeInteraction.status).toBe('suspended');
+    expect(partySizeInteraction.resumePolicy).toBe('resume_after_child');
+    expect(session.conversation.pendingQuestion).toBeNull();
+
+    recordAssistantReply(session, 'Pour quel jour souhaitez-vous réserver ?');
+    expect(session.conversation.pendingQuestion).toBe('date');
+
+    recordUserTurn(session, 'Demain', 'content', new Date('2026-09-22T10:00:00Z'));
+
+    expect(session.conversation.pendingQuestion).toBe('partySize');
+    expect(getActivePendingInteraction(session)?.id).toBe(partySizeInteraction.id);
+    expect(partySizeInteraction.status).toBe('active');
+  });
+
   it('mémorise une intention et la question métier en attente', () => {
     const session = makeSession();
     recordUserTurn(session, 'Je voudrais réserver une table', 'content');
@@ -129,6 +246,7 @@ describe('conversation state', () => {
     expect(session.conversation.pendingReservationConfirmationKey).toBe(key);
     expect(confirmReservationDraft(session)).toBe(true);
     expect(session.conversation.confirmedReservationKey).toBe(key);
+    expect(session.conversation.pendingInteractions.at(-1)?.status).toBe('resolved');
 
     recordUserTurn(session, 'Non, plutôt 20 h 30', 'correction');
 
@@ -596,6 +714,7 @@ describe('conversation state', () => {
     );
     // Aucune phrase ne doit annoncer un transfert qui n'aurait pas lieu.
     expect(offer).not.toContain('Je vais vous passer le gérant');
+    recordAssistantReply(session, offer!);
     expect(session.conversation.humanFallbackOffered).toBe(true);
     expect(pendingQuestionFrom(offer!)).toBe('humanFallback');
   });
@@ -633,6 +752,7 @@ describe('conversation state', () => {
     expect(offer).toBe(
       'Je peux prendre un message pour le gérant, il vous rappellera. Voulez-vous que je le fasse ?',
     );
+    recordAssistantReply(session, offer!);
     expect(session.conversation.humanFallbackOffered).toBe(true);
     expect(pendingQuestionFrom(offer!)).toBe('humanFallback');
   });
@@ -660,6 +780,37 @@ describe('conversation state', () => {
     );
   });
 
+  it('déclare le champ attendu quand il émet une relance déterministe', () => {
+    const session = makeSession();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.date = '2026-09-24';
+
+    const plan = buildReservationProgressPlan(session);
+
+    expect(plan?.reply).toBe('Vous serez combien ?');
+    expect(plan?.proposal).toMatchObject({
+      source: 'explicit',
+      operation: 'activate',
+      interaction: { kind: 'partySize' },
+    });
+    recordAssistantReplyWithPolicy(session, plan!.reply, plan!.proposal);
+    expect(getActivePendingInteraction(session)?.kind).toBe('partySize');
+  });
+
+  it('lie une relance de backchannel au type de la question déjà en attente', () => {
+    const session = makeSession();
+    session.conversation.pendingQuestion = 'partySize';
+    session.conversation.lastAssistantQuestion =
+      'Pour combien de personnes souhaitez-vous réserver ?';
+
+    const plan = buildDeterministicTurnPlan(session, 'backchannel');
+
+    expect(plan?.proposal).toMatchObject({
+      source: 'explicit',
+      interaction: { kind: 'partySize' },
+    });
+  });
+
   it('n’exécute un repli humain que sur une réponse explicite', () => {
     const withoutLine = makeSession();
     withoutLine.conversation.pendingQuestion = 'humanFallback';
@@ -670,8 +821,15 @@ describe('conversation state', () => {
 
     const withLine = makeSession();
     withLine.managerPhone = '+33600000000';
-    withLine.conversation.pendingQuestion = 'humanFallback';
-    withLine.conversation.humanFallbackOffered = true;
+    recordAssistantReply(
+      withLine,
+      'Je peux vous passer le gérant, ou prendre un message pour lui. Que préférez-vous ?',
+    );
+    expect(resolveHumanFallbackChoice(withLine, 'Oui')).toBe('clarify');
+    expect(withLine.conversation.humanFallbackOffered).toBe(true);
+    expect(buildHumanFallbackClarification(withLine, 'Oui')).toBe(
+      'Vous préférez que je vous passe le gérant ou que je prenne un message ?',
+    );
     expect(resolveHumanFallbackChoice(withLine, 'Oui, passez-moi le gérant')).toBe('transfer');
 
     const decline = makeSession();
@@ -680,6 +838,61 @@ describe('conversation state', () => {
     expect(resolveHumanFallbackChoice(decline, 'Non merci')).toBeNull();
     expect(decline.conversation.pendingQuestion).toBeNull();
     expect(decline.conversation.humanFallbackOffered).toBe(false);
+    expect(decline.conversation.closing).toBe(false);
+  });
+
+  it('lie un oui à la seule action réellement proposée', () => {
+    const transferOnly = makeSession();
+    transferOnly.managerPhone = '+33600000000';
+    recordAssistantReply(transferOnly, 'Voulez-vous que je vous passe le gérant ?');
+    expect(transferOnly.conversation.humanFallbackMode).toBe('transfer');
+    expect(resolveHumanFallbackChoice(transferOnly, 'Oui')).toBe('transfer');
+
+    const messageOnly = makeSession();
+    messageOnly.managerPhone = '+33600000000';
+    recordAssistantReply(
+      messageOnly,
+      'Je peux prendre un message pour le gérant. Voulez-vous que je le fasse ?',
+    );
+    expect(messageOnly.conversation.humanFallbackMode).toBe('message');
+    expect(resolveHumanFallbackChoice(messageOnly, 'Oui')).toBe('message');
+
+    const unavailableTransfer = makeSession();
+    recordAssistantReply(unavailableTransfer, 'Voulez-vous que je vous passe le gérant ?');
+    expect(unavailableTransfer.conversation.humanFallbackMode).toBe('transfer');
+    expect(resolveHumanFallbackChoice(unavailableTransfer, 'Oui')).toBe('clarify');
+  });
+
+  it('ne reprend pas une ancienne question après un message pris comme action finale', () => {
+    const session = makeSession();
+    session.managerPhone = '+33600000000';
+    recordAssistantReply(session, 'Vous serez combien ?');
+    const partySize = getActivePendingInteraction(session)!;
+    expect(suspendPendingInteractionForDetour(session, 'Pourquoi ?')).toBe(true);
+    recordAssistantReply(
+      session,
+      'Je peux vous passer le gérant, ou prendre un message pour lui. Que préférez-vous ?',
+    );
+
+    expect(resolveHumanFallbackChoice(session, 'Un message')).toBe('message');
+
+    expect(getActivePendingInteraction(session)).toBeNull();
+    expect(partySize.status).toBe('cancelled');
+  });
+
+  it('annule une ancienne offre quand l’assistant pose une nouvelle question', () => {
+    const session = makeSession();
+    session.managerPhone = '+33600000000';
+    recordAssistantReply(
+      session,
+      'Je peux vous passer le gérant, ou prendre un message pour lui. Que préférez-vous ?',
+    );
+
+    recordAssistantReply(session, 'Désolé, j’ai perdu le fil. On est bien à quatre ?');
+
+    expect(session.conversation.humanFallbackOffered).toBe(false);
+    expect(session.conversation.humanFallbackMode).toBeNull();
+    expect(session.conversation.pendingQuestion).not.toBe('humanFallback');
   });
 
   it('ne répète pas une proposition de repli humain déjà en attente', () => {
@@ -745,13 +958,19 @@ describe('conversation state', () => {
 
   it('propose un transfert réel seulement quand une ligne gérant est configurée', () => {
     const withoutLine = makeSession();
-    expect(buildHumanFallbackOffer(withoutLine)).not.toContain('passer le gérant');
-    expect(withoutLine.conversation.humanFallbackOffered).toBe(true);
+    const messageOnlyOffer = buildHumanFallbackOffer(withoutLine);
+    expect(messageOnlyOffer).not.toContain('passer le gérant');
+    expect(withoutLine.conversation.humanFallbackOffered).toBe(false);
+    recordAssistantReply(withoutLine, messageOnlyOffer);
+    expect(withoutLine.conversation.humanFallbackMode).toBe('message');
 
     const withLine = makeSession();
     withLine.managerPhone = '+33600000000';
-    expect(buildHumanFallbackOffer(withLine)).toContain('passer le gérant');
-    expect(pendingQuestionFrom(buildHumanFallbackOffer(withLine))).toBe('humanFallback');
+    const transferOffer = buildHumanFallbackOffer(withLine);
+    expect(transferOffer).toContain('passer le gérant');
+    expect(pendingQuestionFrom(transferOffer)).toBe('humanFallback');
+    recordAssistantReply(withLine, transferOffer);
+    expect(withLine.conversation.humanFallbackMode).toBe('choice');
   });
 
   it('n’interprète pas une question comme la réponse à un champ manquant', () => {
@@ -846,7 +1065,38 @@ describe('conversation state', () => {
     );
   });
 
-  it('ne fabrique jamais une alternative après une recherche vide', () => {
+  it('déclare le type d’interaction à partir du résultat de disponibilité', () => {
+    const session = makeSession();
+    const request = { date: '2026-09-24', time: '20:00', partySize: 2 };
+
+    expect(buildAvailabilityReplyPlan(session, request, ['20:00']).proposal).toMatchObject({
+      interaction: { kind: 'customerName' },
+    });
+    expect(buildAvailabilityReplyPlan(session, request, ['19:30']).proposal).toMatchObject({
+      interaction: { kind: 'timeChoice' },
+    });
+    expect(buildAvailabilityReplyPlan(session, request, []).proposal).toMatchObject({
+      interaction: { kind: 'date' },
+    });
+  });
+
+  it('ne propose un transfert pour une recherche en erreur que si une ligne existe', () => {
+    const withoutManager = buildAvailabilityErrorPlan(makeSession());
+    expect(withoutManager.reply).not.toContain('passer le gérant');
+    expect(withoutManager.proposal).toMatchObject({
+      interaction: { kind: 'humanFallback', fallbackMode: 'message' },
+    });
+
+    const withManager = makeSession();
+    withManager.managerPhone = '+33600000000';
+    const availableTransfer = buildAvailabilityErrorPlan(withManager);
+    expect(availableTransfer.reply).toContain('passer le gérant');
+    expect(availableTransfer.proposal).toMatchObject({
+      interaction: { kind: 'humanFallback', fallbackMode: 'choice' },
+    });
+  });
+
+  it('déclare un repli réellement disponible après une recherche vide', () => {
     const session = makeSession();
     session.conversation.lastAvailabilityResult = {
       key: '2026-07-23:20:00:2',
@@ -856,9 +1106,28 @@ describe('conversation state', () => {
       slots: [],
     };
 
-    expect(buildAvailabilityFollowupResponse(session, 'Du coup, vous proposez quoi ?')).toBe(
-      "Je n'ai aucun autre créneau vérifié ce jour-là. Je peux vous passer le gérant ou prendre un message.",
+    const plan = buildAvailabilityFollowupPlan(session, 'Du coup, vous proposez quoi ?');
+    expect(plan?.reply).toBe(
+      "Je n'ai aucun autre créneau vérifié ce jour-là. Je peux prendre un message pour le gérant, il vous rappellera. Voulez-vous que je le fasse ?",
     );
+    expect(plan?.proposal).toMatchObject({
+      source: 'explicit',
+      interaction: { kind: 'humanFallback', fallbackMode: 'message' },
+    });
+    recordAssistantReplyWithPolicy(session, plan!.reply, plan!.proposal);
+    expect(getActivePendingInteraction(session)?.fallbackMode).toBe('message');
+
+    const withManagerLine = makeSession();
+    withManagerLine.managerPhone = '+33600000000';
+    withManagerLine.conversation.lastAvailabilityResult =
+      session.conversation.lastAvailabilityResult;
+    const managerPlan = buildAvailabilityFollowupPlan(
+      withManagerLine,
+      'Du coup, vous proposez quoi ?',
+    );
+    expect(managerPlan?.proposal).toMatchObject({
+      interaction: { kind: 'humanFallback', fallbackMode: 'choice' },
+    });
   });
 
   it('demande de préciser le nombre après une transcription ambiguë', () => {

@@ -187,6 +187,20 @@ Pour le diagnostic d'un appel, se fier à `VoiceTurnTelemetry.llmProvider` et
 `openrouterUsed` afin de ne pas confondre une clé présente avec une requête
 effectivement envoyée à OpenRouter.
 
+Le shadow `TurnPlan` est contrôlé par un flag global, sans ciblage par restaurant.
+Quand `VOICE_TURN_PLAN_SHADOW_ENABLED=true`, tous les restaurants sont concernés ;
+`false` le désactive partout. Il ajoute un outil interne à la completion vocale
+Groq/Qwen existante pour recevoir la proposition structurée avec la réponse
+libre ; il ne lance donc pas de requête LLM shadow séparée sur ce chemin. La
+policy valide puis compare la proposition à l’état effectivement conservé.
+Aucune valeur proposée ne modifie la conversation ni n’autorise un effet métier,
+et la télémétrie n’enregistre pas les valeurs de nom/téléphone. Si le modèle
+retourne le tool interne sans contenu parlé, Sokar effectue une génération de
+récupération pour préserver la réponse vocale ; ce cas est tracé `speech_missing`.
+Au prochain déploiement, le workflow staging activera ce flag globalement. La
+promotion du code vers la production ne l'active pas : le flag production reste
+inchangé jusqu'à la fin de l'observation staging et à son activation explicite.
+
 ## Demo restaurant
 
 The seed creates a fictional `Chez Sokar` (slug `chez-sokar-demo`):

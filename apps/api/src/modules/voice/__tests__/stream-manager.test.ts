@@ -22,7 +22,10 @@ import {
 import { voiceConfig, type VoiceConfig } from '../../../env';
 import type { CallSession, ChatMessage } from '../stream/types';
 import type { getRestaurantTools } from '../tools';
-import { getReservationConfirmationKey } from '../stream/conversation-controller';
+import {
+  activatePendingInteraction,
+  getReservationConfirmationKey,
+} from '../stream/conversation-controller';
 
 // ── Module mocks ───────────────────────────────────────────────────────────
 
@@ -108,6 +111,7 @@ import { recommendGiftCardAmount } from '../../gift-cards/gift-card-recommender'
 import { sendSms } from '../../../shared/telnyx/client';
 import { trackGiftCardEvent } from '../../analytics/events.service';
 import { telnyxFetch } from '../../../shared/telnyx/http-agent';
+import { logger } from '../../../shared/logger/pino';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -409,7 +413,7 @@ describe('CallSessionManager — tool execution', () => {
         customerPhone: '+33****0001',
       }),
     );
-    expect(reply).toBe("Parfait, c'est noté.");
+    expect(reply).toContain('Réservation confirmée pour Jean');
   });
 
   it('createReservation : conserve le nom épelé après confirmation', async () => {
@@ -438,7 +442,7 @@ describe('CallSessionManager — tool execution', () => {
     expect(ReservationService.create).toHaveBeenCalledWith(
       expect.objectContaining({ customerName: 'KIF' }),
     );
-    expect(reply).toBe('C’est confirmé.');
+    expect(reply).toContain('Réservation confirmée pour KIF');
   });
 
   it('createReservation : bloque une épellation encore non confirmée', async () => {
@@ -459,7 +463,7 @@ describe('CallSessionManager — tool execution', () => {
     const reply = await mgr.processUtterance(session, 'Au nom de K I F');
 
     expect(ReservationService.create).not.toHaveBeenCalled();
-    expect(reply).toBe('Je vais d’abord vérifier le nom.');
+    expect(reply).toContain("Je dois d'abord confirmer l'orthographe de votre nom.");
   });
 
   it.each(['collecting', 'clarifying', 'confirming'] as const)(
@@ -575,25 +579,26 @@ describe('CallSessionManager — tool execution', () => {
     authorizeReservation(session, '2026-07-16', '12:00', 4, 'Marie');
     const reply = await mgr.processUtterance(session, 'Réserver pour 4');
 
-    // Le tool result contient le message de créneau indisponible,
-    // puis le LLM produit une réponse finale.
-    expect(reply).toBe('Désolé pour le désagrément.');
+    // La réponse vocale annonce le résultat confirmé par le service métier.
+    expect(reply).toContain("ce créneau horaire n'est pas disponible");
     expect(ReservationService.create).toHaveBeenCalled();
   });
 
-  it('createReservation : transfère si le call Telnyx ne possède pas de ligne interne', async () => {
+  it('createReservation : propose un repli si le call Telnyx ne possède pas de ligne interne', async () => {
     vi.mocked(db.call.findUnique).mockResolvedValueOnce(null);
     mockFetchToolCall(
       'createReservation',
       { date: '2026-07-16', time: '19:30', partySize: 2, customerName: 'Jean' },
-      'Je vous transfère au gérant.',
+      'Je ne peux pas enregistrer cette demande. Souhaitez-vous que je vous passe le gérant ?',
     );
 
     const mgr = CallSessionManager.getInstance();
-    const reply = await mgr.processUtterance(makeSession(), 'Je voudrais réserver');
+    const session = makeSession({ managerPhone: '+33612345678' });
+    authorizeReservation(session, '2026-07-16', '19:30', 2, 'Jean');
+    const reply = await mgr.processUtterance(session, 'Je voudrais réserver');
 
     expect(ReservationService.create).not.toHaveBeenCalled();
-    expect(reply).toBe('Je vous transfère au gérant.');
+    expect(reply).toContain('Souhaitez-vous que je vous passe le gérant ?');
   });
 
   it('checkAvailability : retourne les créneaux disponibles', async () => {
@@ -735,7 +740,7 @@ describe('CallSessionManager — tool execution', () => {
     expect(ReservationService.update).not.toHaveBeenCalled();
   });
 
-  it('cancelReservation : transfère au gérant si plusieurs réservations au même nom (ambiguïté)', async () => {
+  it('cancelReservation : ne choisit pas une réservation quand le résultat reste ambigu', async () => {
     vi.mocked(db.reservation.findMany).mockResolvedValue([
       {
         id: 'res-amb-1',
@@ -760,7 +765,7 @@ describe('CallSessionManager — tool execution', () => {
     const session = makeSession();
     await mgr.processUtterance(session, 'Annuler ma résa');
 
-    // Ambiguïté non résolue → PAS d'annulation (handoff au gérant côté tool).
+    // Ambiguïté non résolue → PAS d'annulation.
     expect(ReservationService.update).not.toHaveBeenCalled();
   });
 
@@ -826,7 +831,7 @@ describe('CallSessionManager — tool execution', () => {
     });
   });
 
-  it('cancelReservation : transfère si heure fournie mais plusieurs réservations à cette heure', async () => {
+  it('cancelReservation : garde toutes les réservations si plusieurs correspondent à l’heure', async () => {
     vi.mocked(db.reservation.findMany).mockResolvedValue([
       {
         id: 'res-same-1',
@@ -1095,6 +1100,24 @@ describe('CallSessionManager — tool execution', () => {
     expect(session.history.length).toBeGreaterThan(2);
   });
 
+  it('refuse le tool de transfert sur un « oui » ambigu et remplace la réponse du LLM', async () => {
+    mockFetchToolCall('handoffToManager', {}, 'Le transfert est lancé.');
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession({ managerPhone: '+33612345678' });
+    activatePendingInteraction(
+      session,
+      'humanFallback',
+      'Souhaitez-vous un transfert ou un message ?',
+      { fallbackMode: 'choice' },
+    );
+
+    const reply = await mgr.processUtterance(session, 'Oui');
+
+    expect(telnyxFetch).not.toHaveBeenCalled();
+    expect(reply).toContain("Je n'ai pas lancé le transfert.");
+    expect(reply).not.toContain('Le transfert est lancé.');
+  });
+
   it('recommendGiftCardAmount : appelle le recommender', async () => {
     mockFetchToolCall(
       'recommendGiftCardAmount',
@@ -1167,6 +1190,9 @@ describe('CallSessionManager — tool execution', () => {
     );
     const mgr = CallSessionManager.getInstance();
     const session = makeSession();
+    // processUtterance tests the manager below the handler's deterministic
+    // intent classifier, so set the already-authorized business context.
+    session.conversation.intent = 'gift_card';
     await mgr.processUtterance(session, 'Acheter carte cadeau 50€');
 
     expect(GiftCardService).toHaveBeenCalledWith(db);
@@ -1217,6 +1243,8 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     delete process.env.SOKAR_SIMULATE_MOCK_LLM;
     originalFetch = globalThis.fetch;
     savedVoiceConfig = snapshotVoiceConfig();
+    vi.mocked(telnyxFetch).mockClear();
+    vi.mocked(logger.warn).mockClear();
   });
 
   afterEach(() => {
@@ -1354,16 +1382,62 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const mgr = CallSessionManager.getInstance();
-    const session = makeSession();
+    const session = makeSession({ managerPhone: '+33612345678' });
     const phrases: string[] = [];
 
     const fullText = await mgr.processUtteranceStreaming(session, 'Parler au gérant', (phrase) => {
       phrases.push(phrase);
     });
 
-    expect(fullText).toBe('Transfert en cours.');
-    // Pas de réémission non-streaming : seulement 2 appels fetch (les 2 rounds streaming)
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fullText).toBe(
+      'Le gérant a accepté le transfert. Je vous mets en relation, un instant.',
+    );
+    // Le résultat Telnyx vérifié termine le tour sans laisser le LLM l'inventer.
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('interrompt le stream si la policy refuse un tool de transfert sur « oui »', async () => {
+    const chunks = [
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"tc-1","type":"function","function":{"name":"handoffToManager","arguments":"{}"}}]}}]}\n',
+      'data: [DONE]\n',
+    ];
+    const stream = new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, body: stream });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession({ managerPhone: '+33612345678' });
+    activatePendingInteraction(
+      session,
+      'humanFallback',
+      'Souhaitez-vous un transfert ou un message ?',
+      { fallbackMode: 'choice' },
+    );
+    expect(session.conversation.pendingInteractions).toContainEqual(
+      expect.objectContaining({
+        kind: 'humanFallback',
+        status: 'active',
+        fallbackMode: 'choice',
+      }),
+    );
+    const phrases: string[] = [];
+    const fullText = await mgr.processUtteranceStreaming(session, 'Oui', (phrase) => {
+      phrases.push(phrase);
+    });
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'explicit_transfer_required' }),
+      '[tool] Policy denied voice tool execution',
+    );
+    expect(telnyxFetch).not.toHaveBeenCalled();
+    expect(fullText).toContain("Je n'ai pas lancé le transfert.");
+    expect(phrases).toEqual([fullText]);
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it('reconstruit un tool_call avec arguments fragmentés depuis le stream', async () => {
@@ -1426,7 +1500,7 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
       },
     );
 
-    expect(fullText).toBe("C'est confirmé.");
+    expect(fullText).toContain('Réservation confirmée pour Jean Dupont');
     expect(ReservationService.create).toHaveBeenCalledWith(
       expect.objectContaining({
         restaurantId: 'rest-1',
@@ -1436,8 +1510,8 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
         customerPhone: '+33****0001',
       }),
     );
-    // Seulement 2 appels fetch (les 2 rounds streaming), pas de fallback non-streaming
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Le tour se termine directement sur le résultat de la création.
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it('préserve le texte avant et après un tool_call dans le même stream', async () => {
@@ -1487,15 +1561,17 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
 
     const mgr = CallSessionManager.getInstance();
-    const session = makeSession();
+    const session = makeSession({ managerPhone: '+33612345678' });
     const phrases: string[] = [];
 
     const fullText = await mgr.processUtteranceStreaming(session, 'Parler au gérant', (phrase) => {
       phrases.push(phrase);
     });
 
-    // fullText est le retour du round 1 (dernier round)
-    expect(fullText).toBe('Transfert en cours.');
+    // L'outil retourne l'état Telnyx observé ; aucun texte final LLM ne le remplace.
+    expect(fullText).toBe(
+      'Le gérant a accepté le transfert. Je vous mets en relation, un instant.',
+    );
 
     // Le texte du round 0 (avant et après le tool_call) est dans l'historique
     // comme contenu du message assistant avec tool_calls.
@@ -1506,8 +1582,8 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
     expect(assistantWithToolCalls!.content).toContain('Je vais vérifier');
     expect(assistantWithToolCalls!.content).toContain('Un instant');
 
-    // Seulement 2 appels fetch (les 2 rounds streaming), pas de fallback non-streaming
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Aucun second tour LLM n'est demandé après un transfert accepté.
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   // ── Timeout mid-stream ─────────────────────────────────────────────────────
@@ -1648,6 +1724,276 @@ describe('CallSessionManager — processUtteranceStreaming', () => {
 
     await expect(mgr.processUtteranceStreaming(session, 'Salut', () => {})).rejects.toThrow();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('CallSessionManager — TurnPlan shadow in-band', () => {
+  let originalFetch: typeof globalThis.fetch;
+  let savedVoiceConfig: VoiceConfigSnapshot;
+
+  function makeShadowStream(chunks: string[]): ReadableStream<Uint8Array> {
+    const encoder = new TextEncoder();
+    return new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+        controller.close();
+      },
+    });
+  }
+
+  beforeEach(() => {
+    (CallSessionManager as unknown as { instance: CallSessionManager }).instance =
+      new CallSessionManager();
+    originalFetch = globalThis.fetch;
+    savedVoiceConfig = snapshotVoiceConfig();
+    voiceConfig.GROQ_API_KEY = GROQ_TEST_KEY;
+    _resetCircuitBreakersForTesting();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    restoreVoiceConfig(savedVoiceConfig);
+  });
+
+  it('reçoit le TurnPlan avec la réponse parlée et ne l’exécute jamais comme un outil métier', async () => {
+    const proposal = {
+      interpretation: 'answer',
+      intent: 'unchanged',
+      slots: {},
+      interactionDisposition: 'keep',
+      confidence: 'medium',
+      assistantInteraction: 'partySize',
+    };
+    const sse = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: 'Pour combien de personnes ?' } }] })}\n`,
+      `data: ${JSON.stringify({
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'shadow-1',
+                  type: 'function',
+                  function: { name: 'proposeTurnPlanShadow', arguments: JSON.stringify(proposal) },
+                },
+                {
+                  index: 1,
+                  id: 'late-action',
+                  type: 'function',
+                  function: { name: 'handoffToManager', arguments: '{}' },
+                },
+              ],
+            },
+          },
+        ],
+      })}\n`,
+      'data: [DONE]\n',
+    ];
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: makeShadowStream(sse),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    const onTurnPlanShadowResult = vi.fn();
+    const executeTool = vi.spyOn(
+      mgr as unknown as { executeTool: (...args: unknown[]) => Promise<string> },
+      'executeTool',
+    );
+    const context = {
+      transcript: 'quatre',
+      language: 'fr',
+      timezone: 'Europe/Paris',
+      referenceTime: '2026-09-23T10:00:00.000Z',
+      intent: 'reservation',
+      pendingInteraction: { kind: 'partySize' },
+      slots: {},
+      hasConfirmedName: false,
+    } as const;
+    const response = await mgr.processUtteranceStreaming(
+      session,
+      'Combien de personnes ?',
+      () => {},
+      {
+        turnPlanShadowContext: context,
+        onTurnPlanShadowResult,
+      },
+    );
+
+    expect(response).toBe('Pour combien de personnes ?');
+    expect(onTurnPlanShadowResult).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'valid', plan: proposal }),
+    );
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(
+      requestBody.tools.map((tool: { function: { name: string } }) => tool.function.name),
+    ).toContain('proposeTurnPlanShadow');
+    expect(JSON.stringify(requestBody.messages)).toContain('referenceTime');
+    expect(session.history.at(-1)).toEqual({ role: 'assistant', content: response });
+  });
+
+  it('filtre le tool shadow quand il accompagne un véritable outil métier', async () => {
+    const proposal = {
+      interpretation: 'answer',
+      intent: 'unchanged',
+      slots: {},
+      interactionDisposition: 'keep',
+      confidence: 'medium',
+      assistantInteraction: 'none',
+    };
+    const firstRound = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: 'Je vérifie.' } }] })}\n`,
+      `data: ${JSON.stringify({
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'shadow-1',
+                  type: 'function',
+                  function: { name: 'proposeTurnPlanShadow', arguments: JSON.stringify(proposal) },
+                },
+                {
+                  index: 1,
+                  id: 'business-1',
+                  type: 'function',
+                  function: {
+                    name: 'recommendGiftCardAmount',
+                    arguments: JSON.stringify({ occasion: 'anniversaire', partySize: 4 }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      })}\n`,
+      'data: [DONE]\n',
+    ];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: makeShadowStream(firstRound),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: makeShadowStream([
+          `data: ${JSON.stringify({ choices: [{ delta: { content: 'Je vous conseille cinquante euros.' } }] })}\n`,
+          'data: [DONE]\n',
+        ]),
+      });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    const executeTool = vi
+      .spyOn(
+        mgr as unknown as { executeTool: (...args: unknown[]) => Promise<string> },
+        'executeTool',
+      )
+      .mockResolvedValue('Suggestion calculée.');
+
+    const response = await mgr.processUtteranceStreaming(session, 'Quel montant ?', () => {}, {
+      turnPlanShadowContext: {
+        transcript: 'Quel montant ?',
+        language: 'fr',
+        timezone: 'Europe/Paris',
+        referenceTime: '2026-09-23T10:00:00.000Z',
+        intent: 'gift_card',
+        pendingInteraction: null,
+        slots: {},
+        hasConfirmedName: false,
+      },
+    });
+
+    expect(response).toBe('Je vous conseille cinquante euros.');
+    expect(executeTool).toHaveBeenCalledTimes(1);
+    expect(executeTool.mock.calls[0][1]).toBe('recommendGiftCardAmount');
+    expect(executeTool.mock.calls.some((call) => call[1] === 'proposeTurnPlanShadow')).toBe(false);
+  });
+
+  it('récupère une réponse parlée si le modèle choisit le tool shadow seul', async () => {
+    const planOnly = {
+      interpretation: 'answer',
+      intent: 'unchanged',
+      slots: {},
+      interactionDisposition: 'keep',
+      confidence: 'low',
+      assistantInteraction: 'none',
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: makeShadowStream([
+          `data: ${JSON.stringify({
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: 'shadow-only',
+                      type: 'function',
+                      function: {
+                        name: 'proposeTurnPlanShadow',
+                        arguments: JSON.stringify(planOnly),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          })}\n`,
+          'data: [DONE]\n',
+        ]),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: makeShadowStream([
+          `data: ${JSON.stringify({ choices: [{ delta: { content: 'Je vous écoute.' } }] })}\n`,
+          'data: [DONE]\n',
+        ]),
+      });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    const onTurnPlanShadowResult = vi.fn();
+    const executeTool = vi.spyOn(
+      mgr as unknown as { executeTool: (...args: unknown[]) => Promise<string> },
+      'executeTool',
+    );
+
+    const response = await mgr.processUtteranceStreaming(session, 'Oui', () => {}, {
+      turnPlanShadowContext: {
+        transcript: 'Oui',
+        language: 'fr',
+        timezone: 'Europe/Paris',
+        referenceTime: '2026-09-23T10:00:00.000Z',
+        intent: null,
+        pendingInteraction: null,
+        slots: {},
+        hasConfirmedName: false,
+      },
+      onTurnPlanShadowResult,
+    });
+
+    expect(response).toBe('Je vous écoute.');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(onTurnPlanShadowResult).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'speech_missing' }),
+    );
+    expect(session.history.some((message) => message.content.includes('shadow-only'))).toBe(false);
   });
 });
 

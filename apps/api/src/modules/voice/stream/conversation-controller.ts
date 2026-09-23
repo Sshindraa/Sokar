@@ -2,12 +2,28 @@ import type {
   CallSession,
   ConversationState,
   DialogueStallLevel,
+  HumanFallbackMode,
+  PendingInteraction,
+  PendingInteractionKind,
+  PendingInteractionStatus,
   NameCollection,
   PendingQuestion,
   SpellingToken,
   VoiceSpeechAct,
 } from './types';
 import { effectiveVoiceLanguage, type VoiceLanguageCode } from './voice-language';
+import {
+  decideAssistantInteractionPolicy,
+  decideTurnPolicy,
+  type AssistantInteractionPolicyDecision,
+  type AssistantInteractionProposal,
+  type PartySizeEvidence,
+} from './turn-policy';
+
+export interface AssistantReplyEmissionPlan {
+  reply: string;
+  proposal: AssistantInteractionProposal;
+}
 
 export function createNameCollection(): NameCollection {
   return {
@@ -32,6 +48,8 @@ export function createConversationState(): ConversationState {
     lastAvailabilityResult: null,
     pendingQuestion: null,
     lastAssistantQuestion: null,
+    pendingInteractions: [],
+    nextPendingInteractionId: 1,
     pendingReservationConfirmationKey: null,
     confirmedReservationKey: null,
     spellingCandidate: null,
@@ -40,9 +58,219 @@ export function createConversationState(): ConversationState {
     stalledTurns: 0,
     stallSignature: null,
     humanFallbackOffered: false,
+    humanFallbackMode: null,
     lastDialogueGuard: null,
     closing: false,
   };
+}
+
+function interactionDomain(kind: PendingInteractionKind): PendingInteractionKind {
+  return kind === 'partySizeConfirmation' ? 'partySize' : kind;
+}
+
+export function getActivePendingInteraction(
+  session: Pick<CallSession, 'conversation'>,
+): PendingInteraction | null {
+  return (
+    [...(session.conversation.pendingInteractions ?? [])]
+      .reverse()
+      .find((interaction) => interaction.status === 'active') ?? null
+  );
+}
+
+function syncPendingInteractionProjection(session: Pick<CallSession, 'conversation'>): void {
+  const interaction = getActivePendingInteraction(session);
+  session.conversation.pendingQuestion =
+    interaction && interaction.kind !== 'open' ? interaction.kind : null;
+  session.conversation.lastAssistantQuestion = interaction?.prompt ?? null;
+  session.conversation.humanFallbackOffered = interaction?.kind === 'humanFallback';
+  session.conversation.humanFallbackMode =
+    interaction?.kind === 'humanFallback' ? (interaction.fallbackMode ?? null) : null;
+}
+
+/** Ouvre ou actualise une interaction en conservant l'historique de son cycle de vie. */
+export function activatePendingInteraction(
+  session: CallSession,
+  kind: PendingInteractionKind,
+  prompt: string,
+  details: { fallbackMode?: Exclude<HumanFallbackMode, null>; candidatePartySize?: number } = {},
+): PendingInteraction {
+  const { pendingInteractions } = session.conversation;
+  const active = getActivePendingInteraction(session);
+  if (active?.kind === kind) {
+    active.prompt = prompt;
+    active.resumePolicy = null;
+    active.intentContext = session.conversation.intent;
+    active.fallbackMode = details.fallbackMode;
+    active.candidatePartySize = details.candidatePartySize;
+    syncPendingInteractionProjection(session);
+    return active;
+  }
+  if (active) active.status = 'cancelled';
+
+  const resumable = [...pendingInteractions]
+    .reverse()
+    .find(
+      (interaction) =>
+        interaction.status === 'suspended' &&
+        interaction.resumePolicy === 'resume_after_child' &&
+        interaction.kind === kind,
+    );
+  if (resumable) {
+    resumable.status = 'active';
+    resumable.prompt = prompt;
+    resumable.resumePolicy = null;
+    resumable.fallbackMode = details.fallbackMode;
+    resumable.candidatePartySize = details.candidatePartySize;
+    for (const interaction of pendingInteractions) {
+      if (
+        interaction !== resumable &&
+        interaction.status === 'suspended' &&
+        interaction.resumePolicy === 'discard_on_detour'
+      ) {
+        interaction.status = 'cancelled';
+      }
+    }
+    syncPendingInteractionProjection(session);
+    return resumable;
+  }
+
+  for (const interaction of pendingInteractions) {
+    if (interaction.status !== 'suspended') continue;
+    if (
+      interaction.resumePolicy === 'discard_on_detour' ||
+      interactionDomain(interaction.kind) === interactionDomain(kind)
+    ) {
+      interaction.status = 'cancelled';
+    }
+  }
+
+  const interaction: PendingInteraction = {
+    id: session.conversation.nextPendingInteractionId++,
+    kind,
+    prompt,
+    status: 'active',
+    resumePolicy: null,
+    intentContext: session.conversation.intent,
+    ...details,
+  };
+  pendingInteractions.push(interaction);
+  // Keep a bounded per-call trace while retaining recent terminal states.
+  if (pendingInteractions.length > 64)
+    pendingInteractions.splice(0, pendingInteractions.length - 64);
+  syncPendingInteractionProjection(session);
+  return interaction;
+}
+
+/** Suspend une question pendant une digression, en définissant si elle peut reprendre. */
+export function suspendPendingInteractionForDetour(
+  session: CallSession,
+  transcript: string,
+): boolean {
+  const interaction = getActivePendingInteraction(session);
+  if (!interaction || !isExploratoryUtterance(transcript)) return false;
+  if (
+    interaction.kind === 'humanFallback' &&
+    (isAffirmativeShortResponse(transcript) ||
+      isNegativeShortResponse(transcript) ||
+      isHumanFallbackDecline(transcript) ||
+      explicitlySelectsTransfer(transcript) ||
+      explicitlySelectsMessage(transcript))
+  ) {
+    return false;
+  }
+  if (
+    (interaction.kind === 'partySize' &&
+      (extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris').partySize !==
+        undefined ||
+        extractContextualPartySize(transcript) !== null)) ||
+    (interaction.kind === 'partySizeConfirmation' &&
+      (isAffirmativeShortResponse(transcript) || extractContextualPartySize(transcript) !== null))
+  ) {
+    return false;
+  }
+
+  interaction.status = 'suspended';
+  interaction.resumePolicy =
+    interaction.kind === 'humanFallback' ? 'discard_on_detour' : 'resume_after_child';
+  syncPendingInteractionProjection(session);
+  return true;
+}
+
+/** Termine l'interaction active et reprend, si possible, une interaction suspendue. */
+export function finishActivePendingInteraction(
+  session: Pick<CallSession, 'conversation'>,
+  status: Extract<PendingInteractionStatus, 'resolved' | 'cancelled'>,
+  fulfilledDomain?: PendingInteractionKind,
+): void {
+  const active = getActivePendingInteraction(session);
+  if (active) active.status = status;
+  if (fulfilledDomain) {
+    for (const interaction of session.conversation.pendingInteractions) {
+      if (
+        interaction.status === 'suspended' &&
+        interactionDomain(interaction.kind) === interactionDomain(fulfilledDomain)
+      ) {
+        interaction.status = 'cancelled';
+      }
+    }
+  }
+  if (status === 'resolved') {
+    const resumable = [...session.conversation.pendingInteractions]
+      .reverse()
+      .find(
+        (interaction) =>
+          interaction.status === 'suspended' && interaction.resumePolicy === 'resume_after_child',
+      );
+    if (resumable) {
+      resumable.status = 'active';
+      resumable.resumePolicy = null;
+    }
+  }
+  syncPendingInteractionProjection(session);
+}
+
+function cancelAllPendingInteractions(session: CallSession): void {
+  for (const interaction of session.conversation.pendingInteractions) {
+    if (interaction.status === 'active' || interaction.status === 'suspended') {
+      interaction.status = 'cancelled';
+    }
+  }
+  syncPendingInteractionProjection(session);
+}
+
+function cancelPendingInteractionsByKind(session: CallSession, kind: PendingInteractionKind): void {
+  const active = getActivePendingInteraction(session);
+  for (const interaction of session.conversation.pendingInteractions) {
+    if (
+      interaction.kind === kind &&
+      (interaction.status === 'active' || interaction.status === 'suspended')
+    ) {
+      interaction.status = 'cancelled';
+    }
+  }
+  if (active?.kind === kind) resumeSuspendedPendingInteraction(session);
+  else syncPendingInteractionProjection(session);
+}
+
+function resumeSuspendedPendingInteraction(session: CallSession): void {
+  if (getActivePendingInteraction(session)) return;
+  const resumable = [...session.conversation.pendingInteractions]
+    .reverse()
+    .find(
+      (interaction) =>
+        interaction.status === 'suspended' && interaction.resumePolicy === 'resume_after_child',
+    );
+  for (const interaction of session.conversation.pendingInteractions) {
+    if (interaction.status === 'suspended' && interaction.resumePolicy === 'discard_on_detour') {
+      interaction.status = 'cancelled';
+    }
+  }
+  if (resumable) {
+    resumable.status = 'active';
+    resumable.resumePolicy = null;
+  }
+  syncPendingInteractionProjection(session);
 }
 
 function normalizeTranscript(value: string): string {
@@ -79,8 +307,7 @@ export function clearReservationConfirmation(session: Pick<CallSession, 'convers
   session.conversation.pendingReservationConfirmationKey = null;
   session.conversation.confirmedReservationKey = null;
   if (session.conversation.pendingQuestion === 'confirmation') {
-    session.conversation.pendingQuestion = null;
-    session.conversation.lastAssistantQuestion = null;
+    finishActivePendingInteraction(session, 'cancelled');
   }
 }
 
@@ -97,6 +324,12 @@ export function confirmReservationDraft(session: Pick<CallSession, 'conversation
 
   session.conversation.confirmedReservationKey = currentKey;
   session.conversation.pendingReservationConfirmationKey = null;
+  const confirmation = getActivePendingInteraction(session);
+  if (confirmation?.kind === 'confirmation') confirmation.status = 'resolved';
+  for (const interaction of session.conversation.pendingInteractions) {
+    if (interaction.status === 'suspended') interaction.status = 'cancelled';
+  }
+  syncPendingInteractionProjection(session);
   return true;
 }
 
@@ -717,8 +950,7 @@ export function resetNameCollectionAfterFallback(session: CallSession): void {
   collection.confirmedName = null;
   collection.fallbackRecorded = true;
   session.conversation.spellingCandidate = null;
-  session.conversation.pendingQuestion = null;
-  session.conversation.lastAssistantQuestion = null;
+  cancelPendingInteractionsByKind(session, 'customerName');
   session.conversation.slots.customerName = undefined;
 }
 
@@ -946,8 +1178,7 @@ function resetNameCollectionAfterClosing(session: CallSession, collection: NameC
   collection.presentedCandidate = null;
   collection.confirmedName = confirmedName;
   session.conversation.spellingCandidate = null;
-  session.conversation.pendingQuestion = null;
-  session.conversation.lastAssistantQuestion = null;
+  cancelPendingInteractionsByKind(session, 'customerName');
   if (!confirmedName) session.conversation.slots.customerName = undefined;
 }
 
@@ -1249,8 +1480,9 @@ export function handleCustomerNameTurn(
     collection.fallbackRecorded = false;
     session.conversation.slots.customerName = confirmedName;
     session.conversation.spellingCandidate = null;
-    session.conversation.pendingQuestion = null;
-    session.conversation.lastAssistantQuestion = null;
+    if (getActivePendingInteraction(session)?.kind === 'customerName') {
+      finishActivePendingInteraction(session, 'resolved', 'customerName');
+    }
     return { response: null, confirmedName };
   }
 
@@ -1527,6 +1759,7 @@ export function classifyVoiceSpeechActInContext(
   transcript: string,
 ): VoiceSpeechAct {
   const pending = session.conversation.pendingQuestion;
+  if (pending === 'humanFallback' && isHumanFallbackDecline(transcript)) return 'correction';
   if (pending && (isAffirmativeShortResponse(transcript) || isNegativeShortResponse(transcript))) {
     return isNegativeShortResponse(transcript) ? 'correction' : 'content';
   }
@@ -1845,6 +2078,22 @@ export function buildAvailabilityReply(
   return `Alors ${time} c'est complet, par contre j'ai ${alternatives}. Ça vous irait ?`;
 }
 
+export function buildAvailabilityReplyPlan(
+  session: CallSession,
+  request: { date: string; time: string; partySize: number },
+  availableSlots: string[],
+  language: VoiceLanguageCode = 'fr',
+): AssistantReplyEmissionPlan {
+  const reply = buildAvailabilityReply(request, availableSlots, language);
+  const kind: PendingInteractionKind =
+    availableSlots.length === 0
+      ? 'date'
+      : availableSlots.includes(request.time)
+        ? 'customerName'
+        : 'timeChoice';
+  return buildExplicitInteractionReplyPlan(session, reply, kind);
+}
+
 export interface AvailabilityLlmContextInput {
   request: { date: string; time: string; partySize: number };
   availableSlots: string[];
@@ -1904,10 +2153,26 @@ export function buildAvailabilityLlmContext({
  * confirme jamais le créneau et ne demande pas le nom avant une vérification
  * réussie.
  */
-export function buildAvailabilityErrorReply(language: VoiceLanguageCode = 'fr'): string {
-  return language === 'en'
-    ? "I can't check that time right now. Would you like me to put you through to the manager?"
-    : "Je n'arrive pas à vérifier ce créneau pour le moment. Voulez-vous que je vous passe le gérant ?";
+export function buildAvailabilityErrorReply(
+  language: VoiceLanguageCode = 'fr',
+  managerConfigured = false,
+): string {
+  if (language === 'en') {
+    return managerConfigured
+      ? "I can't check that time right now. I can put you through to the manager or take a message. Which do you prefer?"
+      : "I can't check that time right now, but I can take a message for the manager. Would you like me to do that?";
+  }
+  return managerConfigured
+    ? "Je n'arrive pas à vérifier ce créneau pour le moment. Je peux vous passer le gérant ou prendre un message. Que préférez-vous ?"
+    : "Je n'arrive pas à vérifier ce créneau pour le moment, mais je peux prendre un message pour le gérant. Voulez-vous que je le fasse ?";
+}
+
+export function buildAvailabilityErrorPlan(session: CallSession): AssistantReplyEmissionPlan {
+  const reply = buildAvailabilityErrorReply(
+    effectiveVoiceLanguage(session),
+    Boolean(session.managerPhone?.trim()),
+  );
+  return buildExplicitInteractionReplyPlan(session, reply, 'humanFallback');
 }
 
 const CUSTOMER_NAME_STOP_WORDS = new Set([
@@ -2020,74 +2285,144 @@ export function recordUserTurn(
   now = new Date(),
 ): void {
   if (speechAct === 'closing') {
+    const closingInteraction = getActivePendingInteraction(session);
+    const decision = decideTurnPolicy(
+      {
+        speechAct,
+        intent: session.conversation.intent,
+        slots: session.conversation.slots,
+        customerName: session.conversation.slots.customerName,
+        activeInteractionKind:
+          closingInteraction?.kind === 'open' ? null : (closingInteraction?.kind ?? null),
+      },
+      {
+        intent: null,
+        slots: {},
+        partySizeEvidence: 'none',
+        customerName: null,
+        wantsAvailabilityOptions: false,
+      },
+    );
+    if (decision.disposition !== 'close') return;
     session.conversation.closing = true;
-    clearReservationConfirmation(session);
+    cancelAllPendingInteractions(session);
+    if (decision.clearReservationConfirmation) clearReservationConfirmation(session);
     return;
   }
 
-  if (speechAct === 'content' || speechAct === 'correction') {
-    session.conversation.closing = false;
-    if (speechAct === 'correction') clearReservationConfirmation(session);
-    session.conversation.intent = inferIntent(transcript) ?? session.conversation.intent;
-    const extracted = extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris', now);
-    const current = session.conversation.slots;
-    const offered = session.conversation.offeredAvailability;
-    if (
-      offered &&
-      session.conversation.pendingQuestion === 'timeChoice' &&
-      offered.date === current.date &&
-      offered.partySize === current.partySize &&
-      !extracted.date &&
-      !extracted.partySize &&
-      !extracted.time
-    ) {
-      const choice = normalizeTranscript(transcript).match(
-        /^(?:(?:le|la|the) )?(premier|premiere|deuxieme|second|seconde|troisieme|dernier|derniere|first|second|third|last)(?: (?:creneau|horaire|one))?(?: s il vous plait| please)?$/,
-      );
-      if (choice) {
-        const index = /premier|first/.test(choice[1])
-          ? 0
-          : /deuxieme|second/.test(choice[1])
-            ? 1
-            : /troisieme|third/.test(choice[1])
-              ? 2
-              : offered.slots.length - 1;
-        extracted.time = offered.slots[index];
+  const activeInteraction = getActivePendingInteraction(session);
+  const activeKind =
+    activeInteraction?.kind === 'open'
+      ? null
+      : (activeInteraction?.kind ?? session.conversation.pendingQuestion);
+  const extracted = extractConversationSlots(transcript, session.timezone ?? 'Europe/Paris', now);
+  let partySizeEvidence: PartySizeEvidence =
+    extracted.partySize === undefined ? 'none' : 'explicit';
+
+  if (activeKind === 'partySize' && extracted.partySize === undefined) {
+    const contextualPartySize = extractContextualPartySize(transcript);
+    if (contextualPartySize !== null) {
+      extracted.partySize = contextualPartySize;
+      partySizeEvidence = 'contextual';
+    }
+  }
+  if (activeKind === 'partySizeConfirmation') {
+    if (isAffirmativeShortResponse(transcript)) {
+      const candidatePartySize = activeInteraction?.candidatePartySize;
+      if (candidatePartySize !== undefined) {
+        extracted.partySize = candidatePartySize;
+        partySizeEvidence = 'confirmation';
+      }
+    } else {
+      const contextualPartySize = extractContextualPartySize(transcript);
+      if (contextualPartySize !== null) {
+        extracted.partySize = contextualPartySize;
+        partySizeEvidence = 'contextual';
       }
     }
-    const wantsAvailabilityOptions = asksForAvailabilityOptions(transcript);
-    if (wantsAvailabilityOptions) {
-      session.conversation.wantsAvailabilityOptions = true;
-      session.conversation.intent ??= 'availability';
-    }
-    const plainCustomerName = extractPlainCustomerName(
-      transcript,
-      session.conversation.pendingQuestion === 'customerName' && !isNameCollectionBlocking(session),
-    );
-    const slotChanged = (['date', 'time', 'partySize'] as const).some(
-      (slot) => extracted[slot] !== undefined && extracted[slot] !== current[slot],
-    );
-    const customerNameChanged =
-      plainCustomerName !== null &&
-      normalizeTranscript(plainCustomerName) !== normalizeTranscript(current.customerName ?? '');
-    if (slotChanged || customerNameChanged) {
-      clearReservationConfirmation(session);
-    }
-    if (slotChanged) {
-      session.conversation.offeredAvailability = undefined;
-      session.conversation.lastAvailabilityResult = null;
-      session.conversation.lastAvailabilityCheck = null;
-    }
-    Object.assign(current, extracted);
-    if (plainCustomerName) current.customerName = plainCustomerName;
+  }
 
-    // Un tour qui a fait avancer le brouillon remet le garde-fou à zéro : la
-    // relance suivante est une première relance, pas une répétition.
-    if (slotChanged || customerNameChanged || wantsAvailabilityOptions) {
+  const current = session.conversation.slots;
+  const offered = session.conversation.offeredAvailability;
+  if (
+    offered &&
+    activeKind === 'timeChoice' &&
+    offered.date === current.date &&
+    offered.partySize === current.partySize &&
+    !extracted.date &&
+    !extracted.partySize &&
+    !extracted.time
+  ) {
+    const choice = normalizeTranscript(transcript).match(
+      /^(?:(?:le|la|the) )?(premier|premiere|deuxieme|second|seconde|troisieme|dernier|derniere|first|second|third|last)(?: (?:creneau|horaire|one))?(?: s il vous plait| please)?$/,
+    );
+    if (choice) {
+      const index = /premier|first/.test(choice[1])
+        ? 0
+        : /deuxieme|second/.test(choice[1])
+          ? 1
+          : /troisieme|third/.test(choice[1])
+            ? 2
+            : offered.slots.length - 1;
+      const selectedTime = offered.slots[index];
+      if (selectedTime) extracted.time = selectedTime;
+    }
+  }
+
+  const wantsAvailabilityOptions = asksForAvailabilityOptions(transcript);
+  const plainCustomerName = extractPlainCustomerName(
+    transcript,
+    session.conversation.pendingQuestion === 'customerName' && !isNameCollectionBlocking(session),
+  );
+  const decision = decideTurnPolicy(
+    {
+      speechAct,
+      intent: session.conversation.intent,
+      slots: current,
+      customerName: current.customerName,
+      activeInteractionKind: activeKind,
+      ...(activeInteraction?.candidatePartySize !== undefined
+        ? { activeInteractionCandidatePartySize: activeInteraction.candidatePartySize }
+        : {}),
+    },
+    {
+      intent: inferIntent(transcript),
+      slots: extracted,
+      partySizeEvidence,
+      customerName: plainCustomerName,
+      wantsAvailabilityOptions,
+    },
+  );
+  if (decision.disposition === 'ignore') return;
+
+  session.conversation.closing = false;
+  if (decision.clearReservationConfirmation) clearReservationConfirmation(session);
+  if (decision.intent) session.conversation.intent = decision.intent;
+  if (decision.wantsAvailabilityOptions) session.conversation.wantsAvailabilityOptions = true;
+  if (decision.invalidateAvailability) {
+    session.conversation.offeredAvailability = undefined;
+    session.conversation.lastAvailabilityResult = null;
+    session.conversation.lastAvailabilityCheck = null;
+  }
+  Object.assign(current, decision.slots);
+  if (decision.customerName) current.customerName = decision.customerName;
+
+  if (activeInteraction && decision.resolveInteraction) {
+    finishActivePendingInteraction(session, 'resolved', decision.resolveInteraction);
+  }
+
+  // Un tour qui a fait avancer le brouillon remet le garde-fou à zéro : la
+  // relance suivante est une première relance, pas une répétition.
+  if (decision.progressed) {
+    // Une proposition de repli humain devient caduque dès que l'appelant
+    // apporte une information : le parcours de réservation reprend.
+    if (
+      session.conversation.humanFallbackOffered ||
+      session.conversation.pendingQuestion === 'humanFallback'
+    ) {
+      clearHumanFallback(session);
+    } else {
       resetDialogueStall(session);
-      // Une proposition de repli humain devient caduque dès que l'appelant
-      // apporte une information : le parcours de réservation reprend.
-      session.conversation.humanFallbackOffered = false;
     }
   }
 }
@@ -2132,33 +2467,45 @@ export function selectClosestAvailabilitySlots(
     .slice(0, limit);
 }
 
-export function buildAvailabilityFollowupResponse(
+export function buildAvailabilityFollowupPlan(
   session: CallSession,
   transcript: string,
-): string | null {
+): AssistantReplyEmissionPlan | null {
   if (!asksForAvailabilityAlternative(transcript)) return null;
   const result = session.conversation.lastAvailabilityResult;
   if (!result) return null;
   const language = effectiveVoiceLanguage(session);
 
   if (result.slots.length === 0) {
-    return language === 'en'
-      ? "I don't have another verified time that day. I can put you through to the manager or take a message."
-      : "Je n'ai aucun autre créneau vérifié ce jour-là. Je peux vous passer le gérant ou prendre un message.";
+    const noAlternative =
+      language === 'en'
+        ? "I don't have another verified time that day."
+        : "Je n'ai aucun autre créneau vérifié ce jour-là.";
+    const reply = `${noAlternative} ${buildHumanFallbackOffer(session)}`;
+    return buildExplicitInteractionReplyPlan(session, reply, 'humanFallback');
   }
 
   const alternatives = selectClosestAvailabilitySlots(result.time, result.slots)
     .map((slot) => formatAvailabilitySlot(slot, language))
     .join(language === 'en' ? ' or ' : ' ou ');
-  return language === 'en'
-    ? `I can offer ${alternatives}. Which one works for you?`
-    : `Je peux vous proposer ${alternatives}. Lequel vous convient ?`;
+  const reply =
+    language === 'en'
+      ? `I can offer ${alternatives}. Which one works for you?`
+      : `Je peux vous proposer ${alternatives}. Lequel vous convient ?`;
+  return buildExplicitInteractionReplyPlan(session, reply, 'timeChoice');
 }
 
-export function buildReservationProgressResponse(
+export function buildAvailabilityFollowupResponse(
+  session: CallSession,
+  transcript: string,
+): string | null {
+  return buildAvailabilityFollowupPlan(session, transcript)?.reply ?? null;
+}
+
+export function buildReservationProgressPlan(
   session: CallSession,
   transcript = '',
-): string | null {
+): AssistantReplyEmissionPlan | null {
   const { intent, slots } = session.conversation;
   if (intent !== 'reservation' && intent !== 'availability') return null;
   // Une conversation qui se clôt ne doit plus relancer le formulaire.
@@ -2192,19 +2539,19 @@ export function buildReservationProgressResponse(
 
   const language = effectiveVoiceLanguage(session);
   if (!slots.date)
-    return guardDialogueReprompt(
+    return guardDialogueRepromptPlan(
       session,
       'date',
       language === 'en' ? 'What day would you like to come?' : 'Pour quel jour ?',
     );
   if (!slots.partySize)
-    return guardDialogueReprompt(
+    return guardDialogueRepromptPlan(
       session,
       'partySize',
       language === 'en' ? 'How many people will there be?' : 'Vous serez combien ?',
     );
   if (!slots.time)
-    return guardDialogueReprompt(
+    return guardDialogueRepromptPlan(
       session,
       'time',
       language === 'en'
@@ -2212,6 +2559,13 @@ export function buildReservationProgressResponse(
         : 'Vous voulez venir vers quelle heure ?',
     );
   return null;
+}
+
+export function buildReservationProgressResponse(
+  session: CallSession,
+  transcript = '',
+): string | null {
+  return buildReservationProgressPlan(session, transcript)?.reply ?? null;
 }
 
 /**
@@ -2243,9 +2597,71 @@ function isAmbiguousPartySizeReply(session: CallSession, transcript: string): bo
  * déclencher une action réelle au lieu de relancer le formulaire.
  */
 export function isHumanFallbackOfferText(text: string): boolean {
-  return /\b(?:passe(?:r)? le gerant|transferer au gerant|prendre un message|laisser un message|take a message|put you through|connect you to the manager)\b/.test(
-    normalizeTranscript(text),
+  const normalized = normalizeTranscript(text);
+  return containsHumanTransferOffer(normalized) || containsHumanMessageOffer(normalized);
+}
+
+function containsHumanTransferOffer(normalized: string): boolean {
+  return /\b(?:passe(?:r)? le gerant|transferer au gerant|transfert au gerant|put you through|connect you to the manager)\b/.test(
+    normalized,
   );
+}
+
+function containsHumanMessageOffer(normalized: string): boolean {
+  return /\b(?:(?:prendre|prenne|laisser|laisse) un message|take a message|leave a message)\b/.test(
+    normalized,
+  );
+}
+
+const SPOKEN_PARTY_SIZE_PATTERN =
+  '(\\d{1,2}|zero|un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|onze|douze|treize|quatorze|quinze|seize|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen)';
+
+function partySizeFromNumberToken(token: string): number | null {
+  const normalized = normalizeTranscript(token);
+  const value =
+    FRENCH_NUMBER_UNITS[normalized] ??
+    ENGLISH_NUMBER_WORDS[normalized] ??
+    (/^\d{1,2}$/.test(normalized) ? Number(normalized) : null);
+  // Le parcours vocal de réservation et ses outils sont bornés à sept
+  // couverts ; le contexte ne doit pas contourner cette validation.
+  return value !== null && value >= 1 && value <= 7 ? value : null;
+}
+
+/** Lit un nombre sans unité quand la question active attend explicitement les couverts. */
+function extractContextualPartySize(transcript: string): number | null {
+  const normalized = normalizeTranscript(transcript);
+  const contextualPattern = new RegExp(
+    `\\b(?:on (?:serait|sera|serons|est|ferait|fait|vient)|nous (?:serions|serons|sommes|ferions|faisons|venons)|vous (?:etes|seriez|serez)|we (?:are|will be)|there (?:will be|are))\\s+(?:bien\\s+)?(?:a|pour)?\\s*${SPOKEN_PARTY_SIZE_PATTERN}\\b`,
+    'g',
+  );
+  const contextualMatches = [...normalized.matchAll(contextualPattern)];
+  if (contextualMatches.length) {
+    const values = contextualMatches
+      .map((match) => partySizeFromNumberToken(match[1]))
+      .filter((value): value is number => value !== null);
+    if (new Set(values).size === 1) return values[0];
+    return null;
+  }
+
+  const bareAnswer = normalized.match(
+    new RegExp(
+      `^(?:oui |ouais |alors |ben |non |plutot |en fait )?${SPOKEN_PARTY_SIZE_PATTERN}(?: personnes?| people| guests?)?$`,
+    ),
+  );
+  return bareAnswer ? partySizeFromNumberToken(bareAnswer[1]) : null;
+}
+
+function partySizeConfirmationCandidate(question: string): number | null {
+  if (!question.includes('?')) return null;
+  return extractContextualPartySize(question);
+}
+
+function humanFallbackModeFromText(text: string): 'choice' | 'transfer' | 'message' {
+  const normalized = normalizeTranscript(text);
+  const offersTransfer = containsHumanTransferOffer(normalized);
+  const offersMessage = containsHumanMessageOffer(normalized);
+  if (offersTransfer && offersMessage) return 'choice';
+  return offersTransfer ? 'transfer' : 'message';
 }
 
 export function pendingQuestionFrom(question: string): PendingQuestion {
@@ -2253,6 +2669,7 @@ export function pendingQuestionFrom(question: string): PendingQuestion {
   // Proposition de repli humain : la réponse de l'appelant doit déclencher une
   // action réelle (transfert ou prise de message), pas une relance du formulaire.
   if (isHumanFallbackOfferText(question)) return 'humanFallback';
+  if (partySizeConfirmationCandidate(question) !== null) return 'partySizeConfirmation';
   if (/\b(?:quelle date|quel jour|quand|what day|which day|what date|when)/.test(normalized))
     return 'date';
   if (
@@ -2289,9 +2706,11 @@ export function pendingQuestionFrom(question: string): PendingQuestion {
   return null;
 }
 
-export function recordAssistantReply(session: CallSession, reply: string): void {
-  const lastQuestion = reply.match(/([^.!?\n]+\?)\s*$/u)?.[1]?.trim() ?? null;
-  session.conversation.lastAssistantQuestion = lastQuestion;
+function proposeAssistantInteractionFromLlmText(
+  session: CallSession,
+  reply: string,
+): AssistantInteractionProposal {
+  const lastQuestion = finalAssistantQuestion(reply);
   let pendingQuestion: PendingQuestion = null;
   if (lastQuestion) {
     // Une confirmation d'épellation (« A-K-I-F, c'est bien cela ? ») porte
@@ -2310,21 +2729,99 @@ export function recordAssistantReply(session: CallSession, reply: string): void 
   }
   // Une proposition de repli humain peut s'étaler sur plusieurs phrases : on
   // l'analyse sur le texte complet, pas seulement sur la dernière question.
-  const fallbackOffer =
-    session.conversation.humanFallbackOffered || isHumanFallbackOfferText(reply);
-  const effectivePendingQuestion: PendingQuestion = fallbackOffer
+  // L'état précédent ne survit pas à une nouvelle réponse de l'agent : une
+  // question de réservation ultérieure remplace l'ancienne proposition.
+  const fallbackOffer = isHumanFallbackOfferText(reply);
+  const interactionKind: PendingInteractionKind | null = fallbackOffer
     ? 'humanFallback'
-    : pendingQuestion;
-  session.conversation.pendingQuestion = effectivePendingQuestion;
-  if (fallbackOffer) session.conversation.humanFallbackOffered = true;
+    : (pendingQuestion ?? (lastQuestion ? 'open' : null));
+  if (!interactionKind) return { source: 'llm_text_fallback', operation: 'cancel' };
+  return {
+    source: 'llm_text_fallback',
+    operation: 'activate',
+    interaction: {
+      kind: interactionKind,
+      prompt: interactionKind === 'humanFallback' ? reply : (lastQuestion ?? reply),
+      ...(fallbackOffer ? { fallbackMode: humanFallbackModeFromText(reply) } : {}),
+      ...(interactionKind === 'partySizeConfirmation'
+        ? {
+            candidatePartySize: partySizeConfirmationCandidate(lastQuestion ?? reply) ?? undefined,
+          }
+        : {}),
+    },
+  };
+}
 
-  if (effectivePendingQuestion === 'confirmation') {
-    // Chaque nouveau récapitulatif remplace l'ancien. L'accord doit porter
-    // sur exactement ce brouillon, jamais sur une confirmation plus ancienne.
-    session.conversation.pendingReservationConfirmationKey = getReservationConfirmationKey(session);
+/** Extracts presentation text only; it does not infer an interaction kind. */
+export function finalAssistantQuestion(reply: string): string | null {
+  return reply.match(/([^.!?\n]+\?)\s*$/u)?.[1]?.trim() ?? null;
+}
+
+function buildExplicitInteractionReplyPlan(
+  session: CallSession,
+  reply: string,
+  kind: PendingInteractionKind,
+): AssistantReplyEmissionPlan {
+  const prompt = kind === 'humanFallback' ? reply : (finalAssistantQuestion(reply) ?? reply);
+  const interaction: NonNullable<AssistantInteractionProposal['interaction']> = {
+    kind,
+    prompt,
+    ...(kind === 'humanFallback'
+      ? { fallbackMode: session.managerPhone?.trim() ? 'choice' : 'message' }
+      : {}),
+    ...(kind === 'partySizeConfirmation'
+      ? {
+          candidatePartySize: getActivePendingInteraction(session)?.candidatePartySize,
+        }
+      : {}),
+  };
+  return {
+    reply,
+    proposal: { source: 'explicit', operation: 'activate', interaction },
+  };
+}
+
+function buildHumanFallbackReplyPlan(
+  session: CallSession,
+  reply = buildHumanFallbackOffer(session),
+): AssistantReplyEmissionPlan {
+  return buildExplicitInteractionReplyPlan(session, reply, 'humanFallback');
+}
+
+/**
+ * Applies only a policy-approved assistant plan. `reply` is presentation and
+ * contributes no question or interaction semantics here.
+ */
+export function recordAssistantReply(
+  session: CallSession,
+  reply: string,
+  decision: AssistantInteractionPolicyDecision,
+): void {
+  if (decision.status !== 'accepted') return;
+
+  if (decision.operation === 'activate' && decision.interaction) {
+    if (decision.clearReservationConfirmation) clearReservationConfirmation(session);
+    activatePendingInteraction(session, decision.interaction.kind, decision.interaction.prompt, {
+      ...(decision.interaction.fallbackMode
+        ? { fallbackMode: decision.interaction.fallbackMode }
+        : {}),
+      ...(decision.interaction.candidatePartySize !== undefined
+        ? { candidatePartySize: decision.interaction.candidatePartySize }
+        : {}),
+    });
+  } else if (decision.operation === 'cancel') {
+    if (getActivePendingInteraction(session)) {
+      finishActivePendingInteraction(session, 'cancelled');
+    }
+    resumeSuspendedPendingInteraction(session);
+    if (decision.clearReservationConfirmation) clearReservationConfirmation(session);
+  }
+
+  if (decision.operation === 'activate' && decision.interaction?.kind === 'confirmation') {
+    // L'accord reste lié au brouillon exact autorisé par la policy.
+    session.conversation.pendingReservationConfirmationKey =
+      decision.pendingReservationConfirmationKey;
     session.conversation.confirmedReservationKey = null;
-  } else {
-    clearReservationConfirmation(session);
   }
 
   if (
@@ -2338,6 +2835,37 @@ export function recordAssistantReply(session: CallSession, reply: string): void 
     // compris : ne pas cumuler des incompréhensions anciennes.
     session.conversation.misunderstandingCount = 0;
   }
+}
+
+/** Proposes the legacy deterministic interpretation, then routes it through policy. */
+export function recordAssistantReplyWithPolicy(
+  session: CallSession,
+  reply: string,
+  proposal: AssistantInteractionProposal,
+): void {
+  const decision = decideAssistantInteractionPolicy(
+    proposal,
+    getReservationConfirmationKey(session),
+  );
+  if (decision.status === 'accepted') {
+    recordAssistantReply(session, reply, decision);
+    return;
+  }
+
+  const safeFallback = decideAssistantInteractionPolicy(
+    { source: proposal.source, operation: 'cancel' },
+    getReservationConfirmationKey(session),
+  );
+  if (safeFallback.status === 'accepted') recordAssistantReply(session, reply, safeFallback);
+}
+
+/** Use only for unstructured LLM text when its caller has no typed reply plan. */
+export function recordAssistantReplyFromLlmTextFallback(session: CallSession, reply: string): void {
+  recordAssistantReplyWithPolicy(
+    session,
+    reply,
+    proposeAssistantInteractionFromLlmText(session, reply),
+  );
 }
 
 /** Fil de dialogue suivi par le garde-fou anti-boucle. */
@@ -2370,6 +2898,8 @@ function dialogueStallKeyFromPendingQuestion(session: CallSession): DialogueStal
     case 'customerName':
     case 'customerPhone':
       return session.conversation.pendingQuestion;
+    case 'partySizeConfirmation':
+      return 'partySize';
     default:
       return 'open';
   }
@@ -2444,61 +2974,131 @@ function buildReformulatedPrompt(session: CallSession, key: DialogueStallKey): s
  * configurée, prise de message sinon.
  */
 export function buildHumanFallbackOffer(session: CallSession): string {
-  session.conversation.humanFallbackOffered = true;
   const en = effectiveVoiceLanguage(session) === 'en';
+  let offer: string;
   if (session.managerPhone?.trim()) {
-    return en
+    offer = en
       ? 'I can put you through to the manager, or take a message for them. Which do you prefer?'
       : 'Je peux vous passer le gérant, ou prendre un message pour lui. Que préférez-vous ?';
+  } else {
+    offer = en
+      ? 'I can take a message for the manager; they will call you back. Would you like me to do that?'
+      : 'Je peux prendre un message pour le gérant, il vous rappellera. Voulez-vous que je le fasse ?';
   }
-  return en
-    ? 'I can take a message for the manager; they will call you back. Would you like me to do that?'
-    : 'Je peux prendre un message pour le gérant, il vous rappellera. Voulez-vous que je le fasse ?';
+  return offer;
 }
 
 /** Efface l'état de repli humain quand la proposition n'est plus en attente. */
-export function clearHumanFallback(session: CallSession): void {
-  session.conversation.humanFallbackOffered = false;
-  session.conversation.pendingQuestion = null;
-  session.conversation.lastAssistantQuestion = null;
+export function clearHumanFallback(
+  session: CallSession,
+  status: Extract<PendingInteractionStatus, 'resolved' | 'cancelled'> = 'cancelled',
+): void {
+  const active = getActivePendingInteraction(session);
+  if (status === 'resolved') {
+    // Un transfert ou un message termine le parcours vocal courant ; ne
+    // réactive pas une ancienne question de réservation après cette action.
+    for (const interaction of session.conversation.pendingInteractions) {
+      if (interaction.status === 'suspended') interaction.status = 'cancelled';
+    }
+  }
+  for (const interaction of session.conversation.pendingInteractions) {
+    if (interaction.kind === 'humanFallback' && interaction.status === 'suspended') {
+      interaction.status = status;
+    }
+  }
+  if (active?.kind === 'humanFallback') {
+    finishActivePendingInteraction(session, status);
+  } else {
+    syncPendingInteractionProjection(session);
+  }
   resetDialogueStall(session);
 }
 
-export type HumanFallbackChoice = 'transfer' | 'message' | null;
+export type HumanFallbackChoice = 'transfer' | 'message' | 'clarify' | null;
+
+function isHumanFallbackDecline(transcript: string): boolean {
+  return /^(?:non merci|non merci beaucoup|no thanks?|pas besoin|ca ira|laissez tomber|never mind|forget it)$/.test(
+    normalizeTranscript(transcript),
+  );
+}
+
+function explicitlySelectsTransfer(transcript: string): boolean {
+  const normalized = normalizeTranscript(transcript);
+  return /^(?:(?:oui|ouais|ok|d accord|alors|ben) )?(?:(?:passez?[- ]moi|mettez?[- ]moi en relation|transfer(?:ez)?[- ]moi|put me through|connect me to)\b.*|(?:le )?(?:gerant|manager|transfert|transfer)(?: s il vous plait)?)$/.test(
+    normalized,
+  );
+}
+
+function explicitlySelectsMessage(transcript: string): boolean {
+  const normalized = normalizeTranscript(transcript);
+  return /^(?:(?:oui|ouais|ok|d accord|alors|ben) )?(?:(?:prenez|prends|prendre|laissez|laisser) un message|(?:un )?message|(?:je prefere|je choisis) (?:un message|que vous preniez un message)|rappel|rappelez[- ]moi)$/.test(
+    normalized,
+  );
+}
+
+/** Reformule la demande sans choisir ni exécuter une action à la place du client. */
+export function buildHumanFallbackClarification(session: CallSession, transcript: string): string {
+  const en = effectiveVoiceLanguage(session) === 'en';
+  const normalized = normalizeTranscript(transcript);
+  const explicitlyWantsTransfer = explicitlySelectsTransfer(normalized);
+  if (explicitlyWantsTransfer && !session.managerPhone?.trim()) {
+    return en
+      ? 'I can’t put you through to the manager directly, but I can take a message. Would you like me to do that?'
+      : 'Je ne peux pas vous passer le gérant directement, mais je peux prendre un message. Voulez-vous que je le fasse ?';
+  }
+  if (session.managerPhone?.trim()) {
+    return en
+      ? 'Would you prefer that I put you through to the manager or take a message?'
+      : 'Vous préférez que je vous passe le gérant ou que je prenne un message ?';
+  }
+  return en
+    ? 'Would you like me to take a message for the manager?'
+    : 'Souhaitez-vous que je prenne un message pour le gérant ?';
+}
 
 /**
- * Interprète la réponse à une proposition de repli humain. Un accord déclenche
- * une action réelle (transfert ou prise de message) ; un refus clôt la
- * proposition, et tout autre réponse repart vers le LLM sans boucle.
+ * Interprète la réponse à une proposition de repli humain. Un accord ne choisit
+ * qu'une proposition oui/non ; entre deux choix, il faut une demande explicite.
  */
 export function resolveHumanFallbackChoice(
   session: CallSession,
   transcript: string,
 ): HumanFallbackChoice {
-  const normalized = normalizeTranscript(transcript);
   const hasManagerLine = Boolean(session.managerPhone?.trim());
-  const wantsTransfer = /\b(?:gerant|manager|transfert|transfer|passez moi|put me through)\b/.test(
-    normalized,
-  );
-  const wantsMessage = /\b(?:message|rappel|rappeler|reclamation|call back|callback)\b/.test(
-    normalized,
-  );
+  const wantsTransfer = explicitlySelectsTransfer(transcript);
+  const wantsMessage = explicitlySelectsMessage(transcript);
+  const fallbackMode =
+    session.conversation.humanFallbackMode ?? (hasManagerLine ? 'choice' : 'message');
 
   let choice: HumanFallbackChoice = null;
   if (wantsTransfer && hasManagerLine) choice = 'transfer';
   else if (wantsMessage) choice = 'message';
-  else if (isAffirmativeShortResponse(transcript)) choice = hasManagerLine ? 'transfer' : 'message';
+  else if (wantsTransfer) choice = 'clarify';
+  else if (isAffirmativeShortResponse(transcript)) {
+    if (fallbackMode === 'choice') choice = 'clarify';
+    else if (fallbackMode === 'transfer') choice = hasManagerLine ? 'transfer' : 'clarify';
+    else choice = 'message';
+  }
 
-  if (choice) {
-    clearHumanFallback(session);
+  if (choice === 'transfer' || choice === 'message') {
+    clearHumanFallback(session, 'resolved');
     return choice;
   }
-  if (isNegativeShortResponse(transcript) || classifyVoiceSpeechAct(transcript) === 'closing') {
-    // Le client refuse le repli : on arrête de relancer la même question et on
-    // laisse la conversation se clore naturellement.
+  if (
+    isNegativeShortResponse(transcript) ||
+    isHumanFallbackDecline(transcript) ||
+    classifyVoiceSpeechAct(transcript) === 'closing'
+  ) {
+    // Refuser le transfert/message ne signifie pas nécessairement terminer
+    // l'appel : le LLM peut reprendre le besoin initial.
     clearHumanFallback(session);
-    session.conversation.closing = true;
+    return null;
   }
+  if (choice === 'clarify') return choice;
+
+  // Une question ou un autre sujet invalide l'ancien choix. Le tour suivant
+  // sera lié à la nouvelle question réellement posée par l'agent.
+  clearHumanFallback(session);
   return null;
 }
 
@@ -2513,10 +3113,18 @@ export function guardDialogueReprompt(
   key: DialogueStallKey,
   primary: string,
 ): string {
+  return guardDialogueRepromptPlan(session, key, primary).reply;
+}
+
+export function guardDialogueRepromptPlan(
+  session: CallSession,
+  key: DialogueStallKey,
+  primary: string,
+): AssistantReplyEmissionPlan {
   const level = registerDialogueStall(session, key);
-  if (level === 'escalate') return buildHumanFallbackOffer(session);
-  if (level === 'reformulate') return buildReformulatedPrompt(session, key);
-  return primary;
+  if (level === 'escalate') return buildHumanFallbackReplyPlan(session);
+  const reply = level === 'reformulate' ? buildReformulatedPrompt(session, key) : primary;
+  return buildExplicitInteractionReplyPlan(session, reply, key);
 }
 
 /** Réponses courtes qui ne nécessitent ni interprétation ni appel LLM.
@@ -2530,23 +3138,23 @@ export function guardDialogueReprompt(
  * - followup de disponibilité (alternatives proposées par l'outil)
  * - garde-fou anti-boucle : reformulation puis repli humain réel
  */
-export function buildDeterministicTurnResponse(
+export function buildDeterministicTurnPlan(
   session: CallSession,
   speechAct: VoiceSpeechAct,
   transcript = '',
-): string | null {
+): AssistantReplyEmissionPlan | null {
   // Une proposition de repli humain en attente est traitée par l'orchestrateur
   // (transfert ou message réellement exécuté) : le déterministe ne la répète pas.
   if (session.conversation.pendingQuestion === 'humanFallback') return null;
 
-  const pendingShortResponse = buildPendingQuestionResponse(session, transcript);
+  const pendingShortResponse = buildPendingQuestionReplyPlan(session, transcript);
   if (pendingShortResponse) return pendingShortResponse;
 
   // Deux incompréhensions consécutives constituent un échec de dialogue,
   // pas une invitation à poser une troisième fois la même question. On propose
   // un repli humain réel au lieu d'annoncer un transfert qui n'aurait pas lieu.
   if (speechAct === 'content' && session.conversation.misunderstandingCount >= 2) {
-    return buildHumanFallbackOffer(session);
+    return buildHumanFallbackReplyPlan(session);
   }
 
   if (
@@ -2558,7 +3166,11 @@ export function buildDeterministicTurnResponse(
       effectiveVoiceLanguage(session) === 'en'
         ? `All right. ${session.conversation.lastAssistantQuestion}`
         : `D'accord. ${session.conversation.lastAssistantQuestion}`;
-    return guardDialogueReprompt(session, dialogueStallKeyFromPendingQuestion(session), primary);
+    return guardDialogueRepromptPlan(
+      session,
+      dialogueStallKeyFromPendingQuestion(session),
+      primary,
+    );
   }
 
   if (speechAct === 'content' || speechAct === 'correction') {
@@ -2567,14 +3179,22 @@ export function buildDeterministicTurnResponse(
         effectiveVoiceLanguage(session) === 'en'
           ? "I didn't catch the number of people. How many will there be?"
           : "Je n'ai pas bien compris le nombre de personnes. Vous serez combien ?";
-      return guardDialogueReprompt(session, 'partySize', primary);
+      return guardDialogueRepromptPlan(session, 'partySize', primary);
     }
     // Followup de disponibilité : alternatives proposées par l'outil
     // (ces réponses dépendent du résultat de checkAvailability, pas du LLM)
-    return buildAvailabilityFollowupResponse(session, transcript);
+    return buildAvailabilityFollowupPlan(session, transcript);
   }
 
   return null;
+}
+
+export function buildDeterministicTurnResponse(
+  session: CallSession,
+  speechAct: VoiceSpeechAct,
+  transcript = '',
+): string | null {
+  return buildDeterministicTurnPlan(session, speechAct, transcript)?.reply ?? null;
 }
 
 /**
@@ -2582,10 +3202,10 @@ export function buildDeterministicTurnResponse(
  * à « À quel nom je réserve ? » n'est pas un acquiescement à répéter : il
  * manque encore la valeur attendue.
  */
-export function buildPendingQuestionResponse(
+export function buildPendingQuestionReplyPlan(
   session: CallSession,
   transcript: string,
-): string | null {
+): AssistantReplyEmissionPlan | null {
   if (!isAffirmativeShortResponse(transcript)) return null;
 
   const en = effectiveVoiceLanguage(session) === 'en';
@@ -2605,6 +3225,8 @@ export function buildPendingQuestionResponse(
         return en
           ? 'How many people should I book for?'
           : 'Pour combien de personnes dois-je réserver ?';
+      case 'partySizeConfirmation':
+        return null;
       case 'customerName':
         if (
           session.conversation.nameCollection.state === 'confirming' &&
@@ -2627,5 +3249,12 @@ export function buildPendingQuestionResponse(
   if (!primary) return null;
   // Une acquiescement répété sur la même question ne doit pas produire la même
   // phrase à l'identique : le garde-fou reformule, puis propose un repli humain.
-  return guardDialogueReprompt(session, dialogueStallKeyFromPendingQuestion(session), primary);
+  return guardDialogueRepromptPlan(session, dialogueStallKeyFromPendingQuestion(session), primary);
+}
+
+export function buildPendingQuestionResponse(
+  session: CallSession,
+  transcript: string,
+): string | null {
+  return buildPendingQuestionReplyPlan(session, transcript)?.reply ?? null;
 }
