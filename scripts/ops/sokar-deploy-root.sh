@@ -11,7 +11,7 @@ PRIVILEGED_WRAPPER="/usr/local/sbin/sokar-deploy-root"
 SUDOERS_DST="/etc/sudoers.d/deploy"
 
 usage() {
-    echo "Usage: $0 {check-cert|clean-next|install-nginx|restore-nginx|reload-nginx|install-runtime|configure-watchdog|self-update|check-prod-vhost|start-localstack|stop-localstack|backup-db|restore-test} {prod|staging} [dashboard|connect]" >&2
+    echo "Usage: $0 {check-cert|clean-next|install-nginx|restore-nginx|reload-nginx|install-runtime|configure-watchdog|self-update|check-prod-vhost|start-localstack|stop-localstack|start-prometheus|backup-db|restore-test} {prod|staging} [dashboard|connect]" >&2
     exit 2
 }
 
@@ -203,6 +203,25 @@ restore_test() {
     bash "$script"
 }
 
+start_prometheus() {
+    [ "$ENVIRONMENT" = "prod" ] || usage
+    /usr/bin/docker compose \
+        --project-name sokar-monitoring \
+        -f "$ROOT/infra/prometheus-compose.yml" \
+        up -d prometheus
+
+    local attempt
+    for attempt in $(seq 1 30); do
+        if curl -fsS --max-time 2 http://127.0.0.1:9090/-/ready >/dev/null; then
+            echo "Prometheus est opérationnel."
+            return 0
+        fi
+        sleep 1
+    done
+    echo "Prometheus n'a pas passé son health check en 30 secondes." >&2
+    exit 1
+}
+
 case "$ACTION" in
     check-cert)
         [ "$#" -eq 2 ] || usage
@@ -256,6 +275,10 @@ case "$ACTION" in
     start-localstack|stop-localstack)
         [ "$#" -eq 2 ] || usage
         localstack
+        ;;
+    start-prometheus)
+        [ "$#" -eq 2 ] || usage
+        start_prometheus
         ;;
     *)
         usage

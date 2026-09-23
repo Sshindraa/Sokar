@@ -1,8 +1,9 @@
 import type { CallSession, PendingInteractionKind, PendingInteractionStatus } from './types';
 import type { TurnPlan, TurnPlanContext, TurnPlanSlot } from './turn-plan';
 import { decideTurnPlanPolicy } from './turn-policy';
-import { recordVoiceTurnEventIfCurrent } from './turn-telemetry';
+import { isCurrentVoiceTurn, recordVoiceTurnEventIfCurrent } from './turn-telemetry';
 import { getVoiceLlmModel } from '../llm-provider';
+import { recordVoiceTurnPlanShadowObservation } from '../../../shared/observability/metrics';
 
 export interface TurnPlanPolicySnapshot {
   intent: CallSession['conversation']['intent'];
@@ -121,13 +122,18 @@ export function recordInBandTurnPlanShadow(
   after: TurnPlanPolicySnapshot,
   turnId: string | undefined,
 ): void {
-  if (!isTurnPlanShadowEnabled() || !turnId) return;
+  if (!isTurnPlanShadowEnabled() || !turnId || !isCurrentVoiceTurn(session, turnId)) return;
   const policyDecision =
     result.status === 'valid' ? decideTurnPlanPolicy(context, result.plan) : null;
   const comparison =
     result.status === 'valid' && policyDecision?.status === 'accepted'
       ? compareTurnPlanWithPolicy(result.plan, before, after)
       : null;
+  recordVoiceTurnPlanShadowObservation({
+    status: result.status,
+    policyOutcome: policyDecision?.status ?? 'not_evaluated',
+    agreement: comparison ? (comparison.agrees ? 'agree' : 'disagree') : 'not_comparable',
+  });
   recordVoiceTurnEventIfCurrent(session, turnId, 'turn_plan_shadow', {
     status: result.status,
     policyAccepted: policyDecision ? policyDecision.status === 'accepted' : null,

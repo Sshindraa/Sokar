@@ -144,6 +144,120 @@
         }
       ],
       "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "TurnPlan shadow observés (24 h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 22 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(sokar_voice_turn_plan_shadow_observations_total{env=~\"$env\"}[24h]))",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "noValue": "Aucune observation"
+      },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Plans structurés valides (24 h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 22 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(increase(sokar_voice_turn_plan_shadow_observations_total{env=~\"$env\",status=\"valid\"}[24h])) / (sum(increase(sokar_voice_turn_plan_shadow_observations_total{env=~\"$env\"}[24h])) > 0)",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "noValue": "Aucune observation"
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "decimals": 1, "min": 0, "max": 100 },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Plans acceptés par la policy (24 h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 22 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(increase(sokar_voice_turn_plan_shadow_observations_total{env=~\"$env\",policy_outcome=\"accepted\"}[24h])) / (sum(increase(sokar_voice_turn_plan_shadow_observations_total{env=~\"$env\",policy_outcome=~\"accepted|rejected\"}[24h])) > 0)",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "noValue": "Aucun plan évaluable"
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "decimals": 1, "min": 0, "max": 100 },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Accord avec l’état après policy (24 h)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 22 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(increase(sokar_voice_turn_plan_shadow_observations_total{env=~\"$env\",agreement=\"agree\"}[24h])) / (sum(increase(sokar_voice_turn_plan_shadow_observations_total{env=~\"$env\",agreement=~\"agree|disagree\"}[24h])) > 0)",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "noValue": "Aucun plan comparable"
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "decimals": 1, "min": 0, "max": 100 },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Résultats TurnPlan par statut (volume horaire)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 27 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (status) (increase(sokar_voice_turn_plan_shadow_observations_total{env=~\"$env\"}[1h]))",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 }
+        },
+        "overrides": []
+      }
     }
   ]
 }

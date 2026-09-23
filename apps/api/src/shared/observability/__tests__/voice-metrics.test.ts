@@ -6,6 +6,7 @@ import {
   voiceLlmFirstTokenMs,
   voiceTtsFirstAudioMs,
   voiceProviderErrorsTotal,
+  recordVoiceTurnPlanShadowObservation,
 } from '../metrics';
 
 describe('Voice Prometheus metrics', () => {
@@ -65,6 +66,27 @@ describe('Voice Prometheus metrics', () => {
     );
   });
 
+  it('compte les résultats shadow et mesure leur durée avec des labels bornés', async () => {
+    recordVoiceTurnPlanShadowObservation({
+      status: 'valid',
+      policyOutcome: 'accepted',
+      agreement: 'disagree',
+    });
+    recordVoiceTurnPlanShadowObservation({
+      status: 'missing',
+      policyOutcome: 'not_evaluated',
+      agreement: 'not_comparable',
+    });
+
+    const payload = await renderMetrics();
+    expect(payload).toMatch(
+      /sokar_voice_turn_plan_shadow_observations_total\{[^}]*status="valid"[^}]*policy_outcome="accepted"[^}]*agreement="disagree"[^}]*\} 1/,
+    );
+    expect(payload).toMatch(
+      /sokar_voice_turn_plan_shadow_observations_total\{[^}]*status="missing"[^}]*policy_outcome="not_evaluated"[^}]*agreement="not_comparable"[^}]*\} 1/,
+    );
+  });
+
   it("n'a pas de collision de noms de métriques voice", async () => {
     const payload = await renderMetrics();
     // Vérifier que chaque nom de métrique voice apparaît exactement une fois
@@ -79,6 +101,7 @@ describe('Voice Prometheus metrics', () => {
     expect(voiceNames).toContain('sokar_voice_llm_first_token_ms');
     expect(voiceNames).toContain('sokar_voice_tts_first_audio_ms');
     expect(voiceNames).toContain('sokar_voice_provider_errors_total');
+    expect(voiceNames).toContain('sokar_voice_turn_plan_shadow_observations_total');
   });
 
   it('les buckets voice sont réalistes pour la latence voice (TTFT < 500ms target)', () => {

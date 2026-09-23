@@ -269,6 +269,39 @@ export const voiceProviderErrorsTotal = new Counter({
   registers: [getRegistry()],
 });
 
+export type VoiceTurnPlanShadowStatus =
+  | 'valid'
+  | 'invalid'
+  | 'missing'
+  | 'speech_missing'
+  | 'failed'
+  | 'aborted';
+export type VoiceTurnPlanShadowPolicyOutcome = 'accepted' | 'rejected' | 'not_evaluated';
+export type VoiceTurnPlanShadowAgreement = 'agree' | 'disagree' | 'not_comparable';
+
+/**
+ * Résultats d'observation TurnPlan. Labels strictement bornés : pas de tenant,
+ * de transcription, de créneau ni d'identifiant d'appel.
+ */
+export const voiceTurnPlanShadowObservationsTotal = new Counter({
+  name: 'sokar_voice_turn_plan_shadow_observations_total',
+  help: 'Total in-band TurnPlan shadow observations by bounded outcome',
+  labelNames: ['status', 'policy_outcome', 'agreement'] as const,
+  registers: [getRegistry()],
+});
+
+export function recordVoiceTurnPlanShadowObservation(input: {
+  status: VoiceTurnPlanShadowStatus;
+  policyOutcome: VoiceTurnPlanShadowPolicyOutcome;
+  agreement: VoiceTurnPlanShadowAgreement;
+}): void {
+  voiceTurnPlanShadowObservationsTotal.inc({
+    status: input.status,
+    policy_outcome: input.policyOutcome,
+    agreement: input.agreement,
+  });
+}
+
 // ─── Render ───────────────────────────────────────────────────
 
 /**
@@ -325,6 +358,7 @@ export function __resetMetrics(): void {
   voiceLlmFirstPhraseMs.reset();
   voiceTtsFirstAudioMs.reset();
   voiceProviderErrorsTotal.reset();
+  voiceTurnPlanShadowObservationsTotal.reset();
 }
 
 // ─── Sokar Connect (Phase 1) ────────────────────────────────────────
