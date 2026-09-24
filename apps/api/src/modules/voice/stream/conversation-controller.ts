@@ -2841,6 +2841,7 @@ export function recordUserTurn(
     partySize:
       decision.slots.partySize !== undefined && decision.slots.partySize !== current.partySize,
     date: decision.slots.date !== undefined && decision.slots.date !== current.date,
+    time: decision.slots.time !== undefined && decision.slots.time !== current.time,
   };
   Object.assign(current, decision.slots);
   for (const slot of ['date', 'time', 'partySize'] as const) {
@@ -3030,7 +3031,13 @@ function buildNaturalReadBack(session: CallSession, only?: 'date'): string {
   if (!isExpectedAnswerEnabled(session)) return '';
   const justFilled = session.conversation.justFilled;
   if (!justFilled) return '';
-  const filled = only ? { date: justFilled.date } : justFilled;
+  const filled: { partySize?: boolean; date?: boolean; time?: boolean } = only
+    ? { date: justFilled.date }
+    : {
+        ...justFilled,
+        // Une heure devinée est toujours relue, même si elle n'a pas changé.
+        time: justFilled.time || session.conversation.phoneticAccepted === 'time',
+      };
   const { partySize, date } = session.conversation.slots;
   const en = effectiveVoiceLanguage(session) === 'en';
   const parts: string[] = [];
@@ -3052,11 +3059,13 @@ function buildNaturalReadBack(session: CallSession, only?: 'date'): string {
       }),
     );
   }
-  // Une heure devinée est relue dans la question suivante ; quand la phrase
-  // suivante est une réponse de disponibilité, celle-ci cite déjà l'heure.
+  // L'heure est relue dans la question suivante (« Quatre personnes à 20 h,
+  // très bien. ») ; la réponse de disponibilité, qui la cite déjà, n'appelle
+  // cette relecture que pour le jour : pas de double relecture.
   const time = session.conversation.slots.time;
-  if (!only && session.conversation.phoneticAccepted === 'time' && time) {
-    parts.push(formatAvailabilitySlot(time, en ? 'en' : 'fr'));
+  if (filled.time && time) {
+    const spoken = formatAvailabilitySlot(time, en ? 'en' : 'fr');
+    parts.push(parts.length ? `${en ? 'at' : 'à'} ${spoken}` : spoken);
   }
   if (!parts.length) return '';
   const phrase = parts.join(' ');

@@ -292,6 +292,58 @@ describe('farewell playback and hangup', () => {
     expect(session.interruptedTurn).toBeNull();
   });
 
+  describe('relecture d’une heure lue exactement', () => {
+    const previousFlag = process.env.VOICE_EXPECTED_ANSWER_ENABLED;
+    beforeEach(() => {
+      process.env.VOICE_EXPECTED_ANSWER_ENABLED = 'true';
+    });
+    afterEach(() => {
+      if (previousFlag === undefined) delete process.env.VOICE_EXPECTED_ANSWER_ENABLED;
+      else process.env.VOICE_EXPECTED_ANSWER_ENABLED = previousFlag;
+    });
+
+    it('relit en une phrase l’heure et le nombre donnés avant le jour', async () => {
+      const { session, mgr } = fixture();
+      session.conversation.intent = 'reservation';
+
+      await processTranscriptStreaming(session, 'À 20h pour quatre personnes', mgr);
+
+      expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+        session,
+        'Quatre personnes à 20 h, très bien. Pour quel jour ?',
+      );
+    });
+
+    it('relit une heure donnée seule avant le jour', async () => {
+      const { session, mgr } = fixture();
+      session.conversation.intent = 'reservation';
+      session.conversation.slots.partySize = 4;
+      recordAssistantReply(session, 'Vous voulez venir vers quelle heure ?');
+
+      await processTranscriptStreaming(session, 'Vers vingt-deux heures', mgr);
+
+      expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+        session,
+        '22 h, très bien. Pour quel jour ?',
+      );
+    });
+
+    it('ne relit pas deux fois l’heure quand la disponibilité suit', async () => {
+      const { session, mgr } = fixture();
+      session.timezone = 'Europe/Paris';
+      session.conversation.intent = 'reservation';
+      session.conversation.slots = { date: '2026-09-26', partySize: 4 };
+      recordAssistantReply(session, 'Vous voulez venir vers quelle heure ?');
+      vi.mocked(mgr.getAvailability).mockResolvedValue({ slots: ['20:00'] } as never);
+
+      await processTranscriptStreaming(session, 'À 20h', mgr);
+
+      const spoken = String(vi.mocked(speakTtsStreamed).mock.calls.at(-1)?.[1]);
+      expect(spoken.match(/20 h/g)).toHaveLength(1);
+      expect(spoken).not.toContain('très bien. Oui');
+    });
+  });
+
   describe('heure retenue par rapprochement phonétique', () => {
     const openingHours = Object.fromEntries(
       ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map((day) => [

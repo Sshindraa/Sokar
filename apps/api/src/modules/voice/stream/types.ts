@@ -147,7 +147,7 @@ export interface ConversationState {
    */
   answerChoice?: { kind: 'partySize' | 'weekday' | 'time'; values: [string, string] } | null;
   /** Valeurs retenues au dernier tour, relues naturellement dans la question suivante. */
-  justFilled?: { partySize?: boolean; date?: boolean } | null;
+  justFilled?: { partySize?: boolean; date?: boolean; time?: boolean } | null;
   /** Champ rempli au dernier tour par rapprochement phonétique (jamais en silence). */
   phoneticAccepted?: 'partySize' | 'date' | 'time' | null;
   /** Issue du rapprochement au dernier tour, pour la télémétrie (sans texte). */
