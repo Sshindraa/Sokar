@@ -369,7 +369,30 @@ describe('handleSttMessage', () => {
     const onEvent = vi.fn();
     session.onSttEvent = onEvent;
     handleSttMessage(session, { message_type: 'quota_exceeded', message: 'quota' });
-    expect(onEvent).toHaveBeenCalledWith({ type: 'Error', message: 'quota' });
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'Unavailable',
+      reason: 'quota',
+      message: 'quota',
+    });
+  });
+
+  it.each([
+    ['auth_error', 'auth'],
+    ['unaccepted_terms', 'terms'],
+  ] as const)('%s est une erreur terminale sans demande de reconnexion', (messageType, reason) => {
+    const session = makeSession();
+    const onEvent = vi.fn();
+    session.onSttEvent = onEvent;
+
+    handleSttMessage(session, { message_type: messageType, message: messageType });
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'Unavailable',
+      reason,
+      message: messageType,
+    });
+    expect(session.sttTerminalFailure).toBe(true);
+    expect(session.sttFallbackTriggered).toBe(true);
   });
 
   it.each([
@@ -377,7 +400,6 @@ describe('handleSttMessage', () => {
     'input_error',
     'invalid_request',
     'commit_throttled',
-    'unaccepted_terms',
     'queue_overflow',
     'resource_exhausted',
     'session_time_limit_exceeded',

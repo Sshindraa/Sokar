@@ -46,3 +46,11 @@ résumé chiffré est commité (journal, description de PR).
 - Une seule réponse par phrase, sans le contexte d'un vrai dialogue (pas de relance).
 - Au-delà de 7 personnes, la réservation vocale ne retient pas le nombre : ces phrases
   sont mesurées à part (`groupe > 7`).
+
+## Garde-fous fournisseur
+
+Les scripts de banc utilisent des clés dédiées (`ELEVENLABS_BENCH_API_KEY` et
+`CARTESIA_BENCH_API_KEY`) et exigent un plafond `BENCH_MAX_CREDITS` avant toute requête.
+Ils refusent les clés de production. Les étapes de synthèse et transcription consomment
+les fournisseurs ; `evaluate.ts` reste hors ligne. Aucun banc ne doit être lancé sans
+validation explicite du budget et du compte dédié.

@@ -499,6 +499,7 @@ export class CallSessionManager {
     restaurantId: string;
     restaurantName: string;
     managerPhone?: string | null;
+    onlineReservationsActive?: boolean;
     timezone?: string;
     openingHours?: CallSession['openingHours'];
     /** Taille de groupe réservable automatiquement (incluse) ; absent : 7. */
@@ -536,6 +537,7 @@ export class CallSessionManager {
       ...(opts.maxPartySize !== undefined ? { maxPartySize: opts.maxPartySize } : {}),
       restaurantName,
       managerPhone: opts.managerPhone ?? null,
+      onlineReservationsActive: opts.onlineReservationsActive ?? false,
       timezone: opts.timezone ?? 'Europe/Paris',
       giftCardMinimumAmount,
       systemPrompt: opts.systemPrompt,
@@ -551,6 +553,14 @@ export class CallSessionManager {
       ],
       sttWs: null,
       sttReady: null,
+      sttConsecutiveFailures: 0,
+      sttReconnectAttempts: 0,
+      sttRetryTimer: null,
+      sttConnectTimeout: null,
+      sttConnectionDeadlineTimer: null,
+      sttTerminalFailure: false,
+      sttFallbackTriggered: false,
+      sttFallbackSpoken: false,
       onSttEvent: null,
       sttLanguageCode: undefined,
       voiceLanguageCode: 'fr',
@@ -622,6 +632,12 @@ export class CallSessionManager {
       clearTimeout(session.sttPendingCommit.timer);
       session.sttPendingCommit = null;
     }
+    if (session.sttRetryTimer) clearTimeout(session.sttRetryTimer);
+    if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
+    if (session.sttConnectionDeadlineTimer) clearTimeout(session.sttConnectionDeadlineTimer);
+    session.sttRetryTimer = null;
+    session.sttConnectTimeout = null;
+    session.sttConnectionDeadlineTimer = null;
     session.pendingSttEndOfTurn = null;
     if (session.sttSemanticHold?.timer) clearTimeout(session.sttSemanticHold.timer);
     session.sttSemanticHold = null;
@@ -634,6 +650,12 @@ export class CallSessionManager {
     if (session.sttWs && session.sttWs.readyState === WebSocket.OPEN) {
       try {
         session.sttWs.close();
+      } catch {
+        /* ignore */
+      }
+    } else if (session.sttWs?.readyState === WebSocket.CONNECTING) {
+      try {
+        session.sttWs.terminate();
       } catch {
         /* ignore */
       }

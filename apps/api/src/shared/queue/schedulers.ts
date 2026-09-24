@@ -202,6 +202,16 @@ export async function registerJobSchedulers(): Promise<void> {
     ),
   );
 
+  // Solde ElevenLabs : une lecture de subscription par heure, sans stocker ni
+  // journaliser la clé et sans envoyer de transcription.
+  await register('elevenlabs-subscription/hourly', () =>
+    queues.elevenlabsSubscription.upsertJobScheduler(
+      'elevenlabs-subscription-hourly',
+      { pattern: '0 * * * *', tz: 'Europe/Paris' },
+      { name: 'refresh-subscription' },
+    ),
+  );
+
   // Les enregistrements sont privés et temporaires : purge quotidienne
   // des objets dont la rétention applicative est arrivée à échéance.
   await register('telnyx-webhooks/recordings-purge', () =>

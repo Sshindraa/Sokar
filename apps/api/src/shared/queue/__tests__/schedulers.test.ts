@@ -60,5 +60,10 @@ describe('registerJobSchedulers', () => {
     expect(mocks.eveningReportQueue.upsertJobScheduler).not.toHaveBeenCalled();
     expect(mocks.db.restaurant.findMany).not.toHaveBeenCalled();
     expect(mocks.genericQueue.upsertJobScheduler).toHaveBeenCalled();
+    expect(mocks.genericQueue.upsertJobScheduler).toHaveBeenCalledWith(
+      'elevenlabs-subscription-hourly',
+      { pattern: '0 * * * *', tz: 'Europe/Paris' },
+      { name: 'refresh-subscription' },
+    );
   });
 });

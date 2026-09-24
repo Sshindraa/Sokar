@@ -806,3 +806,23 @@ Log automatique des tâches Hermes.
 - Le handler vocal couvre maintenant la décision de groupe confirmé : transfert si la ligne du gérant existe, prise de message sinon. La mise à jour du seuil invalide l’entrée Redis du contexte téléphonique par numéro, immédiatement (TTL de secours : 300 s).
 
 2026-09-24 — [reservations, voice, prisma] **Défaut de groupe aligné à 7** — Décision : défaut 7 partout, migration du défaut uniquement. Une seule constante partagée alimente les parcours vocal et agentique ; les nouveaux réglages utilisent le défaut Prisma 7, tandis que les valeurs déjà enregistrées ne sont pas modifiées par cette migration.
+2026-09-24 — [voice, stt, incident] **Quota ElevenLabs épuisé par le banc, clé
+remplacée** — Le banc STT (phase 3 B) a consommé les 10 000 crédits du compte gratuit
+partagé par la production et le staging : plus aucune transcription sur les appels
+réels, sans alerte. 20:11 : nouvelle clé (compte gratuit, 6 172 / 10 000,
+réinitialisation le 25/10) installée en prod et en staging (sauvegardes
+`.env.bak.pre-elevenlabs-key.20260924-201122`), API et workers redémarrés, health 200.
+Solution temporaire : passer un compte payant, une clé par environnement, alerte sur le
+solde, banc interdit sur la clé de prod.
+
+2026-09-24 — [voice, stt, resilience] **Repli STT sans tempête de reconnexion** — Les
+échecs de connexion utilisent un backoff 500 ms → 1 s → 2 s, avec quatre échecs maximum
+et une échéance de 10 s ; auth, quota, conditions non acceptées et HTTP 401/403 arrêtent
+les tentatives. Le repli parle une seule fois, transfère au gérant configuré ou termine
+proprement l'appel avec une invitation à rappeler ou réserver en ligne. Ajout des alertes
+Prometheus, du relevé horaire du solde ElevenLabs et de garde-fous séparant les clés de
+banc des clés de production. Les scripts de banc n'ont pas été exécutés ; un premier
+test a pu tenter un handshake ElevenLabs avec une clé factice de test, sans audio. La
+réception côté fournisseur reste invérifiable.
+
+2026-09-24 — [voice, stt, review PR #235] **Alertes dispatchées, reconnexion bornée et repli localisé** — Les notifications STT et quota passent maintenant par `dispatchAlert()` ; Prometheus reste un miroir consultable, sans Alertmanager. Quota ElevenLabs : warning à 80 %, critique à 95 % et 100 %, latch Redis par seuil/période réarmé sous le seuil. Erreurs STT quota/auth/terms : critique, cooldown global 1 h et aucun identifiant d'appel/numéro dans le payload. Connexion : ensemble Redis à fenêtre glissante de 10 min, avertissement au-delà de cinq appels touchés. Le compteur consécutif repart à chaque ouverture réussie ; huit reconnexions maximum par appel et échéance globale 15 s pour laisser s'épuiser quatre ouvertures temporisées. Repli français/anglais selon `effectiveVoiceLanguage`; Connect n'est proposé que si `isPublicConnectPage()` valide la publication (opt-in, flag, slug, date). Vérification API : 269 fichiers passés, 2 676 tests passés, 27 ignorés ; typecheck vert ; lint sans erreur (6 avertissements préexistants). Aucun appel fournisseur ni changement serveur.

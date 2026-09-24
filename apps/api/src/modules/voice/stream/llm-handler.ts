@@ -341,6 +341,32 @@ function takeInterruptedTranscript(session: CallSession): string | null {
   return held.transcript;
 }
 
+function buildSttUnavailableCopy(session: CallSession): {
+  readonly noManager: string;
+  readonly manager: string;
+  readonly transferFailed: string;
+  readonly transferUnavailable: string;
+} {
+  const english = effectiveVoiceLanguage(session) === 'en';
+  const opening = english
+    ? "I'm sorry, I'm having a technical problem and I can't hear you clearly."
+    : "Je suis désolé, j'ai un problème technique et je ne vous entends pas correctement.";
+  const closing = session.onlineReservationsActive
+    ? english
+      ? 'You can book online. Goodbye.'
+      : 'Vous pouvez réserver en ligne. Au revoir.'
+    : english
+      ? 'Please call back a little later. Goodbye.'
+      : 'Vous pouvez rappeler un peu plus tard. Au revoir.';
+
+  return {
+    noManager: `${opening} ${closing}`,
+    manager: `${opening} ${english ? "I'll put you through to the restaurant." : 'Je vous passe le restaurant.'}`,
+    transferFailed: `${opening} ${english ? "I couldn't put you through." : "Je n'ai pas réussi à vous transférer."} ${closing}`,
+    transferUnavailable: `${opening} ${english ? "I can't transfer you right now." : 'Je ne peux pas vous transférer pour le moment.'} ${closing}`,
+  };
+}
+
 /**
  * Gère les événements provenant de ElevenLabs Scribe.
  */
@@ -643,6 +669,64 @@ export function handleSttEvent(
         ),
       );
       mgr.transition(session, 'LISTENING');
+      break;
+    }
+
+    case 'Unavailable': {
+      if (session.sttFallbackSpoken) break;
+      session.sttFallbackSpoken = true;
+      logger.error(
+        { callId: session.callControlId, reason: event.reason },
+        '[stt] Transcription unavailable; starting call fallback',
+      );
+      cancelScheduledFiller(session);
+      session.abortController?.abort();
+      session.abortController = null;
+      session.responseGeneration++;
+      session.speculativeLlm = null;
+      session.speculativeResult = null;
+      session.speculativeTranscript = '';
+
+      const managerConfigured = Boolean(session.managerPhone?.trim());
+      const fallbackCopy = buildSttUnavailableCopy(session);
+      if (!managerConfigured) {
+        finishCall(session, mgr, fallbackCopy.noManager).catch((err) =>
+          logger.error(
+            { err, callId: session.callControlId },
+            '[stt] Could not finish call after transcription outage',
+          ),
+        );
+        break;
+      }
+
+      session.ttsGeneration++;
+      session.ttsContext?.cancel();
+      session.ttsContext = null;
+      if (session.telnyxWs.readyState === WebSocket.OPEN) {
+        session.telnyxWs.send(JSON.stringify({ event: 'clear' }));
+      }
+      if (session.state === 'LISTENING') mgr.transition(session, 'PROCESSING');
+      if (session.state !== 'SPEAKING') mgr.transition(session, 'SPEAKING');
+      (async () => {
+        await speakTtsStreamed(session, fallbackCopy.manager);
+        if (session.ended || session.ending) return;
+        await mgr.handoffToManager(session);
+        if (session.handoffInProgress || session.ended || session.ending) return;
+        await finishCall(session, mgr, fallbackCopy.transferFailed);
+      })().catch((err) => {
+        logger.error(
+          { err, callId: session.callControlId },
+          '[stt] Manager fallback after transcription outage failed',
+        );
+        if (!session.ended && !session.ending) {
+          finishCall(session, mgr, fallbackCopy.transferUnavailable).catch((finishErr) =>
+            logger.error(
+              { err: finishErr, callId: session.callControlId },
+              '[stt] Could not finish call after manager fallback failed',
+            ),
+          );
+        }
+      });
       break;
     }
   }

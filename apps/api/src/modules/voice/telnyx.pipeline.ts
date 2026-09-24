@@ -231,6 +231,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           restaurantId: ctx.id,
           restaurantName: ctx.name,
           managerPhone: ctx.managerPhone,
+          onlineReservationsActive: ctx.onlineReservationsActive === true,
           timezone: ctx.timezone,
           openingHours: (ctx.openingHours as OpeningHours | null) ?? null,
           // Contexte en cache d'avant ce champ : `loadContext` le recalcule sous 5 min.

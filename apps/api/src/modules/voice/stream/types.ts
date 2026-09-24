@@ -327,6 +327,11 @@ export type SttEvent =
       transcript: string;
       words?: SttWord[];
     }
+  | {
+      type: 'Unavailable';
+      reason: 'auth' | 'quota' | 'terms' | 'connection' | 'configuration';
+      message: string;
+    }
   | { type: 'Error'; message: string };
 
 /** Message entrant de Telnyx Media Stream WebSocket */
@@ -380,6 +385,8 @@ export interface CallSession {
   restaurantName: string;
   /** Numéro E.164 du gérant pour le transfert humain, si configuré. */
   managerPhone?: string | null;
+  /** La page Connect publique du restaurant est actuellement publiée. */
+  onlineReservationsActive?: boolean;
   timezone: string;
   /** Montant minimum d'une carte cadeau — stocké à la création de session */
   giftCardMinimumAmount: number;
@@ -409,6 +416,17 @@ export interface CallSession {
   sttWs: WebSocket | null;
   /** Promise résolue quand le fournisseur STT est connecté (pre-warm) */
   sttReady: Promise<void> | null;
+  /** Échecs consécutifs d’ouverture/fermeture avant une connexion STT stable. */
+  sttConsecutiveFailures?: number;
+  /** Reconnexions Scribe déjà tentées pendant cet appel (l'ouverture initiale exclue). */
+  sttReconnectAttempts?: number;
+  sttRetryTimer?: ReturnType<typeof setTimeout> | null;
+  sttConnectTimeout?: ReturnType<typeof setTimeout> | null;
+  sttConnectionDeadlineTimer?: ReturnType<typeof setTimeout> | null;
+  /** Arrêt définitif de la reconnexion après erreur terminale ou repli parlé. */
+  sttTerminalFailure?: boolean;
+  sttFallbackTriggered?: boolean;
+  sttFallbackSpoken?: boolean;
   /** Callback mutable pour les événements STT (remplacé par le handler WS) */
   onSttEvent: ((event: SttEvent) => void) | null;
   /** Modèle STT actif. */

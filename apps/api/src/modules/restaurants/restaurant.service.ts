@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/node';
 import {
   CARTESIA_MODEL,
   CIRCUIT_BREAKER_HOURLY_LIMIT,
+  DEFAULT_MAX_PARTY_SIZE,
   DEFAULT_CARTESIA_VOICE_ID,
   INTERNAL_CALL_ALERT_THRESHOLD,
   REDIS_CTX_TTL_SECONDS,
@@ -11,8 +12,8 @@ import {
 import { voiceConfig } from '../../env';
 import { getRestaurantPlanOverride } from '../../shared/configcat';
 import { DAY_SECONDS, HOUR_SECONDS } from '../../shared/constants/time.js';
-import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
 import { getVoiceLlmProvider, type VoiceLlmProvider } from '../voice/llm-provider';
+import { isPublicConnectPage } from '../connect/connect.types';
 
 /** TTL du compteur mensuel d'appels : ~33 jours en secondes */
 const MONTHLY_CALL_COUNTER_TTL_SECONDS = 33 * DAY_SECONDS;
@@ -32,6 +33,9 @@ interface CachedRestaurantContext {
   readonly id: string;
   readonly name: string;
   readonly slug: string | null;
+  readonly publishedAt: Date | null;
+  readonly agenticOptIn: boolean;
+  readonly onlineReservationsActive: boolean;
   readonly plan: string;
   readonly managerPhone: string;
   readonly managerEmail: string;
@@ -100,6 +104,8 @@ function toCachedRestaurantContext(restaurant: {
   id: string;
   name: string;
   slug: string | null;
+  publishedAt: Date | null;
+  agenticOptIn: boolean;
   plan: string;
   managerPhone: string;
   managerEmail: string;
@@ -110,13 +116,16 @@ function toCachedRestaurantContext(restaurant: {
   smsConfirmEnabled: boolean;
   googleCalendarId: string | null;
   giftCardMinimumAmount: number | null;
-  exposureSettings?: { maxPartySize: number } | null;
+  exposureSettings: { maxPartySize: number; connectPublished: boolean } | null;
   personality: CachedRestaurantContext['personality'];
 }): CachedRestaurantContext {
   return {
     id: restaurant.id,
     name: restaurant.name,
     slug: restaurant.slug,
+    publishedAt: restaurant.publishedAt,
+    agenticOptIn: restaurant.agenticOptIn,
+    onlineReservationsActive: isPublicConnectPage(restaurant),
     plan: restaurant.plan,
     managerPhone: restaurant.managerPhone,
     managerEmail: restaurant.managerEmail,
@@ -150,6 +159,8 @@ export class RestaurantService {
         id: true,
         name: true,
         slug: true,
+        publishedAt: true,
+        agenticOptIn: true,
         plan: true,
         managerPhone: true,
         managerEmail: true,
@@ -160,7 +171,12 @@ export class RestaurantService {
         smsConfirmEnabled: true,
         googleCalendarId: true,
         giftCardMinimumAmount: true,
-        exposureSettings: { select: { maxPartySize: true } },
+        exposureSettings: {
+          select: {
+            maxPartySize: true,
+            connectPublished: true,
+          },
+        },
         personality: {
           select: {
             id: true,
