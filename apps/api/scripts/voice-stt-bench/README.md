@@ -46,3 +46,27 @@ résumé chiffré est commité (journal, description de PR).
 - Une seule réponse par phrase, sans le contexte d'un vrai dialogue (pas de relance).
 - Au-delà de 7 personnes, la réservation vocale ne retient pas le nombre : ces phrases
   sont mesurées à part (`groupe > 7`).
+
+## Deuxième transcription (expérience, hors production)
+
+Question : quand Scribe batch (B) n'est pas d'accord avec Scribe Realtime (A) sur
+une valeur, cette valeur est-elle fausse ? Le désaccord détecte-t-il mieux les
+erreurs que la confiance ?
+
+```bash
+# Sur le serveur (crédits Cartesia + Scribe Realtime + Scribe batch : demander l'accord).
+# L'audio dégradé est écrit une fois dans audio-dir puis relu pour les deux moteurs.
+node --env-file=.env scripts/voice-stt-bench/second-opinion.cjs \
+  scripts/voice-stt-bench/.data/hard-validation-phrases.json \
+  scripts/voice-stt-bench/.data/audio/hard-validation > hard-validation-second-opinion.json
+
+# En local (gratuit) : précision A / B, accord, rappel et fausses alertes du
+# désaccord, confiance à fausses alertes égales, délai p50 / p95 du batch.
+pnpm exec tsx scripts/voice-stt-bench/second-opinion-eval.ts \
+  .data/hard-validation-phrases.json .data/hard-validation-second-opinion.json
+```
+
+B : `POST /v1/speech-to-text`, `model_id=scribe_v2` (`BENCH_BATCH_MODEL` pour
+changer), `language_code=fr`, mêmes `keyterms` que la production
+(`buildSttKeyterms('Chez Sokar')`, +20 % sur le prix du batch), WAV PCM 8 kHz.
+L'audio reste sur le serveur, jamais commité.

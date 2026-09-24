@@ -791,3 +791,8 @@ Log automatique des tâches Hermes.
 - « 20 heures et un enfant » reste 20:00 : après « h / heures », « et un » n'est réécrit en 21 que suivi de « h ».
 - Flag de confiance coupé et phase 1 active : `slot_confidence` publié avec `decision` `wouldBe…`, dialogue inchangé.
 - Banc : AUROC de la confiance (validation difficile : personnes 0,81, heure 0,63 ; calibration : 0,90 et 0,41), tableau hors transcriptions vides, taux de vides par SNR et pertes (SNR 5 dB : 62 % ; ≥ 15 dB : ≤ 5 %).
+
+### 2026-09-24 — Phase 3 B : banc « deuxième transcription » (expérience)
+
+- Scripts du banc seulement (`second-opinion.cjs`, `second-opinion-eval.ts`), aucun code de production. B = Scribe batch `scribe_v2`, français, mêmes keyterms que la prod, même audio exact que A (audio dégradé conservé sur le serveur, `.data/audio/`).
+- En attente de l'accord pour lancer (crédits) ; résultats à consigner ici.
