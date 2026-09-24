@@ -289,8 +289,6 @@ export type SttEvent =
 export interface TelnyxStreamMessage {
   event: 'connected' | 'start' | 'media' | 'stop' | 'dtmf' | 'error' | 'mark';
   sequence_number?: string;
-  /** Touche pressée par l'appelant (événement `dtmf`). */
-  dtmf?: { digit?: string };
   start?: {
     call_control_id: string;
     call_session_id: string;
@@ -388,8 +386,6 @@ export interface CallSession {
     languageCode?: string;
     timer: ReturnType<typeof setTimeout>;
   } | null;
-  /** Chiffres tapés au clavier en attente de validation (nombre de personnes). */
-  dtmfBuffer?: { digits: string; timer: ReturnType<typeof setTimeout> } | null;
   /** Dernière phrase appelant envoyée au traitement (déterministe ou LLM). */
   lastProcessedTranscript?: string;
   /**
