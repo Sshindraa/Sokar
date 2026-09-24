@@ -2,6 +2,7 @@ import type { UsageCategory } from '@prisma/client';
 import { enqueueOnDatabase } from '../../shared/outbox/outbox.service';
 import { logger } from '../../shared/logger/pino';
 import type { CallSession, VoiceUsageCounters } from '../voice/stream/types';
+import { telnyxCodecProfile } from '../voice/stream/telnyx-codec';
 
 const STT_SAMPLE_RATE = 8_000;
 
@@ -36,8 +37,9 @@ export function addSttAudioSamples(session: CallSession, samples: number): void 
 }
 
 export function sttSamplesForBuffer(session: CallSession, audioBytes: number): number {
-  const bytesPerSample = session.codec === 'PCMA' ? 2 : 1;
-  return audioBytes / bytesPerSample;
+  // Comptage après conversion vers Scribe : PCMA et L16 sont PCM16,
+  // PCMU reste en G.711 8 bits. Main divisait déjà PCMA par deux.
+  return audioBytes / (session.codec === 'PCMU' ? 1 : 2);
 }
 
 /** Count Cartesia characters only after a provider request/cache miss. */
@@ -125,7 +127,7 @@ export async function finalizeVoiceUsage(session: CallSession): Promise<void> {
     const counters = ensureVoiceUsage(session);
     const tasks: Promise<void>[] = [];
 
-    const sttSeconds = counters.sttAudioSamples / STT_SAMPLE_RATE;
+    const sttSeconds = counters.sttAudioSamples / telnyxCodecProfile(session.codec).sampleRate;
     if (sttSeconds > 0) {
       tasks.push(
         enqueueVoiceUsage(

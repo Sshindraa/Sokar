@@ -350,7 +350,7 @@ export interface CallSession {
   };
   turnCount: number;
   isVip: boolean;
-  codec: 'PCMA' | 'PCMU';
+  codec: 'PCMA' | 'PCMU' | 'L16';
   history: ChatMessage[];
 
   // WebSockets
@@ -377,6 +377,16 @@ export interface CallSession {
   } | null;
   /** Indique si le premier paquet audio de la socket Scribe a déjà été envoyé. */
   sttFirstAudioChunkSent?: boolean;
+  /** Tampon de regroupement des trames avant envoi (`VOICE_STT_CHUNK_MS` > 20). */
+  sttChunkBuffer?: Buffer | null;
+  /** Timer de sécurité : envoie un tampon partiel si le flux s'interrompt. */
+  sttChunkTimer?: ReturnType<typeof setTimeout> | null;
+  /** Sonde de bande large (premières secondes de parole), codec L16. */
+  widebandProbe?: import('./wideband').WidebandProbe | null;
+  widebandDetected?: boolean;
+  l16EndianProbe?: import('./wideband').L16EndianProbe | null;
+  l16MediaFormat?: { encoding: string; sample_rate: number; channels: number };
+  l16EndianLogged?: boolean;
   /** Profil EOT courant ; conservé même quand le WebSocket est reconnecté. */
   sttTurnConfig?: SttTurnConfigState;
   /** Commit simple en attente de son éventuel événement horodaté associé. */
@@ -489,5 +499,5 @@ export interface MediaStreamConfig {
   stream_url: string;
   stream_track: 'inbound_track';
   stream_bidirectional_mode: 'rtp';
-  stream_bidirectional_codec: 'PCMA' | 'PCMU';
+  stream_bidirectional_codec: 'PCMA' | 'PCMU' | 'L16';
 }

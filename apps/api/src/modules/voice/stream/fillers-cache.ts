@@ -32,6 +32,12 @@ import {
 } from './voice-language';
 import { writeDebugLog } from './debug-log';
 import { splitTelnyxAudioFrames } from './audio-frames';
+import {
+  encodeTelnyxFromPcm16,
+  getTelnyxCodec,
+  telnyxCodecProfile,
+  type TelnyxCodec,
+} from './telnyx-codec';
 import { TTS_FRAME_DURATION_MS } from './constants';
 import { logger } from '../../../shared/logger/pino';
 import { CARTESIA_MODEL, FILLER_CACHE_TTL_SECONDS } from '@sokar/config';
@@ -204,7 +210,7 @@ export function selectRandomGoodbyeText(
 /** Cache RAM : chunks audio (base64) pour chaque filler */
 const fillerCache = new Map<string, string[]>();
 let initialized = false;
-let fillerEncoding: 'pcm_alaw' | 'pcm_mulaw' = 'pcm_alaw';
+let fillerCodec: TelnyxCodec = getTelnyxCodec();
 
 /**
  * Switch le codec filler selon la session Telnyx active.
@@ -213,15 +219,15 @@ let fillerEncoding: 'pcm_alaw' | 'pcm_mulaw' = 'pcm_alaw';
  * session arrive avec l'autre codec, le lookup Redis s'adaptera
  * automatiquement (cf. `redisKey`).
  */
-export function setFillerCodec(codec: 'PCMA' | 'PCMU'): void {
-  fillerEncoding = codec === 'PCMA' ? 'pcm_alaw' : 'pcm_mulaw';
+export function setFillerCodec(codec: TelnyxCodec): void {
+  fillerCodec = codec;
 }
 
 export function __resetFillerCacheForTests(): void {
   if (process.env.NODE_ENV !== 'test') return;
   fillerCache.clear();
   initialized = false;
-  fillerEncoding = 'pcm_alaw';
+  fillerCodec = 'PCMA';
 }
 
 /**
@@ -232,7 +238,7 @@ export function __resetFillerCacheForTests(): void {
 function redisKey(
   text: string,
   voiceId: string,
-  codec: 'pcm_alaw' | 'pcm_mulaw',
+  codec: string,
   language: VoiceLanguageCode = 'fr',
 ): string {
   const locale = normalizeVoiceLocale(language) ?? `${language}-US`;
@@ -244,8 +250,19 @@ function redisKey(
   return `filler:${hash}`;
 }
 
-function memoryKey(text: string, voiceId: string, language: VoiceLanguageCode): string {
-  return `${voiceId}|${normalizeVoiceLocale(language) ?? `${language}-US`}|${text}`;
+function fillerKeyCodec(codec: TelnyxCodec): string {
+  return codec === 'L16' ? 'pcm16k' : telnyxCodecProfile(codec).cartesiaEncoding;
+}
+
+function memoryKey(
+  text: string,
+  voiceId: string,
+  language: VoiceLanguageCode,
+  codec = fillerCodec,
+): string {
+  const legacy = `${voiceId}|${normalizeVoiceLocale(language) ?? `${language}-US`}|${text}`;
+  // En G.711 la clé RAM historique ne portait aucun codec. Seul L16 est isolé.
+  return codec === 'L16' ? `${legacy}|pcm16k` : legacy;
 }
 
 /**
@@ -289,7 +306,7 @@ export async function initFillerCache(): Promise<void> {
   const toGenerate: Array<{ text: string; language: VoiceLanguageCode }> = [];
   for (const filler of allFillers) {
     const { text, language } = filler;
-    const key = redisKey(text, voiceId, fillerEncoding, language);
+    const key = redisKey(text, voiceId, fillerKeyCodec(fillerCodec), language);
     try {
       const cached = await redisCache.get(key);
       if (cached) {
@@ -329,7 +346,7 @@ export async function initFillerCache(): Promise<void> {
             // RAM d'abord (lookup O(1) au runtime)
             fillerCache.set(memoryKey(text, voiceId, language), chunks);
             // Redis ensuite (persistance cross-restart)
-            const key = redisKey(text, voiceId, fillerEncoding, language);
+            const key = redisKey(text, voiceId, fillerKeyCodec(fillerCodec), language);
             await redisCache.set(
               key,
               JSON.stringify(chunks),
@@ -374,6 +391,7 @@ export async function playFiller(
   if (!ws || ws.readyState !== WebSocket.OPEN || options.signal?.aborted) return;
 
   const language = session ? effectiveVoiceLanguage(session) : 'fr';
+  const codec = session?.codec ?? fillerCodec;
   const voiceId = session ? getCartesiaVoiceId(session) : getCartesiaVoiceId();
   const text =
     purpose === 'generic' && options.randomize
@@ -384,19 +402,19 @@ export async function playFiller(
   let fillerCompleted = false;
   try {
     // 1. RAM
-    let chunks = fillerCache.get(memoryKey(text, voiceId, language));
+    let chunks = fillerCache.get(memoryKey(text, voiceId, language, codec));
 
     // 2. Redis fallback
     if (!chunks) {
       try {
-        const key = redisKey(text, voiceId, fillerEncoding, language);
+        const key = redisKey(text, voiceId, fillerKeyCodec(codec), language);
         const cached = await redisCache.get(key);
         if (options.signal?.aborted) return;
         if (cached) {
           chunks = JSON.parse(cached) as string[];
           if (Array.isArray(chunks) && chunks.length > 0) {
             // Promotion en RAM pour le prochain appel
-            fillerCache.set(memoryKey(text, voiceId, language), chunks);
+            fillerCache.set(memoryKey(text, voiceId, language, codec), chunks);
           }
         }
       } catch (err) {
@@ -404,9 +422,13 @@ export async function playFiller(
       }
     }
 
+    if ((!chunks || chunks.length === 0) && codec === 'L16') {
+      chunks = await generateFillerAudio(text, language, codec);
+      if (chunks.length > 0) fillerCache.set(memoryKey(text, voiceId, language, codec), chunks);
+    }
     if (chunks && chunks.length > 0) {
       const audio = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk, 'base64')));
-      const frames = splitTelnyxAudioFrames(audio, fillerEncoding === 'pcm_alaw' ? 'PCMA' : 'PCMU');
+      const frames = splitTelnyxAudioFrames(audio, codec);
       writeDebugLog(`[fillers] Playing filler: "${text}" (${frames.length} frames, 100ms paced)`);
       for (const frame of frames) {
         if (
@@ -419,7 +441,12 @@ export async function playFiller(
           break;
         }
         if (ws.readyState !== WebSocket.OPEN) break;
-        ws.send(JSON.stringify({ event: 'media', media: { payload: frame.toString('base64') } }));
+        ws.send(
+          JSON.stringify({
+            event: 'media',
+            media: { payload: encodeTelnyxFromPcm16(codec, frame).toString('base64') },
+          }),
+        );
         fillerFramesSent++;
         await new Promise((r) => setTimeout(r, TTS_FRAME_DURATION_MS));
         if (options.signal?.aborted) break;
@@ -436,6 +463,7 @@ export async function playFiller(
 async function generateFillerAudio(
   text: string,
   language: VoiceLanguageCode = 'fr',
+  codec: TelnyxCodec = fillerCodec,
 ): Promise<string[]> {
   const maxRetries = 3;
   let response: Response | null = null;
@@ -465,8 +493,8 @@ async function generateFillerAudio(
             },
             output_format: {
               container: 'raw',
-              encoding: fillerEncoding,
-              sample_rate: 8000,
+              encoding: telnyxCodecProfile(codec).cartesiaEncoding,
+              sample_rate: telnyxCodecProfile(codec).sampleRate,
             },
           }),
         },

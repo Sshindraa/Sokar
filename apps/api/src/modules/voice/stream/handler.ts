@@ -26,6 +26,8 @@ import { WebSocket } from 'ws';
 import type { TelnyxStreamMessage, SttEvent, CallSession } from './types';
 import { CallSessionManager } from './manager';
 import { sendAudioToStt, closeStt, connectStt } from './stt-bridge';
+import { decodeTelnyxToPcm16, telnyxCodecProfile } from './telnyx-codec';
+import { L16EndianProbe, WidebandProbe } from './wideband';
 import { logger } from '../../../shared/logger/pino';
 import { captureException } from '../../../shared/sentry/client';
 import { writeDebugLog } from './debug-log';
@@ -39,6 +41,7 @@ import { finalizeVoiceUsage } from '../../usage/voice-usage.service';
 import { finalizeVoiceCall } from '../call-finalization.service';
 import { callFinalizationDependencies } from '../call-finalization.dependencies';
 import { getVoiceLlmRuntimeInfo } from '../llm-provider';
+import { voiceWidebandDetectedTotal } from '../../../shared/observability/metrics';
 
 /**
  * Finalisation métier d'un appel depuis le stream : le WebSocket peut se
@@ -115,6 +118,8 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
     socket.on('close', () => {
       log.info('[stream] Telnyx WS closed');
       if (session) {
+        finishL16Endian(session);
+        finishWideband(session);
         session.ended = true;
         session.state = 'IDLE';
         session.isSpeaking = false;
@@ -142,6 +147,8 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
         extra: { callId },
       });
       if (session) {
+        finishL16Endian(session);
+        finishWideband(session);
         session.ended = true;
         session.state = 'IDLE';
         session.isSpeaking = false;
@@ -163,9 +170,60 @@ export function registerMediaStreamRoutes(app: FastifyInstance): void {
 }
 
 /**
- * Gère chaque message du WebSocket Telnyx.
- * Retourne la session mise à jour.
+ * Sonde de bande large : part de l'énergie au-dessus de 4 kHz sur les premières
+ * secondes de parole. Sert à savoir si L16 apporte réellement quelque chose sur
+ * les appels réels. Aucune PII : seule une énergie agrégée est calculée, et le
+ * buffer est libéré dès la décision prise.
  */
+function trackWideband(session: CallSession, payload: string): void {
+  const profile = telnyxCodecProfile(session.codec);
+  if (!profile.wideband || session.widebandDetected !== undefined) return;
+  session.widebandProbe ??= new WidebandProbe(profile.sampleRate);
+  const pcm = decodeTelnyxToPcm16(session.codec, Buffer.from(payload, 'base64'));
+  const decision = session.widebandProbe.add(pcm);
+  if (decision === null) return;
+  session.widebandDetected = decision;
+  voiceWidebandDetectedTotal.inc({
+    detected: decision ? 'true' : 'false',
+    codec: session.codec,
+  });
+  session.widebandProbe = null;
+}
+
+function finishWideband(session: CallSession): void {
+  if (session.codec !== 'L16' || session.widebandDetected !== undefined) return;
+  const detected = session.widebandProbe?.finish() ?? false;
+  session.widebandDetected = detected;
+  session.widebandProbe = null;
+  voiceWidebandDetectedTotal.inc({ detected: detected ? 'true' : 'false', codec: 'L16' });
+}
+
+function logL16Endian(
+  session: CallSession,
+  rms: { bigEndianRms: number; littleEndianRms: number },
+): void {
+  if (session.l16EndianLogged) return;
+  session.l16EndianLogged = true;
+  session.l16EndianProbe = null;
+  logger.info(
+    { media_format: session.l16MediaFormat ?? null, ...rms },
+    '[stream] L16 endian probe',
+  );
+}
+
+function trackL16Endian(session: CallSession, payload: string): void {
+  if (session.codec !== 'L16' || session.l16EndianLogged) return;
+  session.l16EndianProbe ??= new L16EndianProbe();
+  const rms = session.l16EndianProbe.add(Buffer.from(payload, 'base64'));
+  if (rms) logL16Endian(session, rms);
+}
+
+function finishL16Endian(session: CallSession): void {
+  if (session.codec !== 'L16' || session.l16EndianLogged) return;
+  logL16Endian(session, (session.l16EndianProbe ?? new L16EndianProbe()).finish());
+}
+
+/** Gère chaque message du WebSocket Telnyx et retourne la session mise à jour. */
 function handleTelnyxMessage(
   msg: TelnyxStreamMessage,
   callId: string,
@@ -199,6 +257,14 @@ function handleTelnyxMessage(
         writeDebugLog(`[stream] No session found for ${start.call_control_id}`);
         logger.warn({ callId: start.call_control_id }, '[stream] No session found for start event');
         return;
+      }
+
+      if (session.codec === 'L16') {
+        session.l16MediaFormat = {
+          encoding: start.media_format.encoding,
+          sample_rate: start.media_format.sample_rate,
+          channels: start.media_format.channels,
+        };
       }
 
       // Assigner le WebSocket Telnyx à la session (manquant — cause du silence)
@@ -284,6 +350,10 @@ function handleTelnyxMessage(
       const session = mgr.get(callId);
       if (!session || session.ended || session.ending) return session;
 
+      // Sonde de bande large sur les premières secondes de parole du client.
+      trackL16Endian(session, payload);
+      trackWideband(session, payload);
+
       // Forwarder l'audio à ElevenLabs
       sendAudioToStt(session, payload);
 
@@ -294,6 +364,8 @@ function handleTelnyxMessage(
       logger.info({ callId }, '[stream] Telnyx stream stop');
       const session = mgr.get(callId);
       if (session) {
+        finishL16Endian(session);
+        finishWideband(session);
         session.ended = true;
         session.state = 'IDLE';
         session.isSpeaking = false;
