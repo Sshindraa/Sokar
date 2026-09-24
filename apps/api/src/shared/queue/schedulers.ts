@@ -212,6 +212,16 @@ export async function registerJobSchedulers(): Promise<void> {
     ),
   );
 
+  // Dialogues des appels de test (restaurants de VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS) :
+  // supprimés 14 jours après l'appel.
+  await register('telnyx-webhooks/voice-debug-turns-purge', () =>
+    queues.telnyxWebhooks.upsertJobScheduler(
+      'voice-debug-turns-purge-daily',
+      { pattern: '30 3 * * *', tz: 'Europe/Paris' },
+      { name: 'purge-expired-voice-debug-turns' },
+    ),
+  );
+
   // Nettoyage des holds expirés (filet de sécurité, RES-008).
   await register('hold-cleanup/5min', () =>
     queues.holdCleanup.upsertJobScheduler(

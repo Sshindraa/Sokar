@@ -13,8 +13,13 @@ import {
   voiceLlmFirstTokenMs,
   voiceLlmFirstPhraseMs,
   voiceTtsFirstAudioMs,
+  voiceEndOfSpeechToFirstAudioMs,
+  voiceFalseEndOfTurnTotal,
+  voiceFillerEventsTotal,
+  voiceTurnPlanShadowByRestaurantTotal,
 } from '../../../shared/observability/metrics';
 import { getVoiceLlmModel, getVoiceLlmProvider } from '../llm-provider';
+import { recordDebugCallerText, recordDebugSpeechAct } from './debug-dialogue';
 
 export type VoiceTurnPhase =
   | 'speech'
@@ -195,6 +200,7 @@ export function completeVoiceTurnInput(
   if (!turn) return;
 
   const completedAt = Date.now();
+  recordDebugCallerText(session, transcript);
   turn.transcriptLength = transcript.length;
   turn.transcriptFingerprint = transcriptFingerprint(transcript);
   if (session.latencyTrace) {
@@ -222,6 +228,7 @@ export function recordVoiceTurnClassification(
   session: CallSession,
   speechAct: VoiceSpeechAct,
 ): void {
+  recordDebugSpeechAct(session, speechAct);
   recordVoiceTurnEvent(session, 'classified', {
     speechAct,
     intent: session.conversation.intent,
@@ -418,6 +425,8 @@ export function recordVoiceTurnEvent(
     }
   }
 
+  const restaurantId = session.restaurantId || 'unknown';
+
   // ─── Prometheus metrics (observation only, no alerting) ──────────
   // Les métriques sont observées au passage des events existants, sans
   // ajout de logique métier. Les labels restent à faible cardinalité.
@@ -438,8 +447,42 @@ export function recordVoiceTurnEvent(
       voiceTtsFirstAudioMs.observe(ttsMs);
       const totalMs = typeof fields.totalE2eMs === 'number' ? fields.totalE2eMs : elapsedMs;
       voiceTurnDurationMs.observe(totalMs);
+      if (trace?.sttFinalAt !== undefined) {
+        const vadMs = Math.round(
+          (session.sttTurnConfig?.applied?.vadSilenceThresholdSecs ??
+            session.sttTurnConfig?.desired.vadSilenceThresholdSecs ??
+            0) * 1_000,
+        );
+        voiceEndOfSpeechToFirstAudioMs.observe(
+          { path: currentPath(session), restaurant_id: restaurantId },
+          Math.max(0, eventAt - trace.sttFinalAt + vadMs),
+        );
+      }
       break;
     }
+    case 'speech_resumed':
+      voiceFalseEndOfTurnTotal.inc({ restaurant_id: restaurantId });
+      break;
+    case 'llm_interrupted':
+      if (fields.reason === 'speech_resumed') {
+        voiceFalseEndOfTurnTotal.inc({ restaurant_id: restaurantId });
+      }
+      break;
+    case 'filler_started':
+    case 'filler_completed':
+    case 'filler_interrupted':
+      voiceFillerEventsTotal.inc({
+        outcome: event.slice('filler_'.length),
+        purpose: typeof fields.purpose === 'string' ? fields.purpose : 'unknown',
+        restaurant_id: restaurantId,
+      });
+      break;
+    case 'turn_plan_shadow':
+      voiceTurnPlanShadowByRestaurantTotal.inc({
+        status: typeof fields.status === 'string' ? fields.status : 'unknown',
+        restaurant_id: restaurantId,
+      });
+      break;
   }
 
   logger.info(

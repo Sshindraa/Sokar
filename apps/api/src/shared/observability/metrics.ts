@@ -396,6 +396,66 @@ export function recordVoiceTurnPlanDeferred(outcome: VoiceTurnPlanDeferredOutcom
   voiceTurnPlanDeferredTotal.inc({ outcome });
 }
 
+// ─── Phase 0 : référence de naturalité voice, par restaurant ───────
+// Ces séries portent `restaurant_id` : la cardinalité reste bornée par le
+// nombre de restaurants actifs (quelques dizaines), jamais par l'appel.
+
+export type VoiceFirstAudioPath = 'deterministic' | 'llm' | 'availability' | 'fallback' | 'unknown';
+
+/**
+ * Fin de parole estimée → premier frame audio envoyé à Telnyx. La fin de
+ * parole est le commit STT moins le silence VAD configuré, pour que les
+ * gains de détection de fin de tour soient visibles.
+ */
+export const voiceEndOfSpeechToFirstAudioMs = new Histogram({
+  name: 'sokar_voice_end_of_speech_to_first_audio_ms',
+  help: 'Fin de parole estimée → premier audio envoyé (ms), par chemin et restaurant',
+  labelNames: ['path', 'restaurant_id'] as const,
+  buckets: [250, 500, 750, 1000, 1250, 1500, 2000, 2500, 3000, 4000, 6000, 10000],
+  registers: [getRegistry()],
+});
+
+/** Fausse fin de tour : le client reprend la parole pendant PROCESSING. */
+export const voiceFalseEndOfTurnTotal = new Counter({
+  name: 'sokar_voice_false_end_of_turn_total',
+  help: 'Reprises de parole du client pendant PROCESSING (fausse fin de tour)',
+  labelNames: ['restaurant_id'] as const,
+  registers: [getRegistry()],
+});
+
+export const voiceFillerEventsTotal = new Counter({
+  name: 'sokar_voice_filler_events_total',
+  help: 'Fillers vocaux par résultat (started, completed, interrupted) et usage',
+  labelNames: ['outcome', 'purpose', 'restaurant_id'] as const,
+  registers: [getRegistry()],
+});
+
+export const voiceTurnPlanShadowByRestaurantTotal = new Counter({
+  name: 'sokar_voice_turn_plan_shadow_by_restaurant_total',
+  help: 'Observations TurnPlan shadow par statut et restaurant',
+  labelNames: ['status', 'restaurant_id'] as const,
+  registers: [getRegistry()],
+});
+
+export type VoiceTransferMotive = 'caller_request' | 'dialogue_stall' | 'name_spelling';
+export type VoiceTransferOutcome = 'requested' | 'rejected' | 'failed' | 'unconfigured';
+
+/** Transferts au gérant par motif, intention en cours et résultat Telnyx. */
+export const voiceTransfersTotal = new Counter({
+  name: 'sokar_voice_transfers_total',
+  help: 'Transferts vers le gérant par motif, intention, résultat et restaurant',
+  labelNames: ['motive', 'intent', 'outcome', 'restaurant_id'] as const,
+  registers: [getRegistry()],
+});
+
+/** Appels vocaux démarrés : dénominateur des taux par restaurant. */
+export const voiceCallsTotal = new Counter({
+  name: 'sokar_voice_calls_total',
+  help: 'Appels vocaux démarrés par restaurant',
+  labelNames: ['restaurant_id'] as const,
+  registers: [getRegistry()],
+});
+
 // ─── Render ───────────────────────────────────────────────────
 
 /**
@@ -456,6 +516,12 @@ export function __resetMetrics(): void {
   voiceTurnPlanShadowDimensionTotal.reset();
   voiceTurnPlanAuthorityTotal.reset();
   voiceTurnPlanDeferredTotal.reset();
+  voiceEndOfSpeechToFirstAudioMs.reset();
+  voiceFalseEndOfTurnTotal.reset();
+  voiceFillerEventsTotal.reset();
+  voiceTurnPlanShadowByRestaurantTotal.reset();
+  voiceTransfersTotal.reset();
+  voiceCallsTotal.reset();
 }
 
 // ─── Sokar Connect (Phase 1) ────────────────────────────────────────

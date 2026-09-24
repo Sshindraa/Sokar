@@ -277,6 +277,38 @@ y compris quand elle se trompe sans le savoir (`path="deterministic"`). Commence
 (par exemple `0.2`) et monter selon le volume. Comme la liste d'IDs, cette valeur n'est
 pas un booléen et se pose directement dans le fichier d'environnement de l'API.
 
+`VOICE_SMART_ENDPOINT_ENABLED=true` (défaut `false`) active la fin de tour hybride.
+`VOICE_SMART_ENDPOINT_RESTAURANT_IDS` (IDs séparés par des virgules, vide = tous) la limite
+à certains restaurants. Pour ces appels, Scribe coupe après
+`VOICE_SMART_ENDPOINT_VAD_SILENCE_SECS` (défaut `0.5`, bornes 0,2 à 3) au lieu de
+`ELEVENLABS_STT_VAD_SILENCE_SECS` (défaut `0.95`, qui reste la valeur des autres appels).
+Après le commit, l'API ajoute une attente selon la phrase : 0 ms si elle est complète
+(ponctuation finale ou réponse d'un ou deux mots comme « oui »), 800 ms si elle finit en
+suspens (« demain à », « au nom de », « je suis »), 600 ms pour une correction commencée
+(« non, plutôt… »), 400 ms sans ponctuation. Si le client reprend pendant l'attente, la
+suite est fusionnée dans le même tour. Comparer avant/après avec
+`sokar_voice_end_of_speech_to_first_audio_ms` et `sokar_voice_false_end_of_turn_total`.
+
+`VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS` (IDs séparés par des virgules, **vide = désactivé**)
+enregistre le dialogue de chaque tour pour ces seuls restaurants de test : paroles du client,
+réponses et fillers de l'agent, outils appelés, type de tour. Table `voice_debug_turns`, texte
+passé par `redactPii()` (téléphones, e-mails ; les noms restent), suppression 14 jours après
+l'appel par la tâche quotidienne `purge-expired-voice-debug-turns` (3 h 30, Europe/Paris). Ne
+jamais y mettre un restaurant client. Les mesures du tour restent dans `voice_turn_telemetry`.
+Chaque réplique de l'agent est comptée par ses propres trames envoyées à Telnyx : envoyée en
+entier, « [envoi coupé] », ou omise si aucune trame n'est partie. Avec le contexte Cartesia, la
+réponse forme une seule réplique (l'audio ne se rattache pas phrase par phrase). Envoyé ne veut
+pas dire entendu : un barge-in peut encore vider l'audio en attente côté Telnyx.
+
+`SOKAR_VOICE_READ_TOKEN` (secret, `openssl rand -hex 32`) protège la lecture interne, en
+`Authorization: Bearer <jeton>` ; sans lui, les routes répondent 503. Lecture seule :
+`GET /api/internal/voice/calls?restaurantId=…&limit=20` (derniers appels),
+`GET /api/internal/voice/calls/latest?restaurantId=…` et `GET /api/internal/voice/calls/:callId`
+(mesures par tour, plus le dialogue pour les seuls restaurants de
+`VOICE_DEBUG_TRANSCRIPT_RESTAURANT_IDS`). Jamais le numéro de l'appelant, le transcript brut ni
+les champs d'enregistrement. Pour une session Claude : autoriser `api.sokar.tech` dans l'accès
+réseau de l'environnement et y poser la même valeur en variable d'environnement.
+
 Le TurnPlan propose désormais des `facts` : `{field, op: set|replace|clear, value, source:
 user_explicit|user_tentative|correction}` ; les anciens `slots` restent lus comme `set` affirmé.
 Sous autorité, `set` remplit seulement un champ vide. `replace` corrige un fait d'origine

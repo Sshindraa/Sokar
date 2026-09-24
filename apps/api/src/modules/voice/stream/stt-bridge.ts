@@ -260,14 +260,39 @@ function readConfiguredNumber(envName: string, fallback: number, min: number, ma
   return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 
-function getBaseSttTurnConfig(): SttTurnConfig {
+/** Silence Scribe par défaut quand la fin de tour hybride est active. */
+export const SMART_ENDPOINT_VAD_SILENCE_SECS = 0.5;
+
+/**
+ * Fin de tour hybride : Scribe commite après un silence court et
+ * l'application décide d'attendre ou non selon la phrase. Activée par
+ * VOICE_SMART_ENDPOINT_ENABLED, limitée à VOICE_SMART_ENDPOINT_RESTAURANT_IDS
+ * quand la liste est renseignée.
+ */
+export function isSmartEndpointEnabled(session: Pick<CallSession, 'restaurantId'>): boolean {
+  if (process.env.VOICE_SMART_ENDPOINT_ENABLED !== 'true') return false;
+  const restaurantIds = (process.env.VOICE_SMART_ENDPOINT_RESTAURANT_IDS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return restaurantIds.length === 0 || restaurantIds.includes(session.restaurantId);
+}
+
+function getBaseSttTurnConfig(smartEndpoint = false): SttTurnConfig {
   return {
-    vadSilenceThresholdSecs: readConfiguredNumber(
-      'ELEVENLABS_STT_VAD_SILENCE_SECS',
-      DEFAULT_STT_TURN_CONFIG.vadSilenceThresholdSecs,
-      0.2,
-      3,
-    ),
+    vadSilenceThresholdSecs: smartEndpoint
+      ? readConfiguredNumber(
+          'VOICE_SMART_ENDPOINT_VAD_SILENCE_SECS',
+          SMART_ENDPOINT_VAD_SILENCE_SECS,
+          0.2,
+          3,
+        )
+      : readConfiguredNumber(
+          'ELEVENLABS_STT_VAD_SILENCE_SECS',
+          DEFAULT_STT_TURN_CONFIG.vadSilenceThresholdSecs,
+          0.2,
+          3,
+        ),
     minSpeechDurationMs: readConfiguredNumber(
       'ELEVENLABS_STT_MIN_SPEECH_MS',
       DEFAULT_STT_TURN_CONFIG.minSpeechDurationMs,
@@ -289,7 +314,7 @@ function cloneSttTurnConfig(config: SttTurnConfig): SttTurnConfig {
 
 function ensureSttTurnConfig(session: CallSession): NonNullable<CallSession['sttTurnConfig']> {
   if (!session.sttTurnConfig) {
-    const base = getBaseSttTurnConfig();
+    const base = getBaseSttTurnConfig(isSmartEndpointEnabled(session));
     session.sttTurnConfig = {
       base,
       desired: cloneSttTurnConfig(base),
@@ -399,6 +424,61 @@ function mergeSttTranscripts(previous: string, next: string): string {
     }
   }
   return [...previousWords, ...nextWords].join(' ');
+}
+
+function clearSemanticHold(
+  session: CallSession,
+): NonNullable<CallSession['sttSemanticHold']> | null {
+  const hold = session.sttSemanticHold ?? null;
+  if (hold?.timer) clearTimeout(hold.timer);
+  session.sttSemanticHold = null;
+  return hold;
+}
+
+function armSemanticHoldTimer(
+  session: CallSession,
+  hold: NonNullable<CallSession['sttSemanticHold']>,
+): void {
+  if (hold.timer) clearTimeout(hold.timer);
+  hold.timer = setTimeout(() => {
+    if (session.sttSemanticHold !== hold) return;
+    session.sttSemanticHold = null;
+    dispatchUtteranceEnd(session, hold.transcript, hold.words, hold.languageCode);
+  }, hold.holdMs);
+}
+
+/**
+ * Fin de tour hybride : après le commit Scribe, attend un délai variable
+ * selon la phrase. Si le client reprend pendant l'attente, la suite est
+ * fusionnée au texte retenu au lieu de créer un second tour.
+ */
+function dispatchOrHoldUtteranceEnd(
+  session: CallSession,
+  transcript: string,
+  words?: SttWord[],
+  languageCode?: string,
+): void {
+  const previous = clearSemanticHold(session);
+  const merged = previous ? mergeSttTranscripts(previous.transcript, transcript) : transcript;
+  const mergedWords = previous?.words && words ? [...previous.words, ...words] : words;
+  const mergedLanguage = languageCode ?? previous?.languageCode;
+
+  const { holdMs, reason } = getSmartEndpointDelay(merged);
+  if (holdMs === 0) {
+    dispatchUtteranceEnd(session, merged, mergedWords, mergedLanguage);
+    return;
+  }
+
+  logger.debug({ callId: session.callControlId, reason, holdMs }, '[stt] Holding end of turn');
+  const hold: NonNullable<CallSession['sttSemanticHold']> = {
+    transcript: merged,
+    ...(mergedWords ? { words: mergedWords } : {}),
+    ...(mergedLanguage ? { languageCode: mergedLanguage } : {}),
+    holdMs,
+    timer: null,
+  };
+  session.sttSemanticHold = hold;
+  armSemanticHoldTimer(session, hold);
 }
 
 function dispatchUtteranceEnd(
@@ -743,7 +823,15 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
   const mgr = CallSessionManager.getInstance();
   handleBargeInFromTranscript(session, mgr, cleanTranscript);
 
-  if (!session.turnTranscript.trim()) {
+  const semanticHold = session.sttSemanticHold;
+  if (semanticHold?.timer) {
+    // Le client reprend sa phrase : le tour retenu reste ouvert jusqu'au
+    // prochain commit, qui le fusionnera.
+    clearTimeout(semanticHold.timer);
+    semanticHold.timer = null;
+  }
+
+  if (!session.turnTranscript.trim() && !semanticHold) {
     flushPendingSttEndOfTurn(session);
     session.onSttEvent?.({ type: 'UtteranceStart' });
   } else if (session.state === 'PROCESSING' && cleanTranscript !== session.turnTranscript) {
@@ -787,6 +875,9 @@ function dispatchCommittedTranscript(
       },
       '[stt] Ignoring low-signal committed transcript',
     );
+    // Un tour retenu ne doit jamais rester bloqué derrière un commit ignoré.
+    const hold = session.sttSemanticHold;
+    if (hold && !hold.timer) armSemanticHoldTimer(session, hold);
     return;
   }
 
@@ -804,6 +895,10 @@ function dispatchCommittedTranscript(
       ...(languageCode ? { languageCode } : {}),
     };
     schedulePendingSttEndOfTurn(session);
+    return;
+  }
+  if (isSmartEndpointEnabled(session)) {
+    dispatchOrHoldUtteranceEnd(session, cleanTranscript, words, languageCode);
     return;
   }
   dispatchUtteranceEnd(session, cleanTranscript, words, languageCode);
@@ -972,6 +1067,7 @@ export function sendAudioToStt(session: CallSession, audioPayload: string): void
 
 export function closeStt(session: CallSession): void {
   clearPendingSttEndOfTurn(session);
+  clearSemanticHold(session);
   clearPendingSttCommit(session);
   const ws = session.sttWs;
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -982,53 +1078,50 @@ export function closeStt(session: CallSession): void {
   }
 }
 
-export const SMART_ENDPOINT_DELAY_WITH_PUNCTUATION_MS = 650;
-export const SMART_ENDPOINT_DELAY_WITHOUT_PUNCTUATION_MS = 1_200;
-export const SMART_ENDPOINT_DELAY_INCOMPLETE_RESERVATION_MS = 1_300;
-export const SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS = 2_500;
-export const SMART_ENDPOINT_DELAY_INCOMPLETE_FRAGMENT_MS = 1_500;
+/** Attentes ajoutées après le commit Scribe, selon la forme de la phrase. */
+export const SMART_ENDPOINT_HOLD_COMPLETE_MS = 0;
+export const SMART_ENDPOINT_HOLD_SUSPENDED_MS = 800;
+export const SMART_ENDPOINT_HOLD_CORRECTION_MS = 600;
+export const SMART_ENDPOINT_HOLD_NO_PUNCTUATION_MS = 400;
 
+export type SmartEndpointReason = 'complete' | 'suspended' | 'correction' | 'no_punctuation';
+
+/** Minuscules sans accents : « À » et « a » se comparent de la même façon. */
+function normalizeForEndpoint(transcript: string): string {
+  return transcript
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’]/g, "'")
+    .toLowerCase()
+    .trim();
+}
+
+// Fin en suspens : préposition, article, conjonction ou présentation
+// laissée sans suite (« demain à », « au nom de », « je suis »).
+const SUSPENDED_ENDING =
+  /(?:^|[\s,])(?:pour|a|vers|de|du|des|d'|le|la|les|l'|au|aux|chez|avec|et|ou|mais|donc|alors|puis|du coup|au nom de|je suis|c'est|mon nom est|on sera|nous serons|il y aura|je voudrais|j'aimerais)\s*,?$/;
+const CORRECTION_START = /^(?:non\s*[,.]?\s+\S|plutot\b|en fait\b|j'ai dit\b|je voulais dire\b)/;
+const TERMINAL_PUNCTUATION = /[.!?]$/;
+// Réponse courte, complète même sans ponctuation (« oui », « d'accord »).
+const SHORT_ANSWER = /^(?:\S+)(?:\s+\S+)?$/;
+
+/**
+ * Délai d'attente supplémentaire avant d'envoyer un tour, une fois le
+ * silence Scribe écoulé. 0 ms signifie que la phrase part tout de suite.
+ */
 export function getSmartEndpointDelay(transcript: string): {
-  timeoutMs: number;
-  reason:
-    | 'punctuation'
-    | 'incomplete_identity'
-    | 'incomplete_reservation'
-    | 'incomplete_fragment'
-    | 'silence';
+  holdMs: number;
+  reason: SmartEndpointReason;
 } {
-  const endsWithPunctuation = /[.!?]\s*$/.test(transcript);
-  const soundsLikeIdentityIntroduction =
-    /\b(?:je\s+suis|mon\s+nom\s+est)\s+(?:[\p{L}-]+\s*){1,3}$/iu.test(transcript);
-  const startsWithCorrection =
-    /^\s*(?:non\b|plutot\b|en\s+fait\b|j['’]ai\s+dit\b|je\s+voulais\s+dire\b)/iu.test(transcript);
-  const endsWithReservationFragment =
-    /\b(?:pour|a|vers)\s*$|\b(?:demain|aujourd['’]hui)\s+(?:a|vers)\s*$/iu.test(transcript);
-  const endsWithShortConnector =
-    /^(?:ok(?:ay)?|d['’]accord|donc|du coup|mais|alors|et)(?:\s+(?:donc|du coup|alors))?\s*[.!?]?$/iu.test(
-      transcript.trim(),
-    );
-
-  if (soundsLikeIdentityIntroduction) {
-    return {
-      timeoutMs: SMART_ENDPOINT_DELAY_INCOMPLETE_IDENTITY_MS,
-      reason: 'incomplete_identity',
-    };
+  const text = normalizeForEndpoint(transcript);
+  if (SUSPENDED_ENDING.test(text)) {
+    return { holdMs: SMART_ENDPOINT_HOLD_SUSPENDED_MS, reason: 'suspended' };
   }
-  if (startsWithCorrection || endsWithReservationFragment) {
-    return {
-      timeoutMs: SMART_ENDPOINT_DELAY_INCOMPLETE_RESERVATION_MS,
-      reason: 'incomplete_reservation',
-    };
+  if (CORRECTION_START.test(text) && !TERMINAL_PUNCTUATION.test(text)) {
+    return { holdMs: SMART_ENDPOINT_HOLD_CORRECTION_MS, reason: 'correction' };
   }
-  if (endsWithShortConnector) {
-    return {
-      timeoutMs: SMART_ENDPOINT_DELAY_INCOMPLETE_FRAGMENT_MS,
-      reason: 'incomplete_fragment',
-    };
+  if (TERMINAL_PUNCTUATION.test(text) || SHORT_ANSWER.test(text)) {
+    return { holdMs: SMART_ENDPOINT_HOLD_COMPLETE_MS, reason: 'complete' };
   }
-  if (endsWithPunctuation) {
-    return { timeoutMs: SMART_ENDPOINT_DELAY_WITH_PUNCTUATION_MS, reason: 'punctuation' };
-  }
-  return { timeoutMs: SMART_ENDPOINT_DELAY_WITHOUT_PUNCTUATION_MS, reason: 'silence' };
+  return { holdMs: SMART_ENDPOINT_HOLD_NO_PUNCTUATION_MS, reason: 'no_punctuation' };
 }
