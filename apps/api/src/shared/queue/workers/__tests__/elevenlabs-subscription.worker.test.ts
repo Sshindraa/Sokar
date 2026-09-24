@@ -19,15 +19,16 @@ describe('refreshElevenLabsSubscription', () => {
       json: async () => ({ character_count: 6_172, character_limit: 10_000 }),
     });
 
-    await expect(
-      refreshElevenLabsSubscription({ apiKey: 'test-only-key', fetcher }),
-    ).resolves.toEqual({ character_count: 6_172, character_limit: 10_000 });
+    await expect(refreshElevenLabsSubscription({ apiKey: 'fixture', fetcher })).resolves.toEqual({
+      character_count: 6_172,
+      character_limit: 10_000,
+    });
     expect(fetcher).toHaveBeenCalledOnce();
     expect(fetcher).toHaveBeenCalledWith(
       'https://api.elevenlabs.io/v1/user/subscription',
       expect.objectContaining({
         method: 'GET',
-        headers: { 'xi-api-key': 'test-only-key' },
+        headers: { 'xi-api-key': 'fixture' },
       }),
     );
     expect((await elevenLabsCharacterCount.get()).values[0]?.value).toBe(6_172);
@@ -51,9 +52,9 @@ describe('refreshElevenLabsSubscription', () => {
       json: async () => ({}),
     });
 
-    await expect(
-      refreshElevenLabsSubscription({ apiKey: 'test-only-key', fetcher }),
-    ).rejects.toThrow('HTTP 429');
+    await expect(refreshElevenLabsSubscription({ apiKey: 'fixture', fetcher })).rejects.toThrow(
+      'HTTP 429',
+    );
     expect(fetcher).toHaveBeenCalledOnce();
   });
 });

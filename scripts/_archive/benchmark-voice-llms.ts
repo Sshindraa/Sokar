@@ -596,6 +596,7 @@ async function runScenario(model: (typeof models)[number], scenario: Scenario, r
 
 async function main() {
   const estimatedCredits = estimateBenchmarkCreditsCents();
+  // eslint-disable-next-line no-console
   console.log(
     'Conservative budget estimate: ' +
       estimatedCredits +
