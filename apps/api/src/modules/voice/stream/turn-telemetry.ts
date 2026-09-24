@@ -34,6 +34,7 @@ export type VoiceTurnEvent =
   | 'started'
   | 'speech_resumed'
   | 'stt_final'
+  | 'expected_answer'
   | 'classified'
   | 'llm_started'
   | 'llm_first_token'
@@ -118,6 +119,7 @@ function phaseForEvent(event: VoiceTurnEvent): VoiceTurnPhase {
     case 'speech_resumed':
       return 'speech';
     case 'stt_final':
+    case 'expected_answer':
     case 'classified':
       return 'transcription';
     case 'llm_started':

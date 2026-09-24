@@ -2104,7 +2104,10 @@ export function buildAvailabilityReplyPlan(
   availableSlots: string[],
   language: VoiceLanguageCode = 'fr',
 ): AssistantReplyEmissionPlan {
-  const reply = buildAvailabilityReply(request, availableSlots, language);
+  // Un jour deviné par rapprochement est relu devant la réponse de
+  // disponibilité, qui sinon ne cite que l'heure et le nombre de personnes.
+  const reply =
+    phoneticDateReadBack(session) + buildAvailabilityReply(request, availableSlots, language);
   const kind: PendingInteractionKind =
     availableSlots.length === 0
       ? 'date'
@@ -2463,6 +2466,7 @@ export function buildOpenAvailabilityReply(session: CallSession, availableSlots:
   const { date, partySize } = session.conversation.slots;
   session.conversation.offeredAvailability = { date: date!, partySize: partySize!, slots: offered };
   const en = effectiveVoiceLanguage(session) === 'en';
+  const readBack = phoneticDateReadBack(session);
   if (!offered.length)
     return en
       ? 'I have no available times that day for your party. Would you like to try another day?'
@@ -2478,18 +2482,66 @@ export function buildOpenAvailabilityReply(session: CallSession, availableSlots:
       : period === 'lunch'
         ? 'à midi'
         : 'le soir';
-    return en
-      ? `I have nothing left ${periodLabel} that day, but I can offer ${choices}. Would one of those work?`
-      : `Je n'ai plus rien ${periodLabel} ce jour-là, mais je peux vous proposer ${choices}. L'un de ces horaires vous convient ?`;
+    return (
+      readBack +
+      (en
+        ? `I have nothing left ${periodLabel} that day, but I can offer ${choices}. Would one of those work?`
+        : `Je n'ai plus rien ${periodLabel} ce jour-là, mais je peux vous proposer ${choices}. L'un de ces horaires vous convient ?`)
+    );
   }
-  return en
-    ? `I can offer ${choices}. Which one works for you?`
-    : `Je peux vous proposer ${choices}. Quel horaire vous convient ?`;
+  return (
+    readBack +
+    (en
+      ? `I can offer ${choices}. Which one works for you?`
+      : `Je peux vous proposer ${choices}. Quel horaire vous convient ?`)
+  );
 }
 
-/** Interrupteur d'exploitation du rapprochement phonétique (actif par défaut). */
-function expectedAnswerResolutionEnabled(): boolean {
-  return process.env.VOICE_EXPECTED_ANSWER_ENABLED !== 'false';
+/**
+ * Rapprochement phonétique et relecture naturelle : désactivés par défaut,
+ * activés par `VOICE_EXPECTED_ANSWER_ENABLED=true`, limités aux restaurants de
+ * `VOICE_EXPECTED_ANSWER_RESTAURANT_IDS` (liste vide = tous). Flag coupé, le
+ * dialogue est strictement celui d'avant la fonctionnalité.
+ */
+export function isExpectedAnswerEnabled(session: Pick<CallSession, 'restaurantId'>): boolean {
+  if (process.env.VOICE_EXPECTED_ANSWER_ENABLED !== 'true') return false;
+  const restaurantIds = (process.env.VOICE_EXPECTED_ANSWER_RESTAURANT_IDS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return restaurantIds.length === 0 || restaurantIds.includes(session.restaurantId);
+}
+
+const OPENING_DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
+
+/**
+ * Heures candidates d'après les horaires d'ouverture (pas de 15 min), pour le
+ * jour demandé s'il est connu, sinon pour toute la semaine. Vide si inconnus.
+ */
+export function openingHourTimes(
+  openingHours: CallSession['openingHours'],
+  date?: string,
+): string[] {
+  if (!openingHours) return [];
+  const days = date
+    ? [OPENING_DAY_KEYS[new Date(`${date}T12:00:00Z`).getUTCDay()]]
+    : OPENING_DAY_KEYS;
+  const times = new Set<string>();
+  for (const day of days) {
+    const slot = openingHours[day];
+    if (!slot?.open || !slot.close) continue;
+    const toMinutes = (value: string) => {
+      const [h, m] = value.split(':').map(Number);
+      return h * 60 + (m || 0);
+    };
+    const close = toMinutes(slot.close);
+    for (let minute = toMinutes(slot.open); minute < close; minute += 15) {
+      times.add(
+        `${String(Math.floor(minute / 60) % 24).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`,
+      );
+    }
+  }
+  return [...times].sort();
 }
 
 const WEEKDAY_TOKENS = new Set([
@@ -2520,7 +2572,7 @@ function applyExpectedAnswer(
   extracted: ConversationState['slots'],
   now: Date,
 ): 'partySize' | 'date' | 'time' | null {
-  if (!expectedAnswerResolutionEnabled()) return null;
+  if (!isExpectedAnswerEnabled(session)) return null;
   if (extracted.partySize || extracted.date || extracted.time) return null;
   if (isExploratoryUtterance(transcript)) return null;
   if (normalizeTranscript(transcript).split(' ').length > MAX_EXPECTED_ANSWER_WORDS) return null;
@@ -2550,24 +2602,38 @@ function applyExpectedAnswer(
     return null;
   if (kind === 'weekday' && tokens.some((token) => WEEKDAY_TOKENS.has(token))) return null;
 
-  const allowedTimes =
-    kind === 'time'
-      ? filterSlotsByDayPeriod(
-          session.conversation.lastAvailabilityResult?.slots ?? [],
-          session.conversation.dayPeriod,
-        )
-      : undefined;
+  // Heures possibles : créneaux vérifiés s'il y en a, sinon horaires
+  // d'ouverture du jour demandé, sinon la liste par défaut du module.
+  let allowedTimes: string[] | undefined;
+  if (kind === 'time') {
+    const known =
+      session.conversation.lastAvailabilityResult?.slots ??
+      openingHourTimes(session.openingHours, session.conversation.slots.date);
+    const inPeriod = filterSlotsByDayPeriod(known, session.conversation.dayPeriod);
+    allowedTimes = inPeriod.length ? inPeriod : known;
+  }
   const decision = resolveExpectedAnswer(transcript, kind, allowedTimes);
+  const [best, second] = decision.candidates;
+  session.conversation.lastExpectedAnswer = {
+    kind,
+    status: decision.status,
+    bestScore: best ? Math.round(best.score * 1000) / 1000 : null,
+    margin: best && second ? Math.round((second.score - best.score) * 1000) / 1000 : null,
+  };
   // Au-delà de 7 personnes, la réservation vocale ne retient pas le nombre :
-  // ni valeur ni « huit ou neuf ? », le parcours groupe existant s'applique.
+  // une telle valeur n'est jamais acceptée d'office. Un choix reste utile dès
+  // qu'une des deux valeurs est réservable (« six ou dix ? »).
   const beyondVoiceLimit = (value: string) => kind === 'partySize' && Number(value) > 7;
-  if (decision.status === 'choice' && decision.values.some(beyondVoiceLimit)) return null;
+  if (decision.status === 'choice' && decision.values.every(beyondVoiceLimit)) return null;
   if (decision.status === 'accepted' && beyondVoiceLimit(decision.value)) return null;
   if (decision.status === 'choice') {
     session.conversation.answerChoice = { kind, values: decision.values };
     return null;
   }
   if (decision.status !== 'accepted') return null;
+  // Une valeur devinée n'est jamais retenue en silence : elle est relue dans
+  // la réponse suivante (question suivante ou réponse de disponibilité).
+  session.conversation.phoneticAccepted = kind === 'weekday' ? 'date' : kind;
 
   if (kind === 'partySize') {
     extracted.partySize = Number(decision.value);
@@ -2614,6 +2680,10 @@ const FRENCH_PARTY_SIZE_WORDS: Record<number, string> = {
   10: 'dix',
   11: 'onze',
   12: 'douze',
+  13: 'treize',
+  14: 'quatorze',
+  15: 'quinze',
+  16: 'seize',
 };
 
 export function buildAnswerChoicePlan(session: CallSession): AssistantReplyEmissionPlan | null {
@@ -2723,6 +2793,8 @@ export function recordUserTurn(
 
   session.conversation.answerChoice = null;
   session.conversation.justFilled = null;
+  session.conversation.lastExpectedAnswer = null;
+  session.conversation.phoneticAccepted = null;
   if (speechAct === 'content' || speechAct === 'correction') {
     const resolved = applyExpectedAnswer(session, activeKind, transcript, extracted, now);
     if (resolved === 'partySize') partySizeEvidence = 'contextual';
@@ -2948,9 +3020,17 @@ export function buildReservationProgressPlan(
  * de suite, sans tour supplémentaire. La date est relue avec son numéro, pour
  * qu'une confusion de jour soit audible.
  */
-function buildNaturalReadBack(session: CallSession): string {
-  const filled = session.conversation.justFilled;
-  if (!filled) return '';
+function phoneticDateReadBack(session: CallSession): string {
+  return session.conversation.phoneticAccepted === 'date'
+    ? buildNaturalReadBack(session, 'date')
+    : '';
+}
+
+function buildNaturalReadBack(session: CallSession, only?: 'date'): string {
+  if (!isExpectedAnswerEnabled(session)) return '';
+  const justFilled = session.conversation.justFilled;
+  if (!justFilled) return '';
+  const filled = only ? { date: justFilled.date } : justFilled;
   const { partySize, date } = session.conversation.slots;
   const en = effectiveVoiceLanguage(session) === 'en';
   const parts: string[] = [];

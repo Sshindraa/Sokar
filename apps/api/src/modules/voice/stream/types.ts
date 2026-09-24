@@ -1,3 +1,4 @@
+import type { OpeningHours } from '../prompts';
 import type { WebSocket } from 'ws';
 import type { VoiceLanguageCode } from './voice-language';
 
@@ -147,6 +148,15 @@ export interface ConversationState {
   answerChoice?: { kind: 'partySize' | 'weekday' | 'time'; values: [string, string] } | null;
   /** Valeurs retenues au dernier tour, relues naturellement dans la question suivante. */
   justFilled?: { partySize?: boolean; date?: boolean } | null;
+  /** Champ rempli au dernier tour par rapprochement phonétique (jamais en silence). */
+  phoneticAccepted?: 'partySize' | 'date' | 'time' | null;
+  /** Issue du rapprochement au dernier tour, pour la télémétrie (sans texte). */
+  lastExpectedAnswer?: {
+    kind: 'partySize' | 'weekday' | 'time';
+    status: 'accepted' | 'choice' | 'unresolved';
+    bestScore: number | null;
+    margin: number | null;
+  } | null;
   offeredAvailability?: { date: string; partySize: number; slots: string[] };
   toolInFlight: 'checkAvailability' | null;
   lastAvailabilityCheck: string | null;
@@ -333,6 +343,8 @@ export interface CallSession {
   from: string;
   to: string;
   restaurantId: string;
+  /** Horaires d'ouverture du restaurant, pour borner les heures candidates. */
+  openingHours?: OpeningHours | null;
   restaurantName: string;
   /** Numéro E.164 du gérant pour le transfert humain, si configuré. */
   managerPhone?: string | null;

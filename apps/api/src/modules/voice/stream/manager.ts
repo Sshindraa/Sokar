@@ -497,6 +497,7 @@ export class CallSessionManager {
     restaurantName: string;
     managerPhone?: string | null;
     timezone?: string;
+    openingHours?: CallSession['openingHours'];
     /** Montant minimum carte cadeau — défaut 10€ */
     giftCardMinimumAmount?: number;
     systemPrompt: string;
@@ -526,6 +527,7 @@ export class CallSessionManager {
       from: opts.from,
       to: opts.to,
       restaurantId: opts.restaurantId,
+      openingHours: opts.openingHours ?? null,
       restaurantName,
       managerPhone: opts.managerPhone ?? null,
       timezone: opts.timezone ?? 'Europe/Paris',

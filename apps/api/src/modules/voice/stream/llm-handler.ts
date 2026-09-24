@@ -789,6 +789,11 @@ export async function processTranscriptStreaming(
   const speechAct = classifiedAct === 'closing' && !explicitEnd ? 'backchannel' : classifiedAct;
   if (!explicitEnd) suspendPendingInteractionForDetour(session, transcript);
   recordUserTurn(session, transcript, speechAct);
+  const expectedAnswer = session.conversation.lastExpectedAnswer;
+  if (expectedAnswer) {
+    // Statut et scores seulement : ni transcription ni valeur retenue.
+    recordVoiceTurnEvent(session, 'expected_answer', { ...expectedAnswer });
+  }
   recordVoiceTurnClassification(session, speechAct);
   logger.info(
     {

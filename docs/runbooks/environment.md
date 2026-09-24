@@ -331,15 +331,23 @@ Personen ». Banc du 24/09/2026, 7 phrases × 3 passages : toutes les langues
 Azure Voice Live 76 %. Ajouter une langue seulement si des appelants la parlent
 réellement, et remesurer.
 
-Réponses attendues : quand l'agent pose une question fermée (nombre de
-personnes, jour, heure) et que la réponse ne contient aucune valeur lisible, la
-transcription est rapprochée phonétiquement des réponses possibles
-(`stream/expected-answer.ts`) : une valeur nette est retenue, deux valeurs
-proches donnent « Pardon, six ou cinq personnes ? ». Les valeurs comprises sont
-relues dans la question suivante (« Six personnes, très bien. Pour quel jour ? »).
-`VOICE_EXPECTED_ANSWER_ENABLED=false` coupe le rapprochement (défaut : actif).
-Banc : `apps/api/scripts/voice-stt-bench/` (phrases, transcription sur le
-serveur, évaluation avec le code de dialogue réel).
+Réponses attendues (`stream/expected-answer.ts`) : quand l'agent pose une
+question fermée (nombre de personnes, jour, heure) et que l'analyse exacte ne
+trouve rien, la transcription est rapprochée phonétiquement des réponses
+possibles. Une valeur nette est retenue puis relue dans la phrase suivante
+(« Six personnes, très bien. Pour quel jour ? ») ; deux valeurs proches donnent
+« Pardon, six ou seize personnes ? » ; une réponse hors sujet ne donne rien.
+Les heures candidates sont les créneaux vérifiés, sinon les horaires
+d'ouverture du jour, sinon une liste par défaut.
+
+| Variable                               | Défaut  | Effet                                                                  |
+| -------------------------------------- | ------- | ---------------------------------------------------------------------- |
+| `VOICE_EXPECTED_ANSWER_ENABLED`        | `false` | `true` active rapprochement, choix « X ou Y ? » et relecture naturelle |
+| `VOICE_EXPECTED_ANSWER_RESTAURANT_IDS` | vide    | limite aux restaurants listés (virgules) ; vide = tous                 |
+
+Flag coupé, le dialogue est celui d'avant la fonctionnalité. L'événement
+`expected_answer` publie le type, le statut et les scores (meilleur, écart),
+jamais la transcription. Banc : `apps/api/scripts/voice-stt-bench/README.md`.
 
 Chaque tour publie la confiance Scribe (`minWordConfidence`,
 `meanWordConfidence`, `lowConfidenceWordCount`) dans l'événement `stt_final`,

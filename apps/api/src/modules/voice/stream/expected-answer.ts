@@ -66,7 +66,7 @@ export const WEEKDAY_NAMES = [
 ] as const;
 
 /** Nombre de personnes proposé au rapprochement (au-delà : groupe, géré ailleurs). */
-const MAX_PARTY_SIZE = 12;
+const MAX_PARTY_SIZE = 16;
 
 // ─── Normalisation ──────────────────────────────────────────────────────────
 
@@ -362,7 +362,10 @@ export function resolveExpectedAnswer(
   if (!hasCue && !(shortAnswer && best.score <= SHORT_ANSWER_MAX_SCORE)) {
     return { status: 'unresolved', candidates };
   }
-  const clearLead = !second || second.score - best.score >= thresholds.minMargin;
+  // Une correspondance phonétique parfaite est retenue : la relecture dans la
+  // phrase suivante couvre le cas d'un mot voisin mal entendu (« dix » → « six »).
+  const exactMatch = best.score === 0 && (!second || second.score > 0);
+  const clearLead = exactMatch || !second || second.score - best.score >= thresholds.minMargin;
   if (clearLead && best.score <= thresholds.maxAcceptScore) {
     return { status: 'accepted', value: best.value, candidates };
   }

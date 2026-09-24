@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildDeterministicTurnResponse,
   buildDeterministicTurnPlan,
@@ -9,6 +9,7 @@ import {
   buildAvailabilityLlmContext,
   buildAvailabilityReply,
   buildAnswerChoicePlan,
+  openingHourTimes,
   buildLlmFailurePlan,
   buildOpenAvailabilityReply,
   extractDayPeriod,
@@ -777,7 +778,7 @@ describe('conversation state', () => {
     );
 
     expect(buildReservationProgressResponse(session, 'Euh alors voila')).toBe(
-      'Samedi 5, très bien. Vous serez combien ?',
+      'Vous serez combien ?',
     );
 
     recordUserTurn(session, 'Euh alors voila', 'content');
@@ -806,7 +807,7 @@ describe('conversation state', () => {
     );
 
     expect(buildReservationProgressResponse(session, 'Euh alors voila')).toBe(
-      'Samedi 5, très bien. Vous serez combien ?',
+      'Vous serez combien ?',
     );
     expect(buildReservationProgressResponse(session, 'Euh alors voila')).toContain(
       'Je note combien de personnes',
@@ -814,7 +815,7 @@ describe('conversation state', () => {
 
     recordUserTurn(session, 'Pour quatre personnes', 'content');
     expect(buildReservationProgressResponse(session, 'Pour quatre personnes')).toBe(
-      'Quatre personnes, très bien. Vous voulez venir vers quelle heure ?',
+      'Vous voulez venir vers quelle heure ?',
     );
   });
 
@@ -960,7 +961,7 @@ describe('conversation state', () => {
     expect(session.conversation.humanFallbackOffered).toBe(false);
     expect(resolveHumanFallbackChoice(session, 'En fait, quatre personnes')).toBeNull();
     expect(buildReservationProgressResponse(session, 'En fait, quatre personnes')).toBe(
-      'Quatre personnes, très bien. Vous voulez venir vers quelle heure ?',
+      'Vous voulez venir vers quelle heure ?',
     );
   });
 
@@ -1079,14 +1080,11 @@ describe('conversation state', () => {
       'content',
       new Date('2026-09-04T10:00:00Z'),
     );
-    // Relecture naturelle : la date comprise est répétée avec son numéro.
-    expect(buildReservationProgressResponse(session)).toBe(
-      'Samedi 5, très bien. Vous serez combien ?',
-    );
+    expect(buildReservationProgressResponse(session)).toBe('Vous serez combien ?');
 
     recordUserTurn(session, 'Pour quatre personnes', 'content');
     expect(buildReservationProgressResponse(session, 'Pour quatre personnes')).toBe(
-      'Quatre personnes, très bien. Vous voulez venir vers quelle heure ?',
+      'Vous voulez venir vers quelle heure ?',
     );
   });
 
@@ -1525,6 +1523,15 @@ describe('heures parlées (banc STT du 24/09)', () => {
 });
 
 describe('relecture naturelle et question fermée', () => {
+  const previousFlag = process.env.VOICE_EXPECTED_ANSWER_ENABLED;
+  beforeEach(() => {
+    process.env.VOICE_EXPECTED_ANSWER_ENABLED = 'true';
+  });
+  afterEach(() => {
+    if (previousFlag === undefined) delete process.env.VOICE_EXPECTED_ANSWER_ENABLED;
+    else process.env.VOICE_EXPECTED_ANSWER_ENABLED = previousFlag;
+  });
+
   it('relit le nombre de personnes dans la question suivante', () => {
     const session = makeSession();
     session.timezone = 'Europe/Paris';
@@ -1549,7 +1556,7 @@ describe('relecture naturelle et question fermée', () => {
     expect(buildReservationProgressResponse(session)).toBe('Vous voulez venir vers quelle heure ?');
   });
 
-  it('demande « six ou cinq ? » puis retient la réponse courte', () => {
+  it('demande « six ou seize ? » puis retient la réponse courte', () => {
     const session = makeSession();
     session.timezone = 'Europe/Paris';
     session.conversation.intent = 'reservation';
@@ -1558,7 +1565,7 @@ describe('relecture naturelle et question fermée', () => {
 
     recordUserTurn(session, 'Pour super femme.', 'content');
     const plan = buildAnswerChoicePlan(session);
-    expect(plan?.reply).toBe('Pardon, six ou cinq personnes ?');
+    expect(plan?.reply).toBe('Pardon, six ou seize personnes ?');
     expect(session.conversation.slots.partySize).toBeUndefined();
 
     recordAssistantReplyWithPolicy(session, plan!.reply, plan!.proposal);
@@ -1577,18 +1584,111 @@ describe('relecture naturelle et question fermée', () => {
     expect(session.conversation.answerChoice).toBeNull();
   });
 
-  it('se désactive avec VOICE_EXPECTED_ANSWER_ENABLED=false', () => {
-    const previous = process.env.VOICE_EXPECTED_ANSWER_ENABLED;
+  it('ignore le rapprochement sans question en attente', () => {
+    const session = makeSession();
+    session.conversation.intent = 'reservation';
+
+    recordUserTurn(session, 'Pour super femme.', 'content');
+
+    expect(session.conversation.answerChoice).toBeNull();
+    expect(session.conversation.lastExpectedAnswer).toBeNull();
+  });
+
+  it('ignore le rapprochement quand la question attendue est d’un autre type', () => {
+    const session = makeSession();
+    session.conversation.intent = 'reservation';
+    recordAssistantReply(session, 'Pour quel jour ?');
+
+    recordUserTurn(session, 'Pour super femme.', 'content');
+
+    expect(session.conversation.slots.partySize).toBeUndefined();
+    expect(session.conversation.answerChoice).toBeNull();
+  });
+
+  it('ne remplace jamais une valeur trouvée par l’analyse exacte', () => {
+    const session = makeSession();
+    session.conversation.intent = 'reservation';
+    recordAssistantReply(session, 'Vous serez combien ?');
+
+    recordUserTurn(session, 'Cinq personnes', 'content');
+
+    expect(session.conversation.slots.partySize).toBe(5);
+    expect(session.conversation.lastExpectedAnswer).toBeNull();
+    expect(session.conversation.phoneticAccepted).toBeNull();
+  });
+
+  it('relit dans la phrase suivante un jour retenu par rapprochement', () => {
+    const session = makeSession();
+    session.timezone = 'Europe/Paris';
+    session.conversation.intent = 'reservation';
+    recordAssistantReply(session, 'Pour quel jour ?');
+
+    recordUserTurn(session, 'sa medi', 'content', new Date('2026-09-23T10:00:00Z'));
+
+    expect(session.conversation.phoneticAccepted).toBe('date');
+    expect(buildReservationProgressResponse(session, 'sa medi')).toBe(
+      'Samedi 26, très bien. Vous serez combien ?',
+    );
+  });
+
+  it('publie le statut et les scores sans texte', () => {
+    const session = makeSession();
+    session.conversation.intent = 'reservation';
+    recordAssistantReply(session, 'Vous serez combien ?');
+
+    recordUserTurn(session, 'Pour super femme.', 'content');
+
+    expect(session.conversation.lastExpectedAnswer).toEqual({
+      kind: 'partySize',
+      status: 'choice',
+      bestScore: expect.any(Number),
+      margin: expect.any(Number),
+    });
+  });
+
+  it('borne les heures candidates aux horaires d’ouverture', () => {
+    expect(openingHourTimes({ sat: { open: '19:00', close: '20:00' } }, '2026-09-26')).toEqual([
+      '19:00',
+      '19:15',
+      '19:30',
+      '19:45',
+    ]);
+    expect(openingHourTimes(null)).toEqual([]);
+  });
+
+  it('garde le comportement actuel quand le flag est coupé', () => {
     process.env.VOICE_EXPECTED_ANSWER_ENABLED = 'false';
+    const session = makeSession();
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.date = '2026-09-26';
+    recordAssistantReply(session, 'Vous serez combien ?');
+
+    recordUserTurn(session, 'Pour super femme.', 'content');
+    expect(session.conversation.answerChoice).toBeNull();
+    recordUserTurn(session, 'Six personnes', 'content');
+    expect(buildReservationProgressResponse(session, 'Six personnes')).toBe(
+      'Vous voulez venir vers quelle heure ?',
+    );
+  });
+
+  it('garde le comportement actuel pour un restaurant hors de la liste', () => {
+    const previousIds = process.env.VOICE_EXPECTED_ANSWER_RESTAURANT_IDS;
+    process.env.VOICE_EXPECTED_ANSWER_RESTAURANT_IDS = 'restaurant-pilote';
     try {
       const session = makeSession();
+      session.restaurantId = 'autre-restaurant';
       session.conversation.intent = 'reservation';
       recordAssistantReply(session, 'Vous serez combien ?');
+
       recordUserTurn(session, 'Pour super femme.', 'content');
       expect(session.conversation.answerChoice).toBeNull();
+
+      session.restaurantId = 'restaurant-pilote';
+      recordUserTurn(session, 'Pour super femme.', 'content');
+      expect(session.conversation.answerChoice?.values).toContain('6');
     } finally {
-      if (previous === undefined) delete process.env.VOICE_EXPECTED_ANSWER_ENABLED;
-      else process.env.VOICE_EXPECTED_ANSWER_ENABLED = previous;
+      if (previousIds === undefined) delete process.env.VOICE_EXPECTED_ANSWER_RESTAURANT_IDS;
+      else process.env.VOICE_EXPECTED_ANSWER_RESTAURANT_IDS = previousIds;
     }
   });
 });
