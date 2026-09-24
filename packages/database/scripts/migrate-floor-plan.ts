@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
 
 const prisma = new PrismaClient({
   datasources: { db: { url: process.env.DATABASE_URL } },
@@ -89,7 +90,7 @@ async function migrateRestaurant(restaurantId: string) {
     where: { restaurantId },
   });
 
-  const maxPartySize = settings?.maxPartySize ?? 8;
+  const maxPartySize = settings?.maxPartySize ?? DEFAULT_MAX_PARTY_SIZE;
   const totalSeats = extractTotalSeats(settings?.capacitySpecials, maxPartySize);
   const tables = generateTables(totalSeats, maxPartySize);
 

@@ -331,15 +331,56 @@ Personen ». Banc du 24/09/2026, 7 phrases × 3 passages : toutes les langues
 Azure Voice Live 76 %. Ajouter une langue seulement si des appelants la parlent
 réellement, et remesurer.
 
-Réponses attendues : quand l'agent pose une question fermée (nombre de
-personnes, jour, heure) et que la réponse ne contient aucune valeur lisible, la
-transcription est rapprochée phonétiquement des réponses possibles
-(`stream/expected-answer.ts`) : une valeur nette est retenue, deux valeurs
-proches donnent « Pardon, six ou cinq personnes ? ». Les valeurs comprises sont
-relues dans la question suivante (« Six personnes, très bien. Pour quel jour ? »).
-`VOICE_EXPECTED_ANSWER_ENABLED=false` coupe le rapprochement (défaut : actif).
-Banc : `apps/api/scripts/voice-stt-bench/` (phrases, transcription sur le
-serveur, évaluation avec le code de dialogue réel).
+Réponses attendues (`stream/expected-answer.ts`) : quand l'agent pose une
+question fermée (nombre de personnes, jour, heure) et que l'analyse exacte ne
+trouve rien, la transcription est rapprochée phonétiquement des réponses
+possibles. Une valeur nette est retenue puis relue dans la phrase suivante
+(« Six personnes, très bien. Pour quel jour ? ») ; deux valeurs proches donnent
+« Pardon, six ou seize personnes ? » ; une réponse hors sujet ne donne rien.
+Les heures candidates sont les créneaux vérifiés, sinon les horaires
+d'ouverture du jour, sinon une liste par défaut.
+
+| Variable                               | Défaut  | Effet                                                                  |
+| -------------------------------------- | ------- | ---------------------------------------------------------------------- |
+| `VOICE_EXPECTED_ANSWER_ENABLED`        | `false` | `true` active rapprochement, choix « X ou Y ? » et relecture naturelle |
+| `VOICE_EXPECTED_ANSWER_RESTAURANT_IDS` | vide    | limite aux restaurants listés (virgules) ; vide = tous                 |
+
+Confirmation guidée par la confiance (`stream/slot-confidence.ts`) : pour
+chaque valeur retenue par l'analyse exacte (nombre, jour, heure), la confiance
+Scribe des mots qui la portent et la stabilité des transcriptions partielles
+décident de la suite. Valeur sûre et stable : relecture seule. Valeur douteuse
+ou instable avec un voisin confusable (six/dix/seize, deux/douze, trois/treize,
+cinq/sept, 20 h/21 h/22 h, 8 h/20 h, et quart/et demie) : « Pardon, six ou dix
+personnes ? ». Valeur très douteuse sans voisin : question reposée autrement.
+Heure hors des horaires d'ouverture du jour : jamais acceptée d'office.
+L'événement `slot_confidence` publie le type, la confiance arrondie,
+l'instabilité et la décision, jamais le texte ni la valeur. À utiliser avec
+`VOICE_EXPECTED_ANSWER_ENABLED=true`, qui porte la relecture.
+
+| Variable                                  | Défaut      | Effet                                                                  |
+| ----------------------------------------- | ----------- | ---------------------------------------------------------------------- |
+| `VOICE_CONFIDENCE_CONFIRM_ENABLED`        | `false`     | `true` active la confirmation guidée par la confiance                  |
+| `VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS` | vide        | limite aux restaurants listés ; vide = tous                            |
+| `VOICE_CONFIDENCE_CONFIRM_SLOTS`          | `partySize` | types sur lesquels la confiance agit (CSV parmi `partySize,date,time`) |
+
+Hors de `VOICE_CONFIDENCE_CONFIRM_SLOTS`, la décision est seulement observée :
+`slot_confidence` la publie préfixée `wouldBe…`, sans rien changer au dialogue.
+Le banc difficile montre que la confiance Scribe distingue les nombres de
+personnes justes des faux, pas les heures : d'où le défaut `partySize`.
+
+Vraisemblance des heures (sous `VOICE_EXPECTED_ANSWER_ENABLED`, indépendante
+de la confiance) : une heure hors des horaires d'ouverture du jour, ou de la
+semaine si le jour est inconnu, n'est jamais retenue. L'agent demande « 10 h ou
+22 h ? » avec l'heure ouverte la plus proche à l'oreille, ou cite les horaires.
+
+Groupes : au-delà de `RestaurantExposureSettings.maxPartySize` (réglage du
+tableau de bord « Assistants IA », partagé avec le canal agentique ; 7 sans
+ligne de réglages), le téléphone confirme le nombre puis transfère au gérant,
+ou prend un message sans ligne gérant. Aucun flag : ce parcours est toujours actif.
+
+Flag coupé, le dialogue est celui d'avant la fonctionnalité. L'événement
+`expected_answer` publie le type, le statut et les scores (meilleur, écart),
+jamais la transcription. Banc : `apps/api/scripts/voice-stt-bench/README.md`.
 
 Chaque tour publie la confiance Scribe (`minWordConfidence`,
 `meanWordConfidence`, `lowConfidenceWordCount`) dans l'événement `stt_final`,

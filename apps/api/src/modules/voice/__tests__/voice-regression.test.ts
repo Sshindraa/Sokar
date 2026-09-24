@@ -521,6 +521,41 @@ describe('voice regression harness', () => {
     });
   });
 
+  it('S8b — groupe au-delà du seuil sans ligne gérant : message avec la taille du groupe', async () => {
+    vi.mocked(db.message.create).mockResolvedValue({ id: 'msg-2' } as unknown as Awaited<
+      ReturnType<typeof db.message.create>
+    >);
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    session.conversation.slots.date = '2026-09-26';
+    session.conversation.slots.time = '20:00';
+
+    await mgr.recordGroupRequestMessage(session, 12);
+
+    expect(db.message.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        restaurantId: 'rest-1',
+        content: 'Demande de réservation pour un groupe de 12 personnes le 2026-09-26 à 20:00.',
+      }),
+    });
+  });
+
+  it('S8c — checkAvailability refuse un groupe au-delà du seuil du restaurant', async () => {
+    mockLlmRounds([
+      {
+        type: 'tool_call',
+        toolName: 'checkAvailability',
+        args: { date: '2026-09-26', partySize: 12, time: '20:00' },
+      },
+      { type: 'text', content: 'Douze personnes, c’est bien ça ?' },
+    ]);
+    const mgr = CallSessionManager.getInstance();
+    const session = makeSession();
+    await mgr.processUtterance(session, 'Une table pour douze samedi à 20 h');
+
+    expect(ReservationService.availability).not.toHaveBeenCalled();
+  });
+
   // ── Scénario 9 : Validation Zod rejette les args invalides ──────────────
 
   it('S9 — createReservation : Zod validation rejet (heure invalide) → pas de création', async () => {

@@ -25,7 +25,8 @@
     "clean": "rm -rf .turbo dist"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.3"
+    "@prisma/client": "^6.19.3",
+    "@sokar/config": "workspace:*"
   },
   "devDependencies": {
     "prisma": "^6.0.0",

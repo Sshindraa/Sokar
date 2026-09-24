@@ -23,6 +23,7 @@ import {
   getActivePendingInteraction,
   getReservationConfirmationKey,
   isNameCollectionBlocking,
+  voiceMaxPartySize,
 } from './conversation-controller';
 import { authorizeVoiceTool, type VoiceToolAuthorizationBasis } from './turn-policy';
 import { markVoiceTurnLlmFirstToken, recordVoiceTurnEvent } from './turn-telemetry';
@@ -61,7 +62,9 @@ function recordVoiceTransfer(
       ? 'dialogue_stall'
       : authorizationBasis?.kind === 'name_spelling_escalation'
         ? 'name_spelling'
-        : 'caller_request';
+        : authorizationBasis?.kind === 'group_size'
+          ? 'group_size'
+          : 'caller_request';
   voiceTransfersTotal.inc({
     motive,
     intent: session.conversation.intent ?? 'none',
@@ -194,7 +197,7 @@ function buildTurnPlanShadowTool(): ReturnType<typeof getRestaurantTools>[number
                 value: {
                   type: ['string', 'integer'],
                   description:
-                    'date YYYY-MM-DD, time HH:MM, partySize entier 1 à 7; absent pour clear',
+                    'date YYYY-MM-DD, time HH:MM, partySize entier ≥ 1; absent pour clear',
                 },
                 source: {
                   type: 'string',
@@ -497,6 +500,9 @@ export class CallSessionManager {
     restaurantName: string;
     managerPhone?: string | null;
     timezone?: string;
+    openingHours?: CallSession['openingHours'];
+    /** Taille de groupe réservable automatiquement (incluse) ; absent : 7. */
+    maxPartySize?: number;
     /** Montant minimum carte cadeau — défaut 10€ */
     giftCardMinimumAmount?: number;
     systemPrompt: string;
@@ -526,6 +532,8 @@ export class CallSessionManager {
       from: opts.from,
       to: opts.to,
       restaurantId: opts.restaurantId,
+      openingHours: opts.openingHours ?? null,
+      ...(opts.maxPartySize !== undefined ? { maxPartySize: opts.maxPartySize } : {}),
       restaurantName,
       managerPhone: opts.managerPhone ?? null,
       timezone: opts.timezone ?? 'Europe/Paris',
@@ -789,6 +797,26 @@ export class CallSessionManager {
       }),
       undefined,
       authorizationBasis,
+    );
+  }
+
+  /**
+   * Groupe au-delà du seuil du restaurant, sans ligne gérant : le message
+   * transmis porte la taille du groupe et la date/heure déjà connues.
+   */
+  async recordGroupRequestMessage(session: CallSession, partySize: number): Promise<string> {
+    const { date, time } = session.conversation.slots;
+    const when = [date ? `le ${date}` : '', time ? `à ${time}` : ''].filter(Boolean).join(' ');
+    return this.executeTool(
+      session,
+      'takeMessage',
+      JSON.stringify({
+        customerName: session.conversation.slots.customerName ?? 'Client',
+        message: `Demande de réservation pour un groupe de ${partySize} personnes${when ? ` ${when}` : ''}.`,
+        callbackPhone: session.from,
+      }),
+      undefined,
+      { kind: 'group_size', choice: 'message' },
     );
   }
 
@@ -1786,6 +1814,10 @@ export class CallSessionManager {
       switch (name) {
         case 'createReservation': {
           const { date, time, partySize, customerName, customerPhone } = args;
+          // Groupe au-delà du seuil du restaurant : jamais réservé automatiquement.
+          if (typeof partySize === 'number' && partySize > voiceMaxPartySize(session)) {
+            return `Groupe de ${partySize} personnes : au-delà de ${voiceMaxPartySize(session)}, la réservation passe par le gérant. Confirme le nombre puis propose le gérant ou la prise de message.`;
+          }
 
           // Même si un provider LLM contourne la réponse déterministe, une
           // épellation en attente ne doit jamais déclencher d'effet métier.
@@ -1881,6 +1913,10 @@ export class CallSessionManager {
 
         case 'checkAvailability': {
           const { date, partySize, time } = args;
+          // Groupe au-delà du seuil du restaurant : jamais réservé automatiquement.
+          if (typeof partySize === 'number' && partySize > voiceMaxPartySize(session)) {
+            return `Groupe de ${partySize} personnes : au-delà de ${voiceMaxPartySize(session)}, la réservation passe par le gérant. Confirme le nombre puis propose le gérant ou la prise de message.`;
+          }
 
           try {
             const result = await this.getAvailability(session, date, partySize ?? 2);

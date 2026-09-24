@@ -4,7 +4,6 @@ import {
   computeHoldExpiresAt,
   computeQuoteExpiresAt,
   DEFAULT_HOLD_TTL_SECONDS,
-  DEFAULT_MAX_PARTY_SIZE,
   DEFAULT_MIN_LEAD_TIME_MINUTES,
   DEFAULT_QUOTE_TTL_SECONDS,
   PolicyValidationError,
@@ -12,6 +11,7 @@ import {
   validateExposureSettings,
   validateReservationAgainstPolicy,
 } from '../core/policies.service.js';
+import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
 
 const baseInput: RestaurantPolicyInput = {
   policyVersion: '2026-06-20',
@@ -100,7 +100,7 @@ describe('policies.service', () => {
         notificationChannels: [],
         capacitySpecials: null,
       });
-      expect(DEFAULT_MAX_PARTY_SIZE).toBe(8);
+      expect(DEFAULT_MAX_PARTY_SIZE).toBe(7);
       expect(snap.maxPartySize).toBe(DEFAULT_MAX_PARTY_SIZE);
       expect(snap.minLeadTimeMinutes).toBe(DEFAULT_MIN_LEAD_TIME_MINUTES);
       expect(snap.quoteTtlSeconds).toBe(DEFAULT_QUOTE_TTL_SECONDS);

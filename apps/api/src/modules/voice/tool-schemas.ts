@@ -30,8 +30,10 @@ export const CreateReservationSchema = z.object({
     .number()
     .int()
     .min(1)
-    .max(7)
-    .describe('Nombre de personnes — ≥8 déclenche handoffToManager'),
+    .max(100)
+    .describe(
+      'Nombre de personnes — au-delà du seuil du restaurant (indiqué dans les consignes), handoffToManager',
+    ),
   customerName: z.string().describe('Nom complet du client'),
   customerPhone: z.string().optional().describe('Téléphone du client (optionnel)'),
 });
@@ -40,7 +42,7 @@ export const CreateReservationSchema = z.object({
 
 export const CheckAvailabilitySchema = z.object({
   date: dateField('Date au format YYYY-MM-DD'),
-  partySize: z.number().int().min(1).max(7).describe('Nombre de personnes'),
+  partySize: z.number().int().min(1).max(100).describe('Nombre de personnes'),
   time: z
     .string()
     .regex(TIME_REGEX)
@@ -119,7 +121,7 @@ export const VOICE_TOOL_SCHEMAS: VoiceToolSchema[] = [
   {
     name: 'createReservation',
     description:
-      "Crée une réservation. À appeler uniquement après avoir confirmé date, heure, nombre de personnes et nom du client. Si le nom a été épelé, chaque lettre doit avoir été répétée et confirmée explicitement ; ne transforme jamais une suite comme « K I F » en un mot.",
+      'Crée une réservation. À appeler uniquement après avoir confirmé date, heure, nombre de personnes et nom du client. Si le nom a été épelé, chaque lettre doit avoir été répétée et confirmée explicitement ; ne transforme jamais une suite comme « K I F » en un mot.',
     schema: CreateReservationSchema,
   },
   {

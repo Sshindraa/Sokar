@@ -11,6 +11,7 @@ import {
 import { voiceConfig } from '../../env';
 import { getRestaurantPlanOverride } from '../../shared/configcat';
 import { DAY_SECONDS, HOUR_SECONDS } from '../../shared/constants/time.js';
+import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
 import { getVoiceLlmProvider, type VoiceLlmProvider } from '../voice/llm-provider';
 
 /** TTL du compteur mensuel d'appels : ~33 jours en secondes */
@@ -41,6 +42,11 @@ interface CachedRestaurantContext {
   readonly smsConfirmEnabled: boolean;
   readonly googleCalendarId: string | null;
   readonly giftCardMinimumAmount: number | null;
+  /**
+   * Taille de groupe réservable automatiquement (incluse), partagée avec le
+   * canal agentique. Sans ligne de réglages : 7, comme le téléphone avant.
+   */
+  readonly maxPartySize: number;
   readonly personality: {
     readonly id: string;
     readonly restaurantId: string;
@@ -104,6 +110,7 @@ function toCachedRestaurantContext(restaurant: {
   smsConfirmEnabled: boolean;
   googleCalendarId: string | null;
   giftCardMinimumAmount: number | null;
+  exposureSettings?: { maxPartySize: number } | null;
   personality: CachedRestaurantContext['personality'];
 }): CachedRestaurantContext {
   return {
@@ -120,6 +127,7 @@ function toCachedRestaurantContext(restaurant: {
     smsConfirmEnabled: restaurant.smsConfirmEnabled,
     googleCalendarId: restaurant.googleCalendarId,
     giftCardMinimumAmount: restaurant.giftCardMinimumAmount,
+    maxPartySize: restaurant.exposureSettings?.maxPartySize ?? DEFAULT_MAX_PARTY_SIZE,
     personality: restaurant.personality,
     providerConfig: buildProviderConfig(restaurant),
   };
@@ -152,6 +160,7 @@ export class RestaurantService {
         smsConfirmEnabled: true,
         googleCalendarId: true,
         giftCardMinimumAmount: true,
+        exposureSettings: { select: { maxPartySize: true } },
         personality: {
           select: {
             id: true,

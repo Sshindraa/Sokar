@@ -20,6 +20,7 @@ import type { Table } from '@prisma/client';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { slugifyCity, slugifyCuisine } from '@sokar/shared';
+import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
 import { db } from '../../shared/db/client';
 import { redisCache } from '../../shared/redis/client';
 import { logger } from '../../shared/logger/pino';
@@ -897,9 +898,10 @@ export async function connectRoutes(app: FastifyInstance): Promise<void> {
           ? capacitySpecials.waitingListMaxEntriesPerSlot
           : 10;
 
-      if (partySize > (settings?.maxPartySize ?? 50)) {
+      const maxPartySize = settings?.maxPartySize ?? DEFAULT_MAX_PARTY_SIZE;
+      if (partySize > maxPartySize) {
         return reply.status(409).send({
-          error: `Party size ${partySize} exceeds max (${settings?.maxPartySize ?? 50})`,
+          error: `Party size ${partySize} exceeds max (${maxPartySize})`,
         });
       }
 

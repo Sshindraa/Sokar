@@ -511,6 +511,12 @@ export function handleSttEvent(
       // commencé par UtteranceStart.
       session.transcript += (session.transcript ? ' ' : '') + event.transcript;
       completeVoiceTurnInput(session, event.transcript, event.words);
+      session.sttEvidence = {
+        transcript: event.transcript,
+        words: event.words,
+        partials: [...(session.turnPartials ?? [])],
+      };
+      session.turnPartials = [];
 
       const isSpeculativeEnabled = isSpeculativeLlmEnabled(session);
       const speculativeTranscript = session.speculativeTranscript;
@@ -789,6 +795,15 @@ export async function processTranscriptStreaming(
   const speechAct = classifiedAct === 'closing' && !explicitEnd ? 'backchannel' : classifiedAct;
   if (!explicitEnd) suspendPendingInteractionForDetour(session, transcript);
   recordUserTurn(session, transcript, speechAct);
+  const expectedAnswer = session.conversation.lastExpectedAnswer;
+  if (expectedAnswer) {
+    // Statut et scores seulement : ni transcription ni valeur retenue.
+    recordVoiceTurnEvent(session, 'expected_answer', { ...expectedAnswer });
+  }
+  for (const slotConfidence of session.conversation.lastSlotConfidence ?? []) {
+    // Type, confiance arrondie, instabilité et décision : ni texte ni valeur.
+    recordVoiceTurnEvent(session, 'slot_confidence', { ...slotConfidence });
+  }
   recordVoiceTurnClassification(session, speechAct);
   logger.info(
     {
@@ -1019,6 +1034,32 @@ export async function processTranscriptStreaming(
       if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
       return;
     }
+  }
+
+  // Groupe au-delà du seuil du restaurant, nombre confirmé : le gérant prend
+  // la main (transfert réel), sinon un message est enregistré pour lui.
+  const confirmedGroup = session.conversation.groupRequest;
+  if (deterministicLanguage && confirmedGroup?.confirmed) {
+    session.conversation.groupRequest = null;
+    const transfer = Boolean(session.managerPhone?.trim());
+    const response = transfer
+      ? await mgr.handoffToManager(session, { kind: 'group_size', choice: 'transfer' })
+      : await mgr.recordGroupRequestMessage(session, confirmedGroup.partySize);
+    recordVoiceTurnEvent(session, 'dialogue_guard', {
+      level: 'escalate',
+      action: transfer ? 'transfer' : 'message',
+    });
+    if (!isCurrentResponse()) return;
+    session.turnCount++;
+    session.history.push(
+      { role: 'user', content: transcript },
+      { role: 'assistant', content: response },
+    );
+    recordAssistantReplyWithPolicy(session, response, { source: 'explicit', operation: 'cancel' });
+    mgr.transition(session, 'SPEAKING');
+    await speakTtsStreamed(session, response);
+    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+    return;
   }
 
   // Seul un « oui » au dernier récapitulatif ouvre le verrou de création. La

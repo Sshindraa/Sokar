@@ -84,7 +84,8 @@ export type TurnPlanPolicyDecision =
 
 export type VoiceToolAuthorizationBasis =
   | { kind: 'human_fallback_choice'; choice: 'transfer' | 'message' }
-  | { kind: 'name_spelling_escalation' };
+  | { kind: 'name_spelling_escalation' }
+  | { kind: 'group_size'; choice: 'transfer' | 'message' };
 
 export type VoiceToolDenialReason =
   | 'confirmation_required'
@@ -272,8 +273,10 @@ export function authorizeVoiceTool(context: VoiceToolPolicyContext): VoiceToolPo
 
     case 'handoffToManager': {
       if (!context.managerConfigured) return { status: 'denied', reason: 'manager_unconfigured' };
+      // Groupe au-delà du seuil, nombre confirmé : le transfert fait partie du parcours.
       const selectedByPolicy =
-        context.authorizationBasis?.kind === 'human_fallback_choice' &&
+        (context.authorizationBasis?.kind === 'human_fallback_choice' ||
+          context.authorizationBasis?.kind === 'group_size') &&
         context.authorizationBasis.choice === 'transfer';
       const selectedInPendingInteraction =
         context.pendingInteraction?.kind === 'humanFallback' &&
@@ -288,7 +291,8 @@ export function authorizeVoiceTool(context: VoiceToolPolicyContext): VoiceToolPo
 
     case 'takeMessage': {
       const selectedByPolicy =
-        context.authorizationBasis?.kind === 'human_fallback_choice' &&
+        (context.authorizationBasis?.kind === 'human_fallback_choice' ||
+          context.authorizationBasis?.kind === 'group_size') &&
         context.authorizationBasis.choice === 'message';
       const nameSpellingEscalation =
         context.authorizationBasis?.kind === 'name_spelling_escalation';
@@ -436,7 +440,7 @@ export function decideAssistantInteractionPolicy(
         (interaction.candidatePartySize === undefined ||
           !Number.isInteger(interaction.candidatePartySize) ||
           interaction.candidatePartySize < 1 ||
-          interaction.candidatePartySize > 7)) ||
+          interaction.candidatePartySize > 100)) ||
       (interaction.kind !== 'partySizeConfirmation' && interaction.candidatePartySize !== undefined)
     ) {
       return {
@@ -479,8 +483,12 @@ function sameName(left: string | undefined, right: string): boolean {
   return normalize(left ?? '') === normalize(right);
 }
 
+/**
+ * Borne de cohérence seulement : le seuil du restaurant (`voiceMaxPartySize`)
+ * est appliqué avant la policy, qui ne voit jamais un groupe au-delà.
+ */
 function isValidPartySize(value: number | undefined): value is number {
-  return value !== undefined && Number.isInteger(value) && value >= 1 && value <= 7;
+  return value !== undefined && Number.isInteger(value) && value >= 1 && value <= 100;
 }
 
 function interactionFulfilled(

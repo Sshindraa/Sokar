@@ -66,7 +66,7 @@ export const WEEKDAY_NAMES = [
 ] as const;
 
 /** Nombre de personnes proposé au rapprochement (au-delà : groupe, géré ailleurs). */
-const MAX_PARTY_SIZE = 12;
+const MAX_PARTY_SIZE = 16;
 
 // ─── Normalisation ──────────────────────────────────────────────────────────
 
@@ -280,13 +280,17 @@ function candidatesFor(
   kind: ExpectedAnswerKind,
   allowedValues?: readonly string[],
 ): CandidateSource[] {
+  // Valeurs imposées (réponse à « six ou dix ? ») : seules ces deux-là comptent.
   if (kind === 'partySize') {
-    return Array.from({ length: MAX_PARTY_SIZE }, (_, index) => index + 1).map((n) => ({
-      value: String(n),
-      forms: partySizeForms(n),
-    }));
+    const sizes = allowedValues?.length
+      ? allowedValues.map(Number)
+      : Array.from({ length: MAX_PARTY_SIZE }, (_, index) => index + 1);
+    return sizes.map((n) => ({ value: String(n), forms: partySizeForms(n) }));
   }
-  if (kind === 'weekday') return WEEKDAY_NAMES.map((day) => ({ value: day, forms: [day] }));
+  if (kind === 'weekday') {
+    const days = allowedValues?.length ? allowedValues : WEEKDAY_NAMES;
+    return days.map((day) => ({ value: day, forms: [day] }));
+  }
   const times =
     allowedValues && allowedValues.length > 0
       ? allowedValues
@@ -301,9 +305,15 @@ export function rankExpectedAnswers(
   kind: ExpectedAnswerKind,
   allowedValues?: readonly string[],
 ): ExpectedAnswerCandidate[] {
-  const heard = phonemize(transcript);
+  // « après-midi », « midi », « soir », « matin » sont des moments de la journée,
+  // pas un jour : « d'après-midi » ressemblait à « mardi » (banc difficile, hv267).
+  const source =
+    kind === 'weekday'
+      ? normalize(transcript).replace(/\b(?:apres\s+midi|midi|soir|matin)\b/g, ' ')
+      : transcript;
+  const heard = phonemize(source);
   if (!heard) return [];
-  const heardCore = phonemize(normalize(transcript).replace(FILLER_PATTERN, ' '));
+  const heardCore = phonemize(normalize(source).replace(FILLER_PATTERN, ' '));
   return candidatesFor(kind, allowedValues)
     .map(({ value, forms }) => ({
       value,
@@ -341,7 +351,8 @@ export const EXPECTED_ANSWER_THRESHOLDS = {
 const ANSWER_CUE: Record<ExpectedAnswerKind, RegExp> = {
   partySize: /\b(?:personnes?|person|personen|couverts?|people)\b/,
   weekday: /\b(?:pour|plutot|ce|le)\b/,
-  time: /\b(?:heures?|h|vers|a)\b/,
+  // « à » n'est pas un indice : « je demande à ma femme » n'est pas une heure.
+  time: /\b(?:heures?|h|vers)\b/,
 };
 const SHORT_ANSWER_WORDS = 3;
 const SHORT_ANSWER_MAX_SCORE = 0.2;
@@ -362,7 +373,10 @@ export function resolveExpectedAnswer(
   if (!hasCue && !(shortAnswer && best.score <= SHORT_ANSWER_MAX_SCORE)) {
     return { status: 'unresolved', candidates };
   }
-  const clearLead = !second || second.score - best.score >= thresholds.minMargin;
+  // Une correspondance phonétique parfaite est retenue : la relecture dans la
+  // phrase suivante couvre le cas d'un mot voisin mal entendu (« dix » → « six »).
+  const exactMatch = best.score === 0 && (!second || second.score > 0);
+  const clearLead = exactMatch || !second || second.score - best.score >= thresholds.minMargin;
   if (clearLead && best.score <= thresholds.maxAcceptScore) {
     return { status: 'accepted', value: best.value, candidates };
   }

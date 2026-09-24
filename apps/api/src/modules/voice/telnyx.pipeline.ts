@@ -24,6 +24,7 @@ const webhookRouteOptions = {
   config: { rateLimit: RATE_LIMIT_PROVIDER_WEBHOOK },
 };
 import { MS_TO_SECONDS } from '../../shared/constants/time.js';
+import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
 import { recordPricedUsageEvent } from '../usage/usage-tariff.service';
 
 interface TelnyxCallPayload {
@@ -231,6 +232,9 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           restaurantName: ctx.name,
           managerPhone: ctx.managerPhone,
           timezone: ctx.timezone,
+          openingHours: (ctx.openingHours as OpeningHours | null) ?? null,
+          // Contexte en cache d'avant ce champ : `loadContext` le recalcule sous 5 min.
+          maxPartySize: ctx.maxPartySize ?? DEFAULT_MAX_PARTY_SIZE,
           giftCardMinimumAmount: ctx.giftCardMinimumAmount ?? undefined,
           systemPrompt,
           isVip: customer?.isVip ?? false,

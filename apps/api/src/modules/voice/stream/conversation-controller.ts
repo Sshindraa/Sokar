@@ -12,7 +12,19 @@ import type {
   SpellingToken,
   VoiceSpeechAct,
 } from './types';
-import { resolveExpectedAnswer } from './expected-answer';
+import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
+import {
+  EXPECTED_ANSWER_THRESHOLDS,
+  rankExpectedAnswers,
+  resolveExpectedAnswer,
+} from './expected-answer';
+import {
+  confusableNeighbours,
+  decideSlotConfidence,
+  unstableAlternatives,
+  valueConfidence,
+  type ConfidenceSlotKind,
+} from './slot-confidence';
 import { effectiveVoiceLanguage, type VoiceLanguageCode } from './voice-language';
 import {
   decideAssistantInteractionPolicy,
@@ -1880,6 +1892,20 @@ function parseFrenchNumberWords(value: string): number | null {
   return null;
 }
 
+/**
+ * « à midi », « vers midi », « pour midi », « midi » seul ou « midi et quart » :
+ * une heure. « après-midi », « ce midi », « un repas de midi » ne sont qu'un
+ * moment de la journée (`dayPeriod`) : retenir 12:00 serait une heure devinée.
+ */
+function isExplicitNoonTime(text: string): boolean {
+  const withoutAfternoon = text.replace(/\bapres[\s-]midi\b/g, ' ');
+  if (!/\bmidi\b/.test(withoutAfternoon)) return false;
+  if (/\bmidi\s+(?:et\s+demie?|et\s+quart|trente|quinze|quarante cinq)\b/.test(withoutAfternoon))
+    return true;
+  if (/\b(?:a|vers|pour|avant|des|jusqu a)\s+midi\b/.test(withoutAfternoon)) return true;
+  return /^\W*(?:euh\W+)?midi\W*$/.test(withoutAfternoon);
+}
+
 /** « midi », « midi et demi », « midi et quart », « midi trente », « midi quinze ». */
 function extractNoonTime(normalized: string): string {
   const tail = normalized.match(
@@ -2005,9 +2031,12 @@ export function extractConversationSlots(
 
   // Scribe écrit « vingt et une heures » en « 20 et 1 heure » : sans cette
   // réécriture, l'heure lue était 01:00 (banc STT du 24/09).
+  // Variantes : « 20 et 1 h 30 », « 20 h et 1 h 30 », « vingt et 1 h 30 ».
   const timeTranscript = correctedTranscript.replace(
-    /\b(20|30|40|50)\s+et\s+(?:1|un|une)(?=\s*h|\s|$)/gu,
-    (_, tens: string) => String(Number(tens) + 1),
+    // Après « 20 h » / « 20 heures », « et un » n'est une heure que suivi de « h » :
+    // « 20 heures et un enfant » reste 20:00.
+    /\b(?:20\s*h(?:eures?)?\s+et\s+(?:1|un|une)(?=\s*h)|(?:20\s+et\s+(?:1|un|une)|vingt\s+et\s+1)(?=\s*h|\s|$))/gu,
+    () => '21',
   );
   const timeMatch = slots.time
     ? null
@@ -2022,7 +2051,7 @@ export function extractConversationSlots(
     const spokenClockTime = extractSpokenClockTime(timeTranscript);
     if (spokenClockTime) {
       slots.time = spokenClockTime;
-    } else if (/\b(?:a|vers)?\s*midi\b/.test(correctedTranscript)) {
+    } else if (isExplicitNoonTime(correctedTranscript)) {
       // « à midi » est la formulation la plus courante au téléphone ; elle
       // doit déclencher la même vérification qu'une heure numérique.
       slots.time = extractNoonTime(correctedTranscript);
@@ -2031,23 +2060,25 @@ export function extractConversationSlots(
     }
   }
 
+  // « huit heures ce soir », « 8 heures du soir » : une heure du matin suivie
+  // de « soir » désigne le service du soir (lu 08:00 jusqu'ici).
+  if (slots.time && /\b(?:du|ce|le) soir\b/u.test(correctedTranscript)) {
+    const [hour, minute] = slots.time.split(':').map(Number);
+    if (hour >= 1 && hour <= 11) {
+      slots.time = `${String(hour + 12).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    }
+  }
+
   const partyMatch = correctedTranscript.match(
-    /\b(?:pour|de|for|party of|table for)?\s*(\d+|un|une|deux|trois|quatre|cinq|six|sept|one|two|three|four|five|six|seven)\s+(?:personnes?|people|guests?)\b/,
+    new RegExp(
+      `\\b(?:pour|de|for|party of|table for)?\\s*${SPOKEN_PARTY_SIZE_PATTERN}\\s+(?:personnes?|people|guests?)\\b`,
+    ),
   );
   if (partyMatch) {
-    const words: Record<string, number> = {
-      un: 1,
-      une: 1,
-      deux: 2,
-      trois: 3,
-      quatre: 4,
-      cinq: 5,
-      six: 6,
-      sept: 7,
-    };
-    const partySize =
-      words[partyMatch[1]] ?? ENGLISH_NUMBER_WORDS[partyMatch[1]] ?? Number(partyMatch[1]);
-    if (partySize >= 1 && partySize <= 7) slots.partySize = partySize;
+    // Au-delà du seuil du restaurant, le nombre est lu quand même : c'est ce
+    // qui permet de reconnaître un groupe et de le confier au gérant.
+    const partySize = partySizeFromNumberToken(partyMatch[1]);
+    if (partySize !== null) slots.partySize = partySize;
   }
 
   return slots;
@@ -2104,7 +2135,10 @@ export function buildAvailabilityReplyPlan(
   availableSlots: string[],
   language: VoiceLanguageCode = 'fr',
 ): AssistantReplyEmissionPlan {
-  const reply = buildAvailabilityReply(request, availableSlots, language);
+  // Un jour deviné par rapprochement est relu devant la réponse de
+  // disponibilité, qui sinon ne cite que l'heure et le nombre de personnes.
+  const reply =
+    phoneticDateReadBack(session) + buildAvailabilityReply(request, availableSlots, language);
   const kind: PendingInteractionKind =
     availableSlots.length === 0
       ? 'date'
@@ -2463,6 +2497,7 @@ export function buildOpenAvailabilityReply(session: CallSession, availableSlots:
   const { date, partySize } = session.conversation.slots;
   session.conversation.offeredAvailability = { date: date!, partySize: partySize!, slots: offered };
   const en = effectiveVoiceLanguage(session) === 'en';
+  const readBack = phoneticDateReadBack(session);
   if (!offered.length)
     return en
       ? 'I have no available times that day for your party. Would you like to try another day?'
@@ -2478,18 +2513,66 @@ export function buildOpenAvailabilityReply(session: CallSession, availableSlots:
       : period === 'lunch'
         ? 'à midi'
         : 'le soir';
-    return en
-      ? `I have nothing left ${periodLabel} that day, but I can offer ${choices}. Would one of those work?`
-      : `Je n'ai plus rien ${periodLabel} ce jour-là, mais je peux vous proposer ${choices}. L'un de ces horaires vous convient ?`;
+    return (
+      readBack +
+      (en
+        ? `I have nothing left ${periodLabel} that day, but I can offer ${choices}. Would one of those work?`
+        : `Je n'ai plus rien ${periodLabel} ce jour-là, mais je peux vous proposer ${choices}. L'un de ces horaires vous convient ?`)
+    );
   }
-  return en
-    ? `I can offer ${choices}. Which one works for you?`
-    : `Je peux vous proposer ${choices}. Quel horaire vous convient ?`;
+  return (
+    readBack +
+    (en
+      ? `I can offer ${choices}. Which one works for you?`
+      : `Je peux vous proposer ${choices}. Quel horaire vous convient ?`)
+  );
 }
 
-/** Interrupteur d'exploitation du rapprochement phonétique (actif par défaut). */
-function expectedAnswerResolutionEnabled(): boolean {
-  return process.env.VOICE_EXPECTED_ANSWER_ENABLED !== 'false';
+/**
+ * Rapprochement phonétique et relecture naturelle : désactivés par défaut,
+ * activés par `VOICE_EXPECTED_ANSWER_ENABLED=true`, limités aux restaurants de
+ * `VOICE_EXPECTED_ANSWER_RESTAURANT_IDS` (liste vide = tous). Flag coupé, le
+ * dialogue est strictement celui d'avant la fonctionnalité.
+ */
+export function isExpectedAnswerEnabled(session: Pick<CallSession, 'restaurantId'>): boolean {
+  if (process.env.VOICE_EXPECTED_ANSWER_ENABLED !== 'true') return false;
+  const restaurantIds = (process.env.VOICE_EXPECTED_ANSWER_RESTAURANT_IDS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return restaurantIds.length === 0 || restaurantIds.includes(session.restaurantId);
+}
+
+const OPENING_DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
+
+/**
+ * Heures candidates d'après les horaires d'ouverture (pas de 15 min), pour le
+ * jour demandé s'il est connu, sinon pour toute la semaine. Vide si inconnus.
+ */
+export function openingHourTimes(
+  openingHours: CallSession['openingHours'],
+  date?: string,
+): string[] {
+  if (!openingHours) return [];
+  const days = date
+    ? [OPENING_DAY_KEYS[new Date(`${date}T12:00:00Z`).getUTCDay()]]
+    : OPENING_DAY_KEYS;
+  const times = new Set<string>();
+  for (const day of days) {
+    const slot = openingHours[day];
+    if (!slot?.open || !slot.close) continue;
+    const toMinutes = (value: string) => {
+      const [h, m] = value.split(':').map(Number);
+      return h * 60 + (m || 0);
+    };
+    const close = toMinutes(slot.close);
+    for (let minute = toMinutes(slot.open); minute < close; minute += 15) {
+      times.add(
+        `${String(Math.floor(minute / 60) % 24).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`,
+      );
+    }
+  }
+  return [...times].sort();
 }
 
 const WEEKDAY_TOKENS = new Set([
@@ -2519,8 +2602,9 @@ function applyExpectedAnswer(
   transcript: string,
   extracted: ConversationState['slots'],
   now: Date,
+  previousChoice: ConversationState['answerChoice'] = null,
 ): 'partySize' | 'date' | 'time' | null {
-  if (!expectedAnswerResolutionEnabled()) return null;
+  if (!isExpectedAnswerEnabled(session)) return null;
   if (extracted.partySize || extracted.date || extracted.time) return null;
   if (isExploratoryUtterance(transcript)) return null;
   if (normalizeTranscript(transcript).split(' ').length > MAX_EXPECTED_ANSWER_WORDS) return null;
@@ -2550,24 +2634,42 @@ function applyExpectedAnswer(
     return null;
   if (kind === 'weekday' && tokens.some((token) => WEEKDAY_TOKENS.has(token))) return null;
 
-  const allowedTimes =
-    kind === 'time'
-      ? filterSlotsByDayPeriod(
-          session.conversation.lastAvailabilityResult?.slots ?? [],
-          session.conversation.dayPeriod,
-        )
-      : undefined;
-  const decision = resolveExpectedAnswer(transcript, kind, allowedTimes);
-  // Au-delà de 7 personnes, la réservation vocale ne retient pas le nombre :
-  // ni valeur ni « huit ou neuf ? », le parcours groupe existant s'applique.
-  const beyondVoiceLimit = (value: string) => kind === 'partySize' && Number(value) > 7;
-  if (decision.status === 'choice' && decision.values.some(beyondVoiceLimit)) return null;
+  // Réponse à « six ou dix ? » : seules les deux valeurs proposées comptent.
+  const offered = previousChoice?.kind === kind ? previousChoice.values : undefined;
+  // Heures possibles : créneaux vérifiés s'il y en a, sinon horaires
+  // d'ouverture du jour demandé, sinon la liste par défaut du module.
+  let allowedTimes: string[] | undefined = offered;
+  if (kind === 'time' && !offered) {
+    const known =
+      session.conversation.lastAvailabilityResult?.slots ??
+      openingHourTimes(session.openingHours, session.conversation.slots.date);
+    const inPeriod = filterSlotsByDayPeriod(known, session.conversation.dayPeriod);
+    allowedTimes = inPeriod.length ? inPeriod : known;
+  }
+  const decision = resolveExpectedAnswer(transcript, kind, offered ?? allowedTimes);
+  const [best, second] = decision.candidates;
+  session.conversation.lastExpectedAnswer = {
+    kind,
+    status: decision.status,
+    bestScore: best ? Math.round(best.score * 1000) / 1000 : null,
+    margin: best && second ? Math.round((second.score - best.score) * 1000) / 1000 : null,
+  };
+  // Au-delà du seuil du restaurant, un nombre deviné n'est jamais accepté
+  // d'office. Un choix reste utile dès qu'une des deux valeurs est réservable
+  // (« six ou dix ? ») ; la réponse à ce choix, elle, compte même au-delà.
+  const limit = voiceMaxPartySize(session);
+  const beyondVoiceLimit = (value: string) =>
+    kind === 'partySize' && !offered && Number(value) > limit;
+  if (decision.status === 'choice' && decision.values.every(beyondVoiceLimit)) return null;
   if (decision.status === 'accepted' && beyondVoiceLimit(decision.value)) return null;
   if (decision.status === 'choice') {
     session.conversation.answerChoice = { kind, values: decision.values };
     return null;
   }
   if (decision.status !== 'accepted') return null;
+  // Une valeur devinée n'est jamais retenue en silence : elle est relue dans
+  // la réponse suivante (question suivante ou réponse de disponibilité).
+  session.conversation.phoneticAccepted = kind === 'weekday' ? 'date' : kind;
 
   if (kind === 'partySize') {
     extracted.partySize = Number(decision.value);
@@ -2585,6 +2687,387 @@ function applyExpectedAnswer(
   }
   extracted.time = decision.value;
   return 'time';
+}
+
+/**
+ * Confirmation guidée par la confiance : désactivée par défaut, activée par
+ * `VOICE_CONFIDENCE_CONFIRM_ENABLED=true`, limitée aux restaurants de
+ * `VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS` (liste vide = tous).
+ */
+export function isConfidenceConfirmEnabled(session: Pick<CallSession, 'restaurantId'>): boolean {
+  if (process.env.VOICE_CONFIDENCE_CONFIRM_ENABLED !== 'true') return false;
+  const restaurantIds = (process.env.VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return restaurantIds.length === 0 || restaurantIds.includes(session.restaurantId);
+}
+
+const JS_WEEKDAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+
+function weekdayOfDate(date: string): string {
+  return JS_WEEKDAYS[new Date(`${date}T12:00:00Z`).getUTCDay()];
+}
+
+function toMinutes(value: string): number {
+  const [hour, minute] = value.split(':').map(Number);
+  return hour * 60 + (minute || 0);
+}
+
+/** L'heure tombe-t-elle dans les horaires du jour (de la semaine si le jour est inconnu) ? */
+export function isWithinOpeningHours(
+  openingHours: CallSession['openingHours'],
+  date: string | undefined,
+  time: string,
+): boolean {
+  if (!openingHours) return true;
+  const days = date
+    ? [OPENING_DAY_KEYS[new Date(`${date}T12:00:00Z`).getUTCDay()]]
+    : OPENING_DAY_KEYS;
+  const minute = toMinutes(time);
+  return days.some((day) => {
+    const slot = openingHours[day];
+    if (!slot?.open || !slot.close) return false;
+    const open = toMinutes(slot.open);
+    let close = toMinutes(slot.close);
+    if (close <= open) close += 24 * 60; // service qui finit après minuit
+    return (
+      (minute >= open && minute < close) || (minute + 24 * 60 >= open && minute + 24 * 60 < close)
+    );
+  });
+}
+
+/**
+ * Heure ouverte la plus proche à l'oreille : d'abord les confusions connues
+ * (« dix » / « vingt-deux »), puis le rapprochement phonétique de la phase 1.
+ */
+function closestOpenTime(time: string, openTimes: readonly string[]): string | undefined {
+  const known = confusableNeighbours('time', time).find((candidate) =>
+    openTimes.includes(candidate),
+  );
+  if (known) return known;
+  const [best] = rankExpectedAnswers(formatAvailabilitySlot(time), 'time', openTimes);
+  return best && best.score <= EXPECTED_ANSWER_THRESHOLDS.maxScore ? best.value : undefined;
+}
+
+/**
+ * Vraisemblance des heures (phase 1, indépendante de la confiance) : une heure
+ * hors des horaires d'ouverture n'est jamais retenue en silence. Elle devient
+ * « X ou Y ? » avec l'heure ouverte la plus proche à l'oreille, ou une relance
+ * qui cite les horaires. Horaires inconnus : rien ne change.
+ */
+function applyTimePlausibility(
+  session: CallSession,
+  extracted: ConversationState['slots'],
+  previousChoice: ConversationState['answerChoice'],
+): void {
+  if (!isExpectedAnswerEnabled(session)) return;
+  const time = extracted.time;
+  if (!time || !session.openingHours) return;
+  const date = extracted.date ?? session.conversation.slots.date;
+  const openTimes = openingHourTimes(session.openingHours, date);
+  if (!openTimes.length) return;
+  if (isWithinOpeningHours(session.openingHours, date, time)) return;
+  delete extracted.time;
+  // L'appelant maintient une heure fermée proposée au tour précédent : on
+  // cite les horaires au lieu de reposer la même question.
+  const maintained = previousChoice?.kind === 'time' && previousChoice.values.includes(time);
+  const neighbour = maintained ? undefined : closestOpenTime(time, openTimes);
+  if (neighbour && !session.conversation.answerChoice) {
+    session.conversation.answerChoice = { kind: 'time', values: [time, neighbour] };
+  } else {
+    session.conversation.closedTimeReprompt = true;
+  }
+}
+
+/**
+ * Groupe au-delà du seuil du restaurant : le nombre n'est jamais retenu pour
+ * une réservation automatique. Il est confirmé une fois (« Douze personnes,
+ * c'est bien ça ? »), puis le tour est confié au gérant. Une valeur choisie
+ * dans « X ou Y ? » vaut confirmation.
+ */
+function applyGroupThreshold(
+  session: CallSession,
+  transcript: string,
+  extracted: ConversationState['slots'],
+  previousChoice: ConversationState['answerChoice'],
+  previousGroup: ConversationState['groupRequest'],
+): void {
+  const limit = voiceMaxPartySize(session);
+  if (previousGroup && !previousGroup.confirmed) {
+    const confirmed =
+      extracted.partySize === previousGroup.partySize ||
+      (extracted.partySize === undefined && isAffirmativeShortResponse(transcript));
+    if (confirmed) {
+      delete extracted.partySize;
+      session.conversation.groupRequest = { partySize: previousGroup.partySize, confirmed: true };
+      return;
+    }
+  }
+  const partySize = extracted.partySize;
+  if (partySize === undefined || partySize <= limit) return;
+  delete extracted.partySize;
+  session.conversation.groupRequest = {
+    partySize,
+    confirmed:
+      previousChoice?.kind === 'partySize' && previousChoice.values.includes(String(partySize)),
+  };
+}
+
+/** « Douze personnes, c'est bien ça ? » : confirmation explicite d'un groupe. */
+export function buildGroupConfirmationPlan(
+  session: CallSession,
+): AssistantReplyEmissionPlan | null {
+  const group = session.conversation.groupRequest;
+  if (!group || group.confirmed) return null;
+  const en = effectiveVoiceLanguage(session) === 'en';
+  const spoken = en
+    ? `${group.partySize} people`
+    : `${FRENCH_PARTY_SIZE_WORDS[group.partySize] ?? group.partySize} personnes`;
+  const reply = en
+    ? `${spoken}, is that right?`
+    : `${spoken.charAt(0).toUpperCase()}${spoken.slice(1)}, c'est bien ça ?`;
+  return {
+    reply,
+    proposal: {
+      source: 'explicit',
+      operation: 'activate',
+      interaction: {
+        kind: 'partySizeConfirmation',
+        prompt: reply,
+        candidatePartySize: group.partySize,
+      },
+    },
+  };
+}
+
+/** Heure fermée maintenue ou sans voisin ouvert : relance qui cite les horaires. */
+export function buildClosedTimeRepromptPlan(
+  session: CallSession,
+): AssistantReplyEmissionPlan | null {
+  if (!session.conversation.closedTimeReprompt || !session.openingHours) return null;
+  const en = effectiveVoiceLanguage(session) === 'en';
+  const date = session.conversation.slots.date;
+  const days = date
+    ? [OPENING_DAY_KEYS[new Date(`${date}T12:00:00Z`).getUTCDay()]]
+    : OPENING_DAY_KEYS;
+  const ranges = [
+    ...new Set(
+      days
+        .map((day) => session.openingHours?.[day])
+        .filter((slot): slot is { open: string; close: string } =>
+          Boolean(slot?.open && slot.close),
+        )
+        .map((slot) =>
+          en
+            ? `from ${formatAvailabilitySlot(slot.open, 'en')} to ${formatAvailabilitySlot(slot.close, 'en')}`
+            : `de ${formatAvailabilitySlot(slot.open)} à ${formatAvailabilitySlot(slot.close)}`,
+        ),
+    ),
+  ];
+  if (!ranges.length) return null;
+  const when = date
+    ? en
+      ? 'That day, we are open'
+      : 'Ce jour-là, nous sommes ouverts'
+    : en
+      ? 'We are open'
+      : 'Nous sommes ouverts';
+  const primary = en
+    ? `${when} ${ranges.join(' or ')}. What time would you like to come?`
+    : `${when} ${ranges.join(' ou ')}. Vers quelle heure souhaitez-vous venir ?`;
+  // Citer les horaires est déjà la reformulation : le compteur anti-boucle
+  // reste actif pour proposer un humain si l'heure fermée persiste.
+  if (registerDialogueStall(session, 'time') === 'escalate') {
+    return buildHumanFallbackReplyPlan(session);
+  }
+  return buildExplicitInteractionReplyPlan(session, primary, 'time');
+}
+
+/**
+ * Types sur lesquels la confirmation par la confiance agit vraiment
+ * (`VOICE_CONFIDENCE_CONFIRM_SLOTS`, défaut `partySize`) : la confiance Scribe
+ * sépare bien les nombres justes des faux, pas les heures (banc difficile).
+ * Hors portée, la décision est seulement observée (`wouldBe…`).
+ */
+export function confidenceConfirmSlots(): Set<'partySize' | 'date' | 'time'> {
+  const raw = process.env.VOICE_CONFIDENCE_CONFIRM_SLOTS ?? 'partySize';
+  const slots = raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value): value is 'partySize' | 'date' | 'time' =>
+      ['partySize', 'date', 'time'].includes(value),
+    );
+  return new Set(slots);
+}
+
+const WOULD_BE = {
+  readBack: 'wouldBeReadBack',
+  choice: 'wouldBeChoice',
+  reprompt: 'wouldBeReprompt',
+} as const;
+
+/**
+ * Pour chaque valeur retenue ce tour (nombre, jour, heure), vérifie la
+ * confiance Scribe des mots qui la portent et la stabilité des partielles.
+ * Une valeur douteuse avec un voisin confusable devient « X ou Y ? » ; une
+ * valeur très douteuse sans voisin est redemandée ; une heure hors des
+ * horaires d'ouverture n'est jamais acceptée d'office.
+ */
+function applySlotConfidence(
+  session: CallSession,
+  transcript: string,
+  extracted: ConversationState['slots'],
+  now: Date,
+): void {
+  // Flag coupé mais phase 1 active : la décision est calculée et publiée
+  // (« wouldBe… ») pour observer, sans rien changer au dialogue.
+  const enabled = isConfidenceConfirmEnabled(session);
+  if (!enabled && !isExpectedAnswerEnabled(session)) return;
+  const scope = confidenceConfirmSlots();
+  const evidence =
+    session.sttEvidence &&
+    normalizeTranscript(session.sttEvidence.transcript) === normalizeTranscript(transcript)
+      ? session.sttEvidence
+      : null;
+  const timezone = session.timezone ?? 'Europe/Paris';
+  const partialSlots = (evidence?.partials ?? []).map((partial) =>
+    extractConversationSlots(partial, timezone, now),
+  );
+  const entries: NonNullable<ConversationState['lastSlotConfidence']> = [];
+
+  const slots: Array<['partySize' | 'date' | 'time', ConfidenceSlotKind]> = [
+    ['partySize', 'partySize'],
+    ['date', 'weekday'],
+    ['time', 'time'],
+  ];
+  for (const [slot, kind] of slots) {
+    const raw = extracted[slot];
+    if (raw === undefined) continue;
+    const apply = enabled && scope.has(slot);
+    const value = slot === 'date' ? weekdayOfDate(String(raw)) : String(raw);
+    const partialValues = partialSlots.map((partial, index) => {
+      // L'analyse exacte ignore les groupes de plus de 7 : « dix » dans une
+      // partielle doit pourtant compter comme une valeur différente de « six ».
+      if (slot === 'partySize') return partialPartySize(evidence!.partials[index]);
+      const partialValue = partial[slot];
+      if (partialValue === undefined) return undefined;
+      return slot === 'date' ? weekdayOfDate(String(partialValue)) : String(partialValue);
+    });
+    const slotDate = extracted.date ?? session.conversation.slots.date;
+    let openTimes = kind === 'time' ? openingHourTimes(session.openingHours, slotDate) : undefined;
+    // La grille est au quart d'heure : une heure ouverte comme 20:10 n'y figure pas.
+    if (openTimes?.length && isWithinOpeningHours(session.openingHours, slotDate, value)) {
+      openTimes = [...openTimes, value];
+    }
+    const confidence = valueConfidence(kind, value, evidence?.words);
+    const result = decideSlotConfidence({
+      kind,
+      value,
+      confidence,
+      partialAlternatives: unstableAlternatives(value, partialValues),
+      openTimes,
+    });
+    // Un seul « X ou Y ? » par tour ; les autres valeurs douteuses sont relues.
+    let decision = result.decision;
+    if (decision === 'choice' && session.conversation.answerChoice) decision = 'readBack';
+
+    if (!apply) {
+      entries.push({
+        kind,
+        confidence: confidence === null ? null : Math.round(confidence * 100) / 100,
+        unstable: result.unstable,
+        decision: WOULD_BE[decision],
+      });
+      continue;
+    }
+    if (decision === 'choice' && result.choice) {
+      session.conversation.answerChoice = { kind, values: result.choice };
+      delete extracted[slot];
+    } else if (decision === 'reprompt') {
+      session.conversation.confidenceReprompt ??= {
+        kind,
+        outsideOpeningHours: result.outsideOpeningHours,
+      };
+      delete extracted[slot];
+    }
+    entries.push({
+      kind,
+      confidence: confidence === null ? null : Math.round(confidence * 100) / 100,
+      unstable: result.unstable,
+      decision,
+    });
+  }
+  session.conversation.lastSlotConfidence = entries.length ? entries : null;
+}
+
+const PARTIAL_NUMBER_WORDS: Record<string, number> = {
+  une: 1,
+  un: 1,
+  deux: 2,
+  trois: 3,
+  quatre: 4,
+  cinq: 5,
+  six: 6,
+  sept: 7,
+  huit: 8,
+  neuf: 9,
+  dix: 10,
+  onze: 11,
+  douze: 12,
+  treize: 13,
+  quatorze: 14,
+  quinze: 15,
+  seize: 16,
+};
+
+/** Dernier nombre de 1 à 16 lu dans une partielle (« Dix personnes » → « 10 »). */
+function partialPartySize(partial: string | undefined): string | undefined {
+  if (!partial) return undefined;
+  let found: number | undefined;
+  for (const token of normalizeTranscript(partial).split(' ')) {
+    const value = /^\d{1,2}$/.test(token) ? Number(token) : PARTIAL_NUMBER_WORDS[token];
+    // « un / une » est presque toujours l'article (« une table ») : ignoré.
+    if (value !== undefined && value >= 2 && value <= 16) found = value;
+  }
+  return found === undefined ? undefined : String(found);
+}
+
+/** Relance d'une valeur jugée trop incertaine, formulée autrement. */
+export function buildConfidenceRepromptPlan(
+  session: CallSession,
+): AssistantReplyEmissionPlan | null {
+  const reprompt = session.conversation.confidenceReprompt;
+  if (!reprompt) return null;
+  const en = effectiveVoiceLanguage(session) === 'en';
+  if (reprompt.kind === 'time') {
+    const openTimes = openingHourTimes(session.openingHours, session.conversation.slots.date);
+    const primary =
+      reprompt.outsideOpeningHours && openTimes.length
+        ? en
+          ? `We are open from ${formatAvailabilitySlot(openTimes[0], 'en')} that day. What time would you like to come?`
+          : `Ce jour-là, nous sommes ouverts à partir de ${formatAvailabilitySlot(openTimes[0])}. Vers quelle heure souhaitez-vous venir ?`
+        : en
+          ? "Sorry, I didn't catch the time. What time would you like to come?"
+          : "Pardon, je n'ai pas bien entendu l'heure. Vers quelle heure souhaitez-vous venir ?";
+    return guardDialogueRepromptPlan(session, 'time', primary);
+  }
+  if (reprompt.kind === 'weekday') {
+    return guardDialogueRepromptPlan(
+      session,
+      'date',
+      en
+        ? "Sorry, I didn't catch the day. Which day would you like to book?"
+        : "Pardon, je n'ai pas bien entendu le jour. Pour quel jour souhaitez-vous réserver ?",
+    );
+  }
+  return guardDialogueRepromptPlan(
+    session,
+    'partySize',
+    en
+      ? "Sorry, I didn't catch the number of people. How many will there be?"
+      : "Pardon, je n'ai pas bien entendu le nombre de personnes. Vous serez combien ?",
+  );
 }
 
 /** « Six ou dix ? » : question fermée entre les deux valeurs les plus proches. */
@@ -2614,6 +3097,10 @@ const FRENCH_PARTY_SIZE_WORDS: Record<number, string> = {
   10: 'dix',
   11: 'onze',
   12: 'douze',
+  13: 'treize',
+  14: 'quatorze',
+  15: 'quinze',
+  16: 'seize',
 };
 
 export function buildAnswerChoicePlan(session: CallSession): AssistantReplyEmissionPlan | null {
@@ -2622,9 +3109,14 @@ export function buildAnswerChoicePlan(session: CallSession): AssistantReplyEmiss
   const en = effectiveVoiceLanguage(session) === 'en';
   const [first, second] = choice.values.map((value) => spokenChoiceValue(choice.kind, value, en));
   const suffix = choice.kind === 'partySize' ? (en ? ' people' : ' personnes') : '';
-  const primary = en
-    ? `Sorry, ${first} or ${second}${suffix}?`
-    : `Pardon, ${first} ou ${second}${suffix} ?`;
+  // Les autres valeurs retenues au même tour sont relues dans la même phrase :
+  // sinon une erreur sur l'une passe en silence (banc difficile, hv305).
+  const readBack = buildNaturalReadBack(session);
+  const primary = readBack
+    ? `${readBack}${en ? `${first} or ${second}${suffix}?` : `${first} ou ${second}${suffix} ?`}`
+    : en
+      ? `Sorry, ${first} or ${second}${suffix}?`
+      : `Pardon, ${first} ou ${second}${suffix} ?`;
   const key =
     choice.kind === 'partySize' ? 'partySize' : choice.kind === 'weekday' ? 'date' : 'time';
   return guardDialogueRepromptPlan(session, key, primary);
@@ -2721,12 +3213,30 @@ export function recordUserTurn(
     }
   }
 
+  const previousChoice = session.conversation.answerChoice ?? null;
+  const previousGroup = session.conversation.groupRequest ?? null;
   session.conversation.answerChoice = null;
+  session.conversation.groupRequest = null;
+  session.conversation.closedTimeReprompt = false;
   session.conversation.justFilled = null;
+  session.conversation.lastExpectedAnswer = null;
+  session.conversation.phoneticAccepted = null;
+  session.conversation.lastSlotConfidence = null;
+  session.conversation.confidenceReprompt = null;
   if (speechAct === 'content' || speechAct === 'correction') {
-    const resolved = applyExpectedAnswer(session, activeKind, transcript, extracted, now);
+    const resolved = applyExpectedAnswer(
+      session,
+      activeKind,
+      transcript,
+      extracted,
+      now,
+      previousChoice,
+    );
     if (resolved === 'partySize') partySizeEvidence = 'contextual';
+    applyTimePlausibility(session, extracted, previousChoice);
+    applySlotConfidence(session, transcript, extracted, now);
   }
+  applyGroupThreshold(session, transcript, extracted, previousChoice, previousGroup);
 
   const wantsAvailabilityOptions = asksForAvailabilityOptions(transcript);
   const plainCustomerName = extractPlainCustomerName(
@@ -2769,6 +3279,7 @@ export function recordUserTurn(
     partySize:
       decision.slots.partySize !== undefined && decision.slots.partySize !== current.partySize,
     date: decision.slots.date !== undefined && decision.slots.date !== current.date,
+    time: decision.slots.time !== undefined && decision.slots.time !== current.time,
   };
   Object.assign(current, decision.slots);
   for (const slot of ['date', 'time', 'partySize'] as const) {
@@ -2948,9 +3459,23 @@ export function buildReservationProgressPlan(
  * de suite, sans tour supplémentaire. La date est relue avec son numéro, pour
  * qu'une confusion de jour soit audible.
  */
-function buildNaturalReadBack(session: CallSession): string {
-  const filled = session.conversation.justFilled;
-  if (!filled) return '';
+function phoneticDateReadBack(session: CallSession): string {
+  return session.conversation.phoneticAccepted === 'date'
+    ? buildNaturalReadBack(session, 'date')
+    : '';
+}
+
+function buildNaturalReadBack(session: CallSession, only?: 'date'): string {
+  if (!isExpectedAnswerEnabled(session)) return '';
+  const justFilled = session.conversation.justFilled;
+  if (!justFilled) return '';
+  const filled: { partySize?: boolean; date?: boolean; time?: boolean } = only
+    ? { date: justFilled.date }
+    : {
+        ...justFilled,
+        // Une heure devinée est toujours relue, même si elle n'a pas changé.
+        time: justFilled.time || session.conversation.phoneticAccepted === 'time',
+      };
   const { partySize, date } = session.conversation.slots;
   const en = effectiveVoiceLanguage(session) === 'en';
   const parts: string[] = [];
@@ -2971,6 +3496,14 @@ function buildNaturalReadBack(session: CallSession): string {
         timeZone: 'UTC',
       }),
     );
+  }
+  // L'heure est relue dans la question suivante (« Quatre personnes à 20 h,
+  // très bien. ») ; la réponse de disponibilité, qui la cite déjà, n'appelle
+  // cette relecture que pour le jour : pas de double relecture.
+  const time = session.conversation.slots.time;
+  if (filled.time && time) {
+    const spoken = formatAvailabilitySlot(time, en ? 'en' : 'fr');
+    parts.push(parts.length ? `${en ? 'at' : 'à'} ${spoken}` : spoken);
   }
   if (!parts.length) return '';
   const phrase = parts.join(' ');
@@ -3041,18 +3574,28 @@ function containsHumanMessageOffer(normalized: string): boolean {
   );
 }
 
+/** Mots jusqu'à « vingt », chiffres jusqu'à 100 : de quoi reconnaître un groupe. */
 const SPOKEN_PARTY_SIZE_PATTERN =
-  '(\\d{1,2}|zero|un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|onze|douze|treize|quatorze|quinze|seize|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen)';
+  '(\\d{1,3}|zero|un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix[ -](?:sept|huit|neuf)|dix|onze|douze|treize|quatorze|quinze|seize|vingt|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|twenty)';
+
+const MAX_SPOKEN_PARTY_SIZE = 100;
 
 function partySizeFromNumberToken(token: string): number | null {
   const normalized = normalizeTranscript(token);
   const value =
-    FRENCH_NUMBER_UNITS[normalized] ??
-    ENGLISH_NUMBER_WORDS[normalized] ??
-    (/^\d{1,2}$/.test(normalized) ? Number(normalized) : null);
-  // Le parcours vocal de réservation et ses outils sont bornés à sept
-  // couverts ; le contexte ne doit pas contourner cette validation.
-  return value !== null && value >= 1 && value <= 7 ? value : null;
+    parseFrenchNumberWords(normalized) ??
+    (normalized === 'twenty' ? 20 : ENGLISH_NUMBER_WORDS[normalized]) ??
+    (/^\d{1,3}$/.test(normalized) ? Number(normalized) : null);
+  // Le seuil du restaurant (`voiceMaxPartySize`) est appliqué au tour, pas ici :
+  // un nombre au-delà doit être lu pour déclencher le parcours de groupe.
+  return value !== null && value >= 1 && value <= MAX_SPOKEN_PARTY_SIZE ? value : null;
+}
+
+export function voiceMaxPartySize(session: Pick<CallSession, 'maxPartySize'>): number {
+  const value = session.maxPartySize;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1
+    ? Math.min(value, MAX_SPOKEN_PARTY_SIZE)
+    : DEFAULT_MAX_PARTY_SIZE;
 }
 
 /** Lit un nombre sans unité quand la question active attend explicitement les couverts. */
@@ -3615,6 +4158,15 @@ export function buildDeterministicTurnPlan(
   // (transfert ou message réellement exécuté) : le déterministe ne la répète pas.
   if (session.conversation.pendingQuestion === 'humanFallback') return null;
 
+  // Décidés à ce tour par l'analyse de la réponse : ils passent avant la
+  // relance générique d'une réponse courte.
+  if (speechAct === 'content' || speechAct === 'correction') {
+    const groupPlan = buildGroupConfirmationPlan(session);
+    if (groupPlan) return groupPlan;
+    const closedTimePlan = buildClosedTimeRepromptPlan(session);
+    if (closedTimePlan) return closedTimePlan;
+  }
+
   const pendingShortResponse = buildPendingQuestionReplyPlan(session, transcript);
   if (pendingShortResponse) return pendingShortResponse;
 
@@ -3644,6 +4196,8 @@ export function buildDeterministicTurnPlan(
   if (speechAct === 'content' || speechAct === 'correction') {
     const answerChoicePlan = buildAnswerChoicePlan(session);
     if (answerChoicePlan) return answerChoicePlan;
+    const confidenceRepromptPlan = buildConfidenceRepromptPlan(session);
+    if (confidenceRepromptPlan) return confidenceRepromptPlan;
     // Canary TurnPlan : une réponse que les extracteurs n'ont pas comprise va
     // au modèle au lieu d'une relance mécanique de la même question.
     if (!options.deferUnresolvedToModel && isAmbiguousPartySizeReply(session, transcript)) {

@@ -81,7 +81,7 @@ describe('decideTurnPolicy', () => {
   it('rejects out-of-range party sizes even when explicitly proposed', () => {
     const decision = decideTurnPolicy(
       context(),
-      proposal({ slots: { partySize: 8 }, partySizeEvidence: 'explicit' }),
+      proposal({ slots: { partySize: 101 }, partySizeEvidence: 'explicit' }),
     );
 
     expect(decision.slots.partySize).toBeUndefined();
@@ -220,6 +220,12 @@ describe('authorizeVoiceTool', () => {
         authorizationBasis: { kind: 'human_fallback_choice', choice: 'transfer' },
       }),
     ).toEqual({ status: 'allowed' });
+    expect(
+      authorizeVoiceTool({
+        ...context,
+        authorizationBasis: { kind: 'group_size', choice: 'transfer' },
+      }),
+    ).toEqual({ status: 'allowed' });
     expect(authorizeVoiceTool({ ...context, managerConfigured: false })).toEqual({
       status: 'denied',
       reason: 'manager_unconfigured',
@@ -237,6 +243,12 @@ describe('authorizeVoiceTool', () => {
       authorizeVoiceTool({
         ...context,
         authorizationBasis: { kind: 'human_fallback_choice', choice: 'message' },
+      }),
+    ).toEqual({ status: 'allowed' });
+    expect(
+      authorizeVoiceTool({
+        ...context,
+        authorizationBasis: { kind: 'group_size', choice: 'message' },
       }),
     ).toEqual({ status: 'allowed' });
     expect(
