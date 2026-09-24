@@ -1,12 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
+
+const sttAlertMocks = vi.hoisted(() => ({
+  alertTerminalSttUnavailable: vi.fn().mockResolvedValue(true),
+  recordSttConnectionUnavailable: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock('../stream/stt-alerts', () => sttAlertMocks);
+
 import { CallSessionManager } from '../stream/manager';
 import type { CallSession, SttEvent } from '../stream/types';
 import {
   connectStt,
   sendAudioToStt,
+  STT_CONNECT_TIMEOUT_MS,
   STT_UNAVAILABLE_DEADLINE_MS,
   STT_MAX_CONSECUTIVE_FAILURES,
+  STT_MAX_RECONNECTIONS_PER_CALL,
   STT_RETRY_BACKOFF_MS,
 } from '../stream/stt-bridge';
 import { handleSttEvent } from '../stream/llm-handler';
@@ -114,7 +124,7 @@ describe('résilience STT', () => {
     expect(speakTtsStreamed).toHaveBeenCalledOnce();
     expect(speakTtsStreamed).toHaveBeenCalledWith(
       session,
-      'Je suis désolé, la transcription est temporairement indisponible. Je vous mets en relation avec le gérant.',
+      "Je suis désolé, j'ai un problème technique et je ne vous entends pas correctement. Je vous passe le restaurant.",
     );
     expect(manager.handoffToManager).toHaveBeenCalledOnce();
     expect(manager.transition).toHaveBeenCalledWith(session, 'PROCESSING');
@@ -143,7 +153,7 @@ describe('résilience STT', () => {
     expect(finishCall).toHaveBeenCalledWith(
       session,
       manager,
-      'Je suis désolé, la transcription est temporairement indisponible. Vous pouvez rappeler un peu plus tard ou réserver en ligne. Au revoir.',
+      "Je suis désolé, j'ai un problème technique et je ne vous entends pas correctement. Vous pouvez rappeler un peu plus tard. Au revoir.",
     );
     expect(manager.handoffToManager).not.toHaveBeenCalled();
   });
@@ -186,7 +196,7 @@ describe('résilience STT', () => {
     expect(session.sttFallbackTriggered).toBe(true);
   });
 
-  it('ne remet pas le compteur à zéro sur des sockets qui s’ouvrent puis retombent', async () => {
+  it('ne déclenche pas le repli après quatre fermetures suivant chacune une ouverture sans texte', async () => {
     vi.useFakeTimers();
     const session = makeSession();
     const onEvent = vi.fn();
@@ -198,9 +208,10 @@ describe('résilience STT', () => {
     });
 
     connectStt(session, onEvent, createSocket).catch(() => undefined);
-    const attempts = [0, ...STT_RETRY_BACKOFF_MS];
-    for (let index = 0; index < attempts.length; index++) {
-      if (index > 0) await vi.advanceTimersByTimeAsync(attempts[index]);
+    for (let index = 0; index < 4; index++) {
+      if (index > 0) {
+        await vi.advanceTimersByTimeAsync(STT_RETRY_BACKOFF_MS[index - 1]);
+      }
       const current = sockets.at(-1);
       expect(current).toBeDefined();
       Object.defineProperty(current!.socket, 'readyState', { value: WebSocket.OPEN });
@@ -211,31 +222,141 @@ describe('résilience STT', () => {
       onClose?.(1006, Buffer.from('connection flapped'));
     }
 
-    expect(createSocket).toHaveBeenCalledTimes(STT_MAX_CONSECUTIVE_FAILURES);
+    expect(createSocket).toHaveBeenCalledTimes(4);
+    expect(session.sttConsecutiveFailures).toBe(1);
+    expect(session.sttFallbackTriggered).toBe(false);
+    expect(onEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'Unavailable', reason: 'connection' }),
+    );
+  });
+
+  it('ne déclenche pas le repli après trois délais d’ouverture consécutifs', async () => {
+    vi.useFakeTimers();
+    const session = makeSession();
+    const onEvent = vi.fn();
+    const sockets: ReturnType<typeof makeConnectingSocket>[] = [];
+    const createSocket = vi.fn(() => {
+      const next = makeConnectingSocket();
+      sockets.push(next);
+      return next.socket;
+    });
+
+    let attempt = connectStt(session, onEvent, createSocket).catch(() => undefined);
+    for (let index = 0; index < 3; index++) {
+      await vi.advanceTimersByTimeAsync(STT_CONNECT_TIMEOUT_MS);
+      await attempt;
+      if (index < 2) {
+        await vi.advanceTimersByTimeAsync(STT_RETRY_BACKOFF_MS[index]);
+        attempt = session.sttReady?.catch(() => undefined) ?? Promise.resolve();
+      }
+    }
+
+    expect(createSocket).toHaveBeenCalledTimes(3);
+    expect(session.sttConsecutiveFailures).toBe(3);
+    expect(session.sttFallbackTriggered).toBe(false);
+    expect(onEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'Unavailable', reason: 'connection' }),
+    );
+  });
+
+  it('respecte huit reconnexions totales puis déclenche le repli', async () => {
+    vi.useFakeTimers();
+    const session = makeSession();
+    const onEvent = vi.fn();
+    const sockets: ReturnType<typeof makeConnectingSocket>[] = [];
+    const createSocket = vi.fn(() => {
+      const next = makeConnectingSocket();
+      sockets.push(next);
+      return next.socket;
+    });
+
+    let attempt = connectStt(session, onEvent, createSocket).catch(() => undefined);
+    for (let index = 0; index <= STT_MAX_RECONNECTIONS_PER_CALL; index++) {
+      if (index > 0) {
+        const delay = STT_RETRY_BACKOFF_MS[Math.min(index - 1, STT_RETRY_BACKOFF_MS.length - 1)];
+        await vi.advanceTimersByTimeAsync(delay);
+        attempt = session.sttReady?.catch(() => undefined) ?? Promise.resolve();
+      }
+      const current = sockets.at(-1);
+      expect(current).toBeDefined();
+      Object.defineProperty(current!.socket, 'readyState', { value: WebSocket.OPEN });
+      current!.handlers.get('open')?.();
+      (current!.handlers.get('close') as ((code: number, reason: Buffer) => void) | undefined)?.(
+        1006,
+        Buffer.from('connection flapped'),
+      );
+      await flushMicrotasks();
+    }
+    await attempt;
+
+    expect(STT_MAX_RECONNECTIONS_PER_CALL).toBe(8);
+    expect(createSocket).toHaveBeenCalledTimes(STT_MAX_RECONNECTIONS_PER_CALL + 1);
+    expect(session.sttReconnectAttempts).toBe(STT_MAX_RECONNECTIONS_PER_CALL);
     expect(onEvent).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'Unavailable', reason: 'connection' }),
     );
     expect(session.sttFallbackTriggered).toBe(true);
   });
 
-  it('déclenche le repli si aucune connexion n’aboutit avant 10 secondes', async () => {
+  it('déclenche le repli si aucun socket ne s’ouvre avant l’échéance', async () => {
     vi.useFakeTimers();
     const session = makeSession();
     const onEvent = vi.fn();
     const sockets: ReturnType<typeof makeConnectingSocket>[] = [];
-    const connect = connectStt(session, onEvent, () => {
+    connectStt(session, onEvent, () => {
       const next = makeConnectingSocket();
       sockets.push(next);
       return next.socket;
     }).catch(() => undefined);
+    if (session.sttConnectTimeout) clearTimeout(session.sttConnectTimeout);
+    session.sttConnectTimeout = null;
 
     await vi.advanceTimersByTimeAsync(STT_UNAVAILABLE_DEADLINE_MS);
-    await connect;
 
     expect(onEvent).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'Unavailable', reason: 'connection' }),
     );
-    expect(sockets.length).toBeLessThan(STT_MAX_CONSECUTIVE_FAILURES);
+    expect(sockets).toHaveLength(1);
     expect(session.sttFallbackTriggered).toBe(true);
+  });
+
+  it('parle en anglais et ne propose Connect que si la page de réservation est publiée', async () => {
+    const session = makeSession();
+    session.voiceLanguageCode = 'en';
+    session.onlineReservationsActive = true;
+    const manager = makeManager();
+
+    handleSttEvent(
+      { type: 'Unavailable', reason: 'connection', message: 'connection' },
+      session,
+      manager as never,
+    );
+    await flushMicrotasks();
+
+    expect(finishCall).toHaveBeenCalledWith(
+      session,
+      manager,
+      "I'm sorry, I'm having a technical problem and I can't hear you clearly. You can book online. Goodbye.",
+    );
+  });
+
+  it('n’annonce pas un transfert si celui-ci échoue et reste en vouvoiement', async () => {
+    const session = makeSession('+33100000002');
+    session.onlineReservationsActive = true;
+    const manager = makeManager();
+    manager.handoffToManager.mockRejectedValue(new Error('handoff failed'));
+
+    handleSttEvent(
+      { type: 'Unavailable', reason: 'connection', message: 'connection' },
+      session,
+      manager as never,
+    );
+    await flushMicrotasks();
+
+    expect(finishCall).toHaveBeenCalledWith(
+      session,
+      manager,
+      "Je suis désolé, j'ai un problème technique et je ne vous entends pas correctement. Je ne peux pas vous transférer pour le moment. Vous pouvez réserver en ligne. Au revoir.",
+    );
   });
 });

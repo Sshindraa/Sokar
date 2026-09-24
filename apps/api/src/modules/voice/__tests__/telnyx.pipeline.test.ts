@@ -88,6 +88,7 @@ function makeRestaurantCtx(
     name: string;
     openingHours: unknown;
     personality: unknown;
+    onlineReservationsActive: boolean;
   }> = {},
 ): Awaited<ReturnType<typeof RestaurantService.loadContext>> {
   return {
@@ -95,6 +96,7 @@ function makeRestaurantCtx(
     name: 'Le Bistrot',
     openingHours: { mon: { open: '12:00', close: '14:30' } },
     personality: null,
+    onlineReservationsActive: false,
     ...overrides,
   } as unknown as Awaited<ReturnType<typeof RestaurantService.loadContext>>;
 }
@@ -182,7 +184,7 @@ describe('POST /voice/telnyx — call.initiated', () => {
   });
 
   it('happy path: pre-creates the session and enqueues the answer job', async () => {
-    mockLoadContext.mockResolvedValue(makeRestaurantCtx());
+    mockLoadContext.mockResolvedValue(makeRestaurantCtx({ onlineReservationsActive: true }));
     mockCheckMarginHealth.mockResolvedValue(true);
     mockIsVoicePipelineEnabled.mockResolvedValue(true);
     mockLookupOrCreate.mockResolvedValue({
@@ -231,6 +233,7 @@ describe('POST /voice/telnyx — call.initiated', () => {
     expect(session!.state).toBe('IDLE');
     expect(session!.codec).toBe('PCMA');
     expect(session!.isVip).toBe(false);
+    expect(session!.onlineReservationsActive).toBe(true);
 
     // Answer call was made directly via telnyxFetch (not enqueued to BullMQ)
     expect(mockTelnyxFetch).toHaveBeenCalledWith(

@@ -333,8 +333,10 @@ compte payant avec une clé distincte par environnement.
 L'API et le worker utilisent **ELEVENLABS_API_KEY**, conservée uniquement dans le
 gestionnaire de secrets de chaque environnement. Le worker interroge
 GET https://api.elevenlabs.io/v1/user/subscription une fois par heure et publie
-**sokar_elevenlabs_character_count** et **sokar_elevenlabs_character_limit**. Les seuils
-80 % et 95 % sont définis dans infra/prometheus/alerts.yml.
+**sokar_elevenlabs_character_count** et **sokar_elevenlabs_character_limit**. Le worker
+envoie les seuils 80 % (avertissement), 95 % et 100 % (critique) via `dispatchAlert()`.
+Prometheus garde un miroir consultable ; aucun Alertmanager n'est configuré. Chaque seuil
+dispose d'un latch Redis par période de facturation, réarmé si la consommation repasse dessous.
 
 Les bancs doivent utiliser des clés dédiées, jamais les clés de production :
 
@@ -375,12 +377,15 @@ Chaque tour publie la confiance Scribe (`minWordConfidence`,
 sans le texte. Scribe Realtime envoie une log-probabilité, convertie en
 confiance entre 0 et 1.
 
-En cas d'authentification, de quota ou de conditions ElevenLabs refusés, ou si Scribe ne
-se connecte pas après quatre échecs/10 secondes, l'appel ne relance pas le provider en
-boucle : Sokar transfère au gérant si son numéro est configuré, sinon annonce un rappel
-ultérieur ou une réservation en ligne puis termine l'appel. Les erreurs WebSocket
-transitoires utilisent un backoff de 500 ms, 1 s puis 2 s. Les détails des alertes et du
-worker de solde sont dans docs/runbooks/observability.md.
+En cas d'authentification, de quota ou de conditions ElevenLabs refusés, l'appel cesse
+immédiatement les reconnexions. Les échecs d'ouverture utilisent un backoff de 500 ms, 1 s
+puis 2 s ; chaque ouverture réussie remet le compteur consécutif à zéro. Le repli intervient
+après quatre échecs d'ouverture d'affilée, huit reconnexions par appel, ou une échéance
+globale de 15 s. Il appelle `dispatchAlert()` en critique (cooldown global d'une heure) pour
+les erreurs terminales ; les erreurs de connexion avertissent après plus de cinq appels
+touchés en dix minutes. Le message vocal suit la langue active et ne propose la réservation
+en ligne que si la page Connect est publiée (opt-in, flag, slug et date de publication). Détails :
+docs/runbooks/observability.md.
 
 ## Demo restaurant
 

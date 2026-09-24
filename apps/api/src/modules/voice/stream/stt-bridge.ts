@@ -10,14 +10,18 @@ import { isSpeculativeLlmEnabled } from './speculation';
 import { describeTranscript } from './pii-redact';
 import { voiceProviderErrorsTotal } from '../../../shared/observability/metrics';
 import { addSttAudioSamples, sttSamplesForBuffer } from '../../usage/voice-usage.service';
+import { alertTerminalSttUnavailable, recordSttConnectionUnavailable } from './stt-alerts';
 
 const DEFAULT_STT_MODEL = 'scribe_v2_realtime';
 const STT_REALTIME_PATH = '/v1/speech-to-text/realtime';
 const STT_PROVIDER_LABEL = 'elevenlabs_stt';
 export const STT_RETRY_BACKOFF_MS = [500, 1_000, 2_000] as const;
 export const STT_MAX_CONSECUTIVE_FAILURES = 4;
+export const STT_MAX_RECONNECTIONS_PER_CALL = 8;
 export const STT_CONNECT_TIMEOUT_MS = 2_500;
-export const STT_UNAVAILABLE_DEADLINE_MS = 10_000;
+// Laisse passer quatre délais de connexion (4 × 2,5 s) et le backoff
+// (3,5 s) avant le repli déclenché par la limite d'échecs consécutifs.
+export const STT_UNAVAILABLE_DEADLINE_MS = 15_000;
 
 type SttWebSocketFactory = (url: string, options: { headers: Record<string, string> }) => WebSocket;
 
@@ -55,6 +59,16 @@ function triggerSttUnavailable(
   session.sttFallbackTriggered = true;
   clearSttRecoveryTimers(session);
   session.audioBuffer = [];
+  if (reason === 'connection') {
+    voiceProviderErrorsTotal.inc({ provider: STT_PROVIDER_LABEL, type: 'connection_unavailable' });
+    recordSttConnectionUnavailable().catch((error) =>
+      logger.warn({ err: error }, '[stt] Could not dispatch connection alert'),
+    );
+  } else if (reason === 'quota' || reason === 'auth' || reason === 'terms') {
+    alertTerminalSttUnavailable(reason).catch((error) =>
+      logger.warn({ err: error }, '[stt] Could not dispatch terminal provider alert'),
+    );
+  }
   const ws = session.sttWs;
   session.sttWs = null;
   session.sttReady = null;
@@ -98,6 +112,10 @@ function handleSttConnectionFailure(
     triggerSttUnavailable(session, 'connection', error.message);
     return;
   }
+  if ((session.sttReconnectAttempts ?? 0) >= STT_MAX_RECONNECTIONS_PER_CALL) {
+    triggerSttUnavailable(session, 'connection', error.message);
+    return;
+  }
 
   ensureSttAvailabilityDeadline(session);
   if (session.sttRetryTimer) return;
@@ -108,6 +126,7 @@ function handleSttConnectionFailure(
   session.sttRetryTimer = setTimeout(() => {
     session.sttRetryTimer = null;
     if (session.ended || session.sttTerminalFailure || session.sttFallbackTriggered) return;
+    session.sttReconnectAttempts = (session.sttReconnectAttempts ?? 0) + 1;
     connectStt(session, undefined, createSocket).catch(() => {
       // The connection attempt records its own failure and schedules the next retry.
     });
@@ -1143,6 +1162,9 @@ export function connectStt(
       session.sttConnectTimeout = null;
       if (session.sttConnectionDeadlineTimer) clearTimeout(session.sttConnectionDeadlineTimer);
       session.sttConnectionDeadlineTimer = null;
+      // An open Scribe socket proves availability. Count only consecutive
+      // failed opens/closures, while the per-call reconnection budget remains.
+      session.sttConsecutiveFailures = 0;
       writeDebugLog(
         '[stt] ElevenLabs Scribe connected for call ' +
           session.callControlId +

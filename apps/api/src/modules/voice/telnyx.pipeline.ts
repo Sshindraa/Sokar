@@ -230,6 +230,7 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           restaurantId: ctx.id,
           restaurantName: ctx.name,
           managerPhone: ctx.managerPhone,
+          onlineReservationsActive: ctx.onlineReservationsActive === true,
           timezone: ctx.timezone,
           giftCardMinimumAmount: ctx.giftCardMinimumAmount ?? undefined,
           systemPrompt,

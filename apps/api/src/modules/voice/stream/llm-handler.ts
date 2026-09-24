@@ -341,6 +341,32 @@ function takeInterruptedTranscript(session: CallSession): string | null {
   return held.transcript;
 }
 
+function buildSttUnavailableCopy(session: CallSession): {
+  readonly noManager: string;
+  readonly manager: string;
+  readonly transferFailed: string;
+  readonly transferUnavailable: string;
+} {
+  const english = effectiveVoiceLanguage(session) === 'en';
+  const opening = english
+    ? "I'm sorry, I'm having a technical problem and I can't hear you clearly."
+    : "Je suis désolé, j'ai un problème technique et je ne vous entends pas correctement.";
+  const closing = session.onlineReservationsActive
+    ? english
+      ? 'You can book online. Goodbye.'
+      : 'Vous pouvez réserver en ligne. Au revoir.'
+    : english
+      ? 'Please call back a little later. Goodbye.'
+      : 'Vous pouvez rappeler un peu plus tard. Au revoir.';
+
+  return {
+    noManager: `${opening} ${closing}`,
+    manager: `${opening} ${english ? "I'll put you through to the restaurant." : 'Je vous passe le restaurant.'}`,
+    transferFailed: `${opening} ${english ? "I couldn't put you through." : "Je n'ai pas réussi à vous transférer."} ${closing}`,
+    transferUnavailable: `${opening} ${english ? "I can't transfer you right now." : 'Je ne peux pas vous transférer pour le moment.'} ${closing}`,
+  };
+}
+
 /**
  * Gère les événements provenant de ElevenLabs Scribe.
  */
@@ -656,12 +682,9 @@ export function handleSttEvent(
       session.speculativeTranscript = '';
 
       const managerConfigured = Boolean(session.managerPhone?.trim());
+      const fallbackCopy = buildSttUnavailableCopy(session);
       if (!managerConfigured) {
-        finishCall(
-          session,
-          mgr,
-          'Je suis désolé, la transcription est temporairement indisponible. Vous pouvez rappeler un peu plus tard ou réserver en ligne. Au revoir.',
-        ).catch((err) =>
+        finishCall(session, mgr, fallbackCopy.noManager).catch((err) =>
           logger.error(
             { err, callId: session.callControlId },
             '[stt] Could not finish call after transcription outage',
@@ -679,29 +702,18 @@ export function handleSttEvent(
       if (session.state === 'LISTENING') mgr.transition(session, 'PROCESSING');
       if (session.state !== 'SPEAKING') mgr.transition(session, 'SPEAKING');
       (async () => {
-        await speakTtsStreamed(
-          session,
-          'Je suis désolé, la transcription est temporairement indisponible. Je vous mets en relation avec le gérant.',
-        );
+        await speakTtsStreamed(session, fallbackCopy.manager);
         if (session.ended || session.ending) return;
         await mgr.handoffToManager(session);
         if (session.handoffInProgress || session.ended || session.ending) return;
-        await finishCall(
-          session,
-          mgr,
-          "Je suis désolé, je n'ai pas réussi à joindre le gérant. Vous pouvez rappeler un peu plus tard ou réserver en ligne. Au revoir.",
-        );
+        await finishCall(session, mgr, fallbackCopy.transferFailed);
       })().catch((err) => {
         logger.error(
           { err, callId: session.callControlId },
           '[stt] Manager fallback after transcription outage failed',
         );
         if (!session.ended && !session.ending) {
-          finishCall(
-            session,
-            mgr,
-            'Je suis désolé, je ne peux pas vous mettre en relation pour le moment. Vous pouvez rappeler plus tard ou réserver en ligne. Au revoir.',
-          ).catch((finishErr) =>
+          finishCall(session, mgr, fallbackCopy.transferUnavailable).catch((finishErr) =>
             logger.error(
               { err: finishErr, callId: session.callControlId },
               '[stt] Could not finish call after manager fallback failed',

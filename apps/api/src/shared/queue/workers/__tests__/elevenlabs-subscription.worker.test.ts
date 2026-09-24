@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { __resetMetrics } from '../../../observability/metrics';
 import { elevenLabsCharacterCount, elevenLabsCharacterLimit } from '../../../observability/metrics';
-import { refreshElevenLabsSubscription } from '../elevenlabs-subscription.worker';
+import {
+  dispatchElevenLabsUsageAlerts,
+  refreshElevenLabsSubscription,
+} from '../elevenlabs-subscription.worker';
 
 describe('refreshElevenLabsSubscription', () => {
   afterEach(() => {
@@ -52,5 +55,108 @@ describe('refreshElevenLabsSubscription', () => {
       refreshElevenLabsSubscription({ apiKey: 'test-only-key', fetcher }),
     ).rejects.toThrow('HTTP 429');
     expect(fetcher).toHaveBeenCalledOnce();
+  });
+});
+
+describe('alertes de consommation ElevenLabs', () => {
+  const now = new Date('2026-09-24T12:00:00.000Z');
+  const resetAt = Math.floor(new Date('2026-10-01T00:00:00.000Z').getTime() / 1_000);
+
+  afterEach(() => vi.clearAllMocks());
+
+  function makeDependencies() {
+    const activeKeys = new Set<string>();
+    const claimStore = {
+      set: vi.fn(
+        async (
+          key: string,
+          _value: string,
+          _expiryMode: 'EX',
+          _ttlSeconds: number,
+          _condition: 'NX',
+        ) => {
+          if (activeKeys.has(key)) return null;
+          activeKeys.add(key);
+          return 'OK';
+        },
+      ),
+      del: vi.fn(async (key: string) => Number(activeKeys.delete(key))),
+    };
+    const dispatch = vi.fn().mockResolvedValue([]);
+    return { claimStore, dispatch, activeKeys };
+  }
+
+  it('dispatche les seuils 80 %, 95 % et 100 % avec leur niveau', async () => {
+    const dependencies = makeDependencies();
+
+    const result = await dispatchElevenLabsUsageAlerts(
+      {
+        character_count: 10_000,
+        character_limit: 10_000,
+        next_character_count_reset_unix: resetAt,
+      },
+      { ...dependencies, now },
+    );
+
+    expect(result).toEqual({ dispatched: 3, suppressed: 0 });
+    expect(dependencies.dispatch.mock.calls.map(([alert]) => [alert.kind, alert.severity])).toEqual(
+      [
+        ['elevenlabs_character_usage_80', 'warning'],
+        ['elevenlabs_character_usage_95', 'critical'],
+        ['elevenlabs_character_usage_100', 'critical'],
+      ],
+    );
+    expect(dependencies.claimStore.set.mock.calls.map(([key]) => key)).toEqual([
+      `sokar:elevenlabs:character-usage:${resetAt}:80`,
+      `sokar:elevenlabs:character-usage:${resetAt}:95`,
+      `sokar:elevenlabs:character-usage:${resetAt}:100`,
+    ]);
+    expect(JSON.stringify(dependencies.dispatch.mock.calls)).not.toMatch(/\+33|callId|phone/i);
+  });
+
+  it('supprime le cooldown au retour sous le seuil et réalerte au nouveau franchissement', async () => {
+    const dependencies = makeDependencies();
+    const options = { ...dependencies, now };
+
+    await dispatchElevenLabsUsageAlerts(
+      { character_count: 9_600, character_limit: 10_000, next_character_count_reset_unix: resetAt },
+      options,
+    );
+    await dispatchElevenLabsUsageAlerts(
+      { character_count: 9_400, character_limit: 10_000, next_character_count_reset_unix: resetAt },
+      options,
+    );
+    await dispatchElevenLabsUsageAlerts(
+      { character_count: 9_600, character_limit: 10_000, next_character_count_reset_unix: resetAt },
+      options,
+    );
+
+    expect(dependencies.dispatch).toHaveBeenCalledTimes(3);
+    expect(dependencies.dispatch.mock.calls.map(([alert]) => alert.kind)).toEqual([
+      'elevenlabs_character_usage_80',
+      'elevenlabs_character_usage_95',
+      'elevenlabs_character_usage_95',
+    ]);
+    expect(dependencies.claimStore.del).toHaveBeenCalledWith(
+      `sokar:elevenlabs:character-usage:${resetAt}:95`,
+    );
+  });
+
+  it('isole le cooldown par période de facturation', async () => {
+    const dependencies = makeDependencies();
+
+    for (const nextReset of [resetAt, resetAt + 30 * 24 * 60 * 60]) {
+      await dispatchElevenLabsUsageAlerts(
+        {
+          character_count: 8_000,
+          character_limit: 10_000,
+          next_character_count_reset_unix: nextReset,
+        },
+        { ...dependencies, now },
+      );
+    }
+
+    expect(dependencies.dispatch).toHaveBeenCalledTimes(2);
+    expect(dependencies.activeKeys.size).toBe(2);
   });
 });

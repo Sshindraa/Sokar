@@ -12,6 +12,7 @@ import { voiceConfig } from '../../env';
 import { getRestaurantPlanOverride } from '../../shared/configcat';
 import { DAY_SECONDS, HOUR_SECONDS } from '../../shared/constants/time.js';
 import { getVoiceLlmProvider, type VoiceLlmProvider } from '../voice/llm-provider';
+import { isPublicConnectPage } from '../connect/connect.types';
 
 /** TTL du compteur mensuel d'appels : ~33 jours en secondes */
 const MONTHLY_CALL_COUNTER_TTL_SECONDS = 33 * DAY_SECONDS;
@@ -31,6 +32,9 @@ interface CachedRestaurantContext {
   readonly id: string;
   readonly name: string;
   readonly slug: string | null;
+  readonly publishedAt: Date | null;
+  readonly agenticOptIn: boolean;
+  readonly onlineReservationsActive: boolean;
   readonly plan: string;
   readonly managerPhone: string;
   readonly managerEmail: string;
@@ -94,6 +98,8 @@ function toCachedRestaurantContext(restaurant: {
   id: string;
   name: string;
   slug: string | null;
+  publishedAt: Date | null;
+  agenticOptIn: boolean;
   plan: string;
   managerPhone: string;
   managerEmail: string;
@@ -105,11 +111,17 @@ function toCachedRestaurantContext(restaurant: {
   googleCalendarId: string | null;
   giftCardMinimumAmount: number | null;
   personality: CachedRestaurantContext['personality'];
+  exposureSettings: {
+    connectPublished: boolean;
+  } | null;
 }): CachedRestaurantContext {
   return {
     id: restaurant.id,
     name: restaurant.name,
     slug: restaurant.slug,
+    publishedAt: restaurant.publishedAt,
+    agenticOptIn: restaurant.agenticOptIn,
+    onlineReservationsActive: isPublicConnectPage(restaurant),
     plan: restaurant.plan,
     managerPhone: restaurant.managerPhone,
     managerEmail: restaurant.managerEmail,
@@ -142,6 +154,8 @@ export class RestaurantService {
         id: true,
         name: true,
         slug: true,
+        publishedAt: true,
+        agenticOptIn: true,
         plan: true,
         managerPhone: true,
         managerEmail: true,
@@ -152,6 +166,11 @@ export class RestaurantService {
         smsConfirmEnabled: true,
         googleCalendarId: true,
         giftCardMinimumAmount: true,
+        exposureSettings: {
+          select: {
+            connectPublished: true,
+          },
+        },
         personality: {
           select: {
             id: true,

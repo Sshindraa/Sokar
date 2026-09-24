@@ -80,9 +80,9 @@ s'éditent pas dans l'interface, toute modification passe par le dépôt :
 - Les compteurs HTTP vivent en mémoire : un redémarrage remet les séries à zéro. C'est sans
   conséquence sur Prometheus (les compteurs sont monotones par process), mais `rate()` peut produire
   un pic au redémarrage.
-- Les alertes in-app (`system-health`, `alert-evaluation`) envoient les notifications configurées
-  par email/webhook/SMS. Les règles Prometheus évaluent et historisent les conditions ; Grafana les
-  visualise. Une règle Prometheus seule n'envoie pas de notification.
+- `dispatchAlert()` envoie les alertes in-app à Sentry et, selon `ALERT_*`, par email, webhook et
+  SMS critique. Les appels STT utilisent ce dispatcher avec un cooldown Redis ; les règles
+  Prometheus ne notifient personne car aucun Alertmanager n'est configuré.
 
 ## Quota ElevenLabs pour le STT
 
@@ -91,14 +91,18 @@ et publie `sokar_elevenlabs_character_count` et `sokar_elevenlabs_character_limi
 transcrit aucun audio et ne journalise jamais la clé. Les dernières jauges restent visibles
 jusqu'au prochain relevé réussi ; les erreurs réseau ou HTTP suivent les retries BullMQ.
 
-Le groupe Prometheus `sokar-voice-providers` évalue les règles toutes les 15 secondes :
+Le groupe Prometheus `sokar-voice-providers` évalue les règles toutes les 15 secondes. Il sert de
+miroir et ne notifie personne sans Alertmanager :
 
 - `ElevenLabsSttTerminalError` : première hausse observée de quota, authentification ou
-  conditions refusées en 5 minutes ; sévérité critique.
-- `ElevenLabsSttWebSocketErrors` : plus de cinq erreurs WebSocket en 5 minutes pendant
-  2 minutes ; sévérité warning.
-- `ElevenLabsCharacterUsage80Percent` et `ElevenLabsCharacterUsage95Percent` : alertes de
-  consommation à 80 % et 95 %.
+  conditions refusées en 5 minutes ; le flux STT appelle `dispatchAlert()` en critique, au plus
+  une fois par heure globalement.
+- `ElevenLabsSttAffectedCalls` : plus de cinq appels distincts touchés en 10 minutes ; le flux
+  STT envoie un avertissement au franchissement, avec cooldown Redis de 10 minutes.
+- `ElevenLabsCharacterUsage80Percent`, `ElevenLabsCharacterUsage95Percent` et
+  `ElevenLabsCharacterUsage100Percent` : avertissement à 80 %, critique à 95 % et à 100 %.
+  Le worker `elevenlabs-subscription` les envoie via `dispatchAlert()` et Redis mémorise chaque
+  seuil par période de facturation ; il réarme le seuil si la consommation repasse en dessous.
 
 La clé partagée staging/production et les consignes de banc sont documentées dans
 `docs/runbooks/environment.md`.
