@@ -1517,6 +1517,12 @@ describe('heures parlées (banc STT du 24/09)', () => {
     ['20 et 1 heure.', '21:00'],
     ['20 et 1h30.', '21:30'],
     ['Vingt-deux heures trente.', '22:30'],
+    ['Vers huit heures ce soir.', '20:00'],
+    ['Vers 8 heures ce soir.', '20:00'],
+    ['8 heures du soir', '20:00'],
+    ['20 h et 1 h 30', '21:30'],
+    ['vingt et 1 h 30', '21:30'],
+    ['Une table lundi à 20 h et 1 h 30, c’est possible ?', '21:30'],
   ])('lit « %s » comme %s', (transcript, expected) => {
     expect(extractConversationSlots(transcript, 'Europe/Paris').time).toBe(expected);
   });
@@ -1690,5 +1696,164 @@ describe('relecture naturelle et question fermée', () => {
       if (previousIds === undefined) delete process.env.VOICE_EXPECTED_ANSWER_RESTAURANT_IDS;
       else process.env.VOICE_EXPECTED_ANSWER_RESTAURANT_IDS = previousIds;
     }
+  });
+});
+
+describe('confirmation guidée par la confiance', () => {
+  const saved = {
+    expected: process.env.VOICE_EXPECTED_ANSWER_ENABLED,
+    confidence: process.env.VOICE_CONFIDENCE_CONFIRM_ENABLED,
+    ids: process.env.VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS,
+  };
+  beforeEach(() => {
+    process.env.VOICE_EXPECTED_ANSWER_ENABLED = 'true';
+    process.env.VOICE_CONFIDENCE_CONFIRM_ENABLED = 'true';
+    delete process.env.VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS;
+  });
+  afterEach(() => {
+    const restore = (key: string, value: string | undefined) => {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    };
+    restore('VOICE_EXPECTED_ANSWER_ENABLED', saved.expected);
+    restore('VOICE_CONFIDENCE_CONFIRM_ENABLED', saved.confidence);
+    restore('VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS', saved.ids);
+  });
+
+  function partySizeTurn(
+    transcript: string,
+    words: Array<{ word: string; confidence: number }>,
+    partials: string[] = [transcript],
+  ): CallSession {
+    const session = makeSession();
+    session.restaurantId = 'restaurant-pilote';
+    session.timezone = 'Europe/Paris';
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.date = '2026-09-26';
+    recordAssistantReply(session, 'Vous serez combien ?');
+    session.sttEvidence = { transcript, words, partials };
+    recordUserTurn(session, transcript, 'content');
+    return session;
+  }
+
+  it('n’ajoute aucune question quand la valeur est sûre et stable', () => {
+    const session = partySizeTurn('Six personnes', [
+      { word: 'Six', confidence: 0.95 },
+      { word: 'personnes', confidence: 0.9 },
+    ]);
+    expect(session.conversation.slots.partySize).toBe(6);
+    expect(session.conversation.answerChoice).toBeNull();
+    expect(buildReservationProgressResponse(session, 'Six personnes')).toBe(
+      'Six personnes, très bien. Vous voulez venir vers quelle heure ?',
+    );
+  });
+
+  it('demande « six ou dix ? » quand « six » est peu sûr', () => {
+    const session = partySizeTurn('Six personnes', [
+      { word: 'Six', confidence: 0.3 },
+      { word: 'personnes', confidence: 0.9 },
+    ]);
+    expect(session.conversation.slots.partySize).toBeUndefined();
+    expect(buildAnswerChoicePlan(session)?.reply).toBe('Pardon, six ou dix personnes ?');
+  });
+
+  it('demande un choix quand la valeur a changé dans les partielles', () => {
+    const session = partySizeTurn(
+      'Six personnes',
+      [
+        { word: 'Six', confidence: 0.95 },
+        { word: 'personnes', confidence: 0.9 },
+      ],
+      ['Dix', 'Dix personnes', 'Six personnes'],
+    );
+    expect(session.conversation.answerChoice).toEqual({ kind: 'partySize', values: ['6', '10'] });
+  });
+
+  it('redemande autrement une valeur très douteuse sans voisin', () => {
+    const session = partySizeTurn('Quatre personnes', [
+      { word: 'Quatre', confidence: 0.1 },
+      { word: 'personnes', confidence: 0.9 },
+    ]);
+    expect(session.conversation.slots.partySize).toBeUndefined();
+    expect(buildDeterministicTurnResponse(session, 'content', 'Quatre personnes')).toBe(
+      "Pardon, je n'ai pas bien entendu le nombre de personnes. Vous serez combien ?",
+    );
+  });
+
+  it('fait confirmer une heure hors des horaires d’ouverture', () => {
+    const session = makeSession();
+    session.restaurantId = 'restaurant-pilote';
+    session.timezone = 'Europe/Paris';
+    session.openingHours = { sat: { open: '19:00', close: '23:00' } };
+    session.conversation.intent = 'reservation';
+    session.conversation.slots = { date: '2026-09-26', partySize: 4 };
+    recordAssistantReply(session, 'Vous voulez venir vers quelle heure ?');
+    session.sttEvidence = {
+      transcript: 'À 8 heures',
+      words: [
+        { word: 'À', confidence: 0.9 },
+        { word: '8', confidence: 0.95 },
+        { word: 'heures', confidence: 0.9 },
+      ],
+      partials: ['À 8 heures'],
+    };
+
+    recordUserTurn(session, 'À 8 heures', 'content');
+
+    expect(session.conversation.slots.time).toBeUndefined();
+    expect(buildAnswerChoicePlan(session)?.reply).toBe('Pardon, 8 h ou 20 h ?');
+  });
+
+  it('retient la réponse courte à « six ou dix ? »', () => {
+    const session = partySizeTurn('Six personnes', [{ word: 'Six', confidence: 0.3 }]);
+    const plan = buildAnswerChoicePlan(session)!;
+    recordAssistantReplyWithPolicy(session, plan.reply, plan.proposal);
+    session.sttEvidence = null;
+
+    recordUserTurn(session, 'Six.', 'content');
+
+    expect(session.conversation.slots.partySize).toBe(6);
+  });
+
+  it('publie une télémétrie sans texte ni valeur', () => {
+    const session = partySizeTurn('Six personnes', [{ word: 'Six', confidence: 0.333 }]);
+    const [entry] = session.conversation.lastSlotConfidence!;
+    expect(Object.keys(entry).sort()).toEqual(['confidence', 'decision', 'kind', 'unstable']);
+    expect(entry).toEqual({
+      kind: 'partySize',
+      confidence: 0.33,
+      unstable: false,
+      decision: 'choice',
+    });
+  });
+
+  it('garde le comportement de la phase 1 quand le flag est coupé', () => {
+    process.env.VOICE_CONFIDENCE_CONFIRM_ENABLED = 'false';
+    const session = partySizeTurn('Six personnes', [{ word: 'Six', confidence: 0.1 }]);
+    expect(session.conversation.slots.partySize).toBe(6);
+    expect(session.conversation.answerChoice).toBeNull();
+    expect(session.conversation.lastSlotConfidence).toBeNull();
+  });
+
+  it('garde le comportement de la phase 1 pour un restaurant hors de la liste', () => {
+    process.env.VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS = 'un-autre-restaurant';
+    const session = partySizeTurn('Six personnes', [{ word: 'Six', confidence: 0.1 }]);
+    expect(session.conversation.slots.partySize).toBe(6);
+    expect(session.conversation.answerChoice).toBeNull();
+  });
+
+  it('ignore des preuves STT qui portent sur une autre phrase', () => {
+    const session = makeSession();
+    session.restaurantId = 'restaurant-pilote';
+    session.conversation.intent = 'reservation';
+    session.conversation.slots.date = '2026-09-26';
+    recordAssistantReply(session, 'Vous serez combien ?');
+    session.sttEvidence = {
+      transcript: 'autre chose',
+      words: [{ word: 'Six', confidence: 0.1 }],
+      partials: [],
+    };
+    recordUserTurn(session, 'Six personnes', 'content');
+    expect(session.conversation.slots.partySize).toBe(6);
   });
 });

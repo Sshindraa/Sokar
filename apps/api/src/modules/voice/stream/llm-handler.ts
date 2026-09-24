@@ -511,6 +511,12 @@ export function handleSttEvent(
       // commencé par UtteranceStart.
       session.transcript += (session.transcript ? ' ' : '') + event.transcript;
       completeVoiceTurnInput(session, event.transcript, event.words);
+      session.sttEvidence = {
+        transcript: event.transcript,
+        words: event.words,
+        partials: [...(session.turnPartials ?? [])],
+      };
+      session.turnPartials = [];
 
       const isSpeculativeEnabled = isSpeculativeLlmEnabled(session);
       const speculativeTranscript = session.speculativeTranscript;
@@ -793,6 +799,10 @@ export async function processTranscriptStreaming(
   if (expectedAnswer) {
     // Statut et scores seulement : ni transcription ni valeur retenue.
     recordVoiceTurnEvent(session, 'expected_answer', { ...expectedAnswer });
+  }
+  for (const slotConfidence of session.conversation.lastSlotConfidence ?? []) {
+    // Type, confiance arrondie, instabilité et décision : ni texte ni valeur.
+    recordVoiceTurnEvent(session, 'slot_confidence', { ...slotConfidence });
   }
   recordVoiceTurnClassification(session, speechAct);
   logger.info(

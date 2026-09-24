@@ -148,6 +148,18 @@ export interface ConversationState {
   answerChoice?: { kind: 'partySize' | 'weekday' | 'time'; values: [string, string] } | null;
   /** Valeurs retenues au dernier tour, relues naturellement dans la question suivante. */
   justFilled?: { partySize?: boolean; date?: boolean; time?: boolean } | null;
+  /** Confiance des valeurs du dernier tour, pour la télémétrie (sans texte ni valeur). */
+  lastSlotConfidence?: Array<{
+    kind: 'partySize' | 'weekday' | 'time';
+    confidence: number | null;
+    unstable: boolean;
+    decision: 'readBack' | 'choice' | 'reprompt';
+  }> | null;
+  /** Valeur jugée trop incertaine au dernier tour : la question est reposée autrement. */
+  confidenceReprompt?: {
+    kind: 'partySize' | 'weekday' | 'time';
+    outsideOpeningHours: boolean;
+  } | null;
   /** Champ rempli au dernier tour par rapprochement phonétique (jamais en silence). */
   phoneticAccepted?: 'partySize' | 'date' | 'time' | null;
   /** Issue du rapprochement au dernier tour, pour la télémétrie (sans texte). */
@@ -405,6 +417,14 @@ export interface CallSession {
     languageCode?: string;
     timer: ReturnType<typeof setTimeout>;
   } | null;
+  /** Transcriptions partielles Scribe du tour en cours (signal d'instabilité). */
+  turnPartials?: string[];
+  /**
+   * Preuves STT de la phrase finale, lues par `recordUserTurn` : mots avec leur
+   * confiance et partielles du tour. Rattachées au texte pour ne jamais servir
+   * à une autre phrase.
+   */
+  sttEvidence?: { transcript: string; words?: SttWord[]; partials: string[] } | null;
   /** Dernière phrase appelant envoyée au traitement (déterministe ou LLM). */
   lastProcessedTranscript?: string;
   /**

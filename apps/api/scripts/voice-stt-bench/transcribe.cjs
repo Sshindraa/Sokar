@@ -8,6 +8,7 @@
  * appel (bruit au SNR demandé, paquets de 20 ms perdus, codec A-law), puis
  * envoyée à Scribe avec l'URL de production (`buildSttUrl`, codec PCMA).
  * Les phrases sont synthétiques : aucun contenu d'appel réel n'est traité.
+ * Sortie par phrase : transcription, mots avec `logprob`, transcriptions partielles.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -89,7 +90,11 @@ async function synthesize(phrase) {
     body: JSON.stringify({
       model_id: 'sonic-2',
       transcript: phrase.text,
-      voice: { mode: 'id', id: phrase.voice },
+      voice: {
+        mode: 'id',
+        id: phrase.voice,
+        ...(phrase.speed ? { __experimental_controls: { speed: phrase.speed } } : {}),
+      },
       output_format: { container: 'raw', encoding: 'pcm_s16le', sample_rate: 8000 },
       language: 'fr',
     }),
@@ -103,13 +108,15 @@ function transcribe(audio) {
     const url = buildSttUrl(undefined, 'PCMA', undefined, { restaurantName: 'Chez Sokar' });
     const ws = new WebSocket(url, { headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY } });
     const committed = [];
+    const words = [];
+    const partials = [];
     let finished = false;
     const finish = (error) => {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
       ws.close();
-      resolve({ transcript: committed.join(' ').trim(), error: error ?? null });
+      resolve({ transcript: committed.join(' ').trim(), words, partials, error: error ?? null });
     };
     const timer = setTimeout(() => finish(committed.length ? null : 'timeout'), 15000);
     ws.on('error', (err) => finish(err.message));
@@ -135,11 +142,18 @@ function transcribe(audio) {
         }
         clearTimeout(timer);
         setTimeout(() => finish(), 1500);
+      } else if (event.message_type === 'partial_transcript' && event.text?.trim()) {
+        if (partials.at(-1) !== event.text.trim()) partials.push(event.text.trim());
       } else if (
         event.message_type === 'committed_transcript_with_timestamps' &&
         event.text?.trim()
       ) {
         committed.push(event.text.trim());
+        // Mots et log-probabilités, pour mesurer la confiance comme en production.
+        for (const word of event.words ?? []) {
+          if (word.type === 'spacing' || !(word.text ?? word.word)) continue;
+          words.push({ word: word.text ?? word.word, logprob: word.logprob ?? null });
+        }
       } else if (/error/i.test(event.message_type ?? '')) {
         finish(event.message_type);
       }

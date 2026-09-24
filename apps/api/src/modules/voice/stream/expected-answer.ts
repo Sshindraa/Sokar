@@ -280,13 +280,17 @@ function candidatesFor(
   kind: ExpectedAnswerKind,
   allowedValues?: readonly string[],
 ): CandidateSource[] {
+  // Valeurs imposées (réponse à « six ou dix ? ») : seules ces deux-là comptent.
   if (kind === 'partySize') {
-    return Array.from({ length: MAX_PARTY_SIZE }, (_, index) => index + 1).map((n) => ({
-      value: String(n),
-      forms: partySizeForms(n),
-    }));
+    const sizes = allowedValues?.length
+      ? allowedValues.map(Number)
+      : Array.from({ length: MAX_PARTY_SIZE }, (_, index) => index + 1);
+    return sizes.map((n) => ({ value: String(n), forms: partySizeForms(n) }));
   }
-  if (kind === 'weekday') return WEEKDAY_NAMES.map((day) => ({ value: day, forms: [day] }));
+  if (kind === 'weekday') {
+    const days = allowedValues?.length ? allowedValues : WEEKDAY_NAMES;
+    return days.map((day) => ({ value: day, forms: [day] }));
+  }
   const times =
     allowedValues && allowedValues.length > 0
       ? allowedValues

@@ -24,16 +24,36 @@ import {
   recordAssistantReplyFromLlmTextFallback,
   recordUserTurn,
 } from '../../src/modules/voice/stream/conversation-controller';
+import { valueConfidence } from '../../src/modules/voice/stream/slot-confidence';
 import type { CallSession } from '../../src/modules/voice/stream/types';
 import type { BenchPhrase } from './phrases';
 
 interface TranscriptResult {
   id: string;
   transcript: string;
+  /** Mots Scribe avec log-probabilité (banc « difficile » et suivants). */
+  words?: Array<{ word: string; logprob: number | null }>;
+  partials?: string[];
   error: string | null;
 }
 
-type Outcome = 'correct' | 'wrongReadBack' | 'wrongSilent' | 'choiceOk' | 'choiceKo' | 'reprompt';
+/** Restaurant du banc : ouvert tous les jours de 12 h à 23 h. */
+const BENCH_OPENING_HOURS = Object.fromEntries(
+  ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map((day) => [
+    day,
+    { open: '12:00', close: '23:00' },
+  ]),
+) as NonNullable<CallSession['openingHours']>;
+
+type Outcome =
+  | 'correct'
+  | 'wrongReadBack'
+  | 'wrongSilent'
+  | 'choiceOk'
+  | 'choiceKo'
+  | 'reprompt'
+  | 'uselessConfirm';
+/** Issues exclusives ; `uselessConfirm` est compté à part (sous-ensemble des choix/redemandes). */
 const OUTCOMES: Outcome[] = [
   'correct',
   'wrongReadBack',
@@ -134,6 +154,7 @@ function makeSession(question: string | null): CallSession {
   const session = {
     conversation: createConversationState(),
     restaurantId: 'bench-restaurant',
+    openingHours: BENCH_OPENING_HOURS,
     timezone: 'Europe/Paris',
     voiceLanguageCode: 'fr',
     history: [],
@@ -146,12 +167,17 @@ function makeSession(question: string | null): CallSession {
 interface Evaluation {
   tally: Record<string, Record<Outcome, number>>;
   details: string[];
+  /** Issue par phrase et par fait, pour repérer les confirmations inutiles. */
+  outcomes: Map<string, Outcome>;
 }
 
 function evaluate(phrases: BenchPhrase[], transcripts: Map<string, TranscriptResult>): Evaluation {
   const tally: Record<string, Record<Outcome, number>> = {};
   const details: string[] = [];
+  const outcomes = new Map<string, Outcome>();
+  let currentPhrase = '';
   const count = (fact: string, outcome: Outcome) => {
+    outcomes.set(`${currentPhrase}|${fact}`, outcome);
     tally[fact] ??= {
       correct: 0,
       wrongReadBack: 0,
@@ -159,13 +185,24 @@ function evaluate(phrases: BenchPhrase[], transcripts: Map<string, TranscriptRes
       choiceOk: 0,
       choiceKo: 0,
       reprompt: 0,
+      uselessConfirm: 0,
     };
     tally[fact][outcome]++;
   };
 
   for (const phrase of phrases) {
-    const transcript = transcripts.get(phrase.id)?.transcript ?? '';
+    currentPhrase = phrase.id;
+    const result = transcripts.get(phrase.id);
+    const transcript = result?.transcript ?? '';
     const session = makeSession(QUESTIONS[phrase.question]);
+    session.sttEvidence = {
+      transcript,
+      words: result?.words?.map((word) => ({
+        word: word.word,
+        ...(typeof word.logprob === 'number' ? { confidence: Math.exp(word.logprob) } : {}),
+      })),
+      partials: result?.partials ?? [],
+    };
     const before = { ...session.conversation.slots };
     let reply = '';
     if (transcript) {
@@ -225,25 +262,31 @@ function evaluate(phrases: BenchPhrase[], transcripts: Map<string, TranscriptRes
       else if (actual !== undefined) {
         const readBack = isSpoken(reply, choiceKind, actual);
         count(fact, readBack ? 'wrongReadBack' : 'wrongSilent');
+        const confidence = valueConfidence(choiceKind, actual, session.sttEvidence?.words);
         details.push(
-          `${readBack ? 'relu' : 'SILENCIEUX'} ${fact} ${phrase.id} « ${phrase.text} » → « ${transcript} » → ${actual} (attendu ${expected}) ; agent : « ${reply} »`,
+          `${readBack ? 'relu' : 'SILENCIEUX'} ${fact} ${phrase.id} « ${phrase.text} » → « ${transcript} » → confiance ${confidence === null ? '?' : confidence.toFixed(2)} → ${actual} (attendu ${expected}) ; agent : « ${reply} »`,
         );
       } else if (answerChoice?.kind === choiceKind) {
         count(fact, answerChoice.values.includes(expected) ? 'choiceOk' : 'choiceKo');
       } else count(fact, 'reprompt');
     }
   }
-  return { tally, details };
+  return { tally, details, outcomes };
 }
 
+/** Rapprochement de la phase 1 toujours actif ; seul le flag de confiance bascule. */
 function withFlag<T>(enabled: boolean, run: () => T): T {
-  const previous = process.env.VOICE_EXPECTED_ANSWER_ENABLED;
-  process.env.VOICE_EXPECTED_ANSWER_ENABLED = enabled ? 'true' : 'false';
+  const keys = ['VOICE_EXPECTED_ANSWER_ENABLED', 'VOICE_CONFIDENCE_CONFIRM_ENABLED'] as const;
+  const previous = keys.map((key) => process.env[key]);
+  process.env.VOICE_EXPECTED_ANSWER_ENABLED = 'true';
+  process.env.VOICE_CONFIDENCE_CONFIRM_ENABLED = enabled ? 'true' : 'false';
   try {
     return run();
   } finally {
-    if (previous === undefined) delete process.env.VOICE_EXPECTED_ANSWER_ENABLED;
-    else process.env.VOICE_EXPECTED_ANSWER_ENABLED = previous;
+    keys.forEach((key, index) => {
+      if (previous[index] === undefined) delete process.env[key];
+      else process.env[key] = previous[index];
+    });
   }
 }
 
@@ -256,13 +299,21 @@ function main(): void {
   const pct = (value: number) => `${(100 * value).toFixed(0)} %`;
   const lines: string[] = [
     `N = ${phrases.length} phrases`,
-    '| Type | Flag | n | correct [IC 95 %] | wrongReadBack [IC 95 %] | wrongSilent [IC 95 %] | choix ok | choix ko | redemandé |',
-    '|---|---|---|---|---|---|---|---|---|',
+    '| Type | Flag confiance | n | correct [IC 95 %] | wrongReadBack | wrongSilent [IC 95 %] | choix ok | choix ko | redemandé | confirmations inutiles |',
+    '|---|---|---|---|---|---|---|---|---|---|',
   ];
   const results = {
     off: withFlag(false, () => evaluate(phrases, transcripts)),
     on: withFlag(true, () => evaluate(phrases, transcripts)),
   };
+  // Confirmation inutile : flag actif demande (choix ou redemande) alors que,
+  // flag coupé, la bonne valeur était retenue.
+  for (const [key, onOutcome] of results.on.outcomes) {
+    const offOutcome = results.off.outcomes.get(key);
+    if (offOutcome === 'correct' && ['choiceOk', 'choiceKo', 'reprompt'].includes(onOutcome)) {
+      results.on.tally[key.split('|')[1]].uselessConfirm++;
+    }
+  }
   const types = [...new Set([...Object.keys(results.off.tally), ...Object.keys(results.on.tally)])];
   for (const type of types) {
     for (const flag of ['off', 'on'] as const) {
@@ -270,12 +321,12 @@ function main(): void {
       if (!t) continue;
       const n = OUTCOMES.reduce((sum, outcome) => sum + t[outcome], 0);
       const [cLow, cHigh] = wilson(t.correct, n);
-      const [rLow, rHigh] = wilson(t.wrongReadBack, n);
       const [sLow, sHigh] = wilson(t.wrongSilent, n);
       lines.push(
         `| ${type} | ${flag === 'on' ? 'actif' : 'coupé'} | ${n} | ${t.correct} (${pct(t.correct / n)}) [${pct(cLow)}–${pct(cHigh)}] | ` +
-          `${t.wrongReadBack} (${pct(t.wrongReadBack / n)}) [${pct(rLow)}–${pct(rHigh)}] | ` +
-          `${t.wrongSilent} (${pct(t.wrongSilent / n)}) [${pct(sLow)}–${pct(sHigh)}] | ${t.choiceOk} | ${t.choiceKo} | ${t.reprompt} |`,
+          `${t.wrongReadBack} (${pct(t.wrongReadBack / n)}) | ` +
+          `${t.wrongSilent} (${pct(t.wrongSilent / n)}) [${pct(sLow)}–${pct(sHigh)}] | ${t.choiceOk} | ${t.choiceKo} | ${t.reprompt} | ` +
+          `${flag === 'on' ? t.uselessConfirm : '—'} |`,
       );
     }
   }

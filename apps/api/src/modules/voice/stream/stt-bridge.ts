@@ -175,6 +175,7 @@ const RESERVATION_KEYTERMS = [
   'tafel',
 ];
 const MAX_STT_KEYTERMS = 50;
+const MAX_TURN_PARTIALS = 30;
 const MAX_STT_KEYTERM_LENGTH = 20;
 const MAX_STT_PREVIOUS_TEXT_LENGTH = 50;
 /** Délai de repli si Scribe n'envoie pas le commit horodaté attendu. */
@@ -850,12 +851,17 @@ function emitPartialTranscript(session: CallSession, transcript: string): void {
 
   if (!session.turnTranscript.trim() && !semanticHold) {
     flushPendingSttEndOfTurn(session);
+    session.turnPartials = [];
     session.onSttEvent?.({ type: 'UtteranceStart' });
   } else if (session.state === 'PROCESSING' && cleanTranscript !== session.turnTranscript) {
     session.onSttEvent?.({ type: 'SpeechResumed' });
   }
 
   session.turnTranscript = mergeSttTranscripts(session.turnTranscript, cleanTranscript);
+  // Partielles bornées : elles servent à voir si une valeur a changé en cours de tour.
+  const partials = (session.turnPartials ??= []);
+  if (partials.at(-1) !== cleanTranscript) partials.push(cleanTranscript);
+  if (partials.length > MAX_TURN_PARTIALS) partials.splice(0, partials.length - MAX_TURN_PARTIALS);
 
   const wordCount = cleanTranscript.split(/\s+/u).filter(Boolean).length;
   const isSpeculativeEnabled = isSpeculativeLlmEnabled(session);

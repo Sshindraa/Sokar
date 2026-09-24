@@ -15,7 +15,7 @@
  * Usage : pnpm --filter @sokar/api exec tsx scripts/voice-stt-bench/phrases.ts validation > .data/validation-phrases.json
  */
 
-export type BenchSet = 'calibration' | 'validation';
+export type BenchSet = 'calibration' | 'validation' | 'hard-calibration' | 'hard-validation';
 export type BenchQuestion = 'partySize' | 'date' | 'time' | 'open';
 
 export interface BenchPhrase {
@@ -31,6 +31,8 @@ export interface BenchPhrase {
     offTopic?: boolean;
   };
   voice: string;
+  /** Débit de synthèse accéléré (niveau « difficile »). */
+  speed?: 'fast';
   /** Rapport signal/bruit en dB et taux de paquets perdus appliqués à l'audio. */
   snrDb: number;
   packetLoss: number;
@@ -49,7 +51,18 @@ export const VALIDATION_ONLY_VOICES = [
   '7c58f4a4-a72c-42fa-a503-41b9408820f3', // Inès, féminin
 ] as const;
 
-const SEEDS: Record<BenchSet, number> = { calibration: 20260924, validation: 20261001 };
+/** Voix réservées à la validation « difficile » (jamais en calibration). */
+export const HARD_VALIDATION_ONLY_VOICES = [
+  '996ec149-0dca-4389-ad08-e2d6f906b4bf', // Mathis, masculin
+  '92579402-6868-412e-b845-3efed0be7a9e', // Jade, féminin
+] as const;
+
+const SEEDS: Record<BenchSet, number> = {
+  calibration: 20260924,
+  validation: 20261001,
+  'hard-calibration': 20261101,
+  'hard-validation': 20261115,
+};
 
 const NUMBER_WORDS = [
   '',
@@ -338,20 +351,79 @@ function validationDrafts(random: () => number): Draft[] {
   return phrases;
 }
 
+/**
+ * Demandes à plusieurs valeurs, dont l'heure donnée en premier
+ * (« À vingt heures pour quatre personnes »).
+ */
+function multiValueDrafts(random: () => number): Draft[] {
+  const pick = <T>(values: readonly T[]): T => values[Math.floor(random() * values.length)];
+  const times: Array<[number, number]> = [
+    [19, 30],
+    [20, 0],
+    [20, 15],
+    [20, 30],
+    [21, 0],
+    [21, 15],
+    [21, 30],
+    [22, 0],
+    [22, 30],
+  ];
+  const phrases: Draft[] = [];
+  for (let k = 0; k < 40; k++) {
+    const n = 1 + Math.floor(random() * 7);
+    const [hour, minute] = pick(times);
+    const time = hhmm(hour, minute);
+    const spoken = spokenTime(hour, minute);
+    const people = n === 1 ? 'une personne' : `${NUMBER_WORDS[n]} personnes`;
+    const day = pick(WEEKDAYS);
+    const forms: Draft[] = [
+      { question: 'open', text: `À ${spoken} pour ${people}.`, expected: { partySize: n, time } },
+      {
+        question: 'open',
+        text: `Vers ${spoken}, on sera ${NUMBER_WORDS[n]}.`,
+        expected: { partySize: n, time },
+      },
+      {
+        question: 'open',
+        text: `${capitalize(day)} à ${spoken}, pour ${people}.`,
+        expected: { partySize: n, weekday: day, time },
+      },
+    ];
+    phrases.push(pick(forms));
+  }
+  return phrases;
+}
+
 export function buildBenchPhrases(set: BenchSet = 'calibration'): BenchPhrase[] {
   const random = seeded(SEEDS[set]);
-  const drafts = set === 'calibration' ? calibrationDrafts(random) : validationDrafts(random);
-  const voices =
+  const hard = set.startsWith('hard-');
+  const drafts =
     set === 'calibration'
+      ? calibrationDrafts(random)
+      : hard
+        ? [...validationDrafts(random), ...multiValueDrafts(random)]
+        : validationDrafts(random);
+  const voices =
+    set === 'calibration' || set === 'hard-calibration'
       ? [...CALIBRATION_VOICES]
-      : [...VALIDATION_ONLY_VOICES, ...CALIBRATION_VOICES];
-  const prefix = set === 'calibration' ? 'p' : 'v';
+      : set === 'hard-validation'
+        ? [...HARD_VALIDATION_ONLY_VOICES, ...VALIDATION_ONLY_VOICES, ...CALIBRATION_VOICES]
+        : [...VALIDATION_ONLY_VOICES, ...CALIBRATION_VOICES];
+  const prefix = {
+    calibration: 'p',
+    validation: 'v',
+    'hard-calibration': 'hc',
+    'hard-validation': 'hv',
+  }[set];
   return drafts.map((phrase, index) => ({
     ...phrase,
     id: `${prefix}${String(index + 1).padStart(3, '0')}`,
     voice: voices[index % voices.length],
-    snrDb: Math.round(15 + random() * 15),
-    packetLoss: Math.round(random() * 30) / 1000,
+    // Niveau difficile : bruit fort (5–10 dB), 3–5 % de paquets perdus, une
+    // phrase sur deux au débit rapide, pour que Scribe se trompe assez souvent.
+    ...(hard && random() < 0.5 ? { speed: 'fast' as const } : {}),
+    snrDb: hard ? Math.round(5 + random() * 5) : Math.round(15 + random() * 15),
+    packetLoss: hard ? Math.round(30 + random() * 20) / 1000 : Math.round(random() * 30) / 1000,
   }));
 }
 

@@ -345,6 +345,23 @@ d'ouverture du jour, sinon une liste par défaut.
 | `VOICE_EXPECTED_ANSWER_ENABLED`        | `false` | `true` active rapprochement, choix « X ou Y ? » et relecture naturelle |
 | `VOICE_EXPECTED_ANSWER_RESTAURANT_IDS` | vide    | limite aux restaurants listés (virgules) ; vide = tous                 |
 
+Confirmation guidée par la confiance (`stream/slot-confidence.ts`) : pour
+chaque valeur retenue par l'analyse exacte (nombre, jour, heure), la confiance
+Scribe des mots qui la portent et la stabilité des transcriptions partielles
+décident de la suite. Valeur sûre et stable : relecture seule. Valeur douteuse
+ou instable avec un voisin confusable (six/dix/seize, deux/douze, trois/treize,
+cinq/sept, 20 h/21 h/22 h, 8 h/20 h, et quart/et demie) : « Pardon, six ou dix
+personnes ? ». Valeur très douteuse sans voisin : question reposée autrement.
+Heure hors des horaires d'ouverture du jour : jamais acceptée d'office.
+L'événement `slot_confidence` publie le type, la confiance arrondie,
+l'instabilité et la décision, jamais le texte ni la valeur. À utiliser avec
+`VOICE_EXPECTED_ANSWER_ENABLED=true`, qui porte la relecture.
+
+| Variable                                  | Défaut  | Effet                                                 |
+| ----------------------------------------- | ------- | ----------------------------------------------------- |
+| `VOICE_CONFIDENCE_CONFIRM_ENABLED`        | `false` | `true` active la confirmation guidée par la confiance |
+| `VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS` | vide    | limite aux restaurants listés ; vide = tous           |
+
 Flag coupé, le dialogue est celui d'avant la fonctionnalité. L'événement
 `expected_answer` publie le type, le statut et les scores (meilleur, écart),
 jamais la transcription. Banc : `apps/api/scripts/voice-stt-bench/README.md`.

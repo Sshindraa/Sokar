@@ -11,6 +11,13 @@ dialogue réel (`recordUserTurn`), flag `VOICE_EXPECTED_ANSWER_ENABLED` coupé p
 | `calibration` | 20260924 | Henri, Josette, Fabien, Léonie          | régler `EXPECTED_ANSWER_THRESHOLDS` ; transcriptions du 24/09 réutilisées                                                                        |
 | `validation`  | 20261001 | + Étienne, Inès (jamais en calibration) | seuls chiffres rapportés ; 304 phrases dont 60 hors sujet et les paires pièges six/dix, deux/douze, trois/treize, seize/six, 20 h/22 h, 8 h/20 h |
 
+Jeux « difficiles » (phase 2) : `hard-calibration` (graine 20261101, voix de
+calibration) et `hard-validation` (graine 20261115, + Mathis et Jade réservées),
+344 phrases chacun dont 70 demandes à plusieurs valeurs (heure donnée en premier),
+bruit 5–10 dB, 3–5 % de paquets perdus, une phrase sur deux au débit rapide. Les
+transcriptions gardent les mots Scribe avec `logprob` et les partielles ; les seuils
+de `SLOT_CONFIDENCE_THRESHOLDS` se règlent sur `hard-calibration` uniquement.
+
 ## Usage
 
 ```bash

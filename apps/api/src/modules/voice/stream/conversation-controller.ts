@@ -13,6 +13,12 @@ import type {
   VoiceSpeechAct,
 } from './types';
 import { resolveExpectedAnswer } from './expected-answer';
+import {
+  decideSlotConfidence,
+  unstableAlternatives,
+  valueConfidence,
+  type ConfidenceSlotKind,
+} from './slot-confidence';
 import { effectiveVoiceLanguage, type VoiceLanguageCode } from './voice-language';
 import {
   decideAssistantInteractionPolicy,
@@ -2005,9 +2011,10 @@ export function extractConversationSlots(
 
   // Scribe écrit « vingt et une heures » en « 20 et 1 heure » : sans cette
   // réécriture, l'heure lue était 01:00 (banc STT du 24/09).
+  // Variantes : « 20 et 1 h 30 », « 20 h et 1 h 30 », « vingt et 1 h 30 ».
   const timeTranscript = correctedTranscript.replace(
-    /\b(20|30|40|50)\s+et\s+(?:1|un|une)(?=\s*h|\s|$)/gu,
-    (_, tens: string) => String(Number(tens) + 1),
+    /\b(?:20\s*(?:h(?:eures?)?\s+)?et\s+(?:1|un|une)|vingt\s+et\s+1)(?=\s*h|\s|$)/gu,
+    () => '21',
   );
   const timeMatch = slots.time
     ? null
@@ -2028,6 +2035,15 @@ export function extractConversationSlots(
       slots.time = extractNoonTime(correctedTranscript);
     } else if (/\b(?:a|vers)?\s*minuit\b/.test(correctedTranscript)) {
       slots.time = '00:00';
+    }
+  }
+
+  // « huit heures ce soir », « 8 heures du soir » : une heure du matin suivie
+  // de « soir » désigne le service du soir (lu 08:00 jusqu'ici).
+  if (slots.time && /\b(?:du|ce|le) soir\b/u.test(correctedTranscript)) {
+    const [hour, minute] = slots.time.split(':').map(Number);
+    if (hour >= 1 && hour <= 11) {
+      slots.time = `${String(hour + 12).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
     }
   }
 
@@ -2571,6 +2587,7 @@ function applyExpectedAnswer(
   transcript: string,
   extracted: ConversationState['slots'],
   now: Date,
+  previousChoice: ConversationState['answerChoice'] = null,
 ): 'partySize' | 'date' | 'time' | null {
   if (!isExpectedAnswerEnabled(session)) return null;
   if (extracted.partySize || extracted.date || extracted.time) return null;
@@ -2602,17 +2619,19 @@ function applyExpectedAnswer(
     return null;
   if (kind === 'weekday' && tokens.some((token) => WEEKDAY_TOKENS.has(token))) return null;
 
+  // Réponse à « six ou dix ? » : seules les deux valeurs proposées comptent.
+  const offered = previousChoice?.kind === kind ? previousChoice.values : undefined;
   // Heures possibles : créneaux vérifiés s'il y en a, sinon horaires
   // d'ouverture du jour demandé, sinon la liste par défaut du module.
-  let allowedTimes: string[] | undefined;
-  if (kind === 'time') {
+  let allowedTimes: string[] | undefined = offered;
+  if (kind === 'time' && !offered) {
     const known =
       session.conversation.lastAvailabilityResult?.slots ??
       openingHourTimes(session.openingHours, session.conversation.slots.date);
     const inPeriod = filterSlotsByDayPeriod(known, session.conversation.dayPeriod);
     allowedTimes = inPeriod.length ? inPeriod : known;
   }
-  const decision = resolveExpectedAnswer(transcript, kind, allowedTimes);
+  const decision = resolveExpectedAnswer(transcript, kind, offered ?? allowedTimes);
   const [best, second] = decision.candidates;
   session.conversation.lastExpectedAnswer = {
     kind,
@@ -2651,6 +2670,172 @@ function applyExpectedAnswer(
   }
   extracted.time = decision.value;
   return 'time';
+}
+
+/**
+ * Confirmation guidée par la confiance : désactivée par défaut, activée par
+ * `VOICE_CONFIDENCE_CONFIRM_ENABLED=true`, limitée aux restaurants de
+ * `VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS` (liste vide = tous).
+ */
+export function isConfidenceConfirmEnabled(session: Pick<CallSession, 'restaurantId'>): boolean {
+  if (process.env.VOICE_CONFIDENCE_CONFIRM_ENABLED !== 'true') return false;
+  const restaurantIds = (process.env.VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return restaurantIds.length === 0 || restaurantIds.includes(session.restaurantId);
+}
+
+const JS_WEEKDAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+
+function weekdayOfDate(date: string): string {
+  return JS_WEEKDAYS[new Date(`${date}T12:00:00Z`).getUTCDay()];
+}
+
+/**
+ * Pour chaque valeur retenue ce tour (nombre, jour, heure), vérifie la
+ * confiance Scribe des mots qui la portent et la stabilité des partielles.
+ * Une valeur douteuse avec un voisin confusable devient « X ou Y ? » ; une
+ * valeur très douteuse sans voisin est redemandée ; une heure hors des
+ * horaires d'ouverture n'est jamais acceptée d'office.
+ */
+function applySlotConfidence(
+  session: CallSession,
+  transcript: string,
+  extracted: ConversationState['slots'],
+  now: Date,
+): void {
+  if (!isConfidenceConfirmEnabled(session)) return;
+  const evidence =
+    session.sttEvidence &&
+    normalizeTranscript(session.sttEvidence.transcript) === normalizeTranscript(transcript)
+      ? session.sttEvidence
+      : null;
+  const timezone = session.timezone ?? 'Europe/Paris';
+  const partialSlots = (evidence?.partials ?? []).map((partial) =>
+    extractConversationSlots(partial, timezone, now),
+  );
+  const entries: NonNullable<ConversationState['lastSlotConfidence']> = [];
+
+  const slots: Array<['partySize' | 'date' | 'time', ConfidenceSlotKind]> = [
+    ['partySize', 'partySize'],
+    ['date', 'weekday'],
+    ['time', 'time'],
+  ];
+  for (const [slot, kind] of slots) {
+    const raw = extracted[slot];
+    if (raw === undefined) continue;
+    const value = slot === 'date' ? weekdayOfDate(String(raw)) : String(raw);
+    const partialValues = partialSlots.map((partial, index) => {
+      // L'analyse exacte ignore les groupes de plus de 7 : « dix » dans une
+      // partielle doit pourtant compter comme une valeur différente de « six ».
+      if (slot === 'partySize') return partialPartySize(evidence!.partials[index]);
+      const partialValue = partial[slot];
+      if (partialValue === undefined) return undefined;
+      return slot === 'date' ? weekdayOfDate(String(partialValue)) : String(partialValue);
+    });
+    const openTimes =
+      kind === 'time'
+        ? openingHourTimes(session.openingHours, extracted.date ?? session.conversation.slots.date)
+        : undefined;
+    const confidence = valueConfidence(kind, value, evidence?.words);
+    const result = decideSlotConfidence({
+      kind,
+      value,
+      confidence,
+      partialAlternatives: unstableAlternatives(value, partialValues),
+      openTimes,
+    });
+    // Un seul « X ou Y ? » par tour ; les autres valeurs douteuses sont relues.
+    let decision = result.decision;
+    if (decision === 'choice' && session.conversation.answerChoice) decision = 'readBack';
+
+    if (decision === 'choice' && result.choice) {
+      session.conversation.answerChoice = { kind, values: result.choice };
+      delete extracted[slot];
+    } else if (decision === 'reprompt') {
+      session.conversation.confidenceReprompt ??= {
+        kind,
+        outsideOpeningHours: result.outsideOpeningHours,
+      };
+      delete extracted[slot];
+    }
+    entries.push({
+      kind,
+      confidence: confidence === null ? null : Math.round(confidence * 100) / 100,
+      unstable: result.unstable,
+      decision,
+    });
+  }
+  session.conversation.lastSlotConfidence = entries.length ? entries : null;
+}
+
+const PARTIAL_NUMBER_WORDS: Record<string, number> = {
+  une: 1,
+  un: 1,
+  deux: 2,
+  trois: 3,
+  quatre: 4,
+  cinq: 5,
+  six: 6,
+  sept: 7,
+  huit: 8,
+  neuf: 9,
+  dix: 10,
+  onze: 11,
+  douze: 12,
+  treize: 13,
+  quatorze: 14,
+  quinze: 15,
+  seize: 16,
+};
+
+/** Dernier nombre de 1 à 16 lu dans une partielle (« Dix personnes » → « 10 »). */
+function partialPartySize(partial: string | undefined): string | undefined {
+  if (!partial) return undefined;
+  let found: number | undefined;
+  for (const token of normalizeTranscript(partial).split(' ')) {
+    const value = /^\d{1,2}$/.test(token) ? Number(token) : PARTIAL_NUMBER_WORDS[token];
+    if (value !== undefined && value >= 1 && value <= 16) found = value;
+  }
+  return found === undefined ? undefined : String(found);
+}
+
+/** Relance d'une valeur jugée trop incertaine, formulée autrement. */
+export function buildConfidenceRepromptPlan(
+  session: CallSession,
+): AssistantReplyEmissionPlan | null {
+  const reprompt = session.conversation.confidenceReprompt;
+  if (!reprompt) return null;
+  const en = effectiveVoiceLanguage(session) === 'en';
+  if (reprompt.kind === 'time') {
+    const openTimes = openingHourTimes(session.openingHours, session.conversation.slots.date);
+    const primary =
+      reprompt.outsideOpeningHours && openTimes.length
+        ? en
+          ? `We are open from ${formatAvailabilitySlot(openTimes[0], 'en')} that day. What time would you like to come?`
+          : `Ce jour-là, nous sommes ouverts à partir de ${formatAvailabilitySlot(openTimes[0])}. Vers quelle heure souhaitez-vous venir ?`
+        : en
+          ? "Sorry, I didn't catch the time. What time would you like to come?"
+          : "Pardon, je n'ai pas bien entendu l'heure. Vers quelle heure souhaitez-vous venir ?";
+    return guardDialogueRepromptPlan(session, 'time', primary);
+  }
+  if (reprompt.kind === 'weekday') {
+    return guardDialogueRepromptPlan(
+      session,
+      'date',
+      en
+        ? "Sorry, I didn't catch the day. Which day would you like to book?"
+        : "Pardon, je n'ai pas bien entendu le jour. Pour quel jour souhaitez-vous réserver ?",
+    );
+  }
+  return guardDialogueRepromptPlan(
+    session,
+    'partySize',
+    en
+      ? "Sorry, I didn't catch the number of people. How many will there be?"
+      : "Pardon, je n'ai pas bien entendu le nombre de personnes. Vous serez combien ?",
+  );
 }
 
 /** « Six ou dix ? » : question fermée entre les deux valeurs les plus proches. */
@@ -2791,13 +2976,24 @@ export function recordUserTurn(
     }
   }
 
+  const previousChoice = session.conversation.answerChoice ?? null;
   session.conversation.answerChoice = null;
   session.conversation.justFilled = null;
   session.conversation.lastExpectedAnswer = null;
   session.conversation.phoneticAccepted = null;
+  session.conversation.lastSlotConfidence = null;
+  session.conversation.confidenceReprompt = null;
   if (speechAct === 'content' || speechAct === 'correction') {
-    const resolved = applyExpectedAnswer(session, activeKind, transcript, extracted, now);
+    const resolved = applyExpectedAnswer(
+      session,
+      activeKind,
+      transcript,
+      extracted,
+      now,
+      previousChoice,
+    );
     if (resolved === 'partySize') partySizeEvidence = 'contextual';
+    applySlotConfidence(session, transcript, extracted, now);
   }
 
   const wantsAvailabilityOptions = asksForAvailabilityOptions(transcript);
@@ -3739,6 +3935,8 @@ export function buildDeterministicTurnPlan(
   if (speechAct === 'content' || speechAct === 'correction') {
     const answerChoicePlan = buildAnswerChoicePlan(session);
     if (answerChoicePlan) return answerChoicePlan;
+    const confidenceRepromptPlan = buildConfidenceRepromptPlan(session);
+    if (confidenceRepromptPlan) return confidenceRepromptPlan;
     // Canary TurnPlan : une réponse que les extracteurs n'ont pas comprise va
     // au modèle au lieu d'une relance mécanique de la même question.
     if (!options.deferUnresolvedToModel && isAmbiguousPartySizeReply(session, transcript)) {
