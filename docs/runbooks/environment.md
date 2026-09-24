@@ -159,27 +159,51 @@ rejoué sur un environnement non productif, avec consentement de test et rollbac
 
 ## Voice LLM
 
-Le chemin vocal utilise un provider unique : Groq direct avec le modèle
-`qwen/qwen3.8-27b` par défaut. `VOICE_LLM_PROVIDER` et
-`VOICE_LLM_FALLBACK_MODEL` ne sont plus lus par l’API et ne doivent pas être
-ajoutés aux environnements.
+Le chemin vocal utilise un seul provider actif, choisi par `VOICE_LLM_PROVIDER`
+(`groq` par défaut, ou `cerebras`). Les deux exposent une API OpenAI-compatible
+et servent le même modèle Qwen 3.8, sous un nom différent. Il n'y a aucun repli
+automatique d'un provider vers l'autre. `VOICE_LLM_FALLBACK_MODEL` n'est plus lu.
 
-Définir dans `apps/api/.env` :
+Définir dans `apps/api/.env`, pour Groq :
 
 ```dotenv
+VOICE_LLM_PROVIDER="groq"
 GROQ_API_KEY="gsk_..."
 GROQ_BASE_URL="https://api.groq.com/openai/v1"
 VOICE_LLM_MODEL="qwen/qwen3.8-27b"
 VOICE_LLM_TIMEOUT_MS="8000"
 ```
 
-La clé Groq est un secret local au VPS et ne doit jamais être commitée ou
-envoyée dans le chat. Une réponse en 402, 429, 5xx ou une erreur réseau
-déclenche la dégradation vocale prévue ; aucun autre modèle n'est appelé.
+Pour Cerebras :
+
+```dotenv
+VOICE_LLM_PROVIDER="cerebras"
+CEREBRAS_API_KEY="csk-..."
+CEREBRAS_BASE_URL="https://api.cerebras.ai/v1"
+VOICE_LLM_MODEL="qwen-3.8-27b"
+```
+
+En production, la clé du provider actif est obligatoire (≥20 caractères). Les
+clés sont des secrets locaux au VPS, jamais commités ni envoyés dans le chat.
+
+Les consignes `system` (prompt, langue, contexte de disponibilité) sont
+fusionnées en un seul message avant l'envoi : le template Qwen de Cerebras
+refuse un message `system` qui n'est pas le premier. Une réponse 402, 429, 5xx
+ou une erreur réseau déclenche une réponse parlée déterministe (reprise du
+créneau vérifié, sinon demande de répétition, puis proposition du gérant après
+deux échecs consécutifs). Sur Groq, le niveau `on_demand` plafonne à 7 000
+tokens d'entrée par minute, soit environ un tour LLM par minute.
 
 `OPENROUTER_API_KEY` peut rester provisionnée comme clé isolée pour des outils
 hors production. Elle n'est pas lue par le pipeline vocal et ne constitue pas
 un mécanisme de repli.
+
+**PM2 et `.env` :** l'API lit `.env` via `node --env-file`, qui ne remplace pas
+une variable déjà présente dans l'environnement du process. Si PM2 a été lancé
+depuis un shell où ces variables étaient exportées, il les garde dans son
+snapshot et `pm2 restart --update-env` ne les retire pas : la modification du
+`.env` est alors ignorée sans erreur. Pour repartir d'un environnement propre :
+`pm2 delete sokar-api sokar-workers && pm2 start infra/ecosystem.config.js --only sokar-api,sokar-workers && pm2 save`.
 
 Pour le diagnostic d'un appel, se fier à `VoiceTurnTelemetry.llmProvider` et
 `VoiceTurnTelemetry.llmModel`, puis au même couple dans le bilan

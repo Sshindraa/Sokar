@@ -2,7 +2,12 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { z } from 'zod';
-import { GROQ_BASE_URL, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
+import {
+  CEREBRAS_BASE_URL,
+  GROQ_BASE_URL,
+  VOICE_LLM_MODEL_DEFAULT,
+  VOICE_LLM_PROVIDERS,
+} from '@sokar/config';
 
 function isValidCorsOrigins(val: string): boolean {
   return val
@@ -101,8 +106,11 @@ export const optionalUrlSchema = z.preprocess((value) => {
 export const VoiceConfigSchema = z.object({
   VOICE_LLM_MODEL: z.string().default(VOICE_LLM_MODEL_DEFAULT),
   VOICE_LLM_TIMEOUT_MS: voiceLlmTimeoutSchema,
+  VOICE_LLM_PROVIDER: z.enum(VOICE_LLM_PROVIDERS).default('groq'),
   GROQ_BASE_URL: z.string().url().default(GROQ_BASE_URL),
   GROQ_API_KEY: z.string().optional(),
+  CEREBRAS_BASE_URL: z.string().url().default(CEREBRAS_BASE_URL),
+  CEREBRAS_API_KEY: z.string().optional(),
 });
 
 export type VoiceConfig = z.infer<typeof VoiceConfigSchema>;
@@ -408,13 +416,16 @@ const EnvSchema = z
   .refine(
     (data) => {
       if (data.NODE_ENV !== 'production' || process.env.VOICE_DISABLED === 'true') return true;
-      const key = data.GROQ_API_KEY;
+      const key =
+        data.VOICE_LLM_PROVIDER === 'cerebras' ? data.CEREBRAS_API_KEY : data.GROQ_API_KEY;
       return !!key && key.length >= 20;
     },
-    {
-      message:
-        'GROQ_API_KEY doit être définie en production (≥20 caractères) : c’est le seul provider LLM vocal.',
-      path: ['GROQ_API_KEY'],
+    (data) => {
+      const keyName = data.VOICE_LLM_PROVIDER === 'cerebras' ? 'CEREBRAS_API_KEY' : 'GROQ_API_KEY';
+      return {
+        message: `${keyName} doit être définie en production (≥20 caractères) : c’est la clé du provider LLM vocal actif (${data.VOICE_LLM_PROVIDER}).`,
+        path: [keyName],
+      };
     },
   )
   .refine(

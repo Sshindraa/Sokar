@@ -18,6 +18,7 @@ import {
   CallSessionManager,
   isSafeVoiceNameMatch,
   _resetCircuitBreakersForTesting,
+  mergeSystemMessages,
 } from '../stream/manager';
 import { voiceConfig, type VoiceConfig } from '../../../env';
 import type { CallSession, ChatMessage } from '../stream/types';
@@ -116,6 +117,7 @@ import { logger } from '../../../shared/logger/pino';
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const GROQ_TEST_KEY = ['test', 'groq', 'api', 'key'].join('-');
+const CEREBRAS_TEST_KEY = ['test', 'cerebras', 'api', 'key'].join('-');
 
 function makeTelnyxWs(): WebSocket {
   return {
@@ -172,15 +174,24 @@ function authorizeReservation(
 
 type VoiceConfigSnapshot = Pick<
   VoiceConfig,
-  'VOICE_LLM_MODEL' | 'VOICE_LLM_TIMEOUT_MS' | 'GROQ_BASE_URL' | 'GROQ_API_KEY'
+  | 'VOICE_LLM_MODEL'
+  | 'VOICE_LLM_TIMEOUT_MS'
+  | 'VOICE_LLM_PROVIDER'
+  | 'GROQ_BASE_URL'
+  | 'GROQ_API_KEY'
+  | 'CEREBRAS_BASE_URL'
+  | 'CEREBRAS_API_KEY'
 >;
 
 function snapshotVoiceConfig(): VoiceConfigSnapshot {
   return {
     VOICE_LLM_MODEL: voiceConfig.VOICE_LLM_MODEL,
     VOICE_LLM_TIMEOUT_MS: voiceConfig.VOICE_LLM_TIMEOUT_MS,
+    VOICE_LLM_PROVIDER: voiceConfig.VOICE_LLM_PROVIDER,
     GROQ_BASE_URL: voiceConfig.GROQ_BASE_URL,
     GROQ_API_KEY: voiceConfig.GROQ_API_KEY,
+    CEREBRAS_BASE_URL: voiceConfig.CEREBRAS_BASE_URL,
+    CEREBRAS_API_KEY: voiceConfig.CEREBRAS_API_KEY,
   };
 }
 
@@ -2245,6 +2256,40 @@ describe('CallSessionManager — provider LLM unique, circuit breaker et timeout
     vi.useRealTimers();
   });
 
+  it('Cerebras reçoit la requête avec sa clé et un seul message system en tête', async () => {
+    voiceConfig.VOICE_LLM_PROVIDER = 'cerebras';
+    voiceConfig.CEREBRAS_API_KEY = CEREBRAS_TEST_KEY;
+    voiceConfig.VOICE_LLM_MODEL = 'qwen-3.8-27b';
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, body: null });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const mgr = CallSessionManager.getInstance();
+    const messages: ChatMessage[] = [
+      { role: 'system', content: 'Prompt restaurant' },
+      { role: 'system', content: 'Consigne de langue' },
+      { role: 'assistant', content: 'Bonjour !' },
+      { role: 'user', content: 'Une table demain soir ?' },
+    ];
+    const { provider } = await callFetchLlmStreaming(mgr, messages, {
+      maxTokens: 100,
+      temperature: 0.7,
+    });
+
+    expect(provider).toBe('cerebras');
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(requestHost(url)).toBe('api.cerebras.ai');
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      `Bearer ${CEREBRAS_TEST_KEY}`,
+    );
+    const body = JSON.parse(String(init.body)) as { model: string; messages: ChatMessage[] };
+    expect(body.model).toBe('qwen-3.8-27b');
+    expect(body.messages.filter((m) => m.role === 'system')).toHaveLength(1);
+    expect(body.messages[0]).toEqual({
+      role: 'system',
+      content: 'Prompt restaurant\n\nConsigne de langue',
+    });
+  });
+
   it('Groq utilise Qwen 3.8 en mode instruct avec tool use', async () => {
     voiceConfig.VOICE_LLM_MODEL = 'qwen/qwen3.8-27b';
 
@@ -2385,5 +2430,29 @@ describe('CallSessionManager — provider LLM unique, circuit breaker et timeout
 
     await expect(callFetchLlmCompletion(mgr, messages, opts)).rejects.toThrow(/fetch failed/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mergeSystemMessages', () => {
+  it('regroupe les consignes system en tête, dans leur ordre', () => {
+    const merged = mergeSystemMessages([
+      { role: 'system', content: 'Prompt' },
+      { role: 'system', content: 'Langue' },
+      { role: 'assistant', content: 'Bonjour !' },
+      { role: 'system', content: 'Contexte disponibilité' },
+      { role: 'user', content: 'Vendredi 22 h 30' },
+    ]);
+
+    expect(merged).toEqual([
+      { role: 'system', content: 'Prompt\n\nLangue\n\nContexte disponibilité' },
+      { role: 'assistant', content: 'Bonjour !' },
+      { role: 'user', content: 'Vendredi 22 h 30' },
+    ]);
+  });
+
+  it('laisse une conversation sans message system inchangée', () => {
+    const messages: ChatMessage[] = [{ role: 'user', content: 'Bonjour' }];
+
+    expect(mergeSystemMessages(messages)).toEqual(messages);
   });
 });

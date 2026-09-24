@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GROQ_BASE_URL, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
+import { CEREBRAS_BASE_URL, GROQ_BASE_URL, VOICE_LLM_MODEL_DEFAULT } from '@sokar/config';
 import { VoiceConfigSchema, optionalUrlSchema } from '../env';
 
 /**
@@ -53,16 +53,36 @@ describe('VoiceConfigSchema', () => {
     expect(config).toEqual({
       VOICE_LLM_MODEL: 'qwen/qwen3.8-27b',
       VOICE_LLM_TIMEOUT_MS: 1250,
+      VOICE_LLM_PROVIDER: 'groq',
       GROQ_BASE_URL: 'https://groq.example.test/openai/v1',
       GROQ_API_KEY: 'gsk-key',
+      CEREBRAS_BASE_URL,
     });
+  });
+
+  it('sélectionne Cerebras quand VOICE_LLM_PROVIDER le demande', () => {
+    const config = VoiceConfigSchema.parse({
+      VOICE_LLM_PROVIDER: 'cerebras',
+      VOICE_LLM_MODEL: 'qwen-3.8-27b',
+      CEREBRAS_API_KEY: 'csk-key',
+    });
+
+    expect(config).toMatchObject({
+      VOICE_LLM_PROVIDER: 'cerebras',
+      VOICE_LLM_MODEL: 'qwen-3.8-27b',
+      CEREBRAS_BASE_URL,
+      CEREBRAS_API_KEY: 'csk-key',
+    });
+  });
+
+  it('refuse un provider vocal inconnu', () => {
+    expect(VoiceConfigSchema.safeParse({ VOICE_LLM_PROVIDER: 'legacy' }).success).toBe(false);
   });
 
   it('ignore les variables des providers supprimés', () => {
     // Les anciennes variables de routage ne doivent plus entrer dans la
     // configuration validée, même si elles traînent encore dans un .env.
     const config = VoiceConfigSchema.parse({
-      VOICE_LLM_PROVIDER: 'legacy',
       VOICE_LLM_FALLBACK_MODEL: 'legacy-model',
       VOICE_LLM_BASE_URL: 'https://legacy.example.test',
       VOICE_LLM_API_KEY: 'x',
@@ -72,7 +92,9 @@ describe('VoiceConfigSchema', () => {
     expect(config).toEqual({
       VOICE_LLM_MODEL: VOICE_LLM_MODEL_DEFAULT,
       VOICE_LLM_TIMEOUT_MS: 8000,
+      VOICE_LLM_PROVIDER: 'groq',
       GROQ_BASE_URL,
+      CEREBRAS_BASE_URL,
     });
   });
 
