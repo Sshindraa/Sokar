@@ -341,7 +341,8 @@ export const EXPECTED_ANSWER_THRESHOLDS = {
 const ANSWER_CUE: Record<ExpectedAnswerKind, RegExp> = {
   partySize: /\b(?:personnes?|person|personen|couverts?|people)\b/,
   weekday: /\b(?:pour|plutot|ce|le)\b/,
-  time: /\b(?:heures?|h|vers|a)\b/,
+  // « à » n'est pas un indice : « je demande à ma femme » n'est pas une heure.
+  time: /\b(?:heures?|h|vers)\b/,
 };
 const SHORT_ANSWER_WORDS = 3;
 const SHORT_ANSWER_MAX_SCORE = 0.2;

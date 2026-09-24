@@ -3052,6 +3052,12 @@ function buildNaturalReadBack(session: CallSession, only?: 'date'): string {
       }),
     );
   }
+  // Une heure devinée est relue dans la question suivante ; quand la phrase
+  // suivante est une réponse de disponibilité, celle-ci cite déjà l'heure.
+  const time = session.conversation.slots.time;
+  if (!only && session.conversation.phoneticAccepted === 'time' && time) {
+    parts.push(formatAvailabilitySlot(time, en ? 'en' : 'fr'));
+  }
   if (!parts.length) return '';
   const phrase = parts.join(' ');
   return `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}, ${en ? 'great' : 'très bien'}. `;

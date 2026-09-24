@@ -292,6 +292,59 @@ describe('farewell playback and hangup', () => {
     expect(session.interruptedTurn).toBeNull();
   });
 
+  describe('heure retenue par rapprochement phonétique', () => {
+    const openingHours = Object.fromEntries(
+      ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map((day) => [
+        day,
+        { open: '22:00', close: '23:00' },
+      ]),
+    ) as NonNullable<CallSession['openingHours']>;
+    const previousFlag = process.env.VOICE_EXPECTED_ANSWER_ENABLED;
+    beforeEach(() => {
+      process.env.VOICE_EXPECTED_ANSWER_ENABLED = 'true';
+    });
+    afterEach(() => {
+      if (previousFlag === undefined) delete process.env.VOICE_EXPECTED_ANSWER_ENABLED;
+      else process.env.VOICE_EXPECTED_ANSWER_ENABLED = previousFlag;
+    });
+
+    it('relit l’heure dans la question suivante quand la disponibilité ne suit pas', async () => {
+      const { session, mgr } = fixture();
+      session.openingHours = openingHours;
+      session.conversation.intent = 'reservation';
+      session.conversation.slots.partySize = 4;
+      recordAssistantReply(session, 'Vous voulez venir vers quelle heure ?');
+
+      await processTranscriptStreaming(session, 'vingdeuzeures trente', mgr);
+
+      expect(session.conversation.slots.time).toBe('22:30');
+      expect(session.conversation.phoneticAccepted).toBe('time');
+      expect(mgr.getAvailability).not.toHaveBeenCalled();
+      expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+        session,
+        '22 h 30, très bien. Pour quel jour ?',
+      );
+    });
+
+    it('relit l’heure dans la réponse de disponibilité quand elle suit', async () => {
+      const { session, mgr } = fixture();
+      session.openingHours = openingHours;
+      session.timezone = 'Europe/Paris';
+      session.conversation.intent = 'reservation';
+      session.conversation.slots = { date: '2026-09-26', partySize: 4 };
+      recordAssistantReply(session, 'Vous voulez venir vers quelle heure ?');
+      vi.mocked(mgr.getAvailability).mockResolvedValue({ slots: ['22:30'] } as never);
+
+      await processTranscriptStreaming(session, 'vingdeuzeures trente', mgr);
+
+      expect(session.conversation.slots.time).toBe('22:30');
+      expect(speakTtsStreamed).toHaveBeenLastCalledWith(
+        session,
+        expect.stringContaining('22 h 30'),
+      );
+    });
+  });
+
   it('ne délègue pas au LLM la collecte des slots de réservation', async () => {
     const { session, mgr } = fixture();
     session.conversation.intent = 'reservation';

@@ -15,8 +15,12 @@
  */
 import { readFileSync } from 'node:fs';
 import {
+  buildAvailabilityReplyPlan,
+  buildDeterministicTurnPlan,
+  buildReservationProgressPlan,
   classifyVoiceSpeechActInContext,
   createConversationState,
+  getReadyAvailabilityRequest,
   recordAssistantReplyFromLlmTextFallback,
   recordUserTurn,
 } from '../../src/modules/voice/stream/conversation-controller';
@@ -29,8 +33,72 @@ interface TranscriptResult {
   error: string | null;
 }
 
-type Outcome = 'correct' | 'wrong' | 'choiceOk' | 'choiceKo' | 'reprompt';
-const OUTCOMES: Outcome[] = ['correct', 'wrong', 'choiceOk', 'choiceKo', 'reprompt'];
+type Outcome = 'correct' | 'wrongReadBack' | 'wrongSilent' | 'choiceOk' | 'choiceKo' | 'reprompt';
+const OUTCOMES: Outcome[] = [
+  'correct',
+  'wrongReadBack',
+  'wrongSilent',
+  'choiceOk',
+  'choiceKo',
+  'reprompt',
+];
+
+const FRENCH_NUMBERS = [
+  '',
+  'une',
+  'deux',
+  'trois',
+  'quatre',
+  'cinq',
+  'six',
+  'sept',
+  'huit',
+  'neuf',
+  'dix',
+  'onze',
+  'douze',
+  'treize',
+  'quatorze',
+  'quinze',
+  'seize',
+];
+
+/**
+ * Réponse suivante de l'agent par le chemin déterministe de production :
+ * plan du tour (choix, relances…), sinon réponse de disponibilité si la demande
+ * est complète (créneau supposé libre), sinon question suivante. Une chaîne
+ * vide signifie que le LLM répondrait : la valeur n'est alors pas relue.
+ */
+function nextAgentReply(
+  session: CallSession,
+  transcript: string,
+  speechAct: ReturnType<typeof classifyVoiceSpeechActInContext>,
+): string {
+  const turnPlan = buildDeterministicTurnPlan(session, speechAct, transcript);
+  if (turnPlan) return turnPlan.reply;
+  const request = getReadyAvailabilityRequest(session);
+  if (request) return buildAvailabilityReplyPlan(session, request, [request.time]).reply;
+  return buildReservationProgressPlan(session, transcript)?.reply ?? '';
+}
+
+/** La valeur retenue est-elle prononcée dans la réponse suivante ? */
+function isSpoken(reply: string, kind: 'partySize' | 'weekday' | 'time', value: string): boolean {
+  const text = reply
+    .toLocaleLowerCase('fr-FR')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '');
+  if (kind === 'weekday') return new RegExp(`\\b${value}\\b`).test(text);
+  if (kind === 'partySize') {
+    const n = Number(value);
+    const word = n === 1 ? '(?:une|1) personne' : `(?:${FRENCH_NUMBERS[n] ?? n}|${n}) personnes`;
+    return new RegExp(`\\b${word}\\b`).test(text);
+  }
+  const [hour, minute] = value.split(':').map(Number);
+  const spoken = minute === 0 ? `${hour} h` : `${hour} h ${String(minute).padStart(2, '0')}`;
+  return (
+    new RegExp(`\\b${spoken}(?!\\s*\\d)`).test(text) || (value === '12:00' && /\bmidi\b/.test(text))
+  );
+}
 
 const NOW = new Date('2026-09-23T10:00:00Z'); // mercredi
 const QUESTIONS: Record<BenchPhrase['question'], string | null> = {
@@ -84,7 +152,14 @@ function evaluate(phrases: BenchPhrase[], transcripts: Map<string, TranscriptRes
   const tally: Record<string, Record<Outcome, number>> = {};
   const details: string[] = [];
   const count = (fact: string, outcome: Outcome) => {
-    tally[fact] ??= { correct: 0, wrong: 0, choiceOk: 0, choiceKo: 0, reprompt: 0 };
+    tally[fact] ??= {
+      correct: 0,
+      wrongReadBack: 0,
+      wrongSilent: 0,
+      choiceOk: 0,
+      choiceKo: 0,
+      reprompt: 0,
+    };
     tally[fact][outcome]++;
   };
 
@@ -92,13 +167,11 @@ function evaluate(phrases: BenchPhrase[], transcripts: Map<string, TranscriptRes
     const transcript = transcripts.get(phrase.id)?.transcript ?? '';
     const session = makeSession(QUESTIONS[phrase.question]);
     const before = { ...session.conversation.slots };
+    let reply = '';
     if (transcript) {
-      recordUserTurn(
-        session,
-        transcript,
-        classifyVoiceSpeechActInContext(session, transcript),
-        NOW,
-      );
+      const speechAct = classifyVoiceSpeechActInContext(session, transcript);
+      recordUserTurn(session, transcript, speechAct, NOW);
+      reply = nextAgentReply(session, transcript, speechAct);
     }
     const { slots, answerChoice } = session.conversation;
 
@@ -107,7 +180,7 @@ function evaluate(phrases: BenchPhrase[], transcripts: Map<string, TranscriptRes
         (slot) => slots[slot] !== undefined && slots[slot] !== before[slot],
       );
       if (retained) {
-        count('hors sujet', 'wrong');
+        count('hors sujet', 'wrongSilent');
         details.push(
           `hors sujet ${phrase.id} « ${phrase.text} » → « ${transcript} » → ${retained}=${slots[retained]}`,
         );
@@ -150,9 +223,10 @@ function evaluate(phrases: BenchPhrase[], transcripts: Map<string, TranscriptRes
     for (const [fact, expected, actual, choiceKind] of facts) {
       if (actual === expected) count(fact, 'correct');
       else if (actual !== undefined) {
-        count(fact, 'wrong');
+        const readBack = isSpoken(reply, choiceKind, actual);
+        count(fact, readBack ? 'wrongReadBack' : 'wrongSilent');
         details.push(
-          `${fact} ${phrase.id} « ${phrase.text} » → « ${transcript} » → ${actual} (attendu ${expected})`,
+          `${readBack ? 'relu' : 'SILENCIEUX'} ${fact} ${phrase.id} « ${phrase.text} » → « ${transcript} » → ${actual} (attendu ${expected}) ; agent : « ${reply} »`,
         );
       } else if (answerChoice?.kind === choiceKind) {
         count(fact, answerChoice.values.includes(expected) ? 'choiceOk' : 'choiceKo');
@@ -182,8 +256,8 @@ function main(): void {
   const pct = (value: number) => `${(100 * value).toFixed(0)} %`;
   const lines: string[] = [
     `N = ${phrases.length} phrases`,
-    '| Type | Flag | n | correct [IC 95 %] | wrong [IC 95 %] | choix ok | choix ko | redemandé |',
-    '|---|---|---|---|---|---|---|---|',
+    '| Type | Flag | n | correct [IC 95 %] | wrongReadBack [IC 95 %] | wrongSilent [IC 95 %] | choix ok | choix ko | redemandé |',
+    '|---|---|---|---|---|---|---|---|---|',
   ];
   const results = {
     off: withFlag(false, () => evaluate(phrases, transcripts)),
@@ -196,15 +270,19 @@ function main(): void {
       if (!t) continue;
       const n = OUTCOMES.reduce((sum, outcome) => sum + t[outcome], 0);
       const [cLow, cHigh] = wilson(t.correct, n);
-      const [wLow, wHigh] = wilson(t.wrong, n);
+      const [rLow, rHigh] = wilson(t.wrongReadBack, n);
+      const [sLow, sHigh] = wilson(t.wrongSilent, n);
       lines.push(
         `| ${type} | ${flag === 'on' ? 'actif' : 'coupé'} | ${n} | ${t.correct} (${pct(t.correct / n)}) [${pct(cLow)}–${pct(cHigh)}] | ` +
-          `${t.wrong} (${pct(t.wrong / n)}) [${pct(wLow)}–${pct(wHigh)}] | ${t.choiceOk} | ${t.choiceKo} | ${t.reprompt} |`,
+          `${t.wrongReadBack} (${pct(t.wrongReadBack / n)}) [${pct(rLow)}–${pct(rHigh)}] | ` +
+          `${t.wrongSilent} (${pct(t.wrongSilent / n)}) [${pct(sLow)}–${pct(sHigh)}] | ${t.choiceOk} | ${t.choiceKo} | ${t.reprompt} |`,
       );
     }
   }
-  if (process.env.BENCH_VERBOSE)
-    lines.push('', 'Cas wrong et faux positifs (flag actif) :', ...results.on.details);
+  if (process.env.BENCH_VERBOSE) {
+    lines.push('', 'Cas wrong et faux positifs, flag coupé :', ...results.off.details);
+    lines.push('', 'Cas wrong et faux positifs, flag actif :', ...results.on.details);
+  }
   process.stdout.write(`${lines.join('\n')}\n`);
 }
 

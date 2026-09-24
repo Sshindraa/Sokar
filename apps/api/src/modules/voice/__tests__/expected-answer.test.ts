@@ -76,6 +76,7 @@ describe('resolveExpectedAnswer — réponses hors sujet', () => {
     ['Je sais pas encore', 'weekday'],
     ['Allô ?', 'time'],
     ['Plutôt en terrasse', 'time'],
+    ['Attendez, je demande à ma femme.', 'time'],
   ] as const)('« %s » (%s) reste non résolu', (transcript, kind) => {
     expect(resolveExpectedAnswer(transcript, kind).status).toBe('unresolved');
   });
