@@ -554,7 +554,9 @@ export default function AgenticSettingsPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Taille max du groupe</label>
+              <label className="text-sm font-medium">
+                Taille de groupe maximale réservable automatiquement — téléphone et assistants IA
+              </label>
               <Input
                 type="number"
                 min={1}
@@ -562,7 +564,10 @@ export default function AgenticSettingsPage() {
                 value={maxPartySize}
                 onChange={(e) => setMaxPartySize(Number(e.target.value))}
               />
-              <p className="text-xs text-muted-foreground">1 à 50 personnes</p>
+              <p className="text-xs text-muted-foreground">
+                1 à 50 personnes. Au-delà, l’assistant téléphonique confirme le nombre puis vous
+                passe l’appel, ou prend un message.
+              </p>
             </div>
 
             <div className="space-y-2">

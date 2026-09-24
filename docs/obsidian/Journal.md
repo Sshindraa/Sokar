@@ -791,3 +791,11 @@ Log automatique des tâches Hermes.
 - « 20 heures et un enfant » reste 20:00 : après « h / heures », « et un » n'est réécrit en 21 que suivi de « h ».
 - Flag de confiance coupé et phase 1 active : `slot_confidence` publié avec `decision` `wouldBe…`, dialogue inchangé.
 - Banc : AUROC de la confiance (validation difficile : personnes 0,81, heure 0,63 ; calibration : 0,90 et 0,41), tableau hors transcriptions vides, taux de vides par SNR et pertes (SNR 5 dB : 62 % ; ≥ 15 dB : ≤ 5 %).
+
+### 2026-09-24 — Phase 3 A : vraisemblance des heures, portée de la confiance, groupes par restaurant
+
+- Décision produit : le seuil de groupe du téléphone est **par restaurant** et c'est le même champ que le canal agentique, `RestaurantExposureSettings.maxPartySize` (réservable automatiquement jusqu'à cette valeur incluse). Sans ligne de réglages : 7, comportement téléphonique d'avant. Pas de migration. Libellé du tableau de bord : « téléphone et assistants IA ».
+- Groupe au-delà du seuil : « Douze personnes, c'est bien ça ? » puis transfert au gérant (`handoffToManager`, base d'autorisation `group_size`, motif de métrique `group_size`), ou message pour le gérant sans `managerPhone`. Une valeur choisie dans « X ou Y ? » vaut confirmation. Les 7 codés en dur (analyse, policy, TurnPlan, outils, prompt) sont remplacés par le seuil ; l'analyse lit désormais les nombres jusqu'à 100 (« vingt » en mots).
+- `VOICE_CONFIDENCE_CONFIRM_SLOTS` (défaut `partySize`) : la confiance n'agit que sur les types listés, les autres sont observés (`wouldBe…`).
+- Vraisemblance des heures sous `VOICE_EXPECTED_ANSWER_ENABLED` : heure hors horaires → « X ou Y ? » avec l'heure ouverte la plus proche à l'oreille, sinon relance qui cite les horaires (hv242).
+- « Pour demain midi, quatre personnes. » : pas de 12:00 deviné, pas de boucle ; l'agent demande l'heure une fois au lieu de proposer les créneaux du midi (non corrigé, consigne : seulement si boucle).

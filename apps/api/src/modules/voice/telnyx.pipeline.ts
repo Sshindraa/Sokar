@@ -232,6 +232,8 @@ export async function telnyxVoiceRoutes(app: FastifyInstance) {
           managerPhone: ctx.managerPhone,
           timezone: ctx.timezone,
           openingHours: (ctx.openingHours as OpeningHours | null) ?? null,
+          // Contexte en cache d'avant ce champ : `loadContext` le recalcule sous 5 min.
+          maxPartySize: ctx.maxPartySize ?? 7,
           giftCardMinimumAmount: ctx.giftCardMinimumAmount ?? undefined,
           systemPrompt,
           isVip: customer?.isVip ?? false,

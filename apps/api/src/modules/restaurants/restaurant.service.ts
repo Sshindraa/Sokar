@@ -13,6 +13,9 @@ import { getRestaurantPlanOverride } from '../../shared/configcat';
 import { DAY_SECONDS, HOUR_SECONDS } from '../../shared/constants/time.js';
 import { getVoiceLlmProvider, type VoiceLlmProvider } from '../voice/llm-provider';
 
+/** Seuil téléphonique historique, utilisé sans ligne `RestaurantExposureSettings`. */
+const DEFAULT_VOICE_MAX_PARTY_SIZE = 7;
+
 /** TTL du compteur mensuel d'appels : ~33 jours en secondes */
 const MONTHLY_CALL_COUNTER_TTL_SECONDS = 33 * DAY_SECONDS;
 
@@ -41,6 +44,11 @@ interface CachedRestaurantContext {
   readonly smsConfirmEnabled: boolean;
   readonly googleCalendarId: string | null;
   readonly giftCardMinimumAmount: number | null;
+  /**
+   * Taille de groupe réservable automatiquement (incluse), partagée avec le
+   * canal agentique. Sans ligne de réglages : 7, comme le téléphone avant.
+   */
+  readonly maxPartySize: number;
   readonly personality: {
     readonly id: string;
     readonly restaurantId: string;
@@ -104,6 +112,7 @@ function toCachedRestaurantContext(restaurant: {
   smsConfirmEnabled: boolean;
   googleCalendarId: string | null;
   giftCardMinimumAmount: number | null;
+  exposureSettings?: { maxPartySize: number } | null;
   personality: CachedRestaurantContext['personality'];
 }): CachedRestaurantContext {
   return {
@@ -120,6 +129,7 @@ function toCachedRestaurantContext(restaurant: {
     smsConfirmEnabled: restaurant.smsConfirmEnabled,
     googleCalendarId: restaurant.googleCalendarId,
     giftCardMinimumAmount: restaurant.giftCardMinimumAmount,
+    maxPartySize: restaurant.exposureSettings?.maxPartySize ?? DEFAULT_VOICE_MAX_PARTY_SIZE,
     personality: restaurant.personality,
     providerConfig: buildProviderConfig(restaurant),
   };
@@ -152,6 +162,7 @@ export class RestaurantService {
         smsConfirmEnabled: true,
         googleCalendarId: true,
         giftCardMinimumAmount: true,
+        exposureSettings: { select: { maxPartySize: true } },
         personality: {
           select: {
             id: true,

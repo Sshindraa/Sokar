@@ -126,7 +126,7 @@ describe('parseTurnPlan', () => {
   });
 
   it.each([
-    { partySize: 8 },
+    { partySize: 101 },
     { date: '2026-02-30' },
     { time: '24:00' },
     { createReservation: true },

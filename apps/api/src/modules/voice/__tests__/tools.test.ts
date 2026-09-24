@@ -114,11 +114,11 @@ describe('createReservation tool', () => {
     });
   });
 
-  it('partySize is an integer between 1 and 7 (>=8 triggers handoff)', () => {
+  it('partySize is an integer between 1 and 100 (beyond the restaurant threshold: handoff)', () => {
     expect(params.properties.partySize).toEqual({
       type: 'integer',
       minimum: 1,
-      maximum: 7,
+      maximum: 100,
       description: expect.stringContaining('handoffToManager'),
     });
   });
@@ -158,11 +158,11 @@ describe('checkAvailability tool', () => {
     });
   });
 
-  it('partySize is an integer between 1 and 7', () => {
+  it('partySize is an integer between 1 and 100', () => {
     expect(params.properties.partySize).toEqual({
       type: 'integer',
       minimum: 1,
-      maximum: 7,
+      maximum: 100,
       description: expect.stringContaining('personnes'),
     });
   });
@@ -389,7 +389,7 @@ describe('Zod-derived JSON Schema equivalence (all 8 tools)', () => {
     expect(params.properties.partySize).toMatchObject({
       type: 'integer',
       minimum: 1,
-      maximum: 7,
+      maximum: 100,
     });
     expect(new Set(params.required)).toEqual(
       new Set(['date', 'time', 'partySize', 'customerName']),
@@ -486,10 +486,10 @@ describe('validateToolArgs — invalid args', () => {
     expect(result.success).toBe(false);
   });
 
-  it('createReservation rejects partySize out of bounds (8)', () => {
+  it('createReservation rejects partySize out of bounds (101)', () => {
     const result = validateToolArgs(
       'createReservation',
-      JSON.stringify({ date: '2024-01-15', time: '19:30', partySize: 8, customerName: 'Marie' }),
+      JSON.stringify({ date: '2024-01-15', time: '19:30', partySize: 101, customerName: 'Marie' }),
     );
     expect(result.success).toBe(false);
   });

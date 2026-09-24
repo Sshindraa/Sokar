@@ -27,6 +27,7 @@ import {
   type ExposureSettingsInput,
   type OptInInput,
 } from './schemas.js';
+import { invalidateRestaurantContextCache } from '../../restaurants/restaurant.service';
 
 export class OptInGuardError extends Error {
   constructor(
@@ -296,6 +297,15 @@ export class AgenticAdminService {
       },
       'exposure settings updated',
     );
+
+    // Le seuil de groupe sert aussi au téléphone, dont le contexte est en cache.
+    if (args.input.maxPartySize !== undefined) {
+      const restaurant = await this.prisma.restaurant.findUnique({
+        where: { id: args.restaurantId },
+        select: { phoneNumber: true },
+      });
+      await invalidateRestaurantContextCache(restaurant?.phoneNumber);
+    }
   }
 
   async listAgentClients(restaurantId: string): Promise<

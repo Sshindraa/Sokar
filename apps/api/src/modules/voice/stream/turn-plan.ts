@@ -123,7 +123,8 @@ function parseSlotValue(slot: TurnPlanSlot, value: unknown): TurnPlanSlotValue |
     return typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : null;
   }
   if (slot === 'partySize') {
-    return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 7
+    // Borne de cohérence ; le seuil du restaurant est appliqué à l'écriture.
+    return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 100
       ? value
       : null;
   }

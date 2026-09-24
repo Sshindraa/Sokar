@@ -1737,6 +1737,7 @@ describe('confirmation guidée par la confiance', () => {
     restore('VOICE_EXPECTED_ANSWER_ENABLED', saved.expected);
     restore('VOICE_CONFIDENCE_CONFIRM_ENABLED', saved.confidence);
     restore('VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS', saved.ids);
+    delete process.env.VOICE_CONFIDENCE_CONFIRM_SLOTS;
   });
 
   function partySizeTurn(
@@ -1867,6 +1868,7 @@ describe('confirmation guidée par la confiance', () => {
   });
 
   it('relit les autres valeurs du tour dans la question « X ou Y ? »', () => {
+    process.env.VOICE_CONFIDENCE_CONFIRM_SLOTS = 'partySize,time';
     const session = makeSession();
     session.restaurantId = 'restaurant-pilote';
     session.timezone = 'Europe/Paris';

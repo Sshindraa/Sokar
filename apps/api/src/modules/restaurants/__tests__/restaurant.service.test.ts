@@ -100,6 +100,22 @@ describe('RestaurantService.loadContext', () => {
     expect(setCachedContext).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['seuil 10 réglé pour le canal agentique', { maxPartySize: 10 }, 10],
+    ['seuil 7', { maxPartySize: 7 }, 7],
+    ['pas de ligne de réglages', null, 7],
+  ])('charge le seuil de groupe du téléphone : %s', async (_label, exposureSettings, expected) => {
+    vi.mocked(getCachedContext).mockResolvedValue(null);
+    vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue({
+      ...FULL_RESTAURANT,
+      exposureSettings,
+    } as never);
+
+    const result = await RestaurantService.loadContext('pn-1234');
+
+    expect(result.maxPartySize).toBe(expected);
+  });
+
   it('charge depuis la DB, construit le context, met en cache, et le retourne', async () => {
     vi.mocked(getCachedContext).mockResolvedValue(null);
     vi.mocked(db.restaurant.findUniqueOrThrow).mockResolvedValue(FULL_RESTAURANT as never);

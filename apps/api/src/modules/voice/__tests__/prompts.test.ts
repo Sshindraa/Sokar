@@ -16,6 +16,20 @@ describe('buildSystemPrompt', () => {
     personality: null,
   };
 
+  it.each([
+    [undefined, 8],
+    [7, 8],
+    [10, 11],
+  ])('cite le seuil de groupe du restaurant (maxPartySize %s)', (maxPartySize, threshold) => {
+    const prompt = buildSystemPrompt(
+      { ...baseCtx, maxPartySize },
+      new Date('2026-07-22T10:00:00Z'),
+    );
+
+    expect(prompt).toContain(`groupe de ${threshold} personnes ou plus`);
+    expect(prompt).not.toContain('8+');
+  });
+
   it('devrait generer le prompt de base sans CRM ni prompt extra', () => {
     const prompt = buildSystemPrompt(baseCtx, new Date('2026-07-22T10:00:00Z'));
 

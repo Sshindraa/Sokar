@@ -1036,6 +1036,32 @@ export async function processTranscriptStreaming(
     }
   }
 
+  // Groupe au-delà du seuil du restaurant, nombre confirmé : le gérant prend
+  // la main (transfert réel), sinon un message est enregistré pour lui.
+  const confirmedGroup = session.conversation.groupRequest;
+  if (deterministicLanguage && confirmedGroup?.confirmed) {
+    session.conversation.groupRequest = null;
+    const transfer = Boolean(session.managerPhone?.trim());
+    const response = transfer
+      ? await mgr.handoffToManager(session, { kind: 'group_size', choice: 'transfer' })
+      : await mgr.recordGroupRequestMessage(session, confirmedGroup.partySize);
+    recordVoiceTurnEvent(session, 'dialogue_guard', {
+      level: 'escalate',
+      action: transfer ? 'transfer' : 'message',
+    });
+    if (!isCurrentResponse()) return;
+    session.turnCount++;
+    session.history.push(
+      { role: 'user', content: transcript },
+      { role: 'assistant', content: response },
+    );
+    recordAssistantReplyWithPolicy(session, response, { source: 'explicit', operation: 'cancel' });
+    mgr.transition(session, 'SPEAKING');
+    await speakTtsStreamed(session, response);
+    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+    return;
+  }
+
   // Seul un « oui » au dernier récapitulatif ouvre le verrou de création. La
   // confirmation de l'orthographe du nom ne suffit pas : le client doit encore
   // valider la date, l'heure et le nombre de personnes.

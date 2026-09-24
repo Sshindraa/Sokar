@@ -162,6 +162,14 @@ export interface ConversationState {
       | 'wouldBeChoice'
       | 'wouldBeReprompt';
   }> | null;
+  /**
+   * Groupe au-delà du seuil du restaurant : `confirmed` passe à vrai quand
+   * l'appelant confirme le nombre (ou le choisit dans « X ou Y ? ») ; le tour
+   * est alors confié au gérant (transfert) ou à la prise de message.
+   */
+  groupRequest?: { partySize: number; confirmed: boolean } | null;
+  /** Heure hors des horaires d'ouverture, sans voisin ouvert : redemandée en citant les horaires. */
+  closedTimeReprompt?: boolean;
   /** Valeur jugée trop incertaine au dernier tour : la question est reposée autrement. */
   confidenceReprompt?: {
     kind: 'partySize' | 'weekday' | 'time';
@@ -364,6 +372,11 @@ export interface CallSession {
   restaurantId: string;
   /** Horaires d'ouverture du restaurant, pour borner les heures candidates. */
   openingHours?: OpeningHours | null;
+  /**
+   * Taille de groupe réservable automatiquement (incluse), partagée avec le
+   * canal agentique (`RestaurantExposureSettings.maxPartySize`). Absent : 7.
+   */
+  maxPartySize?: number;
   restaurantName: string;
   /** Numéro E.164 du gérant pour le transfert humain, si configuré. */
   managerPhone?: string | null;

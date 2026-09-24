@@ -437,7 +437,11 @@ export const voiceTurnPlanShadowByRestaurantTotal = new Counter({
   registers: [getRegistry()],
 });
 
-export type VoiceTransferMotive = 'caller_request' | 'dialogue_stall' | 'name_spelling';
+export type VoiceTransferMotive =
+  | 'caller_request'
+  | 'dialogue_stall'
+  | 'name_spelling'
+  | 'group_size';
 export type VoiceTransferOutcome = 'requested' | 'rejected' | 'failed' | 'unconfigured';
 
 /** Transferts au gérant par motif, intention en cours et résultat Telnyx. */

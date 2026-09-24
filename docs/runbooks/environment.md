@@ -357,10 +357,26 @@ L'événement `slot_confidence` publie le type, la confiance arrondie,
 l'instabilité et la décision, jamais le texte ni la valeur. À utiliser avec
 `VOICE_EXPECTED_ANSWER_ENABLED=true`, qui porte la relecture.
 
-| Variable                                  | Défaut  | Effet                                                 |
-| ----------------------------------------- | ------- | ----------------------------------------------------- |
-| `VOICE_CONFIDENCE_CONFIRM_ENABLED`        | `false` | `true` active la confirmation guidée par la confiance |
-| `VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS` | vide    | limite aux restaurants listés ; vide = tous           |
+| Variable                                  | Défaut      | Effet                                                                  |
+| ----------------------------------------- | ----------- | ---------------------------------------------------------------------- |
+| `VOICE_CONFIDENCE_CONFIRM_ENABLED`        | `false`     | `true` active la confirmation guidée par la confiance                  |
+| `VOICE_CONFIDENCE_CONFIRM_RESTAURANT_IDS` | vide        | limite aux restaurants listés ; vide = tous                            |
+| `VOICE_CONFIDENCE_CONFIRM_SLOTS`          | `partySize` | types sur lesquels la confiance agit (CSV parmi `partySize,date,time`) |
+
+Hors de `VOICE_CONFIDENCE_CONFIRM_SLOTS`, la décision est seulement observée :
+`slot_confidence` la publie préfixée `wouldBe…`, sans rien changer au dialogue.
+Le banc difficile montre que la confiance Scribe distingue les nombres de
+personnes justes des faux, pas les heures : d'où le défaut `partySize`.
+
+Vraisemblance des heures (sous `VOICE_EXPECTED_ANSWER_ENABLED`, indépendante
+de la confiance) : une heure hors des horaires d'ouverture du jour, ou de la
+semaine si le jour est inconnu, n'est jamais retenue. L'agent demande « 10 h ou
+22 h ? » avec l'heure ouverte la plus proche à l'oreille, ou cite les horaires.
+
+Groupes : au-delà de `RestaurantExposureSettings.maxPartySize` (réglage du
+tableau de bord « Assistants IA », partagé avec le canal agentique ; 7 sans
+ligne de réglages), le téléphone confirme le nombre puis transfère au gérant,
+ou prend un message sans ligne gérant. Aucun flag : ce parcours est toujours actif.
 
 Flag coupé, le dialogue est celui d'avant la fonctionnalité. L'événement
 `expected_answer` publie le type, le statut et les scores (meilleur, écart),

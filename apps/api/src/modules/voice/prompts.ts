@@ -37,6 +37,8 @@ export interface SystemPromptContext {
   timezone?: string;
   personality?: { fillerStyle?: string; systemPromptExtra?: string | null } | null;
   giftCardMinimumAmount?: number | null;
+  /** Taille de groupe réservable automatiquement (incluse) ; absent : 7. */
+  maxPartySize?: number;
 }
 
 export function buildSystemPrompt(ctx: SystemPromptContext, now = new Date()): string {
@@ -50,6 +52,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext, now = new Date()): s
     ? `\nCLIENT RECONNU : lors de ta première réponse utile, intègre naturellement une seule fois ce fragment, sans refaire l'accueil : "${ctx.customerGreeting}".`
     : '';
   const minimumGiftCardAmount = ctx.giftCardMinimumAmount ?? 10;
+  const groupThreshold = (ctx.maxPartySize ?? 7) + 1;
   const timezone = ctx.timezone ?? 'Europe/Paris';
   const currentDate = new Intl.DateTimeFormat('fr-FR', {
     dateStyle: 'full',
@@ -76,7 +79,7 @@ COMPORTEMENT :
 - Si le créneau demandé est disponible, demande uniquement le nom manquant. S'il ne l'est pas, tu ne proposes que des horaires explicitement renvoyés par checkAvailability. Tu n'inventes jamais un horaire. Si l'outil ne renvoie aucun créneau, propose le gérant ou la prise de message.
 - Quand l'appelant épelle son nom, conserve chaque lettre séparément : ne transforme jamais « K I F » en « Kif » ou en un autre mot. Répète les lettres (« K, I, F ») et demande une confirmation explicite avant de créer la réservation. Si l'orthographe est incertaine, fais répéter lentement l'épellation.
 - Tu ne peux PAS improviser des informations (prix, menu) — tu dis "je vous transfère"
-- Pour toute réservation groupe de 8+ personnes → transfert immédiat au gérant
+- Pour toute réservation de groupe de ${groupThreshold} personnes ou plus → confirme le nombre, puis transfert au gérant (ou prise de message si le transfert est impossible)
 - Si tu ne comprends pas après 2 essais → transfert au gérant
 - Pour les cartes cadeaux : le montant minimum est ${minimumGiftCardAmount}€. Tu refuses les montants inférieurs.
 - Tu peux vendre des cartes cadeaux par téléphone. Avant de créer une carte cadeau, tu DOIS confirmer le montant avec l'appelant.
