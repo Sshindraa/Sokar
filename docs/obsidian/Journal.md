@@ -783,3 +783,11 @@ Log automatique des tâches Hermes.
 - Validation difficile, flag confiance actif vs coupé : heures relues fausses 23 → 7, mais heures justes 57 → 22 et 35 confirmations inutiles ; personnes 52 → 42 justes, 10 confirmations inutiles ; 1 wrongSilent personnes (hv305, choix posé sur l'heure dans le même tour).
 - Correctif : un « un / une » dans une partielle n'est plus pris pour un nombre de personnes (évitait « six ou une personnes ? »).
 - Recommandation : garder `VOICE_CONFIDENCE_CONFIRM_ENABLED` coupé ; la confiance Scribe sépare mal le juste du faux au téléphone.
+
+### 2026-09-24 — Phase 2, corrections de revue (#231)
+
+- Choix « X ou Y ? » : les autres valeurs du tour sont relues dans la même phrase (« Quatre personnes, très bien. 22 h ou 20 h ? »), sous le flag de phase 1 (hv305).
+- hv267 : « d'après-midi » ne donne plus 12:00 (le parseur d'heure exige « à / vers / pour midi », « midi » seul ou « midi et quart ») ; le rapprochement du jour ignore les mots de période (« après-midi » passait pour « mardi »).
+- « 20 heures et un enfant » reste 20:00 : après « h / heures », « et un » n'est réécrit en 21 que suivi de « h ».
+- Flag de confiance coupé et phase 1 active : `slot_confidence` publié avec `decision` `wouldBe…`, dialogue inchangé.
+- Banc : AUROC de la confiance (validation difficile : personnes 0,81, heure 0,63 ; calibration : 0,90 et 0,41), tableau hors transcriptions vides, taux de vides par SNR et pertes (SNR 5 dB : 62 % ; ≥ 15 dB : ≤ 5 %).

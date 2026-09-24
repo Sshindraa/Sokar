@@ -153,6 +153,23 @@ function wilson(successes: number, total: number): [number, number] {
   return [Math.max(0, centre - half), Math.min(1, centre + half)];
 }
 
+/**
+ * AUROC : probabilité qu'une valeur juste ait une confiance plus haute qu'une
+ * valeur fausse (0,5 = le hasard, 1 = séparation parfaite).
+ */
+function auroc(scores: Array<{ confidence: number | null; correct: boolean }>): number | null {
+  const known = scores.filter((s) => s.confidence !== null) as Array<{
+    confidence: number;
+    correct: boolean;
+  }>;
+  const right = known.filter((s) => s.correct).map((s) => s.confidence);
+  const wrong = known.filter((s) => !s.correct).map((s) => s.confidence);
+  if (!right.length || !wrong.length) return null;
+  let wins = 0;
+  for (const r of right) for (const w of wrong) wins += r > w ? 1 : r === w ? 0.5 : 0;
+  return wins / (right.length * wrong.length);
+}
+
 function makeSession(question: string | null): CallSession {
   const session = {
     conversation: createConversationState(),
@@ -172,12 +189,15 @@ interface Evaluation {
   details: string[];
   /** Issue par phrase et par fait, pour repérer les confirmations inutiles. */
   outcomes: Map<string, Outcome>;
+  /** Confiance Scribe de chaque valeur retenue, et si elle était juste (AUROC). */
+  scores: Record<string, Array<{ confidence: number | null; correct: boolean }>>;
 }
 
 function evaluate(phrases: BenchPhrase[], transcripts: Map<string, TranscriptResult>): Evaluation {
   const tally: Record<string, Record<Outcome, number>> = {};
   const details: string[] = [];
   const outcomes = new Map<string, Outcome>();
+  const scores: Evaluation['scores'] = {};
   let currentPhrase = '';
   const count = (fact: string, outcome: Outcome) => {
     outcomes.set(`${currentPhrase}|${fact}`, outcome);
@@ -261,6 +281,12 @@ function evaluate(phrases: BenchPhrase[], transcripts: Map<string, TranscriptRes
     if (phrase.expected.time) facts.push(['heure', phrase.expected.time, slots.time, 'time']);
 
     for (const [fact, expected, actual, choiceKind] of facts) {
+      if (actual !== undefined) {
+        (scores[fact] ??= []).push({
+          confidence: valueConfidence(choiceKind, actual, session.sttEvidence?.words),
+          correct: actual === expected,
+        });
+      }
       if (actual === expected) count(fact, 'correct');
       else if (actual !== undefined) {
         const readBack = isSpoken(reply, choiceKind, actual);
@@ -274,7 +300,7 @@ function evaluate(phrases: BenchPhrase[], transcripts: Map<string, TranscriptRes
       } else count(fact, 'reprompt');
     }
   }
-  return { tally, details, outcomes };
+  return { tally, details, outcomes, scores };
 }
 
 /** Rapprochement de la phase 1 toujours actif ; seul le flag de confiance bascule. */
@@ -305,39 +331,85 @@ function main(): void {
     (JSON.parse(readFileSync(transcriptsPath, 'utf8')) as TranscriptResult[]).map((r) => [r.id, r]),
   );
   const pct = (value: number) => `${(100 * value).toFixed(0)} %`;
-  const lines: string[] = [
-    `N = ${phrases.length} phrases`,
-    '| Type | Flag confiance | n | correct [IC 95 %] | wrongReadBack | wrongSilent [IC 95 %] | choix ok | choix ko | redemandé | confirmations inutiles |',
-    '|---|---|---|---|---|---|---|---|---|---|',
-  ];
-  const results = {
-    off: withFlag(false, () => evaluate(phrases, transcripts)),
-    on: withFlag(true, () => evaluate(phrases, transcripts)),
+  const run = (subset: BenchPhrase[]) => {
+    const results = {
+      off: withFlag(false, () => evaluate(subset, transcripts)),
+      on: withFlag(true, () => evaluate(subset, transcripts)),
+    };
+    // Confirmation inutile : flag actif demande (choix ou redemande) alors que,
+    // flag coupé, la bonne valeur était retenue.
+    for (const [key, onOutcome] of results.on.outcomes) {
+      const offOutcome = results.off.outcomes.get(key);
+      if (offOutcome === 'correct' && ['choiceOk', 'choiceKo', 'reprompt'].includes(onOutcome)) {
+        results.on.tally[key.split('|')[1]].uselessConfirm++;
+      }
+    }
+    return results;
   };
-  // Confirmation inutile : flag actif demande (choix ou redemande) alors que,
-  // flag coupé, la bonne valeur était retenue.
-  for (const [key, onOutcome] of results.on.outcomes) {
-    const offOutcome = results.off.outcomes.get(key);
-    if (offOutcome === 'correct' && ['choiceOk', 'choiceKo', 'reprompt'].includes(onOutcome)) {
-      results.on.tally[key.split('|')[1]].uselessConfirm++;
+  const table = (title: string, results: ReturnType<typeof run>, n: number) => {
+    lines.push(
+      '',
+      `${title} (N = ${n} phrases)`,
+      '| Type | Flag confiance | n | correct [IC 95 %] | wrongReadBack | wrongSilent [IC 95 %] | choix ok | choix ko | redemandé | confirmations inutiles |',
+      '|---|---|---|---|---|---|---|---|---|---|',
+    );
+    const types = [
+      ...new Set([...Object.keys(results.off.tally), ...Object.keys(results.on.tally)]),
+    ];
+    for (const type of types) {
+      for (const flag of ['off', 'on'] as const) {
+        const t = results[flag].tally[type];
+        if (!t) continue;
+        const total = OUTCOMES.reduce((sum, outcome) => sum + t[outcome], 0);
+        const [cLow, cHigh] = wilson(t.correct, total);
+        const [sLow, sHigh] = wilson(t.wrongSilent, total);
+        lines.push(
+          `| ${type} | ${flag === 'on' ? 'actif' : 'coupé'} | ${total} | ${t.correct} (${pct(t.correct / total)}) [${pct(cLow)}–${pct(cHigh)}] | ` +
+            `${t.wrongReadBack} (${pct(t.wrongReadBack / total)}) | ` +
+            `${t.wrongSilent} (${pct(t.wrongSilent / total)}) [${pct(sLow)}–${pct(sHigh)}] | ${t.choiceOk} | ${t.choiceKo} | ${t.reprompt} | ` +
+            `${flag === 'on' ? t.uselessConfirm : '—'} |`,
+        );
+      }
     }
+  };
+
+  const lines: string[] = [];
+  const results = run(phrases);
+  table('Toutes les phrases', results, phrases.length);
+  const heard = phrases.filter((phrase) => transcripts.get(phrase.id)?.transcript.trim());
+  table('Hors transcriptions vides', run(heard), heard.length);
+
+  // AUROC mesurée flag coupé : les valeurs retenues n'y sont pas filtrées.
+  lines.push(
+    '',
+    '| Type | valeurs retenues | fausses | sans confiance | AUROC |',
+    '|---|---|---|---|---|',
+  );
+  for (const [type, scores] of Object.entries(results.off.scores)) {
+    const value = auroc(scores);
+    lines.push(
+      `| ${type} | ${scores.length} | ${scores.filter((s) => !s.correct).length} | ` +
+        `${scores.filter((s) => s.confidence === null).length} | ${value === null ? '—' : value.toFixed(2)} |`,
+    );
   }
-  const types = [...new Set([...Object.keys(results.off.tally), ...Object.keys(results.on.tally)])];
-  for (const type of types) {
-    for (const flag of ['off', 'on'] as const) {
-      const t = results[flag].tally[type];
-      if (!t) continue;
-      const n = OUTCOMES.reduce((sum, outcome) => sum + t[outcome], 0);
-      const [cLow, cHigh] = wilson(t.correct, n);
-      const [sLow, sHigh] = wilson(t.wrongSilent, n);
-      lines.push(
-        `| ${type} | ${flag === 'on' ? 'actif' : 'coupé'} | ${n} | ${t.correct} (${pct(t.correct / n)}) [${pct(cLow)}–${pct(cHigh)}] | ` +
-          `${t.wrongReadBack} (${pct(t.wrongReadBack / n)}) | ` +
-          `${t.wrongSilent} (${pct(t.wrongSilent / n)}) [${pct(sLow)}–${pct(sHigh)}] | ${t.choiceOk} | ${t.choiceKo} | ${t.reprompt} | ` +
-          `${flag === 'on' ? t.uselessConfirm : '—'} |`,
-      );
+
+  // Transcriptions vides selon la dégradation appliquée (bruit, puis pertes).
+  const emptyRate = (label: string, keyOf: (phrase: BenchPhrase) => number) => {
+    lines.push('', `| ${label} | phrases | vides |`, '|---|---|---|');
+    const buckets = new Map<number, { total: number; empty: number }>();
+    for (const phrase of phrases) {
+      const bucket = buckets.get(keyOf(phrase)) ?? { total: 0, empty: 0 };
+      bucket.total++;
+      if (!transcripts.get(phrase.id)?.transcript.trim()) bucket.empty++;
+      buckets.set(keyOf(phrase), bucket);
     }
-  }
+    for (const [key, { total, empty }] of [...buckets].sort(([a], [b]) => a - b)) {
+      lines.push(`| ${key} | ${total} | ${empty} (${pct(empty / total)}) |`);
+    }
+  };
+  emptyRate('SNR (dB)', (phrase) => phrase.snrDb);
+  emptyRate('Pertes de paquets (%)', (phrase) => Math.round(phrase.packetLoss * 100));
+
   if (process.env.BENCH_VERBOSE) {
     lines.push('', 'Cas wrong et faux positifs, flag coupé :', ...results.off.details);
     lines.push('', 'Cas wrong et faux positifs, flag actif :', ...results.on.details);

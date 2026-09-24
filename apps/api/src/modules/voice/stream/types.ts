@@ -153,7 +153,14 @@ export interface ConversationState {
     kind: 'partySize' | 'weekday' | 'time';
     confidence: number | null;
     unstable: boolean;
-    decision: 'readBack' | 'choice' | 'reprompt';
+    /** `wouldBe…` : flag de confiance coupé, décision calculée mais non appliquée. */
+    decision:
+      | 'readBack'
+      | 'choice'
+      | 'reprompt'
+      | 'wouldBeReadBack'
+      | 'wouldBeChoice'
+      | 'wouldBeReprompt';
   }> | null;
   /** Valeur jugée trop incertaine au dernier tour : la question est reposée autrement. */
   confidenceReprompt?: {

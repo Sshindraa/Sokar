@@ -1886,6 +1886,20 @@ function parseFrenchNumberWords(value: string): number | null {
   return null;
 }
 
+/**
+ * « à midi », « vers midi », « pour midi », « midi » seul ou « midi et quart » :
+ * une heure. « après-midi », « ce midi », « un repas de midi » ne sont qu'un
+ * moment de la journée (`dayPeriod`) : retenir 12:00 serait une heure devinée.
+ */
+function isExplicitNoonTime(text: string): boolean {
+  const withoutAfternoon = text.replace(/\bapres[\s-]midi\b/g, ' ');
+  if (!/\bmidi\b/.test(withoutAfternoon)) return false;
+  if (/\bmidi\s+(?:et\s+demie?|et\s+quart|trente|quinze|quarante cinq)\b/.test(withoutAfternoon))
+    return true;
+  if (/\b(?:a|vers|pour|avant|des|jusqu a)\s+midi\b/.test(withoutAfternoon)) return true;
+  return /^\W*(?:euh\W+)?midi\W*$/.test(withoutAfternoon);
+}
+
 /** « midi », « midi et demi », « midi et quart », « midi trente », « midi quinze ». */
 function extractNoonTime(normalized: string): string {
   const tail = normalized.match(
@@ -2013,7 +2027,9 @@ export function extractConversationSlots(
   // réécriture, l'heure lue était 01:00 (banc STT du 24/09).
   // Variantes : « 20 et 1 h 30 », « 20 h et 1 h 30 », « vingt et 1 h 30 ».
   const timeTranscript = correctedTranscript.replace(
-    /\b(?:20\s*(?:h(?:eures?)?\s+)?et\s+(?:1|un|une)|vingt\s+et\s+1)(?=\s*h|\s|$)/gu,
+    // Après « 20 h » / « 20 heures », « et un » n'est une heure que suivi de « h » :
+    // « 20 heures et un enfant » reste 20:00.
+    /\b(?:20\s*h(?:eures?)?\s+et\s+(?:1|un|une)(?=\s*h)|(?:20\s+et\s+(?:1|un|une)|vingt\s+et\s+1)(?=\s*h|\s|$))/gu,
     () => '21',
   );
   const timeMatch = slots.time
@@ -2029,7 +2045,7 @@ export function extractConversationSlots(
     const spokenClockTime = extractSpokenClockTime(timeTranscript);
     if (spokenClockTime) {
       slots.time = spokenClockTime;
-    } else if (/\b(?:a|vers)?\s*midi\b/.test(correctedTranscript)) {
+    } else if (isExplicitNoonTime(correctedTranscript)) {
       // « à midi » est la formulation la plus courante au téléphone ; elle
       // doit déclencher la même vérification qu'une heure numérique.
       slots.time = extractNoonTime(correctedTranscript);
@@ -2692,6 +2708,12 @@ function weekdayOfDate(date: string): string {
   return JS_WEEKDAYS[new Date(`${date}T12:00:00Z`).getUTCDay()];
 }
 
+const WOULD_BE = {
+  readBack: 'wouldBeReadBack',
+  choice: 'wouldBeChoice',
+  reprompt: 'wouldBeReprompt',
+} as const;
+
 /**
  * Pour chaque valeur retenue ce tour (nombre, jour, heure), vérifie la
  * confiance Scribe des mots qui la portent et la stabilité des partielles.
@@ -2705,7 +2727,10 @@ function applySlotConfidence(
   extracted: ConversationState['slots'],
   now: Date,
 ): void {
-  if (!isConfidenceConfirmEnabled(session)) return;
+  // Flag coupé mais phase 1 active : la décision est calculée et publiée
+  // (« wouldBe… ») pour observer, sans rien changer au dialogue.
+  const apply = isConfidenceConfirmEnabled(session);
+  if (!apply && !isExpectedAnswerEnabled(session)) return;
   const evidence =
     session.sttEvidence &&
     normalizeTranscript(session.sttEvidence.transcript) === normalizeTranscript(transcript)
@@ -2750,6 +2775,15 @@ function applySlotConfidence(
     let decision = result.decision;
     if (decision === 'choice' && session.conversation.answerChoice) decision = 'readBack';
 
+    if (!apply) {
+      entries.push({
+        kind,
+        confidence: confidence === null ? null : Math.round(confidence * 100) / 100,
+        unstable: result.unstable,
+        decision: WOULD_BE[decision],
+      });
+      continue;
+    }
     if (decision === 'choice' && result.choice) {
       session.conversation.answerChoice = { kind, values: result.choice };
       delete extracted[slot];
@@ -2878,9 +2912,14 @@ export function buildAnswerChoicePlan(session: CallSession): AssistantReplyEmiss
   const en = effectiveVoiceLanguage(session) === 'en';
   const [first, second] = choice.values.map((value) => spokenChoiceValue(choice.kind, value, en));
   const suffix = choice.kind === 'partySize' ? (en ? ' people' : ' personnes') : '';
-  const primary = en
-    ? `Sorry, ${first} or ${second}${suffix}?`
-    : `Pardon, ${first} ou ${second}${suffix} ?`;
+  // Les autres valeurs retenues au même tour sont relues dans la même phrase :
+  // sinon une erreur sur l'une passe en silence (banc difficile, hv305).
+  const readBack = buildNaturalReadBack(session);
+  const primary = readBack
+    ? `${readBack}${en ? `${first} or ${second}${suffix}?` : `${first} ou ${second}${suffix} ?`}`
+    : en
+      ? `Sorry, ${first} or ${second}${suffix}?`
+      : `Pardon, ${first} ou ${second}${suffix} ?`;
   const key =
     choice.kind === 'partySize' ? 'partySize' : choice.kind === 'weekday' ? 'date' : 'time';
   return guardDialogueRepromptPlan(session, key, primary);

@@ -77,6 +77,8 @@ describe('resolveExpectedAnswer — réponses hors sujet', () => {
     ['Allô ?', 'time'],
     ['Plutôt en terrasse', 'time'],
     ['Attendez, je demande à ma femme.', 'time'],
+    ["C'est pour une repas d'après-midi.", 'weekday'],
+    ['Plutôt l’après-midi', 'weekday'],
   ] as const)('« %s » (%s) reste non résolu', (transcript, kind) => {
     expect(resolveExpectedAnswer(transcript, kind).status).toBe('unresolved');
   });

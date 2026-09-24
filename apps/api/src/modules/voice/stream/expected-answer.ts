@@ -305,9 +305,15 @@ export function rankExpectedAnswers(
   kind: ExpectedAnswerKind,
   allowedValues?: readonly string[],
 ): ExpectedAnswerCandidate[] {
-  const heard = phonemize(transcript);
+  // « après-midi », « midi », « soir », « matin » sont des moments de la journée,
+  // pas un jour : « d'après-midi » ressemblait à « mardi » (banc difficile, hv267).
+  const source =
+    kind === 'weekday'
+      ? normalize(transcript).replace(/\b(?:apres\s+midi|midi|soir|matin)\b/g, ' ')
+      : transcript;
+  const heard = phonemize(source);
   if (!heard) return [];
-  const heardCore = phonemize(normalize(transcript).replace(FILLER_PATTERN, ' '));
+  const heardCore = phonemize(normalize(source).replace(FILLER_PATTERN, ' '));
   return candidatesFor(kind, allowedValues)
     .map(({ value, forms }) => ({
       value,
