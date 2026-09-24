@@ -79,7 +79,7 @@ const baseSettings = {
   },
 };
 
-function mockRestaurantAndSettings(settings: Record<string, unknown> = baseSettings): void {
+function mockRestaurantAndSettings(settings: Record<string, unknown> | null = baseSettings): void {
   vi.mocked(db.restaurant.findUnique).mockResolvedValue(
     mockRestaurantRaw as unknown as Awaited<ReturnType<typeof db.restaurant.findUnique>>,
   );
@@ -144,6 +144,19 @@ describe('Sokar Connect — Waiting list routes', () => {
       expect(body.position).toBe(1);
       expect(body.actionToken).toBe('wl-123');
       expect(body.expiresAt).toBe('2026-06-29T20:00:00.000Z');
+    });
+
+    it('uses the shared group-size default when exposure settings are missing', async () => {
+      mockRestaurantAndSettings(null);
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/public/r/${SLUG}/waiting-list`,
+        payload: { ...basePayload, partySize: 8 },
+      });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toEqual({ error: 'Party size 8 exceeds max (7)' });
     });
 
     it('rejected when waiting list disabled', async () => {

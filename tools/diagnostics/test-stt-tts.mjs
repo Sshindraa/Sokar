@@ -7,25 +7,58 @@
  * Valide chaque API indépendamment pour vérifier que les clés .env sont valides.
  */
 
-// ─── Vérifier que .env.local est chargé (via --env-file) ─────────────────────
-if (!process.env.ELEVENLABS_API_KEY && !process.env.CARTESIA_API_KEY && !process.env.GROQ_API_KEY) {
-  console.log("❌ Variables d'environnement manquantes — .env.local non chargé.");
-  console.log('   Lancez via : pnpm test:diagnostic');
-  console.log('   ou          : node --env-file=.env.local tools/diagnostics/test-stt-tts.mjs');
-  process.exit(1);
-}
-
-const EL_KEY = process.env.ELEVENLABS_API_KEY || '';
-const CA_KEY = process.env.CARTESIA_API_KEY || '';
-const GROQ_KEY = process.env.GROQ_API_KEY || '';
+const EL_KEY = process.env.ELEVENLABS_BENCH_API_KEY || '';
+const CA_KEY = process.env.CARTESIA_BENCH_API_KEY || '';
+const GROQ_KEY = process.env.GROQ_BENCH_API_KEY || '';
 const GROQ_BASE_URL = process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1';
 const CA_VOICE = process.env.CARTESIA_VOICE_ID || 'f786b574-daa5-4673-aa0c-cbe3e8534c02';
 const EL_MODEL = process.env.ELEVENLABS_STT_MODEL || 'scribe_v2_realtime';
 const CA_MODEL = process.env.CARTESIA_MODEL || 'sonic-3.6';
 const VOICE_MODEL = process.env.VOICE_LLM_MODEL || 'qwen/qwen3.8-27b';
+const CARTESIA_TEST_TEXT = 'Test de synthèse vocale Cartesia.';
+const GROQ_SYSTEM_PROMPT = 'Vous êtes un agent vocal concis.';
+const GROQ_USER_PROMPT = 'Dis bonjour en français.';
+const GROQ_MAX_TOKENS = 50;
 
 function keyOk(k) {
   return k && k.length > 10 && k !== '...' && !k.includes('***');
+}
+
+const maximumCredits = Number(process.env.BENCH_MAX_CREDITS);
+const groqEstimatedTokens =
+  Math.ceil((GROQ_SYSTEM_PROMPT.length + GROQ_USER_PROMPT.length) / 2) + GROQ_MAX_TOKENS;
+const providerEstimates = {
+  ElevenLabs: 0,
+  Cartesia: CARTESIA_TEST_TEXT.length,
+  Groq: groqEstimatedTokens,
+};
+
+if (!keyOk(EL_KEY)) throw new Error('ELEVENLABS_BENCH_API_KEY is required');
+if (EL_KEY === process.env.ELEVENLABS_API_KEY) {
+  throw new Error('ELEVENLABS_BENCH_API_KEY must differ from ELEVENLABS_API_KEY');
+}
+if (!keyOk(CA_KEY)) throw new Error('CARTESIA_BENCH_API_KEY is required');
+if (CA_KEY === process.env.CARTESIA_API_KEY?.replace(/"/g, '')) {
+  throw new Error('CARTESIA_BENCH_API_KEY must differ from CARTESIA_API_KEY');
+}
+if (!keyOk(GROQ_KEY)) throw new Error('GROQ_BENCH_API_KEY is required');
+if (GROQ_KEY === process.env.GROQ_API_KEY) {
+  throw new Error('GROQ_BENCH_API_KEY must differ from GROQ_API_KEY');
+}
+if (!Number.isSafeInteger(maximumCredits) || maximumCredits <= 0) {
+  throw new Error('BENCH_MAX_CREDITS must be a positive integer');
+}
+process.stderr.write(
+  'Estimation (unités natives par fournisseur) : ' +
+    Object.entries(providerEstimates)
+      .map(([provider, credits]) => `${provider}=${credits}`)
+      .join(', ') +
+    ` ; BENCH_MAX_CREDITS=${maximumCredits}.\n`,
+);
+if (Object.values(providerEstimates).some((credits) => credits > maximumCredits)) {
+  throw new Error(
+    'Estimated provider usage exceeds BENCH_MAX_CREDITS; no provider request was sent',
+  );
 }
 
 let passed = 0,
@@ -86,7 +119,7 @@ async function testCartesia() {
       },
       body: JSON.stringify({
         model_id: CA_MODEL,
-        transcript: 'Test de synthèse vocale Cartesia.',
+        transcript: CARTESIA_TEST_TEXT,
         voice: { mode: 'id', id: CA_VOICE },
         locale: 'fr-FR',
         normalization: 'auto',
@@ -148,10 +181,10 @@ async function testGroq() {
       body: JSON.stringify({
         model: VOICE_MODEL,
         messages: [
-          { role: 'system', content: 'Vous êtes un agent vocal concis.' },
-          { role: 'user', content: 'Dis bonjour en français.' },
+          { role: 'system', content: GROQ_SYSTEM_PROMPT },
+          { role: 'user', content: GROQ_USER_PROMPT },
         ],
-        max_tokens: 50,
+        max_tokens: GROQ_MAX_TOKENS,
         reasoning_effort: 'none',
       }),
     });
@@ -174,9 +207,9 @@ async function main() {
   console.log('═'.repeat(60));
   console.log('');
   console.log('  État des clés API dans .env.local :');
-  console.log(`  • ELEVENLABS_API_KEY  : ${keyOk(EL_KEY) ? '✓' : '✗'}`);
-  console.log(`  • CARTESIA_API_KEY  : ${keyOk(CA_KEY) ? '✓' : '✗ (placeholder)'}`);
-  console.log(`  • GROQ_API_KEY       : ${keyOk(GROQ_KEY) ? '✓' : '✗'}`);
+  console.log(`  • ELEVENLABS_BENCH_API_KEY : ${keyOk(EL_KEY) ? '✓' : '✗'}`);
+  console.log(`  • CARTESIA_BENCH_API_KEY   : ${keyOk(CA_KEY) ? '✓' : '✗'}`);
+  console.log(`  • GROQ_BENCH_API_KEY       : ${keyOk(GROQ_KEY) ? '✓' : '✗'}`);
   console.log('');
 
   await testElevenLabsStt();
@@ -199,8 +232,9 @@ async function main() {
       console.log('  • Groq : https://console.groq.com → API Keys → créer une clé');
     console.log('');
     console.log('  Ajoutez-les dans .env :');
-    console.log('    ELEVENLABS_API_KEY="cle"');
-    console.log('    CARTESIA_API_KEY="cle"');
+    console.log('    ELEVENLABS_BENCH_API_KEY="cle"');
+    console.log('    CARTESIA_BENCH_API_KEY="cle"');
+    console.log('    GROQ_BENCH_API_KEY="cle"');
     console.log('    CARTESIA_VOICE_ID="f786b574-daa5-4673-aa0c-cbe3e8534c02"');
     console.log('');
     console.log('  Sinon, vous pouvez tester le pipeline de logique métier sans audio :');

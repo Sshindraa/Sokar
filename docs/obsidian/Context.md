@@ -19,6 +19,8 @@
 
 ## Décisions récentes
 
+2026-09-24 — [reservations, voice, prisma] **Seuil de groupe unifié à 7** — La valeur par défaut des réservations vocales et agentiques est 7, portée par une constante partagée et le défaut Prisma. La migration ne change que le défaut des nouvelles lignes ; les lignes existantes conservent leur valeur.
+
 2026-09-23 — [voice, TurnPlan, observabilité] **Shadow global et supervision** — `VOICE_TURN_PLAN_SHADOW_ENABLED=true` concerne tous les restaurants, sans allowlist ; `false` coupe partout. Flag actif en staging et production, API saine après reload sans session active. Le TurnPlan ne modifie rien. Prometheus scrape les quatre cibles de production et staging ; Grafana est séparé, loopback-only, en lecture seule par tunnel SSH. Son secret admin dédié est dans l’environnement GitHub `production` et le workflow le synchronise hors du checkout. Aucun appel réel staging (Telnyx absent).
 
 2026-09-21 — [connect, onboarding, api] **Publier exige un slug** — `PATCH /api/restaurants/:id/connect` avec `connectPublished: true` refusait auparavant d'échouer proprement : sans slug, la fiche passait `connectPublished=true` + `publishedAt` + `agenticOptIn=true` mais ne produisait aucune page publique, sans message. La route renvoie désormais `409 { code: 'CONNECT_SLUG_REQUIRED', missing: ['slug'] }` avant toute écriture. Forme alignée sur `PROVISIONING_NOT_READY`.

@@ -32,6 +32,7 @@ import {
   callsMissingTranscriptGauge,
   reservationsMissingSmsGauge,
 } from '../../observability/metrics';
+import { refreshVoiceReservationQualityMetrics } from '../../observability/voice-reservation-quality';
 import {
   collectQueueStates,
   evaluateQueueStates,
@@ -143,6 +144,25 @@ export const systemHealthWorker = new Worker(
   'system-health',
   async (job: Job<SystemHealthJobData>) => {
     const log = jobLogger(job);
+
+    if (job.name === 'voice-quality-gauges') {
+      try {
+        const snapshot = await refreshVoiceReservationQualityMetrics(db);
+        log.info(
+          {
+            reservationsCreated7d: snapshot.created7d,
+            reservationsChangedAfterCall7d: snapshot.changedAfterCall7d,
+            reservationsCancelledAfterCall7d: snapshot.cancelledAfterCall7d,
+          },
+          '[system-health] refreshed voice reservation quality gauges',
+        );
+        return { voiceQualityRefreshed: true };
+      } catch (err) {
+        log.error({ err }, '[system-health] Voice reservation quality snapshot failed');
+        throw err;
+      }
+    }
+
     const findings: SystemFinding[] = [];
 
     // 1. Files BullMQ : inaccessibles, failed, dead-letter, backlog.

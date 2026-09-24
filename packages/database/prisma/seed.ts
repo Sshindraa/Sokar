@@ -1,4 +1,5 @@
 import { PrismaClient, Prisma } from '@prisma/client';
+import { DEFAULT_MAX_PARTY_SIZE } from '@sokar/config';
 import { createHash, randomBytes } from 'crypto';
 import { shouldSeedDemoListings, shouldSeedDemoMcpClient } from './seed-demo-guard';
 
@@ -138,7 +139,7 @@ async function main() {
         { day: 'sat', start: '12:00', end: '14:00' },
         { day: 'sat', start: '19:00', end: '23:00' },
       ] as Prisma.JsonValue,
-      maxPartySize: 8,
+      maxPartySize: DEFAULT_MAX_PARTY_SIZE,
       minLeadTimeMinutes: 30,
       quoteTtlSeconds: 300,
       holdTtlSeconds: 420,
@@ -167,7 +168,7 @@ async function main() {
         { day: 'sat', start: '12:00', end: '14:00' },
         { day: 'sat', start: '19:00', end: '23:00' },
       ] as Prisma.JsonValue,
-      maxPartySize: 8,
+      maxPartySize: DEFAULT_MAX_PARTY_SIZE,
       minLeadTimeMinutes: 30,
       quoteTtlSeconds: 300,
       holdTtlSeconds: 420,
@@ -412,7 +413,7 @@ async function main() {
           connectPublished: true,
           connectAgentic: false,
           connectPublishedAt: new Date(),
-          maxPartySize: 8,
+          maxPartySize: DEFAULT_MAX_PARTY_SIZE,
           minLeadTimeMinutes: 30,
           exposedCreneaux: [
             { day: 'tue', start: '12:00', end: '14:00' },
@@ -427,7 +428,7 @@ async function main() {
           connectPublished: true,
           connectAgentic: false,
           connectPublishedAt: new Date(),
-          maxPartySize: 8,
+          maxPartySize: DEFAULT_MAX_PARTY_SIZE,
           minLeadTimeMinutes: 30,
           exposedCreneaux: [
             { day: 'tue', start: '12:00', end: '14:00' },
@@ -673,7 +674,7 @@ async function main() {
           connectAgentic: false,
           connectPublishedAt: new Date(),
           connectDescription: r.connectDescription,
-          maxPartySize: 8,
+          maxPartySize: DEFAULT_MAX_PARTY_SIZE,
           minLeadTimeMinutes: 30,
           exposedCreneaux: pilotExposedCreneaux,
         },
@@ -683,7 +684,7 @@ async function main() {
           connectAgentic: false,
           connectPublishedAt: new Date(),
           connectDescription: r.connectDescription,
-          maxPartySize: 8,
+          maxPartySize: DEFAULT_MAX_PARTY_SIZE,
           minLeadTimeMinutes: 30,
           exposedCreneaux: pilotExposedCreneaux,
         },

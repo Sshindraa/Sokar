@@ -262,6 +262,99 @@ describe('ReservationService - Google Calendar Sync', () => {
       expect(result.customerName).toBe('Alice Updated');
     });
 
+    it('audits only changed reservation fields without recording their values', async () => {
+      const originalDate = new Date('2099-06-05T19:00:00.000Z');
+      const updatedDate = new Date('2099-06-06T20:00:00.000Z');
+      const mockReservationWithRest = {
+        id: 'res-456',
+        restaurantId: 'rest-123',
+        status: 'CONFIRMED',
+        state: 'CONFIRMED',
+        reservedAt: originalDate,
+        startsAt: originalDate,
+        partySize: 4,
+        googleEventId: null,
+        restaurant: mockRestaurant,
+      };
+      const updatedReservation = {
+        ...mockReservationWithRest,
+        reservedAt: updatedDate,
+        startsAt: updatedDate,
+        partySize: 5,
+      };
+
+      vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(
+        mockReservationWithRest as unknown as Awaited<
+          ReturnType<typeof db.reservation.findUniqueOrThrow>
+        >,
+      );
+      vi.mocked(db.reservation.update).mockResolvedValue(
+        updatedReservation as unknown as Awaited<ReturnType<typeof db.reservation.update>>,
+      );
+
+      await ReservationService.update('res-456', 'rest-123', {
+        reservedAt: updatedDate,
+        startsAt: updatedDate,
+        partySize: 5,
+      });
+
+      expect(db.reservationAuditLog.create).toHaveBeenCalledWith({
+        data: {
+          event: 'reservation_fields_changed',
+          reservationId: 'res-456',
+          actor: 'legacy:reservation-update',
+          fromState: 'CONFIRMED',
+          toState: 'CONFIRMED',
+          metadata: {
+            source: 'legacy_reservation_update',
+            changedFields: ['party_size', 'date', 'time'],
+          },
+        },
+      });
+    });
+
+    it('compares date and time in the restaurant timezone across a daylight-saving change', async () => {
+      const originalDate = new Date('2026-10-24T17:00:00.000Z');
+      const updatedDate = new Date('2026-10-25T18:00:00.000Z');
+      const mockReservationWithRest = {
+        id: 'res-456',
+        restaurantId: 'rest-123',
+        status: 'CONFIRMED',
+        state: 'CONFIRMED',
+        reservedAt: originalDate,
+        startsAt: originalDate,
+        partySize: 4,
+        googleEventId: null,
+        restaurant: mockRestaurant,
+      };
+      vi.mocked(db.reservation.findUniqueOrThrow).mockResolvedValue(
+        mockReservationWithRest as unknown as Awaited<
+          ReturnType<typeof db.reservation.findUniqueOrThrow>
+        >,
+      );
+      vi.mocked(db.reservation.update).mockResolvedValue({
+        ...mockReservationWithRest,
+        reservedAt: updatedDate,
+        startsAt: updatedDate,
+      } as unknown as Awaited<ReturnType<typeof db.reservation.update>>);
+
+      await ReservationService.update('res-456', 'rest-123', {
+        reservedAt: updatedDate,
+        startsAt: updatedDate,
+      });
+
+      expect(db.reservationAuditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            metadata: {
+              source: 'legacy_reservation_update',
+              changedFields: ['date'],
+            },
+          }),
+        }),
+      );
+    });
+
     it('should delete Google event and clear googleEventId if status is CANCELLED', async () => {
       const mockReservationWithRest = {
         id: 'res-456',

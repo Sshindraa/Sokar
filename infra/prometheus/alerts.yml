@@ -1,5 +1,11 @@
 # ── Sokar Prometheus alerting rules ──────────────────────────────────────────
-# Architecture d'alerting ACTIVE (pilote) :
+# Circuit de notification humain : `dispatchAlert()` (Sentry et, selon ALERT_*,
+# email, webhook et SMS critique). `system-health`, les SLO, les seuils ElevenLabs
+# et les indisponibilités STT l'appellent depuis leurs workers / le flux vocal.
+#
+# Prometheus charge aussi ce fichier, mais `prometheus.yml` ne configure aucun
+# Alertmanager : les règles ci-dessous ne notifient personne. Elles reflètent
+# les seuils actifs pour consultation dans Prometheus/Grafana.
 #
 #   1. Worker in-app `system-health` (toutes les 5 min, même process que l'API)
 #      — apps/api/src/shared/queue/workers/system-health.worker.ts
@@ -11,24 +17,28 @@
 #   2. Worker in-app `alert-evaluation` (toutes les 5 min)
 #      — apps/api/src/shared/queue/workers/alert-evaluation.worker.ts
 #      Évalue : taux 5xx global, 5xx Connect, latence p95 Connect, backlog
-#      connect-analytics. Sortie : logs + Sentry.
+#      connect-analytics et SLO. Les SLO passent par dispatchAlert().
 #
-#   3. Watchdog VPS (cron toutes les 5 min)
+#   3. Workers ElevenLabs et flux STT
+#      — elevenlabs-subscription.worker.ts et stream/stt-alerts.ts
+#      Consommation à 80/95/100 %, erreurs terminales et rafale d'appels
+#      touchés ; le cooldown est stocké dans Redis.
+#
+#   4. Watchdog VPS (cron toutes les 5 min)
 #      — scripts/ops/sokar-watchdog.sh (/usr/local/sbin/sokar-watchdog)
 #      Évalue : API/dashboard/connect injoignables, Redis/Postgres arrêtés,
 #      backup quotidien absent (>26h), disque/mémoire critiques.
 #      Notification : ALERT_WEBHOOK / ALERT_CMD + heartbeat externe
 #      (HEALTHCHECKS_PING_URL) qui couvre la panne totale du VPS.
 #
-# Les règles Prometheus ci-dessous REFLÈTENT les seuils actifs in-app : elles
-# deviennent effectives dès qu'un Prometheus scrape /metrics (les gauges
+# Les règles Prometheus ci-dessous reflètent les seuils actifs in-app dès que
+# Prometheus scrape /metrics (les gauges
 # sokar_queue_jobs, sokar_calls_missing_transcript_24h et
 # sokar_reservations_missing_confirmation_sms_24h sont publiées à chaque tick
 # du worker system-health). Elles servent aussi de documentation des seuils.
 #
-# Chargement : ajouter dans prometheus.yml :
-#   rule_files:
-#     - /etc/prometheus/alerts.yml
+# Chargement actuel : `infra/prometheus/prometheus.yml` référence déjà
+# `/etc/prometheus/alerts.yml` dans `rule_files`.
 #
 # Cf. docs/pilot/grafana-dashboard-connect.json pour les panels associés.
 
@@ -187,3 +197,60 @@ groups:
         annotations:
           summary: 'Fail-open Redis/cache en rafale ({{ $value }} en 5min)'
           description: "sokar_fail_open_total a augmenté de plus de 10 sur 5 minutes. Un service Redis/cache (rate limiter MCP, connect rate limit, cache OpenAI Reserve, idempotency) est probablement down. Vérifier l'état Redis et les logs API (grep 'fail_open')."
+
+  - name: sokar-voice-providers
+    interval: 15s
+    rules:
+      # Un seul échec d'authentification, de quota ou de conditions suffit à
+      # rendre les nouvelles transcriptions indisponibles.
+      - alert: ElevenLabsSttTerminalError
+        expr: increase(sokar_voice_provider_errors_total{provider="elevenlabs_stt",type=~"quota|auth|terms"}[5m]) > 0
+        for: 0s
+        labels:
+          severity: critical
+          team: sokar
+        annotations:
+          summary: 'ElevenLabs STT refuse la transcription ({{ $labels.type }})'
+          description: 'Au moins une erreur terminale ElevenLabs STT a été observée en 5 minutes. Vérifier le compte, les conditions acceptées et la clé sans l’afficher dans les logs.'
+
+      # Plus de cinq appels distincts touchés sur 10 minutes déclenche l'alerte
+      # dispatchée par stream/stt-alerts.ts (fenêtre Redis de 10 minutes).
+      - alert: ElevenLabsSttAffectedCalls
+        expr: increase(sokar_voice_provider_errors_total{provider="elevenlabs_stt",type="connection_unavailable"}[10m]) > 5
+        for: 0s
+        labels:
+          severity: warning
+          team: sokar
+        annotations:
+          summary: 'Plus de cinq appels touchés par une indisponibilité STT'
+          description: 'Plus de cinq appels distincts ont épuisé leurs tentatives de connexion Scribe en 10 minutes. Vérifier la connectivité, le statut du fournisseur et les logs API.'
+
+      - alert: ElevenLabsCharacterUsage80Percent
+        expr: sokar_elevenlabs_character_limit > 0 and sokar_elevenlabs_character_count / sokar_elevenlabs_character_limit >= 0.80
+        for: 0s
+        labels:
+          severity: warning
+          team: sokar
+        annotations:
+          summary: 'Compte ElevenLabs à {{ $value | humanizePercentage }}'
+          description: 'Le compte ElevenLabs a consommé au moins 80 % de sa limite de caractères. Vérifier le solde et arrêter les benchmarks.'
+
+      - alert: ElevenLabsCharacterUsage95Percent
+        expr: sokar_elevenlabs_character_limit > 0 and sokar_elevenlabs_character_count / sokar_elevenlabs_character_limit >= 0.95
+        for: 0s
+        labels:
+          severity: critical
+          team: sokar
+        annotations:
+          summary: 'Compte ElevenLabs presque épuisé ({{ $value | humanizePercentage }})'
+          description: 'Le compte ElevenLabs a consommé au moins 95 % de sa limite de caractères. Traiter le quota avant toute nouvelle campagne de benchmarks.'
+
+      - alert: ElevenLabsCharacterUsage100Percent
+        expr: sokar_elevenlabs_character_limit > 0 and sokar_elevenlabs_character_count / sokar_elevenlabs_character_limit >= 1
+        for: 0s
+        labels:
+          severity: critical
+          team: sokar
+        annotations:
+          summary: 'Limite de caractères ElevenLabs atteinte'
+          description: 'Le compte ElevenLabs a atteint ou dépassé sa limite de caractères.'

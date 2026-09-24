@@ -119,6 +119,7 @@ describe('ServiceCopilotDelayRecoveryService', () => {
         data: expect.objectContaining({
           event: 'reservation_delay_recovered',
           metadata: expect.objectContaining({
+            changedFields: ['time'],
             idempotencyPayloadHash: expect.any(String),
             idempotencyVersion: 'v1',
             originalTableId: 'table-12',

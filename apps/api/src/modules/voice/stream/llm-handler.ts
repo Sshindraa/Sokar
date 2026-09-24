@@ -341,6 +341,32 @@ function takeInterruptedTranscript(session: CallSession): string | null {
   return held.transcript;
 }
 
+function buildSttUnavailableCopy(session: CallSession): {
+  readonly noManager: string;
+  readonly manager: string;
+  readonly transferFailed: string;
+  readonly transferUnavailable: string;
+} {
+  const english = effectiveVoiceLanguage(session) === 'en';
+  const opening = english
+    ? "I'm sorry, I'm having a technical problem and I can't hear you clearly."
+    : "Je suis désolé, j'ai un problème technique et je ne vous entends pas correctement.";
+  const closing = session.onlineReservationsActive
+    ? english
+      ? 'You can book online. Goodbye.'
+      : 'Vous pouvez réserver en ligne. Au revoir.'
+    : english
+      ? 'Please call back a little later. Goodbye.'
+      : 'Vous pouvez rappeler un peu plus tard. Au revoir.';
+
+  return {
+    noManager: `${opening} ${closing}`,
+    manager: `${opening} ${english ? "I'll put you through to the restaurant." : 'Je vous passe le restaurant.'}`,
+    transferFailed: `${english ? "I couldn't put you through." : "Je n'ai pas réussi à vous transférer."} ${closing}`,
+    transferUnavailable: `${english ? "I can't transfer you right now." : 'Je ne peux pas vous transférer pour le moment.'} ${closing}`,
+  };
+}
+
 /**
  * Gère les événements provenant de ElevenLabs Scribe.
  */
@@ -511,6 +537,12 @@ export function handleSttEvent(
       // commencé par UtteranceStart.
       session.transcript += (session.transcript ? ' ' : '') + event.transcript;
       completeVoiceTurnInput(session, event.transcript, event.words);
+      session.sttEvidence = {
+        transcript: event.transcript,
+        words: event.words,
+        partials: [...(session.turnPartials ?? [])],
+      };
+      session.turnPartials = [];
 
       const isSpeculativeEnabled = isSpeculativeLlmEnabled(session);
       const speculativeTranscript = session.speculativeTranscript;
@@ -637,6 +669,64 @@ export function handleSttEvent(
         ),
       );
       mgr.transition(session, 'LISTENING');
+      break;
+    }
+
+    case 'Unavailable': {
+      if (session.sttFallbackSpoken) break;
+      session.sttFallbackSpoken = true;
+      logger.error(
+        { callId: session.callControlId, reason: event.reason },
+        '[stt] Transcription unavailable; starting call fallback',
+      );
+      cancelScheduledFiller(session);
+      session.abortController?.abort();
+      session.abortController = null;
+      session.responseGeneration++;
+      session.speculativeLlm = null;
+      session.speculativeResult = null;
+      session.speculativeTranscript = '';
+
+      const managerConfigured = Boolean(session.managerPhone?.trim());
+      const fallbackCopy = buildSttUnavailableCopy(session);
+      if (!managerConfigured) {
+        finishCall(session, mgr, fallbackCopy.noManager).catch((err) =>
+          logger.error(
+            { err, callId: session.callControlId },
+            '[stt] Could not finish call after transcription outage',
+          ),
+        );
+        break;
+      }
+
+      session.ttsGeneration++;
+      session.ttsContext?.cancel();
+      session.ttsContext = null;
+      if (session.telnyxWs.readyState === WebSocket.OPEN) {
+        session.telnyxWs.send(JSON.stringify({ event: 'clear' }));
+      }
+      if (session.state === 'LISTENING') mgr.transition(session, 'PROCESSING');
+      if (session.state !== 'SPEAKING') mgr.transition(session, 'SPEAKING');
+      (async () => {
+        await speakTtsStreamed(session, fallbackCopy.manager);
+        if (session.ended || session.ending) return;
+        await mgr.handoffToManager(session);
+        if (session.handoffInProgress || session.ended || session.ending) return;
+        await finishCall(session, mgr, fallbackCopy.transferFailed);
+      })().catch((err) => {
+        logger.error(
+          { err, callId: session.callControlId },
+          '[stt] Manager fallback after transcription outage failed',
+        );
+        if (!session.ended && !session.ending) {
+          finishCall(session, mgr, fallbackCopy.transferUnavailable).catch((finishErr) =>
+            logger.error(
+              { err: finishErr, callId: session.callControlId },
+              '[stt] Could not finish call after manager fallback failed',
+            ),
+          );
+        }
+      });
       break;
     }
   }
@@ -789,6 +879,15 @@ export async function processTranscriptStreaming(
   const speechAct = classifiedAct === 'closing' && !explicitEnd ? 'backchannel' : classifiedAct;
   if (!explicitEnd) suspendPendingInteractionForDetour(session, transcript);
   recordUserTurn(session, transcript, speechAct);
+  const expectedAnswer = session.conversation.lastExpectedAnswer;
+  if (expectedAnswer) {
+    // Statut et scores seulement : ni transcription ni valeur retenue.
+    recordVoiceTurnEvent(session, 'expected_answer', { ...expectedAnswer });
+  }
+  for (const slotConfidence of session.conversation.lastSlotConfidence ?? []) {
+    // Type, confiance arrondie, instabilité et décision : ni texte ni valeur.
+    recordVoiceTurnEvent(session, 'slot_confidence', { ...slotConfidence });
+  }
   recordVoiceTurnClassification(session, speechAct);
   logger.info(
     {
@@ -1019,6 +1118,32 @@ export async function processTranscriptStreaming(
       if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
       return;
     }
+  }
+
+  // Groupe au-delà du seuil du restaurant, nombre confirmé : le gérant prend
+  // la main (transfert réel), sinon un message est enregistré pour lui.
+  const confirmedGroup = session.conversation.groupRequest;
+  if (deterministicLanguage && confirmedGroup?.confirmed) {
+    session.conversation.groupRequest = null;
+    const transfer = Boolean(session.managerPhone?.trim());
+    const response = transfer
+      ? await mgr.handoffToManager(session, { kind: 'group_size', choice: 'transfer' })
+      : await mgr.recordGroupRequestMessage(session, confirmedGroup.partySize);
+    recordVoiceTurnEvent(session, 'dialogue_guard', {
+      level: 'escalate',
+      action: transfer ? 'transfer' : 'message',
+    });
+    if (!isCurrentResponse()) return;
+    session.turnCount++;
+    session.history.push(
+      { role: 'user', content: transcript },
+      { role: 'assistant', content: response },
+    );
+    recordAssistantReplyWithPolicy(session, response, { source: 'explicit', operation: 'cancel' });
+    mgr.transition(session, 'SPEAKING');
+    await speakTtsStreamed(session, response);
+    if (isCurrentResponse()) mgr.transition(session, 'LISTENING');
+    return;
   }
 
   // Seul un « oui » au dernier récapitulatif ouvre le verrou de création. La

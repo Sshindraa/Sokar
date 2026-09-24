@@ -7,7 +7,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const apiKey = process.env.CARTESIA_API_KEY;
+const apiKey = process.env.CARTESIA_BENCH_API_KEY;
+const productionApiKey = process.env.CARTESIA_API_KEY?.replace(/"/g, '');
 const model = process.env.CARTESIA_MODEL || 'sonic-3.6';
 const outputRoot =
   process.env.CARTESIA_BENCHMARK_DIR || '/private/tmp/sokar-cartesia-voice-benchmark';
@@ -38,11 +39,61 @@ function safeFilePart(value) {
 }
 
 if (!apiKey || apiKey === '...' || apiKey.length < 20) {
-  console.error(
-    'CARTESIA_API_KEY est absente ou ressemble encore au placeholder. Configurez-la dans votre environnement avant le benchmark.',
-  );
+  console.error('CARTESIA_BENCH_API_KEY est absente ou ressemble encore au placeholder.');
   process.exit(2);
 }
+if (productionApiKey && apiKey === productionApiKey) {
+  console.error('CARTESIA_BENCH_API_KEY doit être différente de CARTESIA_API_KEY.');
+  process.exit(2);
+}
+
+const maximumCredits = Number(process.env.BENCH_MAX_CREDITS);
+if (!Number.isSafeInteger(maximumCredits) || maximumCredits <= 0) {
+  console.error('BENCH_MAX_CREDITS doit être un entier positif.');
+  process.exit(2);
+}
+
+const totalTextCharacters =
+  candidates.length * samples.reduce((sum, sample) => sum + sample.text.length, 0);
+const estimatedCredits = totalTextCharacters + samples[0].text.length;
+console.log(
+  'Estimation conservatrice : ' +
+    estimatedCredits +
+    ' crédits-caractères Cartesia (limite BENCH_MAX_CREDITS=' +
+    maximumCredits +
+    ').',
+);
+if (estimatedCredits > maximumCredits) {
+  console.error('Estimation supérieure à BENCH_MAX_CREDITS ; aucun appel fournisseur effectué.');
+  process.exit(2);
+}
+
+async function synthesize(voice, sample) {
+  return fetch('https://api.cartesia.ai/tts/bytes', {
+    method: 'POST',
+    headers: {
+      'Cartesia-Version': '2026-03-01',
+      'X-API-Key': apiKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model_id: model,
+      transcript: sample.text,
+      voice: { mode: 'id', id: voice.id },
+      locale: sample.locale,
+      normalization: 'auto',
+      output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 24000 },
+    }),
+  });
+}
+
+// Vérifie l'accès au même endpoint avant d'écrire ou de lancer le corpus complet.
+const accessCheck = await synthesize(candidates[0], samples[0]);
+if (!accessCheck.ok) {
+  console.error('Cartesia access check failed with HTTP ' + accessCheck.status);
+  process.exit(2);
+}
+await accessCheck.arrayBuffer();
 
 await mkdir(outputRoot, { recursive: true });
 const manifest = {
@@ -55,22 +106,7 @@ const manifest = {
 for (const voice of candidates) {
   const entry = { ...voice, files: [], error: null };
   for (const sample of samples) {
-    const response = await fetch('https://api.cartesia.ai/tts/bytes', {
-      method: 'POST',
-      headers: {
-        'Cartesia-Version': '2026-03-01',
-        'X-API-Key': apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model_id: model,
-        transcript: sample.text,
-        voice: { mode: 'id', id: voice.id },
-        locale: sample.locale,
-        normalization: 'auto',
-        output_format: { container: 'mp3', encoding: 'mp3', sample_rate: 24000 },
-      }),
-    });
+    const response = await synthesize(voice, sample);
 
     if (!response.ok) {
       entry.error = `Cartesia ${response.status}: ${(await response.text()).slice(0, 200)}`;

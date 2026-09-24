@@ -8,6 +8,7 @@
  * appel (bruit au SNR demandé, paquets de 20 ms perdus, codec A-law), puis
  * envoyée à Scribe avec l'URL de production (`buildSttUrl`, codec PCMA).
  * Les phrases sont synthétiques : aucun contenu d'appel réel n'est traité.
+ * Sortie par phrase : transcription, mots avec `logprob`, transcriptions partielles.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -82,14 +83,18 @@ async function synthesize(phrase) {
   const response = await fetch('https://api.cartesia.ai/tts/bytes', {
     method: 'POST',
     headers: {
-      'X-API-Key': process.env.CARTESIA_API_KEY.replace(/"/g, ''),
+      'X-API-Key': phrase.cartesiaBenchKey,
       'Cartesia-Version': '2025-04-16',
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       model_id: 'sonic-2',
       transcript: phrase.text,
-      voice: { mode: 'id', id: phrase.voice },
+      voice: {
+        mode: 'id',
+        id: phrase.voice,
+        ...(phrase.speed ? { __experimental_controls: { speed: phrase.speed } } : {}),
+      },
       output_format: { container: 'raw', encoding: 'pcm_s16le', sample_rate: 8000 },
       language: 'fr',
     }),
@@ -98,18 +103,20 @@ async function synthesize(phrase) {
   return Buffer.from(await response.arrayBuffer());
 }
 
-function transcribe(audio) {
+function transcribe(audio, elevenLabsBenchKey) {
   return new Promise((resolve) => {
     const url = buildSttUrl(undefined, 'PCMA', undefined, { restaurantName: 'Chez Sokar' });
-    const ws = new WebSocket(url, { headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY } });
+    const ws = new WebSocket(url, { headers: { 'xi-api-key': elevenLabsBenchKey } });
     const committed = [];
+    const words = [];
+    const partials = [];
     let finished = false;
     const finish = (error) => {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
       ws.close();
-      resolve({ transcript: committed.join(' ').trim(), error: error ?? null });
+      resolve({ transcript: committed.join(' ').trim(), words, partials, error: error ?? null });
     };
     const timer = setTimeout(() => finish(committed.length ? null : 'timeout'), 15000);
     ws.on('error', (err) => finish(err.message));
@@ -135,11 +142,18 @@ function transcribe(audio) {
         }
         clearTimeout(timer);
         setTimeout(() => finish(), 1500);
+      } else if (event.message_type === 'partial_transcript' && event.text?.trim()) {
+        if (partials.at(-1) !== event.text.trim()) partials.push(event.text.trim());
       } else if (
         event.message_type === 'committed_transcript_with_timestamps' &&
         event.text?.trim()
       ) {
         committed.push(event.text.trim());
+        // Mots et log-probabilités, pour mesurer la confiance comme en production.
+        for (const word of event.words ?? []) {
+          if (word.type === 'spacing' || !(word.text ?? word.word)) continue;
+          words.push({ word: word.text ?? word.word, logprob: word.logprob ?? null });
+        }
       } else if (/error/i.test(event.message_type ?? '')) {
         finish(event.message_type);
       }
@@ -147,8 +161,88 @@ function transcribe(audio) {
   });
 }
 
+function requireBenchConfig(phrases) {
+  const elevenLabsBenchKey = process.env.ELEVENLABS_BENCH_API_KEY;
+  const cartesiaBenchKey = process.env.CARTESIA_BENCH_API_KEY;
+  const productionElevenLabsKey = process.env.ELEVENLABS_API_KEY;
+  const productionCartesiaKey = process.env.CARTESIA_API_KEY?.replace(/"/g, '');
+  const maximumCredits = Number(process.env.BENCH_MAX_CREDITS);
+
+  if (!elevenLabsBenchKey) throw new Error('ELEVENLABS_BENCH_API_KEY is required');
+  if (productionElevenLabsKey && elevenLabsBenchKey === productionElevenLabsKey) {
+    throw new Error('ELEVENLABS_BENCH_API_KEY must differ from ELEVENLABS_API_KEY');
+  }
+  if (!cartesiaBenchKey) throw new Error('CARTESIA_BENCH_API_KEY is required');
+  if (productionCartesiaKey && cartesiaBenchKey === productionCartesiaKey) {
+    throw new Error('CARTESIA_BENCH_API_KEY must differ from CARTESIA_API_KEY');
+  }
+  if (!Number.isSafeInteger(maximumCredits) || maximumCredits <= 0) {
+    throw new Error('BENCH_MAX_CREDITS must be a positive integer');
+  }
+  if (!Array.isArray(phrases) || phrases.length === 0) {
+    throw new Error('The phrase corpus must contain at least one phrase');
+  }
+  for (const phrase of phrases) {
+    if (!phrase || typeof phrase.text !== 'string' || !phrase.text.trim()) {
+      throw new Error('Every phrase must contain non-empty text');
+    }
+  }
+
+  const expectedTextCharacters = phrases.reduce((sum, phrase) => sum + phrase.text.length, 0);
+  // Double the expected transcript length to leave room for transcription
+  // variation, then include Cartesia synthesis and its one-request preflight.
+  const estimatedCredits =
+    expectedTextCharacters * 2 + expectedTextCharacters + phrases[0].text.length;
+  process.stderr.write(
+    'Estimation conservatrice : ' +
+      estimatedCredits +
+      ' crédits-caractères au total (limite BENCH_MAX_CREDITS=' +
+      maximumCredits +
+      ').\n',
+  );
+  if (estimatedCredits > maximumCredits) {
+    throw new Error('Estimated credits exceed BENCH_MAX_CREDITS; no provider request was sent');
+  }
+
+  return { elevenLabsBenchKey, cartesiaBenchKey };
+}
+
+async function checkElevenLabsAccess(apiKey) {
+  await new Promise((resolve, reject) => {
+    const url = buildSttUrl(undefined, 'PCMA', undefined, {
+      restaurantName: 'Sokar benchmark check',
+    });
+    const ws = new WebSocket(url, { headers: { 'xi-api-key': apiKey } });
+    const timer = setTimeout(() => {
+      ws.terminate();
+      reject(new Error('ElevenLabs Realtime access check timed out'));
+    }, 10_000);
+    const finish = (error) => {
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve();
+    };
+    ws.once('open', () => {
+      ws.close(1000, 'access check complete');
+      finish();
+    });
+    ws.once('unexpected-response', (_request, response) => {
+      const status = response.statusCode ?? 0;
+      response.resume();
+      finish(new Error('ElevenLabs Realtime access check failed with HTTP ' + status));
+    });
+    ws.once('error', () => finish(new Error('ElevenLabs Realtime access check failed')));
+  });
+}
+
 async function main() {
   const phrases = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  const { elevenLabsBenchKey, cartesiaBenchKey } = requireBenchConfig(phrases);
+  const firstPhrase = { ...phrases[0], cartesiaBenchKey };
+  // Each provider receives exactly one access check before any benchmark batch.
+  await synthesize(firstPhrase);
+  await checkElevenLabsAccess(elevenLabsBenchKey);
+
   const results = new Array(phrases.length);
   let next = 0;
   async function worker() {
@@ -156,8 +250,8 @@ async function main() {
       const index = next++;
       const phrase = phrases[index];
       try {
-        const audio = degrade(await synthesize(phrase), phrase);
-        results[index] = { id: phrase.id, ...(await transcribe(audio)) };
+        const audio = degrade(await synthesize({ ...phrase, cartesiaBenchKey }), phrase);
+        results[index] = { id: phrase.id, ...(await transcribe(audio, elevenLabsBenchKey)) };
       } catch (err) {
         results[index] = { id: phrase.id, transcript: '', error: err.message };
       }

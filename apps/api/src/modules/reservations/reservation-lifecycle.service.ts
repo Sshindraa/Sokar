@@ -45,6 +45,8 @@ export type ReservationLifecycleTransitionInput = {
   toState: ReservationState;
   actor: string;
   metadata?: Record<string, unknown>;
+  /** PII-free field names for day/time/party-size edit measurement. */
+  changedFields?: Array<'date' | 'time' | 'party_size'>;
   /** Preserve a caller-specific audit event such as reservation_deleted. */
   auditEvent?: string;
   /** Preserve the legacy operation label while using the canonical writer. */
@@ -232,7 +234,24 @@ export class ReservationLifecycleService {
           actor: args.actor,
           fromState,
           toState: args.toState,
-          metadata: (args.metadata ?? {}) as Prisma.InputJsonValue,
+          metadata: {
+            ...(args.metadata ?? {}),
+            ...(args.changedFields?.length ? { changedFields: args.changedFields } : {}),
+          } as Prisma.InputJsonValue,
+        },
+      });
+    } else if (args.changedFields?.length) {
+      await tx.reservationAuditLog.create({
+        data: {
+          event: 'reservation_fields_changed',
+          reservationId: previous.id,
+          actor: args.actor,
+          fromState,
+          toState: args.toState,
+          metadata: {
+            ...(args.metadata ?? {}),
+            changedFields: args.changedFields,
+          } as Prisma.InputJsonValue,
         },
       });
     }
